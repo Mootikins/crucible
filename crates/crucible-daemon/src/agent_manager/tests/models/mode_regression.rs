@@ -86,9 +86,7 @@ async fn set_mode_does_not_recurse_when_cached_handle_rpcs_back() {
         Box::new(recursing) as BoxedAgentHandle
     ));
     let _ = manager_cell.set(agent_manager.clone());
-    agent_manager
-        .agent_cache
-        .insert(session.id.clone(), handle.clone());
+    agent_manager.install_agent_for_test(session.id.clone(), handle.clone());
 
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(3),
@@ -124,7 +122,7 @@ async fn set_mode_does_not_recurse_when_cached_handle_rpcs_back() {
 /// `handle.lock().await` and block until the turn ended — every mid-session
 /// mode switch on the web hung for the whole RPC timeout. The fix is
 /// `try_lock`: if the handle is busy, defer the mode change into
-/// `pending_modes` so the NEXT turn drains it into `apply_mode` right after
+/// `pending_mode` so the NEXT turn drains it into `apply_mode` right after
 /// acquiring the lock. The cached handle stays alive (an AcpAgentHandle owns
 /// its spawned process's history — eviction would terminate that process and
 /// lose the transcript); the in-flight turn keeps running under the old
@@ -138,9 +136,7 @@ async fn set_mode_does_not_block_when_cached_handle_is_busy_with_a_turn() {
         reject: Arc::new(AtomicBool::new(false)),
         current_mode: "normal".to_string(),
     }) as BoxedAgentHandle));
-    agent_manager
-        .agent_cache
-        .insert(session.id.clone(), handle.clone());
+    agent_manager.install_agent_for_test(session.id.clone(), handle.clone());
 
     let _guard = handle.lock().await;
 
@@ -156,14 +152,11 @@ async fn set_mode_does_not_block_when_cached_handle_is_busy_with_a_turn() {
     result.unwrap().expect("set_mode must succeed");
 
     assert!(
-        agent_manager.agent_cache.get(&session.id).is_some(),
+        agent_manager.has_cached_agent(&session.id),
         "busy handle must NOT be evicted — ACP handles own spawned-process history"
     );
     assert_eq!(
-        agent_manager
-            .pending_modes
-            .get(&session.id)
-            .map(|r| r.value().clone()),
+        agent_manager.slot(&session.id).peek_pending_mode(),
         Some("plan".to_string()),
         "deferred mode change must be staged for the next turn"
     );
@@ -181,7 +174,7 @@ async fn set_mode_does_not_block_when_cached_handle_is_busy_with_a_turn() {
 /// and applies. If the stale "plan" entry survives, the next turn drains it
 /// and silently reverts the live handle to plan while the persisted config
 /// and every UI still say auto. `set_mode` is the single writer of
-/// `pending_modes`: each call must clear any earlier deferral before deciding
+/// `pending_mode`: each call must clear any earlier deferral before deciding
 /// whether to apply or defer.
 #[tokio::test]
 async fn direct_mode_change_clears_an_earlier_deferred_mode() {
@@ -193,9 +186,7 @@ async fn direct_mode_change_clears_an_earlier_deferred_mode() {
         reject: Arc::new(AtomicBool::new(false)),
         current_mode: "normal".to_string(),
     }) as BoxedAgentHandle));
-    agent_manager
-        .agent_cache
-        .insert(session.id.clone(), handle.clone());
+    agent_manager.install_agent_for_test(session.id.clone(), handle.clone());
 
     // Turn in flight → "plan" is deferred.
     let busy = handle.lock().await;
@@ -212,7 +203,10 @@ async fn direct_mode_change_clears_an_earlier_deferred_mode() {
         .expect("direct set_mode must succeed");
 
     assert!(
-        agent_manager.pending_modes.get(&session.id).is_none(),
+        agent_manager
+            .slot(&session.id)
+            .peek_pending_mode()
+            .is_none(),
         "the superseded deferral must be cleared, or the next turn reverts the mode to plan"
     );
     assert_eq!(
@@ -241,9 +235,7 @@ async fn mode_change_after_eviction_clears_an_earlier_deferred_mode() {
         reject: Arc::new(AtomicBool::new(false)),
         current_mode: "normal".to_string(),
     }) as BoxedAgentHandle));
-    agent_manager
-        .agent_cache
-        .insert(session.id.clone(), handle.clone());
+    agent_manager.install_agent_for_test(session.id.clone(), handle.clone());
 
     let busy = handle.lock().await;
     agent_manager
@@ -260,7 +252,10 @@ async fn mode_change_after_eviction_clears_an_earlier_deferred_mode() {
         .expect("set_mode with no cached handle must succeed");
 
     assert!(
-        agent_manager.pending_modes.get(&session.id).is_none(),
+        agent_manager
+            .slot(&session.id)
+            .peek_pending_mode()
+            .is_none(),
         "a deferral for an evicted handle must not outlive the mode change that superseded it"
     );
 }
@@ -278,18 +273,14 @@ async fn pending_mode_is_drained_into_handle_on_next_lock_acquisition() {
         reject: Arc::new(AtomicBool::new(false)),
         current_mode: "normal".to_string(),
     }) as BoxedAgentHandle));
-    agent_manager
-        .agent_cache
-        .insert(session.id.clone(), handle.clone());
+    agent_manager.install_agent_for_test(session.id.clone(), handle.clone());
 
-    agent_manager
-        .pending_modes
-        .insert(session.id.clone(), "plan".to_string());
+    agent_manager.slot(&session.id).set_pending_mode("plan");
 
     let mut guard = handle.lock().await;
-    let pending = agent_manager.pending_modes.remove(&session.id);
+    let pending = agent_manager.slot(&session.id).take_pending_mode();
     assert_eq!(
-        pending.map(|(_, v)| v),
+        pending,
         Some("plan".to_string()),
         "pending mode must be present before drain"
     );
@@ -303,7 +294,10 @@ async fn pending_mode_is_drained_into_handle_on_next_lock_acquisition() {
         "handle's mode mirror must reflect the drained mode"
     );
     assert!(
-        agent_manager.pending_modes.get(&session.id).is_none(),
+        agent_manager
+            .slot(&session.id)
+            .peek_pending_mode()
+            .is_none(),
         "pending mode must be consumed after drain"
     );
 }

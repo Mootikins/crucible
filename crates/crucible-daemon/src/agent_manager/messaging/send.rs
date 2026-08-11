@@ -285,14 +285,15 @@ impl AgentManager {
         //
         // Drain any pending mode change first: a `set_mode` RPC that arrived
         // while the cached handle was busy serving the PREVIOUS turn stored
-        // its new mode in `pending_modes` rather than block (or evict — which
+        // its new mode in the slot's `pending_mode` rather than block (or evict —
+        // which
         // would lose ACP conversation history). Applying it here, on the
         // handle we've just locked for THIS turn, is the earliest safe point:
         // the previous turn has released the lock, and we haven't yet snapshotted
         // the mode for tool-dispatch enforcement.
         let session_mode = {
             let mut guard = agent.lock().await;
-            if let Some((_, pending)) = self.pending_modes.remove(session_id) {
+            if let Some(pending) = self.slot(session_id).take_pending_mode() {
                 match guard.apply_mode(&pending).await {
                     Ok(()) => tracing::info!(
                         session_id = %session_id,
@@ -327,7 +328,6 @@ impl AgentManager {
             message_id: message_id.clone(),
             event_tx: event_tx_clone.clone(),
             session_state: self.get_or_create_session_state(session_id),
-            pending_permissions: self.pending_permissions.clone(),
             workspace_path: session.workspace.clone(),
             session_dir: session.storage_path(),
             agent_stream_config: {
@@ -354,7 +354,7 @@ impl AgentManager {
             tool_dispatcher: self.get_or_create_session_dispatcher(&session).await,
             permission_override,
             conversation_tree,
-            cache_stats: self.cache_stats_handle(),
+            slot: self.slot(session_id),
             session_manager: self.session_manager.clone(),
             precognition_message,
             attachment_message,
@@ -521,6 +521,42 @@ impl AgentManager {
         Err(AgentError::SessionNotFound(session_id.to_string()))
     }
 
+    /// The session's cached agent handle, building one if there is none.
+    ///
+    /// # Why the install is generation-checked
+    ///
+    /// The request slot does **not** make this mutually exclusive with
+    /// `switch_model`, and reading `models.rs`'s `ConcurrentRequest` check as if
+    /// it does is the mistake this comment exists to prevent. That check
+    /// (`models.rs`, `request_state.contains_key`) only *reads* the slot — it
+    /// never claims it — and a non-claiming check cannot protect a
+    /// check-then-act sequence whose two halves straddle an `await`.
+    ///
+    /// The reachable interleaving, in order:
+    ///
+    /// 1. `switch_model` reads the slot, finds it free (no turn yet), proceeds.
+    /// 2. A turn claims the slot (`send_message_inner`, before this call) and
+    ///    this function misses the cache and starts the slow build.
+    /// 3. `switch_model` finishes its `update_session().await` — a storage
+    ///    write, and the whole window — persists model B, then invalidates the
+    ///    agent cache, which is still empty, so it removes **nothing**. It
+    ///    reports success.
+    /// 4. The build completes and installs the handle it built for model **A**.
+    ///
+    /// Storage now says B and the live handle answers as A, for that turn and
+    /// every turn after it, because nothing invalidates it again. That is
+    /// exactly the `CLAUDE.md` pitfall about `get_*` not returning what `set_*`
+    /// stored, and `session.get_model` reads storage, so the two disagree
+    /// silently.
+    ///
+    /// Note the ordering: the *plan's* interleaving (a switch landing inside a
+    /// build that already holds the slot) is unreachable — that switch gets
+    /// `ConcurrentRequest` at step 1. The generation counter closes the version
+    /// above, and step 4 is where it acts.
+    ///
+    /// Making `switch_model` claim the slot instead would turn a deferrable
+    /// mid-turn switch into an error; `pending_mode` is the in-repo precedent
+    /// for preferring deferral over refusal.
     async fn get_or_create_agent(
         &self,
         session_id: &str,
@@ -530,11 +566,17 @@ impl AgentManager {
         is_interactive: bool,
         permission_override: Option<PermissionMode>,
     ) -> Result<Arc<Mutex<BoxedAgentHandle>>, AgentError> {
-        // Check cache first
-        if let Some(cached) = self.agent_cache.get(session_id) {
-            debug!(session_id = %session_id, "Using cached agent");
-            return Ok(cached.clone());
-        }
+        // Check the cache, and note the generation the build below has to
+        // install against. Anything that invalidates while we are awaiting
+        // moves it, and this build's result is then stale by definition.
+        let slot = self.slot(session_id);
+        let generation = match slot.agent_or_generation() {
+            crate::agent_manager::slot::CachedAgent::Hit(cached) => {
+                debug!(session_id = %session_id, "Using cached agent");
+                return Ok(cached);
+            }
+            crate::agent_manager::slot::CachedAgent::Miss { generation } => generation,
+        };
 
         // Build the agent handle from configuration (or the test-support
         // factory override, which lets tests script delegation children
@@ -573,10 +615,18 @@ impl AgentManager {
             }
         }
 
-        // Cache and return
+        // Cache and return. Install only if nothing invalidated us while we
+        // were building — step 4 of the interleaving on this function. Losing
+        // the race is not an error: this turn keeps the handle it just built
+        // (valid for the config it read) and simply goes uncached, so the next
+        // turn rebuilds from the new config.
         let agent = Arc::new(Mutex::new(agent));
-        self.agent_cache
-            .insert(session_id.to_string(), agent.clone());
+        if !slot.install_agent(generation, &agent) {
+            debug!(
+                session_id = %session_id,
+                "session config changed during agent build; serving this turn uncached"
+            );
+        }
 
         Ok(agent)
     }
@@ -677,21 +727,14 @@ impl AgentManager {
             }
         }
 
-        // Resolve the Lua reference: clone the inner Lua handle (Arc-backed)
-        // so we don't need to hold the MutexGuard across the async agent creation.
-        let (lua_handle, plugin_tools): (
-            Option<mlua::Lua>,
-            Option<Arc<crate::plugin_tools::PluginRegistry>>,
-        ) = match &self.plugin_loader {
-            Some(loader) => {
-                let guard = loader.lock().await;
-                match guard.as_ref() {
-                    Some(l) => (Some(l.executor().lua().clone()), Some(l.plugin_registry())),
-                    None => (None, None),
-                }
-            }
-            None => (None, None),
-        };
+        // Both off `OnceLock`s bound at daemon startup, NOT off the loader
+        // mutex: `fire_session_start` holds that across plugin hook execution
+        // (container builds included), so taking it here made a cold-start turn
+        // queue behind an unrelated session's slow start. Each accessor falls
+        // back to the loader only for managers the server never wired.
+        let lua_handle: Option<mlua::Lua> = self.plugin_lua().await;
+        let plugin_tools: Option<Arc<crate::plugin_tools::PluginRegistry>> =
+            self.plugin_registry().await;
 
         let agent = create_agent_from_session_config(CreateAgentFromSessionConfigParams {
             modes: Some(self.modes.clone()),

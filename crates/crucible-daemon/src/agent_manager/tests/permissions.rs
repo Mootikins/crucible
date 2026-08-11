@@ -337,16 +337,8 @@ mod permission_channel_tests {
         }
     }
 
-    #[derive(Clone, Copy)]
-    enum LifecycleAction {
-        AwaitCreates,
-        CleanupRemoves,
-    }
-
-    #[test_case(LifecycleAction::AwaitCreates; "await_permission_creates_pending_request")]
-    #[test_case(LifecycleAction::CleanupRemoves; "cleanup_session_removes_pending_permissions")]
     #[tokio::test]
-    async fn permission_lifecycle(action: LifecycleAction) {
+    async fn await_permission_creates_pending_request() {
         let storage = Arc::new(FileSessionStorage::new());
         let session_manager = Arc::new(SessionManager::with_storage(storage));
         let agent_manager = create_test_agent_manager(session_manager);
@@ -359,28 +351,39 @@ mod permission_channel_tests {
             permission_id.starts_with("perm-"),
             "Permission ID should have perm- prefix"
         );
+        assert!(
+            agent_manager
+                .get_pending_permission(session_id, &permission_id)
+                .is_some(),
+            "Pending permission should exist"
+        );
+    }
 
-        match action {
-            LifecycleAction::AwaitCreates => {
-                let pending = agent_manager.get_pending_permission(session_id, &permission_id);
-                assert!(pending.is_some(), "Pending permission should exist");
-            }
-            LifecycleAction::CleanupRemoves => {
-                assert!(
-                    agent_manager
-                        .get_pending_permission(session_id, &permission_id)
-                        .is_some(),
-                    "Permission should exist before cleanup"
-                );
-                agent_manager.cleanup_session(session_id);
-                assert!(
-                    agent_manager
-                        .get_pending_permission(session_id, &permission_id)
-                        .is_none(),
-                    "Permission should be removed after cleanup"
-                );
-            }
-        }
+    /// Ending a session must unblock whoever is waiting on its prompts, not
+    /// merely forget them.
+    ///
+    /// The map-emptiness half of this is now covered by
+    /// `cleanup_session_leaves_no_per_session_residue`. What is left here is the
+    /// behaviour: dropping the `oneshot::Sender` is what makes a caller parked
+    /// inside the permission gate return, and a teardown that freed the memory
+    /// without dropping the sender would leave that caller waiting out the full
+    /// 300 s timeout on a session that no longer exists.
+    #[tokio::test]
+    async fn cleanup_session_unblocks_a_waiting_permission_prompt() {
+        let storage = Arc::new(FileSessionStorage::new());
+        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let agent_manager = create_test_agent_manager(session_manager);
+
+        let session_id = "cleanup-unblocks-prompt";
+        let (_permission_id, rx) =
+            agent_manager.await_permission(session_id, PermRequest::bash(["npm", "install"]));
+
+        agent_manager.cleanup_session(session_id);
+
+        assert!(
+            rx.await.is_err(),
+            "the waiter must be released, not left to time out"
+        );
     }
 
     #[tokio::test]
@@ -395,7 +398,7 @@ mod permission_channel_tests {
         let (permission_id, rx) = agent_manager.await_permission(session_id, request);
 
         // Remove the pending permission without responding (simulates cleanup/drop)
-        agent_manager.pending_permissions.remove(session_id);
+        agent_manager.slot(session_id).drop_permissions();
 
         // Verify the permission was removed
         let pending = agent_manager.get_pending_permission(session_id, &permission_id);
@@ -666,7 +669,7 @@ mod permission_channel_tests {
 
         if matches!(scenario, SwitchScenario::CrossProviderInvalidatesCache) {
             assert!(
-                !agent_manager.agent_cache.contains_key(&session.id),
+                !agent_manager.has_cached_agent(&session.id),
                 "Cache should be invalidated after cross-provider switch"
             );
         }

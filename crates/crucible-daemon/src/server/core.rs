@@ -92,6 +92,43 @@ pub(super) fn peer_accepted(stream: &UnixStream, authorized_uid: u32) -> bool {
     }
 }
 
+/// How long a write to a client may block before the connection is considered
+/// dead.
+///
+/// A client that has stopped draining fills the socket buffer, and `write_all`
+/// then blocks forever: the writer mutex is held, the other writer blocks on it,
+/// and `handle_client` never reaches its cleanup — so the connection leaks a
+/// task and a subscription entry for the daemon's lifetime.
+///
+/// Timing out *mid*-`write_all` leaves a partial line on the wire, so the only
+/// correct response is to close the connection. Logging and continuing would
+/// hand the client truncated JSON, which is worse than no JSON.
+const CLIENT_WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Write one framed line to a client, or report that the connection is gone.
+///
+/// `Err` means "stop using this connection" for either reason — a real I/O
+/// error, or a peer that has not accepted 30s of writes. Callers must not
+/// distinguish them: both leave the stream unusable.
+pub(super) async fn write_line_or_close(
+    writer: &Mutex<OwnedWriteHalf>,
+    bytes: &[u8],
+    client_id: ClientId,
+) -> Result<()> {
+    let mut w = writer.lock().await;
+    match tokio::time::timeout(CLIENT_WRITE_TIMEOUT, w.write_all(bytes)).await {
+        Ok(result) => Ok(result?),
+        Err(_elapsed) => {
+            warn!(
+                %client_id,
+                timeout_secs = CLIENT_WRITE_TIMEOUT.as_secs(),
+                "client stopped accepting writes; closing the connection"
+            );
+            Err(anyhow::anyhow!("client write timed out"))
+        }
+    }
+}
+
 pub(super) async fn handle_client(
     stream: UnixStream,
     ctx: Arc<ServerContext>,
@@ -132,8 +169,19 @@ pub(super) async fn handle_client(
                                 || sub_manager.is_subscribed(client_id, &event.session_id)
                             {
                                 if let Ok(json) = event.to_json_line() {
-                                    let mut w = writer_clone.lock().await;
-                                    if w.write_all(json.as_bytes()).await.is_err() {
+                                    // Breaks on a write timeout as well as an
+                                    // I/O error: a peer that has stopped
+                                    // draining would otherwise hold the writer
+                                    // mutex forever and wedge the request loop
+                                    // behind it.
+                                    if write_line_or_close(
+                                        &writer_clone,
+                                        json.as_bytes(),
+                                        client_id,
+                                    )
+                                    .await
+                                    .is_err()
+                                    {
                                         break;
                                     }
                                 }
@@ -170,8 +218,10 @@ pub(super) async fn handle_client(
         let mut output = serde_json::to_string(&response)?;
         output.push('\n');
 
-        let mut w = writer.lock().await;
-        w.write_all(output.as_bytes()).await?;
+        // `?` on purpose: a timed-out write must fall out of this loop so the
+        // cleanup below runs. Returning early is what releases the event
+        // subscription and cancels the forwarder task — the leak this closes.
+        write_line_or_close(&writer, output.as_bytes(), client_id).await?;
     }
 
     // Graceful shutdown of event forwarding
@@ -495,5 +545,64 @@ mod panic_boundary_tests {
             .catch_unwind()
             .await;
         assert_eq!(result.ok(), Some(42));
+    }
+}
+
+#[cfg(test)]
+mod client_write_timeout_tests {
+    use super::*;
+
+    /// A peer that stops draining must cost the daemon one closed connection,
+    /// not a permanently wedged writer.
+    ///
+    /// Before the timeout, `write_all` on a full socket buffer blocked forever
+    /// with the writer mutex held: the event forwarder and the request loop both
+    /// stalled, `handle_client` never reached its cleanup, and the connection
+    /// leaked a task plus a subscription entry for the daemon's lifetime.
+    ///
+    /// Deterministic and instant: `tokio::time::pause()` means the runtime
+    /// auto-advances the clock once every task is blocked, so the timeout fires
+    /// the moment `write_all` genuinely cannot make progress. No sleeps, and no
+    /// 30s of wall time.
+    #[tokio::test(start_paused = true)]
+    async fn a_client_that_stops_reading_gets_its_connection_closed() {
+        let (server_side, _client_side) = tokio::net::UnixStream::pair().expect("socketpair");
+        let (_reader, writer) = server_side.into_split();
+        let writer = Mutex::new(writer);
+
+        // `_client_side` is never read from, so this fills the socket buffers
+        // and then blocks — which is precisely the wedge being closed. Well
+        // past any plausible SO_SNDBUF + SO_RCVBUF.
+        let payload = vec![b'x'; 16 * 1024 * 1024];
+
+        let result = write_line_or_close(&writer, &payload, ClientId::new()).await;
+
+        assert!(
+            result.is_err(),
+            "a write the peer never accepts must fail so the caller closes the connection"
+        );
+    }
+
+    /// The ordinary case is untouched: a peer that reads gets its bytes and the
+    /// connection stays up.
+    #[tokio::test(start_paused = true)]
+    async fn a_client_that_reads_is_written_to_normally() {
+        use tokio::io::AsyncReadExt;
+
+        let (server_side, mut client_side) = tokio::net::UnixStream::pair().expect("socketpair");
+        let (_reader, writer) = server_side.into_split();
+        let writer = Mutex::new(writer);
+
+        let reading = tokio::spawn(async move {
+            let mut buf = [0_u8; 5];
+            client_side.read_exact(&mut buf).await.expect("read");
+            buf
+        });
+
+        write_line_or_close(&writer, b"hello", ClientId::new())
+            .await
+            .expect("a draining peer must be written to without error");
+
+        assert_eq!(&reading.await.expect("reader task"), b"hello");
     }
 }

@@ -242,7 +242,7 @@ async fn a_human_edit_during_the_review_gates_hold_is_not_attributed_to_the_held
         .configure_agent(&session.id, agent)
         .await
         .expect("configure agent");
-    manager.agent_cache.insert(
+    manager.install_agent_for_test(
         session.id.clone(),
         Arc::new(Mutex::new(Box::new(StreamingMockAgent {
             events: vec![script::tool_call(

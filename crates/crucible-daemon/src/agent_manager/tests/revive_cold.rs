@@ -92,7 +92,7 @@ async fn cold_manager(
 /// Put a scripted agent in the cache so the revived turn runs without a
 /// provider. Mirrors `ReactorTestHarness::inject_agent`.
 fn inject_for(am: &AgentManager, session_id: &str) {
-    am.agent_cache.insert(
+    am.install_agent_for_test(
         session_id.to_string(),
         Arc::new(Mutex::new(Box::new(StreamingMockAgent {
             events: vec![script::text("revived"), script::done()],

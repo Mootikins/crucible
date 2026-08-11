@@ -80,7 +80,7 @@ async fn cancel_during_streaming_emits_ended_event() {
         .await
         .unwrap();
 
-    agent_manager.agent_cache.insert(
+    agent_manager.install_agent_for_test(
         session.id.clone(),
         Arc::new(Mutex::new(Box::new(PendingMockAgent) as BoxedAgentHandle)),
     );
@@ -114,7 +114,7 @@ async fn empty_stream_without_done_cleans_up_request_state() {
         .await
         .unwrap();
 
-    agent_manager.agent_cache.insert(
+    agent_manager.install_agent_for_test(
         session.id.clone(),
         Arc::new(Mutex::new(Box::new(MockAgent) as BoxedAgentHandle)),
     );
@@ -155,7 +155,7 @@ async fn parallel_workflow_steps_serialize_llm_turns_on_one_session() {
         .await
         .unwrap();
 
-    agent_manager.agent_cache.insert(
+    agent_manager.install_agent_for_test(
         session.id.clone(),
         Arc::new(Mutex::new(Box::new(StreamingMockAgent {
             events: vec![script::text("branch result"), script::done()],
@@ -265,5 +265,109 @@ async fn scope_mutation_releases_request_slot_on_completion() {
     assert!(
         !agent_manager.request_state.contains_key(&session.id),
         "slot must be free once the mutation returns",
+    );
+}
+
+/// Two first turns arriving together on one session must share a VM.
+///
+/// The old `DashMap` was check-then-insert with the whole VM construction in
+/// the gap — file loads, `on_session_start` hooks — so both callers built one
+/// and the loser's was dropped along with every handler registered on it. The
+/// slot's `OnceLock` builds exactly once, and the proof is pointer equality:
+/// two handles to the same `Mutex`, not two equal-looking VMs.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_first_uses_share_one_session_vm() {
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let agent_manager = Arc::new(create_test_agent_manager(session_manager));
+    let session_id = "shared-vm-session";
+
+    // A barrier, not a sleep: both threads are inside the call at the same
+    // time or the test proves nothing about the race.
+    let gate = Arc::new(std::sync::Barrier::new(2));
+    let handles: Vec<_> = (0..2)
+        .map(|_| {
+            let agent_manager = agent_manager.clone();
+            let gate = gate.clone();
+            tokio::task::spawn_blocking(move || {
+                gate.wait();
+                agent_manager.get_or_create_session_state(session_id)
+            })
+        })
+        .collect();
+
+    let mut states = Vec::new();
+    for handle in handles {
+        states.push(handle.await.expect("state builder must not panic"));
+    }
+
+    assert!(
+        Arc::ptr_eq(&states[0], &states[1]),
+        "both callers must get the same VM, or one caller's handlers are lost"
+    );
+}
+
+/// A cold-start turn must not queue behind another session's plugin hooks.
+///
+/// `session_lifecycle::fire_session_start` holds the plugin-loader mutex across
+/// hook execution, which since the oci work includes container builds. The
+/// agent-build path and the title path both used to take that same mutex just
+/// to read the `Lua` handle and the plugin registry, so a slow start on session
+/// A stalled a first turn on session B.
+///
+/// The held guard below *is* the parked hook — no plugin, no container, no
+/// sleep. The timeout is a deadlock detector, not a synchronisation device: if
+/// either accessor still reaches for the loader this test hangs, and 5s turns
+/// that hang into a failure.
+#[tokio::test]
+async fn reading_plugin_state_does_not_queue_behind_the_loader_lock() {
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let (event_tx, _rx) = broadcast::channel(16);
+    let loader = Arc::new(Mutex::new(None));
+    let agent_manager = AgentManager::new(AgentManagerParams {
+        kiln_manager: Arc::new(KilnManager::new()),
+        session_manager,
+        background_manager: Arc::new(BackgroundJobManager::new(event_tx)),
+        mcp_gateway: None,
+        llm_config: None,
+        acp_config: None,
+        context_config: None,
+        permission_config: None,
+        plugin_loader: Some(loader.clone()),
+        workspace_tools: test_workspace_tools(),
+    });
+
+    // What the daemon binds at startup, and what the read paths must prefer.
+    agent_manager.set_plugin_handlers(
+        Arc::new(crucible_lua::LuaScriptHandlerRegistry::new()),
+        Arc::new(Lua::new()),
+    );
+    agent_manager.set_plugin_tool_registry(Arc::new(crate::plugin_tools::PluginRegistry::new()));
+
+    let _parked_session_start = loader.lock().await;
+
+    let plugin_state = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        (
+            agent_manager.plugin_lua().await.is_some(),
+            agent_manager.plugin_registry().await.is_some(),
+        )
+    })
+    .await
+    .expect("neither read may wait on the loader mutex");
+
+    assert_eq!(
+        plugin_state,
+        (true, true),
+        "both values must come from their startup-bound OnceLock"
+    );
+
+    // Self-check, so a guard that silently was not held cannot make this test
+    // pass vacuously: anything that DOES take the loader must time out here.
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(200), loader.lock())
+            .await
+            .is_err(),
+        "the loader must still be held, or the assertion above proved nothing"
     );
 }

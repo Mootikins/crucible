@@ -96,6 +96,13 @@ impl SnapshotMap {
         self.inner.len()
     }
 
+    /// Whether this session has no snapshots left. The keys are
+    /// `(session_id, node_id)`, so `is_empty` cannot answer this — and the
+    /// post-teardown invariant is per session, not global.
+    pub fn is_empty_for(&self, session_id: &str) -> bool {
+        !self.inner.iter().any(|entry| entry.key().0 == session_id)
+    }
+
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }

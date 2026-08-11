@@ -85,13 +85,10 @@ impl AgentManager {
 
         let title = match &session.agent {
             Some(agent_config) => {
-                let lua_handle: Option<Lua> = match &self.plugin_loader {
-                    Some(loader) => {
-                        let guard = loader.lock().await;
-                        guard.as_ref().map(|l| l.executor().lua().clone())
-                    }
-                    None => None,
-                };
+                // Off the startup-bound `OnceLock`, not the loader mutex —
+                // see `plugin_lua`. A title generation is a background nicety
+                // and must never queue behind a session start's plugin hooks.
+                let lua_handle: Option<Lua> = self.plugin_lua().await;
                 match crate::agent_factory::build_chat_client_for_agent(
                     agent_config,
                     lua_handle.as_ref(),

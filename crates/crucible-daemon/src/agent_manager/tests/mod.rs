@@ -515,8 +515,7 @@ impl ReactorTestHarness {
     /// `ScriptedHandle`) that don't have a dedicated `inject_*` helper.
     fn inject_agent(&self, handle: BoxedAgentHandle) {
         self.agent_manager
-            .agent_cache
-            .insert(self.session_id.clone(), Arc::new(Mutex::new(handle)));
+            .install_agent_for_test(self.session_id.clone(), Arc::new(Mutex::new(handle)));
     }
 
     fn default_ok_events() -> Vec<TurnEvent> {
@@ -856,6 +855,7 @@ fn create_test_agent_manager_with_both(
     })
 }
 
+mod build_race;
 mod concurrency;
 mod dispatch;
 mod init_lua;

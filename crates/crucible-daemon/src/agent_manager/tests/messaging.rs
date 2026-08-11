@@ -1318,7 +1318,7 @@ async fn at_mention_attaches_the_file_contents_to_the_turn() {
         .unwrap();
 
     let received_messages = Arc::new(StdMutex::new(None));
-    agent_manager.agent_cache.insert(
+    agent_manager.install_agent_for_test(
         session.id.clone(),
         Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
             received_prompt: Arc::new(StdMutex::new(None)),

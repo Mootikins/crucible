@@ -21,9 +21,14 @@ use std::path::{Path, PathBuf};
 
 impl AgentManager {
     /// Evict everything that baked the old scope in at build time.
+    ///
+    /// One lock over both, so this is atomic rather than two windows a racing
+    /// build could land between — which is what the module doc above has been
+    /// describing aspirationally.
     fn invalidate_scope_caches(&self, session_id: &str) {
-        self.agent_cache.remove(session_id);
-        self.session_dispatchers.remove(session_id);
+        if let Some(slot) = self.existing_slot(session_id) {
+            slot.invalidate_build();
+        }
     }
 
     fn emit_scope_changed(

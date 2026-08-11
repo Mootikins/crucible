@@ -149,7 +149,7 @@ async fn test_switch_model_llm_config_invalidates_cache() {
         .unwrap();
 
     assert!(
-        !agent_manager.agent_cache.contains_key(&session.id),
+        !agent_manager.has_cached_agent(&session.id),
         "Cache should be invalidated after llm_config cross-provider switch"
     );
 }
@@ -284,7 +284,7 @@ async fn test_switch_model_to_zai_provider() {
 
     // Verify cache was invalidated
     assert!(
-        !agent_manager.agent_cache.contains_key(&session.id),
+        !agent_manager.has_cached_agent(&session.id),
         "Cache should be invalidated after cross-provider switch to ZAI"
     );
 }

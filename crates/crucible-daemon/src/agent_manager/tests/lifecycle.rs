@@ -156,12 +156,12 @@ async fn test_switch_model_invalidates_cache() {
         .await
         .unwrap();
 
-    agent_manager.agent_cache.insert(
+    agent_manager.install_agent_for_test(
         session.id.clone(),
         Arc::new(Mutex::new(Box::new(MockAgent))),
     );
 
-    assert!(agent_manager.agent_cache.contains_key(&session.id));
+    assert!(agent_manager.has_cached_agent(&session.id));
 
     agent_manager
         .switch_model(&session.id, "gpt-4", None)
@@ -169,7 +169,7 @@ async fn test_switch_model_invalidates_cache() {
         .unwrap();
 
     assert!(
-        !agent_manager.agent_cache.contains_key(&session.id),
+        !agent_manager.has_cached_agent(&session.id),
         "Cache should be invalidated after model switch"
     );
 }
@@ -230,7 +230,7 @@ async fn test_switch_model_multiple_times_updates_each_time() {
             model
         );
         assert!(
-            !agent_manager.agent_cache.contains_key(&session.id),
+            !agent_manager.has_cached_agent(&session.id),
             "Cache should be invalidated after each switch"
         );
     }

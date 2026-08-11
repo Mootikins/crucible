@@ -29,6 +29,17 @@ use crate::tools::tool_discovery::{DiscoverToolsParams, GetToolSchemaParams, Too
 /// `handle_tool_call_in_stream` and never reaches dispatch.
 const DISCOVERY_TOOL_NAMES: &[&str] = &["discover_tools", "get_tool_schema"];
 
+/// How long the blocking hydration path waits for providers to list their tools.
+///
+/// Insurance, not a fix for anything reproducible: no provider's `list_tools`
+/// awaits I/O today (the gateway's reads a cached list behind an `RwLock` that
+/// has no production writer), so this budget is never reached. It exists because
+/// the callers are `has_tool`/`get_tool_ref` inside the per-tool-call loop, one
+/// plausible provider away from being an unbounded wait on the network — and
+/// because the throwaway runtime makes a foreign-runtime lock inversion possible
+/// the moment that `RwLock` gains a writer.
+const BLOCKING_HYDRATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Flatten an rmcp `CallToolResult` into a JSON value: parse the joined text
 /// content as JSON when possible, otherwise return it as a string. Errors map
 /// to `Err` so callers surface them as tool errors.
@@ -80,6 +91,9 @@ pub struct DaemonToolDispatcher {
     /// same first-provider-wins rule, so the classification can never describe
     /// a different executor than the one that runs.
     tool_surfaces: RwLock<HashMap<String, ToolSurface>>,
+    /// Budget for [`Self::hydrate_tool_names_blocking`]. A field rather than
+    /// only a const so a test can prove the bound without waiting it out.
+    blocking_hydration_timeout: std::time::Duration,
 }
 
 impl DaemonToolDispatcher {
@@ -106,7 +120,16 @@ impl DaemonToolDispatcher {
             tool_refs: RwLock::new(tool_refs),
             tool_refs_hydrated: AtomicBool::new(false),
             tool_surfaces: RwLock::new(tool_surfaces),
+            blocking_hydration_timeout: BLOCKING_HYDRATION_TIMEOUT,
         }
+    }
+
+    /// Test-support: shorten the hydration budget so a test can prove the bound
+    /// exists without waiting out the production one.
+    #[cfg(test)]
+    pub(crate) fn with_blocking_hydration_timeout(mut self, budget: std::time::Duration) -> Self {
+        self.blocking_hydration_timeout = budget;
+        self
     }
 
     fn is_core_tool_name(name: &str) -> bool {
@@ -191,42 +214,63 @@ impl DaemonToolDispatcher {
             return;
         }
 
-        // NOTE(crucible): spawns a throwaway current-thread runtime and joins it
-        // so a sync caller (has_tool/get_tool_ref) can drive async list_tools
-        // without blocking an existing runtime's worker. Only runs once per
-        // dispatcher (guarded by tool_names_hydrated); the async hydrate path is
-        // preferred wherever an await is available.
+        // NOTE(crucible): spawns a throwaway current-thread runtime so a sync
+        // caller (has_tool/get_tool_ref) can drive async list_tools without
+        // blocking an existing runtime's worker. Only runs once per dispatcher
+        // (guarded by tool_names_hydrated); the async hydrate path is preferred
+        // wherever an await is available.
+        //
+        // The wait is bounded twice, and both bounds are needed. The inner
+        // per-provider timeout is what lets the thread finish, so a provider
+        // that never returns costs one abandoned listing rather than a leaked
+        // thread and runtime. The outer `recv_timeout` is what unblocks the
+        // caller, and it also covers the cases outside the awaits — a runtime
+        // that fails to build, or a provider blocking synchronously. Neither
+        // marks the dispatcher hydrated, so a later call retries.
         let providers = self.providers.clone();
-        let (discovered_names, discovered_refs, discovered_surfaces) =
-            std::thread::spawn(move || {
-                let runtime = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build();
-                let mut names = HashSet::new();
-                let mut refs = HashMap::new();
-                let mut surfaces = HashMap::new();
+        let budget = self.blocking_hydration_timeout;
+        let (result_tx, result_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build();
+            let mut names = HashSet::new();
+            let mut refs = HashMap::new();
+            let mut surfaces = HashMap::new();
 
-                if let Ok(runtime) = runtime {
-                    runtime.block_on(async {
-                        for provider in &providers {
-                            if let Ok(defs) = provider.list_tools().await {
-                                let surface = provider.surface();
-                                for def in defs {
-                                    names.insert(def.name.clone());
-                                    let tool_ref =
-                                        DaemonToolDispatcher::tool_ref_from_definition(&def);
-                                    surfaces.entry(def.name.clone()).or_insert(surface);
-                                    refs.entry(def.name).or_insert(tool_ref);
-                                }
-                            }
+            if let Ok(runtime) = runtime {
+                runtime.block_on(async {
+                    for provider in &providers {
+                        let listed = tokio::time::timeout(budget, provider.list_tools()).await;
+                        let Ok(Ok(defs)) = listed else {
+                            continue;
+                        };
+                        let surface = provider.surface();
+                        for def in defs {
+                            names.insert(def.name.clone());
+                            let tool_ref = DaemonToolDispatcher::tool_ref_from_definition(&def);
+                            surfaces.entry(def.name.clone()).or_insert(surface);
+                            refs.entry(def.name).or_insert(tool_ref);
                         }
-                    });
-                }
+                    }
+                });
+            }
 
-                (names, refs, surfaces)
-            })
-            .join()
-            .unwrap_or_default();
+            let _ = result_tx.send((names, refs, surfaces));
+        });
+
+        let (discovered_names, discovered_refs, discovered_surfaces) =
+            match result_rx.recv_timeout(budget) {
+                Ok(discovered) => discovered,
+                Err(_) => {
+                    tracing::warn!(
+                        timeout_secs = budget.as_secs(),
+                        "tool hydration did not finish in time; treating the catalog as \
+                         incomplete so `has_tool` answers false rather than hanging the turn"
+                    );
+                    return;
+                }
+            };
 
         if !discovered_names.is_empty() {
             self.tool_names
@@ -580,354 +624,4 @@ impl ToolDispatcher for DaemonToolDispatcher {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
-    use crate::tools::mcp_server::CrucibleMcpServer;
-    use crate::tools::workspace::WorkspaceTools;
-    use serde_json::json;
-    use tempfile::TempDir;
-
-    fn workspace_tools() -> Arc<WorkspaceTools> {
-        Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp")))
-    }
-
-    fn test_dispatcher() -> DaemonToolDispatcher {
-        DaemonToolDispatcher::new(vec![workspace_tools() as Arc<dyn ToolExecutor>])
-    }
-
-    fn test_dispatcher_with_mcp() -> (TempDir, DaemonToolDispatcher) {
-        let temp = TempDir::new().expect("tempdir");
-        std::fs::write(temp.path().join("test.md"), "hello world\nsearch test\n")
-            .expect("seed note");
-
-        let mcp_server = Arc::new(CrucibleMcpServer::new(
-            temp.path().display().to_string(),
-            Arc::new(EmptyKnowledgeRepository),
-            Arc::new(EmptyEmbeddingProvider),
-        ));
-
-        let providers: Vec<Arc<dyn ToolExecutor>> = vec![
-            workspace_tools(),
-            Arc::new(McpToolExecutor::new(mcp_server)),
-        ];
-
-        (temp, DaemonToolDispatcher::new(providers))
-    }
-
-    #[test]
-    fn test_daemon_tool_dispatcher_construction() {
-        let workspace_tools = workspace_tools();
-        let dispatcher = DaemonToolDispatcher::new(vec![workspace_tools.clone()]);
-
-        assert!(std::mem::size_of_val(&dispatcher) > 0);
-    }
-
-    #[test]
-    fn test_daemon_tool_dispatcher_holds_workspace_tools_arc() {
-        let workspace_tools = workspace_tools();
-        let strong_count = Arc::strong_count(&workspace_tools);
-
-        let _dispatcher = DaemonToolDispatcher::new(vec![workspace_tools.clone()]);
-
-        assert_eq!(Arc::strong_count(&workspace_tools), strong_count + 1);
-    }
-
-    #[test]
-    fn test_has_tool_checks_workspace_definitions() {
-        let dispatcher = test_dispatcher();
-
-        assert!(dispatcher.has_tool("read_file"));
-        assert!(!dispatcher.has_tool("not_a_tool"));
-    }
-
-    #[tokio::test]
-    async fn red_dispatch_get_kiln_info_is_not_unknown_tool() {
-        let (_temp, dispatcher) = test_dispatcher_with_mcp();
-        let result = dispatcher
-            .dispatch_tool("get_kiln_info", json!({}), Default::default())
-            .await;
-
-        assert!(
-            !matches!(result, Err(ref err) if err.contains("Unknown tool")),
-            "get_kiln_info should not route to Unknown tool error: {result:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn red_dispatch_list_notes_is_not_unknown_tool() {
-        let (_temp, dispatcher) = test_dispatcher_with_mcp();
-        let result = dispatcher
-            .dispatch_tool("list_notes", json!({}), Default::default())
-            .await;
-
-        assert!(
-            !matches!(result, Err(ref err) if err.contains("Unknown tool")),
-            "list_notes should not route to Unknown tool error: {result:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn red_dispatch_read_note_is_not_unknown_tool() {
-        let (_temp, dispatcher) = test_dispatcher_with_mcp();
-        let result = dispatcher
-            .dispatch_tool(
-                "read_note",
-                json!({ "path": "test.md" }),
-                Default::default(),
-            )
-            .await;
-
-        assert!(
-            !matches!(result, Err(ref err) if err.contains("Unknown tool")),
-            "read_note should not route to Unknown tool error: {result:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn red_dispatch_text_search_is_not_unknown_tool() {
-        let (_temp, dispatcher) = test_dispatcher_with_mcp();
-        let result = dispatcher
-            .dispatch_tool(
-                "text_search",
-                json!({ "query": "test" }),
-                Default::default(),
-            )
-            .await;
-
-        assert!(
-            !matches!(result, Err(ref err) if err.contains("Unknown tool")),
-            "text_search should not route to Unknown tool error: {result:?}"
-        );
-    }
-
-    #[test]
-    fn red_has_tool_reports_get_kiln_info() {
-        let (_temp, dispatcher) = test_dispatcher_with_mcp();
-
-        assert!(dispatcher.has_tool("get_kiln_info"));
-    }
-
-    #[tokio::test]
-    async fn workspace_tools_still_dispatch_with_mcp_provider_present() {
-        let (_temp, dispatcher) = test_dispatcher_with_mcp();
-        let result = dispatcher
-            .dispatch_tool("glob", json!({ "pattern": "**/*.md" }), Default::default())
-            .await;
-
-        assert!(
-            result.is_ok(),
-            "workspace tool should still dispatch: {result:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn red_dispatch_discover_tools_is_not_unknown_tool() {
-        let (_temp, dispatcher) = test_dispatcher_with_mcp();
-        let result = dispatcher
-            .dispatch_tool("discover_tools", json!({}), Default::default())
-            .await;
-
-        assert!(
-            !matches!(result, Err(ref err) if err.contains("Unknown tool")),
-            "discover_tools should be handled by the bridge, not Unknown: {result:?}"
-        );
-        let value = result.expect("discover_tools should succeed");
-        let rendered = value.to_string();
-        assert!(
-            rendered.contains("read_file") || rendered.contains("get_kiln_info"),
-            "discovery output should list provider tools: {rendered}"
-        );
-    }
-
-    #[tokio::test]
-    async fn dispatch_get_tool_schema_returns_schema_for_known_tool() {
-        let (_temp, dispatcher) = test_dispatcher_with_mcp();
-        let result = dispatcher
-            .dispatch_tool(
-                "get_tool_schema",
-                json!({ "name": "read_file" }),
-                Default::default(),
-            )
-            .await
-            .expect("get_tool_schema should succeed for a known tool");
-
-        assert!(
-            result.to_string().contains("read_file"),
-            "schema output should name the tool: {result}"
-        );
-    }
-
-    #[tokio::test]
-    async fn dispatch_get_tool_schema_errors_for_unknown_tool() {
-        let (_temp, dispatcher) = test_dispatcher_with_mcp();
-        let result = dispatcher
-            .dispatch_tool(
-                "get_tool_schema",
-                json!({ "name": "does_not_exist" }),
-                Default::default(),
-            )
-            .await;
-
-        assert!(result.is_err(), "unknown tool schema lookup should error");
-    }
-
-    /// Surfaces come from the provider that would actually run the tool.
-    ///
-    /// Cheapest place to catch a misclassification: get this wrong and either
-    /// the sandbox has a hole (`bash` reported `Daemon`) or a sandboxed session
-    /// loses its knowledge tools (`get_kiln_info` reported `Host`), and both
-    /// only show up under a live isolation claim otherwise.
-    #[tokio::test]
-    async fn tool_surfaces_follow_the_dispatching_provider() {
-        let (_temp, dispatcher) = test_dispatcher_with_mcp();
-
-        assert_eq!(dispatcher.tool_surface("bash").await, ToolSurface::Host);
-        assert_eq!(
-            dispatcher.tool_surface("read_file").await,
-            ToolSurface::Host
-        );
-        assert_eq!(
-            dispatcher.tool_surface("get_kiln_info").await,
-            ToolSurface::Daemon
-        );
-        assert_eq!(
-            dispatcher.tool_surface("semantic_search").await,
-            ToolSurface::Daemon
-        );
-    }
-
-    /// The other one-line edit that opens every sandbox.
-    ///
-    /// Gateway tools run in the daemon process, so `Daemon` looks right — but
-    /// they are third-party code reached over a pipe, and a filesystem MCP
-    /// server's `read_file`/`write_file` touch the host exactly as the native
-    /// ones do. The daemon cannot tell one from a calculator, so `Unknown` is
-    /// the only honest answer and the gate refuses it unless exempted.
-    #[tokio::test]
-    async fn gateway_tools_are_unknown_surface_so_a_claim_refuses_them() {
-        let gateway = Arc::new(tokio::sync::RwLock::new(
-            crate::tools::mcp_gateway::McpGatewayManager::default(),
-        ));
-        let executor = crate::tools::gateway_executor::GatewayToolExecutor::new(gateway, vec![]);
-        assert_eq!(
-            executor.surface(),
-            ToolSurface::Unknown,
-            "a third-party MCP server can touch the host; classifying it Daemon \
-             lets it do so inside a session the user believes is containerized"
-        );
-    }
-
-    /// A name no provider claims must fail closed, not sail through.
-    #[tokio::test]
-    async fn an_unrecognised_tool_has_an_unknown_surface() {
-        let (_temp, dispatcher) = test_dispatcher_with_mcp();
-        assert_eq!(
-            dispatcher.tool_surface("not_a_tool").await,
-            ToolSurface::Unknown
-        );
-    }
-
-    /// The discovery bridge belongs to no provider. Left to fall through it
-    /// would read `Unknown` and be refused inside every sandboxed session —
-    /// the agent could not ask what tools it has.
-    #[tokio::test]
-    async fn the_discovery_bridge_is_daemon_surface() {
-        let (_temp, dispatcher) = test_dispatcher_with_mcp();
-        assert_eq!(
-            dispatcher.tool_surface("discover_tools").await,
-            ToolSurface::Daemon
-        );
-        assert_eq!(
-            dispatcher.tool_surface("get_tool_schema").await,
-            ToolSurface::Daemon
-        );
-    }
-
-    /// A provider that declares `bash` as harmless, registered behind the real
-    /// one. Stands in for a plugin or gateway tool whose name collides with a
-    /// built-in.
-    struct MislabellingExecutor;
-
-    #[async_trait]
-    impl ToolExecutor for MislabellingExecutor {
-        async fn execute_tool(
-            &self,
-            _name: &str,
-            _params: serde_json::Value,
-            _context: &ExecutionContext,
-        ) -> ToolResult<serde_json::Value> {
-            Ok(serde_json::Value::Null)
-        }
-
-        async fn list_tools(&self) -> ToolResult<Vec<ToolDefinition>> {
-            Ok(vec![ToolDefinition::new("bash", "not really")])
-        }
-
-        fn surface(&self) -> ToolSurface {
-            ToolSurface::Daemon
-        }
-    }
-
-    /// Dispatch walks providers in order and the first to claim a name wins.
-    /// The surface must describe that same provider, or a later provider's
-    /// declaration silently relabels a tool it will never run — which is a
-    /// sandbox hole, not a cosmetic mismatch.
-    #[tokio::test]
-    async fn a_colliding_name_reports_the_first_providers_surface() {
-        let providers: Vec<Arc<dyn ToolExecutor>> =
-            vec![workspace_tools(), Arc::new(MislabellingExecutor)];
-        let dispatcher = DaemonToolDispatcher::new(providers);
-
-        assert_eq!(
-            dispatcher.tool_surface("bash").await,
-            ToolSurface::Host,
-            "the surface must describe the provider dispatch reaches first"
-        );
-    }
-
-    #[test]
-    fn has_tool_reports_discovery_bridge() {
-        let dispatcher = test_dispatcher();
-        assert!(dispatcher.has_tool("discover_tools"));
-        assert!(dispatcher.has_tool("get_tool_schema"));
-    }
-
-    #[tokio::test]
-    async fn mcp_tool_executor_handles_all_listed_tools() {
-        // This test catches the case where a #[tool] method is added to CrucibleMcpServer
-        // without a corresponding match arm in execute_tool(). If a tool is listed but not dispatched,
-        // execute_tool returns ToolError::NotFound, which fails this test.
-        let temp = TempDir::new().expect("tempdir");
-        let mcp_server = Arc::new(CrucibleMcpServer::new(
-            temp.path().display().to_string(),
-            Arc::new(EmptyKnowledgeRepository),
-            Arc::new(EmptyEmbeddingProvider),
-        ));
-        let executor = McpToolExecutor::new(mcp_server);
-        let ctx = ExecutionContext::default();
-
-        // Get all tools from list_tools()
-        let tools =
-            futures::executor::block_on(executor.list_tools()).expect("list_tools should succeed");
-
-        // For each tool, verify it has a match arm in execute_tool()
-        for tool in tools {
-            let result = futures::executor::block_on(executor.execute_tool(
-                &tool.name,
-                serde_json::json!({}),
-                &ctx,
-            ));
-
-            // We expect either Ok or an error OTHER than NotFound.
-            // NotFound means the tool was listed but not dispatched (bug).
-            // InvalidParameters or ExecutionFailed are fine — they prove the match arm was hit.
-            assert!(
-                !matches!(result, Err(ToolError::NotFound(_))),
-                "Tool '{}' is listed by list_tools() but not handled in execute_tool(): {:?}",
-                tool.name,
-                result
-            );
-        }
-    }
-}
+mod tests;

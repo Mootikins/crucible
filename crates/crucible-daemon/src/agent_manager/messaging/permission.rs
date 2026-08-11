@@ -124,13 +124,13 @@ impl AgentManager {
         agent_permissions: Option<PermissionConfig>,
         tool_policy: Option<crucible_core::agent::ToolPolicyMap>,
     ) -> crate::acp::client::PermissionRequestHandler {
-        let pending_permissions = self.pending_permissions.clone();
+        let slot = self.slot(session_id);
         let session_id_owned = session_id.to_string();
         let event_tx_owned = event_tx.clone();
         let serializer = PermissionSerializer::new();
 
         let ask_callback: PermissionPromptCallback = Arc::new(move |perm_request: PermRequest| {
-            let pending_permissions = pending_permissions.clone();
+            let slot = slot.clone();
             let session_id_owned = session_id_owned.clone();
             let event_tx_owned = event_tx_owned.clone();
             let serializer = serializer.clone();
@@ -146,10 +146,7 @@ impl AgentManager {
                             response_tx,
                         };
 
-                        pending_permissions
-                            .entry(session_id_owned.clone())
-                            .or_default()
-                            .insert(permission_id.clone(), pending);
+                        slot.insert_permission(permission_id.clone(), pending);
 
                         let interaction_request = InteractionRequest::Permission(perm_request);
                         if !emit_event(
@@ -172,11 +169,7 @@ impl AgentManager {
                         match result {
                             Ok(Ok(response)) => response,
                             Ok(Err(_)) => {
-                                if let Some(mut session_map) =
-                                    pending_permissions.get_mut(&session_id_owned)
-                                {
-                                    session_map.remove(&permission_id);
-                                }
+                                slot.take_permission(&permission_id);
                                 tracing::debug!(
                                     permission_id = %permission_id,
                                     session_id = %session_id_owned,
@@ -187,11 +180,7 @@ impl AgentManager {
                                 )
                             }
                             Err(_) => {
-                                if let Some(mut session_map) =
-                                    pending_permissions.get_mut(&session_id_owned)
-                                {
-                                    session_map.remove(&permission_id);
-                                }
+                                slot.take_permission(&permission_id);
                                 tracing::debug!(
                                     permission_id = %permission_id,
                                     session_id = %session_id_owned,
@@ -972,10 +961,8 @@ impl AgentManager {
                 };
 
                 stream_ctx
-                    .pending_permissions
-                    .entry(stream_ctx.session_id.to_string())
-                    .or_default()
-                    .insert(permission_id.clone(), pending);
+                    .slot
+                    .insert_permission(permission_id.clone(), pending);
 
                 debug!(
                     session_id = %stream_ctx.session_id,
@@ -1012,12 +999,7 @@ impl AgentManager {
                     tokio::time::timeout(std::time::Duration::from_secs(300), response_rx).await;
                 let (permission_granted, deny_reason) = match response_result {
                     Err(_elapsed) => {
-                        if let Some(mut session_map) = stream_ctx
-                            .pending_permissions
-                            .get_mut(stream_ctx.session_id.as_str())
-                        {
-                            session_map.remove(&permission_id);
-                        }
+                        stream_ctx.slot.take_permission(&permission_id);
                         warn!(
                             session_id = %stream_ctx.session_id,
                             tool = %tool_call.name,

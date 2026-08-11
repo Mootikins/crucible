@@ -88,16 +88,12 @@ impl AgentManager {
         // restart the external agent and lose its history, so route ACP
         // through the live handle instead.
         if agent_config.agent_type == "acp" {
-            let handle = self
-                .agent_cache
-                .get(session_id)
-                .map(|r| r.value().clone())
-                .ok_or_else(|| {
-                    AgentError::NotSupported(
-                        "start the ACP session before switching models (send a message first)"
-                            .to_string(),
-                    )
-                })?;
+            let handle = self.slot(session_id).cached_agent().ok_or_else(|| {
+                AgentError::NotSupported(
+                    "start the ACP session before switching models (send a message first)"
+                        .to_string(),
+                )
+            })?;
 
             handle.lock().await.switch_model(model_id).await?;
 
@@ -169,7 +165,7 @@ impl AgentManager {
             .await
             .map_err(AgentError::Session)?;
 
-        self.agent_cache.remove(session_id);
+        self.slot(session_id).invalidate_agent();
 
         info!(
             session_id = %session_id,
@@ -204,7 +200,7 @@ impl AgentManager {
         // live ACP handle.
         if let Ok((_, agent_config)) = self.get_session_with_agent(session_id) {
             if agent_config.agent_type == "acp" {
-                if let Some(handle) = self.agent_cache.get(session_id).map(|r| r.value().clone()) {
+                if let Some(handle) = self.slot(session_id).cached_agent() {
                     let models = handle.lock().await.fetch_available_models().await;
                     if !models.is_empty() {
                         return Ok(models);
@@ -412,7 +408,7 @@ impl AgentManager {
         prompt: &str,
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
     ) -> Result<(), AgentError> {
-        if self.agent_cache.get(session_id).is_some() {
+        if self.slot(session_id).has_agent() {
             return Err(AgentError::InvalidConfig(
                 "system_prompt is locked after the first message has been sent".to_string(),
             ));
@@ -1183,7 +1179,8 @@ impl AgentManager {
         //     mirror in place. apply_mode is the daemon-internal mirror sync
         //     that skips any RPC round-trip (a DaemonAgentHandle's set_mode_str
         //     would otherwise re-enter this dispatch path).
-        //   - Contended: defer — store the new mode in pending_modes so the
+        //   - Contended: defer — store the new mode in the slot's pending_mode
+        //     so the
         //     NEXT turn drains it into apply_mode right after acquiring the
         //     lock. We do NOT invalidate the cache: an AcpAgentHandle owns its
         //     spawned process's conversation history, and dropping the last
@@ -1192,14 +1189,15 @@ impl AgentManager {
         //     must not reshape a turn already in progress); the next turn
         //     picks up the new mode without losing state.
         //
-        // `set_mode` is the single writer of `pending_modes`, so it clears any
+        // `set_mode` is the single writer of `pending_mode`, so it clears any
         // earlier deferral up front and re-stages only on contention. Without
         // that clear, a deferral superseded by a later applied-directly change
         // (or by a change made after the handle was evicted) survives and gets
         // drained onto the next turn, silently reverting the live mode while
         // the persisted config and every UI still show the newer one.
-        self.pending_modes.remove(session_id);
-        if let Some(handle) = self.agent_cache.get(session_id).map(|r| r.value().clone()) {
+        let slot = self.slot(session_id);
+        slot.clear_pending_mode();
+        if let Some(handle) = slot.cached_agent() {
             match handle.try_lock() {
                 Ok(mut guard) => {
                     guard
@@ -1213,8 +1211,7 @@ impl AgentManager {
                         mode = %mode_id,
                         "cached agent handle busy with a turn; deferring mode change to next turn"
                     );
-                    self.pending_modes
-                        .insert(session_id.to_string(), mode_id.to_string());
+                    slot.set_pending_mode(mode_id);
                 }
             }
         }

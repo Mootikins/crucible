@@ -45,9 +45,8 @@ impl AgentManager {
         // this, partial cancel (user hits Esc) leaves prompts dangling for
         // the full 300 s timeout, blocking subsequent prompts behind them.
         let dropped_pending = self
-            .pending_permissions
-            .remove(session_id)
-            .map(|(_, m)| m.len())
+            .existing_slot(session_id)
+            .map(|slot| slot.drop_permissions())
             .unwrap_or(0);
         if dropped_pending > 0 {
             debug!(

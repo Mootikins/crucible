@@ -76,7 +76,7 @@ async fn set_mode_applies_to_cached_live_handle() {
     let (_tmp, _session_manager, session, agent_manager) = setup_with_agent().await;
 
     let last_mode = Arc::new(std::sync::Mutex::new(None));
-    agent_manager.agent_cache.insert(
+    agent_manager.install_agent_for_test(
         session.id.clone(),
         Arc::new(Mutex::new(Box::new(ModeRecordingAgent {
             last_mode: last_mode.clone(),
@@ -101,7 +101,7 @@ async fn set_mode_applies_to_cached_live_handle() {
 async fn set_mode_rejected_by_handle_persists_nothing() {
     let (_tmp, session_manager, session, agent_manager) = setup_with_agent().await;
 
-    agent_manager.agent_cache.insert(
+    agent_manager.install_agent_for_test(
         session.id.clone(),
         Arc::new(Mutex::new(Box::new(ModeRecordingAgent {
             last_mode: Arc::new(std::sync::Mutex::new(None)),

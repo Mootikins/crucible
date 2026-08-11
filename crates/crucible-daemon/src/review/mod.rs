@@ -256,6 +256,23 @@ impl ReviewLedgers {
         self.ledgers.contains_key(session_id)
     }
 
+    /// Whether any of these maps still holds something for `session_id`.
+    ///
+    /// The post-teardown check `AgentManager::session_residue` runs. Broader
+    /// than [`Self::is_open`] on purpose: teardown of a delegated child is
+    /// [`Self::harvest_and_clear`], which drops the `parents` entry *and* the
+    /// ledger, and a `parents` entry left behind would keep the child pointing
+    /// at a parent that may since have been reissued.
+    pub fn has_session(&self, session_id: &str) -> bool {
+        self.ledgers.contains_key(session_id)
+            || self.states.contains_key(session_id)
+            || self.comments.contains_key(session_id)
+            || self.parents.contains_key(session_id)
+            || self.gate.contains_key(session_id)
+            || self.journals.contains_key(session_id)
+            || self.integrity.contains_key(session_id)
+    }
+
     /// Bind the worktree watch's tracker, so daemon-side writes can suppress
     /// their own detection. Idempotent; the daemon binds it once at startup
     /// and nothing else has one.

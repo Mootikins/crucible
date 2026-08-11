@@ -74,11 +74,7 @@ impl AgentManager {
             "Sending message_complete event"
         );
         if let Some(u) = usage {
-            stream_ctx
-                .cache_stats
-                .entry(stream_ctx.session_id.clone())
-                .or_default()
-                .record(u);
+            stream_ctx.slot.record_usage(u);
             if crate::agent_manager::autocompact::should_autocompact(
                 u.prompt_tokens,
                 stream_ctx.agent_stream_config.context_budget,
@@ -1104,14 +1100,13 @@ impl AgentManager {
                 message_id: format!("msg-{}", uuid::Uuid::new_v4()),
                 event_tx: stream_ctx.event_tx.clone(),
                 session_state: stream_ctx.session_state.clone(),
-                pending_permissions: stream_ctx.pending_permissions.clone(),
                 workspace_path: stream_ctx.workspace_path.clone(),
                 session_dir: stream_ctx.session_dir.clone(),
                 agent_stream_config: stream_ctx.agent_stream_config.clone(),
                 tool_dispatcher: stream_ctx.tool_dispatcher.clone(),
                 permission_override: stream_ctx.permission_override,
                 conversation_tree: stream_ctx.conversation_tree.clone(),
-                cache_stats: stream_ctx.cache_stats.clone(),
+                slot: stream_ctx.slot.clone(),
                 session_manager: stream_ctx.session_manager.clone(),
                 // Don't re-inject Precognition on a validation retry —
                 // the original turn already prepended it.

@@ -49,98 +49,10 @@ use tracing::{debug, error, info, warn};
 /// Unique identifier for a pending permission request.
 pub type PermissionId = String;
 
+pub(crate) mod tool_safety;
+pub use tool_safety::{believed_read_only, is_safe};
+
 pub(crate) const MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
-
-/// Check if a tool is safe to execute without requiring explicit permission.
-///
-/// Safe tools are read-only operations that only query data without modifying state.
-/// Unsafe tools can modify files, execute commands, or change state and require permission.
-///
-/// # Safe Tools (is_safe=true)
-///
-/// **MCP Tools (10 read-only):**
-/// - `semantic_search` — Search notes using semantic similarity
-/// - `text_search` — Fast full-text search across notes
-/// - `property_search` — Search notes by frontmatter properties (includes tags)
-/// - `list_notes` — List notes in a directory
-/// - `read_note` — Read note content with optional line range
-/// - `read_metadata` — Read note metadata without loading full content
-/// - `get_kiln_info` — Get comprehensive kiln information including root path and statistics
-/// - `list_jobs` — List all background jobs (running and completed) for the current session
-///
-/// **Workspace Tools (Rig-native, 3 read-only):**
-/// - `read_file` — Read file content
-/// - `glob` — Find files matching patterns
-/// - `grep` — Search file contents
-///
-/// # Unsafe Tools (is_safe=false)
-///
-/// **MCP Tools (6 mutating):**
-/// - `create_note` — Create a new note in the kiln
-/// - `update_note` — Update an existing note
-/// - `delete_note` — Delete a note from the kiln
-/// - `delegate_session` — Delegate a task to another AI agent
-/// - `get_job_result` — Get the result of a background job
-/// - `cancel_job` — Cancel a running background job by ID
-///
-/// **Workspace Tools (Rig-native, 3 mutating):**
-/// - `write` — Write file content
-/// - `edit` — Edit file content
-/// - `bash` — Execute shell commands
-///
-/// # Default-Deny Policy
-///
-/// Only explicitly safe tools skip the permission prompt.
-/// Everything unknown requires permission.
-///
-/// # Why this takes no MCP annotations
-///
-/// This answer decides whether the permission gate runs at all
-/// (`messaging::tool_call`), and skipping the gate skips the session's mode
-/// stance, its mode rules, every Lua `on_request` hook, the saved patterns and
-/// the prompt. So it may only ever widen on something the daemon itself knows.
-/// A tool name and a `readOnlyHint` both come from a third-party MCP server;
-/// letting them widen this would let any upstream annotate its way past a
-/// mode's `default = "deny"`. For what a server *claims*, see
-/// [`believed_read_only`].
-pub fn is_safe(tool_name: &str) -> bool {
-    matches!(
-        tool_name,
-        "read_file"
-            | "glob"
-            | "grep"
-            | "semantic_search"
-            | "text_search"
-            | "property_search"
-            | "list_notes"
-            | "read_note"
-            | "read_metadata"
-            | "get_kiln_info"
-            | "list_jobs"
-            // Progressive-disclosure bridge lookups are read-only.
-            | "discover_tools"
-            | "get_tool_schema"
-    )
-}
-
-/// What we *believe* about a tool, including what its MCP server claims via
-/// `readOnlyHint` (see
-/// [`crate::tools::mcp_gateway::McpGatewayManager::read_only_tool_names`]).
-///
-/// Advisory, and deliberately separate from [`is_safe`]: this is surfaced to
-/// Lua as `request.is_safe` so a policy hook can distinguish a read-only
-/// upstream tool from one that writes — which is the whole point of reading
-/// the annotation. It must never be used to skip the gate; a hook that trusts
-/// it is making that call knowingly, on one tool, in its own policy.
-///
-/// A server that annotates nothing is not a server saying "writes": the
-/// annotation is optional in MCP, so silence falls through to [`is_safe`].
-pub fn believed_read_only(
-    tool_name: &str,
-    mcp_read_only: &std::collections::HashSet<String>,
-) -> bool {
-    is_safe(tool_name) || mcp_read_only.contains(tool_name)
-}
 
 pub(crate) fn resolve_agent_profile(
     name: &str,
@@ -410,7 +322,7 @@ fn emit_precognition_event(
     }
 }
 
-struct PendingPermission {
+pub(crate) struct PendingPermission {
     request: PermRequest,
     response_tx: oneshot::Sender<PermResponse>,
 }
@@ -421,7 +333,6 @@ struct StreamContext {
     message_id: String,
     event_tx: broadcast::Sender<SessionEventMessage>,
     session_state: Arc<Mutex<SessionEventState>>,
-    pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
     workspace_path: PathBuf,
     session_dir: PathBuf,
     agent_stream_config: AgentStreamConfig,
@@ -434,9 +345,10 @@ struct StreamContext {
     /// Scheduler-owned conversation tree. Populated as a shadow of
     /// events; see `AgentManager::session_trees`.
     conversation_tree: Arc<tokio::sync::Mutex<crucible_core::turn::ConversationTree>>,
-    /// Per-session prompt-cache aggregate updated on every
-    /// `message_complete` that carries usage data.
-    cache_stats: Arc<DashMap<String, cache_stats::CacheStats>>,
+    /// This session's slot. Carried whole rather than as one handle per store
+    /// it touches: the stream already knows its session, and the alternative
+    /// was a StreamContext field per map.
+    slot: Arc<slot::SessionSlot>,
     /// Session manager handle, used by the auto-compact trigger to
     /// request compaction when prompt usage exceeds the configured
     /// threshold.
@@ -487,8 +399,10 @@ pub(crate) struct ResolvedProvider {
 
 pub struct AgentManager {
     request_state: Arc<DashMap<String, RequestState>>,
-    agent_cache: SessionCache<Arc<Mutex<BoxedAgentHandle>>>,
-    session_dispatchers: Arc<DashMap<String, Arc<dyn ToolDispatcher>>>,
+    /// Per-session state, one slot per live session. See [`slot::SessionSlot`]
+    /// for why this is a `DashMap` of `Arc`s with the locks inside the slot
+    /// rather than one lock over the map.
+    slots: Arc<DashMap<String, Arc<slot::SessionSlot>>>,
     /// Config `runtimepath`, for resolving `runtime/defaults/init.lua`.
     /// Empty is the correct default, not a missing value: resolution falls
     /// through to `CRUCIBLE_RUNTIME`, then exe-relative, then the compiled-in
@@ -505,26 +419,6 @@ pub struct AgentManager {
     /// `default_internal_modes()` in that case, so a daemon whose Lua failed
     /// to load still has working modes rather than none.
     modes: crucible_lua::ModeRegistry,
-    /// Per-session starting values, captured when the session VM ran its
-    /// `on_session_start` hooks. Already seeded from `session_defaults`, so
-    /// this is the whole inherited-then-overridden picture for one session —
-    /// `vim.bo` after the `FileType` autocmd, to `session_defaults`' `vim.o`.
-    session_overrides: Arc<DashMap<String, crucible_lua::SessionDefaultValues>>,
-    /// Mode changes that arrived while the cached handle was busy serving a
-    /// turn. `set_mode` stores here when `try_lock` fails; the dispatch path
-    /// drains the entry into `apply_mode` at the start of the NEXT turn
-    /// (right after acquiring the lock). This keeps the cached handle alive
-    /// (no ACP history loss) and ensures the mode change takes effect on the
-    /// next turn without invalidating stateful handles.
-    pending_modes: Arc<DashMap<String, String>>,
-    /// Scheduler-owned conversation tree per session. Populated as a
-    /// shadow of the agent's conversation state — the source of truth
-    /// remains the agent's internal history today, but this tree is
-    /// the target for future reads (workflow fan/collect, branching,
-    /// O(1) undo). See `plans/2026-04-19-crucible-simplification.md`
-    /// Phase 1 Step 3.
-    session_trees:
-        Arc<DashMap<String, Arc<tokio::sync::Mutex<crucible_core::turn::ConversationTree>>>>,
     pub(crate) model_cache: Arc<DashMap<String, (Vec<String>, Instant)>>,
     kiln_manager: Arc<KilnManager>,
     session_manager: Arc<SessionManager>,
@@ -533,8 +427,6 @@ pub struct AgentManager {
     /// The service holds a `Weak` back-reference (bound at startup), so this
     /// strong Arc creates no cycle.
     delegation_service: Arc<DelegationService>,
-    session_states: SessionCache<Arc<Mutex<SessionEventState>>>,
-    pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
     llm_config: Option<crucible_core::config::LlmConfig>,
     acp_config: Option<AcpConfig>,
@@ -544,7 +436,6 @@ pub struct AgentManager {
     permission_config: Option<PermissionConfig>,
     plugin_loader: Option<Arc<Mutex<Option<DaemonPluginLoader>>>>,
     tool_dispatcher: Arc<dyn ToolDispatcher>,
-    cache_stats: Arc<DashMap<String, cache_stats::CacheStats>>,
     /// Lua validator registry + plugin `Lua` handle. Populated once at
     /// daemon startup via [`AgentManager::set_lua_validators`] after the
     /// plugin loader has finished initializing. `OnceLock` keeps the
@@ -644,20 +535,15 @@ impl AgentManager {
         ]));
         Self {
             request_state: Arc::new(DashMap::new()),
-            agent_cache: SessionCache::default(),
+            slots: Arc::new(DashMap::new()),
             runtimepath: Vec::new(),
             session_defaults: crucible_lua::SessionDefaults::new(),
             modes: crucible_lua::ModeRegistry::new(),
-            session_overrides: Arc::new(DashMap::new()),
-            pending_modes: Arc::new(DashMap::new()),
             model_cache: Arc::new(DashMap::new()),
             kiln_manager: params.kiln_manager,
             session_manager: params.session_manager,
             background_manager: params.background_manager,
             delegation_service,
-            session_states: SessionCache::default(),
-            pending_permissions: Arc::new(DashMap::new()),
-            session_dispatchers: Arc::new(DashMap::new()),
             mcp_gateway: params.mcp_gateway,
             llm_config: params.llm_config,
             acp_config: params.acp_config,
@@ -665,8 +551,6 @@ impl AgentManager {
             permission_config: params.permission_config,
             plugin_loader: params.plugin_loader,
             tool_dispatcher,
-            session_trees: Arc::new(DashMap::new()),
-            cache_stats: Arc::new(DashMap::new()),
             lua_validators: std::sync::OnceLock::new(),
             plugin_handlers: std::sync::OnceLock::new(),
             isolation: std::sync::OnceLock::new(),
@@ -787,14 +671,79 @@ impl AgentManager {
     /// cache fields yet — callers can interpret that as "no data" via
     /// `CacheStats::hit_rate()`, which returns `None`.
     pub fn get_cache_stats(&self, session_id: &str) -> cache_stats::CacheStats {
-        self.cache_stats
+        self.slots
             .get(session_id)
-            .map(|s| s.clone())
+            .map(|slot| slot.cache_stats())
             .unwrap_or_default()
     }
 
-    pub(crate) fn cache_stats_handle(&self) -> Arc<DashMap<String, cache_stats::CacheStats>> {
-        self.cache_stats.clone()
+    /// Test-support: seed the session's cached agent handle, as if a previous
+    /// turn had built it.
+    ///
+    /// A named seam rather than 30 tests reaching into a field: the field it
+    /// used to write moved into [`slot::SessionSlot`], and one helper means the
+    /// next move is one edit rather than 30.
+    #[cfg(test)]
+    pub(crate) fn install_agent_for_test(
+        &self,
+        session_id: String,
+        agent: Arc<Mutex<BoxedAgentHandle>>,
+    ) {
+        self.slot(&session_id)
+            .seed_build_for_test(Some(&agent), None);
+    }
+
+    /// Test-support: whether the session has a cached agent handle.
+    #[cfg(test)]
+    pub(crate) fn has_cached_agent(&self, session_id: &str) -> bool {
+        self.slots
+            .get(session_id)
+            .is_some_and(|slot| slot.has_agent())
+    }
+
+    /// The session's slot, created on first use.
+    ///
+    /// One DashMap shard lock, held only long enough to clone the `Arc` —
+    /// never across an `await`. Reading a slot is therefore not a place a
+    /// session can queue behind another session.
+    pub(crate) fn slot(&self, session_id: &str) -> Arc<slot::SessionSlot> {
+        self.slots
+            .entry(session_id.to_string())
+            .or_default()
+            .clone()
+    }
+
+    /// The session's slot only if it already has one.
+    ///
+    /// For invalidation: no slot means nothing is cached and no build is in
+    /// flight (a build creates the slot before it starts), so there is nothing
+    /// to invalidate — and creating one to record that would leak a slot per id
+    /// nobody ever ran a turn for.
+    fn existing_slot(&self, session_id: &str) -> Option<Arc<slot::SessionSlot>> {
+        self.slots.get(session_id).map(|slot| Arc::clone(&slot))
+    }
+
+    /// Tool names per upstream, as the live MCP gateway currently sees them.
+    ///
+    /// Empty when no gateway was configured. Read-only and projected to
+    /// `name -> tools` on purpose rather than handing out `&self.mcp_gateway`:
+    /// the caller is `session.create`'s setup task filling in the
+    /// `mcp_servers_ready` event, and it has no business holding the gateway.
+    ///
+    /// It exists because the daemon had this data and did not publish it, so the
+    /// TUI opened its OWN connections to learn the same thing — one stdio child
+    /// process per configured upstream, plus an `initialize` round-trip with
+    /// each, on every `cru chat` launch, discarded immediately after counting.
+    pub async fn mcp_tools_by_upstream(&self) -> HashMap<String, Vec<String>> {
+        let Some(gateway) = &self.mcp_gateway else {
+            return HashMap::new();
+        };
+        let gateway = gateway.read().await;
+        let mut out: HashMap<String, Vec<String>> = HashMap::new();
+        for tool in gateway.all_tools() {
+            out.entry(tool.upstream).or_default().push(tool.name);
+        }
+        out
     }
 
     /// Look up or create the scheduler-owned `ConversationTree` for a
@@ -814,10 +763,21 @@ impl AgentManager {
         session_id: &str,
         jsonl_path: &std::path::Path,
     ) -> Arc<tokio::sync::Mutex<crucible_core::turn::ConversationTree>> {
-        if let Some(existing) = self.session_trees.get(session_id) {
-            return existing.clone();
-        }
+        let slot = self.slot(session_id);
+        // One rebuild, not one per concurrent first caller: `get_or_init`
+        // serialises them, where check-then-insert let two callers each parse
+        // the JSONL and one of the resulting trees be dropped.
+        slot.tree
+            .get_or_init(|| self.rebuild_session_tree(session_id, jsonl_path))
+            .await
+            .clone()
+    }
 
+    async fn rebuild_session_tree(
+        &self,
+        session_id: &str,
+        jsonl_path: &std::path::Path,
+    ) -> Arc<tokio::sync::Mutex<crucible_core::turn::ConversationTree>> {
         let initial = if jsonl_path.exists() {
             match crate::observe::rebuild::rebuild_tree_from_jsonl(jsonl_path).await {
                 Ok(tree) => tree,
@@ -835,10 +795,7 @@ impl AgentManager {
             crucible_core::turn::ConversationTree::new()
         };
 
-        self.session_trees
-            .entry(session_id.to_string())
-            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(initial)))
-            .clone()
+        Arc::new(tokio::sync::Mutex::new(initial))
     }
 
     /// Look up an existing session tree without rebuilding from JSONL.
@@ -852,7 +809,8 @@ impl AgentManager {
         &self,
         session_id: &str,
     ) -> Option<Arc<tokio::sync::Mutex<crucible_core::turn::ConversationTree>>> {
-        self.session_trees.get(session_id).map(|t| t.clone())
+        self.existing_slot(session_id)
+            .and_then(|slot| slot.tree.get().cloned())
     }
 
     /// Access the background job manager for direct job queries.
@@ -886,7 +844,9 @@ impl AgentManager {
     }
 
     pub fn invalidate_agent_cache(&self, session_id: &str) {
-        self.agent_cache.remove(session_id);
+        if let Some(slot) = self.existing_slot(session_id) {
+            slot.invalidate_agent();
+        }
     }
 
     /// Set the config `runtimepath` used to resolve `runtime/defaults/init.lua`.
@@ -989,10 +949,13 @@ impl AgentManager {
     ) -> Arc<dyn ToolDispatcher> {
         let session_id = &session.id;
 
-        // Return cached dispatcher if it exists
-        if let Some(dispatcher) = self.session_dispatchers.get(session_id) {
-            return dispatcher.clone();
-        }
+        // Return cached dispatcher if it exists, else note the generation this
+        // build must install against — see `SessionSlot::install_dispatcher`.
+        let slot = self.slot(session_id);
+        let generation = match slot.dispatcher_or_generation() {
+            Ok(dispatcher) => return dispatcher,
+            Err(generation) => generation,
+        };
 
         // Build new dispatcher for this session
         let dispatcher = if !session.workspace.as_os_str().is_empty() {
@@ -1138,8 +1101,7 @@ impl AgentManager {
         };
 
         // Cache and return
-        self.session_dispatchers
-            .insert(session_id.clone(), dispatcher.clone());
+        slot.install_dispatcher(generation, &dispatcher);
         dispatcher
     }
 
@@ -1156,6 +1118,25 @@ impl AgentManager {
         let loader = self.plugin_loader.as_ref()?;
         let guard = loader.lock().await;
         guard.as_ref().map(|l| l.plugin_registry())
+    }
+
+    /// The plugin `Lua` handle, preferring the startup-bound `OnceLock` over
+    /// the loader mutex.
+    ///
+    /// Same reasoning as [`Self::plugin_registry`], and it matters on the same
+    /// paths: `fire_session_start` holds the loader across plugin hook
+    /// execution — container builds included — so a cold-start turn or a title
+    /// generation that locks the loader stalls behind an unrelated session's
+    /// slow start. The `OnceLock` is bound at daemon startup, so the fallback
+    /// only runs for managers the server never wired (tests, isolated setups),
+    /// where the loader is uncontended anyway.
+    pub(crate) async fn plugin_lua(&self) -> Option<Lua> {
+        if let Some((_, lua)) = self.plugin_handlers() {
+            return Some((*lua).clone());
+        }
+        let loader = self.plugin_loader.as_ref()?;
+        let guard = loader.lock().await;
+        guard.as_ref().map(|l| l.executor().lua().clone())
     }
 
     /// Access the delegation service (child-session spawning).
@@ -1247,10 +1228,6 @@ impl AgentManager {
     }
 
     pub fn cleanup_session(&self, session_id: &str) {
-        if self.session_states.remove(session_id).is_some() {
-            debug!(session_id = %session_id, "Cleaned up Lua state for session");
-        }
-
         // Cascade: a parent going away must not leave running children.
         // Spawned (cleanup_session is sync); cancellation resolves each
         // child's completion channel, then the records are dropped.
@@ -1270,30 +1247,16 @@ impl AgentManager {
             });
         }
 
-        self.agent_cache.remove(session_id);
-        self.session_dispatchers.remove(session_id);
-        // A deferral only ever drains on this session's next turn, so an
-        // ended session's entry would sit in the map forever.
-        self.pending_modes.remove(session_id);
-        self.session_overrides.remove(session_id);
-        // Drop the in-memory conversation tree so a re-attach to this
-        // session rebuilds from on-disk JSONL rather than reusing stale
-        // pointers (and frees memory for ended sessions).
-        self.session_trees.remove(session_id);
-
         if let Some((_, mut state)) = self.request_state.remove(session_id) {
             if let Some(cancel_tx) = state.cancel_tx.take() {
                 let _ = cancel_tx.send(());
             }
         }
 
-        if self.pending_permissions.remove(session_id).is_some() {
-            debug!(session_id = %session_id, "Cleaned up pending permissions for session");
-        }
-
-        // Free the per-session workspace-snapshot journal (up to a few MiB per
-        // turn) and the cache-stats entry. Both grow per turn and, before this,
-        // were never released — snapshots leaked for the daemon's whole lifetime.
+        // Free the per-session workspace-snapshot journal — up to a few MiB per
+        // turn, and before this step existed it leaked for the daemon's whole
+        // lifetime. Keyed `(session_id, node_id)`, which is why it is not in the
+        // slot.
         self.snapshots.clear_session(session_id);
         // The ledger, its review decisions and its comments all die with the
         // session. Persisting them across a restart is `ReviewLedgers::restore`
@@ -1306,14 +1269,18 @@ impl AgentManager {
         // copied into the parent *before* this drops them. That is ordered and
         // journalled, hence spawned; a session with no registered parent, which
         // is every ordinary one, still tears down synchronously.
-        match tokio::runtime::Handle::try_current() {
+        let review_harvest_spawned = match tokio::runtime::Handle::try_current() {
             Ok(handle) if self.review.parent_of(session_id).is_some() => {
                 let review = Arc::clone(&self.review);
                 let session_id = session_id.to_string();
                 handle.spawn(async move { review.harvest_and_clear(&session_id).await });
+                true
             }
-            _ => self.review.clear_session(session_id),
-        }
+            _ => {
+                self.review.clear_session(session_id);
+                false
+            }
+        };
         // Release the session's claim on its watched roots. Best-effort and
         // spawned: an inotify handle that outlives its session costs a
         // descriptor, where blocking teardown on a watch backend would stall
@@ -1329,7 +1296,16 @@ impl AgentManager {
                 }
             });
         }
-        self.cache_stats.remove(session_id);
+        // Everything the slot owns — Lua VM, conversation tree, agent handle,
+        // dispatcher, deferred mode, pending prompts, cache stats — in one
+        // remove. This used to be seven, and forgetting one was a leak nothing
+        // caught.
+        self.slots.remove(session_id);
+        // Last, deliberately: see `forget_session`. The spawns above can still
+        // emit, and a re-created counter is cheaper than a duplicate `seq`.
+        crate::event_emitter::forget_session(session_id);
+
+        self.debug_assert_no_residue(session_id, review_harvest_spawned);
     }
 
     #[allow(dead_code)] // permission system API, exercised by tests
@@ -1346,10 +1322,8 @@ impl AgentManager {
             response_tx,
         };
 
-        self.pending_permissions
-            .entry(session_id.to_string())
-            .or_default()
-            .insert(permission_id.clone(), pending);
+        self.slot(session_id)
+            .insert_permission(permission_id.clone(), pending);
 
         debug!(
             session_id = %session_id,
@@ -1366,13 +1340,10 @@ impl AgentManager {
         permission_id: &str,
         response: PermResponse,
     ) -> Result<(), AgentError> {
-        let mut session_permissions = self
-            .pending_permissions
-            .get_mut(session_id)
-            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
-
-        let pending = session_permissions
-            .remove(permission_id)
+        let pending = self
+            .existing_slot(session_id)
+            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?
+            .take_permission(permission_id)
             .ok_or_else(|| AgentError::PermissionNotFound(permission_id.to_string()))?;
 
         let _ = pending.response_tx.send(response);
@@ -1392,21 +1363,14 @@ impl AgentManager {
         session_id: &str,
         permission_id: &str,
     ) -> Option<PermRequest> {
-        self.pending_permissions
-            .get(session_id)
-            .and_then(|perms| perms.get(permission_id).map(|p| p.request.clone()))
+        self.existing_slot(session_id)
+            .and_then(|slot| slot.permission_request(permission_id))
     }
 
     #[allow(dead_code)] // permission system API, exercised by tests
     pub fn list_pending_permissions(&self, session_id: &str) -> Vec<(PermissionId, PermRequest)> {
-        self.pending_permissions
-            .get(session_id)
-            .map(|perms| {
-                perms
-                    .iter()
-                    .map(|(id, p)| (id.clone(), p.request.clone()))
-                    .collect()
-            })
+        self.existing_slot(session_id)
+            .map(|slot| slot.list_permissions())
             .unwrap_or_default()
     }
 
@@ -1414,14 +1378,15 @@ impl AgentManager {
     /// needs the aggregate view: a session waiting on a permission must
     /// surface even when no browser tab is subscribed to its event stream.
     pub fn list_all_pending_permissions(&self) -> Vec<(String, PermissionId, PermRequest)> {
-        self.pending_permissions
+        self.slots
             .iter()
             .flat_map(|entry| {
                 let session_id = entry.key().clone();
                 entry
                     .value()
-                    .iter()
-                    .map(|(id, p)| (session_id.clone(), id.clone(), p.request.clone()))
+                    .list_permissions()
+                    .into_iter()
+                    .map(move |(id, request)| (session_id.clone(), id, request))
                     .collect::<Vec<_>>()
             })
             .collect()
@@ -1448,13 +1413,6 @@ impl AgentManager {
 
 pub(crate) mod attachments;
 pub mod autocompact;
-/// A per-session handle map.
-///
-/// The two of these `AgentManager` keeps were a module of hand-written
-/// `DashMap` wrappers whose doc claimed they kept "the lock discipline" in one
-/// place. Nothing locked: every method forwarded one line, and `get` handed
-/// back a raw `DashMap` ref either way.
-type SessionCache<T> = Arc<DashMap<String, T>>;
 pub mod cache_stats;
 pub mod context_length;
 mod iter;
@@ -1463,8 +1421,10 @@ mod models;
 pub(crate) mod precognition;
 pub(crate) mod precognition_gate;
 pub mod providers;
+mod residue;
 mod scope;
 pub(crate) mod session_vm;
+mod slot;
 pub(crate) mod stream_config;
 pub(crate) use stream_config::{AgentStreamConfig, TurnEnvironment};
 pub(crate) mod title;

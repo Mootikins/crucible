@@ -599,86 +599,6 @@ mod event_dispatch {
 }
 
 #[tokio::test]
-async fn cleanup_session_removes_lua_state() {
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-    let agent_manager = create_test_agent_manager(session_manager);
-
-    let session_id = "test-session";
-
-    let _ = agent_manager.get_or_create_session_state(session_id);
-    assert!(
-        agent_manager.session_states.contains_key(session_id),
-        "Lua state should exist after creation"
-    );
-
-    agent_manager.cleanup_session(session_id);
-
-    assert!(
-        !agent_manager.session_states.contains_key(session_id),
-        "Lua state should be removed after cleanup"
-    );
-}
-
-#[tokio::test]
-async fn cleanup_session_frees_snapshots_and_cache_stats() {
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-    let agent_manager = create_test_agent_manager(session_manager);
-
-    let session_id = "test-session";
-
-    // Simulate a turn's per-session accumulation (send.rs inserts a snapshot
-    // every user message; cache stats accrue per session).
-    agent_manager.snapshots.insert(
-        session_id.to_string(),
-        0,
-        crate::workspace_snapshot::WorkspaceSnapshot::default(),
-    );
-    agent_manager
-        .cache_stats
-        .insert(session_id.to_string(), Default::default());
-    assert!(!agent_manager.snapshots.is_empty());
-    assert!(agent_manager.cache_stats.contains_key(session_id));
-
-    agent_manager.cleanup_session(session_id);
-
-    assert!(
-        agent_manager.snapshots.is_empty(),
-        "workspace snapshots should be freed on session end"
-    );
-    assert!(
-        !agent_manager.cache_stats.contains_key(session_id),
-        "cache stats should be pruned on session end"
-    );
-}
-
-#[tokio::test]
-async fn cleanup_session_removes_agent_cache() {
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
-    let agent_manager = create_test_agent_manager(session_manager);
-
-    let session_id = "test-session";
-
-    agent_manager.agent_cache.insert(
-        session_id.to_string(),
-        Arc::new(Mutex::new(Box::new(MockAgent))),
-    );
-    assert!(
-        agent_manager.agent_cache.contains_key(session_id),
-        "Agent cache should exist after insertion"
-    );
-
-    agent_manager.cleanup_session(session_id);
-
-    assert!(
-        !agent_manager.agent_cache.contains_key(session_id),
-        "Agent cache should be removed after cleanup"
-    );
-}
-
-#[tokio::test]
 async fn cleanup_session_cancels_pending_requests() {
     let storage = Arc::new(FileSessionStorage::new());
     let session_manager = Arc::new(SessionManager::with_storage(storage));
@@ -733,17 +653,13 @@ async fn cancel_drops_pending_permission_senders() {
     // Insert a pending permission with a oneshot we can poll.
     let (response_tx, mut response_rx) = oneshot::channel();
     let perm_request = PermRequest::tool("bash", serde_json::json!({"command": "ls"}));
-    agent_manager
-        .pending_permissions
-        .entry(session_id.to_string())
-        .or_default()
-        .insert(
-            "perm-1".to_string(),
-            PendingPermission {
-                request: perm_request,
-                response_tx,
-            },
-        );
+    agent_manager.slot(session_id).insert_permission(
+        "perm-1".to_string(),
+        PendingPermission {
+            request: perm_request,
+            response_tx,
+        },
+    );
 
     // Receiver should still be open right now.
     assert!(
@@ -769,7 +685,139 @@ async fn cancel_drops_pending_permission_senders() {
         "receiver must report Closed after cancel drops the sender"
     );
     assert!(
-        !agent_manager.pending_permissions.contains_key(session_id),
-        "pending_permissions entry should be removed after cancel"
+        agent_manager.slot(session_id).list_permissions().is_empty(),
+        "the session's pending permissions should be gone after cancel"
     );
+}
+
+/// The post-cleanup invariant, in one place instead of five. Populate every
+/// per-session store this manager owns, end the session, and assert nothing is
+/// left — including the stores that are not `AgentManager` fields, which is how
+/// `SESSION_SEQ_COUNTERS` came to leak an entry per session unnoticed.
+///
+/// A unique session id, not a shared `"test-session"`: the seq counters are a
+/// process-global `static` shared with every other test in this binary.
+#[tokio::test]
+async fn cleanup_session_leaves_no_per_session_residue() {
+    use crate::agent_manager::PendingPermission;
+    use crucible_core::interaction::PermRequest;
+    use crucible_core::session::{Comment, CommentAuthor, LineRange, PhysicalRoot, TreeSha};
+
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let agent_manager = create_test_agent_manager(session_manager);
+    let session_id = "residue-session";
+
+    // One populated entry in every per-session store, by the same route
+    // production takes where there is one.
+    //
+    // `get_or_create_session_state` covers two: it builds the Lua VM and
+    // records the session's captured defaults in `session_overrides`.
+    let _ = agent_manager.get_or_create_session_state(session_id);
+    let _ = agent_manager
+        .get_or_rebuild_session_tree(session_id, std::path::Path::new("/nonexistent.jsonl"))
+        .await;
+    agent_manager.install_agent_for_test(
+        session_id.to_string(),
+        Arc::new(Mutex::new(Box::new(MockAgent))),
+    );
+    agent_manager
+        .slot(session_id)
+        .seed_build_for_test(None, Some(&agent_manager.tool_dispatcher));
+    agent_manager.slot(session_id).set_pending_mode("plan");
+    agent_manager
+        .slot(session_id)
+        .record_usage(&crucible_core::traits::llm::TokenUsage {
+            prompt_tokens: 10,
+            completion_tokens: 5,
+            total_tokens: 15,
+            cache_read_tokens: Some(4),
+            cache_creation_tokens: None,
+        });
+    agent_manager.snapshots.insert(
+        session_id.to_string(),
+        0,
+        crate::workspace_snapshot::WorkspaceSnapshot::default(),
+    );
+    let (cancel_tx, _cancel_rx) = oneshot::channel();
+    agent_manager.request_state.insert(
+        session_id.to_string(),
+        RequestState {
+            cancel_tx: Some(cancel_tx),
+            task_handle: None,
+            started_at: Instant::now(),
+        },
+    );
+    let (response_tx, _response_rx) = oneshot::channel();
+    agent_manager.slot(session_id).insert_permission(
+        "perm-1".to_string(),
+        PendingPermission {
+            request: PermRequest::tool("bash", serde_json::json!({"command": "ls"})),
+            response_tx,
+        },
+    );
+    // A comment is the cheapest review-ledger entry: no git repo needed, and
+    // teardown for a session with no registered parent is synchronous.
+    agent_manager
+        .review
+        .add_comment(
+            session_id,
+            Comment::new(
+                PhysicalRoot::from_top_level("/repo"),
+                "a.txt",
+                TreeSha::new("0".repeat(40)),
+                LineRange::new(1, 2),
+                "why this?",
+                CommentAuthor::Human,
+            ),
+        )
+        .await;
+    // And one emitted event, so the session owns a sequence counter.
+    let (event_tx, _event_rx) = broadcast::channel(4);
+    crate::event_emitter::emit_event(
+        &event_tx,
+        SessionEventMessage::new(session_id, "test_event", serde_json::json!({})),
+    );
+
+    assert!(
+        !agent_manager.session_residue(session_id).is_empty(),
+        "the fixture must actually populate something, or this proves nothing"
+    );
+
+    agent_manager.cleanup_session(session_id);
+
+    assert_eq!(
+        agent_manager.session_residue(session_id),
+        Vec::<&str>::new(),
+        "cleanup_session must free every per-session store"
+    );
+}
+
+/// The seq-counter map is a process-global `static` with no `Drop` reaching it,
+/// so "one entry per session, forever" was its shipped behaviour. Assert the
+/// bound directly rather than only through the residue check: N create/cleanup
+/// cycles must leave N-0 entries, not N.
+#[tokio::test]
+async fn ending_sessions_does_not_grow_the_seq_counter_map() {
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let agent_manager = create_test_agent_manager(session_manager);
+    let (event_tx, _event_rx) = broadcast::channel(16);
+
+    for i in 0..8 {
+        let session_id = format!("seq-cycle-{i}");
+        crate::event_emitter::emit_event(
+            &event_tx,
+            SessionEventMessage::new(&session_id, "test_event", serde_json::json!({})),
+        );
+        assert!(
+            crate::event_emitter::has_seq_counter(&session_id),
+            "emitting must mint a counter, or this test proves nothing"
+        );
+        agent_manager.cleanup_session(&session_id);
+        assert!(
+            !crate::event_emitter::has_seq_counter(&session_id),
+            "session {session_id}'s counter must be freed at cleanup"
+        );
+    }
 }

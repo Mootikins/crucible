@@ -84,10 +84,16 @@ impl AgentManager {
         &self,
         session_id: &str,
     ) -> Arc<Mutex<SessionEventState>> {
-        if let Some(state) = self.session_states.get(session_id) {
-            return state.clone();
-        }
+        let slot = self.slot(session_id);
+        // `get_or_init`, not check-then-insert: two concurrent first turns on a
+        // session used to build two VMs and keep whichever inserted last,
+        // silently discarding every handler registered on the other.
+        slot.lua
+            .get_or_init(|| self.build_session_state(session_id))
+            .clone()
+    }
 
+    fn build_session_state(&self, session_id: &str) -> Arc<Mutex<SessionEventState>> {
         let lua = Lua::new();
         let registry = LuaScriptHandlerRegistry::new();
         let permission_hooks = Arc::new(StdMutex::new(Vec::new()));
@@ -215,33 +221,28 @@ impl AgentManager {
         let scope = crucible_lua::SessionDefaults::new();
         scope.set(self.session_defaults.get());
         self.fire_session_start_hooks(&lua, session_id, &scope);
-        self.session_overrides
-            .insert(session_id.to_string(), scope.get());
+        self.slot(session_id).set_overrides(scope.get());
 
-        let state = Arc::new(Mutex::new(SessionEventState {
+        Arc::new(Mutex::new(SessionEventState {
             lua,
             registry,
             permission_hooks,
             permission_functions,
             reactor,
             spill_counter: std::sync::atomic::AtomicU32::new(1),
-        }));
-        self.session_states
-            .insert(session_id.to_string(), state.clone());
-        state
+        }))
     }
 
     fn apply_session_defaults(&self, session_id: &str, mut agent: SessionAgent) -> SessionAgent {
         let _vm = self.get_or_create_session_state(session_id);
         // Creating the VM ran `on_session_start`, which captured this
-        // session's values into `session_overrides` — already seeded from the
+        // session's values into the slot's `overrides` — already seeded from the
         // globals, so it is the complete picture. Fall back to the raw globals
         // only if no VM state was recorded (a manager whose VM construction
         // failed outright).
         let defaults = self
-            .session_overrides
-            .get(session_id)
-            .map(|entry| entry.value().clone())
+            .slot(session_id)
+            .overrides()
             .unwrap_or_else(|| self.session_defaults.get());
 
         if agent.system_prompt.is_empty() {

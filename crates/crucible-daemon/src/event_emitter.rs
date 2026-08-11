@@ -36,6 +36,32 @@ pub(crate) fn emit_event(
         .is_ok()
 }
 
+/// Drop a finished session's sequence counter.
+///
+/// Without this the map grows one entry per session for the daemon's whole
+/// lifetime — it is a global `static`, so no `Drop` anywhere reaches it.
+///
+/// Call it **last** in teardown. `cleanup_session` fires a turn's `cancel_tx`
+/// and spawns three tasks that may still emit, and a late event re-creating the
+/// counter at 1 is harmless — a restarted count on a dead session costs nothing,
+/// where dropping the counter early would hand a live turn a duplicate `seq`.
+pub(crate) fn forget_session(session_id: &str) {
+    if let Some(map) = SESSION_SEQ_COUNTERS.get() {
+        map.remove(session_id);
+    }
+}
+
+/// Whether `session_id` still holds a sequence counter.
+///
+/// Read by `AgentManager::session_residue`: this map is a process-global
+/// `static`, so no `Drop` anywhere reaches it and it is invisible to any
+/// cleanup test that only inspects `AgentManager`'s fields.
+pub(crate) fn has_seq_counter(session_id: &str) -> bool {
+    SESSION_SEQ_COUNTERS
+        .get()
+        .is_some_and(|map| map.contains_key(session_id))
+}
+
 #[cfg(test)]
 pub fn reset_seq_counters() {
     if let Some(map) = SESSION_SEQ_COUNTERS.get() {

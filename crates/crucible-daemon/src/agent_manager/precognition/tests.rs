@@ -886,7 +886,7 @@ mod precognition_select_hook_tests {
     /// Deliberately asserts nothing about wall-clock: a timing threshold in
     /// CI is a flake generator. Run it and read the numbers.
     #[tokio::test]
-    #[ignore = "benchmark: run with --ignored --nocapture to read the numbers"]
+    #[ignore = "requires: manual inspection — benchmark; run with --nocapture to read the numbers"]
     async fn measure_lua_selection_overhead() {
         const ITERATIONS: u32 = 500;
         let budget = 3000;
