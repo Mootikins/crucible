@@ -84,7 +84,16 @@ pub fn is_authored(path: &Path) -> bool {
 /// Falls back to accepting everything when git cannot answer (no git, or an
 /// unpacked source tarball), which is the pre-existing behaviour rather than a
 /// silent pass.
+///
+/// A path outside the workspace is accepted for the same reason: `git ls-files`
+/// cannot know about it, so holding it to the index is not a stricter check but
+/// a broken one. The resolver's own unit tests build kilns in a `tempdir`, and
+/// without this they saw every candidate filtered out and got an empty result
+/// where they asked for a resolved path.
 pub fn is_committable(path: &Path) -> bool {
+    if !path.starts_with(workspace_root()) {
+        return true;
+    }
     indexed_paths().is_none_or(|indexed| indexed.contains(path))
 }
 
