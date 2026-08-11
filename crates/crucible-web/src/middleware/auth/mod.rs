@@ -1,10 +1,13 @@
 //! Authentication and address validation for the web server.
 //!
 //! [`bearer_auth`] is the single gate every API route passes through. It runs
-//! the [`HostPolicy`] check first and unconditionally, because every relaxation
-//! after it — auth disabled, loopback caller, same-origin WebSocket — assumes
-//! the request was addressed to *us* rather than to a name that merely resolves
-//! to us.
+//! the [`HostPolicy`] check first, because every relaxation after it — auth
+//! disabled, loopback caller, same-origin WebSocket — assumes the request was
+//! addressed to *us* rather than to a name that merely resolves to us.
+//!
+//! That check is strict for a loopback caller, who has those relaxations to
+//! reach, and gives way to the key check for a caller on another machine, who
+//! has none — see [`host_list_is_not_this_requests_defence`].
 
 mod api_key;
 mod host;
@@ -14,7 +17,7 @@ mod shell;
 pub use api_key::{
     api_key_path, generate_and_persist_key, resolve_api_key, resolve_api_key_at, verify_api_key,
 };
-pub use host::{HostPolicy, HostVerified};
+pub use host::{local_names, HostPolicy, HostVerified};
 pub use session::{sessions_path, SessionStore, SESSION_TTL};
 pub use shell::{
     localhost_only_shell_auth, remote_shell_active, websocket_origin_guard, ShellGateState,
@@ -91,11 +94,55 @@ fn enforce_host(state: &ApiKeyState, request: &mut Request<Body>) -> Option<Resp
         request.extensions_mut().insert(HostVerified);
         return None;
     }
+    if host_list_is_not_this_requests_defence(state, request) {
+        return None;
+    }
     tracing::warn!(
         host = ?request.headers().get(header::HOST),
         "Rejecting request addressed to an unexpected Host"
     );
     Some(forbidden_host_response())
+}
+
+/// Whether the Host allow-list is the wrong tool for *this* request, and the
+/// key check behind it is the right one.
+///
+/// What rebinding is *for* is the loopback bypass. A page on `evil.test` whose
+/// record is rebound to this machine runs in a browser ON it, so its requests
+/// arrive from 127.0.0.1, skip auth entirely, and the Host allow-list is the
+/// only thing left refusing them. That is worth every name it costs.
+///
+/// A request from ANOTHER machine has no such shortcut to reach: it presents
+/// the API key or [`bearer_auth`] answers 401. Holding it to a list of names
+/// buys nothing there, and costs every FQDN the operator's network resolves to
+/// this box — `impulse`, `impulse.lan`, a tailnet name, a CNAME, a name only
+/// the phone's resolver knows. None of them can be enumerated up front, which
+/// is how a wildcard bind that worked by IP came to 403 by name and read as
+/// though it had never left loopback.
+///
+/// Conditioned on a key being configured. Under `api_key = ""` there is no
+/// check behind this one, so the allow-list *is* the defence and keeps its
+/// strict reading — the same fail-closed shape as [`remote_shell_active`].
+///
+/// Fails closed on the peer, and note that this is the mirror image of
+/// [`caller_is_loopback`]: there, an unknown peer is safely "not local", while
+/// here an unknown peer must not be "remote" — that reading would hand the
+/// relaxation to a request whose origin we cannot establish. So the address
+/// has to be present and has to be non-loopback. A proxy on this machine is
+/// therefore NOT covered (its connections arrive from 127.0.0.1); a public name
+/// it forwards still belongs in `allowed_hosts`.
+///
+/// The request is deliberately NOT marked [`HostVerified`]: that marker means
+/// "this authority is provably one of ours", which is the claim this path
+/// declines to make, and the WebSocket guard reads it as licence to treat
+/// `Origin == Host` as same-origin.
+fn host_list_is_not_this_requests_defence(state: &ApiKeyState, request: &Request<Body>) -> bool {
+    let peer_is_remote = request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .is_some_and(|peer| !peer.0.ip().is_loopback());
+
+    state.api_key.is_some() && peer_is_remote && !caller_is_loopback(request)
 }
 
 /// [`enforce_host`] on its own, for routes mounted outside [`bearer_auth`].
@@ -112,11 +159,12 @@ pub async fn host_guard(
 
 /// Axum middleware that enforces `Authorization: Bearer <key>` on API routes.
 ///
-/// Refuses outright any request whose `Host` is not an authority this server
-/// answers to. That check is first and unconditional, because every relaxation
-/// below it — auth disabled, loopback caller, same-origin WebSocket — assumes
-/// the request was addressed to *us* rather than to a name that merely resolves
-/// to us.
+/// Refuses any request whose `Host` is not an authority this server answers to
+/// — unless the request came from another machine, where the key check below
+/// is the stronger gate ([`host_list_is_not_this_requests_defence`]). The Host
+/// check is first, because every relaxation below it — auth disabled, loopback
+/// caller, same-origin WebSocket — assumes the request was addressed to *us*
+/// rather than to a name that merely resolves to us.
 ///
 /// Past the Host check, auth is bypassed when:
 /// - No API key is configured (auth disabled)
@@ -608,6 +656,97 @@ mod tests {
 
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    /// One request from another machine, addressed by a name this server was
+    /// never told about — the LAN client's ordinary case.
+    fn remote_request(host: &str) -> axum::http::request::Builder {
+        Request::builder()
+            .uri("/api/test")
+            .header(header::HOST, host)
+    }
+
+    fn from_remote_peer(builder: axum::http::request::Builder) -> Request<Body> {
+        let mut req = builder.body(Body::empty()).unwrap();
+        req.extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from(([10, 0, 0, 1], 5000))));
+        req
+    }
+
+    #[tokio::test]
+    async fn an_authenticated_client_on_another_machine_may_use_any_name_for_this_server() {
+        // Every FQDN the operator's network resolves to this box — `impulse`,
+        // `impulse.lan`, a tailnet name, a CNAME — without enumerating any of
+        // them. Safe because the request came from another machine and so has
+        // no loopback bypass to reach: it authenticated to get here.
+        let app = test_router_with_bearer(Some("secret-key".to_string()));
+        let req = from_remote_peer(
+            remote_request("impulse.tail1234.ts.net:3000")
+                .header("authorization", "Bearer secret-key"),
+        );
+
+        assert_eq!(app.oneshot(req).await.unwrap().status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn an_unknown_name_from_another_machine_still_has_to_authenticate() {
+        // The relaxation moves the refusal from the Host check to the key
+        // check; it does not remove one. A 403 here would mean the name was
+        // the gate, a 200 would mean nothing was.
+        let app = test_router_with_bearer(Some("secret-key".to_string()));
+        let req = from_remote_peer(remote_request("evil.test:3000"));
+
+        assert_eq!(
+            app.oneshot(req).await.unwrap().status(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn a_request_with_no_peer_address_is_held_to_the_host_list() {
+        // The relaxation turns on "this came from another machine", so an
+        // absent `ConnectInfo` has to read as "unknown", not as "remote".
+        // Read as remote it would be handed to anything that reaches the
+        // server without one — including the unauthenticated login bootstrap,
+        // where a rebound page could then guess keys and read every answer.
+        let app = test_router_with_bearer(Some("secret-key".to_string()));
+        let req = remote_request("evil.test:3000")
+            .body(Body::empty())
+            .unwrap();
+
+        assert_eq!(
+            app.oneshot(req).await.unwrap().status(),
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    #[tokio::test]
+    async fn with_auth_disabled_every_client_is_held_to_the_host_list() {
+        // `api_key = ""`: there is no check behind the Host check, so the Host
+        // check is the whole defence and keeps its strict reading.
+        let app = test_router_with_bearer(None);
+        let req = from_remote_peer(remote_request("evil.test:3000"));
+
+        assert_eq!(
+            app.oneshot(req).await.unwrap().status(),
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    #[test]
+    fn a_name_admitted_only_by_the_remote_relaxation_is_not_marked_verified() {
+        // `HostVerified` means "this authority is provably one of ours", and
+        // the WebSocket guard reads it as licence to treat Origin == Host as
+        // same-origin. The relaxation declines to make that claim, so the
+        // marker must be absent and the guard left with its static allow-list.
+        let state = bearer_state(Some("secret-key".to_string()));
+        let mut relaxed = from_remote_peer(remote_request("impulse.lan:3000"));
+        assert!(enforce_host(&state, &mut relaxed).is_none());
+        assert!(relaxed.extensions().get::<HostVerified>().is_none());
+
+        let mut ours = from_remote_peer(remote_request(&format!("127.0.0.1:{TEST_PORT}")));
+        assert!(enforce_host(&state, &mut ours).is_none());
+        assert!(ours.extensions().get::<HostVerified>().is_some());
     }
 
     /// Drive one Host value through the real middleware from a loopback peer —

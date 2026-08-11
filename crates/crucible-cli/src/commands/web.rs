@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use crucible_core::config::{CliAppConfig, WebConfig};
-use std::net::{TcpStream, ToSocketAddrs};
+use std::net::{IpAddr, TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
 use crucible_web::middleware::auth::{api_key_path, generate_and_persist_key, resolve_api_key};
@@ -92,10 +92,13 @@ pub async fn handle(cmd: WebCommand, standalone: bool) -> Result<()> {
     crate::common::daemon_client().await?;
 
     println!(
-        "Starting web server on http://{}:{}",
-        final_config.host, final_config.port
+        "{}",
+        banner(
+            &final_config,
+            &crucible_web::middleware::auth::local_names(),
+            outbound_ip()
+        )
     );
-    print_connect_urls(&final_config);
 
     crucible_web::start_server(&final_config, &config, standalone).await?;
 
@@ -228,49 +231,97 @@ fn rotation_notice(listening_on: Option<&str>) -> String {
     )
 }
 
-/// Print ready-to-open URLs after startup. The key is deliberately NOT
-/// embedded in the URL — query-string tokens leak through browser history,
-/// server logs, and referrers. Remote devices sign in once via the in-UI
-/// prompt (POST /api/auth/login → HttpOnly session cookie).
-fn print_connect_urls(config: &WebConfig) {
-    println!("  Local:  http://localhost:{}", config.port);
+/// The startup banner: what the socket is bound to, then the URLs that reach
+/// it. The API key is deliberately NOT embedded in any of them — query-string
+/// tokens leak through browser history, server logs, and referrers. Remote
+/// devices sign in once via the in-UI prompt (POST /api/auth/login → HttpOnly
+/// session cookie).
+///
+/// Two rules, both of which the banner this replaced broke. It names the
+/// socket before it names any URL: `Starting web server on http://0.0.0.0:3000`
+/// above `Local: http://localhost:3000` reads as a loopback bind, and that
+/// reading is how a working wildcard bind gets reported as "binds to
+/// localhost". And it prints only URLs that reach this process AND satisfy the
+/// Host guard — a single-interface bind has nothing listening on localhost, and
+/// a URL the guard would 403 sends the operator hunting the bind instead of the
+/// allow-list. `local_names` is the same list [`HostPolicy`] admits, so the two
+/// cannot drift.
+fn banner(config: &WebConfig, local_names: &[String], outbound: Option<IpAddr>) -> String {
+    let (host, port) = (config.host.as_str(), config.port);
+    let wildcard = matches!(host, "0.0.0.0" | "::");
+    let loopback_bind = matches!(host, "127.0.0.1" | "localhost" | "::1");
 
-    if !binds_remote(&config.host) {
-        return;
+    let interfaces = match (host, wildcard, loopback_bind) {
+        ("0.0.0.0", ..) => "every IPv4 interface on this machine",
+        (_, true, _) => "every interface on this machine",
+        (_, _, true) => "this machine only",
+        _ => "that interface only",
+    };
+    let mut lines = vec![format!("Listening on {host}:{port} — {interfaces}")];
+
+    if wildcard || loopback_bind {
+        lines.push(format!("  Local:  http://localhost:{port}"));
     }
-    match resolve_api_key(config.api_key.as_deref()) {
-        Some(_) => println!(
-            "  Remote: http://{}:{}  (sign in with the key from `cru web key`)",
-            host_for_url(config),
-            config.port
-        ),
-        None => println!(
-            "  Remote: http://{}:{}  (WARNING: API auth disabled)",
-            host_for_url(config),
-            config.port
-        ),
-    }
-}
 
-fn binds_remote(host: &str) -> bool {
-    !matches!(host, "127.0.0.1" | "localhost" | "::1")
-}
-
-/// Best-effort address other devices can reach: for wildcard binds, discover
-/// the primary outbound IP (UDP connect sends no packets); otherwise use the
-/// configured host.
-fn host_for_url(config: &WebConfig) -> String {
-    if config.host == "0.0.0.0" || config.host == "::" {
-        if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
-            if socket.connect("1.1.1.1:80").is_ok() {
-                if let Ok(addr) = socket.local_addr() {
-                    return addr.ip().to_string();
-                }
-            }
+    let mut remote = Vec::new();
+    if !loopback_bind {
+        match (wildcard, outbound) {
+            // A wildcard bind has no address of its own to print; the outbound
+            // probe supplies one, and when it cannot, the names below stand
+            // alone rather than a placeholder standing in for a URL.
+            (true, Some(ip)) => remote.push(format!("http://{ip}:{port}")),
+            (true, None) => {}
+            (false, _) => remote.push(format!("http://{host}:{port}")),
         }
-        return "<this-host>".to_string();
+        remote.extend(
+            local_names
+                .iter()
+                .map(|name| format!("http://{name}:{port}")),
+        );
+        remote.dedup();
     }
-    config.host.clone()
+    for (i, url) in remote.iter().enumerate() {
+        lines.push(match i {
+            0 => format!("  LAN:    {url}"),
+            _ => format!("          {url}"),
+        });
+    }
+    if !remote.is_empty() {
+        lines.push(match resolve_api_key(config.api_key.as_deref()) {
+            Some(_) => {
+                "  Clients off this machine sign in with the key from `cru web key`.".to_string()
+            }
+            None => "  WARNING: API auth is disabled — anything that can reach this port \
+                     has full access."
+                .to_string(),
+        });
+    }
+    lines.join("\n")
+}
+
+/// Best-effort address another device can reach this machine on: the primary
+/// outbound IP, discovered by a UDP connect that sends no packets.
+fn outbound_ip() -> Option<IpAddr> {
+    let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("1.1.1.1:80").ok()?;
+    socket.local_addr().ok().map(|addr| addr.ip())
+}
+
+/// The host to put in a URL for a remote device: the outbound address for a
+/// wildcard bind, this machine's own name if that probe found nothing, and
+/// otherwise whatever was bound.
+fn host_for_url(config: &WebConfig) -> String {
+    if !matches!(config.host.as_str(), "0.0.0.0" | "::") {
+        return config.host.clone();
+    }
+    outbound_ip()
+        .map(|ip| ip.to_string())
+        .or_else(|| {
+            crucible_web::middleware::auth::local_names()
+                .into_iter()
+                .next()
+        })
+        .unwrap_or_else(|| config.host.clone())
 }
 
 #[cfg(test)]
@@ -314,6 +365,125 @@ mod tests {
             running_server_addr(&config_bound_to("127.0.0.1", port)),
             None,
             "a closed port is not a running server"
+        );
+    }
+
+    /// Every URL the banner prints, as `host:port`.
+    fn advertised_authorities(banner: &str) -> Vec<String> {
+        banner
+            .lines()
+            .filter_map(|line| line.split("http://").nth(1))
+            .map(|rest| {
+                rest.split_whitespace()
+                    .next()
+                    .unwrap_or_default()
+                    .trim_end_matches('/')
+                    .to_string()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_banner_never_says_localhost_for_a_bind_that_does_not_include_it() {
+        // The line that started this: `Starting web server on http://0.0.0.0:3000`
+        // followed by `Local: http://localhost:3000` reads as "bound to
+        // localhost", and for a single-interface bind the localhost URL is not
+        // merely misleading — nothing is listening there.
+        let banner = banner(
+            &config_bound_to("192.168.0.16", 3000),
+            &["impulse".to_string()],
+            None,
+        );
+
+        assert!(
+            !banner.contains("localhost"),
+            "nothing answers on localhost for this bind: {banner}"
+        );
+        assert!(banner.contains("192.168.0.16:3000"), "{banner}");
+    }
+
+    #[test]
+    fn the_banner_states_the_bind_before_any_url() {
+        let wildcard = banner(&config_bound_to("0.0.0.0", 3000), &[], None);
+        let first = wildcard.lines().next().unwrap();
+        assert!(first.contains("0.0.0.0:3000"), "{first}");
+        assert!(
+            first.contains("every IPv4 interface"),
+            "a wildcard bind has to name what it opened: {first}"
+        );
+
+        let loopback = banner(&config_bound_to("127.0.0.1", 3000), &[], None);
+        let first = loopback.lines().next().unwrap();
+        assert!(first.contains("127.0.0.1:3000"), "{first}");
+        assert!(first.contains("this machine only"), "{first}");
+    }
+
+    #[test]
+    fn a_loopback_bind_advertises_nothing_off_this_machine() {
+        let banner = banner(
+            &config_bound_to("127.0.0.1", 3000),
+            &["impulse".to_string()],
+            Some("192.168.0.16".parse().unwrap()),
+        );
+        assert_eq!(advertised_authorities(&banner), ["localhost:3000"]);
+    }
+
+    #[test]
+    fn a_wildcard_bind_advertises_the_lan_address_and_the_machines_names() {
+        let banner = banner(
+            &config_bound_to("0.0.0.0", 3000),
+            &["impulse".to_string(), "impulse.local".to_string()],
+            Some("192.168.0.16".parse().unwrap()),
+        );
+        assert_eq!(
+            advertised_authorities(&banner),
+            [
+                "localhost:3000",
+                "192.168.0.16:3000",
+                "impulse:3000",
+                "impulse.local:3000"
+            ]
+        );
+    }
+
+    #[test]
+    fn the_banner_only_advertises_urls_the_host_policy_accepts() {
+        // The invariant that keeps this honest: a printed URL that the Host
+        // guard would 403 is worse than no URL at all, because it sends the
+        // operator hunting the bind. Both derive from the same names.
+        let config = WebConfig {
+            allowed_hosts: vec!["crucible.example.com".to_string()],
+            ..config_bound_to("0.0.0.0", 3000)
+        };
+        let names = crucible_web::middleware::auth::local_names();
+        let policy = crucible_web::middleware::auth::HostPolicy::from_bind_with_local_names(
+            &config.host,
+            config.port,
+            &config.allowed_hosts,
+            &names,
+        );
+        let banner = banner(&config, &names, Some("192.168.0.16".parse().unwrap()));
+
+        for authority in advertised_authorities(&banner) {
+            assert!(
+                policy.answers_to(&authority),
+                "banner advertises {authority}, which the Host guard refuses:\n{banner}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_undiscoverable_outbound_address_drops_the_line_rather_than_guessing() {
+        // No route to the internet: the old banner printed `http://<this-host>:3000`.
+        let banner = banner(
+            &config_bound_to("0.0.0.0", 3000),
+            &["impulse".to_string()],
+            None,
+        );
+        assert!(!banner.contains('<'), "{banner}");
+        assert_eq!(
+            advertised_authorities(&banner),
+            ["localhost:3000", "impulse:3000"]
         );
     }
 

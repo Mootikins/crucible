@@ -25,7 +25,7 @@ Add it to `~/.config/crucible/config.toml`.
 | `api_key` | string | *(unset)* | Bearer token for non-localhost clients. Unset generates and persists one; `""` disables auth entirely |
 | `remote_shell` | bool | `false` | Let authenticated non-localhost clients use the terminal routes |
 | `registration_roots` | array of strings | `[]` | Optional confinement for the web UI's "add project" button. Empty allows any ordinary directory (the floor is the only gate); a non-empty list confines registration to it — see [Project registration from the web UI](#project-registration-from-the-web-ui) |
-| `allowed_hosts` | array of strings | `[]` | Extra `Host` authorities the server answers to. Empty derives them from the bind address — see [Host validation](#host-validation) |
+| `allowed_hosts` | array of strings | `[]` | Extra `Host` authorities the server answers to. Empty derives them from the bind address and this machine's own hostname — see [Host validation](#host-validation) |
 | `enabled` | bool | `false` | **Currently unread.** `cru web` starts the server unconditionally; nothing consults this field |
 
 ```toml
@@ -34,9 +34,11 @@ port = 3000
 host = "127.0.0.1"
 ```
 
-`allowed_hosts` is **fail-closed and empty by default** with no command-line override: if
-reaching the server by hostname returns 403, that field is the fix. `registration_roots` is
-the opposite — empty allows any ordinary directory, and you set it only to *restrict*.
+`allowed_hosts` is empty by default and rarely needs filling: a client on another machine may
+use any name once it holds the API key, and a loopback caller already gets the loopback
+spellings and this machine's own hostname. What is left for it is a name a *loopback* caller
+uses — a reverse proxy on this same box. `registration_roots` is the opposite — empty allows
+any ordinary directory, and you set it only to *restrict*.
 
 `cru web` overrides `port`, `host`, `static_dir`, and `remote_shell` from the command line:
 
@@ -105,15 +107,30 @@ and page script cannot override it, so an attacker page on `evil.test` — even 
 record has been rebound to `127.0.0.1` — is stuck sending `Host: evil.test`. Refusing every
 authority that is not ours is what makes the loopback bypass safe.
 
-The cost is that reaching the box by a name nobody told it about is a hard 403 — and because
-the check covers the static bundle too, the **page itself** fails to load, not just its API
-calls. Reaching `impulse.local` over mDNS, or a reverse proxy forwarding
-`crucible.example.com`, needs the name in `allowed_hosts`:
+What rebinding is *for*, though, is the loopback bypass — the rebound page runs in a browser
+on this machine, so its requests arrive from 127.0.0.1 and skip auth entirely, and the Host
+check is all that stands in the way. **A request from another machine has no such shortcut**:
+it presents the API key or it gets a 401. So the check is strict for loopback callers and
+relaxed for the rest, and the practical effect is the one you want:
+
+| Request arrives from | `Host` it may use |
+|---|---|
+| this machine (loopback) | the loopback spellings, this machine's own name, `allowed_hosts` — and nothing else |
+| another machine, key configured | **any name**; the API key is the gate, not the name |
+| another machine, `api_key = ""` | the same strict list as loopback — with no key behind it, the list is the whole defence |
+
+That is what makes a LAN bind work by **any** FQDN that resolves to this box — `impulse`,
+`impulse.lan`, a tailnet name, a CNAME, a name only the phone's resolver knows — with nothing
+to enumerate and nothing to configure. What a remote client with no key can still reach is
+what was never behind auth anyway: `/health` and the static bundle.
+
+`allowed_hosts` remains for the cases that *are* loopback callers — most often a reverse proxy
+on this same machine forwarding a public name:
 
 ```toml
 [web]
 host = "0.0.0.0"
-allowed_hosts = ["impulse.local", "crucible.example.com"]
+allowed_hosts = ["crucible.example.com"]
 ```
 
 ### What is accepted
@@ -126,8 +143,14 @@ allowed_hosts = ["impulse.local", "crucible.example.com"]
   - `host` is a wildcard (`0.0.0.0` or `::`) → **any IP-literal `Host` on `<port>`** is
     accepted. That is the LAN case: a machine's reachable addresses cannot be enumerated up
     front, and an IP literal in `Host` cannot come from rebinding, which needs a *name*.
-    Names are **not** covered by the wildcard — they must be listed explicitly.
+- **This machine's own names**, on `<port>` and bare, for any bind that is not
+  loopback-only: the system hostname, plus `<hostname>.local` when the hostname is a bare
+  label. This is what lets the operator's own browser use `http://impulse:3000` even when
+  that name resolves to loopback, and it is what `cru web` prints on startup.
 - **Every entry in `allowed_hosts`.**
+- **Any name at all**, when the request came from another machine and an API key is
+  configured — see the table above. This is the rule that makes arbitrary FQDNs work; the
+  three above are what a *loopback* caller is held to.
 
 ### How an entry is matched
 

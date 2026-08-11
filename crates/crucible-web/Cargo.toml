@@ -34,6 +34,10 @@ mime_guess = "2"
 
 portable-pty = "0.9"
 
+# `gethostname`: the machine's own name, which a wildcard bind answers to so a
+# LAN browser can address it by hostname and not only by IP literal.
+gethostname = "1"
+
 # Daemon-proxy HTTP client (transcription forwarding etc.)
 reqwest = { workspace = true }
 dirs = { workspace = true }

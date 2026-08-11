@@ -59,7 +59,22 @@ impl HostPolicy {
     /// A configured entry that carries its own port is matched exactly; one
     /// without a port is accepted both bare (a proxy on 80/443 forwards the
     /// public name with no port) and with `port` appended.
+    ///
+    /// A bind that other machines can reach also answers to this machine's own
+    /// names — see [`local_names`].
     pub fn from_bind(bind_host: &str, port: u16, extra_hosts: &[String]) -> Self {
+        Self::from_bind_with_local_names(bind_host, port, extra_hosts, &local_names())
+    }
+
+    /// [`HostPolicy::from_bind`] with this machine's names supplied rather than
+    /// read from the OS, so the rule can be tested without depending on what
+    /// the box running the test happens to be called.
+    pub fn from_bind_with_local_names(
+        bind_host: &str,
+        port: u16,
+        extra_hosts: &[String],
+        local_names: &[String],
+    ) -> Self {
         let mut allowed = BTreeSet::new();
         let mut allow = |authority: &str| {
             match normalize_authority(authority) {
@@ -83,6 +98,25 @@ impl HostPolicy {
             Some(_) => {}
             // The operator bound by name — answer to that name.
             None => allow(&format!("{bind_host}:{port}")),
+        }
+
+        // A socket other machines can reach is addressed by NAME from those
+        // machines, and until this existed no name reached it: the IP-literal
+        // rule below covers `http://192.168.0.16:3000` and nothing covered
+        // `http://impulse:3000`, so a LAN bind that worked by address 403'd by
+        // hostname and read as if it had never left loopback.
+        //
+        // The rebinding cost, stated rather than glossed: the IP-literal rule
+        // is safe *because* there is no name to rebind, and this gives that up
+        // for these names alone. The attacker it admits is one who controls
+        // resolution of this machine's own hostname on the victim's network —
+        // who is already positioned between the operator and the machine. A
+        // loopback bind buys none of that back and so gets none of these names.
+        if !bind_ip.is_some_and(|ip| ip.is_loopback()) && bind_host != "localhost" {
+            for name in local_names {
+                allow(name);
+                allow(&format!("{name}:{port}"));
+            }
         }
 
         for entry in extra_hosts
@@ -120,6 +154,16 @@ impl HostPolicy {
     /// authority is refused rather than guessed at.
     pub fn accepts<B>(&self, request: &Request<B>) -> bool {
         request_authority(request).is_some_and(|a| self.accepts_authority(&a))
+    }
+
+    /// [`HostPolicy::accepts`] asked of a bare `host[:port]` rather than a
+    /// request.
+    ///
+    /// For code that *renders* an authority instead of receiving one — `cru
+    /// web`'s startup banner checks every URL it is about to print, so a URL
+    /// the guard would refuse can never reach the operator's screen.
+    pub fn answers_to(&self, authority: &str) -> bool {
+        normalize_authority(authority).is_some_and(|canonical| self.accepts_authority(&canonical))
     }
 
     fn accepts_authority(&self, canonical: &str) -> bool {
@@ -248,6 +292,36 @@ fn is_ip_literal(host: &str) -> bool {
     host.starts_with('[') || host.parse::<Ipv4Addr>().is_ok()
 }
 
+/// The names this machine answers to, as a browser elsewhere on the LAN would
+/// spell them.
+///
+/// Read from the OS at policy-construction time. Callers that need this to be
+/// deterministic take [`HostPolicy::from_bind_with_local_names`] instead.
+pub fn local_names() -> Vec<String> {
+    local_names_from(&gethostname::gethostname().to_string_lossy())
+}
+
+/// [`local_names`] minus the OS call: the hostname, plus its mDNS spelling when
+/// the hostname is a bare label.
+///
+/// `<host>.local` is included because that is the name Avahi/Bonjour publishes
+/// and therefore the one a phone or laptop on the same network actually
+/// resolves; a hostname that already carries a domain is left alone. Anything
+/// that is not a usable authority — empty, whitespace, or `localhost`, which
+/// the loopback rule already owns — yields nothing rather than putting a name
+/// in the allow-list that no `Host` header could ever match.
+fn local_names_from(hostname: &str) -> Vec<String> {
+    let host = hostname.trim().to_ascii_lowercase();
+    if host.is_empty() || host == "localhost" || normalize_authority(&host).is_none() {
+        return Vec::new();
+    }
+    let mdns = format!("{host}.local");
+    match host.contains('.') {
+        true => vec![host],
+        false => vec![host, mdns],
+    }
+}
+
 fn parse_bind_ip(bind_host: &str) -> Option<IpAddr> {
     bind_host.trim_matches(['[', ']']).parse::<IpAddr>().ok()
 }
@@ -264,11 +338,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_wildcard_bind_accepts_lan_ips_but_never_a_name() {
+    fn a_wildcard_bind_accepts_lan_ips_but_never_an_unrelated_name() {
         // `--host 0.0.0.0` is the LAN case: the machine's own addresses cannot
         // be enumerated, and an IP-literal Host cannot come from rebinding
-        // (that needs a name). Names still have to be allow-listed.
-        let policy = HostPolicy::from_bind("0.0.0.0", 3000, &[]);
+        // (that needs a name). Every name other than this machine's own still
+        // has to be allow-listed — supplied empty here so the assertions pin
+        // the IP-literal rule alone, whatever the box running them is called.
+        let policy = HostPolicy::from_bind_with_local_names("0.0.0.0", 3000, &[], &[]);
         assert!(policy.accepts_authority("192.168.0.16:3000"));
         assert!(policy.accepts_authority("[fd00::1]:3000"));
         assert!(!policy.accepts_authority("192.168.0.16:3001"));
@@ -276,7 +352,7 @@ mod tests {
         assert!(!policy.accepts_authority("nas.local:3000"));
 
         // A specific bind does not get the IP-literal allowance.
-        let loopback = HostPolicy::from_bind("127.0.0.1", 3000, &[]);
+        let loopback = HostPolicy::from_bind_with_local_names("127.0.0.1", 3000, &[], &[]);
         assert!(!loopback.accepts_authority("192.168.0.16:3000"));
     }
 
@@ -301,6 +377,68 @@ mod tests {
         // Neighbours of a configured name are not the configured name.
         assert!(!policy.accepts_authority("evil.crucible.example.com"));
         assert!(!policy.accepts_authority("crucible.example.com.evil.test"));
+    }
+
+    #[test]
+    fn a_remotely_reachable_bind_answers_to_this_machines_own_names() {
+        // The LAN case the IP-literal rule does not cover: a browser on another
+        // machine addresses this box by NAME, and that Host used to be refused
+        // no matter how the operator bound the socket.
+        let names = ["impulse".to_string(), "impulse.local".to_string()];
+        let policy = HostPolicy::from_bind_with_local_names("0.0.0.0", 3000, &[], &names);
+
+        assert!(policy.accepts_authority("impulse:3000"));
+        assert!(policy.accepts_authority("impulse.local:3000"));
+        // Same as a configured entry: bare too, for a proxy terminating on 80/443.
+        assert!(policy.accepts_authority("impulse"));
+        // Everything the rule did NOT open stays shut.
+        assert!(!policy.accepts_authority("impulse:3001"));
+        assert!(!policy.accepts_authority("evil.test:3000"));
+        assert!(!policy.accepts_authority("impulse.evil.test:3000"));
+        assert!(!policy.accepts_authority("evil.impulse:3000"));
+    }
+
+    #[test]
+    fn a_bind_to_one_lan_interface_also_answers_to_this_machines_names() {
+        // Narrowing the bind to one interface does not change how a browser
+        // spells the machine, so the names have to come along.
+        let names = ["impulse".to_string()];
+        let policy = HostPolicy::from_bind_with_local_names("192.168.0.16", 3000, &[], &names);
+
+        assert!(policy.accepts_authority("impulse:3000"));
+        assert!(policy.accepts_authority("192.168.0.16:3000"));
+        // Still not a wildcard bind: other IP literals are not ours.
+        assert!(!policy.accepts_authority("10.0.0.5:3000"));
+    }
+
+    #[test]
+    fn a_loopback_bind_answers_to_no_name_but_its_own() {
+        // Nothing off this machine can reach a loopback socket, so there is no
+        // LAN case to serve — and every name admitted here would be a
+        // rebinding target bought for nothing.
+        let names = ["impulse".to_string(), "impulse.local".to_string()];
+        for bind in ["127.0.0.1", "::1", "localhost"] {
+            let policy = HostPolicy::from_bind_with_local_names(bind, 3000, &[], &names);
+            assert!(
+                !policy.accepts_authority("impulse:3000"),
+                "{bind} bind must not admit the machine's LAN name"
+            );
+            assert!(policy.accepts_authority("localhost:3000"), "{bind}");
+        }
+    }
+
+    #[test]
+    fn the_local_names_are_the_hostname_and_its_mdns_spelling() {
+        // Derivation only — what the OS reports is environment, not contract.
+        assert_eq!(local_names_from("impulse"), ["impulse", "impulse.local"]);
+        // Already qualified: `.local` is not appended to a dotted name.
+        assert_eq!(local_names_from("impulse.lan"), ["impulse.lan"]);
+        assert_eq!(local_names_from("Impulse"), ["impulse", "impulse.local"]);
+        // A hostname that is not a usable authority yields nothing rather than
+        // poisoning the allow-list with something unparseable.
+        assert!(local_names_from("").is_empty());
+        assert!(local_names_from("localhost").is_empty());
+        assert!(local_names_from("not a hostname").is_empty());
     }
 
     #[test]
