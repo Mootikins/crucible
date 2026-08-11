@@ -12,7 +12,7 @@ use super::tui_e2e_harness::{Key, TuiTestBuilder, TuiTestSession};
 
 /// Test that chat TUI starts and shows initial prompt
 #[test]
-#[ignore = "requires built binary and may need ACP agent"]
+#[ignore = "requires: cru binary"]
 fn chat_startup_shows_prompt() {
     let mut session = TuiTestBuilder::new()
         .command("chat")
@@ -31,7 +31,7 @@ fn chat_startup_shows_prompt() {
 
 /// Test that double Ctrl+C exits the TUI
 #[test]
-#[ignore = "requires built binary and clean daemon shutdown"]
+#[ignore = "requires: cru binary"]
 fn chat_ctrl_c_exits() {
     let mut session = TuiTestBuilder::new()
         .command("chat")
@@ -57,7 +57,7 @@ fn chat_ctrl_c_exits() {
 
 /// Test typing in the input box
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn chat_input_typing() {
     let mut session = TuiTestBuilder::new()
         .command("chat")
@@ -81,7 +81,7 @@ fn chat_input_typing() {
 
 /// Test backspace deletes characters
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn chat_input_backspace() {
     let mut session = TuiTestBuilder::new()
         .command("chat")
@@ -108,7 +108,7 @@ fn chat_input_backspace() {
 
 /// Regression test: backspace should not delete terminal scrollback
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn chat_backspace_preserves_scrollback() {
     let mut session = TuiTestBuilder::new()
         .command("chat")
@@ -140,7 +140,7 @@ fn chat_backspace_preserves_scrollback() {
 
 /// Test that typing "/" shows command popup
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn chat_slash_shows_popup() {
     let mut session = TuiTestBuilder::new()
         .command("chat")
@@ -167,7 +167,7 @@ fn chat_slash_shows_popup() {
 
 /// Test /help command
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn chat_help_command() {
     let mut session = TuiTestBuilder::new()
         .command("chat")
@@ -193,7 +193,7 @@ fn chat_help_command() {
 
 /// Test arrow key navigation in popup
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn chat_popup_navigation() {
     let mut session = TuiTestBuilder::new()
         .command("chat")
@@ -229,7 +229,7 @@ fn chat_popup_navigation() {
 
 /// Test Tab completion
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn chat_tab_completion() {
     let mut session = TuiTestBuilder::new()
         .command("chat")
@@ -260,7 +260,7 @@ fn chat_tab_completion() {
 /// This is a template for more complex multi-turn tests.
 /// Requires an actual ACP agent to be configured.
 #[test]
-#[ignore = "requires built binary and ACP agent"]
+#[ignore = "requires: cru binary, ACP agent"]
 fn chat_multiturn_basic() {
     let mut session = TuiTestBuilder::new()
         .command("chat")
@@ -295,7 +295,7 @@ fn chat_multiturn_basic() {
 
 /// Test switching between modes (plan/act/auto)
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn chat_mode_switching() {
     let mut session = TuiTestBuilder::new()
         .command("chat")
@@ -327,7 +327,7 @@ fn chat_mode_switching() {
 
 /// Test behavior when sending empty message
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn chat_empty_message() {
     let mut session = TuiTestBuilder::new()
         .command("chat")
@@ -354,7 +354,7 @@ fn chat_empty_message() {
 
 /// Test rapid key input doesn't cause issues
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn chat_rapid_input() {
     let mut session = TuiTestBuilder::new()
         .command("chat")
@@ -398,7 +398,7 @@ fn chat_rapid_input() {
 ///
 /// Failure mode we're hunting: TUI shows spinner, no text ever streams.
 #[test]
-#[ignore = "requires built binary and live LLM provider; run with --ignored"]
+#[ignore = "requires: cru binary, LLM provider"]
 fn chat_short_prompt_streams_response() {
     require_binary!();
 

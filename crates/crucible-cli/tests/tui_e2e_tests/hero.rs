@@ -147,7 +147,7 @@ fn wait_for_file_contains(path: &str, needle: &str, timeout: Duration) {
 /// via the shell modal. Proves: a terminal starts real work on the daemon and
 /// touches a kiln buffer that the next console will see.
 #[test]
-#[ignore = "hero flow — driven by the Playwright live harness (needs HERO_STATE env)"]
+#[ignore = "requires: playwright harness — hero flow, needs HERO_STATE"]
 fn hero_leg_1() {
     let Some(hero_state) = env_or_skip("HERO_STATE") else {
         return;
@@ -213,7 +213,7 @@ fn hero_leg_1() {
 /// hypervisor holds all the state: turns 1 AND 2 (the web-sent turn) hydrate,
 /// and `!cat` shows the BROWSER's edit to the shared buffer.
 #[test]
-#[ignore = "hero flow — driven by the Playwright live harness (needs HERO_STATE env)"]
+#[ignore = "requires: playwright harness — hero flow, needs HERO_STATE"]
 fn hero_leg_3() {
     let Some(hero_state) = env_or_skip("HERO_STATE") else {
         return;
@@ -298,7 +298,7 @@ fn hero_leg_3() {
 /// (`AGENT_FS_WRITE.tui`) — kept in sync with the literals below by hand,
 /// same convention as the other hero legs' scripted prompts.
 #[test]
-#[ignore = "agent-fs flow — driven by the Playwright live harness (needs HERO_KILN env)"]
+#[ignore = "requires: playwright harness — agent-fs flow, needs HERO_KILN"]
 fn agent_fs_leg_tui_write() {
     let Some(kiln) = env_or_skip("HERO_KILN") else {
         return;

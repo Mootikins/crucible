@@ -1,7 +1,7 @@
 use crate::chat::bridge::AgentEventBridge;
 use crate::tui::oil::agent_selection::AgentSelection;
 use crate::tui::oil::app::{Action, App, ViewContext};
-use crate::tui::oil::chat_app::{ChatAppMsg, McpServerDisplay, OilChatApp};
+use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::commands::SetEffect;
 use crate::tui::oil::event::Event;
 use crate::tui::oil::theme;
@@ -249,49 +249,13 @@ impl OilChatRunner {
         self.apply_initial_sets(&mut app, &mut agent, bridge, &msg_tx, &mut background_tasks)
             .await?;
 
-        // Connect to MCP servers in background to update tool_count /
-        // connected state. The initial list (name, prefix, connected)
-        // arrives from the daemon's `mcp_servers_ready` setup event;
-        // this background task refines it with live upstream-connect
-        // info. Triggered whenever an MCP config is present — we no
-        // longer gate on `self.mcp_servers`, which is empty until the
-        // setup event lands.
-        //
-        // Structurally live-path only: this runs inside `run_with_factory`.
-        // The replay entry point (Task 2.3c) never reaches this code, so
-        // the MCP gateway is not instantiated during replay.
-        if let Some(ref mcp_config) = self.mcp_config {
-            let mcp_config = mcp_config.clone();
-            let mcp_tx = msg_tx.clone();
-            background_tasks.push(tokio::spawn(async move {
-                use crucible_daemon::tools::mcp_gateway::McpGatewayManager;
-                match McpGatewayManager::from_config(&mcp_config).await {
-                    Ok(gateway) => {
-                        let servers: Vec<McpServerDisplay> = gateway
-                            .upstream_names()
-                            .map(|name| {
-                                let tools_for_upstream: Vec<_> = gateway
-                                    .all_tools()
-                                    .into_iter()
-                                    .filter(|t| t.upstream == name)
-                                    .collect();
-                                McpServerDisplay {
-                                    name: name.to_string(),
-                                    prefix: name.to_string(),
-                                    tool_count: tools_for_upstream.len(),
-                                    connected: !tools_for_upstream.is_empty(),
-                                }
-                            })
-                            .collect();
-                        let _ = mcp_tx.send(ChatAppMsg::McpStatusLoaded(servers));
-                    }
-                    Err(e) => {
-                        tracing::warn!("Failed to connect MCP servers: {}", e);
-                    }
-                }
-                // Drop the gateway — Phase A is display-only
-            }));
-        }
+        // MCP server status is NOT fetched here. The daemon publishes it on
+        // `mcp_servers_ready` with live tool counts and connection state
+        // (`AgentManager::mcp_tools_by_upstream`), which is where it has always
+        // belonged: the daemon holds a connected gateway for its whole lifetime.
+        // This used to fork a second one — one stdio child process per configured
+        // upstream, plus an `initialize` round-trip with each, on every launch —
+        // and drop it after counting tools.
 
         // Prefetch available models in background — daemon cache should be warm,
         // so this returns near-instantly. Ensures :model popup has data immediately.

@@ -50,7 +50,7 @@ mod fastembed_tests {
     use crucible_daemon::llm::embeddings::{create_provider, EmbeddingConfig};
 
     #[tokio::test]
-    #[ignore = "Downloads ONNX models (~100MB)"]
+    #[ignore = "requires: model download — ONNX models, ~100 MB"]
     async fn test_fastembed_basic() {
         let config = EmbeddingConfig::fastembed(None, None, None);
         let provider = create_provider(config).await.unwrap();
@@ -65,7 +65,7 @@ mod fastembed_tests {
     }
 
     #[tokio::test]
-    #[ignore = "Downloads ONNX models (~100MB)"]
+    #[ignore = "requires: model download — ONNX models, ~100 MB"]
     async fn test_fastembed_semantic_similarity() {
         let config = EmbeddingConfig::fastembed(None, None, None);
         let provider = create_provider(config).await.unwrap();
@@ -116,7 +116,7 @@ mod fastembed_tests {
     }
 
     #[tokio::test]
-    #[ignore = "Downloads ONNX models (~100MB)"]
+    #[ignore = "requires: model download — ONNX models, ~100 MB"]
     async fn test_fastembed_batch() {
         let config = EmbeddingConfig::fastembed(None, None, None);
         let provider = create_provider(config).await.unwrap();
@@ -168,7 +168,7 @@ mod ollama_tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires an embedding endpoint (see .env.local.example)"]
+    #[ignore = "requires: embedding endpoint — see .env.local.example"]
     async fn test_ollama_basic() {
         let Some((config, dims)) = ollama_config() else {
             return;
@@ -185,7 +185,7 @@ mod ollama_tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires an embedding endpoint (see .env.local.example)"]
+    #[ignore = "requires: embedding endpoint — see .env.local.example"]
     async fn test_ollama_semantic_similarity() {
         let Some((config, _dims)) = ollama_config() else {
             return;
@@ -238,7 +238,7 @@ mod ollama_tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires an embedding endpoint (see .env.local.example)"]
+    #[ignore = "requires: embedding endpoint — see .env.local.example"]
     async fn test_ollama_batch_throughput() {
         let Some((config, _dims)) = ollama_config() else {
             return;

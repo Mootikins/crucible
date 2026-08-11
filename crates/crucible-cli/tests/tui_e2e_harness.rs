@@ -724,7 +724,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires built binary"]
+    #[ignore = "requires: cru binary"]
     fn test_spawn_help() {
         let mut session = TuiTestBuilder::new()
             .command("--help")

@@ -1,9 +1,4 @@
 use super::session_commands::{execute_command, list_commands};
-use super::session_config::{
-    get_max_tokens, get_precognition, get_precognition_results, get_temperature,
-    get_thinking_budget, set_max_tokens, set_precognition, set_precognition_results,
-    set_temperature, set_thinking_budget,
-};
 use super::session_status::session_status;
 use crate::routes::helpers::ModelsResponse;
 use crate::services::daemon::AppState;
@@ -104,30 +99,14 @@ pub fn session_routes_with(policy: EndpointPolicy) -> Router<AppState> {
         .route("/api/session/{id}/kilns/connect", post(connect_kiln))
         .route("/api/session/{id}/kilns/disconnect", post(disconnect_kiln))
         .route("/api/session/{id}/workspace", put(set_workspace))
-        .route("/api/session/{id}/mode", post(set_mode))
+        .route("/api/session/{id}/mode", post(set_mode).get(get_mode))
         .route("/api/session/{id}/title", put(set_session_title))
         .route("/api/session/{id}/auto-title", post(auto_title))
         .route("/api/providers", get(list_providers))
-        .route(
-            "/api/session/{id}/config/thinking-budget",
-            put(set_thinking_budget).get(get_thinking_budget),
-        )
-        .route(
-            "/api/session/{id}/config/temperature",
-            put(set_temperature).get(get_temperature),
-        )
-        .route(
-            "/api/session/{id}/config/max-tokens",
-            put(set_max_tokens).get(get_max_tokens),
-        )
-        .route(
-            "/api/session/{id}/config/precognition",
-            put(set_precognition).get(get_precognition),
-        )
-        .route(
-            "/api/session/{id}/config/precognition/results",
-            put(set_precognition_results).get(get_precognition_results),
-        )
+        // Config knobs register themselves in `session_config`, next to their
+        // handlers: fifteen route pairs is 60 lines that pushed this file past the
+        // 1000-line budget, and the group has no reason to be spelled out here.
+        .merge(super::session_config::config_routes())
         // Review lives inside this group, not beside it: bearer auth, the host
         // guard, the CORS allowlist, the body limit and the security headers
         // are applied to the session router, and a separate group is how the
@@ -844,6 +823,23 @@ async fn set_mode(
         .await
         .daemon_err()?;
     Ok(OkResponse::success())
+}
+
+#[derive(Debug, Serialize)]
+struct ModeResponse {
+    mode: Option<String>,
+}
+
+/// Read the session mode. `session.get_mode` has existed all along with no web
+/// reader, so the panel could set a mode and then render whatever it last
+/// guessed. Exempt from gate A2e by design (`mode` is not a `config/` knob), so
+/// nothing would have failed if this stayed missing.
+async fn get_mode(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<ModeResponse>, WebError> {
+    let mode = state.daemon.session_get_mode(&id).await.daemon_err()?;
+    Ok(Json(ModeResponse { mode }))
 }
 
 #[derive(Debug, Deserialize)]

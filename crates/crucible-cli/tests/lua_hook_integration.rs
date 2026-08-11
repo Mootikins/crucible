@@ -45,7 +45,7 @@ llm_endpoint = "http://localhost:11434"
 }
 
 #[tokio::test]
-#[ignore = "requires Ollama running and full chat setup"]
+#[ignore = "requires: Ollama"]
 async fn test_init_lua_hook_sets_temperature() {
     // RED: This test should fail initially because hooks aren't fired yet
 

@@ -14,7 +14,11 @@ use super::DaemonClient;
 /// Request for `session.create`.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct SessionCreateRequest {
-    #[serde(rename = "type")]
+    /// Defaulted rather than required because the server now *deserializes*
+    /// this struct instead of hand-plucking `params["type"]` with an
+    /// `.unwrap_or("chat")`. Without the serde default, omitting `type` — which
+    /// several callers do — would start failing as `INVALID_PARAMS`.
+    #[serde(rename = "type", default = "default_session_type")]
     pub session_type: String,
     /// Omitted → the daemon resolves its default (home kiln). Keeping the
     /// fallback daemon-side means clients can never drift from it.
@@ -67,6 +71,12 @@ pub struct SessionCreateRequest {
 
 fn is_false(b: &bool) -> bool {
     !*b
+}
+
+/// The session type an omitted `type` means. Mirrors what the server's
+/// hand-plucking used to do (`optional_param!(req, "type", …).unwrap_or("chat")`).
+fn default_session_type() -> String {
+    "chat".to_string()
 }
 
 /// Parameters for creating a session.

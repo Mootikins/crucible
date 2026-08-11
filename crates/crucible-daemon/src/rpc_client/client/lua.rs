@@ -9,9 +9,17 @@ use super::DaemonClient;
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LuaInitSessionRequest {
     pub session_id: String,
-    pub kiln_path: String,
-    #[serde(default)]
-    pub config: serde_json::Value,
+    /// Optional because the handler treats it as optional: an absent path falls
+    /// back to the daemon's data root. It was a required `String` while the
+    /// server read it with `optional_param!`, so the type claimed a guarantee
+    /// the wire never had.
+    ///
+    /// `kiln` is accepted as an alias. No in-tree caller sends it, but
+    /// `lua.init_session` is a public RPC method and the server has always
+    /// honoured both spellings — the alias records that here instead of leaving
+    /// it as an undocumented second name in the handler.
+    #[serde(default, alias = "kiln", skip_serializing_if = "Option::is_none")]
+    pub kiln_path: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

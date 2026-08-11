@@ -322,7 +322,7 @@ async fn test_glob_respects_limit() {
 // =========================================================================
 
 #[tokio::test]
-#[ignore = "requires ripgrep"]
+#[ignore = "requires: ripgrep"]
 async fn test_grep_finds_matches() {
     let (temp, tools) = create_workspace();
     tokio::fs::write(temp.path().join("test.txt"), "hello\nworld\nhello again")
@@ -345,7 +345,7 @@ async fn test_grep_finds_matches() {
 }
 
 #[tokio::test]
-#[ignore = "requires ripgrep"]
+#[ignore = "requires: ripgrep"]
 async fn test_grep_with_glob_filter() {
     let (temp, tools) = create_workspace();
     tokio::fs::write(temp.path().join("test.rs"), "fn main() {}")
@@ -449,7 +449,7 @@ async fn grep_pattern_starting_with_dash_is_not_parsed_as_a_flag() {
 /// turn the glob into a positional argument and silently change which files
 /// are searched.
 #[tokio::test]
-#[ignore = "requires ripgrep"]
+#[ignore = "requires: ripgrep"]
 async fn grep_still_honors_a_glob_filter_alongside_a_literal_pattern() {
     let (temp, tools) = create_workspace();
     tokio::fs::write(temp.path().join("a.rs"), "needle")
@@ -474,7 +474,7 @@ async fn grep_still_honors_a_glob_filter_alongside_a_literal_pattern() {
 
 /// A leading-dash pattern must still be searchable as a pattern.
 #[tokio::test]
-#[ignore = "requires ripgrep"]
+#[ignore = "requires: ripgrep"]
 async fn grep_finds_a_literal_pattern_that_begins_with_a_dash() {
     let (temp, tools) = create_workspace();
     tokio::fs::write(

@@ -519,6 +519,15 @@ fn replay_acp_parity_fixtures_80x24() {
 }
 
 // ─── Reproduce fixture (spacing + thinking bugs) ──────────────────────────
+//
+// These two are the surviving home of the spinner-in-scrollback coverage that
+// `tests/scrollback_spinner_test.rs` claimed. That file replayed a 2.7 MB
+// `reproduce.cast` from the repo root — untracked, `.gitignore`d, and
+// additionally self-skipping when absent, so it was double-gated and could not
+// fail on any machine. `replay_fixture` checks every frame's scrollback for any
+// spinner glyph (stricter than that file's "short line" heuristic), over the
+// same recording, at the same 124x59 geometry the cast was taken at, with no
+// `#[ignore]`. Deleted in favour of this; do not resurrect the cast.
 
 #[test]
 fn replay_reproduce_124x59() {

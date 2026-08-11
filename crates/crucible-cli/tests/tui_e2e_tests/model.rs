@@ -16,7 +16,7 @@ use super::tui_e2e_harness::{
 /// When models are fetched at startup (parallel with file/note indexing),
 /// the :model command should show a popup with available models.
 #[test]
-#[ignore = "requires built binary and LLM provider (set CRUCIBLE_TEST_CONFIG)"]
+#[ignore = "requires: cru binary, LLM provider — set CRUCIBLE_TEST_CONFIG"]
 fn model_popup_shows_with_ollama() {
     let config = provider_test_config();
 
@@ -42,7 +42,7 @@ fn model_popup_shows_with_ollama() {
 /// When no models are pre-loaded (e.g., Ollama was slow to start),
 /// the :model command should trigger a fetch and show "Fetching models..."
 #[test]
-#[ignore = "requires built binary and LLM provider (set CRUCIBLE_TEST_CONFIG)"]
+#[ignore = "requires: cru binary, LLM provider — set CRUCIBLE_TEST_CONFIG"]
 fn model_popup_lazy_fetch_on_demand() {
     let config = provider_test_config();
 
@@ -70,7 +70,7 @@ fn model_popup_lazy_fetch_on_demand() {
 ///
 /// Typing `:model lla` should filter to llama models.
 #[test]
-#[ignore = "requires built binary and LLM provider (set CRUCIBLE_TEST_CONFIG)"]
+#[ignore = "requires: cru binary, LLM provider — set CRUCIBLE_TEST_CONFIG"]
 fn model_popup_filter_works() {
     let config = provider_test_config();
 
@@ -97,7 +97,7 @@ fn model_popup_filter_works() {
 ///
 /// Selecting a model from popup should update the status bar.
 #[test]
-#[ignore = "requires built binary and Ollama"]
+#[ignore = "requires: cru binary, Ollama"]
 fn model_selection_updates_status() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")
@@ -128,7 +128,7 @@ fn model_selection_updates_status() {
 
 /// Test :model popup navigation with arrow keys
 #[test]
-#[ignore = "requires built binary and LLM provider (set CRUCIBLE_TEST_CONFIG)"]
+#[ignore = "requires: cru binary, LLM provider — set CRUCIBLE_TEST_CONFIG"]
 fn model_popup_navigation() {
     let config = provider_test_config();
 
@@ -160,7 +160,7 @@ fn model_popup_navigation() {
 
 /// Test :model <name> direct switch (no popup)
 #[test]
-#[ignore = "requires built binary and LLM provider (set CRUCIBLE_TEST_CONFIG)"]
+#[ignore = "requires: cru binary, LLM provider — set CRUCIBLE_TEST_CONFIG"]
 fn model_direct_switch_command() {
     let config = provider_test_config();
 
@@ -185,7 +185,7 @@ fn model_direct_switch_command() {
 
 /// Test :model shows message when no models available (Ollama not running)
 #[test]
-#[ignore = "requires built binary without Ollama"]
+#[ignore = "requires: cru binary, no Ollama"]
 fn model_popup_no_models_message() {
     let config = TuiTestConfig::new("chat")
         .with_env("OLLAMA_HOST", "http://localhost:99999")
@@ -216,7 +216,7 @@ fn model_popup_no_models_message() {
 /// state to a final state (models available, empty list, or error) within the
 /// timeout period. This test is provider-agnostic.
 #[test]
-#[ignore = "requires built binary and LLM provider (set CRUCIBLE_TEST_CONFIG)"]
+#[ignore = "requires: cru binary, LLM provider — set CRUCIBLE_TEST_CONFIG"]
 fn model_flow_loading_to_loaded_e2e() {
     let config = provider_test_config();
 
@@ -270,7 +270,7 @@ fn model_flow_loading_to_loaded_e2e() {
 /// Regardless of Ollama status, the model popup should resolve to either
 /// showing models or an error — not stay stuck at "please wait" forever.
 #[test]
-#[ignore = "requires built binary and LLM provider (set CRUCIBLE_TEST_CONFIG)"]
+#[ignore = "requires: cru binary, LLM provider — set CRUCIBLE_TEST_CONFIG"]
 fn model_flow_error_shows_within_timeout_e2e() {
     let config = provider_test_config();
 
@@ -323,7 +323,7 @@ fn model_flow_error_shows_within_timeout_e2e() {
 /// transitions back to the command popup. This should NOT produce duplicate
 /// border rows (the `▄` character).
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn model_backspace_no_double_borders_e2e() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")
@@ -385,7 +385,7 @@ fn model_backspace_no_double_borders_e2e() {
 /// Pressing `:model<CR>` multiple times in quick succession should not
 /// result in duplicate "Fetching" / "loading" / "please wait" messages.
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn model_loading_no_duplicate_messages_e2e() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")
@@ -434,7 +434,7 @@ fn model_loading_no_duplicate_messages_e2e() {
 /// After an initial `:model<CR>`, dismissing and pressing `:model<CR>`
 /// again should trigger a retry or refetch of the model list.
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn model_retry_after_failure_e2e() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")

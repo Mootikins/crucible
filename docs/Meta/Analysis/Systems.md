@@ -105,6 +105,21 @@ External interfaces for programmatic access.
 - Server-Sent Events (streaming responses)
 - MCP server for external tools
 
+**Client-local state.** A view may persist its own presentation state
+(`web-layout.json`, `web-layout.recents.json`) and its own transport credentials
+(`sessions.json`, written 0600). The test is whether *another client or an agent*
+would need to read it: model, temperature and mode would, so they are
+daemon-side; pane geometry and browser tokens would not. Recents are the
+borderline case — client-local until a second surface wants them, and then they
+move to the daemon rather than being copied.
+
+This is not an exception to "the daemon owns all business logic". The daemon has
+no concept of a browser login and must not acquire one, and pane geometry is a
+blob the server stores without interpreting. Recents live server-side rather
+than in `localStorage` because per-origin storage vanished across ports and
+browsers — that reason is about *where the bytes go*, not about who owns the
+rule.
+
 See: [[Help/Extending/MCP Gateway]]
 
 ### cli

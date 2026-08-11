@@ -11,7 +11,7 @@ use super::tui_e2e_harness::{Key, TuiTestConfig, TuiTestSession};
 
 /// Test F1 toggles popup
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn oil_f1_popup_toggle() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")
@@ -39,7 +39,7 @@ fn oil_f1_popup_toggle() {
 
 /// Test popup navigation with arrow keys
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn oil_popup_arrow_navigation() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")
@@ -77,7 +77,7 @@ fn oil_popup_arrow_navigation() {
 
 /// Test rapid input doesn't corrupt display
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn oil_rapid_typing_stress() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")
@@ -114,7 +114,7 @@ fn oil_rapid_typing_stress() {
 
 /// Test alternating input and commands
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn oil_alternating_input_commands() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")
@@ -151,7 +151,7 @@ fn oil_alternating_input_commands() {
 
 /// Test unknown command shows error
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn oil_unknown_command_error() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")
@@ -179,7 +179,7 @@ fn oil_unknown_command_error() {
 
 /// Test :clear command works
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn oil_clear_command() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")

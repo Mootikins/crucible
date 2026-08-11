@@ -91,6 +91,7 @@ export {
   Pin,
   PanelTop,
   Brain,
+  Sliders,
   Key,
   Mic,
   Sparkles,

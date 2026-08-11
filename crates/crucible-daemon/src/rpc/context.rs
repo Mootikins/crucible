@@ -26,9 +26,15 @@ pub struct RpcContext {
     pub plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
     pub llm_config: Option<LlmConfig>,
     pub mcp_server_manager: Arc<McpServerManager>,
-    /// Daemon-global MCP config, threaded through so `session.create`'s setup
-    /// task (Task 1.2f) can surface the configured servers as a setup event
-    /// without a round-trip through the MCP gateway.
+    /// Daemon-global MCP config, threaded through because it is authoritative
+    /// for WHICH servers exist: `session.create`'s setup task lists a configured
+    /// server even when the gateway never connected to it, so the UI shows it
+    /// disconnected rather than omitting it.
+    ///
+    /// It is no longer here to avoid the gateway — the setup task now also reads
+    /// live tool names via `AgentManager::mcp_tools_by_upstream`, because
+    /// emitting the config alone left `tools: []` / `connected: false` and the
+    /// TUI forked its own MCP connections to recover them.
     pub mcp_config: Option<McpConfig>,
     /// Resolved daemon data root (see `BindWithPluginConfigParams::data_home`).
     /// Runtime handlers (session list) read this instead of calling

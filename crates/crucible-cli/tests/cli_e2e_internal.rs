@@ -113,7 +113,7 @@ fn session_show_without_daemon_for_missing_id_is_graceful_error() {
 }
 
 #[test]
-#[ignore = "requires daemon"]
+#[ignore = "requires: cru binary"]
 fn session_internal_lifecycle_with_real_daemon() {
     let daemon = TestDaemon::start();
 

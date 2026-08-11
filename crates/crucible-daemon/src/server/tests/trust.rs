@@ -166,14 +166,9 @@ async fn untrusted_provider_internal_kiln_returns_error() {
 // Tests for resolve_provider_trust_level_for_create
 #[test]
 fn provider_trust_acp_agent_always_cloud() {
-    let req: Request = serde_json::from_value(json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "session.create",
-        "params": {
-            "agent_type": "acp",
-            "kiln": "/tmp/kiln"
-        }
+    let params: crate::rpc_client::SessionCreateRequest = serde_json::from_value(json!({
+        "agent_type": "acp",
+        "kiln": "/tmp/kiln"
     }))
     .unwrap();
     // Even with a Local-trust provider in config, ACP always returns Cloud
@@ -182,52 +177,37 @@ fn provider_trust_acp_agent_always_cloud() {
         crucible_core::config::BackendType::Mock,
         Some(crucible_core::config::TrustLevel::Local),
     ));
-    let result = resolve_provider_trust_level_for_create(&req, &llm_config);
+    let result = resolve_provider_trust_level_for_create(&params, &llm_config);
     assert_eq!(result, crucible_core::config::TrustLevel::Cloud);
 }
 
 #[test]
 fn provider_trust_bare_backend_name_cloud() {
-    let req: Request = serde_json::from_value(json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "session.create",
-        "params": {
-            "provider": "ollama",
-            "kiln": "/tmp/kiln"
-        }
+    let params: crate::rpc_client::SessionCreateRequest = serde_json::from_value(json!({
+        "provider": "ollama",
+        "kiln": "/tmp/kiln"
     }))
     .unwrap();
-    let result = resolve_provider_trust_level_for_create(&req, &None);
+    let result = resolve_provider_trust_level_for_create(&params, &None);
     assert_eq!(result, crucible_core::config::TrustLevel::Cloud);
 }
 
 #[test]
 fn provider_trust_bare_backend_name_local() {
-    let req: Request = serde_json::from_value(json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "session.create",
-        "params": {
-            "provider": "fastembed",
-            "kiln": "/tmp/kiln"
-        }
+    let params: crate::rpc_client::SessionCreateRequest = serde_json::from_value(json!({
+        "provider": "fastembed",
+        "kiln": "/tmp/kiln"
     }))
     .unwrap();
-    let result = resolve_provider_trust_level_for_create(&req, &None);
+    let result = resolve_provider_trust_level_for_create(&params, &None);
     assert_eq!(result, crucible_core::config::TrustLevel::Local);
 }
 
 #[test]
 fn provider_trust_default_provider_fallback() {
     // No agent_type, no provider_key, no provider → falls back to default provider in llm_config
-    let req: Request = serde_json::from_value(json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "session.create",
-        "params": {
-            "kiln": "/tmp/kiln"
-        }
+    let params: crate::rpc_client::SessionCreateRequest = serde_json::from_value(json!({
+        "kiln": "/tmp/kiln"
     }))
     .unwrap();
     // Build config where default provider is Local trust
@@ -236,7 +216,7 @@ fn provider_trust_default_provider_fallback() {
         crucible_core::config::BackendType::Mock,
         Some(crucible_core::config::TrustLevel::Local),
     ));
-    let result = resolve_provider_trust_level_for_create(&req, &llm_config);
+    let result = resolve_provider_trust_level_for_create(&params, &llm_config);
     assert_eq!(result, crucible_core::config::TrustLevel::Local);
 }
 

@@ -91,20 +91,40 @@ fn run_one_shot(extra_args: &[&str]) -> OneShotRun {
 
 /// The single session directory the run created. Each run gets a fresh daemon
 /// and kiln, so "the only one" is well defined — no timestamp guessing.
-fn sole_session_dir(kiln: &Path) -> PathBuf {
-    let sessions = kiln.join(".crucible/sessions");
-    let mut dirs: Vec<PathBuf> = std::fs::read_dir(&sessions)
-        .unwrap_or_else(|e| panic!("read {}: {e}", sessions.display()))
-        .filter_map(Result::ok)
-        .map(|e| e.path())
-        .filter(|p| p.join("session.jsonl").is_file())
-        .collect();
+///
+/// Polled rather than read once: `cru chat -q` exiting does not mean the daemon
+/// has finished writing. The session log is written by the daemon's own
+/// `SessionWriter` task, so the directory can appear milliseconds after the
+/// client process is already gone. Read-once passed on a quiet box and failed
+/// intermittently under load with `got []` — which is how this landed as a flake
+/// in the new `just test gated` tier rather than being caught when it was
+/// written, since nothing ran it.
+fn sole_session_dir(run: &OneShotRun) -> PathBuf {
+    let sessions = run.kiln.join(".crucible/sessions");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    loop {
+        if let Ok(entries) = std::fs::read_dir(&sessions) {
+            dirs = entries
+                .filter_map(Result::ok)
+                .map(|e| e.path())
+                .filter(|p| p.join("session.jsonl").is_file())
+                .collect();
+        }
+        if dirs.len() == 1 || std::time::Instant::now() >= deadline {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
     dirs.sort();
     assert_eq!(
         dirs.len(),
         1,
-        "expected exactly one session under {}, got {dirs:?}",
-        sessions.display()
+        "expected exactly one session under {}, got {dirs:?}. cru exited {:?}, \
+         stderr:\n{}",
+        sessions.display(),
+        run.output.status.code(),
+        stderr(run)
     );
     dirs.pop().unwrap()
 }
@@ -142,10 +162,10 @@ fn stderr(run: &OneShotRun) -> String {
 }
 
 #[test]
-#[ignore = "requires daemon"]
+#[ignore = "requires: cru binary"]
 fn one_shot_chat_sends_the_user_question_as_the_precognition_query() {
     let run = run_one_shot(&[]);
-    let events = transcript(&sole_session_dir(&run.kiln));
+    let events = transcript(&sole_session_dir(&run));
 
     let precognition = expect_event(&events, "precognition_complete");
     assert_eq!(
@@ -169,13 +189,13 @@ fn one_shot_chat_sends_the_user_question_as_the_precognition_query() {
 }
 
 #[test]
-#[ignore = "requires daemon"]
+#[ignore = "requires: cru binary"]
 fn one_shot_context_flags_become_daemon_session_state() {
     // `--no-context` disables Precognition for the session rather than skipping
     // a local transform, so the proof is twofold: the stored agent config, and
     // no `precognition_complete` in the transcript.
     let off = run_one_shot(&["--no-context"]);
-    let off_session = sole_session_dir(&off.kiln);
+    let off_session = sole_session_dir(&off);
     let off_agent = read_json(&off_session.join("meta.json"))["agent"].clone();
     assert_eq!(
         off_agent["precognition_enabled"].as_bool(),
@@ -196,7 +216,7 @@ fn one_shot_context_flags_become_daemon_session_state() {
     // `default_value = "5"`, which would have overwritten a resumed session's
     // stored value with 5 on every one-shot turn.
     let sized = run_one_shot(&["--context-size", "3"]);
-    let sized_agent = read_json(&sole_session_dir(&sized.kiln).join("meta.json"))["agent"].clone();
+    let sized_agent = read_json(&sole_session_dir(&sized).join("meta.json"))["agent"].clone();
     assert_eq!(
         sized_agent["precognition_results"].as_u64(),
         Some(3),

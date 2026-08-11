@@ -290,7 +290,7 @@ fn parse_frontmatter_fields(yaml: &str) -> HashMap<String, String> {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "slow test - parses all markdown files - run with cargo test --ignored"]
+#[ignore = "requires: dev kiln — parses every markdown file in docs/"]
 async fn dev_kiln_all_notes_parse() {
     use crucible_core::parser::test_utils::parse_note;
 
@@ -342,7 +342,7 @@ async fn dev_kiln_all_notes_parse() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "slow test - parses all markdown files - run with cargo test --ignored"]
+#[ignore = "requires: dev kiln — parses every markdown file in docs/"]
 async fn dev_kiln_frontmatter_has_required_fields() {
     let md_files = markdown_files(DEV_KILN_ROOTS);
     let required_fields = vec!["title", "description", "tags"];
@@ -523,7 +523,7 @@ fn is_example_link(target: &str) -> bool {
 }
 
 #[tokio::test]
-#[ignore = "slow test - parses all markdown files - run with cargo test --ignored"]
+#[ignore = "requires: dev kiln — parses every markdown file in docs/"]
 async fn dev_kiln_all_wikilinks_resolve() {
     let dev_kiln_root = docs_root();
     let md_files = markdown_files(DEV_KILN_ROOTS);
@@ -604,7 +604,7 @@ async fn dev_kiln_all_wikilinks_resolve() {
 /// how the kiln is meant to be navigated: `docs/Help/**` is the shipped manual,
 /// and an orphan there is a page that was written and then lost.
 #[tokio::test]
-#[ignore = "slow test - resolves every wikilink in the kiln - run with cargo test --ignored"]
+#[ignore = "requires: dev kiln — resolves every wikilink in docs/"]
 async fn dev_kiln_every_help_note_is_reachable() {
     let dev_kiln_root = docs_root();
     let md_files = markdown_files(DEV_KILN_ROOTS);
@@ -670,7 +670,7 @@ async fn dev_kiln_every_help_note_is_reachable() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "slow test - parses all markdown files - run with cargo test --ignored"]
+#[ignore = "requires: dev kiln — parses every markdown file in docs/"]
 async fn dev_kiln_code_references_exist() {
     let workspace_root = workspace_root();
     let md_files = markdown_files(DEV_KILN_ROOTS);
@@ -712,7 +712,7 @@ async fn dev_kiln_code_references_exist() {
 // TEST 6: Lua/Fennel Scripts Have Valid Syntax
 // ============================================================================
 #[tokio::test]
-#[ignore = "slow test - parses all script files - run with cargo test --ignored"]
+#[ignore = "requires: dev kiln — parses every script file in docs/"]
 async fn dev_kiln_lua_scripts_valid_syntax() {
     let lua_files = files_with_extensions(DEV_KILN_ROOTS, &["lua", "fnl"]);
 

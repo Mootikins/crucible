@@ -1,5 +1,8 @@
-//! Session config endpoints: thinking budget, temperature, max tokens,
-//! precognition. Split from `session.rs` (file-size ceiling).
+//! The five session config knobs the web has always had: thinking budget,
+//! temperature, max tokens, precognition, precognition results.
+//!
+//! Moved here verbatim when `session_config.rs` became a directory — nine more
+//! knob pairs would have taken one file past the 1000-line module budget.
 
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
@@ -9,49 +12,49 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::session::OkResponse;
+use super::super::session::OkResponse;
 
 /// Response for thinking budget config.
 #[derive(Debug, Serialize)]
-pub(super) struct ThinkingBudgetResponse {
+pub(crate) struct ThinkingBudgetResponse {
     thinking_budget: Option<i64>,
 }
 
 /// Response for temperature config.
 #[derive(Debug, Serialize)]
-pub(super) struct TemperatureResponse {
+pub(crate) struct TemperatureResponse {
     temperature: Option<f64>,
 }
 
 /// Response for max tokens config.
 #[derive(Debug, Serialize)]
-pub(super) struct MaxTokensResponse {
+pub(crate) struct MaxTokensResponse {
     max_tokens: Option<u32>,
 }
 
 /// Response for precognition config.
 #[derive(Debug, Serialize)]
-pub(super) struct PrecognitionResponse {
+pub(crate) struct PrecognitionResponse {
     precognition_enabled: bool,
 }
 
 /// Response for precognition results-count config.
 #[derive(Debug, Serialize)]
-pub(super) struct PrecognitionResultsResponse {
+pub(crate) struct PrecognitionResultsResponse {
     precognition_results: usize,
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct SetPrecognitionResultsRequest {
+pub(crate) struct SetPrecognitionResultsRequest {
     count: usize,
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct SetThinkingBudgetRequest {
+pub(crate) struct SetThinkingBudgetRequest {
     thinking_budget: Option<i64>,
 }
 
-pub(super) async fn set_thinking_budget(
+pub(crate) async fn set_thinking_budget(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(req): Json<SetThinkingBudgetRequest>,
@@ -64,7 +67,7 @@ pub(super) async fn set_thinking_budget(
     Ok(OkResponse::success())
 }
 
-pub(super) async fn get_thinking_budget(
+pub(crate) async fn get_thinking_budget(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<ThinkingBudgetResponse>, WebError> {
@@ -77,11 +80,11 @@ pub(super) async fn get_thinking_budget(
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct SetTemperatureRequest {
+pub(crate) struct SetTemperatureRequest {
     temperature: f64,
 }
 
-pub(super) async fn set_temperature(
+pub(crate) async fn set_temperature(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(req): Json<SetTemperatureRequest>,
@@ -94,7 +97,7 @@ pub(super) async fn set_temperature(
     Ok(OkResponse::success())
 }
 
-pub(super) async fn get_temperature(
+pub(crate) async fn get_temperature(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<TemperatureResponse>, WebError> {
@@ -107,11 +110,11 @@ pub(super) async fn get_temperature(
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct SetMaxTokensRequest {
+pub(crate) struct SetMaxTokensRequest {
     max_tokens: Option<u32>,
 }
 
-pub(super) async fn set_max_tokens(
+pub(crate) async fn set_max_tokens(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(req): Json<SetMaxTokensRequest>,
@@ -124,7 +127,7 @@ pub(super) async fn set_max_tokens(
     Ok(OkResponse::success())
 }
 
-pub(super) async fn get_max_tokens(
+pub(crate) async fn get_max_tokens(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<MaxTokensResponse>, WebError> {
@@ -137,11 +140,11 @@ pub(super) async fn get_max_tokens(
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct SetPrecognitionRequest {
+pub(crate) struct SetPrecognitionRequest {
     enabled: bool,
 }
 
-pub(super) async fn set_precognition(
+pub(crate) async fn set_precognition(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(req): Json<SetPrecognitionRequest>,
@@ -154,7 +157,7 @@ pub(super) async fn set_precognition(
     Ok(OkResponse::success())
 }
 
-pub(super) async fn set_precognition_results(
+pub(crate) async fn set_precognition_results(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(req): Json<SetPrecognitionResultsRequest>,
@@ -177,7 +180,7 @@ pub(super) async fn set_precognition_results(
     Ok(OkResponse::success())
 }
 
-pub(super) async fn get_precognition_results(
+pub(crate) async fn get_precognition_results(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<PrecognitionResultsResponse>, WebError> {
@@ -191,7 +194,7 @@ pub(super) async fn get_precognition_results(
     }))
 }
 
-pub(super) async fn get_precognition(
+pub(crate) async fn get_precognition(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<PrecognitionResponse>, WebError> {

@@ -52,6 +52,38 @@ macro_rules! optional_param {
     };
 }
 
+/// Deserialize the whole `params` object into the request type the client
+/// serializes, or the `INVALID_PARAMS` response to return in its place.
+///
+/// The counterpart of [`require_param!`] for a method that already HAS a
+/// `Deserialize` request type in `rpc_client/client/`: one call replaces the N
+/// field-name literals the server would otherwise re-derive by hand. The macros
+/// centralize the *error*, not the *name*, so on a fourteen-field method they
+/// leave fourteen chances for the two sides to disagree — which is what gate A6
+/// (`tests/architecture_tests.rs`) now forbids. They remain the right tool for
+/// one- and two-field methods and for the generated config handlers.
+///
+/// Unknown fields are tolerated deliberately (no `deny_unknown_fields`) so a
+/// newer client can talk to an older daemon.
+///
+/// Called with an explicit turbofish at every site — `typed_params::<T>(&req)` —
+/// because A6 reads the type out of the source.
+///
+/// The error is boxed: `Response` is 216 bytes, so an unboxed `Err` variant
+/// makes every `Ok` this large too (`clippy::result_large_err`), on the path
+/// that always succeeds.
+pub fn typed_params<T: serde::de::DeserializeOwned>(
+    req: &crate::protocol::Request,
+) -> Result<T, Box<crate::protocol::Response>> {
+    serde_json::from_value(req.params.clone()).map_err(|e| {
+        Box::new(crate::protocol::Response::error(
+            req.id.clone(),
+            crate::protocol::INVALID_PARAMS,
+            format!("invalid params: {e}"),
+        ))
+    })
+}
+
 // Re-export macros for use in sibling modules via `use crate::rpc_helpers::*`
 // These are preemptive exports - not all are used yet but will be as handlers grow
 #[allow(unused_imports)]

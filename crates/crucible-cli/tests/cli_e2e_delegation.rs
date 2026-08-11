@@ -127,7 +127,7 @@ fn session_configure_nonexistent_session_fails_gracefully() {
 }
 
 #[test]
-#[ignore = "requires daemon configure RPC to succeed for existing sessions"]
+#[ignore = "requires: cru binary"]
 fn session_configure_updates_existing_session_via_cli() {
     let daemon = TestDaemon::start();
 
@@ -161,7 +161,7 @@ fn session_configure_updates_existing_session_via_cli() {
 }
 
 #[test]
-#[ignore = "requires daemon and mock OpenAI-compatible SSE server"]
+#[ignore = "requires: cru binary — starts an in-process OpenAI-compatible SSE mock"]
 fn session_send_surfaces_delegation_disabled_error() {
     let daemon = TestDaemon::start();
     let (endpoint, server_handle) = start_openai_compat_delegate_tool_server();

@@ -23,10 +23,11 @@ pub use client::{
     DaemonCapabilities, DaemonClient, LuaDiscoverPluginsRequest, LuaDiscoverPluginsResponse,
     LuaExecuteHookRequest, LuaExecuteHookResponse, LuaGenerateStubsRequest,
     LuaGenerateStubsResponse, LuaInitSessionRequest, LuaInitSessionResponse,
-    LuaPluginHealthRequest, LuaPluginHealthResponse, LuaRegisterHooksRequest,
-    LuaRegisterHooksResponse, LuaRunPluginTestsRequest, LuaRunPluginTestsResponse,
-    LuaShutdownSessionRequest, LuaShutdownSessionResponse, PluginTestFailure,
-    PluginTestLoadFailure, SessionAgentSpec, SessionCreateParams, SessionEvent, VersionCheck,
+    LuaPluginHealthRequest, LuaPluginHealthResponse, LuaRegisterCommandsRequest,
+    LuaRegisterCommandsResponse, LuaRegisterHooksRequest, LuaRegisterHooksResponse,
+    LuaRunPluginTestsRequest, LuaRunPluginTestsResponse, LuaShutdownSessionRequest,
+    LuaShutdownSessionResponse, PluginTestFailure, PluginTestLoadFailure, SessionAgentSpec,
+    SessionCreateParams, SessionCreateRequest, SessionEvent, VersionCheck,
 };
 pub use error_ext::ChatResultExt;
 pub use storage::{DaemonNoteStore, DaemonStorageClient};

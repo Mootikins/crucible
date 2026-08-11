@@ -499,7 +499,7 @@ async fn session_generation_and_context_settings_reach_the_agent_handle() {
 }
 
 #[tokio::test]
-#[ignore = "Requires Ollama to be running"]
+#[ignore = "requires: Ollama"]
 async fn test_create_ollama_agent() {
     let config = test_agent_config();
     let result = create_agent_from_session_config(CreateAgentFromSessionConfigParams {

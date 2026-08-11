@@ -840,7 +840,7 @@ async fn load_containerised(tmp: &Path, runtime: &str) -> DaemonPluginLoader {
 
 /// The whole point of the plugin: `bash` runs in the container, not on the host.
 #[tokio::test]
-#[ignore = "requires podman or docker"]
+#[ignore = "requires: container runtime"]
 async fn oci_runs_bash_inside_the_container() {
     let Some(runtime) = available_runtime() else {
         panic!("no container runtime on PATH");
@@ -881,7 +881,7 @@ async fn oci_runs_bash_inside_the_container() {
 /// This is the uid-mapping case: under rootless podman a bind-mounted write can
 /// land owned by a subuid the host user cannot touch.
 #[tokio::test]
-#[ignore = "requires podman or docker"]
+#[ignore = "requires: container runtime"]
 async fn oci_writes_workspace_files_owned_by_the_host_user() {
     let Some(runtime) = available_runtime() else {
         panic!("no container runtime on PATH");
@@ -931,7 +931,7 @@ async fn oci_writes_workspace_files_owned_by_the_host_user() {
 /// Teardown has to actually remove the container, or a long-lived daemon leaks
 /// one per session.
 #[tokio::test]
-#[ignore = "requires podman or docker"]
+#[ignore = "requires: container runtime"]
 async fn oci_removes_the_container_on_session_end() {
     let Some(runtime) = available_runtime() else {
         panic!("no container runtime on PATH");

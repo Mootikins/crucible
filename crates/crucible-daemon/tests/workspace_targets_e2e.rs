@@ -121,7 +121,7 @@ async fn create_with_target(
 }
 
 #[tokio::test]
-#[ignore = "requires daemon"]
+#[ignore = "requires: cru binary"]
 async fn the_shipped_worktree_plugin_declares_itself_on_the_workspace_axis() {
     let (_daemon, mut conn) = daemon_and_conn().await;
 
@@ -139,7 +139,7 @@ async fn the_shipped_worktree_plugin_declares_itself_on_the_workspace_axis() {
 }
 
 #[tokio::test]
-#[ignore = "requires daemon"]
+#[ignore = "requires: cru binary"]
 async fn enumerating_targets_says_what_picking_each_branch_will_do() {
     let (_tmp, repo) = a_repo();
     let (_daemon, mut conn) = daemon_and_conn().await;
@@ -168,7 +168,7 @@ async fn enumerating_targets_says_what_picking_each_branch_will_do() {
 }
 
 #[tokio::test]
-#[ignore = "requires daemon"]
+#[ignore = "requires: cru binary"]
 async fn a_session_created_against_a_branch_is_born_in_that_branch_s_worktree() {
     let (_tmp, repo) = a_repo();
     let (_daemon, mut conn) = daemon_and_conn().await;
@@ -209,7 +209,7 @@ async fn a_session_created_against_a_branch_is_born_in_that_branch_s_worktree() 
 /// git refuses two worktrees on the same branch, so a provider that created
 /// blindly would fail every session after the first.
 #[tokio::test]
-#[ignore = "requires daemon"]
+#[ignore = "requires: cru binary"]
 async fn a_second_session_on_the_same_branch_reuses_the_checkout() {
     let (_tmp, repo) = a_repo();
     let (_daemon, mut conn) = daemon_and_conn().await;
@@ -226,7 +226,7 @@ async fn a_second_session_on_the_same_branch_reuses_the_checkout() {
 
 /// A branch that does not exist yet is created, not refused.
 #[tokio::test]
-#[ignore = "requires daemon"]
+#[ignore = "requires: cru binary"]
 async fn a_name_no_branch_has_yet_becomes_a_new_branch_and_worktree() {
     let (_tmp, repo) = a_repo();
     let (_daemon, mut conn) = daemon_and_conn().await;
@@ -254,7 +254,7 @@ async fn a_name_no_branch_has_yet_becomes_a_new_branch_and_worktree() {
 /// swallowed somewhere in between. A session that quietly ran on `master` when
 /// it was told `feat/x` commits there.
 #[tokio::test]
-#[ignore = "requires daemon"]
+#[ignore = "requires: cru binary"]
 async fn a_target_the_provider_refuses_refuses_the_session() {
     let (_tmp, repo) = a_repo();
     let (_daemon, mut conn) = daemon_and_conn().await;
@@ -278,7 +278,7 @@ async fn a_target_the_provider_refuses_refuses_the_session() {
 }
 
 #[tokio::test]
-#[ignore = "requires daemon"]
+#[ignore = "requires: cru binary"]
 async fn a_target_naming_a_provider_nobody_has_refuses_the_session() {
     let (_tmp, repo) = a_repo();
     let (_daemon, mut conn) = daemon_and_conn().await;
@@ -293,7 +293,7 @@ async fn a_target_naming_a_provider_nobody_has_refuses_the_session() {
 /// The ordinary path stays ordinary: no target, no resolution, no new failure
 /// mode for the sessions that never asked for one.
 #[tokio::test]
-#[ignore = "requires daemon"]
+#[ignore = "requires: cru binary"]
 async fn a_session_that_asks_for_no_target_is_created_against_the_workspace_given() {
     let (_tmp, repo) = a_repo();
     let (_daemon, mut conn) = daemon_and_conn().await;

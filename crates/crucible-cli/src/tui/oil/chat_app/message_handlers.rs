@@ -172,9 +172,6 @@ impl OilChatApp {
                 );
                 self.model_list_state = ModelListState::Failed(err.clone());
             }
-            ChatAppMsg::McpStatusLoaded(servers) => {
-                self.mcp_servers = servers;
-            }
             ChatAppMsg::PluginStatusLoaded(entries) => {
                 self.plugin_status = entries;
             }

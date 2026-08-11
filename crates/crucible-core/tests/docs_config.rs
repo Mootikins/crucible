@@ -223,7 +223,7 @@ fn load_failures(
 // ============================================================================
 
 #[test]
-#[ignore = "slow test - loads every TOML block in docs/ through the config loader - run with cargo test --ignored"]
+#[ignore = "requires: dev kiln — loads every TOML block in docs/ through the config loader"]
 fn docs_toml_blocks_load_as_config() {
     let files = markdown_files(DOC_ROOTS);
     assert!(
@@ -269,7 +269,7 @@ fn docs_toml_blocks_load_as_config() {
 /// file rather than a fenced block, so the sweep above never sees it — and it
 /// is the single largest piece of config prose in the repo.
 #[test]
-#[ignore = "slow test - loads the reference config through the config loader - run with cargo test --ignored"]
+#[ignore = "requires: dev kiln — loads the reference config through the config loader"]
 fn the_reference_config_loads() {
     use crucible_core::config::CliAppConfig;
 

@@ -541,6 +541,32 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         "session.get_precognition" => json!({"precognition_enabled": true}),
         "session.set_precognition_results" => json!(null),
         "session.get_precognition_results" => json!({"precognition_results": 5}),
+        // The nine knobs the web could not reach before, plus `session.get_mode`.
+        // Each getter answers under the DAEMON's wire field name with a value
+        // distinct from every other knob's, so a web response struct wired to
+        // the wrong knob (or to the knob name where the wire name differs)
+        // reads `null` instead of coincidentally matching.
+        "session.set_context_budget" => json!(null),
+        "session.get_context_budget" => json!({"context_budget": 111}),
+        "session.set_context_window" => json!(null),
+        "session.get_context_window" => json!({"context_window": 222}),
+        "session.set_autocompact_threshold" => json!(null),
+        "session.get_autocompact_threshold" => json!({"autocompact_threshold": 0.75}),
+        "session.set_max_iterations" => json!(null),
+        "session.get_max_iterations" => json!({"max_iterations": 33}),
+        "session.set_execution_timeout" => json!(null),
+        // `timeout_secs`, NOT `execution_timeout` — the asymmetry the web
+        // request/response structs have to honour.
+        "session.get_execution_timeout" => json!({"timeout_secs": 44}),
+        "session.set_validation_retries" => json!(null),
+        "session.get_validation_retries" => json!({"validation_retries": 5}),
+        "session.set_context_strategy" => json!(null),
+        "session.get_context_strategy" => json!({"context_strategy": "recent"}),
+        "session.set_output_validation" => json!(null),
+        "session.get_output_validation" => json!({"output_validation": "strict"}),
+        "session.set_system_prompt" => json!(null),
+        "session.get_system_prompt" => json!({"system_prompt": "be terse"}),
+        "session.get_mode" => json!({"mode": "plan"}),
         "session.render_markdown" => json!({"markdown": "# Test Session\n\nExported content"}),
         "providers.list" => json!({"providers": []}),
         "models.list" => json!({"models": ["ollama/llama3.2", "openai/gpt-4o"]}),

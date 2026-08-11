@@ -159,8 +159,6 @@ pub enum ChatAppMsg {
     /// built-in three the TUI starts with, which is how a Lua-declared mode
     /// becomes cyclable and gets its own slash command.
     ModesLoaded(Vec<String>),
-    /// **Event** (daemon → TUI): MCP server status loaded.
-    McpStatusLoaded(Vec<McpServerDisplay>),
     /// **Event** (daemon → TUI): Plugin status loaded.
     PluginStatusLoaded(Vec<PluginStatusEntry>),
     /// **Command** (TUI → daemon): Set LLM thinking budget (extended thinking).
@@ -329,7 +327,6 @@ impl ChatAppMsg {
             | Self::SetPrecognition(_)
             | Self::SetPrecognitionResults(_)
             | Self::SetAutocompactThreshold(_)
-            | Self::McpStatusLoaded(_)
             | Self::PluginStatusLoaded(_) => MsgCategory::Config,
 
             Self::SubagentSpawned { .. }

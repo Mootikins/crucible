@@ -12,7 +12,7 @@ use super::tui_e2e_harness::{Key, TuiTestConfig, TuiTestSession};
 /// NOTE: with_dimensions only affects the vt100 parser, not the actual PTY size.
 /// The TUI still runs at 80x24. This test verifies the mode indicator renders.
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn oil_narrow_terminal_60_cols() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")
@@ -30,7 +30,7 @@ fn oil_narrow_terminal_60_cols() {
 
 /// Test oil runner at very narrow terminal width (40 cols)
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn ink_very_narrow_terminal_40_cols() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")
@@ -49,7 +49,7 @@ fn ink_very_narrow_terminal_40_cols() {
 
 /// Test oil runner at wide terminal width (120 cols)
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn oil_wide_terminal_120_cols() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")
@@ -78,7 +78,7 @@ fn oil_wide_terminal_120_cols() {
 
 /// Test oil runner at short terminal height (10 rows)
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn oil_short_terminal_10_rows() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")

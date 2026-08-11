@@ -61,6 +61,12 @@ setup:
         echo "  apt-get / dnf / pacman / brew install jq"
     fi
 
+    if ! command -v rg >/dev/null 2>&1; then
+        missing=1
+        echo "MISSING: rg (ripgrep) — the grep tool shells out to it, and four \`just test gated\` tests need it (\`#[ignore = \"requires: ripgrep\"]\`)."
+        echo "  apt-get / dnf / pacman / brew install ripgrep"
+    fi
+
     if [ "$missing" -ne 0 ]; then
         echo
         echo "Install the above, then re-run \`just setup\`."
@@ -170,8 +176,15 @@ lint what="all":
 # === Test ===
 
 # Slow/external tests are gated with #[ignore], not cargo features; each ignore
-# reason names its prerequisite (agent binary, podman, or an `.env.local`
-# endpoint). `quick`/`ignored`/`full` differ only in which of those they run.
+# reason names its prerequisite in a closed vocabulary, enforced by gate A5
+# (`crates/crucible-daemon/tests/architecture_tests.rs`).
+# `quick`/`ignored`/`full` differ only in which of those they run.
+#
+# `gated` and `external` split `ignored` along that vocabulary: `gated` is
+# everything whose prerequisites this repo can satisfy by building itself,
+# `external` is everything needing a network, a model, a container runtime or a
+# human. 98 of the 106 ignored tests ran in NO pre-commit tier before these
+# existed — the whole process-boundary surface was outside `ci`.
 #
 # The rest are the CI tiers, and each exists because the one before it is blind
 # to something: `ci` builds every crate with its DEFAULT features, so `features`
@@ -184,7 +197,7 @@ lint what="all":
 # Anything unrecognised that starts with `-` is passed straight to nextest, so
 # `just test -p crucible-core -E 'test(parser)'` scopes a run without a recipe.
 #
-# Test: quick (default) | ignored | full | ci | features | doc | plugin <dir> | plugins
+# Test: quick (default) | ignored | gated | external | full | ci | tiers | features | doc | plugin <dir> | plugins
 test tier="quick" *args:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -200,10 +213,59 @@ test tier="quick" *args:
         case "$arg" in -p|-p=*|--package|--package=*) scope="" ;; esac
     done
 
+    # An `-E` filterset matching exactly the tests in assets/test-tiers/external.txt.
+    # The list is GENERATED from the #[ignore] reason strings (`just test tiers`)
+    # and gated by A5, because a hand-written filter here is precisely what
+    # drifts: the reasons move, the filter does not, and the mismatch is silent
+    # in both directions.
+    # `test(name)`, not `test(=name)`: a nextest test name is MODULE-QUALIFIED
+    # (`chat::chat_ctrl_c_exits`, `embeddings::test_ollama_basic`), while the
+    # generated list holds bare fn names because A5 derives it from source
+    # without a build. Exact match therefore silenced 26 of the 35 entries —
+    # they matched nothing and stayed in the blocking gate. Substring match is
+    # safe because A5 also proves each name is unique among all test fns and is
+    # not a substring of another one.
+    external_filter() {
+        sed -e 's/#.*//' -e '/^[[:space:]]*$/d' assets/test-tiers/external.txt \
+            | sed 's/^/test(/; s/$/)/' | paste -sd'+' -
+    }
+
     case "$tier" in
         quick)   cargo nextest run $scope "$@" ;;
         ignored) cargo nextest run $scope --run-ignored ignored-only "$@" ;;
         full)    cargo nextest run $scope --run-ignored all "$@" ;;
+        gated)
+            # The ignored tests whose prerequisites are hermetic: a built `cru`,
+            # `mock-acp-agent`, ripgrep, this repo's docs/ kiln, or wall-clock
+            # time. Selection is NEGATIVE — everything ignored except the
+            # generated external list — so a NEWLY ADDED ignored test lands in
+            # this blocking gate by default. That is deliberate (fail-closed)
+            # and it will surprise someone once; when it does, A5 has already
+            # run in `test ci` and told them either "unknown prerequisite" or
+            # "regenerate the tier file", with the fix in the message.
+            just build fixtures
+            cargo build -p crucible-cli --bin cru
+            cargo nextest run --profile ci $scope --run-ignored ignored-only \
+                -E "not ($(external_filter))" "$@"
+            ;;
+        external)
+            # Needs a network, a model download, a live LLM, a container
+            # runtime, a real DB, the Playwright harness, or a human reading
+            # numbers. NOT a blocking gate — run it when you have the
+            # prerequisites.
+            just build fixtures
+            cargo build -p crucible-cli --bin cru
+            cargo nextest run --profile ci $scope --run-ignored ignored-only \
+                -E "$(external_filter)" "$@"
+            ;;
+        tiers)
+            # Regenerate assets/test-tiers/external.txt from the #[ignore]
+            # reason strings. Same test that checks the file, so generation and
+            # checking share one parser and cannot disagree.
+            CRUCIBLE_WRITE_TEST_TIERS=1 cargo nextest run -p crucible-daemon \
+                --test architecture_tests --no-capture \
+                -E 'test(external_test_tier_file_matches_the_ignore_reasons)'
+            ;;
         ci)
             just build fixtures
             cargo nextest run --profile ci $scope "$@"
@@ -233,7 +295,7 @@ test tier="quick" *args:
         -*) cargo nextest run $scope "$tier" "$@" ;;
         *)
             echo "Unknown test tier: $tier"
-            echo "Valid tiers: quick ignored full ci features doc plugin plugins"
+            echo "Valid tiers: quick ignored gated external full ci tiers features doc plugin plugins"
             exit 1
             ;;
     esac
@@ -330,8 +392,15 @@ web-test tier="e2e" *args:
 # cannot drift. CI-only: `build-from-clean-clone` (needs a tree with no
 # web/dist) and the sharded Playwright matrix.
 #
+# `test gated` runs LAST and deliberately: it is the only target that spawns
+# real processes (37 PTY tests, 12 daemon-spawning ones), so it is the slowest
+# to fail and the most useful to see after everything cheap has passed. It was
+# added once its cost was measured — 72 tests in 31–56s across four consecutive
+# green runs on a loaded box. `test ci` precedes it so gate A5 reports an
+# unparseable `#[ignore]` reason before the tier derived from those reasons runs.
+#
 # Run every gate GitHub runs — do this before committing
-ci: (lint "all") (test "ci") (test "features") (test "doc") (test "plugins") (web-test "unit") (web-test "e2e") (web-test "live")
+ci: (lint "all") (test "ci") (test "features") (test "doc") (test "plugins") (web-test "unit") (web-test "e2e") (web-test "live") (test "gated")
     @echo "CI checks passed!"
 
 # === Daemon & tooling ===

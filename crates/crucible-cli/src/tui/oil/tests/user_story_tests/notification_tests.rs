@@ -77,7 +77,7 @@ fn keypress_dismisses_open_drawer() {
 }
 
 #[test]
-#[ignore = "slow: exercises the 3s wall-clock toast expiry"]
+#[ignore = "requires: wall clock — the 3s toast expiry"]
 fn toast_auto_dismisses_after_timeout() {
     let mut story = StoryRuntime::new(80, 24);
     add(&mut story, Notification::toast("ephemeral toast"));

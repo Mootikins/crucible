@@ -544,8 +544,7 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
     let lua_initialized = if let Some(client) = lua_client.as_ref() {
         let init_params = LuaInitSessionRequest {
             session_id: lua_session_id.clone(),
-            kiln_path: kiln_root.to_string_lossy().to_string(),
-            config: serde_json::Value::Null,
+            kiln_path: Some(kiln_root.to_string_lossy().to_string()),
         };
         match client.lua_init_session(init_params).await {
             Ok(response) => {
@@ -585,14 +584,6 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
     } else {
         false
     };
-
-    // MCP config is still passed to the runner because the runner's
-    // background MCP gateway task connects to upstream servers to update
-    // tool counts / connection status. The initial display list (name,
-    // prefix) now arrives from the daemon's `mcp_servers_ready` event.
-    if let Some(ref mcp) = config.mcp {
-        runner = runner.with_mcp_config(mcp.clone());
-    }
 
     runner = runner.with_slash_commands(known_slash_commands());
 

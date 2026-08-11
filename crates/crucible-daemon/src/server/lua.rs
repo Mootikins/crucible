@@ -1,13 +1,22 @@
 use super::*;
+use crate::rpc_helpers::typed_params;
 
 pub(crate) async fn handle_lua_init_session(
     req: Request,
     lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str).to_string();
-    let kiln_root = optional_param!(req, "kiln_path", as_str)
-        .or_else(|| optional_param!(req, "kiln", as_str))
+    let params = match typed_params::<crate::rpc_client::LuaInitSessionRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = params.session_id.clone();
+    // The `kiln` spelling this used to accept as a second name is now
+    // `#[serde(alias = "kiln")]` on the struct, so the alias is documented where
+    // the field is rather than only here.
+    let kiln_root = params
+        .kiln_path
+        .as_deref()
         .map(PathBuf::from)
         .unwrap_or_else(crucible_core::config::crucible_home);
 
@@ -79,8 +88,12 @@ pub(crate) async fn handle_lua_register_hooks(
     req: Request,
     lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let hooks = require_param!(req, "hooks", as_array);
+    let params = match typed_params::<crate::rpc_client::LuaRegisterHooksRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = params.session_id.as_str();
+    let hooks = &params.hooks;
 
     let Some(state) = lua_sessions.get(session_id) else {
         return session_not_found(req.id, session_id);
@@ -133,13 +146,19 @@ pub(crate) async fn handle_lua_execute_hook(
     req: Request,
     lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let hook_name = require_param!(req, "hook_name", as_str);
-    let context = req
-        .params
-        .get("context")
-        .cloned()
-        .unwrap_or_else(|| serde_json::json!({}));
+    let params = match typed_params::<crate::rpc_client::LuaExecuteHookRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = params.session_id.as_str();
+    let hook_name = params.hook_name.as_str();
+    // `#[serde(default)]` on the struct gives `Value::Null` for an absent
+    // `context`; the hooks want an object, as the hand-plucked default did.
+    let context = if params.context.is_null() {
+        serde_json::json!({})
+    } else {
+        params.context.clone()
+    };
 
     let Some(state) = lua_sessions.get(session_id) else {
         return session_not_found(req.id, session_id);
@@ -207,7 +226,11 @@ pub(crate) async fn handle_lua_shutdown_session(
     req: Request,
     lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
+    let params = match typed_params::<crate::rpc_client::LuaShutdownSessionRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = params.session_id.as_str();
 
     // Fire on_session_end hooks before removing the Lua session.
     //
@@ -257,9 +280,12 @@ pub(crate) async fn handle_lua_shutdown_session(
 // ─────────────────────────────────────────────────────────────────────────────
 
 pub(crate) async fn handle_lua_discover_plugins(req: Request) -> Response {
-    let kiln_path = require_param!(req, "kiln_path", as_str).to_string();
+    let params = match typed_params::<crate::rpc_client::LuaDiscoverPluginsRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
 
-    match discover_plugins_for_kiln(Path::new(&kiln_path)) {
+    match discover_plugins_for_kiln(Path::new(&params.kiln_path)) {
         Ok(entries) => Response::success(
             req.id,
             serde_json::json!({
@@ -293,7 +319,11 @@ pub(crate) fn discover_plugins_for_kiln(
 }
 
 pub(crate) async fn handle_lua_plugin_health(req: Request) -> Response {
-    let plugin_path_str = require_param!(req, "plugin_path", as_str).to_string();
+    let params = match typed_params::<crate::rpc_client::LuaPluginHealthRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let plugin_path_str = params.plugin_path.clone();
     let plugin_path = PathBuf::from(&plugin_path_str);
 
     if !plugin_path.exists() {
@@ -421,10 +451,13 @@ pub(crate) async fn handle_lua_plugin_health(req: Request) -> Response {
 }
 
 pub(crate) async fn handle_lua_generate_stubs(req: Request) -> Response {
-    let output_dir = require_param!(req, "output_dir", as_str).to_string();
-    let verify = optional_param!(req, "verify", as_bool).unwrap_or(false);
+    let params = match typed_params::<crate::rpc_client::LuaGenerateStubsRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let output_dir = params.output_dir.clone();
 
-    if verify {
+    if params.verify {
         match StubGenerator::verify(Path::new(&output_dir)) {
             Ok(true) => Response::success(
                 req.id,
@@ -451,8 +484,12 @@ pub(crate) async fn handle_lua_register_commands(
     req: Request,
     lua_sessions: &Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let commands = require_param!(req, "commands", as_array);
+    let params = match typed_params::<crate::rpc_client::LuaRegisterCommandsRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = params.session_id.as_str();
+    let commands = &params.commands;
 
     let Some(state) = lua_sessions.get(session_id) else {
         return session_not_found(req.id, session_id);

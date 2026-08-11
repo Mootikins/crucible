@@ -1,5 +1,5 @@
 use super::super::*;
-use crate::optional_param;
+use crate::rpc_helpers::typed_params;
 
 use super::scope::refuse_forbidden_scope;
 use super::spawn_setup_task;
@@ -18,14 +18,27 @@ pub(crate) async fn handle_session_create(
     am: &Arc<AgentManager>,
     mcp_config: Option<&McpConfig>,
 ) -> Response {
-    let session_type_str = optional_param!(req, "type", as_str).unwrap_or("chat");
-    let session_type: SessionType = match session_type_str.parse() {
+    // The client's own request type is the contract: it derives `Deserialize`,
+    // it has wire-format tests (`rpc_client/client/mod.rs`), and it lives in
+    // this crate — so there is no reason for the server to re-derive fourteen
+    // field names by hand. It did, and the fourteen happened to agree; nothing
+    // asserted that they would. (`LuaInitSessionRequest.config` is the same
+    // shape and does NOT agree — the client serializes it, no handler reads it.)
+    //
+    // Unknown fields are tolerated on purpose (no `deny_unknown_fields`): a
+    // newer client must be able to talk to an older daemon.
+    let params = match typed_params::<crate::rpc_client::SessionCreateRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+
+    let session_type: SessionType = match params.session_type.parse() {
         Ok(st) => st,
         Err(_) => {
             return Response::error(
                 req.id,
                 INVALID_PARAMS,
-                format!("Invalid session type: {}", session_type_str),
+                format!("Invalid session type: {}", params.session_type),
             );
         }
     };
@@ -33,28 +46,41 @@ pub(crate) async fn handle_session_create(
     // Kiln-less create falls back to the server's resolved data root, not the
     // process-global crucible_home() — in production they're the same path,
     // but tests inject an isolated data_home that must win here too.
-    let kiln = optional_param!(req, "kiln", as_str)
-        .map(PathBuf::from)
+    let requested_kiln = params.kiln.as_deref().map(PathBuf::from);
+    let kiln = requested_kiln
+        .clone()
         .unwrap_or_else(|| data_home.to_path_buf());
 
-    let workspace = optional_param!(req, "workspace", as_str).map(PathBuf::from);
+    let workspace = params.workspace.as_deref().map(PathBuf::from);
 
-    let connected_kilns: Vec<PathBuf> = req
-        .params
-        .get("connect_kilns")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(PathBuf::from))
-                .collect()
-        })
-        .unwrap_or_default();
+    // Strict where the hand-plucked version was lenient: it `filter_map`ped
+    // non-string elements away, so `["/a", 7]` silently connected one kiln.
+    // Deserializing `Option<Vec<String>>` makes that INVALID_PARAMS instead.
+    let connected_kilns: Vec<PathBuf> = params
+        .connect_kilns
+        .clone()
+        .unwrap_or_default()
+        .into_iter()
+        .map(PathBuf::from)
+        .collect();
 
     // Before anything reads them: every caller-supplied directory that becomes
     // session scope goes through the same floor as
     // `session.connect_kiln`/`session.set_workspace` — the socket has no auth,
     // so create must not be the cheaper door.
-    let scopes = std::iter::once(("kiln", &kiln))
+    //
+    // `requested_kiln`, not `kiln`: the kiln-less FALLBACK is the daemon's own
+    // resolved data root, never anything a caller sent, so the floor has
+    // nothing to police there. Checking it broke kiln-less create outright
+    // wherever `data_home` equals `$HOME` — `refuse_forbidden_scope` reads
+    // `dirs::home_dir()`, the home rule fires when the path IS home, and
+    // `CRUCIBLE_HOME=$HOME` is exactly what a hermetic out-of-process test
+    // harness sets (`hermetic_env_pairs`). Four `workspace_targets_e2e` tests
+    // went red on 4e408f5e4 and nobody saw it for three days, because every
+    // test that spawns a daemon is `#[ignore]`d.
+    let scopes = requested_kiln
+        .iter()
+        .map(|k| ("kiln", k))
         .chain(workspace.iter().map(|w| ("workspace", w)))
         .chain(connected_kilns.iter().map(|k| ("kiln", k)));
     for (kind, path) in scopes {
@@ -64,16 +90,15 @@ pub(crate) async fn handle_session_create(
     }
 
     // Forwarded untouched: `false`, a profile name and an environment object
-    // are the isolating plugin's vocabulary, not the daemon's. Cloned rather
-    // than parsed so a shape the daemon has never heard of still reaches the
-    // plugin that defined it. Absent stays absent — see `Session::isolation`.
-    let isolation = req
-        .params
-        .get("isolation")
-        .filter(|v| !v.is_null())
-        .cloned();
+    // are the isolating plugin's vocabulary, not the daemon's. `Option<Value>`
+    // rather than a parsed type so a shape the daemon has never heard of still
+    // reaches the plugin that defined it. Absent stays absent — see
+    // `Session::isolation`; `false` and absent are different instructions.
+    // serde already maps JSON `null` to `None` for an `Option`, so the explicit
+    // null filter the hand-plucked version needed is gone with it.
+    let isolation = params.isolation.clone();
 
-    let provider_trust_level = resolve_provider_trust_level_for_create(&req, llm_config);
+    let provider_trust_level = resolve_provider_trust_level_for_create(&params, llm_config);
     let classification = resolve_kiln_classification_for_create(&kiln, workspace.as_ref());
     if let Some(classification) = classification {
         if let Err(message) = validate_trust_level(provider_trust_level, classification) {
@@ -81,16 +106,19 @@ pub(crate) async fn handle_session_create(
         }
     }
 
-    let recording_mode = optional_param!(req, "recording_mode", as_str)
+    let recording_mode = params
+        .recording_mode
+        .as_deref()
         .and_then(|s| s.parse::<RecordingMode>().ok());
-    let custom_recording_path = optional_param!(req, "recording_path", as_str).map(PathBuf::from);
+    let custom_recording_path = params.recording_path.as_deref().map(PathBuf::from);
 
     // Read locally — drives ACP vs internal branching in the setup task
     // below. `resolve_provider_trust_level_for_create` above already reads
     // this field for trust resolution.
-    let agent_type = optional_param!(req, "agent_type", as_str)
-        .unwrap_or("internal")
-        .to_string();
+    let agent_type = params
+        .agent_type
+        .clone()
+        .unwrap_or_else(|| "internal".to_string());
 
     // Resolve the agent BEFORE creating the session. `configure_agent` is the
     // caller's opt-in to have the daemon own default-agent resolution (ACP
@@ -99,10 +127,9 @@ pub(crate) async fn handle_session_create(
     // session is created agent-less and configured later via
     // `session.configure_agent`. Resolving first means an unknown ACP profile
     // (or an unparseable provider override) fails without orphaning a session.
-    let configure_agent = optional_param!(req, "configure_agent", as_bool).unwrap_or(false);
-    let resolved_agent = if configure_agent {
+    let resolved_agent = if params.configure_agent {
         match resolve_create_agent(
-            &req,
+            &params,
             &agent_type,
             am,
             llm_config,
@@ -227,7 +254,7 @@ pub(crate) async fn handle_session_create(
 /// config-derived defaults (see [`build_default_internal_agent`]).
 #[allow(clippy::too_many_arguments)]
 fn resolve_create_agent(
-    req: &Request,
+    params: &crate::rpc_client::SessionCreateRequest,
     agent_type: &str,
     am: &Arc<AgentManager>,
     llm_config: &Option<LlmConfig>,
@@ -236,7 +263,7 @@ fn resolve_create_agent(
     kiln: &std::path::Path,
 ) -> Result<crucible_core::session::SessionAgent, String> {
     if agent_type == "acp" {
-        let name = optional_param!(req, "agent_name", as_str).unwrap_or("");
+        let name = params.agent_name.as_deref().unwrap_or("");
         if name.is_empty() {
             return Err("agent_name is required when agent_type is \"acp\"".to_string());
         }
@@ -248,12 +275,12 @@ fn resolve_create_agent(
             None => Err(format!("Unknown ACP agent profile: {name}")),
         }
     } else {
-        let base = build_default_internal_agent(req, llm_config, mcp_config)?;
+        let base = build_default_internal_agent(params, llm_config, mcp_config)?;
         // An internal `agent_name` selects an agent card (specialized
         // internal agent): card prompt/model/tools layered over the
         // config-derived defaults. Unknown card = error before the session
         // exists, mirroring the ACP branch.
-        match optional_param!(req, "agent_name", as_str) {
+        match params.agent_name.as_deref() {
             Some(name) if !name.is_empty() => {
                 let cards = crate::agent_cards::discover_agent_cards(workspace, Some(kiln));
                 match cards.get(name) {
@@ -291,7 +318,7 @@ fn resolve_create_agent(
 /// endpoint/key; an explicit provider override must not silently borrow the
 /// default provider's endpoint.
 fn build_default_internal_agent(
-    req: &Request,
+    params: &crate::rpc_client::SessionCreateRequest,
     llm_config: &Option<LlmConfig>,
     mcp_config: Option<&McpConfig>,
 ) -> Result<crucible_core::session::SessionAgent, String> {
@@ -318,10 +345,10 @@ fn build_default_internal_agent(
             ),
         };
 
-    let req_provider = optional_param!(req, "provider", as_str);
-    let req_provider_key = optional_param!(req, "provider_key", as_str).map(str::to_string);
-    let req_model = optional_param!(req, "model", as_str).map(str::to_string);
-    let req_endpoint = optional_param!(req, "endpoint", as_str).map(str::to_string);
+    let req_provider = params.provider.as_deref();
+    let req_provider_key = params.provider_key.clone();
+    let req_model = params.model.clone();
+    let req_endpoint = params.endpoint.clone();
 
     let provider_defaulted = req_provider.is_none();
     let provider = match req_provider {
@@ -397,14 +424,14 @@ pub(crate) fn validate_trust_level(
 }
 
 pub(crate) fn resolve_provider_trust_level_for_create(
-    req: &Request,
+    params: &crate::rpc_client::SessionCreateRequest,
     llm_config: &Option<LlmConfig>,
 ) -> TrustLevel {
-    if optional_param!(req, "agent_type", as_str) == Some("acp") {
+    if params.agent_type.as_deref() == Some("acp") {
         return TrustLevel::Cloud;
     }
 
-    if let Some(provider_key) = optional_param!(req, "provider_key", as_str) {
+    if let Some(provider_key) = params.provider_key.as_deref() {
         if let Some(config) = llm_config
             .as_ref()
             .and_then(|cfg| cfg.get_provider(provider_key))
@@ -413,7 +440,7 @@ pub(crate) fn resolve_provider_trust_level_for_create(
         }
     }
 
-    if let Some(provider_name) = optional_param!(req, "provider", as_str) {
+    if let Some(provider_name) = params.provider.as_deref() {
         if let Ok(backend) = provider_name.parse::<crucible_core::config::BackendType>() {
             return backend.default_trust_level();
         }

@@ -201,8 +201,30 @@ fn spawn_setup_task(
             Err(e) => tracing::warn!(error = %e, "plugin discovery task panicked; skipping event"),
         }
 
-        // MCP config projection. Always emit — an empty list is meaningful.
-        let servers = crate::mcp::config::read_mcp_servers(mcp_config.as_ref());
+        // MCP config projection, enriched with live gateway state. Always emit —
+        // an empty list is meaningful.
+        //
+        // The config is authoritative for WHICH servers exist (a server that
+        // failed to connect must still be listed, greyed out rather than
+        // missing); the gateway is authoritative for tools and connectivity.
+        // This used to emit the config alone, with `tools: []` and
+        // `connected: false` hardcoded, so the TUI forked its own gateway to
+        // recover what the daemon already knew.
+        //
+        // Not racy on a cold-start daemon, which was the open question here.
+        // `bind_private_listener` runs at `server/mod.rs:248`, BEFORE the gateway
+        // is built at `:255` — but `McpGatewayManager::from_config` awaits
+        // `add_upstream` for every configured server before returning, and the
+        // accept loop lives in `Server::run` (`:846`), a separate method the
+        // caller can only invoke after `bind_with_plugin_config` has returned. So
+        // the gateway is fully connected before the first connection is ever
+        // served; an early `connect()` only lands in the socket backlog.
+        //
+        // A server that FAILED its handshake reports `connected: false` with no
+        // tools, which is correct rather than degraded — see
+        // `project_keeps_a_configured_server_that_failed_to_connect`.
+        let live_tools = am.mcp_tools_by_upstream().await;
+        let servers = crate::mcp::config::project_mcp_servers(mcp_config.as_ref(), &live_tools);
         emit_setup_event(
             &event_tx,
             &sid,

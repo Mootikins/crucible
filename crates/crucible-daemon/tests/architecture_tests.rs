@@ -9,6 +9,13 @@
 //!   A1 — RPC field-name parity for session config get/set pairs.
 //!   A3 — wire-mock seam: vendor LLM SDKs / genai stay behind `provider/`.
 //!   A4 — module-size ratchet against a frozen ledger.
+//!   A5 — `#[ignore]` reason strings parse, and the external test tier is
+//!        derived from them rather than hand-maintained.
+//!
+//! **A2 is not missing.** A2a–A2e live in the *CLI* crate's companion file,
+//! `crates/crucible-cli/tests/architecture_tests.rs`, because they scan the
+//! CLI's message enum and the web frontend's `api.ts`. Look there for the
+//! `ChatAppMsg` and frontend↔backend route gates.
 //!
 //! When one of these fails, the fix is almost always to change the code, not
 //! the test. See the per-gate failure messages for the specific action.
@@ -32,6 +39,31 @@ fn workspace_root() -> PathBuf {
 
 fn read(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+}
+
+/// Every `*.rs` file under `crates/`, including each crate's own `tests/` dir,
+/// as `(relative_path, contents)`.
+///
+/// A5 needs this rather than [`workspace_src_files`] because 63 of the 106
+/// `#[ignore]` attributes are in `tests/`. Kept as a sibling deliberately: A3
+/// and A4 depend on `workspace_src_files`' `/src/`-only contract, and widening
+/// it would start A4 ratcheting test files.
+fn workspace_test_and_src_files() -> Vec<(String, String)> {
+    let root = workspace_root();
+    let mut out = Vec::new();
+    for entry in WalkDir::new(root.join("crates"))
+        .into_iter()
+        .filter_map(Result::ok)
+    {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+            continue;
+        }
+        let rel = path.strip_prefix(&root).unwrap();
+        out.push((rel.to_string_lossy().replace('\\', "/"), read(path)));
+    }
+    out.sort();
+    out
 }
 
 /// Every `*.rs` file under `crates/*/src/` as `(relative_path, contents)`.
@@ -611,7 +643,6 @@ const SIZE_LEDGER: &[&str] = &[
     "crates/crucible-cli/src/tui/oil/tests/component_isolation_tests.rs",
     "crates/crucible-cli/src/tui/oil/tests/e2e_debug_test.rs",
     "crates/crucible-cli/src/tui/oil/tests/vt100_runtime.rs",
-    "crates/crucible-web/src/routes/session.rs",
     "crates/crucible-web/src/services/daemon.rs",
     "crates/crucible-core/src/config/components/backend.rs",
     "crates/crucible-core/src/config/components/llm.rs",
@@ -668,5 +699,494 @@ fn no_new_oversized_modules() {
          focused modules — do NOT add it to SIZE_LEDGER (the ledger only \
          shrinks). Offending files:\n  - {}",
         offenders.join("\n  - ")
+    );
+}
+
+// ===========================================================================
+// A5 — `#[ignore]` reason strings are the gating mechanism (CLAUDE.md: "Tests
+// needing external prerequisites are `#[ignore]`d with the prerequisite in the
+// reason string — that, not cargo features, is how slow/external tests are
+// gated"), so the justfile's test tiers are derived from them. That only works
+// if they parse.
+//
+// Before normalization there were 39 spellings across 106 sites, including a
+// NEGATIVE prerequisite ("requires built binary without Ollama" — substring
+// matching files it under Ollama, the exact opposite of what it needs), one
+// that described a known defect rather than a prerequisite (it had since been
+// fixed and the string never updated), and three that named no prerequisite at
+// all.
+//
+// Grammar:  #[ignore = "requires: <token>[, <token>]* — <free text>"]
+// The token list is closed. Adding a token means wiring it into the justfile
+// tiers, which is why the gate refuses unknown ones.
+// ===========================================================================
+
+/// Prerequisites a developer machine or CI runner satisfies by building this
+/// repo. Tests needing only these belong in the blocking `just test gated`
+/// tier.
+const IGNORE_TOKENS_HERMETIC: &[&str] = &[
+    "cru binary",
+    "dev kiln",
+    "mock-acp-agent",
+    "ripgrep",
+    "wall clock",
+];
+
+/// Prerequisites nothing in the repo can provide: network, a model, a daemon
+/// we do not ship, a container runtime, or a human. These drive
+/// `assets/test-tiers/external.txt` and are EXCLUDED from `just test gated`.
+///
+/// `no Ollama` is a negative prerequisite — a test that asserts the
+/// no-provider path. It is external because it needs Ollama to be *absent*,
+/// which a machine with Ollama installed cannot satisfy. Never tier by
+/// substring: it contains "Ollama".
+const IGNORE_TOKENS_EXTERNAL: &[&str] = &[
+    "ACP agent",
+    "LLM provider",
+    "Ollama",
+    "container runtime",
+    "embedding endpoint",
+    "live database",
+    "manual inspection",
+    "model download",
+    "no Ollama",
+    "playwright harness",
+];
+
+/// The checked-in list of ignored tests whose prerequisites are external.
+/// The `gated` tier runs every ignored test EXCEPT these (negative selection,
+/// so a newly added ignored test is in the blocking gate by default).
+const EXTERNAL_TIER_FILE: &str = "assets/test-tiers/external.txt";
+
+/// Set when `just test tiers` runs this file's checker in generate mode.
+/// Child-scoped env from the recipe, never `set_var` from inside a test.
+const WRITE_TIERS_ENV: &str = "CRUCIBLE_WRITE_TEST_TIERS";
+
+/// One `#[ignore]`d test: where it lives, what it is called, and the
+/// prerequisite tokens its reason declares.
+struct IgnoredTest {
+    rel: String,
+    name: String,
+    reason: String,
+    tokens: Vec<String>,
+}
+
+impl IgnoredTest {
+    fn is_external(&self) -> bool {
+        let external: BTreeSet<&str> = IGNORE_TOKENS_EXTERNAL.iter().copied().collect();
+        self.tokens.iter().any(|t| external.contains(t.as_str()))
+    }
+}
+
+/// Every `#[ignore = "..."]` attribute in the workspace, paired with the test
+/// it decorates.
+///
+/// Attribute order varies (`#[ignore]` may precede or follow `#[tokio::test]`),
+/// so the pairing matches FORWARD to the nearest `fn <name>(` rather than
+/// assuming a fixed layout. `raw_count` is the number of `#[ignore` attribute
+/// lines seen by a plain line scan: comparing it against the parsed count is
+/// what catches a regex that silently stops matching a spelling, which no
+/// hardcoded total can do without failing every time a test is added.
+fn ignored_tests() -> (Vec<IgnoredTest>, usize) {
+    let attr = Regex::new(r#"(?m)^[ \t]*#\[ignore\s*=\s*"([^"]*)"\]"#).unwrap();
+    let raw = Regex::new(r"(?m)^[ \t]*#\[ignore").unwrap();
+    let next_fn = Regex::new(r"\bfn\s+([A-Za-z0-9_]+)\s*\(").unwrap();
+
+    let mut out = Vec::new();
+    let mut raw_count = 0;
+    for (rel, contents) in workspace_test_and_src_files() {
+        raw_count += raw.find_iter(&contents).count();
+        for c in attr.captures_iter(&contents) {
+            let whole = c.get(0).unwrap();
+            let reason = c[1].to_string();
+            let name = next_fn
+                .captures(&contents[whole.end()..])
+                .map(|f| f[1].to_string())
+                .unwrap_or_else(|| panic!("{rel}: #[ignore = {reason:?}] has no `fn` after it"));
+            let tokens = reason
+                .strip_prefix("requires: ")
+                .map(|rest| {
+                    rest.split(" — ")
+                        .next()
+                        .unwrap_or(rest)
+                        .split(", ")
+                        .map(|t| t.trim().to_string())
+                        .collect()
+                })
+                .unwrap_or_default();
+            out.push(IgnoredTest {
+                rel: rel.clone(),
+                name,
+                reason,
+                tokens,
+            });
+        }
+    }
+    (out, raw_count)
+}
+
+// UNIQUE: an attribute string is opaque to rustc — nothing checks that
+// `#[ignore = "..."]` names a prerequisite at all, let alone one the justfile
+// knows how to satisfy. The tiers key off these strings, so they are a wire
+// contract with no type to carry it.
+#[test]
+fn every_ignore_reason_declares_known_prerequisites() {
+    let (tests, raw_count) = ignored_tests();
+    let known: BTreeSet<&str> = IGNORE_TOKENS_HERMETIC
+        .iter()
+        .chain(IGNORE_TOKENS_EXTERNAL)
+        .copied()
+        .collect();
+
+    assert_eq!(
+        tests.len(),
+        raw_count,
+        "The `#[ignore]` regex matched {} of {raw_count} attribute lines. The \
+         unmatched ones are either bare `#[ignore]` (add a `= \"requires: …\"` \
+         reason) or formatted so the scan misses them, which would silently \
+         drop them from every tier.",
+        tests.len()
+    );
+
+    let mut failures = Vec::new();
+    for t in &tests {
+        if t.tokens.is_empty() {
+            failures.push(format!(
+                "{}::{}: {:?} — must start with \"requires: \"",
+                t.rel, t.name, t.reason
+            ));
+            continue;
+        }
+        for token in &t.tokens {
+            if !known.contains(token.as_str()) {
+                failures.push(format!(
+                    "{}::{}: unknown prerequisite {token:?} in {:?}",
+                    t.rel, t.name, t.reason
+                ));
+            }
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "#[ignore] reason strings must declare machine-readable prerequisites in \
+         the form `requires: <token>[, <token>]* — <free text>`.\n\
+         Hermetic tokens (run in the blocking `just test gated` tier): {IGNORE_TOKENS_HERMETIC:?}\n\
+         External tokens (excluded from it): {IGNORE_TOKENS_EXTERNAL:?}\n\
+         To add a token you must also wire it into the justfile tiers.\n  - {}",
+        failures.join("\n  - ")
+    );
+}
+
+// UNIQUE: the justfile's `gated` tier consumes `assets/test-tiers/external.txt`
+// to decide what to EXCLUDE. If that file drifts from the reason strings, one
+// of two silent failures follows: a test needing Ollama runs in the pre-commit
+// gate (red on every machine without it), or a test needing nothing gets
+// skipped — the blind spot the tier exists to close. nextest cannot filter on
+// ignore reasons, only on names, so the name list has to be derived and
+// checked in. This test is both halves: it regenerates the set from source and
+// diffs it, and with CRUCIBLE_WRITE_TEST_TIERS=1 it writes the file instead.
+// One parser, so generation and checking cannot disagree.
+#[test]
+fn external_test_tier_file_matches_the_ignore_reasons() {
+    let root = workspace_root();
+    let path = root.join(EXTERNAL_TIER_FILE);
+
+    let (tests, _) = ignored_tests();
+    let derived: BTreeSet<String> = tests
+        .iter()
+        .filter(|t| t.is_external())
+        .map(|t| t.name.clone())
+        .collect();
+
+    if std::env::var_os(WRITE_TIERS_ENV).is_some() {
+        let mut body = String::from(
+            "# GENERATED by `just test tiers` — do not edit by hand.\n\
+             #\n\
+             # Ignored tests whose #[ignore] reason names an external\n\
+             # prerequisite (see IGNORE_TOKENS_EXTERNAL in\n\
+             # crates/crucible-daemon/tests/architecture_tests.rs). `just test\n\
+             # gated` runs every ignored test EXCEPT these; `just test external`\n\
+             # runs exactly these.\n",
+        );
+        for name in &derived {
+            body.push_str(name);
+            body.push('\n');
+        }
+        std::fs::create_dir_all(path.parent().unwrap()).expect("create assets/test-tiers");
+        std::fs::write(&path, body).expect("write external tier file");
+        eprintln!("wrote {} ({} tests)", path.display(), derived.len());
+        return;
+    }
+
+    let contents = read(&path);
+    let checked_in: BTreeSet<String> = contents
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(str::to_string)
+        .collect();
+
+    let missing: Vec<&String> = derived.difference(&checked_in).collect();
+    let stale: Vec<&String> = checked_in.difference(&derived).collect();
+    assert!(
+        missing.is_empty() && stale.is_empty(),
+        "{EXTERNAL_TIER_FILE} has drifted from the #[ignore] reason strings.\n\
+         Regenerate with `just test tiers`.\n\
+         Missing (external prerequisite, but the gated tier would run it):\n  + {}\n\
+         Stale (listed, but no longer external — the gated tier is skipping it):\n  - {}",
+        missing
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join("\n  + "),
+        stale
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join("\n  - ")
+    );
+}
+
+// UNIQUE: the tier filter is `test(<name>)`, a SUBSTRING match against the
+// module-qualified test name — exact match is not available to us, because this
+// gate derives names from source without a build and so cannot know the module
+// path (`chat::chat_ctrl_c_exits`). Substring matching is only safe while every
+// external name names exactly one ignored test and is not a substring of
+// another ignored test's name (or of a module segment): either would silently
+// pull a hermetic test out of the blocking gate. Rust scopes test names per
+// module, so nothing else notices a collision.
+#[test]
+fn external_tier_test_names_are_unambiguous() {
+    let (tests, _) = ignored_tests();
+
+    // Only IGNORED tests can be affected. Both tiers run with `--run-ignored
+    // ignored-only`, so `-E` never has a non-ignored test to include or
+    // exclude: a collision with a normally-running test is inert. Scoping the
+    // check here rather than over every `#[test]` fn in the workspace is what
+    // keeps it from demanding renames that would change nothing (the first
+    // draft flagged `test_fastembed_batch` against the un-ignored
+    // `test_fastembed_batch_embedding`).
+    let mut failures = Vec::new();
+    for t in tests.iter().filter(|t| t.is_external()) {
+        let same_name: Vec<&IgnoredTest> = tests.iter().filter(|o| o.name == t.name).collect();
+        if same_name.len() > 1 {
+            failures.push(format!(
+                "{} is the name of {} ignored tests ({}) — rename so the \
+                 external tier can name it unambiguously",
+                t.name,
+                same_name.len(),
+                same_name
+                    .iter()
+                    .map(|o| o.rel.as_str())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+
+        // `test(<name>)` is a substring match, so a longer ignored test name
+        // containing this one is dragged out of the blocking gate with it.
+        let shadowed: Vec<&str> = tests
+            .iter()
+            .filter(|o| o.name != t.name && o.name.contains(&t.name))
+            .map(|o| o.name.as_str())
+            .collect();
+        if !shadowed.is_empty() {
+            failures.push(format!(
+                "{} is a substring of ignored test(s) {} — `test({})` would \
+                 exclude those from the blocking gate too; rename one",
+                t.name,
+                shadowed.join(", "),
+                t.name
+            ));
+        }
+
+        // The match is against the module-qualified name, so a name equal to a
+        // module segment would match every test in that module. Module segments
+        // come from file stems, so comparing against the stems of files holding
+        // ignored tests covers it.
+        let as_module: Vec<&str> = tests
+            .iter()
+            .filter(|o| {
+                o.rel.rsplit('/').next().and_then(|f| f.strip_suffix(".rs"))
+                    == Some(t.name.as_str())
+            })
+            .map(|o| o.rel.as_str())
+            .collect();
+        if !as_module.is_empty() {
+            failures.push(format!(
+                "{} is also a module name ({}) — `test({})` would match every \
+                 ignored test in that module; rename the test",
+                t.name,
+                as_module.join(", "),
+                t.name
+            ));
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "External tier entries must name exactly one ignored test:\n  - {}",
+        failures.join("\n  - ")
+    );
+}
+
+// ===========================================================================
+// A6 — a request type that derives `Deserialize` must be the type the server
+// deserializes.
+//
+// `SessionCreateRequest` has fourteen serde fields and its own wire-format
+// tests; the handler hand-plucked all fourteen with `optional_param!`, so the
+// contract was asserted on one side and re-derived on the other. They happened
+// to agree. `LuaInitSessionRequest.config` did not: the client serializes it and
+// no handler has ever read it — a field on the wire with no consumer, which is
+// the whole bug class in one line.
+//
+// The macros are NOT the problem and are not what this gate pushes back on.
+// `require_param!` / `optional_param!` are right for one- and two-field methods
+// and for the thirty generated config handlers (`server/session/params.rs`).
+// The problem is using them on a method that already HAS a `Deserialize`
+// request type in the same crate.
+//
+// LEDGER IS SHRINK-ONLY: convert a handler and remove its row.
+// ===========================================================================
+
+/// `(request struct, the server file that must deserialize it)`.
+const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
+    (
+        "SessionCreateRequest",
+        "crates/crucible-daemon/src/server/session/create.rs",
+    ),
+    (
+        "LuaInitSessionRequest",
+        "crates/crucible-daemon/src/server/lua.rs",
+    ),
+    (
+        "LuaRegisterHooksRequest",
+        "crates/crucible-daemon/src/server/lua.rs",
+    ),
+    (
+        "LuaExecuteHookRequest",
+        "crates/crucible-daemon/src/server/lua.rs",
+    ),
+    (
+        "LuaShutdownSessionRequest",
+        "crates/crucible-daemon/src/server/lua.rs",
+    ),
+    (
+        "LuaDiscoverPluginsRequest",
+        "crates/crucible-daemon/src/server/lua.rs",
+    ),
+    (
+        "LuaPluginHealthRequest",
+        "crates/crucible-daemon/src/server/lua.rs",
+    ),
+    (
+        "LuaGenerateStubsRequest",
+        "crates/crucible-daemon/src/server/lua.rs",
+    ),
+    (
+        "LuaRegisterCommandsRequest",
+        "crates/crucible-daemon/src/server/lua.rs",
+    ),
+];
+
+/// Handlers that still hand-pluck their fields. REMOVE rows; never add.
+///
+/// Empty: every table row above deserializes its request type. Keep the
+/// constant — a new `*Request` whose handler hand-plucks gets one row here with
+/// a reason, and the gate's other direction then forces the row out again the
+/// moment it is converted.
+const HAND_PLUCKED_LEDGER: &[&str] = &[];
+
+// UNIQUE: rustc is perfectly happy for a `Deserialize` struct to describe a
+// payload nobody deserializes — the derive compiles, the client serializes, and
+// the server reads whatever field names it chose to type out. Nothing but a
+// source scan can assert that the two are the same act.
+#[test]
+fn wire_request_types_are_deserialized_not_hand_plucked() {
+    let root = workspace_root();
+    let ledger: BTreeSet<&str> = HAND_PLUCKED_LEDGER.iter().copied().collect();
+    let declared: BTreeSet<&str> = WIRE_REQUEST_TYPES.iter().map(|(s, _)| *s).collect();
+
+    let mut failures = Vec::new();
+
+    for stale in ledger.difference(&declared) {
+        failures.push(format!(
+            "HAND_PLUCKED_LEDGER row `{stale}` is not in WIRE_REQUEST_TYPES — \
+             remove it"
+        ));
+    }
+
+    for (struct_name, server_file) in WIRE_REQUEST_TYPES {
+        let contents = read(&root.join(server_file));
+        // The TURBOFISH is the marker, not any particular function: it names the
+        // type at the call site, so `typed_params::<T>(&req)` and
+        // `serde_json::from_value::<T>(…)` both count and a future wrapper needs
+        // no change here. An annotated binding would let the type drift out of
+        // view of a source scan, which is why every call site turbofishes.
+        let turbofish = Regex::new(&format!(
+            r"::<\s*(?:crate::rpc_client::)?{}\s*>",
+            regex::escape(struct_name)
+        ))
+        .unwrap();
+        let deserializes = turbofish.is_match(&contents);
+        let ledgered = ledger.contains(*struct_name);
+
+        if !deserializes && !ledgered {
+            failures.push(format!(
+                "{server_file} does not deserialize {struct_name} — replace the \
+                 hand-plucked `require_param!`/`optional_param!` reads with \
+                 `serde_json::from_value::<{struct_name}>(req.params.clone())`, \
+                 or (temporarily) add `{struct_name}` to HAND_PLUCKED_LEDGER \
+                 with a reason"
+            ));
+        }
+        if deserializes && ledgered {
+            failures.push(format!(
+                "{server_file} now deserializes {struct_name} — REMOVE \
+                 `{struct_name}` from HAND_PLUCKED_LEDGER (the ledger only shrinks)"
+            ));
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "Wire request types must be deserialized, not re-derived field by field:\n  - {}",
+        failures.join("\n  - ")
+    );
+}
+
+// UNIQUE: a `Deserialize` request type whose fields no handler reads is
+// invisible to every other check — the derive compiles and the client happily
+// serializes it. §P0's `LuaInitSessionRequest.config` lived like that. This
+// asserts the table above stays honest about which structs exist, so a NEW
+// `*Request` type cannot quietly skip the gate.
+#[test]
+fn every_lua_request_type_is_in_the_wire_table() {
+    let root = workspace_root();
+    let lua_client = read(&root.join("crates/crucible-daemon/src/rpc_client/client/lua.rs"));
+    let defined = captures(r"pub struct (Lua[A-Za-z0-9]+Request)\b", &lua_client);
+    let tabled: BTreeSet<String> = WIRE_REQUEST_TYPES
+        .iter()
+        .map(|(s, _)| s.to_string())
+        .collect();
+
+    // `LuaRunPluginTestsRequest`'s handler lives in `server/lua_plugin_suite.rs`,
+    // not `server/lua.rs`; it is out of this table's scope until someone adds
+    // the row with the right file.
+    let out_of_scope: BTreeSet<String> = ["LuaRunPluginTestsRequest"]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+
+    let known: BTreeSet<String> = tabled.union(&out_of_scope).cloned().collect();
+    let missing: Vec<&String> = defined.difference(&known).collect();
+    assert!(
+        missing.is_empty(),
+        "Lua request types with no WIRE_REQUEST_TYPES row — add one naming the \
+         server file that deserializes it: {missing:?}"
     );
 }

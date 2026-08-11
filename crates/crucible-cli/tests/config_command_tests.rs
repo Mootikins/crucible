@@ -536,7 +536,7 @@ type = "fastembed"
 
 #[test]
 #[serial]
-#[ignore = "performance-sensitive smoke test; run manually"]
+#[ignore = "requires: cru binary, wall clock — asserts `config show` finishes inside 5s"]
 fn test_config_show_performance() {
     let temp = TempDir::new().unwrap();
     let config_dir = temp.path().join("config");
@@ -573,7 +573,7 @@ fn test_config_show_performance() {
 
 #[test]
 #[serial]
-#[ignore = "performance-sensitive smoke test; run manually"]
+#[ignore = "requires: cru binary, wall clock — asserts `config show` finishes inside 5s"]
 fn test_config_show_with_large_config() {
     let temp = TempDir::new().unwrap();
     let config_path = temp.path().join("large-config.toml");

@@ -3,28 +3,19 @@
 //! daemon's default home kiln (its data root), producing a "floating" session
 //! that still composes with the mid-session scope RPCs.
 //!
-//! HERMETICITY / KNOWN SRC BUG (why every test here is `#[ignore]`):
-//! `bind_with_data_home` injects the daemon's data root as a *value* threaded
-//! through `Server`/`RpcContext` (no `CRUCIBLE_HOME` env mutation). Every
-//! data-root-aware handler reads that value — `handle_session_list`,
-//! `handle_kiln_list`, and the archive sweep all take `&self.ctx.data_home`.
-//! `handle_session_create` does NOT: it is dispatched without `data_home`
-//! (`rpc/dispatch.rs`) and resolves the kiln-less default via the
-//! process-global `crucible_home()` (`server/session/create.rs`
-//! `unwrap_or_else(crucible_home)`), which reads `CRUCIBLE_HOME`/`~/.crucible`.
+//! HERMETICITY: `bind_with_data_home` injects the daemon's data root as a
+//! *value* threaded through `Server`/`RpcContext` (no `CRUCIBLE_HOME` env
+//! mutation), and every data-root-aware handler reads that value —
+//! `handle_session_list`, `handle_kiln_list`, the archive sweep, and (since the
+//! `data_home` parameter was threaded through `rpc/dispatch.rs`)
+//! `handle_session_create`. So the kiln-less session's kiln resolves to the
+//! injected tempdir, which is what the exact-path assertions below check, and
+//! nothing here touches the developer's real `~/.crucible`.
 //!
-//! Consequences for an in-process test that injects a tempdir data root:
-//!   * the kiln-less session's kiln resolves to the developer's real
-//!     `~/.crucible`, NOT the injected tempdir — so the exact-path assertions
-//!     below are wrong until src is fixed; and
-//!   * merely creating the session writes into the real `~/.crucible`,
-//!     violating the project's mandatory test-hermeticity rules.
-//!
-//! These tests therefore assert the *correct* value-injection behavior (kiln
-//! resolves to the injected data root) and are marked `#[ignore]`. The fix is
-//! to thread `self.ctx.data_home` into `handle_session_create` and use it as
-//! the fallback instead of `crucible_home()`; once that lands, dropping the
-//! `#[ignore]` attributes should make them pass.
+//! No test in this file is `#[ignore]`d: they run in `just test ci`. The
+//! 22-line header that used to explain why they all were described the
+//! `crucible_home()` fallback bug, which was fixed and the attributes removed
+//! without anyone updating the prose.
 
 use anyhow::Result;
 use crucible_daemon::rpc_client::SessionCreateParams;

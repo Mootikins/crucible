@@ -16,7 +16,7 @@ use super::tui_e2e_harness::{
 /// 1. `wait_for_text()` polls until content appears (or times out)
 /// 2. `assert_screen_contains()` checks the parsed screen (no ANSI noise)
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn vt100_exemplar_screen_content_verification() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")
@@ -41,7 +41,7 @@ fn vt100_exemplar_screen_content_verification() {
 /// 3. Dismiss popup
 /// 4. `assert_screen_not_contains()` confirms popup dismissed
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn vt100_exemplar_popup_lifecycle() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")
@@ -82,7 +82,7 @@ fn vt100_exemplar_popup_lifecycle() {
 /// Demonstrates using `wait_for_text()` to track mode indicator changes
 /// across multiple mode switches, replacing fragile raw string matching.
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn vt100_exemplar_mode_indicator() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")
@@ -116,7 +116,7 @@ fn vt100_exemplar_mode_indicator() {
 /// Demonstrates using `wait_until()` with a custom predicate to verify content
 /// renders correctly at a non-default terminal size.
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn vt100_exemplar_terminal_size_adaptation() {
     for (cols, rows, label) in [(60, 24, "narrow"), (120, 40, "wide")] {
         let config = TuiTestConfig::new("chat")

@@ -52,25 +52,30 @@ slow-timeout = { period = "30s", terminate-after = 1 }
 # which silently passes when the change under test is in the daemon and the
 # stale binary predates it. Caught by mutating `resolve_workspace_target` to a
 # no-op and watching all eight `workspace_targets_e2e` tests keep passing.
+#
+# `crucible-cli` is in the filter for the same reason: its 35 PTY tests
+# (`tui_e2e_*`) spawn the `cru` binary too, and the script was daemon-only, so
+# they had the stale-binary trap above with nothing to catch it. One script
+# builds both binaries, so widening the filter costs nothing.
 [scripts.setup.build-test-fixtures]
 command = 'cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent -p crucible-cli --bin cru'
 
 [[profile.default.scripts]]
-filter = 'package(crucible-daemon)'
+filter = 'package(crucible-daemon) + package(crucible-cli)'
 setup = 'build-test-fixtures'
 
 [[profile.unit.scripts]]
-filter = 'package(crucible-daemon)'
+filter = 'package(crucible-daemon) + package(crucible-cli)'
 setup = 'build-test-fixtures'
 
 [[profile.ci.scripts]]
-filter = 'package(crucible-daemon)'
+filter = 'package(crucible-daemon) + package(crucible-cli)'
 setup = 'build-test-fixtures'
 
 [[profile.contract.scripts]]
-filter = 'package(crucible-daemon)'
+filter = 'package(crucible-daemon) + package(crucible-cli)'
 setup = 'build-test-fixtures'
 
 [[profile.integration.scripts]]
-filter = 'package(crucible-daemon)'
+filter = 'package(crucible-daemon) + package(crucible-cli)'
 setup = 'build-test-fixtures'

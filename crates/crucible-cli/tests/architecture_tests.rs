@@ -6,9 +6,11 @@
 //!   A2b — canonical parser types are defined only in crucible-core/parser.
 //!   A2c — every `/api` path the web frontend calls has a backend route.
 //!   A2d — the CLI does not build its own knowledge-base context block.
+//!   A2e — every session config knob the daemon advertises has a web route.
 //!
 //! A2* live here rather than in the daemon's companion file because they scan
-//! CLI and web source; the daemon's header lists A1/A3/A4 for the same reason.
+//! CLI and web source; the daemon's header lists A1/A3/A4/A5 for the same
+//! reason.
 //!
 //! Source-scan style: read files and match, so they are fast and build-free.
 //! When one fails, fix the code, not the test — see each failure message.
@@ -352,5 +354,144 @@ fn the_cli_does_not_build_its_own_context_block() {
          to set `session.set_precognition` / `session.set_precognition_results` \
          and render the `precognition_complete` event:\n  - {}",
         offenders.join("\n  - ")
+    );
+}
+
+// ===========================================================================
+// A2e — every session config knob the daemon advertises is reachable from the
+// web.
+//
+// Nine of fifteen were not, and nothing failed: the daemon grows a knob, the
+// TUI wires it (`tui/oil/config/shortcuts.rs`), and the web silently falls a
+// knob further behind. A1 in the daemon's companion file already gates
+// client↔server field-name parity for all fifteen; daemon↔web was the only
+// ungated axis, and it is a different failure (a route that does not exist at
+// all, rather than a field name that disagrees).
+//
+// The ledger below is SHRINK-ONLY, following SIZE_LEDGER: a NEW knob is not in
+// it and so fails immediately.
+// ===========================================================================
+
+fn captures(re: &str, hay: &str) -> BTreeSet<String> {
+    let re = Regex::new(re).unwrap();
+    re.captures_iter(hay).map(|c| c[1].to_string()).collect()
+}
+
+/// `session.set_<suffix>` → the `/api/session/{}/config/<path>` tail.
+///
+/// Declared rather than derived: `precognition_results` maps to
+/// `precognition/results`, not `precognition-results`, so a naive snake→kebab
+/// transform is wrong and would need special-casing anyway.
+const WEB_CONFIG_ROUTES: &[(&str, &str)] = &[
+    ("autocompact_threshold", "autocompact-threshold"),
+    ("context_budget", "context-budget"),
+    ("context_strategy", "context-strategy"),
+    ("context_window", "context-window"),
+    ("execution_timeout", "execution-timeout"),
+    ("max_iterations", "max-iterations"),
+    ("max_tokens", "max-tokens"),
+    ("output_validation", "output-validation"),
+    ("precognition", "precognition"),
+    ("precognition_results", "precognition/results"),
+    ("system_prompt", "system-prompt"),
+    ("temperature", "temperature"),
+    ("thinking_budget", "thinking-budget"),
+    ("validation_retries", "validation-retries"),
+];
+
+/// Knobs with no web route yet. REMOVE entries as routes land; never add.
+///
+/// Empty: all fifteen advertised knobs are reachable from the web. It held nine
+/// when this gate landed, and the gate is what forced each row out — adding a
+/// route while leaving its row here fails just as loudly as the reverse, which
+/// is how the ledger stays a record of work outstanding rather than of work
+/// forgotten.
+const WEB_ROUTE_LEDGER: &[&str] = &[];
+
+/// Exempt permanently, with a reason: `mode` is not a `config/` knob. It has
+/// its own `POST /api/session/{id}/mode` and `GET .../modes`, because switching
+/// mode changes tool policy rather than a scalar setting.
+const WEB_ROUTE_EXEMPT: &[&str] = &["mode"];
+
+/// `session.set_*` methods that mutate session SCOPE rather than configure the
+/// agent. They share the prefix but are not knobs, and neither belongs under
+/// `config/`.
+const SCOPE_MUTATIONS: &[&str] = &["title", "workspace"];
+
+// UNIQUE: the daemon's METHODS list and the web's axum Router are in different
+// crates with no shared type; a knob present in one and absent from the other is
+// not a compile error, and A1 only compares the daemon's own client to its own
+// server. Route EXISTENCE, not field names — field names are already A1's job,
+// which matters because `execution_timeout`'s wire field is `timeout_secs` and a
+// web struct named after the knob would compile, pass review, and drop the value.
+#[test]
+fn every_rpc_session_knob_is_reachable_from_the_web() {
+    let root = workspace_root();
+    let dispatch = read(&root.join("crates/crucible-daemon/src/rpc/dispatch.rs"));
+
+    // Knobs the daemon advertises, read from METHODS itself — the same list
+    // `daemon.capabilities` returns, so this is a client's view of the surface.
+    let advertised = captures(r#""session\.set_([a-z0-9_]+)""#, &dispatch);
+    let scope: BTreeSet<String> = SCOPE_MUTATIONS.iter().map(|s| s.to_string()).collect();
+    let advertised: BTreeSet<String> = advertised.difference(&scope).cloned().collect();
+
+    assert!(
+        advertised.len() >= 12,
+        "extraction sanity check: expected 12+ session.set_* knobs in METHODS, \
+         found {} — the scan regex probably broke, fix the test",
+        advertised.len()
+    );
+
+    let mapped: BTreeSet<String> = WEB_CONFIG_ROUTES
+        .iter()
+        .map(|(k, _)| k.to_string())
+        .collect();
+    let exempt: BTreeSet<String> = WEB_ROUTE_EXEMPT.iter().map(|s| s.to_string()).collect();
+    let ledger: BTreeSet<&str> = WEB_ROUTE_LEDGER.iter().copied().collect();
+
+    let mut failures = Vec::new();
+
+    // (1) Table completeness: every advertised knob is mapped or exempt.
+    let covered: BTreeSet<String> = mapped.union(&exempt).cloned().collect();
+    for knob in advertised.difference(&covered) {
+        failures.push(format!(
+            "session.set_{knob} has no WEB_CONFIG_ROUTES row — add the route tail, \
+             or add it to WEB_ROUTE_EXEMPT with a reason"
+        ));
+    }
+    // (2) Table staleness: no row for a knob the daemon dropped.
+    for stale in mapped.difference(&advertised) {
+        failures.push(format!(
+            "WEB_CONFIG_ROUTES row `{stale}` is not in METHODS — remove the row or \
+             restore the knob"
+        ));
+    }
+
+    // (3) The routes actually exist in the axum Router.
+    let backend = backend_api_paths(&root);
+    for (knob, tail) in WEB_CONFIG_ROUTES {
+        let path = format!("/api/session/{{}}/config/{tail}");
+        let present = backend.contains(&path);
+        let ledgered = ledger.contains(*knob);
+        if !present && !ledgered {
+            failures.push(format!(
+                "session.set_{knob}: no web route at {path}. Add it under \
+                 crucible-web/src/routes/session_config/, register it in \
+                 routes/session/mod.rs, or (temporarily) add `{knob}` to \
+                 WEB_ROUTE_LEDGER"
+            ));
+        }
+        if present && ledgered {
+            failures.push(format!(
+                "session.set_{knob}: route {path} now exists — REMOVE `{knob}` from \
+                 WEB_ROUTE_LEDGER (the ledger only shrinks)"
+            ));
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "RPC↔web session-knob parity violations:\n  - {}",
+        failures.join("\n  - ")
     );
 }

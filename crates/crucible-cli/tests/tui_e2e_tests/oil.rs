@@ -12,7 +12,7 @@ use super::tui_e2e_harness::{Key, TuiTestConfig, TuiTestSession};
 
 /// Test that oil runner stays responsive during extended use
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn oil_runner_does_not_freeze() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")
@@ -45,7 +45,7 @@ fn oil_runner_does_not_freeze() {
 /// :quit is a REPL command (colon prefix), not a slash command.
 /// /quit would be forwarded to the agent as a slash command.
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn oil_quit_with_repl_command() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")
@@ -71,7 +71,7 @@ fn oil_quit_with_repl_command() {
 
 /// Test that typing and Enter works - check output for echo
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn oil_verify_pty_works() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "crucible_cli::tui::oil=debug")
@@ -104,7 +104,7 @@ fn oil_verify_pty_works() {
 
 /// Test oil runner stays responsive for extended period
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn oil_runner_stays_responsive_10s() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")
@@ -147,7 +147,7 @@ fn oil_runner_stays_responsive_10s() {
 
 /// Test streaming response renders progressively
 #[test]
-#[ignore = "requires built binary and Ollama"]
+#[ignore = "requires: cru binary, Ollama"]
 fn oil_streaming_response_renders() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")
@@ -174,7 +174,7 @@ fn oil_streaming_response_renders() {
 
 /// Test long streaming response with markdown tables
 #[test]
-#[ignore = "requires built binary and Ollama"]
+#[ignore = "requires: cru binary, Ollama"]
 fn oil_streaming_with_markdown_table() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")
@@ -216,7 +216,7 @@ fn oil_streaming_with_markdown_table() {
 
 /// Test Ctrl+C during active streaming cancels gracefully
 #[test]
-#[ignore = "requires built binary and Ollama"]
+#[ignore = "requires: cru binary, Ollama"]
 fn oil_ctrl_c_during_streaming() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")
@@ -253,7 +253,7 @@ fn oil_ctrl_c_during_streaming() {
 
 /// Test double Ctrl+C exits even during streaming
 #[test]
-#[ignore = "requires built binary and Ollama"]
+#[ignore = "requires: cru binary, Ollama"]
 fn oil_double_ctrl_c_exits_during_streaming() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")
@@ -286,7 +286,7 @@ fn oil_double_ctrl_c_exits_during_streaming() {
 
 /// Test Ctrl+C with empty input shows notification
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn oil_ctrl_c_empty_input_notification() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")
@@ -322,7 +322,7 @@ fn oil_ctrl_c_empty_input_notification() {
 
 /// Test /mode command cycles through modes (visual verification)
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn oil_mode_cycle() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")
@@ -344,7 +344,7 @@ fn oil_mode_cycle() {
 
 /// Test /auto and /plan commands
 #[test]
-#[ignore = "requires built binary"]
+#[ignore = "requires: cru binary"]
 fn oil_explicit_mode_commands() {
     let config = TuiTestConfig::new("chat")
         .with_env("RUST_LOG", "warn")

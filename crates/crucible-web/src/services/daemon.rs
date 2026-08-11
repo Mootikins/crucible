@@ -815,6 +815,19 @@ impl ReconnectingDaemon {
         .await
     }
 
+    /// Beside `session_set_mode` rather than in `daemon_session_config`: `mode`
+    /// is not a `config/` knob — switching it changes tool policy, not a scalar
+    /// setting — and it has its own route pair. A settings panel that can set a
+    /// value it cannot read is how a stale control gets shown.
+    pub async fn session_get_mode(&self, session_id: &str) -> anyhow::Result<Option<String>> {
+        let session_id = session_id.to_string();
+        self.call_with_reconnect("session.get_mode", move |daemon| {
+            let session_id = session_id.clone();
+            Box::pin(async move { daemon.session_get_mode(&session_id).await })
+        })
+        .await
+    }
+
     pub async fn session_set_title(&self, session_id: &str, title: &str) -> anyhow::Result<()> {
         let session_id = session_id.to_string();
         let title = title.to_string();

@@ -1187,6 +1187,247 @@ export async function setPrecognitionResults(sessionId: string, count: number): 
   );
 }
 
+// -----------------------------------------------------------------------------
+// The nine session config knobs the daemon advertised but the web could not
+// reach. Gate A2e (crucible-cli/tests/architecture_tests.rs) fails when a knob
+// in the daemon's METHODS list has no route; gate A2c fails when a path named
+// here has no backend route, so these two directions are both covered.
+//
+// The request/response field names are the DAEMON's wire names, which are not
+// always the knob name — `execution-timeout` carries `timeout_secs`. Renaming
+// one of these to match its route would 200 and drop the value.
+// -----------------------------------------------------------------------------
+
+/** Get the context budget (tokens of history a turn may carry). */
+export async function getContextBudget(sessionId: string): Promise<number | null> {
+  return (
+    await request<{ context_budget: number | null }>(
+      'GET',
+      `/api/session/${encodeURIComponent(sessionId)}/config/context-budget`,
+      { errorMessage: 'Failed to get context budget' },
+    )
+  ).context_budget;
+}
+
+/** Set the context budget. `null` restores the daemon's default. */
+export async function setContextBudget(sessionId: string, budget: number | null): Promise<void> {
+  await request<void>('PUT', `/api/session/${encodeURIComponent(sessionId)}/config/context-budget`, {
+    errorMessage: 'Failed to set context budget',
+    parseAs: 'none',
+    ...jsonRequest({ context_budget: budget }),
+  });
+}
+
+/** Get the context window size. */
+export async function getContextWindow(sessionId: string): Promise<number | null> {
+  return (
+    await request<{ context_window: number | null }>(
+      'GET',
+      `/api/session/${encodeURIComponent(sessionId)}/config/context-window`,
+      { errorMessage: 'Failed to get context window' },
+    )
+  ).context_window;
+}
+
+/** Set the context window size. `null` restores the daemon's default. */
+export async function setContextWindow(sessionId: string, window: number | null): Promise<void> {
+  await request<void>('PUT', `/api/session/${encodeURIComponent(sessionId)}/config/context-window`, {
+    errorMessage: 'Failed to set context window',
+    parseAs: 'none',
+    ...jsonRequest({ context_window: window }),
+  });
+}
+
+/** Get the autocompact threshold (0..1 fraction of the window). */
+export async function getAutocompactThreshold(sessionId: string): Promise<number | null> {
+  return (
+    await request<{ autocompact_threshold: number | null }>(
+      'GET',
+      `/api/session/${encodeURIComponent(sessionId)}/config/autocompact-threshold`,
+      { errorMessage: 'Failed to get autocompact threshold' },
+    )
+  ).autocompact_threshold;
+}
+
+/** Set the autocompact threshold. `null` restores the daemon's default. */
+export async function setAutocompactThreshold(
+  sessionId: string,
+  threshold: number | null,
+): Promise<void> {
+  await request<void>(
+    'PUT',
+    `/api/session/${encodeURIComponent(sessionId)}/config/autocompact-threshold`,
+    {
+      errorMessage: 'Failed to set autocompact threshold',
+      parseAs: 'none',
+      ...jsonRequest({ autocompact_threshold: threshold }),
+    },
+  );
+}
+
+/** Get the agent-loop iteration cap. */
+export async function getMaxIterations(sessionId: string): Promise<number | null> {
+  return (
+    await request<{ max_iterations: number | null }>(
+      'GET',
+      `/api/session/${encodeURIComponent(sessionId)}/config/max-iterations`,
+      { errorMessage: 'Failed to get max iterations' },
+    )
+  ).max_iterations;
+}
+
+/** Set the agent-loop iteration cap. `null` restores the daemon's default. */
+export async function setMaxIterations(sessionId: string, max: number | null): Promise<void> {
+  await request<void>('PUT', `/api/session/${encodeURIComponent(sessionId)}/config/max-iterations`, {
+    errorMessage: 'Failed to set max iterations',
+    parseAs: 'none',
+    ...jsonRequest({ max_iterations: max }),
+  });
+}
+
+/**
+ * Get the per-turn execution timeout, in seconds.
+ *
+ * The field is `timeout_secs`, not `execution_timeout`: the RPC method is
+ * `session.set_execution_timeout` but its wire field never matched its name.
+ */
+export async function getExecutionTimeout(sessionId: string): Promise<number | null> {
+  return (
+    await request<{ timeout_secs: number | null }>(
+      'GET',
+      `/api/session/${encodeURIComponent(sessionId)}/config/execution-timeout`,
+      { errorMessage: 'Failed to get execution timeout' },
+    )
+  ).timeout_secs;
+}
+
+/** Set the per-turn execution timeout. `null` restores the daemon's default. */
+export async function setExecutionTimeout(sessionId: string, secs: number | null): Promise<void> {
+  await request<void>(
+    'PUT',
+    `/api/session/${encodeURIComponent(sessionId)}/config/execution-timeout`,
+    {
+      errorMessage: 'Failed to set execution timeout',
+      parseAs: 'none',
+      ...jsonRequest({ timeout_secs: secs }),
+    },
+  );
+}
+
+/** Get how many times a failed output validation is retried. */
+export async function getValidationRetries(sessionId: string): Promise<number | null> {
+  return (
+    await request<{ validation_retries: number | null }>(
+      'GET',
+      `/api/session/${encodeURIComponent(sessionId)}/config/validation-retries`,
+      { errorMessage: 'Failed to get validation retries' },
+    )
+  ).validation_retries;
+}
+
+/** Set how many times a failed output validation is retried. Required, not nullable. */
+export async function setValidationRetries(sessionId: string, retries: number): Promise<void> {
+  await request<void>(
+    'PUT',
+    `/api/session/${encodeURIComponent(sessionId)}/config/validation-retries`,
+    {
+      errorMessage: 'Failed to set validation retries',
+      parseAs: 'none',
+      ...jsonRequest({ validation_retries: retries }),
+    },
+  );
+}
+
+/** Get the context-assembly strategy, by its string spelling. */
+export async function getContextStrategy(sessionId: string): Promise<string | null> {
+  return (
+    await request<{ context_strategy: string | null }>(
+      'GET',
+      `/api/session/${encodeURIComponent(sessionId)}/config/context-strategy`,
+      { errorMessage: 'Failed to get context strategy' },
+    )
+  ).context_strategy;
+}
+
+/**
+ * Set the context-assembly strategy.
+ *
+ * No client-side allowlist of names: the daemon parses the string and answers
+ * 422 for one it does not know, so a list here would be a second place to update
+ * every time the enum grows.
+ */
+export async function setContextStrategy(sessionId: string, strategy: string): Promise<void> {
+  await request<void>(
+    'PUT',
+    `/api/session/${encodeURIComponent(sessionId)}/config/context-strategy`,
+    {
+      errorMessage: 'Failed to set context strategy',
+      parseAs: 'none',
+      ...jsonRequest({ context_strategy: strategy }),
+    },
+  );
+}
+
+/** Get the output-validation mode, by its string spelling. */
+export async function getOutputValidation(sessionId: string): Promise<string | null> {
+  return (
+    await request<{ output_validation: string | null }>(
+      'GET',
+      `/api/session/${encodeURIComponent(sessionId)}/config/output-validation`,
+      { errorMessage: 'Failed to get output validation' },
+    )
+  ).output_validation;
+}
+
+/** Set the output-validation mode. The daemon validates the name; see above. */
+export async function setOutputValidation(sessionId: string, validation: string): Promise<void> {
+  await request<void>(
+    'PUT',
+    `/api/session/${encodeURIComponent(sessionId)}/config/output-validation`,
+    {
+      errorMessage: 'Failed to set output validation',
+      parseAs: 'none',
+      ...jsonRequest({ output_validation: validation }),
+    },
+  );
+}
+
+/** Get the session's system prompt override. */
+export async function getSystemPrompt(sessionId: string): Promise<string | null> {
+  return (
+    await request<{ system_prompt: string | null }>(
+      'GET',
+      `/api/session/${encodeURIComponent(sessionId)}/config/system-prompt`,
+      { errorMessage: 'Failed to get system prompt' },
+    )
+  ).system_prompt;
+}
+
+/** Set the session's system prompt override. */
+export async function setSystemPrompt(sessionId: string, prompt: string): Promise<void> {
+  await request<void>('PUT', `/api/session/${encodeURIComponent(sessionId)}/config/system-prompt`, {
+    errorMessage: 'Failed to set system prompt',
+    parseAs: 'none',
+    ...jsonRequest({ system_prompt: prompt }),
+  });
+}
+
+/**
+ * Get the session mode.
+ *
+ * `setMode` has existed all along with no reader, so a panel could set a mode
+ * and then keep rendering whatever it last guessed.
+ */
+export async function getMode(sessionId: string): Promise<string | null> {
+  return (
+    await request<{ mode: string | null }>(
+      'GET',
+      `/api/session/${encodeURIComponent(sessionId)}/mode`,
+      { errorMessage: 'Failed to get session mode' },
+    )
+  ).mode;
+}
+
 // =============================================================================
 // Session Export
 // =============================================================================

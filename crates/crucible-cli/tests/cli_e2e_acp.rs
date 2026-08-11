@@ -30,7 +30,7 @@ fn session_create_help_shows_agent_flag() {
 }
 
 #[test]
-#[ignore = "requires daemon"]
+#[ignore = "requires: cru binary"]
 fn session_create_rejects_unknown_agent_profile() {
     let daemon = TestDaemon::start();
 
@@ -45,7 +45,7 @@ fn session_create_rejects_unknown_agent_profile() {
 }
 
 #[test]
-#[ignore = "requires daemon"]
+#[ignore = "requires: cru binary"]
 fn session_create_rejects_empty_agent_profile() {
     let daemon = TestDaemon::start();
 
@@ -61,7 +61,7 @@ fn session_create_rejects_empty_agent_profile() {
 }
 
 #[test]
-#[ignore = "requires daemon"]
+#[ignore = "requires: cru binary"]
 fn session_create_accepts_builtin_acp_profiles() {
     let daemon = TestDaemon::start();
 
@@ -78,7 +78,7 @@ fn session_create_accepts_builtin_acp_profiles() {
 }
 
 #[test]
-#[ignore = "requires daemon and mock-acp-agent binary"]
+#[ignore = "requires: cru binary, mock-acp-agent"]
 fn session_acp_lifecycle_with_mock_agent_profile() {
     let mock_path = mock_agent_path();
     assert!(
@@ -131,7 +131,7 @@ fn session_acp_lifecycle_with_mock_agent_profile() {
 /// Validates that an HTTP-capable mock agent can go through the full
 /// create → send → end lifecycle when using capability-aware transport.
 #[test]
-#[ignore = "requires daemon and mock-acp-agent binary"]
+#[ignore = "requires: cru binary, mock-acp-agent"]
 fn session_acp_lifecycle_with_http_capable_mock() {
     let mock_path = mock_agent_path();
     assert!(
@@ -191,7 +191,7 @@ fn session_acp_lifecycle_with_http_capable_mock() {
 /// Validates that a stdio-only mock agent can go through the full lifecycle
 /// even when the daemon has an in-process MCP host running.
 #[test]
-#[ignore = "requires daemon and mock-acp-agent binary"]
+#[ignore = "requires: cru binary, mock-acp-agent"]
 fn session_acp_lifecycle_with_stdio_only_mock() {
     let mock_path = mock_agent_path();
     assert!(
