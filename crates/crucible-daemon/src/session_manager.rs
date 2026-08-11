@@ -34,6 +34,17 @@ pub struct SessionManager {
     /// Resolved and tilde-expanded at construction (see
     /// [`crate::scm::resolve_session_workspace_dir`]).
     session_workspace_dir: Option<PathBuf>,
+    /// Serializes each session's read-modify-write cycle against `meta.json`.
+    ///
+    /// Every mutator here clones the session out of `sessions` and only then
+    /// awaits `storage.save`. Without this lock two of them interleave and the
+    /// loser's stale clone lands last: the persist task's `update_last_activity`
+    /// captures the session while it is still `Active`, `end_session` writes
+    /// `Ended` and drops it from the map, and the pending `Active` write then
+    /// overwrites it — an ended session that `session.get` cannot find but
+    /// `session.list` reports as active forever. The interleaved non-atomic
+    /// writes can also leave `meta.json` unparseable.
+    session_locks: DashMap<String, Arc<tokio::sync::Mutex<()>>>,
 }
 
 impl SessionManager {
@@ -50,7 +61,22 @@ impl SessionManager {
             recording_senders: DashMap::new(),
             session_kilns: DashMap::new(),
             session_workspace_dir: None,
+            session_locks: DashMap::new(),
         }
+    }
+
+    /// Guard for a session's mutate-then-persist cycle. See `session_locks`.
+    ///
+    /// Never hold this across a call to another method that takes it — the
+    /// mutex is not reentrant. `archive_session`/`delete_session` therefore
+    /// call `end_session` before acquiring their own guard.
+    async fn persist_guard(&self, session_id: &str) -> tokio::sync::OwnedMutexGuard<()> {
+        let lock = self
+            .session_locks
+            .entry(session_id.to_string())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone();
+        lock.lock_owned().await
     }
 
     /// Set the base directory for per-session scratch workspaces.
@@ -262,6 +288,7 @@ impl SessionManager {
     }
 
     pub async fn update_session(&self, session: &Session) -> Result<(), SessionError> {
+        let _guard = self.persist_guard(&session.id).await;
         self.storage.save(session).await?;
         self.session_kilns
             .insert(session.id.clone(), session.kiln.clone());
@@ -368,6 +395,7 @@ impl SessionManager {
     ///
     /// Returns the previous state if successful.
     pub async fn pause_session(&self, session_id: &str) -> Result<SessionState, SessionError> {
+        let _guard = self.persist_guard(session_id).await;
         let (previous, session) = {
             let mut entry = self
                 .sessions
@@ -397,6 +425,7 @@ impl SessionManager {
     ///
     /// Returns the previous state if successful.
     pub async fn resume_session(&self, session_id: &str) -> Result<SessionState, SessionError> {
+        let _guard = self.persist_guard(session_id).await;
         let (previous, session) = {
             let mut entry = self
                 .sessions
@@ -433,6 +462,7 @@ impl SessionManager {
         self.recording_senders.get(session_id).map(|r| r.clone())
     }
     pub async fn end_session(&self, session_id: &str) -> Result<Session, SessionError> {
+        let _guard = self.persist_guard(session_id).await;
         let session = {
             let mut entry = self
                 .sessions
@@ -468,6 +498,7 @@ impl SessionManager {
         self.sessions.remove(session_id);
         self.recording_senders.remove(session_id);
         self.session_kilns.remove(session_id);
+        self.session_locks.remove(session_id);
 
         let session_dir = FileSessionStorage::sessions_base(kiln).join(session_id);
         let persisted_exists = session_dir.exists();
@@ -499,6 +530,9 @@ impl SessionManager {
             }
         }
 
+        // After `end_session` above, never before: the guard is not reentrant.
+        let _guard = self.persist_guard(session_id).await;
+
         let session_dir = FileSessionStorage::sessions_base(kiln).join(session_id);
         let meta_path = session_dir.join("meta.json");
         let legacy_path = session_dir.join("session.json");
@@ -529,6 +563,8 @@ impl SessionManager {
         session_id: &str,
         kiln: &Path,
     ) -> Result<Session, SessionError> {
+        let _guard = self.persist_guard(session_id).await;
+
         let session_dir = FileSessionStorage::sessions_base(kiln).join(session_id);
         let meta_path = session_dir.join("meta.json");
         let legacy_path = session_dir.join("session.json");
@@ -556,6 +592,7 @@ impl SessionManager {
     /// Sets the session state to Compacting. The actual compaction
     /// (summarizing events) is performed by the agent when it sees this state.
     pub async fn request_compaction(&self, session_id: &str) -> Result<Session, SessionError> {
+        let _guard = self.persist_guard(session_id).await;
         let session = {
             let mut entry = self
                 .sessions
@@ -618,6 +655,7 @@ impl SessionManager {
 
     /// Update session title and persist the change.
     pub async fn set_title(&self, session_id: &str, title: String) -> Result<(), SessionError> {
+        let _guard = self.persist_guard(session_id).await;
         let session = {
             let mut entry = self
                 .sessions
@@ -714,6 +752,7 @@ impl SessionManager {
         session_id: &str,
         last_activity: DateTime<Utc>,
     ) -> Result<(), SessionError> {
+        let _guard = self.persist_guard(session_id).await;
         let session = {
             let mut entry = self
                 .sessions

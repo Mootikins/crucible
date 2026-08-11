@@ -806,3 +806,124 @@ async fn test_update_session_does_not_modify_memory_on_storage_failure() {
         "In-memory session should retain original title when storage fails"
     );
 }
+
+/// Storage that records the order of `save` calls and can hold one of them
+/// open, so the interleaving under test is forced rather than raced for.
+struct GatedSaveStorage {
+    inner: FileSessionStorage,
+    /// Saves observed, in completion order, as `(session_id, state)`.
+    order: std::sync::Mutex<Vec<(String, SessionState)>>,
+    /// Blocks the first save that arrives while it is `Some`.
+    gate: std::sync::Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
+}
+
+#[async_trait]
+impl SessionStorage for GatedSaveStorage {
+    async fn save(&self, session: &Session) -> Result<(), SessionError> {
+        let held = self.gate.lock().unwrap().take();
+        if let Some(rx) = held {
+            let _ = rx.await;
+        }
+        self.inner.save(session).await?;
+        self.order
+            .lock()
+            .unwrap()
+            .push((session.id.clone(), session.state));
+        Ok(())
+    }
+    async fn load(&self, id: &str, kiln: &Path) -> Result<Session, SessionError> {
+        self.inner.load(id, kiln).await
+    }
+    async fn list(&self, kiln: &Path) -> Result<Vec<SessionSummary>, SessionError> {
+        self.inner.list(kiln).await
+    }
+    async fn append_event(&self, s: &Session, e: &str) -> Result<(), SessionError> {
+        self.inner.append_event(s, e).await
+    }
+    async fn append_markdown(&self, s: &Session, r: &str, c: &str) -> Result<(), SessionError> {
+        self.inner.append_markdown(s, r, c).await
+    }
+    async fn load_events(
+        &self,
+        id: &str,
+        kiln: &Path,
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> Result<Vec<serde_json::Value>, SessionError> {
+        self.inner.load_events(id, kiln, limit, offset).await
+    }
+    async fn count_events(&self, id: &str, kiln: &Path) -> Result<usize, SessionError> {
+        self.inner.count_events(id, kiln).await
+    }
+}
+
+/// The persist task refreshes `last_activity` on every session event, and it
+/// clones the session out of the map before awaiting the write. When
+/// `session.end` lands in that window, the stale `Active` clone must not be
+/// the last thing written to `meta.json` — otherwise `session.get` reports the
+/// session gone while `session.list` keeps offering it as active.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ending_a_session_outlasts_a_concurrent_last_activity_persist() {
+    let tmp = TempDir::new().unwrap();
+    let kiln = tmp.path().to_path_buf();
+    let (release, gate) = tokio::sync::oneshot::channel();
+    let storage = Arc::new(GatedSaveStorage {
+        inner: FileSessionStorage::new(),
+        order: std::sync::Mutex::new(Vec::new()),
+        gate: std::sync::Mutex::new(None),
+    });
+    let manager = Arc::new(SessionManager::with_storage(storage.clone()));
+
+    let session = manager
+        .create_session(SessionType::Chat, kiln.clone(), None, vec![], None)
+        .await
+        .unwrap();
+    let id = session.id.clone();
+
+    // Arm the gate only now, so it catches the last-activity save rather than
+    // the create.
+    *storage.gate.lock().unwrap() = Some(gate);
+
+    let activity = tokio::spawn({
+        let manager = manager.clone();
+        let id = id.clone();
+        async move { manager.update_last_activity(&id, Utc::now()).await }
+    });
+    // Let the persist task reach the gate holding its Active clone.
+    while storage.gate.lock().unwrap().is_some() {
+        tokio::task::yield_now().await;
+    }
+
+    let ending = tokio::spawn({
+        let manager = manager.clone();
+        let id = id.clone();
+        async move { manager.end_session(&id).await }
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    let _ = release.send(());
+
+    activity.await.unwrap().unwrap();
+    ending.await.unwrap().unwrap();
+
+    let persisted = manager.storage.load(&id, &kiln).await.unwrap();
+    assert_eq!(
+        persisted.state,
+        SessionState::Ended,
+        "last write to meta.json was {:?}",
+        storage.order.lock().unwrap()
+    );
+
+    let active = manager
+        .list_sessions_filtered_async(
+            Some(&kiln),
+            None,
+            Some(SessionType::Chat),
+            Some(SessionState::Active),
+            false,
+        )
+        .await;
+    assert!(
+        !active.iter().any(|s| s.id == id),
+        "ended session reappeared in the active list"
+    );
+}
