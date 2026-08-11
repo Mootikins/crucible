@@ -6,6 +6,7 @@ import {
   ensureReviewLayer,
   reviewDecorations,
   reviewHunksField,
+  syncReviewLayer,
   type ReviewHunkMark,
 } from '../review-decorations';
 
@@ -144,5 +145,48 @@ describe('ensureReviewLayer', () => {
   it('pushing hunks at a view with no layer is harmless', () => {
     const view = mount();
     expect(() => applyReviewHunks(view, [mark()])).not.toThrow();
+  });
+});
+
+describe('syncReviewLayer', () => {
+  it('a file with nothing to review gets no gutter column', () => {
+    // The column is 3.5rem of nothing on a file no agent has touched, which
+    // is every file the user opens by hand — and in live preview, where the
+    // line-number gutter is deliberately dropped so the buffer reads as prose,
+    // an empty strip is the only gutter on screen.
+    const view = mount();
+    syncReviewLayer(view, [], { onReveal: vi.fn() });
+
+    expect(view.dom.querySelector('.cm-review-gutter')).toBeNull();
+    expect(view.state.field(reviewHunksField, false)).toBeUndefined();
+  });
+
+  it('installs the moment the first hunk lands', () => {
+    const view = mount();
+    syncReviewLayer(view, [], { onReveal: vi.fn() });
+    syncReviewLayer(view, [mark()], { onReveal: vi.fn() });
+
+    expect(view.dom.querySelector('.cm-review-gutter')).not.toBeNull();
+    expect(view.dom.querySelectorAll('.cm-review-chip')).toHaveLength(1);
+  });
+
+  it('keeps pushing into a layer that is already up', () => {
+    const view = mount();
+    syncReviewLayer(view, [mark()], { onReveal: vi.fn() });
+    syncReviewLayer(view, [mark({ id: 'h2', start: 1, end: 2 }), mark()], { onReveal: vi.fn() });
+
+    expect(view.dom.querySelectorAll('.cm-review-chip')).toHaveLength(2);
+  });
+
+  it('empties an installed layer when the last hunk is resolved away', () => {
+    // The column itself survives until the host reconfigures — it cannot be
+    // removed in place — so what has to go is every marker in it. Its width
+    // then comes from the chips that are no longer there.
+    const view = mount();
+    syncReviewLayer(view, [mark()], { onReveal: vi.fn() });
+    syncReviewLayer(view, [], { onReveal: vi.fn() });
+
+    expect(view.dom.querySelectorAll('.cm-review-chip')).toHaveLength(0);
+    expect(view.dom.querySelectorAll('.cm-review-gutter .cm-gutterElement')).toHaveLength(0);
   });
 });

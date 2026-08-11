@@ -117,7 +117,9 @@ const reviewTheme = EditorView.baseTheme({
   '.cm-review-accepted': { backgroundColor: 'color-mix(in srgb, var(--color-ok) 10%, transparent)' },
   '.cm-review-rejected': { opacity: '0.5' },
   '.cm-review-external': { backgroundColor: 'color-mix(in srgb, var(--color-muted) 10%, transparent)' },
-  '.cm-review-gutter': { minWidth: '3.5rem' },
+  // No minimum: the column is as wide as the chips in it, so one whose hunks
+  // have all been resolved takes no space while it waits for a reconfigure.
+  '.cm-review-gutter': { padding: '0 2px' },
   '.cm-review-chip': {
     display: 'inline-block',
     maxWidth: '7rem',
@@ -183,4 +185,33 @@ export function ensureReviewLayer(view: EditorView, opts: ReviewDecorationOption
 /** Push the current hunks into a view. Harmless on a view with no layer. */
 export function applyReviewHunks(view: EditorView, hunks: ReviewHunkMark[]): void {
   view.dispatch({ effects: setReviewHunks.of(hunks) });
+}
+
+/**
+ * Bring a view's review layer in line with the hunks it should be showing —
+ * installing it on the first hunk, and never before.
+ *
+ * A gutter column exists as soon as its extension does, whether or not any
+ * line has a marker for it. Installing the layer on open therefore charged
+ * every file the width of a chip that was not there: an empty strip on every
+ * note the user opened by hand, and in live preview — which drops the
+ * line-number gutter so the buffer reads as prose — the only gutter on screen.
+ *
+ * Hunk-free is the common case, so the layer waits for one. Once up it cannot
+ * be taken down in place (CodeMirror has no way to remove an appended
+ * extension), so a file whose hunks are all resolved keeps an empty column
+ * until the host next reconfigures. That column collapses to nothing on its
+ * own: its width is the chips' width, and there are none.
+ */
+export function syncReviewLayer(
+  view: EditorView,
+  hunks: ReviewHunkMark[],
+  opts: ReviewDecorationOptions,
+): void {
+  const installed = view.state.field(reviewHunksField, false) !== undefined;
+  if (!installed) {
+    if (hunks.length === 0) return;
+    ensureReviewLayer(view, opts);
+  }
+  applyReviewHunks(view, hunks);
 }

@@ -23,11 +23,7 @@ import { Menu } from '@ark-ui/solid';
 import { Portal } from 'solid-js/web';
 import { attachNativeMenuGuard } from '@/lib/context-menu';
 import { EditorView } from '@codemirror/view';
-import {
-  applyReviewHunks,
-  ensureReviewLayer,
-  type ReviewHunkMark,
-} from './editor/review-decorations';
+import { syncReviewLayer, type ReviewHunkMark } from './editor/review-decorations';
 import { pendingReveal, reviewActions, reviewStore, toolCallLabel } from '@/lib/review-store';
 import { isExternal } from '@/lib/review-types';
 
@@ -237,7 +233,8 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
     }));
   });
 
-  // Install the layer, then push the hunks.
+  // Sync the layer with the file's hunks — which installs it on the first one
+  // and leaves a hunk-free file with no gutter column at all.
   //
   // Deferred to a microtask because `CodeMirrorEditor` rebuilds its entire
   // configuration with `StateEffect.reconfigure` whenever one of seven props
@@ -263,8 +260,9 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
     if (!view) return;
     queueMicrotask(() => {
       if (editorView() !== view) return;
-      ensureReviewLayer(view, { onReveal: (h) => h.toolCallId && reviewActions.revealToolCall(h.toolCallId) });
-      applyReviewHunks(view, marks);
+      syncReviewLayer(view, marks, {
+        onReveal: (h) => h.toolCallId && reviewActions.revealToolCall(h.toolCallId),
+      });
     });
   });
 
