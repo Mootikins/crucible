@@ -169,11 +169,20 @@ async fn init_writes_only_to_the_config_path_it_was_given() {
         !parsed.kilns.is_empty(),
         "the kiln must be registered in the config path passed in, got:\n{contents}"
     );
-    // Which provider gets picked depends on the host's env keys (detection
-    // is honest about OPENROUTER/GLM tokens now); this test only pins that
-    // the selection landed in the path it was given.
-    assert!(
-        !parsed.llm.providers.is_empty(),
-        "the provider selection must be registered too, got:\n{contents}"
+    // Which provider gets picked depends on the host's env keys, and whether
+    // one is picked at all depends on whether anything ANSWERS: detection
+    // probes now, and `init` deliberately registers nothing when nothing is
+    // usable, because a dead `[llm.providers.*]` entry makes `cru chat`'s
+    // zero-provider guard pass for exactly the user it protects. A runner with
+    // no credentials and no Ollama is that case, so asserting a provider
+    // exists here tested the developer's shell rather than this code — it is
+    // how this test passed locally and failed on CI. What belongs to this test
+    // is the PATH: whatever was registered went to the file it was handed.
+    let registered_in_the_given_path = !parsed.llm.providers.is_empty();
+    let default_provider_set = parsed.llm.default_provider().is_some();
+    assert_eq!(
+        registered_in_the_given_path, default_provider_set,
+        "a registered provider and the default that names it travel together, \
+         and both belong in the config path passed in, got:\n{contents}"
     );
 }
