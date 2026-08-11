@@ -473,74 +473,6 @@ struct StreamContext {
     context_attach: Arc<crucible_lua::ContextAttachRegistry>,
 }
 
-#[allow(dead_code)] // fields capture config snapshot; model used in events, others reserved for stream configuration
-#[derive(Clone)]
-struct AgentCache {
-    inner: Arc<DashMap<String, Arc<Mutex<BoxedAgentHandle>>>>,
-}
-
-impl AgentCache {
-    fn new() -> Self {
-        Self {
-            inner: Arc::new(DashMap::new()),
-        }
-    }
-
-    fn get(
-        &self,
-        key: &str,
-    ) -> Option<dashmap::mapref::one::Ref<'_, String, Arc<Mutex<BoxedAgentHandle>>>> {
-        self.inner.get(key)
-    }
-
-    fn insert(&self, key: String, value: Arc<Mutex<BoxedAgentHandle>>) {
-        self.inner.insert(key, value);
-    }
-
-    fn remove(&self, key: &str) -> Option<(String, Arc<Mutex<BoxedAgentHandle>>)> {
-        self.inner.remove(key)
-    }
-
-    #[cfg(test)]
-    fn contains_key(&self, key: &str) -> bool {
-        self.inner.contains_key(key)
-    }
-}
-
-#[derive(Clone)]
-struct SessionStateCache {
-    inner: Arc<DashMap<String, Arc<tokio::sync::Mutex<SessionEventState>>>>,
-}
-
-impl SessionStateCache {
-    fn new() -> Self {
-        Self {
-            inner: Arc::new(DashMap::new()),
-        }
-    }
-
-    fn get(
-        &self,
-        key: &str,
-    ) -> Option<dashmap::mapref::one::Ref<'_, String, Arc<tokio::sync::Mutex<SessionEventState>>>>
-    {
-        self.inner.get(key)
-    }
-
-    fn insert(&self, key: String, value: Arc<tokio::sync::Mutex<SessionEventState>>) {
-        self.inner.insert(key, value);
-    }
-
-    fn remove(&self, key: &str) -> Option<(String, Arc<tokio::sync::Mutex<SessionEventState>>)> {
-        self.inner.remove(key)
-    }
-
-    #[cfg(test)]
-    fn contains_key(&self, key: &str) -> bool {
-        self.inner.contains_key(key)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ResolvedProvider {
     /// Backend/provider type
@@ -555,7 +487,7 @@ pub(crate) struct ResolvedProvider {
 
 pub struct AgentManager {
     request_state: Arc<DashMap<String, RequestState>>,
-    agent_cache: AgentCache,
+    agent_cache: SessionCache<Arc<Mutex<BoxedAgentHandle>>>,
     session_dispatchers: Arc<DashMap<String, Arc<dyn ToolDispatcher>>>,
     /// Config `runtimepath`, for resolving `runtime/defaults/init.lua`.
     /// Empty is the correct default, not a missing value: resolution falls
@@ -601,7 +533,7 @@ pub struct AgentManager {
     /// The service holds a `Weak` back-reference (bound at startup), so this
     /// strong Arc creates no cycle.
     delegation_service: Arc<DelegationService>,
-    session_states: SessionStateCache,
+    session_states: SessionCache<Arc<Mutex<SessionEventState>>>,
     pending_permissions: Arc<DashMap<String, HashMap<PermissionId, PendingPermission>>>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
     llm_config: Option<crucible_core::config::LlmConfig>,
@@ -655,6 +587,21 @@ pub struct AgentManager {
     /// User node). On undo, the tree's new cursor position is looked up
     /// here and its snapshot is replayed to revert tool-side file edits.
     pub(crate) snapshots: Arc<crate::workspace_snapshot::SnapshotMap>,
+    /// Per-session review ledgers: the per-tool-call attribution beside the
+    /// per-turn snapshots above. The two are independent — snapshots exist to
+    /// undo a whole turn, ledgers to say which call produced which hunk — so
+    /// undo consumes a snapshot without touching the ledger. It does not need
+    /// to: the composed diff is derived from the worktree, so a restored turn
+    /// simply stops producing hunks for its intervals to attribute.
+    pub(crate) review: Arc<crate::review::ReviewLedgers>,
+    /// Worktree watch behind the review ledger's external-change backstop.
+    ///
+    /// A `OnceLock` bound at daemon startup, like the plugin registries above
+    /// and for the same reason: starting a watch registers inotify handles and
+    /// is async, so it cannot happen in `new`. Absent in every test manager
+    /// and in any embedding that never starts a server — attribution is
+    /// unaffected, only the push notification is.
+    external_watch: std::sync::OnceLock<Arc<crate::watch::external_changes::ExternalChangeWatch>>,
     /// Test-support: when set, agent handles are built through this instead
     /// of the real factory. See [`AgentFactoryOverride`].
     agent_factory_override: std::sync::OnceLock<Arc<AgentFactoryOverride>>,
@@ -697,7 +644,7 @@ impl AgentManager {
         ]));
         Self {
             request_state: Arc::new(DashMap::new()),
-            agent_cache: AgentCache::new(),
+            agent_cache: SessionCache::default(),
             runtimepath: Vec::new(),
             session_defaults: crucible_lua::SessionDefaults::new(),
             modes: crucible_lua::ModeRegistry::new(),
@@ -708,7 +655,7 @@ impl AgentManager {
             session_manager: params.session_manager,
             background_manager: params.background_manager,
             delegation_service,
-            session_states: SessionStateCache::new(),
+            session_states: SessionCache::default(),
             pending_permissions: Arc::new(DashMap::new()),
             session_dispatchers: Arc::new(DashMap::new()),
             mcp_gateway: params.mcp_gateway,
@@ -728,6 +675,8 @@ impl AgentManager {
             plugin_tool_registry: std::sync::OnceLock::new(),
             titles_in_flight: Arc::new(DashMap::new()),
             snapshots: Arc::new(crate::workspace_snapshot::SnapshotMap::default()),
+            review: Arc::new(crate::review::ReviewLedgers::default()),
+            external_watch: std::sync::OnceLock::new(),
             agent_factory_override: std::sync::OnceLock::new(),
         }
     }
@@ -774,6 +723,25 @@ impl AgentManager {
         self.plugin_handlers
             .get()
             .map(|(r, l)| (Arc::clone(r), Arc::clone(l)))
+    }
+
+    /// Bind the worktree watch behind the review backstop, and hand its
+    /// tracker to the ledgers so their own writes stop being reported as the
+    /// user's. Idempotent, like the other startup bindings.
+    pub fn set_external_watch(
+        &self,
+        watch: Arc<crate::watch::external_changes::ExternalChangeWatch>,
+    ) {
+        self.review
+            .set_external_tracker(Arc::clone(watch.tracker()));
+        let _ = self.external_watch.set(watch);
+    }
+
+    /// The worktree watch, or `None` when the daemon started none.
+    pub(crate) fn external_watch(
+        &self,
+    ) -> Option<&Arc<crate::watch::external_changes::ExternalChangeWatch>> {
+        self.external_watch.get()
     }
 
     /// Bind the plugin isolation registry. Idempotent, like the others.
@@ -1327,6 +1295,40 @@ impl AgentManager {
         // turn) and the cache-stats entry. Both grow per turn and, before this,
         // were never released — snapshots leaked for the daemon's whole lifetime.
         self.snapshots.clear_session(session_id);
+        // The ledger, its review decisions and its comments all die with the
+        // session. Persisting them across a restart is `ReviewLedgers::restore`
+        // on the resume path, not a survival property of this map.
+        //
+        // A delegated child is the exception: `delegate_session` is
+        // deliberately left unbracketed — a parent bracket would overlap every
+        // one of the child's and mark them all contested — so the child's own
+        // intervals are the only attribution its work has, and they have to be
+        // copied into the parent *before* this drops them. That is ordered and
+        // journalled, hence spawned; a session with no registered parent, which
+        // is every ordinary one, still tears down synchronously.
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) if self.review.parent_of(session_id).is_some() => {
+                let review = Arc::clone(&self.review);
+                let session_id = session_id.to_string();
+                handle.spawn(async move { review.harvest_and_clear(&session_id).await });
+            }
+            _ => self.review.clear_session(session_id),
+        }
+        // Release the session's claim on its watched roots. Best-effort and
+        // spawned: an inotify handle that outlives its session costs a
+        // descriptor, where blocking teardown on a watch backend would stall
+        // every caller of this function.
+        if let (Ok(handle), Some(watch)) =
+            (tokio::runtime::Handle::try_current(), self.external_watch())
+        {
+            let watch = Arc::clone(watch);
+            let session_id = session_id.to_string();
+            handle.spawn(async move {
+                if let Err(e) = watch.unwatch_session(&session_id).await {
+                    debug!(session_id = %session_id, error = %e, "review watch not released");
+                }
+            });
+        }
         self.cache_stats.remove(session_id);
     }
 
@@ -1446,6 +1448,13 @@ impl AgentManager {
 
 pub(crate) mod attachments;
 pub mod autocompact;
+/// A per-session handle map.
+///
+/// The two of these `AgentManager` keeps were a module of hand-written
+/// `DashMap` wrappers whose doc claimed they kept "the lock discipline" in one
+/// place. Nothing locked: every method forwarded one line, and `get` handed
+/// back a raw `DashMap` ref either way.
+type SessionCache<T> = Arc<DashMap<String, T>>;
 pub mod cache_stats;
 pub mod context_length;
 mod iter;

@@ -27,6 +27,8 @@
 mod types;
 
 pub use types::{
-    validate_output, ContextStrategy, OutputValidation, RecordingMode, Session, SessionAgent,
-    SessionState, SessionSummary, SessionType,
+    validate_output, ChildLedgerRef, Comment, CommentAuthor, ComposedHunk, ContextStrategy,
+    GateBlock, HunkId, Integrity, Interval, Ledger, LineRange, OutputValidation, PhysicalRoot,
+    RecordingMode, ReviewState, RootBase, RootInterval, RootStatus, Session, SessionAgent,
+    SessionState, SessionSummary, SessionType, Skip, SkipKind, TreeSha, Verdict,
 };

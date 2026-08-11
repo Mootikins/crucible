@@ -39,6 +39,7 @@ fn validate_socket_path(path: &Path) -> Result<()> {
 // retries) lives here in `mod.rs`.
 pub mod agent;
 pub mod lua;
+pub mod review;
 pub mod session;
 pub mod storage;
 pub mod subscription;

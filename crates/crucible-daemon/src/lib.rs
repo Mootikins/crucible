@@ -60,6 +60,7 @@ pub mod protocol;
 pub mod provider;
 pub mod recording;
 pub mod replay;
+pub mod review;
 pub mod rpc;
 pub mod rpc_client;
 pub mod rpc_helpers;

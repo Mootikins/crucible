@@ -329,6 +329,27 @@ impl SessionEventMessage {
         )
     }
 
+    /// The session's composed diff moved: a hunk was accepted, rejected,
+    /// reverted, commented on, or a comment was resolved.
+    ///
+    /// Deliberately carries only `data.reason` and no hunk identity. A hunk id
+    /// is derived from its content *and* its range in `session_base`, so a
+    /// change that re-aligns an ambiguous region moves the ids of hunks the
+    /// user never touched — a client that patched a single row in place from
+    /// this event would be showing a decision attached to different lines. The
+    /// event says "re-list"; the listing is the truth.
+    ///
+    /// `reason` is advisory (`"accepted"`, `"rejected"`, `"commented"`,
+    /// `"comment_resolved"`, `"external"`). Clients must not switch on it for
+    /// correctness — an unrecognised reason still means re-list.
+    pub fn review_changed(session_id: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self::new(
+            session_id,
+            "review_changed",
+            serde_json::json!({ "reason": reason.into() }),
+        )
+    }
+
     pub fn message_complete(
         session_id: impl Into<String>,
         message_id: impl Into<String>,
@@ -739,6 +760,16 @@ mod tests {
         assert_eq!(evt.event, "mode_changed");
         // Wire contract: web events.rs and the SSE reducer read data["mode"].
         assert_eq!(evt.data["mode"], "plan");
+    }
+
+    #[test]
+    fn event_review_changed_factory() {
+        let evt = SessionEventMessage::review_changed("s1", "rejected");
+        assert_eq!(evt.event, "review_changed");
+        // Wire contract: the web ChangesPanel and TUI read data["reason"].
+        assert_eq!(evt.data["reason"], "rejected");
+        // No hunk identity by design — see the constructor's doc comment.
+        assert!(evt.data.get("hunk_id").is_none());
     }
 
     #[test]

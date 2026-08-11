@@ -629,8 +629,27 @@ impl AgentManager {
                         })
                     } else {
                         attempt = Some(tracker.record_call(&name, &args));
-                        Self::handle_tool_call_in_stream(&stream_ctx, &tool_call, diffs.clone())
-                            .await
+                        // The review bracket is CLOSED here and OPENED inside
+                        // `handle_tool_call_in_stream`, below its review gate.
+                        // Splitting the two is deliberate: opening late keeps
+                        // the gate's unbounded wait for a human out of the
+                        // agent's interval, while keeping the handle in this
+                        // frame keeps the close-edge count at one. Every early
+                        // return in the callee unwinds to the line below, and a
+                        // cancelled turn drops this frame and fires the
+                        // handle's own `Drop` guard.
+                        let mut bracket = None;
+                        let call_result = Self::handle_tool_call_in_stream(
+                            &stream_ctx,
+                            &tool_call,
+                            diffs.clone(),
+                            &mut bracket,
+                        )
+                        .await;
+                        if let Some(bracket) = bracket {
+                            stream_ctx.close_review_bracket(bracket, &id).await;
+                        }
+                        call_result
                     };
 
                     // Repeat-failure tracking / annotation.
@@ -686,6 +705,15 @@ impl AgentManager {
                         call_id: Some(id.clone()),
                         terminate: false,
                     });
+
+                    // A delegation is attributed by the child's own ledger,
+                    // not by a parent interval (see `needs_review_bracket`),
+                    // so the parent records a reference to it here.
+                    if name == "delegate_session" {
+                        stream_ctx
+                            .link_delegation_child(&id, &tool_result.result)
+                            .await;
+                    }
 
                     // Commit ToolResult to scheduler-owned tree before
                     // feeding it back to the adapter.

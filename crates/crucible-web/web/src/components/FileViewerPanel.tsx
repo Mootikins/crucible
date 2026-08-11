@@ -2,6 +2,7 @@ import {
   Component,
   Show,
   createEffect,
+  createMemo,
   createSignal,
   onCleanup,
   onMount,
@@ -21,7 +22,14 @@ import { PanelShell } from './PanelShell';
 import { Menu } from '@ark-ui/solid';
 import { Portal } from 'solid-js/web';
 import { attachNativeMenuGuard } from '@/lib/context-menu';
-import type { EditorView } from '@codemirror/view';
+import { EditorView } from '@codemirror/view';
+import {
+  applyReviewHunks,
+  ensureReviewLayer,
+  type ReviewHunkMark,
+} from './editor/review-decorations';
+import { pendingReveal, reviewActions, reviewStore, toolCallLabel } from '@/lib/review-store';
+import { isExternal } from '@/lib/review-types';
 
 
 interface FileViewerPanelProps {
@@ -46,8 +54,10 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   const { settings } = useSettingsSafe();
 
   // Live CodeMirror view (source/live modes; undefined in reading mode) for
-  // the context-menu clipboard actions.
-  let editorView: EditorView | undefined;
+  // the context-menu clipboard actions and the review layer. A signal, not a
+  // plain `let`, because the review effects below must run once the view
+  // exists — the ref callback fires after they first evaluate.
+  const [editorView, setEditorView] = createSignal<EditorView | undefined>(undefined);
 
   // Which kiln owns the open file. A buffer's wikilinks resolve in the kiln
   // holding that FILE — following a link out of a note opened from another
@@ -82,7 +92,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
         if (props.filePath) await navigator.clipboard.writeText(props.filePath);
         return;
       }
-      const v = editorView;
+      const v = editorView();
       if (!v) {
         // Reading mode: rendered preview — only copy-selection is meaningful.
         if (action === 'copy') {
@@ -203,6 +213,76 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   const handleSave = () => {
     if (props.filePath) void saveFile(props.filePath);
   };
+
+  // ===== Review layer =========================================================
+  //
+  // The composed diff for this buffer, projected onto its current line
+  // numbers. Asked for by PATH rather than by session: a center-region buffer
+  // does not belong to a chat tab, and with several sessions on one workspace
+  // the honest answer is every session that touched it.
+  const reviewMarks = createMemo<ReviewHunkMark[]>(() => {
+    const path = props.filePath;
+    if (!path) return [];
+    return reviewStore.hunksForOpenPath(path).map(({ hunk }) => ({
+      id: hunk.id,
+      start: hunk.current_range.start,
+      end: hunk.current_range.end,
+      state: hunk.state,
+      external: isExternal(hunk),
+      // The tool name, not "turn 7 · Edit": the turn coordinate does not cross
+      // the wire on a composed hunk, and a number inferred here would be a
+      // guess dressed as attribution.
+      label: hunk.tool_call_ids.length > 0 ? toolCallLabel(hunk.tool_call_ids[0]) : 'external',
+      toolCallId: hunk.tool_call_ids[0] ?? null,
+    }));
+  });
+
+  // Install the layer, then push the hunks.
+  //
+  // Deferred to a microtask because `CodeMirrorEditor` rebuilds its entire
+  // configuration with `StateEffect.reconfigure` whenever one of seven props
+  // changes, discarding anything appended from outside. Its effect is created
+  // after this one and so runs later in the same flush; a microtask lands
+  // after the whole flush, when the rebuilt config is in place.
+  //
+  // KNOWN GAP: the markdown reading/live mode toggle is internal to
+  // EditorWithPreview, so it is not one of the dependencies below. The layer
+  // reappears on the next store refresh (any tool result or turn end). The
+  // real fix is one `extensions.push(reviewDecorations(…))` inside
+  // `createExtensions()`, which belongs to that component.
+  createEffect(() => {
+    const marks = reviewMarks();
+    // Reconfigure triggers visible from here — each one drops the layer.
+    void props.filePath;
+    void settings.editor.vimMode;
+    void settings.editor.maxLineWidth;
+    void settings.editor.renderMath;
+    void settings.editor.renderDiagrams;
+    void pendingDiff()?.original;
+    const view = editorView();
+    if (!view) return;
+    queueMicrotask(() => {
+      if (editorView() !== view) return;
+      ensureReviewLayer(view, { onReveal: (h) => h.toolCallId && reviewActions.revealToolCall(h.toolCallId) });
+      applyReviewHunks(view, marks);
+    });
+  });
+
+  // A hunk picked in the Changes panel scrolls THIS buffer to it. Tab metadata
+  // cannot carry this: a panel only re-renders when its active tab id changes,
+  // so an already-open file would never see the request.
+  createEffect(() => {
+    const target = pendingReveal();
+    const view = editorView();
+    if (!target || !view || target.path !== props.filePath) return;
+    const line = Math.min(Math.max(target.line, 1), view.state.doc.lines);
+    const pos = view.state.doc.line(line).from;
+    view.dispatch({
+      selection: { anchor: pos },
+      effects: EditorView.scrollIntoView(pos, { y: 'center' }),
+    });
+    reviewActions.clearReveal();
+  });
 
   // Track ONLY props.filePath. openFile() begins with openFilesStore.find(),
   // a reactive store read; left tracked, this effect would subscribe to the
@@ -375,7 +455,7 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
                   lineWidth={settings.editor.maxLineWidth}
                   renderMath={settings.editor.renderMath}
                   renderDiagrams={settings.editor.renderDiagrams}
-                  editorApiRef={(view) => (editorView = view)}
+                  editorApiRef={(view) => setEditorView(() => view)}
                   initialMode={
                     props.initialMode === 'reading' || props.initialMode === 'live' || props.initialMode === 'source'
                       ? props.initialMode

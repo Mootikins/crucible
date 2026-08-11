@@ -869,6 +869,7 @@ mod permissions;
 mod precognition;
 mod providers_concurrency;
 mod reactor;
+mod review_capture;
 mod revive_cold;
 mod workspace;
 

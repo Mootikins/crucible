@@ -181,10 +181,28 @@ function notifyAuthRequired(): void {
   }
 }
 
-interface RequestOptions extends Omit<RequestInit, 'method'> {
+export interface RequestOptions extends Omit<RequestInit, 'method'> {
   errorMessage?: string;
   parseAs?: 'json' | 'text' | 'none';
   includeErrorText?: boolean;
+}
+
+/**
+ * The human half of a `WebError`, which every crucible-web route serializes as
+ * `{"error": {code, message}}`.
+ *
+ * Throwing the raw body instead puts a JSON blob in a toast: the user reads
+ * `{"error":{"code":422,"message":"Hunk no longer exists"}}` where the server
+ * went to the trouble of writing a sentence. Non-envelope bodies (a plain-text
+ * 500 from a proxy, an empty body) fall through unchanged.
+ */
+function errorBodyMessage(text: string): string {
+  try {
+    const message = (JSON.parse(text) as { error?: { message?: unknown } })?.error?.message;
+    return typeof message === 'string' && message ? message : text;
+  } catch {
+    return text;
+  }
 }
 
 interface ApiError extends Error {
@@ -198,7 +216,12 @@ function jsonRequest(body: unknown): Pick<RequestOptions, 'headers' | 'body'> {
   };
 }
 
-async function request<T>(
+/**
+ * The one HTTP helper. Exported so feature slices (`review-api.ts`) get the
+ * 401 re-prompt and the error-envelope unwrapping instead of reimplementing
+ * "throw on !ok" and quietly losing both.
+ */
+export async function request<T>(
   method: HttpMethod,
   url: string,
   options: RequestOptions = {},
@@ -209,7 +232,7 @@ async function request<T>(
   if (!res.ok) {
     let errorText = '';
     if (includeErrorText) {
-      errorText = await res.text().catch(() => '');
+      errorText = errorBodyMessage(await res.text().catch(() => ''));
     }
     if (res.status === 401) {
       notifyAuthRequired();

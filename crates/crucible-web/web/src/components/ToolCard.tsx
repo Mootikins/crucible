@@ -1,4 +1,4 @@
-import { Component, Show, createSignal, createMemo, createEffect } from 'solid-js';
+import { Component, For, Show, createSignal, createMemo, createEffect } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import type { ToolCallDisplay } from '@/lib/types';
 import { DiffViewer } from './DiffViewer';
@@ -9,7 +9,16 @@ import { getFileContent } from '@/lib/api';
 import { deepPrettyPrintJson } from '@/lib/pretty-print';
 import { unwrapMcpEnvelope } from '@/lib/mcp-envelope';
 import { notificationActions } from '@/stores/notificationStore';
+import { useChatSafe } from '@/contexts/ChatContext';
 import {
+  indexToolCall,
+  reviewActions,
+  reviewStore,
+  revealedToolCall,
+} from '@/lib/review-store';
+import { isExternal } from '@/lib/review-types';
+import {
+  Check,
   ChevronRight,
   FileOutput,
   FileText,
@@ -17,6 +26,7 @@ import {
   Pencil,
   Search,
   StickyNote,
+  Undo2,
   Wrench,
   Zap,
 } from '@/lib/icons';
@@ -149,6 +159,60 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
 
   const diff = createMemo(() => extractDiffFromToolCall(props.toolCall));
 
+  // ===== Review attribution ===================================================
+  //
+  // This card is an INDEX ENTRY into the composed diff: it says what the call
+  // did, and offers accept/reject only for the parts of it that are still
+  // there. The action unit is the composed hunk, never the call's own
+  // contribution — rejecting an early edit after later edits touched the same
+  // lines is a three-way merge that fails exactly when it matters.
+  //
+  // A passive consumer: it reads the review store but never retains it. A
+  // transcript holds dozens of cards and each would open the same subscription
+  // (refcounted to one, but re-entered on every mount/unmount as the list
+  // virtualizes). `SessionStatusChips` — mounted once per chat, beside the
+  // composer — is what keeps the session's review state live.
+  const { sessionId } = useChatSafe();
+
+  // `callId` is the daemon's ChatToolCall id, which is what the ledger keys
+  // intervals on. `toolCall.id` is a transcript id and would mis-link, so a
+  // card without a callId simply carries no attribution.
+  const callId = () => props.toolCall.callId ?? null;
+
+  createEffect(() => {
+    const id = callId();
+    // The gutter and the Changes panel render outside ChatProvider and have
+    // only ids; the transcript is where the tool's NAME lives, so publish it.
+    if (id) indexToolCall(id, props.toolCall.name);
+  });
+
+  /** Composed hunks this call is still responsible for. */
+  const liveHunks = createMemo(() => {
+    const id = callId();
+    return id ? reviewStore.hunksForToolCall(sessionId(), id) : [];
+  });
+
+  /**
+   * The call wrote something, the ledger has been read, and none of it
+   * survives in the composed diff — a later edit overwrote it.
+   *
+   * Gated on `loaded` so an unanswered (or failed) list never claims work was
+   * thrown away, and on `diff()` so a call that never proposed an edit is not
+   * described as superseded for having produced no hunks.
+   */
+  const superseded = createMemo(
+    () =>
+      !!callId() &&
+      !!diff() &&
+      reviewStore.session(sessionId()).loaded &&
+      liveHunks().length === 0,
+  );
+
+  /** A rejected mutation is worth saying out loud — it means the disk did not
+   * change, and a silent no-op here reads as a dropped click. */
+  const review = (op: Promise<void>) =>
+    void op.catch((e: Error) => notificationActions.addNotification('error', e.message));
+
   // Open the edited file in the real editor with this change overlaid as an
   // inline diff: fetch the current content, apply the tool's edit to get the
   // proposed content, and hand both to openFileWithDiff (opens or focuses the
@@ -210,7 +274,15 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
   });
 
   return (
-    <div class={`${statusBgColor()} overflow-hidden`}>
+    <div
+      class={`${statusBgColor()} overflow-hidden ${
+        revealedToolCall() === callId() ? 'ring-1 ring-attention/60' : ''
+      }`}
+      // The gutter chip in the editor scrolls the transcript here by id. This
+      // attribute IS that contract — the editor lives outside ChatProvider and
+      // cannot reach the transcript any other way.
+      data-tool-call-id={callId() ?? undefined}
+    >
       <button
         onClick={() => setExpanded(!expanded())}
         aria-expanded={expanded()}
@@ -233,6 +305,18 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
             title={`Permission granted without asking (${props.toolCall.autoApproved}).`}
           >
             Auto
+          </span>
+        </Show>
+        {/* Nothing this call wrote is still in the composed diff. Its
+            accept/reject buttons vanish with it — the action unit is gone, so
+            offering the action would be offering a no-op. */}
+        <Show when={superseded()}>
+          <span
+            class="flex-shrink-0 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-attention/15 text-attention border border-attention/50 font-semibold"
+            data-testid="tool-superseded"
+            title="A later edit replaced everything this call wrote — there is nothing left to review."
+          >
+            Superseded
           </span>
         </Show>
         <Show when={props.toolCall.terminate}>
@@ -306,7 +390,46 @@ export const ToolCard: Component<ToolCardProps> = (props) => {
             {(d) => (
               <div class={`px-3 py-2 ${props.toolCall.status === 'error' && props.toolCall.result ? 'border-t border-hairline' : ''} bg-surface-base`}>
                 {/* Review this change in the real editor (inline diff overlay). */}
-                <div class="flex items-center justify-end mb-1.5">
+                <div class="flex items-center justify-end gap-1.5 mb-1.5 flex-wrap">
+                  {/* One control pair per composed hunk this call still owns.
+                      External hunks cannot appear here by construction (they
+                      have no tool call), so there is no reject to suppress. */}
+                  <div class="flex items-center gap-1.5 flex-wrap mr-auto">
+                  <For each={liveHunks().filter((h) => !isExternal(h))}>
+                    {(hunk) => (
+                      <span
+                        class="inline-flex items-center gap-1 rounded-md border border-hairline px-1.5 py-0.5"
+                        data-testid={`tool-hunk-${hunk.id}`}
+                      >
+                        <span class="text-[10px] font-mono text-muted-dark">
+                          L{hunk.current_range.start}
+                        </span>
+                        <Show when={hunk.state !== 'accepted'}>
+                          <button
+                            type="button"
+                            title="Accept this hunk"
+                            data-testid={`tool-accept-${hunk.id}`}
+                            onClick={() =>
+                              review(reviewActions.setState(sessionId()!, hunk.id, 'accepted'))
+                            }
+                            class="rounded p-0.5 text-muted-dark hover:text-ok hover:bg-hover-wash"
+                          >
+                            <Check class="w-3 h-3" />
+                          </button>
+                        </Show>
+                        <button
+                          type="button"
+                          title="Reject — reverts it on disk and tells the agent"
+                          data-testid={`tool-reject-${hunk.id}`}
+                          onClick={() => review(reviewActions.reject(sessionId()!, hunk.id))}
+                          class="rounded p-0.5 text-muted-dark hover:text-error hover:bg-hover-wash"
+                        >
+                          <Undo2 class="w-3 h-3" />
+                        </button>
+                      </span>
+                    )}
+                  </For>
+                  </div>
                   <button
                     type="button"
                     onClick={openInEditor}

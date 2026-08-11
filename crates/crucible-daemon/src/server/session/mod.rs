@@ -15,6 +15,7 @@ mod models;
 mod modes;
 mod notifications;
 mod params;
+pub(crate) mod review;
 mod scope;
 
 pub(crate) use create::handle_session_create;
@@ -60,6 +61,10 @@ pub(crate) use params::{
     handle_session_set_precognition_results, handle_session_set_system_prompt,
     handle_session_set_temperature, handle_session_set_thinking_budget,
     handle_session_set_validation_retries, handle_session_undo, handle_session_undo_depth,
+};
+pub(crate) use review::{
+    handle_review_comment, handle_review_list_hunks, handle_review_rebase,
+    handle_review_resolve_comment, handle_review_set_state,
 };
 pub(crate) use scope::{
     handle_session_connect_kiln, handle_session_disconnect_kiln, handle_session_set_workspace,

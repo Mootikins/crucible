@@ -176,3 +176,43 @@ impl AgentHandle for MockSubagentHandle {
         Ok(())
     }
 }
+
+/// Run one `git` command in `dir`, asserting it succeeded.
+///
+/// Shared because three test modules each grew their own copy with slightly
+/// different failure messages and one of them silently discarded stderr.
+pub async fn git(dir: &std::path::Path, args: &[&str]) {
+    let out = tokio::process::Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// A git repository at `dir` containing `files`, all committed.
+///
+/// The identity is set explicitly so a machine with no configured `user.email`
+/// still runs the suite.
+pub async fn init_repo(dir: &std::path::Path, files: &[(&str, &str)]) {
+    std::fs::create_dir_all(dir).unwrap();
+    git(dir, &["init", "-q"]).await;
+    git(dir, &["config", "user.email", "t@t"]).await;
+    git(dir, &["config", "user.name", "t"]).await;
+    for (name, contents) in files {
+        let path = dir.join(name);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(path, contents).unwrap();
+    }
+    if !files.is_empty() {
+        git(dir, &["add", "."]).await;
+        git(dir, &["commit", "-q", "-m", "init"]).await;
+    }
+}

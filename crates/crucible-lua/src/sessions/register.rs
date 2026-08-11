@@ -66,6 +66,10 @@ pub fn register_sessions_module(lua: &Lua) -> Result<(), LuaError> {
     stub_async!("can_undo", lua, sessions, String);
     stub_async!("undo_depth", lua, sessions, String);
     stub_async!("undo_history", lua, sessions, String);
+    stub_async!("review_list_hunks", lua, sessions, String);
+    stub_async!("review_set_state", lua, sessions, (String, String, String));
+    stub_async!("review_comment", lua, sessions, (String, mlua::Value));
+    stub_async!("review_resolve_comment", lua, sessions, (String, String));
 
     register_in_namespaces(lua, "sessions", sessions)?;
 
@@ -687,6 +691,94 @@ pub fn register_sessions_module_with_api(
         }
     })?;
     sessions.set("undo_history", undo_history_fn)?;
+
+    // ── Attributed-diff review ─────────────────────────────────────────────
+    //
+    // `session_id` is a parameter rather than implicit context on purpose: the
+    // caller a plugin tool most often has is a *delegating* agent reviewing
+    // the child session it spawned, and an implicit "current session" would
+    // make that the one thing the API cannot express.
+
+    // review_list_hunks(session_id) -> (hunks, nil) | (nil, err)
+    let a = Arc::clone(&api);
+    let review_list_fn = lua.create_async_function(move |lua, sid: String| {
+        let a = Arc::clone(&a);
+        async move {
+            match a.review_list_hunks(sid).await {
+                Ok(hunks) => {
+                    let table = lua.create_table()?;
+                    for (i, hunk) in hunks.iter().enumerate() {
+                        table.set(i + 1, lua.to_value(hunk)?)?;
+                    }
+                    Ok((Value::Table(table), Value::Nil))
+                }
+                Err(e) => {
+                    let err = lua.create_string(&e)?;
+                    Ok((Value::Nil, Value::String(err)))
+                }
+            }
+        }
+    })?;
+    sessions.set("review_list_hunks", review_list_fn)?;
+
+    // review_set_state(session_id, hunk_id, state) -> (true, nil) | (nil, err)
+    let a = Arc::clone(&api);
+    let review_state_fn =
+        lua.create_async_function(move |lua, (sid, hunk, state): (String, String, String)| {
+            let a = Arc::clone(&a);
+            async move {
+                match a.review_set_state(sid, hunk, state).await {
+                    Ok(()) => Ok((Value::Boolean(true), Value::Nil)),
+                    Err(e) => {
+                        let err = lua.create_string(&e)?;
+                        Ok((Value::Nil, Value::String(err)))
+                    }
+                }
+            }
+        })?;
+    sessions.set("review_set_state", review_state_fn)?;
+
+    // review_comment(session_id, { path, line_start, line_end?, body, root?,
+    // author? }) -> (comment, nil) | (nil, err)
+    let a = Arc::clone(&api);
+    let review_comment_fn =
+        lua.create_async_function(move |lua, (sid, spec): (String, Value)| {
+            let a = Arc::clone(&a);
+            async move {
+                let spec: serde_json::Value = match lua.from_value(spec) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        let err = lua.create_string(format!("invalid comment spec: {e}"))?;
+                        return Ok((Value::Nil, Value::String(err)));
+                    }
+                };
+                match a.review_comment(sid, spec).await {
+                    Ok(comment) => Ok((lua.to_value(&comment)?, Value::Nil)),
+                    Err(e) => {
+                        let err = lua.create_string(&e)?;
+                        Ok((Value::Nil, Value::String(err)))
+                    }
+                }
+            }
+        })?;
+    sessions.set("review_comment", review_comment_fn)?;
+
+    // review_resolve_comment(session_id, comment_id) -> (true, nil) | (nil, err)
+    let a = Arc::clone(&api);
+    let review_resolve_fn =
+        lua.create_async_function(move |lua, (sid, comment_id): (String, String)| {
+            let a = Arc::clone(&a);
+            async move {
+                match a.review_resolve_comment(sid, comment_id).await {
+                    Ok(()) => Ok((Value::Boolean(true), Value::Nil)),
+                    Err(e) => {
+                        let err = lua.create_string(&e)?;
+                        Ok((Value::Nil, Value::String(err)))
+                    }
+                }
+            }
+        })?;
+    sessions.set("review_resolve_comment", review_resolve_fn)?;
 
     Ok(())
 }

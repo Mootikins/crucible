@@ -67,10 +67,17 @@ export const pwaOptions = {
     ],
   },
   workbox: {
-    // Precache the app shell only. Oversized vendor chunks (shiki,
-    // transformers) exceed the 2 MiB default and are intentionally
-    // skipped — they load from network exactly as before.
+    // Precache the app shell only. The transformers ONNX runtime (~23 MB of
+    // `.wasm`) is excluded by extension, not by size, and loads from network
+    // exactly as before.
     globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+    // The shell is a single chunk and has grown past workbox's 2 MiB
+    // per-asset default, at which point workbox skips it and the app has no
+    // offline shell at all — the one thing this precache exists for. The
+    // default is a generic heuristic about accidentally caching huge vendor
+    // blobs; here it would drop precisely the asset we mean to cache. 3 MiB
+    // keeps the shell in and still refuses anything genuinely oversized.
+    maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
     // Activation waits for the user: registerType 'prompt' only sends
     // SKIP_WAITING when they accept the update toast, so a deploy never
     // reloads a page mid-turn (autoUpdate did exactly that — killing

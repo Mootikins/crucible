@@ -298,6 +298,33 @@ pub fn mock_rpc_error(method: &str, msg: &Value) -> Option<(i64, String)> {
 }
 
 #[cfg(any(test, feature = "test-utils"))]
+/// One string param off a JSON-RPC request, or `""`. Lets an arm echo what it
+/// was sent, which is how a passthrough route's contract gets asserted.
+fn param_str<'a>(msg: &'a Value, key: &str) -> &'a str {
+    msg.get("params")
+        .and_then(|p| p.get(key))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+/// A `crucible_core::session::Comment` on the wire — all nine fields, so a
+/// route test sees what the frontend's `ReviewComment` will actually receive.
+fn review_comment_fixture(id: &str, body: &str) -> Value {
+    json!({
+        "id": id,
+        "root": "/tmp/test-project",
+        "path": "src/a.rs",
+        "base_tree": "0000000000000000000000000000000000000000",
+        "line_range": { "start": 1, "end": 2 },
+        "body": body,
+        "author": "human",
+        "resolved": false,
+        "created_at": "2026-01-01T00:00:00Z",
+    })
+}
+
+#[cfg(any(test, feature = "test-utils"))]
 /// Generate mock RPC responses based on method name.
 pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
     match method {
@@ -598,6 +625,58 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             "name": "removed-plugin",
             "plugins_toml": "/tmp/plugins.toml",
             "purged_dir": Value::Null,
+        }),
+        // ── review.* ───────────────────────────────────────────────────────
+        // Shaped from the daemon's real handlers in
+        // `crucible-daemon/src/server/session/review.rs`, echoing the same
+        // params back, because the web layer's whole contract for these five
+        // is "forward it untouched in both directions" — a hand-simplified
+        // stub could not fail when that stopped being true.
+        "review.list_hunks" => {
+            let session_id = param_str(msg, "session_id");
+            json!({
+                "session_id": session_id,
+                "hunks": [{
+                    "id": "hunk-1",
+                    "root": "/tmp/test-project",
+                    "path": "src/a.rs",
+                    "base_range": { "start": 1, "end": 2 },
+                    "current_range": { "start": 1, "end": 3 },
+                    "before_content": "old\n",
+                    "after_content": "new\nnewer\n",
+                    "tool_call_ids": ["call-1"],
+                    "state": "unreviewed",
+                    "reapplied": false,
+                }],
+                "comments": [review_comment_fixture("comment-1", "why this?")],
+                // Pre-filtered to broken roots only; empty is the normal case.
+                "degraded": [],
+                // What the journal could not be read back as. Carries the
+                // losses `degraded` cannot: those have no root to name.
+                "integrity": { "skips": [] },
+                // What a parked turn is waiting on. Always present, and `null`
+                // here because the fixture session is not blocked — an absent
+                // key means something different to the store than a null one.
+                "gate": null,
+            })
+        }
+        "review.rebase" => json!({
+            "session_id": param_str(msg, "session_id"),
+            "roots": [{ "root": "/tmp/test-project", "degraded": Value::Null }],
+        }),
+        "review.set_state" => json!({
+            "session_id": param_str(msg, "session_id"),
+            "hunk_id": param_str(msg, "hunk_id"),
+            "state": param_str(msg, "state"),
+        }),
+        "review.comment" => json!({
+            "session_id": param_str(msg, "session_id"),
+            "comment": review_comment_fixture("comment-2", param_str(msg, "body")),
+        }),
+        "review.resolve_comment" => json!({
+            "session_id": param_str(msg, "session_id"),
+            "comment_id": param_str(msg, "comment_id"),
+            "resolved": true,
         }),
         "skills.list" => json!({
             "skills": [

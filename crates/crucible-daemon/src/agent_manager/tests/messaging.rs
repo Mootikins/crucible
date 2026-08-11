@@ -1098,7 +1098,7 @@ async fn snapshot_map_round_trip_consumes_entry() {
     assert_eq!(map.len(), 1);
 
     let got = map.remove("s1", 7).expect("expected entry under (s1, 7)");
-    assert!(got.commit_id.is_none() && got.journal.is_none());
+    assert!(got.tree_id.is_none() && got.journal.is_none());
     assert!(map.is_empty());
 }
 

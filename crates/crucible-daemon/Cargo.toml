@@ -54,6 +54,9 @@ reqwest = { workspace = true }
 rustls = { version = "0.23", default-features = false, features = ["ring", "tls12"] }
 blake3 = "1.8"
 walkdir = "2.5"
+# Throwaway git index for workspace capture — the repository's real index
+# must never be staged into (see workspace_snapshot::capture_tree).
+tempfile = { workspace = true }
 sha2 = "0.11"
 # Paired with sha2 0.11 (both on digest 0.11) — webhook sender authentication.
 hmac = "0.13"
@@ -96,7 +99,6 @@ test-utils = []
 fastembed = ["dep:fastembed", "dep:ort"]
 
 [dev-dependencies]
-tempfile = { workspace = true }
 futures = { workspace = true }
 mockito = { workspace = true }
 tokio-test = "0.4"

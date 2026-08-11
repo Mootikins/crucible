@@ -145,10 +145,83 @@ impl AgentManager {
             let t = conversation_tree.lock().await;
             t.current()
         };
-        let snapshot =
-            crate::workspace_snapshot::WorkspaceSnapshot::create(&session.workspace).await;
+        let snapshot = crate::workspace_snapshot::WorkspaceSnapshot::create(
+            &session.workspace,
+            session_id,
+            snapshot_key_node.index(),
+        )
+        .await;
         self.snapshots
             .insert(session_id.to_string(), snapshot_key_node.index(), snapshot);
+
+        // Open the review ledger over every root this session may write to,
+        // not just the workspace: a note written into a kiln that is not the
+        // workspace is a real change the composed diff has to show, and only
+        // `session.workspace` is snapshotted above.
+        //
+        // The session's storage dir is deliberately excluded — it is
+        // daemon-owned spill under `~/.crucible`, never review material.
+        //
+        // Re-opening is a no-op, so `session_base` is captured on the first
+        // turn and never recomputed. Recomputing it on a later turn would
+        // report that the agent had changed nothing, which reads as success
+        // rather than as data loss — and the same is true across a daemon
+        // restart, which is why this restores from `review.jsonl` rather than
+        // opening blind. A journal that exists and will not read is an error
+        // here, never a fresh base.
+        let mut review_roots = vec![session.workspace.clone(), session.kiln.clone()];
+        review_roots.extend(session.connected_kilns.iter().cloned());
+        if let Err(e) = self
+            .review
+            .open_or_restore(session_id, &session.storage_path(), &review_roots)
+            .await
+        {
+            // Two different failures land here and they are not equally
+            // benign — a workspace outside git has nothing to track, while an
+            // unreadable journal is lost evidence. They are logged the same
+            // way because the *distinction* is not carried by this error: an
+            // unreadable journal is recorded on the session's `Integrity`
+            // inside `open_or_restore`, which is what holds its writes rather
+            // than letting them through unattributed.
+            debug!(
+                session_id = %session_id,
+                error = %e,
+                "review ledger not opened; this session's changes go unattributed"
+            );
+        }
+
+        // A delegated child records its own intervals; the parent has none for
+        // the delegation, by design. Registering the link here — off the field
+        // the session already carries — is what lets the child's attribution be
+        // harvested up when it ends, and needs no tool call id threaded through
+        // `DelegationRequest`. Idempotent, so re-registering on every turn is
+        // the same as registering on the first.
+        if let Some(parent) = session.parent_session_id.as_deref() {
+            self.review.set_parent(session_id, parent);
+        }
+
+        // Watch the ledger's roots, not `review_roots`: `open` normalises each
+        // to its repository top level and dedupes, and the tracker matches
+        // observed paths by prefix, so a root spelled any other way than the
+        // way git prints it matches nothing the watcher ever sees. Re-watching
+        // a root another session already holds is refcounted, not duplicated.
+        if let Some(watch) = self.external_watch() {
+            let roots: Vec<std::path::PathBuf> = self
+                .review
+                .ledger(session_id)
+                .map(|l| l.roots().map(std::path::Path::to_path_buf).collect())
+                .unwrap_or_default();
+            if !roots.is_empty() {
+                if let Err(e) = watch.watch_session(session_id, &roots).await {
+                    debug!(
+                        session_id = %session_id,
+                        error = %e,
+                        "review watch not established; external edits will not push"
+                    );
+                }
+            }
+        }
+
         let is_first_user_message = {
             let mut t = conversation_tree.lock().await;
             let parent = t.current();
@@ -274,6 +347,9 @@ impl AgentManager {
                         mcp_read_only_tools,
                     },
                 )
+                // Capture and the gate read the same ledgers, so the turn
+                // carries one handle to them rather than two.
+                .with_review(self.review.clone())
             },
             tool_dispatcher: self.get_or_create_session_dispatcher(&session).await,
             permission_override,

@@ -128,6 +128,18 @@ pub fn session_routes_with(policy: EndpointPolicy) -> Router<AppState> {
             "/api/session/{id}/config/precognition/results",
             put(set_precognition_results).get(get_precognition_results),
         )
+        // Review lives inside this group, not beside it: bearer auth, the host
+        // guard, the CORS allowlist, the body limit and the security headers
+        // are applied to the session router, and a separate group is how the
+        // review surface would quietly stop inheriting them.
+        .route("/api/session/{id}/review/hunks", get(review::list_hunks))
+        .route("/api/session/{id}/review/rebase", post(review::rebase))
+        .route("/api/session/{id}/review/state", post(review::set_state))
+        .route("/api/session/{id}/review/comment", post(review::comment))
+        .route(
+            "/api/session/{id}/review/comment/{comment_id}/resolve",
+            post(review::resolve_comment),
+        )
         .route("/api/session/{id}/export", post(export_session))
         .route("/api/session/{id}/command", post(execute_command))
         // Session-independent: the command set is static, so the composer can
@@ -967,6 +979,8 @@ async fn list_providers(
         .daemon_err()?;
     Ok(Json(serde_json::json!({ "providers": providers })))
 }
+
+mod review;
 
 #[cfg(test)]
 mod tests;

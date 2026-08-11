@@ -15,9 +15,11 @@ use crucible_lua::{ToolBeforeExecuteEvent, ToolDisplayCompleteEvent, ToolDisplay
 /// This guarantee holds for INTERNAL agents only: the daemon dispatches
 /// their tools, so a denial here prevents execution. An ACP agent executes
 /// tools in its own process and reports them as notifications — a denial
-/// arrives after the fact and stops nothing. That is why the dispatch layer
-/// refuses to pair an isolation claim with an external agent
-/// (`unenforceable_isolation` in rpc/dispatch.rs).
+/// arrives after the fact and stops nothing. That is why the session
+/// lifecycle refuses to pair an isolation claim with an external agent
+/// (`unenforceable_isolation` in session_lifecycle.rs, whose rule is the pure
+/// `unenforceable_reason` beside it), and why the review gate degrades to
+/// post-turn review for one rather than pretending to block.
 fn deny_tool_call(
     stream_ctx: &StreamContext,
     call_id: &str,
@@ -170,10 +172,17 @@ async fn run_pre_tool_call_handlers(
 }
 
 impl AgentManager {
+    /// `bracket` is an out-parameter, not a return value, on purpose. The
+    /// review capture handle has to be a local in the CALLER's frame: every
+    /// early return below then unwinds to the caller's single close site, and
+    /// a cancelled or timed-out turn drops the caller's frame and fires the
+    /// handle's own `Drop`. Returning it in a tuple would need each of the ten
+    /// early returns rewritten and would still not cover cancellation.
     pub(super) async fn handle_tool_call_in_stream(
         stream_ctx: &StreamContext,
         tool_call: &crucible_core::traits::chat::ChatToolCall,
         diffs: Vec<FileDiff>,
+        bracket: &mut Option<crate::review::CaptureHandle>,
     ) -> Option<crucible_core::traits::chat::ChatToolResult> {
         let call_id = tool_call
             .id
@@ -266,6 +275,44 @@ impl AgentManager {
                 ),
             );
         }
+
+        // Review gate. Waits — it does not refuse — while a file this call
+        // targets still has unreviewed hunks from the agent's own earlier
+        // work. See `review_gate` for the rule and for why waiting beats
+        // denying.
+        //
+        // Above the hook loop, with the hard refusals, and for the same
+        // reason: a `pre_tool_call` handler returning `Handled` returns at the
+        // interception branch below and never reaches the isolation gate, the
+        // permission gate, or dispatch — yet it can still write, since oci's
+        // handler runs bash inside a container over the same bind-mounted
+        // workspace. A gate placed under the loop would be one a plugin can
+        // opt out of. It also means the wait happens before the session-state
+        // lock is taken, so a held call does not starve the session.
+        //
+        // The cost of being up here is that a Transform handler's rewritten
+        // path is not what the gate checked. That is the right trade: the
+        // rewrite is the plugin's, the unreviewed hunk is the user's.
+        super::review_gate::hold_for_review(stream_ctx, &tool_call.name, &args, &diffs).await;
+
+        // The capture bracket opens HERE, below the gate, and not at the call
+        // site above this function. `hold_for_review` is an unbounded wait on
+        // a human: everything they do to the worktree while it waits — most
+        // sharply the revert that rejecting a hunk performs, which is what
+        // releases the gate — would otherwise be measured inside this call's
+        // interval and attributed to the agent.
+        //
+        // It cannot open any lower either. The `pre_tool_call` handlers just
+        // below can write (oci's handler runs bash in a container over the
+        // same bind-mounted workspace), and a bracket opened after them would
+        // report their edits as `external`. The permission prompt further down
+        // is the other unbounded wait, and it is handled by re-baselining
+        // rather than by moving this point.
+        //
+        // Side effect of being below the `invoke_tool` unwrap: the bracket now
+        // sees the real tool name, so `invoke_tool`→`read_file` stops being
+        // bracketed and `invoke_tool`→`delegate_session` is correctly excluded.
+        *bracket = stream_ctx.open_review_bracket(&tool_call.name).await;
 
         let mut intercepted = {
             let mut state = stream_ctx.session_state.lock().await;
@@ -515,6 +562,16 @@ impl AgentManager {
                 _ => None,
             }
         };
+
+        // The second unbounded wait, and the only other one. Re-baseline only
+        // when the gate genuinely put the question to a person: `auto_approved`
+        // is `Some` exactly when config, the mode, or the card answered without
+        // asking, and `requires_gate` is false when nothing was asked at all.
+        // Rebaselining unconditionally would discard whatever a plugin handler
+        // legitimately wrote above.
+        if requires_gate && auto_approved.is_none() {
+            stream_ctx.rebase_review_bracket(bracket).await;
+        }
 
         let args_str = serde_json::to_string(&args).unwrap_or_else(|_| "null".to_string());
         let (mut description, mut source) = stream_ctx

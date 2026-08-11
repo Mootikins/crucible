@@ -49,6 +49,7 @@ pub mod backends;
 pub mod config;
 pub mod error;
 mod events;
+pub mod external_changes;
 pub mod handlers;
 mod manager;
 
@@ -68,7 +69,12 @@ pub use config::{
 };
 pub use error::{Error, Result};
 pub use events::{EventFilter, EventMetadata, FileEvent, FileEventKind};
-pub use handlers::{CompositeHandler, HandlerRegistry, IndexingHandler, ParserHandler};
+pub use external_changes::{
+    CaptureWindow, ExternalChange, ExternalChangeTracker, ExternalChangeWatch, Ownership,
+};
+pub use handlers::{
+    CompositeHandler, ExternalChangeHandler, HandlerRegistry, IndexingHandler, ParserHandler,
+};
 pub use manager::WatchManager;
 
 pub use traits::{

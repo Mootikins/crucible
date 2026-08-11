@@ -10,6 +10,7 @@ import { PluginPanel } from '@/components/PluginPanel';
 import FileViewerPanel from '@/components/FileViewerPanel';
 import InboxPanel from '@/components/InboxPanel';
 import { BacklinksPanel } from '@/components/BacklinksPanel';
+import { ChangesPanel } from '@/components/ChangesPanel';
 import { GraphPanel } from '@/components/graph/GraphPanel';
 import { CanvasPanel } from '@/components/canvas/CanvasPanel';
 
@@ -30,6 +31,9 @@ export function registerPanels(): void {
   registry.register('skills', 'Skills', SkillsPanel, 'left');
   registry.register('plugins', 'Plugins', PluginPanel, 'left');
   registry.register('backlinks', 'Backlinks', BacklinksPanel, 'right');
+  // The session's review queue, beside Activity and Backlinks. Reviewing
+  // happens in the center buffer; this is the index into it.
+  registry.register('changes', 'Changes', ChangesPanel, 'right');
   registry.register('graph', 'Graph', GraphPanel, 'center');
   registry.register('canvas', 'Canvas', CanvasPanel, 'center');
 }

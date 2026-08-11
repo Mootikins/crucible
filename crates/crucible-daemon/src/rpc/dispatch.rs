@@ -109,6 +109,11 @@ pub const METHODS: &[&str] = &[
     "session.undo",
     "session.can_undo",
     "session.undo_depth",
+    "review.list_hunks",
+    "review.set_state",
+    "review.comment",
+    "review.resolve_comment",
+    "review.rebase",
     "plugin.reload",
     "plugin.list",
     "plugin.commands",
@@ -365,6 +370,23 @@ impl RpcDispatcher {
                 to_response(id, self.handle_session_set_workspace(&req).await)
             }
             "session.set_mode" => to_response(id, self.handle_session_set_mode(&req).await),
+
+            // Review queue. Session-scoped like the handlers above, but
+            // namespaced `review.*` rather than `session.*`: the unit they act
+            // on is a composed hunk, and a delegating agent reviewing a child
+            // session addresses that child's id, not its own.
+            "review.list_hunks" => to_response(id, self.handle_review_list_hunks(&req).await),
+            "review.set_state" => to_response(id, self.handle_review_set_state(&req).await),
+            "review.comment" => to_response(id, self.handle_review_comment(&req).await),
+            "review.resolve_comment" => {
+                to_response(id, self.handle_review_resolve_comment(&req).await)
+            }
+            // The release valve for the one block reviewing cannot clear: a
+            // base tree gc'd out of the object store, a root that moved, a
+            // journal record that would not parse. Without it, failing closed
+            // on a structural failure would be an unreleasable hang.
+            "review.rebase" => to_response(id, self.handle_review_rebase(&req).await),
+
             "session.list_models" => to_response(id, self.handle_session_list_models(&req).await),
             "session.list_modes" => to_response(id, self.handle_session_list_modes(&req).await),
             "session.add_notification" => {
@@ -1314,6 +1336,60 @@ impl RpcDispatcher {
         let resp = crate::server::session::handle_session_set_mode(
             req.clone(),
             &self.ctx.agents,
+            &self.ctx.event_tx,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_review_list_hunks(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_review_list_hunks(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.sessions,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_review_rebase(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_review_rebase(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.sessions,
+            &self.ctx.event_tx,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_review_set_state(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_review_set_state(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.sessions,
+            &self.ctx.event_tx,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_review_comment(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_review_comment(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.sessions,
+            &self.ctx.event_tx,
+        )
+        .await;
+        map_server_resp(resp)
+    }
+
+    async fn handle_review_resolve_comment(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        let resp = crate::server::session::handle_review_resolve_comment(
+            req.clone(),
+            &self.ctx.agents,
+            &self.ctx.sessions,
             &self.ctx.event_tx,
         )
         .await;

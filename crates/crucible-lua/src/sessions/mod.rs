@@ -363,6 +363,59 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
         Box::pin(async { Err("not implemented".into()) })
     }
 
+    // ── Attributed-diff review ──────────────────────────────────────────
+    //
+    // These take a `session_id` like everything else here, and that is the
+    // whole point: a delegating agent reviews the session it delegated to,
+    // not itself. An RPC-only review surface could not express that from
+    // inside a plugin tool.
+    //
+    // Every method defaults to `Err("not implemented")` so an embedder that
+    // predates review keeps compiling and reports the gap honestly at the
+    // call site rather than silently answering "no hunks".
+
+    /// The session's composed diff: one JSON object per hunk, shaped like
+    /// `ComposedHunk`. A session that never ran a turn has an empty queue,
+    /// not an error.
+    fn review_list_hunks(
+        &self,
+        _session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
+        Box::pin(async { Err("not implemented".into()) })
+    }
+
+    /// Record a decision about one hunk. `state` is `"unreviewed"`,
+    /// `"accepted"` or `"rejected"`; rejecting reverts the hunk on disk and
+    /// tells the session's agent it was rejected.
+    fn review_set_state(
+        &self,
+        _session_id: String,
+        _hunk_id: String,
+        _state: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+        Box::pin(async { Err("not implemented".into()) })
+    }
+
+    /// Anchor a comment to a line range. `spec` carries
+    /// `{ path, line_start, line_end?, body, root?, author? }`; the stored
+    /// comment (including its minted id) comes back.
+    fn review_comment(
+        &self,
+        _session_id: String,
+        _spec: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
+        Box::pin(async { Err("not implemented".into()) })
+    }
+
+    /// Mark a comment answered.
+    fn review_resolve_comment(
+        &self,
+        _session_id: String,
+        _comment_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+        Box::pin(async { Err("not implemented".into()) })
+    }
+
     /// Send a message and stream structured response parts.
     ///
     /// Subscribes, sends the message, then returns a receiver that yields

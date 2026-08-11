@@ -477,6 +477,10 @@ impl SessionManager {
         }
 
         if persisted_exists {
+            // Before the directory goes: `review.jsonl` is the only record of
+            // which repositories this session claimed keep refs in, so once it
+            // is deleted those refs pin trees that nothing will ever collect.
+            crate::review::drop_keep_refs(&session_dir, session_id).await;
             tokio::fs::remove_dir_all(&session_dir).await?;
         }
 

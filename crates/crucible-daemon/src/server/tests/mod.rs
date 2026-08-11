@@ -21,6 +21,7 @@ mod lifecycle;
 mod models_settings;
 mod persist_event;
 mod persisted_session;
+mod review_watch;
 mod rpc_basic;
 mod subscription;
 mod truncation;

@@ -965,9 +965,30 @@ impl AgentManager {
             // position. Restore failures are logged but do not abort
             // the undo — the conversation has already been rewound and
             // the user's mental model of "undo happened" should hold.
+            //
+            // The review ledger is deliberately left alone. Its composed diff
+            // is derived from the worktree, so restoring the snapshot removes
+            // the undone turn's hunks by itself; the intervals that produced
+            // them simply stop intersecting anything. Rewinding the ledger
+            // too would additionally discard attribution for the turns that
+            // survived, since intervals are not per-turn separable.
             if let Some(node_id) = new_cursor_id {
                 if let Some(snap) = self.snapshots.remove(session_id, node_id) {
-                    if let Err(e) = snap.restore(&session.workspace).await {
+                    // Suppressed for the same reason a rejected hunk's revert
+                    // is: this is the daemon rewriting the user's worktree, and
+                    // the watcher cannot tell it from the user doing so. A
+                    // restore touches every file the turn wrote, so unsuppressed
+                    // it announces one external change per restored file.
+                    let _suppressed = self
+                        .external_watch()
+                        .map(|w| w.tracker().capture(session_id));
+                    let restored = snap.restore(&session.workspace).await;
+                    // The snapshot has left the map, so nothing will release
+                    // its keep ref later. Do it here, whether or not the
+                    // restore worked — a failed restore does not make the
+                    // captured tree worth pinning forever.
+                    snap.release(session_id, node_id).await;
+                    if let Err(e) = restored {
                         warn!(
                             session_id = %session_id,
                             error = %e,

@@ -1,0 +1,13 @@
+name: review
+version: "0.1.0"
+description: Attributed-diff review as agent-callable tools — list, decide, revert, comment
+author: Crucible Team
+license: MIT
+
+main: init.lua
+
+capabilities:
+  - agent
+
+exports:
+  auto_discover: true

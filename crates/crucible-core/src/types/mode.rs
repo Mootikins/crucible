@@ -15,6 +15,117 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::acp::schema::{SessionMode, SessionModeId, SessionModeState};
 
+/// How much review a mode asks for before the agent writes.
+///
+/// Ordered weakest to strongest, and that order is load-bearing: a session's
+/// effective policy is `min(what the mode asks for, what the agent can
+/// enforce)`, so a mode can never ask for more gating than is deliverable.
+/// See [`ReviewPolicy::effective_for`].
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewPolicy {
+    /// No gate at all. Changes are still attributed; nothing ever waits.
+    None,
+    /// Never blocks a tool call — the review queue surfaces at turn end.
+    ///
+    /// Auto-approve should mean "don't interrupt me", not "don't review".
+    PostTurn,
+    /// A writing tool call waits while its target file has unreviewed hunks.
+    #[default]
+    PreWrite,
+}
+
+impl ReviewPolicy {
+    /// The policy a mode id asks for.
+    ///
+    /// Mode ids are open strings, so this answers for the modes the daemon
+    /// ships and falls back to the conservative [`ReviewPolicy::PreWrite`] for
+    /// everything else: a mode declared in Lua or advertised by an ACP agent
+    /// is gated until it says otherwise.
+    pub fn for_mode_id(id: &str) -> Self {
+        BuiltinMode::from_id(id).map_or(Self::default(), BuiltinMode::review_policy)
+    }
+
+    /// The strongest policy an agent of this type can actually enforce.
+    ///
+    /// The daemon dispatches an internal agent's tools, so a gate placed
+    /// before dispatch genuinely holds the write back. An ACP agent runs its
+    /// own tools in its own process and only reports them afterwards —
+    /// blocking there would announce a refusal for an edit that is already on
+    /// disk, which is strictly worse than not gating. Same rule and same
+    /// reason as `session_lifecycle::unenforceable_reason`.
+    ///
+    /// Attribution is unaffected: the ledger watches filesystem state, so an
+    /// ACP session still gets a full composed diff. Only the blocking is
+    /// unenforceable.
+    pub fn enforceable_by(agent_type: &str) -> Self {
+        if agent_type == "internal" {
+            Self::PreWrite
+        } else {
+            Self::PostTurn
+        }
+    }
+
+    /// This policy degraded to what an agent of `agent_type` can enforce.
+    pub fn effective_for(self, agent_type: &str) -> Self {
+        self.min(Self::enforceable_by(agent_type))
+    }
+}
+
+/// The modes the daemon ships.
+///
+/// *Not* the set of valid modes — those are open string ids, and a mode
+/// declared in Lua or advertised by an ACP agent is legitimate without
+/// appearing here. This is only what can be answered about a mode id with no
+/// declaration in hand, gathered in one place so those questions are asked
+/// once instead of by comparing string literals at each call site.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BuiltinMode {
+    /// Full read/write access.
+    Normal,
+    /// Read-only exploration.
+    Plan,
+    /// Auto-approve every operation.
+    Auto,
+}
+
+impl BuiltinMode {
+    /// The shipped mode with this id, or `None` for a mode the daemon does not
+    /// ship (declared elsewhere, or gone).
+    pub fn from_id(id: &str) -> Option<Self> {
+        match id {
+            "normal" => Some(Self::Normal),
+            "plan" => Some(Self::Plan),
+            "auto" => Some(Self::Auto),
+            _ => None,
+        }
+    }
+
+    /// Whether the mode confines the agent to the read-only tool set.
+    ///
+    /// This is what a tool-visibility fallback needs when no declaration is
+    /// available for the mode — a different question from
+    /// [`BuiltinMode::review_policy`], which happens to agree here only
+    /// because there is nothing to review in a mode that cannot write.
+    pub fn is_read_only(self) -> bool {
+        matches!(self, Self::Plan)
+    }
+
+    /// How much review this mode asks for.
+    pub fn review_policy(self) -> ReviewPolicy {
+        match self {
+            // Read-only, so the gate is vacuous rather than merely disabled.
+            Self::Plan => ReviewPolicy::None,
+            Self::Normal => ReviewPolicy::PreWrite,
+            // Auto keeps the receipt and surfaces the queue at turn end,
+            // instead of leaving changes unexamined forever.
+            Self::Auto => ReviewPolicy::PostTurn,
+        }
+    }
+}
+
 /// A mode descriptor with UI presentation metadata
 ///
 /// This type extends the ACP SessionMode with additional fields for UI display,
@@ -46,18 +157,39 @@ pub struct ModeDescriptor {
     pub icon: Option<String>,
     /// Optional color for UI display (hex color code)
     pub color: Option<String>,
+    /// How much review this mode asks for before the agent writes.
+    ///
+    /// Carries the *effective* policy — see [`ModeDescriptor::degraded_for`].
+    /// `#[serde(default)]` so a client older than the field still deserialises;
+    /// the default is the conservative [`ReviewPolicy::PreWrite`].
+    #[serde(default)]
+    pub review_policy: ReviewPolicy,
 }
 
 impl ModeDescriptor {
     /// Create a new mode descriptor with required fields
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
+        let id = id.into();
         Self {
-            id: id.into(),
             name: name.into(),
             description: None,
             icon: None,
             color: None,
+            review_policy: ReviewPolicy::for_mode_id(&id),
+            id,
         }
+    }
+
+    /// Degrade the policy to what an agent of `agent_type` can actually
+    /// enforce, so a client renders the effective policy and not the
+    /// configured one.
+    ///
+    /// A mode chip reading "gated" on a session that cannot gate is a lie
+    /// about a safety property. That is why the wire carries one field holding
+    /// the effective value rather than two fields a client has to reconcile.
+    pub fn degraded_for(mut self, agent_type: &str) -> Self {
+        self.review_policy = self.review_policy.effective_for(agent_type);
+        self
     }
 
     /// Set the description
@@ -108,6 +240,12 @@ impl From<&SessionMode> for ModeDescriptor {
             description: mode.description.clone(),
             icon: None,
             color: None,
+            // ACP's `SessionMode` is `#[non_exhaustive]` upstream and has no
+            // policy field, so the policy cannot ride the conversion — it is
+            // derived from the id here. Without this, every mode reaching a
+            // client through `session.list_modes` would report the default and
+            // the chip would be wrong for `plan` and `auto`.
+            review_policy: ReviewPolicy::for_mode_id(&mode.id.0),
         }
     }
 }
@@ -270,6 +408,145 @@ mod tests {
                 mode.id.0
             );
         }
+    }
+
+    // ========================================================================
+    // Review policy
+    // ========================================================================
+
+    #[test]
+    fn plan_mode_asks_for_no_review() {
+        assert_eq!(ReviewPolicy::for_mode_id("plan"), ReviewPolicy::None);
+    }
+
+    #[test]
+    fn normal_mode_gates_before_the_write() {
+        assert_eq!(ReviewPolicy::for_mode_id("normal"), ReviewPolicy::PreWrite);
+    }
+
+    #[test]
+    fn auto_mode_reviews_after_the_turn_instead_of_never() {
+        assert_eq!(ReviewPolicy::for_mode_id("auto"), ReviewPolicy::PostTurn);
+    }
+
+    /// A mode nobody declared may be anything, so it gates. Deleting a
+    /// declaration must not be a way to turn review off.
+    #[test]
+    fn an_undeclared_mode_gates_conservatively() {
+        assert_eq!(
+            ReviewPolicy::for_mode_id("architect"),
+            ReviewPolicy::PreWrite
+        );
+        assert_eq!(ReviewPolicy::for_mode_id(""), ReviewPolicy::PreWrite);
+    }
+
+    /// The daemon dispatches an internal agent's tools, so a pre-write gate
+    /// genuinely holds the write back.
+    #[test]
+    fn an_internal_agent_can_gate_before_the_write() {
+        assert_eq!(
+            ReviewPolicy::PreWrite.effective_for("internal"),
+            ReviewPolicy::PreWrite
+        );
+    }
+
+    /// An ACP agent already ran the tool by the time we hear about it, so
+    /// PreWrite degrades rather than pretending to block.
+    #[test]
+    fn an_external_agent_degrades_prewrite_to_postturn() {
+        assert_eq!(
+            ReviewPolicy::PreWrite.effective_for("acp"),
+            ReviewPolicy::PostTurn
+        );
+    }
+
+    /// Degrading is a floor, never a ceiling: a mode that asked for nothing
+    /// does not acquire a gate by running on an external agent.
+    #[test]
+    fn degrading_never_strengthens_a_policy() {
+        assert_eq!(
+            ReviewPolicy::None.effective_for("acp"),
+            ReviewPolicy::None,
+            "plan mode must stay ungated on an external agent"
+        );
+        assert_eq!(
+            ReviewPolicy::PostTurn.effective_for("acp"),
+            ReviewPolicy::PostTurn
+        );
+        assert_eq!(
+            ReviewPolicy::None.effective_for("internal"),
+            ReviewPolicy::None
+        );
+    }
+
+    #[test]
+    fn descriptor_derives_its_policy_from_the_mode_id() {
+        assert_eq!(
+            ModeDescriptor::new("plan", "Plan").review_policy,
+            ReviewPolicy::None
+        );
+        assert_eq!(
+            ModeDescriptor::new("auto", "Auto").review_policy,
+            ReviewPolicy::PostTurn
+        );
+        assert_eq!(
+            ModeDescriptor::new("normal", "Normal").review_policy,
+            ReviewPolicy::PreWrite
+        );
+    }
+
+    /// The conversion is the only source `session.list_modes` has, so a policy
+    /// that did not survive it would leave every mode reporting the default.
+    #[test]
+    fn descriptor_from_session_mode_carries_the_policy() {
+        let descriptor: ModeDescriptor = (&test_session_mode("auto", "Auto", None)).into();
+        assert_eq!(descriptor.review_policy, ReviewPolicy::PostTurn);
+    }
+
+    #[test]
+    fn descriptor_degraded_for_an_external_agent_reports_the_effective_policy() {
+        let descriptor = ModeDescriptor::new("normal", "Normal").degraded_for("acp");
+        assert_eq!(descriptor.review_policy, ReviewPolicy::PostTurn);
+    }
+
+    /// Wire compatibility: a client that predates the field must still
+    /// deserialise, and must land on the conservative value.
+    #[test]
+    fn a_descriptor_without_a_policy_field_defaults_to_gating() {
+        let restored: ModeDescriptor = serde_json::from_value(json!({
+            "id": "normal",
+            "name": "Normal",
+            "description": null,
+            "icon": null,
+            "color": null,
+        }))
+        .expect("descriptor without review_policy must deserialise");
+
+        assert_eq!(restored.review_policy, ReviewPolicy::PreWrite);
+    }
+
+    #[test]
+    fn review_policy_wire_names_are_snake_case() {
+        assert_eq!(
+            serde_json::to_value(ReviewPolicy::PostTurn).unwrap(),
+            json!("post_turn")
+        );
+        assert_eq!(
+            serde_json::to_value(ReviewPolicy::PreWrite).unwrap(),
+            json!("pre_write")
+        );
+        assert_eq!(
+            serde_json::to_value(ReviewPolicy::None).unwrap(),
+            json!("none")
+        );
+    }
+
+    #[test]
+    fn plan_is_the_only_shipped_read_only_mode() {
+        assert!(BuiltinMode::from_id("plan").unwrap().is_read_only());
+        assert!(!BuiltinMode::from_id("normal").unwrap().is_read_only());
+        assert!(!BuiltinMode::from_id("auto").unwrap().is_read_only());
+        assert!(BuiltinMode::from_id("architect").is_none());
     }
 
     #[test]

@@ -46,6 +46,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 mod core;
+mod external_announce;
 mod file_event_hooks;
 pub mod fs;
 pub mod grep;
@@ -672,10 +673,50 @@ impl Server {
                                 warn!(error = %e, "Auto-archive sweep failed");
                             }
                         }
+
+                        // Same tick, same kiln list: keep refs whose session
+                        // directory has been removed pin git objects that
+                        // nothing else will ever release.
+                        let dropped = sweep_review_refs(
+                            &sweep_kiln_manager,
+                            &sweep_data_home,
+                        ).await;
+                        if dropped > 0 {
+                            info!(dropped, "Released review keep refs for deleted sessions");
+                        }
                     }
                 }
             }
         });
+
+        // Review backstop: watch every session's roots so a write no capture
+        // bracket owned is announced instead of being noticed the next time
+        // someone happens to reload. Started here rather than in
+        // `AgentManager::new` because a watch is an async inotify
+        // registration, not a field; a daemon that cannot start one still
+        // attributes bracketed writes exactly, it just stops pushing.
+        let review_watch_cancel = CancellationToken::new();
+        let review_watch_task = match crate::watch::external_changes::ExternalChangeWatch::start(
+            Arc::new(crate::watch::external_changes::ExternalChangeTracker::default()),
+        )
+        .await
+        {
+            Ok(watch) => {
+                let watch = Arc::new(watch);
+                self.agent_manager.set_external_watch(Arc::clone(&watch));
+                let rx = watch.tracker().subscribe();
+                let tx = self.event_tx.clone();
+                let cancel = review_watch_cancel.clone();
+                Some((
+                    Arc::clone(&watch),
+                    tokio::spawn(external_announce::announce_external_changes(rx, tx, cancel)),
+                ))
+            }
+            Err(e) => {
+                warn!(error = %e, "review external-change watch not started; edits made outside a tool call will not push");
+                None
+            }
+        };
 
         // Auto-title task: when a turn completes in a still-untitled session,
         // generate a topic-based title daemon-side so every client (TUI, web,
@@ -845,6 +886,10 @@ impl Server {
         reprocess_cancel.cancel();
         sweep_cancel.cancel();
         title_cancel.cancel();
+        // The notifier parks on `rx.recv()`, and the tracker's sender outlives
+        // it (`AgentManager` holds the watch), so `Closed` never arrives on its
+        // own — without this the join below always burns its full timeout.
+        review_watch_cancel.cancel();
         match tokio::time::timeout(std::time::Duration::from_secs(5), persist_task).await {
             Ok(Ok(())) => debug!("Persist task completed gracefully"),
             Ok(Err(e)) => warn!("Persist task panicked: {}", e),
@@ -864,6 +909,16 @@ impl Server {
             Ok(Ok(())) => debug!("Auto-title task completed gracefully"),
             Ok(Err(e)) => warn!("Auto-title task panicked: {}", e),
             Err(_) => warn!("Auto-title task did not complete within timeout, aborting"),
+        }
+        if let Some((watch, task)) = review_watch_task {
+            if let Err(e) = watch.shutdown().await {
+                warn!(error = %e, "review external-change watch shutdown failed");
+            }
+            match tokio::time::timeout(std::time::Duration::from_secs(5), task).await {
+                Ok(Ok(())) => debug!("Review watch task completed gracefully"),
+                Ok(Err(e)) => warn!("Review watch task panicked: {}", e),
+                Err(_) => warn!("Review watch task did not complete within timeout, aborting"),
+            }
         }
 
         Ok(())

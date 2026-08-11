@@ -6,6 +6,8 @@ const DEFAULT_MAX_TOOL_DEPTH: usize = 10;
 mod gate_decision;
 mod isolation_gate;
 mod permission;
+pub(crate) mod review_capture;
+mod review_gate;
 mod send;
 mod stream;
 mod tool_call;

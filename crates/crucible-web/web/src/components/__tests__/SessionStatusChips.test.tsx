@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, waitFor, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { SessionStatusChips } from '../SessionStatusChips';
+import { __resetReviewStore } from '@/lib/review-store';
 import type { Session } from '@/lib/types';
 
 const [currentSession, setCurrentSession] = createSignal<Session | undefined>(undefined);
@@ -10,8 +11,16 @@ vi.mock('@/contexts/SessionContext', () => ({
 }));
 
 const getSessionStatusMock = vi.fn();
+const listModesMock = vi.fn(async () => ({ current_mode_id: 'normal', modes: [] }));
+// The chips retain the session's review state, which opens one SSE stream and
+// lists the composed diff. Both are stubbed: this suite is about the chips.
 vi.mock('@/lib/api', () => ({
   getSessionStatus: (...args: unknown[]) => getSessionStatusMock(...args),
+  listModes: (...args: unknown[]) => listModesMock(...(args as [])),
+  subscribeToEvents: () => () => {},
+}));
+vi.mock('@/lib/review-api', () => ({
+  listReviewHunks: vi.fn(async () => ({ session_id: 's', hunks: [], comments: [] })),
 }));
 
 const baseSession = (id = 's1'): Session => ({
@@ -32,6 +41,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   setCurrentSession(undefined);
+  __resetReviewStore();
 });
 
 describe('SessionStatusChips', () => {

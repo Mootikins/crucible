@@ -1,0 +1,673 @@
+use super::*;
+use crate::agent_manager::{AgentManager, AgentManagerParams};
+use crate::background_manager::BackgroundJobManager;
+use crate::kiln_manager::KilnManager;
+use crate::session_manager::SessionManager;
+use crate::session_storage::FileSessionStorage;
+use crate::tools::workspace::WorkspaceTools;
+use crucible_core::config::BackendType;
+use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
+use std::collections::HashMap;
+use std::time::Duration;
+use tempfile::TempDir;
+
+fn build_test_agent_manager(session_manager: Arc<SessionManager>) -> Arc<AgentManager> {
+    let (event_tx, _) = broadcast::channel(16);
+    let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
+    Arc::new(AgentManager::new(AgentManagerParams {
+        kiln_manager: Arc::new(KilnManager::new()),
+        session_manager,
+        background_manager,
+        mcp_gateway: None,
+        llm_config: None,
+        acp_config: None,
+        context_config: None,
+        permission_config: None,
+        plugin_loader: None,
+        workspace_tools: Arc::new(WorkspaceTools::new(PathBuf::from("/tmp"))),
+    }))
+}
+
+fn make_test_agent(context_budget: Option<usize>) -> SessionAgent {
+    SessionAgent {
+        mode: None,
+        agent_type: "internal".to_string(),
+        agent_name: None,
+        provider_key: Some("ollama".to_string()),
+        provider: BackendType::Ollama,
+        model: "llama3.2".to_string(),
+        system_prompt: "You are helpful.".to_string(),
+        temperature: Some(0.7),
+        max_tokens: None,
+        max_context_tokens: None,
+        thinking_budget: None,
+        endpoint: None,
+        env_overrides: HashMap::new(),
+        mcp_servers: Vec::new(),
+        agent_card_name: None,
+        capabilities: None,
+        agent_description: None,
+        delegation_config: None,
+        precognition_enabled: false,
+        precognition_results: 5,
+        max_iterations: None,
+        execution_timeout_secs: None,
+        context_budget,
+        context_strategy: Default::default(),
+        context_window: None,
+        output_validation: OutputValidation::default(),
+        validation_retries: 3,
+        autocompact_threshold: None,
+        tool_policy: None,
+    }
+}
+
+/// Agent that calls `bash` once and waits for the tool result.
+///
+/// `bash` is not believed read-only, so it reaches the permission gate —
+/// which is exactly the decision a plugin-created turn has nobody to make.
+struct BashCallingAgent;
+
+#[async_trait::async_trait]
+impl crucible_core::turn::Agent for BashCallingAgent {
+    fn capabilities(&self) -> crucible_core::turn::AgentCapabilities {
+        crucible_core::turn::AgentCapabilities::default()
+    }
+    async fn turn<'a>(
+        &'a mut self,
+        ctx: crucible_core::turn::TurnContext,
+    ) -> Result<
+        futures::stream::BoxStream<'a, crucible_core::turn::TurnEvent>,
+        crucible_core::turn::AgentError,
+    > {
+        use crucible_core::turn::{StopReason, TurnEvent};
+        let mut inbound = ctx.inbound;
+        let body = async_stream::stream! {
+            yield TurnEvent::ToolCall {
+                id: "call-1".to_string(),
+                name: "bash".to_string(),
+                args: serde_json::json!({"command": "rm -rf /"}),
+                diffs: Vec::new(),
+            };
+            yield TurnEvent::ToolBatchEnd;
+            if let Some(rx) = inbound.as_mut() {
+                while let Some(event) = rx.recv().await {
+                    if matches!(event, TurnEvent::ToolResult { .. }) {
+                        break;
+                    }
+                }
+            }
+            yield TurnEvent::Done { stop_reason: StopReason::EndTurn };
+        };
+        Ok(Box::pin(body))
+    }
+    async fn cancel(&self) -> Result<(), crucible_core::turn::AgentError> {
+        Ok(())
+    }
+    async fn switch_model(&mut self, _: &str) -> Result<(), crucible_core::turn::NotSupported> {
+        Err(crucible_core::turn::NotSupported::new("switch_model"))
+    }
+}
+
+#[async_trait::async_trait]
+impl crucible_core::traits::chat::AgentHandle for BashCallingAgent {
+    async fn send_message_fire_and_forget(
+        &mut self,
+        _: String,
+    ) -> crucible_core::traits::chat::ChatResult<()> {
+        Ok(())
+    }
+    async fn set_mode_str(&mut self, _: &str) -> crucible_core::traits::chat::ChatResult<()> {
+        Ok(())
+    }
+    fn get_mode_id(&self) -> &str {
+        "normal"
+    }
+}
+
+/// A session whose single turn calls `bash`, driven through the real
+/// scheduler and tool dispatch behind a [`DaemonSessionBridge`]. No
+/// `[permissions]` config, so the gate has no rule to fall back on.
+async fn bash_calling_rig(
+    event_tx: broadcast::Sender<SessionEventMessage>,
+) -> (TempDir, DaemonSessionBridge, String) {
+    let tmp = TempDir::new().unwrap();
+    let workspace = tmp.path().to_path_buf();
+    let session_manager = Arc::new(SessionManager::with_storage(Arc::new(
+        FileSessionStorage::new(),
+    )));
+    let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
+        kiln_manager: Arc::new(KilnManager::new()),
+        session_manager: session_manager.clone(),
+        background_manager: Arc::new(BackgroundJobManager::new(event_tx.clone())),
+        mcp_gateway: None,
+        llm_config: None,
+        acp_config: None,
+        context_config: None,
+        permission_config: None,
+        plugin_loader: None,
+        workspace_tools: Arc::new(WorkspaceTools::new(workspace.clone())),
+    }));
+    agent_manager.set_agent_factory_override(Box::new(|_, _| {
+        Box::pin(async {
+            Ok(Box::new(BashCallingAgent)
+                as Box<
+                    dyn crucible_core::traits::chat::AgentHandle + Send + Sync,
+                >)
+        })
+    }));
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            workspace.clone(),
+            Some(workspace.clone()),
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+    agent_manager
+        .configure_agent(&session.id, make_test_agent(None))
+        .await
+        .unwrap();
+    let bridge = DaemonSessionBridge::new(session_manager, agent_manager, event_tx);
+    (tmp, bridge, session.id)
+}
+
+/// A Discord (or any plugin) turn has no Crucible principal on the other
+/// end, so a tool that would need approval must come back as a tool error
+/// rather than as a prompt anyone in the room could answer.
+#[tokio::test]
+async fn a_collected_plugin_turn_errors_on_a_gated_tool_instead_of_prompting() {
+    let (event_tx, _keep_open) = broadcast::channel(256);
+    let (_tmp, bridge, session_id) = bash_calling_rig(event_tx).await;
+
+    let mut rx = bridge
+        .send_and_collect(session_id, "go".to_string(), Some(5.0), None, false)
+        .await
+        .unwrap();
+
+    let mut parts = Vec::new();
+    while let Ok(Some(part)) = tokio::time::timeout(Duration::from_secs(30), rx.recv()).await {
+        parts.push(part);
+    }
+
+    assert!(
+        !parts
+            .iter()
+            .any(|p| matches!(p, ResponsePart::PermissionRequest { .. })),
+        "a plugin turn must never surface a permission prompt, got: {parts:?}"
+    );
+    assert!(
+        parts.iter().any(|p| matches!(
+            p,
+            ResponsePart::ToolResult {
+                tool,
+                is_error: true,
+                ..
+            } if tool == "bash"
+        )),
+        "the gated bash call must come back as a tool error, got: {parts:?}"
+    );
+}
+
+/// Same guarantee on the fire-and-forget path, which has no part stream to
+/// inspect: nothing may reach the broadcast that a subscriber could answer.
+#[tokio::test]
+async fn a_fire_and_forget_plugin_turn_never_broadcasts_a_permission_request() {
+    let (event_tx, mut events) = broadcast::channel(256);
+    let (_tmp, bridge, session_id) = bash_calling_rig(event_tx).await;
+
+    bridge
+        .send_message(session_id, "go".to_string())
+        .await
+        .unwrap();
+
+    let mut errored_tool = None;
+    while let Ok(Ok(event)) = tokio::time::timeout(Duration::from_secs(30), events.recv()).await {
+        assert_ne!(
+            event.event, "interaction_requested",
+            "a plugin turn must never ask the broadcast for permission"
+        );
+        if event.event == "tool_result"
+            && event
+                .data
+                .get("result")
+                .and_then(|r| r.get("error"))
+                .is_some()
+        {
+            errored_tool = event
+                .data
+                .get("tool")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+        }
+        if event.event == "message_complete" || event.event == "ended" {
+            break;
+        }
+    }
+
+    assert_eq!(
+        errored_tool.as_deref(),
+        Some("bash"),
+        "the gated bash call must come back as a tool error"
+    );
+}
+
+#[test]
+fn test_daemon_session_bridge_construction() {
+    // Create minimal dependencies for testing
+    let (event_tx, _) = broadcast::channel(100);
+    let kiln_manager = Arc::new(KilnManager::new());
+    let session_manager = Arc::new(SessionManager::new());
+    let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
+    let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
+        kiln_manager,
+        session_manager: session_manager.clone(),
+        background_manager,
+        mcp_gateway: None,
+        llm_config: None,
+        acp_config: None,
+        context_config: None,
+        permission_config: None,
+        plugin_loader: None,
+        workspace_tools: Arc::new(WorkspaceTools::new(PathBuf::from("/tmp"))),
+    }));
+
+    // Construct bridge
+    let bridge = DaemonSessionBridge::new(
+        session_manager.clone(),
+        agent_manager.clone(),
+        event_tx.clone(),
+    );
+
+    // Verify bridge was created (no panic)
+    assert!(std::mem::size_of_val(&bridge) > 0);
+}
+
+#[test]
+fn test_daemon_session_bridge_delegates_to_managers() {
+    // Verify Arc cloning works (bridge holds Arc references)
+    let (event_tx, _) = broadcast::channel(100);
+    let kiln_manager = Arc::new(KilnManager::new());
+    let session_manager = Arc::new(SessionManager::new());
+    let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
+    let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
+        kiln_manager,
+        session_manager: session_manager.clone(),
+        background_manager,
+        mcp_gateway: None,
+        llm_config: None,
+        acp_config: None,
+        context_config: None,
+        permission_config: None,
+        plugin_loader: None,
+        workspace_tools: Arc::new(WorkspaceTools::new(PathBuf::from("/tmp"))),
+    }));
+
+    let sm_strong_count = Arc::strong_count(&session_manager);
+    let am_strong_count = Arc::strong_count(&agent_manager);
+
+    let _bridge = DaemonSessionBridge::new(
+        session_manager.clone(),
+        agent_manager.clone(),
+        event_tx.clone(),
+    );
+
+    // Verify Arc references are held (strong count increased)
+    assert_eq!(Arc::strong_count(&session_manager), sm_strong_count + 1);
+    assert_eq!(Arc::strong_count(&agent_manager), am_strong_count + 1);
+}
+
+#[test]
+fn parse_range_accepts_known_types() {
+    use crucible_core::traits::context_ops::Range;
+    assert!(matches!(
+        parse_range(&serde_json::json!({"type": "all"})).unwrap(),
+        Range::All
+    ));
+    assert!(matches!(
+        parse_range(&serde_json::json!({"type": "last", "n": 3})).unwrap(),
+        Range::Last(3)
+    ));
+    assert!(matches!(
+        parse_range(&serde_json::json!({"type": "first", "n": 2})).unwrap(),
+        Range::First(2)
+    ));
+    match parse_range(&serde_json::json!({"type": "indices", "start": 1, "end": 4})).unwrap() {
+        Range::Indices(r) => assert_eq!(r, 1..4),
+        _ => panic!("expected Indices"),
+    }
+}
+
+#[test]
+fn parse_range_rejects_unknown_type() {
+    let err = parse_range(&serde_json::json!({"type": "bogus"})).unwrap_err();
+    assert!(err.contains("unknown range type"), "got: {err}");
+}
+
+#[test]
+fn parse_range_requires_n_for_last_and_first() {
+    let err = parse_range(&serde_json::json!({"type": "last"})).unwrap_err();
+    assert!(err.contains("range.n required"), "got: {err}");
+    let err = parse_range(&serde_json::json!({"type": "first"})).unwrap_err();
+    assert!(err.contains("range.n required"), "got: {err}");
+}
+
+#[test]
+fn parse_range_requires_start_end_for_indices() {
+    let err = parse_range(&serde_json::json!({"type": "indices", "start": 0})).unwrap_err();
+    assert!(err.contains("range.end required"), "got: {err}");
+}
+
+#[tokio::test]
+async fn context_usage_returns_expected_shape() {
+    let tmp = TempDir::new().unwrap();
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    let agent_manager = build_test_agent_manager(session_manager.clone());
+    agent_manager
+        .configure_agent(&session.id, make_test_agent(Some(10_000)))
+        .await
+        .unwrap();
+
+    let (event_tx, _) = broadcast::channel(16);
+    let bridge = DaemonSessionBridge::new(session_manager.clone(), agent_manager.clone(), event_tx);
+
+    let usage = bridge.context_usage(session.id.clone()).await.unwrap();
+    let obj = usage.as_object().expect("expected object");
+    assert!(obj.contains_key("messages"));
+    assert!(obj.contains_key("prompt_tokens"));
+    assert!(obj.contains_key("budget"));
+    assert!(obj.contains_key("percent"));
+    assert_eq!(obj.get("budget").and_then(|v| v.as_u64()), Some(10_000));
+    // No turn has run, so no tree, no tokens.
+    assert_eq!(obj.get("messages").and_then(|v| v.as_u64()), Some(0));
+    assert_eq!(obj.get("prompt_tokens").and_then(|v| v.as_u64()), Some(0));
+    assert_eq!(obj.get("percent").and_then(|v| v.as_f64()), Some(0.0));
+}
+
+#[tokio::test]
+async fn compact_transitions_session_to_compacting() {
+    let tmp = TempDir::new().unwrap();
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    let agent_manager = build_test_agent_manager(session_manager.clone());
+    let (event_tx, _) = broadcast::channel(16);
+    let bridge = DaemonSessionBridge::new(session_manager.clone(), agent_manager.clone(), event_tx);
+
+    bridge.compact(session.id.clone()).await.unwrap();
+    let after = session_manager.get_session(&session.id).unwrap();
+    assert_eq!(
+        format!("{}", after.state),
+        "compacting",
+        "session should be in compacting state after compact()"
+    );
+}
+
+#[tokio::test]
+async fn remove_messages_last_n_rewinds_tree() {
+    let tmp = TempDir::new().unwrap();
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    let agent_manager = build_test_agent_manager(session_manager.clone());
+    agent_manager
+        .configure_agent(&session.id, make_test_agent(None))
+        .await
+        .unwrap();
+
+    // Seed the tree with three non-root nodes: User → Agent → User.
+    let tree = agent_manager
+        .get_or_rebuild_session_tree(&session.id, std::path::Path::new("/nonexistent"))
+        .await;
+    {
+        let mut t = tree.lock().await;
+        let root = t.root();
+        let u1 = t.add_child_and_advance(
+            root,
+            crucible_core::turn::NodeContent::User { text: "u1".into() },
+        );
+        let a1 = t.add_child_and_advance(
+            u1,
+            crucible_core::turn::NodeContent::Agent { text: "a1".into() },
+        );
+        t.add_child_and_advance(
+            a1,
+            crucible_core::turn::NodeContent::User { text: "u2".into() },
+        );
+        // sanity: path has root + 3 nodes
+        let cur = t.current();
+        assert_eq!(t.path_to_here(cur).len(), 4);
+    }
+
+    let (event_tx, _) = broadcast::channel(16);
+    let bridge = DaemonSessionBridge::new(session_manager.clone(), agent_manager, event_tx);
+
+    let removed = bridge
+        .remove_messages(
+            session.id.clone(),
+            serde_json::json!({"type": "last", "n": 2}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(removed, 2);
+
+    let tree = bridge
+        .agent_manager
+        .get_session_tree(&session.id)
+        .expect("tree should exist");
+    let t = tree.lock().await;
+    assert_eq!(
+        t.path_to_here(t.current()).len(),
+        2,
+        "expected root + 1 surviving node"
+    );
+}
+
+#[tokio::test]
+async fn remove_messages_indices_truncates_from_start() {
+    let tmp = TempDir::new().unwrap();
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    let agent_manager = build_test_agent_manager(session_manager.clone());
+    agent_manager
+        .configure_agent(&session.id, make_test_agent(None))
+        .await
+        .unwrap();
+
+    // Seed the tree with three non-root nodes.
+    let tree = agent_manager
+        .get_or_rebuild_session_tree(&session.id, std::path::Path::new("/nonexistent"))
+        .await;
+    {
+        let mut t = tree.lock().await;
+        let root = t.root();
+        let u1 = t.add_child_and_advance(
+            root,
+            crucible_core::turn::NodeContent::User { text: "u1".into() },
+        );
+        let a1 = t.add_child_and_advance(
+            u1,
+            crucible_core::turn::NodeContent::Agent { text: "a1".into() },
+        );
+        t.add_child_and_advance(
+            a1,
+            crucible_core::turn::NodeContent::User { text: "u2".into() },
+        );
+    }
+
+    let (event_tx, _) = broadcast::channel(16);
+    let bridge = DaemonSessionBridge::new(session_manager.clone(), agent_manager, event_tx);
+
+    let removed = bridge
+        .remove_messages(
+            session.id.clone(),
+            serde_json::json!({"type": "indices", "start": 1, "end": 3}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(removed, 2);
+}
+
+/// Seeds a tree with two complete turns and verifies that
+/// `bridge.undo` rewinds by one turn, that `can_undo`/`undo_depth`
+/// reflect the new state, and that an `undo_history` lists what's
+/// still undoable.
+#[tokio::test]
+async fn undo_rewinds_tree_and_emits_event() {
+    let tmp = TempDir::new().unwrap();
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    let agent_manager = build_test_agent_manager(session_manager.clone());
+    agent_manager
+        .configure_agent(&session.id, make_test_agent(None))
+        .await
+        .unwrap();
+
+    // Seed two complete turns: User → Agent → User → Agent.
+    let tree = agent_manager
+        .get_or_rebuild_session_tree(&session.id, std::path::Path::new("/nonexistent"))
+        .await;
+    {
+        let mut t = tree.lock().await;
+        let root = t.root();
+        let u1 = t.add_child_and_advance(
+            root,
+            crucible_core::turn::NodeContent::User { text: "u1".into() },
+        );
+        let a1 = t.add_child_and_advance(
+            u1,
+            crucible_core::turn::NodeContent::Agent { text: "a1".into() },
+        );
+        let u2 = t.add_child_and_advance(
+            a1,
+            crucible_core::turn::NodeContent::User { text: "u2".into() },
+        );
+        t.add_child_and_advance(
+            u2,
+            crucible_core::turn::NodeContent::Agent { text: "a2".into() },
+        );
+    }
+
+    let (event_tx, mut event_rx) = broadcast::channel(16);
+    let bridge = DaemonSessionBridge::new(session_manager.clone(), agent_manager.clone(), event_tx);
+
+    // Pre-undo state.
+    assert!(bridge.can_undo(session.id.clone()).await.unwrap());
+    assert_eq!(bridge.undo_depth(session.id.clone()).await.unwrap(), 2);
+    let history = bridge.undo_history(session.id.clone()).await.unwrap();
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[0]["turn_index"].as_u64(), Some(0));
+    assert_eq!(history[0]["messages_removed"].as_u64(), Some(2));
+    assert_eq!(history[1]["turn_index"].as_u64(), Some(1));
+    assert_eq!(history[1]["messages_removed"].as_u64(), Some(2));
+
+    // Undo one turn.
+    let turns_undone = bridge.undo(session.id.clone(), 1).await.unwrap();
+    assert_eq!(turns_undone, 1);
+
+    // session_undo event should have been broadcast.
+    let mut saw_event = false;
+    while let Ok(msg) = event_rx.try_recv() {
+        if msg.event == "session_undo" {
+            assert_eq!(msg.data["turns_undone"].as_u64(), Some(1));
+            assert_eq!(msg.data["messages_removed"].as_u64(), Some(2));
+            saw_event = true;
+            break;
+        }
+    }
+    assert!(saw_event, "expected a session_undo broadcast event");
+
+    // Post-undo state: depth dropped, one turn still undoable.
+    assert_eq!(bridge.undo_depth(session.id.clone()).await.unwrap(), 1);
+    let history2 = bridge.undo_history(session.id.clone()).await.unwrap();
+    assert_eq!(history2.len(), 1);
+    assert_eq!(history2[0]["turn_index"].as_u64(), Some(0));
+}
+
+#[tokio::test]
+async fn remove_messages_invalid_range_type_errors() {
+    let tmp = TempDir::new().unwrap();
+    let storage = Arc::new(FileSessionStorage::new());
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    let agent_manager = build_test_agent_manager(session_manager.clone());
+    agent_manager
+        .configure_agent(&session.id, make_test_agent(None))
+        .await
+        .unwrap();
+
+    let (event_tx, _) = broadcast::channel(16);
+    let bridge = DaemonSessionBridge::new(session_manager, agent_manager, event_tx);
+
+    let err = bridge
+        .remove_messages(session.id, serde_json::json!({"type": "bogus"}))
+        .await
+        .unwrap_err();
+    assert!(err.contains("unknown range type"), "got: {err}");
+}

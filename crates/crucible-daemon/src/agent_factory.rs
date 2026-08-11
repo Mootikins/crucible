@@ -283,14 +283,23 @@ async fn create_internal_mcp_tool_defs(
 ///
 /// Consults the Lua registry when the mode is declared there, so a
 /// user-defined mode filters tools without any Rust change. Falls back to the
-/// shipped read-only list for plan, and to "everything" otherwise — the
-/// fallback matters: a daemon whose Lua failed to load must still restrict
-/// plan mode rather than silently opening it up.
+/// shipped read-only list for a read-only mode, and to "everything" otherwise
+/// — the fallback matters: a daemon whose Lua failed to load must still
+/// restrict plan mode rather than silently opening it up.
 fn mode_exposes_tool(modes: Option<&crucible_lua::ModeRegistry>, mode: &str, name: &str) -> bool {
     if let Some(definition) = modes.and_then(|m| m.get(mode)) {
         return definition.tools.matches(name);
     }
-    if mode == "plan" {
+    // Asked of the mode table rather than by comparing the id to `"plan"`.
+    // The literal used to live here, and the same literal then had to be
+    // repeated in the dispatch guard, the advertisement filter and the review
+    // policy — four places that could disagree about one mode. `BuiltinMode`
+    // is the one place a mode id is turned into what the daemon knows about
+    // it; this branch means what it always meant, and Plan is still the only
+    // shipped read-only mode.
+    if crucible_core::types::mode::BuiltinMode::from_id(mode)
+        .is_some_and(crucible_core::types::mode::BuiltinMode::is_read_only)
+    {
         return crate::tools::tool_modes::PLAN_TOOL_NAMES.contains(&name);
     }
     // A mode the daemon ships needs no declaration to be legitimate. This is

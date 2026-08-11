@@ -5,10 +5,13 @@
 //!
 //! Two backends:
 //!
-//! * **Git mode** — when the workspace is a git repo. Uses
-//!   `git stash create` to produce a stash commit SHA *without* applying
-//!   it. Restore replays that stash via `git restore --source <sha>`,
-//!   recreating both the index and worktree.
+//! * **Git mode** — when the workspace is a git repo. Stages the worktree
+//!   into a *throwaway* index ([`capture_tree`]) and wraps the resulting
+//!   tree in an orphan commit. This is deliberately not `git stash
+//!   create`, which cannot capture untracked files — a tool that wrote a
+//!   new file would not be undoable. Restore replays the tree via
+//!   `git restore --source <sha> -- .`, recreating both index and
+//!   worktree — scoped to the workspace, because capture is.
 //! * **Journal mode** — when the workspace is not a git repo. Walks the
 //!   workspace and stores every file's bytes in memory. Capped at
 //!   `DEFAULT_JOURNAL_CAP` (5 MiB) to bound memory; over the cap we
@@ -16,14 +19,16 @@
 //!
 //! `create` never propagates failures upward — a failure at snapshot
 //! time degrades to `skipped: true` (with a `warn!` log) so it can never
-//! abort the agent turn.
+//! abort the agent turn. Callers that need to know a capture failed —
+//! the review ledger, which must not silently fall back to walking the
+//! whole workspace per tool call — use [`capture_tree`] directly.
 
 use dashmap::DashMap;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::process::Command;
-use tracing::warn;
+use tracing::{debug, warn};
 
 const DEFAULT_JOURNAL_CAP: usize = 5 * 1024 * 1024;
 
@@ -61,9 +66,30 @@ impl SnapshotMap {
             .map(|(_, v)| v)
     }
 
-    /// Drop every snapshot for a session. Called at session end.
+    /// Drop every snapshot for a session, releasing their keep refs.
+    ///
+    /// Callers are sync (`AgentManager::cleanup_session`), so the git work
+    /// is spawned. A ref that outlives its snapshot costs one unreachable
+    /// tree until the sweeper catches it — teardown must not block on git.
     pub fn clear_session(&self, session_id: &str) {
-        self.inner.retain(|(s, _), _| s != session_id);
+        let mut released = Vec::new();
+        self.inner.retain(|(s, node), snap| {
+            if s == session_id {
+                released.push((*node, Arc::clone(snap)));
+                false
+            } else {
+                true
+            }
+        });
+        if released.is_empty() {
+            return;
+        }
+        let session = session_id.to_string();
+        tokio::spawn(async move {
+            for (node, snap) in released {
+                snap.release(&session, node).await;
+            }
+        });
     }
 
     pub fn len(&self) -> usize {
@@ -79,17 +105,21 @@ impl SnapshotMap {
 ///
 /// One of three shapes:
 ///
-/// * `commit_id = Some(sha)` — git stash SHA. Restore replays it.
+/// * `tree_id = Some(sha)`   — captured tree. Restore replays it.
 /// * `journal = Some(map)`   — in-memory file → bytes map.
 /// * `skipped = true`        — snapshot was bypassed (e.g. cap exceeded
 ///   or git op failed unrecoverably). `restore` is a no-op.
 ///
 /// The default value is the third (no-op) form, used when there's
-/// nothing to snapshot (clean git tree, empty workspace, etc.).
+/// nothing to snapshot (empty workspace, git unavailable, etc.).
 #[derive(Debug, Clone, Default)]
 pub struct WorkspaceSnapshot {
-    /// Git stash commit SHA when the workspace is a git repo.
-    pub commit_id: Option<String>,
+    /// The captured tree. This is what `restore` replays and what the
+    /// session's keep ref pins against `git gc`.
+    pub tree_id: Option<String>,
+    /// Repo the capture came from, so cleanup can find the keep ref
+    /// again. `None` outside git mode.
+    pub root: Option<PathBuf>,
     /// Path → original bytes map, populated for non-git workspaces.
     /// Paths are relative to the workspace root.
     pub journal: Option<HashMap<PathBuf, Vec<u8>>>,
@@ -98,39 +128,75 @@ pub struct WorkspaceSnapshot {
     pub skipped: bool,
 }
 
+/// Ref pinning one turn's captured tree.
+///
+/// **Tree-valued, deliberately.** A commit-valued ref under `refs/` shows
+/// up in `git log --all`, putting crucible's bookkeeping in the user's
+/// history; a tree-valued one does not, because `--all` walks commits.
+pub(crate) fn keep_ref(session_id: &str, node_id: u32) -> String {
+    format!("refs/crucible/snapshots/{session_id}/{node_id}")
+}
+
 impl WorkspaceSnapshot {
     /// Capture workspace state, picking git or journal mode automatically.
-    pub async fn create(workspace: &Path) -> Self {
-        Self::create_with_cap(workspace, DEFAULT_JOURNAL_CAP).await
+    pub async fn create(workspace: &Path, session_id: &str, node_id: u32) -> Self {
+        Self::create_with_cap(workspace, session_id, node_id, DEFAULT_JOURNAL_CAP).await
     }
 
     /// As [`Self::create`] but with an explicit journal byte cap. Mainly
     /// for tests; production code uses the default.
-    pub async fn create_with_cap(workspace: &Path, journal_cap: usize) -> Self {
+    pub async fn create_with_cap(
+        workspace: &Path,
+        session_id: &str,
+        node_id: u32,
+        journal_cap: usize,
+    ) -> Self {
         if is_git_repo(workspace).await {
-            match git_stash_create(workspace).await {
-                Ok(sha) if !sha.is_empty() => Self {
-                    commit_id: Some(sha),
-                    journal: None,
-                    skipped: false,
-                },
-                Ok(_) => {
-                    // Empty SHA = clean working tree, nothing to snapshot.
-                    // Restore is a no-op which is correct: there were no
-                    // changes to revert.
-                    Self::default()
+            match capture_tree(workspace).await {
+                Ok(tree) => {
+                    // Without this the captured tree is unreachable from any
+                    // ref, so `git gc --prune=now` in the agent's own repo —
+                    // or any gc once the object passes the two-week default
+                    // expiry — deletes it and undo silently restores nothing.
+                    if let Err(e) =
+                        update_keep(workspace, &keep_ref(session_id, node_id), &tree).await
+                    {
+                        warn!(
+                            workspace = %workspace.display(),
+                            error = %e,
+                            "snapshot keep ref failed; the capture is gc-collectable"
+                        );
+                    }
+                    Self {
+                        tree_id: Some(tree),
+                        root: Some(workspace.to_path_buf()),
+                        journal: None,
+                        skipped: false,
+                    }
                 }
                 Err(e) => {
                     warn!(
                         workspace = %workspace.display(),
                         error = %e,
-                        "git stash create failed; falling back to journal"
+                        "workspace tree capture failed; falling back to journal"
                     );
                     build_journal(workspace, journal_cap)
                 }
             }
         } else {
             build_journal(workspace, journal_cap)
+        }
+    }
+
+    /// Release the keep ref, making the captured tree collectable again.
+    /// Failure is logged, not propagated: a stale ref costs one unreachable
+    /// tree, while a failed cleanup must never block session teardown.
+    pub(crate) async fn release(&self, session_id: &str, node_id: u32) {
+        let Some(root) = self.root.as_deref() else {
+            return;
+        };
+        if let Err(e) = drop_keep(root, &keep_ref(session_id, node_id)).await {
+            debug!(error = %e, "dropping snapshot keep ref failed");
         }
     }
 
@@ -142,20 +208,23 @@ impl WorkspaceSnapshot {
         if self.skipped {
             return Ok(());
         }
-        if let Some(sha) = &self.commit_id {
-            // `git restore --source <sha> --worktree --staged :(top)`
-            // replays both the worktree and the index from the stash
-            // commit, which is what we want: any files the turn created,
-            // modified, or staged are reverted.
+        if let Some(sha) = self.tree_id.as_ref() {
+            // Scoped to the workspace, NOT `:(top)`.
+            //
+            // Capture and restore have to agree on what they cover, and
+            // capture cannot cover more than the workspace: `capture_tree`
+            // runs `add -A .` from here, so paths outside the workspace keep
+            // whatever the *seeded index* held. Restoring `:(top)` therefore
+            // rewrote the whole worktree from a tree that only knew about the
+            // workspace — reverting a user's uncommitted edits in sibling
+            // directories to their committed content, silently, on an undo
+            // they asked for about the agent's work.
+            //
+            // `.` resolves against `current_dir` below, so this is the whole
+            // repo when the workspace *is* the repo root, and exactly the
+            // agent's subtree when it is not.
             let out = Command::new("git")
-                .args([
-                    "restore",
-                    "--source",
-                    sha,
-                    "--worktree",
-                    "--staged",
-                    ":(top)",
-                ])
+                .args(["restore", "--source", sha, "--worktree", "--staged", "."])
                 .current_dir(workspace)
                 .output()
                 .await?;
@@ -165,7 +234,7 @@ impl WorkspaceSnapshot {
                 // won't remove files the turn newly created. That's a
                 // graceful degradation rather than a hard failure.
                 let out2 = Command::new("git")
-                    .args(["checkout", sha, "--", ":/"])
+                    .args(["checkout", sha, "--", "."])
                     .current_dir(workspace)
                     .output()
                     .await?;
@@ -187,14 +256,19 @@ impl WorkspaceSnapshot {
             }
             Ok(())
         } else {
-            // Default-shaped snapshot (no commit_id, no journal, not
+            // Default-shaped snapshot (no tree_id, no journal, not
             // skipped): there was nothing to snapshot, so nothing to do.
             Ok(())
         }
     }
 }
 
-async fn is_git_repo(p: &Path) -> bool {
+/// True when `p` is inside a git worktree.
+///
+/// `rev-parse` walks *up*, so a plain directory nested inside a repo
+/// answers true and takes the git path. That is intentional: the tree it
+/// produces still describes that directory's contents.
+pub async fn is_git_repo(p: &Path) -> bool {
     let out = Command::new("git")
         .args(["rev-parse", "--git-dir"])
         .current_dir(p)
@@ -203,95 +277,87 @@ async fn is_git_repo(p: &Path) -> bool {
     matches!(out, Ok(o) if o.status.success())
 }
 
-async fn git_stash_create(p: &Path) -> std::io::Result<String> {
-    // We want a single commit that captures *both* tracked changes and
-    // untracked files (e.g. a tool that ran `Write new_file.txt`).
-    // `git stash create` alone only captures tracked changes; it has no
-    // `--include-untracked` flag — that's a `stash push` thing.
-    //
-    // Strategy: snapshot the current index to a tree, then build a
-    // single commit whose tree includes everything in the worktree.
-    //
-    // 1. Save the current index tree (so we can restore it after).
-    // 2. `git add -A` to stage every worktree file.
-    // 3. `git write-tree` produces the snapshot tree SHA.
-    // 4. `git commit-tree` wraps the tree in an orphan commit (no
-    //    parent) which is enough to be passed to `git restore --source`.
-    // 5. Restore the original index via `read-tree`.
-    //
-    // The worktree is never touched. The committed objects are loose
-    // (unreachable from any ref) and will be GC'd eventually.
+/// Stage everything under `p` into a *throwaway* index and return the
+/// resulting tree SHA. The worktree and the repository's real index are
+/// both left untouched.
+///
+/// The real index must not be involved: this runs once per turn for undo
+/// and once per tool call for the review ledger, and `git add -A` against
+/// the live index races anyone running git in a terminal beside us. Worse,
+/// mid-merge it collapses every unmerged stage — a snapshot would silently
+/// mark the user's conflicts resolved.
+///
+/// The temp index is *seeded* from the real one. That is not just a warm
+/// cache: `git write-tree` always emits the full index tree, so an empty
+/// seed under a workspace nested inside a larger repo would write a tree
+/// missing every sibling directory, and restoring it would delete them.
+pub async fn capture_tree(p: &Path) -> std::io::Result<String> {
+    let temp = tempfile::TempDir::new()?;
+    let index_path = temp.path().join("index");
 
-    let saved_index = Command::new("git")
-        .args(["write-tree"])
-        .current_dir(p)
-        .output()
-        .await?;
-    let saved_tree = if saved_index.status.success() {
-        Some(
-            String::from_utf8_lossy(&saved_index.stdout)
-                .trim()
-                .to_string(),
-        )
-    } else {
-        None
-    };
-
-    // Stage every worktree file (additions, modifications, deletions).
-    // Errors here are non-fatal; if `add` fails the subsequent
-    // `write-tree` will simply reflect the prior index, which is still
-    // a valid (though incomplete) snapshot.
-    let _ = Command::new("git")
-        .args(["add", "-A", "."])
-        .current_dir(p)
-        .output()
-        .await;
-
-    let tree_out = Command::new("git")
-        .args(["write-tree"])
-        .current_dir(p)
-        .output()
-        .await?;
-
-    // Always restore the prior index, even on failure paths below.
-    let restore_index = || async {
-        if let Some(t) = saved_tree.as_ref() {
-            let _ = Command::new("git")
-                .args(["read-tree", t])
-                .current_dir(p)
-                .output()
-                .await;
+    // Absolute: git resolves a relative GIT_INDEX_FILE against the worktree
+    // top level, not the current directory.
+    let git_dir = run_git(p, &["rev-parse", "--absolute-git-dir"], None).await?;
+    let real_index = Path::new(git_dir.trim()).join("index");
+    if let Ok(source) = std::fs::metadata(&real_index) {
+        std::fs::copy(&real_index, &index_path)?;
+        // The copy's own mtime is what git compares entries against to decide
+        // they are "racily clean" and must be re-hashed. Letting it default to
+        // now silently disarms that check: an edit written in the same second
+        // as the real index, with the same file size, keeps matching stat data
+        // and never reaches `write-tree`. Same second, same size is exactly
+        // what a tool call rewriting a line produces.
+        if let Ok(mtime) = source.modified() {
+            std::fs::File::options()
+                .write(true)
+                .open(&index_path)?
+                .set_modified(mtime)?;
         }
-    };
+    }
 
-    if !tree_out.status.success() {
-        restore_index().await;
+    let index_env = index_path.as_os_str();
+    // Additions, modifications and deletions under `p`. `.gitignore` still
+    // applies, so build output never lands in the tree.
+    run_git(p, &["add", "-A", "."], Some(index_env)).await?;
+    let tree = run_git(p, &["write-tree"], Some(index_env)).await?;
+    Ok(tree.trim().to_string())
+}
+
+/// Point `name` at `tree`, pinning it against `git gc`.
+async fn update_keep(root: &Path, name: &str, tree: &str) -> std::io::Result<()> {
+    run_git(root, &["update-ref", name, tree], None)
+        .await
+        .map(|_| ())
+}
+
+/// Delete `name`, if it still exists.
+async fn drop_keep(root: &Path, name: &str) -> std::io::Result<()> {
+    run_git(root, &["update-ref", "-d", name], None)
+        .await
+        .map(|_| ())
+}
+
+/// Run git in `dir`, optionally against an alternate index, and return
+/// stdout. A non-zero exit is an error carrying git's stderr.
+async fn run_git(
+    dir: &Path,
+    args: &[&str],
+    index_file: Option<&std::ffi::OsStr>,
+) -> std::io::Result<String> {
+    let mut cmd = Command::new("git");
+    cmd.args(args).current_dir(dir);
+    if let Some(index) = index_file {
+        cmd.env("GIT_INDEX_FILE", index);
+    }
+    let out = cmd.output().await?;
+    if !out.status.success() {
         return Err(std::io::Error::other(format!(
-            "git write-tree failed: {}",
-            String::from_utf8_lossy(&tree_out.stderr)
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim()
         )));
     }
-    let tree_sha = String::from_utf8_lossy(&tree_out.stdout).trim().to_string();
-
-    // Wrap the tree in a commit object so callers can pass it to
-    // `git restore --source <sha>`.
-    let commit_out = Command::new("git")
-        .args(["commit-tree", &tree_sha, "-m", "crucible-snapshot"])
-        .current_dir(p)
-        .output()
-        .await?;
-
-    restore_index().await;
-
-    if !commit_out.status.success() {
-        return Err(std::io::Error::other(format!(
-            "git commit-tree failed: {}",
-            String::from_utf8_lossy(&commit_out.stderr)
-        )));
-    }
-    Ok(String::from_utf8_lossy(&commit_out.stdout)
-        .trim()
-        .to_string())
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// Walk `workspace` and collect every file's bytes into an in-memory
@@ -338,9 +404,9 @@ fn build_journal(workspace: &Path, cap: usize) -> WorkspaceSnapshot {
         journal.insert(rel, bytes);
     }
     WorkspaceSnapshot {
-        commit_id: None,
         journal: Some(journal),
         skipped: false,
+        ..Default::default()
     }
 }
 
@@ -349,6 +415,16 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::tempdir;
+
+    async fn git_status(p: &Path) -> String {
+        let out = Command::new("git")
+            .args(["status", "--porcelain"])
+            .current_dir(p)
+            .output()
+            .await
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    }
 
     async fn git_init(p: &Path) {
         Command::new("git")
@@ -369,8 +445,7 @@ mod tests {
             .output()
             .await
             .unwrap();
-        // Initial commit so HEAD exists; without a HEAD commit
-        // `git stash create` returns failure on some git versions.
+        // Initial commit so HEAD exists.
         fs::write(p.join(".gitkeep"), b"").unwrap();
         Command::new("git")
             .args(["add", "."])
@@ -386,13 +461,118 @@ mod tests {
             .unwrap();
     }
 
+    /// The captured tree is unreachable from any branch, so without a keep
+    /// ref `git gc --prune=now` in the agent's own repo collects it and undo
+    /// silently restores nothing — reporting success while doing so.
+    #[tokio::test]
+    async fn a_snapshot_survives_an_aggressive_prune() {
+        let dir = tempdir().unwrap();
+        git_init(dir.path()).await;
+        fs::write(dir.path().join("a.txt"), b"before").unwrap();
+
+        let snap = WorkspaceSnapshot::create(dir.path(), "sess", 7).await;
+        fs::write(dir.path().join("a.txt"), b"after the turn").unwrap();
+
+        let out = Command::new("git")
+            .args(["gc", "--prune=now", "--aggressive", "-q"])
+            .current_dir(dir.path())
+            .output()
+            .await
+            .unwrap();
+        assert!(out.status.success(), "gc: {:?}", out);
+
+        snap.restore(dir.path()).await.expect("restore after gc");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+            "before",
+            "the turn was not undone: gc collected the captured tree"
+        );
+    }
+
+    /// Undo must not reach outside the workspace.
+    ///
+    /// When the workspace is a subdirectory, capture only refreshes paths
+    /// under it (`add -A .`). Restoring `:(top)` replayed the whole worktree
+    /// from that partial tree, so a user's uncommitted edit in a sibling
+    /// directory was silently reverted to its committed content by an undo
+    /// about the agent's work.
+    #[tokio::test]
+    async fn undo_leaves_uncommitted_work_outside_the_workspace_alone() {
+        let dir = tempdir().unwrap();
+        git_init(dir.path()).await;
+        let ws = dir.path().join("ws");
+        let sibling = dir.path().join("sibling");
+        fs::create_dir(&ws).unwrap();
+        fs::create_dir(&sibling).unwrap();
+        fs::write(ws.join("a.txt"), b"before").unwrap();
+        fs::write(sibling.join("s.txt"), b"committed").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(dir.path())
+            .output()
+            .await
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-q", "-m", "init"])
+            .current_dir(dir.path())
+            .output()
+            .await
+            .unwrap();
+
+        // The user is editing elsewhere in the repo while the agent works.
+        fs::write(sibling.join("s.txt"), b"the user's uncommitted work").unwrap();
+
+        let snap = WorkspaceSnapshot::create(&ws, "sess", 1).await;
+        fs::write(ws.join("a.txt"), b"what the agent wrote").unwrap();
+        snap.restore(&ws).await.unwrap();
+
+        assert_eq!(
+            fs::read_to_string(ws.join("a.txt")).unwrap(),
+            "before",
+            "the agent's edit should have been undone"
+        );
+        assert_eq!(
+            fs::read_to_string(sibling.join("s.txt")).unwrap(),
+            "the user's uncommitted work",
+            "undo destroyed the user's work outside the workspace"
+        );
+    }
+
+    /// Releasing must actually unpin, or every session a daemon ever ran
+    /// keeps its trees alive forever.
+    #[tokio::test]
+    async fn releasing_a_snapshot_drops_its_keep_ref() {
+        let dir = tempdir().unwrap();
+        git_init(dir.path()).await;
+        fs::write(dir.path().join("a.txt"), b"before").unwrap();
+        let snap = WorkspaceSnapshot::create(dir.path(), "sess", 7).await;
+
+        let name = keep_ref("sess", 7);
+        let present = |name: String| {
+            let d = dir.path().to_path_buf();
+            async move {
+                Command::new("git")
+                    .args(["rev-parse", "--verify", "--quiet", &name])
+                    .current_dir(&d)
+                    .output()
+                    .await
+                    .unwrap()
+                    .status
+                    .success()
+            }
+        };
+        assert!(present(name.clone()).await, "keep ref was never written");
+        snap.release("sess", 7).await;
+        assert!(!present(name).await, "keep ref outlived its snapshot");
+    }
+
     #[tokio::test]
     async fn snapshot_git_captures_uncommitted_change_and_restores() {
         let dir = tempdir().unwrap();
         git_init(dir.path()).await;
         fs::write(dir.path().join("a.txt"), b"hello").unwrap();
-        let snap = WorkspaceSnapshot::create(dir.path()).await;
-        assert!(snap.commit_id.is_some(), "expected git stash sha");
+        let snap = WorkspaceSnapshot::create(dir.path(), "sess", 1).await;
+        assert!(snap.tree_id.is_some(), "expected a captured tree sha");
         assert!(!snap.skipped);
 
         // Mutate then restore.
@@ -405,9 +585,9 @@ mod tests {
     async fn snapshot_non_git_uses_journal() {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("a.txt"), b"hello").unwrap();
-        let snap = WorkspaceSnapshot::create(dir.path()).await;
+        let snap = WorkspaceSnapshot::create(dir.path(), "sess", 1).await;
         assert!(snap.journal.is_some());
-        assert!(snap.commit_id.is_none());
+        assert!(snap.tree_id.is_none());
         assert!(!snap.skipped);
 
         fs::write(dir.path().join("a.txt"), b"world").unwrap();
@@ -420,7 +600,7 @@ mod tests {
         let dir = tempdir().unwrap();
         // 6 MiB file — single file exceeds 5 MiB default cap.
         fs::write(dir.path().join("big.bin"), vec![0u8; 6 * 1024 * 1024]).unwrap();
-        let snap = WorkspaceSnapshot::create_with_cap(dir.path(), 5 * 1024 * 1024).await;
+        let snap = WorkspaceSnapshot::create_with_cap(dir.path(), "sess", 1, 5 * 1024 * 1024).await;
         assert!(snap.skipped);
         // Restore is a no-op; the post-mutation content survives.
         fs::write(dir.path().join("big.bin"), b"changed").unwrap();
@@ -432,7 +612,7 @@ mod tests {
     async fn snapshot_restore_creates_missing_files_in_journal() {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("a.txt"), b"hello").unwrap();
-        let snap = WorkspaceSnapshot::create(dir.path()).await;
+        let snap = WorkspaceSnapshot::create(dir.path(), "sess", 1).await;
         // Delete the file — restore should re-create it.
         fs::remove_file(dir.path().join("a.txt")).unwrap();
         snap.restore(dir.path()).await.unwrap();
@@ -448,12 +628,111 @@ mod tests {
         fs::write(dir.path().join("target").join("debug.bin"), b"junk").unwrap();
         fs::write(dir.path().join("a.txt"), b"hello").unwrap();
 
-        let snap = WorkspaceSnapshot::create(dir.path()).await;
+        let snap = WorkspaceSnapshot::create(dir.path(), "sess", 1).await;
         let journal = snap.journal.expect("expected journal mode");
         assert!(journal.contains_key(&PathBuf::from("a.txt")));
         assert!(!journal
             .keys()
             .any(|k| k.starts_with(".git") || k.starts_with("target")));
+    }
+
+    /// The real index is the user's; a capture that touches it races anyone
+    /// running git beside us and destroys unmerged stages mid-merge.
+    #[tokio::test]
+    async fn capture_leaves_the_real_index_alone() {
+        let dir = tempdir().unwrap();
+        git_init(dir.path()).await;
+        fs::write(dir.path().join("untracked.txt"), b"new").unwrap();
+        let index_before = fs::read(dir.path().join(".git").join("index")).unwrap();
+        let status_before = git_status(dir.path()).await;
+
+        capture_tree(dir.path()).await.unwrap();
+
+        assert_eq!(
+            fs::read(dir.path().join(".git").join("index")).unwrap(),
+            index_before,
+            "capture wrote through to the repository index"
+        );
+        assert_eq!(git_status(dir.path()).await, status_before);
+    }
+
+    #[tokio::test]
+    async fn capture_tree_includes_untracked_files() {
+        let dir = tempdir().unwrap();
+        git_init(dir.path()).await;
+        fs::write(dir.path().join("brand_new.txt"), b"hi").unwrap();
+
+        let tree = capture_tree(dir.path()).await.unwrap();
+        let listing = Command::new("git")
+            .args(["ls-tree", "-r", "--name-only", &tree])
+            .current_dir(dir.path())
+            .output()
+            .await
+            .unwrap();
+        let listing = String::from_utf8_lossy(&listing.stdout);
+        assert!(
+            listing.contains("brand_new.txt"),
+            "untracked file missing from tree: {listing}"
+        );
+    }
+
+    /// A no-op tool call must not produce an interval. Tree SHAs are the
+    /// dedupe key, so two captures with no edit between them must match.
+    #[tokio::test]
+    async fn capture_tree_is_stable_across_no_op_captures() {
+        let dir = tempdir().unwrap();
+        git_init(dir.path()).await;
+        fs::write(dir.path().join("a.txt"), b"hello").unwrap();
+
+        let first = capture_tree(dir.path()).await.unwrap();
+        let second = capture_tree(dir.path()).await.unwrap();
+        assert_eq!(first, second);
+
+        fs::write(dir.path().join("a.txt"), b"changed").unwrap();
+        assert_ne!(capture_tree(dir.path()).await.unwrap(), first);
+    }
+
+    /// Git compares cached stat data at one-second granularity, so an edit
+    /// that keeps a file's size and lands in the same second as the last
+    /// index write is only caught by the "racily clean" re-hash — which is
+    /// keyed on the index file's own mtime. A capture taken a second later
+    /// must still see it.
+    #[tokio::test]
+    async fn capture_tree_sees_a_same_size_edit_made_in_the_index_second() {
+        let dir = tempdir().unwrap();
+        git_init(dir.path()).await;
+        fs::write(dir.path().join("a.txt"), b"aaaa\n").unwrap();
+        for args in [&["add", "a.txt"][..], &["commit", "-q", "-m", "a"][..]] {
+            Command::new("git")
+                .args(args)
+                .current_dir(dir.path())
+                .output()
+                .await
+                .unwrap();
+        }
+
+        fs::write(dir.path().join("a.txt"), b"bbbb\n").unwrap();
+        // Push the capture past the second boundary the write shares with the
+        // index, which is what makes the stale stat data look trustworthy.
+        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+
+        let captured = capture_tree(dir.path()).await.unwrap();
+        let head_tree = Command::new("git")
+            .args(["rev-parse", "HEAD^{tree}"])
+            .current_dir(dir.path())
+            .output()
+            .await
+            .unwrap();
+        let head_tree = String::from_utf8_lossy(&head_tree.stdout)
+            .trim()
+            .to_string();
+        assert_ne!(captured, head_tree, "capture silently dropped the edit");
+    }
+
+    #[tokio::test]
+    async fn capture_tree_errors_outside_a_repo() {
+        let dir = tempdir().unwrap();
+        assert!(capture_tree(dir.path()).await.is_err());
     }
 
     #[tokio::test]

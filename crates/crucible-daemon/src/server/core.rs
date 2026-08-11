@@ -356,6 +356,48 @@ pub(super) async fn sweep_and_archive_stale_sessions(
     Ok(archived)
 }
 
+/// Release review keep refs whose sessions are gone.
+///
+/// Rides the archive sweep rather than getting its own timer: both walk the
+/// same kiln list and both are cheap, and a second half-hourly task spawning
+/// `git` subprocesses in every tracked repository is not worth the tick.
+///
+/// Only the *orphans* go. A keep ref whose session still has a journal is
+/// still protecting trees a live review depends on, however old the session
+/// is — expiring on age would delete the base tree out from under a queue
+/// somebody is halfway through.
+pub(super) async fn sweep_review_refs(kiln_manager: &KilnManager, data_home: &Path) -> usize {
+    // Every *registered* kiln, not just the open ones. `KilnManager::list`
+    // returns live connections, so a kiln nobody has opened this run is
+    // invisible — and a repository shared between an open kiln's session and a
+    // closed kiln's session would report the closed one's ref as an orphan and
+    // delete it, taking the base tree of a queue somebody is halfway through.
+    // A kiln we cannot read is a kiln whose sessions we cannot vouch for, so
+    // being wrong in this direction only costs an unreleased ref.
+    let mut kilns: Vec<PathBuf> = crucible_core::config::CliAppConfig::load(None, None, None)
+        .map(|config| {
+            config
+                .resolved_kilns()
+                .into_values()
+                .filter_map(|entry| match entry {
+                    crucible_core::config::KilnEntry::Path(path) => Some(path),
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    for (path, _, _) in kiln_manager.list().await {
+        if !kilns.contains(&path) {
+            kilns.push(path);
+        }
+    }
+    let home = data_home.to_path_buf();
+    if !kilns.contains(&home) {
+        kilns.push(home);
+    }
+    crate::review::sweep_review_refs(&kilns).await
+}
+
 /// Dispatch one request, converting a panic into an error response.
 ///
 /// A panicking handler used to unwind the connection task, so the client saw

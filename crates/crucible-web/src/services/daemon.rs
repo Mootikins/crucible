@@ -187,6 +187,25 @@ impl ReconnectingDaemon {
         Ok(())
     }
 
+    /// One attempt against the current connection, with no reconnect-and-retry.
+    ///
+    /// [`Self::call_with_reconnect`] replays the call after a broken pipe or a
+    /// connection reset — errors that can be raised *after* the daemon read the
+    /// request and acted on it. For a read that is a free retry; for a review
+    /// write it is a second revert, or a second rejection note in the
+    /// conversation, or an `UnknownHunk` answer for a mutation that in fact
+    /// landed. The review writes are at-most-once, so a lost connection has to
+    /// surface as an error the user retries deliberately.
+    /// `pub(crate)` for the same reason as [`Self::call_with_reconnect`]: the
+    /// `review.*` forwarders live in `services::daemon_review`.
+    pub(crate) async fn call_once<T>(
+        &self,
+        call: impl for<'a> Fn(&'a DaemonClient) -> BoxFuture<'a, anyhow::Result<T>>,
+    ) -> anyhow::Result<T> {
+        let daemon = self.daemon.read().await;
+        call(&daemon).await
+    }
+
     fn is_connection_error(err: &anyhow::Error) -> bool {
         let msg = err.to_string();
         let lower = msg.to_ascii_lowercase();

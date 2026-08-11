@@ -97,8 +97,15 @@ vi.mock('@/lib/api', () => ({
   connectSessionKiln: vi.fn(),
   disconnectSessionKiln: vi.fn(),
   setSessionWorkspace: vi.fn(),
-  // SessionStatusChips (also rendered inside ChatInput): no plugin slots.
+  // SessionStatusChips (also rendered inside ChatInput): no plugin slots, no
+  // review policy, and a review event stream that never emits.
   getSessionStatus: vi.fn(async () => []),
+  listModes: vi.fn(async () => ({ current_mode_id: 'normal', modes: [] })),
+  subscribeToEvents: vi.fn(() => () => {}),
+}));
+
+vi.mock('@/lib/review-api', () => ({
+  listReviewHunks: vi.fn(async () => ({ session_id: 'test-session', hunks: [], comments: [] })),
 }));
 
 describe('ChatInput', () => {
