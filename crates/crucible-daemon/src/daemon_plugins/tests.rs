@@ -872,3 +872,118 @@ async fn bootstrap_skips_disabled_entries() {
     assert!(result.is_ok());
     drop(tmp);
 }
+
+// ---------------------------------------------------------------------------
+// cru.kiln graph functions, through the registration the daemon performs
+// ---------------------------------------------------------------------------
+//
+// These go through `upgrade_with_storage` over a real `SqliteNoteStore`
+// because that is the only wiring production has. The `crucible-lua`-side
+// tests can only reach a `NoteStore` mock; nothing but this exercises the
+// resolved-link index (`note_links`) that the three functions read.
+
+mod kiln_graph {
+    use super::*;
+    use crate::storage::sqlite::{create_note_store, SqliteConfig, SqlitePool};
+    use crucible_core::parser::BlockHash;
+    use crucible_core::storage::{NoteRecord, Scope};
+
+    /// Path a `Scope::workspace_unchecked` authority is derived from in
+    /// these tests. Never touched on disk — `_unchecked` skips canonicalize.
+    const KILN: &str = "/kiln";
+
+    fn note(path: &str, links: &[&str]) -> NoteRecord {
+        NoteRecord::new(path, BlockHash::zero())
+            .with_title(path.trim_end_matches(".md"))
+            .with_links(links.iter().map(|s| (*s).to_string()).collect())
+    }
+
+    /// `a.md -> b.md -> c.md`, inserted target-first so every wikilink
+    /// resolves on write rather than relying on the re-resolution pass.
+    async fn chain_store() -> Arc<dyn NoteStore> {
+        let pool = SqlitePool::new(SqliteConfig::memory()).expect("pool");
+        let store = create_note_store(pool).await.expect("store");
+        for record in [
+            note("c.md", &[]),
+            note("b.md", &["c.md"]),
+            note("a.md", &["b.md"]),
+        ] {
+            store.upsert(record).await.expect("upsert");
+        }
+        Arc::new(store)
+    }
+
+    async fn upgraded_lua(store: Arc<dyn NoteStore>) -> Arc<mlua::Lua> {
+        let loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+        loader
+            .upgrade_with_storage(store, Path::new(KILN))
+            .expect("upgrade with storage");
+        loader.plugin_lua()
+    }
+
+    async fn eval_paths(lua: &mlua::Lua, script: &str) -> Vec<String> {
+        let table: mlua::Table = lua.load(script).eval_async().await.expect("eval");
+        table
+            .sequence_values::<String>()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("array of strings")
+    }
+
+    #[tokio::test]
+    async fn kiln_outlinks_returns_links_from_the_note_store() {
+        let lua = upgraded_lua(chain_store().await).await;
+
+        let paths = eval_paths(&lua, r#"return cru.kiln.outlinks("a.md")"#).await;
+
+        assert_eq!(paths, ["b.md"]);
+    }
+
+    #[tokio::test]
+    async fn kiln_backlinks_returns_sources_from_the_note_store() {
+        let lua = upgraded_lua(chain_store().await).await;
+
+        let paths = eval_paths(&lua, r#"return cru.kiln.backlinks("b.md")"#).await;
+
+        assert_eq!(paths, ["a.md"]);
+    }
+
+    #[tokio::test]
+    async fn kiln_neighbors_walks_the_note_store_graph_to_the_requested_depth() {
+        let lua = upgraded_lua(chain_store().await).await;
+
+        // depth 1 = direct links only; a.md's only edge is a.md -> b.md.
+        let direct = eval_paths(&lua, r#"return cru.kiln.neighbors("a.md", 1)"#).await;
+        assert_eq!(direct, ["b.md"]);
+
+        // depth 2 reaches c.md through b.md, and never re-includes the start.
+        let two_hops = eval_paths(&lua, r#"return cru.kiln.neighbors("a.md", 2)"#).await;
+        assert_eq!(two_hops, ["b.md", "c.md"]);
+    }
+
+    #[tokio::test]
+    async fn kiln_graph_functions_hide_notes_outside_the_authority_scope() {
+        let pool = SqlitePool::new(SqliteConfig::memory()).expect("pool");
+        let store = create_note_store(pool).await.expect("store");
+        for record in [
+            note("b.md", &[]),
+            note("a.md", &["b.md"]),
+            // Same kiln database, different workspace: default-deny.
+            note("secret.md", &["b.md"]).with_scope(Scope::workspace_unchecked("/other")),
+        ] {
+            store.upsert(record).await.expect("upsert");
+        }
+        let lua = upgraded_lua(Arc::new(store)).await;
+
+        let backlinks = eval_paths(&lua, r#"return cru.kiln.backlinks("b.md")"#).await;
+        assert_eq!(backlinks, ["a.md"], "secret.md is out of scope");
+
+        let neighbors = eval_paths(&lua, r#"return cru.kiln.neighbors("b.md", 3)"#).await;
+        assert_eq!(neighbors, ["a.md"], "scope holds across the BFS");
+
+        let outlinks = eval_paths(&lua, r#"return cru.kiln.outlinks("secret.md")"#).await;
+        assert!(
+            outlinks.is_empty(),
+            "an out-of-scope source is indistinguishable from a missing one: {outlinks:?}"
+        );
+    }
+}
