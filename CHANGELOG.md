@@ -106,6 +106,12 @@ in config, and the gate honours it on both the internal and the ACP agent path.
   rather than on the first hunk, so every file paid 3.5rem for an empty column —
   and in live preview, which drops the line-number gutter to read as prose, it
   was the only gutter on screen.
+- **An image in the file tree could not be opened.** Every file went to the
+  editor, whose load is a TEXT read, and that read reported "not valid UTF-8"
+  as a 404 — a status saying the file was missing, a body saying it was not,
+  and a real file that `/api/file/raw` served without complaint. Images now
+  render from their bytes, and a non-text file gets a 415 naming the endpoint
+  that can serve it.
 - **The permission header claimed creates and deletes it could not know about.**
   A whole-file write has no old side whether it creates or overwrites, so every
   overwrite announced itself as a create — the opposite of the risk being
