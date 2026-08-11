@@ -19,7 +19,7 @@
 //! passed through to the libtest harness to bypass the `#[ignore]` gate.
 //! `cargo test --ignored dev_kiln` is INVALID Cargo syntax — `dev_kiln` sitting
 //! after `--ignored` parses as a positional test-name filter, not a binary
-//! selector, so it silently runs nothing. `just lint-docs` runs this binary
+//! selector, so it silently runs nothing. `just lint docs` runs this binary
 //! together with `docs_config`, and that recipe is what the CI `docs` job calls.
 //!
 //! The suite is `#[ignore]`d because it walks and parses every markdown and

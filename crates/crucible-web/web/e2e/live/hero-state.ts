@@ -47,7 +47,7 @@ export function readHeroState(): HeroState {
   if (!state.skip && (!state.tmpDir || !existsSync(state.tmpDir))) {
     return {
       skip: true,
-      reason: `stale hero state (${STATE_FILE} points at missing ${state.tmpDir ?? 'tmpDir'}; run \`just hero\` to regenerate)`,
+      reason: `stale hero state (${STATE_FILE} points at missing ${state.tmpDir ?? 'tmpDir'}; run \`just web-test hero\` to regenerate)`,
     };
   }
   return state;

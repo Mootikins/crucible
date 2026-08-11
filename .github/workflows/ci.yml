@@ -29,10 +29,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/rust-prereqs
-      - run: just fmt-check
-      - run: just clippy
+      - run: just lint fmt
+      - run: just lint clippy
       - name: Check for god files
-        run: just file-size-check
+        run: just lint size
 
   # Validate the `docs/` kiln: every note parses, frontmatter is complete, every
   # wikilink resolves, every `crates/…` code reference names a file that exists
@@ -47,7 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/rust-prereqs
-      - run: just lint-docs
+      - run: just lint docs
 
   # The install path a new user actually takes: clone, cargo build, no bun and so
   # no web/dist. The absence of a bun step is the thing under test.
@@ -79,7 +79,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      # Mirrors `just license-check`. `licenses` and nothing else: deny.toml
+      # Mirrors `just lint license`. `licenses` and nothing else: deny.toml
       # states a policy for that check alone, and the action's default (all
       # checks) would turn an overnight upstream advisory into a red build.
       - uses: EmbarkStudios/cargo-deny-action@v2
@@ -104,16 +104,16 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/rust-prereqs
       - name: Run tests with nextest
-        run: just test-ci
+        run: just test ci
       # Oil's serde JSON contract (consumed by the web UI) and the Lua
       # stub-staleness check — feature-gated off the default build, so
-      # `test-ci` never compiles them.
+      # `test ci` never compiles them.
       - name: Run feature-gated suites
-        run: just test-features
+        run: just test features
       # nextest does not execute doctests, so every example in a doc comment
       # was unverified until this step existed — they had rotted to 62 failures.
       - name: Run doctests
-        run: just test-doc
+        run: just test doc
 
   test-plugins:
     name: Lua Plugin Suites
@@ -121,7 +121,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/rust-prereqs
-      - run: just test-plugins
+      - run: just test plugins
 
   test-web-unit:
     name: Web Unit Tests
@@ -140,9 +140,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Typecheck
-        run: just web-typecheck
+        run: just lint types
       - name: Run Vitest unit tests
-        run: just web-test-unit
+        run: just web-test unit
 
   test-web-live:
     # Its own job, not a step in `test-web`: this tier needs a Rust toolchain
@@ -168,7 +168,7 @@ jobs:
         working-directory: crates/crucible-web/web
       # Builds `cru` and `web/dist` itself — see the recipe's comment on why it
       # must not be allowed to skip.
-      - run: just web-test-live
+      - run: just web-test live
       - name: Upload failure traces
         if: failure()
         uses: actions/upload-artifact@v7

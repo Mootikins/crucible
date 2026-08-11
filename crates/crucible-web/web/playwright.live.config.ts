@@ -30,7 +30,7 @@ import { defineConfig, devices } from '@playwright/test';
  *
  * `*.pw.ts`, not `*.spec.ts`: vitest's include is `**\/*.{test,spec}.*` with
  * only `e2e/**` excluded, so a `.spec.ts` under tests/ would be swept into
- * `just web-test-unit` and fail on the Playwright import.
+ * `just web-test unit` and fail on the Playwright import.
  */
 export default defineConfig({
   testDir: './e2e/live',
@@ -57,7 +57,7 @@ export default defineConfig({
       // but they belong to playwright.hero.config.ts: they need hero-setup
       // (fake Ollama + .hero-state.json) and the compiled TUI test binary,
       // neither of which this config provides. Swept in here they read
-      // whatever stale .hero-state.json a previous `just hero` run left
+      // whatever stale .hero-state.json a previous `just web-test hero` run left
       // behind and fail against its dead temp dirs.
       testIgnore: ['**/hero.live.spec.ts', '**/agent-fs.live.spec.ts'],
     },

@@ -200,7 +200,7 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 ### WS-221: Full-flow proof — a session's agent affects the filesystem (TUI + web)
 **As a developer**, one deterministic journey proves the whole stack: new session → prompt → REAL `write_file` tool call → REAL permission approval in the console → file bytes on disk — through both the TUI and the web UI.
 **Acceptance:** the fake Ollama server can script TOOL CALLS (`OllamaRule.toolCall` streams a native-Ollama `message.tool_calls` NDJSON round; the follow-up round is detected by a `role:"tool"` message in the request and answered with `replyAfterTool`). `write_file` is permission-gated by default (not in the safe-tool allowlist, default mode Ask): the TUI leg approves with `y`, the web leg clicks Allow on the real inline `PermissionInteraction` card. Files land in the session WORKSPACE — kiln for `cru chat` sessions, registered project root for web-created sessions (documented asymmetry).
-**Tests:** W4 live `e2e/live/agent-fs.live.spec.ts` (hero project, serial): TUI leg via `tui_e2e_tests hero::agent_fs_leg_tui_write` (expectrl; asserts `notes/agent-tui.md` content on disk), web leg drives the shipped UI end-to-end and asserts `notes/agent-web.md`. Shared TUI-leg runner extracted to `e2e/live/tui-leg-runner.ts`. Run with `just hero`.
+**Tests:** W4 live `e2e/live/agent-fs.live.spec.ts` (hero project, serial): TUI leg via `tui_e2e_tests hero::agent_fs_leg_tui_write` (expectrl; asserts `notes/agent-tui.md` content on disk), web leg drives the shipped UI end-to-end and asserts `notes/agent-web.md`. Shared TUI-leg runner extracted to `e2e/live/tui-leg-runner.ts`. Run with `just web-test hero`.
 
 ### WS-222: Knowledge graph view (Obsidian-style)
 **As a user**, I can open an interactive graph of my kiln — notes as nodes, wikilinks as edges — and explore it like Obsidian's graph view: smooth canvas, physics, hover neighborhoods, click-to-open.
@@ -225,7 +225,7 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 ### WS-HERO: One session across web and terminal (cross-surface)
 **As a user**, a session and its kiln notes are shared truth across the browser and the terminal — the daemon is the hypervisor, the consoles are stateless.
 **Acceptance:** the web console resumes a session started in `cru chat` (turn 1 hydrates both sides); opening `from-tui.md` in the real editor shows the terminal's write; editing + saving changes the bytes on disk; a web-sent turn 2 is later visible from `cru chat --resume`; final history is 3 turns and the file carries both the terminal and browser edits.
-**Tests:** the flagship live journey `e2e/live/hero.live.spec.ts` (serial), orchestrating TUI legs (`tests/tui_e2e_tests/hero.rs`) around the web console. Deterministic LLM turns via the fake Ollama server (`e2e/live/fake-ollama.ts`) + injected `config.toml` (`hero-setup.ts`). Run with `just hero`. This is the first live-tier story to exercise real agent turns (see infra #3 note).
+**Tests:** the flagship live journey `e2e/live/hero.live.spec.ts` (serial), orchestrating TUI legs (`tests/tui_e2e_tests/hero.rs`) around the web console. Deterministic LLM turns via the fake Ollama server (`e2e/live/fake-ollama.ts`) + injected `config.toml` (`hero-setup.ts`). Run with `just web-test hero`. This is the first live-tier story to exercise real agent turns (see infra #3 note).
 
 ---
 
@@ -308,7 +308,7 @@ The four-surface shell from the "Crucible Shell Options" design (turn 5): Home �
 
 ## Infra requirements these stories impose (status)
 
-1. **vitest gates CI** — DONE: `just ci` runs `web-test-unit`; the GitHub `test-web` job runs `bunx vitest run` (617 tests).
+1. **vitest gates CI** — DONE: `just ci` runs `web-test unit`; the GitHub `test-web` job runs `bunx vitest run` (617 tests).
 2. **Story specs run with video + trace ON** and step screenshots — DONE: the `stories` Playwright project (`e2e/stories/**`) with `createStory().step()`; the existing default project keeps its cheap settings.
 3. **W4 harness** — DONE: `playwright.live.config.ts` + `e2e/live/global-setup.ts` boot `cru web` on an isolated socket against a `TempDir` kiln; teardown stops the daemon and kills the tree. Gated on a `cru` binary (`CRU_BIN`); skips cleanly otherwise. NOTE: the web session route hardcodes the internal agent, so `mock-acp-agent` is unreachable — but the hero tier (`playwright.hero.config.ts`) now makes real internal-agent turns deterministic by pointing the daemon's Ollama provider at a fake Ollama server (`e2e/live/fake-ollama.ts`) via an injected `config.toml`. The base live tier still covers the no-LLM kiln-truth path.
 4. **Visual baselines** committed under `e2e/__screenshots__/` — DONE: markdown editor + chat mid-stream/complete, each eye-verified before commit.

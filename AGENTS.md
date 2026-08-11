@@ -58,13 +58,11 @@ names between client and server (silent failure — verify `session.get_*` retur
 ## Workflow
 
 **Use `just` recipes before invoking cargo/bunx/vitest/playwright directly** — they encode
-this box's constraints (thread caps, build prereqs). Scoped runs pass through args. If a flow
-has no recipe and you need it twice, add a recipe.
+this box's constraints (thread caps, build prereqs). `just` lists them; recipes are grouped
+by verb and take a sub-target (`just test ci`, `just lint clippy`), and passing an unknown
+one prints the valid set. If a flow has no recipe and you need it twice, add a target.
 
-- `just ci` — **run before committing**
-- `just build` / `just test` / `just check`; `just test-crate <crate>`; `just test ignored` / `just test full` for `#[ignore]`d tests
-- `just web-test-unit [paths…]` / `just web-test [specs…]` / `just web-typecheck`
-- `just web [port] [host]` (build + serve, `0.0.0.0:3000`); `just mcp`
+**`just ci` — run before committing.**
 
 **Don't build release unless installing** — LTO takes 5–10 minutes; iterate on debug builds.
 Web frontend uses **bun** (not npm/yarn); see `crates/crucible-web/web/AGENTS.md`.

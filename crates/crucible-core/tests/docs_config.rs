@@ -7,7 +7,7 @@
 //! throws away.**
 //!
 //! Run with: `cargo test -p crucible-core --test docs_config -- --ignored`
-//! (or `just lint-docs`, which is what the CI `docs` job invokes).
+//! (or `just lint docs`, which is what the CI `docs` job invokes).
 //!
 //! # Why the second pass
 //!

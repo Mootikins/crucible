@@ -29,12 +29,12 @@ install for you:
 | [`bun`](https://bun.sh) | the SolidJS web frontend — **not** npm or yarn | reports it, prints the install command |
 | `jq` | the justfile resolves the cargo target directory with it | not checked — install it yourself |
 | `cargo-nextest` | the Rust test runner; `cargo test` is not the supported path | installs |
-| `cargo-deny` | dependency licence gate (`just license-check`) | installs |
+| `cargo-deny` | dependency licence gate (`just lint license`) | installs |
 | Playwright chromium | web E2E tests (`just web-test`) | installs |
 
 Without `protoc`, `cargo build` fails while compiling `lance`; the CI workflow installs
 it in every Rust job for the same reason. Without `jq`, any recipe that runs the built
-`cru` binary — including `just ci`, via `test-plugins` — fails.
+`cru` binary — including `just ci`, via `test plugins` — fails.
 
 If Playwright reports missing system libraries, run `bunx playwright install-deps
 chromium` yourself; `just setup` deliberately does not, because it shells out to `sudo`.
@@ -94,14 +94,14 @@ just ci                                   # everything CI runs — do this befor
 just test                                 # all non-#[ignore]d tests
 just test ignored                         # only the #[ignore]d tests
 just test full                            # both
-just test-crate crucible-core             # one crate
-just test-crate-filter crucible-core wikilink   # substring filter within one crate
-just test-doc                             # doctests (nextest cannot run these)
-just web-test-unit                        # web unit tests (Vitest)
+just test -p crucible-core                # one crate (anything after the tier goes to nextest)
+just test -p crucible-core -E 'test(wikilink)'  # a filtered subset of one crate
+just test doc                             # doctests (nextest cannot run these)
+just test plugins                         # every shipped plugin's Lua suite
+just web-test unit                        # web unit tests (Vitest)
 just web-test                             # web E2E tests (Playwright)
-just web-typecheck                        # web typecheck, no emit
-just test-plugins                         # every shipped plugin's Lua suite
-just lint-docs                            # validate the docs/ kiln (also run by `just ci`)
+just lint types                           # web typecheck, no emit
+just lint docs                            # validate the docs/ kiln (also run by `just ci`)
 ```
 
 `just test` is the tier a contributor needs to pass with no external services running.

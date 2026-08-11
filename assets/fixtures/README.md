@@ -92,7 +92,7 @@ Once fixtures exist, regenerate GIFs deterministically:
 
 ```bash
 # Regenerate all demo GIFs
-just demo-all
+just demo all
 
 # Regenerate a single demo
 just demo demo
