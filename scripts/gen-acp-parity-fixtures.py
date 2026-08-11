@@ -31,8 +31,6 @@ it on every test run and fails when the daemon stops emitting these bytes, so
 a fixture cannot quietly outlive the shape it pins. Run this script only after
 that test tells you the shape legitimately changed.
 
-See `docs/Meta/Plans/2026-08-03-acp-presentation-parity.md`, Task 7 and A4.
-
 Run: python3 scripts/gen-acp-parity-fixtures.py
 """
 

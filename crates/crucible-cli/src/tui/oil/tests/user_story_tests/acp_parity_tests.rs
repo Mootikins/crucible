@@ -4,7 +4,7 @@
 //! as a card in our transcript. Without a provenance badge the card is
 //! indistinguishable from a tool Crucible ran itself, which hides the fact
 //! that another process — under another permission gate — touched the
-//! workspace. See `docs/Meta/Plans/2026-08-03-acp-presentation-parity.md`.
+//! workspace. The story is US-307 in `docs/Meta/TUI User Stories.md`.
 //!
 //! These cover the *consumer* half of the badge contract. The producer half —
 //! the daemon stamping `Acp:<agent>` onto the `tool_call` event — is pinned in
