@@ -39,8 +39,15 @@ use super::script_handler::{interpret_handler_result, LuaScriptHandler, ScriptHa
 pub struct LuaScriptHandlerRegistry {
     pub(super) handlers: Vec<LuaScriptHandler>,
     /// Runtime-registered handlers (via crucible.on())
+    ///
+    /// This Vec shrinks: `clear_plugin_handlers` drops a reloaded plugin's
+    /// entries. Handler names must therefore come from `crucible_on.rs`'s
+    /// monotonic allocator and never from this length — see the comment there.
     pub(super) runtime_handlers: Arc<Mutex<Vec<RuntimeHandler>>>,
     /// Stored Lua function references (handler_name -> RegistryKey)
+    ///
+    /// The name is the dispatch key (`execute_runtime_handler`), so two
+    /// registrants sharing a name is a misbinding, not a duplicate.
     pub(super) handler_functions: Arc<Mutex<HashMap<String, RegistryKey>>>,
 }
 

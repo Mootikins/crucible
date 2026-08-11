@@ -415,6 +415,164 @@ async fn reloading_a_plugin_replaces_its_handlers() {
     );
 }
 
+/// Reloading one plugin must not rebind another registrant's handler.
+///
+/// Handler names were allocated from `runtime_handlers.len()`, which
+/// `clear_plugin_handlers` shrinks — so a reload handed the reloaded plugin
+/// names a *surviving* plugin (or the user's `init.lua`) still held in
+/// `handler_functions`, and dispatch, which is by name, ran the wrong body.
+/// With `pre_tool_call` failing closed, a body raising against the wrong event
+/// shape denies every matching tool call in every session.
+#[tokio::test]
+async fn reloading_one_plugin_leaves_another_plugins_handler_bound_to_its_own_function() {
+    use tempfile::TempDir;
+
+    let tmp = TempDir::new().unwrap();
+
+    // Two handlers, so alpha's re-registration reaches beta's name.
+    let alpha = tmp.path().join("alpha");
+    std::fs::create_dir_all(&alpha).unwrap();
+    std::fs::write(
+        alpha.join("init.lua"),
+        r#"
+        crucible.on("turn:complete", function() return { handled = true, result = "alpha" } end)
+        crucible.on("turn:complete", function() return { handled = true, result = "alpha" } end)
+        return { name = "alpha", version = "0.1.0" }
+    "#,
+    )
+    .unwrap();
+
+    let beta = tmp.path().join("beta");
+    std::fs::create_dir_all(&beta).unwrap();
+    std::fs::write(
+        beta.join("init.lua"),
+        r#"
+        crucible.on("pre_tool_call", { pattern = "bash" }, function()
+            return { handled = true, result = "beta" }
+        end)
+        return { name = "beta", version = "0.1.0" }
+    "#,
+    )
+    .unwrap();
+
+    let loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    loader
+        .execute_plugin("alpha", &alpha.join("init.lua"))
+        .await
+        .expect("load alpha");
+    loader
+        .execute_plugin("beta", &beta.join("init.lua"))
+        .await
+        .expect("load beta");
+    loader
+        .execute_plugin("alpha", &alpha.join("init.lua"))
+        .await
+        .expect("reload alpha");
+
+    let registry = loader.plugin_handlers();
+    let handlers = registry.runtime_handlers_for("pre_tool_call", Some("bash"));
+    assert_eq!(
+        handlers.len(),
+        1,
+        "beta registered exactly one bash handler and alpha registered none"
+    );
+
+    let event = crucible_core::events::SessionEvent::Custom {
+        name: "pre_tool_call".to_string(),
+        payload: serde_json::json!({ "tool": "bash", "args": {} }),
+    };
+    let result = registry
+        .execute_runtime_handler(&loader.plugin_lua(), &handlers[0].name, &event, Some("s1"))
+        .await
+        .expect("dispatch beta's handler");
+
+    match result {
+        crucible_lua::ScriptHandlerResult::Handled { result, .. } => assert_eq!(
+            result,
+            serde_json::json!("beta"),
+            "beta's handler ran alpha's function — reloading alpha reused beta's handler name"
+        ),
+        other => panic!("expected Handled, got {other:?}"),
+    }
+}
+
+/// `~/.config/crucible/init.lua` is evaluated into the loader's VM *after*
+/// every plugin, so its handlers hold the highest indices — the first names a
+/// reload would reuse — and carry `plugin: None`, so nothing ever clears them.
+/// A rebound user handler stays wrong for the daemon's lifetime, which makes
+/// this the likeliest way the collision is met in the field.
+#[tokio::test]
+async fn reloading_a_plugin_leaves_a_user_init_handler_bound_to_its_own_function() {
+    use tempfile::TempDir;
+
+    let tmp = TempDir::new().unwrap();
+
+    let alpha = tmp.path().join("alpha");
+    std::fs::create_dir_all(&alpha).unwrap();
+    std::fs::write(
+        alpha.join("init.lua"),
+        r#"
+        crucible.on("turn:complete", function() return { handled = true, result = "alpha" } end)
+        crucible.on("turn:complete", function() return { handled = true, result = "alpha" } end)
+        return { name = "alpha", version = "0.1.0" }
+    "#,
+    )
+    .unwrap();
+
+    let user_init = tmp.path().join("init.lua");
+    std::fs::write(
+        &user_init,
+        r#"
+        crucible.on("pre_tool_call", { pattern = "bash" }, function()
+            return { handled = true, result = "user" }
+        end)
+    "#,
+    )
+    .unwrap();
+
+    let loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    loader
+        .execute_plugin("alpha", &alpha.join("init.lua"))
+        .await
+        .expect("load alpha");
+    // The real entry point, so the `plugin: None` attribution is genuine.
+    loader.eval_user_init(&user_init).await;
+    loader
+        .execute_plugin("alpha", &alpha.join("init.lua"))
+        .await
+        .expect("reload alpha");
+
+    let registry = loader.plugin_handlers();
+    let handlers = registry.runtime_handlers_for("pre_tool_call", Some("bash"));
+    assert_eq!(
+        handlers.len(),
+        1,
+        "the user handler is the only bash handler, and nothing clears it"
+    );
+    assert_eq!(
+        handlers[0].plugin, None,
+        "a user init.lua handler is unattributed — that is why nothing clears it"
+    );
+
+    let event = crucible_core::events::SessionEvent::Custom {
+        name: "pre_tool_call".to_string(),
+        payload: serde_json::json!({ "tool": "bash", "args": {} }),
+    };
+    let result = registry
+        .execute_runtime_handler(&loader.plugin_lua(), &handlers[0].name, &event, Some("s1"))
+        .await
+        .expect("dispatch the user handler");
+
+    match result {
+        crucible_lua::ScriptHandlerResult::Handled { result, .. } => assert_eq!(
+            result,
+            serde_json::json!("user"),
+            "the user's handler ran a plugin's function — reloading alpha reused its name"
+        ),
+        other => panic!("expected Handled, got {other:?}"),
+    }
+}
+
 /// An installed `cru` has no `runtime/plugins` next to it — the release
 /// archive never carried one and the installer would have deleted it — so
 /// `kiln-expert`, `oci` and `reflection` reached nobody who did not clone the

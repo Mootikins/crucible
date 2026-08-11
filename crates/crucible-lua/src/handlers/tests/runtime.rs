@@ -451,6 +451,129 @@ async fn todo_enforcer_pattern_integration() {
     );
 }
 
+/// A handler name must never be reused. `clear_plugin_handlers` shrinks the
+/// `runtime_handlers` Vec, so a name derived from that Vec's length lands on a
+/// name another registrant still holds in `handler_functions` — and dispatch is
+/// by name, so the survivor's entry silently starts running the reloaded
+/// plugin's function.
+#[test]
+fn a_cleared_plugins_names_are_not_reused_by_the_next_registration() {
+    let lua = Lua::new();
+    let registry = LuaScriptHandlerRegistry::new();
+
+    register_crucible_on_api(
+        &lua,
+        registry.runtime_handlers(),
+        registry.handler_functions(),
+    )
+    .unwrap();
+
+    // Two plugins, loaded in order, exactly as the loader does it.
+    lua.globals()
+        .set("__crucible_loading_plugin__", "alpha")
+        .unwrap();
+    lua.load(
+        r#"
+        crucible.on("turn:complete", function() end)
+        crucible.on("turn:complete", function() end)
+    "#,
+    )
+    .exec()
+    .unwrap();
+
+    lua.globals()
+        .set("__crucible_loading_plugin__", "beta")
+        .unwrap();
+    lua.load(r#"crucible.on("pre_tool_call", function() end)"#)
+        .exec()
+        .unwrap();
+
+    let beta_name = registry
+        .runtime_handlers_for("pre_tool_call", None)
+        .first()
+        .expect("beta registered one handler")
+        .name
+        .clone();
+
+    // Reload alpha: drop its handlers, then let it register again.
+    registry.clear_plugin_handlers("alpha");
+    lua.globals()
+        .set("__crucible_loading_plugin__", "alpha")
+        .unwrap();
+    lua.load(
+        r#"
+        crucible.on("turn:complete", function() end)
+        crucible.on("turn:complete", function() end)
+    "#,
+    )
+    .exec()
+    .unwrap();
+
+    let after_reload = registry.runtime_handlers_for("turn:complete", None);
+    let reused: Vec<&String> = after_reload
+        .iter()
+        .map(|h| &h.name)
+        .filter(|n| **n == beta_name)
+        .collect();
+    assert!(
+        reused.is_empty(),
+        "reload reused '{beta_name}', which beta still holds in handler_functions"
+    );
+
+    // Attribution is orthogonal to name allocation and must still hold: the
+    // reload replaced alpha's two handlers rather than appending to them.
+    assert_eq!(
+        after_reload.len(),
+        2,
+        "alpha's reload should replace its own handlers, not accumulate them"
+    );
+    assert_eq!(registry.plugin_handler_count("alpha"), 2);
+    assert_eq!(registry.plugin_handler_count("beta"), 1);
+}
+
+/// The name allocator makes this unreachable; assert it is nonetheless loud,
+/// because the silent version of this was a live misbinding bug — an overwrite
+/// orphans the live body and leaves its owner's handler pointing at the new one.
+#[test]
+fn registering_over_a_live_handler_name_is_an_error_not_an_overwrite() {
+    let lua = Lua::new();
+    let registry = LuaScriptHandlerRegistry::new();
+    register_crucible_on_api(
+        &lua,
+        registry.runtime_handlers(),
+        registry.handler_functions(),
+    )
+    .unwrap();
+
+    // Occupy the first name the allocator will hand out.
+    let squatter = lua.create_function(|_, (): ()| Ok(())).unwrap();
+    let key = lua.create_registry_value(squatter).unwrap();
+    registry
+        .handler_functions()
+        .lock()
+        .unwrap()
+        .insert("runtime_handler_0".to_string(), key);
+
+    let err = lua
+        .load(r#"crucible.on("turn:complete", function() end)"#)
+        .exec()
+        .expect_err("a name collision must fail the registration");
+    assert!(
+        err.to_string().contains("handler name collision"),
+        "got: {err}"
+    );
+
+    // A refused registration must leave nothing behind: a `RuntimeHandler`
+    // whose function is missing dispatches to "Handler not found", which
+    // `pre_tool_call` turns into a denied tool call.
+    assert!(
+        registry
+            .runtime_handlers_for("turn:complete", None)
+            .is_empty(),
+        "the refused registration left a handler with no function behind"
+    );
+}
+
 /// A handler returning the (flat) event table is a TRANSFORM, even when the
 /// event's payload contains a `cancel`/`handled` field — flat events carry
 /// the envelope `type` key, and only directive-shaped returns (no `type`)

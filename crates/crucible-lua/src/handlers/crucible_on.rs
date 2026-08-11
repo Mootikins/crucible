@@ -1,5 +1,6 @@
 use mlua::{Lua, RegistryKey, Result as LuaResult, Table, Value};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tracing::debug;
 
@@ -32,6 +33,26 @@ pub fn register_crucible_on_api(
 
     let handlers = runtime_handlers.clone();
     let functions = handler_functions.clone();
+
+    // Monotonic source of runtime-handler names, scoped to this
+    // `runtime_handlers`/`handler_functions` pair — every caller registers the
+    // API exactly once against a freshly built store, so per-closure is
+    // per-registry. A staging point: it belongs beside the Vec and the map, and
+    // moves there when those three collapse into one owning store. `AtomicU64`
+    // rather than `Cell` because the daemon enables the `send` feature, so this
+    // closure must be `Send + Sync`.
+    //
+    // NEVER derive a name from `guard.len()`. `clear_plugin_handlers` shrinks
+    // that Vec, so after a reload a length-derived name collides with one
+    // another registrant — another plugin, or the user's `init.lua`, which is
+    // evaluated into this same registry and holds the highest indices — still
+    // owns in `handler_functions`. Dispatch is by name, so the collision
+    // rebinds the survivor's handler to the reloaded plugin's body rather than
+    // merely duplicating an entry, and with `pre_tool_call` failing closed a
+    // body raising against the wrong event shape denies every matching tool
+    // call in every session.
+    let next_handler_id = AtomicU64::new(0);
+
     let on_fn = lua.create_function(move |lua, args: mlua::MultiValue| {
         let args_vec: Vec<Value> = args.into_vec();
         if args_vec.len() < 2 {
@@ -92,7 +113,39 @@ pub fn register_crucible_on_api(
             .ok()
             .flatten();
 
-        let name = format!("runtime_handler_{}", guard.len());
+        // `Relaxed` suffices: the handlers mutex taken above brackets the whole
+        // allocate-push-insert sequence, so it supplies the ordering.
+        let name = format!(
+            "runtime_handler_{}",
+            next_handler_id.fetch_add(1, Ordering::Relaxed)
+        );
+        // Still inside the handlers lock, deliberately: handlers is the outer
+        // lock (`clear_plugin_handlers` orders them the same way) and is held
+        // across this mutation, so a dispatch racing a reload — the daemon
+        // reads the registry without the loader mutex — can never see a
+        // `RuntimeHandler` whose function is missing. Do not split these into
+        // two critical sections.
+        let mut func_guard = functions
+            .lock()
+            .map_err(|e| mlua::Error::RuntimeError(format!("Failed to lock functions: {}", e)))?;
+
+        // Defense in depth: unreachable while names come from the monotonic
+        // allocator above. Were it reached, an overwrite would orphan the live
+        // body and silently point its owner's handler at this one for the
+        // daemon's lifetime — refuse instead. Checked before anything is
+        // mutated, so a refused registration leaves no handler without a
+        // function (which `pre_tool_call`, failing closed, would turn into a
+        // denied tool call).
+        if func_guard.contains_key(&name) {
+            return Err(mlua::Error::RuntimeError(format!(
+                "handler name collision: '{name}' was already registered \
+                 (registering plugin: {plugin:?})"
+            )));
+        }
+
+        // Stored before the push for the same reason: nothing lands in
+        // `runtime_handlers` until its function is in hand.
+        let key = lua.create_registry_value(handler)?;
         guard.push(RuntimeHandler {
             event_type: event_type.clone(),
             name: name.clone(),
@@ -100,11 +153,6 @@ pub fn register_crucible_on_api(
             pattern: pattern.clone(),
             plugin: plugin.clone(),
         });
-
-        let key = lua.create_registry_value(handler)?;
-        let mut func_guard = functions
-            .lock()
-            .map_err(|e| mlua::Error::RuntimeError(format!("Failed to lock functions: {}", e)))?;
         func_guard.insert(name.clone(), key);
 
         debug!(
