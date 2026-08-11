@@ -1,35 +1,21 @@
 name: graph-view
-version: "0.1.0"
-description: Knowledge graph visualization using Fennel
+version: "0.2.0"
+description: Inspect a kiln's link graph, in Fennel
 author: Crucible Team
 license: MIT
 
-# Plugin capabilities
+# `kiln` for cru.kiln.*, `ui` for the (declared, not yet rendered) view.
 capabilities:
-  - ui
   - kiln
+  - ui
 
 main: init.fnl
 
-# Plugin dependencies
 dependencies: []
 
-# Configuration schema
-config:
-  properties:
-    max_depth:
-      type: number
-      description: Maximum depth for graph traversal
-      default: 3
-    show_orphans:
-      type: boolean
-      description: Show notes with no links
-      default: false
-    layout:
-      type: string
-      description: Graph layout algorithm
-      default: "force"
-      enum: ["force", "tree", "radial"]
+# Configuration lives in the user's config.toml under `[plugins.graph-view]`;
+# the daemon hands that section to the plugin's `setup(cfg)` at load time.
+# plugin.yaml has no config schema — a `config:` block here is ignored.
 
 exports:
   views:
@@ -37,5 +23,6 @@ exports:
   commands:
     - /graph
   tools:
+    - graph_links
     - graph_stats
   auto_discover: false
