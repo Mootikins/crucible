@@ -147,8 +147,10 @@ async fn test_search_vectors_rpc() {
 
 /// Test search_vectors via KnowledgeRepository trait
 ///
-/// This is the full integration test that mimics how the CLI's semantic_search
-/// actually works: KilnContext -> StorageHandle::Daemon -> DaemonStorageClient -> RPC
+/// The full integration test for the path a semantic search takes to storage:
+/// StorageHandle::Daemon -> DaemonStorageClient -> RPC. The CLI no longer has a
+/// search path of its own — `KilnContext`, which used to head this chain, was
+/// deleted once the daemon owned grounding.
 #[tokio::test]
 async fn test_search_vectors_via_knowledge_repository() {
     use crucible_core::traits::KnowledgeRepository;

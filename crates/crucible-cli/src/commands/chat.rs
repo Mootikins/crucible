@@ -53,6 +53,8 @@ pub struct RunInteractiveChatParams {
     pub parsed_env: std::collections::HashMap<String, String>,
     pub working_dir: Option<std::path::PathBuf>,
     pub resume_session_id: Option<String>,
+    pub no_context: bool,
+    pub context_size: Option<usize>,
     pub set_overrides: Vec<String>,
     pub record: Option<PathBuf>,
     pub replay: Option<PathBuf>,
@@ -186,6 +188,8 @@ pub async fn execute(params: ExecuteParams) -> Result<()> {
                 parsed_env,
                 working_dir,
                 resume_session_id,
+                no_context,
+                context_size,
                 set_overrides,
                 record,
                 replay,
@@ -283,6 +287,64 @@ fn parse_env_overrides(env_overrides: &[String]) -> std::collections::HashMap<St
     parsed
 }
 
+/// The session-state RPCs `--no-context` / `--context-size` stand for.
+///
+/// `--no-context` → `session.set_precognition(false)`, `--context-size N` →
+/// `session.set_precognition_results(N)`. Both paths (`cru chat` and
+/// `cru chat -q`) go through here so they cannot drift apart.
+///
+/// The asymmetry is deliberate. An *absent* flag emits nothing:
+///   - no `set_precognition(true)`, which would silently undo a
+///     `:set noprecognition` the user made in a session now being `--resume`d;
+///   - no default result count, which would override the daemon's own.
+///
+/// `--no-context` also suppresses `--context-size`: there is no result count
+/// to set on a searcher that will not run.
+fn precognition_flag_actions(
+    no_context: bool,
+    context_size: Option<usize>,
+) -> Vec<crate::tui::oil::commands::SetRpcAction> {
+    use crate::tui::oil::commands::SetRpcAction;
+
+    if no_context {
+        vec![SetRpcAction::SetPrecognition(false)]
+    } else {
+        context_size
+            .map(SetRpcAction::SetPrecognitionResults)
+            .into_iter()
+            .collect()
+    }
+}
+
+/// Startup overrides for interactive chat: `--set` first, then the
+/// `--no-context` / `--context-size` flags.
+///
+/// Flags land last so that, as in `run_oneshot_chat`, an explicit
+/// `--no-context` beats a `--set precognition=on` on the same command line.
+/// The `Err` is a rendered message for the caller to report and exit on —
+/// this returns rather than exits so it stays testable.
+fn build_initial_sets(
+    set_overrides: &[String],
+    no_context: bool,
+    context_size: Option<usize>,
+) -> Result<Vec<crate::tui::oil::commands::SetEffect>, String> {
+    use crate::tui::oil::commands::{validate_set_for_cli, SetEffect};
+
+    let mut sets = Vec::with_capacity(set_overrides.len() + 1);
+    for input in set_overrides {
+        match validate_set_for_cli(input) {
+            Ok(effect) => sets.push(effect),
+            Err(e) => return Err(format!("invalid --set '{}': {}", input, e)),
+        }
+    }
+    sets.extend(
+        precognition_flag_actions(no_context, context_size)
+            .into_iter()
+            .map(SetEffect::DaemonRpc),
+    );
+    Ok(sets)
+}
+
 /// If the current working directory matches a registered project, open that
 /// project's kilns via daemon RPC. This ensures multi-kiln projects have all
 /// their knowledge sources available at session start.
@@ -352,6 +414,8 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
         parsed_env,
         working_dir,
         resume_session_id,
+        no_context,
+        context_size,
         set_overrides,
         record,
         replay,
@@ -362,20 +426,17 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
     use crate::tui::oil::OilChatRunner;
     use crucible_core::events::EventRing;
 
-    let parsed_set_overrides = {
-        use crate::tui::oil::commands::validate_set_for_cli;
-
-        let mut parsed = Vec::with_capacity(set_overrides.len());
-        for input in &set_overrides {
-            match validate_set_for_cli(input) {
-                Err(e) => {
-                    output::error(&format!("invalid --set '{}': {}", input, e));
-                    std::process::exit(1);
-                }
-                Ok(effect) => parsed.push(effect),
-            }
+    // `--set` plus the `--no-context` / `--context-size` flags. All of these
+    // are session state the daemon owns, so they ride the same
+    // `initial_sets` → `process_action` path, which applies them after the
+    // session exists — including a session reattached by `--resume`, matching
+    // `cru chat -q --resume`.
+    let parsed_set_overrides = match build_initial_sets(&set_overrides, no_context, context_size) {
+        Ok(sets) => sets,
+        Err(message) => {
+            output::error(&message);
+            std::process::exit(1);
         }
-        parsed
     };
 
     let default_agent = config.acp.default_agent.clone();
@@ -671,10 +732,10 @@ async fn run_oneshot_chat(params: RunOneshotChatParams) -> Result<()> {
     // `cru chat -q` and the TUI ground identically — and why the prompt below
     // is the user's text verbatim. Enriching it client-side made the daemon's
     // own search run against the CLI's context block instead of the question.
-    if no_context {
-        handle.set_precognition(false).await?;
-    } else if let Some(n) = context_size {
-        handle.set_precognition_results(n).await?;
+    for action in precognition_flag_actions(no_context, context_size) {
+        if let Err(e) = apply_rpc_action(&mut handle, action).await {
+            anyhow::bail!("failed to apply knowledge-base context flags: {e}");
+        }
     }
     let prompt = query_text;
 
@@ -923,5 +984,69 @@ mod tests {
         let result = parse_env_overrides(&["KEY=".to_string()]);
         assert_eq!(result.len(), 1);
         assert_eq!(result.get("KEY"), Some(&"".to_string()));
+    }
+
+    // --- `--no-context` / `--context-size` -> session precognition state ---
+    //
+    // Both flags live on the shared `Commands::Chat` variant, so interactive
+    // chat must honour them exactly as `cru chat -q` does. The asymmetry
+    // below (absent flag sends nothing) is the point of these tests.
+
+    use crate::tui::oil::commands::{SetEffect, SetRpcAction};
+
+    #[test]
+    fn no_context_flag_disables_precognition() {
+        assert_eq!(
+            precognition_flag_actions(true, None),
+            vec![SetRpcAction::SetPrecognition(false)]
+        );
+    }
+
+    #[test]
+    fn context_size_flag_sets_the_result_count() {
+        assert_eq!(
+            precognition_flag_actions(false, Some(3)),
+            vec![SetRpcAction::SetPrecognitionResults(3)]
+        );
+    }
+
+    #[test]
+    fn absent_context_flags_send_no_precognition_rpc() {
+        // Sending `set_precognition(true)` here would clobber a user's
+        // `:set noprecognition`, and a `set_precognition_results` default
+        // would clobber the daemon's own default.
+        assert!(precognition_flag_actions(false, None).is_empty());
+    }
+
+    #[test]
+    fn no_context_flag_wins_over_context_size() {
+        // A disabled searcher has no result count to set. This was
+        // `run_oneshot_chat`'s `if no_context { .. } else if ..` before both
+        // paths shared this function; interactive inherits it.
+        assert_eq!(
+            precognition_flag_actions(true, Some(9)),
+            vec![SetRpcAction::SetPrecognition(false)]
+        );
+    }
+
+    #[test]
+    fn interactive_initial_sets_append_the_context_flags_after_set_overrides() {
+        let sets = build_initial_sets(&["precognition=on".to_string()], true, None)
+            .expect("valid --set input");
+        assert_eq!(
+            sets,
+            vec![
+                SetEffect::DaemonRpc(SetRpcAction::SetPrecognition(true)),
+                SetEffect::DaemonRpc(SetRpcAction::SetPrecognition(false)),
+            ],
+            "flags must be applied last so `--no-context` wins, as in oneshot"
+        );
+    }
+
+    #[test]
+    fn interactive_initial_sets_reject_invalid_set_overrides() {
+        let err = build_initial_sets(&["definitely_not_a_key=1".to_string()], false, None)
+            .expect_err("unknown key must not be silently dropped");
+        assert!(err.contains("definitely_not_a_key"), "got {err}");
     }
 }
