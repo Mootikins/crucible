@@ -30,7 +30,7 @@
 mod common;
 
 use common::docs_kiln::{
-    docs_root, files_with_extensions, is_authored, markdown_files, workspace_root,
+    docs_root, files_with_extensions, is_authored, is_committable, markdown_files, workspace_root,
 };
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -192,6 +192,11 @@ fn resolve_wikilink_candidates(target: &str, dev_kiln_root: &Path) -> Vec<PathBu
             .flatten()
             .filter(|e| e.file_type().is_file())
             .filter(|e| is_authored(e.path()))
+            // A link may only resolve to something a commit contains. Both
+            // directions have to agree on what the kiln IS, or an untracked
+            // file sitting in the tree silently satisfies a link that the
+            // repository does not.
+            .filter(|e| is_committable(e.path()))
             .filter(|e| {
                 e.path()
                     .file_name()
@@ -934,4 +939,41 @@ order: 1"#;
     assert_eq!(fields.get("title").unwrap(), "Test Note");
     assert_eq!(fields.get("description").unwrap(), "A test note");
     assert_eq!(fields.get("order").unwrap(), "1");
+}
+
+/// Removes the file it names when it drops, panic or not.
+struct ScratchFile(PathBuf);
+impl Drop for ScratchFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// The gate validates the content of the commit, not the state of someone's
+/// disk.
+///
+/// These suites walked `docs/` and held every `.md` on disk to the authoring
+/// conventions, so anything dropped in there — a scratch plan, a personal note,
+/// a second agent's work in a shared checkout — turned the gate red for work
+/// that is not part of the repository. That happened: seven untracked drafts
+/// appeared in `docs/Meta/Plans/` and `just ci` went red on broken wikilinks
+/// and code references in files no commit contains.
+///
+/// Tracked-or-staged is the line, and `git add` is what moves a file across it,
+/// so a new note is validated from the moment it is on its way into a commit.
+#[test]
+fn the_kiln_sweep_ignores_a_file_no_commit_would_contain() {
+    let scratch = ScratchFile(docs_root().join("Meta").join("zz-untracked-scratch.md"));
+    std::fs::write(
+        &scratch.0,
+        "# scratch\n\nA [[Link That Does Not Resolve]] and a bad ref \
+         `crates/nonexistent/file.rs`.\n",
+    )
+    .unwrap();
+
+    assert!(
+        !markdown_files(&["docs"]).contains(&scratch.0),
+        "an untracked file must not be swept: {}",
+        scratch.0.display()
+    );
 }
