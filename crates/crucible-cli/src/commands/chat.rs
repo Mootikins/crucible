@@ -12,8 +12,6 @@ use tracing::{debug, info, warn};
 
 use crate::commands::chat_preflight::{ensure_valid_kiln, fill_default_model_if_missing};
 use crate::config::CliConfig;
-use crate::context_enricher::ContextEnricher;
-use crate::core_facade::KilnContext;
 use crate::factories;
 use crate::output;
 use crate::progress::{BackgroundProgress, LiveProgress, StatusLine};
@@ -651,27 +649,34 @@ async fn run_oneshot_chat(params: RunOneshotChatParams) -> Result<()> {
         agent_params = agent_params.with_working_dir(wd.clone());
     }
 
-    status.update("Initializing storage...");
-    let storage_handle = factories::get_storage(&config).await?;
+    // Kept for its side effect, not its value: `get_storage` opens the kiln
+    // with `process = true`, which indexes pending files. Without it the
+    // daemon's Precognition would search a possibly-unindexed kiln.
+    status.update("Opening kiln...");
+    let _storage_handle = factories::get_storage(&config).await?;
 
     status.update("Discovering agent...");
     let mut handle = factories::create_agent(&config, agent_params).await?;
 
     let bg_progress: Option<BackgroundProgress> = None;
-    status.update("Initializing core...");
-    let core = Arc::new(KilnContext::from_storage_handle(storage_handle, config));
     status.success("Ready");
 
     let _autoconfirm_session = apply_oneshot_set_overrides(&mut handle, &set_overrides).await;
 
     let _live_progress = bg_progress.map(LiveProgress::start);
 
-    let prompt = if no_context {
-        query_text
-    } else {
-        let enricher = ContextEnricher::new(core.clone(), context_size);
-        enricher.enrich(&query_text).await?
-    };
+    // `--no-context` / `--context-size` are session state, not a local
+    // transform: the daemon owns Precognition, and it is already enabled by
+    // `SessionAgent::internal_from_config`. Setting it here is what makes
+    // `cru chat -q` and the TUI ground identically — and why the prompt below
+    // is the user's text verbatim. Enriching it client-side made the daemon's
+    // own search run against the CLI's context block instead of the question.
+    if no_context {
+        handle.set_precognition(false).await?;
+    } else if let Some(n) = context_size {
+        handle.set_precognition_results(n).await?;
+    }
+    let prompt = query_text;
 
     {
         use crate::formatting::render_markdown;

@@ -319,7 +319,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
                 query,
                 read_only: plan,
                 no_context,
-                context_size: Some(context_size),
+                context_size,
                 provider_key: provider,
                 max_context_tokens: max_context,
                 env_overrides: env,
@@ -487,7 +487,8 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
                 query: None,
                 read_only: false,
                 no_context: false,
-                context_size: Some(5),
+                // No override: the daemon's session default stands.
+                context_size: None,
                 provider_key: None,
                 max_context_tokens: 16384,
                 env_overrides: vec![],

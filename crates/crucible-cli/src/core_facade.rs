@@ -125,26 +125,6 @@ impl KilnContext {
             })
             .collect())
     }
-
-    /// Perform semantic search with reranking for better results
-    ///
-    /// # Arguments
-    /// * `query` - The search query string
-    /// * `limit` - Maximum number of results to return
-    ///
-    /// # Returns
-    /// Vector of search results with document IDs and similarity scores
-    pub async fn semantic_search_with_reranking(
-        &self,
-        query: &str,
-        limit: usize,
-    ) -> Result<Vec<SemanticSearchResult>> {
-        // Reranking not supported via RPC yet — fall back to basic search
-        tracing::debug!(
-            "Reranking not available in this storage mode, using basic semantic search"
-        );
-        self.semantic_search(query, limit).await
-    }
 }
 
 /// Result from semantic search

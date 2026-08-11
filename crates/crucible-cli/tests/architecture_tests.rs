@@ -4,6 +4,11 @@
 //! TUI-side invariants CLAUDE.md states in prose:
 //!   A2a — every `ChatAppMsg` variant is handled somewhere (no dead messages).
 //!   A2b — canonical parser types are defined only in crucible-core/parser.
+//!   A2c — every `/api` path the web frontend calls has a backend route.
+//!   A2d — the CLI does not build its own knowledge-base context block.
+//!
+//! A2* live here rather than in the daemon's companion file because they scan
+//! CLI and web source; the daemon's header lists A1/A3/A4 for the same reason.
 //!
 //! Source-scan style: read files and match, so they are fast and build-free.
 //! When one fails, fix the code, not the test — see each failure message.
@@ -297,5 +302,55 @@ fn every_frontend_api_path_has_a_backend_route() {
         "web/src/lib/api.ts calls /api paths that no backend route serves \
          (routes/*.rs + server.rs). Add the route or fix the frontend path:\n  - {}",
         missing.join("\n  - ")
+    );
+}
+
+// ===========================================================================
+// A2d — the CLI must not build its own knowledge-base context block.
+//
+// `context_enricher.rs` did this and shipped alongside the daemon's
+// Precognition, so `cru chat -q` ran BOTH: the CLI prepended a block, then the
+// daemon searched again using that block as its query text. Grounding is
+// daemon business logic (Systems.md: "Owns all business logic that views
+// consume over RPC") and there is exactly one implementation.
+// ===========================================================================
+
+/// Marker strings that only a client-side context-block builder would contain.
+const CLIENT_SIDE_ENRICHMENT_MARKERS: &[&str] = &[
+    "# Context from Knowledge Base",
+    "Context from Knowledge Base (Reranked)",
+];
+
+// UNIQUE: no type or lint can express "this crate must not format a retrieval
+// result into a prompt" — the duplicate implementation compiled cleanly and
+// passed its own tests for as long as it existed. Source-scan is the seam.
+#[test]
+fn the_cli_does_not_build_its_own_context_block() {
+    let root = workspace_root();
+    let mut offenders = Vec::new();
+    for entry in WalkDir::new(root.join("crates/crucible-cli/src"))
+        .into_iter()
+        .filter_map(Result::ok)
+    {
+        if entry.path().extension().and_then(|e| e.to_str()) != Some("rs") {
+            continue;
+        }
+        let contents = read(entry.path());
+        for marker in CLIENT_SIDE_ENRICHMENT_MARKERS {
+            if contents.contains(marker) {
+                offenders.push(format!(
+                    "{}: contains {marker:?}",
+                    entry.path().strip_prefix(&root).unwrap().display()
+                ));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "The CLI is formatting knowledge-base context into a prompt. Grounding \
+         belongs to the daemon (agent_manager/precognition/); the CLI's job is \
+         to set `session.set_precognition` / `session.set_precognition_results` \
+         and render the `precognition_complete` event:\n  - {}",
+        offenders.join("\n  - ")
     );
 }

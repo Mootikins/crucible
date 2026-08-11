@@ -135,13 +135,15 @@ pub enum Commands {
         #[arg(long, default_value = "16384")]
         max_context: usize,
 
-        /// Skip context enrichment (faster, but agent has no knowledge base access)
+        /// Turn off knowledge-base grounding for this session (Precognition).
+        /// Session state, so it persists across resume — same as `:set noprecognition`
         #[arg(long)]
         no_context: bool,
 
-        /// Number of context results to include (default: 5)
-        #[arg(long, default_value = "5")]
-        context_size: usize,
+        /// Number of knowledge-base notes to ground with (daemon default: 5).
+        /// Session state, so it persists across resume
+        #[arg(long)]
+        context_size: Option<usize>,
 
         /// Start in plan mode (read-only) instead of normal mode (full access)
         /// Can be toggled during session with /plan and /normal commands
