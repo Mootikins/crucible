@@ -104,3 +104,6 @@ reproduce.cast
 
 # Local test config referenced from .env.local (see .env.local.example)
 .crucible-test-config.toml
+
+# graphify knowledge-graph output (regenerable, ~40MB)
+graphify-out/
