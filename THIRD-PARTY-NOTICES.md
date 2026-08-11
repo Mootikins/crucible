@@ -360,7 +360,7 @@ as `Apache-2.0 OR GPL-2.0-only`; Crucible elects **Apache-2.0**.
 
 ---
 
-## Rust crates (814)
+## Rust crates (817)
 
 Linked into the released binary.
 
@@ -469,6 +469,7 @@ Linked into the released binary.
 | `clap_derive` | 4.6.4 | MIT OR Apache-2.0 |
 | `clap_lex` | 1.1.0 | MIT OR Apache-2.0 |
 | `clru` | 0.6.3 | MIT |
+| `cmov` | 0.5.4 | Apache-2.0 OR MIT |
 | `color_quant` | 1.1.0 | MIT |
 | `colorchoice` | 1.0.5 | MIT OR Apache-2.0 |
 | `colored` | 3.1.1 | MPL-2.0 |
@@ -500,17 +501,18 @@ Linked into the released binary.
 | `crossbeam-utils` | 0.8.21 | MIT OR Apache-2.0 |
 | `crossterm` | 0.28.1 | MIT |
 | `crossterm` | 0.29.0 | MIT |
-| `crucible-cli` | 0.17.0 | MIT OR Apache-2.0 |
-| `crucible-core` | 0.17.0 | MIT OR Apache-2.0 |
-| `crucible-daemon` | 0.17.0 | MIT OR Apache-2.0 |
-| `crucible-lua` | 0.17.0 | MIT OR Apache-2.0 |
-| `crucible-oil` | 0.17.0 | MIT OR Apache-2.0 |
-| `crucible-web` | 0.17.0 | MIT OR Apache-2.0 |
+| `crucible-cli` | 0.23.0 | MIT OR Apache-2.0 |
+| `crucible-core` | 0.23.0 | MIT OR Apache-2.0 |
+| `crucible-daemon` | 0.23.0 | MIT OR Apache-2.0 |
+| `crucible-lua` | 0.23.0 | MIT OR Apache-2.0 |
+| `crucible-oil` | 0.23.0 | MIT OR Apache-2.0 |
+| `crucible-web` | 0.23.0 | MIT OR Apache-2.0 |
 | `crunchy` | 0.2.4 | MIT |
 | `crypto-common` | 0.1.7 | MIT OR Apache-2.0 |
 | `crypto-common` | 0.2.2 | MIT OR Apache-2.0 |
 | `csv` | 1.4.0 | Unlicense/MIT |
 | `csv-core` | 0.1.13 | Unlicense/MIT |
+| `ctutils` | 0.4.2 | Apache-2.0 OR MIT |
 | `daachorse` | 2.1.1 | MIT OR Apache-2.0 |
 | `darling` | 0.20.11 | MIT |
 | `darling` | 0.23.0 | MIT |
@@ -701,6 +703,7 @@ Linked into the released binary.
 | `hex` | 0.4.3 | MIT OR Apache-2.0 |
 | `hf-hub` | 0.4.3 | Apache-2.0 |
 | `hifijson` | 0.4.0 | MIT |
+| `hmac` | 0.13.0 | MIT OR Apache-2.0 |
 | `html-escape` | 0.2.13 | MIT |
 | `html_parser` | 0.7.0 | MIT |
 | `http` | 1.4.2 | MIT OR Apache-2.0 |
@@ -1295,7 +1298,7 @@ Installed in the web tree; a subset is bundled into the shipped UI.
 | `@braintree/sanitize-url` | 7.1.2 | MIT |
 | `@bramus/specificity` | 2.4.2 | MIT |
 | `@chevrotain/types` | 11.1.2 | Apache-2.0 |
-| `@codemirror/autocomplete` | 6.20.1 | MIT |
+| `@codemirror/autocomplete` | 6.20.3 | MIT |
 | `@codemirror/commands` | 6.10.3 | MIT |
 | `@codemirror/lang-angular` | 0.1.4 | MIT |
 | `@codemirror/lang-cpp` | 6.0.3 | MIT |

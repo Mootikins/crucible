@@ -7,6 +7,125 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-08-11
+
+Crucible meets strangers. A Discord bot is the first surface where the person
+typing is not the operator, and most of this release is what that turned out to
+require: an allowlist that means nobody until it says otherwise, a per-requester
+capability model, a spend cap, and a gateway that survives an outage. The rest
+is the security work that exposing *anything* forced — an RPC socket any local
+user could reach, a permission prompt a passer-by could answer, a diff preview
+that read the file before you approved it.
+
+The through-line is that "who is asking?" and "what may this session do?" are
+two questions. A chat-room username is not a Crucible principal, so nobody in a
+channel approves anything; what the session may do is declared up front instead,
+in config, and the gate honours it on both the internal and the ACP agent path.
+
+### Added
+- **The Discord plugin ships.** It lived at repo-root `plugins/`, which is on
+  none of the loader's search paths, so it had never loaded for anyone. It now
+  ships inside every `cru` — but only after it fails closed: services are lazily
+  spawned, so an unconfigured daemon no longer dials `gateway.discord.gg` on
+  load, and `allowed_users`/`allowed_guilds` default to empty meaning **nobody**.
+  The four agent tools are gone with it; `agent_factory` folded every plugin tool
+  into *every* session, so `discord_send` to an arbitrary channel was an
+  exfiltration path in an unrelated TUI.
+- **One bot, a different capability per requester.** A server role can carry a
+  grant above the room's, and a named approver answers a prompt in their own DM.
+- **A Discord turn declares the tools it may run**, on either agent path.
+  Non-interactive turns turn `Ask` into `Deny`, which had quietly become the
+  answer to "what may this session do?" too — a bot that can be asked about a
+  kiln but may not read one. The declared set is reads only; `bash`, writes and
+  edits are left off because their blast radius is not bounded by
+  `allowed_roots`.
+- **A per-user daily turn cap** (`quota_turns_per_day`, default 50). Turns, not
+  tokens: usage is recorded conditionally, so a token quota reads zero and fails
+  *open* on a config flip.
+- **A DM conversation survives a daemon restart** when its kiln is registered,
+  and one session per speaker keeps a reply in its own thread.
+- **`[plugins.<name>] enabled = false` is honoured.** A bundled plugin could not
+  be durably switched off: `plugin.yaml` ships inside the binary and the runtime
+  tree is re-stamped on upgrade, so an edited `enabled:` was reverted.
+- **Every change is attributed to the tool call that made it.** Review hunks
+  carry the call that produced them, and the editor puts one chip per hunk in
+  the margin; clicking it jumps to that call.
+- **An operator runbook for the bot** (`docs/Help/Extending/Discord.md`), plus
+  the reason the kill switch is an edit to the section you already have — a
+  second `[plugins.discord]` header is a duplicate TOML table, which takes the
+  whole config down and looks exactly like a successful kill switch.
+
+### Security
+- **Any local user could reach the RPC socket.** It was bound with no
+  permissions, accepted with no peer check, and fell back to a shared
+  `/tmp/crucible.sock` when `XDG_RUNTIME_DIR` was unset — the normal case for a
+  systemd service or a container. None of the 153 RPC methods authenticates, so
+  reaching the socket is the whole game. Now bound inside a narrowed umask,
+  `SO_PEERCRED`-checked on accept, with a per-uid `0700` fallback directory that
+  refuses — never repairs — a path it does not own.
+- **A stranger in a chat room could approve a tool call.** Permissions are keyed
+  on `(session_id, permission_id)` alone, so the daemon has no idea who is
+  entitled to answer. Plugin-created sessions now run non-interactive, and the
+  approval protocol they could reach is deleted rather than guarded.
+- **A denied edit leaked the file it named.** The diff preview opened the file
+  from the model's raw, unapproved arguments — absolute paths verbatim, `..`
+  never rejected — before the permission gate resolved, and broadcast the result
+  on the session event stream. `old_string: ""` matched any file and returned
+  its whole body, so clicking Deny changed nothing: the read had happened and
+  the content was already published.
+- **A card-denied tool reached `pre_tool_call` handlers.** Handlers ran before
+  the agent-card policy was consulted, and a handler that returns `Handled`
+  returns before the gate is reached at all — so a plugin could see the
+  arguments of, rewrite, and fabricate a result for a tool the session refuses.
+- **A delegated child could widen its parent's tool policy.** `from_card`
+  discarded the parent's `tool_policy` and `mcp_servers` outright, so a
+  `bash: Deny` parent delegating to a card with `bash: allow` got a child
+  running bash with the gate skipped — and cards are rediscovered every
+  delegation.
+- **Listing sessions indexed the daemon data root.** `session.list` opened
+  `~/.crucible` as a kiln, and an open kiln is a watched kiln — putting every
+  session body through the parser into SQLite and into LanceDB as embeddings,
+  permanently, with no retention policy. For a chat integration those bodies are
+  strangers' messages.
+
+### Fixed
+- **The gateway gave up on the first outage.** `cru.ws.connect` raises a string
+  and the retry predicate tested for a table, so ten reconnect attempts on paper
+  were zero in practice. Three more defects in the same region made the fix
+  unobservable: a stale `awaiting_ack` dropped each new healthy socket at its
+  first heartbeat, `RESUMED` never set `is_connected`, and `disconnect` reset its
+  state only on the path where `ws` was still live. Each outage now gets its own
+  budget.
+- **LAN clients could not reach the web server by name.** The bind was always
+  `0.0.0.0`; the Host guard refused every name, which reads exactly like a
+  loopback-only bind — as did a banner that printed `Local: http://localhost` on
+  the line under it. The guard is now strict for loopback callers and defers to
+  the API key for clients on another machine, and the banner is derived from the
+  same policy, so it cannot advertise a URL the server would refuse.
+- **The review gutter appeared on every file.** The layer was installed on open
+  rather than on the first hunk, so every file paid 3.5rem for an empty column —
+  and in live preview, which drops the line-number gutter to read as prose, it
+  was the only gutter on screen.
+- **The permission header claimed creates and deletes it could not know about.**
+  A whole-file write has no old side whether it creates or overwrites, so every
+  overwrite announced itself as a create — the opposite of the risk being
+  approved.
+- **Provider probes ran one at a time.** Three providers and one dead endpoint
+  meant up to thirty seconds before `session.create` finished setting up.
+
+### Changed
+- **Diff previews render from the tool arguments, not from the file.** The
+  arguments already carry the change; the read only expanded it into whole-file
+  form. There is now no containment to get right, no TOCTOU, and nothing to
+  exfiltrate — the class is gone rather than guarded.
+- **The justfile is 16 recipes, not 56**, grouped by verb with sub-targets
+  (`just test ci`, `just lint clippy`, `just web-test live`). Every CI call site
+  moved with it.
+- Removed `path_containment` — 963 lines and 56 tests added by this branch,
+  briefly used, then orphaned when its one consumer was deleted. A security
+  primitive with no call sites protects nothing while reading, in review and in
+  every future grep, as though a containment control exists.
+
 ## [0.22.0] - 2026-08-05
 
 Delegation, made presentable. `cru chat -a claude` has worked for a while, but
