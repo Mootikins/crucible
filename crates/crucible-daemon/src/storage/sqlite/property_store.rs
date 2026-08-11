@@ -283,24 +283,34 @@ mod tests {
     use super::*;
     use crate::storage::sqlite::SqliteConfig;
 
+    /// Exactly what production builds: `SqlitePool::new` applies the pragmas and
+    /// the migrations, and nothing seeds the `entities` catalog — because
+    /// nothing in production does. This fixture used to pre-insert catalog rows
+    /// to satisfy a foreign key, which is what hid the fact that every real
+    /// `cru.storage.set` call failed.
     async fn test_store() -> SqlitePropertyStore {
+        SqlitePropertyStore::new(SqlitePool::new(SqliteConfig::memory()).unwrap())
+    }
+
+    /// Production has no writer for `entities`: plugins call `cru.storage.set`
+    /// with an opaque id they choose themselves. Build the store the way
+    /// production does — `SqlitePool::new` and nothing else — so the FK
+    /// regression cannot hide behind a fixture that pre-creates catalog rows.
+    #[tokio::test]
+    async fn plugin_property_set_succeeds_without_a_catalog_row() {
         let pool = SqlitePool::new(SqliteConfig::memory()).unwrap();
-        // Apply the schema that includes the properties table
-        pool.with_connection(|conn| {
-            crate::storage::sqlite::schema::apply_migrations(conn)
-                .map_err(|e| crucible_core::storage::StorageError::Backend(e.to_string()))?;
-            // Create test entities for FK satisfaction
-            for id in &["entity1", "e1", "e2", "e3"] {
-                conn.execute(
-                    "INSERT OR IGNORE INTO entities (id, type) VALUES (?1, 'note')",
-                    params![id],
-                )
-                .map_err(|e| crucible_core::storage::StorageError::Backend(e.to_string()))?;
-            }
-            Ok(())
-        })
-        .unwrap();
-        SqlitePropertyStore::new(pool)
+        let store = SqlitePropertyStore::new(pool);
+
+        store
+            .property_set("note:foo", "plugin:x", "k", "v")
+            .await
+            .unwrap();
+
+        let val = store
+            .property_get("note:foo", "plugin:x", "k")
+            .await
+            .unwrap();
+        assert_eq!(val, Some("v".to_string()));
     }
 
     #[tokio::test]
