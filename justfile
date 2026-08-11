@@ -263,33 +263,32 @@ bench:
 
 # === Web Interface ===
 
-# Build SolidJS frontend and run web server (for production-like dev)
-web: web-build
-    cargo run -p crucible-cli -- web --host 0.0.0.0 --port 3000
-
-# Build only the SolidJS frontend
-web-build:
-    cd crates/crucible-web/web && bun install && bun run build
-
-# Run Vite dev server (hot reload, localhost only)
-web-vite:
-    cd crates/crucible-web/web && bun run dev
-
-# Run Vite dev server exposed to network
-web-vite-host:
-    cd crates/crucible-web/web && bun run dev --host
-
-# Run web server pointing to Vite dev server (for API + hot reload)
-web-dev:
-    cargo run -p crucible-cli -- web --host 0.0.0.0 --port 3000 --static-dir crates/crucible-web/web/dist
-
 # `--standalone` is NOT optional: a debug `cru` on the shared socket detects the
 # git-SHA mismatch and shuts the installed daemon down to respawn its own.
 #
-# Debug web server on a side port (default 3001, bound 0.0.0.0)
-web-debug port="3001" host="0.0.0.0": web-build-debug
+# Bound to every interface by default so a headless box is reachable; pass a
+# host to narrow it. Over a LAN an IP literal on the bound port needs no
+# configuration, but reaching it by NAME needs that name in
+# `[web] allowed_hosts`.
+#
+# For frontend hot reload, run `bun run dev` in crates/crucible-web/web
+# alongside this. Its proxy is hardcoded to localhost:3000, so changing the
+# port here leaves that dev server's /api pointing at nothing.
+#
+#     just web / just web 3001 / just web 3000 127.0.0.1
+#
+# Build the frontend and serve it (default 0.0.0.0:3000)
+web port="3000" host="0.0.0.0": (web-build "off")
     cargo build -p crucible-cli --bin cru
     cargo run -p crucible-cli -- --standalone web --host {{host}} --port {{port}} --static-dir crates/crucible-web/web/dist
+
+# `off` disables the PWA service worker, which otherwise serves stale assets
+# from its cache and makes a rebuild look like it did nothing — always what you
+# want locally, never what you want in a release.
+#
+# Build the SolidJS frontend
+web-build pwa="on":
+    cd crates/crucible-web/web && bun install && {{ if pwa == "off" { "VITE_DISABLE_PWA=1" } else { "" } }} bun run build
 
 # Fail on a dependency whose licence is not on deny.toml's allowlist
 license-check:
@@ -306,9 +305,6 @@ notices:
 # bundle until the update toast is accepted. Never ship this output.
 #
 # Build the frontend for debugging (no PWA service worker)
-web-build-debug:
-    cd crates/crucible-web/web && bun install && VITE_DISABLE_PWA=1 bun run build
-
 # Build release with embedded web assets
 release-web: web-build
     cargo build -p crucible-cli --release

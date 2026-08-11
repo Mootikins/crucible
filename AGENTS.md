@@ -64,7 +64,7 @@ has no recipe and you need it twice, add a recipe.
 - `just ci` — **run before committing**
 - `just build` / `just test` / `just check`; `just test-crate <crate>`; `just test ignored` / `just test full` for `#[ignore]`d tests
 - `just web-test-unit [paths…]` / `just web-test [specs…]` / `just web-typecheck`
-- `just web` (build + serve on 3000) / `just web-debug [port]` (side port, safe next to installed instance); `just mcp`
+- `just web [port] [host]` (build + serve, `0.0.0.0:3000`); `just mcp`
 
 **Don't build release unless installing** — LTO takes 5–10 minutes; iterate on debug builds.
 Web frontend uses **bun** (not npm/yarn); see `crates/crucible-web/web/AGENTS.md`.
