@@ -138,8 +138,17 @@ describe("ddg provider", function()
         --
         -- This version builds rows that are actually parsed, sized just under
         -- the bound so every one is accepted, filling the body. That is the
-        -- shape that measured 20.4s before the bounds were tightened. Verified
-        -- by mutation: raising MAX_ROW_BYTES or MAX_BODY makes it fail.
+        -- shape that measured 20.4s before the bounds were tightened.
+        --
+        -- What it does NOT do is track the constants, and the claim that it
+        -- did ("verified by mutation: raising MAX_ROW_BYTES or MAX_BODY makes
+        -- it fail") was wrong — the shape is hardcoded at 4000/60KB, so
+        -- raising both bounds eightfold moves this parse by 0.05s, inside the
+        -- noise. Measured, not reasoned about. The constants are guarded
+        -- behaviourally instead, by "refuses a body over the parse limit" and
+        -- the skipped-row test below; what this one guards is the parse's
+        -- COST at a maximal legal body — the O(body x row) blowup, which no
+        -- assertion about the constants would catch.
         local function hostile_body(row_bytes, total_bytes)
             local head = '<tr><td><a href="https://x.test/" class="result-link">'
             local tail = "</a></td></tr>"
@@ -163,8 +172,20 @@ describe("ddg provider", function()
             local elapsed = os.clock() - started
 
             assert.truthy(rows, "a page of well-formed rows must parse")
+            -- 8s for a parse that measures ~1s here. The old 2s ceiling was
+            -- under 2x the real cost, which is fine on a developer machine and
+            -- was not: this suite reached CI for the first time in 0.23.0 and
+            -- failed on its first run, on a shared four-core runner.
+            --
+            -- The headroom is for the runner, not for the parse. What this
+            -- guards is a 20.4s stall, so hardware slow enough to push 1s past
+            -- 8 would push that past 160 — the separation survives the
+            -- slowdown, which is the property that matters rather than the
+            -- absolute number. Keep this a multiple of the measured cost, and
+            -- if the parse itself ever approaches it, that is the regression
+            -- and not a slow runner.
             assert.truthy(
-                elapsed < 2.0,
+                elapsed < 8.0,
                 string.format(
                     "parse took %.2fs on a %d-byte body of maximum-size rows. The cost "
                         .. "is O(body x row), so raising either bound reopens a stall of "
