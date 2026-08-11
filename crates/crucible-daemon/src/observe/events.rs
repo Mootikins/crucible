@@ -4,19 +4,20 @@
 //! `crucible_core::events::SessionEvent` which is for Reactor dispatch.
 
 use chrono::{DateTime, Utc};
+use crucible_core::protocol::SessionEventMessage;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Token usage information
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct TokenUsage {
-    /// Input tokens consumed
-    #[serde(rename = "in")]
-    pub input: u32,
-    /// Output tokens generated
-    #[serde(rename = "out")]
-    pub output: u32,
-}
+/// Token usage on a persisted assistant turn.
+///
+/// Canonically owned by `crucible-core`; re-exported here so
+/// `crucible_daemon::observe::events::TokenUsage` and
+/// `crucible_daemon::TokenUsage` keep resolving. This module used to define
+/// a second, two-field `{in,out}` copy — which meant every resumed turn
+/// silently lost the cache-read and cache-creation accounting the wire form
+/// already carried (`SessionEventMessage::message_complete`). CLAUDE.md: never duplicate types
+/// between crates.
+pub use crucible_core::traits::llm::TokenUsage;
 
 /// Permission decision for a tool call
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -480,6 +481,214 @@ impl LogEvent {
     }
 }
 
+/// One line of `session.jsonl`, in either shape the file can hold.
+///
+/// The log is mixed by construction and always has been. `persist_event`
+/// (`server/core.rs`) appends a serialized [`SessionEventMessage`] —
+/// `{"type":"event","event":"user_message","data":{…}}` — and that is the
+/// overwhelming majority of every real file. `inject_context_impl`
+/// (`server/session/messaging.rs`) and both fork handlers append
+/// [`LogEvent`] instead — `{"type":"user","ts":…,"content":…}`. Neither
+/// writer knows about the other, so a reader that understands only one
+/// shape silently drops the rest of the file. That was the bug this type
+/// exists to make unrepresentable.
+#[derive(Debug, Clone)]
+pub enum SessionLogLine {
+    /// The daemon's broadcast event, as persisted.
+    Wire(SessionEventMessage),
+    /// The presentation-shaped event written by inject-context and fork.
+    View(LogEvent),
+}
+
+/// Reads only the discriminator, so neither full parse is attempted twice.
+#[derive(Deserialize)]
+struct LineTypeProbe {
+    #[serde(rename = "type")]
+    kind: Option<String>,
+}
+
+impl SessionLogLine {
+    /// Parse one JSONL line.
+    ///
+    /// Discriminated on `type` rather than `#[serde(untagged)]`: untagged
+    /// reports "data did not match any variant" without saying which shape
+    /// it tried, and it would run `LogEvent`'s 16-way tag against every
+    /// wire line before failing. `"event"` is `SessionEventMessage`'s
+    /// hardcoded `msg_type` (`SessionEventMessage::new`) and is not a `LogEvent` tag, so
+    /// the split is unambiguous. `"replay_event"` (`replay.rs`) never
+    /// reaches `session.jsonl`, but accept it so a hand-copied recording
+    /// line does not read as a broken `LogEvent` tag.
+    pub fn from_jsonl(line: &str) -> Result<Self, serde_json::Error> {
+        let probe: LineTypeProbe = serde_json::from_str(line)?;
+        match probe.kind.as_deref() {
+            Some("event" | "replay_event") => serde_json::from_str(line).map(SessionLogLine::Wire),
+            _ => serde_json::from_str(line).map(SessionLogLine::View),
+        }
+    }
+}
+
+/// Project a persisted [`SessionEventMessage`] onto the presentation type
+/// every reader already matches on.
+///
+/// Only the events `should_persist` (`server/core.rs`) admits can reach
+/// a session log, so only those are mapped. `None` means "carries no
+/// conversation content" — an ordinary outcome, not a parse failure, so
+/// callers must not warn on it.
+pub fn wire_to_log_event(msg: &SessionEventMessage) -> Option<LogEvent> {
+    // Events reaching the persist task via `emit_event` are stamped
+    // (`event_emitter.rs`'s `stamp_event`); the ~15 direct `event_tx.send` sites are
+    // not, so `timestamp` is genuinely absent on some real lines.
+    // `Utc::now()` is the fail-safe fallback: `handle_session_cleanup`
+    // (`server/observe.rs`) deletes sessions whose newest event predates
+    // a cutoff, so a fabricated-recent stamp keeps a session, where the
+    // epoch would delete one. Deriving the stamp from the session id — which
+    // encodes date and time to the minute — was considered and rejected: it
+    // is per-session, not per-event, and buys nothing `.max()` does not
+    // already get from the stamped majority.
+    let ts = msg.timestamp.unwrap_or_else(Utc::now);
+    let data = &msg.data;
+    let text = |key: &str| data.get(key).and_then(Value::as_str).map(str::to_string);
+
+    match msg.event.as_str() {
+        "user_message" => Some(LogEvent::User {
+            ts,
+            content: text("content")?,
+        }),
+        "thinking" => Some(LogEvent::Thinking {
+            ts,
+            content: text("content")?,
+        }),
+        "message_complete" => Some(LogEvent::Assistant {
+            ts,
+            content: text("full_response")?,
+            // Not carried by the payload (`SessionEventMessage::message_complete` writes only
+            // message_id, full_response and usage). `parse_session_log`
+            // fills it from the session's last `model_switched`.
+            model: None,
+            tokens: wire_token_usage(data),
+        }),
+        "tool_call" => Some(LogEvent::ToolCall {
+            ts,
+            id: text("call_id")?,
+            name: text("tool").unwrap_or_default(),
+            args: data.get("args").cloned().unwrap_or(Value::Null),
+        }),
+        "tool_result" => Some(LogEvent::ToolResult {
+            ts,
+            id: text("call_id")?,
+            // `data.result` is an arbitrary `Value` (`SessionEventMessage::tool_result`);
+            // `LogEvent::ToolResult.result` is a String. Unwrap the common
+            // string case rather than re-quoting it.
+            result: match data.get("result") {
+                Some(Value::String(s)) => s.clone(),
+                Some(other) => other.to_string(),
+                None => String::new(),
+            },
+            // Truncation is applied before the event is emitted, so the
+            // wire form carries no marker to recover. Reporting `false`
+            // is honest about what the log knows.
+            truncated: false,
+            full_size: None,
+            error: text("error"),
+        }),
+        // Injected context is part of the turn's record: without it a
+        // resumed transcript cannot say which notes grounded the answer.
+        // `server/core.rs` persists it for exactly that reason.
+        "precognition_complete" => Some(LogEvent::System {
+            ts,
+            content: format!(
+                "Context injected: {} note(s) for \"{}\"",
+                data.get("notes_count").and_then(Value::as_u64).unwrap_or(0),
+                text("query_summary").unwrap_or_default(),
+            ),
+        }),
+        // `segment_complete` is a prefix of the same turn's
+        // `message_complete.full_response` — `segment_complete`'s own doc comment says so outright
+        // ("`message_complete` still carries the WHOLE turn's accumulated
+        // text"). Mapping both would print every turn twice.
+        // `model_switched` is consumed by `parse_session_log` for the model
+        // attribution, not rendered on its own. `ended` is lifecycle
+        // bookkeeping with no conversation content.
+        _ => None,
+    }
+}
+
+/// The canonical [`TokenUsage`] out of a `message_complete` payload.
+///
+/// `SessionEventMessage::message_complete` flattens all
+/// five canonical fields into `data`, so the wire form carries strictly more
+/// accounting than the two-field `{in,out}` struct this replaces. The three
+/// required fields are written together or not at all, so any one being
+/// absent means the turn recorded no usage.
+fn wire_token_usage(data: &Value) -> Option<TokenUsage> {
+    let at = |key: &str| data.get(key).and_then(Value::as_u64).map(|n| n as u32);
+    Some(TokenUsage {
+        prompt_tokens: at("prompt_tokens")?,
+        completion_tokens: at("completion_tokens")?,
+        total_tokens: at("total_tokens")?,
+        cache_read_tokens: at("cache_read_tokens"),
+        cache_creation_tokens: at("cache_creation_tokens"),
+    })
+}
+
+/// Parse a whole session log into presentation events.
+///
+/// Pure `&str -> Vec<LogEvent>` so the async file-backed reader
+/// (`observe::load_events`) and the sync in-memory one
+/// (`observe::rebuild::rebuild_tree_from_str`) share one parser instead of
+/// the two divergent line loops they had — which is how only one of them
+/// would have been fixed.
+///
+/// A line that parses as neither shape warns and is skipped, keeping a
+/// partially-corrupt log recoverable. A line that parses but maps to no
+/// presentation event is skipped **silently**: a new persisted event kind is
+/// not corruption, and warning on it would put a line in the log for every
+/// `segment_complete` of every turn.
+pub fn parse_session_log(jsonl: &str) -> Vec<LogEvent> {
+    let mut events = Vec::new();
+    // The model a turn ran under is announced once, by `model_switched`,
+    // and not repeated on each `message_complete`. Carry it forward so
+    // `## Assistant (model)` in the markdown renderer and `[assistant
+    // (model)]` in `cru session show` say something true. Turns before the
+    // first switch keep `None`: a session's *starting* model is never
+    // emitted as an event, and inventing one would be worse than omitting it.
+    let mut current_model: Option<String> = None;
+
+    for (line_no, line) in jsonl.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        match SessionLogLine::from_jsonl(trimmed) {
+            Ok(SessionLogLine::Wire(msg)) => {
+                if msg.event == "model_switched" {
+                    current_model = msg
+                        .data
+                        .get("model_id")
+                        .and_then(Value::as_str)
+                        .map(str::to_string);
+                }
+                if let Some(mut event) = wire_to_log_event(&msg) {
+                    if let LogEvent::Assistant { model, .. } = &mut event {
+                        *model = current_model.clone();
+                    }
+                    events.push(event);
+                }
+            }
+            Ok(SessionLogLine::View(event)) => events.push(event),
+            Err(e) => {
+                tracing::warn!(
+                    line = line_no + 1,
+                    error = %e,
+                    "skipping unparseable session log line"
+                );
+            }
+        }
+    }
+
+    events
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -513,21 +722,24 @@ mod tests {
     }
 
     #[test]
-    fn test_assistant_event_json() {
+    fn assistant_event_json_carries_canonical_token_fields() {
         let event = LogEvent::assistant_with_model(
             "Hi there!",
             "claude-3-haiku",
             Some(TokenUsage {
-                input: 10,
-                output: 5,
+                prompt_tokens: 10,
+                completion_tokens: 5,
+                total_tokens: 15,
+                cache_read_tokens: None,
+                cache_creation_tokens: None,
             }),
         );
         let json = event.to_jsonl().unwrap();
 
         assert!(json.contains("\"type\":\"assistant\""));
         assert!(json.contains("\"model\":\"claude-3-haiku\""));
-        assert!(json.contains("\"in\":10"));
-        assert!(json.contains("\"out\":5"));
+        assert!(json.contains("\"prompt_tokens\":10"));
+        assert!(json.contains("\"completion_tokens\":5"));
     }
 
     #[test]
@@ -612,11 +824,16 @@ mod tests {
 
     #[test]
     fn test_parse_example_jsonl() {
-        // From the spec
+        // From the spec. The `assistant` line's `tokens` used to read
+        // `{"in":10,"out":5}`, which is *not* a compatibility requirement: no
+        // production writer ever emitted a `tokens` field at all
+        // (`LogEvent::assistant`, the constructor `inject_context` and both
+        // fork paths use, sets `tokens: None`), so that shape never reached
+        // disk. It is written here in the canonical field names.
         let lines = [
             r#"{"ts":"2026-01-04T15:30:00Z","type":"system","content":"You are a helpful assistant..."}"#,
             r#"{"ts":"2026-01-04T15:30:01Z","type":"user","content":"Hello"}"#,
-            r#"{"ts":"2026-01-04T15:30:02Z","type":"assistant","content":"Hi!","model":"claude-3-haiku","tokens":{"in":10,"out":5}}"#,
+            r#"{"ts":"2026-01-04T15:30:02Z","type":"assistant","content":"Hi!","model":"claude-3-haiku","tokens":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}"#,
             r#"{"ts":"2026-01-04T15:30:03Z","type":"tool_call","id":"tc_001","name":"read_file","args":{"path":"foo.rs"}}"#,
             r#"{"ts":"2026-01-04T15:30:04Z","type":"tool_result","id":"tc_001","result":"fn main()...","truncated":false}"#,
             r#"{"ts":"2026-01-04T15:30:05Z","type":"error","message":"Rate limited","recoverable":true}"#,

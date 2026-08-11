@@ -1,16 +1,18 @@
 //! End-to-end tests for session logging and markdown export
 //!
 //! Tests the full pipeline:
-//! 1. Create session → Append events (JSONL)
+//! 1. Write a session log (JSONL)
 //! 2. Load events back (JSONL roundtrip)
 //! 3. Export to Markdown (both imperative and serde-based)
 //! 4. Verify content correctness
 
+use chrono::Utc;
 use crucible_daemon::{
     events::TokenUsage, load_events, render_to_markdown, serde_md, LogEvent, RenderOptions,
-    SessionType, SessionWriter,
+    SessionId, SessionType,
 };
 use serde_json::json;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 /// Create a sample conversation for testing
@@ -21,7 +23,13 @@ fn sample_conversation() -> Vec<LogEvent> {
         LogEvent::assistant_with_model(
             "You can use std::fs::read_to_string() to read a file as a String:\n\n```rust\nuse std::fs;\n\nlet content = fs::read_to_string(\"path/to/file.txt\")?;\nprintln!(\"{}\", content);\n```\n\nThis will return the entire file contents as a String.",
             "claude-3-haiku",
-            Some(TokenUsage { input: 25, output: 75 }),
+            Some(TokenUsage {
+                prompt_tokens: 25,
+                completion_tokens: 75,
+                total_tokens: 100,
+                cache_read_tokens: Some(12),
+                cache_creation_tokens: None,
+            }),
         ),
         LogEvent::user("Can you show me with an actual file?"),
         LogEvent::tool_call("tc_001", "read_file", json!({"path": "Cargo.toml"})),
@@ -30,24 +38,36 @@ fn sample_conversation() -> Vec<LogEvent> {
     ]
 }
 
+/// Write a session log directly. `SessionWriter` used to do this, but it
+/// had no production callers, so every test that used it was round-tripping
+/// against a format the daemon never produced.
+async fn write_session_log(sessions_dir: &Path, lines: &[String]) -> PathBuf {
+    let id = SessionId::new(SessionType::Chat, Utc::now());
+    let session_dir = sessions_dir.join(id.as_str());
+    tokio::fs::create_dir_all(&session_dir).await.unwrap();
+    tokio::fs::write(session_dir.join("session.jsonl"), lines.join("\n") + "\n")
+        .await
+        .unwrap();
+    session_dir
+}
+
+/// `LogEvent::to_jsonl` for a whole conversation. These tests cover the `View`
+/// branch of the reader and the markdown renderers; both stay in scope, so the
+/// events stay `LogEvent` and are serialized at the call site.
+fn as_jsonl(events: &[LogEvent]) -> Vec<String> {
+    events.iter().map(|e| e.to_jsonl().unwrap()).collect()
+}
+
 #[tokio::test]
 async fn test_jsonl_roundtrip() {
     let dir = TempDir::new().unwrap();
     let sessions_dir = dir.path().join("sessions");
 
-    // Create session and append events
-    let mut writer = SessionWriter::create(&sessions_dir, SessionType::Chat)
-        .await
-        .unwrap();
-
     let original_events = sample_conversation();
-    for event in &original_events {
-        writer.append(event.clone()).await.unwrap();
-    }
-    writer.flush().await.unwrap();
+    let session_dir = write_session_log(&sessions_dir, &as_jsonl(&original_events)).await;
 
     // Load events back
-    let loaded_events = load_events(writer.session_dir()).await.unwrap();
+    let loaded_events = load_events(&session_dir).await.unwrap();
 
     // Verify count and content
     assert_eq!(loaded_events.len(), original_events.len());
@@ -75,18 +95,10 @@ async fn test_markdown_export_imperative() {
     let dir = TempDir::new().unwrap();
     let sessions_dir = dir.path().join("sessions");
 
-    // Create session with events
-    let mut writer = SessionWriter::create(&sessions_dir, SessionType::Chat)
-        .await
-        .unwrap();
-
-    for event in sample_conversation() {
-        writer.append(event).await.unwrap();
-    }
-    writer.flush().await.unwrap();
+    let session_dir = write_session_log(&sessions_dir, &as_jsonl(&sample_conversation())).await;
 
     // Load and render to markdown
-    let events = load_events(writer.session_dir()).await.unwrap();
+    let events = load_events(&session_dir).await.unwrap();
     let md = render_to_markdown(&events, &RenderOptions::default());
 
     // Verify markdown structure
@@ -117,18 +129,10 @@ async fn test_markdown_export_serde() {
     let dir = TempDir::new().unwrap();
     let sessions_dir = dir.path().join("sessions");
 
-    // Create session with events
-    let mut writer = SessionWriter::create(&sessions_dir, SessionType::Chat)
-        .await
-        .unwrap();
-
-    for event in sample_conversation() {
-        writer.append(event).await.unwrap();
-    }
-    writer.flush().await.unwrap();
+    let session_dir = write_session_log(&sessions_dir, &as_jsonl(&sample_conversation())).await;
 
     // Load and render via serde_md
-    let events = load_events(writer.session_dir()).await.unwrap();
+    let events = load_events(&session_dir).await.unwrap();
     let md = serde_md::to_string_seq(&events).unwrap();
 
     // Verify markdown structure (serde variant)
@@ -148,43 +152,40 @@ async fn test_session_resume_append() {
     let sessions_dir = dir.path().join("sessions");
 
     // Create initial session
-    let id = {
-        let mut writer = SessionWriter::create(&sessions_dir, SessionType::Chat)
+    let session_dir = write_session_log(
+        &sessions_dir,
+        &as_jsonl(&[
+            LogEvent::system("System prompt"),
+            LogEvent::user("Initial message"),
+        ]),
+    )
+    .await;
+
+    let jsonl_path = session_dir.join("session.jsonl");
+    assert_eq!(
+        tokio::fs::read_to_string(&jsonl_path)
             .await
-            .unwrap();
+            .unwrap()
+            .lines()
+            .count(),
+        2
+    );
 
-        writer
-            .append(LogEvent::system("System prompt"))
-            .await
-            .unwrap();
-        writer
-            .append(LogEvent::user("Initial message"))
-            .await
-            .unwrap();
-        writer.flush().await.unwrap();
-
-        writer.id().clone()
-    };
-
-    // Reopen and append (simulating resume)
-    {
-        let mut writer = SessionWriter::open(&sessions_dir, id.clone())
-            .await
-            .unwrap();
-
-        assert_eq!(writer.event_count(), 2);
-
-        writer
-            .append(LogEvent::assistant("Resumed response"))
-            .await
-            .unwrap();
-        writer.flush().await.unwrap();
-
-        assert_eq!(writer.event_count(), 3);
-    }
+    // Append (simulating resume). This is what `append_event`
+    // (`session_storage.rs`) does: open for append, write one line.
+    let resumed = LogEvent::assistant("Resumed response").to_jsonl().unwrap();
+    let mut file = tokio::fs::OpenOptions::new()
+        .append(true)
+        .open(&jsonl_path)
+        .await
+        .unwrap();
+    tokio::io::AsyncWriteExt::write_all(&mut file, format!("{resumed}\n").as_bytes())
+        .await
+        .unwrap();
+    drop(file);
 
     // Verify full session
-    let events = load_events(sessions_dir.join(id.as_str())).await.unwrap();
+    let events = load_events(&session_dir).await.unwrap();
     assert_eq!(events.len(), 3);
 
     match &events[2] {
@@ -200,23 +201,17 @@ async fn test_error_event_roundtrip() {
     let dir = TempDir::new().unwrap();
     let sessions_dir = dir.path().join("sessions");
 
-    let mut writer = SessionWriter::create(&sessions_dir, SessionType::Chat)
-        .await
-        .unwrap();
-
-    // Append error events
-    writer
-        .append(LogEvent::error("Rate limited", true))
-        .await
-        .unwrap();
-    writer
-        .append(LogEvent::error("Connection lost", false))
-        .await
-        .unwrap();
-    writer.flush().await.unwrap();
+    let session_dir = write_session_log(
+        &sessions_dir,
+        &as_jsonl(&[
+            LogEvent::error("Rate limited", true),
+            LogEvent::error("Connection lost", false),
+        ]),
+    )
+    .await;
 
     // Load and verify
-    let events = load_events(writer.session_dir()).await.unwrap();
+    let events = load_events(&session_dir).await.unwrap();
 
     match &events[0] {
         LogEvent::Error {
@@ -248,22 +243,18 @@ async fn test_tool_truncated_roundtrip() {
     let dir = TempDir::new().unwrap();
     let sessions_dir = dir.path().join("sessions");
 
-    let mut writer = SessionWriter::create(&sessions_dir, SessionType::Chat)
-        .await
-        .unwrap();
-
-    writer
-        .append(LogEvent::tool_result_truncated(
+    let session_dir = write_session_log(
+        &sessions_dir,
+        &as_jsonl(&[LogEvent::tool_result_truncated(
             "tc_002",
             "...partial content...",
             50000,
-        ))
-        .await
-        .unwrap();
-    writer.flush().await.unwrap();
+        )]),
+    )
+    .await;
 
     // Load and verify truncated flag preserved
-    let events = load_events(writer.session_dir()).await.unwrap();
+    let events = load_events(&session_dir).await.unwrap();
 
     match &events[0] {
         LogEvent::ToolResult {
@@ -304,17 +295,10 @@ async fn test_jsonl_file_is_valid_ndjson() {
     let dir = TempDir::new().unwrap();
     let sessions_dir = dir.path().join("sessions");
 
-    let mut writer = SessionWriter::create(&sessions_dir, SessionType::Chat)
-        .await
-        .unwrap();
-
-    for event in sample_conversation() {
-        writer.append(event).await.unwrap();
-    }
-    writer.flush().await.unwrap();
+    let session_dir = write_session_log(&sessions_dir, &as_jsonl(&sample_conversation())).await;
 
     // Read raw file content
-    let jsonl_content = tokio::fs::read_to_string(writer.jsonl_path())
+    let jsonl_content = tokio::fs::read_to_string(session_dir.join("session.jsonl"))
         .await
         .unwrap();
 
@@ -339,4 +323,27 @@ async fn test_jsonl_file_is_valid_ndjson() {
             );
         }
     }
+}
+
+/// The `Wire` branch, end to end through the renderer.
+#[tokio::test]
+async fn wire_format_log_renders_to_markdown() {
+    let dir = TempDir::new().unwrap();
+    let sessions_dir = dir.path().join("sessions");
+    let fixture =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/fixtures/session_log_wire.jsonl");
+    let lines: Vec<String> = std::fs::read_to_string(&fixture)
+        .unwrap()
+        .lines()
+        .map(str::to_string)
+        .collect();
+    let session_dir = write_session_log(&sessions_dir, &lines).await;
+
+    let events = load_events(&session_dir).await.unwrap();
+    let md = render_to_markdown(&events, &RenderOptions::default());
+
+    assert!(md.contains("## User"), "{md}");
+    assert!(md.contains("how do I read a file"), "{md}");
+    assert!(md.contains("Use std::fs::read_to_string."), "{md}");
+    assert!(md.contains("*Tokens: 25 in, 75 out, 12 cached*"), "{md}");
 }

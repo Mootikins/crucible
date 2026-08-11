@@ -109,12 +109,18 @@ fn render_event(output: &mut String, event: &LogEvent, options: &RenderOptions) 
 
             if options.include_tokens {
                 if let Some(tokens) = tokens {
-                    writeln!(
+                    write!(
                         output,
-                        "*Tokens: {} in, {} out*\n",
-                        tokens.input, tokens.output
+                        "*Tokens: {} in, {} out",
+                        tokens.prompt_tokens, tokens.completion_tokens
                     )
                     .unwrap();
+                    // Cache accounting only when the provider reported it —
+                    // "0 cached" and "not measured" are different claims.
+                    if let Some(cached) = tokens.cache_read_tokens {
+                        write!(output, ", {cached} cached").unwrap();
+                    }
+                    writeln!(output, "*\n").unwrap();
                 }
             }
         }
@@ -377,8 +383,11 @@ mod tests {
             "Hi there!",
             "claude-3-haiku",
             Some(TokenUsage {
-                input: 10,
-                output: 5,
+                prompt_tokens: 10,
+                completion_tokens: 5,
+                total_tokens: 15,
+                cache_read_tokens: None,
+                cache_creation_tokens: None,
             }),
         )];
         let md = render_to_markdown(&events, &RenderOptions::default());
@@ -388,14 +397,38 @@ mod tests {
         assert!(md.contains("*Tokens: 10 in, 5 out*"));
     }
 
+    /// Cache reads are reported only when the provider measured them, so a
+    /// turn that has them says so and a turn that does not stays silent
+    /// rather than claiming zero.
+    #[test]
+    fn render_reports_cache_reads_when_the_provider_measured_them() {
+        let events = vec![LogEvent::assistant_with_model(
+            "Hi!",
+            "claude-sonnet-5",
+            Some(TokenUsage {
+                prompt_tokens: 100,
+                completion_tokens: 20,
+                total_tokens: 120,
+                cache_read_tokens: Some(80),
+                cache_creation_tokens: None,
+            }),
+        )];
+        let md = render_to_markdown(&events, &RenderOptions::default());
+
+        assert!(md.contains("*Tokens: 100 in, 20 out, 80 cached*"), "{md}");
+    }
+
     #[test]
     fn test_render_without_tokens() {
         let events = vec![LogEvent::assistant_with_model(
             "Hi!",
             "model",
             Some(TokenUsage {
-                input: 10,
-                output: 5,
+                prompt_tokens: 10,
+                completion_tokens: 5,
+                total_tokens: 15,
+                cache_read_tokens: None,
+                cache_creation_tokens: None,
             }),
         )];
         let md = render_to_markdown(
@@ -516,8 +549,11 @@ mod tests {
                 "2+2 equals 4.",
                 "gpt-4",
                 Some(TokenUsage {
-                    input: 20,
-                    output: 10,
+                    prompt_tokens: 20,
+                    completion_tokens: 10,
+                    total_tokens: 30,
+                    cache_read_tokens: None,
+                    cache_creation_tokens: None,
                 }),
             ),
         ];

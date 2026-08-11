@@ -277,7 +277,7 @@ impl OilChatRunner {
                     ChatAppMsg::ModeSynced(ref mode_id) if !params.app.knows_mode(mode_id) => {
                         let _ = params.msg_tx.send(ChatAppMsg::FetchModes);
                     }
-                    ChatAppMsg::McpStatusLoaded(_) | ChatAppMsg::PluginStatusLoaded(_) => {
+                    ChatAppMsg::PluginStatusLoaded(_) => {
                         params.app.on_message(msg.clone());
                     }
                     ChatAppMsg::SetThinkingBudget(budget) => {

@@ -1,0 +1,5 @@
+{"type":"event","session_id":"chat-2026-08-11T2007-bnks2n","event":"user_message","data":{"message_id":"m1","content":"how do I read a file"},"timestamp":"2026-08-11T20:07:43.166769205Z","seq":2}
+{"type":"event","session_id":"chat-2026-08-11T2007-bnks2n","event":"thinking","data":{"content":"consider std::fs"},"timestamp":"2026-08-11T20:07:43.166772495Z","seq":3}
+{"type":"event","session_id":"chat-2026-08-11T2007-bnks2n","event":"tool_call","data":{"call_id":"c1","tool":"read_file","args":{"path":"Cargo.toml"},"display":{"kind":"path","primary":"Cargo.toml"}},"timestamp":"2026-08-11T20:07:43.166773425Z","seq":4}
+{"type":"event","session_id":"chat-2026-08-11T2007-bnks2n","event":"tool_result","data":{"call_id":"c1","tool":"read_file","result":"[package]\nname = \"example\"","terminate":false},"timestamp":"2026-08-11T20:07:43.166774135Z","seq":5}
+{"type":"event","session_id":"chat-2026-08-11T2007-bnks2n","event":"message_complete","data":{"message_id":"m1","full_response":"Use std::fs::read_to_string.","prompt_tokens":25,"completion_tokens":75,"total_tokens":100,"cache_read_tokens":12},"timestamp":"2026-08-11T20:07:43.166774845Z","seq":6}

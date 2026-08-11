@@ -47,6 +47,7 @@ still real event streams, just hand-assembled rather than recorded.
 | `acp_parity_read_internal.jsonl` / `acp_parity_read_delegated.jsonl` | The same, over `read_file`. The edit pair's result is one short line, which every tool's card collapses the same way; a read's is not, so this pair is the one that reaches the name-keyed summary table (divergence **A4**). |
 | `parity-test.jsonl`, `reproduce.jsonl`, `reproduce-formatting.jsonl` | `session_event_stream_tests.rs` — rendered `ThinkingDelta` counts, pinning end-of-stream reasoning-replay suppression. |
 | `permission_flow.jsonl`, `undo_flow.jsonl` | `user_story_tests/` permission and undo stories. |
+| `session_log_wire.jsonl` | A real `session.jsonl` — the bytes `persist_event` appends, captured off a live in-process `Server`. `crucible-daemon`'s `server::tests::session_log_capture::the_committed_session_log_is_what_the_daemon_writes` re-captures it every run and fails when the daemon stops producing it; regenerate by deleting the file, running that test once, reading the `.new` it drops, and only then moving it into place. Also the input for `crucible-cli`'s `setup_test_session` and `crucible-daemon`'s `wire_format_log_renders_to_markdown`, both of which used to build their input with `SessionWriter` — a writer no production path ever called, which is how a read path that could not read the real format stayed green. |
 
 The four `acp_parity_*` files are **not** transcripts of a real `claude`
 session. They are the daemon's own broadcast output, driven by

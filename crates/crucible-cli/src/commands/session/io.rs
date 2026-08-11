@@ -9,17 +9,19 @@ pub(super) fn sessions_dir(config: &CliConfig) -> PathBuf {
     config.kiln_path.join(".crucible").join("sessions")
 }
 
+/// Fallback for when the daemon is unreachable; the daemon-side
+/// `session.load_events` RPC is the normal path (`show.rs`).
+///
+/// Delegates to `crucible_daemon::parse_session_log` rather than parsing
+/// here. The hand-rolled `filter_map(… .ok())` this replaces dropped every
+/// wire-format line without even a warning, which is why `cru session list`
+/// reported `(0 messages)` for every session.
 pub(super) async fn read_session_events(session_dir: &std::path::Path) -> Result<Vec<LogEvent>> {
     let jsonl_path = session_dir.join("session.jsonl");
     let content = fs::read_to_string(&jsonl_path)
         .await
         .map_err(|e| anyhow!("Failed to read session events: {}", e))?;
-    Ok(content
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .filter_map(|line| serde_json::from_str::<LogEvent>(line).ok())
-        .collect())
+    Ok(crucible_daemon::parse_session_log(&content))
 }
 
 pub(super) async fn list_session_dirs(sessions_path: &std::path::Path) -> Result<Vec<String>> {

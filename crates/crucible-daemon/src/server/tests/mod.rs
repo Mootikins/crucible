@@ -23,9 +23,25 @@ mod persist_event;
 mod persisted_session;
 mod review_watch;
 mod rpc_basic;
+mod session_log_capture;
 mod subscription;
 mod truncation;
 mod trust;
+
+/// Poll until the session log has at least `n` lines. The persist task is
+/// a separate tokio task, so there is no synchronous point to await; a
+/// fixed sleep would be a timing guess.
+pub(super) async fn wait_for_lines(path: &Path, n: usize) -> String {
+    for _ in 0..100 {
+        if let Ok(content) = tokio::fs::read_to_string(path).await {
+            if content.lines().filter(|l| !l.trim().is_empty()).count() >= n {
+                return content;
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    panic!("session log at {} never reached {n} lines", path.display());
+}
 
 pub(super) fn build_llm_config(
     default_key: &str,

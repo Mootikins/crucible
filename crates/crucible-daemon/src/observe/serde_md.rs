@@ -360,19 +360,18 @@ impl ser::SerializeStruct for StructSerializer<'_> {
             "tool_result" | "ToolResult" => render_tool_result(&mut self.ser.output, &self.fields)?,
             "summary" | "Summary" => render_summary(&mut self.ser.output, &self.fields)?,
             "error" | "Error" => render_error(&mut self.ser.output, &self.fields)?,
+            // Field names are the canonical `crucible_core` ones. They used to
+            // be the two-field `{in,out}` copy this module's `TokenUsage`
+            // defined; nothing on disk ever carried those, so there is no
+            // fallback to keep.
             "TokenUsage" => {
                 let empty = String::new();
-                let input = self
-                    .fields
-                    .get("in")
-                    .or(self.fields.get("input"))
-                    .unwrap_or(&empty);
-                let output = self
-                    .fields
-                    .get("out")
-                    .or(self.fields.get("output"))
-                    .unwrap_or(&empty);
+                let input = self.fields.get("prompt_tokens").unwrap_or(&empty);
+                let output = self.fields.get("completion_tokens").unwrap_or(&empty);
                 write!(self.ser.output, "{input} in / {output} out").map_err(Error::from)?;
+                if let Some(cached) = self.fields.get("cache_read_tokens") {
+                    write!(self.ser.output, " / {cached} cached").map_err(Error::from)?;
+                }
             }
             // Unknown: fall back to generic key-value
             _ => {
@@ -595,15 +594,21 @@ mod tests {
             "Response text",
             "claude-3-haiku",
             Some(TokenUsage {
-                input: 100,
-                output: 50,
+                prompt_tokens: 100,
+                completion_tokens: 50,
+                total_tokens: 150,
+                cache_read_tokens: None,
+                cache_creation_tokens: None,
             }),
         );
         let md = to_string(&event).unwrap();
 
         assert!(md.contains("## Assistant (claude-3-haiku)"));
         assert!(md.contains("Response text"));
-        assert!(md.contains("Tokens:"));
+        // Asserting the numbers, not just the label: the label survived the
+        // move to canonical field names on its own, so `contains("Tokens:")`
+        // would have passed against `*Tokens:  in /  out*`.
+        assert!(md.contains("*Tokens: 100 in / 50 out*"), "{md}");
     }
 
     #[test]

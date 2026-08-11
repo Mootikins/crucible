@@ -2,9 +2,13 @@
 //!
 //! Today's session logs record a linear conversation — no fan-out, no
 //! branch, no resume-to-earlier-turn. The rebuilder reflects that: it
-//! walks the JSONL in order and appends each event as a child of the
+//! walks the log in order and appends each event as a child of the
 //! current leaf, producing a degenerate single-spine tree that matches
 //! the session's lived order.
+//!
+//! Parsing is not done here. [`crate::observe::parse_session_log`] turns the
+//! JSONL into [`LogEvent`]s — it is the only parser, and it is the one that
+//! knows `session.jsonl` holds two shapes. There is no second one to find.
 //!
 //! If a future `LogEvent` gains optional `node_id` / `parent_id`
 //! fields, this module is the place to honour them and rebuild actual
@@ -33,17 +37,8 @@ pub async fn rebuild_tree_from_jsonl(path: &Path) -> Result<ConversationTree> {
 /// Core rebuilder. Exposed as a pure function for testability.
 pub fn rebuild_tree_from_str(jsonl: &str) -> ConversationTree {
     let mut tree = ConversationTree::new();
-    for (line_no, line) in jsonl.lines().enumerate() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        match serde_json::from_str::<LogEvent>(trimmed) {
-            Ok(event) => apply_event_to_tree(&mut tree, &event),
-            Err(e) => {
-                tracing::warn!(line = line_no + 1, error = %e, "skipping malformed log line");
-            }
-        }
+    for event in crate::observe::events::parse_session_log(jsonl) {
+        apply_event_to_tree(&mut tree, &event);
     }
     tree
 }
@@ -189,34 +184,54 @@ this is not json
         assert_eq!(tree.len(), 3); // root + user + agent
     }
 
+    /// `get_or_rebuild_session_tree` (`agent_manager/mod.rs`) exists so a
+    /// resumed session's first-user-message gate sees the session's real
+    /// history. It reads the same file `persist_event` writes, so it has to
+    /// understand the same shape.
+    #[test]
+    fn rebuild_tree_from_str_reads_the_wire_format_the_daemon_writes() {
+        let jsonl = concat!(
+            r#"{"type":"event","session_id":"s1","event":"user_message","data":{"message_id":"m1","content":"hello"},"timestamp":"2026-08-11T12:00:01Z"}"#,
+            "\n",
+            r#"{"type":"event","session_id":"s1","event":"message_complete","data":{"message_id":"m1","full_response":"hi there"},"timestamp":"2026-08-11T12:00:02Z"}"#,
+            "\n",
+        );
+
+        let tree = rebuild_tree_from_str(jsonl);
+        let path = tree.path_to_here(tree.current());
+
+        assert_eq!(path.len(), 3, "root + user + agent; path = {path:?}");
+        assert!(matches!(
+            &tree.get(path[1]).content,
+            NodeContent::User { text } if text == "hello"
+        ));
+        assert!(matches!(
+            &tree.get(path[2]).content,
+            NodeContent::Agent { text } if text == "hi there"
+        ));
+    }
+
     #[tokio::test]
-    async fn roundtrip_session_writer_to_rebuilder() {
-        use crate::observe::id::SessionType;
-        use crate::observe::session::SessionWriter;
+    async fn roundtrip_persisted_log_to_rebuilder() {
         use tempfile::TempDir;
 
         let tmp = TempDir::new().unwrap();
-        let mut writer = SessionWriter::create(tmp.path(), SessionType::Chat)
+        let session_dir = tmp.path().join("chat-20260421-0000-abcd");
+        tokio::fs::create_dir_all(&session_dir).await.unwrap();
+
+        let lines: Vec<String> = [
+            LogEvent::init_with_details("test-session", Some(".".into()), Some("mock".into())),
+            LogEvent::user("hello"),
+            LogEvent::assistant("hi there"),
+            LogEvent::user("bye"),
+            LogEvent::assistant("goodbye"),
+        ]
+        .iter()
+        .map(|e| e.to_jsonl().unwrap())
+        .collect();
+        tokio::fs::write(session_dir.join("session.jsonl"), lines.join("\n") + "\n")
             .await
             .unwrap();
-        writer
-            .append(LogEvent::init_with_details(
-                "test-session",
-                Some(".".into()),
-                Some("mock".into()),
-            ))
-            .await
-            .unwrap();
-        writer.append(LogEvent::user("hello")).await.unwrap();
-        writer
-            .append(LogEvent::assistant("hi there"))
-            .await
-            .unwrap();
-        writer.append(LogEvent::user("bye")).await.unwrap();
-        writer.append(LogEvent::assistant("goodbye")).await.unwrap();
-        // Writer flushes on drop.
-        let session_dir = writer.session_dir().to_path_buf();
-        drop(writer);
 
         let tree = rebuild_tree_from_jsonl(&session_dir.join("session.jsonl"))
             .await

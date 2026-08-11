@@ -105,10 +105,10 @@ pub use mcp_server::McpServerManager;
 pub use observe::SessionIndex;
 pub use observe::{events, id, indexer, markdown, serde_md, session, truncate};
 pub use observe::{
-    extract_session_content, list_sessions, load_events, render_to_markdown, truncate_for_log,
-    LogEvent, PermissionDecision, RenderOptions, SessionContent, SessionId, SessionIdError,
-    SessionMetadata, SessionType, SessionWriter, TokenUsage, TruncateResult,
-    DEFAULT_TRUNCATE_THRESHOLD,
+    extract_session_content, list_sessions, load_events, parse_session_log, render_to_markdown,
+    truncate_for_log, wire_to_log_event, LogEvent, PermissionDecision, RenderOptions,
+    SessionContent, SessionId, SessionIdError, SessionLogLine, SessionMetadata, SessionType,
+    TokenUsage, TruncateResult, DEFAULT_TRUNCATE_THRESHOLD,
 };
 pub use permission_bridge::DaemonPermissionGate;
 pub use project_manager::{ProjectError, ProjectManager};

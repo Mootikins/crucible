@@ -12,7 +12,23 @@
 //!
 //! # Event Types
 //!
-//! The JSONL log captures:
+//! `session.jsonl` holds **two** line shapes, and this module reads both. See
+//! [`SessionLogLine`] for why, and [`parse_session_log`] for the one parser
+//! that handles it.
+//!
+//! The wire shape — `{"type":"event","event":"<name>","data":{…}}` — is what
+//! `persist_event` (`server/core.rs`) appends, and is the overwhelming
+//! majority of every real file. Its `event` names are the ones `should_persist`
+//! (`server/core.rs`) admits:
+//! - `user_message`, `thinking`, `message_complete` - the conversation
+//! - `segment_complete` - a prefix of the same turn's `message_complete`
+//! - `tool_call`, `tool_result` - tool invocations and their outputs
+//! - `model_switched` - supplies the model attribution for later turns
+//! - `precognition_complete` - what context was injected
+//! - `ended` - lifecycle bookkeeping
+//!
+//! The view shape is a serialized [`LogEvent`], written by `inject_context_impl`
+//! (`server/session/messaging.rs`) and both fork handlers, and tagged on `type`:
 //! - `init` - Session initialization with metadata
 //! - `system` - System prompts and context injections
 //! - `user` - User messages
@@ -23,23 +39,25 @@
 //! - `tool_result` - Tool outputs (may be truncated)
 //! - `summary` - Context compaction summaries
 //! - `error` - Errors during session
+//! - `bash_*`, `subagent_*` - background task and subagent bookkeeping
 //!
 //! # Example
 //!
+//! This module is the **read** side. Writing is `persist_event`'s job, off the
+//! daemon's broadcast channel; nothing outside the daemon appends to a session
+//! log.
+//!
 //! ```no_run
-//! use crucible_daemon::{LogEvent, SessionType, SessionWriter};
+//! use crucible_daemon::{load_events, LogEvent};
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! // Create a new session
-//! let mut writer = SessionWriter::create(".crucible/sessions", SessionType::Chat).await?;
+//! let events = load_events(".crucible/sessions/chat-20260811-1200-abcd").await?;
 //!
-//! // Log events
-//! writer.append(LogEvent::system("You are helpful")).await?;
-//! writer.append(LogEvent::user("Hello!")).await?;
-//! writer.append(LogEvent::assistant("Hi there!")).await?;
-//!
-//! // Session ID can be used to resume later
-//! let id = writer.id().clone();
+//! for event in &events {
+//!     if let LogEvent::User { content, .. } = event {
+//!         println!("user said: {content}");
+//!     }
+//! }
 //! # Ok(())
 //! # }
 //! ```
@@ -55,11 +73,13 @@ pub mod session_index;
 pub mod truncate;
 
 // Re-exports for convenience
-pub use events::{LogEvent, PermissionDecision, TokenUsage};
+pub use events::{
+    parse_session_log, wire_to_log_event, LogEvent, PermissionDecision, SessionLogLine, TokenUsage,
+};
 pub use id::{SessionId, SessionIdError, SessionType};
 pub use indexer::{extract_session_content, SessionContent};
 pub use markdown::{render_to_markdown, RenderOptions};
-pub use session::{list_sessions, load_events, SessionError, SessionMetadata, SessionWriter};
+pub use session::{list_sessions, load_events, SessionError, SessionMetadata};
 pub use truncate::{truncate_for_log, TruncateResult, DEFAULT_TRUNCATE_THRESHOLD};
 
 pub use session_index::SessionIndex;
