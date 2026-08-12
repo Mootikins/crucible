@@ -217,12 +217,15 @@ fn has_balanced_emphasis(line: &str) -> bool {
     underscores % 2 == 0 && asterisks % 2 == 0
 }
 
-/// Truncate a line for display
+/// Truncate a line for display, counting chars rather than bytes.
+///
+/// A byte-offset cut panics mid-codepoint, and this runs inside the recovery path
+/// for an upstream markdown-it panic — an abort there loses the diagnostic.
 fn truncate_line(line: &str, max_len: usize) -> String {
-    if line.len() <= max_len {
+    if line.chars().count() <= max_len {
         line.to_string()
     } else {
-        format!("{}...", &line[..max_len])
+        format!("{}...", line.chars().take(max_len).collect::<String>())
     }
 }
 
@@ -269,5 +272,25 @@ mod tests {
 
         assert!(errors.is_empty());
         assert!(content.paragraphs.len() >= 2);
+    }
+
+    #[test]
+    fn truncate_line_measures_the_limit_in_chars() {
+        // 120 bytes but only 40 chars: under the limit, so it passes through whole.
+        // This runs inside the panic-recovery diagnostic, so a byte-offset cut here
+        // turned a recovered markdown-it panic into a process abort.
+        let line = "\u{65E5}".repeat(40);
+
+        assert_eq!(truncate_line(&line, 60), line);
+    }
+
+    #[test]
+    fn truncate_line_cuts_multibyte_lines_on_a_char_boundary() {
+        // Byte 60 falls inside a 日 here, which aborted the diagnostic outright.
+        let line = format!("x{}", "\u{65E5}".repeat(70));
+
+        let truncated = truncate_line(&line, 60);
+
+        assert_eq!(truncated, format!("x{}...", "\u{65E5}".repeat(59)));
     }
 }

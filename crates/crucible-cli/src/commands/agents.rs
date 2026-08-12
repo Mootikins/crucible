@@ -9,6 +9,9 @@ use std::path::{Path, PathBuf};
 use crate::cli::AgentsCommands;
 use crate::config::CliConfig;
 
+/// Width of the DESCRIPTION column in the `cru agents list` table.
+const DESCRIPTION_MAX_CHARS: usize = 35;
+
 /// Execute agent subcommand
 pub async fn execute(config: CliConfig, command: Option<AgentsCommands>) -> Result<()> {
     // When no subcommand is given, default to list
@@ -129,17 +132,25 @@ async fn list(config: &CliConfig, tag: Option<String>, format: String) -> Result
             println!("{:<25} {:<10} DESCRIPTION", "NAME", "VERSION");
             println!("{}", "-".repeat(70));
             for card in cards {
-                let desc = if card.description.len() > 35 {
-                    format!("{}...", &card.description[..32])
-                } else {
-                    card.description.clone()
-                };
-                println!("{:<25} {:<10} {}", card.name, card.version, desc);
+                println!(
+                    "{:<25} {:<10} {}",
+                    card.name,
+                    card.version,
+                    truncate_description(&card.description)
+                );
             }
         }
     }
 
     Ok(())
+}
+
+/// Fit an agent-card description into the `cru agents list` table column.
+///
+/// Truncates by chars, not bytes: descriptions are hand-authored frontmatter, so
+/// an em dash or an accent straddling the cut used to abort the whole command.
+fn truncate_description(description: &str) -> std::borrow::Cow<'_, str> {
+    crucible_oil::truncate_to_chars(description, DESCRIPTION_MAX_CHARS, true)
 }
 
 /// Show details of a specific agent card
@@ -366,6 +377,28 @@ You are a test agent.
             dir.join(format!("{}.md", name.to_lowercase().replace(" ", "-"))),
             content,
         )
+    }
+
+    #[test]
+    fn agents_list_truncates_description_on_a_char_boundary() {
+        // Hand-authored frontmatter routinely carries em dashes and accents.
+        // The em dash occupies bytes 31..34, so the old `&description[..32]`
+        // sliced through the middle of it and panicked. Keep that offset if you
+        // reword this fixture — it is what makes the test a regression test.
+        let description = "Screens and ranks applications \u{2014} reads r\u{e9}sum\u{e9}s";
+        let truncated = truncate_description(description);
+
+        assert!(truncated.starts_with("Screens and ranks"));
+        assert!(truncated.ends_with('\u{2026}'));
+        assert_eq!(truncated.chars().count(), DESCRIPTION_MAX_CHARS);
+        // No partial code point survived the cut.
+        assert!(!truncated.contains('\u{FFFD}'));
+    }
+
+    #[test]
+    fn agents_list_leaves_short_descriptions_alone() {
+        let description = "Résumé triage \u{2014} short enough";
+        assert_eq!(truncate_description(description), description);
     }
 
     #[test]

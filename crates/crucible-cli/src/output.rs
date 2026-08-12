@@ -1,6 +1,7 @@
 use anyhow::Result;
 use colored::Colorize;
 use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, Cell, Color, Table};
+use crucible_oil::truncate_to_chars;
 use serde_json;
 use std::io::IsTerminal;
 
@@ -20,6 +21,14 @@ pub struct SearchResultWithScore {
 pub fn is_interactive() -> bool {
     std::io::stdout().is_terminal()
 }
+
+/// Lines of note content a `--preview` block shows, in either format.
+const PREVIEW_MAX_LINES: usize = 2;
+/// Char budget for the preview cell in the bordered table.
+const PREVIEW_MAX_CHARS_TABLE: usize = 60;
+/// Char budget for the free-flowing plain preview block. Matches the cap
+/// `extract_snippet` already applies, so real snippets pass through untouched.
+const PREVIEW_MAX_CHARS_PLAIN: usize = 200;
 
 /// Format search results
 pub fn format_search_results(
@@ -55,9 +64,10 @@ fn format_as_plain(
             let preview = result
                 .content
                 .lines()
-                .take(3)
+                .take(PREVIEW_MAX_LINES)
                 .collect::<Vec<_>>()
                 .join("\n   ");
+            let preview = truncate_to_chars(&preview, PREVIEW_MAX_CHARS_PLAIN, true);
             output.push_str(&format!("   {}\n", preview.dimmed()));
         }
 
@@ -100,12 +110,13 @@ fn format_as_table(
         }
 
         if show_content {
-            let preview: String = result.content.lines().take(2).collect::<Vec<_>>().join(" ");
-            let truncated = if preview.len() > 60 {
-                format!("{}...", &preview[..60])
-            } else {
-                preview
-            };
+            let preview: String = result
+                .content
+                .lines()
+                .take(PREVIEW_MAX_LINES)
+                .collect::<Vec<_>>()
+                .join(" ");
+            let truncated = truncate_to_chars(&preview, PREVIEW_MAX_CHARS_TABLE, true);
             row.push(Cell::new(truncated).fg(Color::DarkGrey));
         }
 
@@ -294,8 +305,72 @@ mod tests {
 
         let output = format_search_results(&results, "table", false, true).unwrap();
 
-        // Should be truncated
-        assert!(output.contains("..."));
+        // Truncated with the single-character ellipsis, one char of the budget spent on it.
+        assert!(output.contains(&format!(
+            "{}{}",
+            "a".repeat(PREVIEW_MAX_CHARS_TABLE - 1),
+            '\u{2026}'
+        )));
+    }
+
+    #[test]
+    fn search_preview_truncates_on_a_char_boundary() {
+        // Byte 60 lands inside the twentieth 日 (bytes 58..61), which is what the
+        // old `&preview[..60]` slice aborted on.
+        let results = vec![SearchResultWithScore {
+            id: "cjk.md".to_string(),
+            title: "CJK".to_string(),
+            content: format!("x{}", "\u{65E5}".repeat(70)),
+            score: 0.9,
+        }];
+
+        let output = format_search_results(&results, "table", false, true).unwrap();
+
+        assert!(output.contains('x'));
+        assert!(output.contains('\u{2026}'));
+        assert!(!output.contains('\u{FFFD}'));
+        // 'x' plus whole 日 characters, ellipsis included, inside the budget.
+        assert_eq!(
+            output.chars().filter(|c| *c == '\u{65E5}').count(),
+            PREVIEW_MAX_CHARS_TABLE - 2
+        );
+    }
+
+    #[test]
+    fn search_preview_truncates_emoji_on_a_char_boundary() {
+        // 4-byte sequences: byte 60 lands mid-emoji.
+        let results = vec![SearchResultWithScore {
+            id: "emoji.md".to_string(),
+            title: "Emoji".to_string(),
+            content: format!("ab{}", "\u{1F525}".repeat(70)),
+            score: 0.9,
+        }];
+
+        let output = format_search_results(&results, "table", false, true).unwrap();
+
+        assert!(output.contains("ab"));
+        assert!(output.contains('\u{2026}'));
+        assert!(!output.contains('\u{FFFD}'));
+        assert_eq!(
+            output.chars().filter(|c| *c == '\u{1F525}').count(),
+            PREVIEW_MAX_CHARS_TABLE - 3
+        );
+    }
+
+    #[test]
+    fn plain_preview_caps_a_pathologically_long_line() {
+        let results = vec![SearchResultWithScore {
+            id: "long.md".to_string(),
+            title: "Long".to_string(),
+            content: "\u{65E5}".repeat(4000),
+            score: 0.9,
+        }];
+
+        let output = format_search_results(&results, "plain", false, true).unwrap();
+
+        let preview_chars = output.chars().filter(|c| *c == '\u{65E5}').count();
+        assert_eq!(preview_chars, PREVIEW_MAX_CHARS_PLAIN - 1);
+        assert!(output.contains('\u{2026}'));
     }
 
     #[test]
