@@ -2,6 +2,10 @@ use crate::tui::oil::chat_app::{ChatAppMsg, McpServerDisplay, OilChatApp};
 use crucible_core::error_utils::strip_tool_error_prefix;
 use crucible_core::events::SessionEvent;
 use crucible_core::interaction::InteractionRequest;
+use crucible_core::protocol::session_events::{
+    EventDecodeError, JobPayload, SessionEventPayload, SettingsPayload, SetupPayload,
+    SystemPayload, ToolResultBody, TurnPayload,
+};
 use crucible_core::traits::chat::AgentHandle;
 use crucible_lua::SessionCommand;
 
@@ -134,32 +138,11 @@ impl OilChatRunner {
                     request,
                 }),
             },
-            SessionEvent::DelegationSpawned {
-                delegation_id,
-                prompt,
-                target_agent,
-                ..
-            } => Some(ChatAppMsg::DelegationSpawned {
-                id: delegation_id,
-                prompt,
-                target_agent,
-            }),
-            SessionEvent::DelegationCompleted {
-                delegation_id,
-                result_summary,
-                ..
-            } => Some(ChatAppMsg::DelegationCompleted {
-                id: delegation_id,
-                summary: result_summary,
-            }),
-            SessionEvent::DelegationFailed {
-                delegation_id,
-                error,
-                ..
-            } => Some(ChatAppMsg::DelegationFailed {
-                id: delegation_id,
-                error,
-            }),
+            // The three delegation arms that used to live here were dead: this
+            // function's only caller (`runner.rs`) invokes it exclusively with
+            // `SessionEvent::InteractionRequested`, and the live delegation
+            // mapping is the wire one in `session_event_to_chat_msgs`. Two
+            // implementations of the same mapping had already diverged.
             _ => None,
         }
     }
@@ -170,467 +153,367 @@ impl OilChatRunner {
 /// Returns zero or more messages. The `tool_result` event produces two messages
 /// (delta + complete), while most events produce one. `replay_complete` and
 /// unknown event types return an empty Vec.
+///
+/// Keyed on the typed payload rather than on `data.get("…")`: a new event in a
+/// group the TUI handles now fails to compile here instead of falling through to
+/// the `trace!` arm.
 pub fn session_event_to_chat_msgs(event_type: &str, data: &serde_json::Value) -> Vec<ChatAppMsg> {
-    match event_type {
-        // Hot reload and runtime theme switching arrive here. Applying the
-        // payload and repainting are separate steps: over a socket, with the
-        // TUI idle-blocked on input, a changed store repaints nothing by itself.
-        "ui_style_changed" => {
-            crate::tui::oil::theme::apply_ui_config(data);
-            vec![ChatAppMsg::StyleChanged]
+    // `subagent_*` are NOT on the wire — they exist only as
+    // `InternalSessionEvent` variants for Lua, so they have no
+    // `SessionEventPayload` name. The arms stay because `ChatAppMsg` carries the
+    // variants and a test pins them; whether the wire should carry them is a
+    // feature question with a missing producer, not three orphan consumers.
+    if let Some(msgs) = subagent_msgs(event_type, data) {
+        return msgs;
+    }
+
+    // Also not in the typed vocabulary, and for a structural reason rather than
+    // an oversight: `stream_gap` is minted per *connection* by the daemon's event
+    // forwarder when this client's broadcast cursor falls off the ring
+    // (`daemon/src/server/core.rs`), so no session produces it and
+    // `SessionEventPayload` has no name for it. It must be handled before the
+    // typed dispatch, because that dispatch's `UnknownEvent` arm is a silent
+    // `trace!` — which is exactly how the gap stayed invisible.
+    if event_type == "stream_gap" {
+        return vec![stream_gap_msg(data)];
+    }
+
+    match SessionEventPayload::from_wire(event_type, data) {
+        Ok(SessionEventPayload::Turn(turn)) => turn_msgs(turn),
+        Ok(SessionEventPayload::Setup(setup)) => setup_msgs(setup),
+        Ok(SessionEventPayload::Settings(settings)) => settings_msgs(settings),
+        Ok(SessionEventPayload::Job(job)) => job_msgs(job),
+        Ok(SessionEventPayload::System(system)) => system_msgs(system),
+        Ok(SessionEventPayload::Review(_))
+        | Ok(SessionEventPayload::Notification(_))
+        | Ok(SessionEventPayload::Workflow(_)) => vec![],
+        Err(EventDecodeError::UnknownEvent { event }) => {
+            tracing::trace!(event_type = %event, "Skipping unknown session event");
+            vec![]
         }
-        "user_message" => data
-            .get("content")
+        Err(e @ EventDecodeError::MalformedPayload { .. }) => {
+            tracing::warn!(error = %e, "Dropping malformed session event");
+            vec![]
+        }
+    }
+}
+
+/// Say out loud that this transcript is missing events.
+///
+/// Routed through `ChatAppMsg::Error`, which surfaces as a warning notification.
+/// A gap is not a turn failure, but it is the one thing the user cannot find out
+/// any other way: the events are gone from this connection and no later event
+/// mentions them, so a message that is easy to miss is the same as no message.
+///
+/// A missing `dropped` still warns. The count is the daemon's own field, so its
+/// absence means a version skew — not a reason to swallow the fact of the loss.
+fn stream_gap_msg(data: &serde_json::Value) -> ChatAppMsg {
+    // Count first: the status bar shows one truncated line, so the number has to
+    // survive the truncation to be worth carrying.
+    let dropped = data.get("dropped").and_then(|v| v.as_u64());
+    ChatAppMsg::Error(match dropped {
+        Some(n) => format!(
+            "{n} events dropped: the event stream fell behind. \
+             This conversation is incomplete — reload the session."
+        ),
+        None => "Events dropped: the event stream fell behind. \
+                 This conversation is incomplete — reload the session."
+            .to_string(),
+    })
+}
+
+/// `Some` only for the three names that never cross the wire.
+fn subagent_msgs(event_type: &str, data: &serde_json::Value) -> Option<Vec<ChatAppMsg>> {
+    let id = data.get("job_id").and_then(|v| v.as_str())?.to_string();
+    let text = |key: &str| {
+        data.get(key)
             .and_then(|v| v.as_str())
-            .map(|c| vec![ChatAppMsg::UserMessage(c.to_string())])
-            .unwrap_or_default(),
-        "text_delta" => data
-            .get("content")
-            .and_then(|v| v.as_str())
-            .map(|c| vec![ChatAppMsg::TextDelta(c.to_string())])
-            .unwrap_or_default(),
-        "thinking" => data
-            .get("content")
-            .and_then(|v| v.as_str())
-            .map(|c| vec![ChatAppMsg::ThinkingDelta(c.to_string())])
-            .unwrap_or_default(),
-        "tool_call" => {
-            let name = data
-                .get("tool")
+            .unwrap_or_default()
+            .to_string()
+    };
+    Some(match event_type {
+        "subagent_spawned" => vec![ChatAppMsg::SubagentSpawned {
+            id,
+            prompt: text("prompt"),
+        }],
+        "subagent_completed" => vec![ChatAppMsg::SubagentCompleted {
+            id,
+            summary: text("summary"),
+        }],
+        "subagent_failed" => {
+            let error = data
+                .get("error")
                 .and_then(|v| v.as_str())
-                .unwrap_or("tool")
+                .unwrap_or("Unknown error")
                 .to_string();
-            let args = data.get("args").map(|v| v.to_string()).unwrap_or_default();
-            let call_id = data
-                .get("call_id")
-                .and_then(|v| v.as_str())
-                .map(String::from);
-            // Descriptions are not shown during live streaming (the LLM chunk
-            // doesn't include them), so omit them on resume for consistency.
-            let description = None;
-            let source = data
-                .get("source")
-                .and_then(|v| v.as_str())
-                .map(String::from);
-            let lua_primary_arg = data
-                .get("lua_primary_arg")
-                .and_then(|v| v.as_str())
-                .map(String::from);
-            let diffs = match data.get("diffs") {
-                Some(raw) => match serde_json::from_value(raw.clone()) {
-                    Ok(parsed) => parsed,
-                    Err(err) => {
-                        tracing::warn!(
-                            target: "tui",
-                            error = %err,
-                            tool = ?data.get("tool"),
-                            call_id = ?data.get("call_id"),
-                            raw = %raw,
-                            "tool_call event carried a malformed `diffs` field; \
-                             ignoring and continuing with empty Vec",
-                        );
-                        Vec::new()
-                    }
-                },
-                None => Vec::new(),
-            };
-            let auto_approved = data
-                .get("auto_approved")
-                .and_then(|v| v.as_str())
-                .map(String::from);
+            vec![ChatAppMsg::SubagentFailed { id, error }]
+        }
+        _ => return None,
+    })
+}
+
+/// Empty strings and absent keys are the same thing here: every one of these
+/// fields is `#[serde(default)]`, so a missing key arrives as `""`, and the
+/// untyped code this replaces dropped the message rather than pushing an empty
+/// one.
+fn non_empty(s: String) -> Option<String> {
+    Some(s).filter(|s| !s.is_empty())
+}
+
+fn turn_msgs(turn: TurnPayload) -> Vec<ChatAppMsg> {
+    match turn {
+        TurnPayload::UserMessage { content, .. } => non_empty(content)
+            .map(|c| vec![ChatAppMsg::UserMessage(c)])
+            .unwrap_or_default(),
+        TurnPayload::TextDelta { content } => non_empty(content)
+            .map(|c| vec![ChatAppMsg::TextDelta(c)])
+            .unwrap_or_default(),
+        TurnPayload::Thinking { content } => non_empty(content)
+            .map(|c| vec![ChatAppMsg::ThinkingDelta(c)])
+            .unwrap_or_default(),
+        TurnPayload::ToolCall {
+            call_id,
+            tool,
+            args,
+            source,
+            lua_primary_arg,
+            auto_approved,
+            diffs,
+            ..
+        } => {
             vec![ChatAppMsg::ToolCall {
-                name,
-                args,
-                call_id,
-                description,
+                name: non_empty(tool).unwrap_or_else(|| "tool".to_string()),
+                args: if args.is_null() {
+                    String::new()
+                } else {
+                    args.to_string()
+                },
+                call_id: non_empty(call_id),
+                // Descriptions are not shown during live streaming (the LLM
+                // chunk doesn't include them), so omit them on resume for
+                // consistency.
+                description: None,
                 source,
                 lua_primary_arg,
                 diffs,
                 auto_approved,
             }]
         }
-        "tool_call_diff_update" => {
-            let Some(call_id) = data
-                .get("call_id")
-                .and_then(|v| v.as_str())
-                .map(String::from)
-            else {
+        TurnPayload::ToolCallDiffUpdate { call_id, diffs } => {
+            let Some(call_id) = non_empty(call_id) else {
                 return Vec::new();
-            };
-            let diffs = match data.get("diffs") {
-                Some(raw) => match serde_json::from_value(raw.clone()) {
-                    Ok(parsed) => parsed,
-                    Err(err) => {
-                        tracing::warn!(
-                            target: "tui",
-                            error = %err,
-                            call_id = %call_id,
-                            raw = %raw,
-                            "tool_call_diff_update event carried a malformed `diffs` field; \
-                             ignoring",
-                        );
-                        return Vec::new();
-                    }
-                },
-                None => Vec::new(),
             };
             if diffs.is_empty() {
                 return Vec::new();
             }
             vec![ChatAppMsg::ToolCallDiffUpdate { call_id, diffs }]
         }
-        "tool_call_args_update" => {
-            let Some(call_id) = data
-                .get("call_id")
-                .and_then(|v| v.as_str())
-                .map(String::from)
-            else {
+        TurnPayload::ToolCallArgsUpdate { call_id, args } => {
+            let Some(call_id) = non_empty(call_id) else {
                 return Vec::new();
             };
             // Same noise filter as the diff path: an empty or null payload
             // carries nothing worth disturbing the existing card for.
-            let args = match data.get("args") {
-                Some(raw) if !raw.is_null() && raw != &serde_json::json!({}) => {
-                    serde_json::to_string(raw).unwrap_or_default()
-                }
-                _ => return Vec::new(),
-            };
+            if args.is_null() || args == serde_json::json!({}) {
+                return Vec::new();
+            }
+            let args = serde_json::to_string(&args).unwrap_or_default();
             if args.is_empty() {
                 return Vec::new();
             }
             vec![ChatAppMsg::ToolCallArgsUpdate { call_id, args }]
         }
-        "tool_result" => {
-            let name = data
-                .get("tool")
-                .and_then(|v| v.as_str())
-                .unwrap_or("tool")
-                .to_string();
-            let call_id = data
-                .get("call_id")
-                .and_then(|v| v.as_str())
-                .map(String::from);
-            let result_data = data.get("result");
-            let error = result_data
-                .and_then(|r| r.get("error"))
-                .and_then(|e| e.as_str());
-
-            if let Some(err) = error {
-                vec![ChatAppMsg::ToolResultError {
+        TurnPayload::ToolResult {
+            call_id,
+            tool,
+            result,
+            ..
+        } => {
+            let name = non_empty(tool).unwrap_or_else(|| "tool".to_string());
+            let call_id = non_empty(call_id);
+            let body = ToolResultBody::of(&result);
+            if let Some(err) = body.as_ref().and_then(|b| b.error()) {
+                return vec![ChatAppMsg::ToolResultError {
                     name,
                     error: strip_tool_error_prefix(err),
                     call_id,
-                }]
-            } else {
-                let result_str = result_data
-                    .and_then(|r| r.get("result"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                // Strip nested tool-error prefixes from result text that
-                // looks like an error (matches old handle_stream_chunk
-                // behaviour).
-                let result_str = if result_str.starts_with("Error: ") {
-                    strip_tool_error_prefix(result_str)
-                } else {
-                    result_str.to_string()
-                };
-                vec![
-                    ChatAppMsg::ToolResultDelta {
-                        name: name.clone(),
-                        delta: result_str,
-                        call_id: call_id.clone(),
-                    },
-                    ChatAppMsg::ToolResultComplete { name, call_id },
-                ]
+                }];
             }
+            let result_str = match &body {
+                Some(ToolResultBody::Ok { result, .. }) => result.as_str().unwrap_or(""),
+                _ => "",
+            };
+            // Strip nested tool-error prefixes from result text that looks like
+            // an error (matches old handle_stream_chunk behaviour).
+            let result_str = if result_str.starts_with("Error: ") {
+                strip_tool_error_prefix(result_str)
+            } else {
+                result_str.to_string()
+            };
+            vec![
+                ChatAppMsg::ToolResultDelta {
+                    name: name.clone(),
+                    delta: result_str,
+                    call_id: call_id.clone(),
+                },
+                ChatAppMsg::ToolResultComplete { name, call_id },
+            ]
         }
-        "message_complete" => {
+        TurnPayload::MessageComplete {
+            full_response,
+            total_tokens,
+            cache_read_tokens,
+            cache_creation_tokens,
+            ..
+        } => {
             let mut msgs = Vec::new();
             // Reconstruct the full response text from the persisted snapshot.
-            // text_delta events are not persisted (too granular), so this is
-            // the only source of assistant text on resume.
-            if let Some(text) = data.get("full_response").and_then(|v| v.as_str()) {
-                if !text.is_empty() {
-                    msgs.push(ChatAppMsg::TextDelta(text.to_string()));
-                }
+            // text_delta events are not persisted (too granular), so this is the
+            // only source of assistant text on resume.
+            if let Some(text) = non_empty(full_response) {
+                msgs.push(ChatAppMsg::TextDelta(text));
             }
-            // If the daemon attached token counts to message_complete, surface
-            // them as ContextUsage. The `total` side requires a context-limit
-            // lookup, which the standalone converter cannot do — the caller
-            // (SessionEventStream) fills it in.
-            if let Some(total_tokens) = data.get("total_tokens").and_then(|v| v.as_u64()) {
+            // If the daemon attached token counts, surface them as ContextUsage.
+            // The `total` side requires a context-limit lookup, which the
+            // standalone converter cannot do — the caller (SessionEventStream)
+            // fills it in.
+            if let Some(total) = total_tokens {
                 msgs.push(ChatAppMsg::ContextUsage {
-                    used: total_tokens as usize,
+                    used: total as usize,
                     total: 0,
                 });
             }
-            // Compute cache hit rate from the per-event token fields.
-            // Both fields are optional; emit only when at least one is
-            // present so the StatusBar's "no data" sentinel still works
-            // for older sessions.
-            let cache_read = data
-                .get("cache_read_tokens")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
-            let cache_creation = data
-                .get("cache_creation_tokens")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
-            if data.get("cache_read_tokens").is_some()
-                || data.get("cache_creation_tokens").is_some()
-            {
-                let denom = cache_read + cache_creation;
-                let rate = if denom == 0 {
-                    None
-                } else {
-                    Some(cache_read as f64 / denom as f64)
-                };
+            // Cache hit rate from the per-event token fields. Both are optional;
+            // emit only when at least one is present so the StatusBar's "no
+            // data" sentinel still works for older sessions.
+            if cache_read_tokens.is_some() || cache_creation_tokens.is_some() {
+                let read = u64::from(cache_read_tokens.unwrap_or(0));
+                let creation = u64::from(cache_creation_tokens.unwrap_or(0));
+                let denom = read + creation;
+                let rate = (denom != 0).then(|| read as f64 / denom as f64);
                 msgs.push(ChatAppMsg::CacheHitRate(rate));
             }
             msgs.push(ChatAppMsg::StreamComplete);
             msgs
         }
-        "precognition_complete" => {
-            let notes_count = data
-                .get("notes_count")
-                .and_then(|v| v.as_u64())
-                .map(|n| n as usize)
-                .unwrap_or(0);
-            let notes = data
-                .get("notes")
-                .and_then(|v| {
-                    serde_json::from_value::<
-                        Vec<crucible_core::traits::chat::PrecognitionNoteInfo>,
-                    >(v.clone())
-                    .ok()
-                })
-                .unwrap_or_default();
+        TurnPayload::PrecognitionComplete {
+            notes_count, notes, ..
+        } => {
             if notes_count > 0 {
                 vec![ChatAppMsg::PrecognitionResult { notes_count, notes }]
             } else {
                 vec![]
             }
         }
-        "delegation_spawned" => {
-            let id = data
-                .get("delegation_id")
-                .and_then(|v| v.as_str())
-                .map(String::from);
-            let prompt = data
-                .get("prompt")
-                .and_then(|v| v.as_str())
-                .map(String::from);
-            let target_agent = data
-                .get("target_agent")
-                .and_then(|v| v.as_str())
-                .map(String::from);
+        // Rendered by other paths or not rendered at all: `segment_complete` is
+        // additive over `message_complete`'s text, `ended` is handled by the
+        // stateful wrapper, interactions ride their own channel, and the rest is
+        // context plumbing and telemetry.
+        TurnPayload::SegmentComplete { .. }
+        | TurnPayload::Ended { .. }
+        | TurnPayload::InteractionRequested { .. }
+        | TurnPayload::InteractionCompleted { .. }
+        | TurnPayload::InjectionPending { .. }
+        | TurnPayload::ContextInjected { .. }
+        | TurnPayload::PostLlmCall { .. } => vec![],
+    }
+}
 
-            match (id, prompt) {
-                (Some(id), Some(prompt)) => vec![ChatAppMsg::DelegationSpawned {
-                    id,
-                    prompt,
-                    target_agent,
-                }],
-                _ => vec![],
-            }
+/// The seven setup payloads used to be decoded one at a time, each with its own
+/// warn-and-drop block. One decode, one exhaustive match.
+fn setup_msgs(setup: SetupPayload) -> Vec<ChatAppMsg> {
+    match setup {
+        SetupPayload::SessionInitialized(p) => vec![ChatAppMsg::SessionInitialized(p)],
+        SetupPayload::ProvidersListed(p) => vec![ChatAppMsg::ProvidersListed(p.providers)],
+        SetupPayload::ContextLimitResolved(p) => vec![ChatAppMsg::ContextLimitResolved {
+            limit: p.limit,
+            source: p.source,
+        }],
+        SetupPayload::WorkspaceIndexed(p) => vec![ChatAppMsg::WorkspaceIndexed(p.files)],
+        SetupPayload::KilnNotesIndexed(p) => vec![ChatAppMsg::KilnNotesIndexed(p.notes)],
+        SetupPayload::PluginsDiscovered(p) => vec![ChatAppMsg::PluginsDiscovered(p.plugins)],
+        SetupPayload::McpServersReady(p) => {
+            // Map McpServerInfo (tools: Vec<String>) → McpServerDisplay
+            // (tool_count: usize). The TUI renders tool_count only; collapsing at
+            // the boundary keeps the rest of the TUI unchanged. The real
+            // connected-state / tool count is refreshed later by the background
+            // MCP gateway task.
+            let servers: Vec<McpServerDisplay> = p
+                .servers
+                .into_iter()
+                .map(|s| McpServerDisplay {
+                    name: s.name,
+                    prefix: s.prefix.trim_end_matches('_').to_string(),
+                    tool_count: s.tools.len(),
+                    connected: s.connected,
+                })
+                .collect();
+            vec![ChatAppMsg::McpServersReady(servers)]
         }
-        "delegation_completed" => {
-            let id = data
-                .get("delegation_id")
-                .and_then(|v| v.as_str())
-                .map(String::from);
-            let summary = data
-                .get("result_summary")
-                .and_then(|v| v.as_str())
-                .map(String::from);
+    }
+}
 
-            match (id, summary) {
-                (Some(id), Some(summary)) => {
-                    vec![ChatAppMsg::DelegationCompleted { id, summary }]
-                }
-                _ => vec![],
-            }
-        }
-        "delegation_failed" => {
-            let id = data
-                .get("delegation_id")
-                .and_then(|v| v.as_str())
-                .map(String::from);
-            let error = data.get("error").and_then(|v| v.as_str()).map(String::from);
-
-            match (id, error) {
-                (Some(id), Some(error)) => vec![ChatAppMsg::DelegationFailed { id, error }],
-                _ => vec![],
-            }
-        }
-        "subagent_spawned" => {
-            let id = data
-                .get("job_id")
-                .and_then(|v| v.as_str())
-                .map(String::from);
-            let prompt = data
-                .get("prompt")
-                .and_then(|v| v.as_str())
-                .map(String::from);
-            match (id, prompt) {
-                (Some(id), Some(prompt)) => vec![ChatAppMsg::SubagentSpawned { id, prompt }],
-                (Some(id), None) => vec![ChatAppMsg::SubagentSpawned {
-                    id,
-                    prompt: String::new(),
-                }],
-                _ => vec![],
-            }
-        }
-        "subagent_completed" => {
-            let id = data
-                .get("job_id")
-                .and_then(|v| v.as_str())
-                .map(String::from);
-            let summary = data
-                .get("summary")
-                .and_then(|v| v.as_str())
-                .map(String::from);
-            match (id, summary) {
-                (Some(id), Some(summary)) => vec![ChatAppMsg::SubagentCompleted { id, summary }],
-                (Some(id), None) => vec![ChatAppMsg::SubagentCompleted {
-                    id,
-                    summary: String::new(),
-                }],
-                _ => vec![],
-            }
-        }
-        "subagent_failed" => {
-            let id = data
-                .get("job_id")
-                .and_then(|v| v.as_str())
-                .map(String::from);
-            let error = data.get("error").and_then(|v| v.as_str()).map(String::from);
-            match (id, error) {
-                (Some(id), Some(error)) => vec![ChatAppMsg::SubagentFailed { id, error }],
-                (Some(id), None) => vec![ChatAppMsg::SubagentFailed {
-                    id,
-                    error: "Unknown error".to_string(),
-                }],
-                _ => vec![],
-            }
-        }
-        "replay_complete" => vec![],
+fn settings_msgs(settings: SettingsPayload) -> Vec<ChatAppMsg> {
+    match settings {
         // A mode change made anywhere else — the web UI, another client, a Lua
-        // handler — reaches the statusline only through this arm. Without it
-        // the daemon emitted `mode_changed` to nobody on the TUI side, and the
-        // badge kept showing the mode this client last set itself.
-        "mode_changed" => data
-            .get("mode")
-            .and_then(|v| v.as_str())
-            .map(|m| vec![ChatAppMsg::ModeSynced(m.to_string())])
+        // handler — reaches the statusline only through this arm. Without it the
+        // daemon emitted `mode_changed` to nobody on the TUI side, and the badge
+        // kept showing the mode this client last set itself.
+        SettingsPayload::ModeChanged { mode } => non_empty(mode)
+            .map(|m| vec![ChatAppMsg::ModeSynced(m)])
             .unwrap_or_default(),
-        "session_initialized" => {
-            match serde_json::from_value::<
-                crucible_core::protocol::session_events::SessionInitializedPayload,
-            >(data.clone())
-            {
-                Ok(payload) => vec![ChatAppMsg::SessionInitialized(payload)],
-                Err(e) => {
-                    tracing::warn!(error = %e, "Failed to decode session_initialized payload");
-                    vec![]
-                }
-            }
+        // The rest are acknowledgements of a change this client either made or
+        // can re-read from the session record.
+        _ => vec![],
+    }
+}
+
+fn job_msgs(job: JobPayload) -> Vec<ChatAppMsg> {
+    match job {
+        JobPayload::DelegationSpawned {
+            delegation_id,
+            prompt,
+            target_agent,
+            ..
+        } => match (non_empty(delegation_id), non_empty(prompt)) {
+            (Some(id), Some(prompt)) => vec![ChatAppMsg::DelegationSpawned {
+                id,
+                prompt,
+                target_agent,
+            }],
+            _ => vec![],
+        },
+        JobPayload::DelegationCompleted {
+            delegation_id,
+            result_summary,
+            ..
+        } => match (non_empty(delegation_id), non_empty(result_summary)) {
+            (Some(id), Some(summary)) => vec![ChatAppMsg::DelegationCompleted { id, summary }],
+            _ => vec![],
+        },
+        JobPayload::DelegationFailed {
+            delegation_id,
+            error,
+            ..
+        } => match (non_empty(delegation_id), non_empty(error)) {
+            (Some(id), Some(error)) => vec![ChatAppMsg::DelegationFailed { id, error }],
+            _ => vec![],
+        },
+        // Bash and background jobs have no TUI surface yet.
+        _ => vec![],
+    }
+}
+
+fn system_msgs(system: SystemPayload) -> Vec<ChatAppMsg> {
+    match system {
+        // Hot reload and runtime theme switching arrive here. Applying the
+        // payload and repainting are separate steps: over a socket, with the TUI
+        // idle-blocked on input, a changed store repaints nothing by itself.
+        SystemPayload::UiStyleChanged(config) => {
+            crate::tui::oil::theme::apply_ui_config(&config);
+            vec![ChatAppMsg::StyleChanged]
         }
-        "providers_listed" => {
-            match serde_json::from_value::<
-                crucible_core::protocol::session_events::ProvidersListedPayload,
-            >(data.clone())
-            {
-                Ok(payload) => vec![ChatAppMsg::ProvidersListed(payload.providers)],
-                Err(e) => {
-                    tracing::warn!(error = %e, "Failed to decode providers_listed payload");
-                    vec![]
-                }
-            }
-        }
-        "context_limit_resolved" => {
-            match serde_json::from_value::<
-                crucible_core::protocol::session_events::ContextLimitResolvedPayload,
-            >(data.clone())
-            {
-                Ok(payload) => vec![ChatAppMsg::ContextLimitResolved {
-                    limit: payload.limit,
-                    source: payload.source,
-                }],
-                Err(e) => {
-                    tracing::warn!(error = %e, "Failed to decode context_limit_resolved payload");
-                    vec![]
-                }
-            }
-        }
-        "workspace_indexed" => {
-            match serde_json::from_value::<
-                crucible_core::protocol::session_events::WorkspaceIndexedPayload,
-            >(data.clone())
-            {
-                Ok(payload) => vec![ChatAppMsg::WorkspaceIndexed(payload.files)],
-                Err(e) => {
-                    tracing::warn!(error = %e, "Failed to decode workspace_indexed payload");
-                    vec![]
-                }
-            }
-        }
-        "kiln_notes_indexed" => {
-            match serde_json::from_value::<
-                crucible_core::protocol::session_events::KilnNotesIndexedPayload,
-            >(data.clone())
-            {
-                Ok(payload) => vec![ChatAppMsg::KilnNotesIndexed(payload.notes)],
-                Err(e) => {
-                    tracing::warn!(error = %e, "Failed to decode kiln_notes_indexed payload");
-                    vec![]
-                }
-            }
-        }
-        "plugins_discovered" => {
-            match serde_json::from_value::<
-                crucible_core::protocol::session_events::PluginsDiscoveredPayload,
-            >(data.clone())
-            {
-                Ok(payload) => vec![ChatAppMsg::PluginsDiscovered(payload.plugins)],
-                Err(e) => {
-                    tracing::warn!(error = %e, "Failed to decode plugins_discovered payload");
-                    vec![]
-                }
-            }
-        }
-        "mcp_servers_ready" => {
-            match serde_json::from_value::<
-                crucible_core::protocol::session_events::McpServersReadyPayload,
-            >(data.clone())
-            {
-                Ok(payload) => {
-                    // Map McpServerInfo (tools: Vec<String>) → McpServerDisplay
-                    // (tool_count: usize). The TUI renders tool_count only;
-                    // collapsing at the boundary keeps the rest of the TUI
-                    // unchanged. The real connected-state / tool count is
-                    // refreshed later by the background MCP gateway task.
-                    let servers: Vec<McpServerDisplay> = payload
-                        .servers
-                        .into_iter()
-                        .map(|s| McpServerDisplay {
-                            name: s.name,
-                            prefix: s.prefix.trim_end_matches('_').to_string(),
-                            tool_count: s.tools.len(),
-                            connected: s.connected,
-                        })
-                        .collect();
-                    vec![ChatAppMsg::McpServersReady(servers)]
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "Failed to decode mcp_servers_ready payload");
-                    vec![]
-                }
-            }
-        }
-        _ => {
-            tracing::trace!(event_type = %event_type, "Skipping unknown session event");
-            vec![]
-        }
+        // `replay_complete` is consumed by the stateful wrapper, not here.
+        _ => vec![],
     }
 }

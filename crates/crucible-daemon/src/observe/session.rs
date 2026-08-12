@@ -6,43 +6,9 @@
 //! reads. See [`crate::observe`] for the two line shapes a log can hold.
 
 use crate::observe::events::LogEvent;
-use crate::observe::id::{SessionId, SessionType};
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use crate::observe::id::SessionId;
+use std::path::Path;
 use tokio::fs;
-
-/// Session metadata.
-///
-/// On its way out: `SessionMetadata::new` has zero callers repo-wide, and the
-/// type's only remaining constructor is `observe/session_index.rs`, which
-/// [[2026-08-11-dead-code-and-schema-migrations]]'s T-E1 deletes — taking this
-/// with it. Do not add new uses.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionMetadata {
-    pub id: SessionId,
-    pub session_type: SessionType,
-    pub started_at: DateTime<Utc>,
-    pub ended_at: Option<DateTime<Utc>>,
-    pub title: Option<String>,
-    pub message_count: u32,
-    pub kiln_path: PathBuf,
-}
-
-impl SessionMetadata {
-    /// Create metadata for a new session
-    pub fn new(id: SessionId, kiln_path: impl Into<PathBuf>) -> Self {
-        Self {
-            session_type: id.session_type(),
-            id,
-            started_at: Utc::now(),
-            ended_at: None,
-            title: None,
-            message_count: 0,
-            kiln_path: kiln_path.into(),
-        }
-    }
-}
 
 /// Errors that can occur during session operations.
 ///
@@ -58,16 +24,6 @@ impl SessionMetadata {
 pub enum SessionError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-}
-
-/// Kept only for `observe/session_index.rs`, the sole `rusqlite` user in
-/// `observe/`. It is dead the moment that file goes, which
-/// [[2026-08-11-dead-code-and-schema-migrations]]'s T-E1 does — along with
-/// `SessionMetadata` above.
-impl From<rusqlite::Error> for SessionError {
-    fn from(err: rusqlite::Error) -> Self {
-        Self::Io(std::io::Error::other(err))
-    }
 }
 
 /// Load all events from a session log.
@@ -120,6 +76,9 @@ pub async fn list_sessions(sessions_dir: impl AsRef<Path>) -> Result<Vec<Session
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::observe::id::SessionType;
+    use chrono::Utc;
+    use std::path::PathBuf;
     use tempfile::TempDir;
 
     /// The bytes `persist_event` (`server/core.rs`) actually appends: a
@@ -383,5 +342,106 @@ mod tests {
 
         let listed = list_sessions(&sessions_dir).await.unwrap();
         assert_eq!(listed, vec![id]);
+    }
+
+    /// `LogEvent`'s `type` tags and the wire envelope's `type` values share one
+    /// field in one file. Nothing enforces disjointness, so a `LogEvent` variant
+    /// named `Event` would make every wire line decode as the wrong thing —
+    /// silently, since both are valid JSON with a `type` string.
+    #[test]
+    fn log_event_tags_never_collide_with_wire_envelope_types() {
+        const WIRE_TYPES: &[&str] = &["event", "replay_event"];
+
+        let src = include_str!("events.rs");
+        let needle = "pub enum LogEvent {\n";
+        let start = src
+            .find(needle)
+            .expect("`pub enum LogEvent {` not found — fix this test")
+            + needle.len();
+        let body = &src[start..];
+        let end = body.find("\n}\n").expect("unterminated LogEvent enum");
+
+        let mut tags = Vec::new();
+        let mut depth = 0i32;
+        for line in body[..end].lines() {
+            let trimmed = line.trim();
+            if depth == 0
+                && trimmed
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_uppercase())
+            {
+                let ident: String = trimmed
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                    .collect();
+                // `#[serde(rename_all = "snake_case")]` on the enum.
+                let mut tag = String::new();
+                for (i, c) in ident.chars().enumerate() {
+                    if c.is_ascii_uppercase() {
+                        if i > 0 {
+                            tag.push('_');
+                        }
+                        tag.push(c.to_ascii_lowercase());
+                    } else {
+                        tag.push(c);
+                    }
+                }
+                tags.push(tag);
+            }
+            depth += line.matches(['{', '(']).count() as i32;
+            depth -= line.matches(['}', ')']).count() as i32;
+        }
+
+        assert!(
+            tags.len() > 5,
+            "extracted only {} LogEvent tags — the scan markers moved, fix this test",
+            tags.len()
+        );
+        for tag in tags {
+            assert!(
+                !WIRE_TYPES.contains(&tag.as_str()),
+                "LogEvent variant `{tag}` collides with a SessionEventMessage msg_type",
+            );
+        }
+    }
+
+    /// A real log is mixed. `inject_context` writes a `LogEvent` line to disk and
+    /// broadcasts a `SessionEventMessage`; `fork` copies `LogEvent` lines into a
+    /// file the turn loop then appends wire lines to. Reading one shape must not
+    /// drop the other — and until now no fixture contained both, so the reader's
+    /// tolerance for that was entirely untested.
+    #[tokio::test]
+    async fn a_log_holding_both_shapes_yields_both() {
+        let dir = TempDir::new().unwrap();
+        let sessions_dir = dir.path().join("sessions");
+        let id = SessionId::new(SessionType::Chat, Utc::now());
+
+        // A LogEvent line (as `inject_context` and `fork` write it), then the
+        // wire lines the broadcast path appends.
+        let mixed = format!(
+            "{}{}",
+            as_jsonl(&[LogEvent::system("injected context")]),
+            WIRE_LOG
+        );
+        let session_dir = write_log(&sessions_dir, &id, &mixed).await;
+
+        let events = load_events(&session_dir).await.unwrap();
+
+        assert!(
+            matches!(&events[0], LogEvent::System { content, .. } if content == "injected context"),
+            "the LogEvent line must survive, got {:?}",
+            events.first()
+        );
+        assert!(
+            events.len() > 1,
+            "the wire lines must survive alongside it, got {events:?}"
+        );
+        assert!(
+            events.iter().any(
+                |e| matches!(e, LogEvent::User { content, .. } if content == "how do I read a file")
+            ),
+            "the wire `user_message` line must survive, got {events:?}"
+        );
     }
 }

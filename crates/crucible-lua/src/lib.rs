@@ -160,8 +160,8 @@ pub use storage_api::{register_storage_module, register_storage_module_with_stor
 pub use timer::register_timer_module;
 pub use types::{LuaExecutionResult, LuaTool, ToolParam, ToolResult};
 pub use vault::{
-    register_vault_module, register_vault_module_full, register_vault_module_with_graph,
-    register_vault_module_with_store, register_vault_module_with_store_scoped,
+    register_vault_module, register_vault_module_with_store,
+    register_vault_module_with_store_scoped,
 };
 pub use ws::register_ws_module;
 
@@ -183,7 +183,7 @@ pub use handlers::{
     run_handler_chain, HandlerExecutionResult, LuaScriptHandler, LuaScriptHandlerRegistry,
     PermissionHook, PermissionHookResult, PermissionRequest, RuntimeHandler, ScriptHandlerResult,
     ToolBeforeExecuteEvent, ToolBeforeExecuteResult, ToolDisplayCompleteEvent,
-    ToolDisplayCompleteHints, ToolDisplayStartEvent, ToolDisplayStartHints,
+    ToolDisplayCompleteHints, ToolDisplayStartEvent, ToolDisplayStartHints, HOOK_NAMES,
     SHIPPED_DEFAULT_PRIORITY, TOOL_BEFORE_EXECUTE_EVENT, TOOL_DISPLAY_COMPLETE_EVENT,
     TOOL_DISPLAY_START_EVENT,
 };

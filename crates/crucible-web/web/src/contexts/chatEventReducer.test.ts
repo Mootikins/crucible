@@ -201,8 +201,8 @@ beforeEach(() => {
 describe('event matrix — covers every ChatEvent variant', () => {
   // ---- Parameterized clusters (homogeneous shape across many variants) ----
 
-  // tool_call / tool_call_start: dispatch one tool-call event, assert the
-  // ToolCallDisplay shape that lands in the transcript.
+  // tool_call: dispatch one tool-call event, assert the ToolCallDisplay
+  // shape that lands in the transcript.
   it.each([
     {
       name: 'tool_call: adds a running ToolCallDisplay with title and arguments',
@@ -211,11 +211,6 @@ describe('event matrix — covers every ChatEvent variant', () => {
         id: 'tc-1', name: 'list_files',
         args: JSON.stringify({ path: '/tmp' }), status: 'running', callId: 'tc-1',
       },
-    },
-    {
-      name: 'tool_call_start: same as tool_call but uses `name`',
-      event: { type: 'tool_call_start', id: 'tc-2', name: 'bash', arguments: { cmd: 'ls' } },
-      expected: { name: 'bash', status: 'running' },
     },
     {
       name: 'tool_call: handles missing arguments gracefully',
@@ -860,6 +855,19 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(h.spies.onTitleChanged).toHaveBeenCalledWith('Merkle tree sync design');
   });
 
+  it('session_event stream_gap: surfaces the loss with its count', () => {
+    const h = createHarness();
+    h.reducer({ type: 'session_event', event_type: 'stream_gap', data: { dropped: 12 } });
+    expect(h.state.error).toContain('12');
+    expect(h.state.error).toMatch(/incomplete/i);
+  });
+
+  it('session_event stream_gap: still surfaces without a count', () => {
+    const h = createHarness();
+    h.reducer({ type: 'session_event', event_type: 'stream_gap', data: {} });
+    expect(h.state.error).toMatch(/incomplete/i);
+  });
+
   it('session_event: no-op (acknowledged but not surfaced)', () => {
     const h = createHarness();
     expect(() =>
@@ -909,7 +917,6 @@ const interactionPerm = evt('interaction_requested', {
 const arbChatEvent = (): fc.Arbitrary<ChatEvent> => fc.oneof(
   evt('token', { content: fc.string() }),
   evt('tool_call', { id: strId, title: fc.string() }),
-  evt('tool_call_start', { id: strId, name: fc.string() }),
   evt('tool_result', { id: strId, result: fc.string() }),
   evt('tool_result_delta', { id: strId, delta: fc.string() }),
   evt('tool_result_complete', { id: strId }),
@@ -1105,7 +1112,6 @@ describe('contract: SSE subscription parity with reducer handlers', () => {
   const REDUCER_HANDLED_TYPES = [
     'token',
     'tool_call',
-    'tool_call_start',
     'tool_result',
     'tool_result_delta',
     'tool_result_complete',
@@ -1173,7 +1179,7 @@ describe('contract: SSE subscription parity with reducer handlers', () => {
       if (t === 'error') { minimal.code = 'x'; minimal.message = ''; }
       if (t === 'message_complete') { minimal.content = ''; }
       if (t === 'segment_complete') { minimal.message_id = 'placeholder'; minimal.index = 0; minimal.content = ''; }
-      if (t === 'tool_call' || t === 'tool_call_start') minimal.title = minimal.name = 'noop';
+      if (t === 'tool_call') minimal.title = minimal.name = 'noop';
       if (t === 'tool_result_delta') minimal.delta = '';
       if (t === 'tool_result_error' || t === 'subagent_failed' || t === 'delegation_failed') {
         minimal.error = '';

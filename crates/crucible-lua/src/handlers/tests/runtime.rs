@@ -20,13 +20,13 @@ fn runtime_handler_stores_function_reference() {
         function test_handler(event)
             return event
         end
-        crucible.on("test_event", test_handler)
+        crucible.on("pre_tool_call", test_handler)
     "#;
     lua.load(handler_code).eval::<()>().unwrap();
 
     let runtime_handlers = registry.runtime_handlers.lock().unwrap();
     assert_eq!(runtime_handlers.len(), 1);
-    assert_eq!(runtime_handlers[0].event_type, "test_event");
+    assert_eq!(runtime_handlers[0].event_type, "pre_tool_call");
     assert_eq!(runtime_handlers[0].name, "runtime_handler_0");
 
     let functions = registry.handler_functions.lock().unwrap();

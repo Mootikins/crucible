@@ -14,10 +14,10 @@
 //! reports `type_name() == "FileChanged"`, which the handler registry matches on
 //! and `session_event_to_lua` converts. Only the dispatch was missing.
 
-use crucible_core::events::session_event::{FileChangeKind, InternalSessionEvent};
+use crucible_core::events::session_event::InternalSessionEvent;
 use crucible_core::events::SessionEvent;
+use crucible_core::protocol::session_events::{SessionEventPayload, SystemPayload};
 use crucible_core::protocol::SessionEventMessage;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::{debug, warn};
@@ -28,17 +28,23 @@ use tracing::{debug, warn};
 /// typed value has to be reconstructed for handlers that expect the same shape
 /// every other hook receives. Returns `None` for anything that is not a file
 /// event.
+///
+/// Decoding the payload rather than digging keys out of it fixes two bugs at
+/// once. It used to read `data["path"]` *before* matching the name, so
+/// `file_moved` — which carries `from`/`to` and no `path` — could never reach a
+/// handler. And `kind` used to be a two-arm string match that mapped everything
+/// that was not `created` to `Modified`; `FileChangeKind` now decodes itself.
 fn to_internal_event(msg: &SessionEventMessage) -> Option<InternalSessionEvent> {
-    let path = PathBuf::from(msg.data.get("path")?.as_str()?);
-    match msg.event.as_str() {
-        "file_changed" => {
-            let kind = match msg.data.get("kind").and_then(|k| k.as_str()) {
-                Some("created") | Some("Created") => FileChangeKind::Created,
-                _ => FileChangeKind::Modified,
-            };
+    match msg.payload() {
+        Ok(SessionEventPayload::System(SystemPayload::FileChanged { path, kind })) => {
             Some(InternalSessionEvent::FileChanged { path, kind })
         }
-        "file_deleted" => Some(InternalSessionEvent::FileDeleted { path }),
+        Ok(SessionEventPayload::System(SystemPayload::FileDeleted { path })) => {
+            Some(InternalSessionEvent::FileDeleted { path })
+        }
+        Ok(SessionEventPayload::System(SystemPayload::FileMoved { from, to })) => {
+            Some(InternalSessionEvent::FileMoved { from, to })
+        }
         _ => None,
     }
 }
@@ -87,7 +93,9 @@ pub fn spawn_file_event_hooks(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_core::events::session_event::FileChangeKind;
     use serde_json::json;
+    use std::path::PathBuf;
 
     fn msg(event: &str, data: serde_json::Value) -> SessionEventMessage {
         SessionEventMessage::new("system", event, data)
@@ -140,9 +148,24 @@ mod tests {
         assert_eq!(event.type_name(), "FileChanged");
     }
 
+    /// `to_internal_event` read `data["path"]` before matching the event name,
+    /// but a `file_moved` payload carries `from`/`to` and no `path`
+    /// (`file_watch_bridge.rs`). So `InternalSessionEvent::FileMoved` was
+    /// broadcast and could never reach a Lua handler.
+    #[test]
+    fn a_file_moved_message_rebuilds_the_typed_event() {
+        let m = msg("file_moved", json!({ "from": "/w/a.md", "to": "/w/b.md" }));
+        assert!(matches!(
+            to_internal_event(&m),
+            Some(InternalSessionEvent::FileMoved { .. })
+        ));
+    }
+
     #[test]
     fn unrelated_events_are_ignored() {
         assert!(to_internal_event(&msg("message_complete", json!({}))).is_none());
+        // A file event with no path is meaningless: the payload requires `path`,
+        // so this is a malformed decode and no handler fires on an empty path.
         assert!(to_internal_event(&msg("file_changed", json!({}))).is_none());
     }
 }

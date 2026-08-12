@@ -391,14 +391,6 @@ export interface TokenEvent {
   content: string;
 }
 
-/** Tool call is starting */
-export interface ToolCallStartEvent {
-  type: 'tool_call_start';
-  id: string;
-  name: string;
-  arguments?: unknown;
-}
-
 /** Tool call event (from daemon tool_call event) */
 export interface ToolCallEvent {
   type: 'tool_call';
@@ -578,7 +570,6 @@ export interface SessionEventData {
 /** Union of all SSE event types */
 export type ChatEvent =
   | TokenEvent
-  | ToolCallStartEvent
   | ToolCallEvent
   | ToolResultEvent
   | ToolResultDeltaEvent

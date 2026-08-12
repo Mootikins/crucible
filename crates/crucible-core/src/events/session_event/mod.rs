@@ -53,13 +53,28 @@ pub use types::{
     ToolProvider,
 };
 
-/// Events that flow through a session (wire-facing).
+/// Events that flow through a session — the **scripting** vocabulary.
 ///
-/// These are the events that cross the RPC wire between daemon and clients.
-/// Internal pipeline events live in [`InternalSessionEvent`] and are wrapped
-/// via the `Internal` variant for reactor dispatch.
+/// This type is **not** wire-facing, despite what this comment used to say.
+/// Nothing serializes it onto the RPC wire; its two serialization targets are the
+/// markdown session log ([`crate::events::markdown`]) and Lua tables
+/// (`crucible-lua/src/handlers/conversion.rs`). Its third use is Reactor
+/// dispatch, which is what `crucible-daemon/src/observe/events.rs` says plainly.
 ///
-/// # Wire Event Categories
+/// The transport vocabulary is
+/// [`SessionEventPayload`](crate::protocol::session_events::SessionEventPayload),
+/// carried by `SessionEventMessage`. The two are disjoint by design and spell ten
+/// of the same events differently — this type's `tool_called`/`tool_completed`/
+/// `agent_responded` are the wire's `tool_call`/`tool_result`/
+/// `message_complete`. See
+/// [`TurnPayload::as_scripting_event`](crate::protocol::session_events::TurnPayload::as_scripting_event)
+/// for the mapping, and that module's doc for why unifying them is not on the
+/// table.
+///
+/// Internal pipeline events live in [`InternalSessionEvent`] and are wrapped via
+/// the `Internal` variant for reactor dispatch.
+///
+/// # Event Categories
 ///
 /// - **User/participant**: `MessageReceived`
 /// - **Agent**: `AgentResponded`, `AgentThinking`

@@ -172,240 +172,218 @@ impl ChatEvent {
         }
     }
 
+    /// Project a daemon wire event onto the browser's presentation enum.
+    ///
+    /// Decodes the typed payload rather than digging keys out of `data`, so the
+    /// field names here cannot drift from the producer's. Seven input arms went
+    /// with the change — `thinking_delta`, `tool_call_start`, `turn_complete`,
+    /// `tool_result_delta`, `tool_result_complete`, `tool_result_error` and
+    /// `context_usage` — because no daemon or core code emits any of them.
+    /// `tool_call_start` was the one already provably drifted: `api.ts` had a
+    /// listener for an SSE name `event_name()` could not produce.
+    ///
+    /// Two renames survive and are deliberate: `text_delta` → `token` and
+    /// `precognition_complete` → `precognition_result`. Everything the enum does
+    /// not model reaches the browser as the `session_event` passthrough, which is
+    /// exactly the `Err(UnknownEvent)` path.
     pub fn from_daemon_event(event: &SessionEvent) -> Self {
-        let data = &event.data;
+        use crucible_core::protocol::session_events::{
+            JobPayload, SessionEventPayload, SettingsPayload, TurnPayload,
+        };
 
-        match event.event_type.as_str() {
-            "text_delta" => ChatEvent::Token {
-                content: data["content"].as_str().unwrap_or("").to_string(),
-            },
+        let passthrough = || ChatEvent::SessionEvent {
+            event_type: event.event_type.clone(),
+            data: event.data.clone(),
+        };
 
-            // The daemon broadcast name is `thinking` (SessionEventMessage::
-            // thinking); `thinking_delta` kept for older recordings.
-            "thinking" | "thinking_delta" => ChatEvent::Thinking {
-                content: data["content"].as_str().unwrap_or("").to_string(),
-            },
-
-            // Canonical payload is `{call_id, tool, args}` (SessionEvent
-            // Message::tool_call); id/name/arguments kept for older
-            // recordings.
-            "tool_call_start" | "tool_call" => ChatEvent::ToolCall {
-                id: data["call_id"]
+        // Pre-flattened interaction payloads (older recordings, e2e mock frames)
+        // carry `kind` at the top level and no `request`, so they do not decode
+        // as `TurnPayload::InteractionRequested`. `normalize_interaction` already
+        // passes them through unchanged; keep accepting them, because dropping
+        // one means no permission prompt renders at all.
+        if event.event_type == "interaction_requested" && event.data.get("kind").is_some() {
+            return ChatEvent::InteractionRequested {
+                id: event.data["id"]
                     .as_str()
-                    .or_else(|| data["id"].as_str())
+                    .or_else(|| event.data["request_id"].as_str())
                     .unwrap_or("")
                     .to_string(),
-                title: data["tool"]
-                    .as_str()
-                    .or_else(|| data["name"].as_str())
-                    .or_else(|| data["title"].as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                arguments: data.get("args").or_else(|| data.get("arguments")).cloned(),
-            },
+                request: normalize_interaction(&event.data),
+            };
+        }
 
-            "tool_result" => ChatEvent::ToolResult {
-                id: data["id"]
-                    .as_str()
-                    .or_else(|| data["call_id"].as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                // Results are arbitrary JSON; pass strings through verbatim
-                // and stringify anything else rather than dropping it.
-                result: match &data["result"] {
-                    serde_json::Value::Null => None,
-                    serde_json::Value::String(s) => Some(s.clone()),
-                    other => Some(other.to_string()),
+        let payload = match SessionEventPayload::from_wire(&event.event_type, &event.data) {
+            Ok(p) => p,
+            Err(_) => return passthrough(),
+        };
+
+        match payload {
+            SessionEventPayload::Turn(turn) => match turn {
+                TurnPayload::TextDelta { content } => ChatEvent::Token { content },
+
+                TurnPayload::Thinking { content } => ChatEvent::Thinking { content },
+
+                TurnPayload::ToolCall {
+                    call_id,
+                    tool,
+                    args,
+                    ..
+                } => ChatEvent::ToolCall {
+                    id: call_id,
+                    title: tool,
+                    arguments: Some(args).filter(|a| !a.is_null()),
                 },
-                terminate: data["terminate"].as_bool().unwrap_or(false),
-            },
 
-            "tool_result_delta" => ChatEvent::ToolResultDelta {
-                id: data["id"]
-                    .as_str()
-                    .or_else(|| data["call_id"].as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                delta: data["delta"]
-                    .as_str()
-                    .or_else(|| data["content"].as_str())
-                    .unwrap_or("")
-                    .to_string(),
-            },
+                TurnPayload::ToolResult {
+                    call_id,
+                    result,
+                    terminate,
+                    ..
+                } => ChatEvent::ToolResult {
+                    id: call_id,
+                    // Results are arbitrary JSON; pass strings through verbatim
+                    // and stringify anything else rather than dropping it.
+                    result: match &result {
+                        serde_json::Value::Null => None,
+                        serde_json::Value::String(s) => Some(s.clone()),
+                        other => Some(other.to_string()),
+                    },
+                    terminate,
+                },
 
-            "tool_result_complete" => ChatEvent::ToolResultComplete {
-                id: data["id"]
-                    .as_str()
-                    .or_else(|| data["call_id"].as_str())
-                    .unwrap_or("")
-                    .to_string(),
-            },
+                TurnPayload::SegmentComplete {
+                    message_id,
+                    index,
+                    content,
+                } => ChatEvent::SegmentComplete {
+                    message_id,
+                    index: index as u64,
+                    content,
+                },
 
-            "tool_result_error" => ChatEvent::ToolResultError {
-                id: data["id"]
-                    .as_str()
-                    .or_else(|| data["call_id"].as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                error: data["error"]
-                    .as_str()
-                    .unwrap_or("Unknown error")
-                    .to_string(),
-            },
+                TurnPayload::MessageComplete {
+                    message_id,
+                    full_response,
+                    prompt_tokens,
+                    completion_tokens,
+                    total_tokens,
+                    cache_read_tokens,
+                    cache_creation_tokens,
+                } => ChatEvent::MessageComplete {
+                    id: message_id,
+                    content: full_response,
+                    prompt_tokens: prompt_tokens.map(u64::from),
+                    completion_tokens: completion_tokens.map(u64::from),
+                    total_tokens: total_tokens.map(u64::from),
+                    cache_read_tokens: cache_read_tokens.map(u64::from),
+                    cache_creation_tokens: cache_creation_tokens.map(u64::from),
+                },
 
-            "segment_complete" => ChatEvent::SegmentComplete {
-                message_id: data["message_id"].as_str().unwrap_or("").to_string(),
-                index: data["index"].as_u64().unwrap_or(0),
-                content: data["content"].as_str().unwrap_or("").to_string(),
-            },
+                // `ended` carries the turn's failure as an `"error: "`-prefixed
+                // reason; nothing else on the wire produces `ChatEvent::Error`,
+                // so without this arm a browser user saw a stalled turn where
+                // the TUI showed a message.
+                TurnPayload::Ended { ref reason } => match chat_error_from_ended_reason(reason) {
+                    Some(message) => ChatEvent::Error {
+                        code: "turn_failed".to_string(),
+                        message: message.to_string(),
+                    },
+                    None => passthrough(),
+                },
 
-            "turn_complete" | "message_complete" => ChatEvent::MessageComplete {
-                id: data["message_id"]
-                    .as_str()
-                    .or_else(|| data["id"].as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                content: data["full_response"]
-                    .as_str()
-                    .or_else(|| data["content"].as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                prompt_tokens: data["prompt_tokens"].as_u64(),
-                completion_tokens: data["completion_tokens"].as_u64(),
-                total_tokens: data["total_tokens"].as_u64(),
-                cache_read_tokens: data["cache_read_tokens"].as_u64(),
-                cache_creation_tokens: data["cache_creation_tokens"].as_u64(),
-            },
+                TurnPayload::InteractionRequested { ref request_id, .. } => {
+                    ChatEvent::InteractionRequested {
+                        id: request_id.clone(),
+                        request: normalize_interaction(&event.data),
+                    }
+                }
 
-            "error" => ChatEvent::Error {
-                code: data["code"].as_str().unwrap_or("unknown").to_string(),
-                message: data["message"]
-                    .as_str()
-                    .unwrap_or("Unknown error")
-                    .to_string(),
-            },
-
-            "interaction_requested" => ChatEvent::InteractionRequested {
-                id: data["request_id"]
-                    .as_str()
-                    .or_else(|| data["id"].as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                request: normalize_interaction(data),
-            },
-
-            "subagent_spawned" => ChatEvent::SubagentSpawned {
-                id: data["id"].as_str().unwrap_or("").to_string(),
-                prompt: data["prompt"]
-                    .as_str()
-                    .or_else(|| data["description"].as_str())
-                    .unwrap_or("")
-                    .to_string(),
-            },
-
-            "subagent_completed" => ChatEvent::SubagentCompleted {
-                id: data["id"].as_str().unwrap_or("").to_string(),
-                summary: data["summary"]
-                    .as_str()
-                    .or_else(|| data["result"].as_str())
-                    .unwrap_or("")
-                    .to_string(),
-            },
-
-            "subagent_failed" => ChatEvent::SubagentFailed {
-                id: data["id"].as_str().unwrap_or("").to_string(),
-                error: data["error"]
-                    .as_str()
-                    .unwrap_or("Unknown error")
-                    .to_string(),
-            },
-
-            "delegation_spawned" => ChatEvent::DelegationSpawned {
-                id: data["delegation_id"]
-                    .as_str()
-                    .or_else(|| data["id"].as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                prompt: data["prompt"].as_str().unwrap_or("").to_string(),
-                target_agent: data["target_agent"].as_str().map(String::from),
-            },
-
-            "delegation_completed" => ChatEvent::DelegationCompleted {
-                id: data["delegation_id"]
-                    .as_str()
-                    .or_else(|| data["id"].as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                summary: data["result_summary"]
-                    .as_str()
-                    .or_else(|| data["summary"].as_str())
-                    .unwrap_or("")
-                    .to_string(),
-            },
-
-            "delegation_failed" => ChatEvent::DelegationFailed {
-                id: data["delegation_id"]
-                    .as_str()
-                    .or_else(|| data["id"].as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                error: data["error"]
-                    .as_str()
-                    .unwrap_or("Unknown error")
-                    .to_string(),
-            },
-
-            // Daemon emits "precognition_complete"; we normalize to "precognition_result" for frontend
-            "precognition_complete" => {
-                let notes = data
-                    .get("notes")
-                    .and_then(|n| {
-                        n.as_array().map(|arr| {
-                            arr.iter()
-                                .filter_map(|note| {
-                                    let name = note
-                                        .get("title")
-                                        .or_else(|| note.get("name"))
-                                        .and_then(|v| v.as_str())?;
-                                    // Daemon payloads carry `score` (PrecognitionNoteInfo).
-                                    let relevance =
-                                        note.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                                    Some(PrecognitionNote {
-                                        name: name.to_string(),
-                                        relevance,
-                                    })
-                                })
-                                .collect::<Vec<_>>()
+                TurnPayload::PrecognitionComplete {
+                    notes_count,
+                    ref notes,
+                    ..
+                } => ChatEvent::PrecognitionResult {
+                    notes_count,
+                    notes: notes
+                        .iter()
+                        .map(|n| PrecognitionNote {
+                            name: n.title.clone(),
+                            relevance: n.score,
                         })
-                    })
-                    .unwrap_or_default();
-                let notes_count = data["notes_count"]
-                    .as_u64()
-                    .map(|n| n as usize)
-                    .unwrap_or(notes.len());
+                        .collect(),
+                },
 
-                ChatEvent::PrecognitionResult { notes_count, notes }
+                // Not modelled by the browser's presentation enum; the raw
+                // envelope still reaches it through the passthrough.
+                TurnPayload::UserMessage { .. }
+                | TurnPayload::ToolCallArgsUpdate { .. }
+                | TurnPayload::ToolCallDiffUpdate { .. }
+                | TurnPayload::InteractionCompleted { .. }
+                | TurnPayload::InjectionPending { .. }
+                | TurnPayload::ContextInjected { .. }
+                | TurnPayload::PostLlmCall { .. } => passthrough(),
+            },
+
+            SessionEventPayload::Settings(SettingsPayload::ModeChanged { mode }) => {
+                ChatEvent::ModeChanged { mode }
+            }
+            SessionEventPayload::Settings(SettingsPayload::TitleChanged { title }) => {
+                ChatEvent::TitleChanged { title }
             }
 
-            "context_usage" => ChatEvent::ContextUsage {
-                used: data["used"].as_u64().unwrap_or(0),
-                total: data["total"].as_u64().unwrap_or(0),
+            SessionEventPayload::Job(JobPayload::DelegationSpawned {
+                delegation_id,
+                prompt,
+                target_agent,
+                ..
+            }) => ChatEvent::DelegationSpawned {
+                id: delegation_id,
+                prompt,
+                target_agent,
+            },
+            SessionEventPayload::Job(JobPayload::DelegationCompleted {
+                delegation_id,
+                result_summary,
+                ..
+            }) => ChatEvent::DelegationCompleted {
+                id: delegation_id,
+                summary: result_summary,
+            },
+            SessionEventPayload::Job(JobPayload::DelegationFailed {
+                delegation_id,
+                error,
+                ..
+            }) => ChatEvent::DelegationFailed {
+                id: delegation_id,
+                error,
             },
 
-            "mode_changed" => ChatEvent::ModeChanged {
-                mode: data["mode"].as_str().unwrap_or("normal").to_string(),
-            },
-
-            "title_changed" => ChatEvent::TitleChanged {
-                title: data["title"].as_str().unwrap_or("").to_string(),
-            },
-
-            _ => ChatEvent::SessionEvent {
-                event_type: event.event_type.clone(),
-                data: data.clone(),
-            },
+            _ => passthrough(),
         }
     }
+}
+
+/// The message inside an `"error: "`-prefixed `ended` reason, with the
+/// `ChatError` `Display` prefix stripped.
+fn chat_error_from_ended_reason(reason: &str) -> Option<&str> {
+    let inner = reason.strip_prefix("error: ")?;
+    const PREFIXES: &[&str] = &[
+        "Connection error: ",
+        "Communication error: ",
+        "Mode change error: ",
+        "Command execution failed: ",
+        "Invalid input: ",
+        "Agent not available: ",
+        "Internal error: ",
+        "Invalid mode: ",
+        "Operation not supported: ",
+    ];
+    Some(
+        PREFIXES
+            .iter()
+            .find_map(|p| inner.strip_prefix(p))
+            .unwrap_or(inner),
+    )
 }
 
 /// Flatten a daemon `interaction_requested` payload into the shape the
@@ -708,13 +686,18 @@ mod tests {
     /// breaks loudly instead of the precognition badge silently disappearing.
     #[test]
     fn precognition_complete_translates_to_precognition_result() {
+        // The real wire shape: `PrecognitionNoteInfo` carries `title` and
+        // `score`. `name`/`relevance` are the SSE *output* field names, and this
+        // test used to feed them back in as input — a shape the daemon has never
+        // emitted.
         let event = make_event(
             "precognition_complete",
             serde_json::json!({
                 "notes_count": 2,
+                "query_summary": "tokio pinning",
                 "notes": [
-                    { "name": "Note A", "relevance": 0.9 },
-                    { "name": "Note B", "relevance": 0.7 },
+                    { "title": "Note A", "kiln_label": "docs", "score": 0.9 },
+                    { "title": "Note B", "kiln_label": "docs", "score": 0.7 },
                 ],
             }),
         );
@@ -842,6 +825,118 @@ mod tests {
                 assert_eq!(request["tokens"], serde_json::json!(["ls"]));
             }
             other => panic!("expected InteractionRequested, got {other:?}"),
+        }
+    }
+
+    // ── Cross-language drift guard ───────────────────────────────────
+
+    /// Text between two markers, or a panic naming the marker that moved.
+    fn between<'a>(src: &'a str, start: &str, end: &str) -> &'a str {
+        let from = src
+            .find(start)
+            .unwrap_or_else(|| panic!("scan marker `{start}` not found — fix this test"))
+            + start.len();
+        let rest = &src[from..];
+        let to = rest
+            .find(end)
+            .unwrap_or_else(|| panic!("scan marker `{end}` not found — fix this test"));
+        &rest[..to]
+    }
+
+    /// Every quoted lowercase-ish literal in `src`, in either language: Rust
+    /// `"…"` and TypeScript `'…'` both yield their contents.
+    fn quoted_wire_literals(src: &str, quote: char) -> std::collections::BTreeSet<String> {
+        let mut out = std::collections::BTreeSet::new();
+        let mut rest = src;
+        while let Some(open) = rest.find(quote) {
+            rest = &rest[open + 1..];
+            let Some(close) = rest.find(quote) else { break };
+            let lit = &rest[..close];
+            rest = &rest[close + 1..];
+            if !lit.is_empty()
+                && lit
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c == '_' || c == '.' || c == ':')
+            {
+                out.insert(lit.to_string());
+            }
+        }
+        out
+    }
+
+    /// `event_name()` decides the SSE event name; `SSE_EVENT_TYPES` decides which
+    /// names the browser registers a listener for. A name in one and not the
+    /// other is a silently undelivered event — that is how `tool_call_start`
+    /// ended up in `api.ts` with no Rust arm, and the existing TS-side guard
+    /// (`chatEventReducer.test.ts`) compares TS to TS so it passed throughout.
+    ///
+    /// Source-scanning both is ugly; it is also the only check that spans the
+    /// languages, and `rpc/dispatch.rs` sets the precedent.
+    #[test]
+    fn sse_event_names_match_the_frontend_listener_list() {
+        let rust = quoted_wire_literals(
+            between(
+                include_str!("events.rs"),
+                "pub fn event_name(&self) -> &'static str {",
+                "\n    }\n",
+            ),
+            '"',
+        );
+        let ts = quoted_wire_literals(
+            between(
+                include_str!("../web/src/lib/api.ts"),
+                "export const SSE_EVENT_TYPES = [",
+                "] as const;",
+            ),
+            '\'',
+        );
+        assert!(
+            !rust.is_empty() && !ts.is_empty(),
+            "source markers moved — fix this test (rust: {}, ts: {})",
+            rust.len(),
+            ts.len(),
+        );
+
+        let rust_only: Vec<_> = rust.difference(&ts).collect();
+        let ts_only: Vec<_> = ts.difference(&rust).collect();
+        assert!(
+            rust_only.is_empty(),
+            "emitted by event_name() but no browser listener: {rust_only:?}"
+        );
+        assert!(
+            ts_only.is_empty(),
+            "browser listens but Rust never emits: {ts_only:?}"
+        );
+    }
+
+    /// `ended` with an `"error: "` reason is the only thing on the wire that
+    /// produces `ChatEvent::Error`. Before this, `ChatEvent::Error` was
+    /// unreachable and the reducer's `case 'error'` never fired from the server,
+    /// so a browser user saw a stalled turn where the TUI showed a message.
+    #[test]
+    fn an_ended_turn_that_failed_becomes_an_error_event() {
+        let event = from_wire(SessionEventMessage::ended(
+            "s1",
+            "error: Communication error: LLM timeout",
+        ));
+        match ChatEvent::from_daemon_event(&event) {
+            ChatEvent::Error { code, message } => {
+                assert_eq!(code, "turn_failed");
+                // The ChatError Display prefix is stripped, same as convert.rs.
+                assert_eq!(message, "LLM timeout");
+            }
+            other => panic!("expected Error, got {other:?}"),
+        }
+    }
+
+    /// A clean `ended` is not an error, and the browser still sees the raw
+    /// envelope through the passthrough.
+    #[test]
+    fn a_clean_ended_turn_stays_a_passthrough() {
+        let event = from_wire(SessionEventMessage::ended("s1", "complete"));
+        match ChatEvent::from_daemon_event(&event) {
+            ChatEvent::SessionEvent { event_type, .. } => assert_eq!(event_type, "ended"),
+            other => panic!("expected passthrough, got {other:?}"),
         }
     }
 }

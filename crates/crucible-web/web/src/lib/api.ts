@@ -332,7 +332,6 @@ export async function sendChatMessage(
 export const SSE_EVENT_TYPES = [
   'token',
   'tool_call',
-  'tool_call_start',
   'tool_result',
   'tool_result_delta',
   'tool_result_complete',

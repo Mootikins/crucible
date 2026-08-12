@@ -123,8 +123,7 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         break;
       }
 
-      case 'tool_call':
-      case 'tool_call_start': {
+      case 'tool_call': {
         // A tool call after streamed text is a segment boundary: close the
         // current text message so the narration between tools survives as
         // its own entry (message_complete only carries the FINAL response,
@@ -155,7 +154,10 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
             deps.setCurrentStreamingMessageId(null);
           }
         }
-        const toolName = 'title' in event ? event.title : ('name' in event ? event.name : '');
+        // `title` is the only tool-name field on the wire. The `name` fallback
+        // here existed for `tool_call_start`, an SSE name the server has never
+        // been able to send.
+        const toolName = event.title;
         const toolArgs = 'arguments' in event ? JSON.stringify(event.arguments ?? '') : '';
         deps.addToolMessage({
           id: event.id,
@@ -477,6 +479,24 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         break;
 
       case 'session_event': {
+        // The daemon's event forwarder writes this straight to our connection
+        // when its broadcast cursor falls off the ring: N events are gone and
+        // nothing later mentions them. It arrives as a passthrough because it is
+        // minted per connection, not by a session, so it has no typed payload.
+        //
+        // Surfaced rather than logged: a transcript with an invisible hole is
+        // permanently and silently wrong, and reloading the session is the only
+        // way back — so the user has to be told, and told what to do.
+        if (event.event_type === 'stream_gap') {
+          const dropped = (event.data as { dropped?: number } | null)?.dropped;
+          deps.setError(
+            dropped === undefined
+              ? 'Event stream fell behind and events were dropped — this conversation is incomplete. Reload to see it whole.'
+              : `Event stream fell behind and ${dropped} events were dropped — this conversation is incomplete. Reload to see it whole.`,
+          );
+          break;
+        }
+
         // The daemon echoes user_message over SSE with the turn's canonical
         // message_id — the same id sendMessage keyed its entry on, so dedup
         // is exact. Viewers that attached mid-turn get the prompt from here.

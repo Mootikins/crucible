@@ -127,23 +127,29 @@ fn chat_event_from_daemon_text_delta() {
     assert_eq!(json["content"], "chunk");
 }
 
+/// The daemon's name is `thinking`; `thinking_delta` was an input arm nothing
+/// ever emitted and is gone.
 #[test]
-fn chat_event_from_daemon_thinking_delta() {
+fn chat_event_from_daemon_thinking() {
     let daemon_event = crucible_daemon::SessionEvent {
         session_id: "s1".to_string(),
-        event_type: "thinking_delta".to_string(),
+        event_type: "thinking".to_string(),
         data: json!({"content": "reasoning..."}),
     };
     let event = ChatEvent::from_daemon_event(&daemon_event);
     assert_eq!(event.event_name(), "thinking");
 }
 
+/// The daemon's only tool-call name is `tool_call`, with `{call_id, tool, args}`.
+/// This test used to feed `tool_call_start` and the legacy `id`/`name` keys — an
+/// input name nothing has ever emitted, which is why `api.ts` grew a listener for
+/// an SSE name the server could not send.
 #[test]
 fn chat_event_from_daemon_tool_call() {
     let daemon_event = crucible_daemon::SessionEvent {
         session_id: "s1".to_string(),
-        event_type: "tool_call_start".to_string(),
-        data: json!({"id": "tc-1", "name": "search", "arguments": {"query": "test"}}),
+        event_type: "tool_call".to_string(),
+        data: json!({"call_id": "tc-1", "tool": "search", "args": {"query": "test"}}),
     };
     let event = ChatEvent::from_daemon_event(&daemon_event);
     assert_eq!(event.event_name(), "tool_call");
@@ -153,26 +159,31 @@ fn chat_event_from_daemon_tool_call() {
     assert_eq!(json["title"], "search");
 }
 
+/// There is no `error` event on the wire. A failed turn arrives as `ended` with
+/// an `"error: "`-prefixed reason, which is now what produces `ChatEvent::Error`
+/// — before, that variant was unreachable and the browser showed a stalled turn.
 #[test]
-fn chat_event_from_daemon_error() {
+fn chat_event_from_daemon_failed_turn_is_an_error() {
     let daemon_event = crucible_daemon::SessionEvent {
         session_id: "s1".to_string(),
-        event_type: "error".to_string(),
-        data: json!({"code": "provider_error", "message": "API down"}),
+        event_type: "ended".to_string(),
+        data: json!({"reason": "error: Connection error: API down"}),
     };
     let event = ChatEvent::from_daemon_event(&daemon_event);
     assert_eq!(event.event_name(), "error");
 
     let json: Value = serde_json::to_value(&event).unwrap();
-    assert_eq!(json["code"], "provider_error");
+    assert_eq!(json["code"], "turn_failed");
     assert_eq!(json["message"], "API down");
 }
 
+/// The daemon's name is `message_complete`; `turn_complete` was an input arm
+/// nothing ever emitted and is gone.
 #[test]
-fn chat_event_from_daemon_turn_complete() {
+fn chat_event_from_daemon_message_complete() {
     let daemon_event = crucible_daemon::SessionEvent {
         session_id: "s1".to_string(),
-        event_type: "turn_complete".to_string(),
+        event_type: "message_complete".to_string(),
         data: json!({"message_id": "msg-99", "full_response": "Final answer"}),
     };
     let event = ChatEvent::from_daemon_event(&daemon_event);

@@ -213,10 +213,12 @@ fn test_crucible_on_api_registration() {
 
     register_crucible_on_api(&lua, handlers.clone(), functions.clone()).unwrap();
 
-    // Verify crucible.on exists
+    // Verify crucible.on exists. The name has to be a real hook: `crucible.on`
+    // now validates against `HOOK_NAMES`, because a name nothing dispatches
+    // registered happily and then never fired.
     lua.load(
         r#"
-        crucible.on("test_event", function(event)
+        crucible.on("pre_tool_call", function(event)
             return event
         end)
     "#,
@@ -227,7 +229,26 @@ fn test_crucible_on_api_registration() {
     // Check that handler was registered
     let guard = handlers.lock().unwrap();
     assert_eq!(guard.len(), 1);
-    assert_eq!(guard[0].event_type, "test_event");
+    assert_eq!(guard[0].event_type, "pre_tool_call");
+}
+
+/// The bug: `crucible.on("pre_toolcall", …)` registered, logged at `debug!`, and
+/// never fired. The registry compares `event_type` with `==`, so nothing about a
+/// misspelt name was recoverable at dispatch time.
+#[test]
+fn crucible_on_rejects_a_hook_name_nothing_dispatches() {
+    let lua = Lua::new();
+    let handlers = Arc::new(Mutex::new(Vec::new()));
+    let functions = Arc::new(Mutex::new(HashMap::new()));
+    register_crucible_on_api(&lua, handlers.clone(), functions.clone()).unwrap();
+
+    let err = lua
+        .load(r#"crucible.on("pre_toolcall", function(event) return event end)"#)
+        .exec()
+        .expect_err("a misspelt hook name must not register");
+    let msg = err.to_string();
+    assert!(msg.contains("did you mean `pre_tool_call`"), "{msg}");
+    assert!(handlers.lock().unwrap().is_empty(), "nothing may be stored");
 }
 
 // ============================================================================

@@ -39,12 +39,38 @@ crucible.on(event_type, { pattern = "...", priority = 50 }, handler)
 
 | Argument | Type | Description |
 |---|---|---|
-| `event_type` | string | Event name (e.g. `"pre_tool_call"`) |
+| `event_type` | string | Event name (e.g. `"pre_tool_call"`). Must be one of the eleven below — **exact match, no globs**. |
 | `opts.pattern` | string, optional | Glob filter applied to the event's identifier (e.g. tool name). Default: match all. |
 | `opts.priority` | integer, optional | Lower runs first. Default: `100`. |
 | `handler` | `function(ctx, event)` | Called when the event fires and matches |
 
+`event_type` is validated at registration. A name outside the closed set below
+raises an error naming the closest match — because the dispatcher compares event
+names with `==`, so a misspelt hook used to register happily and then never fire,
+with only a `debug!` line to say so.
+
+`opts.pattern` is the only glob, and it filters the event's *identifier* (the
+tool name), never the event name.
+
 ## Event Types
+
+The complete set. Every entry is a live dispatch site, kept in step with
+`HOOK_NAMES` (`crucible-lua/src/handlers/crucible_on.rs`) by a test that scans
+for them.
+
+| Event | Fires |
+|---|---|
+| `pre_tool_call` | before a tool runs — can cancel, replace, or observe |
+| `tool_result` | after a tool returns |
+| `pre_llm_call` | before the request goes to the provider |
+| `post_llm_call` | after a response has streamed |
+| `transform_context` | every turn, over the assembled context |
+| `precognition_select` | over candidate kiln notes, to choose which survive |
+| `precognition_format` | over the surviving notes, to render the context block |
+| `turn:complete` | once the whole turn has finished |
+| `tool:before_execute` | immediately before execution, after permission |
+| `tool:display_start` | to customise how a running tool card renders |
+| `tool:display_complete` | to customise how a finished tool card renders |
 
 ### `pre_tool_call`
 
@@ -173,6 +199,24 @@ Event fields: `event.user_message`, `event.note_count`, and `event.results`
 Does **not** fire when the search returned nothing — the daemon short-circuits
 before invoking it. To inject something on the empty case, use
 `transform_context`, which fires every turn.
+
+### `pre_llm_call` / `post_llm_call`
+
+`pre_llm_call` fires once per provider request, before it is sent.
+`post_llm_call` fires after the response has finished streaming and carries
+`event.response_summary`, `event.model` and `event.duration_ms`.
+
+### `transform_context`
+
+Fires every turn, over the assembled context, whether or not a kiln search ran.
+The hook for "always add something", where `precognition_format` is the hook for
+"reshape what the search found".
+
+### `turn:complete`
+
+Fires once when the whole turn has finished — after the final
+`message_complete`, not once per LLM call. The place for end-of-turn side
+effects (writing a note, updating a statusline value).
 
 ## Handler Return Values
 

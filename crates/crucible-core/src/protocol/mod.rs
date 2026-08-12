@@ -8,7 +8,9 @@ pub use rpc::{
     INVALID_REQUEST, METHOD_NOT_FOUND, PARSE_ERROR,
 };
 pub use session_events::{
-    ContextLimitResolvedPayload, ContextLimitSource, KilnNotesIndexedPayload,
-    McpServersReadyPayload, PluginsDiscoveredPayload, ProvidersListedPayload,
-    SessionInitializedPayload, WorkspaceIndexedPayload,
+    ContextLimitResolvedPayload, ContextLimitSource, EventDecodeError, Group, JobPayload,
+    KilnNotesIndexedPayload, McpServersReadyPayload, NotificationPayload, PluginsDiscoveredPayload,
+    ProvidersListedPayload, ReviewPayload, SessionEventPayload, SessionInitializedPayload,
+    SettingsPayload, SetupPayload, SystemPayload, ToolResultBody, TurnPayload, WorkflowPayload,
+    WorkspaceIndexedPayload, EVENT_NAMES,
 };
