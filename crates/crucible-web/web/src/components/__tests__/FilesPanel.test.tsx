@@ -11,6 +11,10 @@ const EMOJI = ['📝', '🔷', '🟨', '🦀', '📋', '⚙️', '🎨', '🌐',
 
 const listNotesMock = vi.fn();
 const listKilnsMock = vi.fn();
+const listDirMock = vi.fn();
+// Mutable so one describe can browse a PROJECT root (lazy, listDir) while the
+// rest use the kiln fallback (eager, listNotes).
+let projectRoots: unknown[] = [];
 // `file-tree-a11y` is deliberately NOT mocked. `currentOpenFilePath` reads the
 // real `windowStore`, and the reveal it used to trigger only fired once the
 // tree had finished loading — so a non-reactive stub produced a test that
@@ -21,6 +25,7 @@ vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   listNotes: (...args: unknown[]) => listNotesMock(...args),
   listKilns: (...args: unknown[]) => listKilnsMock(...args),
+  listDir: (...args: unknown[]) => listDirMock(...args),
   // No SSE in jsdom: return a no-op unsubscribe so onMount doesn't open a
   // real EventSource.
   subscribeToFsEvents: () => () => {},
@@ -32,7 +37,7 @@ vi.mock('@/lib/api', async (importOriginal) => ({
 vi.mock('@/contexts/ProjectContext', () => ({
   useProjectSafe: () => ({
     currentProject: () => null,
-    projects: () => [],
+    projects: () => projectRoots,
   }),
 }));
 
@@ -74,6 +79,7 @@ const NOTE_NAMES = [
 beforeEach(() => {
   vi.clearAllMocks();
   setStore('tabGroups', {});
+  projectRoots = [];
   localStorage.clear();
   // These assertions match full filenames; keep extensions visible (the tree
   // hides `.md` by default now).
@@ -88,6 +94,38 @@ beforeEach(() => {
       updated_at: '',
     })),
   );
+});
+
+describe('FilesPanel — a project root loads once', () => {
+  // `swrLocal` applies twice by design (cached value, then fetched), so
+  // `setKilns` fires twice per mount. `activeRoot` is a memo over a rebuilt
+  // roster, so it handed back a NEW TreeRoot object each time and the
+  // identity-keyed loader effect re-ran — refetching the root and every
+  // persisted-expanded folder. That was the duplicate /api/fs/list per expand.
+  const dir = (rel: string) => ({ rel_path: rel, name: rel.split('/').pop(), is_dir: true });
+  const file = (rel: string) => ({ rel_path: rel, name: rel.split('/').pop(), is_dir: false });
+
+  beforeEach(() => {
+    projectRoots = [{ path: '/proj', name: 'proj', kilns: [], repository: null }];
+    // A cached kilns value makes swrLocal apply synchronously AND again from
+    // the response — the double-apply this guards against.
+    localStorage.setItem('crucible:cache:kilns', JSON.stringify([{ path: '/vault', name: 'vault' }]));
+    localStorage.setItem('crucible.filetree.expanded.project:/proj', JSON.stringify(['src']));
+    listDirMock.mockImplementation(async (_root: string, rel: string) =>
+      rel === '' ? [dir('src'), file('README.md')] : [file('src/main.rs')],
+    );
+  });
+
+  it('fetches each directory exactly once despite the cache-then-fetch double apply', async () => {
+    const { findByText } = render(() => <FilesPanel />);
+    await findByText('README.md');
+    // Let any second pass land before counting.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    // Pre-fix this was ['', '', 'src', 'src'] — the root and every
+    // persisted-expanded folder, once per pass.
+    expect(listDirMock.mock.calls.map((c) => c[1])).toEqual(['', 'src']);
+  });
 });
 
 describe('FilesPanel — the navigator does not follow the focused tab', () => {

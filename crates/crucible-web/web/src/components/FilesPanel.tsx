@@ -1,4 +1,4 @@
-import { Component, Show, createSignal, createEffect, createMemo, onMount, onCleanup } from 'solid-js';
+import { Component, Show, createSignal, createEffect, createMemo, on, onMount, onCleanup } from 'solid-js';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import { openFileInEditor, closeTabsUnder } from '@/lib/file-actions';
 import { PanelShell } from './PanelShell';
@@ -193,13 +193,37 @@ export const FilesPanel: Component<{ embedded?: boolean }> = (props) => {
     }
   }
 
-  createEffect(() => {
+  // Keyed on the root's identity AS A PATH, not on the memo's object. `roster()`
+  // rebuilds fresh TreeRoot objects on every recompute and `swrLocal` applies
+  // twice by design (cached value, then fetched), so `setKilns` fires twice per
+  // mount — and an identity-keyed effect refetched the root plus every
+  // persisted-expanded folder a second time. That was the duplicate
+  // `/api/fs/list` per expand: folders already in the persisted-expanded set
+  // were fetched once per pass.
+  //
+  // `on`'s handler also runs untracked, which drops a second accidental
+  // dependency: `loadProjectTree` reads `showHidden()` before its first await
+  // (so inside the tracking scope), and `toggleHidden` already reloads
+  // explicitly — tracking it meant every toggle did two full loads.
+  // The key is its OWN memo, and that is the load-bearing part: `on()` narrows
+  // what an effect tracks but does not compare the dep's value, so keying it on
+  // an inline accessor still re-ran on every `activeRoot` notification. A memo
+  // compares with `===`, so an unchanged key string stops the propagation here.
+  const activeRootKey = createMemo(() => {
     const root = activeRoot();
-    setRawRoot(null);
-    if (!root) return;
-    if (root.kind === 'kiln') void loadKilnTree(root.path);
-    else void loadProjectTree(root);
+    return root ? rootKey(root) : null;
   });
+
+  createEffect(
+    on(activeRootKey, (key) => {
+      setRawRoot(null);
+      if (!key) return;
+      const root = activeRoot();
+      if (!root) return;
+      if (root.kind === 'kiln') void loadKilnTree(root.path);
+      else void loadProjectTree(root);
+    }),
+  );
 
   // Displayed collection = sorted view of the raw tree. New identity on
   // raw-tree or sort change -> FileTreeView re-mounts (keyed <Show>).
