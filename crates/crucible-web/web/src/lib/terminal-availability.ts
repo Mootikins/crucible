@@ -21,21 +21,56 @@ const [remoteShell, setRemoteShell] = createSignal<boolean | undefined>(undefine
 // Lazy on first read, NOT at import: a module-level fetch would fire as an
 // import side effect in any test/tool that transitively pulls this in under
 // a non-localhost URL.
-let started = false;
+// A promise while a check is in flight, not a boolean latch. The latch made a
+// TRANSPORT failure permanent: on a LAN page load the first `/api/config` is a
+// 401 (the API group is behind bearer auth), which collapsed *unknown* onto
+// *denied* for the lifetime of the page. The terminal then claimed to be
+// localhost-only until a full reload, even after signing in.
+let inFlight: Promise<void> | null = null;
+// These accessors are read from render paths, so "retry when the answer is
+// unknown" has to be throttled or every read fires a request. Same shape as the
+// auth-prompt throttle in `api.ts`.
+const RETRY_COOLDOWN_MS = 3_000;
+let lastAttempt = 0;
+
 function ensureStarted(): void {
-  if (started) return;
-  started = true;
   if (isLocalhost()) {
     setRemoteShell(true);
     return;
   }
+  // Settled either way, or already asking: nothing to do. `undefined` means we
+  // never got an answer, so that one is worth re-asking — behind the cooldown.
+  if (inFlight || remoteShell() !== undefined) return;
+  const now = Date.now();
+  if (now - lastAttempt < RETRY_COOLDOWN_MS) return;
+  lastAttempt = now;
   try {
-    getConfig()
-      .then((c) => setRemoteShell(c.remote_shell === true))
-      .catch(() => setRemoteShell(false));
+    inFlight = getConfig()
+      .then((c) => void setRemoteShell(c.remote_shell === true))
+      // `undefined`, never `false`: we did not learn that the terminal is
+      // denied, we learned nothing. Only `remote_shell === false` is a denial.
+      .catch(() => setRemoteShell(undefined))
+      .finally(() => {
+        inFlight = null;
+      });
   } catch {
-    setRemoteShell(false);
+    setRemoteShell(undefined);
+    inFlight = null;
   }
+}
+
+// Signing in is the event that turns the 401 above into an answer. Without
+// this, a user who dismissed the token prompt and authenticated later — or in
+// another tab — kept a terminal that refused for no stated reason.
+if (typeof window !== 'undefined') {
+  window.addEventListener('crucible:auth-ok', () => {
+    setRemoteShell(undefined);
+    inFlight = null;
+    // Signing in is new information, so it bypasses the cooldown rather than
+    // waiting it out.
+    lastAttempt = 0;
+    ensureStarted();
+  });
 }
 
 /** Terminal is usable from this client. */

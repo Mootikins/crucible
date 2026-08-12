@@ -13,6 +13,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import '@xterm/xterm/css/xterm.css';
 import { terminalAllowed, terminalDenied } from '@/lib/terminal-availability';
+import { nextReconnectDelay } from '@/lib/terminal-backoff';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
 
 /**
@@ -64,7 +65,9 @@ function wsUrl(): string {
 }
 
 export const TerminalPanel: Component = () => {
-  const [status, setStatus] = createSignal<'connecting' | 'open' | 'closed'>('connecting');
+  const [status, setStatus] = createSignal<'connecting' | 'open' | 'closed' | 'reconnecting'>(
+    'connecting',
+  );
   // Terminal font: its own setting when set, else the Appearance code font,
   // else the shell default. xterm renders to canvas, so CSS vars can't reach
   // it — the resolved family is passed as a real option.
@@ -86,6 +89,9 @@ export const TerminalPanel: Component = () => {
   let fitAddon: FitAddon | undefined;
   let socket: WebSocket | undefined;
   let resizeObserver: ResizeObserver | undefined;
+  let reconnectAttempts = 0;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let disposed = false;
 
   // Live-apply font changes from Settings to the running terminal.
   createEffect(() => {
@@ -101,13 +107,42 @@ export const TerminalPanel: Component = () => {
     }
   });
 
-  const connect = (t: Terminal, fit: FitAddon) => {
+  /**
+   * Schedule the next attempt, or don't.
+   *
+   * A dropped socket used to be terminal (in both senses): status went to
+   * `closed` and stayed there until someone clicked. Every server restart —
+   * including every `just install`, which overwrites the binary the unit runs —
+   * therefore left an open tab showing "Session ended" forever, while ordinary
+   * HTTP requests recovered silently and made the rest of the UI look healthy.
+   */
+  const scheduleReconnect = () => {
+    if (disposed || reconnectTimer) return;
+    // A hidden tab retrying on a timer is pure waste; the visibility listener
+    // below re-arms the moment it comes back.
+    if (document.hidden) {
+      setStatus('closed');
+      return;
+    }
+    setStatus('reconnecting');
+    const delay = nextReconnectDelay(reconnectAttempts++);
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      if (!disposed && term) connect(term);
+    }, delay);
+  };
+
+  const connect = (t: Terminal) => {
     setStatus('connecting');
     const ws = new WebSocket(wsUrl());
     ws.binaryType = 'arraybuffer';
     socket = ws;
 
     ws.onopen = () => {
+      // Reset here, not on the attempt: a socket that opens and immediately
+      // dies must keep escalating, or a half-broken server gets hammered at
+      // the base delay forever.
+      reconnectAttempts = 0;
       setStatus('open');
       // Sync the PTY to the fitted size before the first prompt paints.
       ws.send(JSON.stringify({ t: 'r', cols: t.cols, rows: t.rows }));
@@ -120,8 +155,8 @@ export const TerminalPanel: Component = () => {
         t.write(new Uint8Array(ev.data as ArrayBuffer));
       }
     };
-    ws.onclose = () => setStatus('closed');
-    ws.onerror = () => setStatus('closed');
+    ws.onclose = () => scheduleReconnect();
+    ws.onerror = () => scheduleReconnect();
 
     const dataSub = t.onData((d) => {
       if (ws.readyState === WebSocket.OPEN) {
@@ -137,7 +172,11 @@ export const TerminalPanel: Component = () => {
       dataSub.dispose();
       resizeSub.dispose();
     });
-    void fit;
+  };
+
+  /** Retry as soon as a hidden tab is looked at again. */
+  const onVisibilityChange = () => {
+    if (!document.hidden && status() === 'closed' && !reconnectTimer) scheduleReconnect();
   };
 
   const init = (el: HTMLDivElement) => {
@@ -187,8 +226,9 @@ export const TerminalPanel: Component = () => {
         // WebGL unavailable (headless/old GPU) — DOM renderer still works.
       }
       fit.fit();
-      connect(t, fit);
+      connect(t);
     });
+    document.addEventListener('visibilitychange', onVisibilityChange);
     resizeObserver = new ResizeObserver(() => {
       try {
         fit.fit();
@@ -199,23 +239,55 @@ export const TerminalPanel: Component = () => {
     resizeObserver.observe(el);
   };
 
+  /** The manual escape hatch. A click is a fresh start, so the backoff resets. */
   const reconnect = () => {
     if (!term) return;
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    reconnectAttempts = 0;
     term.reset();
-    const fit = new FitAddon();
-    term.loadAddon(fit);
-    fitAddon = fit;
-    connect(term, fit);
+    // Reuse the addon loaded in `init`. Constructing one per attempt leaked:
+    // xterm's addon manager holds every loaded addon until `Terminal.dispose()`,
+    // and `reset()` clears the buffer, not addons — so N reconnects left N live
+    // FitAddons all subscribed to resize/render, with `fitAddon` pointing only
+    // at the newest.
+    try {
+      fitAddon?.fit();
+    } catch {
+      // Fitting a zero-sized (hidden) panel throws; harmless.
+    }
+    connect(term);
   };
 
   onCleanup(() => {
+    // Before closing the socket: `onclose` fires during teardown, and without
+    // this it would schedule a reconnect against a disposed terminal.
+    disposed = true;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    document.removeEventListener('visibilitychange', onVisibilityChange);
     resizeObserver?.disconnect();
     socket?.close();
     term?.dispose();
   });
 
   return (
-    <Switch fallback={<div class="h-full w-full bg-shell-bg" data-testid="terminal-panel" />}>
+    <Switch
+      fallback={
+        // Neither allowed nor denied: the availability check is in flight, or
+        // it failed and left the answer unknown. This was a blank panel, which
+        // is indistinguishable from a broken one.
+        <div
+          class="h-full w-full bg-shell-bg flex flex-col items-center justify-center gap-1.5 px-6 text-center"
+          data-testid="terminal-panel"
+        >
+          <span class="text-sm text-muted-dark" data-testid="terminal-checking">
+            Checking terminal availability…
+          </span>
+        </div>
+      }
+    >
       <Match when={denied()}>
         <div
           class="h-full w-full bg-shell-bg flex flex-col items-center justify-center gap-1.5 px-6 text-center"
@@ -237,7 +309,7 @@ export const TerminalPanel: Component = () => {
       <Match when={allowed()}>
         <div class="relative h-full w-full bg-shell-bg" data-testid="terminal-panel">
           <div ref={init} class="h-full w-full pl-2 pt-1" />
-          <Show when={status() === 'closed'}>
+          <Show when={status() === 'closed' || status() === 'reconnecting'}>
             {/* z-20: xterm's accessibility layer is z-10 inside the term —
                 the overlay must stay clickable above it. */}
             <div class="absolute inset-0 z-20 flex items-center justify-center bg-shell-bg/80 cru-anim-fade">
@@ -247,7 +319,7 @@ export const TerminalPanel: Component = () => {
                 onClick={reconnect}
                 class="px-3 py-1.5 rounded border border-hairline-strong bg-control text-shell-ink text-sm hover:bg-hover-wash transition-colors"
               >
-                Session ended — reconnect
+                {status() === 'reconnecting' ? 'Reconnecting… — retry now' : 'Session ended — reconnect'}
               </button>
             </div>
           </Show>

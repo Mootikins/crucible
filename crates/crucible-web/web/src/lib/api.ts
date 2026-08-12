@@ -162,6 +162,11 @@ export async function login(key: string): Promise<boolean> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key }),
     });
+    // The success counterpart to `crucible:auth-required`. Modules that gave up
+    // on a 401 need a signal to re-ask; without one, anything that cached a
+    // failure stayed broken for the life of the page even after signing in
+    // (the terminal's availability check did exactly that).
+    if (res.ok) window.dispatchEvent(new CustomEvent('crucible:auth-ok'));
     return res.ok;
   } catch {
     return false;
