@@ -69,30 +69,7 @@ impl ParserCapabilities {
             horizontal_rules: true,
             full_content: true,
             max_file_size: Some(10 * 1024 * 1024),
-            extensions: vec!["md", "markdown"],
-        }
-    }
-
-    /// Create capabilities for a minimal parser
-    pub fn minimal() -> Self {
-        Self {
-            name: "minimal",
-            version: "0.0.0",
-            yaml_frontmatter: false,
-            toml_frontmatter: false,
-            wikilinks: true,
-            tags: true,
-            headings: false,
-            code_blocks: false,
-            tables: false,
-            callouts: false,
-            latex_expressions: false,
-            footnotes: false,
-            blockquotes: false,
-            horizontal_rules: false,
-            full_content: true,
-            max_file_size: Some(1024 * 1024), // 1 MB
-            extensions: vec!["md"],
+            extensions: crate::kiln::KilnFileKind::NOTE_EXTENSIONS.to_vec(),
         }
     }
 
@@ -181,16 +158,13 @@ mod tests {
         assert!(caps.supports_all(&reqs));
     }
 
+    /// The advertised list is not a second predicate: it is the `Note` arm of
+    /// `KilnFileKind`, so it cannot drift from `is_note_file`.
     #[test]
-    fn test_minimal_capabilities() {
-        let caps = ParserCapabilities::minimal();
-        let reqs = ParserRequirements::crucible_kiln();
-
-        // Minimal caps don't support all crucible requirements
-        assert!(!caps.supports_all(&reqs));
-
-        // But does support minimal requirements
-        let min_reqs = ParserRequirements::links_and_tags_only();
-        assert!(caps.supports_all(&min_reqs));
+    fn advertised_extensions_come_from_the_canonical_note_list() {
+        assert_eq!(
+            ParserCapabilities::full().extensions,
+            crate::kiln::KilnFileKind::NOTE_EXTENSIONS.to_vec()
+        );
     }
 }

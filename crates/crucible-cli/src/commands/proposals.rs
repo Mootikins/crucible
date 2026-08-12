@@ -66,7 +66,7 @@ fn collect_proposals(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
         .with_context(|| format!("reading proposals dir {}", dir.display()))?
         .filter_map(|entry| entry.ok().map(|e| e.path()))
-        .filter(|p| p.extension().is_some_and(|ext| ext == "md"))
+        .filter(|p| crucible_core::is_note_file(p))
         .collect();
     files.sort();
     Ok(files)

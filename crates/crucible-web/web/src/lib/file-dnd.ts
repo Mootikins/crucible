@@ -19,6 +19,7 @@ import {
   dropTargetForElements,
 } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
+import { isMarkdownPath, noteStem } from './markdown-path';
 
 export type FileDropZone = 'folder' | 'tree-root' | 'pane' | 'editor' | 'ribbon';
 
@@ -68,10 +69,14 @@ export function moveTargetRel(source: FileDragData, destParentRel: string): stri
  * everything else inserts the root-relative path.
  */
 export function insertTextFor(source: FileDragData, targetPath: string): string {
-  const targetIsMd = /\.(md|markdown)$/i.test(targetPath);
-  const sourceIsMdNote = source.rootKind === 'kiln' && /\.md$/i.test(source.name);
+  // Both sides ask the same predicate: they used to disagree (target took
+  // `.markdown`, source only `.md`), so a `.markdown` note dropped into a note
+  // inserted a bare path. The stem must be stripped by the same module too, or
+  // the widened source side emits `[[Reading List.markdown]]`.
+  const targetIsMd = isMarkdownPath(targetPath);
+  const sourceIsMdNote = source.rootKind === 'kiln' && isMarkdownPath(source.name);
   if (targetIsMd && sourceIsMdNote) {
-    return `[[${source.name.replace(/\.md$/i, '')}]]`;
+    return `[[${noteStem(source.name)}]]`;
   }
   return source.relPath;
 }

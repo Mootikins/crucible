@@ -70,6 +70,12 @@ const lisp: FileIconMeta = { icon: Parentheses, color: PURPLE };
 
 const BY_EXT: Record<string, FileIconMeta> = {
   // --- prose / docs ---
+  // This map is cosmetic and deliberately WIDER than `isMarkdownPath`
+  // (`lib/markdown-path.ts`): it answers "what does this file look like", not
+  // "is this a note we can edit as markdown". `.mdx`/`.mdc`/`.txt`/`.rst` open
+  // as source with a document icon, which is the honest picture. Do not read
+  // this list as precedent for widening the predicate — and do not add a
+  // markdown extension here without adding it there too.
   md: doc, markdown: doc, mdx: doc, mdc: doc,
   txt: { icon: FileText, color: MUTED },
   rst: doc, adoc: doc, asciidoc: doc, org: doc, tex: doc, bib: doc, rtf: doc,

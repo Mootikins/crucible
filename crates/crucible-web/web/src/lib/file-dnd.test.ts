@@ -81,6 +81,29 @@ describe('insertTextFor', () => {
   it('inserts the rel path when the target is not markdown', () => {
     expect(insertTextFor(drag(), 'src/main.rs')).toBe('notes/a.md');
   });
+
+  // The source and target sides answered "is this markdown" differently: the
+  // target accepted `.markdown`, the source only `.md`, so a `.markdown` note
+  // dropped into a `.md` note inserted a bare path instead of a wikilink.
+  // Both sides now go through isMarkdownPath, so every extension the target
+  // accepts the source accepts too.
+  it('treats source and target symmetrically for every markdown extension', () => {
+    const exts = ['md', 'MD', 'markdown', 'MARKDOWN'];
+    for (const srcExt of exts) {
+      for (const dstExt of exts) {
+        const src = drag({ relPath: `notes/Reading List.${srcExt}`, name: `Reading List.${srcExt}` });
+        expect(insertTextFor(src, `journal/today.${dstExt}`)).toBe('[[Reading List]]');
+      }
+    }
+  });
+
+  it('inserts the rel path for extensions that are not notes', () => {
+    for (const ext of ['mdx', 'mdc', 'txt']) {
+      const src = drag({ relPath: `notes/a.${ext}`, name: `a.${ext}` });
+      expect(insertTextFor(src, 'journal/today.md')).toBe(`notes/a.${ext}`);
+      expect(insertTextFor(drag(), `journal/today.${ext}`)).toBe('notes/a.md');
+    }
+  });
 });
 
 describe('isInnermostFileTarget', () => {

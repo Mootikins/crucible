@@ -54,11 +54,7 @@ impl FileSystemKilnStatsService {
                 }
 
                 // Check if it's a markdown file
-                if entry_path
-                    .extension()
-                    .map(|ext| ext.eq_ignore_ascii_case("md"))
-                    .unwrap_or(false)
-                {
+                if crucible_core::is_note_file(&entry_path) {
                     stats.markdown_files += 1;
                 }
             } else if entry_path.is_dir() {

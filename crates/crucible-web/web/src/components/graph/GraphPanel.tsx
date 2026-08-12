@@ -45,6 +45,7 @@ import {
   type GraphSettings,
 } from '@/lib/graph/types';
 import { GraphControls } from './GraphControls';
+import { isMarkdownPath } from '@/lib/markdown-path';
 
 // v2: the force wiring changed to degree-aware clustering, so v1's persisted
 // force values would fight the new defaults — a fresh key retires them.
@@ -104,7 +105,7 @@ export const GraphPanel: Component = () => {
   const editor = useEditorSafe();
   const focalKey = createMemo(() => {
     const path = editor.activeFile();
-    if (!path || !/\.(md|markdown)$/i.test(path)) return null;
+    if (!path || !isMarkdownPath(path)) return null;
     return noteKeyForPath(path, kiln());
   });
   // Rebuild trigger that only tracks the focused note while local mode is on,

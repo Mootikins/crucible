@@ -2,6 +2,7 @@ import { Component, JSX, Match, Show, Switch, createMemo } from 'solid-js';
 import { CanvasNoteCard, CanvasTextCard } from './CanvasCard';
 import { ExternalLink, FileText, ShieldAlert } from '@/lib/icons';
 import { resolveCanvasColor, type CanvasNode, type FileNode } from '@/lib/canvas-types';
+import { isMarkdownPath } from '@/lib/markdown-path';
 
 
 /**
@@ -231,8 +232,6 @@ const LinkCard: Component<{ url: string; interactive?: boolean }> = (props) => {
   );
 };
 
-const MARKDOWN_EXT = /\.(md|markdown)$/i;
-
 const FileCard: Component<{
   node: FileNode;
   rawUrlFor: (relPath: string) => string;
@@ -246,7 +245,7 @@ const FileCard: Component<{
 
   return (
     <Switch fallback={<FileHeader node={props.node} onOpen={props.onOpenFile} />}>
-      <Match when={MARKDOWN_EXT.test(path())}>
+      <Match when={isMarkdownPath(path())}>
         <CanvasNoteCard
           absPath={props.absPathFor(path())}
           kiln={props.kiln}

@@ -798,6 +798,13 @@ impl KilnManager {
     /// Process multiple files through the kiln's pipeline
     ///
     /// Returns (processed_count, skipped_count, errors)
+    ///
+    /// Emits no per-file event, and never has. The batch progress events that
+    /// were deleted lived on the RPC fast path (`server/kiln.rs`) instead, over
+    /// an explicit path list; this is the loop where indexing is actually slow.
+    /// A future full-kiln progress producer belongs here, addressed to
+    /// `WILDCARD_SESSION` so both surfaces can receive it — the manager already
+    /// holds an `event_tx`, so the missing piece is a consumer, not a sender.
     pub async fn process_batch(
         &self,
         kiln_path: &Path,

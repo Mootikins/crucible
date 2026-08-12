@@ -18,6 +18,7 @@ import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';
 import { RefreshCw } from '@/lib/icons';
 import { listKilns } from '@/lib/api';
+import { isMarkdownPath } from '@/lib/markdown-path';
 
 /**
  * The kiln holding the file the panel is describing.
@@ -62,7 +63,7 @@ export const BacklinksPanel: Component = () => {
 
   const focusedFile = createMemo(() => {
     const path = editor.activeFile();
-    if (!path || !/\.(md|markdown)$/i.test(path)) return null;
+    if (!path || !isMarkdownPath(path)) return null;
     return path;
   });
 

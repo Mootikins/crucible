@@ -7,6 +7,7 @@
 //!   A2c — every `/api` path the web frontend calls has a backend route.
 //!   A2d — the CLI does not build its own knowledge-base context block.
 //!   A2e — every session config knob the daemon advertises has a web route.
+//!   A2f — nobody hand-rolls the "is this file markdown" predicate.
 //!
 //! A2* live here rather than in the daemon's companion file because they scan
 //! CLI and web source; the daemon's header lists A1/A3/A4/A5 for the same
@@ -493,5 +494,273 @@ fn every_rpc_session_knob_is_reachable_from_the_web() {
         failures.is_empty(),
         "RPC↔web session-knob parity violations:\n  - {}",
         failures.join("\n  - ")
+    );
+}
+
+// ===========================================================================
+// A2f — one markdown predicate.
+//
+// `KilnFileKind::of` (crucible-core/src/kiln.rs) is the only thing allowed to
+// know which extensions are notes. Fourteen call sites used to answer it
+// themselves, in four mutually-inconsistent ways, so `Reading List.markdown`
+// was indexed, searchable and live-previewed by the daemon while `cru stats`,
+// `cru kiln validate`, `cru workflow` and `cru process --watch` all reported
+// that it did not exist. Nothing failed: each copy was locally correct.
+//
+// Two families deliberately do NOT match, because they answer a different
+// question and unifying them would be a bug:
+//   - stem-stripping (`strip_suffix(".md")`, `trim_end_matches(".md")`) is
+//     wikilink *resolution*, governed by Obsidian's stem rules;
+//   - `.md`-*appending* (`ensure_md_suffix`, `note_refactor.rs`, `acp/tools.rs`)
+//     answers "what extension do we create", which stays `.md` even though the
+//     recognizer accepts `.markdown`.
+// Both spell the extension WITH a leading dot, so every pattern below matches
+// only the bare `"md"` form. That is what keeps this gate's allowlist small
+// instead of enumerating a dozen legitimate sites.
+// ===========================================================================
+
+/// Bare-extension comparison forms. None may contain `".md"` with a leading
+/// dot — see the header: that would flag every `ends_with(".md")` path-builder.
+const MARKDOWN_PREDICATE_PATTERNS: &[&str] = &[
+    r#"==\s*Some\("md"\)"#,
+    r#"==\s*"md""#,
+    r#"eq_ignore_ascii_case\("md"\)"#,
+    r#"matches!\([^)]*"md""#,
+    r#"vec!\["md""#,
+    r#"\["md""#,
+];
+
+/// The canonical home, skipped: it is where the answer lives.
+const MARKDOWN_PREDICATE_HOME: &str = "crates/crucible-core/src/kiln.rs";
+
+/// Files that still hold a copy. SHRINK-ONLY, like WEB_ROUTE_LEDGER: an entry
+/// whose file has stopped matching fails just as loudly as a new copy, so the
+/// ledger cannot outlive the work it records.
+///
+/// Currently empty, which is the goal state: every Rust caller asks
+/// `crucible_core::is_note_file` / `is_indexable_file`. The last row was
+/// `watch/handlers/parser_handler.rs`, dead code reachable only from its own
+/// tests, deleted rather than migrated. Add a row only to record work you are
+/// deliberately deferring, and say why.
+const MARKDOWN_PREDICATE_LEDGER: &[&str] = &[];
+
+/// Frontend files allowed to name markdown extensions.
+///
+/// Permanent, not a ledger: `lib/markdown-path.ts` is the frontend's canonical
+/// home (the one duplicate of the Rust predicate that has to exist, because
+/// TypeScript cannot call Rust and asking the daemon per keystroke is not an
+/// option), and `lib/file-icons.ts` maps extensions to glyphs — cosmetic, and
+/// it deliberately gives `.mdx`/`.mdc` a document icon without claiming they
+/// are editable notes.
+const FRONTEND_MARKDOWN_HOMES: &[&str] = &[
+    "crates/crucible-web/web/src/lib/markdown-path.ts",
+    "crates/crucible-web/web/src/lib/file-icons.ts",
+];
+
+/// Predicate forms only. Narrow on purpose: `=== 'md'` and the `/\.(md|
+/// markdown)$/i` regex are how the copies were spelled, whereas a bare `'md'`
+/// would flag `IconButton`'s `size?: 'sm' | 'md'` union and
+/// `CodeMirrorEditor`'s `case 'md':` grammar switch, neither of which is a note
+/// predicate.
+const FRONTEND_PREDICATE_PATTERNS: &[&str] = &[
+    r"\\\.\(md\|markdown\)\$/i?\.test\(",
+    r"===\s*'md'",
+    r#"===\s*"md""#,
+];
+
+/// `src` with `//` line comments removed, string literals respected.
+///
+/// Prose about the predicate is not a copy of it: `kiln_validate.rs` documents
+/// itself as using "the canonical predicate rather than an inline `ext ==
+/// "md"`", and flagging that sentence would teach the next author to describe
+/// the fix less honestly rather than to make it.
+fn without_line_comments(src: &str) -> String {
+    let mut out = String::with_capacity(src.len());
+    for line in src.lines() {
+        let bytes = line.as_bytes();
+        let (mut in_str, mut escaped, mut i) = (false, false, 0usize);
+        let mut cut = line.len();
+        while i < bytes.len() {
+            let c = bytes[i];
+            if in_str {
+                match (escaped, c) {
+                    (true, _) => escaped = false,
+                    (false, b'\\') => escaped = true,
+                    (false, b'"') => in_str = false,
+                    _ => {}
+                }
+            } else if c == b'"' {
+                in_str = true;
+            } else if c == b'/' && bytes.get(i + 1) == Some(&b'/') {
+                cut = i;
+                break;
+            }
+            i += 1;
+        }
+        out.push_str(&line[..cut]);
+        out.push('\n');
+    }
+    out
+}
+
+/// Every `crates/*/src/**/*.rs` path, as a workspace-relative `/`-joined string.
+fn crate_source_files(root: &Path) -> Vec<(String, PathBuf)> {
+    let mut out = Vec::new();
+    for entry in WalkDir::new(root.join("crates"))
+        .into_iter()
+        .filter_map(Result::ok)
+    {
+        let p = entry.path();
+        if p.extension().and_then(|e| e.to_str()) != Some("rs") {
+            continue;
+        }
+        let rel = p
+            .strip_prefix(root)
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/");
+        if !rel.contains("/src/") {
+            continue;
+        }
+        out.push((rel, p.to_path_buf()));
+    }
+    out
+}
+
+// UNIQUE: every copy of this predicate compiles, passes review and is locally
+// correct — `extension() == Some("md")` is not a lint violation, it is just a
+// different answer to a question that must have one. No type can express "ask
+// KilnFileKind", and the Rust↔TypeScript half of it is beyond any compiler.
+#[test]
+fn nobody_hand_rolls_the_markdown_extension_check() {
+    let root = workspace_root();
+    let re = Regex::new(&MARKDOWN_PREDICATE_PATTERNS.join("|")).unwrap();
+
+    // Extraction sanity: the canonical home itself must match, or the pattern
+    // family has rotted into matching nothing and this gate is a no-op.
+    assert!(
+        re.is_match(&without_line_comments(&read(
+            &root.join(MARKDOWN_PREDICATE_HOME)
+        ))),
+        "scan regex no longer matches {MARKDOWN_PREDICATE_HOME} — the pattern \
+         family broke, fix the test"
+    );
+
+    let ledger: BTreeSet<&str> = MARKDOWN_PREDICATE_LEDGER.iter().copied().collect();
+    let mut offenders = Vec::new();
+    let mut matched_ledger_rows: BTreeSet<&str> = BTreeSet::new();
+
+    for (rel, path) in crate_source_files(&root) {
+        if rel == MARKDOWN_PREDICATE_HOME {
+            continue;
+        }
+        let src = without_line_comments(&read(&path));
+        let hits: Vec<String> = re
+            .find_iter(&src)
+            .map(|m| m.as_str().trim().to_string())
+            .collect();
+        if hits.is_empty() {
+            continue;
+        }
+        match ledger.get(rel.as_str()) {
+            Some(row) => {
+                matched_ledger_rows.insert(row);
+            }
+            None => offenders.push(format!("{rel}: {}", hits.join(", "))),
+        }
+    }
+
+    // Both directions, so the ledger records outstanding work rather than
+    // forgotten work: a row whose file has stopped matching must be removed.
+    let stale: Vec<&str> = ledger
+        .difference(&matched_ledger_rows)
+        .copied()
+        .collect::<Vec<_>>();
+
+    assert!(
+        offenders.is_empty() && stale.is_empty(),
+        "A2f: the markdown extension check has been hand-rolled again.\n\
+         Call `crucible_core::is_note_file(path)` (or `is_indexable_file` when \
+         canvases count too) instead — it lowercases the extension and accepts \
+         `md` and `markdown`, which is what the daemon's indexer, watcher and \
+         search already do. Building a `.md` path is a different question and \
+         does not match these patterns.\n  \
+         new copies: {offenders:?}\n  \
+         stale MARKDOWN_PREDICATE_LEDGER rows (the file no longer matches — \
+         remove the row): {stale:?}"
+    );
+}
+
+// UNIQUE: the frontend copy is real and unavoidable (no Rust call, and asking
+// the daemon would be a network round trip per keystroke), so the only thing
+// that can stop it becoming six copies again is a scan. The compiler cannot
+// cross the language boundary and neither can A2f's Rust half.
+#[test]
+fn the_frontend_has_exactly_one_markdown_predicate() {
+    let root = workspace_root();
+    let re = Regex::new(&FRONTEND_PREDICATE_PATTERNS.join("|")).unwrap();
+    let homes: BTreeSet<&str> = FRONTEND_MARKDOWN_HOMES.iter().copied().collect();
+
+    let canonical = root.join(FRONTEND_MARKDOWN_HOMES[0]);
+    assert!(
+        canonical.is_file(),
+        "{} is missing — the frontend's single markdown predicate lives there; \
+         if it moved, update FRONTEND_MARKDOWN_HOMES",
+        FRONTEND_MARKDOWN_HOMES[0]
+    );
+
+    // Extraction sanity, against literals rather than a file. The Rust half
+    // can scan its own canonical home for proof the pattern family still
+    // matches; this half cannot, because `markdown-path.ts` deliberately
+    // spells the predicate a third way (`NOTE_EXTENSIONS.includes(ext)`, so it
+    // mirrors `Path::extension()` and agrees with `KilnFileKind::of` that a
+    // bare `.md` is an Asset). With zero matches anywhere in `src/`, a typo in
+    // FRONTEND_PREDICATE_PATTERNS would leave this test green forever. These
+    // are the exact spellings the six deleted copies used.
+    for spelling in [
+        r"/\.(md|markdown)$/i.test(props.path)",
+        r"/\.(md|markdown)$/.test(name)",
+        r"if (ext === 'md') {",
+        r#"if (ext === "md") {"#,
+    ] {
+        assert!(
+            re.is_match(spelling),
+            "scan regex no longer matches {spelling:?} — the pattern family \
+             broke and the frontend half of A2f is silently a no-op; fix \
+             FRONTEND_PREDICATE_PATTERNS"
+        );
+    }
+
+    let mut offenders = Vec::new();
+    for entry in WalkDir::new(root.join("crates/crucible-web/web/src"))
+        .into_iter()
+        .filter_map(Result::ok)
+    {
+        let p = entry.path();
+        let ext = p.extension().and_then(|e| e.to_str());
+        if !matches!(ext, Some("ts") | Some("tsx")) {
+            continue;
+        }
+        let rel = p
+            .strip_prefix(&root)
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/");
+        if homes.contains(rel.as_str()) {
+            continue;
+        }
+        for m in re.find_iter(&read(p)) {
+            offenders.push(format!("{rel}: {}", m.as_str().trim()));
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "A2f (frontend): `isMarkdownPath` from `lib/markdown-path.ts` is the \
+         frontend's only markdown predicate — import it instead of re-testing \
+         the extension. Its counterpart `noteStem` strips the extension a \
+         wikilink insert needs. Both mirror `KilnFileKind::of` in \
+         crates/crucible-core/src/kiln.rs and must change with it:\n  - {}",
+        offenders.join("\n  - ")
     );
 }

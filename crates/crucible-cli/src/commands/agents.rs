@@ -233,7 +233,7 @@ async fn validate(config: &CliConfig, verbose: bool) -> Result<()> {
             continue;
         }
 
-        // Find all .md files in directory
+        // Find all markdown files in directory
         let entries = match std::fs::read_dir(&dir) {
             Ok(e) => e,
             Err(_) => continue,
@@ -241,7 +241,7 @@ async fn validate(config: &CliConfig, verbose: bool) -> Result<()> {
 
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().is_some_and(|e| e == "md") {
+            if crucible_core::is_note_file(&path) {
                 total_files += 1;
                 let mut warnings = Vec::new();
 

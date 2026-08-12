@@ -115,6 +115,17 @@ spans that stay resolvable and backlinkable but are never spliced.
 about. It replaced twelve hardcoded `extension == "md"` checks that were already
 subtly inconsistent — some accepted `.markdown`, none were case-insensitive.
 
+That was true of the daemon only; the migration stopped at the crate boundary,
+and fourteen more copies lived in the CLI, in `crucible-core` itself and in the
+web frontend, so `Reading List.markdown` was indexed, searchable and
+live-previewed while `cru stats`, `cru kiln validate`, `cru workflow` and
+`cru process --watch` all reported that it did not exist. It is now true of the
+whole workspace, and **A2f** in `crates/crucible-cli/tests/architecture_tests.rs`
+is what keeps it true: it scans every `crates/*/src/**/*.rs` for bare-extension
+comparisons and every `crucible-web/web/src/**/*.{ts,tsx}` for a second copy of
+the frontend predicate. Nothing else can — each copy compiles and is locally
+correct, and no compiler crosses the Rust↔TypeScript boundary.
+
 ### Not yet done
 
 Canvas **edges between two file nodes** are a labelled, directional,

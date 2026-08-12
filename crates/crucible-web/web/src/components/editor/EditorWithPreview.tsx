@@ -14,8 +14,7 @@ import { Component, Show, createSignal, createEffect } from 'solid-js';
 import { CodeMirrorEditor } from './CodeMirrorEditor';
 import { MarkdownPreview } from './MarkdownPreview';
 import { Eye, Pencil, Code } from '@/lib/icons';
-
-const isMarkdownPath = (path: string) => /\.(md|markdown)$/i.test(path);
+import { isMarkdownPath } from '@/lib/markdown-path';
 
 type EditorMode = 'live' | 'source' | 'reading';
 

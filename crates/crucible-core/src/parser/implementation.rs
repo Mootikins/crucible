@@ -509,16 +509,12 @@ impl MarkdownParser for CrucibleParser {
             horizontal_rules: true,
             full_content: true,
             max_file_size: self.max_file_size,
-            extensions: vec!["md", "markdown"],
+            extensions: crate::kiln::KilnFileKind::NOTE_EXTENSIONS.to_vec(),
         }
     }
 
     fn can_parse(&self, path: &Path) -> bool {
-        // Use default implementation from trait
-        path.extension()
-            .and_then(|ext| ext.to_str())
-            .map(|ext| matches!(ext, "md" | "markdown"))
-            .unwrap_or(false)
+        crate::kiln::is_note_file(path)
     }
 }
 

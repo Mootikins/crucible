@@ -125,24 +125,6 @@ impl ContentCategory {
                 | ContentCategory::StackOverflow
         )
     }
-
-    /// Get common file extensions for this category (if applicable)
-    pub fn file_extensions(&self) -> &'static [&'static str] {
-        match self {
-            ContentCategory::Note => &["md", "markdown", "txt"],
-            ContentCategory::Image => &["png", "jpg", "jpeg", "svg", "gif", "webp", "bmp", "tiff"],
-            ContentCategory::Video => &["mp4", "avi", "mov", "webm", "mkv", "flv"],
-            ContentCategory::Audio => &["mp3", "wav", "ogg", "flac", "aac", "m4a"],
-            ContentCategory::PDF => &["pdf"],
-            ContentCategory::Document => &["doc", "docx", "txt", "rtf", "odt"],
-            ContentCategory::Other => &[],
-            ContentCategory::Web => &["html", "htm"],
-            ContentCategory::YouTube => &[],
-            ContentCategory::GitHub => &[],
-            ContentCategory::Wikipedia => &[],
-            ContentCategory::StackOverflow => &[],
-        }
-    }
 }
 
 /// Implement Display for user-friendly string representation
@@ -279,20 +261,6 @@ mod tests {
         assert!(ContentCategory::GitHub.is_web_content());
         assert!(!ContentCategory::Note.is_web_content());
         assert!(!ContentCategory::PDF.is_web_content());
-    }
-
-    #[test]
-    fn test_file_extensions() {
-        let note_exts = ContentCategory::Note.file_extensions();
-        assert!(note_exts.contains(&"md"));
-        assert!(note_exts.contains(&"markdown"));
-
-        let image_exts = ContentCategory::Image.file_extensions();
-        assert!(image_exts.contains(&"png"));
-        assert!(image_exts.contains(&"jpg"));
-
-        let web_exts = ContentCategory::YouTube.file_extensions();
-        assert!(web_exts.is_empty());
     }
 
     #[test]

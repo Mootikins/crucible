@@ -59,6 +59,12 @@ impl KilnFileKind {
 
     /// The kiln-facing extensions, for watcher filters that take a list.
     pub const INDEXABLE_EXTENSIONS: &'static [&'static str] = &["md", "markdown", "canvas"];
+
+    /// The [`Note`](Self::Note) extensions alone, for parsers that *advertise* a
+    /// list rather than test a path. An advertisement that disagrees with
+    /// [`is_note_file`] is how the next hand-rolled copy gets written, so it is
+    /// sourced from here too.
+    pub const NOTE_EXTENSIONS: &'static [&'static str] = &["md", "markdown"];
 }
 
 /// Whether `path` is a markdown note.
@@ -141,6 +147,47 @@ mod tests {
             assert!(
                 is_indexable_file(&path),
                 "{ext} is advertised as indexable but does not classify as such"
+            );
+        }
+    }
+
+    #[test]
+    fn note_extensions_are_the_note_arm_of_the_classifier() {
+        for ext in KilnFileKind::NOTE_EXTENSIONS {
+            let path = PathBuf::from(format!("f.{ext}"));
+            assert!(
+                is_note_file(&path),
+                "{ext} is advertised as a note extension but does not classify as one"
+            );
+            assert!(KilnFileKind::INDEXABLE_EXTENSIONS.contains(ext));
+        }
+    }
+
+    /// The edge cases the fourteen hand-rolled copies of this predicate
+    /// disagreed on. `.mdx`/`.mdc` embed JSX and are deliberately *not* notes;
+    /// `.txt` is deliberately not a note either.
+    #[test]
+    fn classifies_the_edge_cases_the_hand_rolled_copies_disagreed_on() {
+        let cases: &[(&str, KilnFileKind)] = &[
+            ("a.md", KilnFileKind::Note),
+            ("a.MD", KilnFileKind::Note),
+            ("a.markdown", KilnFileKind::Note),
+            ("a.MARKDOWN", KilnFileKind::Note),
+            ("a.mdx", KilnFileKind::Asset),
+            ("a.mdc", KilnFileKind::Asset),
+            ("a.txt", KilnFileKind::Asset),
+            ("noext", KilnFileKind::Asset),
+            // A dotfile with a real extension is still a note.
+            (".hidden.md", KilnFileKind::Note),
+            // Only the last extension counts: a backup is not a note.
+            ("notes.md.bak", KilnFileKind::Asset),
+            ("board.canvas", KilnFileKind::Canvas),
+        ];
+        for (name, expected) in cases {
+            assert_eq!(
+                KilnFileKind::of(Path::new(name)),
+                *expected,
+                "{name} should classify as {expected:?}"
             );
         }
     }

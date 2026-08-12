@@ -12,12 +12,21 @@ use tempfile::TempDir;
 
 /// Create a test kiln with:
 /// - 3 `.md` files in root (should be counted)
+/// - 1 `.markdown` and 1 `.MD` file in root (should be counted)
 /// - 1 `.md` in `subdir/` (should be counted)
 /// - 1 `.md` in `.crucible/` (excluded)
 /// - 1 `.md` in `.git/` (excluded)
 /// - 1 `.txt` file (not markdown)
 ///
-/// Expected markdown count: 4
+/// Expected markdown count: 6
+///
+/// `Reading List.markdown` and `Daily.MD` are the two spellings that used to be
+/// discovered by `open_and_process` (which asks `is_indexable_file`) and
+/// simultaneously invisible to `cru stats` (which asked `ext == "md"` /
+/// `eq_ignore_ascii_case("md")`). Keeping them here is what makes this the
+/// regression test for that divergence: the counts have to agree on the widened
+/// set, not just on the `.md` subset. No `.canvas` file: discovery counts
+/// canvases and stats does not, which is a separate, deliberate difference.
 fn create_consistency_kiln() -> Result<TempDir> {
     let temp = TempDir::new()?;
     let root = temp.path();
@@ -28,6 +37,16 @@ fn create_consistency_kiln() -> Result<TempDir> {
     std::fs::write(
         root.join("note3.md"),
         "# Note 3\n\n[[note1]] link.\n\n#tag1 #tag2",
+    )?;
+
+    // Obsidian vaults really do contain both of these spellings.
+    std::fs::write(
+        root.join("Reading List.markdown"),
+        "# Reading List\n\nA note with the long extension.",
+    )?;
+    std::fs::write(
+        root.join("Daily.MD"),
+        "# Daily\n\nUppercase extension from a case-preserving filesystem.",
     )?;
 
     // Subdirectory markdown (should be discovered)
@@ -61,8 +80,8 @@ async fn process_and_stats_agree_on_markdown_file_count() -> Result<()> {
     let temp = create_consistency_kiln()?;
     let kiln_path = temp.path();
 
-    // 3 root .md + 1 subdir .md = 4 expected
-    const EXPECTED_MD: usize = 4;
+    // 3 root .md + .markdown + .MD + 1 subdir .md = 6 expected
+    const EXPECTED_MD: usize = 6;
 
     // === 1. Process via KilnManager (equivalent of `cru process`) ===
     let km = KilnManager::new();
@@ -114,10 +133,10 @@ async fn process_and_stats_agree_on_markdown_file_count() -> Result<()> {
     );
 
     // === 4. Stats also counts non-markdown files correctly ===
-    // Total files = 4 markdown + 1 txt = 5 (in non-excluded dirs)
+    // Total files = 6 markdown + 1 txt = 7 (in non-excluded dirs)
     assert_eq!(
-        stats.total_files, 5,
-        "Stats total_files should be 5 (4 md + 1 txt), got {}",
+        stats.total_files, 7,
+        "Stats total_files should be 7 (6 markdown + 1 txt), got {}",
         stats.total_files
     );
 
@@ -129,7 +148,7 @@ async fn process_and_stats_agree_on_markdown_file_count() -> Result<()> {
 async fn second_process_run_skips_unchanged_files() -> Result<()> {
     let temp = create_consistency_kiln()?;
     let kiln_path = temp.path();
-    const EXPECTED_MD: usize = 4;
+    const EXPECTED_MD: usize = 6;
 
     let km = KilnManager::new();
 

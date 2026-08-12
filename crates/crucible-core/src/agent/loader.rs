@@ -31,12 +31,12 @@ impl AgentCardLoader {
 
         let mut cards = Vec::new();
 
-        // Look for .md files in the directory
+        // Look for markdown files in the directory
         for entry in fs::read_dir(path)? {
             let entry = entry?;
             let file_path = entry.path();
 
-            if file_path.is_file() && file_path.extension().is_some_and(|ext| ext == "md") {
+            if file_path.is_file() && crate::kiln::is_note_file(&file_path) {
                 match self.load_from_file(file_path.to_str().unwrap()) {
                     Ok(card) => cards.push(card),
                     Err(e) => {

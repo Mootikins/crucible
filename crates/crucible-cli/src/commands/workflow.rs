@@ -363,12 +363,7 @@ where
                 continue;
             }
             walk_markdown(&path, visit)?;
-        } else if path.is_file()
-            && path
-                .extension()
-                .map(|e| e.eq_ignore_ascii_case("md"))
-                .unwrap_or(false)
-        {
+        } else if path.is_file() && crucible_core::is_note_file(&path) {
             visit(&path)?;
         }
     }
@@ -593,6 +588,41 @@ mod tests {
             kiln_path: root.to_path_buf(),
             ..Default::default()
         }
+    }
+
+    /// `cru workflow list` used to miss `Reading List.markdown` entirely — the
+    /// walk asked `eq_ignore_ascii_case("md")`, so a workflow note saved with
+    /// the long extension was indexed by the daemon and invisible to the CLI.
+    #[test]
+    fn the_walk_visits_every_markdown_extension_the_indexer_accepts() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+
+        write(&root.join("plain.md"), "x");
+        write(&root.join("Reading List.markdown"), "x");
+        write(&root.join("Daily.MD"), "x");
+        write(&root.join("nested").join("deep.MARKDOWN"), "x");
+        // Not notes: neither is indexable, so neither should be visited.
+        write(&root.join("notes.md.bak"), "x");
+        write(&root.join("readme.txt"), "x");
+
+        let mut visited: Vec<String> = Vec::new();
+        walk_markdown(root, &mut |p| {
+            visited.push(p.file_name().unwrap().to_string_lossy().into_owned());
+            Ok(())
+        })
+        .unwrap();
+        visited.sort();
+
+        assert_eq!(
+            visited,
+            vec![
+                "Daily.MD",
+                "Reading List.markdown",
+                "deep.MARKDOWN",
+                "plain.md"
+            ]
+        );
     }
 
     #[test]

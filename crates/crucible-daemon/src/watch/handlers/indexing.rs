@@ -19,7 +19,6 @@ use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
 pub struct IndexingHandler {
-    supported_extensions: Vec<String>,
     index_debounce: std::time::Duration,
     emitter: Arc<dyn EventEmitter<Event = SessionEvent>>,
 }
@@ -32,11 +31,6 @@ impl IndexingHandler {
     pub fn with_emitter(emitter: Arc<dyn EventEmitter<Event = SessionEvent>>) -> Result<Self> {
         info!("IndexingHandler created");
         Ok(Self {
-            supported_extensions: crucible_core::kiln::KilnFileKind::INDEXABLE_EXTENSIONS
-                .iter()
-                .map(|s| s.to_string())
-                .chain(["txt", "rst", "adoc"].iter().map(|s| s.to_string()))
-                .collect(),
             index_debounce: std::time::Duration::from_millis(500),
             emitter,
         })
@@ -48,12 +42,6 @@ impl IndexingHandler {
 
     pub fn emitter(&self) -> &Arc<dyn EventEmitter<Event = SessionEvent>> {
         &self.emitter
-    }
-
-    /// Set the supported file extensions.
-    pub fn with_supported_extensions(mut self, extensions: Vec<String>) -> Self {
-        self.supported_extensions = extensions;
-        self
     }
 
     /// Set the debounce delay for indexing operations.
@@ -69,13 +57,17 @@ impl IndexingHandler {
         Ok(())
     }
 
+    /// Whether this file participates in the note index.
+    ///
+    /// This is the canonical predicate, not a list this handler owns. It used
+    /// to carry its own `Vec<String>` seeded with `txt`/`rst`/`adoc` on top of
+    /// `INDEXABLE_EXTENSIONS`, which read as "the daemon indexes plaintext"
+    /// but never did: the kiln watcher's `EventFilter` is built from
+    /// `INDEXABLE_EXTENSIONS` alone (`kiln_manager.rs`) and the notify backend
+    /// applies it before any handler runs, so those three extensions were
+    /// filtered out upstream of here.
     fn should_index_file(&self, path: &PathBuf) -> bool {
-        if let Some(ext) = path.extension() {
-            if let Some(ext_str) = ext.to_str() {
-                return self.supported_extensions.contains(&ext_str.to_lowercase());
-            }
-        }
-        false
+        crucible_core::kiln::is_indexable_file(path)
     }
 
     async fn index_file(
@@ -113,12 +105,13 @@ impl IndexingHandler {
             file_size
         );
 
-        // Note: Parsing is now handled by ParserHandler which listens for FileChanged events.
-        // The IndexingHandler emits FileChanged events (via emit_session_event), and the
-        // ParserHandler picks those up and emits NoteParsed events with the parsed content.
-        // This method now just validates the file exists and returns success.
+        // This handler only emits FileChanged (see emit_session_event); parsing
+        // and embedding belong to the `NotePipeline`, which subscribes to that
+        // event. The comment here used to name `ParserHandler` as the consumer,
+        // which was never true — `create_default_handlers` has only ever
+        // registered this handler.
         debug!(
-            "File validated for indexing: {} ({} bytes) - parsing handled by ParserHandler",
+            "File validated for indexing: {} ({} bytes) — parsing is the NotePipeline's job",
             path.display(),
             file_size
         );

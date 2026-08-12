@@ -328,7 +328,7 @@ async fn run_watch_mode(
 ///
 /// This is a temporary local helper until watch mode moves to the daemon.
 /// Walks the directory tree, excluding common system directories, and
-/// returns all `.md` files found.
+/// returns all markdown notes found.
 fn discover_markdown_files_for_watch(path: &std::path::Path) -> Vec<PathBuf> {
     use walkdir::WalkDir;
 
@@ -341,7 +341,7 @@ fn discover_markdown_files_for_watch(path: &std::path::Path) -> Vec<PathBuf> {
     };
 
     if path.is_file() {
-        if path.extension().and_then(|s| s.to_str()) == Some("md") {
+        if crucible_core::is_note_file(path) {
             return vec![path.to_path_buf()];
         }
         return vec![];
@@ -352,9 +352,7 @@ fn discover_markdown_files_for_watch(path: &std::path::Path) -> Vec<PathBuf> {
         .into_iter()
         .filter_entry(|e| !is_excluded(e.path()))
         .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path().is_file() && e.path().extension().and_then(|s| s.to_str()) == Some("md")
-        })
+        .filter(|e| e.path().is_file() && crucible_core::is_note_file(e.path()))
         .map(|e| e.path().to_path_buf())
         .collect()
 }

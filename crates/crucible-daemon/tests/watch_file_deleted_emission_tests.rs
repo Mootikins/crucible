@@ -71,7 +71,10 @@ async fn test_file_deleted_emission_various_extensions() {
     let emitter: Arc<MockEventEmitter<SessionEvent>> = Arc::new(MockEventEmitter::new());
     let handler = IndexingHandler::with_emitter(emitter.clone()).expect("Failed to create handler");
 
-    let extensions = vec!["md", "txt", "rst", "adoc"];
+    // The indexable set, canonically: `KilnFileKind::INDEXABLE_EXTENSIONS`.
+    // Case is part of the contract — a vault synced off a case-preserving
+    // filesystem really does contain `Note.MD`.
+    let extensions = vec!["md", "markdown", "canvas", "MD", "MARKDOWN"];
 
     for ext in extensions {
         emitter.reset();

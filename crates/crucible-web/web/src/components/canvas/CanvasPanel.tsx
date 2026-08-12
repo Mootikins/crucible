@@ -86,6 +86,7 @@ import {
   undo,
   type History,
 } from '@/lib/canvas-doc';
+import { isMarkdownPath } from '@/lib/markdown-path';
 
 /**
  * The canvas editor.
@@ -924,7 +925,7 @@ export const CanvasPanel: Component<CanvasPanelProps> = (props) => {
                   color={node()!.color}
                   onResizeStart={(e, corner) => onResizePointerDown(e, node()!.id, corner)}
                   onConnectStart={(e, side) => onConnectPointerDown(e, node()!.id, side)}
-                  canEdit={node()!.type === 'text' || (node()!.type === 'file' && /\.(md|markdown)$/i.test((node()! as { file?: string }).file ?? ''))}
+                  canEdit={node()!.type === 'text' || (node()!.type === 'file' && isMarkdownPath((node()! as { file?: string }).file ?? ''))}
                   onEdit={() => setEditingId(node()!.id)}
                   onColor={(color) => mutate(updateNode(doc(), node()!.id, { color } as Partial<CanvasNode>))}
                   onDelete={() => {

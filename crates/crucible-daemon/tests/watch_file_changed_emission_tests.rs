@@ -153,9 +153,45 @@ async fn test_file_moved_emission() {
     }
 }
 
-/// Test that non-markdown files still emit FileChanged events when they pass the filter.
+/// The long markdown extension emits FileChanged just like `.md` does.
+///
+/// This case used to assert the same thing about `note.txt`, because the
+/// handler kept its own extension list seeded with `txt`/`rst`/`adoc`. That
+/// list was never reachable in production — the kiln watcher's `EventFilter` is
+/// built from `KilnFileKind::INDEXABLE_EXTENSIONS` and the notify backend
+/// applies it before any handler runs — so it only ever described the handler's
+/// unit-test behaviour. `.markdown` is the extension that genuinely does reach
+/// here and genuinely must be emitted.
 #[tokio::test]
-async fn test_file_changed_emission_for_supported_extension() {
+async fn test_file_changed_emission_for_long_markdown_extension() {
+    let emitter: Arc<MockEventEmitter<SessionEvent>> = Arc::new(MockEventEmitter::new());
+    let handler = IndexingHandler::with_emitter(emitter.clone()).expect("Failed to create handler");
+
+    let temp_dir = TempDir::new().unwrap();
+    let note = temp_dir.path().join("Reading List.markdown");
+    std::fs::write(&note, "# Reading List").unwrap();
+
+    let file_event = FileEvent::new(FileEventKind::Created, note.clone());
+
+    handler.handle(file_event).await.expect("Handler failed");
+
+    let emitted_events = emitter.emitted_events();
+    assert_eq!(emitted_events.len(), 1);
+
+    match &emitted_events[0] {
+        SessionEvent::Internal(inner) => {
+            if let InternalSessionEvent::FileChanged { path, kind } = inner.as_ref() {
+                assert_eq!(path, &note);
+                assert_eq!(*kind, FileChangeKind::Created);
+            }
+        }
+        other => panic!("Expected FileChanged event, got: {:?}", other),
+    }
+}
+
+/// Plaintext is not a note: `.txt` must not reach the index.
+#[tokio::test]
+async fn test_no_emission_for_plaintext() {
     let emitter: Arc<MockEventEmitter<SessionEvent>> = Arc::new(MockEventEmitter::new());
     let handler = IndexingHandler::with_emitter(emitter.clone()).expect("Failed to create handler");
 
@@ -163,23 +199,15 @@ async fn test_file_changed_emission_for_supported_extension() {
     let txt_file = temp_dir.path().join("note.txt");
     std::fs::write(&txt_file, "Plain text content").unwrap();
 
-    let file_event = FileEvent::new(FileEventKind::Created, txt_file.clone());
+    let file_event = FileEvent::new(FileEventKind::Created, txt_file);
 
     handler.handle(file_event).await.expect("Handler failed");
 
-    let emitted_events = emitter.emitted_events();
-    // .txt is in the supported extensions list
-    assert_eq!(emitted_events.len(), 1);
-
-    match &emitted_events[0] {
-        SessionEvent::Internal(inner) => {
-            if let InternalSessionEvent::FileChanged { path, kind } = inner.as_ref() {
-                assert_eq!(path, &txt_file);
-                assert_eq!(*kind, FileChangeKind::Created);
-            }
-        }
-        other => panic!("Expected FileChanged event, got: {:?}", other),
-    }
+    assert_eq!(
+        emitter.emitted_events().len(),
+        0,
+        "`.txt` is not indexable; nothing downstream parses plaintext as markdown"
+    );
 }
 
 /// Test that unsupported file types do NOT emit FileChanged events.

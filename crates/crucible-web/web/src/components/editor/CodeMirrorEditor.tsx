@@ -23,6 +23,7 @@ import { vim, Vim } from '@replit/codemirror-vim';
 import { wikilinkNavigation } from './wikilink-extension';
 import { wikilinkCompletion } from './wikilink-completion';
 import { attachFileDropTarget, insertTextFor } from '@/lib/file-dnd';
+import { isMarkdownPath } from '@/lib/markdown-path';
 import { crucibleEditorChrome } from './editor-theme';
 import { livePreview } from './live-preview';
 import { getOriginalDoc, unifiedMergeView } from '@codemirror/merge';
@@ -156,11 +157,11 @@ export const CodeMirrorEditor: Component<{
   };
 
   const createExtensions = (): Extension[] => {
-    const ext0 = props.path.split('.').pop()?.toLowerCase() ?? '';
+    const isMarkdown = isMarkdownPath(props.path);
     // A pending diff forces plain source (with the unified-merge overlay); live
     // preview's markdown decorations would fight the merge chunk widgets.
     const diffMode = props.diffOriginal != null;
-    const liveMode = !diffMode && !!props.livePreview && (ext0 === 'md' || ext0 === 'markdown');
+    const liveMode = !diffMode && !!props.livePreview && isMarkdown;
     const extensions: Extension[] = [
       // vim() must precede other keymaps so modal keys win while active.
       ...(props.vimMode ? [vim()] : []),
@@ -241,8 +242,6 @@ export const CodeMirrorEditor: Component<{
     // into this compartment once the view exists.
     extensions.push(langCompartment.of(getLanguageExtension(props.path) ?? []));
 
-    const ext = props.path.split('.').pop()?.toLowerCase() ?? '';
-    const isMarkdown = ext === 'md' || ext === 'markdown';
     if (props.onFollowLink && isMarkdown) {
       extensions.push(wikilinkNavigation((target) => props.onFollowLink?.(target)));
     }
