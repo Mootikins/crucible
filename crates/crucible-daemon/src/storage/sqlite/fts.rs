@@ -7,9 +7,10 @@
 //! ```ignore
 //! use crucible_daemon::storage::sqlite::{SqlitePool, FtsIndex};
 //!
+//! // `notes_fts` is created by the migration ladder when the pool opens the
+//! // database, so there is no setup step here.
 //! let pool = SqlitePool::new(config)?;
 //! let fts = FtsIndex::new(pool.clone());
-//! fts.setup().await?;
 //!
 //! // Index a note
 //! fts.index("notes/example.md", "Example Note", "Some content here").await?;
@@ -21,7 +22,19 @@
 use crate::storage::sqlite::connection::SqlitePool;
 use crate::storage::sqlite::error_ext::SqliteResultExt;
 use crucible_core::storage::{StorageError, StorageResult};
-use tracing::debug;
+
+/// `notes_fts` DDL. Executed by the migration ladder
+/// (`schema::apply_migrations`), which is the only DDL owner for the kiln
+/// database; the constant lives here because this module owns the table's
+/// shape. See `docs/Meta/Analysis/Storage Schema.md`.
+pub(crate) const NOTES_FTS_SCHEMA: &str = r#"
+CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
+    path,
+    title,
+    content,
+    tokenize='porter unicode61'
+);
+"#;
 
 /// A full-text search result
 #[derive(Debug, Clone, PartialEq)]
@@ -46,32 +59,6 @@ impl FtsIndex {
     /// Create a new FTS index backed by the given pool
     pub fn new(pool: SqlitePool) -> Self {
         Self { pool }
-    }
-
-    /// Set up the FTS5 virtual table
-    pub async fn setup(&self) -> StorageResult<()> {
-        let pool = self.pool.clone();
-        tokio::task::spawn_blocking(move || {
-            pool.with_connection(|conn| {
-                // Create FTS5 virtual table for notes
-                conn.execute_batch(
-                    r#"
-                    CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
-                        path,
-                        title,
-                        content,
-                        tokenize='porter unicode61'
-                    );
-                    "#,
-                )
-                .sql()?;
-
-                debug!("FTS5 index created");
-                Ok(())
-            })
-        })
-        .await
-        .map_err(|e: tokio::task::JoinError| StorageError::Backend(e.to_string()))?
     }
 
     /// Index a note's content for full-text search
@@ -274,17 +261,15 @@ mod tests {
     use super::*;
     use crate::storage::sqlite::config::SqliteConfig;
 
+    /// `notes_fts` comes from the migration ladder, which `SqlitePool::new`
+    /// runs — so there is nothing for this fixture to set up beyond the pool.
     async fn setup_test_fts() -> StorageResult<FtsIndex> {
-        let config = SqliteConfig::memory();
-        let pool = SqlitePool::new(config)?;
-
-        let fts = FtsIndex::new(pool);
-        fts.setup().await?;
-        Ok(fts)
+        let pool = SqlitePool::new(SqliteConfig::memory())?;
+        Ok(FtsIndex::new(pool))
     }
 
     #[tokio::test]
-    async fn test_fts_setup() {
+    async fn the_ladder_creates_the_fts_table_before_any_index_call() {
         let fts = setup_test_fts().await.unwrap();
 
         // Should be able to search (empty results)

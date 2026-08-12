@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use crucible_core::storage::{GraphView, NoteStore, PropertyStore};
+use crucible_core::storage::{NoteStore, PropertyStore};
 use mlua::{Lua, Table};
 
 use crate::notify::register_notify_module;
@@ -14,8 +14,8 @@ use crate::{
     register_oq_module, register_session_module, register_sessions_module,
     register_sessions_module_with_api, register_storage_module, register_storage_module_with_store,
     register_tools_module, register_tools_module_with_api, register_vault_module,
-    register_vault_module_with_graph, register_vault_module_with_store,
-    register_vault_module_with_store_scoped, DaemonSessionApi, DaemonToolsApi, SessionManager,
+    register_vault_module_with_store, register_vault_module_with_store_scoped, DaemonSessionApi,
+    DaemonToolsApi, SessionManager,
 };
 
 /// Builder for constructing Lua test environments with specific module registrations.
@@ -97,23 +97,6 @@ impl TestLuaBuilder {
         self.ensure_crucible_table();
         register_vault_module_with_store_scoped(&self.lua, store, authority)
             .expect("Should register scoped vault module");
-        self
-    }
-
-    /// Register the vault module with graph support.
-    /// Sets up: cru + crucible global tables, vault + graph modules.
-    ///
-    /// Callerless as of T-F1: the `cru.kiln` graph tests moved onto the
-    /// `NoteStore` registration the daemon actually performs, because this
-    /// one is wired by nothing but tests. Kept only so T-F1 does not delete
-    /// part of the `GraphView` axis out from under T-F2, which removes the
-    /// trait, its three implementations, and this method together.
-    #[allow(dead_code, reason = "removed with the GraphView axis in T-F2")]
-    pub fn with_vault_graph(self, view: Arc<dyn GraphView>) -> Self {
-        self.ensure_cru_table();
-        self.ensure_crucible_table();
-        register_vault_module(&self.lua).expect("Should register vault module");
-        register_vault_module_with_graph(&self.lua, view).expect("Should register graph functions");
         self
     }
 

@@ -211,7 +211,7 @@ fn row_value_to_json(row: &rusqlite::Row, idx: usize) -> serde_json::Value {
 /// Create a SQLite client from configuration.
 pub async fn create_sqlite_client(config: SqliteConfig) -> Result<SqliteClientHandle> {
     let pool = SqlitePool::new(config)?;
-    let note_store = crate::storage::sqlite::create_note_store(pool.clone()).await?;
+    let note_store = SqliteNoteStore::new(pool.clone());
 
     Ok(SqliteClientHandle::new(pool, note_store))
 }

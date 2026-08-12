@@ -5,7 +5,6 @@
 //! ## Key Components
 //!
 //! - **NoteStore**: Unified note metadata and vector search storage
-//! - **GraphView**: In-memory graph from denormalized links
 //! - **Pure computation**: Hash and embedding generation
 //!
 //! ## Architecture
@@ -18,7 +17,6 @@
 
 pub mod error;
 pub mod error_ext;
-pub mod graph;
 pub mod note_store;
 pub mod property_store;
 pub mod scope;
@@ -28,10 +26,8 @@ pub mod vector_store;
 // Re-export main types for convenience
 pub use error::{StorageError, StorageResult};
 pub use error_ext::StorageResultExt;
-pub use graph::InMemoryGraph;
 pub use note_store::{
-    Filter, GraphLink, GraphView, InboundLink, LinkOccurrence, NoteRecord, NoteStore, Op,
-    SearchResult,
+    Filter, GraphLink, InboundLink, LinkOccurrence, NoteRecord, NoteStore, Op, SearchResult,
 };
 pub use property_store::PropertyStore;
 pub use scope::{Scope, ScopeError};

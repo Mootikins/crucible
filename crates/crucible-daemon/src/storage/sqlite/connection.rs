@@ -5,7 +5,7 @@
 
 use crate::storage::sqlite::config::SqliteConfig;
 use crate::storage::sqlite::error_ext::SqliteResultExt;
-use crate::storage::sqlite::schema;
+use crate::storage::sqlite::schema::{self, MigrationOutcome};
 use crucible_core::storage::{StorageError, StorageResult};
 use parking_lot::Mutex;
 use rusqlite::Connection;
@@ -19,7 +19,10 @@ use tracing::{debug, info};
 #[derive(Clone)]
 pub struct SqlitePool {
     conn: Arc<Mutex<Connection>>,
-    config: SqliteConfig,
+    /// What the migration ladder reported when this pool opened the database.
+    /// By value, not behind a lock: it is written once, before the pool
+    /// exists, and only read afterwards.
+    migration_outcome: MigrationOutcome,
 }
 
 impl SqlitePool {
@@ -39,15 +42,19 @@ impl SqlitePool {
             Connection::open(&config.path).sql()?
         };
 
-        let sqlite_pool = Self {
+        // Pragmas and migrations run before the pool exists, so the outcome can
+        // be stored by value rather than mutated through the mutex.
+        let migration_outcome = initialize(&conn, &config)?;
+
+        Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
-            config,
-        };
+            migration_outcome,
+        })
+    }
 
-        // Configure and apply schema
-        sqlite_pool.initialize()?;
-
-        Ok(sqlite_pool)
+    /// What the migration ladder reported when this database was opened.
+    pub fn migration_outcome(&self) -> &MigrationOutcome {
+        &self.migration_outcome
     }
 
     /// Create an in-memory pool for testing
@@ -96,58 +103,6 @@ impl SqlitePool {
         }
     }
 
-    /// Initialize the database (configure pragmas and apply schema)
-    fn initialize(&self) -> StorageResult<()> {
-        self.with_connection(|conn| {
-            // Apply PRAGMA settings
-            self.configure_pragmas(conn)?;
-
-            // Apply schema migrations
-            schema::apply_migrations(conn)?;
-
-            info!("SQLite database initialized successfully");
-            Ok(())
-        })
-    }
-
-    /// Configure SQLite PRAGMA settings for optimal performance
-    fn configure_pragmas(&self, conn: &Connection) -> StorageResult<()> {
-        debug!("Configuring SQLite pragmas");
-
-        // WAL mode for better concurrency
-        if self.config.wal_mode {
-            conn.execute_batch("PRAGMA journal_mode = WAL;").sql()?;
-            conn.execute_batch("PRAGMA synchronous = NORMAL;").sql()?;
-        }
-
-        // Foreign key enforcement
-        if self.config.foreign_keys {
-            conn.execute_batch("PRAGMA foreign_keys = ON;").sql()?;
-        }
-
-        // Busy timeout
-        conn.execute_batch(&format!(
-            "PRAGMA busy_timeout = {};",
-            self.config.busy_timeout_ms
-        ))
-        .sql()?;
-
-        // Cache size
-        conn.execute_batch(&format!("PRAGMA cache_size = {};", self.config.cache_size))
-            .sql()?;
-
-        // MMAP for faster reads (if configured)
-        if self.config.mmap_size > 0 {
-            conn.execute_batch(&format!("PRAGMA mmap_size = {};", self.config.mmap_size))
-                .sql()?;
-        }
-
-        // Use memory for temp tables
-        conn.execute_batch("PRAGMA temp_store = MEMORY;").sql()?;
-
-        Ok(())
-    }
-
     /// Get database statistics
     pub fn stats(&self) -> StorageResult<DbStats> {
         self.with_connection(|conn| {
@@ -171,6 +126,55 @@ impl SqlitePool {
             })
         })
     }
+}
+
+/// Configure pragmas and run the migration ladder.
+///
+/// Free rather than a method because it runs *before* the pool exists: the
+/// migration outcome it produces is one of the pool's fields.
+fn initialize(conn: &Connection, config: &SqliteConfig) -> StorageResult<MigrationOutcome> {
+    configure_pragmas(conn, config)?;
+    let outcome = schema::apply_migrations(conn)?;
+    info!("SQLite database initialized successfully");
+    Ok(outcome)
+}
+
+/// Configure SQLite PRAGMA settings for optimal performance
+fn configure_pragmas(conn: &Connection, config: &SqliteConfig) -> StorageResult<()> {
+    debug!("Configuring SQLite pragmas");
+
+    // WAL mode for better concurrency
+    if config.wal_mode {
+        conn.execute_batch("PRAGMA journal_mode = WAL;").sql()?;
+        conn.execute_batch("PRAGMA synchronous = NORMAL;").sql()?;
+    }
+
+    // Foreign key enforcement
+    if config.foreign_keys {
+        conn.execute_batch("PRAGMA foreign_keys = ON;").sql()?;
+    }
+
+    // Busy timeout
+    conn.execute_batch(&format!(
+        "PRAGMA busy_timeout = {};",
+        config.busy_timeout_ms
+    ))
+    .sql()?;
+
+    // Cache size
+    conn.execute_batch(&format!("PRAGMA cache_size = {};", config.cache_size))
+        .sql()?;
+
+    // MMAP for faster reads (if configured)
+    if config.mmap_size > 0 {
+        conn.execute_batch(&format!("PRAGMA mmap_size = {};", config.mmap_size))
+            .sql()?;
+    }
+
+    // Use memory for temp tables
+    conn.execute_batch("PRAGMA temp_store = MEMORY;").sql()?;
+
+    Ok(())
 }
 
 /// Database statistics
@@ -226,11 +230,18 @@ mod tests {
         assert!(stats.page_size > 0);
     }
 
+    /// A new kiln gets the tables it uses and none of the four `SCHEMA_V1`
+    /// created but nothing ever wrote. The negative half is the point: this
+    /// test used to assert all six existed, which defended an accident rather
+    /// than a decision.
+    ///
+    /// `entities` is still here deliberately. It holds no rows either, but it
+    /// stays one release so a binary downgraded across the v3 migration still
+    /// finds the foreign-key target its `properties` table declares.
     #[test]
-    fn test_schema_applied() {
+    fn a_new_kiln_gets_the_live_tables_and_none_of_the_vestigial_ones() {
         let pool = SqlitePool::memory().expect("Failed to create pool");
 
-        // Verify tables exist
         pool.with_connection(|conn| {
             let tables: Vec<String> = {
                 let mut stmt = conn
@@ -240,12 +251,20 @@ mod tests {
                 rows.filter_map(Result::ok).collect()
             };
 
-            assert!(tables.contains(&"entities".to_string()));
-            assert!(tables.contains(&"properties".to_string()));
-            assert!(tables.contains(&"relations".to_string()));
-            assert!(tables.contains(&"blocks".to_string()));
-            assert!(tables.contains(&"tags".to_string()));
-            assert!(tables.contains(&"entity_tags".to_string()));
+            for live in ["entities", "properties", "notes", "note_links", "notes_fts"] {
+                assert!(
+                    tables.contains(&live.to_string()),
+                    "{live} is missing: {tables:?}"
+                );
+            }
+
+            for vestigial in ["relations", "blocks", "tags", "entity_tags"] {
+                assert!(
+                    !tables.contains(&vestigial.to_string()),
+                    "{vestigial} has no production reader or writer and must not \
+                     be created for a new kiln: {tables:?}"
+                );
+            }
 
             Ok(())
         })

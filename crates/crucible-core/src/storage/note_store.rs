@@ -4,7 +4,6 @@
 //! It replaces the previous scattered storage traits with three clean abstractions:
 //!
 //! - [`NoteStore`] - Storage CRUD + vector search
-//! - [`GraphView`] - In-memory graph from denormalized links
 //! - [`Precognition`] - Pure computation (hash + embed)
 //!
 //! # Design Philosophy
@@ -97,10 +96,17 @@ pub struct NoteRecord {
     #[serde(default)]
     pub tags: Vec<String>,
 
-    /// Denormalized outlinks (paths this note links to)
+    /// Denormalized wikilink targets, exactly as written in the note.
     ///
-    /// Used by [`GraphView`] to build the in-memory graph without
-    /// querying the database.
+    /// These are **raw targets, not resolved paths** — the pipeline fills this
+    /// from `parsed.wikilinks`, so `[[async]]` lands here as `"async"`, never as
+    /// `"notes/async.md"`. It is therefore not interchangeable with what
+    /// `backlinks`/`graph_links` return, and the two do not join.
+    ///
+    /// Graph traversal reads the resolved `note_links` index instead, so that
+    /// `outlinks` and `backlinks` are inverses and a caller can walk the graph a
+    /// hop at a time. Reach for this field only when you want what the author
+    /// typed, including targets that resolve to nothing.
     #[serde(default)]
     pub links_to: Vec<String>,
 
@@ -535,55 +541,6 @@ pub trait NoteStore: Send + Sync {
         filter: Option<Filter>,
     ) -> StorageResult<Vec<SearchResult>>;
 }
-
-// ============================================================================
-// GraphView Trait
-// ============================================================================
-
-/// In-memory graph built from denormalized links
-///
-/// This trait provides efficient graph traversal over the link structure
-/// in a kiln. The graph is built from the `links_to` field of [`NoteRecord`]s
-/// and must be rebuilt when notes change.
-///
-/// # Performance
-///
-/// All methods are synchronous and should be fast (O(1) or O(k) where k is
-/// the number of neighbors). The `rebuild` method may be O(n) where n is
-/// the number of notes.
-pub trait GraphView: Send + Sync {
-    /// Get all notes this note links to
-    ///
-    /// Returns paths of notes that this note directly links to.
-    fn outlinks(&self, path: &str) -> Vec<String>;
-
-    /// Get all notes that link to this note
-    ///
-    /// Returns paths of notes that contain links to this note.
-    fn backlinks(&self, path: &str) -> Vec<String>;
-
-    /// Get all neighbors within a given depth
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Starting note path
-    /// * `depth` - Maximum link distance (1 = direct links only)
-    ///
-    /// # Returns
-    ///
-    /// Paths of all notes reachable within the given depth, not including
-    /// the starting note.
-    fn neighbors(&self, path: &str, depth: usize) -> Vec<String>;
-
-    /// Rebuild the graph from note records
-    ///
-    /// This should be called after bulk updates to the NoteStore.
-    fn rebuild(&mut self, notes: &[NoteRecord]);
-}
-
-// ============================================================================
-// Tests
-// ============================================================================
 
 // ============================================================================
 // Tests

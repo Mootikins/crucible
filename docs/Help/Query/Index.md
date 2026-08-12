@@ -1,168 +1,79 @@
 ---
 title: Query
-description: Advanced queries for finding and filtering notes
-status: planned
+description: Why Crucible has no query language, and what to use instead
+status: rejected
 tags:
   - query
   - search
 ---
 
-> **⚠️ Planned Feature**: This feature is not yet implemented. The documentation below describes the intended design.
+> **⚠️ Not a feature, and not planned.** Crucible has no query language and no
+> work in progress toward one. This note exists to record that a query DSL was
+> built, explored and removed, so the next person to reach for one starts from
+> the evidence rather than from scratch.
 
 # Query System
 
-The query system provides a powerful language for finding notes based on complex criteria.
+This note used to promise a syntax — `notes where tags contains "project"` and
+about eighty lines of examples in the same shape — and describe it as "the
+intended design". No code ever implemented that syntax, in any form.
 
-## Overview
+## What actually existed, and why it went
 
-While simple search is available through chat commands like `/search`, the query system will let you:
+`crates/crucible-daemon/src/storage/sqlite/` carried an unwired query pipeline:
+a graph IR, four front-end parsers (Cypher, SQL:2023 PGQ `MATCH`, a jaq-style
+syntax, and SQL sugar), a SQLite renderer, and seventeen golden-SQL snapshots.
+It was ~5,700 lines and no caller ever reached it — there was no `kiln.query`
+RPC method, no CLI surface and no Lua binding.
 
-- Combine multiple conditions
-- Filter by relationships
-- Aggregate results
-- Transform output
+It was deleted once before, in July 2026, on the grounds of "no callers", and
+restored a day later because that argument was correct but not sufficient: an
+unwired subsystem can still be deliberate infrastructure. The reason it is gone
+now is different and stronger:
 
-## Basic Queries
+- **The renderer targeted a schema Crucible has never had.** Its default preset
+  joined an `edges` table, which does not exist in any migration. Its
+  Crucible-specific preset joined `entities.path`, and `entities` has no `path`
+  column.
+- **So both committed golden SQL strings fail to prepare** against a real kiln
+  database. The part of the subsystem that "worked" was the part tested against
+  golden files of SQL that cannot execute.
 
-```
-# Find notes with tag
-notes where tags contains "project"
+Wiring it up was therefore not a wiring task: it started by discarding the
+renderer and all its tests — the only finished half — and re-deriving them
+against `notes`/`note_links`.
 
-# Find notes in folder
-notes where path starts_with "Projects/"
+## The verdict to start from, if this is revisited
 
-# Find notes modified recently
-notes where modified > "2024-01-01"
-```
+Carried forward verbatim from the design note that justified the 2026-07 restore
+(`docs/Meta/Ideas/Storage Agnostic Query Language.md`, itself deleted four days
+after that restore and recoverable only from git history at `16504bb64^`):
 
-## Combining Conditions
+> **Primary**: SQL virtual tables or CSS selectors
+>
+> **Verdict**: Skip DSL entirely
 
-```
-# AND conditions
-notes where tags contains "project" and status = "active"
+Four hand-written parser front-ends was the option that document argued
+*against*, and it is the option that got built. A third attempt should begin
+there.
 
-# OR conditions
-notes where tags contains "urgent" or priority = "high"
+## What to use instead
 
-# Complex expressions
-notes where (tags contains "project" and status = "active")
-         or priority = "high"
-```
+Everything the examples above described is already served, without a DSL:
 
-## Relationship Queries
-
-Query based on how notes connect:
-
-```
-# Notes that link to a specific note
-notes where links_to "Projects/Alpha"
-
-# Notes linked from a specific note
-notes where linked_from "Index"
-
-# Notes with many connections
-notes where link_count > 10
-```
-
-## Sorting and Limiting
-
-```
-# Sort by date
-notes where tags contains "meeting"
-      order by modified desc
-
-# Limit results
-notes where folder = "Inbox"
-      limit 10
-
-# Offset for pagination
-notes where folder = "Archive"
-      offset 20 limit 10
-```
-
-## Aggregations
-
-```
-# Count notes by tag
-count notes group by tags
-
-# Most linked notes
-notes order by backlink_count desc limit 10
-```
-
-## Output Formatting
-
-```
-# Select specific fields
-notes where status = "active"
-      select path, title, modified
-
-# As list
-notes where tags contains "todo" as list
-
-# As table
-notes where folder = "Projects" as table
-```
-
-## Examples
-
-### Find Orphan Notes
-
-Notes with no incoming or outgoing links:
-
-```
-notes where link_count = 0 and backlink_count = 0
-```
-
-### Recent Meeting Notes
-
-```
-notes where tags contains "meeting"
-      and modified > "7 days ago"
-      order by modified desc
-```
-
-### Project Overview
-
-```
-notes where path starts_with "Projects/"
-      group by folder
-      select folder, count(*) as note_count
-```
-
-### Stale Tasks
-
-```
-notes where tags contains "task"
-      and status != "completed"
-      and modified < "30 days ago"
-```
-
-## Integration
-
-### In Chat
-
-```
-/query notes where tags contains "research"
-```
-
-### In Lua Plugins
-
-```lua
-local results = cru.query("notes where status = 'active'")
-for _, note in ipairs(results) do
-    print(note.path)
-end
-```
-
-### From CLI
-
-```bash
-# Planned command (not yet implemented)
-cru query "notes where tags contains 'important'"
-```
+| Want | Use |
+|---|---|
+| Full-text search over note bodies | `cru search`, backed by the `notes_fts` FTS5 index |
+| Semantic / similarity search | the `semantic_search` agent tool and the `search_vectors` RPC |
+| Backlinks and outlinks | `cru.kiln.backlinks()` / `outlinks()` / `neighbors()` in Lua, exact over the resolved-link index |
+| The whole link graph | the `kiln.graph` RPC, over `NoteStore::graph_links` |
+| Tag and path filtering | [[Help/Tags]] and the `Filter`/`Op` predicates the note store already takes |
 
 ## See Also
 
 - [[Search & Discovery]] - All search methods
-- [[Help/Tags]] - Tag syntax for filtering
+- [[Help/Tags]] - Tag syntax
+- `docs/Meta/Plans/2026-08-11-dead-code-and-schema-migrations.md` - the deletion,
+  its evidence, and the commit to revert if this is ever wanted back. A path
+  rather than a wikilink: `docs/Meta/Plans/` is gitignored, and the docs-kiln
+  gate resolves links only against files a commit would contain

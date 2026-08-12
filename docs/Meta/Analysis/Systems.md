@@ -49,7 +49,8 @@ Persistence layer. Stores and retrieves structured data.
 - Merkle tree integrity verification
 - Kiln management
 
-See: [[Help/Concepts/Kilns]]
+See: [[Help/Concepts/Kilns]], and [[Storage Schema]] for the kiln database's
+migration ladder, which of its tables are rebuildable, and how to add a column.
 
 ### sync
 
@@ -224,12 +225,21 @@ that becomes true.** Downstream of it there is exactly one renderer per surface:
 `crucible-cli/src/tui/oil/` branches on which agent produced the turn.
 
 The contract that follows: **a new `AgentHandle` gets correct presentation for
-free if and only if it emits the same `SessionEventMessage` vocabulary with the
-same fields populated** — `tool_call` with its `source`, `display` and `diffs`,
-`tool_result` with the `{"result"|"error": …}` envelope, `thinking`,
-`text_delta`, `segment_complete`, `message_complete`. A field a handle leaves
-`None` is a card the renderer draws with less information, not an error anyone
-sees.
+free if and only if it emits `TurnPayload` values with the same fields
+populated.** That contract used to be stated here as a list of event names and
+fields; it is now a type —
+`crucible-core/src/protocol/session_events/turn.rs` — whose variant list *is*
+the vocabulary and whose fields *are* the fields. Both renderers match on it
+exhaustively, so an event added to the group fails their builds rather than
+falling through to a trace log. A field a handle leaves `None` is a card the
+renderer draws with less information, not an error anyone sees.
+
+One correction the type made: `tool_result`'s `data.result` is not the two-key
+`{"result"|"error": …}` envelope this section used to describe. It is
+`ToolResultBody` — `result` **or** `error`, plus an optional `spill_path` (set
+when a ≥10KB output was written to `$CRU_SESSION_DIR/tools/`) and an optional
+`summary` (from a `tool:display_complete` Lua hook). Four keys, and the
+disjointness of `result`/`error` is what makes the untagged decode unambiguous.
 
 **`TurnEvent`-level cross-agent equality is structurally impossible and must
 never be asserted.** The two handles differ there *by design*: the internal agent

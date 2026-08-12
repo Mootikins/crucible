@@ -9,7 +9,6 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rusqlite::{params, params_from_iter, OptionalExtension, ToSql};
 use serde_json::Value;
-use tracing::debug;
 
 use crate::storage::sqlite::connection::SqlitePool;
 use crate::storage::sqlite::error_ext::SqliteResultExt;
@@ -23,8 +22,11 @@ use crucible_core::storage::{
 // Schema
 // ============================================================================
 
-/// SQL schema for the notes table and note_links junction table
-const NOTES_SCHEMA: &str = r#"
+/// `notes` DDL. Executed by the migration ladder
+/// (`schema::apply_migrations`), which is the only DDL owner for the kiln
+/// database; the constant lives here because this module owns the table's
+/// shape. See `docs/Meta/Analysis/Storage Schema.md`.
+pub(crate) const NOTES_SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS notes (
     path TEXT PRIMARY KEY,
     content_hash BLOB NOT NULL,
@@ -41,8 +43,8 @@ CREATE TABLE IF NOT EXISTS notes (
 CREATE INDEX IF NOT EXISTS notes_hash_idx ON notes(content_hash);
 CREATE INDEX IF NOT EXISTS notes_updated_idx ON notes(updated_at);
 
--- note: the resolved-link index (note_links v2) is owned by link_index.rs
--- and created/migrated in apply_schema.
+-- note: the resolved-link index (note_links v2) is owned by link_index.rs.
+-- Both DDL constants are run by the ladder in schema/, in that order.
 "#;
 
 // ============================================================================
@@ -63,49 +65,6 @@ fn deserialize_embedding(bytes: &[u8]) -> Vec<f32> {
             f32::from_le_bytes(arr)
         })
         .collect()
-}
-
-// ============================================================================
-// Schema Migration
-// ============================================================================
-
-/// Ensure embedding metadata columns exist in the notes table
-///
-/// This is an idempotent migration that checks if columns exist before adding them.
-/// Uses PRAGMA table_info to avoid ALTER TABLE errors on existing columns.
-fn ensure_embedding_metadata_columns(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
-    // Check if embedding_model column exists
-    let has_embedding_model = conn
-        .query_row(
-            "SELECT 1 FROM pragma_table_info('notes') WHERE name = 'embedding_model'",
-            [],
-            |_| Ok(()),
-        )
-        .is_ok();
-
-    // Check if embedding_dimensions column exists
-    let has_embedding_dimensions = conn
-        .query_row(
-            "SELECT 1 FROM pragma_table_info('notes') WHERE name = 'embedding_dimensions'",
-            [],
-            |_| Ok(()),
-        )
-        .is_ok();
-
-    // Add embedding_model column if it doesn't exist
-    if !has_embedding_model {
-        conn.execute("ALTER TABLE notes ADD COLUMN embedding_model TEXT", [])?;
-    }
-
-    // Add embedding_dimensions column if it doesn't exist
-    if !has_embedding_dimensions {
-        conn.execute(
-            "ALTER TABLE notes ADD COLUMN embedding_dimensions INTEGER",
-            [],
-        )?;
-    }
-
-    Ok(())
 }
 
 // ============================================================================
@@ -341,9 +300,10 @@ fn row_to_note(row: &rusqlite::Row<'_>) -> Result<NoteRecord, rusqlite::Error> {
 /// use crucible_daemon::storage::sqlite::{SqliteConfig, SqlitePool, note_store::SqliteNoteStore};
 /// use crucible_core::storage::NoteStore;
 ///
+/// // The pool has already run the migration ladder, so the store has no
+/// // schema step of its own.
 /// let pool = SqlitePool::new(SqliteConfig::memory())?;
 /// let store = SqliteNoteStore::new(pool);
-/// store.apply_schema().await?;
 ///
 /// // Now use via the NoteStore trait
 /// let note = store.get("notes/example.md").await?;
@@ -351,54 +311,32 @@ fn row_to_note(row: &rusqlite::Row<'_>) -> Result<NoteRecord, rusqlite::Error> {
 #[derive(Clone)]
 pub struct SqliteNoteStore {
     pool: SqlitePool,
-    /// Set by `apply_schema` when the note_links v1→v2 migration dropped the
-    /// old raw-text rows: existing notes must be relinked from disk (the kiln
-    /// open path runs the pass and clears this).
+    /// Seeded from the pool's `MigrationOutcome`: true when the note_links
+    /// v1→v2 step dropped the old raw-text rows, or when this kiln has notes
+    /// and an empty link index. Consumed once — the kiln open path runs the
+    /// relink pass and clears it, which is the contract `NoteStore`'s trait
+    /// method documents.
     needs_link_reindex: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl SqliteNoteStore {
-    /// Create a new NoteStore with the given connection pool
+    /// Create a new NoteStore over a pool that has already migrated.
+    ///
+    /// No schema work happens here: `SqlitePool::new` ran the ladder, which is
+    /// the sole owner of DDL for the kiln database.
     pub fn new(pool: SqlitePool) -> Self {
+        let needs_link_reindex = pool.migration_outcome().needs_link_reindex;
         Self {
             pool,
-            needs_link_reindex: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            needs_link_reindex: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(
+                needs_link_reindex,
+            )),
         }
     }
 
     /// Get a reference to the underlying connection pool
     pub fn pool(&self) -> &SqlitePool {
         &self.pool
-    }
-
-    /// Apply the notes table schema
-    ///
-    /// This should be called once when initializing the store.
-    pub async fn apply_schema(&self) -> StorageResult<()> {
-        let pool = self.pool.clone();
-
-        let needs_relink = tokio::task::spawn_blocking(move || {
-            pool.with_connection(|conn| {
-                conn.execute_batch(NOTES_SCHEMA).sql()?;
-                debug!("Notes schema applied successfully");
-
-                // Apply idempotent migration for embedding metadata columns
-                ensure_embedding_metadata_columns(conn).sql()?;
-                debug!("Embedding metadata columns ensured");
-
-                // Resolved-link index (note_links v2); true = v1 was dropped
-                // and existing notes need a relink pass.
-                let needs_relink = super::link_index::ensure_note_links_v2(conn).sql()?;
-                Ok(needs_relink)
-            })
-        })
-        .await??;
-
-        if needs_relink {
-            self.needs_link_reindex
-                .store(true, std::sync::atomic::Ordering::Release);
-        }
-        Ok(())
     }
 }
 
@@ -784,28 +722,6 @@ impl NoteStore for SqliteNoteStore {
 }
 
 // ============================================================================
-// Factory Function
-// ============================================================================
-
-/// Create a new SqliteNoteStore with schema applied
-///
-/// This is a convenience function that creates the store and applies the schema.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use crucible_daemon::storage::sqlite::{SqliteConfig, SqlitePool, note_store::create_note_store};
-///
-/// let pool = SqlitePool::new(SqliteConfig::memory())?;
-/// let store = create_note_store(pool).await?;
-/// ```
-pub async fn create_note_store(pool: SqlitePool) -> StorageResult<SqliteNoteStore> {
-    let store = SqliteNoteStore::new(pool);
-    store.apply_schema().await?;
-    Ok(store)
-}
-
-// ============================================================================
 // Tests
 // ============================================================================
 
@@ -982,27 +898,39 @@ mod tests {
         assert!(result.is_err(), "Empty key should be rejected");
     }
 
+    /// Replaces `schema_idempotency_apply_twice_no_error`, which called
+    /// `SqliteNoteStore::apply_schema` — a second DDL owner that no longer
+    /// exists. Reopening a kiln is the production shape of the same question:
+    /// the ladder runs again over a database it already migrated.
     #[tokio::test]
-    async fn schema_idempotency_apply_twice_no_error() {
-        let pool = SqlitePool::memory().expect("Failed to create pool");
-        let store = SqliteNoteStore::new(pool);
+    async fn reopening_a_kiln_reruns_the_ladder_without_error() {
+        use crate::storage::sqlite::config::SqliteConfig;
 
-        store
-            .apply_schema()
+        let dir = tempfile::TempDir::new().expect("tempdir");
+        let db_path = dir.path().join("kiln.db");
+        let authority = Scope::Workspace {
+            path: dir.path().to_path_buf(),
+        };
+
+        let first =
+            SqliteNoteStore::new(SqlitePool::new(SqliteConfig::new(&db_path)).expect("first open"));
+        first
+            .upsert(NoteRecord::new("docs/A.md", BlockHash::zero()).with_title("A"))
             .await
-            .expect("First apply_schema should succeed");
-        store
-            .apply_schema()
-            .await
-            .expect("Second apply_schema should also succeed");
+            .expect("upsert");
+        drop(first);
+
+        let second = SqliteNoteStore::new(
+            SqlitePool::new(SqliteConfig::new(&db_path)).expect("second open"),
+        );
+        let note = second.get("docs/A.md", &authority).await.expect("get");
+        assert!(note.is_some(), "the note survives a reopen");
     }
 
     #[tokio::test]
     async fn embedding_metadata_round_trip() {
         let pool = SqlitePool::memory().expect("Failed to create pool");
-        let store = create_note_store(pool)
-            .await
-            .expect("Failed to create store");
+        let store = SqliteNoteStore::new(pool);
 
         let note = NoteRecord::new("metadata.md", BlockHash::zero())
             .with_title("Metadata")
@@ -1024,9 +952,7 @@ mod tests {
     #[tokio::test]
     async fn test_note_store_crud() {
         let pool = SqlitePool::memory().expect("Failed to create pool");
-        let store = create_note_store(pool)
-            .await
-            .expect("Failed to create store");
+        let store = SqliteNoteStore::new(pool);
 
         // Create a note
         let note = NoteRecord::new("test/note.md", BlockHash::zero())
@@ -1076,9 +1002,7 @@ mod tests {
     #[tokio::test]
     async fn test_note_store_list() {
         let pool = SqlitePool::memory().expect("Failed to create pool");
-        let store = create_note_store(pool)
-            .await
-            .expect("Failed to create store");
+        let store = SqliteNoteStore::new(pool);
 
         // Create multiple notes
         for i in 0..3 {
@@ -1095,9 +1019,7 @@ mod tests {
     #[tokio::test]
     async fn test_note_store_get_by_hash() {
         let pool = SqlitePool::memory().expect("Failed to create pool");
-        let store = create_note_store(pool)
-            .await
-            .expect("Failed to create store");
+        let store = SqliteNoteStore::new(pool);
 
         // Create a hash
         let hash = BlockHash::new([1u8; 32]);
@@ -1123,9 +1045,7 @@ mod tests {
     #[tokio::test]
     async fn test_note_store_search() {
         let pool = SqlitePool::memory().expect("Failed to create pool");
-        let store = create_note_store(pool)
-            .await
-            .expect("Failed to create store");
+        let store = SqliteNoteStore::new(pool);
 
         // Create notes with embeddings
         let note1 = NoteRecord::new("note1.md", BlockHash::zero())
@@ -1171,9 +1091,7 @@ mod tests {
     #[tokio::test]
     async fn test_note_store_search_with_path_filter() {
         let pool = SqlitePool::memory().expect("Failed to create pool");
-        let store = create_note_store(pool)
-            .await
-            .expect("Failed to create store");
+        let store = SqliteNoteStore::new(pool);
 
         let note1 = NoteRecord::new("projects/rust/note.md", BlockHash::zero())
             .with_embedding(vec![1.0, 0.0, 0.0]);
@@ -1203,9 +1121,7 @@ mod tests {
     #[tokio::test]
     async fn test_note_store_with_properties() {
         let pool = SqlitePool::memory().expect("Failed to create pool");
-        let store = create_note_store(pool)
-            .await
-            .expect("Failed to create store");
+        let store = SqliteNoteStore::new(pool);
 
         let mut props = HashMap::new();
         props.insert("status".to_string(), Value::String("published".to_string()));
@@ -1237,9 +1153,7 @@ mod tests {
     #[tokio::test]
     async fn test_note_links_junction_table() {
         let pool = SqlitePool::memory().expect("Failed to create pool");
-        let store = create_note_store(pool.clone())
-            .await
-            .expect("Failed to create store");
+        let store = SqliteNoteStore::new(pool.clone());
 
         // Create notes with links (raw links_to fallback path — no spans)
         let note_a = NoteRecord::new("a.md", BlockHash::zero())
@@ -1299,7 +1213,7 @@ mod tests {
 
     async fn scoped_store_with_notes(notes: Vec<(&str, Scope)>) -> SqliteNoteStore {
         let pool = SqlitePool::memory().expect("pool");
-        let store = create_note_store(pool).await.expect("store");
+        let store = SqliteNoteStore::new(pool);
         for (path, scope) in notes {
             let n = NoteRecord::new(path, BlockHash::zero())
                 .with_title(path)
@@ -1331,7 +1245,7 @@ mod tests {
     #[tokio::test]
     async fn get_by_hash_respects_scope() {
         let pool = SqlitePool::memory().expect("pool");
-        let store = create_note_store(pool).await.expect("store");
+        let store = SqliteNoteStore::new(pool);
 
         let h1 = BlockHash::new([1u8; 32]);
         let h2 = BlockHash::new([2u8; 32]);
@@ -1389,7 +1303,7 @@ mod tests {
         // authority that's reading this DB. Per the migration policy: legacy
         // notes belong to "this kiln's workspace" (and SQLite is per-kiln).
         let pool = SqlitePool::memory().expect("pool");
-        let store = create_note_store(pool).await.expect("store");
+        let store = SqliteNoteStore::new(pool);
 
         let legacy = NoteRecord::new("legacy.md", BlockHash::zero()).with_title("legacy");
         store.upsert(legacy).await.unwrap();

@@ -6,35 +6,28 @@
 //! ## Features
 //!
 //! - **NoteStore**: Unified note metadata and vector search storage
-//! - **Graph Queries**: Full pipeline support for jaq, SQL sugar, and PGQ MATCH syntax
 //! - **FTS5 Full-Text Search**: Built-in full-text search using SQLite's FTS5 extension
 //! - **WAL Mode**: Optimized for concurrent read access with write-ahead logging
 //! - **Thread Safety**: Arc<Mutex<Connection>> pattern for concurrent access
 //!
-//! ## Graph Query Syntaxes
-//!
-//! ```ignore
-//! // jaq-style (like jq)
-//! executor.execute(r#"outlinks("Index")"#).await?;
-//! executor.execute(r#"inlinks("Index")"#).await?;
-//!
-//! // SQL sugar
-//! executor.execute("SELECT outlinks FROM 'Index'").await?;
-//! executor.execute("SELECT inlinks FROM 'Index'").await?;
-//!
-//! // PGQ MATCH (SQL:2023 graph pattern matching)
-//! executor.execute("MATCH (a {title: 'Index'})-[:wikilink]->(b)").await?;
-//! ```
+//! There is no graph query language here. This module doc used to advertise
+//! "Full pipeline support for jaq, SQL sugar, and PGQ MATCH syntax" over a
+//! `query/` subtree that no caller ever reached and whose renderer targeted
+//! tables Crucible has never had (an `edges` table; `entities.path`), so its
+//! own golden SQL could not be prepared. Both the subtree and the claim were
+//! removed together — see [[2026-08-11-dead-code-and-schema-migrations]] and
+//! `docs/Help/Query/Index.md`. Graph reads go through
+//! `NoteStore::graph_links`/`backlinks` over `note_links` instead.
 //!
 //! ## Usage
 //!
 //! ```rust,ignore
 //! use crucible_daemon::storage::sqlite::{SqliteConfig, SqlitePool};
-//! use crucible_daemon::storage::sqlite::create_note_store;
+//! use crucible_daemon::storage::sqlite::SqliteNoteStore;
 //! use crucible_core::storage::NoteStore;
 //!
 //! let pool = SqlitePool::new(SqliteConfig::new("./crucible.db"))?;
-//! let store = create_note_store(pool)?;
+//! let store = SqliteNoteStore::new(pool);
 //!
 //! // Use via the unified NoteStore trait
 //! let note = store.get("notes/example.md").await?;
@@ -45,11 +38,9 @@ pub mod config;
 pub mod connection;
 mod error_ext;
 pub mod fts;
-pub mod graph_view;
 pub(crate) mod link_index;
 pub mod note_store;
 pub mod property_store;
-pub mod query;
 pub mod repository;
 pub mod schema;
 
@@ -59,14 +50,8 @@ pub use config::SqliteConfig;
 pub use connection::SqlitePool;
 pub use crucible_core::storage::StorageResult as SqliteResult;
 pub use fts::{FtsIndex, FtsResult};
-pub use graph_view::SqliteGraphView;
-pub use note_store::{create_note_store, SqliteNoteStore};
+pub use note_store::SqliteNoteStore;
 pub use property_store::SqlitePropertyStore;
-pub use query::{
-    GraphIR, ParseError, PipelineError, QueryPipeline, QueryPipelineBuilder, QueryRenderer,
-    QuerySyntax, QuerySyntaxRegistry, QuerySyntaxRegistryBuilder, QueryTransform, RenderError,
-    RenderedQuery, TransformError,
-};
 pub use repository::{
     create_knowledge_repository, create_knowledge_repository_with_kiln, SqliteKnowledgeRepository,
 };

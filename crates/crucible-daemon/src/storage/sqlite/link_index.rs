@@ -71,6 +71,14 @@ pub(crate) fn ensure_note_links_v2(conn: &Connection) -> rusqlite::Result<bool> 
             .optional()?
             .is_some();
         if !has_v2_shape {
+            // Dropping is only legitimate because `note_links` is derived: the
+            // kiln open path re-extracts every link from the files on disk.
+            // Asserted rather than remembered, so a future migration cannot
+            // quietly point this at a canonical table.
+            debug_assert!(
+                crate::storage::sqlite::schema::DERIVED_TABLES.contains(&"note_links"),
+                "note_links must be registered as derived before it is dropped"
+            );
             conn.execute("DROP TABLE note_links", [])?;
             let notes: i64 = conn.query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))?;
             needs_relink = notes > 0;

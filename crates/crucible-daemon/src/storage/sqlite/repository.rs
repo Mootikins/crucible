@@ -20,11 +20,11 @@ use crate::storage::sqlite::note_store::SqliteNoteStore;
 /// ## Example
 ///
 /// ```ignore
-/// use crucible_daemon::storage::sqlite::{SqliteConfig, SqlitePool, create_note_store};
+/// use crucible_daemon::storage::sqlite::{SqliteConfig, SqlitePool, SqliteNoteStore};
 /// use crucible_daemon::storage::sqlite::repository::SqliteKnowledgeRepository;
 ///
 /// let pool = SqlitePool::new(SqliteConfig::new("./crucible.db"))?;
-/// let store = create_note_store(pool).await?;
+/// let store = SqliteNoteStore::new(pool);
 /// let repo = SqliteKnowledgeRepository::new(Arc::new(store));
 ///
 /// let note = repo.get_note_by_name("Index").await?;
@@ -210,7 +210,6 @@ mod tests {
     use super::*;
     use crate::storage::sqlite::config::SqliteConfig;
     use crate::storage::sqlite::connection::SqlitePool;
-    use crate::storage::sqlite::note_store::create_note_store;
     use chrono::Utc;
     use crucible_core::parser::BlockHash;
     use crucible_core::storage::note_store::NoteRecord;
@@ -219,7 +218,7 @@ mod tests {
     async fn setup_test_repo() -> (SqliteKnowledgeRepository, Arc<SqliteNoteStore>) {
         let config = SqliteConfig::memory();
         let pool = SqlitePool::new(config).unwrap();
-        let store = create_note_store(pool).await.unwrap();
+        let store = SqliteNoteStore::new(pool);
         let store_arc = Arc::new(store);
 
         // Add test notes
@@ -391,6 +390,53 @@ mod tests {
         }
     }
 
+    /// Settles which of two contradictory claims about vector search is true.
+    ///
+    /// `pipeline/note_pipeline.rs` used to comment that "Lance is the source of
+    /// truth for similarity search; the SQLite copy persists for now but is no
+    /// longer queried". The call chain says otherwise:
+    /// `search_across_kilns` → `KnowledgeRepository::search_vectors` →
+    /// `SqliteKnowledgeRepository::search_vectors` →
+    /// `SqliteNoteStore::search`, which brute-forces cosine similarity over
+    /// `notes.embedding`. This test decides it empirically: there is no Lance
+    /// directory anywhere in the fixture, so a hit can only have come from
+    /// SQLite.
+    ///
+    /// Two vector paths coexist, split by caller rather than by design — the
+    /// `search_vectors` RPC goes to Lance, the `semantic_search` agent tool and
+    /// precognition go to SQLite cosine. Unifying them changes ranking, so it
+    /// is deliberately not this test's business; the comment was corrected
+    /// instead.
+    #[tokio::test]
+    async fn a_kiln_with_no_lance_index_still_returns_semantic_hits() {
+        use crate::multi_kiln_search::{search_across_kilns, KilnSearchSource};
+
+        let tempdir = tempfile::TempDir::new().unwrap();
+        let kiln_path = tempdir.path().to_path_buf();
+        let (_repo, store) = setup_test_repo().await;
+
+        assert!(
+            !kiln_path.join("crucible-vectors.lance").exists(),
+            "the fixture must have no Lance index for the result to mean anything"
+        );
+
+        let sources = vec![KilnSearchSource {
+            kiln_path: kiln_path.clone(),
+            knowledge_repo: create_knowledge_repository(store),
+            is_primary: true,
+        }];
+
+        let results = search_across_kilns(&sources, vec![0.0, 1.0, 0.0], 5, None, &kiln_path)
+            .await
+            .expect("search");
+
+        assert!(
+            !results.is_empty(),
+            "the SQLite embedding column is read in production, not merely persisted"
+        );
+        assert_eq!(results[0].document_id.0, "notes/rust.md");
+    }
+
     /// Memory-scoping regression test: a `KnowledgeRepository` bound to a
     /// kiln must NOT return notes scoped to a sibling workspace.
     ///
@@ -407,7 +453,7 @@ mod tests {
 
         let config = SqliteConfig::memory();
         let pool = SqlitePool::new(config).unwrap();
-        let store = create_note_store(pool).await.unwrap();
+        let store = SqliteNoteStore::new(pool);
         let store_arc = Arc::new(store);
 
         // Own-workspace note.

@@ -52,7 +52,7 @@
 
 use crate::error::LuaError;
 use crate::lua_util::register_in_namespaces;
-use crucible_core::storage::{GraphView, NoteStore, Scope, StorageError, StorageResult};
+use crucible_core::storage::{NoteStore, Scope, StorageError, StorageResult};
 use mlua::{Lua, LuaSerdeExt, Table, Value};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
@@ -230,51 +230,6 @@ pub fn register_vault_module_with_store_scoped(
         })?;
     vault.set("neighbors", neighbors_fn)?;
 
-    Ok(())
-}
-
-/// Register GraphView functions on the kiln module for graph traversal.
-pub fn register_vault_module_with_graph(
-    lua: &Lua,
-    view: Arc<dyn GraphView>,
-) -> Result<(), LuaError> {
-    let globals = lua.globals();
-    let cru: Table = globals.get("cru")?;
-    let vault: Table = cru.get("kiln")?;
-
-    let v = Arc::clone(&view);
-    let outlinks_fn = lua.create_function(move |lua, path: String| {
-        let paths = v.outlinks(&path);
-        string_vec_to_lua_table(lua, &paths)
-    })?;
-    vault.set("outlinks", outlinks_fn)?;
-
-    let v = Arc::clone(&view);
-    let backlinks_fn = lua.create_function(move |lua, path: String| {
-        let paths = v.backlinks(&path);
-        string_vec_to_lua_table(lua, &paths)
-    })?;
-    vault.set("backlinks", backlinks_fn)?;
-
-    let v = Arc::clone(&view);
-    let neighbors_fn =
-        lua.create_function(move |lua, (path, depth): (String, Option<usize>)| {
-            let paths = v.neighbors(&path, depth.unwrap_or(1));
-            string_vec_to_lua_table(lua, &paths)
-        })?;
-    vault.set("neighbors", neighbors_fn)?;
-
-    Ok(())
-}
-
-/// Register the kiln module with both NoteStore and GraphView
-pub fn register_vault_module_full(
-    lua: &Lua,
-    store: Arc<dyn NoteStore>,
-    view: Arc<dyn GraphView>,
-) -> Result<(), LuaError> {
-    register_vault_module_with_store(lua, store)?;
-    register_vault_module_with_graph(lua, view)?;
     Ok(())
 }
 

@@ -16,7 +16,6 @@ pub mod parser;
 pub mod permission_gate;
 pub mod provider;
 pub mod storage_client;
-pub mod text_search;
 pub mod tools;
 pub mod undoable;
 
@@ -43,5 +42,4 @@ pub use mcp::{
     ToolCallResult,
 };
 pub use permission_gate::PermissionGate;
-pub use text_search::TextSearchMatch;
 pub use undoable::Undoable;

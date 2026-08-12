@@ -67,7 +67,6 @@ rand = { workspace = true }
 
 # Absorbed from crucible-sqlite
 parking_lot = "0.12"
-chumsky = "0.13"
 
 # Absorbed from crucible-acp
 similar = "3"
