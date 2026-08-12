@@ -39,19 +39,11 @@ pub fn ollama_endpoint() -> String {
         .unwrap_or_else(|| DEFAULT_OLLAMA_ENDPOINT.to_string())
 }
 
-/// Check if an API key exists for a provider (env var or credential store)
-pub fn has_api_key(provider: &str) -> bool {
-    has_api_key_with_source(provider).is_some()
-}
-
-/// Check if an API key exists and return its source
-pub fn has_api_key_with_source(provider: &str) -> Option<CredentialSource> {
-    has_api_key_with_source_in(&SecretsFile::new(), provider)
-}
-
-/// [`has_api_key_with_source`] against an explicit store. Tests inject an
-/// isolated store here; the default path reads the developer's real
-/// `~/.config/crucible/secrets.toml`, whose contents would leak into
+/// Whether a credential for `provider` exists, and where it came from.
+///
+/// The store is a parameter so callers — and tests — say which one they mean:
+/// the default `SecretsFile::new()` reads the developer's real
+/// `~/.config/crucible/secrets.toml`, whose contents would otherwise leak into
 /// assertions (pass on CI, fail on any box with stored credentials).
 fn has_api_key_with_source_in(store: &SecretsFile, provider: &str) -> Option<CredentialSource> {
     // The env-var name comes from the backend's own metadata rather than a
@@ -326,33 +318,41 @@ mod tests {
         assert!(detected.iter().any(|p| p.provider_type == "anthropic"));
     }
 
+    /// Credential lookup against an empty, isolated store, so only the
+    /// environment can satisfy it.
+    fn has_key_isolated(provider: &str) -> bool {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let store = SecretsFile::with_path(tmp.path().join("secrets.toml"));
+        has_api_key_with_source_in(&store, provider).is_some()
+    }
+
     #[test]
     #[serial]
     fn test_has_api_key_openai() {
         let _guard = EnvVarGuard::set("OPENAI_API_KEY", "sk-test".to_string());
-        assert!(has_api_key("openai"));
+        assert!(has_key_isolated("openai"));
     }
 
     #[test]
     #[serial]
     fn test_has_api_key_anthropic() {
         let _guard = EnvVarGuard::set("ANTHROPIC_API_KEY", "sk-ant-test".to_string());
-        assert!(has_api_key("anthropic"));
+        assert!(has_key_isolated("anthropic"));
     }
 
     #[test]
     fn test_has_api_key_unknown_provider() {
-        assert!(!has_api_key("unknown"));
-        assert!(!has_api_key("google"));
+        assert!(!has_key_isolated("unknown"));
+        assert!(!has_key_isolated("google"));
     }
 
     #[test]
     #[serial]
     fn test_has_api_key_case_insensitive() {
         let _guard = EnvVarGuard::set("OPENAI_API_KEY", "sk-test".to_string());
-        assert!(has_api_key("OpenAI"));
-        assert!(has_api_key("OPENAI"));
-        assert!(has_api_key("openai"));
+        assert!(has_key_isolated("OpenAI"));
+        assert!(has_key_isolated("OPENAI"));
+        assert!(has_key_isolated("openai"));
     }
 
     #[test]
@@ -360,8 +360,8 @@ mod tests {
     fn test_has_api_key_missing() {
         let _guard1 = EnvVarGuard::remove("OPENAI_API_KEY");
         let _guard2 = EnvVarGuard::remove("ANTHROPIC_API_KEY");
-        assert!(!has_api_key("openai"));
-        assert!(!has_api_key("anthropic"));
+        assert!(!has_key_isolated("openai"));
+        assert!(!has_key_isolated("anthropic"));
     }
 
     #[test]

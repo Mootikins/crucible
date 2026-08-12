@@ -34,14 +34,8 @@ pub struct ValidationFinding {
 /// Overall result of path validation.
 #[derive(Debug, Clone)]
 pub struct ValidationResult {
-    /// Path that was validated (canonicalized if possible).
-    pub path: PathBuf,
     /// All findings, ordered by severity (hard blocks first).
     pub findings: Vec<ValidationFinding>,
-    /// Whether the path exists on disk.
-    pub path_exists: bool,
-    /// Whether the path already has a `.crucible/` directory.
-    pub is_existing_kiln: bool,
     /// Number of `.md` files found if the path exists (0 if doesn't exist).
     pub markdown_file_count: usize,
 }
@@ -54,38 +48,12 @@ impl ValidationResult {
             .any(|f| f.severity == ValidationSeverity::HardBlock)
     }
 
-    /// Returns true if there are strong warnings that need user confirmation.
-    pub fn has_strong_warnings(&self) -> bool {
-        self.findings
-            .iter()
-            .any(|f| f.severity == ValidationSeverity::StrongWarning)
-    }
-
-    /// Returns true if there are mild warnings to inform the user about.
-    pub fn has_mild_warnings(&self) -> bool {
-        self.findings
-            .iter()
-            .any(|f| f.severity == ValidationSeverity::MildWarning)
-    }
-
-    /// Returns true if there are info findings.
-    pub fn has_info(&self) -> bool {
-        self.findings
-            .iter()
-            .any(|f| f.severity == ValidationSeverity::Info)
-    }
-
     /// Returns findings of a specific severity.
     pub fn findings_by_severity(&self, severity: ValidationSeverity) -> Vec<&ValidationFinding> {
         self.findings
             .iter()
             .filter(|f| f.severity == severity)
             .collect()
-    }
-
-    /// Returns true if validation passed with no blocks or warnings requiring confirmation.
-    pub fn is_clean(&self) -> bool {
-        !self.is_blocked() && !self.has_strong_warnings()
     }
 }
 
@@ -264,10 +232,7 @@ pub fn validate_kiln_path(path: &Path) -> ValidationResult {
     });
 
     ValidationResult {
-        path: resolved,
         findings,
-        path_exists,
-        is_existing_kiln,
         markdown_file_count,
     }
 }
@@ -377,6 +342,22 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    /// The predicate `cru init` acts on: at least one default-deny warning.
+    fn has_strong_warning(result: &ValidationResult) -> bool {
+        !result
+            .findings_by_severity(ValidationSeverity::StrongWarning)
+            .is_empty()
+    }
+
+    /// Whether an Info finding carries `needle` — the only channel through
+    /// which "already a kiln" / "doesn't exist yet" reaches a caller.
+    fn info_says(result: &ValidationResult, needle: &str) -> bool {
+        result
+            .findings_by_severity(ValidationSeverity::Info)
+            .iter()
+            .any(|f| f.message.contains(needle))
+    }
+
     #[test]
     fn test_expand_tilde() {
         let expanded = expand_tilde("~/notes");
@@ -402,7 +383,7 @@ mod tests {
     #[test]
     fn test_validate_temp_directory() {
         let result = validate_kiln_path(Path::new("/tmp/test-kiln"));
-        assert!(result.has_strong_warnings());
+        assert!(has_strong_warning(&result));
         assert!(result
             .findings
             .iter()
@@ -415,7 +396,7 @@ mod tests {
         let kiln_path = tmp.path().join("my-notes");
         let result = validate_kiln_path(&kiln_path);
         assert!(!result.is_blocked());
-        assert!(!result.path_exists);
+        assert!(info_says(&result, "doesn't exist yet"));
         let non_temp_strong: Vec<_> = result
             .findings_by_severity(ValidationSeverity::StrongWarning)
             .into_iter()
@@ -433,11 +414,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         std::fs::create_dir_all(tmp.path().join(".crucible")).unwrap();
         let result = validate_kiln_path(tmp.path());
-        assert!(result.is_existing_kiln);
-        assert!(result
-            .findings
-            .iter()
-            .any(|f| f.message.contains("already exists")));
+        assert!(info_says(&result, "already exists"));
     }
 
     #[test]
@@ -458,7 +435,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         std::fs::create_dir_all(tmp.path().join(".git")).unwrap();
         let result = validate_kiln_path(tmp.path());
-        assert!(result.has_strong_warnings());
+        assert!(has_strong_warning(&result));
         assert!(result
             .findings
             .iter()
@@ -470,7 +447,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         std::fs::write(tmp.path().join("Cargo.toml"), "[package]").unwrap();
         let result = validate_kiln_path(tmp.path());
-        assert!(result.has_strong_warnings());
+        assert!(has_strong_warning(&result));
         assert!(result
             .findings
             .iter()
@@ -519,7 +496,7 @@ mod tests {
     fn test_validate_home_directory() {
         if let Some(home) = dirs::home_dir() {
             let result = validate_kiln_path(&home);
-            assert!(result.has_strong_warnings());
+            assert!(has_strong_warning(&result));
             assert!(result
                 .findings
                 .iter()
@@ -534,16 +511,6 @@ mod tests {
         let result = validate_kiln_path(tmp.path());
         // Re-init should NOT be blocked — it's idempotent
         assert!(!result.is_blocked());
-        assert!(result.is_existing_kiln);
-    }
-
-    #[test]
-    fn test_validation_result_methods() {
-        let tmp = TempDir::new().unwrap();
-        let kiln_path = tmp.path().join("notes");
-        let result = validate_kiln_path(&kiln_path);
-        assert!(!result.is_blocked());
-        assert!(result.has_info());
-        assert!(!result.path_exists);
+        assert!(info_says(&result, "already exists"));
     }
 }

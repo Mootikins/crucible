@@ -14,7 +14,7 @@ use crate::commands::chat_preflight::{ensure_valid_kiln, fill_default_model_if_m
 use crate::config::CliConfig;
 use crate::factories;
 use crate::output;
-use crate::progress::{BackgroundProgress, LiveProgress, StatusLine};
+use crate::status_line::StatusLine;
 use crate::tui::AgentSelection;
 
 /// Parameters for the execute function
@@ -710,12 +710,9 @@ async fn run_oneshot_chat(params: RunOneshotChatParams) -> Result<()> {
     status.update("Discovering agent...");
     let mut handle = factories::create_agent(&config, agent_params).await?;
 
-    let bg_progress: Option<BackgroundProgress> = None;
     status.success("Ready");
 
     let _autoconfirm_session = apply_oneshot_set_overrides(&mut handle, &set_overrides).await;
-
-    let _live_progress = bg_progress.map(LiveProgress::start);
 
     // `--no-context` / `--context-size` are session state, not a local
     // transform: the daemon owns Precognition, and it is already enabled by

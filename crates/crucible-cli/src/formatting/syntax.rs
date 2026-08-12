@@ -108,25 +108,9 @@ impl SyntaxHighlighter {
         h
     }
 
-    pub fn from_config(config: &HighlightingConfig) -> Self {
-        Self {
-            theme_name: config.theme.clone(),
-            enabled: config.enabled,
-        }
-    }
-
     pub fn with_theme(mut self, theme: &str) -> Self {
         self.theme_name = theme.to_string();
         self
-    }
-
-    pub fn with_enabled(mut self, enabled: bool) -> Self {
-        self.enabled = enabled;
-        self
-    }
-
-    pub fn is_enabled(&self) -> bool {
-        self.enabled
     }
 
     pub fn highlight(&self, code: &str, language: &str) -> Vec<HighlightedLine> {
@@ -371,22 +355,19 @@ mod tests {
         assert!(lines.len() >= 2);
     }
 
-    #[test]
-    fn from_config_uses_theme() {
-        let config = HighlightingConfig {
-            enabled: true,
-            theme: "InspiredGitHub".to_string(),
-        };
-        let highlighter = SyntaxHighlighter::from_config(&config);
-
-        assert!(highlighter.is_enabled());
-        let lines = highlighter.highlight("fn main() {}", "rs");
-        assert!(!lines.is_empty());
-    }
-
+    /// `highlighting.enabled = false` reaches rendering only through the
+    /// seeded active state — the one path production uses.
     #[test]
     fn disabled_highlighting_returns_plain_text() {
-        let highlighter = SyntaxHighlighter::new().with_enabled(false);
+        let _guard = ACTIVE_STATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        seed_from_config(&HighlightingConfig {
+            enabled: false,
+            theme: "base16-ocean.dark".to_string(),
+        });
+        clear_theme_override();
+        let highlighter = SyntaxHighlighter::active();
         let code = "fn main() {\n    println!(\"Hello\");\n}";
 
         let lines = highlighter.highlight(code, "rs");
@@ -396,17 +377,6 @@ mod tests {
             assert_eq!(line.spans.len(), 1);
             assert_eq!(line.spans[0].style, Style::default());
         }
-    }
-
-    #[test]
-    fn from_config_respects_enabled_flag() {
-        let config = HighlightingConfig {
-            enabled: false,
-            theme: "base16-ocean.dark".to_string(),
-        };
-        let highlighter = SyntaxHighlighter::from_config(&config);
-
-        assert!(!highlighter.is_enabled());
     }
 
     // ACTIVE_HIGHLIGHTING is process-global. Isolated per test under nextest;
@@ -437,7 +407,7 @@ mod tests {
         clear_theme_override();
         let h = SyntaxHighlighter::active();
         assert_eq!(h.theme_name, "Solarized (light)");
-        assert!(!h.is_enabled());
+        assert!(!h.enabled);
     }
 
     /// Pure-core proof that the theme knob changes rendered colors: the same

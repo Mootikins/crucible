@@ -9,8 +9,8 @@ use anyhow::{Context, Result};
 
 use crate::common::daemon_client;
 use crate::config::CliConfig;
-use crate::interactive::SearchResultWithScore;
 use crate::output;
+use crate::output::SearchResultWithScore;
 
 /// Which search backends to use
 enum SearchMode {
@@ -243,7 +243,7 @@ async fn run_semantic_search(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::interactive::SearchResultWithScore;
+    use crate::output::SearchResultWithScore;
     use clap::Parser;
 
     // ---- Output formatting (TDD: written before implementation) ----

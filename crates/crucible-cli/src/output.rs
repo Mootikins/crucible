@@ -1,9 +1,17 @@
-use crate::interactive::SearchResultWithScore;
 use anyhow::Result;
 use colored::Colorize;
 use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, Cell, Color, Table};
 use serde_json;
 use std::io::IsTerminal;
+
+/// A search hit with the display fields `cru search` renders.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SearchResultWithScore {
+    pub id: String,
+    pub title: String,
+    pub content: String,
+    pub score: f64,
+}
 
 /// Detect if stdout is connected to an interactive terminal.
 ///

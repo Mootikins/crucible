@@ -1,21 +1,19 @@
 //! Crucible CLI library
 //!
 //! This library provides the core functionality for the Crucible CLI,
-//! exposing modules for configuration, interactive components, and output formatting.
+//! exposing modules for configuration, commands, and output formatting.
 //!
-pub mod chat;
+pub(crate) mod chat;
 pub mod cli;
 pub mod commands;
-pub mod common;
+pub(crate) mod common;
 pub mod config;
 
 pub mod factories;
-pub mod formatting;
-pub mod interactive;
-pub mod kiln_discover;
-pub mod kiln_validate;
+pub(crate) mod formatting;
+pub(crate) mod kiln_discover;
+pub(crate) mod kiln_validate;
 pub mod output;
-pub mod progress;
-pub mod provider_detect;
-pub mod sync;
+pub(crate) mod provider_detect;
+pub(crate) mod status_line;
 pub mod tui;
