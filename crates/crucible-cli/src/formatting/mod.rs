@@ -10,51 +10,103 @@ pub mod syntax;
 pub mod syntax_theme;
 pub use syntax::SyntaxHighlighter;
 
-/// Standard output format types supported across all commands
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Output format for commands whose payload is a list of records.
+///
+/// A `ValueEnum` rather than a `String`, because clap then derives the help
+/// text and the accepted set from this one declaration and the two cannot drift
+/// apart. The predecessor was a `from_str` documented as "infallible parsing
+/// with default" that mapped everything unrecognised to `Plain` — which is how
+/// `csv` came to be advertised on commands that have no CSV writer. Nothing
+/// rejected it, so nothing revealed it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
 pub enum OutputFormat {
-    /// Plain text output
-    Plain,
-    /// JSON output for programmatic consumption
-    Json,
-    /// Human-readable table format
+    /// Bordered table, for reading.
+    #[default]
     Table,
+    /// JSON, for scripting.
+    Json,
+    /// Unadorned lines, for piping.
+    #[value(alias = "text")]
+    Plain,
 }
 
-impl OutputFormat {
-    /// Parse format from string
-    #[allow(clippy::should_implement_trait)] // Infallible parsing with default, not FromStr semantics
-    pub fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "json" => OutputFormat::Json,
-            "table" => OutputFormat::Table,
-            _ => OutputFormat::Plain,
+/// Output format for commands whose payload has no tabular shape — nested
+/// config, a step tree, a status report.
+///
+/// Separate from [`OutputFormat`] so `table` is not offered where it could only
+/// ever be a synonym for the human-readable rendering. It stays accepted as an
+/// alias, because it was the documented default on these commands and scripts
+/// pass it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
+pub enum TextFormat {
+    /// Human-readable report.
+    #[default]
+    #[value(alias = "table", alias = "plain")]
+    Text,
+    /// JSON, for scripting.
+    Json,
+}
+
+/// `default_value_t` needs `Display`, and the only spelling that must not drift
+/// from what clap accepts is the one clap itself derived. So ask it.
+macro_rules! display_via_possible_value {
+    ($ty:ty) => {
+        impl std::fmt::Display for $ty {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                clap::ValueEnum::to_possible_value(self)
+                    .expect("no variant is #[value(skip)]")
+                    .get_name()
+                    .fmt(f)
+            }
         }
-    }
+    };
 }
 
-impl From<String> for OutputFormat {
-    fn from(s: String) -> Self {
-        Self::from_str(&s)
-    }
-}
-
-impl From<&str> for OutputFormat {
-    fn from(s: &str) -> Self {
-        Self::from_str(s)
-    }
-}
+display_via_possible_value!(OutputFormat);
+display_via_possible_value!(TextFormat);
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::ValueEnum;
+
+    /// The values clap accepts are the values the enum declares. This is the
+    /// invariant the old `from_str` could not hold: it accepted every string.
+    #[test]
+    fn output_format_accepts_exactly_its_variants() {
+        for (input, expected) in [
+            ("table", OutputFormat::Table),
+            ("json", OutputFormat::Json),
+            ("plain", OutputFormat::Plain),
+            ("text", OutputFormat::Plain),
+        ] {
+            assert_eq!(
+                OutputFormat::from_str(input, true).ok(),
+                Some(expected),
+                "{input}"
+            );
+        }
+        for rejected in ["csv", "detailed", "binary", "xyzzy", ""] {
+            assert!(
+                OutputFormat::from_str(rejected, true).is_err(),
+                "`{rejected}` must be rejected, not silently downgraded"
+            );
+        }
+    }
 
     #[test]
-    fn test_output_format_from_str() {
-        assert_eq!(OutputFormat::from_str("json"), OutputFormat::Json);
-        assert_eq!(OutputFormat::from_str("JSON"), OutputFormat::Json);
-        assert_eq!(OutputFormat::from_str("table"), OutputFormat::Table);
-        assert_eq!(OutputFormat::from_str("unknown"), OutputFormat::Plain);
-        assert_eq!(OutputFormat::from_str(""), OutputFormat::Plain);
+    fn text_format_keeps_table_and_plain_as_aliases() {
+        for input in ["text", "table", "plain"] {
+            assert_eq!(
+                TextFormat::from_str(input, true).ok(),
+                Some(TextFormat::Text),
+                "{input}"
+            );
+        }
+        assert_eq!(
+            TextFormat::from_str("json", true).ok(),
+            Some(TextFormat::Json)
+        );
+        assert!(TextFormat::from_str("csv", true).is_err());
     }
 }

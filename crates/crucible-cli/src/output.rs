@@ -1,3 +1,4 @@
+use crate::formatting::OutputFormat;
 use anyhow::Result;
 use colored::Colorize;
 use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, Cell, Color, Table};
@@ -33,14 +34,14 @@ const PREVIEW_MAX_CHARS_PLAIN: usize = 200;
 /// Format search results
 pub fn format_search_results(
     results: &[SearchResultWithScore],
-    format: &str,
+    format: OutputFormat,
     show_scores: bool,
     show_content: bool,
 ) -> Result<String> {
     match format {
-        "json" => Ok(serde_json::to_string_pretty(results)?),
-        "table" => Ok(format_as_table(results, show_scores, show_content)),
-        _ => Ok(format_as_plain(results, show_scores, show_content)),
+        OutputFormat::Json => Ok(serde_json::to_string_pretty(results)?),
+        OutputFormat::Table => Ok(format_as_table(results, show_scores, show_content)),
+        OutputFormat::Plain => Ok(format_as_plain(results, show_scores, show_content)),
     }
 }
 
@@ -126,37 +127,32 @@ fn format_as_table(
     table.to_string()
 }
 
-/// Format file list
-pub fn format_file_list(files: &[String], format: &str) -> Result<String> {
-    match format {
-        "json" => Ok(serde_json::to_string_pretty(files)?),
-        "table" => {
-            let mut table = Table::new();
-            table
-                .load_preset(UTF8_FULL)
-                .apply_modifier(UTF8_ROUND_CORNERS);
-            table.set_header(vec!["#", "Path"]);
-
-            for (idx, file) in files.iter().enumerate() {
-                table.add_row(vec![Cell::new(idx + 1), Cell::new(file)]);
-            }
-
-            Ok(table.to_string())
-        }
-        _ => Ok(files.join("\n")),
-    }
-}
-
-/// Format statistics
-pub fn format_stats(stats: &std::collections::HashMap<String, i64>) -> String {
+/// Render a list of records as a bordered table, first column highlighted.
+///
+/// This body is `format_stats`', which *was* the `cru stats -f table` renderer
+/// until `a644c2022` replaced its call site with a `println!` block and left the
+/// function uncalled. It read as dead code and was nearly deleted as such; it is
+/// in fact the missing implementation behind every `--format table` the CLI
+/// advertised. Generalised over headers and rows so one helper serves each
+/// list-shaped command rather than each growing its own `comfy_table` block.
+pub fn records_table(headers: &[&str], rows: &[Vec<String>]) -> String {
     let mut table = Table::new();
     table
         .load_preset(UTF8_FULL)
         .apply_modifier(UTF8_ROUND_CORNERS);
-    table.set_header(vec!["Metric", "Value"]);
+    table.set_header(headers.iter().copied());
 
-    for (key, value) in stats {
-        table.add_row(vec![Cell::new(key).fg(Color::Cyan), Cell::new(value)]);
+    for row in rows {
+        table.add_row(row.iter().enumerate().map(|(column, value)| {
+            let cell = Cell::new(value);
+            // First column is the record's identity — the old Metric/Value
+            // table coloured it, so keep that.
+            if column == 0 {
+                cell.fg(Color::Cyan)
+            } else {
+                cell
+            }
+        }));
     }
 
     table.to_string()
@@ -193,29 +189,9 @@ pub fn hint(message: &str) {
     eprintln!("  {} {}", "→".cyan(), message);
 }
 
-/// Show a warning about degraded functionality in lightweight storage mode
-///
-/// Displays a yellow warning message to stderr that clearly indicates the feature
-/// requires full storage mode. The message always includes "storage"
-/// to clarify the cause.
-///
-/// # Example
-///
-/// ```rust
-/// use crucible_cli::output::storage_warning;
-///
-/// // When a feature requires the daemon
-/// storage_warning("SQL queries");
-/// // Prints: ⚠ SQL queries requires full storage mode
-/// ```
-pub fn storage_warning(feature: &str) {
-    eprintln!("{} {} requires full storage mode", "⚠".yellow(), feature);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
     fn create_sample_results() -> Vec<SearchResultWithScore> {
         vec![
@@ -237,7 +213,7 @@ mod tests {
     #[test]
     fn test_format_plain_without_scores() {
         let results = create_sample_results();
-        let output = format_search_results(&results, "plain", false, false).unwrap();
+        let output = format_search_results(&results, OutputFormat::Plain, false, false).unwrap();
 
         assert!(output.contains("Test Note 1"));
         assert!(output.contains("test1.md"));
@@ -247,7 +223,7 @@ mod tests {
     #[test]
     fn test_format_plain_with_scores() {
         let results = create_sample_results();
-        let output = format_search_results(&results, "plain", true, false).unwrap();
+        let output = format_search_results(&results, OutputFormat::Plain, true, false).unwrap();
 
         assert!(output.contains("Test Note 1"));
         assert!(output.contains("0.95"));
@@ -257,7 +233,7 @@ mod tests {
     #[test]
     fn test_format_plain_with_content() {
         let results = create_sample_results();
-        let output = format_search_results(&results, "plain", false, true).unwrap();
+        let output = format_search_results(&results, OutputFormat::Plain, false, true).unwrap();
 
         assert!(output.contains("Test Note 1"));
         assert!(output.contains("This is test content"));
@@ -266,7 +242,7 @@ mod tests {
     #[test]
     fn test_format_json() {
         let results = create_sample_results();
-        let output = format_search_results(&results, "json", false, false).unwrap();
+        let output = format_search_results(&results, OutputFormat::Json, false, false).unwrap();
 
         // Verify it's valid JSON
         let parsed: Vec<SearchResultWithScore> = serde_json::from_str(&output).unwrap();
@@ -278,7 +254,7 @@ mod tests {
     #[test]
     fn test_format_table() {
         let results = create_sample_results();
-        let output = format_search_results(&results, "table", false, false).unwrap();
+        let output = format_search_results(&results, OutputFormat::Table, false, false).unwrap();
 
         assert!(output.contains("Test Note 1"));
         assert!(output.contains("Test Note 2"));
@@ -289,7 +265,7 @@ mod tests {
     #[test]
     fn test_format_empty_results() {
         let results: Vec<SearchResultWithScore> = vec![];
-        let output = format_search_results(&results, "plain", false, false).unwrap();
+        let output = format_search_results(&results, OutputFormat::Plain, false, false).unwrap();
 
         assert_eq!(output, "");
     }
@@ -303,7 +279,7 @@ mod tests {
             score: 0.9,
         }];
 
-        let output = format_search_results(&results, "table", false, true).unwrap();
+        let output = format_search_results(&results, OutputFormat::Table, false, true).unwrap();
 
         // Truncated with the single-character ellipsis, one char of the budget spent on it.
         assert!(output.contains(&format!(
@@ -324,7 +300,7 @@ mod tests {
             score: 0.9,
         }];
 
-        let output = format_search_results(&results, "table", false, true).unwrap();
+        let output = format_search_results(&results, OutputFormat::Table, false, true).unwrap();
 
         assert!(output.contains('x'));
         assert!(output.contains('\u{2026}'));
@@ -346,7 +322,7 @@ mod tests {
             score: 0.9,
         }];
 
-        let output = format_search_results(&results, "table", false, true).unwrap();
+        let output = format_search_results(&results, OutputFormat::Table, false, true).unwrap();
 
         assert!(output.contains("ab"));
         assert!(output.contains('\u{2026}'));
@@ -366,7 +342,7 @@ mod tests {
             score: 0.9,
         }];
 
-        let output = format_search_results(&results, "plain", false, true).unwrap();
+        let output = format_search_results(&results, OutputFormat::Plain, false, true).unwrap();
 
         let preview_chars = output.chars().filter(|c| *c == '\u{65E5}').count();
         assert_eq!(preview_chars, PREVIEW_MAX_CHARS_PLAIN - 1);
@@ -374,48 +350,43 @@ mod tests {
     }
 
     #[test]
-    fn test_format_file_list_plain() {
-        let files = vec!["file1.md".to_string(), "file2.md".to_string()];
+    fn records_table_renders_every_header_and_cell() {
+        let rows = vec![
+            vec!["total_files".to_string(), "42".to_string()],
+            vec!["indexed_files".to_string(), "40".to_string()],
+        ];
 
-        let output = format_file_list(&files, "plain").unwrap();
+        let output = records_table(&["Metric", "Value"], &rows);
 
-        assert!(output.contains("file1.md"));
-        assert!(output.contains("file2.md"));
-        assert_eq!(output, "file1.md\nfile2.md");
+        for expected in [
+            "Metric",
+            "Value",
+            "total_files",
+            "42",
+            "indexed_files",
+            "40",
+        ] {
+            assert!(output.contains(expected), "missing {expected}:\n{output}");
+        }
+        assert!(output.contains('─'), "no table border:\n{output}");
     }
 
     #[test]
-    fn test_format_file_list_json() {
-        let files = vec!["test.md".to_string()];
-        let output = format_file_list(&files, "json").unwrap();
+    fn records_table_of_no_rows_is_still_a_table() {
+        // `cru stats` on an empty kiln, `cru tools list` with nothing installed:
+        // the header is the answer, and a bare border beats a panic.
+        let output = records_table(&["Name", "Scope"], &[]);
 
-        let parsed: Vec<String> = serde_json::from_str(&output).unwrap();
-        assert_eq!(parsed.len(), 1);
-        assert_eq!(parsed[0], "test.md");
+        assert!(output.contains("Name"));
+        assert!(output.contains("Scope"));
     }
 
     #[test]
-    fn test_format_file_list_table() {
-        let files = vec!["file1.md".to_string(), "file2.md".to_string()];
+    fn records_table_tolerates_a_short_row() {
+        // Rows are built per command; a ragged one should render, not panic.
+        let output = records_table(&["A", "B", "C"], &[vec!["only".to_string()]]);
 
-        let output = format_file_list(&files, "table").unwrap();
-
-        assert!(output.contains("file1.md"));
-        assert!(output.contains("file2.md"));
-        assert!(output.contains("─")); // Table border
-    }
-
-    #[test]
-    fn test_format_stats() {
-        let mut stats = HashMap::new();
-        stats.insert("total_files".to_string(), 42);
-        stats.insert("indexed_files".to_string(), 40);
-
-        let output = format_stats(&stats);
-
-        assert!(output.contains("total_files"));
-        assert!(output.contains("42"));
-        assert!(output.contains("─")); // Table border
+        assert!(output.contains("only"));
     }
 
     #[test]

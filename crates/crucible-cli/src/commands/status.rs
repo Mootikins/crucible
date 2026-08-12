@@ -8,18 +8,17 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use crate::config::CliConfig;
-use crate::formatting::OutputFormat;
+use crate::formatting::TextFormat;
 use crate::output;
 
 /// Execute status command
 pub async fn execute(
     config: CliConfig,
     path: Option<PathBuf>,
-    format: String,
+    format: TextFormat,
     detailed: bool,
     recent: bool,
 ) -> Result<()> {
-    let output_format = OutputFormat::from(format);
     let start_time = Instant::now();
 
     // Get storage
@@ -31,7 +30,7 @@ pub async fn execute(
         show_path_status(&path, detailed)?;
     } else {
         output::info("Gathering global storage status...");
-        show_global_status(&config, &storage, output_format, detailed, recent).await?;
+        show_global_status(&config, &storage, format, detailed, recent).await?;
     }
 
     // Show performance metrics
@@ -82,7 +81,7 @@ fn show_path_status(path: &std::path::Path, detailed: bool) -> Result<()> {
 async fn show_global_status(
     config: &CliConfig,
     storage: &crate::factories::StorageHandle,
-    output_format: OutputFormat,
+    format: TextFormat,
     detailed: bool,
     _recent: bool,
 ) -> Result<()> {
@@ -94,8 +93,8 @@ async fn show_global_status(
         .unwrap_or_else(|_| crucible_core::storage::Scope::workspace_unchecked(&config.kiln_path));
     let note_count = Some(storage.note_store().list(&authority).await?.len());
 
-    match output_format {
-        OutputFormat::Json => {
+    match format {
+        TextFormat::Json => {
             let json = serde_json::json!({
                 "storage_mode": mode,
                 "kiln_path": config.kiln_path.to_string_lossy(),
@@ -103,7 +102,7 @@ async fn show_global_status(
             });
             println!("{}", serde_json::to_string_pretty(&json)?);
         }
-        _ => {
+        TextFormat::Text => {
             output::header("Storage Status");
             println!("  Storage Mode: {}", mode);
             println!("  Kiln Path: {}", config.kiln_path.display());

@@ -1,3 +1,4 @@
+use crate::formatting::OutputFormat;
 use clap::Subcommand;
 
 /// Skills management subcommands
@@ -8,9 +9,9 @@ pub enum SkillsCommands {
         /// Filter by scope (personal, workspace, kiln)
         #[arg(long)]
         scope: Option<String>,
-        /// Output format (table, json, plain)
-        #[arg(short = 'f', long, default_value = "table")]
-        format: String,
+        /// Output format
+        #[arg(short = 'f', long, default_value_t)]
+        format: OutputFormat,
     },
     /// Show skill details
     Show {

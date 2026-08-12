@@ -381,11 +381,11 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             r#type,
             format,
             preview,
-        }) => commands::search::execute(config, &query, limit, &r#type, &format, preview).await?,
+        }) => commands::search::execute(config, &query, limit, &r#type, format, preview).await?,
 
-        Some(Commands::Stats { format }) => commands::stats::execute(config, &format).await?,
+        Some(Commands::Stats { format }) => commands::stats::execute(config, format).await?,
 
-        Some(Commands::Models { format }) => commands::models::execute(config, &format).await?,
+        Some(Commands::Models { format }) => commands::models::execute(config, format).await?,
 
         Some(Commands::Config(cmd)) => commands::config::execute(config, cmd).await?,
 
@@ -397,7 +397,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
         }) => commands::status::execute(config, path, format, detailed, recent).await?,
 
         Some(Commands::Doctor { format }) => {
-            commands::doctor::execute(cli_config_path, &format).await?
+            commands::doctor::execute(cli_config_path, format).await?
         }
 
         Some(Commands::Storage(cmd)) => commands::storage::execute(config, cmd).await?,

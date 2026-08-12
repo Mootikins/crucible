@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 
 use crate::common::daemon_client;
 use crate::config::CliConfig;
-use crate::formatting::OutputFormat;
+use crate::formatting::{OutputFormat, TextFormat};
 
 #[derive(Parser)]
 pub struct WorkflowCommand {
@@ -31,18 +31,18 @@ pub struct WorkflowCommand {
 pub enum WorkflowSubcommand {
     /// List all workflow notes in the active kiln
     List {
-        /// Output format (table, json)
-        #[arg(short = 'f', long, default_value = "table")]
-        format: String,
+        /// Output format
+        #[arg(short = 'f', long, default_value_t)]
+        format: OutputFormat,
     },
     /// Show a workflow's parsed structure (goals, validation, step tree)
     Show {
         /// Workflow identifier: a path, a title, or a filename stem.
         /// Relative paths are resolved against the active kiln.
         target: String,
-        /// Output format (table, json)
-        #[arg(short = 'f', long, default_value = "table")]
-        format: String,
+        /// Output format
+        #[arg(short = 'f', long, default_value_t)]
+        format: TextFormat,
     },
     /// Start a workflow execution against a new session
     Start {
@@ -75,10 +75,8 @@ pub enum WorkflowSubcommand {
 
 pub async fn execute(config: CliConfig, command: WorkflowSubcommand) -> Result<()> {
     match command {
-        WorkflowSubcommand::List { format } => run_list(config, OutputFormat::from_str(&format)),
-        WorkflowSubcommand::Show { target, format } => {
-            run_show(config, &target, OutputFormat::from_str(&format))
-        }
+        WorkflowSubcommand::List { format } => run_list(config, format),
+        WorkflowSubcommand::Show { target, format } => run_show(config, &target, format),
         WorkflowSubcommand::Start { target, session } => {
             run_start(config, &target, session.as_deref()).await
         }
@@ -134,7 +132,36 @@ fn run_list(config: CliConfig, format: OutputFormat) -> Result<()> {
         OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(&entries)?);
         }
-        _ => {
+        OutputFormat::Table => {
+            if entries.is_empty() {
+                println!(
+                    "No workflows found in {} (no notes with `type: workflow` frontmatter).",
+                    kiln_path.display()
+                );
+                return Ok(());
+            }
+            let rows: Vec<Vec<String>> = entries
+                .iter()
+                .map(|e| {
+                    vec![
+                        e.path.clone(),
+                        e.title.clone(),
+                        e.steps_count.to_string(),
+                        e.goals_count.to_string(),
+                        e.validations_count.to_string(),
+                        e.gate_count.to_string(),
+                    ]
+                })
+                .collect();
+            println!(
+                "{}",
+                crate::output::records_table(
+                    &["Path", "Title", "Steps", "Goals", "Val", "Gates"],
+                    &rows
+                )
+            );
+        }
+        OutputFormat::Plain => {
             if entries.is_empty() {
                 println!(
                     "No workflows found in {} (no notes with `type: workflow` frontmatter).",
@@ -166,15 +193,15 @@ fn run_list(config: CliConfig, format: OutputFormat) -> Result<()> {
 
 // ---------- show ----------
 
-fn run_show(config: CliConfig, target: &str, format: OutputFormat) -> Result<()> {
+fn run_show(config: CliConfig, target: &str, format: TextFormat) -> Result<()> {
     let kiln_path = &config.kiln_path;
     let wf = resolve_workflow(kiln_path, target)?;
 
     match format {
-        OutputFormat::Json => {
+        TextFormat::Json => {
             println!("{}", serde_json::to_string_pretty(&wf)?);
         }
-        _ => render_tree(&wf),
+        TextFormat::Text => render_tree(&wf),
     }
     Ok(())
 }
@@ -726,7 +753,7 @@ mod tests {
         let result = execute(
             config,
             WorkflowSubcommand::List {
-                format: "table".into(),
+                format: OutputFormat::Table,
             },
         )
         .await;
@@ -741,7 +768,7 @@ mod tests {
             config,
             WorkflowSubcommand::Show {
                 target: "does-not-exist".into(),
-                format: "table".into(),
+                format: TextFormat::Text,
             },
         )
         .await;
@@ -763,7 +790,7 @@ mod tests {
             config,
             WorkflowSubcommand::Show {
                 target: "X".into(),
-                format: "json".into(),
+                format: TextFormat::Json,
             },
         )
         .await

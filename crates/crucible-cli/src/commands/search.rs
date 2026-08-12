@@ -9,6 +9,7 @@ use anyhow::{Context, Result};
 
 use crate::common::daemon_client;
 use crate::config::CliConfig;
+use crate::formatting::OutputFormat;
 use crate::output;
 use crate::output::SearchResultWithScore;
 
@@ -43,7 +44,7 @@ pub async fn execute(
     query: &str,
     limit: usize,
     search_type: &str,
-    format: &str,
+    format: OutputFormat,
     preview: bool,
 ) -> Result<()> {
     let kiln_path = &config.kiln_path;
@@ -149,7 +150,7 @@ pub async fn execute(
 
     // --- Output ---
     if results.is_empty() {
-        if format == "json" {
+        if format == OutputFormat::Json {
             println!("[]");
         } else {
             output::info(&format!("No results found for '{query}'"));
@@ -269,7 +270,8 @@ mod tests {
     #[test]
     fn search_command_format_json_is_valid() {
         let results = sample_results();
-        let json = output::format_search_results(&results, "json", true, false).unwrap();
+        let json =
+            output::format_search_results(&results, OutputFormat::Json, true, false).unwrap();
         let parsed: Vec<SearchResultWithScore> = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.len(), 2);
         assert_eq!(parsed[0].title, "Wikilinks");
@@ -279,7 +281,8 @@ mod tests {
     #[test]
     fn search_command_format_plain_contains_titles() {
         let results = sample_results();
-        let plain = output::format_search_results(&results, "plain", true, false).unwrap();
+        let plain =
+            output::format_search_results(&results, OutputFormat::Plain, true, false).unwrap();
         assert!(plain.contains("Wikilinks"));
         assert!(plain.contains("Tags"));
         assert!(plain.contains("0.92"));
@@ -288,7 +291,8 @@ mod tests {
     #[test]
     fn search_command_format_table_contains_titles() {
         let results = sample_results();
-        let table = output::format_search_results(&results, "table", false, false).unwrap();
+        let table =
+            output::format_search_results(&results, OutputFormat::Table, false, false).unwrap();
         assert!(table.contains("Wikilinks"));
         assert!(table.contains("Tags"));
     }
@@ -296,7 +300,8 @@ mod tests {
     #[test]
     fn search_command_format_empty_json() {
         let results: Vec<SearchResultWithScore> = vec![];
-        let json = output::format_search_results(&results, "json", true, false).unwrap();
+        let json =
+            output::format_search_results(&results, OutputFormat::Json, true, false).unwrap();
         let parsed: Vec<SearchResultWithScore> = serde_json::from_str(&json).unwrap();
         assert!(parsed.is_empty());
     }
@@ -304,7 +309,8 @@ mod tests {
     #[test]
     fn search_command_format_scores_hidden_when_text_only() {
         let results = sample_results();
-        let plain = output::format_search_results(&results, "plain", false, false).unwrap();
+        let plain =
+            output::format_search_results(&results, OutputFormat::Plain, false, false).unwrap();
         // Score column should not appear when show_scores=false
         assert!(!plain.contains("0.92"));
     }
@@ -346,7 +352,7 @@ mod tests {
             assert_eq!(query, "rust");
             assert_eq!(limit, 5);
             assert_eq!(r#type, "semantic");
-            assert_eq!(format, "json");
+            assert_eq!(format, OutputFormat::Json);
             assert!(!preview);
         } else {
             panic!("Expected Search command");

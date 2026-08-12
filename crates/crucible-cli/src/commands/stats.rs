@@ -91,7 +91,7 @@ impl KilnStatsService for FileSystemKilnStatsService {
     }
 }
 
-pub async fn execute(config: CliConfig, format: &str) -> Result<()> {
+pub async fn execute(config: CliConfig, format: OutputFormat) -> Result<()> {
     let service: Arc<dyn KilnStatsService> = Arc::new(FileSystemKilnStatsService);
     execute_with_service(service, config, format).await
 }
@@ -99,7 +99,7 @@ pub async fn execute(config: CliConfig, format: &str) -> Result<()> {
 pub async fn execute_with_service(
     service: Arc<dyn KilnStatsService>,
     config: CliConfig,
-    format: &str,
+    format: OutputFormat,
 ) -> Result<()> {
     let kiln_path = &config.kiln_path;
 
@@ -110,9 +110,8 @@ pub async fn execute_with_service(
     }
 
     let stats = service.collect(kiln_path)?;
-    let output_format = OutputFormat::from(format);
 
-    match output_format {
+    match format {
         OutputFormat::Json => {
             let output = StatsOutput {
                 file_count: stats.total_files,
@@ -121,7 +120,25 @@ pub async fn execute_with_service(
             };
             println!("{}", serde_json::to_string_pretty(&output)?);
         }
-        _ => {
+        OutputFormat::Table => {
+            let rows = vec![
+                vec!["Total files".to_string(), stats.total_files.to_string()],
+                vec![
+                    "Markdown files".to_string(),
+                    stats.markdown_files.to_string(),
+                ],
+                vec![
+                    "Total size (KB)".to_string(),
+                    (stats.total_size_bytes / 1024).to_string(),
+                ],
+                vec!["Kiln path".to_string(), kiln_path.display().to_string()],
+            ];
+            println!(
+                "{}",
+                crate::output::records_table(&["Metric", "Value"], &rows)
+            );
+        }
+        OutputFormat::Plain => {
             println!("📊 Kiln Statistics\n");
             println!("📁 Total files: {}", stats.total_files);
             println!("📝 Markdown files: {}", stats.markdown_files);
@@ -277,7 +294,7 @@ mod tests {
             },
         };
 
-        let result = execute_with_service(Arc::new(mock), config, "table").await;
+        let result = execute_with_service(Arc::new(mock), config, OutputFormat::Table).await;
         assert!(result.is_ok());
     }
 
@@ -292,7 +309,7 @@ mod tests {
             stats: KilnStats::default(),
         };
 
-        let result = execute_with_service(Arc::new(mock), config, "table").await;
+        let result = execute_with_service(Arc::new(mock), config, OutputFormat::Table).await;
         assert!(result.is_err());
     }
 
@@ -304,7 +321,8 @@ mod tests {
             ..Default::default()
         };
 
-        let result = execute_with_service(Arc::new(ErrorStatsService), config, "table").await;
+        let result =
+            execute_with_service(Arc::new(ErrorStatsService), config, OutputFormat::Table).await;
         assert!(result.is_err());
     }
 

@@ -17,11 +17,11 @@ pub async fn execute(_config: CliConfig, command: ToolsCommands) -> Result<()> {
         ToolsCommands::List {
             permissions,
             format,
-        } => list(permissions, &format).await,
+        } => list(permissions, format).await,
     }
 }
 
-async fn list(permissions: bool, format: &str) -> Result<()> {
+async fn list(permissions: bool, format: OutputFormat) -> Result<()> {
     let client = daemon_client().await?;
 
     if permissions {
@@ -31,37 +31,36 @@ async fn list(permissions: bool, format: &str) -> Result<()> {
     }
 }
 
-async fn list_normal(_client: &DaemonClient, format: &str) -> Result<()> {
-    let output_format = OutputFormat::from(format);
+/// The tools the daemon always has, independent of MCP servers and plugins.
+///
+/// One list, three renderings. It used to be written out separately in the JSON
+/// arm and the text arm, so adding a tool meant remembering both.
+const BUILTIN_TOOLS: [&str; 5] = ["read", "edit", "write", "bash", "delete"];
 
-    match output_format {
+async fn list_normal(_client: &DaemonClient, format: OutputFormat) -> Result<()> {
+    match format {
         OutputFormat::Json => {
-            let tools = vec![
-                ToolOutput {
-                    name: "read".to_string(),
-                },
-                ToolOutput {
-                    name: "edit".to_string(),
-                },
-                ToolOutput {
-                    name: "write".to_string(),
-                },
-                ToolOutput {
-                    name: "bash".to_string(),
-                },
-                ToolOutput {
-                    name: "delete".to_string(),
-                },
-            ];
+            let tools: Vec<ToolOutput> = BUILTIN_TOOLS
+                .iter()
+                .map(|name| ToolOutput {
+                    name: (*name).to_string(),
+                })
+                .collect();
             println!("{}", serde_json::to_string_pretty(&tools)?);
         }
-        _ => {
+        OutputFormat::Table => {
+            let rows: Vec<Vec<String>> = BUILTIN_TOOLS
+                .iter()
+                .map(|name| vec![(*name).to_string()])
+                .collect();
+            println!("{}", crate::output::records_table(&["Tool"], &rows));
+            println!("\nMCP server tools appear once a chat session is running: cru chat");
+        }
+        OutputFormat::Plain => {
             println!("Built-in Tools:");
-            println!("  read");
-            println!("  edit");
-            println!("  write");
-            println!("  bash");
-            println!("  delete");
+            for name in BUILTIN_TOOLS {
+                println!("  {name}");
+            }
             println!("\nMCP Server tools will appear here when a chat session is running");
             println!("Start a chat session first to discover tools: cru chat");
         }

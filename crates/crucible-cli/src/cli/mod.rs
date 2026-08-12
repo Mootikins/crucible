@@ -1,3 +1,4 @@
+use crate::formatting::{OutputFormat, TextFormat};
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 use tracing_subscriber::filter::LevelFilter;
@@ -251,9 +252,9 @@ pub enum Commands {
         #[arg(long, default_value = "both")]
         r#type: String,
 
-        /// Output format (table, json, plain)
-        #[arg(short = 'f', long, default_value = "table")]
-        format: String,
+        /// Output format
+        #[arg(short = 'f', long, default_value_t)]
+        format: OutputFormat,
 
         /// Show a content preview for each hit
         #[arg(short = 'c', long)]
@@ -265,9 +266,9 @@ pub enum Commands {
         long_about = "Display comprehensive kiln statistics including note count, embeddings status, and storage metrics.\n\nShows overview of your knowledge base with format options for different output styles.\n\nExamples:\n  # Show statistics in table format\n  cru stats\n\n  # JSON output for scripting\n  cru stats -f json"
     )]
     Stats {
-        /// Output format (table, json, plain)
-        #[arg(short = 'f', long, default_value = "table")]
-        format: String,
+        /// Output format
+        #[arg(short = 'f', long, default_value_t)]
+        format: OutputFormat,
     },
 
     /// List available models from configured LLM provider
@@ -275,9 +276,9 @@ pub enum Commands {
         long_about = "List available models from the configured LLM provider.\n\nQueries the provider (Ollama, OpenAI, Anthropic, etc.) to show available models and their capabilities.\n\nExamples:\n  # List models from configured provider\n  cru models\n\n  # JSON output for scripting\n  cru models -f json"
     )]
     Models {
-        /// Output format (table, json, plain)
-        #[arg(short = 'f', long, default_value = "table")]
-        format: String,
+        /// Output format
+        #[arg(short = 'f', long, default_value_t)]
+        format: OutputFormat,
     },
 
     /// Manage Crucible configuration (initialize, view, export)
@@ -297,9 +298,9 @@ pub enum Commands {
         #[arg(value_name = "PATH")]
         path: Option<PathBuf>,
 
-        /// Output format (table, json, plain)
-        #[arg(short = 'f', long, default_value = "table")]
-        format: String,
+        /// Output format
+        #[arg(short = 'f', long, default_value_t)]
+        format: TextFormat,
 
         /// Show detailed block-level information
         #[arg(long)]
@@ -325,9 +326,9 @@ Examples:
   # Show help for diagnostics
   cru doctor --help")]
     Doctor {
-        /// Output format (table, json)
-        #[arg(short = 'f', long, default_value = "table")]
-        format: String,
+        /// Output format
+        #[arg(short = 'f', long, default_value_t)]
+        format: TextFormat,
     },
 
     /// Manage storage operations (migration, verification, backup, cleanup)

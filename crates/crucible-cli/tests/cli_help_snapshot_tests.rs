@@ -47,23 +47,53 @@ fn storage_subcommands_reject_a_format_flag() {
     }
 }
 
-/// Stage 1 removes only fictions from the help text; the values the
-/// subcommands accept are untouched. The narrowing to a typed `ValueEnum`
-/// vocabulary is a separate change, so `csv` still parses here even though no
-/// help string offers it any more.
+/// Formats are a typed `ValueEnum` now, so an unknown value is rejected instead
+/// of silently rendering as something else. This replaces the stage-1 test that
+/// asserted the opposite — that `csv` still parsed while no help text offered
+/// it. That was the honest description of a half-finished migration; it is no
+/// longer true, and the boundary it pinned is what this change moved.
 #[test]
-fn subcommand_format_values_are_unchanged() {
+fn unknown_format_values_are_rejected() {
     for args in [
         vec!["cru", "stats", "-f", "csv"],
         vec!["cru", "models", "-f", "csv"],
+        vec!["cru", "search", "q", "-f", "detailed"],
+        vec!["cru", "status", "-f", "binary"],
+        vec!["cru", "doctor", "-f", "xyzzy"],
+    ] {
+        let rendered = args.join(" ");
+        let err = Cli::try_parse_from(&args)
+            .map(|_| ())
+            .expect_err(&format!("`{rendered}` must not parse"));
+        assert_eq!(err.kind(), ErrorKind::InvalidValue, "{rendered}: {err}");
+    }
+}
+
+/// The values that do exist keep working, including the aliases kept for the
+/// commands whose documented default used to be `table` even though their
+/// payload has no tabular shape.
+#[test]
+fn every_advertised_format_value_parses() {
+    for args in [
+        vec!["cru", "stats", "-f", "table"],
         vec!["cru", "stats", "-f", "json"],
+        vec!["cru", "stats", "-f", "plain"],
         vec!["cru", "search", "q", "-f", "plain"],
+        vec!["cru", "search", "q", "-f", "text"],
+        vec!["cru", "status", "-f", "text"],
         vec!["cru", "status", "-f", "table"],
+        vec!["cru", "status", "-f", "json"],
+        vec!["cru", "doctor", "-f", "table"],
+        vec!["cru", "tools", "list", "-f", "table"],
+        vec!["cru", "skills", "list", "-f", "json"],
+        vec!["cru", "proposals", "list", "-f", "plain"],
+        vec!["cru", "workflow", "list", "-f", "table"],
+        vec!["cru", "workflow", "show", "wf", "-f", "json"],
     ] {
         let rendered = args.join(" ");
         assert!(
             Cli::try_parse_from(&args).is_ok(),
-            "`{rendered}` must still parse"
+            "`{rendered}` must parse"
         );
     }
 }

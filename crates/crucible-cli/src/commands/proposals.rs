@@ -33,7 +33,7 @@ struct ProposalSummary {
 
 pub async fn execute(config: CliConfig, command: ProposalsCommands) -> Result<()> {
     match command {
-        ProposalsCommands::List { format } => list(&config, &format),
+        ProposalsCommands::List { format } => list(&config, format),
         ProposalsCommands::Show { id } => show(&config, &id),
         ProposalsCommands::Accept { id } => accept(&config, &id),
         ProposalsCommands::Reject { id } => reject(&config, &id),
@@ -97,7 +97,7 @@ fn summarize(path: &Path) -> ProposalSummary {
     }
 }
 
-fn list(config: &CliConfig, format: &str) -> Result<()> {
+fn list(config: &CliConfig, format: OutputFormat) -> Result<()> {
     let dir = proposals_dir(config);
     let files = collect_proposals(&dir)?;
 
@@ -110,9 +110,27 @@ fn list(config: &CliConfig, format: &str) -> Result<()> {
 
     let summaries: Vec<ProposalSummary> = files.iter().map(|p| summarize(p)).collect();
 
-    match OutputFormat::from(format) {
+    match format {
         OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&summaries)?),
-        _ => {
+        OutputFormat::Table => {
+            let rows: Vec<Vec<String>> = summaries
+                .iter()
+                .map(|s| {
+                    vec![
+                        s.id.clone(),
+                        s.title.clone(),
+                        s.created.clone().unwrap_or_default(),
+                        s.session.clone().unwrap_or_default(),
+                    ]
+                })
+                .collect();
+            println!(
+                "{}",
+                crate::output::records_table(&["ID", "Title", "Created", "Session"], &rows)
+            );
+            println!("\nReview with `cru proposals show <id>`, then accept or reject.");
+        }
+        OutputFormat::Plain => {
             println!("{} pending proposal(s):\n", summaries.len());
             for s in summaries {
                 println!("  {} — {}", s.id, s.title);
@@ -438,6 +456,6 @@ mod tests {
     fn list_reports_empty_without_error() {
         let tmp = tempfile::tempdir().unwrap();
         let config = test_config(tmp.path());
-        list(&config, "table").unwrap();
+        list(&config, OutputFormat::Table).unwrap();
     }
 }

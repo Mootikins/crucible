@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::config::CliConfig;
+use crate::formatting::TextFormat;
 use crate::output;
 use crucible_core::config::BackendType;
 use crucible_daemon::rpc_client::DaemonClient;
@@ -26,7 +27,7 @@ pub struct DoctorCheckResult {
     pub message: String,
 }
 
-pub async fn execute(config_path_override: Option<PathBuf>, format: &str) -> Result<()> {
+pub async fn execute(config_path_override: Option<PathBuf>, format: TextFormat) -> Result<()> {
     let mut results = Vec::new();
 
     // Check 1: Daemon
@@ -240,13 +241,11 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: &str) -> Res
 
     let total_checks = results.len();
 
-    // Output results based on format
     match format {
-        "json" => {
+        TextFormat::Json => {
             println!("{}", serde_json::to_string_pretty(&results)?);
         }
-        _ => {
-            // Default table format
+        TextFormat::Text => {
             output::header("Crucible Doctor - Installation Health Check");
 
             let mut failures = 0usize;

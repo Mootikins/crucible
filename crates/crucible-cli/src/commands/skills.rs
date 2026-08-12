@@ -22,14 +22,18 @@ pub struct SkillOutput {
 /// Execute skills subcommand
 pub async fn execute(config: CliConfig, command: SkillsCommands) -> Result<()> {
     match command {
-        SkillsCommands::List { scope, format } => list(&config, scope, &format).await,
+        SkillsCommands::List { scope, format } => list(&config, scope, format).await,
         SkillsCommands::Show { name } => show(&config, name).await,
         SkillsCommands::Search { query, limit } => search(&config, query, limit).await,
     }
 }
 
 /// List discovered skills
-async fn list(config: &CliConfig, scope_filter: Option<String>, format: &str) -> Result<()> {
+async fn list(
+    config: &CliConfig,
+    scope_filter: Option<String>,
+    format: OutputFormat,
+) -> Result<()> {
     let client = daemon_client().await?;
     let response = client
         .skills_list(&config.kiln_path, scope_filter.as_deref())
@@ -46,9 +50,7 @@ async fn list(config: &CliConfig, scope_filter: Option<String>, format: &str) ->
         return Ok(());
     }
 
-    let output_format = OutputFormat::from(format);
-
-    match output_format {
+    match format {
         OutputFormat::Json => {
             let output: Vec<SkillOutput> = skills
                 .iter()
@@ -61,7 +63,29 @@ async fn list(config: &CliConfig, scope_filter: Option<String>, format: &str) ->
                 .collect();
             println!("{}", serde_json::to_string_pretty(&output)?);
         }
-        _ => {
+        OutputFormat::Table => {
+            let rows: Vec<Vec<String>> = skills
+                .iter()
+                .map(|skill| {
+                    let shadowed = skill["shadowed_count"].as_u64().unwrap_or(0);
+                    vec![
+                        skill["name"].as_str().unwrap_or("unknown").to_string(),
+                        skill["scope"].as_str().unwrap_or("unknown").to_string(),
+                        skill["description"].as_str().unwrap_or("").to_string(),
+                        if shadowed > 0 {
+                            shadowed.to_string()
+                        } else {
+                            String::new()
+                        },
+                    ]
+                })
+                .collect();
+            println!(
+                "{}",
+                crate::output::records_table(&["Skill", "Scope", "Description", "Shadows"], &rows)
+            );
+        }
+        OutputFormat::Plain => {
             println!("Discovered {} skill(s):\n", skills.len());
 
             for skill in skills {

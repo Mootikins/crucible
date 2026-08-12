@@ -1,3 +1,4 @@
+use crate::formatting::OutputFormat;
 use clap::Subcommand;
 
 /// Reflection-pass proposal review subcommands.
@@ -10,9 +11,9 @@ use clap::Subcommand;
 pub enum ProposalsCommands {
     /// List pending proposals
     List {
-        /// Output format (table, json, plain)
-        #[arg(short = 'f', long, default_value = "table")]
-        format: String,
+        /// Output format
+        #[arg(short = 'f', long, default_value_t)]
+        format: OutputFormat,
     },
     /// Show a proposal's full content
     Show {
