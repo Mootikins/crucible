@@ -29,7 +29,7 @@ fn lists_nested_dirs_and_files_dirs_first() {
     let (pm, root) = registered_pm(store.path(), proj);
 
     // Top level.
-    let entries = list_dir(&pm, &root, "", false, false).unwrap();
+    let entries = list_dir(&pm, &root, "", false, false).unwrap().entries;
     let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
     // Dirs first (case-insensitive name), then files (case-insensitive).
     assert_eq!(names, vec!["assets", "src", "Cargo.toml", "README.md"]);
@@ -45,7 +45,7 @@ fn lists_nested_dirs_and_files_dirs_first() {
     assert!(entries.iter().all(|e| e.status.is_none()));
 
     // One level down via rel_path.
-    let sub = list_dir(&pm, &root, "src", false, false).unwrap();
+    let sub = list_dir(&pm, &root, "src", false, false).unwrap().entries;
     assert_eq!(sub.len(), 1);
     assert_eq!(sub[0].name, "main.rs");
     assert_eq!(sub[0].rel_path, "src/main.rs");
@@ -62,7 +62,7 @@ fn gitignored_file_hidden_by_default_shown_with_show_ignored() {
 
     let (pm, root) = registered_pm(store.path(), proj);
 
-    let hidden = list_dir(&pm, &root, "", false, false).unwrap();
+    let hidden = list_dir(&pm, &root, "", false, false).unwrap().entries;
     let hidden_names: Vec<&str> = hidden.iter().map(|e| e.name.as_str()).collect();
     assert!(hidden_names.contains(&"kept.txt"));
     assert!(!hidden_names.contains(&"ignored.txt"));
@@ -70,13 +70,13 @@ fn gitignored_file_hidden_by_default_shown_with_show_ignored() {
     assert!(!hidden_names.contains(&".gitignore"));
 
     // show_ignored alone reveals gitignored entries but NOT dotfiles.
-    let shown = list_dir(&pm, &root, "", true, false).unwrap();
+    let shown = list_dir(&pm, &root, "", true, false).unwrap().entries;
     let shown_names: Vec<&str> = shown.iter().map(|e| e.name.as_str()).collect();
     assert!(shown_names.contains(&"ignored.txt"));
     assert!(!shown_names.contains(&".gitignore"));
 
     // Both axes on: dotfiles too.
-    let all = list_dir(&pm, &root, "", true, true).unwrap();
+    let all = list_dir(&pm, &root, "", true, true).unwrap().entries;
     assert!(all.iter().any(|e| e.name == ".gitignore"));
 }
 
@@ -91,12 +91,12 @@ fn dotfile_hidden_by_default() {
 
     let (pm, root) = registered_pm(store.path(), proj);
 
-    let hidden = list_dir(&pm, &root, "", false, false).unwrap();
+    let hidden = list_dir(&pm, &root, "", false, false).unwrap().entries;
     assert!(hidden.iter().all(|e| e.name != ".env"));
     assert!(hidden.iter().any(|e| e.name == "visible.txt"));
 
     // show_hidden alone reveals the dotfile (no gitignore involvement).
-    let shown = list_dir(&pm, &root, "", false, true).unwrap();
+    let shown = list_dir(&pm, &root, "", false, true).unwrap().entries;
     assert!(shown.iter().any(|e| e.name == ".env"));
 }
 
@@ -110,7 +110,7 @@ fn git_dir_never_listed_even_with_both_flags() {
     fs::write(proj.join("visible.txt"), "ok").unwrap();
 
     let (pm, root) = registered_pm(store.path(), proj);
-    let all = list_dir(&pm, &root, "", true, true).unwrap();
+    let all = list_dir(&pm, &root, "", true, true).unwrap().entries;
     assert!(all.iter().all(|e| e.name != ".git"));
     assert!(all.iter().any(|e| e.name == "visible.txt"));
 }
@@ -129,7 +129,7 @@ fn symlink_escaping_root_is_excluded() {
     std::os::unix::fs::symlink(&secret, proj.join("escape.txt")).unwrap();
 
     let (pm, root) = registered_pm(store.path(), proj);
-    let entries = list_dir(&pm, &root, "", false, false).unwrap();
+    let entries = list_dir(&pm, &root, "", false, false).unwrap().entries;
     let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
     assert!(names.contains(&"inside.txt"));
     // The escaping symlink must never surface.
@@ -147,7 +147,7 @@ fn intra_project_symlink_is_listed() {
     std::os::unix::fs::symlink(proj.join("target.txt"), proj.join("link.txt")).unwrap();
 
     let (pm, root) = registered_pm(store.path(), proj);
-    let entries = list_dir(&pm, &root, "", false, false).unwrap();
+    let entries = list_dir(&pm, &root, "", false, false).unwrap().entries;
     let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
     #[cfg(unix)]
     assert!(names.contains(&"link.txt"));
@@ -457,4 +457,43 @@ fn move_of_symlink_moves_the_link_not_its_target() {
         .file_type()
         .is_symlink());
     assert_eq!(fs::read_to_string(&target).unwrap(), "real");
+}
+
+#[test]
+fn a_directory_past_the_cap_is_truncated_and_says_so() {
+    // `target/debug/deps` in this very repo is 1,472,409 entries — 381 MB and
+    // 14.7 s in a single response before the cap, with the client rendering
+    // every child unvirtualized.
+    let tmp = tempfile::TempDir::new().unwrap();
+    let proj = tmp.path().join("proj");
+    let big = proj.join("many");
+    std::fs::create_dir_all(&big).unwrap();
+    for i in 0..(MAX_DIR_ENTRIES + 25) {
+        std::fs::write(big.join(format!("f{i:05}.txt")), b"").unwrap();
+    }
+    let (pm, root) = registered_pm(tmp.path(), &proj);
+
+    let listing = list_dir(&pm, &root, "many", true, false).unwrap();
+    assert_eq!(listing.entries.len(), MAX_DIR_ENTRIES);
+    assert!(
+        listing.truncated,
+        "a capped listing must be distinguishable from a complete one"
+    );
+}
+
+#[test]
+fn a_directory_within_the_cap_is_not_flagged_truncated() {
+    // The flag drives a user-visible notice, so a false positive is as wrong as
+    // a missing one.
+    let tmp = tempfile::TempDir::new().unwrap();
+    let proj = tmp.path().join("proj");
+    std::fs::create_dir_all(proj.join("few")).unwrap();
+    for i in 0..5 {
+        std::fs::write(proj.join("few").join(format!("f{i}.txt")), b"").unwrap();
+    }
+    let (pm, root) = registered_pm(tmp.path(), &proj);
+
+    let listing = list_dir(&pm, &root, "few", true, false).unwrap();
+    assert_eq!(listing.entries.len(), 5);
+    assert!(!listing.truncated);
 }

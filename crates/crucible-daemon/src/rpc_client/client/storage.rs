@@ -823,14 +823,18 @@ impl DaemonClient {
     }
 
     /// List one directory level inside a registered project. Read-only,
-    /// metadata only. Returns the raw entry array (`FsEntry` JSON objects).
+    /// metadata only.
+    ///
+    /// Returns the listing envelope verbatim — `{ entries, truncated }`. It was
+    /// an unwrapped array; the flag has to survive to the client, or a directory
+    /// cut short by the per-entry cap is indistinguishable from a complete one.
     pub async fn fs_list_dir(
         &self,
         root: &str,
         rel_path: &str,
         show_ignored: bool,
         show_hidden: bool,
-    ) -> Result<Vec<serde_json::Value>> {
+    ) -> Result<serde_json::Value> {
         let v: serde_json::Value = self
             .typed_call(
                 "fs.list_dir",
@@ -842,7 +846,7 @@ impl DaemonClient {
                 },
             )
             .await?;
-        Ok(v.as_array().cloned().unwrap_or_default())
+        Ok(v)
     }
 
     /// Move/rename a file or directory within a registered project or open

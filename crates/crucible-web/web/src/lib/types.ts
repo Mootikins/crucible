@@ -237,6 +237,16 @@ export interface FsEntry {
 }
 
 /**
+ * One level of a directory, plus whether the daemon's per-directory cap cut it
+ * short. `truncated` exists because `target/debug/deps` is 1.47M entries: the
+ * listing has to be able to say "there is more" rather than looking complete.
+ */
+export interface FsListing {
+  entries: FsEntry[];
+  truncated: boolean;
+}
+
+/**
  * A live filesystem-change event delivered over `GET /api/fs/events` (SSE).
  * Discriminated union mirroring the Rust `FsEvent` (web/fs_events.rs); paths
  * are ABSOLUTE. `moved` is decomposed into remove+add by the reconciler, so a

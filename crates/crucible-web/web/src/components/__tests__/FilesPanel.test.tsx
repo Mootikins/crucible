@@ -111,9 +111,10 @@ describe('FilesPanel — a project root loads once', () => {
     // the response — the double-apply this guards against.
     localStorage.setItem('crucible:cache:kilns', JSON.stringify([{ path: '/vault', name: 'vault' }]));
     localStorage.setItem('crucible.filetree.expanded.project:/proj', JSON.stringify(['src']));
-    listDirMock.mockImplementation(async (_root: string, rel: string) =>
-      rel === '' ? [dir('src'), file('README.md')] : [file('src/main.rs')],
-    );
+    listDirMock.mockImplementation(async (_root: string, rel: string) => ({
+      entries: rel === '' ? [dir('src'), file('README.md')] : [file('src/main.rs')],
+      truncated: false,
+    }));
   });
 
   it('fetches each directory exactly once despite the cache-then-fetch double apply', async () => {

@@ -16,7 +16,7 @@ async fn body_json(response: axum::response::Response) -> Value {
 }
 
 #[tokio::test]
-async fn fs_list_returns_200_with_array() {
+async fn fs_list_returns_200_with_a_listing_envelope() {
     let (_mock, client) = start_mock_daemon().await;
     let app = build_test_app(build_mock_state(client));
 
@@ -31,7 +31,12 @@ async fn fs_list_returns_200_with_array() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
-    assert!(body_json(response).await.is_array());
+    // `{ entries, truncated }` rather than a bare array: the daemon caps a
+    // directory at 1000 entries, and the flag is the only way for a capped
+    // listing to say so.
+    let body = body_json(response).await;
+    assert!(body["entries"].is_array(), "entries: {body}");
+    assert_eq!(body["truncated"], serde_json::json!(false), "truncated: {body}");
 }
 
 #[tokio::test]

@@ -11,7 +11,7 @@ import type {
   BacklinksResponse,
   ProviderInfo,
   KilnListEntry,
-  FsEntry,
+  FsListing,
   FsEvent,
   SessionModes,
 } from './types';
@@ -2067,7 +2067,7 @@ export async function listDir(
   root: string,
   relPath = '',
   showHidden = false,
-): Promise<FsEntry[]> {
+): Promise<FsListing> {
   const q = new URLSearchParams({
     root,
     rel_path: relPath,

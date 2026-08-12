@@ -1119,18 +1119,30 @@ describe('MCP / kilns / notes / search', () => {
     ]);
   });
 
-  it('listDir sends root/rel_path/show_ignored and returns FsEntry[]', async () => {
+  it('listDir sends root/rel_path/show_ignored and returns the listing envelope', async () => {
     const entries = [
       { name: 'web', rel_path: 'src/web', is_dir: true, size: 0, modified: 1721270400, status: null },
       { name: 'api.ts', rel_path: 'src/web/api.ts', is_dir: false, size: 20481, modified: 1721270511, status: null },
     ];
-    const mockFetch = createMockFetch({ 'GET /api/fs/list': { body: entries } });
+    // `{ entries, truncated }`, not a bare array: the daemon caps a directory at
+    // 1000 entries, and a capped listing has to be distinguishable from a
+    // complete one.
+    const listing = { entries, truncated: false };
+    const mockFetch = createMockFetch({ 'GET /api/fs/list': { body: listing } });
     global.fetch = mockFetch;
-    expect(await listDir('/proj', 'src/web', true)).toEqual(entries);
+    expect(await listDir('/proj', 'src/web', true)).toEqual(listing);
     const url = mockFetch.mock.calls[0][0] as string;
     expect(url).toContain('root=%2Fproj');
     expect(url).toContain('rel_path=src%2Fweb');
     expect(url).toContain('show_ignored=true');
+  });
+
+  it('listDir preserves the truncation flag', async () => {
+    // Dropping this on the floor would render a capped folder as if it were
+    // the whole thing, which is the failure the cap exists to avoid.
+    const listing = { entries: [], truncated: true };
+    global.fetch = createMockFetch({ 'GET /api/fs/list': { body: listing } });
+    expect((await listDir('/proj')).truncated).toBe(true);
   });
 
   it('listDir throws on a non-ok response', async () => {

@@ -494,7 +494,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             }
         }
         "project.list" => json!([]),
-        "fs.list_dir" => json!([]),
+        "fs.list_dir" => json!({ "entries": [], "truncated": false }),
         "fs.move" => json!({"moved": true}),
         "fs.mkdir" => json!({"created": true}),
         "fs.trash" => json!({"trashed": true, "trash_path": ".crucible/trash/0-x"}),

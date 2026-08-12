@@ -44,7 +44,8 @@ async fn list_dir(
     State(state): State<AppState>,
     Query(query): Query<FsListQuery>,
 ) -> Result<Json<serde_json::Value>, WebError> {
-    let entries = state
+    // Passthrough of the daemon's listing envelope (`{ entries, truncated }`).
+    let listing = state
         .daemon
         .fs_list_dir(
             &query.root,
@@ -55,7 +56,7 @@ async fn list_dir(
         .await
         .daemon_err()?;
 
-    Ok(Json(serde_json::Value::Array(entries)))
+    Ok(Json(listing))
 }
 
 #[derive(Debug, Deserialize)]

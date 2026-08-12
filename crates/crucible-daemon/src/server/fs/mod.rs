@@ -65,6 +65,32 @@ pub(crate) struct FsEntry {
     pub status: Option<serde_json::Value>,
 }
 
+/// Hard per-directory cap.
+///
+/// A file browser must show every file in a folder, so `show_ignored` is sent
+/// true and `target/` is a real node in the tree. That makes `target/debug/deps`
+/// three clicks from the root — measured at **1,472,409 entries, 381 MB, 14.7 s**
+/// in a single response, with the client rendering every child unvirtualized.
+/// A directory past this cap cannot be browsed as a tree in any case.
+///
+/// The walk BREAKS at the cap rather than collecting and truncating, so the
+/// remaining readdir and gitignore-matching cost is never paid either. The
+/// entries kept are therefore the first N in *readdir* order, sorted afterwards
+/// — not the alphabetically-first N, which would cost the full 14.7 s to find.
+const MAX_DIR_ENTRIES: usize = 1_000;
+
+/// One directory level, plus whether the cap cut it short.
+///
+/// Both keys are part of the cross-language contract (TypeScript `FsListing`).
+/// The response used to be a bare array, which had nowhere to say "there is
+/// more" — so a capped listing would have been indistinguishable from a complete
+/// one, which is worse than the slow response it replaces.
+#[derive(serde::Serialize)]
+pub(crate) struct DirListing {
+    pub entries: Vec<FsEntry>,
+    pub truncated: bool,
+}
+
 #[derive(Debug, thiserror::Error)]
 enum FsListError {
     #[error("root is not a registered project")]
@@ -85,7 +111,7 @@ pub(crate) async fn handle_fs_list_dir(req: Request, pm: &Arc<ProjectManager>) -
     let show_hidden = optional_param!(req, "show_hidden", as_bool).unwrap_or(false);
 
     match list_dir(pm, Path::new(root), rel_path, show_ignored, show_hidden) {
-        Ok(entries) => match serde_json::to_value(entries) {
+        Ok(listing) => match serde_json::to_value(listing) {
             Ok(v) => Response::success(req.id, v),
             Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
         },
@@ -106,7 +132,7 @@ fn list_dir(
     rel_path: &str,
     show_ignored: bool,
     show_hidden: bool,
-) -> Result<Vec<FsEntry>, FsListError> {
+) -> Result<DirListing, FsListError> {
     // Fail-closed allowlist: only registered projects are listable.
     let project = pm.get(root).ok_or(FsListError::NotRegistered)?;
     let base = project.path.canonicalize()?;
@@ -114,7 +140,8 @@ fn list_dir(
     if !target.is_dir() {
         return Err(FsListError::NotADir);
     }
-    walk_one_level(&base, &target, show_ignored, show_hidden)
+    let (entries, truncated) = walk_one_level(&base, &target, show_ignored, show_hidden)?;
+    Ok(DirListing { entries, truncated })
 }
 
 /// Resolve `rel_path` against `base` with a component whitelist and
@@ -149,8 +176,9 @@ fn walk_one_level(
     dir: &Path,
     show_ignored: bool,
     show_hidden: bool,
-) -> Result<Vec<FsEntry>, FsListError> {
+) -> Result<(Vec<FsEntry>, bool), FsListError> {
     let mut out = Vec::new();
+    let mut truncated = false;
     let walker = ignore::WalkBuilder::new(dir)
         .max_depth(Some(1))
         .parents(true)
@@ -166,6 +194,12 @@ fn walk_one_level(
         .build();
 
     for dent in walker {
+        if out.len() >= MAX_DIR_ENTRIES {
+            // The walker yielded another entry, so there IS more. Breaking drops
+            // it and the rest of the traversal with it.
+            truncated = true;
+            break;
+        }
         let Ok(dent) = dent else { continue };
         if dent.depth() == 0 {
             continue; // skip `dir` itself
@@ -220,7 +254,7 @@ fn walk_one_level(
             .cmp(&a.is_dir)
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
-    Ok(out)
+    Ok((out, truncated))
 }
 
 // ── fs.move ────────────────────────────────────────────────────────────────

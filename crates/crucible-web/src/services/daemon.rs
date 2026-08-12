@@ -1099,7 +1099,7 @@ impl ReconnectingDaemon {
         rel_path: &str,
         show_ignored: bool,
         show_hidden: bool,
-    ) -> anyhow::Result<Vec<serde_json::Value>> {
+    ) -> anyhow::Result<serde_json::Value> {
         let root = root.to_string();
         let rel_path = rel_path.to_string();
         self.call_with_reconnect("fs.list_dir", move |daemon| {

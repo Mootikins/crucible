@@ -41,6 +41,8 @@ const SHOW_HIDDEN_KEY = 'crucible.filetree.showHidden';
 const HIDE_EXTS_KEY = 'crucible.filetree.hideExts';
 const HIDDEN_EXTS_KEY = 'crucible.filetree.hiddenExts';
 const EXPANDED_CAP = 500;
+/** Mirrors the daemon's `MAX_DIR_ENTRIES`; used only for the notice text. */
+const MAX_LISTED_ENTRIES = 1000;
 
 /** Strip a trailing extension from a display name when it's in `hidden`
  * (Obsidian hides `.md`). Never touches the real node name. */
@@ -170,8 +172,10 @@ export const FilesPanel: Component<{ embedded?: boolean }> = (props) => {
     setLoading(true);
     setError(null);
     const expanded = new Set(expandedFor(root));
+    let anyTruncated = false;
     const build = async (rel: string): Promise<Node[]> => {
-      const entries = await listDir(root.path, rel, showHidden());
+      const { entries, truncated } = await listDir(root.path, rel, showHidden());
+      anyTruncated ||= truncated;
       return Promise.all(
         entries.map(async (e) => {
           const node = fsEntryToNode(e, root.path);
@@ -185,6 +189,11 @@ export const FilesPanel: Component<{ embedded?: boolean }> = (props) => {
     try {
       const children = await build('');
       setRawRoot({ relPath: '', name: '', isDir: true, absPath: root.path, children });
+      // Say so rather than presenting a capped folder as complete. Non-fatal,
+      // so it rides the same banner as the move/link notices.
+      if (anyTruncated) {
+        setError(`Some folders have more than ${MAX_LISTED_ENTRIES} entries; showing the first ${MAX_LISTED_ENTRIES}`);
+      }
     } catch (e) {
       setRawRoot(null);
       setError(e instanceof Error ? e.message : 'Failed to list directory');
@@ -240,7 +249,12 @@ export const FilesPanel: Component<{ embedded?: boolean }> = (props) => {
 
   // Project lazy loader (kilns build the whole tree so they pass undefined).
   const loadChildren = (root: TreeRoot) => async (details: { node: Node }) => {
-    const entries = await listDir(root.path, details.node.relPath, showHidden());
+    const { entries, truncated } = await listDir(root.path, details.node.relPath, showHidden());
+    setError(
+      truncated
+        ? `${details.node.name} has more than ${MAX_LISTED_ENTRIES} entries; showing the first ${MAX_LISTED_ENTRIES}`
+        : null,
+    );
     return entries.map((e) => fsEntryToNode(e, root.path));
   };
 
