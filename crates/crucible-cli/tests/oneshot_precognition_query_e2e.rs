@@ -101,7 +101,12 @@ fn run_one_shot(extra_args: &[&str]) -> OneShotRun {
 /// written, since nothing ran it.
 fn sole_session_dir(run: &OneShotRun) -> PathBuf {
     let sessions = run.kiln.join(".crucible/sessions");
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    // 60s is a deadlock detector, not synchronisation: the loop leaves as soon as
+    // the directory appears, polling every 25ms, so a generous ceiling costs a
+    // fast box nothing. 10s was not generous enough — it failed at 10.86s in the
+    // first full `just ci` run that included the gated tier, where 72 tests
+    // contend and the daemon binary is cold, while passing in 0.56s alone.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
     let mut dirs: Vec<PathBuf> = Vec::new();
     loop {
         if let Ok(entries) = std::fs::read_dir(&sessions) {
