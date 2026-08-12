@@ -233,43 +233,21 @@ pub enum SystemPayload {
         #[serde(default)]
         kiln_path: String,
     },
-    /// The `type` key duplicates the envelope's `event` name inside `data`.
-    /// Redundant, and on the wire since the first release, so it stays.
-    ProcessStart {
-        #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
-        type_: Option<String>,
-        #[serde(default)]
-        batch_id: String,
-        #[serde(default)]
-        total: usize,
+    /// One producer: `handle_kiln_open` (`crucible-daemon/src/server/kiln.rs`),
+    /// once a `kiln.open { process: true }` has finished indexing a kiln. The
+    /// second producer this name used to have — the `process_batch` RPC, which
+    /// sent `type`/`batch_id` and no `kiln` — is gone, along with the
+    /// `process_start`/`process_progress` events beside it; they reported per-file
+    /// work on a batch of one and nothing ever read them.
+    ///
+    /// Every field keeps `#[serde(default)]` even though the surviving producer
+    /// writes all five: a daemon older than that deletion still sends the batch
+    /// shape, and it must decode as zeroes rather than as `MalformedPayload`.
+    ProcessComplete {
         #[serde(default)]
         kiln: String,
-    },
-    ProcessProgress {
-        #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
-        type_: Option<String>,
         #[serde(default)]
-        batch_id: String,
-        #[serde(default)]
-        file: String,
-        #[serde(default)]
-        result: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        error_msg: Option<String>,
-    },
-    /// Two producers, two shapes: the batch path carries `type`/`batch_id`, the
-    /// single-kiln path carries `kiln`/`discovered`. Every field is therefore
-    /// omissible. Two events wearing one name; recorded here rather than split,
-    /// because splitting is a client-visible rename.
-    ProcessComplete {
-        #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
-        type_: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        batch_id: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        kiln: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        discovered: Option<usize>,
+        discovered: usize,
         #[serde(default)]
         processed: usize,
         #[serde(default)]

@@ -350,19 +350,6 @@ async fn test_multiple_sequential_calls_event_mode() {
 }
 
 #[tokio::test]
-async fn test_subscribe_process_events() {
-    let (_tmp, sock_path, _handle) = setup_test_server().await;
-
-    let (client, _event_rx) = DaemonClient::connect_to_with_events(&sock_path)
-        .await
-        .unwrap();
-    let result = client.subscribe_process_events("batch-123").await.unwrap();
-
-    assert_eq!(result["batch_id"], "batch-123");
-    assert_eq!(result["subscription"]["subscribed"][0], "process");
-}
-
-#[tokio::test]
 async fn test_session_create_and_get() {
     let (_srv, sock, _handle) = setup_test_server().await;
     let client = DaemonClient::connect_to(&sock).await.unwrap();

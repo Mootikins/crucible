@@ -692,11 +692,23 @@ pub(crate) async fn handle_process_file(req: Request, km: &Arc<KilnManager>) -> 
     }
 }
 
-pub(crate) async fn handle_process_batch(
-    req: Request,
-    km: &Arc<KilnManager>,
-    event_tx: &broadcast::Sender<SessionEventMessage>,
-) -> Response {
+/// Process an explicit list of paths, returning the counts the caller prints.
+///
+/// **Emits nothing, deliberately.** This handler used to broadcast a
+/// `process_start`, a `process_progress` per file and a batch
+/// `process_complete`, all addressed to the synthetic session id `"process"`,
+/// which neither delivery filter passes (`chat_runner/stream.rs`, the web
+/// `EventBroker`). Both callers are `cru process` — a single file, or watch
+/// mode's changed set — and both print from this response, so the events had no
+/// reader and only restated the return value.
+///
+/// The deleted events were on the *fast* path. Full-kiln indexing, the slow one,
+/// goes through `kiln.open { process: true }` →
+/// `KilnManager::open_and_process` → `KilnManager::process_batch`, whose per-file
+/// loop has never emitted anything; a real progress producer belongs there,
+/// throttled and addressed to `WILDCARD_SESSION` so both surfaces can receive
+/// it — not here.
+pub(crate) async fn handle_process_batch(req: Request, km: &Arc<KilnManager>) -> Response {
     let request_id = req.id.clone();
     let kiln_path = require_param!(req, "kiln", as_str);
     let paths_arr = require_param!(req, "paths", as_array);
@@ -704,30 +716,6 @@ pub(crate) async fn handle_process_batch(
         .iter()
         .filter_map(|v: &serde_json::Value| v.as_str().map(std::path::PathBuf::from))
         .collect();
-    let batch_id = request_id
-        .as_ref()
-        .map(|id| match id {
-            RequestId::Number(n) => format!("batch-{}", n),
-            RequestId::String(s) => format!("batch-{}", s),
-        })
-        .unwrap_or_else(|| "batch-unknown".to_string());
-
-    // Emit start event
-    if !emit_event(
-        event_tx,
-        SessionEventMessage::new(
-            "process",
-            "process_start",
-            serde_json::json!({
-                "type": "process_start",
-                "batch_id": &batch_id,
-                "total": paths.len(),
-                "kiln": kiln_path
-            }),
-        ),
-    ) {
-        tracing::debug!("process_start event had no subscribers");
-    }
 
     let mut processed = 0usize;
     let mut skipped = 0usize;
@@ -735,81 +723,10 @@ pub(crate) async fn handle_process_batch(
 
     for path in &paths {
         match km.process_file(Path::new(kiln_path), path).await {
-            Ok(true) => {
-                processed += 1;
-                if !emit_event(
-                    event_tx,
-                    SessionEventMessage::new(
-                        "process",
-                        "process_progress",
-                        serde_json::json!({
-                            "type": "process_progress",
-                            "batch_id": &batch_id,
-                            "file": path.to_string_lossy(),
-                            "result": "processed"
-                        }),
-                    ),
-                ) {
-                    tracing::debug!("process_progress event had no subscribers");
-                }
-            }
-            Ok(false) => {
-                skipped += 1;
-                if !emit_event(
-                    event_tx,
-                    SessionEventMessage::new(
-                        "process",
-                        "process_progress",
-                        serde_json::json!({
-                            "type": "process_progress",
-                            "batch_id": &batch_id,
-                            "file": path.to_string_lossy(),
-                            "result": "skipped"
-                        }),
-                    ),
-                ) {
-                    tracing::debug!("process_progress event had no subscribers");
-                }
-            }
-            Err(e) => {
-                let error_msg = e.to_string();
-                errors.push((path.clone(), error_msg.clone()));
-                if !emit_event(
-                    event_tx,
-                    SessionEventMessage::new(
-                        "process",
-                        "process_progress",
-                        serde_json::json!({
-                            "type": "process_progress",
-                            "batch_id": &batch_id,
-                            "file": path.to_string_lossy(),
-                            "result": "error",
-                            "error_msg": error_msg
-                        }),
-                    ),
-                ) {
-                    tracing::debug!("process_progress event had no subscribers");
-                }
-            }
+            Ok(true) => processed += 1,
+            Ok(false) => skipped += 1,
+            Err(e) => errors.push((path.clone(), e.to_string())),
         }
-    }
-
-    // Emit completion event
-    if !emit_event(
-        event_tx,
-        SessionEventMessage::new(
-            "process",
-            "process_complete",
-            serde_json::json!({
-                "type": "process_complete",
-                "batch_id": &batch_id,
-                "processed": processed,
-                "skipped": skipped,
-                "errors": errors.len()
-            }),
-        ),
-    ) {
-        tracing::debug!("process_complete event had no subscribers");
     }
 
     Response::success(

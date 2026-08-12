@@ -43,59 +43,6 @@ fn assert_contiguous_from_one(seqs: &[u64]) {
     );
 }
 
-/// `process_batch` emits start, one progress per file, and complete — all four
-/// through the same sender, none of them through a session's turn path.
-///
-/// Before C1 these were bare `event_tx.send` calls and every one arrived with
-/// `seq: None`.
-#[tokio::test]
-async fn every_process_batch_event_carries_a_contiguous_seq() {
-    let tmp = TempDir::new().unwrap();
-    let kiln_path = tmp.path().join("kiln");
-    std::fs::create_dir_all(&kiln_path).unwrap();
-
-    let good_file = kiln_path.join("ok.md");
-    std::fs::write(&good_file, "# ok\n").unwrap();
-    let missing_file = kiln_path.join("missing.md");
-
-    let km = Arc::new(KilnManager::new());
-    let (event_tx, _) = broadcast::channel(64);
-    let mut event_rx = event_tx.subscribe();
-
-    let req: Request = serde_json::from_value(json!({
-        "jsonrpc": "2.0",
-        "id": 42,
-        "method": "process_batch",
-        "params": {
-            "kiln": kiln_path.to_string_lossy(),
-            "paths": [good_file.to_string_lossy(), missing_file.to_string_lossy()],
-        }
-    }))
-    .unwrap();
-
-    let response = crate::server::kiln::handle_process_batch(req, &km, &event_tx).await;
-    assert!(response.error.is_none(), "{response:?}");
-
-    // Four events, already queued in the channel by the time the handler
-    // returned — `recv` here never waits on a timer.
-    let mut events = Vec::new();
-    for _ in 0..4 {
-        events.push(event_rx.recv().await.expect("event channel closed"));
-    }
-
-    assert!(
-        events.iter().all(|e| e.session_id == "process"),
-        "process events share one synthetic session id: {:?}",
-        events.iter().map(|e| &e.session_id).collect::<Vec<_>>()
-    );
-    assert_contiguous_from_one(&seqs(&events));
-    assert!(
-        events.iter().all(|e| e.timestamp.is_some()),
-        "emit_event stamps a timestamp too, and `observe::wire_to_log_event` \
-         falls back to Utc::now() without one"
-    );
-}
-
 /// A UI style push is the other shape: not a turn, not a batch, and addressed
 /// to a session that may have no turn stream at all.
 #[tokio::test]

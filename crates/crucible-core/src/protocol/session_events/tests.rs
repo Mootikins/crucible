@@ -258,7 +258,7 @@ fn group_of_routes_each_name_to_the_enum_that_declares_it() {
 /// one must decode into a typed payload; there is no allowlist left.
 ///
 /// This catches *name* drift, not shape drift — 15 fixtures do not contain all
-/// 71 names. The per-variant goldens in `rpc.rs` are the shape coverage.
+/// 70 names. The per-variant goldens in `rpc.rs` are the shape coverage.
 #[test]
 fn every_recorded_event_decodes_into_a_typed_payload() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/fixtures");

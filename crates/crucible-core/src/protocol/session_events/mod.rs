@@ -30,10 +30,10 @@
 //! | [`ReviewPayload`] | 3 | [`lifecycle`] |
 //! | [`NotificationPayload`] | 2 | [`lifecycle`] |
 //! | [`WorkflowPayload`] | 8 | [`lifecycle`] |
-//! | [`SystemPayload`] | 10 | [`lifecycle`] |
+//! | [`SystemPayload`] | 9 | [`lifecycle`] |
 //!
-//! Groups rather than one flat 71-variant enum because exhaustive matching over
-//! 71 variants in nine consumers is 639 arms — worse than the untyped code it
+//! Groups rather than one flat 70-variant enum because exhaustive matching over
+//! 70 variants in nine consumers is 630 arms — worse than the untyped code it
 //! replaces. Grouping makes the *interesting* set exhaustive and the rest one
 //! arm.
 //!
@@ -57,7 +57,7 @@
 //! |---|---|---|
 //! | Serialization target | RPC socket, SSE, `session.jsonl`, `assets/fixtures/*.jsonl` | markdown session logs, Lua tables |
 //! | Back-compat constraint | recorded fixtures and persisted sessions on disk | `handlers/*.lua` in user kilns |
-//! | Vocabulary size | 71 | 14 wire-ish + 41 internal |
+//! | Vocabulary size | 70 | 14 wire-ish + 41 internal |
 //! | `tool_call` is called | `tool_call` | `tool_called` |
 //! | `tool_result` is called | `tool_result` | `tool_completed` |
 //! | `message_complete` is called | `message_complete` | `agent_responded` |
@@ -197,13 +197,11 @@ impl Group {
             | "workflow.assessed"
             | "workflow.failed"
             | "workflow.cancelled" => Self::Workflow,
-            // System (10)
+            // System (9)
             "file_changed"
             | "file_deleted"
             | "file_moved"
             | "classification_required"
-            | "process_start"
-            | "process_progress"
             | "process_complete"
             | "ui_style_changed"
             | "stream_gap"
@@ -294,8 +292,6 @@ pub const EVENT_NAMES: &[&str] = &[
     "file_deleted",
     "file_moved",
     "classification_required",
-    "process_start",
-    "process_progress",
     "process_complete",
     "ui_style_changed",
     "stream_gap",

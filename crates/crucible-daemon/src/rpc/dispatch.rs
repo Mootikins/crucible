@@ -814,12 +814,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_process_batch(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_process_batch(
-            req.clone(),
-            &self.ctx.kiln,
-            &self.ctx.event_tx,
-        )
-        .await;
+        let resp = crate::server::kiln::handle_process_batch(req.clone(), &self.ctx.kiln).await;
         map_server_resp(resp)
     }
 
