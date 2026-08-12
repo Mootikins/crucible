@@ -1,4 +1,4 @@
-import { Component, Show, createSignal, createEffect, createMemo, on, onMount, onCleanup } from 'solid-js';
+import { Component, Show, createSignal, createEffect, createMemo, onMount, onCleanup } from 'solid-js';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import { openFileInEditor, closeTabsUnder } from '@/lib/file-actions';
 import { PanelShell } from './PanelShell';
@@ -409,14 +409,11 @@ export const FilesPanel: Component<{ embedded?: boolean }> = (props) => {
     }, 60);
   }
 
-  // Auto-reveal: when the open file changes, expand to it and scroll it into
-  // view (VSCode's "reveal active file"). revealActive no-ops when the open
-  // file isn't under the browsed root, so switching roots stays quiet.
-  createEffect(
-    on(openFilePath, (open) => {
-      if (open) revealActive();
-    }),
-  );
+  // No auto-reveal. Following the focused tab moved the navigator out from
+  // under the pointer — it expanded a branch and scrolled on every tab switch,
+  // which fights browsing: the tree is where you go to look somewhere ELSE than
+  // the file you are editing. `revealActive` stays for the explicit
+  // `reveal-in-tree` action, which is where VSCode's behaviour actually belongs.
 
   const cycleSort = () => {
     const s = sort();
