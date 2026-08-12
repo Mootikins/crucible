@@ -34,6 +34,7 @@
 //! 2. Credential store (secrets file or keyring)
 //! 3. Config file value (already resolved from `{env:VAR}` / `{file:path}`)
 
+use crate::config::components::backend::BackendType;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -465,13 +466,18 @@ impl CredentialStore for AutoStore {
     }
 }
 
-/// Known provider environment variable mappings
+/// The environment variable holding `provider`'s API key, if it has one.
+///
+/// The name comes from the backend's own metadata rather than a hand-kept list
+/// here — hardcoding only OPENAI/ANTHROPIC was how OpenRouter and Z.AI keys
+/// went undetected. Providers with no key (Ollama) and unrecognised names both
+/// yield `None`; matching is case-insensitive because [`BackendType::from_str`]
+/// lowercases.
 pub fn env_var_for_provider(provider: &str) -> Option<&'static str> {
-    match provider.to_lowercase().as_str() {
-        "openai" => Some("OPENAI_API_KEY"),
-        "anthropic" => Some("ANTHROPIC_API_KEY"),
-        _ => None,
-    }
+    provider
+        .parse::<BackendType>()
+        .ok()
+        .and_then(|backend| backend.api_key_env_var())
 }
 
 /// Source of a resolved credential
@@ -822,6 +828,15 @@ mod tests {
         assert_eq!(env_var_for_provider("openai"), Some("OPENAI_API_KEY"));
         assert_eq!(env_var_for_provider("OpenAI"), Some("OPENAI_API_KEY"));
         assert_eq!(env_var_for_provider("anthropic"), Some("ANTHROPIC_API_KEY"));
+        assert_eq!(
+            env_var_for_provider("openrouter"),
+            Some("OPENROUTER_API_KEY")
+        );
+        assert_eq!(env_var_for_provider("zai"), Some("GLM_AUTH_TOKEN"));
+        assert_eq!(env_var_for_provider("cohere"), Some("COHERE_API_KEY"));
+        assert_eq!(env_var_for_provider("vertexai"), Some("GOOGLE_API_KEY"));
+        // Copilot authenticates via OAuth, not an API-key env var.
+        assert_eq!(env_var_for_provider("githubcopilot"), None);
         assert_eq!(env_var_for_provider("ollama"), None);
         assert_eq!(env_var_for_provider("unknown"), None);
     }

@@ -8,6 +8,7 @@ use colored::Colorize;
 use crucible_core::config::credentials::{
     env_var_for_provider, CredentialSource, CredentialStore, SecretsFile,
 };
+use crucible_core::config::BackendType;
 use crucible_daemon::provider::copilot::{CopilotAuth, CopilotError};
 use std::time::Duration;
 
@@ -181,9 +182,6 @@ async fn list() -> Result<()> {
     let store = SecretsFile::new();
     let stored = store.list()?;
 
-    // Known providers to check
-    let known_providers = ["openai", "anthropic", "github-copilot"];
-
     let mut found_any = false;
 
     // Check stored credentials
@@ -212,12 +210,20 @@ async fn list() -> Result<()> {
         }
     }
 
-    // Check environment variables (for providers not already shown from store)
-    for provider in &known_providers {
-        if stored.contains_key(*provider) {
+    // Check environment variables (for providers not already shown from store).
+    // Every keyed backend is checked, from the metadata table rather than a list
+    // kept here — a hand-kept list is how OpenRouter and Z.AI keys went
+    // unreported. Copilot drops out on its own: its API-key env var is None and
+    // its OAuth token is handled above.
+    for backend in BackendType::all()
+        .iter()
+        .filter(|backend| backend.api_key_env_var().is_some())
+    {
+        let provider = backend.as_str();
+        if stored.contains_key(provider) {
             // Already shown from store, but check if env var also exists
             if let Some(env_var) = env_var_for_provider(provider) {
-                if std::env::var(env_var).is_ok() {
+                if std::env::var(env_var).is_ok_and(|value| !value.trim().is_empty()) {
                     println!(
                         "  {} {} ({}{})",
                         provider.bold(),
@@ -340,11 +346,13 @@ async fn copilot_auth(force: bool) -> Result<()> {
 }
 
 /// Mask an API key for display (show first 5 chars + ****)
+///
+/// The cut is at the 6th char's boundary rather than byte 5: `&key[..5]` panics
+/// mid-codepoint on a non-ASCII key, and a pasted key can contain anything.
 fn mask_key(key: &str) -> String {
-    if key.len() <= 5 {
-        "****".to_string()
-    } else {
-        format!("{}****", &key[..5])
+    match key.char_indices().nth(5) {
+        Some((boundary, _)) => format!("{}****", &key[..boundary]),
+        None => "****".to_string(),
     }
 }
 
@@ -367,6 +375,33 @@ mod tests {
     #[test]
     fn mask_key_oauth_token() {
         assert_eq!(mask_key("gho_1234567890abcdef"), "gho_1****");
+    }
+
+    #[test]
+    fn mask_key_multibyte_key_keeps_five_chars_without_panicking() {
+        // Byte 5 falls mid-codepoint in both of these.
+        assert_eq!(mask_key("sk-é-key-12345"), "sk-é-****");
+        assert_eq!(mask_key("🔑🔑🔑🔑🔑🔑"), "🔑🔑🔑🔑🔑****");
+        // Multibyte but fewer than six chars: nothing to reveal.
+        assert_eq!(mask_key("ééé"), "****");
+    }
+
+    #[test]
+    fn env_var_reported_providers_come_from_backend_metadata() {
+        // The `auth list` env loop iterates keyed backends from the metadata
+        // table; a hand-kept list is how OpenRouter and Z.AI went unreported.
+        let keyed: Vec<&str> = BackendType::all()
+            .iter()
+            .filter(|backend| backend.api_key_env_var().is_some())
+            .map(|backend| backend.as_str())
+            .collect();
+        assert!(keyed.contains(&"openrouter"), "keyed backends: {keyed:?}");
+        assert!(keyed.contains(&"zai"), "keyed backends: {keyed:?}");
+        // Copilot is OAuth-only and must not appear in the env-var loop.
+        assert!(
+            !keyed.contains(&"github-copilot"),
+            "keyed backends: {keyed:?}"
+        );
     }
 
     #[tokio::test]

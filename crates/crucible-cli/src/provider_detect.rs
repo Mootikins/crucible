@@ -10,7 +10,9 @@
 //! also run daemon-side — see
 //! `crucible_daemon::agent_manager::context_length::fetch_model_context_length`.
 
-use crucible_core::config::credentials::{CredentialSource, CredentialStore, SecretsFile};
+use crucible_core::config::credentials::{
+    env_var_for_provider, CredentialSource, CredentialStore, SecretsFile,
+};
 use crucible_core::config::{BackendType, ChatConfig, DEFAULT_OLLAMA_ENDPOINT};
 
 /// A detected provider with availability info
@@ -46,15 +48,7 @@ pub fn ollama_endpoint() -> String {
 /// `~/.config/crucible/secrets.toml`, whose contents would otherwise leak into
 /// assertions (pass on CI, fail on any box with stored credentials).
 fn has_api_key_with_source_in(store: &SecretsFile, provider: &str) -> Option<CredentialSource> {
-    // The env-var name comes from the backend's own metadata rather than a
-    // hand-kept list here — hardcoding only OPENAI/ANTHROPIC was how
-    // OpenRouter and Z.AI keys went undetected.
-    let env_var = provider
-        .to_lowercase()
-        .parse::<BackendType>()
-        .ok()
-        .and_then(|b| b.api_key_env_var());
-    if let Some(env_var) = env_var {
+    if let Some(env_var) = env_var_for_provider(provider) {
         if std::env::var(env_var).is_ok_and(|v| !v.trim().is_empty()) {
             return Some(CredentialSource::EnvVar);
         }

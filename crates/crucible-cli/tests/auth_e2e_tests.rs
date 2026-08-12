@@ -177,6 +177,64 @@ fn auth_list_shows_env_var_credentials() {
 
 #[test]
 #[serial]
+fn auth_list_shows_openrouter_env_var_credentials() {
+    let env = AuthTestEnv::new().with_env_var("OPENROUTER_API_KEY", "sk-or-from-env");
+
+    env.command("auth")
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("openrouter"))
+        .stdout(predicates::str::contains("env"));
+}
+
+#[test]
+#[serial]
+fn auth_list_shows_zai_env_var_credentials() {
+    let env = AuthTestEnv::new().with_env_var("GLM_AUTH_TOKEN", "glm-from-env");
+
+    env.command("auth")
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("zai"))
+        .stdout(predicates::str::contains("env"));
+}
+
+#[test]
+#[serial]
+fn auth_list_reports_both_sources_when_env_overrides_stored_credential() {
+    let env = AuthTestEnv::new()
+        .with_credential("openrouter", "sk-or-from-file")
+        .with_env_var("OPENROUTER_API_KEY", "sk-or-from-env");
+
+    env.command("auth")
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("file"))
+        .stdout(predicates::str::contains("env"))
+        .stdout(predicates::str::contains("overrides file"));
+}
+
+#[test]
+#[serial]
+fn auth_list_ignores_blank_env_var_for_stored_credential() {
+    use predicates::boolean::PredicateBooleanExt;
+
+    let env = AuthTestEnv::new()
+        .with_credential("openrouter", "sk-or-from-file")
+        .with_env_var("OPENROUTER_API_KEY", "   ");
+
+    env.command("auth")
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("overrides file").not());
+}
+
+#[test]
+#[serial]
 fn auth_list_empty_shows_guidance() {
     let env = AuthTestEnv::new();
 

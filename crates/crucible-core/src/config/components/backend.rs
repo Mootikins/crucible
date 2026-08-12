@@ -307,6 +307,29 @@ impl BackendType {
     pub fn api_key_env_var(&self) -> Option<&'static str> {
         self.metadata().api_key_env_var
     }
+
+    /// Every backend, in declaration order.
+    ///
+    /// Callers that report or discover providers iterate this rather than
+    /// keeping their own list — a backend missing from one such list is a
+    /// backend the user cannot see. The order is load-bearing: it is the order
+    /// `providers.list` and `cru auth list` print in.
+    pub fn all() -> &'static [BackendType] {
+        &[
+            BackendType::Ollama,
+            BackendType::OpenAI,
+            BackendType::Anthropic,
+            BackendType::Cohere,
+            BackendType::VertexAI,
+            BackendType::FastEmbed,
+            BackendType::Burn,
+            BackendType::GitHubCopilot,
+            BackendType::OpenRouter,
+            BackendType::ZAI,
+            BackendType::Custom,
+            BackendType::Mock,
+        ]
+    }
 }
 
 impl std::fmt::Display for BackendType {
@@ -1207,9 +1230,30 @@ mod tests {
     }
 
     #[test]
-    fn test_all_variants_have_non_empty_as_str() {
-        // Every variant must have a non-empty as_str() value
-        let all_variants = [
+    fn all_lists_every_backend_variant_in_declaration_order() {
+        // The match is the compile-time half: adding a variant to the enum stops
+        // this compiling until the variant is named, which is the prompt to add
+        // it to `all()`. A backend missing from `all()` is invisible to every
+        // surface that enumerates providers — `cru auth list` and the daemon's
+        // `providers.list` both iterate it — which is exactly how OpenRouter and
+        // Z.AI keys went unreported.
+        match BackendType::Ollama {
+            BackendType::Ollama
+            | BackendType::OpenAI
+            | BackendType::Anthropic
+            | BackendType::Cohere
+            | BackendType::VertexAI
+            | BackendType::FastEmbed
+            | BackendType::Burn
+            | BackendType::GitHubCopilot
+            | BackendType::OpenRouter
+            | BackendType::ZAI
+            | BackendType::Custom
+            | BackendType::Mock => {}
+        }
+
+        // Order is load-bearing: it is the order providers are printed in.
+        let expected: &[BackendType] = &[
             BackendType::Ollama,
             BackendType::OpenAI,
             BackendType::Anthropic,
@@ -1223,8 +1267,13 @@ mod tests {
             BackendType::Custom,
             BackendType::Mock,
         ];
+        assert_eq!(BackendType::all(), expected);
+    }
 
-        for variant in &all_variants {
+    #[test]
+    fn test_all_variants_have_non_empty_as_str() {
+        // Every variant must have a non-empty as_str() value
+        for variant in BackendType::all() {
             let s = variant.as_str();
             assert!(!s.is_empty(), "{:?} has empty as_str()", variant);
             assert!(

@@ -96,7 +96,7 @@ impl AgentManager {
     ) -> Vec<(String, LlmProviderConfig, String)> {
         let mut providers = Vec::new();
 
-        for &backend in all_backend_types() {
+        for &backend in BackendType::all() {
             if !backend.supports_chat() {
                 continue;
             }
@@ -151,23 +151,6 @@ impl AgentManager {
 
         providers
     }
-}
-
-fn all_backend_types() -> &'static [BackendType] {
-    &[
-        BackendType::Ollama,
-        BackendType::OpenAI,
-        BackendType::Anthropic,
-        BackendType::Cohere,
-        BackendType::VertexAI,
-        BackendType::FastEmbed,
-        BackendType::Burn,
-        BackendType::GitHubCopilot,
-        BackendType::OpenRouter,
-        BackendType::ZAI,
-        BackendType::Custom,
-        BackendType::Mock,
-    ]
 }
 
 fn format_provider_name(
@@ -525,87 +508,5 @@ mod tests {
         // With no classification, all providers should be returned
         let all_providers = manager.list_providers(None).await;
         assert_eq!(all_providers.len(), 2);
-    }
-
-    #[test]
-    fn all_backend_types_is_exhaustive() {
-        // This test ensures that all_backend_types() covers all BackendType variants.
-        // If a new variant is added to BackendType, this match will fail to compile
-        // until the variant is added to all_backend_types().
-        let all_types = all_backend_types();
-        let all_types_set: std::collections::HashSet<_> = all_types.iter().copied().collect();
-
-        // Verify each variant is in the array by matching exhaustively
-        match BackendType::Ollama {
-            BackendType::Ollama => (),
-            BackendType::OpenAI => (),
-            BackendType::Anthropic => (),
-            BackendType::Cohere => (),
-            BackendType::VertexAI => (),
-            BackendType::FastEmbed => (),
-            BackendType::Burn => (),
-            BackendType::GitHubCopilot => (),
-            BackendType::OpenRouter => (),
-            BackendType::ZAI => (),
-            BackendType::Custom => (),
-            BackendType::Mock => (),
-        }
-
-        // Now verify all variants are in the array
-        assert!(
-            all_types_set.contains(&BackendType::Ollama),
-            "Ollama missing from all_backend_types"
-        );
-        assert!(
-            all_types_set.contains(&BackendType::OpenAI),
-            "OpenAI missing from all_backend_types"
-        );
-        assert!(
-            all_types_set.contains(&BackendType::Anthropic),
-            "Anthropic missing from all_backend_types"
-        );
-        assert!(
-            all_types_set.contains(&BackendType::Cohere),
-            "Cohere missing from all_backend_types"
-        );
-        assert!(
-            all_types_set.contains(&BackendType::VertexAI),
-            "VertexAI missing from all_backend_types"
-        );
-        assert!(
-            all_types_set.contains(&BackendType::FastEmbed),
-            "FastEmbed missing from all_backend_types"
-        );
-        assert!(
-            all_types_set.contains(&BackendType::Burn),
-            "Burn missing from all_backend_types"
-        );
-        assert!(
-            all_types_set.contains(&BackendType::GitHubCopilot),
-            "GitHubCopilot missing from all_backend_types"
-        );
-        assert!(
-            all_types_set.contains(&BackendType::OpenRouter),
-            "OpenRouter missing from all_backend_types"
-        );
-        assert!(
-            all_types_set.contains(&BackendType::ZAI),
-            "ZAI missing from all_backend_types"
-        );
-        assert!(
-            all_types_set.contains(&BackendType::Custom),
-            "Custom missing from all_backend_types"
-        );
-        assert!(
-            all_types_set.contains(&BackendType::Mock),
-            "Mock missing from all_backend_types"
-        );
-
-        // Verify the count matches
-        assert_eq!(
-            all_types.len(),
-            12,
-            "all_backend_types() should contain exactly 12 variants"
-        );
     }
 }
