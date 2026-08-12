@@ -484,7 +484,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
         Some(Commands::Web(cmd)) => {
             // Standalone web instances persist their layout separately so a
             // debug/test server never trashes the installed one's workspace.
-            commands::web::handle(cmd, cli.standalone).await?;
+            commands::web::handle(cmd, cli.standalone, cli.config.clone()).await?;
         }
 
         None => {

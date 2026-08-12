@@ -61,8 +61,12 @@ pub enum WebSubcommand {
     },
 }
 
-pub async fn handle(cmd: WebCommand, standalone: bool) -> Result<()> {
-    let config = CliAppConfig::load(None, None, None).unwrap_or_default();
+pub async fn handle(
+    cmd: WebCommand,
+    standalone: bool,
+    config_path: Option<std::path::PathBuf>,
+) -> Result<()> {
+    let config = load_app_config(config_path)?;
 
     // `..default()` on both, so a new security-relevant `WebConfig` field
     // (registration_roots, allowed_hosts, …) is carried through instead of
@@ -103,6 +107,31 @@ pub async fn handle(cmd: WebCommand, standalone: bool) -> Result<()> {
     crucible_web::start_server(&final_config, &config, standalone).await?;
 
     Ok(())
+}
+
+/// Load the app config for `cru web`, honouring a `--config` path.
+///
+/// Its own function because the interesting behaviour is the *asymmetry*, and
+/// that is what regressed: `--config` never reached the load at all, so
+/// `cru --config X web` served the default config's port, API key and
+/// allowed_hosts while reporting success (same class as 04b58b098).
+///
+/// A path the user NAMED fails loudly rather than falling back, because the
+/// fallback is a different security posture — another key, another allow-list —
+/// and that is the worst thing to substitute silently. With no `--config`, a
+/// missing or unreadable global config still defaults, so `cru web key` keeps
+/// working on a box that has never been configured.
+fn load_app_config(config_path: Option<std::path::PathBuf>) -> Result<CliAppConfig> {
+    match CliAppConfig::load(config_path.clone(), None, None) {
+        Ok(config) => Ok(config),
+        Err(err) => match config_path {
+            Some(named) => Err(anyhow::Error::new(err).context(format!(
+                "failed to load the config file named by --config ({})",
+                named.display()
+            ))),
+            None => Ok(CliAppConfig::default()),
+        },
+    }
 }
 
 fn handle_key(config: &WebConfig, rotate: bool) -> Result<()> {
@@ -343,6 +372,55 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
         let port = listener.local_addr().unwrap().port();
         (listener, port)
+    }
+
+    #[test]
+    fn a_named_config_file_is_the_one_that_gets_used() {
+        // The regression: `--config` never reached the load, so a named file's
+        // port, API key and allow-list were all silently replaced by the
+        // defaults while the command reported success.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("named.toml");
+        std::fs::write(
+            &path,
+            "[web]\nport = 4242\nallowed_hosts = [\"named.example.test\"]\n",
+        )
+        .expect("write config");
+
+        let web = load_app_config(Some(path))
+            .expect("a valid named config loads")
+            .web
+            .expect("[web] section survives the load");
+
+        assert_eq!(web.port, 4242);
+        assert_eq!(web.allowed_hosts, ["named.example.test"]);
+    }
+
+    #[test]
+    fn a_named_config_that_cannot_be_read_fails_instead_of_defaulting() {
+        // Falling back here would serve a DIFFERENT api_key and allowed_hosts
+        // than the operator asked for — the one substitution that must never be
+        // silent. Absent `--config`, defaulting is still correct, so that arm
+        // stays permissive (not asserted here: it would read the developer's
+        // real ~/.config/crucible and is not hermetic).
+        let dir = tempfile::tempdir().expect("tempdir");
+        let broken = dir.path().join("broken.toml");
+        std::fs::write(&broken, "this is not = valid toml [[[\n").expect("write config");
+
+        let err = load_app_config(Some(broken.clone())).expect_err("must not default");
+        let rendered = format!("{err:#}");
+        assert!(
+            rendered.contains("--config"),
+            "the error must name the flag that chose the file: {rendered}"
+        );
+        assert!(
+            rendered.contains(&broken.display().to_string()),
+            "the error must name the file: {rendered}"
+        );
+
+        // A path that does not exist at all is the same mistake as an
+        // unparseable one: the operator named something we cannot honour.
+        assert!(load_app_config(Some(dir.path().join("absent.toml"))).is_err());
     }
 
     #[test]
