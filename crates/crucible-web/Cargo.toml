@@ -66,5 +66,9 @@ dns-lookup = "3.0.1"
 nix = { version = "0.31", features = ["signal"] }
 
 [dev-dependencies]
+# A real WebSocket client for the PTY route: `ServiceExt::oneshot` returns the
+# 101 and never performs the upgrade, so the contract-test harness cannot reach
+# the session loop the keepalive lives in.
+tokio-tungstenite = { workspace = true }
 crucible-web = { path = ".", features = ["test-utils"] }
 tokio = { workspace = true, features = ["full"] }
