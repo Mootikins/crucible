@@ -281,19 +281,43 @@ async fn session_create_omits_llm_events_for_acp_agent() {
         .expect("session_id must be string")
         .to_string();
 
-    // For ACP we assert on *absence* of LLM events, so we cannot early-exit
-    // the moment the common events arrive — we need to drain the full
-    // window to catch a regression where `providers_listed` would leak in
-    // later. Pass an expected set that will never fully match so the
-    // collector waits the whole timeout.
+    // For ACP we assert on *absence* of LLM events, so a collector that
+    // early-exits the moment the common events arrive would never see a
+    // `providers_listed` that leaks in late. But draining a single fixed window
+    // cannot be both load-tolerant and bounded, so this is two phases.
+    //
+    // Phase 1 waits for the common events with a generous ceiling and leaves as
+    // soon as they arrive, so a contended box does not fail the positive
+    // assertions below. Phase 2 then drains a short fixed window against a
+    // sentinel that never matches — that is the part that catches a late leak.
+    //
+    // The total has to stay well under nextest's terminate threshold, which is
+    // 60s on `profile.default` (30s `slow-timeout` × `terminate-after = 2`).
+    // One 60s drain sat exactly on that boundary: it was killed at 60.010s
+    // under `just test full` while passing under `profile.ci`, whose threshold
+    // is 120s. Worst case here is 32s; the common path is about 3s.
+    let common: HashSet<&str> = [
+        "session_initialized",
+        "workspace_indexed",
+        "kiln_notes_indexed",
+        "plugins_discovered",
+        "mcp_servers_ready",
+    ]
+    .into_iter()
+    .collect();
+    let mut events =
+        collect_setup_events(&mut event_rx, &session_id, &common, Duration::from_secs(30)).await;
+
     let never_completes: HashSet<&str> = ["__sentinel_never_fires__"].into_iter().collect();
-    let events = collect_setup_events(
-        &mut event_rx,
-        &session_id,
-        &never_completes,
-        Duration::from_secs(60),
-    )
-    .await;
+    events.extend(
+        collect_setup_events(
+            &mut event_rx,
+            &session_id,
+            &never_completes,
+            Duration::from_secs(2),
+        )
+        .await,
+    );
     let event_types: Vec<String> = events.iter().map(|e| e.event_type.clone()).collect();
     let event_set: HashSet<&str> = event_types.iter().map(|s| s.as_str()).collect();
 
