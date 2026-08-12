@@ -1,7 +1,9 @@
 use crate::formatting::OutputFormat;
 use anyhow::Result;
 use colored::Colorize;
-use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, Cell, Color, Table};
+use comfy_table::{
+    modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, Cell, Color, ContentArrangement, Table,
+};
 use crucible_oil::truncate_to_chars;
 use serde_json;
 use std::io::IsTerminal;
@@ -139,7 +141,11 @@ pub fn records_table(headers: &[&str], rows: &[Vec<String>]) -> String {
     let mut table = Table::new();
     table
         .load_preset(UTF8_FULL)
-        .apply_modifier(UTF8_ROUND_CORNERS);
+        .apply_modifier(UTF8_ROUND_CORNERS)
+        // Wrap long cells instead of widening the table past the terminal. One
+        // absolute kiln path in a Metric/Value table is enough to push it to a
+        // hundred columns and wrap in the shell instead, which looks broken.
+        .set_content_arrangement(ContentArrangement::Dynamic);
     table.set_header(headers.iter().copied());
 
     for row in rows {
