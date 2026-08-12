@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use crate::cli::AgentsCommands;
 use crate::config::CliConfig;
+use crate::formatting::{OutputFormat, TextFormat};
 
 /// Width of the DESCRIPTION column in the `cru agents list` table.
 const DESCRIPTION_MAX_CHARS: usize = 35;
@@ -17,11 +18,13 @@ pub async fn execute(config: CliConfig, command: Option<AgentsCommands>) -> Resu
     // When no subcommand is given, default to list
     let cmd = command.unwrap_or(AgentsCommands::List {
         tag: None,
-        format: "table".to_string(),
+        format: None,
     });
 
     match cmd {
-        AgentsCommands::List { tag, format } => list(&config, tag, format).await,
+        AgentsCommands::List { tag, format } => {
+            list(&config, tag, OutputFormat::for_stdout(format)).await
+        }
         AgentsCommands::Show { name, format, full } => show(&config, name, format, full).await,
         AgentsCommands::Validate { verbose } => validate(&config, verbose).await,
     }
@@ -99,7 +102,7 @@ fn resolve_path(path: &Path, _config_dir: Option<&PathBuf>) -> PathBuf {
 }
 
 /// List all registered agent cards
-async fn list(config: &CliConfig, tag: Option<String>, format: String) -> Result<()> {
+async fn list(config: &CliConfig, tag: Option<String>, format: OutputFormat) -> Result<()> {
     let registry = load_agent_registry(config);
 
     // Get cards, optionally filtered by tag
@@ -122,13 +125,28 @@ async fn list(config: &CliConfig, tag: Option<String>, format: String) -> Result
         return Ok(());
     }
 
-    match format.as_str() {
-        "json" => {
+    match format {
+        OutputFormat::Json => {
             let json = serde_json::to_string_pretty(&cards)?;
             println!("{}", json);
         }
-        _ => {
-            // Table format
+        OutputFormat::Table => {
+            let rows: Vec<Vec<String>> = cards
+                .iter()
+                .map(|card| {
+                    vec![
+                        card.name.clone(),
+                        card.version.clone(),
+                        card.description.clone(),
+                    ]
+                })
+                .collect();
+            println!(
+                "{}",
+                crate::output::records_table(&["Name", "Version", "Description"], &rows)
+            );
+        }
+        OutputFormat::Plain => {
             println!("{:<25} {:<10} DESCRIPTION", "NAME", "VERSION");
             println!("{}", "-".repeat(70));
             for card in cards {
@@ -154,7 +172,7 @@ fn truncate_description(description: &str) -> std::borrow::Cow<'_, str> {
 }
 
 /// Show details of a specific agent card
-async fn show(config: &CliConfig, name: String, format: String, full: bool) -> Result<()> {
+async fn show(config: &CliConfig, name: String, format: TextFormat, full: bool) -> Result<()> {
     let registry = load_agent_registry(config);
 
     let card = match registry.get(&name) {
@@ -164,12 +182,12 @@ async fn show(config: &CliConfig, name: String, format: String, full: bool) -> R
         }
     };
 
-    match format.as_str() {
-        "json" => {
+    match format {
+        TextFormat::Json => {
             let json = serde_json::to_string_pretty(card)?;
             println!("{}", json);
         }
-        _ => {
+        TextFormat::Text => {
             // Table/human-readable format
             println!("Name:        {}", card.name);
             println!("Version:     {}", card.version);
@@ -233,7 +251,7 @@ async fn validate(config: &CliConfig, verbose: bool) -> Result<()> {
             continue;
         }
 
-        // Find all markdown files in directory
+        // Find all note files in directory
         let entries = match std::fs::read_dir(&dir) {
             Ok(e) => e,
             Err(_) => continue,

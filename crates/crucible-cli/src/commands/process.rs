@@ -160,7 +160,7 @@ pub async fn execute(
             };
             println!("{}", serde_json::to_string_pretty(&summary)?);
         } else {
-            println!("Dry-run: daemon would discover and process all markdown files in kiln");
+            println!("Dry-run: daemon would discover and process every indexable file in the kiln");
         }
         return Ok(());
     }
@@ -216,7 +216,7 @@ pub async fn execute(
         println!("{}", serde_json::to_string_pretty(&summary)?);
     } else {
         println!("Pipeline processing complete!");
-        println!("  Discovered: {} markdown files", discovered);
+        println!("  Discovered: {} indexable files", discovered);
         println!("  Processed: {} files", processed);
         println!("  Skipped (unchanged): {} files", skipped);
         if !err_entries.is_empty() {
@@ -324,7 +324,7 @@ async fn run_watch_mode(
     Ok(())
 }
 
-/// Discover markdown files for watch mode polling seed.
+/// Discover indexable files for watch mode polling seed.
 ///
 /// This is a temporary local helper until watch mode moves to the daemon.
 /// Walks the directory tree, excluding common system directories, and

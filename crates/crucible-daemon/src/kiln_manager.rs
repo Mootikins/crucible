@@ -1099,7 +1099,7 @@ fn is_excluded_dir(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// Discover markdown files in a kiln directory
+/// Discover indexable files in a kiln directory — notes, canvases and plain text.
 fn discover_indexable_files(kiln_path: &Path) -> Vec<PathBuf> {
     use walkdir::WalkDir;
 

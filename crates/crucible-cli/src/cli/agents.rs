@@ -1,3 +1,4 @@
+use crate::formatting::{OutputFormat, TextFormat};
 use clap::Subcommand;
 
 /// Agent card management subcommands
@@ -10,9 +11,10 @@ pub enum AgentsCommands {
         #[arg(short = 't', long)]
         tag: Option<String>,
 
-        /// Output format (table, json)
-        #[arg(short = 'f', long, default_value = "table")]
-        format: String,
+        /// Output format. Defaults to a table on a terminal, plain lines when
+        /// piped or redirected.
+        #[arg(short = 'f', long)]
+        format: Option<OutputFormat>,
     },
 
     /// Show details of a specific agent card
@@ -20,9 +22,9 @@ pub enum AgentsCommands {
         /// Name of the agent card to show
         name: String,
 
-        /// Output format (table, json)
-        #[arg(short = 'f', long, default_value = "table")]
-        format: String,
+        /// Output format
+        #[arg(short = 'f', long, default_value_t)]
+        format: TextFormat,
 
         /// Show full system prompt (not truncated)
         #[arg(long)]
