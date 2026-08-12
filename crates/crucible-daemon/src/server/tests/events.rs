@@ -137,18 +137,28 @@ async fn test_events_auto_persisted() {
     let event = SessionEventMessage::user_message(&session_id, "msg-1", "hello world");
     event_tx.send(event).unwrap();
 
-    // Wait for persistence
-    tokio::time::sleep(Duration::from_millis(100)).await;
-
-    // Check that event was persisted
     let session_dir = kiln_path
         .join(".crucible")
         .join("sessions")
         .join(&session_id);
     let jsonl_path = session_dir.join("session.jsonl");
 
-    let content = tokio::fs::read_to_string(&jsonl_path).await.unwrap();
-    assert!(content.contains("hello world"));
+    // Poll for the write instead of sleeping a fixed 100ms. Persistence is
+    // asynchronous, so a fixed wait is a bet on how loaded the machine is: it
+    // held when the test ran alone and lost under a full `just ci`, where ~8000
+    // tests share one disk. The deadline keeps the real failure mode — the event
+    // never arrives — and removes the false one, where it merely arrived late.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    let content = loop {
+        match tokio::fs::read_to_string(&jsonl_path).await {
+            Ok(content) if content.contains("hello world") => break content,
+            _ if tokio::time::Instant::now() >= deadline => panic!(
+                "event was not persisted to {} within 10s",
+                jsonl_path.display()
+            ),
+            _ => tokio::time::sleep(Duration::from_millis(25)).await,
+        }
+    };
     assert!(content.contains("user_message"));
 
     server.shutdown().await;
