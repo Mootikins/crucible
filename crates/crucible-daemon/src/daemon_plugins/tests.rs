@@ -884,7 +884,7 @@ async fn bootstrap_skips_disabled_entries() {
 
 mod kiln_graph {
     use super::*;
-    use crate::storage::sqlite::{create_note_store, SqliteConfig, SqlitePool};
+    use crate::storage::sqlite::{SqliteConfig, SqliteNoteStore, SqlitePool};
     use crucible_core::parser::BlockHash;
     use crucible_core::storage::{NoteRecord, Scope};
 
@@ -902,7 +902,7 @@ mod kiln_graph {
     /// resolves on write rather than relying on the re-resolution pass.
     async fn chain_store() -> Arc<dyn NoteStore> {
         let pool = SqlitePool::new(SqliteConfig::memory()).expect("pool");
-        let store = create_note_store(pool).await.expect("store");
+        let store = SqliteNoteStore::new(pool);
         for record in [
             note("c.md", &[]),
             note("b.md", &["c.md"]),
@@ -963,7 +963,7 @@ mod kiln_graph {
     #[tokio::test]
     async fn kiln_graph_functions_hide_notes_outside_the_authority_scope() {
         let pool = SqlitePool::new(SqliteConfig::memory()).expect("pool");
-        let store = create_note_store(pool).await.expect("store");
+        let store = SqliteNoteStore::new(pool);
         for record in [
             note("b.md", &[]),
             note("a.md", &["b.md"]),

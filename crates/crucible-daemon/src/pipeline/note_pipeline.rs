@@ -288,9 +288,20 @@ impl NotePipeline {
             }
         }
 
-        // Mirror the embedding into the Lance vector index keyed by note
-        // path. Lance is the source of truth for similarity search; the
-        // SQLite copy persists for now but is no longer queried.
+        // Mirror the embedding into the Lance vector index keyed by note path.
+        //
+        // Both copies are read, by different callers — this comment used to
+        // claim the SQLite copy "is no longer queried", which is false. The
+        // `search_vectors` RPC goes to Lance (`kiln_manager.rs`), while the
+        // `semantic_search` agent tool and precognition reach
+        // `SqliteNoteStore::search`, a brute-force cosine over
+        // `notes.embedding`. That split is drift, not design: someone migrated
+        // the RPC path and did not notice the tool path. Unifying them changes
+        // ranking behaviour and needs its own plan; until then treat BOTH as
+        // derived-but-costly (recoverable only by re-paying a provider) and
+        // never destroy either in a migration. Settled by
+        // `repository.rs::a_kiln_with_no_lance_index_still_returns_semantic_hits`
+        // and recorded in `docs/Meta/Analysis/Storage Schema.md`.
         if let (Some(vectors), Some(embedding)) =
             (self.vector_store.as_ref(), embedding_for_vectors)
         {

@@ -1062,8 +1062,9 @@ async fn create_storage_handle(
             .await?,
     );
 
+    // No setup call: `notes_fts` is created by the migration ladder, which ran
+    // when `sqlite`'s pool opened the database.
     let text = Arc::new(crate::storage::sqlite::FtsIndex::new(sqlite.pool().clone()));
-    text.setup().await?;
 
     Ok(StorageHandle {
         sqlite,

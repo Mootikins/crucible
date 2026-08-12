@@ -17,6 +17,5 @@ pub mod kiln_validate;
 pub mod output;
 pub mod progress;
 pub mod provider_detect;
-pub mod search;
 pub mod sync;
 pub mod tui;

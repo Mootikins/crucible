@@ -102,13 +102,11 @@ pub use kiln_manager::KilnManager;
 pub use lifecycle::{remove_socket, socket_path, wait_for_shutdown};
 pub use mcp_host::InProcessMcpHost;
 pub use mcp_server::McpServerManager;
-pub use observe::SessionIndex;
-pub use observe::{events, id, indexer, markdown, serde_md, session, truncate};
+pub use observe::{events, id, indexer, markdown, serde_md, session};
 pub use observe::{
     extract_session_content, list_sessions, load_events, parse_session_log, render_to_markdown,
-    truncate_for_log, wire_to_log_event, LogEvent, PermissionDecision, RenderOptions,
-    SessionContent, SessionId, SessionIdError, SessionLogLine, SessionMetadata, SessionType,
-    TokenUsage, TruncateResult, DEFAULT_TRUNCATE_THRESHOLD,
+    wire_to_log_event, LogEvent, PermissionDecision, RenderOptions, SessionContent, SessionId,
+    SessionIdError, SessionLogLine, SessionType, TokenUsage,
 };
 pub use permission_bridge::DaemonPermissionGate;
 pub use project_manager::{ProjectError, ProjectManager};

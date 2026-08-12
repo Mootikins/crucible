@@ -1258,20 +1258,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "chumsky"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0d2bfadce76f963d776feff99db6dc33783829539258314776383b33e2a00f8"
-dependencies = [
- "hashbrown 0.15.5",
- "regex-automata",
- "serde",
- "stacker",
- "unicode-ident",
- "unicode-segmentation",
-]
-
-[[package]]
 name = "ciborium"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1903,7 +1889,6 @@ dependencies = [
  "axum",
  "blake3",
  "chrono",
- "chumsky",
  "criterion",
  "crucible-core",
  "crucible-lua",
