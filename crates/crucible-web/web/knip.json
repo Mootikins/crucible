@@ -1,0 +1,45 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/index.tsx",
+    "vite.config.ts",
+    "playwright.config.ts",
+    "playwright.hero.config.ts",
+    "playwright.live.config.ts",
+    "src/pwa-options.ts"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx}",
+    "e2e/**/*.ts"
+  ],
+  "ignore": [
+    "src/**/__screenshots__/**",
+    "e2e/__screenshots__/**"
+  ],
+  "ignoreDependencies": [],
+  "vitest": {
+    "config": [
+      "vite.config.ts"
+    ],
+    "entry": [
+      "src/**/*.test.{ts,tsx}",
+      "src/**/__tests__/**/*.{ts,tsx}",
+      "src/test/**",
+      "src/test-harness/**",
+      "src/test-utils/**"
+    ]
+  },
+  "playwright": {
+    "config": [
+      "playwright.config.ts",
+      "playwright.hero.config.ts",
+      "playwright.live.config.ts"
+    ],
+    "entry": [
+      "e2e/**/*.spec.ts"
+    ]
+  },
+  "ignoreUnresolved": [
+    "^/src/"
+  ]
+}

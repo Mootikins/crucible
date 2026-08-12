@@ -148,7 +148,14 @@ fmt:
 # - `types` is the only target that needs no Rust toolchain — the web-unit CI
 #   job runs it with bun alone.
 #
-# Lint: all (default) | fmt | clippy | docs | license | size | types
+# - `dead` is frontend-only, and deliberately NOT in `all`. Rust needs no
+#   equivalent: `crucible-cli`'s modules are `pub(crate)` precisely so `dead_code`
+#   reports unused items itself, which `clippy -D warnings` then fails on. Knip is
+#   the same idea for TypeScript, where `pub` has no analogue. It is out of `all`
+#   until its existing findings are triaged — wiring it in with a backlog would
+#   just teach everyone to ignore it.
+#
+# Lint: all (default) | fmt | clippy | docs | license | size | types | dead
 lint what="all":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -162,13 +169,21 @@ lint what="all":
     lint_license() { cargo deny --all-features check licenses; }
     lint_size()    { scripts/check-file-sizes.sh; }
     lint_types()   { (cd crates/crucible-web/web && bunx tsc --noEmit -p tsconfig.json); }
+    # Import-dead frontend code: unused files, exports and dependencies. Run it
+    # WITHOUT `--production`: that mode drops test files from the graph and then
+    # reports three dozen lazy-loaded dependencies as unused, which is noise, not
+    # a finding. Note the limit — knip sees imports, so a component that IS
+    # imported and rendered behind a condition that is always false (the
+    # `FilesPanel` root dropdown under `embedded`) is invisible to it. That class
+    # needs a reachability test, not a linter.
+    lint_dead()    { (cd crates/crucible-web/web && bunx knip --no-progress); }
 
     case "$1" in
         all) lint_fmt; lint_clippy; lint_docs; lint_license; lint_size; lint_types ;;
-        fmt|clippy|docs|license|size|types) "lint_$1" ;;
+        fmt|clippy|docs|license|size|types|dead) "lint_$1" ;;
         *)
             echo "Unknown lint target: $1"
-            echo "Valid targets: all fmt clippy docs license size types"
+            echo "Valid targets: all fmt clippy docs license size types dead"
             exit 1
             ;;
     esac
