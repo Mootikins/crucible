@@ -43,11 +43,25 @@ pub async fn websocket_origin_guard(
         let same_origin = request.extensions().get::<HostVerified>().is_some()
             && origin_matches_authority(origin, request_authority(&request).as_deref());
         if !same_origin && !allowed.iter().any(|a| a == origin) {
+            // Name the authority and the remedy. This refusal is invisible
+            // where it matters: a browser never exposes a failed WS
+            // handshake's status or body to page script, so the panel sees
+            // only "the socket closed" and shows a reconnect button that can
+            // never succeed. The log is the operator's only channel, so it
+            // has to carry the fix, not just the verdict.
             tracing::warn!(
                 ?origin,
-                "Rejecting WebSocket upgrade from disallowed Origin"
+                authority = ?request_authority(&request),
+                host_verified = request.extensions().get::<HostVerified>().is_some(),
+                "Rejecting WebSocket upgrade: Origin is not an authority this server answers to. \
+                 If this is a name you reach the server by, add it to `[web] allowed_hosts` \
+                 in config.toml and restart"
             );
-            return (StatusCode::FORBIDDEN, "Origin not allowed").into_response();
+            return (
+                StatusCode::FORBIDDEN,
+                "Origin not allowed — add this host to `[web] allowed_hosts` in config.toml",
+            )
+                .into_response();
         }
     }
     next.run(request).await

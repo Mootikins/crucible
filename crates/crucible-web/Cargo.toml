@@ -37,6 +37,11 @@ portable-pty = "0.9"
 # `gethostname`: the machine's own name, which a wildcard bind answers to so a
 # LAN browser can address it by hostname and not only by IP literal.
 gethostname = "1"
+# `libc`: getaddrinfo(AI_CANONNAME) for the machine's FQDN — the portable
+# mechanism (RFC 3493), and the one `hostname --fqdn` uses. A bare
+# /etc/hostname whose domain lives in DNS would otherwise 403 by its real name.
+# Used only under cfg(unix); the crate itself builds everywhere.
+libc = "0.2"
 
 # Daemon-proxy HTTP client (transcription forwarding etc.)
 reqwest = { workspace = true }
@@ -54,6 +59,7 @@ tracing = { workspace = true }
 # referenced from library code, so they're optional real deps.
 tempfile = { workspace = true, optional = true }
 proptest = { version = "1.11", optional = true }
+dns-lookup = "3.0.1"
 
 # Unix-only: process-group signals for the PTY terminal teardown.
 [target.'cfg(unix)'.dependencies]

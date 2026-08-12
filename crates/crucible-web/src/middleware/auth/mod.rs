@@ -115,7 +115,7 @@ fn enforce_host(state: &ApiKeyState, request: &mut Request<Body>) -> Option<Resp
 /// A request from ANOTHER machine has no such shortcut to reach: it presents
 /// the API key or [`bearer_auth`] answers 401. Holding it to a list of names
 /// buys nothing there, and costs every FQDN the operator's network resolves to
-/// this box — `impulse`, `impulse.lan`, a tailnet name, a CNAME, a name only
+/// this box — `node7`, `node7.lan`, a tailnet name, a CNAME, a name only
 /// the phone's resolver knows. None of them can be enumerated up front, which
 /// is how a wildcard bind that worked by IP came to 403 by name and read as
 /// though it had never left loopback.
@@ -675,13 +675,13 @@ mod tests {
 
     #[tokio::test]
     async fn an_authenticated_client_on_another_machine_may_use_any_name_for_this_server() {
-        // Every FQDN the operator's network resolves to this box — `impulse`,
-        // `impulse.lan`, a tailnet name, a CNAME — without enumerating any of
+        // Every FQDN the operator's network resolves to this box — `node7`,
+        // `node7.lan`, a tailnet name, a CNAME — without enumerating any of
         // them. Safe because the request came from another machine and so has
         // no loopback bypass to reach: it authenticated to get here.
         let app = test_router_with_bearer(Some("secret-key".to_string()));
         let req = from_remote_peer(
-            remote_request("impulse.tail1234.ts.net:3000")
+            remote_request("node7.tail1234.ts.net:3000")
                 .header("authorization", "Bearer secret-key"),
         );
 
@@ -740,7 +740,7 @@ mod tests {
         // same-origin. The relaxation declines to make that claim, so the
         // marker must be absent and the guard left with its static allow-list.
         let state = bearer_state(Some("secret-key".to_string()));
-        let mut relaxed = from_remote_peer(remote_request("impulse.lan:3000"));
+        let mut relaxed = from_remote_peer(remote_request("node7.lan:3000"));
         assert!(enforce_host(&state, &mut relaxed).is_none());
         assert!(relaxed.extensions().get::<HostVerified>().is_none());
 

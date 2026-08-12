@@ -264,7 +264,7 @@ verbose = false
 #                       of localhost/127.0.0.1/[::1] on `port` and whatever
 #                       `host` names. Empty ([]) means "derive from the bind
 #                       address", NOT "allow anything" — so reaching the box
-#                       by an mDNS name (impulse.local) or through a reverse
+#                       by an mDNS name (node7.local) or through a reverse
 #                       proxy is a 403 until the name is listed here. An entry
 #                       without a port matches both bare and on `port`; an
 #                       entry with a port matches that port only. No globs.
@@ -289,7 +289,7 @@ verbose = false
 # api_key = ""                        # "" disables auth entirely
 # remote_shell = false
 # registration_roots = []             # empty = any ordinary dir; set to confine
-# allowed_hosts = []                  # e.g. ["impulse.local", "crucible.example.com"]
+# allowed_hosts = []                  # e.g. ["node7.local", "crucible.example.com"]
 
 # =============================================================================
 # [scm] - Git integration

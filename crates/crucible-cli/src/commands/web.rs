@@ -391,7 +391,7 @@ mod tests {
         // merely misleading — nothing is listening there.
         let banner = banner(
             &config_bound_to("192.168.0.16", 3000),
-            &["impulse".to_string()],
+            &["node7".to_string()],
             None,
         );
 
@@ -422,7 +422,7 @@ mod tests {
     fn a_loopback_bind_advertises_nothing_off_this_machine() {
         let banner = banner(
             &config_bound_to("127.0.0.1", 3000),
-            &["impulse".to_string()],
+            &["node7".to_string()],
             Some("192.168.0.16".parse().unwrap()),
         );
         assert_eq!(advertised_authorities(&banner), ["localhost:3000"]);
@@ -432,7 +432,7 @@ mod tests {
     fn a_wildcard_bind_advertises_the_lan_address_and_the_machines_names() {
         let banner = banner(
             &config_bound_to("0.0.0.0", 3000),
-            &["impulse".to_string(), "impulse.local".to_string()],
+            &["node7".to_string(), "node7.local".to_string()],
             Some("192.168.0.16".parse().unwrap()),
         );
         assert_eq!(
@@ -440,8 +440,8 @@ mod tests {
             [
                 "localhost:3000",
                 "192.168.0.16:3000",
-                "impulse:3000",
-                "impulse.local:3000"
+                "node7:3000",
+                "node7.local:3000"
             ]
         );
     }
@@ -477,13 +477,13 @@ mod tests {
         // No route to the internet: the old banner printed `http://<this-host>:3000`.
         let banner = banner(
             &config_bound_to("0.0.0.0", 3000),
-            &["impulse".to_string()],
+            &["node7".to_string()],
             None,
         );
         assert!(!banner.contains('<'), "{banner}");
         assert_eq!(
             advertised_authorities(&banner),
-            ["localhost:3000", "impulse:3000"]
+            ["localhost:3000", "node7:3000"]
         );
     }
 

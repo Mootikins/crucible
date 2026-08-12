@@ -119,8 +119,8 @@ relaxed for the rest, and the practical effect is the one you want:
 | another machine, key configured | **any name**; the API key is the gate, not the name |
 | another machine, `api_key = ""` | the same strict list as loopback — with no key behind it, the list is the whole defence |
 
-That is what makes a LAN bind work by **any** FQDN that resolves to this box — `impulse`,
-`impulse.lan`, a tailnet name, a CNAME, a name only the phone's resolver knows — with nothing
+That is what makes a LAN bind work by **any** FQDN that resolves to this box — `node7`,
+`node7.lan`, a tailnet name, a CNAME, a name only the phone's resolver knows — with nothing
 to enumerate and nothing to configure. What a remote client with no key can still reach is
 what was never behind auth anyway: `/health` and the static bundle.
 
@@ -145,7 +145,7 @@ allowed_hosts = ["crucible.example.com"]
     front, and an IP literal in `Host` cannot come from rebinding, which needs a *name*.
 - **This machine's own names**, on `<port>` and bare, for any bind that is not
   loopback-only: the system hostname, plus `<hostname>.local` when the hostname is a bare
-  label. This is what lets the operator's own browser use `http://impulse:3000` even when
+  label. This is what lets the operator's own browser use `http://node7:3000` even when
   that name resolves to loopback, and it is what `cru web` prints on startup.
 - **Every entry in `allowed_hosts`.**
 - **Any name at all**, when the request came from another machine and an API key is

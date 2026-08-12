@@ -201,11 +201,18 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
         _ => false,
     };
 
-    // A daemon running as the spawned background process has its stderr
-    // redirected to ~/.crucible/daemon.log. With the old OFF default that
-    // file stayed empty and a startup failure had no cause anywhere; WARN
-    // gives it something to say.
-    let is_daemon_process = matches!(
+    // Long-running servers, whose stderr is captured by whatever supervises
+    // them (~/.crucible/daemon.log for the spawned daemon, the journal for a
+    // systemd unit). With the OFF default that destination stayed empty and a
+    // failure had no cause recorded anywhere; WARN gives it something to say.
+    //
+    // `web` belongs here for the same reason and was missed: every
+    // `tracing::warn!` in crucible-web was a silent no-op, so a refused
+    // WebSocket Origin and an exhausted terminal-session limit — the two
+    // failures whose ONLY diagnostic channel is the log, because a browser
+    // never exposes a failed WS handshake to page script — left no trace at
+    // all. Absence of those warnings then reads as proof they did not happen.
+    let is_server_process = matches!(
         &cli.command,
         Some(Commands::Daemon(
             commands::daemon::DaemonCommands::Serve
@@ -213,7 +220,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
                     foreground: true,
                     ..
                 }
-        ))
+        )) | Some(Commands::Web { .. })
     );
 
     // Determine base log level from CLI flags or config
@@ -224,12 +231,12 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
     } else if cli.verbose {
         LevelFilter::DEBUG
     } else if let Some(config_level) = config.logging_level() {
-        parse_log_level(&config_level).unwrap_or(if uses_stdio || is_daemon_process {
+        parse_log_level(&config_level).unwrap_or(if uses_stdio || is_server_process {
             LevelFilter::WARN
         } else {
             LevelFilter::OFF
         })
-    } else if uses_stdio || is_daemon_process {
+    } else if uses_stdio || is_server_process {
         LevelFilter::WARN // Default to WARN for chat/mcp (always capture errors)
     } else {
         LevelFilter::OFF

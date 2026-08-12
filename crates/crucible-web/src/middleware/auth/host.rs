@@ -103,7 +103,7 @@ impl HostPolicy {
         // A socket other machines can reach is addressed by NAME from those
         // machines, and until this existed no name reached it: the IP-literal
         // rule below covers `http://192.168.0.16:3000` and nothing covered
-        // `http://impulse:3000`, so a LAN bind that worked by address 403'd by
+        // `http://node7:3000`, so a LAN bind that worked by address 403'd by
         // hostname and read as if it had never left loopback.
         //
         // The rebinding cost, stated rather than glossed: the IP-literal rule
@@ -298,11 +298,12 @@ fn is_ip_literal(host: &str) -> bool {
 /// Read from the OS at policy-construction time. Callers that need this to be
 /// deterministic take [`HostPolicy::from_bind_with_local_names`] instead.
 pub fn local_names() -> Vec<String> {
-    local_names_from(&gethostname::gethostname().to_string_lossy())
+    let host = gethostname::gethostname().to_string_lossy().into_owned();
+    local_names_from(&host, canonical_name(&host).as_deref())
 }
 
-/// [`local_names`] minus the OS call: the hostname, plus its mDNS spelling when
-/// the hostname is a bare label.
+/// [`local_names`] minus the OS calls: the hostname, its mDNS spelling when the
+/// hostname is a bare label, and the resolver's canonical name for it.
 ///
 /// `<host>.local` is included because that is the name Avahi/Bonjour publishes
 /// and therefore the one a phone or laptop on the same network actually
@@ -310,16 +311,67 @@ pub fn local_names() -> Vec<String> {
 /// that is not a usable authority — empty, whitespace, or `localhost`, which
 /// the loopback rule already owns — yields nothing rather than putting a name
 /// in the allow-list that no `Host` header could ever match.
-fn local_names_from(hostname: &str) -> Vec<String> {
+///
+/// `canonical` is what [`canonical_name`] resolved, and is accepted only when it
+/// *extends* the hostname (`node7` → `node7.example.com`). A resolver that
+/// answers with an unrelated name is not describing this machine's own identity,
+/// and admitting it would let whoever controls resolution choose a rebinding
+/// target — the one thing the whole allow-list exists to prevent. Operators
+/// whose public name is genuinely unrelated to the hostname have
+/// `[web] allowed_hosts`, which is explicit and auditable.
+fn local_names_from(hostname: &str, canonical: Option<&str>) -> Vec<String> {
     let host = hostname.trim().to_ascii_lowercase();
     if host.is_empty() || host == "localhost" || normalize_authority(&host).is_none() {
         return Vec::new();
     }
-    let mdns = format!("{host}.local");
-    match host.contains('.') {
-        true => vec![host],
-        false => vec![host, mdns],
+    let mut names = vec![host.clone()];
+    // Bare label: add the mDNS spelling the network actually publishes.
+    if !host.contains('.') {
+        names.push(format!("{host}.local"));
     }
+    if let Some(fqdn) = canonical
+        .map(|c| c.trim().trim_end_matches('.').to_ascii_lowercase())
+        .filter(|c| c != &host && !c.is_empty())
+        .filter(|c| c.strip_prefix(&format!("{host}.")).is_some_and(|d| !d.is_empty()))
+        .filter(|c| normalize_authority(c).is_some())
+    {
+        names.push(fqdn);
+    }
+    names
+}
+
+/// The resolver's canonical name for `hostname`, or `None`.
+///
+/// This is `getaddrinfo(AI_CANONNAME)` (RFC 3493) — the portable mechanism, and
+/// the same one `hostname --fqdn` uses. It is what makes a normally-configured
+/// host reachable by its real domain without the operator listing it: a machine
+/// whose `/etc/hostname` is an FQDN, or whose DNS/`hosts` canonicalizes the bare
+/// label, resolves here. A machine where nothing declares an FQDN gets the bare
+/// hostname back and nothing is added — deliberately, because a resolver
+/// `search` suffix is not a standard statement that the host answers to
+/// `host.suffix`, and scraping `resolv.conf` for one is glibc-specific and
+/// meaningless behind a systemd-resolved stub.
+///
+/// Runs once, at policy construction. A lookup of the machine's own name
+/// normally resolves from `hosts` without touching the network; a resolver that
+/// stalls would delay startup by its own timeout, which is the same exposure
+/// `hostname --fqdn` has always had.
+/// `dns-lookup` rather than raw FFI: this file is the rebinding defence, so it
+/// is the last place to hand-roll `unsafe` pointer walking over `addrinfo`.
+/// `libc` still supplies `AI_CANONNAME`, whose value is per-platform — reading a
+/// constant needs no `unsafe`, and there is no pure-Rust substitute for asking
+/// the *system* resolver (a DNS-only client would skip `hosts` and nsswitch,
+/// which is exactly the configuration this has to honour).
+fn canonical_name(hostname: &str) -> Option<String> {
+    let hints = dns_lookup::AddrInfoHints {
+        flags: libc::AI_CANONNAME,
+        socktype: dns_lookup::SockType::Stream.into(),
+        ..Default::default()
+    };
+    dns_lookup::getaddrinfo(Some(hostname.trim()), None, Some(hints))
+        .ok()?
+        .filter_map(Result::ok)
+        .find_map(|info| info.canonname)
 }
 
 fn parse_bind_ip(bind_host: &str) -> Option<IpAddr> {
@@ -384,28 +436,28 @@ mod tests {
         // The LAN case the IP-literal rule does not cover: a browser on another
         // machine addresses this box by NAME, and that Host used to be refused
         // no matter how the operator bound the socket.
-        let names = ["impulse".to_string(), "impulse.local".to_string()];
+        let names = ["node7".to_string(), "node7.local".to_string()];
         let policy = HostPolicy::from_bind_with_local_names("0.0.0.0", 3000, &[], &names);
 
-        assert!(policy.accepts_authority("impulse:3000"));
-        assert!(policy.accepts_authority("impulse.local:3000"));
+        assert!(policy.accepts_authority("node7:3000"));
+        assert!(policy.accepts_authority("node7.local:3000"));
         // Same as a configured entry: bare too, for a proxy terminating on 80/443.
-        assert!(policy.accepts_authority("impulse"));
+        assert!(policy.accepts_authority("node7"));
         // Everything the rule did NOT open stays shut.
-        assert!(!policy.accepts_authority("impulse:3001"));
+        assert!(!policy.accepts_authority("node7:3001"));
         assert!(!policy.accepts_authority("evil.test:3000"));
-        assert!(!policy.accepts_authority("impulse.evil.test:3000"));
-        assert!(!policy.accepts_authority("evil.impulse:3000"));
+        assert!(!policy.accepts_authority("node7.evil.test:3000"));
+        assert!(!policy.accepts_authority("evil.node7:3000"));
     }
 
     #[test]
     fn a_bind_to_one_lan_interface_also_answers_to_this_machines_names() {
         // Narrowing the bind to one interface does not change how a browser
         // spells the machine, so the names have to come along.
-        let names = ["impulse".to_string()];
+        let names = ["node7".to_string()];
         let policy = HostPolicy::from_bind_with_local_names("192.168.0.16", 3000, &[], &names);
 
-        assert!(policy.accepts_authority("impulse:3000"));
+        assert!(policy.accepts_authority("node7:3000"));
         assert!(policy.accepts_authority("192.168.0.16:3000"));
         // Still not a wildcard bind: other IP literals are not ours.
         assert!(!policy.accepts_authority("10.0.0.5:3000"));
@@ -416,11 +468,11 @@ mod tests {
         // Nothing off this machine can reach a loopback socket, so there is no
         // LAN case to serve — and every name admitted here would be a
         // rebinding target bought for nothing.
-        let names = ["impulse".to_string(), "impulse.local".to_string()];
+        let names = ["node7".to_string(), "node7.local".to_string()];
         for bind in ["127.0.0.1", "::1", "localhost"] {
             let policy = HostPolicy::from_bind_with_local_names(bind, 3000, &[], &names);
             assert!(
-                !policy.accepts_authority("impulse:3000"),
+                !policy.accepts_authority("node7:3000"),
                 "{bind} bind must not admit the machine's LAN name"
             );
             assert!(policy.accepts_authority("localhost:3000"), "{bind}");
@@ -430,15 +482,79 @@ mod tests {
     #[test]
     fn the_local_names_are_the_hostname_and_its_mdns_spelling() {
         // Derivation only — what the OS reports is environment, not contract.
-        assert_eq!(local_names_from("impulse"), ["impulse", "impulse.local"]);
+        assert_eq!(local_names_from("node7", None), ["node7", "node7.local"]);
         // Already qualified: `.local` is not appended to a dotted name.
-        assert_eq!(local_names_from("impulse.lan"), ["impulse.lan"]);
-        assert_eq!(local_names_from("Impulse"), ["impulse", "impulse.local"]);
+        assert_eq!(local_names_from("node7.lan", None), ["node7.lan"]);
+        assert_eq!(local_names_from("Node7", None), ["node7", "node7.local"]);
         // A hostname that is not a usable authority yields nothing rather than
         // poisoning the allow-list with something unparseable.
-        assert!(local_names_from("").is_empty());
-        assert!(local_names_from("localhost").is_empty());
-        assert!(local_names_from("not a hostname").is_empty());
+        assert!(local_names_from("", None).is_empty());
+        assert!(local_names_from("localhost", None).is_empty());
+        assert!(local_names_from("not a hostname", None).is_empty());
+    }
+
+    #[test]
+    fn the_resolvers_canonical_name_extends_the_hostname_or_is_ignored() {
+        // The case this exists for: a bare `/etc/hostname` whose FQDN lives in
+        // DNS or `hosts`. Without it, a LAN browser at the machine's real
+        // domain 403s while the same box answers to the bare name and an IP.
+        assert_eq!(
+            local_names_from("node7", Some("node7.example.com")),
+            ["node7", "node7.local", "node7.example.com"]
+        );
+        // Spelling differences in the resolver's answer are not new names.
+        assert_eq!(
+            local_names_from("node7", Some("NODE7.example.com.")),
+            ["node7", "node7.local", "node7.example.com"]
+        );
+        // Canonical name == hostname (the common answer): nothing to add.
+        assert_eq!(
+            local_names_from("node7", Some("node7")),
+            ["node7", "node7.local"]
+        );
+        // An FQDN hostname whose resolver agrees stays a single name.
+        assert_eq!(
+            local_names_from("node7.example.com", Some("node7.example.com")),
+            ["node7.example.com"]
+        );
+
+        // A canonical name that does NOT extend the hostname is not this
+        // machine describing itself — admitting it would hand whoever controls
+        // resolution a rebinding target, which is what the allow-list is for.
+        for hostile in [
+            "evil.test",
+            "node7-evil.test",
+            "notnode7.example.com",
+            "evil.node7",
+            "node7.",
+            "",
+        ] {
+            assert_eq!(
+                local_names_from("node7", Some(hostile)),
+                ["node7", "node7.local"],
+                "{hostile:?} must not reach the allow-list"
+            );
+        }
+    }
+
+    #[test]
+    fn a_reachable_bind_answers_to_the_resolved_fqdn() {
+        // End to end through the policy: the FQDN is accepted bare and on the
+        // bind port, exactly like the hostname it extends.
+        let names = local_names_from("node7", Some("node7.example.com"));
+        let policy = HostPolicy::from_bind_with_local_names("0.0.0.0", 3000, &[], &names);
+
+        assert!(policy.accepts_authority("node7.example.com:3000"));
+        assert!(policy.accepts_authority("node7.example.com"));
+        assert!(policy.accepts_authority("node7:3000"));
+        // The FQDN's neighbours are still not the FQDN.
+        assert!(!policy.accepts_authority("evil.example.com:3000"));
+        assert!(!policy.accepts_authority("node7.example.com.evil.test:3000"));
+        assert!(!policy.accepts_authority("node7.example.com:3001"));
+
+        // …and a loopback bind still answers to no LAN name, FQDN included.
+        let loopback = HostPolicy::from_bind_with_local_names("127.0.0.1", 3000, &[], &names);
+        assert!(!loopback.accepts_authority("node7.example.com:3000"));
     }
 
     #[test]
