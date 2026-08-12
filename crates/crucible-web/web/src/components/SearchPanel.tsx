@@ -9,6 +9,7 @@ import {
   onCleanup,
   onMount,
 } from 'solid-js';
+import { Portal } from 'solid-js/web';
 import { PanelShell } from './PanelShell';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
@@ -27,12 +28,16 @@ import { openFileInEditor } from '@/lib/file-actions';
 import { pathBasename } from '@/stores/statusBarStore';
 import { kilnLabel } from '@/lib/kiln-label';
 import { relativeTime } from '@/lib/format-time';
+import { placePopup, type PopupPlacement } from '@/lib/popup-placement';
 import { treeSectionHeader } from '@/components/tree/tree-style';
 import { Search, FileText, FolderGit2, FlaskConical, ClipboardList, ChevronDown, Check, X } from '@/lib/icons';
 
 const HIT_LIMIT = 60;
 const SEMANTIC_LIMIT = 20;
 const DEBOUNCE_MS = 220;
+/** Scope menu width (was `w-56`) and the height at which its list scrolls. */
+const SCOPE_MENU_WIDTH = 224;
+const SCOPE_MENU_MAX_HEIGHT = 320;
 
 // ---- scope-aware search options --------------------------------------------
 type ScopeKind = 'everywhere' | 'kiln' | 'project' | 'sessions';
@@ -143,6 +148,8 @@ export const SearchPanel: Component = () => {
   const [error, setError] = createSignal<string | null>(null);
 
   let inputRef: HTMLInputElement | undefined;
+  /** The scope chip; the portaled menu is placed against its viewport rect. */
+  let scopeChipRef: HTMLButtonElement | undefined;
 
   const primaryKiln = () => kilnPath();
   const mruProject = () => projects()[0]?.path ?? '';
@@ -260,9 +267,11 @@ export const SearchPanel: Component = () => {
         </div>
 
         {/* Scope picker — prefilled to context; narrows/broadens the search. */}
-        <div class="relative flex items-center gap-1.5 text-[11px]" data-search-scope>
+        {/* No `relative` — the menu is portaled and viewport-positioned. */}
+        <div class="flex items-center gap-1.5 text-[11px]" data-search-scope>
           <span class="text-muted-dark">in</span>
           <button
+            ref={scopeChipRef}
             type="button"
             onClick={() => setPickerOpen((o) => !o)}
             data-testid="search-scope"
@@ -276,6 +285,7 @@ export const SearchPanel: Component = () => {
             <ScopeMenu
               options={scopeOptions()}
               current={scope()}
+              anchor={() => scopeChipRef}
               onPick={pickScope}
               onClose={() => setPickerOpen(false)}
             />
@@ -364,11 +374,56 @@ export const SearchPanel: Component = () => {
   );
 };
 
-const ScopeMenu: Component<{ options: SScope[]; current: SScope; onPick: (s: SScope) => void; onClose: () => void }> = (props) => {
+/**
+ * The scope picker's list.
+ *
+ * Portaled and viewport-positioned for the same reason `ChipSelect` is: the
+ * panel renders inside an EdgePanel whose slide frame is `overflow-hidden` and
+ * whose inner wrapper always carries a `translate` — a stacking context AND a
+ * containing block, so an in-flow `absolute` menu is clipped at the panel's
+ * right edge and painted under the center pane whatever z-index it asks for.
+ */
+const ScopeMenu: Component<{
+  options: SScope[];
+  current: SScope;
+  /** The trigger chip — the menu is placed against its viewport rect. */
+  anchor: () => HTMLElement | undefined;
+  onPick: (s: SScope) => void;
+  onClose: () => void;
+}> = (props) => {
+  const [pos, setPos] = createSignal<PopupPlacement | null>(null);
+  let menuRef: HTMLDivElement | undefined;
+
+  const place = () => {
+    const el = props.anchor();
+    if (!el) return;
+    setPos(
+      placePopup(el.getBoundingClientRect(), { width: window.innerWidth, height: window.innerHeight }, {
+        width: SCOPE_MENU_WIDTH,
+        preferredHeight: SCOPE_MENU_MAX_HEIGHT,
+        gap: 4,
+      }),
+    );
+  };
+
   onMount(() => {
-    const close = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest('[data-search-scope]')) props.onClose(); };
+    place();
+    // Portaled out of `[data-search-scope]`, so containment no longer means
+    // "inside the control" — the menu itself has to be checked too.
+    const close = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if ((t as HTMLElement).closest?.('[data-search-scope]')) return;
+      if (menuRef?.contains(t)) return;
+      props.onClose();
+    };
     document.addEventListener('click', close);
-    onCleanup(() => document.removeEventListener('click', close));
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    onCleanup(() => {
+      document.removeEventListener('click', close);
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    });
   });
   const isSel = (s: SScope) => s.kind === props.current.kind && s.path === props.current.path;
   const Row: Component<{ s: SScope }> = (r) => {
@@ -383,16 +438,31 @@ const ScopeMenu: Component<{ options: SScope[]; current: SScope; onPick: (s: SSc
     );
   };
   return (
-    <div class="absolute left-6 top-6 z-30 w-56 max-h-[320px] overflow-y-auto bg-surface-overlay border border-hairline-strong rounded-lg shadow-xl py-1">
-      <For each={props.options.filter((s) => s.kind === 'everywhere' || s.kind === 'sessions')}>{(s) => <Row s={s} />}</For>
-      <Show when={props.options.some((s) => s.kind === 'kiln')}>
-        <div class="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-dark">Kilns</div>
-        <For each={props.options.filter((s) => s.kind === 'kiln')}>{(s) => <Row s={s} />}</For>
-      </Show>
-      <Show when={props.options.some((s) => s.kind === 'project')}>
-        <div class="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-dark">Projects</div>
-        <For each={props.options.filter((s) => s.kind === 'project')}>{(s) => <Row s={s} />}</For>
-      </Show>
-    </div>
+    <Portal>
+      <div
+        ref={menuRef}
+        data-testid="search-scope-menu"
+        class="z-50 overflow-y-auto bg-surface-overlay border border-hairline-strong rounded-lg shadow-xl py-1"
+        style={{
+          position: 'fixed',
+          left: `${pos()?.left ?? 0}px`,
+          ...(pos()?.bottom !== undefined
+            ? { bottom: `${pos()!.bottom}px` }
+            : { top: `${pos()?.top ?? 0}px` }),
+          width: `${SCOPE_MENU_WIDTH}px`,
+          'max-height': `${pos()?.maxHeight ?? SCOPE_MENU_MAX_HEIGHT}px`,
+        }}
+      >
+        <For each={props.options.filter((s) => s.kind === 'everywhere' || s.kind === 'sessions')}>{(s) => <Row s={s} />}</For>
+        <Show when={props.options.some((s) => s.kind === 'kiln')}>
+          <div class="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-dark">Kilns</div>
+          <For each={props.options.filter((s) => s.kind === 'kiln')}>{(s) => <Row s={s} />}</For>
+        </Show>
+        <Show when={props.options.some((s) => s.kind === 'project')}>
+          <div class="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-dark">Projects</div>
+          <For each={props.options.filter((s) => s.kind === 'project')}>{(s) => <Row s={s} />}</For>
+        </Show>
+      </div>
+    </Portal>
   );
 };

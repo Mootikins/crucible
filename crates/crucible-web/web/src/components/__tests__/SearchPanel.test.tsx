@@ -79,6 +79,21 @@ describe('SearchPanel', () => {
     expect(openFileMock).toHaveBeenCalled();
   });
 
+  // Same constraint as the Navigator's scope swapper: SearchPanel renders
+  // inside the left EdgePanel, whose slide frame is `overflow-hidden` and whose
+  // inner wrapper always carries a `translate` (a stacking context AND a
+  // containing block). An in-flow `absolute` menu is clipped at the panel edge
+  // and painted under the center pane; only a portal escapes.
+  it('renders the scope menu outside the panel subtree, so no ancestor overflow clips it', async () => {
+    const { container } = render(() => <SearchPanel />);
+    fireEvent.click(screen.getByTestId('search-scope'));
+
+    const menu = await screen.findByTestId('search-scope-menu');
+    expect(container.contains(menu)).toBe(false);
+    expect(document.body.contains(menu)).toBe(true);
+    expect(menu.style.position).toBe('fixed');
+  });
+
   it('scoping to Sessions drops the notes/files sections', async () => {
     render(() => <SearchPanel />);
     fireEvent.input(screen.getByTestId('search-input'), { target: { value: 'trust' } });
