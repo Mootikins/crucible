@@ -4,7 +4,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
 import { pwaOptions } from './src/pwa-options';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [solid(), VitePWA(pwaOptions)],
   resolve: {
     alias: {
@@ -29,7 +29,12 @@ export default defineConfig({
   optimizeDeps: {},
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    // Sourcemaps only outside a production build. They were 35 MB across 520
+    // `.map` files, and `dist` is embedded into the `cru` binary with
+    // rust-embed — so shipping them meant every user downloading a debugger aid
+    // for minified code they are not debugging. `vite build --mode development`
+    // keeps them when you actually want them.
+    sourcemap: mode !== 'production',
   },
   test: {
     environment: 'jsdom',
@@ -146,4 +151,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));
