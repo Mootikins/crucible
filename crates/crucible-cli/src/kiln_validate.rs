@@ -1,11 +1,15 @@
-//! Kiln path validation layer.
+//! Kiln path validation for `cru init`.
 //!
-//! Shared between `cru init` and the `cru chat` first-run wizard.
-//! Validates proposed kiln paths with tiered warnings:
-//! - Hard blocks: prevent init entirely
-//! - Strong warnings: default deny, user must confirm
-//! - Mild warnings: default allow, inform user
-//! - Info: no confirmation needed
+//! `cru init` is the only caller (`commands/init.rs:54`); the `cru chat`
+//! first-run auto-create path does not validate at all, so treat "shared
+//! validation layer" as aspirational.
+//!
+//! Severity ranks how bad a location is, not what init does about it. Only
+//! [`ValidationSeverity::HardBlock`] changes control flow — the "strong warning
+//! means default deny, ask for confirmation" gate the tier names imply was
+//! never built, so warnings print and init proceeds. Findings are also
+//! informational only in the exit-code sense: a git repo or a temp directory
+//! must stay exit 0, because scripts init into both.
 
 use std::path::{Path, PathBuf};
 
@@ -18,8 +22,6 @@ pub enum ValidationSeverity {
     StrongWarning,
     /// Mildly discouraged. Default answer is Yes — just inform the user.
     MildWarning,
-    /// Informational. No confirmation needed.
-    Info,
 }
 
 /// A single validation finding.
@@ -36,7 +38,7 @@ pub struct ValidationFinding {
 pub struct ValidationResult {
     /// All findings, ordered by severity (hard blocks first).
     pub findings: Vec<ValidationFinding>,
-    /// Number of `.md` files found if the path exists (0 if doesn't exist).
+    /// Number of markdown notes found if the path exists (0 if it doesn't).
     pub markdown_file_count: usize,
 }
 
@@ -80,7 +82,6 @@ pub fn validate_kiln_path(path: &Path) -> ValidationResult {
     // Resolve the path (expand symlinks if it exists, otherwise use as-is)
     let resolved = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
     let path_exists = resolved.exists();
-    let is_existing_kiln = resolved.join(".crucible").is_dir();
 
     // --- Hard blocks ---
 
@@ -185,50 +186,20 @@ pub fn validate_kiln_path(path: &Path) -> ValidationResult {
         });
     }
 
-    // --- Info (no confirmation needed) ---
-
-    // Re-init of existing kiln
-    if is_existing_kiln {
-        findings.push(ValidationFinding {
-            severity: ValidationSeverity::Info,
-            message: "A kiln already exists here.".to_string(),
-            suggestion: Some("Using the existing kiln. No changes made.".to_string()),
-        });
-    }
-
-    // Non-existent path
-    if !path_exists {
-        findings.push(ValidationFinding {
-            severity: ValidationSeverity::Info,
-            message: "This directory doesn't exist yet.".to_string(),
-            suggestion: None,
-        });
-    }
-
-    // Count markdown files if path exists
+    // Reported as a count rather than a finding: `cru init` prints it from
+    // `markdown_file_count` in its success block, which is the better moment —
+    // after the kiln exists.
     let markdown_file_count = if path_exists {
         count_markdown_files(&resolved)
     } else {
         0
     };
 
-    if markdown_file_count > 0 {
-        findings.push(ValidationFinding {
-            severity: ValidationSeverity::Info,
-            message: format!(
-                "Found {} markdown file(s). Crucible will index these but won't modify them.",
-                markdown_file_count
-            ),
-            suggestion: None,
-        });
-    }
-
     // Sort by severity (hard blocks first)
     findings.sort_by_key(|f| match f.severity {
         ValidationSeverity::HardBlock => 0,
         ValidationSeverity::StrongWarning => 1,
         ValidationSeverity::MildWarning => 2,
-        ValidationSeverity::Info => 3,
     });
 
     ValidationResult {
@@ -325,13 +296,18 @@ fn find_ancestor_files(path: &Path, names: &[&str]) -> Option<String> {
     None
 }
 
-/// Count `.md` files in a directory (non-recursive, top level only to keep it fast).
+/// Count markdown notes in a directory (non-recursive, top level only to keep
+/// it fast).
+///
+/// Uses the canonical predicate rather than an inline `ext == "md"` so this
+/// agrees with what the indexer will actually pick up — `.markdown` and
+/// uppercase extensions included.
 fn count_markdown_files(path: &Path) -> usize {
     std::fs::read_dir(path)
         .map(|entries| {
             entries
                 .filter_map(|e| e.ok())
-                .filter(|e| e.path().extension().map(|ext| ext == "md").unwrap_or(false))
+                .filter(|e| crucible_core::kiln::is_note_file(&e.path()))
                 .count()
         })
         .unwrap_or(0)
@@ -347,15 +323,6 @@ mod tests {
         !result
             .findings_by_severity(ValidationSeverity::StrongWarning)
             .is_empty()
-    }
-
-    /// Whether an Info finding carries `needle` — the only channel through
-    /// which "already a kiln" / "doesn't exist yet" reaches a caller.
-    fn info_says(result: &ValidationResult, needle: &str) -> bool {
-        result
-            .findings_by_severity(ValidationSeverity::Info)
-            .iter()
-            .any(|f| f.message.contains(needle))
     }
 
     #[test]
@@ -396,7 +363,6 @@ mod tests {
         let kiln_path = tmp.path().join("my-notes");
         let result = validate_kiln_path(&kiln_path);
         assert!(!result.is_blocked());
-        assert!(info_says(&result, "doesn't exist yet"));
         let non_temp_strong: Vec<_> = result
             .findings_by_severity(ValidationSeverity::StrongWarning)
             .into_iter()
@@ -407,14 +373,6 @@ mod tests {
             "unexpected strong warnings: {:?}",
             non_temp_strong
         );
-    }
-
-    #[test]
-    fn test_validate_existing_kiln() {
-        let tmp = TempDir::new().unwrap();
-        std::fs::create_dir_all(tmp.path().join(".crucible")).unwrap();
-        let result = validate_kiln_path(tmp.path());
-        assert!(info_says(&result, "already exists"));
     }
 
     #[test]
@@ -486,10 +444,42 @@ mod tests {
         std::fs::write(tmp.path().join("readme.txt"), "not md").unwrap();
         let result = validate_kiln_path(tmp.path());
         assert_eq!(result.markdown_file_count, 2);
-        assert!(result
-            .findings
+    }
+
+    /// The count promises what the indexer will pick up, so it goes through the
+    /// canonical predicate: `.markdown` and an uppercase `.MD` are notes, and
+    /// counting only lowercase `.md` under-reported a synced vault.
+    #[test]
+    fn test_validate_markdown_count_matches_the_indexable_extensions() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("lower.md"), "# a").unwrap();
+        std::fs::write(tmp.path().join("Upper.MD"), "# b").unwrap();
+        std::fs::write(tmp.path().join("long.markdown"), "# c").unwrap();
+        std::fs::write(tmp.path().join("board.canvas"), "{}").unwrap();
+        std::fs::write(tmp.path().join("image.png"), "").unwrap();
+        let result = validate_kiln_path(tmp.path());
+        assert_eq!(result.markdown_file_count, 3);
+    }
+
+    /// The cloud-sync message alone only says where you are; the suggestion is
+    /// the whole actionable content, and `cru init` prints it under `Note:`.
+    #[test]
+    fn test_validate_cloud_sync_folder_carries_its_suggestion() {
+        let tmp = TempDir::new().unwrap();
+        let kiln_path = tmp.path().join("Dropbox").join("notes");
+        std::fs::create_dir_all(&kiln_path).unwrap();
+        let result = validate_kiln_path(&kiln_path);
+
+        let mild = result.findings_by_severity(ValidationSeverity::MildWarning);
+        let cloud: Vec<_> = mild
             .iter()
-            .any(|f| f.message.contains("2 markdown file(s)")));
+            .filter(|f| f.message.contains("cloud sync folder"))
+            .collect();
+        assert_eq!(cloud.len(), 1, "expected one cloud-sync finding: {mild:?}");
+        assert_eq!(
+            cloud[0].suggestion.as_deref(),
+            Some("Markdown notes sync fine, but the database may have conflicts.")
+        );
     }
 
     #[test]
@@ -511,6 +501,5 @@ mod tests {
         let result = validate_kiln_path(tmp.path());
         // Re-init should NOT be blocked — it's idempotent
         assert!(!result.is_blocked());
-        assert!(info_says(&result, "already exists"));
     }
 }

@@ -72,6 +72,9 @@ pub async fn execute(
 
     for finding in validation.findings_by_severity(ValidationSeverity::MildWarning) {
         eprintln!("{} {}", "Note:".blue().bold(), finding.message);
+        if let Some(ref suggestion) = finding.suggestion {
+            eprintln!("  {}", suggestion);
+        }
     }
 
     // Detect what this directory already is
