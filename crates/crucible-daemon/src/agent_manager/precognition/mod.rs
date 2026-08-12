@@ -430,14 +430,25 @@ impl AgentManager {
     ) -> Option<crucible_core::traits::ContextMessage> {
         let kiln_path = session.kiln.as_path();
 
+        // Every failure below this point emits, because the gate already said
+        // Precognition should run for this turn. A silent `None` leaves the
+        // transcript unable to say whether the answer was grounded — which is
+        // the whole reason `PrecognitionComplete` is persisted rather than
+        // being a live-only notification. `kilns_searched` is 0 when the primary
+        // kiln never opened and 1 once it did.
         let handle = match self.kiln_manager.get_or_open(kiln_path).await {
             Ok(h) => h,
             Err(error) => {
                 warn!(session_id = %session_id, error = %error, "Failed to open kiln for precognition");
+                emit_precognition_event(event_tx, session_id, original_content, 0, 0, 1, None);
                 return None;
             }
         };
 
+        // The one silent path, and deliberately so: no enrichment provider
+        // configured is the default state, not a failure. Emitting here would
+        // report a grounding failure on the first message of every session that
+        // has never configured embeddings.
         let primary_config = self.kiln_manager.enrichment_config().cloned()?;
 
         let embedding_provider = match crate::embedding::get_or_create_embedding_provider(
@@ -448,6 +459,7 @@ impl AgentManager {
             Ok(p) => p,
             Err(error) => {
                 warn!(session_id = %session_id, error = %error, "Failed to create embedding provider for precognition");
+                emit_precognition_event(event_tx, session_id, original_content, 0, 1, 1, None);
                 return None;
             }
         };

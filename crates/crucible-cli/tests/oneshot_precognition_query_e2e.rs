@@ -158,7 +158,12 @@ fn find_event<'a>(events: &'a [serde_json::Value], name: &str) -> Option<&'a ser
 fn expect_event<'a>(events: &'a [serde_json::Value], name: &str) -> &'a serde_json::Value {
     find_event(events, name).unwrap_or_else(|| {
         let seen: Vec<&str> = events.iter().filter_map(|e| e["event"].as_str()).collect();
-        panic!("no `{name}` event in transcript; saw {seen:?}")
+        // The whole transcript, not just the names. A `["user_message",
+        // "ended"]` failure means the turn stopped early, and the reason is in
+        // `ended`'s payload — printing names alone hid that through several
+        // rounds of diagnosis.
+        let full = serde_json::to_string_pretty(&events).unwrap_or_default();
+        panic!("no `{name}` event in transcript; saw {seen:?}\nfull transcript:\n{full}")
     })
 }
 
