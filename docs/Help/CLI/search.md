@@ -29,6 +29,13 @@ Full-text search runs over an FTS5 index of every note's **title and body**, ran
 
 Notes are indexed as they are processed — by `cru process`, and automatically by the file watcher while the daemon is running. A kiln first opened by a build that predates the text index is backfilled once, on open.
 
+`.txt` files in a kiln are full-text searchable too. They are indexed for their
+body and nothing else — a plain text file has no frontmatter, tags, wikilinks or
+headings, so it does not appear in the link graph, is not a wikilink target, and
+is not counted as markdown by `cru stats`. `.rst` and `.adoc` are **not**
+indexed: reading them with a markdown parser would produce wrong headings and
+miss their links, so they need real parsers first.
+
 Your query is treated as literal words, not FTS5 query syntax: punctuation and operators like `AND` search for themselves.
 
 ## MCP search tools

@@ -48,8 +48,18 @@ curl -fsSL https://github.com/Mootikins/crucible/releases/latest/download/crucib
 **From source** (needs a Rust toolchain and `protoc`; `apt install protobuf-compiler` or `brew install protobuf`):
 
 ```bash
-cargo install --git https://github.com/Mootikins/crucible.git crucible-cli
+cargo install --git https://github.com/Mootikins/crucible.git --locked crucible-cli
 ```
+
+`--locked` is required, not optional: without it Cargo re-resolves and picks a
+`jaq-std` that does not compile against the pinned `jaq-json`.
+
+The CLI, TUI and daemon need no JavaScript toolchain. `cru web` does: the UI is
+compiled into the binary from `crates/crucible-web/web/dist`, which is a
+[bun](https://bun.sh) build artifact and is not in the repository. A `cargo
+install` therefore gives you everything except the web UI, and `cru web` serves a
+page saying so. To get it, clone and run `just install` (or `just web-build`
+before `cargo build`) — or use a pre-built binary above, which ships it.
 
 ## Quick Start
 

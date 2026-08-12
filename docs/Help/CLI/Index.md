@@ -66,6 +66,31 @@ Complete reference for all Crucible CLI commands.
 -V, --version               Print version
 ```
 
+## Output formats
+
+Commands that render a result take `-f/--format`. There is no global
+`--format` — each command declares its own, because they do not all offer the
+same thing.
+
+| Vocabulary | Commands | Values |
+|---|---|---|
+| Record lists | `search`, `models`, `tools list`, `skills list`, `proposals list`, `workflow list` | `table`, `json`, `plain` |
+| Reports and trees | `stats`, `status`, `doctor`, `workflow show` | `text`, `json` |
+| Config | `config show`, `config dump` | `toml`, `json` |
+| Sessions | `session list`, `session show`, … | `text`, `json` (`markdown` on `show`) |
+
+**The default depends on where output is going.** For the record-list commands, a
+terminal gets `table` and a pipe or a redirect gets `plain`, so `cru models`
+reads well on screen and `cru models | while read -r ...` gets unadorned lines
+without you passing a flag. An explicit `--format` always wins.
+
+`table` and `plain` are still accepted on the report commands as aliases for
+`text`, because `table` used to be their documented default.
+
+An unrecognised value is an error. Earlier versions accepted anything and
+silently fell back to human-readable output, which is how `csv` came to be
+advertised on commands that never had a CSV writer.
+
 ## cru doctor
 
 Run bounded installation diagnostics:

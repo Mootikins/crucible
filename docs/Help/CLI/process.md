@@ -20,6 +20,11 @@ cru process [OPTIONS]
 
 The `process` command parses all markdown files in your kiln and stores structured data in the local database. This enables semantic search, knowledge graph queries, and AI agent integration.
 
+**What gets processed:** `.md` and `.markdown` notes, `.canvas` documents, and
+`.txt` files. Notes and canvases contribute links to the graph; plain text is
+indexed for full-text search only. Everything else in the kiln — images, PDFs,
+attachments — is left alone.
+
 **What processing does:**
 - Parses markdown files for structure
 - Extracts frontmatter metadata
@@ -88,7 +93,7 @@ cru process --force
 
 Files go through these stages:
 
-1. **Discovery** - Find all `.md` files in kiln
+1. **Discovery** - Find every indexable file in the kiln (`.md`, `.markdown`, `.canvas`, `.txt`)
 2. **Filtering** - Skip ignored directories (`.crucible`, `.git`, etc.)
 3. **Hashing** - Check for content changes
 4. **Parsing** - Extract structure from markdown

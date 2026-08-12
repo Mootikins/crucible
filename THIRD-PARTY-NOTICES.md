@@ -360,7 +360,7 @@ as `Apache-2.0 OR GPL-2.0-only`; Crucible elects **Apache-2.0**.
 
 ---
 
-## Rust crates (817)
+## Rust crates (810)
 
 Linked into the released binary.
 
@@ -459,7 +459,6 @@ Linked into the released binary.
 | `chacha20` | 0.10.1 | MIT OR Apache-2.0 |
 | `chrono` | 0.4.45 | MIT OR Apache-2.0 |
 | `chrono-tz` | 0.10.4 | MIT OR Apache-2.0 |
-| `chumsky` | 0.13.0 | MIT |
 | `ciborium` | 0.2.2 | Apache-2.0 |
 | `ciborium-io` | 0.2.2 | Apache-2.0 |
 | `ciborium-ll` | 0.2.2 | Apache-2.0 |
@@ -501,12 +500,12 @@ Linked into the released binary.
 | `crossbeam-utils` | 0.8.21 | MIT OR Apache-2.0 |
 | `crossterm` | 0.28.1 | MIT |
 | `crossterm` | 0.29.0 | MIT |
-| `crucible-cli` | 0.23.0 | MIT OR Apache-2.0 |
-| `crucible-core` | 0.23.0 | MIT OR Apache-2.0 |
-| `crucible-daemon` | 0.23.0 | MIT OR Apache-2.0 |
-| `crucible-lua` | 0.23.0 | MIT OR Apache-2.0 |
-| `crucible-oil` | 0.23.0 | MIT OR Apache-2.0 |
-| `crucible-web` | 0.23.0 | MIT OR Apache-2.0 |
+| `crucible-cli` | 0.24.0 | MIT OR Apache-2.0 |
+| `crucible-core` | 0.24.0 | MIT OR Apache-2.0 |
+| `crucible-daemon` | 0.24.0 | MIT OR Apache-2.0 |
+| `crucible-lua` | 0.24.0 | MIT OR Apache-2.0 |
+| `crucible-oil` | 0.24.0 | MIT OR Apache-2.0 |
+| `crucible-web` | 0.24.0 | MIT OR Apache-2.0 |
 | `crunchy` | 0.2.4 | MIT |
 | `crypto-common` | 0.1.7 | MIT OR Apache-2.0 |
 | `crypto-common` | 0.2.2 | MIT OR Apache-2.0 |
@@ -877,7 +876,6 @@ Linked into the released binary.
 | `ort` | 2.0.0-rc.11 | MIT OR Apache-2.0 |
 | `ort-sys` | 2.0.0-rc.11 | MIT OR Apache-2.0 |
 | `page_size` | 0.6.0 | MIT/Apache-2.0 |
-| `papergrid` | 0.18.0 | MIT |
 | `parking` | 2.2.1 | Apache-2.0 OR MIT |
 | `parking_lot` | 0.12.5 | MIT OR Apache-2.0 |
 | `parking_lot_core` | 0.9.12 | MIT OR Apache-2.0 |
@@ -912,8 +910,6 @@ Linked into the released binary.
 | `powerfmt` | 0.2.0 | MIT OR Apache-2.0 |
 | `pprof` | 0.15.0 | Apache-2.0 |
 | `ppv-lite86` | 0.2.21 | MIT OR Apache-2.0 |
-| `proc-macro-error-attr2` | 2.0.0 | MIT OR Apache-2.0 |
-| `proc-macro-error2` | 2.0.1 | MIT OR Apache-2.0 |
 | `proc-macro2` | 1.0.106 | MIT OR Apache-2.0 |
 | `process-wrap` | 9.1.0 | Apache-2.0 OR MIT |
 | `prodash` | 31.0.0 | MIT |
@@ -1061,14 +1057,11 @@ Linked into the released binary.
 | `sync_wrapper` | 1.0.2 | Apache-2.0 |
 | `synstructure` | 0.13.2 | MIT |
 | `syntect` | 5.3.0 | MIT |
-| `tabled` | 0.21.0 | MIT |
-| `tabled_derive` | 0.11.0 | MIT |
 | `taffy` | 0.12.2 | MIT |
 | `tagptr` | 0.2.0 | MIT/Apache-2.0 |
 | `tap` | 1.0.1 | MIT |
 | `tempfile` | 3.27.0 | MIT OR Apache-2.0 |
 | `termcolor` | 1.4.1 | Unlicense OR MIT |
-| `testing_table` | 0.3.0 | MIT |
 | `textwrap` | 0.16.2 | MIT |
 | `thiserror` | 1.0.69 | MIT OR Apache-2.0 |
 | `thiserror` | 2.0.19 | MIT OR Apache-2.0 |
@@ -1186,7 +1179,7 @@ Linked into the released binary.
 
 ---
 
-## npm packages (828)
+## npm packages (845)
 
 Installed in the web tree; a subset is bundled into the shipped UI.
 
@@ -1383,7 +1376,11 @@ Installed in the web tree; a subset is bundled into the shipped UI.
 | `@lezer/yaml` | 1.0.4 | MIT |
 | `@marijn/find-cluster-break` | 1.0.2 | MIT |
 | `@mermaid-js/parser` | 1.2.0 | MIT |
-| `@oxc-project/types` | 0.124.0 | MIT |
+| `@oxc-parser/binding-linux-x64-gnu` | 0.143.0 | MIT |
+| `@oxc-parser/binding-linux-x64-musl` | 0.143.0 | MIT |
+| `@oxc-project/types` | 0.143.0 | MIT |
+| `@oxc-resolver/binding-linux-x64-gnu` | 11.24.2 | MIT |
+| `@oxc-resolver/binding-linux-x64-musl` | 11.24.2 | MIT |
 | `@playwright/test` | 1.59.1 | Apache-2.0 |
 | `@protobufjs/aspromise` | 1.1.2 | BSD-3-Clause |
 | `@protobufjs/base64` | 1.1.2 | BSD-3-Clause |
@@ -1709,11 +1706,13 @@ Installed in the web tree; a subset is bundled into the shipped UI.
 | `fast-deep-equal` | 3.1.3 | MIT |
 | `fast-json-stable-stringify` | 2.1.0 | MIT |
 | `fast-uri` | 3.1.2 | BSD-3-Clause |
+| `fd-package-json` | 2.0.0 | MIT |
 | `fdir` | 6.5.0 | MIT |
 | `filelist` | 1.0.6 | Apache-2.0 |
 | `flatbuffers` | 25.9.23 | Apache-2.0 |
 | `for-each` | 0.3.5 | MIT |
 | `foreground-child` | 3.3.1 | ISC |
+| `formatly` | 0.3.0 | MIT |
 | `fs-extra` | 9.1.0 | MIT |
 | `function-bind` | 1.1.2 | MIT |
 | `function.prototype.name` | 1.1.8 | MIT |
@@ -1724,6 +1723,7 @@ Installed in the web tree; a subset is bundled into the shipped UI.
 | `get-own-enumerable-property-symbols` | 3.0.2 | ISC |
 | `get-proto` | 1.0.1 | MIT |
 | `get-symbol-description` | 1.1.0 | MIT |
+| `get-tsconfig` | 4.14.1 | MIT |
 | `glob` | 11.1.0 | BlueOak-1.0.0 |
 | `global-agent` | 3.0.0 | BSD-3-Clause |
 | `globalthis` | 1.0.4 | MIT |
@@ -1785,7 +1785,7 @@ Installed in the web tree; a subset is bundled into the shipped UI.
 | `istanbul-reports` | 3.2.0 | BSD-3-Clause |
 | `jackspeak` | 4.2.3 | BlueOak-1.0.0 |
 | `jake` | 10.9.4 | Apache-2.0 |
-| `jiti` | 2.6.1 | MIT |
+| `jiti` | 2.7.0 | MIT |
 | `js-tokens` | 10.0.0 | MIT |
 | `jsdom` | 29.0.2 | MIT |
 | `jsesc` | 3.1.0 | MIT |
@@ -1796,6 +1796,7 @@ Installed in the web tree; a subset is bundled into the shipped UI.
 | `jsonpointer` | 5.0.1 | MIT |
 | `katex` | 0.18.1 | MIT |
 | `khroma` | 2.1.0 | MIT (from file) |
+| `knip` | 6.32.2 | ISC |
 | `layout-base` | 1.0.2 | MIT |
 | `leven` | 3.1.0 | MIT |
 | `lightningcss` | 1.32.0 | MPL-2.0 |
@@ -1842,6 +1843,8 @@ Installed in the web tree; a subset is bundled into the shipped UI.
 | `onnxruntime-node` | 1.24.3 | MIT |
 | `onnxruntime-web` | 1.25.0-dev.20260327-722743c0e2 | MIT |
 | `own-keys` | 1.0.1 | MIT |
+| `oxc-parser` | 0.143.0 | MIT |
+| `oxc-resolver` | 11.24.2 | MIT |
 | `package-json-from-dist` | 1.0.1 | BlueOak-1.0.0 |
 | `package-manager-detector` | 1.8.0 | MIT |
 | `parse5` | 8.0.0 | MIT |
@@ -1852,7 +1855,7 @@ Installed in the web tree; a subset is bundled into the shipped UI.
 | `pathe` | 2.0.3 | MIT |
 | `perfect-freehand` | 1.2.3 | MIT |
 | `picocolors` | 1.1.1 | ISC |
-| `picomatch` | 4.0.4 | MIT |
+| `picomatch` | 4.0.5 | MIT |
 | `platform` | 1.3.6 | MIT |
 | `playwright` | 1.59.1 | Apache-2.0 |
 | `playwright-core` | 1.59.1 | Apache-2.0 |
@@ -1885,6 +1888,7 @@ Installed in the web tree; a subset is bundled into the shipped UI.
 | `regjsparser` | 0.13.1 | BSD-2-Clause |
 | `require-from-string` | 2.0.2 | MIT |
 | `resolve` | 1.22.12 | MIT |
+| `resolve-pkg-maps` | 1.0.0 | MIT |
 | `roarr` | 2.15.4 | BSD-3-Clause |
 | `robust-predicates` | 3.0.3 | Unlicense |
 | `rolldown` | 1.0.0-rc.15 | MIT |
@@ -1916,6 +1920,7 @@ Installed in the web tree; a subset is bundled into the shipped UI.
 | `siginfo` | 2.0.0 | ISC |
 | `signal-exit` | 4.1.0 | ISC |
 | `smob` | 1.6.2 | MIT |
+| `smol-toml` | 1.8.0 | BSD-3-Clause |
 | `solid-js` | 1.9.12 | MIT |
 | `solid-prevent-scroll` | 0.1.10 | MIT |
 | `solid-refresh` | 0.6.3 | MIT |
@@ -1935,6 +1940,7 @@ Installed in the web tree; a subset is bundled into the shipped UI.
 | `stringify-object` | 3.3.0 | BSD-2-Clause |
 | `strip-comments` | 2.0.1 | MIT |
 | `strip-indent` | 3.0.0 | MIT |
+| `strip-json-comments` | 5.0.3 | MIT |
 | `style-mod` | 4.1.3 | MIT |
 | `stylis` | 4.4.0 | MIT |
 | `supports-color` | 7.2.0 | MIT |
@@ -1947,7 +1953,7 @@ Installed in the web tree; a subset is bundled into the shipped UI.
 | `terser` | 5.48.0 | BSD-2-Clause |
 | `tinybench` | 2.9.0 | MIT |
 | `tinyexec` | 1.1.1 | MIT |
-| `tinyglobby` | 0.2.16 | MIT |
+| `tinyglobby` | 0.2.17 | MIT |
 | `tinyrainbow` | 3.1.0 | MIT |
 | `tldts` | 7.0.28 | MIT |
 | `tldts-core` | 7.0.28 | MIT |
@@ -1963,6 +1969,7 @@ Installed in the web tree; a subset is bundled into the shipped UI.
 | `typed-array-length` | 1.0.8 | MIT |
 | `typescript` | 6.0.2 | Apache-2.0 |
 | `uc.micro` | 2.1.0 | MIT |
+| `unbash` | 4.0.10 | ISC |
 | `unbox-primitive` | 1.1.0 | MIT |
 | `undici` | 7.24.7 | MIT |
 | `undici-types` | 7.18.2 | MIT |
@@ -1991,6 +1998,7 @@ Installed in the web tree; a subset is bundled into the shipped UI.
 | `vitest` | 4.1.4 | MIT |
 | `w3c-keyname` | 2.2.8 | MIT |
 | `w3c-xmlserializer` | 5.0.0 | MIT |
+| `walk-up-path` | 4.0.0 | ISC |
 | `webidl-conversions` | 8.0.1 | BSD-2-Clause |
 | `whatwg-mimetype` | 5.0.0 | MIT |
 | `whatwg-url` | 16.0.1 | MIT |
@@ -2019,5 +2027,7 @@ Installed in the web tree; a subset is bundled into the shipped UI.
 | `xml-name-validator` | 5.0.0 | Apache-2.0 |
 | `xmlchars` | 2.2.0 | MIT |
 | `yallist` | 3.1.1 | ISC |
+| `yaml` | 2.9.0 | ISC |
+| `zod` | 4.4.3 | MIT |
 | `zwitch` | 2.0.4 | MIT |
 

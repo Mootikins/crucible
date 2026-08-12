@@ -7,6 +7,144 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-08-12
+
+The CLI stops lying. `cru stats -f csv` exited 0 and printed emoji prose;
+`cru storage verify -f json` told a script it got JSON and printed a human
+report; a global `--format` was declared, defaulted, documented, and read by
+nothing. Underneath each of those was a lenient parser that mapped every
+unrecognised value to "human-readable" and so could never reveal the gap.
+
+The pattern held everywhere it was looked for. A validation tier constructed
+findings nothing displayed. A daemon event was emitted from four sites with no
+consumer anywhere but its own test. "Is this file markdown?" was answered
+independently in about twenty Rust places and five TypeScript ones, and the
+answers disagreed. In each case removing the dead surface exposed a live bug
+behind it — the clearest being a byte-offset string slice that only looked
+unreachable because the flag guarding it was hardcoded off, while the same
+expression sat on `cru agents list`'s default path, crashing on any agent card
+whose description contained an em dash.
+
+Across 353 files that is 20,700 lines added against 21,900 removed — the
+deletions are large, and most of what replaced them is tests and the two features
+below. There is also a new test tier for the process-boundary tests nothing had
+been running, which caught four failures on its first run.
+
+### Added
+- **`cru search -c/--preview`** shows a content snippet per hit again. The
+  parameter had been threaded through both formatters and then hardcoded `false`
+  at the only call site since the command was rewritten, so no user could reach
+  it — while `-f json` emitted the same field all along.
+- **`.txt` files in a kiln are full-text searchable.** Indexed for their body and
+  nothing else: plain text is its own kind, so it does not join the link graph,
+  is not a wikilink target, and is not counted as markdown. `.rst` and `.adoc`
+  stay out — a markdown parser reads their directives as literal text, which
+  would mean wrong titles and a link graph that silently omits references.
+- **`cru stats` counts each kind it indexes** — markdown, canvases, plain text —
+  and reports the total. Separate counts because the kinds are not
+  interchangeable, and the extra lines only appear when the kiln has them.
+- **A gated test tier** (`just test gated`) runs the 72 `#[ignore]`d tests whose
+  prerequisites are hermetic — a built `cru`, the mock ACP agent, this repo's
+  docs kiln. They were skipped by every previous run, and the first one to
+  include them found four tests that had been failing invisibly for three days.
+- **The session event vocabulary is typed end to end**, including a `stream_gap`
+  variant so a client that falls behind is told how many events it lost instead
+  of the web layer silently dropping the lag.
+- **knip** for import-dead frontend code, with both configuration mistakes worth
+  making written down.
+
+### Changed
+- **`--format` is a typed vocabulary, and an unknown value is now an error.** The
+  global `--format` is gone; `csv`, `detailed` and `binary` are gone because
+  nothing implemented them. Record-list commands take `table|json|plain`; reports
+  and trees take `text|json`, with `table` and `plain` kept as aliases since
+  `table` was their documented default. `cru session` and `cru config` still
+  parse their own vocabularies from strings and still fall through silently on an
+  unknown value — the same defect, not yet converted.
+- **The default format depends on where output is going.** A terminal gets
+  `table`, a pipe or a redirect gets `plain`, so `cru models` reads well on
+  screen and parses cleanly in `cru models | while read -r ...` with no flag
+  either way. An explicit `--format` always wins.
+- **`cru storage {stats,verify,backup,restore} --format` is removed.** It was
+  bound to a discarded parameter, so even `-f json` did nothing.
+- **`cru stats` has no table rendering.** Four counts and a path are not tabular
+  data; a table only made it wider.
+- **Table inner borders are solid.** `UTF8_FULL` draws only the outer frame
+  solid and leaves row separators dashed.
+- **`.txt` and `.canvas` appear in the agent-facing `notes list`.** An agent that
+  can search a file should be able to list it.
+- **`cru models` no longer prints a "switch model in chat with" hint.**
+- **The embedded web bundle no longer carries sourcemaps.** `vite.config.ts` set
+  `sourcemap: true` unconditionally, so `web/dist` was 76 MB of which 35 MB was
+  520 `.map` files — a debugger aid for minified code, baked into every binary.
+  Now 41 MB. (The rest is 535 lazily-loaded shiki grammar chunks that a browser
+  fetches on demand and rust-embed bakes in wholesale; trimming those is
+  outstanding.)
+- **`cargo install --git` needs `--locked`**, and the README now says so. Without
+  it Cargo re-resolves and picks a `jaq-std` that will not compile against the
+  pinned `jaq-json`. A new `just install` recipe builds through the workspace and
+  copies the binary, which also avoids repeating the LTO link.
+- **`crucible-web` has a build script that checks for the frontend** and fails a
+  build declaring `CRUCIBLE_REQUIRE_WEB_UI` when it is absent, so a release cannot
+  quietly ship a placeholder web UI. It deliberately does **not** run the bundler:
+  that would write outside `OUT_DIR` — into cargo's own git checkout during
+  `cargo install --git` — which the Cargo book forbids and which other projects
+  have been bitten by.
+
+### Fixed
+- **`cru agents list` crashed on any agent card description containing an em
+  dash or an accent past byte 32.** `&description[..32]` is a byte-offset slice
+  and descriptions are hand-authored frontmatter. The same fault class is fixed
+  in the search preview, the API-key mask, and the markdown-it panic-recovery
+  path — where a panic turned a recovered parse error into an abort.
+- **`cru auth list` under-reported which credentials you have.** It checked three
+  provider names from a list in the function, and the helper it called for env
+  var names was a second hardcoded map with two arms, so `OPENROUTER_API_KEY`,
+  `GLM_AUTH_TOKEN` and Cohere's key were invisible to the command whose whole job
+  is reporting them. Enumeration now derives from backend metadata.
+- **Files named `Reading List.markdown` or `Daily.MD` were treated
+  inconsistently** — indexed, searchable and backlinked, while `cru stats`,
+  `cru kiln validate`, `cru workflow` and the editor's drag-and-drop each
+  disagreed about whether they existed. One predicate now answers it, with an
+  architecture test that fails if anyone hand-rolls another copy.
+- **A failed grounding pass left no trace in the transcript.** Three of four
+  early returns in Precognition returned silently, so a resumed session could not
+  say whether an answer was grounded — which is the entire reason the event is
+  persisted.
+- **`session.jsonl` was written in one format and read in another**, leaving six
+  APIs empty and re-firing precognition on every restart.
+- **A model switch could report success while the agent answered as the old
+  model**, and an ended session could be persisted as active.
+- **Lua fixes:** `cru.storage.set` failed on a foreign key, `cru.kiln`'s
+  outlinks/backlinks/neighbors were stubs that always returned empty, and plugin
+  handler names collided on reload — most likely to hit a user's own `init.lua`.
+- **Web:** opening an image 404'd, and the navigator's scope menu rendered behind
+  the editor.
+- **`cru agents list -f csv` printed a table** instead of erroring — that command
+  was missed when the format vocabulary was typed. And `cru process` reported
+  "Discovered: N markdown files" for a set that includes canvases and plain text;
+  the count was right and the noun was not. Both found by running the installed
+  binary rather than the test suite.
+- **Two test suites read the developer's real data root.** `runtime_defaults` and
+  `skills::discovery` appended `runtime_roots::for_current_exe()` to their
+  candidate lists with no way for a test to replace it, so two tests asserting
+  "nothing is installed" passed on CI and failed on any machine where `cru` had
+  been installed and run. Both now take the roots as an injected value.
+
+### Removed
+- **The `process_progress` event.** Four emission sites, no consumer anywhere but
+  its own test. A `cru process --verbose` consumer existed for one day in
+  February and was removed when discovery moved into the daemon; nothing replaced
+  it because the slow path never emitted per-file events. The five
+  "had no subscribers" warnings went with it — they named a condition they did
+  not test.
+- **The `Info` validation tier.** Constructed three times, read never, and every
+  one of its messages was already printed by code that does not go through the
+  validator.
+- **Five dead subsystems**, a 5,739-line unused query layer, a dead kiln facade,
+  a graph view with no callers, and a watch handler registered nowhere.
+
+
 ## [0.23.0] - 2026-08-11
 
 Crucible meets strangers. A Discord bot is the first surface where the person

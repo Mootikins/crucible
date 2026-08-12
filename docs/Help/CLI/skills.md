@@ -29,7 +29,7 @@ shadows a same-named skill from a lower scope is annotated with the number it sh
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--scope <scope>` | all | Keep only skills whose resolved scope is `builtin`, `personal`, `workspace`, or `kiln` |
-| `-f, --format <format>` | `table` | `table`, `plain`, or `json` |
+| `-f, --format <format>` | terminal: `table`, piped: `plain` | `table`, `plain`, or `json` |
 
 ```bash
 cru skills list
