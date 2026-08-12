@@ -48,6 +48,26 @@ impl std::fmt::Display for DefaultsSource {
 /// Split out so the ordering is testable without touching the filesystem or
 /// reading whatever the developer happens to have installed.
 pub fn defaults_candidates(runtimepath: &[PathBuf], env_runtime: Option<&str>) -> Vec<PathBuf> {
+    // Installed layout first, then the dev tree; see `runtime_roots`.
+    defaults_candidates_from(
+        runtimepath,
+        env_runtime,
+        &crucible_core::runtime_roots::for_current_exe(),
+    )
+}
+
+/// `defaults_candidates` with the exe-relative roots supplied rather than
+/// discovered.
+///
+/// Tests must use this. The discovering version always appends the real
+/// installed runtime directory, so a test asserting "nothing is installed"
+/// passes on CI and fails on any machine where someone has run `cru` — which is
+/// every developer's machine, and is exactly how this was found.
+fn defaults_candidates_from(
+    runtimepath: &[PathBuf],
+    env_runtime: Option<&str>,
+    exe_roots: &[PathBuf],
+) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
 
     for rtp in runtimepath {
@@ -58,8 +78,7 @@ pub fn defaults_candidates(runtimepath: &[PathBuf], env_runtime: Option<&str>) -
         candidates.push(PathBuf::from(base).join("defaults").join("init.lua"));
     }
 
-    // Installed layout first, then the dev tree; see `runtime_roots`.
-    for root in crucible_core::runtime_roots::for_current_exe() {
+    for root in exe_roots {
         candidates.push(root.join("defaults").join("init.lua"));
     }
 
@@ -73,7 +92,21 @@ pub fn defaults_candidates(runtimepath: &[PathBuf], env_runtime: Option<&str>) -
 /// with no defaults at all.
 pub fn load_defaults(runtimepath: &[PathBuf]) -> (String, DefaultsSource) {
     let env_runtime = std::env::var("CRUCIBLE_RUNTIME").ok();
-    for candidate in defaults_candidates(runtimepath, env_runtime.as_deref()) {
+    load_defaults_from(
+        runtimepath,
+        env_runtime.as_deref(),
+        &crucible_core::runtime_roots::for_current_exe(),
+    )
+}
+
+/// `load_defaults` with the environment supplied rather than read. See
+/// [`defaults_candidates_from`] for why tests need this.
+fn load_defaults_from(
+    runtimepath: &[PathBuf],
+    env_runtime: Option<&str>,
+    exe_roots: &[PathBuf],
+) -> (String, DefaultsSource) {
+    for candidate in defaults_candidates_from(runtimepath, env_runtime, exe_roots) {
         match std::fs::read_to_string(&candidate) {
             Ok(source) => return (source, DefaultsSource::File(candidate)),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
@@ -174,7 +207,7 @@ mod tests {
     #[test]
     fn falls_back_to_the_builtin_when_nothing_is_installed() {
         let tmp = tempfile::TempDir::new().unwrap();
-        let (source, origin) = load_defaults(&[tmp.path().to_path_buf()]);
+        let (source, origin) = load_defaults_from(&[tmp.path().to_path_buf()], None, &[]);
 
         assert_eq!(origin, DefaultsSource::Builtin);
         assert!(
@@ -191,7 +224,7 @@ mod tests {
         // A DIRECTORY named init.lua: exists, but reading it errors.
         std::fs::create_dir_all(tmp.path().join("defaults").join("init.lua")).unwrap();
 
-        let (source, origin) = load_defaults(&[tmp.path().to_path_buf()]);
+        let (source, origin) = load_defaults_from(&[tmp.path().to_path_buf()], None, &[]);
 
         assert_eq!(origin, DefaultsSource::Builtin);
         assert!(source.contains("cru.defaults.system_prompt"));

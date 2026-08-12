@@ -228,6 +228,27 @@ pub fn default_discovery_paths(
     kiln: Option<&Path>,
     home: Option<&Path>,
 ) -> Vec<SearchPath> {
+    let runtime_roots = match std::env::var("CRUCIBLE_RUNTIME") {
+        Ok(base) => vec![PathBuf::from(base)],
+        Err(_) => crucible_core::runtime_roots::for_current_exe(),
+    };
+    default_discovery_paths_from(workspace, kiln, home, &runtime_roots)
+}
+
+/// `default_discovery_paths` with the runtime roots supplied rather than
+/// discovered from `current_exe()`.
+///
+/// Tests must use this. The discovering version always appends the installed
+/// runtime's bundled-skill directories, so a test asserting "no skills are
+/// found" passes on CI and fails on any machine where `cru` has been installed
+/// and run — which is every developer's machine. `runtime_skill_paths` was
+/// already split out for exactly this reason; its caller had not been.
+fn default_discovery_paths_from(
+    workspace: Option<&Path>,
+    kiln: Option<&Path>,
+    home: Option<&Path>,
+    runtime_roots: &[PathBuf],
+) -> Vec<SearchPath> {
     let mut paths = Vec::new();
 
     if let Some(config_dir) = dirs::config_dir() {
@@ -279,11 +300,7 @@ pub fn default_discovery_paths(
         paths.push(SearchPath::new(k.join("skills"), SkillScope::Kiln).with_agent("crucible"));
     }
 
-    let runtime_roots = match std::env::var("CRUCIBLE_RUNTIME") {
-        Ok(base) => vec![PathBuf::from(base)],
-        Err(_) => crucible_core::runtime_roots::for_current_exe(),
-    };
-    paths.extend(runtime_skill_paths(&runtime_roots));
+    paths.extend(runtime_skill_paths(runtime_roots));
 
     paths
 }
@@ -723,7 +740,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         // Inject an empty home dir so the test isn't affected by the
         // host's real ~/.claude / ~/.codex / ~/.pi skill libraries.
-        let paths = default_discovery_paths(Some(tmp.path()), None, Some(tmp.path()));
+        let paths = default_discovery_paths_from(Some(tmp.path()), None, Some(tmp.path()), &[]);
         let discovery = FolderDiscovery::new(paths);
 
         // Should not panic, and discover should work on nonexistent paths
