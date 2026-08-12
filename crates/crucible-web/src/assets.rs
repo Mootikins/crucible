@@ -23,6 +23,10 @@ use tower_http::services::ServeDir;
 /// contributor whose first command is `cargo test`. A release build still
 /// embeds the real assets; a build without them serves the message in
 /// [`serve_embedded`] instead of failing to compile.
+///
+/// `build.rs` does not build the frontend — it only reports whether one is
+/// present, and fails the build when `CRUCIBLE_REQUIRE_WEB_UI` says the binary
+/// must ship with it. See that file for why building it here was reverted.
 #[derive(Embed)]
 #[folder = "web/dist"]
 #[allow_missing = true]

@@ -68,6 +68,31 @@ jobs:
           fi
       - run: cargo build -p crucible-cli
 
+  # The other half: a build that declares it ships the web UI must fail loudly
+  # when the frontend has not been built, rather than embedding nothing and
+  # serving a placeholder. `CRUCIBLE_REQUIRE_WEB_UI` is set for release builds
+  # (see .github/build-setup.yml), so this is the guard that keeps a release from
+  # quietly shipping a UI-less binary.
+  require-web-ui-fails-without-a-bundle:
+    name: Missing frontend fails a shipping build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Assert the build refuses to ship without the UI
+        env:
+          CRUCIBLE_REQUIRE_WEB_UI: "1"
+        run: |
+          if cargo build -p crucible-cli 2>build.log; then
+            echo "build succeeded with CRUCIBLE_REQUIRE_WEB_UI set and no web/dist" >&2
+            exit 1
+          fi
+          grep -q "CRUCIBLE_REQUIRE_WEB_UI is set" build.log \
+            || { echo "failed, but not with the expected message:" >&2; cat build.log >&2; exit 1; }
+
   deny:
     name: Dependency Licences
     runs-on: ubuntu-latest

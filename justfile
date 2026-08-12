@@ -98,6 +98,29 @@ setup:
 
 # === Build & Check ===
 
+# Two reasons this is a build-and-copy rather than `cargo install --path`.
+#
+# `cargo install` ignores `Cargo.lock` unless you pass `--locked`, and a fresh
+# resolve picks `jaq-std 3.0.1` against `jaq-json 2.0.0-alpha`, which do not
+# compile together; the lock pins `jaq-std 3.0.0-beta`. So `--locked` is
+# mandatory, not optional. And `cargo install` builds in its own target dir, so
+# it would redo the whole LTO link instead of reusing the release build below.
+#
+# The frontend has to exist first either way: `crucible-web` embeds `web/dist`
+# with rust-embed, and `allow_missing = true` means a build without it succeeds
+# and silently serves a placeholder rather than failing.
+
+# Install the shipping build to ~/.cargo/bin
+install:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just build release-web
+    dest="${CARGO_HOME:-$HOME/.cargo}/bin/cru"
+    install -m 755 "$(cargo metadata --format-version 1 --no-deps --offline \
+        | jq -r .target_directory)/release/cru" "$dest"
+    echo "installed $("$dest" --version) to $dest"
+
+
 # Don't build `release` unless you are installing — LTO takes 5-10 minutes.
 # `release-web` is the shipping build: it builds the frontend first because
 # rust-embed bakes `web/dist` into the binary at compile time. `fixtures`

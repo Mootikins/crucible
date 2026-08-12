@@ -11,3 +11,7 @@
   run: |
     bun install --frozen-lockfile
     bun run build
+# Make the Rust build refuse to proceed if the step above somehow produced no
+# bundle, rather than embedding nothing and shipping a placeholder page.
+- name: Require the web UI in release builds
+  run: echo "CRUCIBLE_REQUIRE_WEB_UI=1" >> "$GITHUB_ENV"
