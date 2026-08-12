@@ -184,14 +184,21 @@ export function renderFrontmatterCardHtml(entries: FrontmatterEntry[]): string {
     .join('');
   const count = entries.length;
   const label = `${count} ${count === 1 ? 'property' : 'properties'}`;
-  // Collapsed, the summary is a single small square floated out of the flow, so
-  // the note's own first line sits at the top of the card rather than below a
-  // header-shaped bar. The label survives as the tooltip and for assistive
-  // tech; only its visible text goes away.
+  // Collapsed, this is a one-line row across the content column: caret then the
+  // count. It replaced a shrink-wrapped square floated into the top-right
+  // corner, which collided with the editor's mode toggles — the two were
+  // anchored to different right edges (the centred content column vs the pane),
+  // so they converged as the window narrowed. A full-width row costs nothing
+  // vertically: the square was already 18px tall in a 20.8px line, and it is
+  // the padded multi-line block in other editors that wastes space, not the bar.
+  //
+  // The label is visible text now, so `title`/`aria-label` are gone with it —
+  // as a tooltip and an accessible-name override they only duplicated it.
   return (
     `<details class="fm-card" data-testid="fm-card">` +
-    `<summary class="fm-summary" data-testid="fm-summary" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">` +
+    `<summary class="fm-summary" data-testid="fm-summary">` +
     `<span class="fm-caret" aria-hidden="true"></span>` +
+    `<span class="fm-count">${escapeHtml(label)}</span>` +
     `</summary>` +
     `<div class="fm-rows">${rows}</div>` +
     `</details>`

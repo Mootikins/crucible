@@ -1098,7 +1098,9 @@ const livePreviewTheme = EditorView.baseTheme({
   // Frontmatter Properties card (shared .fm-card styles from index.css);
   // click drops into the raw source like the other block widgets.
   '.cm-lp-fm': { cursor: 'text', padding: '2px 0', whiteSpace: 'normal' },
-  '.cm-lp-fm .fm-card': { margin: '2px 0' },
+  // The card carries its own bottom margin now that it is a row in the flow;
+  // overriding it here doubled the gap under the bar.
+  '.cm-lp-fm .fm-card': { margin: '0' },
   // Rendered raw-HTML block (e.g. a README's centered `<p align="center">`
   // demo). whiteSpace reset for the same pre-wrap reason as callouts.
   '.cm-lp-html': { cursor: 'text', padding: '2px 0', whiteSpace: 'normal' },

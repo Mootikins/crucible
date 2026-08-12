@@ -573,68 +573,40 @@ details.callout[open] > summary.callout-title::after {
 /* Frontmatter Properties card (lib/frontmatter.ts renderFrontmatterCardHtml)
    — the SAME card in the reading view and the live-preview widget. Quiet
    key/value rows; array values render as pill chips. */
-/* Collapsed, this is a single square floated out of the flow: the note's own
-   first heading or paragraph sits at the very top, with the toggle tucked into
-   the corner beside it. Opened, it becomes an ordinary block card. */
+/* A one-line row in the flow, full width of the content column. It was a square
+   floated into the top-right corner, which put it in the same place as the
+   editor's mode toggles and the canvas card's — and the two are anchored to
+   DIFFERENT right edges (this card to the centred content column, the toggles
+   to the pane), so narrowing the window walked them together until the toggle
+   covered the caret. `padding-right` reserves the toggle gutter in the card's
+   own coordinate space, so it holds at every width instead of needing a
+   per-surface offset (the canvas one used to need its own). */
 .fm-card {
-  float: right;
-  margin: 0 0 4px 8px;
+  display: flow-root;
+  margin: 0 0 4px;
+  padding-right: 3.5rem;
 }
 .fm-card[open] {
-  float: none;
-  /* `flow-root` only when open, so the card contains its own floated summary.
-     The closed state keeps plain block display and the UA's content hiding. */
-  display: flow-root;
   margin: 0 0 1rem;
   padding: 8px 12px;
   border: 1px solid var(--color-hairline);
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--color-surface-elevated) 45%, transparent);
 }
-/* Collapsed, the card is floated out of the flow, so the block after it is
-   visually the FIRST one — but `:first-child` no longer matches it, and it kept
-   the top margin that rule exists to remove. A note's heading therefore sat
-   14px lower than the identical heading in a card with no frontmatter, and
-   below the toggle it is supposed to line up with. */
-.fm-card:not([open]) + * {
-  margin-top: 0;
-}
-
 /* The default disclosure triangle is suppressed on both engines — WebKit needs
    the vendor pseudo-element, everything else honours `list-style`. */
 .fm-summary {
   display: flex;
   align-items: center;
-  justify-content: center;
-  height: 1.125rem;
-  width: 1.125rem;
+  gap: 6px;
+  height: 1.25rem;
   cursor: pointer;
   list-style: none;
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-sm);
   color: var(--color-muted-dark);
   user-select: none;
 }
 .fm-summary:hover {
   color: var(--color-shell-ink);
-  border-color: var(--color-hairline-strong);
-}
-/* Open, the square stays exactly where it was — floated into the corner — and
-   the first property row flows BESIDE it. A full-width header row spent a whole
-   horizontal slice of the note on one small arrow. Float rather than absolute
-   so a long first value wraps under the square instead of running beneath it. */
-.fm-card[open] .fm-summary {
-  position: relative;
-  float: right;
-  margin: 0 0 2px 8px;
-}
-/* The square is 18px; this makes the target ~66x30 without drawing anything.
-   Only when open — collapsed, the square sits in the prose and a wide pad
-   would steal clicks from the note's own first line. */
-.fm-card[open] .fm-summary::after {
-  content: '';
-  position: absolute;
-  inset: -6px -6px -6px -44px;
 }
 .fm-summary::-webkit-details-marker {
   display: none;
@@ -651,13 +623,11 @@ details.callout[open] > summary.callout-title::after {
 .fm-card[open] .fm-caret {
   transform: rotate(180deg);
 }
-/* Plain flow, deliberately NOT grid: a grid container is a block formatting
-   context and would clear the floated summary over its whole height, indenting
-   every row by the square's width. In normal flow only the first row — the one
-   actually beside the square — shortens. `.fm-row` is itself a grid and its own
-   BFC, so the columns still line up. */
-.fm-card[open] .fm-rows {
-  display: block;
+/* The count that names what is collapsed. Mono to match `.fm-key`, so the bar
+   reads as part of the property table rather than as prose. */
+.fm-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 .fm-row + .fm-row {
   margin-top: 3px;
@@ -833,13 +803,6 @@ details.callout[open] > summary.callout-title::after {
   .canvas-card-mode {
     opacity: 1;
   }
-}
-
-/* The properties square and the toggle both want the top-right corner. The
-   toggle owns the corner itself, so the floated square steps left to clear it
-   and the two read as one row of small controls. */
-.canvas-card-body:has(.canvas-card-mode) .fm-card:not([open]) {
-  margin-right: 1.6rem;
 }
 
 /* Raw source view of an unfocused card: the same text an editor would show,

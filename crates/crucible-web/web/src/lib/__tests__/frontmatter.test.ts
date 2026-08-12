@@ -100,6 +100,23 @@ describe('renderFrontmatterCardHtml', () => {
     ).toContain('2 properties');
   });
 
+  /**
+   * The summary is a visible one-line row now, not a shrink-wrapped square
+   * floated into the corner where the editor's mode toggles live. So the count
+   * has to be rendered text — as a `title`/`aria-label` pair it was invisible,
+   * and keeping those alongside visible text would duplicate the accessible
+   * name and add a redundant tooltip.
+   */
+  it('shows the count as text rather than hiding it in a tooltip', () => {
+    const html = renderFrontmatterCardHtml([
+      { key: 'a', value: '1' },
+      { key: 'b', value: '2' },
+    ]);
+    expect(html).toContain('<span class="fm-count">2 properties</span>');
+    expect(html).not.toContain('title=');
+    expect(html).not.toContain('aria-label=');
+  });
+
   /** Escaped through the same path as the rows — the label is built, not user text, but the rows beside it are not. */
   it('keeps the rows available inside the collapsed card', () => {
     const html = renderFrontmatterCardHtml([{ key: 'tags', value: ['kiln'] }]);
