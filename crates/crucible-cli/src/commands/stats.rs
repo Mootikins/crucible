@@ -1,5 +1,5 @@
 use crate::config::CliConfig;
-use crate::formatting::OutputFormat;
+use crate::formatting::TextFormat;
 use anyhow::{anyhow, Result};
 use crucible_core::EXCLUDED_DIRS;
 use serde::Serialize;
@@ -12,7 +12,21 @@ use std::sync::Arc;
 pub struct KilnStats {
     pub total_files: u64,
     pub markdown_files: u64,
+    pub canvas_files: u64,
+    pub plain_text_files: u64,
     pub total_size_bytes: u64,
+}
+
+impl KilnStats {
+    /// Files the kiln indexes — the number `cru process` discovers.
+    ///
+    /// Counted per kind rather than as one total because they are not
+    /// interchangeable: notes and canvases join the link graph, plain text is
+    /// only full-text searchable. Reporting a single "indexed" figure would hide
+    /// which of those a kiln actually contains.
+    pub fn indexed_files(&self) -> u64 {
+        self.markdown_files + self.canvas_files + self.plain_text_files
+    }
 }
 
 /// Output format for stats (JSON serializable)
@@ -20,6 +34,9 @@ pub struct KilnStats {
 pub struct StatsOutput {
     pub file_count: u64,
     pub markdown_count: u64,
+    pub canvas_count: u64,
+    pub plain_text_count: u64,
+    pub indexed_count: u64,
     pub size_bytes: u64,
 }
 
@@ -53,9 +70,11 @@ impl FileSystemKilnStatsService {
                     stats.total_size_bytes = stats.total_size_bytes.saturating_add(metadata.len());
                 }
 
-                // Check if it's a markdown file
-                if crucible_core::is_note_file(&entry_path) {
-                    stats.markdown_files += 1;
+                match crucible_core::KilnFileKind::of(&entry_path) {
+                    crucible_core::KilnFileKind::Note => stats.markdown_files += 1,
+                    crucible_core::KilnFileKind::Canvas => stats.canvas_files += 1,
+                    crucible_core::KilnFileKind::PlainText => stats.plain_text_files += 1,
+                    crucible_core::KilnFileKind::Asset => {}
                 }
             } else if entry_path.is_dir() {
                 // Skip excluded directories
@@ -91,7 +110,7 @@ impl KilnStatsService for FileSystemKilnStatsService {
     }
 }
 
-pub async fn execute(config: CliConfig, format: OutputFormat) -> Result<()> {
+pub async fn execute(config: CliConfig, format: TextFormat) -> Result<()> {
     let service: Arc<dyn KilnStatsService> = Arc::new(FileSystemKilnStatsService);
     execute_with_service(service, config, format).await
 }
@@ -99,7 +118,7 @@ pub async fn execute(config: CliConfig, format: OutputFormat) -> Result<()> {
 pub async fn execute_with_service(
     service: Arc<dyn KilnStatsService>,
     config: CliConfig,
-    format: OutputFormat,
+    format: TextFormat,
 ) -> Result<()> {
     let kiln_path = &config.kiln_path;
 
@@ -112,36 +131,28 @@ pub async fn execute_with_service(
     let stats = service.collect(kiln_path)?;
 
     match format {
-        OutputFormat::Json => {
+        TextFormat::Json => {
             let output = StatsOutput {
                 file_count: stats.total_files,
                 markdown_count: stats.markdown_files,
+                canvas_count: stats.canvas_files,
+                plain_text_count: stats.plain_text_files,
+                indexed_count: stats.indexed_files(),
                 size_bytes: stats.total_size_bytes,
             };
             println!("{}", serde_json::to_string_pretty(&output)?);
         }
-        OutputFormat::Table => {
-            let rows = vec![
-                vec!["Total files".to_string(), stats.total_files.to_string()],
-                vec![
-                    "Markdown files".to_string(),
-                    stats.markdown_files.to_string(),
-                ],
-                vec![
-                    "Total size (KB)".to_string(),
-                    (stats.total_size_bytes / 1024).to_string(),
-                ],
-                vec!["Kiln path".to_string(), kiln_path.display().to_string()],
-            ];
-            println!(
-                "{}",
-                crate::output::records_table(&["Metric", "Value"], &rows)
-            );
-        }
-        OutputFormat::Plain => {
+        TextFormat::Text => {
             println!("📊 Kiln Statistics\n");
             println!("📁 Total files: {}", stats.total_files);
             println!("📝 Markdown files: {}", stats.markdown_files);
+            if stats.canvas_files > 0 {
+                println!("🎨 Canvases: {}", stats.canvas_files);
+            }
+            if stats.plain_text_files > 0 {
+                println!("📄 Plain text: {}", stats.plain_text_files);
+            }
+            println!("🔍 Indexed: {}", stats.indexed_files());
             println!("💾 Total size: {} KB", stats.total_size_bytes / 1024);
             println!("🗂️  Kiln path: {}", kiln_path.display());
             println!("\n✅ Kiln scan completed successfully.");
@@ -189,11 +200,13 @@ mod tests {
             total_files: 10,
             markdown_files: 5,
             total_size_bytes: 1024,
+            ..Default::default()
         };
         let stats2 = KilnStats {
             total_files: 10,
             markdown_files: 5,
             total_size_bytes: 1024,
+            ..Default::default()
         };
         assert_eq!(stats1, stats2);
     }
@@ -291,10 +304,11 @@ mod tests {
                 total_files: 100,
                 markdown_files: 50,
                 total_size_bytes: 1024 * 1024,
+                ..Default::default()
             },
         };
 
-        let result = execute_with_service(Arc::new(mock), config, OutputFormat::Table).await;
+        let result = execute_with_service(Arc::new(mock), config, TextFormat::Text).await;
         assert!(result.is_ok());
     }
 
@@ -309,7 +323,7 @@ mod tests {
             stats: KilnStats::default(),
         };
 
-        let result = execute_with_service(Arc::new(mock), config, OutputFormat::Table).await;
+        let result = execute_with_service(Arc::new(mock), config, TextFormat::Text).await;
         assert!(result.is_err());
     }
 
@@ -322,7 +336,7 @@ mod tests {
         };
 
         let result =
-            execute_with_service(Arc::new(ErrorStatsService), config, OutputFormat::Table).await;
+            execute_with_service(Arc::new(ErrorStatsService), config, TextFormat::Text).await;
         assert!(result.is_err());
     }
 
@@ -331,6 +345,9 @@ mod tests {
         let output = StatsOutput {
             file_count: 42,
             markdown_count: 10,
+            canvas_count: 2,
+            plain_text_count: 3,
+            indexed_count: 15,
             size_bytes: 1024 * 100,
         };
 

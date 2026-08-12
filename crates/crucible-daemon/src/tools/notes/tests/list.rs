@@ -55,8 +55,12 @@ async fn test_list_notes_with_files() {
         .await
         .unwrap();
 
-    // Create a non-md file (should be ignored)
-    std::fs::write(temp_dir.path().join("ignore.txt"), "ignore").unwrap();
+    // Indexed but not markdown: a `.txt` is full-text searchable, so an agent
+    // that can search it should be able to list it too.
+    std::fs::write(temp_dir.path().join("scratch.txt"), "scratch").unwrap();
+
+    // A genuine asset stays out — nothing indexes it, so nothing lists it.
+    std::fs::write(temp_dir.path().join("diagram.png"), "not text").unwrap();
 
     let result = note_tools
         .list_notes(Parameters(ListNotesParams {
@@ -72,8 +76,9 @@ async fn test_list_notes_with_files() {
         if let Some(raw_text) = content.as_text() {
             let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
             let notes = parsed["notes"].as_array().unwrap();
-            assert_eq!(notes.len(), 2); // Should only find .md files
-            assert_eq!(parsed["count"], 2);
+            // Two notes plus the `.txt`; the `.png` is an asset and excluded.
+            assert_eq!(notes.len(), 3);
+            assert_eq!(parsed["count"], 3);
 
             // Check that all notes have required fields
             for note in notes {

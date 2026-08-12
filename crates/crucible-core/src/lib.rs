@@ -46,7 +46,10 @@ pub use content_category::{ContentCategory, ContentCategoryError};
 pub use discovery::{DiscoveryConfig, DiscoveryPaths};
 pub use error_utils::strip_tool_error_prefix;
 pub use interaction_context::{EventPushCallback, InteractionContext};
-pub use kiln::{is_canvas_file, is_indexable_file, is_note_file, KilnFileKind, EXCLUDED_DIRS};
+pub use kiln::{
+    is_canvas_file, is_indexable_file, is_note_file, is_plain_text_file, KilnFileKind,
+    EXCLUDED_DIRS,
+};
 
 // Re-export enrichment types (concrete implementation lives in crucible-daemon::enrichment)
 pub use enrichment::{

@@ -189,9 +189,15 @@ async fn test_file_changed_emission_for_long_markdown_extension() {
     }
 }
 
-/// Plaintext is not a note: `.txt` must not reach the index.
+/// `.txt` reaches the index, so a change to one must be emitted.
+///
+/// This test asserted the opposite until plain text became a searchable kind.
+/// The reason it gave — "nothing downstream parses plaintext as markdown" — is
+/// still true and is precisely why `PlainText` exists as its own kind: the
+/// pipeline stores and full-text indexes a `.txt` without parsing it. Not being
+/// markdown is no longer the same as not being indexed.
 #[tokio::test]
-async fn test_no_emission_for_plaintext() {
+async fn test_emission_for_plaintext() {
     let emitter: Arc<MockEventEmitter<SessionEvent>> = Arc::new(MockEventEmitter::new());
     let handler = IndexingHandler::with_emitter(emitter.clone()).expect("Failed to create handler");
 
@@ -205,8 +211,8 @@ async fn test_no_emission_for_plaintext() {
 
     assert_eq!(
         emitter.emitted_events().len(),
-        0,
-        "`.txt` is not indexable; nothing downstream parses plaintext as markdown"
+        1,
+        "`.txt` is indexable as plain text, so a change to one must be emitted"
     );
 }
 

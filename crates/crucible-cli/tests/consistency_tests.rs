@@ -16,17 +16,22 @@ use tempfile::TempDir;
 /// - 1 `.md` in `subdir/` (should be counted)
 /// - 1 `.md` in `.crucible/` (excluded)
 /// - 1 `.md` in `.git/` (excluded)
-/// - 1 `.txt` file (not markdown)
+/// - 1 `.txt` file (indexed as plain text, not markdown)
+/// - 1 `.canvas` file (indexed as a canvas, not markdown)
 ///
-/// Expected markdown count: 6
+/// Expected markdown count: 6. Expected *indexed* count: 8.
 ///
 /// `Reading List.markdown` and `Daily.MD` are the two spellings that used to be
 /// discovered by `open_and_process` (which asks `is_indexable_file`) and
 /// simultaneously invisible to `cru stats` (which asked `ext == "md"` /
 /// `eq_ignore_ascii_case("md")`). Keeping them here is what makes this the
-/// regression test for that divergence: the counts have to agree on the widened
-/// set, not just on the `.md` subset. No `.canvas` file: discovery counts
-/// canvases and stats does not, which is a separate, deliberate difference.
+/// regression test for that divergence.
+///
+/// The `.txt` and `.canvas` are the point of the *current* shape. Discovery has
+/// three indexable kinds and stats used to report only one, so the keystone
+/// assertion had to be either a false equality or an admitted divergence. Now
+/// stats counts each kind, so the invariant is real again and covers all three
+/// rather than quietly excluding two.
 fn create_consistency_kiln() -> Result<TempDir> {
     let temp = TempDir::new()?;
     let root = temp.path();
@@ -67,21 +72,24 @@ fn create_consistency_kiln() -> Result<TempDir> {
     std::fs::create_dir(root.join(".git"))?;
     std::fs::write(root.join(".git").join("config.md"), "# Git config")?;
 
-    // Non-markdown file
+    // Indexed, but not markdown: searchable text and a canvas.
     std::fs::write(root.join("readme.txt"), "Not a markdown file")?;
+    std::fs::write(root.join("board.canvas"), r#"{"nodes":[],"edges":[]}"#)?;
 
     Ok(temp)
 }
 
 /// Keystone consistency test:
-/// Process discovers the same markdown files that stats counts.
+/// Process discovers exactly the files stats reports as indexed.
 #[tokio::test]
 async fn process_and_stats_agree_on_markdown_file_count() -> Result<()> {
     let temp = create_consistency_kiln()?;
     let kiln_path = temp.path();
 
-    // 3 root .md + .markdown + .MD + 1 subdir .md = 6 expected
+    // 3 root .md + .markdown + .MD + 1 subdir .md = 6 markdown
     const EXPECTED_MD: usize = 6;
+    // ...plus 1 .txt and 1 .canvas, all three kinds being indexable
+    const EXPECTED_INDEXED: usize = 8;
 
     // === 1. Process via KilnManager (equivalent of `cru process`) ===
     let km = KilnManager::new();
@@ -89,11 +97,11 @@ async fn process_and_stats_agree_on_markdown_file_count() -> Result<()> {
 
     // The total files the pipeline saw = discovered count
 
-    // Assert: discovered == actual .md file count (excludes .crucible/.git)
+    // Assert: discovered == every indexable file (excludes .crucible/.git)
     assert_eq!(
-        discovered, EXPECTED_MD,
-        "Process discovered {} markdown files, expected {}",
-        discovered, EXPECTED_MD
+        discovered, EXPECTED_INDEXED,
+        "Process discovered {} indexable files, expected {}",
+        discovered, EXPECTED_INDEXED
     );
 
     // Assert: processed + skipped + errors == discovered (accounting invariant)
@@ -118,25 +126,29 @@ async fn process_and_stats_agree_on_markdown_file_count() -> Result<()> {
     let stats_service = FileSystemKilnStatsService;
     let stats = stats_service.collect(kiln_path)?;
 
-    // Assert: stats.markdown_files == discovered
+    // Assert: each kind counted separately, because they are not interchangeable
     assert_eq!(
         stats.markdown_files as usize, EXPECTED_MD,
         "Stats reports {} markdown files, expected {}",
         stats.markdown_files, EXPECTED_MD
     );
+    assert_eq!(stats.canvas_files, 1, "one canvas in the fixture");
+    assert_eq!(stats.plain_text_files, 1, "one .txt in the fixture");
 
     // === 3. Cross-command consistency: process == stats ===
     assert_eq!(
-        discovered, stats.markdown_files as usize,
-        "CONSISTENCY FAILURE: process discovered {} but stats reports {} markdown files",
-        discovered, stats.markdown_files
+        discovered,
+        stats.indexed_files() as usize,
+        "CONSISTENCY FAILURE: process discovered {} but stats reports {} indexed files",
+        discovered,
+        stats.indexed_files()
     );
 
-    // === 4. Stats also counts non-markdown files correctly ===
-    // Total files = 6 markdown + 1 txt = 7 (in non-excluded dirs)
+    // === 4. Stats also counts files it does not index ===
+    // Total files = 6 markdown + 1 txt + 1 canvas = 8 (in non-excluded dirs)
     assert_eq!(
-        stats.total_files, 7,
-        "Stats total_files should be 7 (6 markdown + 1 txt), got {}",
+        stats.total_files, 8,
+        "Stats total_files should be 8 (6 markdown + 1 txt + 1 canvas), got {}",
         stats.total_files
     );
 
@@ -148,15 +160,14 @@ async fn process_and_stats_agree_on_markdown_file_count() -> Result<()> {
 async fn second_process_run_skips_unchanged_files() -> Result<()> {
     let temp = create_consistency_kiln()?;
     let kiln_path = temp.path();
-    const EXPECTED_MD: usize = 6;
+    const EXPECTED_INDEXED: usize = 8;
 
     let km = KilnManager::new();
 
     // First run: all files get processed
     let (discovered1, _processed1, _skipped1, errors1) =
         km.open_and_process(kiln_path, false).await?;
-    assert_eq!(discovered1, EXPECTED_MD);
-    assert_eq!(discovered1, EXPECTED_MD);
+    assert_eq!(discovered1, EXPECTED_INDEXED);
     assert!(errors1.is_empty());
 
     // Second run: all files should be skipped (no changes)
@@ -172,9 +183,9 @@ async fn second_process_run_skips_unchanged_files() -> Result<()> {
 
     // Everything should be skipped on second run
     assert_eq!(
-        skipped2, EXPECTED_MD,
+        skipped2, EXPECTED_INDEXED,
         "Second run should skip all {} files, but only skipped {}",
-        EXPECTED_MD, skipped2
+        EXPECTED_INDEXED, skipped2
     );
     assert_eq!(
         processed2, 0,
@@ -202,9 +213,11 @@ async fn force_reprocess_agrees_with_stats() -> Result<()> {
     // Discovered count must match stats even after force
     let stats = FileSystemKilnStatsService.collect(kiln_path)?;
     assert_eq!(
-        discovered, stats.markdown_files as usize,
-        "After force: process discovered {} but stats reports {}",
-        discovered, stats.markdown_files
+        discovered,
+        stats.indexed_files() as usize,
+        "After force: process discovered {} but stats reports {} indexed",
+        discovered,
+        stats.indexed_files()
     );
 
     Ok(())

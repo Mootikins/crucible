@@ -190,6 +190,14 @@ impl NotePipeline {
             return self.process_canvas(path, phase1_duration).await;
         }
 
+        // Plain text earns an index row and an FTS entry so `cru search` can see
+        // inside it, and nothing else. None of the markdown phases apply: there
+        // is no frontmatter to read, no headings to extract, and no wikilink
+        // syntax to resolve.
+        if crucible_core::kiln::is_plain_text_file(path) {
+            return self.process_plain_text(path, phase1_duration).await;
+        }
+
         // Phase 2: Parse to AST
         let phase2_start = std::time::Instant::now();
         let parsed = self.parser.parse_file(path).await.with_context(|| {
@@ -377,6 +385,87 @@ impl NotePipeline {
 
         debug!(
             "Indexed canvas {} (P1:{}ms)",
+            path.display(),
+            phase1_duration
+        );
+
+        Ok(ProcessingResult::success_with_warnings(
+            0,
+            false,
+            Vec::new(),
+        ))
+    }
+
+    /// Index a plain text file: a storage row and an FTS entry, no parsing.
+    ///
+    /// Unlike [`Self::process_canvas`] this also writes the text index, because
+    /// full-text search is the entire reason a `.txt` is indexed at all — a row
+    /// without an FTS entry would be invisible to `cru search`, which would make
+    /// the feature pointless rather than partial.
+    async fn process_plain_text(
+        &self,
+        path: &Path,
+        phase1_duration: u64,
+    ) -> Result<ProcessingResult> {
+        let storage_path = match self.kiln_root.as_ref() {
+            Some(root) => crate::kiln_manager::normalize_note_path(path, root)
+                .unwrap_or_else(|| path.to_string_lossy().to_string()),
+            None => path.to_string_lossy().to_string(),
+        };
+
+        let body = tokio::fs::read_to_string(path)
+            .await
+            .with_context(|| format!("reading plain text '{}'", path.display()))?;
+
+        // The filename is the only title a plain text file can offer — the same
+        // fallback a note with neither frontmatter nor a heading gets.
+        let title = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(&storage_path)
+            .to_string();
+
+        let mut properties = std::collections::HashMap::new();
+        stamp_scope_on_properties(&mut properties, self.kiln_root.as_deref());
+
+        let record = NoteRecord {
+            path: storage_path.clone(),
+            content_hash: crucible_core::parser::types::BlockHash::new(
+                *blake3::hash(body.as_bytes()).as_bytes(),
+            ),
+            embedding: None,
+            embedding_model: None,
+            embedding_dimensions: None,
+            title: title.clone(),
+            tags: Vec::new(),
+            links_to: Vec::new(),
+            links: Vec::new(),
+            properties,
+            updated_at: chrono::Utc::now(),
+        };
+
+        self.note_store
+            .upsert(record)
+            .await
+            .map_err(|e| anyhow::anyhow!("Storage error: {}", e))
+            .with_context(|| format!("Failed to store plain text '{}'", path.display()))?;
+
+        if let Some(text_index) = self.text_index.as_ref() {
+            if let Err(e) = text_index.index(&storage_path, &title, &body).await {
+                tracing::error!(
+                    path = %storage_path,
+                    ?e,
+                    "text index write failed; `cru search` will miss this plain text file"
+                );
+            }
+        }
+
+        self.update_file_state(path)
+            .await
+            .with_context(|| format!("Failed to update file state for '{}'", path.display()))?;
+
+        debug!(
+            "Indexed plain text {} (P1:{}ms)",
             path.display(),
             phase1_duration
         );

@@ -122,6 +122,90 @@ async fn text_search_matches_words_in_note_bodies() {
     server.shutdown().await;
 }
 
+/// A `.txt` in a kiln is full-text searchable.
+///
+/// This is the whole of the intent behind `KilnFileKind::PlainText`: plain text
+/// gets an index row and an FTS entry so `cru search` can see inside it, while
+/// staying out of everything that assumes markdown. The sentinel appears only in
+/// the body, so matching the filename or the title cannot make this pass.
+#[tokio::test]
+async fn text_search_matches_words_inside_plain_text_files() {
+    let server = TestServer::start().await.expect("Failed to start server");
+    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+
+    let client = DaemonClient::connect_to(&server.socket_path)
+        .await
+        .expect("Failed to connect");
+    client
+        .kiln_open(kiln_dir.path())
+        .await
+        .expect("kiln_open failed");
+
+    std::fs::write(
+        kiln_dir.path().join("scratch.txt"),
+        "no frontmatter, no headings, no wikilinks.\nqfmzlrt is the distinctive body word.\n",
+    )
+    .expect("failed to write plain text file");
+    wait_until_indexed(&client, kiln_dir.path(), "scratch").await;
+
+    let hits = client
+        .search_text(kiln_dir.path(), "qfmzlrt", 20)
+        .await
+        .expect("search_text RPC failed");
+
+    assert!(
+        hits.iter().any(|h| h.path.contains("scratch")),
+        "a word inside a .txt must be findable; got {:?}",
+        hits.iter().map(|h| &h.path).collect::<Vec<_>>()
+    );
+
+    server.shutdown().await;
+}
+
+/// An asset stays invisible to search. The plain-text tier widened what gets
+/// indexed, and this is the edge of that widening — if `.png` starts being read
+/// as text, the tier has grown past what it claims.
+#[tokio::test]
+async fn text_search_ignores_assets() {
+    let server = TestServer::start().await.expect("Failed to start server");
+    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+
+    let client = DaemonClient::connect_to(&server.socket_path)
+        .await
+        .expect("Failed to connect");
+    client
+        .kiln_open(kiln_dir.path())
+        .await
+        .expect("kiln_open failed");
+
+    // Written as text so that a wrongly-widened predicate would actually find
+    // it, rather than the assertion passing because the bytes were unreadable.
+    std::fs::write(
+        kiln_dir.path().join("diagram.png"),
+        "wbtqkdh should never be indexed.\n",
+    )
+    .expect("failed to write asset");
+    std::fs::write(
+        kiln_dir.path().join("anchor.txt"),
+        "this file exists so the test can wait for indexing to have happened.\n",
+    )
+    .expect("failed to write anchor");
+    wait_until_indexed(&client, kiln_dir.path(), "anchor").await;
+
+    let hits = client
+        .search_text(kiln_dir.path(), "wbtqkdh", 20)
+        .await
+        .expect("search_text RPC failed");
+
+    assert!(
+        hits.is_empty(),
+        "an asset must not be indexed; got {:?}",
+        hits.iter().map(|h| &h.path).collect::<Vec<_>>()
+    );
+
+    server.shutdown().await;
+}
+
 /// Title matches must keep working — they are the half that was never broken,
 /// and FTS5 indexes the title column too.
 #[tokio::test]
