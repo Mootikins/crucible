@@ -19,8 +19,11 @@ import {
   IconPanelBottomClose,
   IconZap,
   IconSettings,
+  IconBell,
 } from './icons';
 import { Plus } from '@/lib/icons';
+import { notificationStore } from '@/stores/notificationStore';
+import { NotificationCenter } from '@/components/NotificationCenter';
 
 const EDGE_PANEL_MIN_WIDTH = 120;
 // No fixed max — an edge panel hosting a chat session should be able to take
@@ -180,6 +183,43 @@ const RibbonTabButton: Component<{
 const ribbonBtn =
   'flex items-center justify-center text-muted-dark hover:text-shell-body hover:bg-hover-wash transition-colors';
 
+/**
+ * The notification bell, pinned to the bottom of the right ribbon.
+ *
+ * Its own component rather than a `RibbonCommand` because it carries an unread
+ * badge and owns a popout, neither of which that shape supports. Keeps
+ * `data-testid="corner-bell"` from its previous home so existing locators
+ * resolve.
+ */
+const RibbonBell: Component = () => {
+  const [open, setOpen] = createSignal(false);
+  const unreadCount = () => notificationStore.notificationCount();
+  let bellRef: HTMLButtonElement | undefined;
+
+  return (
+    <>
+      <button
+        type="button"
+        ref={bellRef}
+        data-testid="corner-bell"
+        class={`${ribbonBtn} relative w-10 h-9 flex-none mt-auto`}
+        classList={{ 'text-shell-body': open() }}
+        title="Notifications"
+        aria-label="Toggle notifications"
+        onClick={() => setOpen(!open())}
+      >
+        <IconBell class="w-4 h-4" />
+        <Show when={unreadCount() > 0}>
+          <span class="absolute top-1 right-1.5 px-0.5 min-w-[12px] text-center rounded-full bg-error text-white text-[8px] font-bold leading-[12px]">
+            {unreadCount() > 99 ? '99+' : unreadCount()}
+          </span>
+        </Show>
+      </button>
+      <NotificationCenter open={open()} onClose={() => setOpen(false)} anchor={bellRef} />
+    </>
+  );
+};
+
 /** One command button on the ribbon (opens a modal/panel — Obsidian puts
  * these on the ribbon: palette, quick actions, settings gear at bottom). */
 const RibbonCommand: Component<{
@@ -332,6 +372,14 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
         >
           <IconSettings class="w-4 h-4" />
         </RibbonCommand>
+      </Show>
+      {/* The bell mirrors the left ribbon's gear: pinned to the bottom of the
+          RIGHT rail. It used to float in the centre pane's bottom-right corner,
+          where it sat over the document and vanished with the rest of the
+          transient chip cluster. The rail is rendered outside the slide clip
+          frame, so this survives collapsing the panel. */}
+      <Show when={props.position === 'right'}>
+        <RibbonBell />
       </Show>
     </div>
   );

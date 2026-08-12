@@ -136,11 +136,12 @@ describe('NotificationCenter — time grouping', () => {
       makeNotif({ id: 'today', timestamp: now - 1000, message: 'today-msg' }),
       makeNotif({ id: 'yest', timestamp: now - 1.5 * DAY, message: 'yest-msg' }),
     ];
-    const { container } = render(() => (
-      <NotificationCenter open={true} onClose={() => {}} />
-    ));
+    // Queried from `document.body`, not `render`'s container: the popout is
+    // portaled so it can escape the right ribbon's `overflow-hidden`
+    // ancestors, which puts it outside the container by construction.
+    render(() => <NotificationCenter open={true} onClose={() => {}} />);
 
-    const headers = Array.from(container.querySelectorAll('span.uppercase'))
+    const headers = Array.from(document.body.querySelectorAll('span.uppercase'))
       .map((el) => el.textContent?.trim())
       .filter((s): s is string => !!s && ['Today', 'Yesterday', 'Older'].includes(s));
 
@@ -153,11 +154,10 @@ describe('NotificationCenter — time grouping', () => {
       makeNotif({ id: 'a', timestamp: now - 60_000, message: 'older-today' }),
       makeNotif({ id: 'b', timestamp: now - 1000, message: 'newer-today' }),
     ];
-    const { container } = render(() => (
-      <NotificationCenter open={true} onClose={() => {}} />
-    ));
+    // Portaled — see the note above.
+    render(() => <NotificationCenter open={true} onClose={() => {}} />);
 
-    const messages = Array.from(container.querySelectorAll('p'))
+    const messages = Array.from(document.body.querySelectorAll('p'))
       .map((el) => el.textContent ?? '')
       .filter((s) => s === 'older-today' || s === 'newer-today');
 

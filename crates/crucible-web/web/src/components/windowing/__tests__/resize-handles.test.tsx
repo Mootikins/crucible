@@ -153,6 +153,30 @@ describe('EdgePanel ribbon chrome — rendered DOM', () => {
     }
   });
 
+  it('pins the notification bell to the bottom of the RIGHT ribbon only', () => {
+    // It used to float in the centre pane's bottom-right corner, over the
+    // document, and disappeared with the rest of the transient chip cluster.
+    // `mt-auto` is the same bottom-anchor the left ribbon's settings gear uses.
+    const seen: Record<string, HTMLElement | null> = {};
+    for (const position of ['left', 'right', 'bottom'] as const) {
+      const { container, unmount } = render(() => (
+        <DragDropProvider>
+          <EdgePanel position={position} />
+        </DragDropProvider>
+      ));
+      seen[position] = container.querySelector<HTMLElement>('[data-testid="corner-bell"]');
+      // Read before unmount — the node is detached afterwards.
+      if (seen[position]) {
+        expect(seen[position]!.getAttribute('class') ?? '').toContain('mt-auto');
+      }
+      unmount();
+    }
+
+    expect(seen.right, 'right ribbon hosts the bell').toBeTruthy();
+    expect(seen.left, 'left ribbon must not').toBeNull();
+    expect(seen.bottom, 'bottom ribbon must not').toBeNull();
+  });
+
   it('the expanded tab bar has no duplicate in-bar collapse control', () => {
     const { container } = render(() => (
       <DragDropProvider>

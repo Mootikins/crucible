@@ -1,6 +1,11 @@
 import { Component, For, Show, createEffect, createSignal, onCleanup } from 'solid-js';
+import { Portal } from 'solid-js/web';
 import { notificationStore, notificationActions } from '@/stores/notificationStore';
+import { placeFlyout } from '@/lib/popup-placement';
 import type { Notification, NotificationType } from '@/lib/types';
+
+/** Fixed panel width — no measuring pass, so placement is a single sync call. */
+const PANEL_WIDTH = 320;
 
 // ── Time grouping helpers ───────────────────────────────────────────────
 
@@ -112,19 +117,45 @@ const NotificationItem: Component<{ notification: Notification }> = (props) => {
 // ── Notification Center Drawer ──────────────────────────────────────────
 
 /**
- * Notification popout — anchors to the corner bell (Adobe-style flyout),
- * expects a `position: relative` parent to hang from. No backdrop; it
- * dismisses on outside click or Escape.
+ * Notification popout, anchored to the bell wherever it sits.
+ *
+ * Portaled and positioned in VIEWPORT coordinates rather than `absolute` inside
+ * the trigger's parent, because the bell now lives on the right ribbon: every
+ * ancestor there is `overflow-hidden` (the EdgePanel root, its slide clip
+ * frame, and the WindowManager row), so an absolutely-positioned panel is
+ * clipped to nothing no matter which side it opens toward. `placeFlyout` also
+ * flips it leftward, since a 320px panel cannot fit to the right of a 40px rail.
+ *
+ * No backdrop; it dismisses on outside click or Escape.
  */
-export const NotificationCenter: Component<{ open: boolean; onClose: () => void }> = (props) => {
+export const NotificationCenter: Component<{
+  open: boolean;
+  onClose: () => void;
+  /** The bell, for placement and for the outside-click test. */
+  anchor?: HTMLElement;
+}> = (props) => {
   const [visible, setVisible] = createSignal(false);
+  const [pos, setPos] = createSignal({ left: 0, top: 0, width: PANEL_WIDTH, maxHeight: 480 });
   let panelRef: HTMLDivElement | undefined;
+
+  const place = () => {
+    const anchor = props.anchor;
+    if (!anchor) return;
+    setPos(
+      placeFlyout(
+        anchor.getBoundingClientRect(),
+        { width: window.innerWidth, height: window.innerHeight },
+        { width: PANEL_WIDTH, preferredHeight: Math.min(480, window.innerHeight * 0.7), gap: 8 },
+      ),
+    );
+  };
 
   // Animate in/out
   createEffect(() => {
     if (props.open) {
       // Mark all as read when the popout opens
       notificationActions.markAllRead();
+      place();
       requestAnimationFrame(() => setVisible(true));
     } else {
       setVisible(false);
@@ -141,17 +172,23 @@ export const NotificationCenter: Component<{ open: boolean; onClose: () => void 
       }
     };
     const onPointerDown = (e: MouseEvent) => {
-      // The anchor parent contains both the bell and this panel — clicks
-      // inside either keep the popout open (the bell's own handler toggles).
-      if (panelRef && !panelRef.parentElement?.contains(e.target as Node)) {
-        props.onClose();
-      }
+      // Two elements, deliberately. Portaled, `panelRef.parentElement` is the
+      // portal container rather than the bell's parent, so the old single
+      // containment test read a click on the bell as OUTSIDE — which closed the
+      // popout just as the bell's own handler reopened it.
+      const target = e.target as Node;
+      const insidePanel = panelRef?.contains(target) ?? false;
+      const onAnchor = props.anchor?.contains(target) ?? false;
+      if (!insidePanel && !onAnchor) props.onClose();
     };
+    const onViewportChange = () => place();
     document.addEventListener('keydown', onKey, true);
     document.addEventListener('mousedown', onPointerDown);
+    window.addEventListener('resize', onViewportChange);
     onCleanup(() => {
       document.removeEventListener('keydown', onKey, true);
       document.removeEventListener('mousedown', onPointerDown);
+      window.removeEventListener('resize', onViewportChange);
     });
   });
 
@@ -165,12 +202,18 @@ export const NotificationCenter: Component<{ open: boolean; onClose: () => void 
 
   return (
     <Show when={props.open}>
-      {/* Popout above the bell, growing up-left from the corner. */}
-      <div
-        ref={panelRef}
-        class={`
-          absolute bottom-full right-0 mb-2 z-50
-          w-80 max-w-[85vw] max-h-[min(480px,70vh)]
+      <Portal>
+        <div
+          ref={panelRef}
+          data-testid="notification-popout"
+          style={{
+            left: `${pos().left}px`,
+            top: `${pos().top}px`,
+            width: `${pos().width}px`,
+            'max-height': `${pos().maxHeight}px`,
+          }}
+          class={`
+          fixed z-50
           rounded-lg border border-hairline-strong bg-surface-overlay
           shadow-2xl shadow-black/50
           flex flex-col overflow-hidden
@@ -178,7 +221,7 @@ export const NotificationCenter: Component<{ open: boolean; onClose: () => void 
           transition-[opacity,scale,translate] duration-200 ease-out
           ${visible() ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-1'}
         `}
-      >
+        >
           {/* Header */}
           <div class="flex items-center justify-between px-4 py-3 border-b border-hairline">
             <div class="flex items-center gap-2">
@@ -243,7 +286,8 @@ export const NotificationCenter: Component<{ open: boolean; onClose: () => void 
               </div>
             </Show>
           </div>
-      </div>
+        </div>
+      </Portal>
     </Show>
   );
 };
