@@ -258,11 +258,15 @@ pub enum Commands {
         /// Output format (table, json, plain)
         #[arg(short = 'f', long, default_value = "table")]
         format: String,
+
+        /// Show a content preview for each hit
+        #[arg(short = 'c', long)]
+        preview: bool,
     },
 
     /// Display kiln statistics
     #[command(
-        long_about = "Display comprehensive kiln statistics including note count, embeddings status, and storage metrics.\n\nShows overview of your knowledge base with format options for different output styles.\n\nExamples:\n  # Show statistics in table format\n  cru stats\n\n  # JSON output for scripting\n  cru stats -f json\n\n  # CSV format for spreadsheets\n  cru stats -f csv"
+        long_about = "Display comprehensive kiln statistics including note count, embeddings status, and storage metrics.\n\nShows overview of your knowledge base with format options for different output styles.\n\nExamples:\n  # Show statistics in table format\n  cru stats\n\n  # JSON output for scripting\n  cru stats -f json"
     )]
     Stats {
         /// Output format (table, json, plain)

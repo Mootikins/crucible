@@ -19,7 +19,11 @@ cru search "wikilinks"                  # full-text + semantic (default)
 cru search "wikilink" --type text       # full-text only
 cru search "how do links work" --type semantic
 cru search "architecture" --limit 5 -f json
+cru search "wikilinks" --preview            # add a content preview per hit (-c)
 ```
+
+Results are title and path by default. `-c/--preview` adds a snippet of each note's
+content — the first two lines, capped so a long line cannot flood the terminal.
 
 Full-text search runs over an FTS5 index of every note's **title and body**, ranked by BM25, so a word that appears only inside a note is found. Semantic search embeds the query and searches the vector index; it needs an embedding provider configured (see `:h config.embedding`) and notes that have been processed.
 

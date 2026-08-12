@@ -44,6 +44,7 @@ pub async fn execute(
     limit: usize,
     search_type: &str,
     format: &str,
+    preview: bool,
 ) -> Result<()> {
     let kiln_path = &config.kiln_path;
 
@@ -157,7 +158,7 @@ pub async fn execute(
     }
 
     let formatted =
-        output::format_search_results(&results, format, mode.includes_semantic(), false)?;
+        output::format_search_results(&results, format, mode.includes_semantic(), preview)?;
     println!("{formatted}");
 
     Ok(())
@@ -339,14 +340,32 @@ mod tests {
             limit,
             r#type,
             format,
+            preview,
         }) = cli.command
         {
             assert_eq!(query, "rust");
             assert_eq!(limit, 5);
             assert_eq!(r#type, "semantic");
             assert_eq!(format, "json");
+            assert!(!preview);
         } else {
             panic!("Expected Search command");
+        }
+    }
+
+    #[test]
+    fn search_command_preview_is_opt_in() {
+        for args in [
+            vec!["cru", "search", "rust"],
+            vec!["cru", "search", "rust", "-c"],
+            vec!["cru", "search", "rust", "--preview"],
+        ] {
+            let expected = args.len() > 3;
+            let cli = crate::cli::Cli::try_parse_from(&args).unwrap();
+            let Some(crate::cli::Commands::Search { preview, .. }) = cli.command else {
+                panic!("Expected Search command");
+            };
+            assert_eq!(preview, expected, "args: {args:?}");
         }
     }
 

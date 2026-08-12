@@ -380,7 +380,8 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             limit,
             r#type,
             format,
-        }) => commands::search::execute(config, &query, limit, &r#type, &format).await?,
+            preview,
+        }) => commands::search::execute(config, &query, limit, &r#type, &format, preview).await?,
 
         Some(Commands::Stats { format }) => commands::stats::execute(config, &format).await?,
 
