@@ -1940,7 +1940,7 @@ impl RpcDispatcher {
         );
 
         // Best-effort broadcast — no subscribers is fine
-        let _ = self.ctx.event_tx.send(event);
+        crate::event_emitter::emit_event(&self.ctx.event_tx, event);
 
         Ok(serde_json::json!({ "status": "ok" }))
     }

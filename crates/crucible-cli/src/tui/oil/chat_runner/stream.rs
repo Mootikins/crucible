@@ -4,6 +4,20 @@ use std::sync::Arc;
 
 use super::commands::session_event_to_chat_msgs;
 
+/// The session id the daemon addresses genuinely global events to.
+///
+/// The daemon's own constant, not a second `"*"`: the two ends of this filter
+/// have to agree, and one of them already owns the value.
+///
+/// The daemon treats the wildcard symmetrically — a client subscribed to `"*"`
+/// receives everything, and an event addressed to `"*"` reaches every client
+/// (`daemon/src/server/core.rs`). This end had only the first half, so a
+/// wildcard-addressed event reached the process and was then dropped by the
+/// per-session filter: `stream_gap` (the broadcast gap marker, which names no
+/// session because `Lagged(n)` does not know one) and `ui_style_changed`'s
+/// config-level pushes both went nowhere.
+use crucible_daemon::subscription::WILDCARD_SESSION;
+
 /// Stateful SessionEvent → ChatAppMsg converter.
 ///
 /// Tracks `saw_text_delta` per turn so `message_complete.full_response`
@@ -250,7 +264,7 @@ pub(crate) async fn session_event_consumer(
         event_rx,
         msg_tx,
         context_limit,
-        move |event| event.session_id == filter_id,
+        move |event| event.session_id == filter_id || event.session_id == WILDCARD_SESSION,
         |event, tx| {
             promote_ended_error(event, tx);
             if event.event_type == "replay_complete" {

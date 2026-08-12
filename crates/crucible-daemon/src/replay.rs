@@ -146,6 +146,13 @@ impl ReplaySession {
                 event.timestamp = Some(recorded.ts);
                 event.seq = Some(recorded.seq);
 
+                // Deliberately NOT `event_emitter::emit_event`, and the next
+                // person will want to "fix" that: replay's whole job is to
+                // reproduce a recording, so the seq and timestamp above are the
+                // recorded ones. Stamping would renumber history from the live
+                // counter and silently rewrite what a recording says happened.
+                // The `replay_event` msg_type is what tells a client these seqs
+                // belong to their own stream and not to its live session.
                 if let Err(err) = self.event_tx.send(event) {
                     warn!(
                         source = %self.replay_source.display(),
@@ -161,6 +168,12 @@ impl ReplaySession {
                 serde_json::json!({"status": "complete", "total_events": total_events}),
             );
             complete.msg_type = "replay_event".to_string();
+            // No seq, and not stamped either. A replay stream is not
+            // gap-checkable in the first place — keypress events are filtered
+            // out above, so the recorded seqs it re-emits already have holes —
+            // and stamping this one from the live counter would put a number
+            // from a different sequence space next to them. `replay_event` is
+            // the marker that tells a client to skip contiguity here.
             if let Err(e) = self.event_tx.send(complete) {
                 tracing::debug!("Failed to send replay_complete event: {e}");
             }

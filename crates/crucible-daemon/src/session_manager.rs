@@ -735,11 +735,14 @@ impl SessionManager {
                         continue;
                     }
                 }
-                let _ = event_tx.send(SessionEventMessage::new(
-                    &summary.id,
-                    "title_changed",
-                    serde_json::json!({ "title": title }),
-                ));
+                crate::event_emitter::emit_event(
+                    event_tx,
+                    SessionEventMessage::new(
+                        &summary.id,
+                        "title_changed",
+                        serde_json::json!({ "title": title }),
+                    ),
+                );
                 info!(session_id = %summary.id, title = %title, "Catch-up title applied");
                 titled += 1;
             }

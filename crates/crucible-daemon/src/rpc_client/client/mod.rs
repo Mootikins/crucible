@@ -624,17 +624,17 @@ impl DaemonClient {
         let mut req_str = serde_json::to_string(&request)?;
         req_str.push('\n');
 
-        // Register pending request before sending (for event mode)
-        let response_rx = if self.reader_task.is_some() {
-            let (tx, rx) = oneshot::channel();
-            {
-                let mut pending = self.pending_requests.lock().await;
-                pending.insert(id, tx);
-            }
-            Some(rx)
-        } else {
-            None
-        };
+        // Register the pending slot before sending, in BOTH modes. Event mode's
+        // background reader routes into it; simple mode has no background reader,
+        // so whichever caller happens to hold the read half routes *other*
+        // callers' responses into theirs. One correlation table, two ways of
+        // being fed — rather than event mode correlating by id and simple mode
+        // trusting arrival order.
+        let (response_tx, response_rx) = oneshot::channel();
+        {
+            let mut pending = self.pending_requests.lock().await;
+            pending.insert(id, response_tx);
+        }
 
         // Send request
         {
@@ -643,9 +643,9 @@ impl DaemonClient {
         }
 
         // Get response
-        let response = if let Some(rx) = response_rx {
+        let response = if self.reader_task.is_some() {
             // Event mode: wait for background reader to route response
-            match tokio::time::timeout(timeout, rx).await {
+            match tokio::time::timeout(timeout, response_rx).await {
                 Ok(Ok(response)) => response,
                 Ok(Err(_)) => anyhow::bail!("Response channel closed unexpectedly"),
                 Err(_) => {
@@ -657,7 +657,11 @@ impl DaemonClient {
             }
         } else {
             // Simple mode: read directly
-            self.read_response_simple().await?
+            let result = self.read_response_simple(id, response_rx).await;
+            if result.is_err() {
+                self.pending_requests.lock().await.remove(&id);
+            }
+            result?
         };
 
         if let Some(error) = response.get("error") {
@@ -670,26 +674,77 @@ impl DaemonClient {
             .unwrap_or(serde_json::Value::Null))
     }
 
-    async fn read_response_simple(&self) -> Result<serde_json::Value> {
+    /// Read this request's own response off the socket.
+    ///
+    /// Simple mode has no background reader, so the caller that gets the read
+    /// half becomes the reader for everyone. Two things follow, and the old
+    /// version did neither:
+    ///
+    /// 1. **It must match the id.** It used to return the first line carrying an
+    ///    `id`, whichever request that belonged to. Harmless only while the
+    ///    daemon answered strictly FIFO — and the daemon is what changed.
+    /// 2. **A line that is not ours must be delivered, not discarded.** Dropping
+    ///    it would hang the caller it belonged to, which is a worse failure than
+    ///    the mis-delivery being fixed. It goes into `pending_requests`, the same
+    ///    table event mode routes through.
+    ///
+    /// The `select!` is what keeps that deadlock-free: a caller waits on *either*
+    /// the read half or its own slot, so a caller whose response has already been
+    /// routed by someone else never has to acquire the reader to collect it.
+    async fn read_response_simple(
+        &self,
+        id: u64,
+        mut response_rx: oneshot::Receiver<serde_json::Value>,
+    ) -> Result<serde_json::Value> {
         let reader = self
             .simple_reader
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No reader available in event mode"))?;
 
+        // Biased so an already-routed response wins over becoming the reader.
+        let mut guard = tokio::select! {
+            biased;
+            routed = &mut response_rx => {
+                return routed.context("response channel closed before the reply arrived");
+            }
+            guard = reader.lock() => guard,
+        };
+
         loop {
             let mut line = String::new();
-            {
-                let mut reader = reader.lock().await;
-                let bytes_read = reader.read_line(&mut line).await?;
-                if bytes_read == 0 {
-                    anyhow::bail!("Connection closed by daemon");
-                }
+            if guard.read_line(&mut line).await? == 0 {
+                anyhow::bail!("Connection closed by daemon");
             }
 
             let msg: serde_json::Value = serde_json::from_str(&line)?;
 
-            if msg.get("id").is_some() || msg.get("error").is_some() {
+            let Some(msg_id) = msg.get("id").and_then(|v| v.as_u64()) else {
+                // No id: either a server-pushed notification (skip it, a reply is
+                // not necessarily the next line on the wire) or a parse-error
+                // response for a request whose id the daemon never read. This
+                // client always writes well-formed JSON, so the second cannot
+                // arise from us — but answering it to whoever is reading is the
+                // only thing that can be done with a reply that names no request.
+                if msg.get("error").is_some() {
+                    warn!("daemon returned an error response with no id: {msg}");
+                    self.pending_requests.lock().await.remove(&id);
+                    return Ok(msg);
+                }
+                continue;
+            };
+
+            if msg_id == id {
+                self.pending_requests.lock().await.remove(&id);
                 return Ok(msg);
+            }
+
+            // Another caller's reply. Hand it over; if nobody is waiting it is a
+            // reply to a request that already timed out or was abandoned.
+            match self.pending_requests.lock().await.remove(&msg_id) {
+                Some(tx) => {
+                    let _ = tx.send(msg);
+                }
+                None => warn!("Received response for unknown request id: {}", msg_id),
             }
         }
     }

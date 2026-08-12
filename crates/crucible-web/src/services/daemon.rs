@@ -1253,8 +1253,28 @@ impl EventBroker {
         tx.subscribe()
     }
 
+    /// Route one daemon event to the SSE streams that should see it.
+    ///
+    /// The wildcard is symmetric on the daemon's side — an event addressed to
+    /// `"*"` reaches every connected client (`daemon/src/server/core.rs`) —
+    /// because such an event belongs to no single session by construction. Two
+    /// exist: `stream_gap`, which reports that this connection's event stream
+    /// lost N events and cannot say which sessions they came from, and
+    /// `ui_style_changed`'s config-level pushes.
+    ///
+    /// Without the fan-out below they arrived here and were dropped: no
+    /// per-session sender is keyed `"*"`, so the exact-match lookup found
+    /// nothing and returned success. A dropped `stream_gap` is the worst case —
+    /// it is the marker that stops a transcript with a hole in it from being
+    /// silently wrong.
     async fn dispatch(&self, event: SessionEvent) {
         let sessions = self.sessions.read().await;
+        if event.session_id == crucible_daemon::subscription::WILDCARD_SESSION {
+            for tx in sessions.values() {
+                let _ = tx.send(event.clone());
+            }
+            return;
+        }
         if let Some(tx) = sessions.get(&event.session_id) {
             let _ = tx.send(event);
         }
@@ -1376,6 +1396,33 @@ mod tests {
         let received_event = received.unwrap();
         assert_eq!(received_event.session_id, "session-1");
         assert_eq!(received_event.event_type, "test_event");
+    }
+
+    /// A wildcard-addressed event reaches every open stream, because it belongs
+    /// to no session and the daemon has no way to attribute it to one.
+    ///
+    /// `stream_gap` is the case that matters: the exact-match lookup this
+    /// replaces found no `"*"` sender and dropped the marker, so a browser
+    /// rendering a transcript with a hole in it was never told.
+    #[tokio::test]
+    async fn a_wildcard_addressed_event_reaches_every_session_stream() {
+        let broker = Arc::new(EventBroker::new());
+        let mut rx1 = broker.subscribe("session-1").await;
+        let mut rx2 = broker.subscribe("session-2").await;
+
+        broker
+            .dispatch(SessionEvent {
+                session_id: crucible_daemon::subscription::WILDCARD_SESSION.to_string(),
+                event_type: "stream_gap".to_string(),
+                data: serde_json::json!({ "dropped": 5 }),
+            })
+            .await;
+
+        for rx in [&mut rx1, &mut rx2] {
+            let got = rx.recv().await.expect("every stream must see the marker");
+            assert_eq!(got.event_type, "stream_gap");
+            assert_eq!(got.data["dropped"], 5);
+        }
     }
 
     #[tokio::test]

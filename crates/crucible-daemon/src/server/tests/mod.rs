@@ -13,6 +13,7 @@ use tokio::net::UnixStream;
 
 mod child_sessions;
 mod delegation_e2e;
+mod event_seq;
 mod events;
 mod graph;
 mod isolation_param;

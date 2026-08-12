@@ -370,7 +370,7 @@ async fn run_and_emit_assessment(
     }
 
     let msg = SessionEventMessage::workflow_assessed(session_id, &passed, &failed, &manual);
-    let _ = ctx.event_tx.send(msg);
+    crate::event_emitter::emit_event(&ctx.event_tx, msg);
 }
 
 const VALIDATION_OUTPUT_CAP: usize = 4096;
@@ -445,7 +445,7 @@ fn truncate_utf8_lossy(bytes: &[u8], cap: usize) -> String {
 fn drain_and_broadcast(ctx: &RpcContext, session_id: &str, exec: &mut WorkflowExecution) {
     for event in exec.drain_events() {
         let msg = workflow_event_to_message(session_id, event);
-        let _ = ctx.event_tx.send(msg);
+        crate::event_emitter::emit_event(&ctx.event_tx, msg);
     }
 }
 

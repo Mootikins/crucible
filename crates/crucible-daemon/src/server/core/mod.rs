@@ -129,10 +129,242 @@ pub(super) async fn write_line_or_close(
     }
 }
 
+/// The event name a client sees when its own stream lost events.
+///
+/// Not in [`crucible_core::protocol::session_events`]'s vocabulary yet: it is
+/// minted per *connection*, not by a session, so no producer of session state
+/// emits it. `Group::of` therefore answers `None` and every typed consumer takes
+/// its documented `UnknownEvent` passthrough arm — which is why this ships
+/// without touching the payload enums. It belongs in `SystemPayload` and that
+/// module's owner should put it there.
+pub(super) const STREAM_GAP: &str = "stream_gap";
+
+/// Tell one client that its event stream has a hole in it.
+///
+/// Written straight to the socket rather than published on the broadcast: the
+/// broadcast is what lagged, and a gap is a fact about this connection's cursor,
+/// not about any session — publishing it would hand every *other* client a
+/// marker for a gap it did not have.
+///
+/// Addressed to the wildcard because `Lagged(n)` reports a count and nothing
+/// else: the daemon does not know which sessions the dropped events belonged to,
+/// so naming one would be a guess. `n` is per connection, not per session.
+///
+/// Deliberately carries **no `seq`**. Every other event is stamped from its
+/// session's counter (`event_emitter::stamp_event`) so a client can check
+/// contiguity by arithmetic; this one is minted outside that sequence space, and
+/// giving it a number from the `"*"` counter would insert a value into a stream
+/// other clients never saw. Clients exempt `stream_gap` from the contiguity
+/// check — it is the thing that *explains* a discontinuity.
+fn stream_gap_event(dropped: u64) -> SessionEventMessage {
+    SessionEventMessage::new(
+        crate::subscription::WILDCARD_SESSION,
+        STREAM_GAP,
+        serde_json::json!({ "dropped": dropped }),
+    )
+}
+
+/// Forward broadcast events to one client's socket until cancelled or wedged.
+///
+/// Extracted from `handle_client` so the `Lagged` path is reachable from a test:
+/// overflowing a `broadcast::Receiver` is deterministic (send past capacity
+/// before the first `recv`), but only if something other than a live daemon
+/// connection can be handed the receiver.
+async fn forward_events(
+    mut event_rx: broadcast::Receiver<SessionEventMessage>,
+    writer: Arc<Mutex<OwnedWriteHalf>>,
+    sub_manager: Arc<SubscriptionManager>,
+    client_id: ClientId,
+    cancel: CancellationToken,
+) {
+    loop {
+        tokio::select! {
+            biased;
+            _ = cancel.cancelled() => break,
+            result = event_rx.recv() => {
+                match result {
+                    Ok(event) => {
+                        // The wildcard is symmetric: a client subscribed to
+                        // "*" receives everything, and an event addressed
+                        // to "*" reaches everyone. Without the second half,
+                        // a genuinely global event (a theme change) would
+                        // silently reach nobody, because every client
+                        // subscribes to its own session id.
+                        let broadcast_to_all =
+                            event.session_id == crate::subscription::WILDCARD_SESSION;
+                        if broadcast_to_all
+                            || sub_manager.is_subscribed(client_id, &event.session_id)
+                        {
+                            if let Ok(json) = event.to_json_line() {
+                                // Breaks on a write timeout as well as an
+                                // I/O error: a peer that has stopped
+                                // draining would otherwise hold the writer
+                                // mutex forever and wedge the request loop
+                                // behind it.
+                                if write_line_or_close(&writer, json.as_bytes(), client_id)
+                                    .await
+                                    .is_err()
+                                {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        tracing::warn!(
+                            "Event forwarder lagged, dropped {} events for client {}", n, client_id
+                        );
+                        // Tell the client. A hole it cannot see is worse than a
+                        // hole it can: with the marker it can refetch and it
+                        // stops trusting a transcript that is now wrong;
+                        // without it the rendered conversation is quietly and
+                        // permanently missing N events.
+                        if let Ok(json) = stream_gap_event(n).to_json_line() {
+                            if write_line_or_close(&writer, json.as_bytes(), client_id)
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
+                        continue;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        }
+    }
+}
+
+/// How many requests one connection may have in flight at once.
+///
+/// Bounded, not unbounded: a client that pipelines faster than the daemon can
+/// serve should queue in its socket, not create tasks without limit. Spawning
+/// per line with no bound trades head-of-line blocking for unbounded resource
+/// growth, which is a worse deal.
+///
+/// 32 is well above any real client's concurrency — the TUI and the web server
+/// each have a handful of calls outstanding at their busiest — and far below
+/// anything that matters for memory.
+const MAX_INFLIGHT_PER_CONNECTION: usize = 32;
+
+/// Read requests from one connection, serve them concurrently, and write each
+/// reply as it finishes.
+///
+/// The serial `read_line` → `handle_request().await` → `write_all` this replaces
+/// meant one long **synchronous** handler delayed that client's every other
+/// call: `kiln.open` with `process = true`, `process_batch`, `session.reindex`.
+/// (Not `session.send_message` — it spawns the turn and returns, so cancel was
+/// never queued behind a running turn, contrary to how this is usually
+/// described.)
+///
+/// Three things make the spawn safe, and it would not be without all three:
+/// - `handle_request` already contains each request's panic, so a spawned
+///   handler cannot unwind the connection.
+/// - Replies are no longer FIFO, so every client must correlate by id.
+///   `DaemonClient` now does in both modes, and so does the integration-test
+///   `RpcConn`; a client that does not will mis-deliver silently.
+/// - The semaphore bounds task growth.
+///
+/// `serve` is a parameter rather than a direct `handle_request` call because the
+/// property this function exists for — a parked request not blocking a later one
+/// — is unobservable through a dispatcher whose handlers all return promptly. It
+/// also puts the connection's framing and concurrency on one side of a line and
+/// dispatch on the other.
+async fn serve_requests<F, Fut>(
+    reader: tokio::net::unix::OwnedReadHalf,
+    writer: Arc<Mutex<OwnedWriteHalf>>,
+    client_id: ClientId,
+    max_inflight: usize,
+    serve: F,
+) -> Result<()>
+where
+    F: Fn(String) -> Fut + Clone + Send + 'static,
+    Fut: std::future::Future<Output = Response> + Send + 'static,
+{
+    let mut reader = BufReader::new(reader);
+    let mut line = String::new();
+    let inflight = Arc::new(tokio::sync::Semaphore::new(max_inflight));
+    let mut handlers = tokio::task::JoinSet::new();
+
+    // A failed write now happens inside a handler, not in this loop. Without
+    // this token the connection would go on accepting requests whose replies can
+    // never be delivered — and never reach the caller's cleanup, which is the
+    // task-plus-subscription leak the write timeout exists to close.
+    let closed = CancellationToken::new();
+
+    let outcome = loop {
+        line.clear();
+        // `read_line` is not cancel-safe: losing the select drops a partly-read
+        // line. That is fine here and only here, because the only branch that can
+        // beat it is the one that abandons the connection outright — a request
+        // whose reply can never be written is not one to finish reading.
+        let read = tokio::select! {
+            biased;
+            _ = closed.cancelled() => break Err(anyhow::anyhow!("client write failed; closing")),
+            r = reader.read_line(&mut line) => r,
+        };
+        match read {
+            Ok(0) => break Ok(()),
+            Ok(_) => {}
+            Err(e) => break Err(e.into()),
+        }
+
+        // Acquired before the spawn, so a client that pipelines past the limit
+        // waits here and its extra requests queue in the socket buffer rather
+        // than as tasks.
+        let permit = tokio::select! {
+            biased;
+            _ = closed.cancelled() => break Err(anyhow::anyhow!("client write failed; closing")),
+            p = inflight.clone().acquire_owned() => match p {
+                Ok(p) => p,
+                // Nothing closes this semaphore; it lives and dies with the loop.
+                Err(_) => break Err(anyhow::anyhow!("connection semaphore closed")),
+            },
+        };
+
+        let owned = std::mem::take(&mut line);
+        let serve = serve.clone();
+        let writer = writer.clone();
+        let closed_for_handler = closed.clone();
+        handlers.spawn(async move {
+            let _permit = permit;
+            let response = serve(owned).await;
+            let mut output = match serde_json::to_string(&response) {
+                Ok(o) => o,
+                Err(e) => {
+                    error!(error = %e, "failed to serialize a response; dropping it");
+                    return;
+                }
+            };
+            output.push('\n');
+            if write_line_or_close(&writer, output.as_bytes(), client_id)
+                .await
+                .is_err()
+            {
+                closed_for_handler.cancel();
+            }
+        });
+    };
+
+    // Let in-flight handlers finish before the caller tears the connection down.
+    // Dropping the `JoinSet` would abort them mid-handler, and a handler is
+    // whatever the RPC does — a storage write, a git operation. The serial loop
+    // this replaces always ran its one request to completion, so waiting keeps
+    // that guarantee instead of trading it for a faster close.
+    while let Some(joined) = handlers.join_next().await {
+        if let Err(e) = joined {
+            error!(error = %e, "request handler task failed");
+        }
+    }
+
+    outcome
+}
+
 pub(super) async fn handle_client(
     stream: UnixStream,
     ctx: Arc<ServerContext>,
-    mut event_rx: broadcast::Receiver<SessionEventMessage>,
+    event_rx: broadcast::Receiver<SessionEventMessage>,
 ) -> Result<()> {
     #[cfg(unix)]
     if !peer_accepted(&stream, ctx.authorized_uid) {
@@ -142,94 +374,43 @@ pub(super) async fn handle_client(
     let client_id = ClientId::new();
     let (reader, writer) = stream.into_split();
     let writer: Arc<Mutex<OwnedWriteHalf>> = Arc::new(Mutex::new(writer));
-    let mut reader = BufReader::new(reader);
-    let mut line = String::new();
 
-    let writer_clone = writer.clone();
-    let sub_manager = ctx.subscription_manager.clone();
     let event_cancel = CancellationToken::new();
-    let event_cancel_clone = event_cancel.clone();
-    let event_task = tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                biased;
-                _ = event_cancel_clone.cancelled() => break,
-                result = event_rx.recv() => {
-                    match result {
-                        Ok(event) => {
-                            // The wildcard is symmetric: a client subscribed to
-                            // "*" receives everything, and an event addressed
-                            // to "*" reaches everyone. Without the second half,
-                            // a genuinely global event (a theme change) would
-                            // silently reach nobody, because every client
-                            // subscribes to its own session id.
-                            let broadcast_to_all =
-                                event.session_id == crate::subscription::WILDCARD_SESSION;
-                            if broadcast_to_all
-                                || sub_manager.is_subscribed(client_id, &event.session_id)
-                            {
-                                if let Ok(json) = event.to_json_line() {
-                                    // Breaks on a write timeout as well as an
-                                    // I/O error: a peer that has stopped
-                                    // draining would otherwise hold the writer
-                                    // mutex forever and wedge the request loop
-                                    // behind it.
-                                    if write_line_or_close(
-                                        &writer_clone,
-                                        json.as_bytes(),
-                                        client_id,
-                                    )
-                                    .await
-                                    .is_err()
-                                    {
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                            tracing::warn!(
-                                "Event forwarder lagged, dropped {} events for client {}", n, client_id
-                            );
-                            continue;
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+    let event_task = tokio::spawn(forward_events(
+        event_rx,
+        writer.clone(),
+        ctx.subscription_manager.clone(),
+        client_id,
+        event_cancel.clone(),
+    ));
+
+    let dispatch_ctx = ctx.clone();
+    let result = serve_requests(
+        reader,
+        writer,
+        client_id,
+        MAX_INFLIGHT_PER_CONNECTION,
+        move |line: String| {
+            let ctx = dispatch_ctx.clone();
+            async move {
+                match serde_json::from_str::<Request>(&line) {
+                    Ok(req) => handle_request(req, client_id, &ctx).await,
+                    Err(e) => {
+                        warn!("Parse error: {}", e);
+                        Response::error(None, PARSE_ERROR, e.to_string())
                     }
                 }
             }
-        }
-    });
-
-    loop {
-        line.clear();
-        let n = reader.read_line(&mut line).await?;
-        if n == 0 {
-            break;
-        }
-
-        let response = match serde_json::from_str::<Request>(&line) {
-            Ok(req) => handle_request(req, client_id, &ctx).await,
-            Err(e) => {
-                warn!("Parse error: {}", e);
-                Response::error(None, PARSE_ERROR, e.to_string())
-            }
-        };
-
-        let mut output = serde_json::to_string(&response)?;
-        output.push('\n');
-
-        // `?` on purpose: a timed-out write must fall out of this loop so the
-        // cleanup below runs. Returning early is what releases the event
-        // subscription and cancels the forwarder task — the leak this closes.
-        write_line_or_close(&writer, output.as_bytes(), client_id).await?;
-    }
+        },
+    )
+    .await;
 
     // Graceful shutdown of event forwarding
     event_cancel.cancel();
     let _ = tokio::time::timeout(std::time::Duration::from_millis(100), event_task).await;
     ctx.subscription_manager.remove_client(client_id);
 
-    Ok(())
+    result
 }
 
 pub(super) fn forward_to_recording(sm: &SessionManager, event: &SessionEventMessage) {
@@ -243,28 +424,21 @@ pub(super) fn forward_to_recording(sm: &SessionManager, event: &SessionEventMess
     }
 }
 
+/// Does this event belong in `session.jsonl`?
+///
+/// The decision now lives on the typed payload
+/// ([`SessionEventPayload::is_persisted`]), which matches exhaustively over each
+/// group. This was a ninth hand-maintained vocabulary: adding a turn event
+/// persisted nothing and nobody was told, which is how `segment_complete` was
+/// nearly shipped unpersisted.
+///
+/// An event this build cannot decode is not persisted — the same answer the name
+/// list gave for a name it did not list.
 pub(super) fn should_persist(event: &SessionEventMessage) -> bool {
     if event.msg_type != "event" {
         return false;
     }
-
-    matches!(
-        event.event.as_str(),
-        "user_message"
-            | "thinking"
-            | "segment_complete"
-            | "message_complete"
-            | "tool_call"
-            | "tool_result"
-            | "model_switched"
-            | "ended"
-            // What context was injected is part of the turn's record, not just
-            // a live notification: without it a resumed transcript cannot say
-            // which notes the answer was grounded in, and re-deriving it later
-            // would report today's search results as though they were the
-            // ones actually used.
-            | "precognition_complete"
-    )
+    event.payload().is_ok_and(|p| p.is_persisted())
 }
 
 pub(super) async fn persist_event(
@@ -504,105 +678,4 @@ pub(super) async fn handle_request(
 }
 
 #[cfg(test)]
-mod panic_boundary_tests {
-    use futures::FutureExt;
-
-    /// The property `handle_request` provides: a panicking handler becomes an
-    /// error response, not a dropped connection.
-    ///
-    /// This exercises the same `AssertUnwindSafe` + `catch_unwind` composition
-    /// the real path uses. Driving `handle_request` itself would need a whole
-    /// live `ServerContext`; what can actually regress here is the catch
-    /// composition, since the panic escapes the moment it is removed.
-    #[tokio::test]
-    async fn a_panicking_future_is_caught_rather_than_unwinding() {
-        let caught = std::panic::AssertUnwindSafe(async {
-            // The shape of the real one: a byte index inside a codepoint.
-            let s = "an em dash — here";
-            let _ = &s[..12];
-            "unreachable"
-        })
-        .catch_unwind()
-        .await;
-
-        let panic = caught.expect_err("slicing mid-codepoint must panic");
-        let detail = panic
-            .downcast_ref::<String>()
-            .map(String::as_str)
-            .or_else(|| panic.downcast_ref::<&str>().copied())
-            .unwrap_or("unknown panic");
-
-        assert!(
-            detail.contains("char boundary"),
-            "the panic payload is recoverable for the error message: {detail:?}"
-        );
-    }
-
-    /// A handler that does not panic must be entirely unaffected.
-    #[tokio::test]
-    async fn a_normal_future_passes_through_untouched() {
-        let result = std::panic::AssertUnwindSafe(async { 42 })
-            .catch_unwind()
-            .await;
-        assert_eq!(result.ok(), Some(42));
-    }
-}
-
-#[cfg(test)]
-mod client_write_timeout_tests {
-    use super::*;
-
-    /// A peer that stops draining must cost the daemon one closed connection,
-    /// not a permanently wedged writer.
-    ///
-    /// Before the timeout, `write_all` on a full socket buffer blocked forever
-    /// with the writer mutex held: the event forwarder and the request loop both
-    /// stalled, `handle_client` never reached its cleanup, and the connection
-    /// leaked a task plus a subscription entry for the daemon's lifetime.
-    ///
-    /// Deterministic and instant: `tokio::time::pause()` means the runtime
-    /// auto-advances the clock once every task is blocked, so the timeout fires
-    /// the moment `write_all` genuinely cannot make progress. No sleeps, and no
-    /// 30s of wall time.
-    #[tokio::test(start_paused = true)]
-    async fn a_client_that_stops_reading_gets_its_connection_closed() {
-        let (server_side, _client_side) = tokio::net::UnixStream::pair().expect("socketpair");
-        let (_reader, writer) = server_side.into_split();
-        let writer = Mutex::new(writer);
-
-        // `_client_side` is never read from, so this fills the socket buffers
-        // and then blocks — which is precisely the wedge being closed. Well
-        // past any plausible SO_SNDBUF + SO_RCVBUF.
-        let payload = vec![b'x'; 16 * 1024 * 1024];
-
-        let result = write_line_or_close(&writer, &payload, ClientId::new()).await;
-
-        assert!(
-            result.is_err(),
-            "a write the peer never accepts must fail so the caller closes the connection"
-        );
-    }
-
-    /// The ordinary case is untouched: a peer that reads gets its bytes and the
-    /// connection stays up.
-    #[tokio::test(start_paused = true)]
-    async fn a_client_that_reads_is_written_to_normally() {
-        use tokio::io::AsyncReadExt;
-
-        let (server_side, mut client_side) = tokio::net::UnixStream::pair().expect("socketpair");
-        let (_reader, writer) = server_side.into_split();
-        let writer = Mutex::new(writer);
-
-        let reading = tokio::spawn(async move {
-            let mut buf = [0_u8; 5];
-            client_side.read_exact(&mut buf).await.expect("read");
-            buf
-        });
-
-        write_line_or_close(&writer, b"hello", ClientId::new())
-            .await
-            .expect("a draining peer must be written to without error");
-
-        assert_eq!(&reading.await.expect("reader task"), b"hello");
-    }
-}
+mod tests;

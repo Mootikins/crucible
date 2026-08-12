@@ -20,6 +20,7 @@ use tokio::sync::broadcast;
 use tracing::debug;
 
 use crate::agent_manager::AgentManager;
+use crate::event_emitter::emit_event;
 
 /// The event name clients match on.
 pub const UI_STYLE_CHANGED: &str = "ui_style_changed";
@@ -55,7 +56,7 @@ pub fn broadcast_exprs_changed(
 ) {
     let payload = crate::rpc::ui::expr_payload(agents, session_id);
     let msg = SessionEventMessage::new(session_id, UI_STYLE_CHANGED, payload);
-    if event_tx.send(msg).is_err() {
+    if !emit_event(event_tx, msg) {
         debug!("statusline value change had no subscribers");
     }
 }
@@ -67,7 +68,7 @@ pub fn broadcast_style_changed(
 ) {
     let payload = crate::rpc::ui::style_payload(agents, session_id);
     let msg = SessionEventMessage::new(session_id, UI_STYLE_CHANGED, payload);
-    if event_tx.send(msg).is_err() {
+    if !emit_event(event_tx, msg) {
         debug!("ui style change had no subscribers");
     }
 }

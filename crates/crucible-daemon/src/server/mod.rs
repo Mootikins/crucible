@@ -69,6 +69,27 @@ pub mod storage;
 use core::*;
 use plugins::*;
 
+/// How many events the broadcast ring retains before a slow receiver's cursor
+/// falls off the back of it.
+///
+/// **A mitigation, not a fix.** No capacity makes lag impossible; it only moves
+/// the threshold. What makes the loss survivable is the `stream_gap` marker
+/// (`core::stream_gap_event`) — this number just makes the marker rare.
+///
+/// One ring, shared by every receiver, so the cost is paid once for the daemon
+/// rather than per connected client. Sized against the traffic that actually
+/// causes lag, which is `text_delta`: ~196 bytes serialized (a 45-char chunk,
+/// full envelope with timestamp and seq), so 4096 slots is roughly 800 KiB of
+/// retained deltas, and a client has to fall ~4096 deltas — a large fraction of
+/// one streamed response — behind before it loses anything.
+///
+/// The worst case is not bounded by this number and never was: a
+/// `message_complete` or a `tool_result` carries an arbitrarily large
+/// `serde_json::Value` (a 2 KiB response body already serializes to ~2.3 KiB),
+/// so a ring full of those is megabytes at any capacity. Capping event *payload*
+/// size is the fix for that and is a different change.
+const EVENT_CHANNEL_CAPACITY: usize = 4096;
+
 /// Daemon server that listens on a Unix socket
 pub struct Server {
     listener: UnixListener,
@@ -247,7 +268,7 @@ impl Server {
 
         let listener = bind_private_listener(&params.path)?;
         let (shutdown_tx, _) = broadcast::channel(1);
-        let (event_tx, _) = broadcast::channel(1024);
+        let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
 
         use crate::tools::mcp_gateway::McpGatewayManager;
         use tokio::sync::RwLock;

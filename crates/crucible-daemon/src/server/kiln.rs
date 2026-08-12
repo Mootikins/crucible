@@ -54,18 +54,21 @@ pub(crate) async fn handle_kiln_open(
     if process {
         match km.open_and_process(kiln_path, force).await {
             Ok((discovered, processed, skipped, errors)) => {
-                if let Err(e) = event_tx.send(SessionEventMessage::new(
-                    "process",
-                    "process_complete",
-                    serde_json::json!({
-                        "kiln": path,
-                        "discovered": discovered,
-                        "processed": processed,
-                        "skipped": skipped,
-                        "errors": errors.len()
-                    }),
-                )) {
-                    tracing::debug!("Failed to send process_complete event: {e}");
+                if !emit_event(
+                    event_tx,
+                    SessionEventMessage::new(
+                        "process",
+                        "process_complete",
+                        serde_json::json!({
+                            "kiln": path,
+                            "discovered": discovered,
+                            "processed": processed,
+                            "skipped": skipped,
+                            "errors": errors.len()
+                        }),
+                    ),
+                ) {
+                    tracing::debug!("process_complete event had no subscribers");
                 }
 
                 Response::success(
@@ -710,17 +713,20 @@ pub(crate) async fn handle_process_batch(
         .unwrap_or_else(|| "batch-unknown".to_string());
 
     // Emit start event
-    if let Err(e) = event_tx.send(SessionEventMessage::new(
-        "process",
-        "process_start",
-        serde_json::json!({
-            "type": "process_start",
-            "batch_id": &batch_id,
-            "total": paths.len(),
-            "kiln": kiln_path
-        }),
-    )) {
-        tracing::debug!("Failed to send process_start event: {e}");
+    if !emit_event(
+        event_tx,
+        SessionEventMessage::new(
+            "process",
+            "process_start",
+            serde_json::json!({
+                "type": "process_start",
+                "batch_id": &batch_id,
+                "total": paths.len(),
+                "kiln": kiln_path
+            }),
+        ),
+    ) {
+        tracing::debug!("process_start event had no subscribers");
     }
 
     let mut processed = 0usize;
@@ -731,67 +737,79 @@ pub(crate) async fn handle_process_batch(
         match km.process_file(Path::new(kiln_path), path).await {
             Ok(true) => {
                 processed += 1;
-                if let Err(e) = event_tx.send(SessionEventMessage::new(
-                    "process",
-                    "process_progress",
-                    serde_json::json!({
-                        "type": "process_progress",
-                        "batch_id": &batch_id,
-                        "file": path.to_string_lossy(),
-                        "result": "processed"
-                    }),
-                )) {
-                    tracing::debug!("Failed to send process_progress event: {e}");
+                if !emit_event(
+                    event_tx,
+                    SessionEventMessage::new(
+                        "process",
+                        "process_progress",
+                        serde_json::json!({
+                            "type": "process_progress",
+                            "batch_id": &batch_id,
+                            "file": path.to_string_lossy(),
+                            "result": "processed"
+                        }),
+                    ),
+                ) {
+                    tracing::debug!("process_progress event had no subscribers");
                 }
             }
             Ok(false) => {
                 skipped += 1;
-                if let Err(e) = event_tx.send(SessionEventMessage::new(
-                    "process",
-                    "process_progress",
-                    serde_json::json!({
-                        "type": "process_progress",
-                        "batch_id": &batch_id,
-                        "file": path.to_string_lossy(),
-                        "result": "skipped"
-                    }),
-                )) {
-                    tracing::debug!("Failed to send process_progress event: {e}");
+                if !emit_event(
+                    event_tx,
+                    SessionEventMessage::new(
+                        "process",
+                        "process_progress",
+                        serde_json::json!({
+                            "type": "process_progress",
+                            "batch_id": &batch_id,
+                            "file": path.to_string_lossy(),
+                            "result": "skipped"
+                        }),
+                    ),
+                ) {
+                    tracing::debug!("process_progress event had no subscribers");
                 }
             }
             Err(e) => {
                 let error_msg = e.to_string();
                 errors.push((path.clone(), error_msg.clone()));
-                if let Err(e) = event_tx.send(SessionEventMessage::new(
-                    "process",
-                    "process_progress",
-                    serde_json::json!({
-                        "type": "process_progress",
-                        "batch_id": &batch_id,
-                        "file": path.to_string_lossy(),
-                        "result": "error",
-                        "error_msg": error_msg
-                    }),
-                )) {
-                    tracing::debug!("Failed to send process_progress event: {e}");
+                if !emit_event(
+                    event_tx,
+                    SessionEventMessage::new(
+                        "process",
+                        "process_progress",
+                        serde_json::json!({
+                            "type": "process_progress",
+                            "batch_id": &batch_id,
+                            "file": path.to_string_lossy(),
+                            "result": "error",
+                            "error_msg": error_msg
+                        }),
+                    ),
+                ) {
+                    tracing::debug!("process_progress event had no subscribers");
                 }
             }
         }
     }
 
     // Emit completion event
-    if let Err(e) = event_tx.send(SessionEventMessage::new(
-        "process",
-        "process_complete",
-        serde_json::json!({
-            "type": "process_complete",
-            "batch_id": &batch_id,
-            "processed": processed,
-            "skipped": skipped,
-            "errors": errors.len()
-        }),
-    )) {
-        tracing::debug!("Failed to send process_complete event: {e}");
+    if !emit_event(
+        event_tx,
+        SessionEventMessage::new(
+            "process",
+            "process_complete",
+            serde_json::json!({
+                "type": "process_complete",
+                "batch_id": &batch_id,
+                "processed": processed,
+                "skipped": skipped,
+                "errors": errors.len()
+            }),
+        ),
+    ) {
+        tracing::debug!("process_complete event had no subscribers");
     }
 
     Response::success(

@@ -53,11 +53,25 @@ impl RpcConn {
         })
     }
 
-    /// Send a raw JSON-RPC request line and return the matching response.
+    /// Send a raw JSON-RPC request line and return **that request's** response.
     ///
     /// Skips server-pushed notifications, which is what a real client does:
     /// a reply is not necessarily the next line on the wire.
+    ///
+    /// It also matches the response's `id` against the request's, rather than
+    /// taking the first reply on the wire. `&mut self` means only one request is
+    /// ever outstanding here, so arrival order and request order agree — but the
+    /// daemon serves requests concurrently now, and "there is only one in flight"
+    /// is an invariant of this type, not of the wire. Checking it is what makes
+    /// it an invariant rather than an assumption; a mismatch means a stale reply
+    /// from an abandoned call is being handed to the wrong assertion.
     pub async fn call(&mut self, request: &str) -> serde_json::Value {
+        // `None` for a request with no id — a notification, which has no reply
+        // to wait for; such a call falls back to the first reply on the wire.
+        let expected_id = serde_json::from_str::<serde_json::Value>(request)
+            .ok()
+            .and_then(|v| v.get("id").cloned());
+
         self.stream
             .write_all(format!("{}\n", request).as_bytes())
             .await
@@ -83,8 +97,16 @@ impl RpcConn {
                         )
                     });
                 // No `id` means a notification (e.g. `ui_style_changed`).
-                if value.get("id").is_some() {
-                    return value;
+                let Some(got_id) = value.get("id") else {
+                    continue;
+                };
+                match &expected_id {
+                    Some(want) if want != got_id => {
+                        eprintln!(
+                            "RpcConn: skipping a reply for id {got_id} while waiting for {want}"
+                        );
+                    }
+                    _ => return value,
                 }
             }
 
@@ -378,6 +400,41 @@ mod tests {
         );
         assert_eq!(second["result"], "second");
 
+        server.await.expect("server task");
+    }
+
+    /// A reply left over from an abandoned call must not be handed to the next
+    /// one. The daemon serves requests concurrently, so "the next reply is mine"
+    /// is not something the wire guarantees any more.
+    #[tokio::test]
+    async fn a_stale_reply_is_skipped_rather_than_answered_to_the_wrong_call() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let socket_path = dir.path().join("fake.sock");
+        let listener = tokio::net::UnixListener::bind(&socket_path).expect("bind");
+
+        // Answers the first request twice: once with a stale id nobody is waiting
+        // for, then with the real one. Deterministic — one write, one read.
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept");
+            let mut chunk = [0u8; 1024];
+            let n = stream.read(&mut chunk).await.expect("server read");
+            assert!(n > 0);
+            stream
+                .write_all(
+                    b"{\"jsonrpc\":\"2.0\",\"id\":99,\"result\":\"stale\"}\n\
+                      {\"jsonrpc\":\"2.0\",\"id\":7,\"result\":\"mine\"}\n",
+                )
+                .await
+                .expect("server write");
+        });
+
+        let mut conn = RpcConn::connect(&socket_path).await.expect("connect");
+        let reply = conn
+            .call(r#"{"jsonrpc":"2.0","id":7,"method":"ping"}"#)
+            .await;
+
+        assert_eq!(reply["id"], 7, "must not answer with id 99's reply");
+        assert_eq!(reply["result"], "mine");
         server.await.expect("server task");
     }
 

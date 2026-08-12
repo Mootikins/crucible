@@ -258,6 +258,37 @@ async fn test_should_persist_filters_correctly() {
     );
 }
 
+/// A session's starting model is emitted (`session_initialized.model`) but was
+/// never persisted, while `model_switched` was — so a session that switched
+/// models had an attributable second half and an unattributable first half.
+///
+/// It is persisted only once the model is known. The setup task runs before
+/// `session.configure_agent` and "almost always observes `None`", so
+/// `assets/fixtures/demo.jsonl` records `"model":""`; persisting that would look
+/// like an answer.
+#[tokio::test]
+async fn a_session_initialized_is_persisted_once_the_model_is_known() {
+    let payload = |model: &str| {
+        serde_json::json!({
+            "model": model,
+            "mode": "normal",
+            "agent_name": null,
+            "kiln_path": "/k",
+            "workspace_path": "/w",
+        })
+    };
+    assert!(should_persist(&SessionEventMessage::new(
+        "test",
+        "session_initialized",
+        payload("glm-5"),
+    )));
+    assert!(!should_persist(&SessionEventMessage::new(
+        "test",
+        "session_initialized",
+        payload(""),
+    )));
+}
+
 #[tokio::test]
 async fn test_sweep_and_archive_stale_sessions_archives_inactive_sessions_without_subscribers() {
     let tmp = TempDir::new().unwrap();

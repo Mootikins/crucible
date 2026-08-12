@@ -608,3 +608,141 @@ fn build_sha_is_set_by_build_rs() {
         "SHA should be hex chars only: got {sha}"
     );
 }
+
+/// Response correlation in simple mode.
+///
+/// Simple mode had no correlation at all: `read_response_simple` returned the
+/// first line carrying an `id`, whichever request it belonged to. That was
+/// invisible while the daemon answered strictly FIFO, and it is the reason a
+/// per-request spawn on the server could not land — it would have started
+/// mis-delivering every simple-mode client's responses, silently, with no error
+/// anywhere.
+mod simple_mode_correlation {
+    use super::*;
+    use std::sync::Arc;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::UnixListener;
+
+    /// A daemon that waits for `n` requests and then answers them in reverse
+    /// arrival order, echoing each request's `method` as its result.
+    ///
+    /// Reverse is the point: it is exactly what a server that spawns per request
+    /// produces when one handler is slower than another, and it is fully
+    /// deterministic here — nothing is written until both requests are in.
+    fn stub_answering_in_reverse(
+        listener: UnixListener,
+        n: usize,
+    ) -> tokio::task::JoinHandle<Vec<(u64, String)>> {
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept");
+            let (read, mut write) = stream.into_split();
+            let mut reader = BufReader::new(read);
+
+            let mut requests: Vec<(u64, String)> = Vec::new();
+            while requests.len() < n {
+                let mut line = String::new();
+                assert!(reader.read_line(&mut line).await.expect("read") > 0);
+                let req: serde_json::Value = serde_json::from_str(&line).expect("parse request");
+                requests.push((
+                    req["id"].as_u64().expect("numeric id"),
+                    req["method"].as_str().expect("method").to_string(),
+                ));
+            }
+
+            let answers: Vec<(u64, String)> = requests.into_iter().rev().collect();
+            for (id, method) in &answers {
+                write
+                    .write_all(
+                        format!("{{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":\"{method}\"}}\n")
+                            .as_bytes(),
+                    )
+                    .await
+                    .expect("write response");
+            }
+            answers
+        })
+    }
+
+    /// Each caller must get its own answer, not the first one on the wire.
+    #[tokio::test]
+    async fn each_caller_gets_its_own_response_when_answers_arrive_reversed() {
+        let dir = TempDir::new().expect("temp dir");
+        let sock = dir.path().join("stub.sock");
+        let listener = UnixListener::bind(&sock).expect("bind");
+        let server = stub_answering_in_reverse(listener, 2);
+
+        let client = Arc::new(
+            DaemonClient::connect_to(&sock)
+                .await
+                .expect("connect simple mode"),
+        );
+        assert!(
+            client.simple_reader.is_some() && client.reader_task.is_none(),
+            "this test is about simple mode; event mode already correlates"
+        );
+
+        let a = tokio::spawn({
+            let client = client.clone();
+            async move { client.call("alpha", serde_json::Value::Null).await }
+        });
+        let b = tokio::spawn({
+            let client = client.clone();
+            async move { client.call("beta", serde_json::Value::Null).await }
+        });
+
+        let a = a.await.expect("task a").expect("call alpha");
+        let b = b.await.expect("task b").expect("call beta");
+
+        assert_eq!(a, serde_json::json!("alpha"), "caller a got b's response");
+        assert_eq!(b, serde_json::json!("beta"), "caller b got a's response");
+
+        // The hazard, asserted present: if the stub had answered in arrival
+        // order this test would pass without any correlation at all.
+        let answered = server.await.expect("server task");
+        let ids: Vec<u64> = answered.iter().map(|(id, _)| *id).collect();
+        let mut ascending = ids.clone();
+        ascending.sort_unstable();
+        assert_ne!(
+            ids, ascending,
+            "the stub must actually have answered out of order, or this test \
+             proves nothing"
+        );
+    }
+
+    /// Server-pushed notifications carry no `id` and must be skipped, not
+    /// mistaken for a reply. This was the one thing the old code got right.
+    #[tokio::test]
+    async fn a_notification_between_request_and_reply_is_skipped() {
+        let dir = TempDir::new().expect("temp dir");
+        let sock = dir.path().join("stub.sock");
+        let listener = UnixListener::bind(&sock).expect("bind");
+
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept");
+            let (read, mut write) = stream.into_split();
+            let mut reader = BufReader::new(read);
+            let mut line = String::new();
+            assert!(reader.read_line(&mut line).await.expect("read") > 0);
+            let req: serde_json::Value = serde_json::from_str(&line).expect("parse");
+            let id = req["id"].as_u64().expect("id");
+            write
+                .write_all(
+                    format!(
+                        "{{\"type\":\"event\",\"session_id\":\"s\",\"event\":\"ui_style_changed\",\"data\":{{}}}}\n\
+                         {{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":\"pong\"}}\n"
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .expect("write");
+        });
+
+        let client = DaemonClient::connect_to(&sock).await.expect("connect");
+        let result = client
+            .call("ping", serde_json::Value::Null)
+            .await
+            .expect("call");
+        assert_eq!(result, serde_json::json!("pong"));
+        server.await.expect("server task");
+    }
+}
