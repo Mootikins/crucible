@@ -333,8 +333,15 @@ mod stream_gap_tests {
         let (mut reader, cancel, task) = spawn_forwarder(forwarder_rx, client_id, sub_manager);
 
         let gap = next_event(&mut reader).await;
+        // Expected name derived from the payload enum, not a literal or a
+        // parallel constant: the enum is what produces the wire name, so this
+        // cannot pass while the two disagree.
+        let (gap_name, _) = crucible_core::protocol::session_events::SessionEventPayload::from(
+            crucible_core::protocol::session_events::SystemPayload::StreamGap { dropped: 0 },
+        )
+        .to_wire();
         assert_eq!(
-            gap.event, STREAM_GAP,
+            gap.event, gap_name,
             "the gap must be the first thing the client sees, before the \
              surviving events, or it would attribute the hole to the wrong place"
         );

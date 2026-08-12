@@ -284,6 +284,21 @@ pub enum SystemPayload {
     /// with the same code path it uses at attach, and narrowing the type here
     /// would only move the drift to `rpc::ui`.
     UiStyleChanged(Value),
+    /// A subscriber fell far enough behind the broadcast ring that events were
+    /// overwritten before it read them, and `dropped` of them are gone for good.
+    ///
+    /// This is a *transport* fact rather than something that happened in the
+    /// session, and it is the one event the daemon emits about its own delivery.
+    /// It is in this vocabulary anyway, deliberately: it reaches clients over the
+    /// same channel as everything else and both surfaces render it, so leaving it
+    /// outside would mean exactly the untyped `{event, data}` pair this enum
+    /// exists to retire — and a marker announcing lost data is a poor thing to
+    /// leave unvalidated. Consumers should treat it as "your transcript has a hole
+    /// here", not as session content.
+    StreamGap {
+        #[serde(default)]
+        dropped: u64,
+    },
     #[serde(rename = "webhook:received")]
     WebhookReceived {
         #[serde(default)]

@@ -129,16 +129,6 @@ pub(super) async fn write_line_or_close(
     }
 }
 
-/// The event name a client sees when its own stream lost events.
-///
-/// Not in [`crucible_core::protocol::session_events`]'s vocabulary yet: it is
-/// minted per *connection*, not by a session, so no producer of session state
-/// emits it. `Group::of` therefore answers `None` and every typed consumer takes
-/// its documented `UnknownEvent` passthrough arm — which is why this ships
-/// without touching the payload enums. It belongs in `SystemPayload` and that
-/// module's owner should put it there.
-pub(super) const STREAM_GAP: &str = "stream_gap";
-
 /// Tell one client that its event stream has a hole in it.
 ///
 /// Written straight to the socket rather than published on the broadcast: the
@@ -157,10 +147,9 @@ pub(super) const STREAM_GAP: &str = "stream_gap";
 /// other clients never saw. Clients exempt `stream_gap` from the contiguity
 /// check — it is the thing that *explains* a discontinuity.
 fn stream_gap_event(dropped: u64) -> SessionEventMessage {
-    SessionEventMessage::new(
+    SessionEventMessage::typed(
         crate::subscription::WILDCARD_SESSION,
-        STREAM_GAP,
-        serde_json::json!({ "dropped": dropped }),
+        crucible_core::protocol::session_events::SystemPayload::StreamGap { dropped },
     )
 }
 

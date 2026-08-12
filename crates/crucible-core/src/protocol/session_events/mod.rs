@@ -206,6 +206,7 @@ impl Group {
             | "process_progress"
             | "process_complete"
             | "ui_style_changed"
+            | "stream_gap"
             | "webhook:received"
             | "replay_complete" => Self::System,
             _ => return None,
@@ -297,6 +298,7 @@ pub const EVENT_NAMES: &[&str] = &[
     "process_progress",
     "process_complete",
     "ui_style_changed",
+    "stream_gap",
     "webhook:received",
     "replay_complete",
 ];

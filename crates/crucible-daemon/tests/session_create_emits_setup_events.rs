@@ -52,14 +52,20 @@ impl TestServer {
         // Poll for readiness rather than sleeping a fixed interval. Under a
         // loaded box the socket may not be accepting when a fixed timer
         // elapses, which is the source of this suite's intermittent failures.
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        // 60s, not 5s: this is a deadlock detector, not synchronisation — the
+        // loop leaves on the first successful connect, polling every 10ms, so a
+        // generous ceiling costs a fast box nothing. 5s failed in the first full
+        // `just ci` to include the gated tier (8,156 tests contending, cold
+        // binaries) while passing in 1s alone, which is the load this comment
+        // above already anticipated.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
         loop {
             if DaemonClient::connect_to(&socket_path).await.is_ok() {
                 break;
             }
             assert!(
                 tokio::time::Instant::now() < deadline,
-                "daemon did not start accepting connections within 5s"
+                "daemon did not start accepting connections within 60s"
             );
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
@@ -191,7 +197,7 @@ async fn session_create_emits_setup_events_for_internal_agent() {
         &mut event_rx,
         &session_id,
         &expected,
-        Duration::from_secs(5),
+        Duration::from_secs(60),
     )
     .await;
 
@@ -285,7 +291,7 @@ async fn session_create_omits_llm_events_for_acp_agent() {
         &mut event_rx,
         &session_id,
         &never_completes,
-        Duration::from_secs(5),
+        Duration::from_secs(60),
     )
     .await;
     let event_types: Vec<String> = events.iter().map(|e| e.event_type.clone()).collect();

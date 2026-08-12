@@ -55,8 +55,37 @@ async fn event_stream(
 
     let rx = state.events.subscribe(&session_id).await;
 
+    // A browser that falls behind loses events here for the same reason it used
+    // to lose them in the daemon's forwarder, and `.ok()` discarded the very
+    // error that says so. `Lagged(n)` becomes the same `stream_gap` the daemon
+    // emits, so the client cannot tell which layer's ring overflowed — it only
+    // needs to know its transcript has a hole and how big.
+    //
+    // Not fatal: the receiver stays usable after lagging, having been advanced to
+    // the oldest surviving event, so the stream continues rather than ending the
+    // SSE connection and provoking a reconnect that would lose more.
     let stream = tokio_stream::wrappers::BroadcastStream::new(rx)
-        .filter_map(|result| result.ok())
+        .map(move |result| match result {
+            Ok(event) => event,
+            Err(tokio_stream::wrappers::errors::BroadcastStreamRecvError::Lagged(n)) => {
+                tracing::warn!(session_id = %session_id, dropped = n, "SSE subscriber lagged");
+                // Name and payload come from the typed vocabulary rather than a
+                // literal, so this cannot drift from what the daemon emits for
+                // the same condition.
+                let (event_type, data) =
+                    crucible_core::protocol::session_events::SessionEventPayload::from(
+                        crucible_core::protocol::session_events::SystemPayload::StreamGap {
+                            dropped: n,
+                        },
+                    )
+                    .to_wire();
+                crucible_daemon::SessionEvent {
+                    session_id: session_id.clone(),
+                    event_type,
+                    data,
+                }
+            }
+        })
         .map(|event| {
             let chat_event = ChatEvent::from_daemon_event(&event);
             let event_name = chat_event.event_name();
