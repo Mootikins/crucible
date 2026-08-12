@@ -9,9 +9,10 @@ pub enum SkillsCommands {
         /// Filter by scope (personal, workspace, kiln)
         #[arg(long)]
         scope: Option<String>,
-        /// Output format
-        #[arg(short = 'f', long, default_value_t)]
-        format: OutputFormat,
+        /// Output format. Defaults to a table on a terminal, plain lines when
+        /// piped or redirected.
+        #[arg(short = 'f', long)]
+        format: Option<OutputFormat>,
     },
     /// Show skill details
     Show {

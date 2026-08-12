@@ -252,9 +252,10 @@ pub enum Commands {
         #[arg(long, default_value = "both")]
         r#type: String,
 
-        /// Output format
-        #[arg(short = 'f', long, default_value_t)]
-        format: OutputFormat,
+        /// Output format. Defaults to a table on a terminal, plain lines when
+        /// piped or redirected.
+        #[arg(short = 'f', long)]
+        format: Option<OutputFormat>,
 
         /// Show a content preview for each hit
         #[arg(short = 'c', long)]
@@ -268,7 +269,7 @@ pub enum Commands {
     Stats {
         /// Output format
         #[arg(short = 'f', long, default_value_t)]
-        format: OutputFormat,
+        format: TextFormat,
     },
 
     /// List available models from configured LLM provider
@@ -276,9 +277,10 @@ pub enum Commands {
         long_about = "List available models from the configured LLM provider.\n\nQueries the provider (Ollama, OpenAI, Anthropic, etc.) to show available models and their capabilities.\n\nExamples:\n  # List models from configured provider\n  cru models\n\n  # JSON output for scripting\n  cru models -f json"
     )]
     Models {
-        /// Output format
-        #[arg(short = 'f', long, default_value_t)]
-        format: OutputFormat,
+        /// Output format. Defaults to a table on a terminal, plain lines when
+        /// piped or redirected.
+        #[arg(short = 'f', long)]
+        format: Option<OutputFormat>,
     },
 
     /// Manage Crucible configuration (initialize, view, export)

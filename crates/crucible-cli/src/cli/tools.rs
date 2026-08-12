@@ -8,8 +8,9 @@ pub enum ToolsCommands {
         /// Output in permission rule format (tool:pattern)
         #[arg(long)]
         permissions: bool,
-        /// Output format
-        #[arg(short = 'f', long, default_value_t)]
-        format: OutputFormat,
+        /// Output format. Defaults to a table on a terminal, plain lines when
+        /// piped or redirected.
+        #[arg(short = 'f', long)]
+        format: Option<OutputFormat>,
     },
 }

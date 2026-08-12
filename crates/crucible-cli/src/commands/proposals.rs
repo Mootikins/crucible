@@ -33,7 +33,7 @@ struct ProposalSummary {
 
 pub async fn execute(config: CliConfig, command: ProposalsCommands) -> Result<()> {
     match command {
-        ProposalsCommands::List { format } => list(&config, format),
+        ProposalsCommands::List { format } => list(&config, OutputFormat::for_stdout(format)),
         ProposalsCommands::Show { id } => show(&config, &id),
         ProposalsCommands::Accept { id } => accept(&config, &id),
         ProposalsCommands::Reject { id } => reject(&config, &id),

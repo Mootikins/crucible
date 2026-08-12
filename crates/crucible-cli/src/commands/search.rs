@@ -44,9 +44,10 @@ pub async fn execute(
     query: &str,
     limit: usize,
     search_type: &str,
-    format: OutputFormat,
+    format: Option<OutputFormat>,
     preview: bool,
 ) -> Result<()> {
+    let format = OutputFormat::for_stdout(format);
     let kiln_path = &config.kiln_path;
 
     // Verify a kiln is configured
@@ -352,7 +353,7 @@ mod tests {
             assert_eq!(query, "rust");
             assert_eq!(limit, 5);
             assert_eq!(r#type, "semantic");
-            assert_eq!(format, OutputFormat::Json);
+            assert_eq!(format, Some(OutputFormat::Json));
             assert!(!preview);
         } else {
             panic!("Expected Search command");

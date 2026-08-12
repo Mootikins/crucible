@@ -22,7 +22,9 @@ pub struct SkillOutput {
 /// Execute skills subcommand
 pub async fn execute(config: CliConfig, command: SkillsCommands) -> Result<()> {
     match command {
-        SkillsCommands::List { scope, format } => list(&config, scope, format).await,
+        SkillsCommands::List { scope, format } => {
+            list(&config, scope, OutputFormat::for_stdout(format)).await
+        }
         SkillsCommands::Show { name } => show(&config, name).await,
         SkillsCommands::Search { query, limit } => search(&config, query, limit).await,
     }

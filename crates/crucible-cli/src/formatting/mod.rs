@@ -10,6 +10,8 @@ pub mod syntax;
 pub mod syntax_theme;
 pub use syntax::SyntaxHighlighter;
 
+use std::io::IsTerminal;
+
 /// Output format for commands whose payload is a list of records.
 ///
 /// A `ValueEnum` rather than a `String`, because clap then derives the help
@@ -21,13 +23,41 @@ pub use syntax::SyntaxHighlighter;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
 pub enum OutputFormat {
     /// Bordered table, for reading.
-    #[default]
     Table,
     /// JSON, for scripting.
     Json,
     /// Unadorned lines, for piping.
+    ///
+    /// The fallback when there is no terminal — see [`OutputFormat::for_stdout`].
+    #[default]
     #[value(alias = "text")]
     Plain,
+}
+
+impl OutputFormat {
+    /// Resolve an unspecified `--format` against stdout.
+    ///
+    /// A bordered table is the better read for a human and strictly worse to
+    /// script around, and whether either applies is knowable: a terminal gets
+    /// `Table`, a pipe or a redirect gets `Plain`. So `cru models` is a table on
+    /// screen and plain lines in `cru models | while read -r ...`, with no flag
+    /// in either case. An explicit `--format` always wins.
+    ///
+    /// The same test already decides whether to emit ANSI colours
+    /// (`output::is_interactive`), so this is the existing convention rather
+    /// than a new one. It is deliberately *not* an `impl Default`: reading the
+    /// environment from `default()` would make the value depend on how the
+    /// process was invoked at every call site that never asked about a terminal,
+    /// including tests.
+    pub fn for_stdout(explicit: Option<Self>) -> Self {
+        explicit.unwrap_or({
+            if std::io::stdout().is_terminal() {
+                Self::Table
+            } else {
+                Self::Plain
+            }
+        })
+    }
 }
 
 /// Output format for commands whose payload has no tabular shape — nested
@@ -91,6 +121,18 @@ mod tests {
                 OutputFormat::from_str(rejected, true).is_err(),
                 "`{rejected}` must be rejected, not silently downgraded"
             );
+        }
+    }
+
+    /// An explicit `--format` is never second-guessed by the terminal check.
+    ///
+    /// The `None` case is deliberately not asserted: its answer depends on
+    /// whether the harness captured stdout, so pinning it here would encode the
+    /// test runner's behaviour rather than the CLI's.
+    #[test]
+    fn an_explicit_format_beats_the_terminal_default() {
+        for explicit in [OutputFormat::Table, OutputFormat::Json, OutputFormat::Plain] {
+            assert_eq!(OutputFormat::for_stdout(Some(explicit)), explicit);
         }
     }
 

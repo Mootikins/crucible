@@ -17,7 +17,7 @@ pub async fn execute(_config: CliConfig, command: ToolsCommands) -> Result<()> {
         ToolsCommands::List {
             permissions,
             format,
-        } => list(permissions, format).await,
+        } => list(permissions, OutputFormat::for_stdout(format)).await,
     }
 }
 

@@ -31,9 +31,10 @@ pub struct WorkflowCommand {
 pub enum WorkflowSubcommand {
     /// List all workflow notes in the active kiln
     List {
-        /// Output format
-        #[arg(short = 'f', long, default_value_t)]
-        format: OutputFormat,
+        /// Output format. Defaults to a table on a terminal, plain lines when
+        /// piped or redirected.
+        #[arg(short = 'f', long)]
+        format: Option<OutputFormat>,
     },
     /// Show a workflow's parsed structure (goals, validation, step tree)
     Show {
@@ -75,7 +76,7 @@ pub enum WorkflowSubcommand {
 
 pub async fn execute(config: CliConfig, command: WorkflowSubcommand) -> Result<()> {
     match command {
-        WorkflowSubcommand::List { format } => run_list(config, format),
+        WorkflowSubcommand::List { format } => run_list(config, OutputFormat::for_stdout(format)),
         WorkflowSubcommand::Show { target, format } => run_show(config, &target, format),
         WorkflowSubcommand::Start { target, session } => {
             run_start(config, &target, session.as_deref()).await
@@ -753,7 +754,7 @@ mod tests {
         let result = execute(
             config,
             WorkflowSubcommand::List {
-                format: OutputFormat::Table,
+                format: Some(OutputFormat::Table),
             },
         )
         .await;

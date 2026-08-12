@@ -12,7 +12,8 @@ pub struct ModelOutput {
     pub parameter_count: Option<u64>,
 }
 
-pub async fn execute(config: CliConfig, format: OutputFormat) -> Result<()> {
+pub async fn execute(config: CliConfig, format: Option<OutputFormat>) -> Result<()> {
+    let format = OutputFormat::for_stdout(format);
     eprintln!("Fetching models from daemon...");
 
     let client = daemon_client().await?;
@@ -31,14 +32,6 @@ pub async fn execute(config: CliConfig, format: OutputFormat) -> Result<()> {
         return Ok(());
     }
 
-    /// Both human formats end with this. `table` became the default when the
-    /// format vocabulary was typed, and the hint lived only in the plain arm —
-    /// so for a moment the default output stopped telling anyone how to use it.
-    fn print_switch_hint() {
-        println!("\nSwitch model in chat with: :model <name>");
-        println!("Or start chat with: cru chat --model <name>");
-    }
-
     match format {
         OutputFormat::Json => {
             let output: Vec<ModelOutput> = models
@@ -54,14 +47,12 @@ pub async fn execute(config: CliConfig, format: OutputFormat) -> Result<()> {
         OutputFormat::Table => {
             let rows: Vec<Vec<String>> = models.iter().map(|m| vec![m.clone()]).collect();
             println!("{}", crate::output::records_table(&["Model"], &rows));
-            print_switch_hint();
         }
         OutputFormat::Plain => {
             println!("\nAvailable models ({}):\n", models.len());
             for model in &models {
                 println!("  {}", model);
             }
-            print_switch_hint();
         }
     }
 

@@ -11,9 +11,10 @@ use clap::Subcommand;
 pub enum ProposalsCommands {
     /// List pending proposals
     List {
-        /// Output format
-        #[arg(short = 'f', long, default_value_t)]
-        format: OutputFormat,
+        /// Output format. Defaults to a table on a terminal, plain lines when
+        /// piped or redirected.
+        #[arg(short = 'f', long)]
+        format: Option<OutputFormat>,
     },
     /// Show a proposal's full content
     Show {
