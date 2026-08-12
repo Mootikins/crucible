@@ -14,7 +14,7 @@ use crucible_daemon::DaemonClient;
 pub async fn execute(config: CliConfig, command: StorageCommands) -> Result<()> {
     match command {
         StorageCommands::Mode => execute_mode(&config).await,
-        StorageCommands::Stats { format, .. } => execute_stats(config, format).await,
+        StorageCommands::Stats { .. } => execute_stats(config).await,
         StorageCommands::Verify { path, .. } => {
             let kiln = path.unwrap_or_else(|| config.kiln_path.clone());
             rpc_stub("Verifying storage integrity...", |c| async move {
@@ -87,7 +87,7 @@ where
 }
 
 /// Execute storage stats command
-async fn execute_stats(config: CliConfig, _format: String) -> Result<()> {
+async fn execute_stats(config: CliConfig) -> Result<()> {
     let start_time = Instant::now();
     output::info("Gathering storage statistics...");
 

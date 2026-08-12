@@ -85,10 +85,6 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub embedding_model: Option<String>,
 
-    /// Set output format (table, json, csv)
-    #[arg(short = 'f', long, global = true, default_value = "table")]
-    pub format: String,
-
     /// Run with an in-process daemon (no background server required).
     /// Useful for single-session use, restricted environments, or testing.
     /// Data persists to the kiln's .crucible/ directory.
@@ -241,7 +237,7 @@ pub enum Commands {
 
     /// Search kiln notes using semantic and/or text search
     #[command(
-        long_about = "Search kiln notes using semantic similarity, text matching, or both.\n\nExamples:\n  # Search with default (semantic + text)\n  cru search \"wikilinks\"\n\n  # Semantic search only\n  cru search \"how do links work\" --type semantic\n\n  # Text search only, JSON output\n  cru search \"wikilink\" --type text -f json\n\n  # Limit results\n  cru search \"architecture\" --limit 5"
+        long_about = "Search kiln notes using semantic similarity, text matching, or both.\n\nExamples:\n  # Search with default (semantic + text)\n  cru search \"wikilinks\"\n\n  # Semantic search only\n  cru search \"how do links work\" --type semantic\n\n  # Text search only, JSON output\n  cru search \"wikilink\" --type text -f json\n\n  # Limit results\n  cru search \"architecture\" --limit 5\n\n  # Show a content preview for each hit\n  cru search \"wikilinks\" --preview"
     )]
     Search {
         /// Search query
@@ -276,7 +272,7 @@ pub enum Commands {
 
     /// List available models from configured LLM provider
     #[command(
-        long_about = "List available models from the configured LLM provider.\n\nQueries the provider (Ollama, OpenAI, Anthropic, etc.) to show available models and their capabilities.\n\nExamples:\n  # List models from configured provider\n  cru models\n\n  # JSON output for scripting\n  cru models -f json\n\n  # CSV format for spreadsheets\n  cru models -f csv"
+        long_about = "List available models from the configured LLM provider.\n\nQueries the provider (Ollama, OpenAI, Anthropic, etc.) to show available models and their capabilities.\n\nExamples:\n  # List models from configured provider\n  cru models\n\n  # JSON output for scripting\n  cru models -f json"
     )]
     Models {
         /// Output format (table, json, plain)

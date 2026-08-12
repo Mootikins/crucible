@@ -4,9 +4,69 @@
 //! output. Behaviour tests assert that prefix subcommand inference and
 //! suggestion-on-typo work.
 
+use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser};
 use crucible_cli::cli::Cli;
 use insta::assert_snapshot;
+
+/// Clap's own audit of the arg definition: duplicate ids, colliding shorts,
+/// defaults that are not valid values. The class of drift that let a global
+/// `-f, --format` advertise `csv` while no code read the field starts here.
+#[test]
+fn clap_arg_definition_is_self_consistent() {
+    Cli::command().debug_assert();
+}
+
+/// There is no global output format. Every command that renders formatted
+/// output declares its own `--format`, and clap never propagated the global
+/// into those anyway, so `cru -f json <cmd>` was accepted and ignored.
+#[test]
+fn format_before_the_subcommand_is_an_unknown_argument() {
+    let err = Cli::try_parse_from(["cru", "-f", "json", "search", "query"])
+        .map(|_| ())
+        .expect_err("`cru -f json search` must not parse: there is no global --format");
+    assert_eq!(err.kind(), ErrorKind::UnknownArgument, "{err}");
+}
+
+/// `cru storage {stats,verify,backup,restore} --format` was bound to `_format`
+/// or discarded by `..` — a flag that told a script it got JSON and then
+/// printed a human report. Absent is better than inert.
+#[test]
+fn storage_subcommands_reject_a_format_flag() {
+    for args in [
+        vec!["cru", "storage", "stats", "-f", "table"],
+        vec!["cru", "storage", "verify", "-f", "json"],
+        vec!["cru", "storage", "backup", "/tmp/dest", "-f", "binary"],
+        vec!["cru", "storage", "restore", "/tmp/src", "-f", "binary"],
+    ] {
+        let rendered = args.join(" ");
+        let err = Cli::try_parse_from(&args)
+            .map(|_| ())
+            .expect_err(&format!("`{rendered}` must not parse: --format is gone"));
+        assert_eq!(err.kind(), ErrorKind::UnknownArgument, "{rendered}: {err}");
+    }
+}
+
+/// Stage 1 removes only fictions from the help text; the values the
+/// subcommands accept are untouched. The narrowing to a typed `ValueEnum`
+/// vocabulary is a separate change, so `csv` still parses here even though no
+/// help string offers it any more.
+#[test]
+fn subcommand_format_values_are_unchanged() {
+    for args in [
+        vec!["cru", "stats", "-f", "csv"],
+        vec!["cru", "models", "-f", "csv"],
+        vec!["cru", "stats", "-f", "json"],
+        vec!["cru", "search", "q", "-f", "plain"],
+        vec!["cru", "status", "-f", "table"],
+    ] {
+        let rendered = args.join(" ");
+        assert!(
+            Cli::try_parse_from(&args).is_ok(),
+            "`{rendered}` must still parse"
+        );
+    }
+}
 
 /// The top-level `cru --help` output is the front door of the CLI; lock it
 /// down so future changes are reviewed deliberately.

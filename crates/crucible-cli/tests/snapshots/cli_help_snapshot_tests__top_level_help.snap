@@ -61,11 +61,6 @@ Options:
       --embedding-model <EMBEDDING_MODEL>
           Embedding model name (overrides config file)
 
-  -f, --format <FORMAT>
-          Set output format (table, json, csv)
-          
-          [default: table]
-
       --standalone
           Run with an in-process daemon (no background server required). Useful for single-session use, restricted environments, or testing. Data persists to the kiln's .crucible/ directory
 

@@ -59,7 +59,6 @@ Complete reference for all Crucible CLI commands.
 -l, --log-level <LEVEL>     Set log level (off, error, warn, info, debug, trace)
 -v, --verbose               Enable verbose logging (--log-level=debug)
 -C, --config <PATH>         Config file path (defaults to ~/.config/crucible/config.toml)
--f, --format <FORMAT>       Output format: table, json, csv (default: table)
     --embedding-url <URL>   Embedding service URL (overrides config)
     --embedding-model <MODEL> Embedding model name (overrides config)
     --standalone            Run with in-process daemon (no background server required)

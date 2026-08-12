@@ -8,10 +8,6 @@ pub enum StorageCommands {
 
     /// Show detailed storage statistics
     Stats {
-        /// Output format (table, json, plain)
-        #[arg(short = 'f', long, default_value = "table")]
-        format: String,
-
         /// Show per-backend breakdown
         #[arg(long)]
         by_backend: bool,
@@ -30,10 +26,6 @@ pub enum StorageCommands {
         /// Repair any inconsistencies found
         #[arg(long)]
         repair: bool,
-
-        /// Output format (plain, json)
-        #[arg(short = 'f', long, default_value = "plain")]
-        format: String,
     },
 
     /// Perform maintenance operations
@@ -76,10 +68,6 @@ pub enum StorageCommands {
         /// Verify backup after creation
         #[arg(long)]
         verify: bool,
-
-        /// Export format (json, binary)
-        #[arg(short = 'f', long, default_value = "json")]
-        format: String,
     },
 
     /// Import or restore storage data
@@ -95,9 +83,5 @@ pub enum StorageCommands {
         /// Skip verification during import
         #[arg(long)]
         skip_verify: bool,
-
-        /// Import format (json, binary)
-        #[arg(short = 'f', long, default_value = "json")]
-        format: String,
     },
 }

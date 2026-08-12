@@ -106,20 +106,9 @@ fn test_global_embedding_model_flag() {
 }
 
 #[test]
-fn test_global_format_flag() {
-    let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("--format").arg("json").arg("--help");
-
-    cmd.assert().success();
-}
-
-#[test]
 fn test_multiple_global_flags() {
     let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("--verbose")
-        .arg("--format")
-        .arg("json")
-        .arg("--help");
+    cmd.arg("--verbose").arg("--help");
 
     cmd.assert().success();
 }

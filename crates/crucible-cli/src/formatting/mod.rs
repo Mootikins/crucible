@@ -19,10 +19,6 @@ pub enum OutputFormat {
     Json,
     /// Human-readable table format
     Table,
-    /// CSV format for data export
-    Csv,
-    /// Detailed/verbose output
-    Detailed,
 }
 
 impl OutputFormat {
@@ -32,8 +28,6 @@ impl OutputFormat {
         match s.to_lowercase().as_str() {
             "json" => OutputFormat::Json,
             "table" => OutputFormat::Table,
-            "csv" => OutputFormat::Csv,
-            "detailed" | "detail" => OutputFormat::Detailed,
             _ => OutputFormat::Plain,
         }
     }
@@ -60,8 +54,6 @@ mod tests {
         assert_eq!(OutputFormat::from_str("json"), OutputFormat::Json);
         assert_eq!(OutputFormat::from_str("JSON"), OutputFormat::Json);
         assert_eq!(OutputFormat::from_str("table"), OutputFormat::Table);
-        assert_eq!(OutputFormat::from_str("csv"), OutputFormat::Csv);
-        assert_eq!(OutputFormat::from_str("detailed"), OutputFormat::Detailed);
         assert_eq!(OutputFormat::from_str("unknown"), OutputFormat::Plain);
         assert_eq!(OutputFormat::from_str(""), OutputFormat::Plain);
     }
