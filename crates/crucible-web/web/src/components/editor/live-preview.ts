@@ -688,15 +688,25 @@ function buildBlockWidgets(state: EditorState): DecorationSet {
   const baseDir = state.facet(baseDirFacet);
 
   const pushWidget = (kind: BlockKind, from: number, to: number) => {
+    // A block range can end AT the next line's start: the yaml Frontmatter node
+    // ends at the body's first position, and so can a Table. Clamp to the last
+    // REAL line — the same clamp display math and `entryFor` already apply —
+    // because a block replace that reaches a line start swallows that line: when
+    // it is blank, CodeMirror emits no `.cm-line` for it at all, and the cursor
+    // parked there (CodeMirrorEditor opens at `bodyStart`) gets measured against
+    // the widget's 4px-tall box instead of a text line. That is where the 3x4px
+    // vim block cursor came from.
+    //
+    // This replaces a `kind === 'frontmatter' ? to - 1 : to` fudge that existed
+    // only to compensate for the unclamped end. It is deliberately NOT gated on
+    // `kind`: `entryFor` clamps with no kind check, and letting the two
+    // disagree about where a table ends is how this bug got in.
+    const endLine = state.doc.lineAt(to);
+    const realTo = endLine.from === to ? state.doc.line(endLine.number - 1).to : to;
     // Selection in the block = editing: show the raw source (the whole
     // block at once — no nested widgets inside revealed source).
-    // Frontmatter's END boundary is exclusive: the yaml Frontmatter node
-    // ends AT the body's first position, where the cursor deliberately
-    // starts (CodeMirrorEditor) — an inclusive test would boot every file
-    // open into raw yaml.
-    const touchTo = kind === 'frontmatter' ? to - 1 : to;
-    if (selectionTouches(state, from, touchTo)) return;
-    const source = state.doc.sliceString(from, to);
+    if (selectionTouches(state, from, realTo)) return;
+    const source = state.doc.sliceString(from, realTo);
     // Frontmatter the flat parser can't represent stays raw — a wrong card
     // is worse than mono source.
     if (kind === 'frontmatter' && frontmatterCardHtml(source) === null) return;
@@ -704,7 +714,7 @@ function buildBlockWidgets(state: EditorState): DecorationSet {
       Decoration.replace({
         widget: new RenderedBlockWidget(source, kind, baseDir),
         block: true,
-      }).range(from, to),
+      }).range(from, realTo),
     );
   };
 

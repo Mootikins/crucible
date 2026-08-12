@@ -535,6 +535,50 @@ describe('live preview: styled everywhere except the construct at the cursor', (
   });
 
   /**
+   * The frontmatter node ends AT the body's first position, so an unclamped
+   * block replace reached into the next line and consumed it. When that line is
+   * blank — the overwhelmingly common shape, `---` then a blank line then the
+   * heading — CodeMirror emitted no `.cm-line` for it at all, and the cursor
+   * that `CodeMirrorEditor` deliberately opens at `bodyStart` had no text line
+   * to be measured against. It fell back to the widget's box, which is 4px tall
+   * because the card's only content is floated, and vim's block cursor rendered
+   * as a 3x4px speck beside the disclosure caret.
+   *
+   * The 4px geometry itself is not assertable here (jsdom has no float layout
+   * and no line boxes) — an e2e spec covers that. What IS assertable, and is
+   * the actual cause, is whether the blank line still exists as a line.
+   */
+  it('leaves the blank first body line as its own line instead of swallowing it', () => {
+    const FM_DOC = ['---', 'tags: [kiln]', 'title: A **note**', '---', '', '# Title', ''].join('\n');
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+    const view = track(
+      new EditorView({
+        state: EditorState.create({
+          doc: FM_DOC,
+          extensions: [
+            yamlFrontmatter({ content: markdown({ base: markdownLanguage }) }),
+            livePreview(),
+          ],
+        }),
+        parent,
+      }),
+    );
+    cursorAt(view, FM_DOC.length);
+
+    // The card still renders — the clamp must not push the selection into the
+    // block and reveal raw yaml.
+    expect(view.dom.querySelector('[data-testid="fm-card"]')).not.toBeNull();
+    const lines = Array.from(view.dom.querySelectorAll('.cm-line')).map((l) => l.textContent);
+    // Position, not mere presence: this doc ends with a newline, so a trailing
+    // empty line exists either way and `toContain('')` passed pre-fix too.
+    // What the bug removed is specifically the FIRST line after the widget.
+    expect(lines[0]).toBe('');
+    expect(lines[1]).toBe('Title');
+    expect(view.dom.querySelector('.cm-lp-h1')).not.toBeNull();
+  });
+
+  /**
    * A `<details>` inside a widget changes the widget's height AFTER the editor
    * measured it, and the editor keeps positioning every following line from the
    * stale figure — expanding Properties pushed the note it belongs to up out of
