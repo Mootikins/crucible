@@ -165,9 +165,17 @@ allowed_hosts = ["crucible.example.com"]
   string here).
 - IPv6 must be bracketed, and is canonicalised: `[0:0:0:0:0:0:0:1]` and `[::1]` are the same
   entry. An unbracketed IPv6 address is not a legal HTTP authority and is rejected.
-- There is **no wildcard or glob syntax**. `"*"` and `"*.example.com"` are not patterns —
-  `*` is not a character a hostname may contain, so both are dropped as unparseable at
-  startup (with a warning) and match nothing. List each name.
+- An entry beginning with a **dot** is a suffix. `".example.com"` accepts the apex
+  `example.com` and exactly **one** label under it — `app.example.com` — and nothing deeper:
+  `a.b.example.com` is refused. That is Rails' rule rather than Django's any-depth one,
+  because a wildcard at arbitrary depth inherits every delegated subtree under the apex, and
+  one dangling NS record down there hands an attacker A-record control of a name inside it —
+  which is exactly what rebinding needs. List `a.b.example.com` explicitly if you want it.
+  The dot is part of the comparison, so `evilexample.com` and `sub-example.com` are not
+  matches. Ports work as above: `".example.com"` also accepts `app.example.com:<port>`, and
+  `".example.com:8443"` accepts that port only.
+- There is **no glob syntax**. `"*"` and `"*.example.com"` are not patterns — `*` is not a
+  character a hostname may contain. Write `".example.com"`.
 - An empty list means "derive from the bind address" — i.e. exactly the two bullets above
   it. It does not mean "allow anything".
 
@@ -182,8 +190,22 @@ guess:
 - an authority carrying userinfo, a path, a scheme, whitespace, non-ASCII, percent-escapes,
   port `0`, or an out-of-range port.
 
-An `allowed_hosts` entry that does not parse is dropped with a warning at startup and never
-matches; it does not fail the whole list.
+### An entry the server will not start with
+
+A bad `allowed_hosts` entry **fails startup**, with the entry named in the error. It used to
+be dropped with one `tracing::warn!` line, which meant a `*.example.com` entry produced a
+403 from an allow-list that read as configured and behaved as empty. Refused entries:
+
+- anything that is not a `host`, `host:port`, or `.suffix` — a glob (`*.example.com`), a URL,
+  a path, whitespace, non-ASCII, port `0`;
+- a bare `.`, or a dot with nothing usable after it (`..example.com`, `.:3000`);
+- an address as a suffix (`.192.168.0.1`) — suffix matching is for names, so this could never
+  match anything;
+- a **public suffix**: any single-label suffix (`.com`, `.io`, `.local`, `.internal`) plus a
+  short list of multi-label ones with the same property — `.co.uk`, `.github.io`,
+  `.trycloudflare.com`, `.ngrok.io` and similar shared apexes. Vite's docs put it plainly:
+  "you should never add Top-Level Domains like .com to the list." A domain you control under
+  one of them (`.crucible.co.uk`) is fine.
 
 ## Project registration from the web UI
 

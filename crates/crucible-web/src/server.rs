@@ -29,6 +29,12 @@ pub async fn start_server(
     app_config: &CliAppConfig,
     standalone: bool,
 ) -> Result<()> {
+    // First, before the daemon is touched or a port is taken: a malformed
+    // `allowed_hosts` entry is a refusal to start, and the operator should get
+    // that on a machine that is otherwise exactly as they left it.
+    let host_policy =
+        HostPolicy::from_web_config(web_config).map_err(|e| WebError::Config(e.to_string()))?;
+
     let mut state = daemon::init_daemon(app_config.clone()).await?;
 
     // A standalone instance (isolated debug/test daemon) must not share the
@@ -47,7 +53,7 @@ pub async fn start_server(
     // Restricting origins prevents arbitrary websites from triggering command execution via browsers.
     // Shared allow-list: CORS uses it for HTTP, and the terminal WebSocket
     // guard reuses it (browsers bypass CORS on WS handshakes).
-    let allowed_origins = Arc::new(build_cross_origin_allowlist(web_config));
+    let allowed_origins = Arc::new(build_cross_origin_allowlist(&host_policy));
     let cors = CorsLayer::new()
         .allow_origin(AllowOrigin::list((*allowed_origins).clone()))
         .allow_methods([
@@ -65,10 +71,7 @@ pub async fn start_server(
     } else {
         tracing::warn!("API Bearer token auth is disabled — all requests will be accepted");
     }
-    let api_key_state = Arc::new(ApiKeyState::new(
-        api_key,
-        HostPolicy::from_web_config(web_config),
-    ));
+    let api_key_state = Arc::new(ApiKeyState::new(api_key, host_policy));
     state.remote_shell =
         remote_shell_active(web_config.remote_shell, api_key_state.api_key.is_some());
     if state.remote_shell {
@@ -277,7 +280,7 @@ fn with_security_headers(app: Router) -> Router {
 /// cross-origin cases — the vite dev server, and whatever the operator names in
 /// `CRUCIBLE_CORS_ORIGINS` — plus the app's own origin spellings, which cost
 /// nothing and keep a hand-typed `curl -H Origin:` working.
-fn build_cross_origin_allowlist(web_config: &WebConfig) -> Vec<HeaderValue> {
+fn build_cross_origin_allowlist(host_policy: &HostPolicy) -> Vec<HeaderValue> {
     let mut origins = Vec::new();
 
     let mut add_origin = |origin: &str| {
@@ -299,7 +302,10 @@ fn build_cross_origin_allowlist(web_config: &WebConfig) -> Vec<HeaderValue> {
     // `127.0.0.1`, and `localhost` — browsers visiting as `http://localhost:PORT`
     // send exactly that Origin, and the bind host renders as 0.0.0.0/127.0.0.1,
     // never `localhost`.
-    for authority in HostPolicy::from_web_config(web_config).allowed_authorities() {
+    // The policy is passed in rather than rebuilt from the config: rebuilding it
+    // would parse `allowed_hosts` a second time, and a second parse is a second
+    // answer waiting to disagree with the one `Host` is checked against.
+    for authority in host_policy.allowed_authorities() {
         add_origin(&format!("http://{authority}"));
         add_origin(&format!("https://{authority}"));
     }
@@ -348,11 +354,18 @@ mod tests {
         }
     }
 
+    /// The policy for a config whose `allowed_hosts` these tests never make
+    /// malformed — the failure that would justify a `Result` here is
+    /// `HostPolicy`'s own test to make.
+    fn policy_for(web_config: &WebConfig) -> HostPolicy {
+        HostPolicy::from_web_config(web_config).expect("bind-derived policy")
+    }
+
     #[test]
     fn the_cross_origin_allowlist_includes_expected_defaults() {
         let web_config = web_config_bound_to("localhost", 3000);
 
-        let origins = build_cross_origin_allowlist(&web_config);
+        let origins = build_cross_origin_allowlist(&policy_for(&web_config));
         let has_origin = |value: &str| {
             let value = HeaderValue::from_str(value).unwrap();
             origins.contains(&value)
@@ -373,7 +386,7 @@ mod tests {
     fn the_cross_origin_allowlist_allows_localhost_for_real_binds() {
         for host in ["0.0.0.0", "127.0.0.1"] {
             let web_config = web_config_bound_to(host, 3000);
-            let origins = build_cross_origin_allowlist(&web_config);
+            let origins = build_cross_origin_allowlist(&policy_for(&web_config));
             let localhost = HeaderValue::from_static("http://localhost:3000");
             assert!(
                 origins.contains(&localhost),
@@ -387,7 +400,9 @@ mod tests {
         let web_config = web_config_bound_to("localhost", 3000);
 
         let cors = CorsLayer::new()
-            .allow_origin(AllowOrigin::list(build_cross_origin_allowlist(&web_config)))
+            .allow_origin(AllowOrigin::list(build_cross_origin_allowlist(
+                &policy_for(&web_config),
+            )))
             .allow_methods([
                 Method::GET,
                 Method::POST,
@@ -541,11 +556,12 @@ mod tests {
     #[tokio::test]
     async fn a_rebound_host_is_refused_on_public_routes_too() {
         let web_config = web_config_bound_to("127.0.0.1", 3000);
-        let cors = CorsLayer::new()
-            .allow_origin(AllowOrigin::list(build_cross_origin_allowlist(&web_config)));
+        let cors = CorsLayer::new().allow_origin(AllowOrigin::list(build_cross_origin_allowlist(
+            &policy_for(&web_config),
+        )));
         let state = Arc::new(ApiKeyState::new(
             None, // auth disabled: rebinding is most dangerous precisely here
-            HostPolicy::from_web_config(&web_config),
+            policy_for(&web_config),
         ));
         // `/health` and the static index are both public — neither sits behind
         // `bearer_auth`, which is where the Host check used to live.

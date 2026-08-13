@@ -17,7 +17,7 @@ mod shell;
 pub use api_key::{
     api_key_path, generate_and_persist_key, resolve_api_key, resolve_api_key_at, verify_api_key,
 };
-pub use host::{local_names, HostPolicy, HostVerified};
+pub use host::{local_names, HostPolicy, HostVerified, InvalidAllowedHost};
 pub use session::{sessions_path, SessionStore, SESSION_TTL};
 pub use shell::{
     localhost_only_shell_auth, remote_shell_active, websocket_origin_guard, ShellGateState,
@@ -346,7 +346,7 @@ mod tests {
     fn bearer_state(api_key: Option<String>) -> Arc<ApiKeyState> {
         Arc::new(ApiKeyState::new_at(
             api_key,
-            HostPolicy::from_bind("127.0.0.1", TEST_PORT, &[]),
+            HostPolicy::from_bind("127.0.0.1", TEST_PORT, &[]).expect("bind-derived policy"),
             None,
         ))
     }

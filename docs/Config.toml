@@ -267,7 +267,13 @@ verbose = false
 #                       by an mDNS name (node7.local) or through a reverse
 #                       proxy is a 403 until the name is listed here. An entry
 #                       without a port matches both bare and on `port`; an
-#                       entry with a port matches that port only. No globs.
+#                       entry with a port matches that port only. No globs: a
+#                       leading dot (".example.com") is the wildcard, and it
+#                       matches the apex plus exactly ONE label under it
+#                       (app.example.com, never a.b.example.com). A malformed
+#                       entry — a glob, a bare ".", or a public suffix such as
+#                       ".com" or ".local" — makes `cru web` REFUSE TO START
+#                       rather than be dropped with a warning.
 #
 # Webhook sender secrets are NOT in this file. POST /api/webhook/{name}
 # requires an HMAC signature and is closed until you create
@@ -289,7 +295,7 @@ verbose = false
 # api_key = ""                        # "" disables auth entirely
 # remote_shell = false
 # registration_roots = []             # empty = any ordinary dir; set to confine
-# allowed_hosts = []                  # e.g. ["node7.local", "crucible.example.com"]
+# allowed_hosts = []                  # e.g. ["node7.local", ".crucible.example.com"]
 
 # =============================================================================
 # [scm] - Git integration

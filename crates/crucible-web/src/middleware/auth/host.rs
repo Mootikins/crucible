@@ -30,6 +30,9 @@ pub struct HostVerified;
 pub struct HostPolicy {
     /// Canonical `host[:port]` authorities that are accepted verbatim.
     allowed: BTreeSet<String>,
+    /// Leading-dot `allowed_hosts` entries (`.example.com`), each admitting its
+    /// apex plus exactly one label beneath it.
+    suffixes: Vec<SuffixRule>,
     /// Accept *any* IP-literal host on [`port`](Self::port). Set for wildcard
     /// binds (`0.0.0.0` / `::`), whose reachable LAN addresses cannot be
     /// enumerated up front. Safe because an IP literal in `Host` means the
@@ -39,6 +42,183 @@ pub struct HostPolicy {
     port: u16,
 }
 
+/// A `[web] allowed_hosts` entry the server refuses to run with.
+///
+/// A hard error rather than the warn-and-drop this replaced. That version cost
+/// this project real time: a `*.example.test` entry produced a 403 and a single
+/// `tracing::warn!` line nobody was looking at, so the allow-list read as
+/// configured and behaved as empty. An entry an operator wrote is either
+/// honoured or it stops the server.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum InvalidAllowedHost {
+    #[error(
+        "[web] allowed_hosts entry {entry:?} is not a `host`, `host:port`, or `.suffix` entry \
+         — a glob like `*.example.com` is spelled `.example.com`"
+    )]
+    Unparseable { entry: String },
+
+    #[error("[web] allowed_hosts entry {entry:?} names nothing after its leading dot")]
+    NoSuffix { entry: String },
+
+    #[error(
+        "[web] allowed_hosts entry {entry:?} is a public suffix — it would answer to every \
+         name anyone can register under it. Name the domain you control (`.crucible.example.com`)"
+    )]
+    PublicSuffix { entry: String },
+}
+
+/// A leading-dot `allowed_hosts` entry: the apex, plus exactly one label under it.
+#[derive(Clone, Debug)]
+struct SuffixRule {
+    /// The apex WITH its leading dot (`.example.com`) — see
+    /// [`SuffixRule::matches_host`] for why the dot is stored rather than
+    /// stripped.
+    dotted_apex: String,
+    /// The port the entry named, if it named one. Same meaning as for an exact
+    /// entry: `Some` matches that port only, `None` matches bare or the bind port.
+    port: Option<u16>,
+}
+
+impl SuffixRule {
+    /// Whether `host` is this rule's apex, or exactly ONE label beneath it.
+    ///
+    /// One label, not any depth — Rails' rule rather than Django's. Any-depth
+    /// matching inherits every delegated subtree beneath the apex, and one
+    /// dangling NS record down there hands an attacker A-record control of a
+    /// name inside it, which is exactly the primitive DNS rebinding needs. The
+    /// operator who really does want `a.b.example.com` can list it.
+    ///
+    /// The compared suffix keeps its dot (`.example.com`, never `example.com`)
+    /// because `ends_with("example.com")` also accepts `evilexample.com` — the
+    /// classic form of this bug. And the comparison is `strip_suffix`, not a
+    /// regex: Rails' CVE-2021-22903 was an apex interpolated unescaped into a
+    /// pattern, where `.` matched any character and `sub-example.com` passed as
+    /// `sub.example.com`.
+    fn matches_host(&self, host: &str) -> bool {
+        // An IP literal is reached by address, so there is no name to rebind and
+        // nothing to delegate; it keeps the exact / any-IP-literal paths only.
+        if is_ip_literal(host) {
+            return false;
+        }
+        if host == self.apex() {
+            return true;
+        }
+        match host.strip_suffix(self.dotted_apex.as_str()) {
+            // Present, and one label. `normalize_authority` already refuses a
+            // leading or doubled dot, so this is the second lock on a `Host` of
+            // `.example.com` or `..example.com` — both of which Django accepts.
+            Some(label) => !label.is_empty() && !label.contains('.'),
+            None => false,
+        }
+    }
+
+    fn apex(&self) -> &str {
+        &self.dotted_apex[1..]
+    }
+
+    /// The port rule, identical to an exact entry's: an entry naming a port
+    /// matches that port only, and one naming none matches bare (a proxy
+    /// terminating on 80/443 forwards the name without a port) or the bind port.
+    fn accepts_port(&self, port: Option<u16>, bind_port: u16) -> bool {
+        match self.port {
+            Some(expected) => port == Some(expected),
+            None => port.is_none() || port == Some(bind_port),
+        }
+    }
+}
+
+/// One parsed `allowed_hosts` entry.
+enum AllowedHost {
+    /// A canonical `host[:port]` matched verbatim.
+    Exact(String),
+    Suffix(SuffixRule),
+}
+
+/// Parse one `[web] allowed_hosts` entry, or say why it cannot be used.
+///
+/// Every rejection here is a startup failure, so each one has to be a genuine
+/// mistake rather than a taste: an entry that cannot parse, an entry with no
+/// name after its dot, and an entry whose suffix is public — none of which can
+/// ever admit the authority its author meant.
+fn parse_allowed_host(entry: &str) -> Result<AllowedHost, InvalidAllowedHost> {
+    let unparseable = || InvalidAllowedHost::Unparseable {
+        entry: entry.to_string(),
+    };
+    let Some(after_dot) = entry.strip_prefix('.') else {
+        return normalize_authority(entry)
+            .map(AllowedHost::Exact)
+            .ok_or_else(unparseable);
+    };
+    if after_dot.is_empty() {
+        return Err(InvalidAllowedHost::NoSuffix {
+            entry: entry.to_string(),
+        });
+    }
+    let canonical = normalize_authority(after_dot).ok_or_else(unparseable)?;
+    let (apex, port) = split_canonical(&canonical);
+    // `.192.168.0.1` parses but can never match anything, since suffix matching
+    // declines IP literals — the same invisible nothing this whole error type
+    // exists to stop.
+    if is_ip_literal(apex) {
+        return Err(unparseable());
+    }
+    if is_public_suffix(apex) {
+        return Err(InvalidAllowedHost::PublicSuffix {
+            entry: entry.to_string(),
+        });
+    }
+    Ok(AllowedHost::Suffix(SuffixRule {
+        dotted_apex: format!(".{apex}"),
+        port,
+    }))
+}
+
+/// Whether wildcarding this apex would hand the server to strangers.
+///
+/// A single-label apex is a TLD — Vite's docs put it plainly: "you should never
+/// add Top-Level Domains like .com to the list" — and that rule alone catches
+/// `.com`, `.io`, `.local` and `.internal`. [`DENIED_SUFFIXES`] extends it to
+/// the multi-label apexes with the same property.
+fn is_public_suffix(apex: &str) -> bool {
+    !apex.contains('.') || DENIED_SUFFIXES.contains(&apex)
+}
+
+/// Multi-label apexes refused for the same reason a TLD is.
+///
+/// Deliberately a short hand-written list and not the Public Suffix List: a
+/// weekly-changing dependency is out of proportion to catching a config
+/// mistake, and the single-label rule above already covers every real TLD. What
+/// is left is what an operator here would plausibly type — names any peer on
+/// the network can claim, and the shared apexes of the tunnels this project
+/// documents, where the next subdomain along belongs to a stranger.
+///
+/// `local` and `internal` are listed even though the single-label rule already
+/// refuses them, because a reader checking whether mDNS names are covered looks
+/// at this list.
+const DENIED_SUFFIXES: &[&str] = &[
+    "local",
+    "internal",
+    "home.arpa",
+    "trycloudflare.com",
+    "ngrok.io",
+    "ngrok.app",
+    "ngrok-free.app",
+    "loca.lt",
+    "github.io",
+    "pages.dev",
+    "workers.dev",
+    "vercel.app",
+    "netlify.app",
+    "herokuapp.com",
+    "onrender.com",
+    "co.uk",
+    "com.au",
+    "co.jp",
+    "co.nz",
+    "com.br",
+    "co.za",
+];
+
 impl HostPolicy {
     /// Derive the policy from the web server's own configuration.
     ///
@@ -47,7 +227,10 @@ impl HostPolicy {
     /// escape hatch for reverse-proxy and tunnel deployments, and an argument
     /// a caller has to remember to forward is one that will eventually be
     /// forwarded as `&[]` — leaving a documented control with no input.
-    pub fn from_web_config(config: &WebConfig) -> Self {
+    ///
+    /// Fallible because a malformed `allowed_hosts` entry stops the server; see
+    /// [`InvalidAllowedHost`].
+    pub fn from_web_config(config: &WebConfig) -> Result<Self, InvalidAllowedHost> {
         Self::from_bind(&config.host, config.port, &config.allowed_hosts)
     }
 
@@ -58,11 +241,16 @@ impl HostPolicy {
     /// three spellings of the same loopback the operator actually bound.
     /// A configured entry that carries its own port is matched exactly; one
     /// without a port is accepted both bare (a proxy on 80/443 forwards the
-    /// public name with no port) and with `port` appended.
+    /// public name with no port) and with `port` appended. An entry that starts
+    /// with a dot (`.example.com`) is a suffix — see [`SuffixRule`].
     ///
     /// A bind that other machines can reach also answers to this machine's own
     /// names — see [`local_names`].
-    pub fn from_bind(bind_host: &str, port: u16, extra_hosts: &[String]) -> Self {
+    pub fn from_bind(
+        bind_host: &str,
+        port: u16,
+        extra_hosts: &[String],
+    ) -> Result<Self, InvalidAllowedHost> {
         Self::from_bind_with_local_names(bind_host, port, extra_hosts, &local_names())
     }
 
@@ -74,8 +262,14 @@ impl HostPolicy {
         port: u16,
         extra_hosts: &[String],
         local_names: &[String],
-    ) -> Self {
+    ) -> Result<Self, InvalidAllowedHost> {
         let mut allowed = BTreeSet::new();
+        // Warn-and-drop survives here, for the authorities this function derives
+        // itself: the bind address and whatever the OS calls this machine are
+        // environment, not something an operator typed, and a hostname the
+        // resolver reports in a shape no `Host` header could carry is not a
+        // reason to refuse to serve loopback. Operator entries are the fallible
+        // path below.
         let mut allow = |authority: &str| {
             match normalize_authority(authority) {
                 Some(canonical) => {
@@ -119,28 +313,39 @@ impl HostPolicy {
             }
         }
 
+        let mut suffixes = Vec::new();
         for entry in extra_hosts
             .iter()
             .map(|h| h.trim())
             .filter(|h| !h.is_empty())
         {
-            allow(entry);
-            if normalize_authority(entry).is_some_and(|a| split_canonical(&a).1.is_none()) {
-                allow(&format!("{entry}:{port}"));
+            match parse_allowed_host(entry)? {
+                AllowedHost::Exact(canonical) => {
+                    if split_canonical(&canonical).1.is_none() {
+                        allowed.insert(format!("{canonical}:{port}"));
+                    }
+                    allowed.insert(canonical);
+                }
+                AllowedHost::Suffix(rule) => suffixes.push(rule),
             }
         }
 
-        Self {
+        Ok(Self {
             allowed,
+            suffixes,
             any_ip_literal,
             port,
-        }
+        })
     }
 
     /// Every canonical `host[:port]` authority accepted verbatim.
     ///
-    /// Excludes the open-ended "any IP literal on the bind port" rule a
-    /// wildcard bind adds — that set is unbounded and cannot be enumerated.
+    /// Excludes the open-ended rules — "any IP literal on the bind port" from a
+    /// wildcard bind, and any `.example.com` suffix entry — because those sets
+    /// are unbounded and cannot be enumerated. That costs the CORS list
+    /// nothing: a suffix entry describes a proxied or tunnelled deployment,
+    /// which the browser sees as *same*-origin, so CORS is never consulted for
+    /// it (see `build_cross_origin_allowlist`).
     /// Exists so the CORS allow-list derives from the same source that decides
     /// `Host`: they were built independently, and a configured `allowed_hosts`
     /// entry passed the Host check while the CSP still blocked the terminal
@@ -170,12 +375,20 @@ impl HostPolicy {
         if self.allowed.contains(canonical) {
             return true;
         }
+        let (host, port) = split_canonical(canonical);
+        if self
+            .suffixes
+            .iter()
+            .any(|rule| rule.accepts_port(port, self.port) && rule.matches_host(host))
+        {
+            return true;
+        }
         if !self.any_ip_literal {
             return false;
         }
-        match split_canonical(canonical) {
-            (host, Some(port)) => port == self.port && is_ip_literal(host),
-            (_, None) => false,
+        match port {
+            Some(port) => port == self.port && is_ip_literal(host),
+            None => false,
         }
     }
 }
@@ -392,6 +605,19 @@ fn format_authority(ip: IpAddr, port: u16) -> String {
 mod tests {
     use super::*;
 
+    /// [`HostPolicy::from_bind_with_local_names`] for a case whose entries are
+    /// well-formed. The rejections live in their own tests below, where the
+    /// error is the assertion rather than a `.expect` nobody reads.
+    fn policy_for_bind(
+        bind_host: &str,
+        port: u16,
+        extra_hosts: &[String],
+        local_names: &[String],
+    ) -> HostPolicy {
+        HostPolicy::from_bind_with_local_names(bind_host, port, extra_hosts, local_names)
+            .expect("well-formed allowed_hosts")
+    }
+
     #[test]
     fn a_wildcard_bind_accepts_lan_ips_but_never_an_unrelated_name() {
         // `--host 0.0.0.0` is the LAN case: the machine's own addresses cannot
@@ -399,7 +625,7 @@ mod tests {
         // (that needs a name). Every name other than this machine's own still
         // has to be allow-listed — supplied empty here so the assertions pin
         // the IP-literal rule alone, whatever the box running them is called.
-        let policy = HostPolicy::from_bind_with_local_names("0.0.0.0", 3000, &[], &[]);
+        let policy = policy_for_bind("0.0.0.0", 3000, &[], &[]);
         assert!(policy.accepts_authority("192.168.0.16:3000"));
         assert!(policy.accepts_authority("[fd00::1]:3000"));
         assert!(!policy.accepts_authority("192.168.0.16:3001"));
@@ -407,7 +633,7 @@ mod tests {
         assert!(!policy.accepts_authority("nas.local:3000"));
 
         // A specific bind does not get the IP-literal allowance.
-        let loopback = HostPolicy::from_bind_with_local_names("127.0.0.1", 3000, &[], &[]);
+        let loopback = policy_for_bind("127.0.0.1", 3000, &[], &[]);
         assert!(!loopback.accepts_authority("192.168.0.16:3000"));
     }
 
@@ -415,13 +641,14 @@ mod tests {
     fn configured_public_names_are_accepted_bare_and_on_the_bind_port() {
         // `cru tunnel` / reverse proxy: the browser's Host is the public name,
         // with no port when the proxy terminates on 80 or 443.
-        let policy = HostPolicy::from_bind(
+        let policy = policy_for_bind(
             "127.0.0.1",
             3000,
             &[
                 "crucible.example.com".to_string(),
                 "old.example:8443".into(),
             ],
+            &[],
         );
         assert!(policy.accepts_authority("crucible.example.com"));
         assert!(policy.accepts_authority("crucible.example.com:3000"));
@@ -440,7 +667,7 @@ mod tests {
         // machine addresses this box by NAME, and that Host used to be refused
         // no matter how the operator bound the socket.
         let names = ["node7".to_string(), "node7.local".to_string()];
-        let policy = HostPolicy::from_bind_with_local_names("0.0.0.0", 3000, &[], &names);
+        let policy = policy_for_bind("0.0.0.0", 3000, &[], &names);
 
         assert!(policy.accepts_authority("node7:3000"));
         assert!(policy.accepts_authority("node7.local:3000"));
@@ -458,7 +685,7 @@ mod tests {
         // Narrowing the bind to one interface does not change how a browser
         // spells the machine, so the names have to come along.
         let names = ["node7".to_string()];
-        let policy = HostPolicy::from_bind_with_local_names("192.168.0.16", 3000, &[], &names);
+        let policy = policy_for_bind("192.168.0.16", 3000, &[], &names);
 
         assert!(policy.accepts_authority("node7:3000"));
         assert!(policy.accepts_authority("192.168.0.16:3000"));
@@ -473,7 +700,7 @@ mod tests {
         // rebinding target bought for nothing.
         let names = ["node7".to_string(), "node7.local".to_string()];
         for bind in ["127.0.0.1", "::1", "localhost"] {
-            let policy = HostPolicy::from_bind_with_local_names(bind, 3000, &[], &names);
+            let policy = policy_for_bind(bind, 3000, &[], &names);
             assert!(
                 !policy.accepts_authority("node7:3000"),
                 "{bind} bind must not admit the machine's LAN name"
@@ -545,7 +772,7 @@ mod tests {
         // End to end through the policy: the FQDN is accepted bare and on the
         // bind port, exactly like the hostname it extends.
         let names = local_names_from("node7", Some("node7.example.com"));
-        let policy = HostPolicy::from_bind_with_local_names("0.0.0.0", 3000, &[], &names);
+        let policy = policy_for_bind("0.0.0.0", 3000, &[], &names);
 
         assert!(policy.accepts_authority("node7.example.com:3000"));
         assert!(policy.accepts_authority("node7.example.com"));
@@ -556,7 +783,7 @@ mod tests {
         assert!(!policy.accepts_authority("node7.example.com:3001"));
 
         // …and a loopback bind still answers to no LAN name, FQDN included.
-        let loopback = HostPolicy::from_bind_with_local_names("127.0.0.1", 3000, &[], &names);
+        let loopback = policy_for_bind("127.0.0.1", 3000, &[], &names);
         assert!(!loopback.accepts_authority("node7.example.com:3000"));
     }
 
@@ -571,7 +798,7 @@ mod tests {
             allowed_hosts: vec!["crucible.example.com".to_string()],
             ..WebConfig::default()
         };
-        let policy = HostPolicy::from_web_config(&config);
+        let policy = HostPolicy::from_web_config(&config).expect("well-formed config");
         assert!(policy.accepts_authority("crucible.example.com"));
         assert!(policy.accepts_authority("192.168.0.16:3000"));
         assert!(!policy.accepts_authority("evil.test:3000"));
@@ -609,5 +836,183 @@ mod tests {
             normalize_authority("[0:0:0:0:0:0:0:1]:03000").as_deref(),
             Some("[::1]:3000")
         );
+    }
+
+    #[test]
+    fn the_host_shapes_upstream_host_checks_get_wrong_are_parsed_or_refused() {
+        // Ported from the regression suites of Django, Rails and Werkzeug —
+        // every one of these is a shape that got some framework's Host check
+        // wrong at least once.
+        for raw in [
+            "example.com:80",
+            "[2001:19f0:feee::dead:beef:cafe]:8080",
+            // Punycode is ASCII by construction, so an IDN needs no special case.
+            "xn--4ca9at.com",
+            // The fully-qualified spelling of the same name.
+            "example.com.",
+        ] {
+            assert!(normalize_authority(raw).is_some(), "{raw:?} must parse");
+        }
+
+        for raw in [
+            "example.com..",
+            "example.com@evil.tld",
+            "example.com:80/badpath",
+            "www.example.com:80:80",
+            // Django accepts a leading dot in the *Host* header, which turns
+            // its own suffix syntax into a bypass. This one does not.
+            ".example.com",
+            "..example.com",
+        ] {
+            assert_eq!(normalize_authority(raw), None, "{raw:?} must not parse");
+        }
+    }
+
+    #[test]
+    fn a_suffix_entry_admits_the_apex_and_exactly_one_label_beneath_it() {
+        // `.example.com` is the leading-dot syntax Django, Rails, Vite,
+        // webpack-dev-server and Werkzeug all share — with Rails' narrower
+        // depth rule, because any-depth matching inherits every delegated
+        // subtree under the apex.
+        let policy = policy_for_bind("127.0.0.1", 3000, &[".example.com".to_string()], &[]);
+
+        assert!(policy.accepts_authority("example.com"));
+        assert!(policy.accepts_authority("app.example.com"));
+        assert!(policy.accepts_authority("app.example.com:3000"));
+        // Two labels deep is where a dangling NS record under the apex would
+        // hand an attacker a name inside it.
+        assert!(!policy.accepts_authority("a.b.example.com"));
+        assert!(!policy.accepts_authority("a.b.example.com:3000"));
+    }
+
+    #[test]
+    fn a_suffix_entry_refuses_a_name_that_merely_ends_with_its_apex() {
+        let policy = policy_for_bind("127.0.0.1", 3000, &[".example.com".to_string()], &[]);
+
+        // `ends_with("example.com")` — the classic form of this bug.
+        assert!(!policy.accepts_authority("evilexample.com"));
+        // Rails' CVE-2021-22903: the apex interpolated into a regex unescaped,
+        // where `.` matched the `-`.
+        assert!(!policy.accepts_authority("sub-example.com"));
+        // The apex as a prefix of somebody else's name.
+        assert!(!policy.accepts_authority("example.com.evil.test"));
+        // A Host that is only the suffix — refused at the parse step, and again
+        // by the empty-label rule if it ever got past it.
+        assert!(!policy.answers_to(".example.com"));
+        assert!(!policy.answers_to("..example.com"));
+        // A different apex of the same shape.
+        assert!(!policy.accepts_authority("app.example.test"));
+    }
+
+    #[test]
+    fn an_ip_literal_host_is_never_matched_by_a_suffix_entry() {
+        // The entry is contrived on purpose: a rule that admits *names* under a
+        // domain must have no way to reach an ADDRESS, whatever the apex looks
+        // like. Without that rule `.0.0.1` would hand out every 10.0.0.x host,
+        // and the IP-literal path is exactly the one that is safe only because
+        // there is no name involved.
+        let policy = policy_for_bind("127.0.0.1", 3000, &[".0.0.1".to_string()], &[]);
+
+        assert!(!policy.accepts_authority("10.0.0.1:3000"));
+        assert!(!policy.accepts_authority("10.0.0.1"));
+        assert!(!policy.accepts_authority("[::1]:3001"));
+        // The loopback bind's own authority is unaffected.
+        assert!(policy.accepts_authority("127.0.0.1:3000"));
+    }
+
+    #[test]
+    fn a_suffix_entry_follows_the_same_port_rule_as_an_exact_entry() {
+        let policy = policy_for_bind(
+            "127.0.0.1",
+            3000,
+            &[".example.com".to_string(), ".old.example:8443".to_string()],
+            &[],
+        );
+
+        // No port on the entry: bare (a proxy terminating on 80/443) or the
+        // port we bound.
+        assert!(policy.accepts_authority("app.example.com"));
+        assert!(policy.accepts_authority("app.example.com:3000"));
+        assert!(!policy.accepts_authority("app.example.com:3001"));
+        // A port on the entry is exact.
+        assert!(policy.accepts_authority("app.old.example:8443"));
+        assert!(policy.accepts_authority("old.example:8443"));
+        assert!(!policy.accepts_authority("app.old.example"));
+        assert!(!policy.accepts_authority("app.old.example:3000"));
+    }
+
+    #[test]
+    fn a_malformed_allowed_hosts_entry_refuses_to_start() {
+        // The regression this exists for: `*.example.test` was dropped with one
+        // `tracing::warn!` line, so the operator got a 403 from an allow-list
+        // that looked configured and was empty.
+        let refusals = [
+            ("*.example.test", "a glob is not the syntax"),
+            ("*", "nor is a bare star"),
+            (".", "a bare dot names nothing"),
+            ("..", "and neither does two"),
+            (".:3000", "a port is not a name"),
+            (
+                "..example.test",
+                "a doubled dot is not a name a browser sends",
+            ),
+            (".192.168.0.1", "an address cannot be a name suffix"),
+            ("http://example.test", "a URL is not an authority"),
+            ("example.test/path", "nor is a path"),
+        ];
+        for (entry, why) in refusals {
+            let err = HostPolicy::from_bind_with_local_names(
+                "127.0.0.1",
+                3000,
+                &[entry.to_string()],
+                &[],
+            )
+            .expect_err(why);
+            // The message has to name the entry, or the operator cannot find it
+            // in a config file with a dozen of them.
+            assert!(err.to_string().contains(entry), "{err}");
+        }
+    }
+
+    #[test]
+    fn a_public_suffix_allowed_hosts_entry_refuses_to_start() {
+        // Vite's documentation puts it plainly: "you should never add Top-Level
+        // Domains like .com to the list." Every name anyone can register under
+        // one of these would be an authority this server answers to.
+        for entry in [
+            ".com",
+            ".io",
+            ".test",
+            ".local",
+            ".internal",
+            ".co.uk",
+            ".github.io",
+            ".trycloudflare.com",
+        ] {
+            let err = HostPolicy::from_bind_with_local_names(
+                "127.0.0.1",
+                3000,
+                &[entry.to_string()],
+                &[],
+            )
+            .expect_err(entry);
+            assert_eq!(
+                err,
+                InvalidAllowedHost::PublicSuffix {
+                    entry: entry.to_string()
+                },
+                "{entry} must be refused as a public suffix"
+            );
+        }
+
+        // …while a domain someone actually controls under one of them is fine.
+        let policy = policy_for_bind(
+            "127.0.0.1",
+            3000,
+            &[".crucible.co.uk".to_string(), ".node7.local".to_string()],
+            &[],
+        );
+        assert!(policy.accepts_authority("app.crucible.co.uk"));
+        assert!(policy.accepts_authority("app.node7.local"));
     }
 }

@@ -116,7 +116,7 @@ mod tests {
     fn verify_api_key_matches_and_disabled_auth_accepts_all() {
         // `new_at(.., None)` keeps the session store in memory; `new` would persist
         // into the developer's real `~/.config/crucible/sessions.json`.
-        let policy = HostPolicy::from_bind("127.0.0.1", 3000, &[]);
+        let policy = HostPolicy::from_bind("127.0.0.1", 3000, &[]).expect("bind-derived policy");
         let enabled = ApiKeyState::new_at(Some("secret-key".into()), policy.clone(), None);
         assert!(verify_api_key(&enabled, "secret-key"));
         assert!(!verify_api_key(&enabled, "wrong"));

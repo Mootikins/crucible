@@ -114,7 +114,7 @@ mod tests {
     fn state(key: Option<&str>) -> Arc<ApiKeyState> {
         Arc::new(ApiKeyState::new_at(
             key.map(String::from),
-            HostPolicy::from_bind("127.0.0.1", TEST_PORT, &[]),
+            HostPolicy::from_bind("127.0.0.1", TEST_PORT, &[]).expect("bind-derived policy"),
             None,
         ))
     }

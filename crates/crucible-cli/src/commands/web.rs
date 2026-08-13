@@ -539,7 +539,8 @@ mod tests {
             config.port,
             &config.allowed_hosts,
             &names,
-        );
+        )
+        .expect("the configured allowed_hosts entry is well-formed");
         let banner = banner(&config, &names, Some("192.168.0.16".parse().unwrap()));
 
         for authority in advertised_authorities(&banner) {

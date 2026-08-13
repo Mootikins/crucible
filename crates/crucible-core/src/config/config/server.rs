@@ -121,6 +121,12 @@ pub struct WebConfig {
     /// rebinding, where an attacker-controlled name resolving to 127.0.0.1
     /// makes a victim's browser talk to a loopback-bound `cru web`.
     ///
+    /// An entry beginning with a dot (`.example.com`) is a suffix: it matches
+    /// the apex and exactly one label under it (`app.example.com`), never
+    /// deeper. A malformed entry — a glob, a bare `.`, a public suffix like
+    /// `.com` or `.local` — makes the server refuse to start rather than be
+    /// dropped with a warning nobody reads.
+    ///
     /// Default: EMPTY, which means "derive the expected authority from the
     /// bind address". Set it when the server sits behind a reverse proxy or a
     /// tunnel, where the public authority is not the one it binds.

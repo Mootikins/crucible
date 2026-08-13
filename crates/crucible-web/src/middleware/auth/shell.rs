@@ -264,7 +264,8 @@ mod tests {
         // layers it, from a LAN address, with no credentials at all.
         let key_state = Arc::new(crate::middleware::auth::ApiKeyState::new_at(
             Some("secret-key".to_string()),
-            crate::middleware::auth::HostPolicy::from_bind("127.0.0.1", 3000, &[]),
+            crate::middleware::auth::HostPolicy::from_bind("127.0.0.1", 3000, &[])
+                .expect("bind-derived policy"),
             None,
         ));
         let allowed = Arc::new(vec![HeaderValue::from_static("http://127.0.0.1:3000")]);
@@ -355,7 +356,8 @@ mod tests {
             credentials: allow_remote.then(|| {
                 crate::middleware::auth::ApiKeyState::new_at(
                     Some("secret-key".to_string()),
-                    crate::middleware::auth::HostPolicy::from_bind("127.0.0.1", 3000, &[]),
+                    crate::middleware::auth::HostPolicy::from_bind("127.0.0.1", 3000, &[])
+                        .expect("no allowed_hosts entries to reject"),
                     None,
                 )
             }),
