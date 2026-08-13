@@ -169,19 +169,3 @@ cru.defaults.system_prompt = table.concat({
   "Be concise. Match the depth of the question — a short question gets a short",
   "answer, and code or structure only when it earns its place.",
 }, "\n")
-
--- Bundled plugin defaults
---
--- These load runtime plugins with default config. Override in your
--- .crucible/lua/init.lua by calling setup() with custom config:
---
---   require("kiln-expert").setup({
---     kilns = { docs = "~/crucible/docs" },
---     timeout = 60,
---   })
---
--- Or don't require a plugin at all to skip loading it.
-pcall(function()
-  local ke = require("kiln-expert")
-  if ke and ke.setup then ke.setup({}) end
-end)

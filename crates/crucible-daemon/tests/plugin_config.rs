@@ -104,16 +104,16 @@ fn init(module: &mlua::Table, lua: &mlua::Lua, cfg: &str) {
 #[test]
 fn declared_default_beats_caller_fallback() {
     // The caller's fallback is a last resort, not an override. `timeout`
-    // is declared as 30 in kiln-expert's defaults, so a call site passing
-    // 999 must still see 30.
-    let (_lua, module) = shipped_config_module("kiln-expert", serde_json::json!({}));
-    assert_eq!(get_i64(&module, "timeout"), 30);
-    assert_eq!(get_i64_with_fallback(&module, "timeout", 999), 30);
+    // is declared as 120 in reflection's defaults, so a call site passing
+    // 999 must still see 120.
+    let (_lua, module) = shipped_config_module("reflection", serde_json::json!({}));
+    assert_eq!(get_i64(&module, "timeout"), 120);
+    assert_eq!(get_i64_with_fallback(&module, "timeout", 999), 120);
 }
 
 #[test]
 fn caller_fallback_applies_only_to_undeclared_keys() {
-    let (_lua, module) = shipped_config_module("kiln-expert", serde_json::json!({}));
+    let (_lua, module) = shipped_config_module("reflection", serde_json::json!({}));
     let val: String = module
         .get::<mlua::Function>("get")
         .unwrap()
@@ -124,26 +124,18 @@ fn caller_fallback_applies_only_to_undeclared_keys() {
 
 #[test]
 fn setup_values_beat_declared_defaults_and_fallback() {
-    let (lua, module) = shipped_config_module("kiln-expert", serde_json::json!({}));
+    let (lua, module) = shipped_config_module("reflection", serde_json::json!({}));
     init(&module, &lua, "{ timeout = 7 }");
     assert_eq!(get_i64(&module, "timeout"), 7);
-    assert_eq!(get_i64_with_fallback(&module, "timeout", 30), 7);
+    assert_eq!(get_i64_with_fallback(&module, "timeout", 120), 7);
 }
 
-#[test]
-fn setup_kilns_are_visible_through_the_kilns_accessor() {
-    // `M.kilns()` is `M.get("kilns", {})` — the non-nil fallback used to
-    // shadow every setup() value permanently.
-    let (lua, module) = shipped_config_module("kiln-expert", serde_json::json!({}));
-    init(&module, &lua, r#"{ kilns = { docs = "/tmp/docs" } }"#);
-
-    let kilns: mlua::Table = module
-        .get::<mlua::Function>("kilns")
-        .unwrap()
-        .call::<mlua::Table>(())
-        .unwrap();
-    assert_eq!(kilns.get::<String>("docs").unwrap(), "/tmp/docs");
-}
+// `setup_kilns_are_visible_through_the_kilns_accessor` lived here. It drove
+// `kiln-expert`'s `M.kilns()` — the one shipped accessor with a non-nil table
+// default — to prove the fallback did not permanently shadow a `setup()` value.
+// The plugin is gone and no other declares such an accessor. The behaviour it
+// guarded is still covered generally by `setup_values_beat_explicit_toml` and
+// the `timeout` cases above.
 
 /// Lua beats TOML — the Neovim convention. The daemon seeds `setup()` with
 /// the TOML section at load, so TOML applies as the base; a user's later
@@ -153,8 +145,8 @@ fn setup_kilns_are_visible_through_the_kilns_accessor() {
 #[test]
 fn setup_values_beat_explicit_toml() {
     let (lua, module) = shipped_config_module(
-        "kiln-expert",
-        serde_json::json!({ "kiln-expert": { "timeout": 99 } }),
+        "reflection",
+        serde_json::json!({ "reflection": { "timeout": 99 } }),
     );
     // Before any setup() call, TOML is the resolved value.
     assert_eq!(get_i64(&module, "timeout"), 99);

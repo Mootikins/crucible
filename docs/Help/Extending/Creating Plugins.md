@@ -85,7 +85,6 @@ extracted on first run. Every one of them loads **enabled by default**:
 | `daily-notes` | `daily_create`, `daily_open`, `daily_list`, `/daily` |
 | `discord` | Discord gateway + REST integration |
 | `graph-view` | `graph_links`, `graph_stats`, `/graph` (Fennel) |
-| `kiln-expert` | Search across unmounted kilns by delegation |
 | `oci` | Routes workspace tools into containers |
 | `reflection` | Post-session retrospective notes |
 | `review` | `review_*` tools over the attributed diff |
@@ -108,8 +107,8 @@ Plugins export a module table with an optional `setup()` function. Users configu
 
 ```lua
 -- ~/.config/crucible/init.lua
-require("kiln-expert").setup({
-  kilns = { docs = "~/crucible/docs" },
+require("reflection").setup({
+  enabled = true,
   timeout = 60,
 })
 ```

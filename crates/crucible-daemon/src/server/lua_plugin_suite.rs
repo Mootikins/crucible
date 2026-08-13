@@ -394,7 +394,6 @@ mod shipped_plugin_tests {
     #[test_case("daily-notes")]
     #[test_case("discord")]
     #[test_case("graph-view")]
-    #[test_case("kiln-expert")]
     #[test_case("oci")]
     #[test_case("reflection")]
     #[test_case("review")]

@@ -487,7 +487,7 @@ fn plugins_extracted_from_the_binary_are_discovered() {
             .any(|(p, src)| *p == extracted.join("plugins") && *src == PluginSource::Runtime),
         "extracted plugins must be discovered, got {paths:?}"
     );
-    for bundled in ["kiln-expert", "oci", "reflection"] {
+    for bundled in ["reflection", "oci", "reflection"] {
         assert!(
             extracted.join("plugins").join(bundled).is_dir(),
             "{bundled} must be in the extracted tree"

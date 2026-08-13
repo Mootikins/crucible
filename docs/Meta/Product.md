@@ -949,7 +949,7 @@ HTTP Gateway (crucible-web wired to daemon)
 
 ### Default Runtime Plugins (P1 — Neovim-style bundled plugins)
 
-> Crucible ships a `runtime/` directory of Lua plugins alongside the binary, analogous to Neovim's `$VIMRUNTIME/plugin/`. Release tarballs carry no such directory, so the binary carries the tree itself and extracts it when no install put one on disk; see **Bundled Runtime Plugins in Releases**. These load automatically, are overridable, and their source code *is* the documentation for how to build plugins. The bundled set is `kiln-expert`, `oci` and `reflection`.
+> Crucible ships a `runtime/` directory of Lua plugins alongside the binary, analogous to Neovim's `$VIMRUNTIME/plugin/`. Release tarballs carry no such directory, so the binary carries the tree itself and extracts it when no install put one on disk; see **Bundled Runtime Plugins in Releases**. These load automatically, are overridable, and their source code *is* the documentation for how to build plugins. The bundled set is `daily-notes`, `discord`, `graph-view`, `oci`, `reflection`, `review`, `todo-list`, `web-search` and `worktree`.
 >
 > **Plugin search path (priority order):**
 > 1. `CRUCIBLE_PLUGIN_PATH` — env override (highest priority)
@@ -978,11 +978,10 @@ HTTP Gateway (crucible-web wired to daemon)
   - **Gets you:** nothing. No surface in the product displays a plugin's provenance.
   - **Proof:** _none — `source` goes on the wire and is read by nobody: `PluginStatusEntry` has only `{name, version, state, error}`, with **no `source` field at all**, so provenance is dropped before it reaches the TUI. `:plugins` renders `"  {icon} {name} v{version} ({state})"` and `cru plugin list` prints `NAME VERSION STATE TOOLS/CMDS/HOOKS`; neither reads `source`. Asserted as fact in two other places, both now corrected._
 - [x] **Bundled Runtime Plugins in Releases** `P1` — the bundled plugins reach an installed user · `crucible-cli`
-  - **Gets you:** `kiln-expert`, `oci` and `reflection` load for anyone who installed Crucible, not only for people who cloned the repo. The tree travels inside the `cru` binary (144K, 22 files) and the daemon extracts it on first start when no install put one on disk.
+  - **Gets you:** every bundled plugin loads for anyone who installed Crucible, not only for people who cloned the repo. The tree travels inside the `cru` binary (144K, 22 files) and the daemon extracts it on first start when no install put one on disk.
   - **Proof:** `crates/crucible-daemon/src/daemon_plugins/tests/mod.rs`::plugins_extracted_from_the_binary_are_discovered; the extraction at `crucible-core/src/runtime_roots.rs`::a_binary_with_nothing_on_disk_materialises_the_tree; the single call site at `crates/crucible-cli/src/commands/daemon.rs`:73. _The earlier reading of this entry — "the fix is one `include` key plus an installer that unpacks it" — was half wrong, and the wrong half is why this took a design rather than a config line: `include` does put `runtime/` in the archive (`dist plan` lists it), but cargo-dist 0.31.0's generated installer moves only `$_bins $_libs $_staticlibs` out of the unpacked directory and deletes the rest, and `cargo install` never had a data path at all. Shipping inside the binary covers every install route at once._
-- [x] **`kiln-expert` Runtime Plugin** `P1` — on-demand search across *unmounted* kilns via subagent delegation · `runtime/plugins/kiln-expert/`
-  - **Gets you:** you configure a `kilns` map of label → path and the agent can search a kiln that is not attached to the session, without you mounting it first.
-  - **Proof:** `runtime/plugins/kiln-expert/plugin.yaml` plus its Lua suite in `runtime/plugins/kiln-expert/tests/`, run in CI by `server/lua_plugin_suite.rs::shipped_plugin_lua_suite_passes`. Subject to the packaging gap above.
+- [-] **`kiln-expert` Runtime Plugin** `P1` — REMOVED. It hand-rolled agent card + kiln + delegation as a plugin: spawn a subagent with a kiln attached, ask it, summarise, end the session. That is the composition of three intended features, and a card you author says it better. It also shipped with an empty kiln map, so it advertised `search_kiln`/`list_kilns` to every session and both returned nothing
+  - **Replacement:** an agent card naming the model, prompt and tools, plus the kiln attached to the session that delegates to it. `session.create` already resolves a card by `agent_name` (`server/session/create.rs`). The gap left behind: `cru.sessions.create` does not forward `agent_name`, so a *plugin* cannot yet start a card-backed session — that is what the Discord bot needs, and it is the one piece worth building.
 
 ### Ecosystem & Shareability (P1-P2)
 

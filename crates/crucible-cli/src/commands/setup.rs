@@ -168,8 +168,8 @@ const TEMPLATE_INIT_LUA: &str = r#"-- Crucible user configuration
 -- Bundled plugins load with defaults; your setup() overrides them.
 -- Don't require a plugin to skip loading it entirely.
 --
--- require("kiln-expert").setup({
---   kilns = { docs = "~/crucible/docs" },
+-- require("reflection").setup({
+--   enabled = true,
 --   timeout = 60,
 -- })
 
@@ -267,7 +267,7 @@ mod tests {
             "a copied defaults/ shadows the shipped one for good"
         );
         assert!(
-            target.join("plugins").join("kiln-expert").is_dir(),
+            target.join("plugins").join("reflection").is_dir(),
             "plugins still come across — they layer per name"
         );
         assert!(target.join("themes").is_dir(), "so do themes");
@@ -282,7 +282,7 @@ mod tests {
 
         assert!(target
             .join("plugins")
-            .join("kiln-expert")
+            .join("reflection")
             .join("plugin.yaml")
             .is_file());
         assert!(target
@@ -307,7 +307,7 @@ mod tests {
 
         let plugin = target
             .join("plugins")
-            .join("kiln-expert")
+            .join("reflection")
             .join("plugin.yaml");
         std::fs::write(&plugin, "# edited").unwrap();
 
@@ -338,7 +338,7 @@ mod tests {
             "-- packaged"
         );
         assert!(
-            !target.join("plugins").join("kiln-expert").is_dir(),
+            !target.join("plugins").join("reflection").is_dir(),
             "the compiled-in tree must not be merged over the installed one"
         );
     }

@@ -17,8 +17,8 @@ Create `~/.config/crucible/init.lua`:
 
 ```lua
 -- Configure plugins
-require("kiln-expert").setup({
-  kilns = { docs = "~/crucible/docs" },
+require("reflection").setup({
+  enabled = true,
 })
 
 -- Colours
@@ -54,11 +54,9 @@ Plugins are configured via `require("name").setup({...})` — the same pattern a
 
 ```lua
 -- Configure a bundled plugin with custom settings
-require("kiln-expert").setup({
-  kilns = {
-    docs = "~/crucible/docs",
-    research = "~/notes/research",
-  },
+require("reflection").setup({
+  enabled = true,
+  model = "llama3.2",
   timeout = 60,
 })
 ```

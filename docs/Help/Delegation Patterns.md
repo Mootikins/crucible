@@ -60,8 +60,13 @@ local function collect_text(stream)
 end
 ```
 
-The `kiln-expert` plugin uses this exact pattern — see
-`runtime/plugins/kiln-expert/init.lua` for a working reference.
+The `reflection` plugin uses this pattern — see
+`runtime/plugins/reflection/init.lua` for a working reference.
+
+A plugin is rarely the right home for it, though. "Spawn a subagent with a
+kiln attached and ask it" is an agent card plus a kiln plus delegation, and a
+card you author says it more directly than Lua that assembles the same three
+pieces by hand. `kiln-expert` was exactly that plugin and was removed for it.
 
 ## Router — classify input, dispatch to one specialist
 
