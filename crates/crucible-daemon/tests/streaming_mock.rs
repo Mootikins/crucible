@@ -82,9 +82,26 @@ pub async fn next_event(
 ) -> SessionEventMessage {
     timeout(Duration::from_secs(2), async {
         loop {
-            if let Ok(event) = rx.recv().await {
-                if event.event == event_name {
-                    return event;
+            // `Err(Closed)` must not be discarded. A closed broadcast returns it
+            // IMMEDIATELY and forever, so `if let Ok(..)` swallowing it leaves a
+            // loop with nothing that can park: it pegs a core and, on the
+            // current-thread runtime `#[tokio::test]` builds, starves the timer
+            // driver that the `timeout` wrapping this relies on. The intended
+            // "timed out waiting for X" panic then never arrives and the test
+            // hangs until the harness kills it.
+            match rx.recv().await {
+                Ok(event) if event.event == event_name => return event,
+                Ok(_) => continue,
+                Err(broadcast::error::RecvError::Lagged(n)) => {
+                    // Self-correcting: the cursor is repositioned and the next
+                    // recv parks or delivers. Worth saying, since a dropped event
+                    // could be the one being waited for.
+                    eprintln!(
+                        "event stream lagged, dropped {n} events while waiting for {event_name}"
+                    );
+                }
+                Err(broadcast::error::RecvError::Closed) => {
+                    panic!("event stream closed while waiting for {event_name}")
                 }
             }
         }

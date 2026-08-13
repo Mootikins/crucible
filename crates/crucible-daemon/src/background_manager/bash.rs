@@ -210,31 +210,41 @@ impl BackgroundJobManager {
             exit_code: None,
         })?;
 
-        let stdout_handle = child.stdout.take();
-        let stderr_handle = child.stderr.take();
+        let mut stdout_handle = child.stdout.take();
+        let mut stderr_handle = child.stderr.take();
 
+        // Wait and both pipes CONCURRENTLY. Awaiting `wait()` first deadlocks:
+        // a pipe holds 64 KiB on Linux, and a child that writes past that blocks
+        // in `write()` until someone reads — so `wait()` never returns and the
+        // job ends only when its timeout fires. Any verbose command hit this
+        // (`cargo build`, a test run), and it looked like a slow command rather
+        // than a stall. Reading stdout to EOF before touching stderr has the same
+        // flaw one pipe over. tokio's own `Child::wait_with_output` uses
+        // `try_join3` for exactly this reason, which is what this is.
         let wait_and_collect = async {
-            let status = child.wait().await?;
-
-            let stdout = if let Some(mut h) = stdout_handle {
-                use tokio::io::AsyncReadExt;
-                let mut buf = Vec::new();
-                h.read_to_end(&mut buf).await?;
-                String::from_utf8_lossy(&buf).to_string()
-            } else {
-                String::new()
-            };
-
-            let stderr = if let Some(mut h) = stderr_handle {
-                use tokio::io::AsyncReadExt;
-                let mut buf = Vec::new();
-                h.read_to_end(&mut buf).await?;
-                String::from_utf8_lossy(&buf).to_string()
-            } else {
-                String::new()
-            };
-
-            Ok::<_, std::io::Error>((status, stdout, stderr))
+            use tokio::io::AsyncReadExt;
+            let mut stdout_buf = Vec::new();
+            let mut stderr_buf = Vec::new();
+            let (status, (), ()) = tokio::try_join!(
+                child.wait(),
+                async {
+                    match stdout_handle.as_mut() {
+                        Some(h) => h.read_to_end(&mut stdout_buf).await.map(|_| ()),
+                        None => Ok(()),
+                    }
+                },
+                async {
+                    match stderr_handle.as_mut() {
+                        Some(h) => h.read_to_end(&mut stderr_buf).await.map(|_| ()),
+                        None => Ok(()),
+                    }
+                },
+            )?;
+            Ok::<_, std::io::Error>((
+                status,
+                String::from_utf8_lossy(&stdout_buf).to_string(),
+                String::from_utf8_lossy(&stderr_buf).to_string(),
+            ))
         };
 
         tokio::select! {
@@ -268,6 +278,82 @@ impl BackgroundJobManager {
                     }
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Output larger than a pipe buffer must come back whole, and promptly.
+    ///
+    /// The regression: `wait()` was awaited before either pipe was read. A pipe
+    /// holds 64 KiB on Linux, so a child writing past that blocks in `write()`
+    /// waiting for a reader that does not exist yet, while we wait for an exit
+    /// that cannot happen — deadlocked until the job's timeout. 256 KiB is four
+    /// buffers' worth, so this hangs pre-fix on any plausible pipe size.
+    ///
+    /// The timeout is the assertion: `BashError::Timeout` is what the deadlock
+    /// produced, so a regression fails here rather than hanging the suite.
+    #[tokio::test]
+    async fn output_past_the_pipe_buffer_comes_back_whole() {
+        const BYTES: usize = 256 * 1024;
+        let (_cancel_tx, cancel_rx) = oneshot::channel();
+
+        // Matched rather than `expect`ed: `BashError` derives nothing, and this
+        // test is not a reason to widen a production type.
+        let (stdout, exit_code) = match BackgroundJobManager::execute_bash_with_cancellation(
+            format!("printf 'x%.0s' $(seq 1 {BYTES})"),
+            None,
+            Duration::from_secs(20),
+            cancel_rx,
+        )
+        .await
+        {
+            Ok(out) => out,
+            Err(BashError::Timeout) => {
+                panic!("deadlocked: the child blocked writing while we waited for its exit")
+            }
+            Err(BashError::Cancelled) => panic!("nothing cancelled this job"),
+            Err(BashError::Failed { message, .. }) => panic!("command failed: {message}"),
+        };
+
+        assert_eq!(exit_code, 0);
+        assert_eq!(
+            stdout.len(),
+            BYTES,
+            "the whole of stdout must survive, not one pipe buffer's worth"
+        );
+    }
+
+    /// The same for stderr, which the old code read only after draining stdout —
+    /// so a chatty stderr deadlocked against a quiet stdout's EOF.
+    #[tokio::test]
+    async fn a_chatty_stderr_does_not_block_on_stdout() {
+        const BYTES: usize = 256 * 1024;
+        let (_cancel_tx, cancel_rx) = oneshot::channel();
+
+        match BackgroundJobManager::execute_bash_with_cancellation(
+            format!("printf 'e%.0s' $(seq 1 {BYTES}) >&2; exit 3"),
+            None,
+            Duration::from_secs(20),
+            cancel_rx,
+        )
+        .await
+        {
+            Err(BashError::Failed { exit_code, message }) => {
+                assert_eq!(exit_code, Some(3));
+                assert!(
+                    message.contains(&"e".repeat(1024)),
+                    "stderr must be captured, not truncated at a pipe buffer"
+                );
+            }
+            Err(BashError::Timeout) => {
+                panic!("deadlocked: stderr filled its pipe while stdout was drained first")
+            }
+            Err(BashError::Cancelled) => panic!("nothing cancelled this job"),
+            Ok(_) => panic!("exit 3 must surface as a failure"),
         }
     }
 }

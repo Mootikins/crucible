@@ -45,6 +45,7 @@ use tokio::sync::{broadcast, Mutex};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
+mod accept;
 mod core;
 mod external_announce;
 mod file_event_hooks;
@@ -55,6 +56,7 @@ mod plugin_boot;
 mod socket_lock;
 mod socket_privacy;
 pub(crate) mod ui_broadcast;
+use accept::{accept_error_is_transient, ACCEPT_ERROR_BACKOFF};
 use socket_lock::acquire_socket_lock;
 use socket_privacy::{bind_private_listener, prepare_socket_dir};
 pub mod lua;
@@ -889,7 +891,25 @@ impl Server {
                             });
                         }
                         Err(e) => {
-                            error!("Accept error: {}", e);
+                            // Never retry an accept error at full speed. A
+                            // per-connection failure is transient and worth an
+                            // immediate retry, but a RESOURCE error — fd
+                            // exhaustion above all — fails synchronously without
+                            // registering readiness, so retrying at once means
+                            // this loop stops returning `Pending`: a pegged core,
+                            // a log line per iteration, and a task that cannot
+                            // yield to whatever would release the fd it needs.
+                            // hyper's `AddrIncoming` backs off for this reason.
+                            if accept_error_is_transient(&e) {
+                                debug!(error = %e, "Transient accept error; retrying");
+                            } else {
+                                error!(
+                                    error = %e,
+                                    backoff_ms = ACCEPT_ERROR_BACKOFF.as_millis() as u64,
+                                    "Accept failed; backing off before retrying"
+                                );
+                                tokio::time::sleep(ACCEPT_ERROR_BACKOFF).await;
+                            }
                         }
                     }
                 }
