@@ -6,10 +6,25 @@ use super::TestArgs;
 use crate::config::CliConfig;
 
 pub async fn execute(_config: CliConfig, args: TestArgs) -> Result<()> {
-    if !args.path.exists() {
-        eprintln!("{} Path does not exist: {}", "✗".red(), args.path.display());
-        std::process::exit(2);
-    }
+    // Resolved HERE, before it crosses the RPC boundary. The daemon re-checks
+    // existence against its OWN working directory, which is wherever it was
+    // spawned — `%h` for the systemd unit, the repo root for a shell-started
+    // one. So a relative path validated in this process and then sent verbatim
+    // means two different things at the two ends, and `just test plugins` passed
+    // or failed depending on where the developer's daemon happened to start:
+    //   Error: RPC error: Test path does not exist: runtime/plugins/discord
+    // with `runtime/plugins/discord` sitting right there in the repo.
+    let test_path = match args.path.canonicalize() {
+        Ok(path) => path,
+        Err(err) => {
+            eprintln!(
+                "{} Path does not exist: {} ({err})",
+                "✗".red(),
+                args.path.display()
+            );
+            std::process::exit(2);
+        }
+    };
 
     // Connect to daemon
     let client = crate::common::daemon_client().await?;
@@ -17,7 +32,7 @@ pub async fn execute(_config: CliConfig, args: TestArgs) -> Result<()> {
     // Run plugin tests via daemon RPC
     let response = client
         .lua_run_plugin_tests(LuaRunPluginTestsRequest {
-            test_path: args.path.to_string_lossy().to_string(),
+            test_path: test_path.to_string_lossy().to_string(),
             filter: args.filter,
         })
         .await?;
