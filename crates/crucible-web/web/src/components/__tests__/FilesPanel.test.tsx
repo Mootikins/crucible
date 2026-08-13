@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@solidjs/testing-library';
+import { render, fireEvent } from '@solidjs/testing-library';
 
 // The old test read FilesPanel.tsx as a string and asserted the SOURCE did not
 // contain emoji and did contain Lucide identifiers ("FileText", "Folder", …).
@@ -112,9 +112,41 @@ describe('FilesPanel — a project root loads once', () => {
     localStorage.setItem('crucible:cache:kilns', JSON.stringify([{ path: '/vault', name: 'vault' }]));
     localStorage.setItem('crucible.filetree.expanded.project:/proj', JSON.stringify(['src']));
     listDirMock.mockImplementation(async (_root: string, rel: string) => ({
-      entries: rel === '' ? [dir('src'), file('README.md')] : [file('src/main.rs')],
+      entries:
+        rel === ''
+          ? [dir('src'), dir('later'), file('README.md')]
+          : rel === 'later'
+            ? [file('later/lazy.rs')]
+            : [file('src/main.rs')],
       truncated: false,
     }));
+  });
+
+  it('keeps the existing rows when a lazily loaded folder arrives', async () => {
+    // The tree used to be rebuilt from scratch on every first expand: the
+    // merged tree came back via `onLoadedTree` -> `setRawRoot`, the `collection`
+    // memo took a new identity, and a KEYED `<Show>` tore down and recreated
+    // every row. Measured at 1134 visible rows, expanding a folder with two
+    // children cost 1775ms of DOM work against 4ms of network, because the cost
+    // tracked total rows (~1.3ms each) rather than children added.
+    //
+    // Asserted on node IDENTITY, not on row counts: counts stay equal across a
+    // teardown-and-recreate, which is exactly what made this invisible.
+    const { findByText, container } = render(() => <FilesPanel />);
+    const readmeRow = await findByText('README.md');
+    await findByText('main.rs'); // initial load settled
+    const treeBefore = container.querySelector('[role="tree"]');
+    expect(treeBefore).not.toBeNull();
+
+    // `later` is deliberately NOT in the persisted-expanded set, so expanding it
+    // goes through `loadChildren` -> `onLoadedTree` -> `setRawRoot` AFTER mount
+    // — the path that used to remount. An already-expanded folder would not
+    // exercise it, which is what made an earlier version of this test vacuous.
+    fireEvent.click(await findByText('later'));
+    await findByText('lazy.rs');
+
+    expect(container.querySelector('[role="tree"]')).toBe(treeBefore);
+    expect(container.contains(readmeRow)).toBe(true);
   });
 
   it('fetches each directory exactly once despite the cache-then-fetch double apply', async () => {

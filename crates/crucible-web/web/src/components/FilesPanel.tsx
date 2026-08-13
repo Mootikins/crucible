@@ -234,8 +234,9 @@ export const FilesPanel: Component<{ embedded?: boolean }> = (props) => {
     }),
   );
 
-  // Displayed collection = sorted view of the raw tree. New identity on
-  // raw-tree or sort change -> FileTreeView re-mounts (keyed <Show>).
+  // Displayed collection = sorted view of the raw tree. A new identity on
+  // raw-tree or sort change reaches the tree machine reactively — it does NOT
+  // remount FileTreeView any more; see the note at the <Show> below.
   const collection = createMemo(() => {
     const raw = rawRoot();
     return raw ? makeFileCollection(sortTree(raw, sort())) : null;
@@ -602,12 +603,26 @@ export const FilesPanel: Component<{ embedded?: boolean }> = (props) => {
             No project or kiln to browse
           </div>
         </Show>
-        <Show when={collection()} keyed>
+        {/* NOT `keyed`. Keyed, every lazily loaded folder rebuilt the entire
+            tree: `onLoadedTree` -> `setRawRoot` -> new `collection` identity ->
+            this Show tears down and recreates every row. Measured at 1134
+            visible rows, expanding a folder with TWO children cost 1775ms of
+            DOM work against 4ms of network, and mutation totals showed
+            `removed == rowsBefore` each time — the cost tracked total rows
+            (~1.3ms each), not children added.
+
+            Redundant as well as expensive: `FileTreeView` declares its machine
+            options as a function of props (`useTreeView(() => ({ collection:
+            props.collection, ... }))`), so a new collection already reaches the
+            machine reactively. Persisting the merged tree — the thing the
+            discarded-children bug was about — is `onLoadedTree` -> `setRawRoot`
+            below, and that is untouched. */}
+        <Show when={collection()}>
           {(col) => {
             const root = activeRoot()!;
             return (
               <FileTreeView
-                collection={col}
+                collection={col()}
                 rootKind={root.kind}
                 openFilePath={openFilePath()}
                 defaultExpandedValue={expandedFor(root)}
