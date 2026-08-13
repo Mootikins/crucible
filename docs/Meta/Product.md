@@ -1195,6 +1195,23 @@ HTTP Gateway (crucible-web wired to daemon)
   - **Gets you:** an installable app whose update surfaces as a prompt rather than reloading mid-turn (`registerType: 'prompt'`, `skipWaiting: false`), with the service worker forbidden from intercepting `/api/*` including the SSE stream. Debug builds ship a self-destructing SW.
   - **Proof:** built artifacts on disk (`web/dist/manifest.webmanifest`, `dist/sw.js`, `dist/workbox-*.js`, three icon sizes), served with content types pinned by `crates/crucible-web/src/assets.rs`::pwa_assets_resolve_to_correct_mime_types; manifest fields at `web/vite.config.ts:26-46`; SW registered at `web/src/index.tsx:40-41`. No test asserts an actual HTTP 200 for `/manifest.webmanifest` — the one gap if this entry is ever challenged.
 
+- [ ] **Mobile Shell** `P2` — a second app shell on the same origin: editor as the main area, file tree and session as edge drawers, no terminal, no vim mode · `crucible-web`
+  - **Gets you:** a phone surface that is not the desktop layout squeezed — the desktop shell assumes a wide viewport (measured: at 780px the centre column collapses to 29px and the terminal renders one column), and making it responsive was explicitly rejected in favour of a separate shell.
+  - **Why it is cheap:** the seam already exists. `web/src/lib/panel-registry.ts` registers panels as bare components and `Pane.tsx` renders them through `<Dynamic>` with no pane or tab context, so all 15 panels are directly mountable by another shell; only two files in the tree import `windowing/`. Deliberately NOT a `/m` route or a second bundle — two PWAs on nested paths of one origin is what Chromium's web-apps team calls "strongly not recommended" (two installs, link capture, misattributed notifications), and `vite-plugin-pwa` cannot emit two scoped service workers.
+  - **Scope:** online only. Reads and writes go through the existing API while connected.
+
+- [ ] **Offline Kiln Cache** `P3` — cache a kiln's notes so the mobile shell can read them with no connection · `crucible-web`
+  - **Gets you:** notes readable on a phone that is out of signal, which is most of the value of installing the PWA at all.
+  - **Blocked on a decision, not on effort:** the service worker deliberately has **zero** `runtimeCaching` and precaches only the app bundle, so no API response is ever stored. Caching kiln content means putting authenticated responses in a same-origin-writable store, which is the threat `web/src/test/pwa-scope.test.ts` exists to pin. Needs an explicit answer on what may be cached, for how long, and what happens to it on sign-out — not an incidental config addition.
+
+- [ ] **Offline Note Capture** `P3` — edit and create notes while disconnected, sync on reconnect · `crucible-web`
+  - **Gets you:** the actual reason to want an editor on a phone — capture a thought in a tunnel, have it land in the kiln later.
+  - **The hard part is not the editor:** it is a second writer. Crucible is plaintext-first with a daemon that owns writes, so a phone queue means an outbox, replay on reconnect, and an answer for a note that changed server-side meanwhile. Scope the conflict behaviour explicitly — the failure mode of getting this wrong is silent data loss, not a broken screen. Sequence it last, after the shell and after read-caching.
+
+- [ ] **Deep Links / URI Actions** `P3` — open a note or start a capture from a shortcut or link · `crucible-web`
+  - **Gets you:** a home-screen shortcut that jumps straight to a note or a blank capture.
+  - **Forward-compatibility constraint, worth honouring before anything ships:** keep the path at `/` and carry the action in the hash (`/#note=…`). `navigateFallbackAllowlist: [/^\/$/]` serves the cached shell for `/` alone, and the manifest `id` is pinned to `/`, so a path-based deep link would work online and fail offline — exactly when a shortcut matters — while widening the allowlist re-opens what `pwa-scope.test.ts` pins. Published URLs are permanent, so the shape has to be right the first time.
+
 ### Knowledge & Search (web)
 
 - [x] **Knowledge Graph Visualization** `P2` — interactive force-directed wikilink graph · `crucible-web`
