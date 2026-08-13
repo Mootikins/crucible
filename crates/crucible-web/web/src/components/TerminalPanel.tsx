@@ -174,9 +174,29 @@ export const TerminalPanel: Component = () => {
     });
   };
 
-  /** Retry as soon as a hidden tab is looked at again. */
-  const onVisibilityChange = () => {
-    if (!document.hidden && status() === 'closed' && !reconnectTimer) scheduleReconnect();
+  /**
+   * Try again NOW, discarding a scheduled attempt and the escalation behind it.
+   *
+   * Backoff protects a server that is down; it actively hurts the far more
+   * common case where the server came back and the client is still counting
+   * down. After a long outage the delay sits at the 15s cap, so a terminal whose
+   * server recovered took up to 15s to notice — and reported as "took forever",
+   * because the wait is dead time in front of a working shell.
+   *
+   * Focus, visibility and `online` are all evidence worth acting on: the first
+   * two mean the user is looking at this panel, the third that the network
+   * changed. None of them proves the server is up, so a failed retry simply
+   * re-enters the backoff from zero.
+   */
+  const retryNow = () => {
+    if (disposed || document.hidden) return;
+    if (status() === 'open' || status() === 'connecting') return;
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    reconnectAttempts = 0;
+    if (term) connect(term);
   };
 
   const init = (el: HTMLDivElement) => {
@@ -228,7 +248,9 @@ export const TerminalPanel: Component = () => {
       fit.fit();
       connect(t);
     });
-    document.addEventListener('visibilitychange', onVisibilityChange);
+    document.addEventListener('visibilitychange', retryNow);
+    window.addEventListener('focus', retryNow);
+    window.addEventListener('online', retryNow);
     resizeObserver = new ResizeObserver(() => {
       try {
         fit.fit();
@@ -239,14 +261,9 @@ export const TerminalPanel: Component = () => {
     resizeObserver.observe(el);
   };
 
-  /** The manual escape hatch. A click is a fresh start, so the backoff resets. */
+  /** The manual escape hatch: same reset as `retryNow`, plus a screen wipe. */
   const reconnect = () => {
     if (!term) return;
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-    }
-    reconnectAttempts = 0;
     term.reset();
     // Reuse the addon loaded in `init`. Constructing one per attempt leaked:
     // xterm's addon manager holds every loaded addon until `Terminal.dispose()`,
@@ -258,7 +275,7 @@ export const TerminalPanel: Component = () => {
     } catch {
       // Fitting a zero-sized (hidden) panel throws; harmless.
     }
-    connect(term);
+    retryNow();
   };
 
   onCleanup(() => {
@@ -266,7 +283,9 @@ export const TerminalPanel: Component = () => {
     // this it would schedule a reconnect against a disposed terminal.
     disposed = true;
     if (reconnectTimer) clearTimeout(reconnectTimer);
-    document.removeEventListener('visibilitychange', onVisibilityChange);
+    document.removeEventListener('visibilitychange', retryNow);
+    window.removeEventListener('focus', retryNow);
+    window.removeEventListener('online', retryNow);
     resizeObserver?.disconnect();
     socket?.close();
     term?.dispose();
