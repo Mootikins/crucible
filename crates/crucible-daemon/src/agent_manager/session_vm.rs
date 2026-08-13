@@ -179,7 +179,7 @@ impl AgentManager {
             );
         }
 
-        let mut reactor = Reactor::new();
+        let reactor = Reactor::new();
         if let Some(session) = self.session_manager.get_session(session_id) {
             let user_init = session.workspace.join(".crucible/lua/init.lua");
             if user_init.exists() {
@@ -204,8 +204,6 @@ impl AgentManager {
                     }
                 }
             }
-
-            discover_and_register_lua_handlers(&mut reactor, &session.kiln, session_id);
         }
 
         // Every file has now run, so the hooks list is complete. Fire it here

@@ -1,4 +1,4 @@
-use crate::annotations::{DiscoveredCommand, DiscoveredParam};
+use crate::discovered::{DiscoveredCommand, DiscoveredParam};
 
 #[derive(Debug, Clone)]
 pub struct CommandBuilder {

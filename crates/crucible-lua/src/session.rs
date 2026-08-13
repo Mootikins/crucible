@@ -11,7 +11,6 @@
 use crate::error::LuaError;
 use crate::error_ext::LuaResultExt;
 use crate::handlers::{run_handler_chain, LuaScriptHandlerRegistry};
-use crucible_core::discovery::DiscoveryPaths;
 use crucible_core::events::{EventRing, SessionEvent, SessionEventConfig};
 use mlua::Lua;
 use serde::{Deserialize, Serialize};
@@ -379,7 +378,6 @@ pub struct LuaSessionBuilder {
     max_context_tokens: usize,
     ring_capacity: usize,
     channel_capacity: usize,
-    handler_paths: Vec<PathBuf>,
     lua: Option<Lua>,
 }
 
@@ -393,7 +391,6 @@ impl LuaSessionBuilder {
             max_context_tokens: default_max_tokens(),
             ring_capacity: DEFAULT_RING_CAPACITY,
             channel_capacity: DEFAULT_CHANNEL_CAPACITY,
-            handler_paths: Vec::new(),
             lua: None,
         }
     }
@@ -422,18 +419,6 @@ impl LuaSessionBuilder {
         self
     }
 
-    /// Add handler discovery paths
-    pub fn with_handler_paths(mut self, paths: Vec<PathBuf>) -> Self {
-        self.handler_paths = paths;
-        self
-    }
-
-    /// Use DiscoveryPaths for handler discovery
-    pub fn with_discovery_paths(mut self, discovery: &DiscoveryPaths) -> Self {
-        self.handler_paths = discovery.existing_paths().into_iter().collect();
-        self
-    }
-
     /// Provide a pre-configured Lua instance
     pub fn with_lua(mut self, lua: Lua) -> Self {
         self.lua = Some(lua);
@@ -456,12 +441,9 @@ impl LuaSessionBuilder {
         let ring = Arc::new(EventRing::new(self.ring_capacity));
         let (event_tx, event_rx) = mpsc::channel(self.channel_capacity);
 
-        // Discover handlers
-        let handlers = if self.handler_paths.is_empty() {
-            LuaScriptHandlerRegistry::new()
-        } else {
-            LuaScriptHandlerRegistry::discover(&self.handler_paths).map_err(LuaError::Io)?
-        };
+        // Handlers register at runtime via `crucible.on`; there is no
+        // filesystem scan.
+        let handlers = LuaScriptHandlerRegistry::new();
 
         // Create or use provided Lua instance
         let lua = self.lua.unwrap_or_default();

@@ -1,5 +1,5 @@
 use super::PluginManager;
-use crate::annotations::{DiscoveredCommand, DiscoveredHandler, DiscoveredTool, DiscoveredView};
+use crate::discovered::{DiscoveredCommand, DiscoveredHandler, DiscoveredTool, DiscoveredView};
 use crate::manifest::{Capability, LoadedPlugin, PluginState};
 
 impl PluginManager {

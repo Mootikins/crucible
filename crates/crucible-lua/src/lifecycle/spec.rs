@@ -1,5 +1,5 @@
 use super::{LifecycleError, LifecycleResult};
-use crate::annotations::{
+use crate::discovered::{
     DiscoveredCommand, DiscoveredHandler, DiscoveredParam, DiscoveredService, DiscoveredTool,
     DiscoveredView,
 };

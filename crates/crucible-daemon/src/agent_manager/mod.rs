@@ -21,7 +21,6 @@ use crucible_core::config::components::permissions::{PermissionConfig, Permissio
 use crucible_core::config::{
     AcpConfig, AgentProfile, BackendType, DataClassification, LlmProviderConfig, PatternStore,
 };
-use crucible_core::discovery::DiscoveryPaths;
 use crucible_core::events::{
     InternalSessionEvent, Reactor, ReactorEmitResult as EmitResult, SessionEvent,
 };
@@ -240,51 +239,6 @@ pub(crate) struct SessionEventState {
     pub(crate) reactor: Reactor,
     /// Counter for spill file naming, persists across messages in a session
     pub(crate) spill_counter: std::sync::atomic::AtomicU32,
-}
-
-/// Discover Lua handler files and register them with the Reactor.
-/// Logs warnings on discovery/conversion failures, returns silently on empty dirs.
-fn discover_and_register_lua_handlers(
-    reactor: &mut Reactor,
-    kiln_path: &std::path::Path,
-    session_id: &str,
-) {
-    let paths = DiscoveryPaths::new("handlers", Some(kiln_path));
-    let existing = paths.existing_paths();
-    if existing.is_empty() {
-        debug!(session_id = %session_id, "No handler directories found, skipping Lua handlers");
-        return;
-    }
-
-    let handler_registry = match LuaScriptHandlerRegistry::discover(&existing) {
-        Ok(r) => r,
-        Err(e) => {
-            warn!("Failed to discover Lua handlers: {}", e);
-            return;
-        }
-    };
-
-    let handlers = match handler_registry.to_core_handlers() {
-        Ok(h) => h,
-        Err(e) => {
-            warn!("Failed to create core handlers from Lua: {}", e);
-            return;
-        }
-    };
-
-    let mut loaded_count = 0;
-    for handler in handlers {
-        let name = handler.name().to_string();
-        if let Err(e) = reactor.register(handler) {
-            warn!("Failed to register Lua handler {}: {}", name, e);
-        } else {
-            loaded_count += 1;
-            debug!("Loaded Lua handler: {}", name);
-        }
-    }
-    if loaded_count > 0 {
-        info!(session_id = %session_id, "Loaded {} Lua handlers", loaded_count);
-    }
 }
 
 fn emit_precognition_event(

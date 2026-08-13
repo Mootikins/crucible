@@ -43,12 +43,12 @@
 //! - `fennel` (default): Bundle the Fennel compiler (~255KB)
 //! - `send`: Enable `Send+Sync` on Lua state for multi-threaded use
 
-pub mod annotations;
 mod ask;
 pub mod auth_plugin;
 mod context;
 mod context_attach;
 pub mod core_handler;
+pub mod discovered;
 mod error;
 mod error_ext;
 mod executor;
@@ -105,10 +105,6 @@ pub mod theme;
 pub mod theme_wire;
 pub mod ui_geometry;
 
-pub use annotations::{
-    DiscoveredCommand, DiscoveredHandler, DiscoveredParam, DiscoveredPlugin, DiscoveredService,
-    DiscoveredTool, DiscoveredView,
-};
 pub use ask::{
     core_answer_to_lua, core_batch_to_lua, core_question_to_lua, core_response_to_lua,
     lua_answer_table_to_core, lua_answer_to_core, lua_batch_table_to_core, lua_batch_to_core,
@@ -129,6 +125,10 @@ pub use context_attach::{
     register_context_attach, AttachRejection, ContextAttachRegistry, DEFAULT_ATTACH_BUDGET_CHARS,
 };
 pub use core_handler::{LuaHandler, LuaHandlerMeta};
+pub use discovered::{
+    DiscoveredCommand, DiscoveredHandler, DiscoveredParam, DiscoveredService, DiscoveredTool,
+    DiscoveredView,
+};
 pub use error::{format_lua_error, LuaError};
 pub use executor::LuaExecutor;
 #[cfg(feature = "fennel")]

@@ -1,4 +1,4 @@
-use crate::annotations::{DiscoveredParam, DiscoveredTool};
+use crate::discovered::{DiscoveredParam, DiscoveredTool};
 
 #[derive(Debug, Clone)]
 pub struct ToolBuilder {

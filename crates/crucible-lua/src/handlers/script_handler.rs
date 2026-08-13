@@ -1,4 +1,4 @@
-use crate::annotations::DiscoveredHandler;
+use crate::discovered::DiscoveredHandler;
 use crate::error::LuaError;
 use crucible_core::events::SessionEvent;
 use crucible_core::utils::glob_match;

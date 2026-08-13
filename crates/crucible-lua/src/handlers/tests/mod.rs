@@ -1,4 +1,4 @@
-use crate::annotations::DiscoveredHandler;
+use crate::discovered::DiscoveredHandler;
 
 use super::LuaScriptHandler;
 

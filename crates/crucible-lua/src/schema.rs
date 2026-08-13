@@ -18,7 +18,7 @@
 //!
 //! Tool parameters are converted to schemas using this module's types.
 
-use crate::annotations::DiscoveredParam;
+use crate::discovered::DiscoveredParam;
 use crate::types::LuaTool;
 #[cfg(test)]
 use crate::types::ToolParam;

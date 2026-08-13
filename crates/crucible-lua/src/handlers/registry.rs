@@ -1,13 +1,9 @@
-use crate::annotations::AnnotationParser;
 use crate::error::LuaError;
 use crucible_core::events::SessionEvent;
 use crucible_core::utils::glob_match;
 use mlua::{Function, Lua, RegistryKey, Result as LuaResult, Value};
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tracing::{debug, warn};
-use walkdir::WalkDir;
 
 use super::conversion::session_event_to_lua;
 use super::script_handler::{interpret_handler_result, LuaScriptHandler, ScriptHandlerResult};
@@ -127,80 +123,6 @@ impl LuaScriptHandlerRegistry {
             handler_functions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
-
-    /// Discover handlers from the given paths
-    ///
-    /// Walks each path recursively, parsing `.lua` and `.fnl` files for handler
-    /// annotations. Discovered handlers are sorted by priority (lowest first).
-    ///
-    /// # Arguments
-    ///
-    /// * `paths` - Directories or files to scan for handlers
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if file reading fails. Missing paths are silently skipped.
-    pub fn discover(paths: &[PathBuf]) -> Result<Self, std::io::Error> {
-        let parser = AnnotationParser::new();
-        let mut handlers = Vec::new();
-
-        for path in paths {
-            if !path.exists() {
-                debug!("Handler discovery path does not exist: {:?}", path);
-                continue;
-            }
-
-            for entry in WalkDir::new(path)
-                .into_iter()
-                .filter_map(|e| e.ok())
-                .filter(|e| e.file_type().is_file())
-                .filter(|e| {
-                    e.path()
-                        .extension()
-                        .is_some_and(|ext| ext == "lua" || ext == "fnl")
-                })
-            {
-                let entry_path = entry.path();
-                let source = match std::fs::read_to_string(entry_path) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        warn!("Failed to read handler source {:?}: {}", entry_path, e);
-                        continue;
-                    }
-                };
-
-                match parser.parse_handlers(&source, entry_path) {
-                    Ok(hooks) => {
-                        for hook in hooks {
-                            // Use with_source to avoid re-reading the file
-                            let handler = LuaScriptHandler::with_source(hook, source.clone());
-                            debug!(
-                                "Discovered handler: {} (event={}, priority={})",
-                                handler.metadata.name,
-                                handler.metadata.event_type,
-                                handler.metadata.priority
-                            );
-                            handlers.push(handler);
-                        }
-                    }
-                    Err(e) => {
-                        warn!("Failed to parse handlers from {:?}: {}", entry_path, e);
-                    }
-                }
-            }
-        }
-
-        // Sort by priority (lower priority values execute first)
-        handlers.sort_by_key(|h| h.metadata.priority);
-
-        debug!("Handler registry discovered {} handlers", handlers.len());
-        Ok(Self {
-            handlers,
-            runtime_handlers: Arc::new(Mutex::new(Vec::new())),
-            handler_functions: Arc::new(Mutex::new(HashMap::new())),
-        })
-    }
-
     /// Get all handlers that match the given event
     ///
     /// Returns handlers in priority order (lowest priority value first).

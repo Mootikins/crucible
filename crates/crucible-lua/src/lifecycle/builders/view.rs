@@ -1,4 +1,4 @@
-use crate::annotations::DiscoveredView;
+use crate::discovered::DiscoveredView;
 
 #[derive(Debug, Clone)]
 pub struct ViewBuilder {

@@ -47,7 +47,18 @@ fn configure_package_path(lua: &mlua::Lua, plugin_dir: &Path) {
     lua.load(format!(
         r#"
 local plugin_dir = {plugin_dir:?}
+local plugin_parent = plugin_dir:match("^(.*)/[^/]+$") or plugin_dir
 local entries = {{
+    -- The entry the RUNTIME provides, and the one a plugin's own suite uses:
+    -- a plugin is required by its directory name. Without it a scaffolded
+    -- suite's `require("<plugin-name>")` finds nothing here while working
+    -- perfectly under `cru plugin test`.
+    plugin_parent .. "/?/init.lua",
+    -- Wider than the runtime, deliberately: these fixtures put submodules at
+    -- `<plugin_dir>/<name>/core.lua` and require them as `<name>.core`. This
+    -- harness exercises the reload and scaffold pipelines, NOT runtime
+    -- package.path fidelity — `shipped_plugin_lua_suite_passes` is the gate
+    -- that mirrors the loader exactly.
     plugin_dir .. "/?.lua",
     plugin_dir .. "/?/init.lua",
     plugin_dir .. "/tests/?.lua",

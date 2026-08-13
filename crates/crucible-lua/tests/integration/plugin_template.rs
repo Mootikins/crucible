@@ -25,6 +25,20 @@ fn test_plugin_template_init_lua_is_syntactically_valid() {
     let substituted = template_lua.replace("{{name}}", "test-plugin");
 
     let lua = mlua::Lua::new();
+    // The template registers its lifecycle hook by CALLING
+    // `crucible.on_session_start` at load, which is the only registration the
+    // loader honours — so evaluating it needs that global. A bare `Lua::new()`
+    // has no `crucible` table; the daemon's executor always does.
+    let crucible = lua.create_table().expect("crucible table");
+    crucible
+        .set(
+            "on_session_start",
+            lua.create_function(|_, _: mlua::Function| Ok(()))
+                .expect("stub"),
+        )
+        .expect("stub on_session_start");
+    lua.globals().set("crucible", crucible).expect("set global");
+
     let result = lua.load(&substituted).eval::<mlua::Value>();
 
     assert!(
@@ -34,25 +48,41 @@ fn test_plugin_template_init_lua_is_syntactically_valid() {
     );
 }
 
+/// The template must show only constructs the loader actually reads.
+///
+/// It used to carry `-- @tool name="greet"` / `-- @param` doc comments and a
+/// `hooks = { on_session_start = ... }` spec field. Neither does anything:
+/// `parse_tools`, `parse_commands` and `parse_views` have no callers on any
+/// live path (only `parse_handlers` does, from `handlers/registry.rs`), and a
+/// plugin that returns a spec table has its exports registered from that table
+/// and nothing else. `hooks` is not among the recognised spec fields at all.
+/// A starter template that leads with three no-ops teaches them.
 #[test]
-fn test_plugin_template_tool_annotation_format() {
+fn test_plugin_template_uses_only_live_constructs() {
     let template_lua = include_str!("../../../crucible-cli/src/commands/plugin/templates/init.lua");
 
+    // Anchored to a comment at the start of a line: the template names these
+    // constructs in prose precisely to say that they do nothing.
+    for dead in ["@tool", "@param"] {
+        assert!(
+            !template_lua.lines().any(|line| {
+                let trimmed = line.trim_start();
+                trimmed.starts_with("-- ") && trimmed[3..].trim_start().starts_with(dead)
+            }),
+            "`{dead}` is never parsed; it must not look load-bearing in the template"
+        );
+    }
     assert!(
-        template_lua.contains("@tool name=\"greet\""),
-        "Should have @tool annotation"
-    );
-    assert!(
-        template_lua.contains("@param name string"),
-        "Should have @param annotation"
-    );
-    assert!(
-        template_lua.contains("on_session_start"),
-        "Should have on_session_start hook"
+        template_lua.contains("crucible.on_session_start("),
+        "the hook must be registered by calling the api, not by a `hooks` field"
     );
     assert!(
         template_lua.contains("return {"),
         "Should return a plugin spec"
+    );
+    assert!(
+        template_lua.contains("tools = {"),
+        "the spec table is where tools are declared"
     );
 }
 

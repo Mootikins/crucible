@@ -1,4 +1,4 @@
-use crate::annotations::DiscoveredHandler;
+use crate::discovered::DiscoveredHandler;
 
 #[derive(Debug, Clone)]
 pub struct HandlerBuilder {

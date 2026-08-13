@@ -1,9 +1,8 @@
-use crate::annotations::DiscoveredHandler;
+use crate::discovered::DiscoveredHandler;
 use crate::handlers::{register_crucible_on_api, LuaScriptHandler, LuaScriptHandlerRegistry};
 use crucible_core::events::SessionEvent;
 use mlua::Lua;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use super::create_test_handler;
@@ -154,46 +153,6 @@ fn test_registry_iter() {
     assert_eq!(names.len(), 2);
     assert!(names.contains(&"handler_one"));
     assert!(names.contains(&"handler_two"));
-}
-
-#[test]
-fn test_registry_discover_nonexistent_path() {
-    let paths = vec![PathBuf::from("/nonexistent/path/that/should/not/exist")];
-    let registry = LuaScriptHandlerRegistry::discover(&paths).unwrap();
-    assert!(registry.is_empty());
-}
-
-#[test]
-fn test_registry_discover_from_temp_dir() {
-    use std::io::Write;
-
-    // Create a temp directory with a handler file
-    let temp_dir = tempfile::tempdir().unwrap();
-    let handler_file = temp_dir.path().join("my_handler.lua");
-
-    let handler_source = r#"
---- Filter search results
--- @handler event="ToolCalled" pattern="*" priority=25
-function filter_results(ctx, event)
-    return event
-end
-"#;
-
-    std::fs::File::create(&handler_file)
-        .unwrap()
-        .write_all(handler_source.as_bytes())
-        .unwrap();
-
-    // Discover handlers
-    let paths = vec![temp_dir.path().to_path_buf()];
-    let registry = LuaScriptHandlerRegistry::discover(&paths).unwrap();
-
-    assert_eq!(registry.len(), 1);
-
-    let handler = registry.iter().next().unwrap();
-    assert_eq!(handler.metadata.name, "filter_results");
-    assert_eq!(handler.metadata.event_type, "ToolCalled");
-    assert_eq!(handler.metadata.priority, 25);
 }
 
 #[test]
