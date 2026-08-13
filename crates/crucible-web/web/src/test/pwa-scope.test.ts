@@ -57,3 +57,28 @@ describe('service worker request surface', () => {
     expect(pwaOptions.registerType).toBe('prompt');
   });
 });
+
+/**
+ * `id` is what a browser uses to decide whether an install is THIS app or a new
+ * one. Absent, it defaults to `start_url`, which quietly makes `start_url`
+ * load-bearing forever: change it later — a mobile shell, a different landing
+ * route — and every existing install becomes a second app with its own icon,
+ * storage and notification identity, un-migratable remotely.
+ */
+describe('install identity', () => {
+  it('pins an explicit manifest id, independent of start_url', () => {
+    expect(pwaOptions.manifest.id).toBe('/');
+  });
+
+  it('agrees with index.html about theme-color', async () => {
+    // Two sources for one colour, and they had drifted (#0e0d11 vs #0a0a0a).
+    // The browser uses the manifest once installed and the meta tag before that,
+    // so a mismatch shows as the title bar changing colour on install.
+    // Read from the vitest root rather than `import.meta.url`: under the test
+    // transform that URL is not a file: URL.
+    const fs = await import('node:fs/promises');
+    const html = await fs.readFile(`${process.cwd()}/index.html`, 'utf8');
+    const meta = html.match(/name="theme-color"\s+content="([^"]+)"/)?.[1];
+    expect(meta).toBe(pwaOptions.manifest.theme_color);
+  });
+});

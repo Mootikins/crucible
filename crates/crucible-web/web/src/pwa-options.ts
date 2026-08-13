@@ -49,6 +49,14 @@ export const pwaOptions = {
     name: 'Crucible',
     short_name: 'Crucible',
     description: 'Knowledge-grounded agent runtime',
+    // Pinned EXPLICITLY, and worth the line: an absent `id` defaults to
+    // `start_url`, which makes `start_url` load-bearing forever. Change it later
+    // — a mobile shell, a different landing route — and every existing install
+    // becomes a SECOND app rather than an update, with its own icon, its own
+    // storage and its own notification identity. Setting it before anyone
+    // installs costs nothing; setting it after costs a migration that cannot be
+    // done remotely.
+    id: '/',
     start_url: '/',
     scope: '/',
     display: 'standalone',
