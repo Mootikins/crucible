@@ -65,38 +65,47 @@ export function itemsForNode(node: FileTreeNode, rootKind: TreeRootKind): Contex
   );
 }
 
-/**
- * Wraps a row (`children`) in an ark-ui context trigger. Right-click or
- * Shift+F10 opens a `role=menu` with keyboard support; selecting an item routes
- * through `onAction`.
- */
 /** The toggle-hidden row reads its label from the live state. */
 function labelFor(item: ContextItem, showHidden: boolean | undefined): string {
   if (item.action === 'toggle-hidden') return showHidden ? 'Hide hidden files' : 'Show hidden files';
   return item.label;
 }
 
+/**
+ * ONE context trigger for the whole tree (`children` is the tree, not a row).
+ * Right-click or the Menu key opens a `role=menu` with keyboard support;
+ * selecting an item routes through `onAction`.
+ *
+ * `node` is the row the menu acts on, resolved by the owner from the event
+ * target when the menu opens — a trigger per row cost two zag machines and a
+ * portalled div per row (~2k machines on a 1k-row tree), all to hold a value
+ * one signal can hold.
+ */
 export const FileTreeContextMenu: Component<{
-  node: FileTreeNode;
+  /** Row the open menu acts on; `null` before the first open. */
+  node: FileTreeNode | null;
   rootKind: TreeRootKind;
   onAction: (action: ContextAction, node: FileTreeNode) => void;
   /** Live dotfile-visibility state (flips the toggle-hidden row's label). */
   showHidden?: boolean;
   children: JSX.Element;
 }> = (props) => {
-  const items = () => itemsForNode(props.node, props.rootKind);
+  const items = () => (props.node ? itemsForNode(props.node, props.rootKind) : []);
+  const select = (action: string) => {
+    const node = props.node;
+    if (node) props.onAction(action as ContextAction, node);
+  };
   return (
-    <Show when={items().length > 0} fallback={props.children}>
-      <Menu.Root onSelect={(d) => props.onAction(d.value as ContextAction, props.node)}>
-        {/* asChild div (display:contents): the default trigger is a BUTTON,
-            and tree rows contain focusables (rename input) — interactive
-            content inside a button is invalid and steals keys. */}
-        <Menu.ContextTrigger
-          asChild={(triggerProps) => (
-            <div {...triggerProps({ class: 'contents' })}>{props.children}</div>
-          )}
-        />
-        <Portal>
+    <Menu.Root onSelect={(d) => select(d.value)}>
+      {/* asChild div (display:contents): the default trigger is a BUTTON,
+          and tree rows contain focusables (rename input) — interactive
+          content inside a button is invalid and steals keys. */}
+      <Menu.ContextTrigger
+        asChild={(triggerProps) => (
+          <div {...triggerProps({ class: 'contents' })}>{props.children}</div>
+        )}
+      />
+      <Portal>
         <Menu.Positioner>
           <Menu.Content class="min-w-[10rem] rounded border border-hairline bg-surface-elevated py-1 text-xs text-shell-ink shadow-lg focus:outline-none">
             <For each={items()}>
@@ -118,8 +127,7 @@ export const FileTreeContextMenu: Component<{
             </For>
           </Menu.Content>
         </Menu.Positioner>
-        </Portal>
-      </Menu.Root>
-    </Show>
+      </Portal>
+    </Menu.Root>
   );
 };

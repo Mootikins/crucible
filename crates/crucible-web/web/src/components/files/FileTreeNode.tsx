@@ -10,7 +10,6 @@ import {
   type FileDragData,
 } from '@/lib/file-dnd';
 import { fileIconFor } from '@/lib/file-icons';
-import { FileTreeContextMenu, type ContextAction } from './FileTreeContextMenu';
 import { ChevronRight } from '@/lib/icons';
 
 /** Colored filetype icon, resolved by full filename — slightly smaller than
@@ -77,10 +76,7 @@ const ICON_SLOT = 'w-4 py-1 flex items-center justify-center shrink-0';
 export const FileTreeNode: Component<{
   node: Node;
   indexPath: number[];
-  rootKind: TreeRootKind;
   openFilePath: string | null;
-  onContextAction: (action: ContextAction, node: Node) => void;
-  showHidden?: boolean;
   /** Transform a node's display name (e.g. strip hidden extensions). Identity
    * when absent; never changes `node.name` (rename/logic use the real name). */
   formatName?: (name: string) => string;
@@ -150,63 +146,55 @@ export const FileTreeNode: Component<{
       <Show
         when={props.node.isDir}
         fallback={
-          <FileTreeContextMenu node={props.node} rootKind={props.rootKind} onAction={props.onContextAction} showHidden={props.showHidden}>
-            <TreeView.Item
-              {...currentAttrs()}
-              ref={attachDrag}
-              title={props.node.relPath || props.node.name}
-              class={`${ROW} relative data-[selected]:bg-hover-wash data-[current=true]:font-medium`}
-            >
-              <IndentGuides depth={props.indexPath.length} />
-              <span class={ICON_SLOT}>
-                <FileIcon name={props.node.name} />
-              </span>
-              {/* fade-scroll masks the overflow with a gradient (no ellipsis
-                  glyph to collide with the open-file dot); marquees on hover. */}
-              <TreeView.ItemText class="flex-1 min-w-0 fade-scroll py-1 ml-1"><span>{shown()}</span></TreeView.ItemText>
-              <TreeView.NodeRenameInput class="bg-surface-base text-shell-body text-sm px-1 my-0.5 rounded border border-primary outline-none min-w-0 flex-1" />
-              {/* Open-in-editor marker: an absolute dot so it never shifts the
-                  icon / name / indent guides (the old left border did). */}
-              <Show when={isCurrent()}>
-                <span aria-hidden="true" class="absolute right-1.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-primary" />
-              </Show>
-            </TreeView.Item>
-          </FileTreeContextMenu>
+          <TreeView.Item
+            {...currentAttrs()}
+            ref={attachDrag}
+            title={props.node.relPath || props.node.name}
+            class={`${ROW} relative data-[selected]:bg-hover-wash data-[current=true]:font-medium`}
+          >
+            <IndentGuides depth={props.indexPath.length} />
+            <span class={ICON_SLOT}>
+              <FileIcon name={props.node.name} />
+            </span>
+            {/* fade-scroll masks the overflow with a gradient (no ellipsis
+                glyph to collide with the open-file dot); marquees on hover. */}
+            <TreeView.ItemText class="flex-1 min-w-0 fade-scroll py-1 ml-1"><span>{shown()}</span></TreeView.ItemText>
+            <TreeView.NodeRenameInput class="bg-surface-base text-shell-body text-sm px-1 my-0.5 rounded border border-primary outline-none min-w-0 flex-1" />
+            {/* Open-in-editor marker: an absolute dot so it never shifts the
+                icon / name / indent guides (the old left border did). */}
+            <Show when={isCurrent()}>
+              <span aria-hidden="true" class="absolute right-1.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-primary" />
+            </Show>
+          </TreeView.Item>
         }
       >
         <TreeView.Branch>
-          <FileTreeContextMenu node={props.node} rootKind={props.rootKind} onAction={props.onContextAction} showHidden={props.showHidden}>
-            <TreeView.BranchControl
-              {...currentAttrs()}
-              ref={attachFolderDrop}
-              title={props.node.relPath || props.node.name}
-              data-file-drop={dropOver() ? 'true' : undefined}
-              class={`${ROW} data-[selected]:bg-hover-wash data-[file-drop=true]:bg-primary/15 data-[file-drop=true]:outline data-[file-drop=true]:outline-1 data-[file-drop=true]:outline-primary`}
+          <TreeView.BranchControl
+            {...currentAttrs()}
+            ref={attachFolderDrop}
+            title={props.node.relPath || props.node.name}
+            data-file-drop={dropOver() ? 'true' : undefined}
+            class={`${ROW} data-[selected]:bg-hover-wash data-[file-drop=true]:bg-primary/15 data-[file-drop=true]:outline data-[file-drop=true]:outline-1 data-[file-drop=true]:outline-primary`}
+          >
+            <IndentGuides depth={props.indexPath.length} />
+            {/* The chevron IS the folder icon (no separate glyph). zag stamps
+                data-state on the INDICATOR, not its children — the rotate
+                selector must live here or it never matches. */}
+            <TreeView.BranchIndicator
+              class={`${ICON_SLOT} text-muted transition-transform duration-150 data-[state=open]:rotate-90`}
             >
-              <IndentGuides depth={props.indexPath.length} />
-              {/* The chevron IS the folder icon (no separate glyph). zag stamps
-                  data-state on the INDICATOR, not its children — the rotate
-                  selector must live here or it never matches. */}
-              <TreeView.BranchIndicator
-                class={`${ICON_SLOT} text-muted transition-transform duration-150 data-[state=open]:rotate-90`}
-              >
-                <ChevronRight class="w-3.5 h-3.5" />
-              </TreeView.BranchIndicator>
-              <TreeView.BranchText class="flex-1 min-w-0 fade-scroll py-1 ml-1"><span>{shown()}</span></TreeView.BranchText>
-              <TreeView.NodeRenameInput class="bg-surface-base text-shell-body text-sm px-1 my-0.5 rounded border border-primary outline-none min-w-0 flex-1" />
-            </TreeView.BranchControl>
-          </FileTreeContextMenu>
+              <ChevronRight class="w-3.5 h-3.5" />
+            </TreeView.BranchIndicator>
+            <TreeView.BranchText class="flex-1 min-w-0 fade-scroll py-1 ml-1"><span>{shown()}</span></TreeView.BranchText>
+            <TreeView.NodeRenameInput class="bg-surface-base text-shell-body text-sm px-1 my-0.5 rounded border border-primary outline-none min-w-0 flex-1" />
+          </TreeView.BranchControl>
           <TreeView.BranchContent>
             <For each={props.node.children}>
               {(child, i) => (
                 <FileTreeNode
                   node={child}
                   indexPath={[...props.indexPath, i()]}
-                  rootKind={props.rootKind}
                   openFilePath={props.openFilePath}
-                  onContextAction={props.onContextAction}
-                  showHidden={props.showHidden}
-
                   formatName={props.formatName}
                   dnd={props.dnd}
                 />

@@ -20,17 +20,46 @@ const kilnCollection = () =>
     ),
   );
 
-const renderTree = (openFilePath: string | null = null, onOpenLeaf = vi.fn()) => {
+const renderTree = (
+  openFilePath: string | null = null,
+  onOpenLeaf = vi.fn(),
+  onContextAction = vi.fn(),
+) => {
   const utils = render(() => (
     <FileTreeView
       collection={kilnCollection()}
       rootKind="kiln"
       openFilePath={openFilePath}
       onOpenLeaf={onOpenLeaf}
-      onContextAction={() => {}}
+      onContextAction={onContextAction}
     />
   ));
-  return { ...utils, onOpenLeaf };
+  return { ...utils, onOpenLeaf, onContextAction };
+};
+
+/** Rows (leaf items and folder headers) currently in the DOM. */
+const rows = (container: HTMLElement) => [
+  ...container.querySelectorAll<HTMLElement>(
+    '[data-scope="tree-view"][data-part="item"], [data-scope="tree-view"][data-part="branch-control"]',
+  ),
+];
+
+const rowNamed = (container: HTMLElement, name: string) =>
+  rows(container).find((r) => r.textContent?.trim() === name)!;
+
+const menuItems = () => [
+  ...document.querySelectorAll<HTMLElement>('[data-scope="menu"][data-part="item"]'),
+];
+const menuItemLabels = () => menuItems().map((i) => i.textContent?.trim());
+
+const openMenuContent = () =>
+  document.querySelector<HTMLElement>('[data-scope="menu"][data-part="content"][data-state="open"]');
+
+/** zag highlights on pointerdown and selects the HIGHLIGHTED item on click. */
+const chooseMenuItem = (label: string) => {
+  const item = menuItems().find((i) => i.textContent?.trim() === label)!;
+  fireEvent.pointerDown(item);
+  fireEvent.click(item);
 };
 
 describe('FileTreeView — rendering & a11y', () => {
@@ -155,6 +184,88 @@ describe('FileTreeView — lazy loading survives unmounting', () => {
     // zag's expand path short-circuits on loaded children, so the DOM going
     // away does not re-trigger the fetch.
     expect(loadChildren).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('FileTreeView — one context menu for the whole tree', () => {
+  it('renders a single context trigger regardless of row count', async () => {
+    const { container } = renderTree();
+    await waitFor(() => expect(rows(container).length).toBeGreaterThan(1));
+    // One trigger + one portalled menu container for N rows — a trigger per row
+    // means N zag menu machines and N portalled divs.
+    expect(document.querySelectorAll('[data-scope="menu"][data-part="context-trigger"]').length).toBe(1);
+    expect(document.querySelectorAll('[data-scope="menu"][data-part="positioner"]').length).toBe(1);
+  });
+
+  it('right-clicking a row opens the menu with THAT row\'s actions', async () => {
+    const { container, findByText } = renderTree();
+    await findByText('README.md');
+
+    fireEvent.contextMenu(rowNamed(container, 'README.md'));
+    await waitFor(() => expect(menuItemLabels()).toContain('Copy path'));
+    expect(openMenuContent()).toBeTruthy();
+    // File row: Open/Rename, never the dir-only creation actions.
+    expect(menuItemLabels()).toContain('Open');
+    expect(menuItemLabels()).toContain('Rename');
+    expect(menuItemLabels()).not.toContain('New folder');
+
+    // The SAME menu retargets when another row is right-clicked: dir actions
+    // now, and no Open. (A stale target here is the bug hoisting can introduce.)
+    fireEvent.contextMenu(rowNamed(container, 'Meta'));
+    await waitFor(() => expect(menuItemLabels()).toContain('New folder'));
+    expect(menuItemLabels()).toContain('New note');
+    expect(menuItemLabels()).not.toContain('Open');
+  });
+
+  it('routes a selected action to the right-clicked node', async () => {
+    const onContextAction = vi.fn();
+    const { container, findByText } = renderTree(null, vi.fn(), onContextAction);
+    await findByText('README.md');
+
+    fireEvent.contextMenu(rowNamed(container, 'README.md'));
+    await waitFor(() => expect(menuItemLabels()).toContain('Copy path'));
+    chooseMenuItem('Copy path');
+
+    await waitFor(() => expect(onContextAction).toHaveBeenCalledTimes(1));
+    expect(onContextAction.mock.calls[0][0]).toBe('copy-path');
+    expect(onContextAction.mock.calls[0][1]).toMatchObject({ relPath: 'README.md', isDir: false });
+  });
+
+  it('drives the open menu from the keyboard', async () => {
+    const onContextAction = vi.fn();
+    const { container, findByText } = renderTree(null, vi.fn(), onContextAction);
+    await findByText('README.md');
+
+    // The Menu key (and Shift+F10 in Chrome) reaches the tree as a contextmenu
+    // event on the focused row — the same path the hoisted trigger listens on.
+    fireEvent.contextMenu(rowNamed(container, 'README.md'));
+    await waitFor(() => expect(openMenuContent()).toBeTruthy());
+    const content = openMenuContent()!;
+    fireEvent.keyDown(content, { key: 'ArrowDown' });
+    fireEvent.keyDown(content, { key: 'Enter' });
+
+    await waitFor(() => expect(onContextAction).toHaveBeenCalledTimes(1));
+    expect(onContextAction.mock.calls[0][0]).toBe('open'); // first item for a file row
+    expect(onContextAction.mock.calls[0][1]).toMatchObject({ relPath: 'README.md' });
+  });
+
+  it('leaves right-click on empty space below the rows to the browser', async () => {
+    const { container, findByText } = renderTree();
+    await findByText('README.md');
+    const tree = container.querySelector<HTMLElement>('[role="tree"]')!;
+    // dispatchEvent returns false only when a listener called preventDefault —
+    // the custom menu must not swallow a click that hits no row.
+    expect(fireEvent.contextMenu(tree)).toBe(true);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(menuItemLabels()).toHaveLength(0);
+  });
+
+  it('leaves Shift+right-click on a row to the browser', async () => {
+    const { container, findByText } = renderTree();
+    await findByText('README.md');
+    expect(fireEvent.contextMenu(rowNamed(container, 'README.md'), { shiftKey: true })).toBe(true);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(menuItemLabels()).toHaveLength(0);
   });
 });
 

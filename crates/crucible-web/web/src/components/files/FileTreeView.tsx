@@ -14,8 +14,16 @@ import type { FileTreeNode as Node } from '@/lib/file-tree/types';
 import type { TreeRootKind } from '@/lib/tree-root';
 import { FileTreeNode, type FileTreeDnd } from './FileTreeNode';
 import { attachFileDropTarget, canDropIntoFolder } from '@/lib/file-dnd';
-import { attachNativeMenuGuard } from '@/lib/context-menu';
-import type { ContextAction } from './FileTreeContextMenu';
+import { shouldUseNativeMenu } from '@/lib/context-menu';
+import { FileTreeContextMenu, itemsForNode, type ContextAction } from './FileTreeContextMenu';
+
+/**
+ * The two zag parts that render a clickable row (leaf / folder header). Both
+ * carry `data-value` — the node's relPath — so the row under a right-click is
+ * resolvable from the event target.
+ */
+const ROW_PARTS =
+  '[data-scope="tree-view"][data-part="item"], [data-scope="tree-view"][data-part="branch-control"]';
 
 /** DOM-id-safe encoding of a relPath (slashes/dots are awkward in ids/selectors). */
 export const cssId = (value: string): string =>
@@ -61,6 +69,9 @@ export interface FileTreeViewProps {
  * the routing-seam duplicate-side-effect bug class). Branches never "open" a
  * file — they expand (via `expandOnClick`). Rename (F2 or the context menu) commits
  * through `onRenameNode`.
+ *
+ * The context menu is ONE menu for the whole tree, hoisted here; the row it
+ * acts on is resolved from the event target when it opens.
  */
 export const FileTreeView: Component<FileTreeViewProps> = (props) => {
   const handleSelection = (d: TreeViewSelectionChangeDetails<Node>) => {
@@ -108,6 +119,49 @@ export const FileTreeView: Component<FileTreeViewProps> = (props) => {
     onCleanup(cleanup);
   };
 
+  // The tree owns ONE context menu; this is the row it acts on.
+  const [menuNode, setMenuNode] = createSignal<Node | null>(null);
+
+  /** The row under an event target, or `null` (empty space below the rows). */
+  const rowNodeFor = (target: EventTarget | null): Node | null => {
+    if (!(target instanceof Element)) return null;
+    const value = target.closest(ROW_PARTS)?.getAttribute('data-value');
+    return value == null ? null : (api().collection.findNode(value) ?? null);
+  };
+
+  /** True when the hoisted trigger may open on this event (and it now knows the row). */
+  const routeToRow = (e: Event): boolean => {
+    const node = rowNodeFor(e.target);
+    if (!node || itemsForNode(node, props.rootKind).length === 0) return false;
+    setMenuNode(node);
+    return true;
+  };
+
+  /**
+   * Capture-phase router for the single hoisted context trigger, which listens
+   * on the wrapper OUTSIDE the tree — so this always runs first and can both
+   * resolve the row and veto the open by stopping propagation. Vetoed:
+   * Shift/images/links (the shared native-menu rule) and anything that hits no
+   * row, which under the old per-row triggers simply had no trigger to hit.
+   * Non-mouse pointerdown is zag's long-press path, and needs the same routing.
+   */
+  const attachContextRouter = (el: HTMLElement) => {
+    el.addEventListener(
+      'contextmenu',
+      (e) => {
+        if (shouldUseNativeMenu(e) || !routeToRow(e)) e.stopPropagation();
+      },
+      { capture: true },
+    );
+    el.addEventListener(
+      'pointerdown',
+      (e) => {
+        if (e.pointerType !== 'mouse' && !routeToRow(e)) e.stopPropagation();
+      },
+      { capture: true },
+    );
+  };
+
   return (
     // lazyMount + unmountOnExit: without them ark-ui only sets `hidden` on
     // branch content, so every branch ever expanded stays mounted for the
@@ -117,30 +171,34 @@ export const FileTreeView: Component<FileTreeViewProps> = (props) => {
     // keeps `loadingStatus` in machine context and short-circuits expansion
     // for already-loaded branches, so unmounting never refetches.
     <TreeView.RootProvider value={api} lazyMount unmountOnExit>
-      <TreeView.Tree
-        aria-label="File tree"
-        ref={(el: HTMLElement) => {
-          attachRootDrop(el);
-          attachNativeMenuGuard(el); // Shift+right-click → native menu
-        }}
-        data-file-drop={rootDropOver() ? 'true' : undefined}
-        class="px-1 min-h-full data-[file-drop=true]:bg-primary/5"
+      <FileTreeContextMenu
+        node={menuNode()}
+        rootKind={props.rootKind}
+        onAction={props.onContextAction}
+        showHidden={props.showHidden}
       >
-        <For each={api().collection.rootNode.children}>
-          {(node, i) => (
-            <FileTreeNode
-              node={node}
-              indexPath={[i()]}
-              rootKind={props.rootKind}
-              openFilePath={props.openFilePath}
-              onContextAction={props.onContextAction}
-              showHidden={props.showHidden}
-              formatName={props.formatName}
-              dnd={props.dnd}
-            />
-          )}
-        </For>
-      </TreeView.Tree>
+        <TreeView.Tree
+          aria-label="File tree"
+          ref={(el: HTMLElement) => {
+            attachRootDrop(el);
+            attachContextRouter(el);
+          }}
+          data-file-drop={rootDropOver() ? 'true' : undefined}
+          class="px-1 min-h-full data-[file-drop=true]:bg-primary/5"
+        >
+          <For each={api().collection.rootNode.children}>
+            {(node, i) => (
+              <FileTreeNode
+                node={node}
+                indexPath={[i()]}
+                openFilePath={props.openFilePath}
+                formatName={props.formatName}
+                dnd={props.dnd}
+              />
+            )}
+          </For>
+        </TreeView.Tree>
+      </FileTreeContextMenu>
     </TreeView.RootProvider>
   );
 };
