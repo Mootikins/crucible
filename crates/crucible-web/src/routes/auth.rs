@@ -14,8 +14,8 @@
 //! Mounted OUTSIDE the bearer-auth layer: it is the way in.
 
 use crate::middleware::auth::{
-    auth_cookie_values, host_guard, request_is_tls, verify_api_key, ApiKeyState, AUTH_COOKIE,
-    SESSION_TTL,
+    auth_cookie_values, forwarded_scheme_is_tls, host_guard, verify_api_key, ApiKeyState,
+    AUTH_COOKIE, SESSION_TTL,
 };
 use axum::extract::{ConnectInfo, State};
 use axum::http::{header::SET_COOKIE, HeaderMap, StatusCode};
@@ -62,7 +62,7 @@ pub fn auth_routes(api_key_state: Arc<ApiKeyState>) -> Router {
 /// Cookie attributes shared by the mint and the clear.
 ///
 /// `Secure` is conditional on the request having reached the browser over TLS
-/// ([`request_is_tls`]), never unconditional: `cru web` serves plain HTTP on the
+/// ([`forwarded_scheme_is_tls`]), never unconditional: `cru web` serves plain HTTP on the
 /// LAN, and a browser silently declines to store a `Secure` cookie delivered
 /// over `http`, so setting it always would make login appear to succeed and
 /// leave the user logged out. Behind a TLS-terminating proxy it is set, and then
@@ -108,7 +108,7 @@ async fn login(
     let cookie = session_cookie(
         &token,
         SESSION_TTL.as_secs(),
-        request_is_tls(&headers, peer_addr(peer)),
+        forwarded_scheme_is_tls(&headers, peer_addr(peer)),
     );
     ([(SET_COOKIE, cookie)], StatusCode::NO_CONTENT).into_response()
 }
@@ -122,7 +122,7 @@ async fn logout(State(state): State<Arc<ApiKeyState>>, headers: HeaderMap, peer:
     for token in auth_cookie_values(&headers) {
         state.sessions.revoke(token);
     }
-    let cookie = session_cookie("", 0, request_is_tls(&headers, peer_addr(peer)));
+    let cookie = session_cookie("", 0, forwarded_scheme_is_tls(&headers, peer_addr(peer)));
     ([(SET_COOKIE, cookie)], StatusCode::NO_CONTENT).into_response()
 }
 
@@ -453,7 +453,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_clearing_cookie_carries_the_same_secure_attribute_as_the_mint() {
+    async fn the_clearing_cookie_is_secure_only_when_the_clear_arrives_over_tls() {
         // A `Secure` clear sent over plain HTTP is dropped, and a non-`Secure`
         // one is what logout has to send there — otherwise the browser keeps a
         // cookie the server has already revoked and still believes it is signed

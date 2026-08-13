@@ -28,9 +28,17 @@ tokio-stream = { workspace = true, features = ["sync"] }
 futures = { workspace = true }
 
 # Embedded frontend (web/dist) — the default asset source in every profile;
-# `--static-dir` is the opt-out. No `debug-embed` here, but crucible-core enables
-# it and cargo unifies features, so any binary carrying both truly embeds.
-rust-embed = { version = "8", features = ["interpolate-folder-path"] }
+# `--static-dir` is the opt-out.
+#
+# `debug-embed` is declared HERE and not merely inherited. Without it, rust-embed
+# generates its `dynamic()` impl under `cfg(debug_assertions)`: `Assets::get()`
+# then resolves each file at RUNTIME from the build machine's absolute `web/dist`,
+# which is precisely the moved-binary-points-at-nothing defect that deleting the
+# `cfg!(debug_assertions)` branch in `assets.rs` was meant to end. crucible-core
+# happens to enable it and cargo unifies features, so this is free today — but
+# inheriting it means one edit to another crate silently restores the old
+# behaviour, and no test here would notice (the 404 body is identical either way).
+rust-embed = { version = "8", features = ["interpolate-folder-path", "debug-embed"] }
 walkdir = "2.5"
 mime_guess = "2"
 

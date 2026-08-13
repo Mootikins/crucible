@@ -992,8 +992,13 @@ mod tests {
             )
             .expect_err(why);
             // The message has to name the entry, or the operator cannot find it
-            // in a config file with a dozen of them.
-            assert!(err.to_string().contains(entry), "{err}");
+            // in a config file with a dozen of them. Asserted on the QUOTED form
+            // the error actually renders (`{entry:?}`): a bare `contains(entry)`
+            // passes for free on the entries where finding it matters most —
+            // `.` and `..` appear in any sentence with a period, and `*` appears
+            // in the Unparseable message's own `*.example.com` hint.
+            let quoted = format!("{entry:?}");
+            assert!(err.to_string().contains(&quoted), "{err}");
         }
     }
 

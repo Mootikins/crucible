@@ -286,23 +286,64 @@ fn forwarded_chain_is_loopback(headers: &HeaderMap) -> bool {
 /// alone. `caller_is_loopback` gates an authentication bypass and needs the
 /// strict reading; a cookie attribute does not.
 ///
-/// Fails closed on anything ambiguous — two headers (a layer behind us could
-/// read the other one), a chain whose hops disagree, an unreadable value —
-/// because guessing `Secure` wrong breaks login *silently*: browsers drop a
-/// `Secure` cookie that arrives over `http`.
-pub(crate) fn request_is_tls(headers: &HeaderMap, peer: Option<SocketAddr>) -> bool {
-    if !peer.is_some_and(|addr| addr.ip().is_loopback()) {
-        return false;
-    }
+/// Within a single header, the **leftmost** hop is the answer: by the same
+/// convention `X-Forwarded-For` follows (and RFC 7239 formalises), the first
+/// value describes the *client's* connection and later ones describe hops
+/// downstream of it. So a legitimate chained deployment —
+/// browser --https--> edge --http--> local proxy --> here — arrives as
+/// `https, http`, and demanding every hop be `https` would answer "not TLS" for
+/// exactly the deployment this exists for, leaving the cookie non-`Secure` over
+/// HTTPS with nothing to say so.
+///
+/// Still fails closed on what is genuinely ambiguous — two separate header
+/// instances (a layer behind us could read the other one), an unreadable value,
+/// a non-loopback peer — because guessing `Secure` wrong breaks login
+/// *silently*: browsers drop a `Secure` cookie that arrives over `http`. Each
+/// such refusal is logged, since the residual is a silent security downgrade and
+/// an operator otherwise has no way to find it.
+///
+/// Named for what it reads rather than what it concludes: this is a header
+/// believed on peer-loopback alone, sound for decorating a `Set-Cookie` and not
+/// sound for authorization. A future "require TLS for the PTY" must not reach
+/// for it.
+pub(crate) fn forwarded_scheme_is_tls(headers: &HeaderMap, peer: Option<SocketAddr>) -> bool {
     let mut forwarded = headers.get_all("x-forwarded-proto").iter();
     let (Some(proto), None) = (forwarded.next(), forwarded.next()) else {
+        // Two instances is a misconfiguration worth naming; none is the ordinary
+        // plain-HTTP case and says nothing.
+        if headers.get_all("x-forwarded-proto").iter().count() > 1 {
+            tracing::warn!(
+                "Ignoring X-Forwarded-Proto: the request carries more than one, so which hop \
+                 terminated TLS is ambiguous. The session cookie will not be marked Secure."
+            );
+        }
         return false;
     };
-    proto.to_str().is_ok_and(|proto| {
-        proto
-            .split(',')
-            .all(|hop| hop.trim().eq_ignore_ascii_case("https"))
-    })
+    if !peer.is_some_and(|addr| addr.ip().is_loopback()) {
+        tracing::debug!(
+            ?peer,
+            "Ignoring X-Forwarded-Proto from a non-loopback peer; a terminating proxy dials \
+             this server's local port. The session cookie will not be marked Secure."
+        );
+        return false;
+    }
+    let Ok(proto) = proto.to_str() else {
+        tracing::warn!(
+            "Ignoring an X-Forwarded-Proto that is not valid UTF-8. The session cookie will \
+             not be marked Secure."
+        );
+        return false;
+    };
+    let client_hop = proto.split(',').next().unwrap_or("").trim();
+    if client_hop.eq_ignore_ascii_case("https") {
+        return true;
+    }
+    tracing::debug!(
+        forwarded_proto = proto,
+        "X-Forwarded-Proto reports the client's own hop as plaintext; the session cookie will \
+         not be marked Secure."
+    );
+    false
 }
 
 /// A single `X-Forwarded-For` hop: a bare address, or one carrying a port
@@ -934,10 +975,16 @@ mod tests {
         (&["http"], false),
         (&[""], false),
         (&["wss"], false),
-        // Chained proxies. Every hop or none: a chain that disagrees about the
-        // scheme is not evidence, and reading only one end of it is a guess.
+        // Chained proxies: the LEFTMOST hop is the browser's, the same
+        // convention X-Forwarded-For follows. `https, http` is the ordinary
+        // shape of browser --https--> edge --http--> local proxy, and is
+        // exactly the deployment the attribute exists for — demanding every
+        // hop be https answered "not TLS" for it.
         (&["https, https"], true),
-        (&["https, http"], false),
+        (&["https, http"], true),
+        (&["https,http"], true),
+        // …and the client's own hop being plaintext settles it, whatever an
+        // internal hop upgraded to afterwards.
         (&["http, https"], false),
         // Two headers — a layer behind us could read the other one.
         (&["https", "https"], false),
@@ -954,7 +1001,7 @@ mod tests {
 
             let local = Some(SocketAddr::from(([127, 0, 0, 1], 5000)));
             assert_eq!(
-                request_is_tls(&headers, local),
+                forwarded_scheme_is_tls(&headers, local),
                 *is_tls,
                 "X-Forwarded-Proto {forwarded:?} from a loopback proxy"
             );
@@ -964,7 +1011,7 @@ mod tests {
             // we cannot name — the header is a client talking about itself.
             for peer in [Some(SocketAddr::from(([10, 0, 0, 1], 5000))), None] {
                 assert!(
-                    !request_is_tls(&headers, peer),
+                    !forwarded_scheme_is_tls(&headers, peer),
                     "X-Forwarded-Proto {forwarded:?} from {peer:?} must not claim TLS"
                 );
             }

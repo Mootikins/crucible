@@ -88,7 +88,15 @@ signing in would appear to succeed and leave you signed out.
 so the only evidence of the browser's scheme is `X-Forwarded-Proto`, and it is believed only
 when the connection came **from this machine**, which is the shape a terminating proxy has:
 it dials the local port. The same header from another machine is a client talking about
-itself and is ignored, as is a chain of proxies whose hops disagree about the scheme.
+itself and is ignored.
+
+Through a chain of proxies the header arrives as a list, and the **leftmost** value is read —
+that is the browser's own hop, by the convention `X-Forwarded-For` follows. So the ordinary
+`https, http` of *browser → TLS edge → local proxy → here* is correctly read as HTTPS. What
+is still refused is what is genuinely ambiguous: two separate `X-Forwarded-Proto` headers, or
+a value that is not text. Each refusal is logged (`warn` for a misconfiguration, `debug` for
+an ordinary plaintext request), because the fallback is a cookie that is missing `Secure`
+over HTTPS — a downgrade that is otherwise invisible. Run `cru web` with `-v` to see them.
 
 ## Remote shell access
 

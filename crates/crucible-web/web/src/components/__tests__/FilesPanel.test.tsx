@@ -176,9 +176,9 @@ describe('FilesPanel — the navigator does not follow the focused tab', () => {
   });
 
   /** The folder row's expansion state, which is what auto-reveal changed.
-   *  Asserted via `aria-expanded` rather than the presence of `buried.md`:
-   *  the tree view keeps collapsed descendants in the DOM, so absence would
-   *  have been a vacuous assertion. */
+   *  Asserted via `aria-expanded` rather than the absence of `buried.md`,
+   *  which would pass for the wrong reason the moment a descendant is filtered
+   *  out or lazily unloaded — `aria-expanded` names the state under test. */
   const folderExpanded = (container: HTMLElement) =>
     Array.from(container.querySelectorAll('[role="treeitem"]'))
       .find((el) => el.textContent?.trim().startsWith('folder'))
