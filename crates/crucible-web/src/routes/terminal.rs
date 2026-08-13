@@ -15,6 +15,7 @@ use axum::{
 };
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use serde::Deserialize;
+use std::path::PathBuf;
 use std::time::Duration;
 use tokio::sync::{mpsc, Semaphore};
 use tracing::{debug, warn};
@@ -42,6 +43,7 @@ const KEEPALIVE: KeepAlive = KeepAlive {
     ping: Duration::from_secs(20),
     idle: Duration::from_secs(65),
     shell: None,
+    cwd: None,
 };
 
 /// Per-session knobs, injectable so the regression test neither sleeps for a
@@ -52,6 +54,8 @@ pub(crate) struct KeepAlive {
     ping: Duration,
     idle: Duration,
     shell: Option<String>,
+    /// Requested working directory, from the client's focused workspace.
+    cwd: Option<String>,
 }
 
 pub fn terminal_routes() -> Router<AppState> {
@@ -67,7 +71,19 @@ enum ClientMsg {
     Resize { cols: u16, rows: u16 },
 }
 
-async fn terminal_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
+/// Query parameters on the PTY upgrade.
+#[derive(Debug, Deserialize, Default)]
+pub(crate) struct TerminalParams {
+    /// Where to start the shell. The CLIENT knows which workspace the user is
+    /// looking at; the server does not, and its own cwd is a bad guess (see
+    /// [`shell_cwd`]).
+    cwd: Option<String>,
+}
+
+async fn terminal_ws(
+    ws: WebSocketUpgrade,
+    axum::extract::Query(params): axum::extract::Query<TerminalParams>,
+) -> impl IntoResponse {
     // Bound concurrent PTYs; hold the permit for the connection's lifetime.
     let permit = match TERMINAL_SLOTS.try_acquire() {
         Ok(permit) => permit,
@@ -83,8 +99,12 @@ async fn terminal_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
                 .into_response();
         }
     };
+    let keepalive = KeepAlive {
+        cwd: params.cwd,
+        ..KEEPALIVE
+    };
     ws.on_upgrade(move |socket| async move {
-        handle_terminal(socket, KEEPALIVE).await;
+        handle_terminal(socket, keepalive).await;
         drop(permit);
     })
 }
@@ -120,16 +140,8 @@ async fn handle_terminal(mut socket: WebSocket, keepalive: KeepAlive) {
     // gate truecolor on COLORTERM and silently downgrade to 256-color
     // approximations without it.
     cmd.env("COLORTERM", "truecolor");
-    // Start where the server was launched (the project you're working in),
-    // not $HOME — until terminals are session-aware, the launch directory is
-    // the best guess at "where the user's work is".
-    match std::env::current_dir() {
-        Ok(cwd) => cmd.cwd(cwd),
-        Err(_) => {
-            if let Some(home) = dirs::home_dir() {
-                cmd.cwd(home);
-            }
-        }
+    if let Some(dir) = shell_cwd(keepalive.cwd.as_deref()) {
+        cmd.cwd(dir);
     }
 
     let mut child = match pair.slave.spawn_command(cmd) {
@@ -284,6 +296,36 @@ async fn handle_terminal(mut socket: WebSocket, keepalive: KeepAlive) {
     .await;
 }
 
+/// Where the shell should start.
+///
+/// The old rule was "wherever the server was launched", on the theory that this
+/// is the project you are working in. That is false for the installed systemd
+/// unit, whose cwd is `$HOME` — so a terminal opened from a project always
+/// started in the home directory, ignoring the workspace on screen. Same root
+/// cause as the plugin-test path bug: a server-relative notion of "here" that
+/// stopped matching the user's "here" once the server stopped being a shell
+/// child.
+///
+/// So the client sends the workspace it has focused, and the server verifies it
+/// is a directory. Verification is for a clean failure, not for privilege: a PTY
+/// is a full shell and can `cd` anywhere, so choosing its initial directory
+/// grants nothing. Falling back to the server's cwd keeps the old behaviour when
+/// the client says nothing.
+fn shell_cwd(requested: Option<&str>) -> Option<PathBuf> {
+    if let Some(raw) = requested.map(str::trim).filter(|s| !s.is_empty()) {
+        match std::fs::canonicalize(raw) {
+            Ok(path) if path.is_dir() => return Some(path),
+            Ok(path) => {
+                warn!(requested = %path.display(), "Terminal cwd is not a directory; using the server's")
+            }
+            Err(e) => {
+                warn!(requested = raw, error = %e, "Terminal cwd is unusable; using the server's")
+            }
+        }
+    }
+    std::env::current_dir().ok().or_else(dirs::home_dir)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -299,6 +341,8 @@ mod tests {
             ping: Duration::from_millis(40),
             idle: Duration::from_millis(200),
             shell: Some("/bin/sh".to_string()),
+            // Not exercised here; the cwd helper has its own tests.
+            cwd: None,
         }
     }
 
@@ -340,6 +384,42 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
+    }
+
+    #[test]
+    fn the_requested_workspace_wins_over_the_servers_own_directory() {
+        // The bug: a terminal opened from a project started in `$HOME`, because
+        // the server used ITS cwd and the systemd unit's is `%h`.
+        let dir = tempfile::TempDir::new().unwrap();
+        let requested = dir.path().canonicalize().unwrap();
+
+        assert_eq!(
+            shell_cwd(Some(requested.to_str().unwrap())),
+            Some(requested.clone())
+        );
+        // Trailing whitespace from a query string must not defeat it.
+        let padded = format!("  {}  ", requested.display());
+        assert_eq!(shell_cwd(Some(&padded)), Some(requested));
+    }
+
+    #[test]
+    fn an_unusable_request_falls_back_instead_of_failing() {
+        // A shell that refuses to start is worse than one in the wrong place, so
+        // every bad input degrades to the previous behaviour.
+        let server_cwd = std::env::current_dir().ok();
+        for bad in ["", "   ", "/definitely/not/here"] {
+            assert_eq!(shell_cwd(Some(bad)), server_cwd, "{bad:?}");
+        }
+
+        // A FILE is not a working directory — canonicalize succeeds, so this is
+        // the case a bare `exists()` check would have got wrong.
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("not-a-dir");
+        std::fs::write(&file, b"").unwrap();
+        assert_eq!(shell_cwd(Some(file.to_str().unwrap())), server_cwd);
+
+        // Saying nothing keeps the old behaviour exactly.
+        assert_eq!(shell_cwd(None), server_cwd);
     }
 
     #[tokio::test]

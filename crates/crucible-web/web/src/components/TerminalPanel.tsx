@@ -14,6 +14,7 @@ import { Unicode11Addon } from '@xterm/addon-unicode11';
 import '@xterm/xterm/css/xterm.css';
 import { terminalAllowed, terminalDenied } from '@/lib/terminal-availability';
 import { nextReconnectDelay } from '@/lib/terminal-backoff';
+import { selectedRootKey } from '@/stores/treeRootStore';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
 
 /**
@@ -59,9 +60,24 @@ function buildEmberTheme() {
   };
 }
 
+/**
+ * The PTY socket, carrying the workspace the user is looking at.
+ *
+ * The server cannot work this out for itself: it used to start the shell in its
+ * OWN working directory on the theory that this is "the project you launched
+ * from", which is `$HOME` for the installed systemd unit — so a terminal opened
+ * from a project landed in the home directory. Only the client knows which root
+ * is focused, so only the client can say.
+ *
+ * `selectedRootKey` is `"<kind>:<path>"` (`lib/tree-root.ts`), and a path may
+ * itself contain a colon, so split on the FIRST separator only.
+ */
 function wsUrl(): string {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${proto}://${window.location.host}/api/terminal/ws`;
+  const base = `${proto}://${window.location.host}/api/terminal/ws`;
+  const key = selectedRootKey();
+  const path = key?.slice(key.indexOf(':') + 1);
+  return path ? `${base}?cwd=${encodeURIComponent(path)}` : base;
 }
 
 export const TerminalPanel: Component = () => {
