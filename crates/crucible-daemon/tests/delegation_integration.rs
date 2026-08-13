@@ -916,7 +916,9 @@ async fn delegation_to_agent_card_builds_specialized_child() {
     .await;
 
     let parent = h.session_manager.get_session(&h.parent_id).unwrap();
-    let agents_dir = parent.kiln.join("agents");
+    // `.crucible/agents/`, not the kiln's visible `agents/`: the latter is no
+    // longer a discovery path.
+    let agents_dir = parent.kiln.join(".crucible").join("agents");
     std::fs::create_dir_all(&agents_dir).unwrap();
     std::fs::write(
         agents_dir.join("researcher.md"),
@@ -1058,7 +1060,8 @@ async fn card_tool_policy_deny_blocks_child_tool_call() {
         Box::pin(async { Ok(Box::new(BashCallingAgent) as Box<dyn AgentHandle + Send + Sync>) })
     }));
 
-    let agents_dir = temp.path().join("agents");
+    // `.crucible/agents/`: the kiln's visible tree is not a discovery path.
+    let agents_dir = temp.path().join(".crucible").join("agents");
     std::fs::create_dir_all(&agents_dir).unwrap();
     std::fs::write(
         agents_dir.join("no-bash.md"),
@@ -1283,7 +1286,8 @@ async fn card_specialty_resolves_through_llm_models_table() {
         MockSubagentBehavior::ImmediateSuccess("ok".to_string()),
     ));
 
-    let agents_dir = temp.path().join("agents");
+    // `.crucible/agents/`: the kiln's visible tree is not a discovery path.
+    let agents_dir = temp.path().join(".crucible").join("agents");
     std::fs::create_dir_all(&agents_dir).unwrap();
     std::fs::write(
         agents_dir.join("thinker.md"),

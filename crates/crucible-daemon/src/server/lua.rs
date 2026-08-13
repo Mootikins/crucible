@@ -285,7 +285,13 @@ pub(crate) async fn handle_lua_discover_plugins(req: Request) -> Response {
         Err(response) => return *response,
     };
 
-    match discover_plugins_for_kiln(Path::new(&params.kiln_path)) {
+    // `kiln_path` is accepted and ignored: the parameter predates the decision
+    // that a kiln's `plugins/` is not a search path. Kept so the RPC shape does
+    // not break, and because it will mean something again if per-kiln loading
+    // returns behind `runtimepath`.
+    let _ = &params.kiln_path;
+
+    match discover_available_plugins() {
         Ok(entries) => Response::success(
             req.id,
             serde_json::json!({
@@ -296,17 +302,19 @@ pub(crate) async fn handle_lua_discover_plugins(req: Request) -> Response {
     }
 }
 
-/// Discover plugins available for a kiln and return their status entries.
+/// The plugins on the standard search paths, as status entries.
 ///
-/// Internal-facing helper so `session.create`'s setup task (Task 1.2f) can
-/// obtain the same data the `lua.discover_plugins` RPC returns without a
-/// round-trip. Mirrors the RPC handler's behavior: initializes a
-/// [`PluginManager`] scoped to `kiln_path`, then projects each discovered
-/// plugin into a [`PluginStatusEntry`].
-pub(crate) fn discover_plugins_for_kiln(
-    kiln_path: &Path,
+/// **Discovery only — nothing is executed.** This used to call
+/// `PluginManager::initialize`, which loads what it finds, so answering "what
+/// plugins are there" ran every one of their `init.lua` files. Two callers made
+/// that reachable: this RPC (which the web UI calls, `daemon.rs:399`) and
+/// `session.create`'s setup task. Name, version and state all come from
+/// `plugin.yaml`; none of them needs a VM.
+///
+/// Shared by the RPC and `session.create` so the two cannot answer differently.
+pub(crate) fn discover_available_plugins(
 ) -> anyhow::Result<Vec<crucible_core::types::PluginStatusEntry>> {
-    let manager = PluginManager::initialize(Some(kiln_path))?;
+    let manager = PluginManager::discover_only()?;
     Ok(manager
         .list()
         .map(|p| crucible_core::types::PluginStatusEntry {
@@ -525,10 +533,12 @@ mod discover_plugins_tests {
     use std::fs;
     use tempfile::TempDir;
 
-    /// Create a minimal valid plugin inside `<root>/plugins/<name>/`.
+    /// Write a plugin into `<root>/plugins/<name>/` whose `init.lua` records
+    /// that it ran, by touching `<root>/EXECUTED`.
     ///
-    /// `PluginManager::initialize` searches the kiln's `plugins/` subdirectory
-    /// (among others), so this is the canonical per-kiln install location.
+    /// The marker is the point: a plugin that merely fails to appear in a
+    /// listing could still have been executed, and executing it is the actual
+    /// defect.
     fn write_kiln_plugin(kiln_root: &Path, name: &str, version: &str) {
         let plugin_dir = kiln_root.join("plugins").join(name);
         fs::create_dir_all(&plugin_dir).unwrap();
@@ -537,41 +547,51 @@ mod discover_plugins_tests {
             format!("name: {name}\nversion: \"{version}\"\nmain: init.lua\n"),
         )
         .unwrap();
+        let marker = kiln_root.join("EXECUTED");
         fs::write(
             plugin_dir.join("init.lua"),
-            "return { setup = function() end }\n",
+            format!(
+                "local f = io.open({:?}, 'w'); f:write('ran'); f:close()\n\
+                 return {{ setup = function() end }}\n",
+                marker.to_string_lossy()
+            ),
         )
         .unwrap();
     }
 
     #[test]
-    fn returns_ok_for_empty_kiln() {
-        let kiln = TempDir::new().unwrap();
-        let result = discover_plugins_for_kiln(kiln.path());
-        // `PluginManager::initialize` might still find plugins from the user's
-        // config_dir; we only assert the call itself succeeds and returns a
-        // Vec. The projection shape is covered by `projects_kiln_plugin`.
+    fn returns_ok_when_nothing_is_installed() {
+        let result = discover_available_plugins();
+        // The user's own config_dir may hold plugins; only the call contract is
+        // asserted here.
         assert!(result.is_ok(), "expected Ok, got {:?}", result.err());
     }
 
+    /// A kiln's `plugins/` is not a search path, and — the part that matters —
+    /// its plugins are not executed.
+    ///
+    /// They were. `session.create` and this RPC both called
+    /// `PluginManager::initialize(Some(kiln))`, which discovers *and loads*,
+    /// so opening a session against a cloned repo ran that repo's Lua inside
+    /// the daemon. The manager was then dropped, so the tools and handlers it
+    /// registered reached nobody: the exposure was total and the feature was
+    /// nil. A kiln's plugins load by putting the kiln on `runtimepath`.
     #[test]
-    fn projects_kiln_plugin_into_status_entry() {
+    fn a_kiln_plugin_is_neither_listed_nor_executed() {
         let kiln = TempDir::new().unwrap();
         write_kiln_plugin(kiln.path(), "krohn-test-plugin", "0.1.0");
 
-        let entries = discover_plugins_for_kiln(kiln.path()).expect("discovery succeeds");
-        let entry = entries
-            .iter()
-            .find(|e| e.name == "krohn-test-plugin")
-            .unwrap_or_else(|| {
-                panic!(
-                    "expected 'krohn-test-plugin' in results, got {:?}",
-                    entries.iter().map(|e| &e.name).collect::<Vec<_>>()
-                )
-            });
+        let entries = discover_available_plugins().expect("discovery succeeds");
 
-        assert_eq!(entry.version, "0.1.0");
-        // `state` is `Loaded` / `Error` / etc. — stringified variant.
-        assert!(!entry.state.is_empty());
+        assert!(
+            !entries.iter().any(|e| e.name == "krohn-test-plugin"),
+            "a kiln's plugins/ must not be a search path, got {:?}",
+            entries.iter().map(|e| &e.name).collect::<Vec<_>>()
+        );
+        assert!(
+            !kiln.path().join("EXECUTED").exists(),
+            "the kiln plugin's init.lua RAN — this is `git clone` to arbitrary \
+             code execution in the daemon"
+        );
     }
 }

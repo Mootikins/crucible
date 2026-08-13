@@ -29,9 +29,19 @@ Agent cards define specialized AI agents. Each card is a markdown file: YAML fro
 Discovery order (later locations shadow earlier ones, by card name):
 
 1. `~/.config/crucible/agents/` — personal cards
-2. `KILN/.crucible/agents/` — kiln hidden config
-3. `KILN/agents/` or `KILN/Agents/` — kiln content (shared with the team)
-4. `PROJECT/.crucible/agents/` — project-scoped cards (checked into a repo)
+2. `KILN/.crucible/agents/` — kiln-scoped cards
+3. `PROJECT/.crucible/agents/` — project-scoped cards (checked into a repo)
+
+Only `.crucible/` directories. A kiln's visible tree is **not** searched:
+`KILN/agents/` and `KILN/Agents/` used to be, which meant any kiln you cloned,
+synced or were handed could introduce an agent card — and a card names a model,
+a system prompt and a tool policy, so that is not something to acquire by
+accident. A kiln's top level belongs to your notes.
+
+A kiln that genuinely *is* a card library — an org's shared agent and skill
+repo — brings itself in rather than being scanned: its Lua adds the directory
+at load. The component composes itself into the host; the host does not go
+looking.
 
 ## Basic Example
 

@@ -182,14 +182,13 @@ fn spawn_setup_task(
 
         // Plugin discovery.
         //
-        // `PluginManager::initialize` is moderately expensive (touches
-        // disk). Run it on a blocking thread so we don't starve the tokio
-        // reactor when many setup tasks run concurrently.
-        let kiln_for_plugins = kiln_path.clone();
-        let plugins_res = tokio::task::spawn_blocking(move || {
-            super::lua::discover_plugins_for_kiln(&kiln_for_plugins)
-        })
-        .await;
+        // Discovery is moderately expensive (touches disk). Run it on a
+        // blocking thread so we don't starve the tokio reactor when many setup
+        // tasks run concurrently.
+        //
+        // Discovery only — this used to load, so opening a session against a
+        // kiln executed every plugin in that kiln.
+        let plugins_res = tokio::task::spawn_blocking(super::lua::discover_available_plugins).await;
         match plugins_res {
             Ok(Ok(plugins)) => emit_setup_event(
                 &event_tx,

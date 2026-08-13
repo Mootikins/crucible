@@ -896,7 +896,11 @@ mod tests {
         )
         .unwrap();
 
-        let kiln_skill = kiln.path().join("skills").join("kiln-skill");
+        let kiln_skill = kiln
+            .path()
+            .join(".crucible")
+            .join("skills")
+            .join("kiln-skill");
         std::fs::create_dir_all(&kiln_skill).unwrap();
         std::fs::write(
             kiln_skill.join("SKILL.md"),

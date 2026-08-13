@@ -116,12 +116,23 @@ impl DiscoveryPaths {
             }
         }
 
-        // Kiln-specific paths (in priority order)
+        // Kiln: KILN/.crucible/<type_name>/ only.
+        //
+        // `KILN/<type_name>/` used to be searched too, described as the
+        // "shared, version-controlled" half of a pair. Nothing ever honoured
+        // that distinction — no `.gitignore` was written for the hidden one and
+        // both were handed to `existing_paths()` and treated identically — so
+        // in practice it was just a second directory whose contents ran. Both
+        // consumers here load executable Lua (event handlers, and MCP tools on
+        // the `mcp.start` path), so a kiln you cloned or synced could
+        // contribute code by containing a directory.
+        //
+        // Every directory Crucible auto-detects is now a `.crucible/` one:
+        // plugins, agent cards, skills, handlers, MCP tools. A kiln's visible
+        // top level belongs to notes. A kiln that is a library composes itself
+        // in at load rather than being scanned.
         if let Some(kiln) = kiln_path {
-            // Kiln personal: KILN/.crucible/<type_name>/ (gitignored)
             defaults.push(kiln.join(".crucible").join(&type_name));
-            // Kiln shared: KILN/<type_name>/ (version-controlled)
-            defaults.push(kiln.join(&type_name));
         }
 
         Self {

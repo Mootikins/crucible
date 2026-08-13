@@ -53,9 +53,9 @@ fn load_agent_registry(config: &CliConfig) -> AgentCardRegistry {
 /// Load order (later sources override earlier by agent name):
 /// 1. `~/.config/crucible/agents/` - Global default directory
 /// 2. Paths from global config `agent_directories`
-/// 3. `KILN_DIR/.crucible/agents/` - Kiln hidden config directory
-/// 4. `KILN_DIR/agents/` - Kiln visible content directory
-/// 5. Paths from kiln config `agent_directories` (future)
+/// 3. `KILN_DIR/.crucible/agents/` - Kiln config directory
+///
+/// Must stay in step with `crucible-daemon/src/agent_cards.rs::card_directories`.
 pub fn collect_agent_directories(config: &CliConfig) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
@@ -71,15 +71,14 @@ pub fn collect_agent_directories(config: &CliConfig) -> Vec<PathBuf> {
         dirs.push(resolved);
     }
 
-    // 3. Kiln hidden: KILN_DIR/.crucible/agents/
-    let kiln_hidden = config.kiln_path.join(".crucible").join("agents");
-    dirs.push(kiln_hidden);
-
-    // 4. Kiln visible: KILN_DIR/agents/
-    let kiln_visible = config.kiln_path.join("agents");
-    dirs.push(kiln_visible);
-
-    // 5. Kiln config agent_directories - TODO: Load kiln-level config
+    // 3. Kiln config: KILN_DIR/.crucible/agents/
+    //
+    // The kiln's visible `agents/` is deliberately NOT here, matching
+    // `crucible-daemon/src/agent_cards.rs`: a card names a model, a system
+    // prompt and a tool policy, so a cloned or synced kiln must not be able to
+    // introduce one just by containing a directory. A kiln that is a card
+    // library adds itself to the path in Lua instead.
+    dirs.push(config.kiln_path.join(".crucible").join("agents"));
 
     dirs
 }
@@ -425,15 +424,32 @@ You are a test agent.
         let config = test_config(kiln_path.clone());
         let dirs = collect_agent_directories(&config);
 
-        // Should include at least:
-        // 1. Global default
-        // 2. Kiln hidden
-        // 3. Kiln visible
-        assert!(dirs.len() >= 3);
-
-        // Check kiln directories are present
+        // Global default plus the kiln's config dir.
+        assert!(dirs.len() >= 2, "{dirs:?}");
         assert!(dirs.contains(&kiln_path.join(".crucible/agents")));
-        assert!(dirs.contains(&kiln_path.join("agents")));
+    }
+
+    /// The CLI's list must match the daemon's — the kiln's visible `agents/`
+    /// is not a discovery path in either.
+    ///
+    /// Two implementations of one list is how they drift: this is a second
+    /// copy of `crucible-daemon/src/agent_cards.rs::card_directories`, and it
+    /// is what `cru agents list` answers from, so a divergence means the CLI
+    /// advertises cards the daemon will not resolve.
+    #[test]
+    fn test_collect_agent_directories_excludes_the_kilns_visible_tree() {
+        let kiln_path = test_path("test-kiln");
+        let config = test_config(kiln_path.clone());
+        let dirs = collect_agent_directories(&config);
+
+        assert!(
+            !dirs.contains(&kiln_path.join("agents")),
+            "the kiln's visible agents/ must not be searched: {dirs:?}"
+        );
+        assert!(
+            !dirs.contains(&kiln_path.join("Agents")),
+            "nor its capitalised form: {dirs:?}"
+        );
     }
 
     #[test]
@@ -455,19 +471,22 @@ You are a test agent.
     #[test]
     fn test_collect_agent_directories_order() {
         let kiln_path = test_path("test-kiln");
-        let config = test_config(kiln_path.clone());
+        let mut config = test_config(kiln_path.clone());
+        config.agent_directories = vec![PathBuf::from("/custom/agents")];
         let dirs = collect_agent_directories(&config);
 
-        // Find indices
-        let kiln_hidden_idx = dirs
+        let custom_idx = dirs
             .iter()
-            .position(|p| p == &kiln_path.join(".crucible/agents"));
-        let kiln_visible_idx = dirs.iter().position(|p| p == &kiln_path.join("agents"));
+            .position(|p| p == &PathBuf::from("/custom/agents"))
+            .expect("configured dir present");
+        let kiln_idx = dirs
+            .iter()
+            .position(|p| p == &kiln_path.join(".crucible/agents"))
+            .expect("kiln config dir present");
 
-        // Kiln hidden should come before kiln visible
-        assert!(kiln_hidden_idx.is_some());
-        assert!(kiln_visible_idx.is_some());
-        assert!(kiln_hidden_idx.unwrap() < kiln_visible_idx.unwrap());
+        // Later shadows earlier, so the kiln's own cards win over a
+        // globally-configured directory.
+        assert!(custom_idx < kiln_idx, "{dirs:?}");
     }
 
     #[test]
@@ -500,7 +519,7 @@ You are a test agent.
     fn test_load_agent_registry_from_kiln() {
         // Create temp dir structure with agents
         let temp_dir = TempDir::new().unwrap();
-        let agents_dir = temp_dir.path().join("agents");
+        let agents_dir = temp_dir.path().join(".crucible").join("agents");
         fs::create_dir_all(&agents_dir).unwrap();
 
         // Create a test agent card
@@ -526,48 +545,41 @@ You are a test agent.
         assert_eq!(registry.count(), 0);
     }
 
+    /// A card in the kiln's visible tree is ignored; the one in `.crucible/`
+    /// loads.
+    ///
+    /// This test used to assert the opposite — that `KILN/agents/` overrode
+    /// `KILN/.crucible/agents/`. The visible tree is no longer searched: a
+    /// kiln is notes, and a cloned one must not be able to introduce an agent
+    /// card just by containing a directory.
     #[test]
-    fn test_load_agent_registry_later_overrides_earlier() {
-        // Test that kiln/agents overrides .crucible/agents
+    fn test_load_agent_registry_ignores_the_kilns_visible_tree() {
         let temp_dir = TempDir::new().unwrap();
 
-        // Create both agent directories
         let hidden_dir = temp_dir.path().join(".crucible").join("agents");
         let visible_dir = temp_dir.path().join("agents");
         fs::create_dir_all(&hidden_dir).unwrap();
         fs::create_dir_all(&visible_dir).unwrap();
 
-        // Create agent with same name in hidden dir
-        let hidden_content = r#"---
-name: "Shared Agent"
-version: "1.0.0"
-description: "Hidden version"
----
-
-You are the hidden version.
-"#;
-        fs::write(hidden_dir.join("shared-agent.md"), hidden_content).unwrap();
-
-        // Create agent with same name in visible dir (should override)
-        let visible_content = r#"---
-name: "Shared Agent"
-version: "2.0.0"
-description: "Visible version (should win)"
----
-
-You are the visible version.
-"#;
-        fs::write(visible_dir.join("shared-agent.md"), visible_content).unwrap();
+        fs::write(
+            hidden_dir.join("shared-agent.md"),
+            "---\nname: \"Shared Agent\"\nversion: \"1.0.0\"\ndescription: \"Configured version\"\n---\n\nConfigured.\n",
+        )
+        .unwrap();
+        fs::write(
+            visible_dir.join("shared-agent.md"),
+            "---\nname: \"Shared Agent\"\nversion: \"2.0.0\"\ndescription: \"Ambient version\"\n---\n\nAmbient.\n",
+        )
+        .unwrap();
 
         let config = test_config(temp_dir.path().to_path_buf());
         let registry = load_agent_registry(&config);
 
-        // Should have only one agent (later overrides)
         assert_eq!(registry.count(), 1);
-
-        // The visible version should have won
         let agent = registry.get("Shared Agent").unwrap();
-        assert_eq!(agent.version, "2.0.0");
-        assert!(agent.description.contains("Visible version"));
+        assert_eq!(
+            agent.version, "1.0.0",
+            "the .crucible/ card must win; the visible one must not be read at all"
+        );
     }
 }

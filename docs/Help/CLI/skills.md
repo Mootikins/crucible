@@ -77,7 +77,7 @@ name, the one from the **higher scope** wins and the loser is recorded as shadow
 | `builtin` | `<runtime root>/*/skills/` — the skills Crucible ships | lowest |
 | `personal` | `~/.config/crucible/skills/` | |
 | `workspace` | `<workspace>/.claude/skills/`, `.codex/skills/`, `.opencode/skills/`, `.crucible/skills/` | |
-| `kiln` | `<kiln>/skills/` | highest |
+| `kiln` | `<kiln>/.crucible/skills/` | highest |
 
 Runtime roots come from `$CRUCIBLE_RUNTIME` when set, otherwise from the layout next to the
 `cru` binary.

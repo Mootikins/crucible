@@ -70,9 +70,12 @@ Place files in:
 
 ```
 ~/.config/crucible/plugins/     # Global personal
-KILN/.crucible/plugins/         # Kiln personal (gitignored)
-KILN/plugins/                   # Kiln shared (version-controlled)
+<runtimepath entry>/plugins/    # Opt-in extra trees, named in config.toml
 ```
+
+Plugins are user-scoped: no kiln, project or workspace directory is searched on
+its own. See [[Help/Extending/Creating Plugins]] for why, and for how
+`runtimepath` opts a tree in.
 
 File extensions determine the runtime:
 - `.lua` — Lua

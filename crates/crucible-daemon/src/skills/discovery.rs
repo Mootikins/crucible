@@ -60,7 +60,10 @@ impl FolderDiscovery {
     /// Searches:
     /// - `~/.config/crucible/skills/` (personal)
     /// - `<workspace>/.<agent>/skills/` for each known agent (workspace)
-    /// - `<kiln>/skills/` if kiln path provided (kiln)
+    /// - `<kiln>/.crucible/skills/` if kiln path provided (kiln)
+    ///
+    /// Every workspace- and kiln-relative entry is under a dot-directory, the
+    /// same rule plugins and agent cards follow.
     pub fn with_default_paths(workspace: &Path, kiln: Option<&Path>) -> Self {
         let paths = default_discovery_paths(Some(workspace), kiln, dirs::home_dir().as_deref());
         Self::new(paths)
@@ -296,8 +299,17 @@ fn default_discovery_paths_from(
         }
     }
 
+    // `.crucible/skills`, not the kiln's visible `skills/`. Every directory
+    // Crucible auto-detects is a `.crucible/` one — the same rule that governs
+    // plugins and agent cards. A kiln's top level belongs to notes, and a
+    // cloned or synced kiln must not introduce skills into an agent's system
+    // prompt just by containing a directory. A kiln that is a skill library
+    // adds itself at load rather than being scanned.
     if let Some(k) = kiln {
-        paths.push(SearchPath::new(k.join("skills"), SkillScope::Kiln).with_agent("crucible"));
+        paths.push(
+            SearchPath::new(k.join(".crucible").join("skills"), SkillScope::Kiln)
+                .with_agent("crucible"),
+        );
     }
 
     paths.extend(runtime_skill_paths(runtime_roots));
@@ -746,6 +758,57 @@ mod tests {
         // Should not panic, and discover should work on nonexistent paths
         let resolved = discovery.discover().unwrap();
         assert!(resolved.is_empty());
+    }
+
+    /// Every auto-detected directory is a `.crucible/` one.
+    ///
+    /// The kiln tier used to be the visible `KILN/skills/`, which made it the
+    /// odd one out among the three things Crucible discovers — plugins and
+    /// agent cards both read only `.crucible/`. It also meant a cloned or
+    /// synced kiln could put text straight into an agent's system prompt just
+    /// by containing a `skills/` directory. A kiln that is a skill library
+    /// adds itself at load instead of being scanned.
+    #[test]
+    fn every_auto_detected_directory_is_under_a_dot_crucible() {
+        let tmp = TempDir::new().unwrap();
+        let ws = tmp.path().join("workspace");
+        let kiln = tmp.path().join("kiln");
+        // The workspace tier only lists directories that exist.
+        for agent in ["claude", "codex", "opencode", "crucible"] {
+            std::fs::create_dir_all(ws.join(format!(".{agent}")).join("skills")).unwrap();
+        }
+        std::fs::create_dir_all(kiln.join("skills")).unwrap();
+        std::fs::create_dir_all(kiln.join(".crucible").join("skills")).unwrap();
+
+        let paths = default_discovery_paths_from(Some(&ws), Some(&kiln), Some(tmp.path()), &[]);
+
+        assert!(
+            paths
+                .iter()
+                .any(|p| p.path == kiln.join(".crucible").join("skills")),
+            "the kiln's .crucible/skills must be searched: {:?}",
+            paths.iter().map(|p| &p.path).collect::<Vec<_>>()
+        );
+        assert!(
+            !paths.iter().any(|p| p.path == kiln.join("skills")),
+            "the kiln's visible skills/ must NOT be searched: {:?}",
+            paths.iter().map(|p| &p.path).collect::<Vec<_>>()
+        );
+
+        // Nothing workspace- or kiln-relative escapes a dot-directory. Runtime
+        // and personal roots live outside both and are not in scope here.
+        for p in &paths {
+            for root in [&ws, &kiln] {
+                if let Ok(rel) = p.path.strip_prefix(root) {
+                    let first = rel.components().next().expect("non-empty relative path");
+                    assert!(
+                        first.as_os_str().to_string_lossy().starts_with('.'),
+                        "auto-detected {} is not under a dot-directory",
+                        p.path.display()
+                    );
+                }
+            }
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────

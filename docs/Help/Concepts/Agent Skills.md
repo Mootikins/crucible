@@ -107,9 +107,15 @@ Crucible discovers skills from three scopes, in priority order:
 |-------|------|----------|
 | Personal | `~/.config/crucible/skills/` | Lowest |
 | Workspace | `<project>/.<agent>/skills/` | Medium |
-| Kiln | `<kiln>/skills/` | Highest |
+| Kiln | `<kiln>/.crucible/skills/` | Highest |
 
 Within each scope, Crucible globs for `*/SKILL.md` patterns. For workspace scope, it checks directories for known agents: `.claude/skills/`, `.codex/skills/`, `.opencode/skills/`, `.crucible/skills/`.
+
+Every auto-detected directory is a dot-directory — the same rule plugins and
+agent cards follow. A kiln's visible top level belongs to your notes, and a
+kiln you cloned or synced must not be able to put text into an agent's system
+prompt just by containing a `skills/` folder. A kiln that genuinely is a skill
+library brings itself in at load rather than being scanned.
 
 ### Priority and Shadowing
 

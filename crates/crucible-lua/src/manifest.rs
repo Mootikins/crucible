@@ -301,15 +301,21 @@ fn is_valid_version(version: &str) -> bool {
 }
 
 /// Where a plugin was discovered from, ordered by priority (highest first).
+///
+/// There is no `Kiln` variant. There was, documented as
+/// `KILN/.crucible/plugins/` or `KILN/plugins/`, and nothing ever produced it:
+/// `daemon_plugin_paths` emits only these three. The kiln-relative loading that
+/// did exist ran through `PluginManager::with_standard_paths`, which built its
+/// own path list and tagged nothing. Plugins are user-scoped; a kiln's tree is
+/// opted into via `runtimepath`, which makes it `Runtime` like any other.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PluginSource {
     /// `CRUCIBLE_PLUGIN_PATH` env var
     EnvPath,
     /// `~/.config/crucible/plugins/`
     User,
-    /// `KILN/.crucible/plugins/` or `KILN/plugins/`
-    Kiln,
-    /// `$CRUCIBLE_RUNTIME/plugins/` or exe-relative runtime path
+    /// A `runtimepath` entry's `plugins/`, `$CRUCIBLE_RUNTIME/plugins/`, or the
+    /// exe-relative runtime path
     Runtime,
 }
 
@@ -318,7 +324,6 @@ impl std::fmt::Display for PluginSource {
         match self {
             Self::EnvPath => f.write_str("path"),
             Self::User => f.write_str("user"),
-            Self::Kiln => f.write_str("kiln"),
             Self::Runtime => f.write_str("runtime"),
         }
     }

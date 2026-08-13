@@ -6,14 +6,14 @@ tags: [agents, examples]
 
 # Example Agent Cards
 
-The markdown files in this directory are **templates**. Crucible does *not* load agent cards from `docs/Agents/` at runtime — the files here exist as a gallery you can copy, adapt, and drop into one of the real load paths.
+The markdown files in this directory are **templates**. Crucible does *not* load agent cards from `docs/Agents/` at runtime — only `.crucible/agents/` directories are searched, so this stays true even when `docs/` is the open kiln. The files here are a gallery to copy, adapt, and drop into a real load path.
 
 To use one of these agents:
 
 1. Copy the file to a load path:
    - `~/.config/crucible/agents/` — global (all kilns see it)
-   - `<kiln>/.crucible/agents/` — kiln-scoped, hidden
-   - `<kiln>/agents/` — kiln-scoped, visible alongside your notes
+   - `<kiln>/.crucible/agents/` — kiln-scoped
+   - `<project>/.crucible/agents/` — project-scoped, checked into the repo
 
 2. Verify it's picked up:
    ```bash

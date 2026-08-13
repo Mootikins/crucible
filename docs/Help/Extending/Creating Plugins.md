@@ -28,14 +28,41 @@ Plugins are discovered from these directories (highest priority first):
 |----------|--------|----------|
 | `CRUCIBLE_PLUGIN_PATH` dirs | EnvPath | Development, CI |
 | `~/.config/crucible/plugins/` | User | Personal plugins |
-| `$CRUCIBLE_RUNTIME/plugins/` | Runtime | Bundled with Crucible |
-
-Kiln- and project-local plugin directories are deliberately NOT loaded: a
-plugin directory that auto-loads on `cd` would turn `git clone` into
-arbitrary code execution inside a long-lived daemon shared by every session.
-If that lands later it ships together with a trust gate, not before.
+| `<entry>/plugins/` for each `runtimepath` entry | Runtime | Opt-in extra trees |
+| `$CRUCIBLE_RUNTIME/plugins/`, else exe-relative | Runtime | Bundled with Crucible |
 
 Same-name plugins at higher priority shadow lower ones.
+
+**Plugins are user-scoped.** Nothing loads from a kiln, project or workspace on
+its own. Two reasons, and the second is the one that does not go away:
+
+1. A plugin directory that auto-loaded on `cd` would turn `git clone` into
+   arbitrary code execution inside a long-lived daemon shared by every session.
+2. A plugin registers daemon-global handlers, tools and services into a VM no
+   session owns. `RuntimeHandler` has no session, workspace or kiln dimension,
+   so a plugin loaded "for" one workspace fires its `pre_tool_call` in every
+   other workspace's sessions — and `pre_tool_call` can cancel or replace a
+   tool call. There is also no unload-on-leave. A trust prompt answers "should
+   this code run?"; it does not answer "which sessions does it apply to?", and
+   that second question currently has no answer.
+
+Until plugin state is session- or workspace-scoped, per-workspace loading stays
+out. This is a stated constraint with a named precondition, not a deferral.
+
+### Loading another tree deliberately
+
+`runtimepath` is the opt-in. It is your own config naming the tree, so consent
+is explicit and needs no prompt in a headless daemon:
+
+```toml
+# ~/.config/crucible/config.toml
+runtimepath = ["~/kilns/work"]   # loads ~/kilns/work/plugins/
+```
+
+Entries **add to** the shipped runtime rather than replacing it, and they rank
+above it, so a plugin there can shadow a bundled one by name. Everything a
+`runtimepath` tree loads is still daemon-global — point 2 above applies
+unchanged, which is why this is a deliberate act and not a default.
 
 ```
 ~/.config/crucible/plugins/
@@ -46,7 +73,34 @@ Same-name plugins at higher priority shadow lower ones.
 └── quick-tag.lua        # Single-file plugin
 ```
 
-All plugin directories are also added to Lua's `package.path`, so `require("tasks")` works from anywhere — your init.lua, other plugins, or the built-in defaults.
+All plugin directories are also added to Lua's `package.path`, so `require("tasks")` works from anywhere — your init.lua, other plugins, or the built-in defaults. Note the module name is the **directory name**, not `init`; that is what a plugin's own test suite must require too.
+
+### What ships
+
+`runtime/plugins/` in the repo is the bundled set, compiled into the binary and
+extracted on first run. Every one of them loads **enabled by default**:
+
+| Plugin | What it adds |
+|--------|--------------|
+| `daily-notes` | `daily_create`, `daily_open`, `daily_list`, `/daily` |
+| `discord` | Discord gateway + REST integration |
+| `graph-view` | `graph_links`, `graph_stats`, `/graph` (Fennel) |
+| `kiln-expert` | Search across unmounted kilns by delegation |
+| `oci` | Routes workspace tools into containers |
+| `reflection` | Post-session retrospective notes |
+| `review` | `review_*` tools over the attributed diff |
+| `todo-list` | `tasks_list`, `tasks_add`, `tasks_complete`, `tasks_next`, `/tasks` |
+| `web-search` | Search over a provider chain |
+| `worktree` | Run a session against a git worktree |
+
+Turn one off with `[plugins.<name>] enabled = false` in `config.toml`. That is
+the only durable lever — editing the extracted `plugin.yaml` does not survive,
+because the runtime tree is re-stamped from the binary whenever the build
+changes.
+
+Their **test suites are not extracted** (`plugins/*/tests/**` is excluded from
+the embed), so `cru plugin test` against a bundled plugin on an installed
+Crucible finds nothing. Run those from a checkout.
 
 ## The Setup Pattern
 
@@ -338,7 +392,7 @@ local result = cru.shell("cargo", {"build"}, {
 For a Lisp-like experience with macros, use Fennel:
 
 ```fennel
-;; .crucible/plugins/greet.fnl
+;; ~/.config/crucible/plugins/greet.fnl
 
 (fn greet [args]
   "A friendly greeting tool"
@@ -403,11 +457,17 @@ Crucible ships a built-in test runner based on `describe`/`it` blocks. Tests liv
 
 ### Writing Tests
 
+Load the plugin under test the way the daemon does: by its **directory name**,
+not by `init`. The runner's `package.path` mirrors the loader exactly
+(`<plugins-parent>/?/init.lua`, plus the plugin's own `lua/?.lua`), so
+`require("init")` resolves nothing — a suite written that way fails to load
+rather than failing an assertion.
+
 ```lua
--- tests/init_test.lua
+-- tests/init_test.lua   (in a plugin directory named `tasks/`)
 
 describe("tasks_list", function()
-    local plugin = require("init")
+    local plugin = require("tasks")
 
     before_each(function()
         test_mocks.setup({

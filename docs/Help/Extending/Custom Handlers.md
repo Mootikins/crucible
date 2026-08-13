@@ -97,20 +97,31 @@ impl StorageHandler {
 
 Lua handlers are scripts that process events without requiring Rust compilation.
 
-> [!NOTE] Registration is `crucible.on`, not doc-comment annotations
-> Earlier revisions of this page showed `-- @handler event=...` annotations and
-> a `{kiln}/.crucible/handlers/*.lua` load path. Neither is real: the daemon
-> never scans doc comments, and kiln-local handler directories are deliberately
-> not loaded, so handlers written that way silently never fired. Plugins live
-> under `~/.config/crucible/plugins/` and register with `crucible.on` at load
-> time. See [[Help/Extending/Event Hooks]] for the events that actually fire.
+> [!NOTE] One way in: a plugin
+> Handlers are not a separate kind of thing to install. A plugin is a superset
+> of a handler collection — it can register handlers *and* contribute tools,
+> commands, views, config and services — so there is one import mechanism
+> rather than two that overlap.
+>
+> A `<kiln>/handlers/` and `<kiln>/.crucible/handlers/` scan did exist, keyed
+> off `-- @handler` doc comments. It is gone: it was a second, weaker loader
+> for something plugins already do, and it auto-ran Lua out of any kiln you
+> opened. Nothing shipped used it.
 
 ### Location
 
-Plugins — which is where handlers live — are loaded from:
+Handlers live in plugins, and register with `crucible.on` at load:
+
 ```
-~/.config/crucible/plugins/
+~/.config/crucible/plugins/      # your plugins
+<runtimepath entry>/plugins/     # trees you opt into in config.toml
 ```
+
+Registration is daemon-wide — a handler fires for every session, and filters on
+what it is given (`ctx.session_id`, the event payload, `opts.pattern`) rather
+than on where it was installed from. See [[Help/Extending/Event Hooks]] for the
+eleven events and the cancel / handled / transform contract, and
+[[Help/Extending/Creating Plugins]] for how a kiln can ship a plugin.
 
 ### Basic Structure
 

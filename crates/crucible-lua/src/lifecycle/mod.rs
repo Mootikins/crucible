@@ -15,12 +15,12 @@ mod spec;
 #[cfg(test)]
 mod tests;
 
-use crate::annotations::{DiscoveredCommand, DiscoveredHandler, DiscoveredTool, DiscoveredView};
+use crate::discovered::{DiscoveredCommand, DiscoveredHandler, DiscoveredTool, DiscoveredView};
 use crate::manifest::{LoadedPlugin, PluginSource};
 use mlua::{Lua, RegistryKey};
 use registration::RegisteredItem;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tracing::warn;
 
@@ -102,7 +102,23 @@ impl PluginManager {
         }
     }
 
-    pub fn with_standard_paths(kiln_path: Option<&Path>) -> Self {
+    /// Search paths for a standalone `PluginManager`: env override, then the
+    /// user's plugin directory.
+    ///
+    /// **A kiln's `plugins/` is deliberately not here.** It used to be, which
+    /// made this a second, divergent copy of the daemon's path list
+    /// (`daemon_plugin_paths`: env → user → runtime, versus env → user → kiln
+    /// here) — and because `initialize` loads what it discovers, every
+    /// `session.create` executed the `init.lua` of every plugin in the kiln
+    /// it was opening. That is `git clone` → arbitrary code execution in the
+    /// daemon, the exact thing `docs/Help/Extending/Creating Plugins.md` says
+    /// does not happen. It also bought nothing: `discover_plugins_for_kiln`
+    /// drops this manager immediately, so the tools and handlers those plugins
+    /// registered went into a VM nobody kept.
+    ///
+    /// A kiln's plugins load by putting the kiln on `runtimepath`, which is
+    /// the one path list and is the user's own config saying so.
+    pub fn with_standard_paths() -> Self {
         let mut paths = Vec::new();
 
         if let Ok(env_paths) = std::env::var("CRUCIBLE_PLUGIN_PATH") {
@@ -119,17 +135,30 @@ impl PluginManager {
             paths.push(config_dir.join("crucible").join("plugins"));
         }
 
-        if let Some(kiln) = kiln_path {
-            paths.push(kiln.join("plugins"));
-        }
-
         Self::new().with_search_paths(paths)
     }
 
-    pub fn initialize(kiln_path: Option<&Path>) -> LifecycleResult<Self> {
-        let mut manager = Self::with_standard_paths(kiln_path);
+    /// Discover **and execute** every plugin on the standard paths.
+    ///
+    /// The execution is the point for callers that want a live VM, and a trap
+    /// for callers that only want a listing — see [`Self::discover_only`].
+    pub fn initialize() -> LifecycleResult<Self> {
+        let mut manager = Self::with_standard_paths();
         manager.discover()?;
         manager.load_all()?;
+        Ok(manager)
+    }
+
+    /// Discover without executing anything.
+    ///
+    /// What an enumeration wants. `lua.discover_plugins` used to answer with
+    /// `initialize`, so listing the plugins ran all of them — a read-shaped
+    /// RPC, reachable from the web UI, with arbitrary Lua as a side effect.
+    /// Manifest metadata (name, version) comes from `plugin.yaml`, which needs
+    /// no VM.
+    pub fn discover_only() -> LifecycleResult<Self> {
+        let mut manager = Self::with_standard_paths();
+        manager.discover()?;
         Ok(manager)
     }
 
