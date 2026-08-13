@@ -259,6 +259,52 @@ fn forwarded_chain_is_loopback(headers: &HeaderMap) -> bool {
     })
 }
 
+/// Whether the *browser's* leg of this request was TLS — the one question
+/// `Secure` on the session cookie may be conditioned on.
+///
+/// Nothing in this process terminates TLS: `cru web` serves plain HTTP from a
+/// `TcpListener`, and encrypted deployments put a terminating proxy in front
+/// (`cru tunnel` wrapping cloudflared / tailscale funnel, or an operator's own
+/// reverse proxy). So the connection's own scheme is *always* `http` and reading
+/// it would mean never minting a `Secure` cookie at all, while the request URI's
+/// scheme is no better than the client: absent for origin-form HTTP/1.1, and
+/// over h2 it is whatever the client wrote in `:scheme`. The only real evidence
+/// is `X-Forwarded-Proto`, from the hop that actually did terminate.
+///
+/// That header is attacker-supplied unless something in front of us set it, so
+/// it counts only when the connection arrived from loopback — the shape every
+/// supported terminating proxy has, because it dials this server's local port.
+/// Note that is *peer* loopback, not [`caller_is_loopback`]: a tunnel's
+/// `X-Forwarded-For` names the real remote client, which is the point of the
+/// header, so demanding a loopback forwarded chain here would refuse precisely
+/// the deployment this exists for.
+///
+/// The weaker test is sound because the answer only decorates the `Set-Cookie`
+/// in the response to *this very request*. A local process that spoofs the
+/// header gets a cookie its own browser then refuses to store; it cannot reach a
+/// session any other client holds, since `Set-Cookie` travels to the requester
+/// alone. `caller_is_loopback` gates an authentication bypass and needs the
+/// strict reading; a cookie attribute does not.
+///
+/// Fails closed on anything ambiguous — two headers (a layer behind us could
+/// read the other one), a chain whose hops disagree, an unreadable value —
+/// because guessing `Secure` wrong breaks login *silently*: browsers drop a
+/// `Secure` cookie that arrives over `http`.
+pub(crate) fn request_is_tls(headers: &HeaderMap, peer: Option<SocketAddr>) -> bool {
+    if !peer.is_some_and(|addr| addr.ip().is_loopback()) {
+        return false;
+    }
+    let mut forwarded = headers.get_all("x-forwarded-proto").iter();
+    let (Some(proto), None) = (forwarded.next(), forwarded.next()) else {
+        return false;
+    };
+    proto.to_str().is_ok_and(|proto| {
+        proto
+            .split(',')
+            .all(|hop| hop.trim().eq_ignore_ascii_case("https"))
+    })
+}
+
 /// A single `X-Forwarded-For` hop: a bare address, or one carrying a port
 /// (some proxies emit `127.0.0.1:54321`).
 fn parse_forwarded_hop(hop: &str) -> Option<IpAddr> {
@@ -868,6 +914,60 @@ mod tests {
                 StatusCode::OK,
                 "Host {host:?} is this server and must be accepted"
             );
+        }
+    }
+
+    // --- Forwarded scheme (what may carry `Secure` on the cookie) ---
+
+    /// Every `X-Forwarded-Proto` shape, with the one answer each may give.
+    ///
+    /// Ambiguity resolves to "not TLS": the loss is a cookie without `Secure`,
+    /// where the opposite mistake is a `Secure` cookie the browser drops on a
+    /// plain-HTTP deployment, i.e. a login that stops working without saying so.
+    const FORWARDED_PROTO_CASES: &[(&[&str], bool)] = &[
+        (&["https"], true),
+        // Real proxies vary in the case and padding they write the scheme with.
+        (&["HTTPS"], true),
+        (&[" https "], true),
+        // The deployment as it is today: nothing in front of us at all.
+        (&[], false),
+        (&["http"], false),
+        (&[""], false),
+        (&["wss"], false),
+        // Chained proxies. Every hop or none: a chain that disagrees about the
+        // scheme is not evidence, and reading only one end of it is a guess.
+        (&["https, https"], true),
+        (&["https, http"], false),
+        (&["http, https"], false),
+        // Two headers — a layer behind us could read the other one.
+        (&["https", "https"], false),
+        (&["https", "http"], false),
+    ];
+
+    #[test]
+    fn a_forwarded_scheme_counts_only_from_a_proxy_on_this_machine() {
+        for (forwarded, is_tls) in FORWARDED_PROTO_CASES {
+            let mut headers = HeaderMap::new();
+            for value in *forwarded {
+                headers.append("x-forwarded-proto", HeaderValue::from_str(value).unwrap());
+            }
+
+            let local = Some(SocketAddr::from(([127, 0, 0, 1], 5000)));
+            assert_eq!(
+                request_is_tls(&headers, local),
+                *is_tls,
+                "X-Forwarded-Proto {forwarded:?} from a loopback proxy"
+            );
+
+            // Only a proxy on this machine can be in front of us: this server's
+            // local port is what it dials. From anywhere else — or from a peer
+            // we cannot name — the header is a client talking about itself.
+            for peer in [Some(SocketAddr::from(([10, 0, 0, 1], 5000))), None] {
+                assert!(
+                    !request_is_tls(&headers, peer),
+                    "X-Forwarded-Proto {forwarded:?} from {peer:?} must not claim TLS"
+                );
+            }
         }
     }
 

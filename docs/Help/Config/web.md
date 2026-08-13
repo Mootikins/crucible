@@ -76,6 +76,20 @@ config, change it there instead.
 The key is deliberately never embedded in the URLs `cru web` prints — query-string tokens
 leak through browser history, server logs, and referrer headers.
 
+### The session cookie
+
+Signing in mints a session token — never the key itself — into a cookie marked `HttpOnly`,
+`SameSite=Strict` and `Path=/`. `Secure` is added **only for a request that reached the
+browser over HTTPS**, and unconditionally setting it would break the plain-HTTP LAN case
+outright: a browser silently refuses to store a `Secure` cookie delivered over `http://`, so
+signing in would appear to succeed and leave you signed out.
+
+`cru web` serves plain HTTP itself — TLS is always terminated by something in front of it —
+so the only evidence of the browser's scheme is `X-Forwarded-Proto`, and it is believed only
+when the connection came **from this machine**, which is the shape a terminating proxy has:
+it dials the local port. The same header from another machine is a client talking about
+itself and is ignored, as is a chain of proxies whose hops disagree about the scheme.
+
 ## Remote shell access
 
 The terminal routes hand out a PTY, which is unrestricted shell access on the host. They are
