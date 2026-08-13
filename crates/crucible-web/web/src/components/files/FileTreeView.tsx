@@ -109,7 +109,14 @@ export const FileTreeView: Component<FileTreeViewProps> = (props) => {
   };
 
   return (
-    <TreeView.RootProvider value={api}>
+    // lazyMount + unmountOnExit: without them ark-ui only sets `hidden` on
+    // branch content, so every branch ever expanded stays mounted for the
+    // session and the machine re-runs prop getters for all of it on every
+    // select/expand. Mounted-row count is the cost lever, so collapsed
+    // subtrees must actually leave the DOM. Safe with `loadChildren`: zag
+    // keeps `loadingStatus` in machine context and short-circuits expansion
+    // for already-loaded branches, so unmounting never refetches.
+    <TreeView.RootProvider value={api} lazyMount unmountOnExit>
       <TreeView.Tree
         aria-label="File tree"
         ref={(el: HTMLElement) => {

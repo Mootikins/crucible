@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { createSignal } from 'solid-js';
 import { render, fireEvent, waitFor } from '@solidjs/testing-library';
 import { FileTreeView } from '../FileTreeView';
 import { makeFileCollection } from '@/lib/file-tree/collection';
@@ -48,7 +49,9 @@ describe('FileTreeView — rendering & a11y', () => {
     const texts = [...container.querySelectorAll('[role="treeitem"]')].map((n) =>
       n.textContent?.trim(),
     );
-    const metaIdx = texts.findIndex((t) => t?.startsWith('Meta'));
+    // Exact match: `Meta` is collapsed, and a collapsed branch no longer
+    // contains its children (lazyMount), so its row text is just its label.
+    const metaIdx = texts.findIndex((t) => t === 'Meta');
     const readmeIdx = texts.findIndex((t) => t === 'README.md');
     expect(metaIdx).toBeGreaterThanOrEqual(0);
     expect(readmeIdx).toBeGreaterThan(metaIdx);
@@ -80,6 +83,78 @@ describe('FileTreeView — rendering & a11y', () => {
       const current = container.querySelector('[aria-current="page"]');
       expect(current?.textContent).toContain('README.md');
     });
+  });
+});
+
+describe('FileTreeView — collapsed subtrees leave the DOM', () => {
+  it('never mounts an unexpanded branch’s descendants', async () => {
+    const { findByText, queryByText } = renderTree();
+    await findByText('Meta');
+    // `Meta` starts collapsed: with lazyMount its rows have never rendered, so
+    // row cost is paid on first expand, not on tree build.
+    expect(queryByText('Systems.md')).toBeNull();
+    expect(queryByText('Roadmap.md')).toBeNull();
+  });
+
+  it('removes a branch’s descendants from the DOM when it collapses', async () => {
+    const { findByText, queryByText } = renderTree();
+    const meta = await findByText('Meta');
+
+    fireEvent.click(meta);
+    await findByText('Systems.md');
+
+    fireEvent.click(meta);
+    // unmountOnExit: collapsing must free the rows, otherwise a session-long
+    // browse leaves every branch ever opened mounted forever.
+    await waitFor(() => expect(queryByText('Systems.md')).toBeNull());
+    expect(queryByText('Roadmap.md')).toBeNull();
+  });
+});
+
+const PROJECT = '/proj';
+/** Project-shaped root: `src` has `children: undefined`, i.e. NOT loaded. */
+const lazyProjectRoot = (): FileTreeNode => ({
+  relPath: '',
+  name: '',
+  isDir: true,
+  absPath: PROJECT,
+  children: [{ relPath: 'src', name: 'src', isDir: true, absPath: `${PROJECT}/src` }],
+});
+
+describe('FileTreeView — lazy loading survives unmounting', () => {
+  it('re-expands a loaded branch without fetching its children again', async () => {
+    const [root, setRoot] = createSignal<FileTreeNode>(lazyProjectRoot());
+    const loadChildren = vi.fn(async () => [
+      { relPath: 'src/main.rs', name: 'main.rs', isDir: false, absPath: `${PROJECT}/src/main.rs` },
+    ]);
+    const { findByText, queryByText } = render(() => (
+      <FileTreeView
+        collection={makeFileCollection(root())}
+        rootKind="project"
+        openFilePath={null}
+        loadChildren={loadChildren}
+        onLoadedTree={setRoot}
+        onOpenLeaf={() => {}}
+        onContextAction={() => {}}
+      />
+    ));
+    // Re-query before every click: persisting the loaded children swaps the
+    // collection, which recreates the branch row (a held reference goes stale
+    // and clicks on it are silently dropped).
+    const clickSrc = async () => fireEvent.click(await findByText('src'));
+
+    await clickSrc();
+    await findByText('main.rs');
+    expect(loadChildren).toHaveBeenCalledTimes(1);
+
+    await clickSrc();
+    await waitFor(() => expect(queryByText('main.rs')).toBeNull());
+
+    await clickSrc();
+    await findByText('main.rs');
+    // zag's expand path short-circuits on loaded children, so the DOM going
+    // away does not re-trigger the fetch.
+    expect(loadChildren).toHaveBeenCalledTimes(1);
   });
 });
 

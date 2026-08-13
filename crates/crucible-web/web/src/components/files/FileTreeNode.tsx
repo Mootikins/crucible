@@ -62,9 +62,11 @@ const ICON_SLOT = 'w-4 py-1 flex items-center justify-center shrink-0';
 
 /**
  * Recursive branch/leaf renderer built on ark-ui `TreeView`. The machine emits
- * `role=tree/treeitem/group` and `aria-expanded/selected/level/setsize/posinset`
- * via `getBranchProps`/`getItemProps` — we never hand-author them. We only
- * AUGMENT (never overwrite) with the open-note markers (`aria-current`,
+ * `role=tree/treeitem/group` and `aria-expanded/selected/level` via
+ * `getBranchProps`/`getItemProps` — we never hand-author them. (It emits no
+ * `aria-setsize`/`aria-posinset`; with `unmountOnExit` we could not supply
+ * honest ones anyway, since a collapsed sibling has no element to carry them.)
+ * We only AUGMENT (never overwrite) with the open-note markers (`aria-current`,
  * `data-current`) when the node's absolute path is the active editor file.
  *
  * Indentation is drawn as explicit per-level guide columns (`IndentGuides`)
