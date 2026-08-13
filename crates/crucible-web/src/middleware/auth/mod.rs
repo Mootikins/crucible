@@ -582,6 +582,7 @@ mod tests {
         // shell gate failed closed. Same header, same request, opposite trust.
         let shell_gate = Arc::new(ShellGateState {
             allow_remote: false,
+            credentials: None,
         });
         for (forwarded, trusted) in FORWARDED_FOR_CASES {
             let shell = Router::new()

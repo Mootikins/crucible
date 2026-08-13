@@ -93,10 +93,15 @@ pub fn remote_shell_active(opted_in: bool, api_key_configured: bool) -> bool {
 }
 
 /// State for [`localhost_only_shell_auth`]: whether the loopback restriction
-/// is lifted (already fail-closed via [`remote_shell_active`]).
+/// is lifted (already fail-closed via [`remote_shell_active`]), plus what a
+/// credential must match once it is.
 #[derive(Clone)]
 pub struct ShellGateState {
     pub allow_remote: bool,
+    /// The configured API key, and the session store that mints tokens for it.
+    /// `None` when no key is configured, which also means `allow_remote` is
+    /// false (see [`remote_shell_active`]).
+    pub credentials: Option<super::ApiKeyState>,
 }
 
 /// Loopback-only gate on the shell and terminal routes, lifted only by the
@@ -105,16 +110,77 @@ pub struct ShellGateState {
 /// "Is the caller loopback?" is answered by [`caller_is_loopback`], the same
 /// function `bearer_auth` uses for its own bypass — this middleware used to
 /// answer it separately and the two disagreed about the same header.
+///
+/// **Loopback stops being a free pass once `remote_shell` is on.** `bearer_auth`
+/// waves through any loopback caller, which is defensible for reading notes and
+/// indefensible for a PTY, because with the opt-in active the Host allow-list
+/// becomes the only thing standing between a rebound name and a shell: a
+/// browser fetching an allow-listed authority that resolves to 127.0.0.1
+/// arrives as a loopback caller, `enforce_host` marks it `HostVerified`, and the
+/// WebSocket Origin guard's `Origin == Host` shortcut then passes honestly.
+/// Verified before this change by asking for a PTY with no cookie and no key:
+/// `Host: <allow-listed>` returned 101.
+///
+/// Requiring a credential here costs one sign-in on the operator's own machine
+/// and removes the whole chain. A localhost-only server — `remote_shell` off,
+/// which is the default — is untouched, because there the loopback restriction
+/// is itself the defence and nothing outside the machine can reach these routes.
 pub async fn localhost_only_shell_auth(
     State(state): State<Arc<ShellGateState>>,
     request: Request<Body>,
     next: Next,
 ) -> Response {
-    if state.allow_remote || caller_is_loopback(&request) {
+    if !state.allow_remote {
+        // Opt-in off: loopback-only, exactly as before.
+        return if caller_is_loopback(&request) {
+            next.run(request).await
+        } else {
+            forbidden_response()
+        };
+    }
+    if shell_caller_is_authenticated(&state, &request) {
         next.run(request).await
     } else {
-        forbidden_response()
+        unauthenticated_shell_response()
     }
+}
+
+/// A Bearer header or a session cookie matching the configured key.
+///
+/// Deliberately re-checked here rather than delegating to `bearer_auth`: that
+/// layer's loopback bypass is the thing being closed, so consulting it would
+/// answer the wrong question.
+fn shell_caller_is_authenticated(state: &ShellGateState, request: &Request<Body>) -> bool {
+    let Some(creds) = &state.credentials else {
+        // `remote_shell_active` cannot be true without a key, so this is
+        // unreachable in practice — refuse rather than assume.
+        return false;
+    };
+    let Some(expected) = creds.api_key.as_deref() else {
+        return false;
+    };
+    let headers = request.headers();
+    let bearer_ok = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|h| h.strip_prefix("Bearer "))
+        .is_some_and(|token| super::verify_api_key(creds, token));
+    bearer_ok
+        || super::auth_cookie_values(headers).any(|token| creds.sessions.verify(token, expected))
+}
+
+fn unauthenticated_shell_response() -> Response {
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(json!({
+            "error": {
+                "code": StatusCode::UNAUTHORIZED.as_u16(),
+                "message": "Shell access requires the API key, including from localhost, \
+                            because `[web] remote_shell` is enabled",
+            }
+        })),
+    )
+        .into_response()
 }
 
 fn forbidden_response() -> Response {
@@ -205,7 +271,10 @@ mod tests {
         let terminal = Router::new()
             .route("/api/terminal/ws", get(|| async { "pty" }))
             .layer(middleware::from_fn_with_state(
-                Arc::new(ShellGateState { allow_remote: true }),
+                Arc::new(ShellGateState {
+                    allow_remote: true,
+                    credentials: Some((*key_state).clone()),
+                }),
                 localhost_only_shell_auth,
             ))
             .layer(middleware::from_fn_with_state(
@@ -278,8 +347,19 @@ mod tests {
 
     // --- Localhost shell auth tests ---
 
+    /// The gate alone. `allow_remote` true means it demands a credential, so the
+    /// helper supplies the key state it checks against.
     fn shell_router(allow_remote: bool) -> Router {
-        let state = Arc::new(ShellGateState { allow_remote });
+        let state = Arc::new(ShellGateState {
+            allow_remote,
+            credentials: allow_remote.then(|| {
+                crate::middleware::auth::ApiKeyState::new_at(
+                    Some("secret-key".to_string()),
+                    crate::middleware::auth::HostPolicy::from_bind("127.0.0.1", 3000, &[]),
+                    None,
+                )
+            }),
+        });
         Router::new()
             .route("/shell/run", get(|| async { "ok" }))
             .layer(middleware::from_fn_with_state(
@@ -327,15 +407,60 @@ mod tests {
 
     // --- Remote shell opt-in ([web] remote_shell) ---
 
+    /// `shell_req` plus a valid Bearer token.
+    fn authed_shell_req(ip: [u8; 4]) -> Request<Body> {
+        let mut req = shell_req(ip);
+        req.headers_mut().insert(
+            "authorization",
+            HeaderValue::from_static("Bearer secret-key"),
+        );
+        req
+    }
+
     #[tokio::test]
-    async fn remote_shell_gate_allows_non_localhost_when_active() {
-        // bearer_auth (layered separately in the real router) still gates
-        // the request — this middleware only lifts the loopback restriction.
+    async fn remote_shell_gate_admits_a_credentialled_non_localhost_caller() {
         let response = shell_router(true)
-            .oneshot(shell_req([10, 0, 0, 8]))
+            .oneshot(authed_shell_req([10, 0, 0, 8]))
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn remote_shell_gate_refuses_an_uncredentialled_caller_even_from_loopback() {
+        // The hole this closes, and the reason this gate stopped deferring to
+        // `bearer_auth`: that layer waves loopback callers through, which is
+        // fine for reading notes and not for a PTY. A browser at an
+        // allow-listed name that resolves to 127.0.0.1 arrives AS a loopback
+        // caller, `enforce_host` stamps it `HostVerified`, and the WebSocket
+        // Origin guard's `Origin == Host` shortcut then passes honestly — so
+        // before this, `Host: <allow-listed>` with no cookie and no key
+        // returned 101 and a shell.
+        for ip in [[127, 0, 0, 1], [10, 0, 0, 8]] {
+            let status = shell_router(true)
+                .oneshot(shell_req(ip))
+                .await
+                .unwrap()
+                .status();
+            assert_eq!(
+                status,
+                StatusCode::UNAUTHORIZED,
+                "{ip:?} must not reach a PTY without a credential"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn loopback_keeps_its_free_pass_while_the_opt_in_is_off() {
+        // The default posture is untouched: with `remote_shell` off, the
+        // loopback restriction IS the defence and nothing off-box can reach
+        // these routes, so requiring a key would be friction for no gain.
+        let status = shell_router(false)
+            .oneshot(shell_req([127, 0, 0, 1]))
+            .await
+            .unwrap()
+            .status();
+        assert_eq!(status, StatusCode::OK);
     }
 
     #[test]

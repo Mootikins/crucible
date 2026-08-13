@@ -84,6 +84,10 @@ pub async fn start_server(
     }
     let shell_gate = Arc::new(ShellGateState {
         allow_remote: state.remote_shell,
+        // Carried so the gate can demand a credential of its own. It cannot
+        // defer to `bearer_auth`: that layer waves loopback callers through,
+        // and closing exactly that hole for the PTY is the point.
+        credentials: state.remote_shell.then(|| (*api_key_state).clone()),
     });
 
     // API routes get Bearer auth + shell gets an additional localhost-only
