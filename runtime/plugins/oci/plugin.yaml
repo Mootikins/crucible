@@ -1,6 +1,11 @@
 name: oci
 version: "0.2.0"
 description: Run agent workspace tools inside OCI containers
+author: Crucible Team
+license: MIT
+
+main: init.lua
+
 capabilities:
   - shell
   - config

@@ -1,5 +1,5 @@
 name: todo-list
-version: "1.0.0"
+version: "1.1.0"
 description: Task management with TASKS.md format
 author: Crucible Contributors
 license: MIT
@@ -9,6 +9,8 @@ main: init.lua
 capabilities:
   - filesystem
   - kiln
+  # `setup(cfg)` reads the `[plugins.todo-list]` section below.
+  - config
 
 exports:
   tools:
@@ -20,11 +22,16 @@ exports:
     - /tasks
   auto_discover: false
 
+# Documentation of record: `PluginManifest` has no `config` field, so nothing
+# parses this block. `init.lua`'s `setup(cfg)` is what applies these; the
+# defaults are duplicated there because that is where resolution happens.
 config:
   properties:
     default_file:
       type: string
-      description: Default tasks file path
+      description: >-
+        Default tasks file. A relative path resolves against the kiln root
+        (falling back to the workspace); an absolute path is used as given.
       default: "TASKS.md"
     show_completed:
       type: boolean

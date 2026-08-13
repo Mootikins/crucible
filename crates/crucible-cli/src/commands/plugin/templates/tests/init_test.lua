@@ -1,8 +1,12 @@
 --- Tests for {{name}} plugin
 
+-- The plugin is required by its DIRECTORY NAME, never by `init`: the test
+-- runner's package.path mirrors the daemon loader's, which exposes a plugin
+-- as `<plugins-parent>/?/init.lua`.
 describe("{{name}}", function()
-    local plugin = require("init")
-    
+    local plugin = require("{{name}}")
+
+
     it("should greet with default greeting", function()
         local result = plugin.tools.greet.fn({ name = "Alice" })
         assert.equal(result.message, "Hello, Alice!")

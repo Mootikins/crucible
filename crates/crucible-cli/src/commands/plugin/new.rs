@@ -108,6 +108,65 @@ mod tests {
         );
     }
 
+    /// The scaffolded suite must require the plugin by its DIRECTORY NAME.
+    ///
+    /// It required `"init"`, which resolves against nothing: the test runner
+    /// mirrors the daemon loader's `package.path`, and that exposes a plugin as
+    /// `<plugins-parent>/?/init.lua`. So every plugin `cru plugin new` had ever
+    /// produced shipped with a test file that could not load — "0 passed, 0
+    /// failed, 1 test file(s) failed to load" — which is the first thing a new
+    /// plugin author runs.
+    #[test]
+    fn the_scaffolded_test_requires_the_plugin_by_its_directory_name() {
+        let rendered = TEMPLATE_TESTS_INIT.replace("{{name}}", "my-widget");
+
+        assert!(
+            rendered.contains(r#"require("my-widget")"#),
+            "the suite must require the plugin by directory name, got:\n{rendered}"
+        );
+        assert!(
+            !rendered.contains(r#"require("init")"#),
+            "require(\"init\") resolves against nothing in the test runner"
+        );
+    }
+
+    /// The scaffolded plugin must not lead with constructs the loader ignores.
+    ///
+    /// The template returned `hooks = { on_session_start = ... }`, but the spec
+    /// parser's recognised fields are name/version/tools/commands/handlers/
+    /// views/setup (`crucible-lua/src/lifecycle/spec.rs`), so the hook never
+    /// fired. Its `-- @tool` / `-- @param` doc comments were decorative in the
+    /// same way: annotations are not discovered.
+    #[test]
+    fn the_scaffolded_plugin_uses_only_constructs_the_loader_honours() {
+        let rendered = TEMPLATE_INIT_LUA.replace("{{name}}", "my-widget");
+
+        // Anchored to a line start, not a bare substring: the template
+        // explains in prose why a `hooks = {...}` field does not work, and a
+        // substring check matches that explanation.
+        assert!(
+            !rendered
+                .lines()
+                .any(|line| line.trim_start().starts_with("hooks = {")),
+            "a `hooks` table is silently ignored by the spec parser"
+        );
+        assert!(
+            rendered.contains("crucible.on_session_start("),
+            "the template should show the registration that actually works"
+        );
+        // Anchored, for the same reason as above: the template names these
+        // constructs in prose to say they do nothing.
+        for annotation in ["@tool", "@param"] {
+            assert!(
+                !rendered.lines().any(|line| {
+                    let trimmed = line.trim_start();
+                    trimmed.starts_with("-- ") && trimmed[3..].trim_start().starts_with(annotation)
+                }),
+                "`{annotation}` is not discovered; it must not look load-bearing"
+            );
+        }
+    }
+
     /// …and it must be the directory `cru plugin stubs` actually writes to.
     /// Two independent spellings of one path is how this breaks next.
     #[test]

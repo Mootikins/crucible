@@ -1,15 +1,15 @@
 ---
 title: graph view
-description: Example Fennel plugin that inspects a kiln's link graph through cru.kiln
+description: Fennel plugin that inspects a kiln's link graph through cru.kiln
 tags:
   - plugins
 ---
 
 # Graph View Plugin
 
-An example plugin, written in Fennel, that reads a kiln's link graph through
-`cru.kiln`. Its purpose is to show how the three graph functions behave and
-compose; it is small on purpose.
+Reads a kiln's link graph through `cru.kiln` — read-only, no tool here writes.
+Written in Fennel, and small on purpose: it doubles as the reference for how
+the three graph functions behave and compose.
 
 > **Status.** The tools and the `/graph` command work. The `graph` **view** is
 > declared but nothing renders it — spec-table views are parsed and counted and
@@ -20,11 +20,18 @@ compose; it is small on purpose.
 
 ## Installation
 
-```bash
-cp -r graph-view ~/.config/crucible/plugins/
-# or, to scope it to one kiln
-cp -r graph-view ~/your-kiln/plugins/
+None — `graph-view` ships with Crucible and is enabled by default:
+
+```toml
+# ~/.config/crucible/config.toml
+[plugins.graph-view]
+enabled = false   # the kill switch
+max_depth = 3     # default hops for graph_stats and /graph
 ```
+
+Config is the durable lever: editing the extracted `plugin.yaml` does not
+survive, because the runtime tree is re-stamped from the binary whenever the
+build changes.
 
 ## What it demonstrates
 

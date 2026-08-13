@@ -87,6 +87,19 @@ end
         return internal_error(req.id, e);
     }
 
+    // Make a Fennel plugin requirable by name, the way a Lua one already is.
+    //
+    // `package.path` has no `.fnl` templates and Lua has no Fennel searcher —
+    // the daemon compiles a plugin's `.fnl` main by path and never goes
+    // through `require` — so `(require :graph-view)` from that plugin's own
+    // suite failed with "module not found". A Fennel plugin was therefore
+    // untestable: the runner would compile its *test* files and then have no
+    // way to load the thing under test. Preloading the compiled main closes
+    // that without inventing a searcher the daemon does not have.
+    if let Err(e) = preload_fennel_main(&executor, &plugin_root) {
+        return internal_error(req.id, e);
+    }
+
     // Setup test mocks
     if let Err(e) = executor
         .lua()
@@ -229,6 +242,43 @@ end
     )
 }
 
+/// Put `<plugin_root>/init.fnl`, compiled, into `package.preload` under the
+/// plugin's directory name.
+///
+/// A no-op for a Lua plugin, or for a path that is a single file rather than a
+/// plugin directory. A compile error is returned rather than swallowed: a
+/// Fennel plugin whose main does not compile should fail the run loudly, not
+/// look like a plugin with no tests.
+fn preload_fennel_main(executor: &LuaExecutor, plugin_root: &Path) -> Result<()> {
+    let main = plugin_root.join("init.fnl");
+    if !main.is_file() {
+        return Ok(());
+    }
+    let Some(name) = plugin_root.file_name().and_then(|n| n.to_str()) else {
+        return Ok(());
+    };
+
+    let source = std::fs::read_to_string(&main)?;
+    let lua_source =
+        anyhow::Context::with_context(executor.compile_fennel_source(&source), || {
+            format!("compiling {}", main.display())
+        })?;
+
+    let chunk = executor
+        .lua()
+        .load(&lua_source)
+        .set_name(format!("@{}", main.display()))
+        .into_function()?;
+
+    let preload: mlua::Table = executor
+        .lua()
+        .globals()
+        .get::<mlua::Table>("package")?
+        .get("preload")?;
+    preload.set(name, chunk)?;
+    Ok(())
+}
+
 /// Discover test files in a plugin directory (files ending with _test.lua or _test.fnl)
 pub(super) fn discover_plugin_test_files(path: &Path) -> Result<Vec<PathBuf>> {
     if path.is_file() {
@@ -278,6 +328,16 @@ mod shipped_plugin_tests {
         ))
     }
 
+    /// Shipped plugins that deliberately have no Lua suite, and why.
+    ///
+    /// Empty, and that is the point: every shipped plugin is gated. The list
+    /// is the escape hatch that keeps
+    /// `every_shipped_plugin_with_a_suite_is_gated` usable — an experimental
+    /// plugin may sit in `runtime/plugins/` untested, but only by saying so
+    /// here, with a reason. Silence is what let `web-search` (148 assertions)
+    /// and `worktree` (42) go unrun by any in-process gate for months.
+    const NO_LUA_SUITE: &[(&str, &str)] = &[];
+
     fn run_plugin_tests(plugin_dir: &str) -> serde_json::Value {
         let req = Request {
             jsonrpc: "2.0".to_string(),
@@ -322,18 +382,25 @@ mod shipped_plugin_tests {
     /// same handler `cru plugin test` uses — no daemon, so it runs under
     /// nextest alongside everything else. Also exercises the package.path
     /// setup that lets `require("config")` resolve a plugin's lua/ submodule.
-    // Arms are listed explicitly rather than derived from the directory. A
-    // test used to assert the two matched, so a plugin could not sit in
-    // `runtime/plugins/` without joining CI — which also meant an
-    // experimental plugin could not exist in the tree at all before it was
-    // ready to ship. The tradeoff: adding an arm when a plugin graduates is
-    // now a manual step. `every_shipped_plugin_is_discovered` and
+    //
+    // Arms are listed explicitly so that a plugin can sit in `runtime/plugins/`
+    // while still experimental without being forced into CI. What makes that
+    // safe is `every_shipped_plugin_with_a_suite_is_gated` below: the omission
+    // has to be declared in `NO_LUA_SUITE` with a reason, so the list cannot
+    // drift behind the directory the way it did for `web-search` and
+    // `worktree`. `every_shipped_plugin_is_discovered` and
     // `every_shipped_plugin_executes` still walk the real directory, so a
     // broken plugin in the tree fails CI regardless of this list.
+    #[test_case("daily-notes")]
     #[test_case("discord")]
+    #[test_case("graph-view")]
     #[test_case("kiln-expert")]
     #[test_case("oci")]
     #[test_case("reflection")]
+    #[test_case("review")]
+    #[test_case("todo-list")]
+    #[test_case("web-search")]
+    #[test_case("worktree")]
     fn shipped_plugin_lua_suite_passes(plugin: &str) {
         let plugin_dir = shipped_plugins_dir().join(plugin);
         let result = run_plugin_tests(&plugin_dir.to_string_lossy());
@@ -355,6 +422,92 @@ mod shipped_plugin_tests {
             describe_failures(&result)
         );
         assert!(passed > 0, "{plugin}: expected passing assertions");
+    }
+
+    /// The arms of `shipped_plugin_lua_suite_passes`, read out of this file.
+    ///
+    /// Parsing the source is ugly, and it is still the only way to compare the
+    /// gated set against the directory: `#[test_case]` arms are consumed by a
+    /// proc macro and leave nothing to enumerate at runtime.
+    fn gated_plugins() -> Vec<String> {
+        let source = include_str!("lua_plugin_suite.rs");
+        let body = source
+            .split_once("fn shipped_plugin_lua_suite_passes")
+            .map(|(before, _)| before)
+            .expect("the gate function must exist");
+        body.lines()
+            .filter_map(|line| {
+                line.trim()
+                    .strip_prefix("#[test_case(\"")?
+                    .strip_suffix("\")]")
+                    .map(str::to_string)
+            })
+            .collect()
+    }
+
+    /// Every shipped plugin either has its suite gated or says why it does not.
+    ///
+    /// The gate that was missing. `shipped_plugin_lua_suite_passes` listed four
+    /// plugins while the directory held seven, so `web-search` (148 assertions)
+    /// and `worktree` (42) ran only under `just test plugins` — a heavier tier
+    /// needing a built binary and a live daemon — and nothing said so.
+    #[test]
+    fn every_shipped_plugin_with_a_suite_is_gated() {
+        let gated = gated_plugins();
+        assert!(!gated.is_empty(), "failed to parse the #[test_case] arms");
+
+        let mut ungated = Vec::new();
+        let mut stale_exemptions = Vec::new();
+
+        for entry in std::fs::read_dir(shipped_plugins_dir()).expect("runtime/plugins must exist") {
+            let path = entry.expect("readable dir entry").path();
+            if !path.is_dir() {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .expect("plugin dir name is UTF-8")
+                .to_string();
+
+            let has_suite = super::discover_plugin_test_files(&path)
+                .map(|files| !files.is_empty())
+                .unwrap_or(false);
+            let exempt = NO_LUA_SUITE.iter().any(|(n, _)| *n == name);
+            let is_gated = gated.contains(&name);
+
+            if has_suite && !is_gated && !exempt {
+                ungated.push(name);
+            } else if !has_suite && !exempt && !is_gated {
+                ungated.push(format!("{name} (no tests/ at all)"));
+            } else if exempt && has_suite {
+                stale_exemptions.push(name);
+            }
+        }
+
+        assert!(
+            ungated.is_empty(),
+            "these shipped plugins are not in the CI gate: {ungated:?}\n\
+             Add a #[test_case(\"<name>\")] arm to shipped_plugin_lua_suite_passes, \
+             or an entry to NO_LUA_SUITE saying why not."
+        );
+        assert!(
+            stale_exemptions.is_empty(),
+            "these plugins are in NO_LUA_SUITE but DO have a suite now: {stale_exemptions:?}\n\
+             Drop the exemption and add a #[test_case] arm."
+        );
+    }
+
+    /// No arm names a plugin that is no longer there — a stale arm fails with
+    /// "0 passed" and reads as a broken suite rather than a deleted plugin.
+    #[test]
+    fn every_gated_plugin_still_exists() {
+        for name in gated_plugins() {
+            assert!(
+                shipped_plugins_dir().join(&name).is_dir(),
+                "gate names '{name}', which is not a directory under runtime/plugins"
+            );
+        }
     }
 }
 

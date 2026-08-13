@@ -18,13 +18,21 @@ A journaling plugin for Crucible that creates and manages daily notes.
 
 ## Installation
 
-Copy this plugin to your Crucible plugins directory:
+None — `daily-notes` ships with Crucible and is enabled by default. To turn it
+off, or to point it somewhere other than `Journal/`:
 
-```bash
-cp -r daily-notes ~/.config/crucible/plugins/
-# or
-cp -r daily-notes ~/your-kiln/plugins/
+```toml
+# ~/.config/crucible/config.toml
+[plugins.daily-notes]
+enabled = false      # the kill switch
+folder = "Journal"   # relative to the KILN root; an absolute path is used as given
+template = ""        # a file whose {{date}} / {{title}} are substituted
+date_format = "%Y-%m-%d"
 ```
+
+Config is the durable lever: editing the extracted `plugin.yaml` does not
+survive, because the runtime tree is re-stamped from the binary whenever the
+build changes.
 
 ## Usage
 

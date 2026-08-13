@@ -191,20 +191,28 @@ fn test_active_plugins_iterator() {
     assert_eq!(active[0].name(), "active");
 }
 
+/// `PluginManager` loads the shipped tree: Lua and Fennel, tools, commands and
+/// views.
+///
+/// These three plugins used to live under `docs/plugins/` as "documentation
+/// examples" that CI did not run, which is how `graph-view` reached the tree
+/// with a `.fnl` main that had never executed in the daemon at all. They ship
+/// now, so this walks `runtime/plugins/` — the same directory
+/// `every_shipped_plugin_executes` drives through the real loader.
 #[test]
-fn test_load_example_plugins_from_docs() {
+fn test_load_shipped_plugins() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let plugins_dir = manifest_dir
         .parent()
         .unwrap()
         .parent()
         .unwrap()
-        .join("docs")
+        .join("runtime")
         .join("plugins");
 
     if !plugins_dir.exists() {
         panic!(
-            "Example plugins directory not found: {}",
+            "Shipped plugins directory not found: {}",
             plugins_dir.display()
         );
     }
@@ -214,7 +222,7 @@ fn test_load_example_plugins_from_docs() {
     let discovered = manager.discover().unwrap();
     assert!(
         discovered.len() >= 3,
-        "Expected at least 3 example plugins, found {}: {:?}",
+        "Expected at least 3 shipped plugins, found {}: {:?}",
         discovered.len(),
         discovered
     );

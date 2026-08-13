@@ -55,7 +55,13 @@ rmcp = { workspace = true }
 # The shipped `runtime/` tree, compiled into the binary. `debug-embed` keeps
 # debug and release builds on the same code path; `interpolate-folder-path`
 # lets the folder be named relative to this crate.
-rust-embed = { version = "8", features = ["interpolate-folder-path", "debug-embed"] }
+# `include-exclude` is what lets the embed skip `plugins/*/tests/**`; see the
+# BundledRuntime doc comment in src/runtime_roots.rs.
+rust-embed = { version = "8", features = [
+    "interpolate-folder-path",
+    "debug-embed",
+    "include-exclude",
+] }
 
 # Enhanced change detection dependencies
 parking_lot = "0.12"

@@ -34,8 +34,18 @@ use std::sync::OnceLock;
 /// machine's source path in debug builds, so the embedded route would only ever
 /// execute in release — and "works in dev, dead when installed" is the exact
 /// failure this module exists to end.
+///
+/// Plugin test suites are excluded. They were 297K of the tree's 617K — 48%,
+/// mostly `web-search`'s HTML and JSON provider fixtures — carried by every
+/// installed binary to no end: a suite is a development artifact, run from a
+/// checkout by `cru plugin test runtime/plugins/<name>` or by the
+/// `shipped_plugin_lua_suite_passes` gate, neither of which reads the extracted
+/// tree. The visible consequence is that `cru plugin test` against a *shipped*
+/// plugin on an installed Crucible reports "No test files found"; against a
+/// user's own plugin, which is what that command is for, nothing changes.
 #[derive(rust_embed::Embed)]
 #[folder = "$CARGO_MANIFEST_DIR/../../runtime"]
+#[exclude = "plugins/*/tests/**"]
 struct BundledRuntime;
 
 /// Runtime roots to try for a binary at `exe_dir`, highest priority first.
@@ -324,6 +334,39 @@ mod tests {
             include_str!("../../../runtime/defaults/init.lua"),
             "the extracted defaults must be the shipped defaults"
         );
+    }
+
+    /// Plugin test suites are excluded from the embed, and nothing else is.
+    ///
+    /// The suites were 297K of the tree's 617K, carried by every installed
+    /// binary for nothing. The second half of this test is the important half:
+    /// an over-broad exclude glob that also dropped `init.lua` would leave
+    /// every shipped plugin unloadable on an installed Crucible, and the size
+    /// win would look like a success.
+    #[test]
+    fn the_embed_carries_plugin_code_but_not_plugin_tests() {
+        let embedded: Vec<String> = BundledRuntime::iter().map(|p| p.to_string()).collect();
+        assert!(!embedded.is_empty(), "the embed must not be empty");
+
+        let tests: Vec<&String> = embedded.iter().filter(|p| p.contains("/tests/")).collect();
+        assert!(
+            tests.is_empty(),
+            "plugin test files must not be compiled into the binary: {tests:?}"
+        );
+
+        for required in [
+            "plugins/oci/init.lua",
+            "plugins/oci/plugin.yaml",
+            "plugins/oci/lua/container.lua",
+            "plugins/graph-view/init.fnl",
+            "plugins/web-search/lua/providers/ddg.lua",
+            "defaults/init.lua",
+        ] {
+            assert!(
+                embedded.iter().any(|p| p == required),
+                "the exclude glob dropped '{required}', which a shipped plugin needs"
+            );
+        }
     }
 
     /// A stale copy from an older build must not survive, and an up-to-date one

@@ -1,6 +1,7 @@
 ;;; graph-view — inspect a kiln's link graph from a plugin
 ;;;
-;;; An example. It exists to show what the three graph functions on `cru.kiln`
+;;; Read-only: every tool here reports on the graph and none of them writes.
+;;; It is also the reference for what the three graph functions on `cru.kiln`
 ;;; do and how they compose:
 ;;;
 ;;;   cru.kiln.outlinks(path)          one hop, forward

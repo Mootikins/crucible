@@ -837,6 +837,20 @@ end
         // Execute init.lua with eval_async — captures return value AND enables async Lua
         let source = std::fs::read_to_string(init_path)
             .map_err(|e| anyhow::anyhow!("read {}: {e}", init_path.display()))?;
+
+        // A `.fnl` main is compiled first. The discovery pass in `crucible-lua`
+        // already did this for its throwaway sandbox VM, so a Fennel plugin
+        // looked healthy right up to here and then died loading its own source
+        // as Lua ("syntax error near '-'", from the `;;;` header comment).
+        // No Fennel plugin had ever executed in the daemon.
+        let source = if init_path.extension().is_some_and(|ext| ext == "fnl") {
+            self.executor
+                .compile_fennel_source(&source)
+                .map_err(|e| anyhow::anyhow!("fennel compile {}: {e}", init_path.display()))?
+        } else {
+            source
+        };
+
         let return_val: mlua::Value = lua
             .load(&source)
             .set_name(init_path.to_string_lossy().as_ref())
@@ -1171,15 +1185,24 @@ end
 
 /// Build plugin search paths from config `runtimepath` + env vars + defaults.
 ///
-/// If `runtimepath` is non-empty, each entry's `plugins/` subdir is used as a
-/// Runtime source. Otherwise falls back to `CRUCIBLE_RUNTIME` env var and
-/// exe-relative detection.
+/// `runtimepath` entries **add to** the shipped runtime, they do not replace
+/// it: each entry's `plugins/` subdir is prepended ahead of the auto-detected
+/// roots, which are always searched. This mirrors Vim's `runtimepath`, where
+/// `$VIMRUNTIME` is always a member and a user appends to the list.
+///
+/// It used to be an either/or — a non-empty `runtimepath` skipped the
+/// auto-detected roots entirely — which made the one thing `runtimepath` is
+/// for unusable. Putting a kiln on it to pick up that kiln's plugins silently
+/// unloaded all ten bundled ones (`oci`, `review`, `web-search`, …), with the
+/// only evidence a `debug!` line naming what *was* added.
 ///
 /// `CRUCIBLE_PLUGIN_PATH` env var always prepends (highest priority).
 /// `~/.config/crucible/plugins/` is always included as User source.
 ///
 /// Paths are ordered by priority (highest first) — same-named plugins at
-/// higher-priority paths shadow lower-priority ones.
+/// higher-priority paths shadow lower-priority ones. A `runtimepath` entry
+/// therefore shadows a same-named bundled plugin, which is how you override
+/// one.
 pub fn daemon_plugin_paths(runtimepath: &[std::path::PathBuf]) -> Vec<(PathBuf, PluginSource)> {
     let mut paths = Vec::new();
 
@@ -1201,17 +1224,19 @@ pub fn daemon_plugin_paths(runtimepath: &[std::path::PathBuf]) -> Vec<(PathBuf, 
         ));
     }
 
-    // 3. Runtime paths — from config runtimepath or auto-detected
-    if !runtimepath.is_empty() {
-        for rtp in runtimepath {
-            let expanded = expand_tilde(rtp);
-            let plugins_dir = expanded.join("plugins");
-            if plugins_dir.exists() {
-                tracing::debug!("Adding runtimepath plugin dir: {:?}", plugins_dir);
-                paths.push((plugins_dir, PluginSource::Runtime));
-            }
+    // 3a. Configured runtimepath entries, ahead of the shipped runtime so they
+    // can shadow a bundled plugin by name. Additive — 3b still runs.
+    for rtp in runtimepath {
+        let expanded = expand_tilde(rtp);
+        let plugins_dir = expanded.join("plugins");
+        if plugins_dir.exists() {
+            tracing::debug!("Adding runtimepath plugin dir: {:?}", plugins_dir);
+            paths.push((plugins_dir, PluginSource::Runtime));
         }
-    } else {
+    }
+
+    // 3b. The shipped runtime, always searched.
+    {
         // Auto-detect: CRUCIBLE_RUNTIME env → exe-relative fallback
         if let Ok(runtime_base) = std::env::var("CRUCIBLE_RUNTIME") {
             let runtime_plugins = PathBuf::from(runtime_base).join("plugins");

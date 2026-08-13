@@ -1,5 +1,5 @@
 name: daily-notes
-version: "1.0.0"
+version: "1.1.0"
 description: Create and navigate daily notes
 author: Crucible Contributors
 license: MIT
@@ -9,6 +9,8 @@ main: init.lua
 capabilities:
   - filesystem
   - kiln
+  # `setup(cfg)` reads the `[plugins.daily-notes]` section below.
+  - config
 
 exports:
   tools:
@@ -19,11 +21,16 @@ exports:
     - /daily
   auto_discover: false
 
+# Documentation of record: `PluginManifest` has no `config` field, so nothing
+# parses this block. `init.lua`'s `setup(cfg)` is what applies these; the
+# defaults are duplicated there because that is where resolution happens.
 config:
   properties:
     folder:
       type: string
-      description: Folder for daily notes
+      description: >-
+        Folder for daily notes. Relative paths resolve against the kiln root
+        (falling back to the workspace); an absolute path is used as given.
       default: "Journal"
     template:
       type: string

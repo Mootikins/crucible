@@ -15,6 +15,10 @@ local function default_fixtures()
         graph = { notes = {}, outlinks = {}, backlinks = {}, neighbors = {} },
         http = { responses = {} },
         fs = { files = {}, dirs = {} },
+        -- Absolute by default: a plugin that resolves its files against the
+        -- kiln has to be testable without the assertion depending on where the
+        -- daemon happened to be started.
+        paths = { kiln = "/mock/kiln", workspace = "/mock/workspace", session = false, state = "/mock/state" },
         session = { temperature = 0.7, max_tokens = nil, model = "mock-model", mode = "act", thinking_budget = nil },
         sessions = { info = { kiln = "/mock/kiln" }, messages = {}, response_parts = {} },
     }
@@ -161,6 +165,51 @@ local function create_fs_mock(fixtures)
     }
 end
 
+--- `cru.paths` — mirrors `crucible-lua/src/paths.rs`, where each accessor
+--- RAISES when its path is not configured rather than returning nil. A plugin
+--- that pcalls `kiln()` and falls back to the workspace has to be exercised
+--- against that same shape, or the fallback runs first in production.
+---
+--- `false`, not `nil`, marks a path unconfigured: a Lua table cannot hold a nil
+--- value, so `test_mocks.setup({paths = {kiln = nil}})` is indistinguishable
+--- from passing no override and would silently leave the default in place.
+local function create_paths_mock(fixtures)
+    local f = fixtures.paths
+    local function accessor(name)
+        return function()
+            record_call("paths", name)
+            if f[name] == nil or f[name] == false then
+                error(name .. " path not configured")
+            end
+            return f[name]
+        end
+    end
+    return {
+        kiln = accessor("kiln"),
+        workspace = accessor("workspace"),
+        session = accessor("session"),
+        state = function(plugin)
+            record_call("paths", "state", plugin)
+            if not f.state then error("state path not configured") end
+            return f.state .. "/" .. plugin
+        end,
+        -- Matches PathBuf::push: an absolute component discards what preceded it.
+        join = function(...)
+            local parts = {}
+            for _, part in ipairs({ ... }) do
+                if type(part) == "string" and part ~= "" then
+                    if part:sub(1, 1) == "/" then
+                        parts = { (part:gsub("/+$", "")) }
+                    else
+                        table.insert(parts, (part:gsub("^/+", ""):gsub("/+$", "")))
+                    end
+                end
+            end
+            return (table.concat(parts, "/"))
+        end,
+    }
+end
+
 local function create_session_mock(fixtures)
     local state = {
         temperature = fixtures.session.temperature,
@@ -237,16 +286,20 @@ function test_mocks.setup(overrides)
     cru.graph = create_graph_mock(_fixtures)
     cru.http = create_http_mock(_fixtures)
     cru.fs = create_fs_mock(_fixtures)
+    cru.paths = create_paths_mock(_fixtures)
     cru.session = create_session_mock(_fixtures)
     cru.sessions = create_sessions_mock(_fixtures)
     http = cru.http
     fs = cru.fs
+    paths = cru.paths
     if crucible then
         crucible.kiln = cru.kiln
         crucible.graph = cru.graph
         crucible.http = cru.http
         crucible.fs = cru.fs
+        crucible.paths = cru.paths
         crucible.session = cru.session
+        crucible.sessions = cru.sessions
     end
 end
 

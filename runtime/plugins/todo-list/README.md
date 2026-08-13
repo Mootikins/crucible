@@ -19,13 +19,22 @@ A task management plugin for Crucible using the TASKS.md format.
 
 ## Installation
 
-Copy this plugin to your Crucible plugins directory:
+None — `todo-list` ships with Crucible and is enabled by default:
 
-```bash
-cp -r todo-list ~/.config/crucible/plugins/
-# or
-cp -r todo-list ~/your-kiln/plugins/
+```toml
+# ~/.config/crucible/config.toml
+[plugins.todo-list]
+enabled = false            # the kill switch
+default_file = "TASKS.md"  # relative to the KILN root; an absolute path is used as given
+show_completed = false
 ```
+
+Config is the durable lever: editing the extracted `plugin.yaml` does not
+survive, because the runtime tree is re-stamped from the binary whenever the
+build changes.
+
+Task **ids are positions in the file**, not positions in a listing. An id from
+`tasks_list { show_completed = false }` still means the same task.
 
 ## Usage
 

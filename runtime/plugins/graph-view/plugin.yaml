@@ -4,10 +4,12 @@ description: Inspect a kiln's link graph, in Fennel
 author: Crucible Team
 license: MIT
 
-# `kiln` for cru.kiln.*, `ui` for the (declared, not yet rendered) view.
+# `kiln` for cru.kiln.*, `ui` for the (declared, not yet rendered) view,
+# `config` because `setup(cfg)` reads `[plugins.graph-view] max_depth`.
 capabilities:
   - kiln
   - ui
+  - config
 
 main: init.fnl
 

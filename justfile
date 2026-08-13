@@ -228,9 +228,13 @@ lint what="all":
 # to something: `ci` builds every crate with its DEFAULT features, so `features`
 # covers what a non-default flag gates; nextest cannot execute doctests, so
 # `doc` covers the examples in doc comments (they had rotted to 62 failures
-# before it existed); and `plugins` runs the shipped Lua suites, because `oci`
-# decides which environment to build and whether config is trustworthy — a
-# regression there is a sandbox regression no Rust suite covers.
+# before it existed). The shipped Lua suites are NOT a tier of their own any
+# more: `oci` decides which environment to build and whether config is
+# trustworthy, so a regression there is a sandbox regression no Rust suite
+# covers — but `shipped_plugin_lua_suite_passes` now runs every plugin's suite
+# in-process under `test ci`, so `test plugins` was running them a second time
+# through a daemon for no added signal. It remains as a manual recipe for the
+# process-boundary path; see the comment on that arm.
 #
 # Anything unrecognised that starts with `-` is passed straight to nextest, so
 # `just test -p crucible-core -E 'test(parser)'` scopes a run without a recipe.
@@ -322,8 +326,20 @@ test tier="quick" *args:
             "$cru" plugin test "$1"
             ;;
         plugins)
+            # NOT in `just ci` — the nextest gate
+            # `shipped_plugin_lua_suite_passes` runs the same suites through the
+            # same handler, in-process, needing neither a built binary nor a
+            # live daemon, and `every_shipped_plugin_with_a_suite_is_gated`
+            # proves it covers every plugin that has one. What this recipe adds
+            # over that is the process boundary: `cru plugin test` -> RPC ->
+            # daemon. Worth running by hand when you touch that path.
+            #
+            # `.fnl` as well as `.lua`: the runner compiles Fennel suites, and a
+            # Fennel-only plugin (graph-view) was silently skipped by a
+            # Lua-only glob.
             for dir in runtime/plugins/*/; do
-                if compgen -G "${dir}tests/*.lua" > /dev/null; then
+                if compgen -G "${dir}tests/*.lua" > /dev/null \
+                    || compgen -G "${dir}tests/*.fnl" > /dev/null; then
                     echo "== ${dir}"
                     just test plugin "${dir%/}"
                 fi
@@ -444,7 +460,7 @@ web-test tier="e2e" *args:
 # unparseable `#[ignore]` reason before the tier derived from those reasons runs.
 #
 # Run every gate GitHub runs — do this before committing
-ci: (lint "all") (test "ci") (test "features") (test "doc") (test "plugins") (web-test "unit") (web-test "e2e") (web-test "live") (test "gated")
+ci: (lint "all") (test "ci") (test "features") (test "doc") (web-test "unit") (web-test "e2e") (web-test "live") (test "gated")
     @echo "CI checks passed!"
 
 # === Daemon & tooling ===
