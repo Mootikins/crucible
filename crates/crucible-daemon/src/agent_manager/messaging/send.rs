@@ -478,7 +478,20 @@ impl AgentManager {
         session_id: &str,
     ) -> Result<crucible_core::session::Session, AgentError> {
         if let Some(session) = self.session_manager.get_session(session_id) {
-            return Ok(session);
+            // Resident but ended: reached because `end_session` keeps the session
+            // in memory (see its comment — evicting there lost in-flight events).
+            // Route it through the same always-resumable path as a non-resident
+            // one, so sending to an ended session flips it back to Active instead
+            // of streaming a turn into something `session.list` calls finished.
+            if session.state != crucible_core::session::SessionState::Ended {
+                return Ok(session);
+            }
+            let revived = self
+                .session_manager
+                .resume_session_from_storage(session_id, &session.kiln)
+                .await?;
+            info!(session_id = %session_id, "Reactivated an ended session on send");
+            return Ok(revived);
         }
 
         // Not resident — revive from disk. Prefer the last-known kiln from the

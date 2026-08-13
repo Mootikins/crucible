@@ -393,6 +393,66 @@ async fn test_sweep_cleans_up_agent_state_for_archived_sessions() {
 /// The sweep must reach sessions that are only in storage (ended sessions
 /// are evicted from memory) — this was the gap that let hundreds of stale
 /// ended sessions accumulate in listings forever.
+/// The sweep is what frees an ended session now, so it has to actually collect
+/// one.
+///
+/// `end_session` deliberately leaves the session resident — evicting there
+/// dropped the turn's in-flight events — which means nothing reclaims it except
+/// this sweep. Without this test the retention has no proven upper bound: a
+/// candidate filter that skipped `Ended` would turn "resident until the sweep"
+/// into "resident forever" and no test would notice.
+#[tokio::test]
+async fn the_sweep_reclaims_a_stale_ended_session_that_is_still_resident() {
+    let tmp = TempDir::new().unwrap();
+    let home_dir = TempDir::new().unwrap();
+    let session_manager = SessionManager::new();
+    let subscription_manager = SubscriptionManager::new();
+
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+    session_manager
+        .update_last_activity(&session.id, Utc::now() - ChronoDuration::hours(80))
+        .await
+        .unwrap();
+    session_manager.end_session(&session.id).await.unwrap();
+    assert!(
+        session_manager.get_session(&session.id).is_some(),
+        "precondition: ending keeps the session resident"
+    );
+
+    let kiln_manager = KilnManager::new();
+    kiln_manager.open(tmp.path()).await.unwrap();
+    let archived = sweep_and_archive_stale_sessions(
+        &session_manager,
+        &kiln_manager,
+        &subscription_manager,
+        &sweep_test_agent_manager(),
+        72,
+        home_dir.path(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(archived, 1, "a stale ended session must be archived");
+    assert!(
+        session_manager.get_session(&session.id).is_none(),
+        "and evicted: the sweep is the only thing that frees it now"
+    );
+    let persisted = FileSessionStorage::new()
+        .load(&session.id, tmp.path())
+        .await
+        .unwrap();
+    assert!(persisted.archived);
+}
+
 #[tokio::test]
 async fn test_sweep_archives_stale_persisted_sessions_not_in_memory() {
     let tmp = TempDir::new().unwrap();
@@ -418,9 +478,14 @@ async fn test_sweep_archives_stale_persisted_sessions_not_in_memory() {
         .await
         .unwrap();
     session_manager.end_session(&session.id).await.unwrap();
+    // Ending no longer evicts (it dropped in-flight events); `remove_session` is
+    // the eviction verb, and evicting is what this test is about.
+    session_manager
+        .remove_session(&session.id)
+        .expect("an ended session may be evicted");
     assert!(
         session_manager.get_session(&session.id).is_none(),
-        "precondition: ended session must be evicted from memory"
+        "precondition: this test is about a session that is not in memory"
     );
 
     let kiln_manager = KilnManager::new();
@@ -815,4 +880,94 @@ async fn test_granular_recording_stops_on_session_end() {
     );
 
     server.shutdown().await;
+}
+
+/// The turn's last events arrive after `session.end` has already returned.
+///
+/// This is the flake that made `just test gated` red about one run in ten under
+/// CPU contention and never once in isolation: `end_session` used to evict the
+/// session from the in-memory map as soon as its RPC completed, and the persist
+/// task — one `await` behind — then found `get_session` empty and returned
+/// `Ok(())` without writing. The transcript came out missing whichever events had
+/// not been drained yet, so `cru session show` reported a turn that never
+/// grounded itself, and once the whole `session.jsonl` was absent.
+///
+/// Asserted at the seam rather than through a real turn, because the race is only
+/// reachable by timing: driving the daemon cannot pin it, and a test that needs
+/// load to fail is the flake again with extra steps. Ending the session first
+/// reproduces the *state* the race produced, deterministically.
+#[tokio::test]
+async fn an_event_that_arrives_after_the_session_ended_is_still_written() {
+    let tmp = TempDir::new().unwrap();
+    let sm = Arc::new(SessionManager::new());
+    let session = sm
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    sm.end_session(&session.id).await.unwrap();
+
+    let storage = FileSessionStorage::new();
+    let event = SessionEventMessage::new(
+        session.id.clone(),
+        "precognition_complete",
+        serde_json::json!({"notes_count": 1, "query_summary": "what is a kiln?"}),
+    );
+    persist_event(&event, &sm, &storage).await.unwrap();
+
+    let persisted = storage
+        .load_events(&session.id, tmp.path(), None, None)
+        .await
+        .unwrap();
+    let events: Vec<&str> = persisted
+        .iter()
+        .filter_map(|e| e["event"].as_str())
+        .collect();
+    assert!(
+        events.contains(&"precognition_complete"),
+        "a late event must still reach session.jsonl; got {events:?}"
+    );
+}
+
+/// …but only for a session this daemon can still account for. A deleted
+/// session's retained kiln is cleared, and re-creating its transcript from a
+/// straggling event would resurrect a file the user asked to be gone.
+#[tokio::test]
+async fn an_event_for_a_deleted_session_is_dropped_rather_than_recreating_it() {
+    let tmp = TempDir::new().unwrap();
+    let sm = Arc::new(SessionManager::new());
+    let session = sm
+        .create_session(
+            SessionType::Chat,
+            tmp.path().to_path_buf(),
+            None,
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+    sm.delete_session(&session.id, tmp.path()).await.unwrap();
+
+    let storage = FileSessionStorage::new();
+    let event = SessionEventMessage::new(
+        session.id.clone(),
+        "precognition_complete",
+        serde_json::json!({"notes_count": 1}),
+    );
+    persist_event(&event, &sm, &storage).await.unwrap();
+
+    let persisted = storage
+        .load_events(&session.id, tmp.path(), None, None)
+        .await
+        .unwrap();
+    assert!(
+        persisted.is_empty(),
+        "a deleted session must stay deleted; got {persisted:?}"
+    );
 }

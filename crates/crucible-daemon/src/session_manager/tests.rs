@@ -332,8 +332,14 @@ async fn test_end_session() {
     let ended = manager.end_session(&session_id).await.unwrap();
     assert_eq!(ended.state, SessionState::Ended);
 
-    // Session removed from memory after end
-    assert!(manager.get_session(&session_id).is_none());
+    // Resident, and Ended. Ending is a lifecycle transition, not an eviction:
+    // the persist task is still draining this session's last events when
+    // `session.end` returns, and evicting here dropped them (see `end_session`).
+    // Reclamation belongs to the archive sweep.
+    let resident = manager
+        .get_session(&session_id)
+        .expect("an ended session stays resident until the archive sweep reclaims it");
+    assert_eq!(resident.state, SessionState::Ended);
 }
 
 #[tokio::test]
@@ -352,13 +358,20 @@ async fn test_remove_session() {
         .unwrap();
     let session_id = session.id.clone();
 
+    // Eviction is refused while the session is live: a running turn's events
+    // would have nothing to resolve to.
     let err = manager.remove_session(&session_id).unwrap_err();
     assert!(matches!(err, SessionError::InvalidState { .. }));
 
     manager.end_session(&session_id).await.unwrap();
 
-    // end_session already removes from memory
+    // Ended and still resident, so this is the eviction that actually evicts —
+    // the one the archive sweep performs once the session has gone stale.
+    let removed = manager.remove_session(&session_id).unwrap();
+    assert_eq!(removed.state, SessionState::Ended);
     assert!(manager.get_session(&session_id).is_none());
+
+    // And it is not idempotent-by-accident: a second eviction has nothing to do.
     let err = manager.remove_session(&session_id).unwrap_err();
     assert!(matches!(err, SessionError::NotFound(_)));
 }
@@ -401,6 +414,14 @@ async fn test_counts() {
 
     manager.end_session(&session2.id).await.unwrap();
     assert_eq!(manager.active_count(), 0);
+    // Both are still resident — one Paused, one Ended — which is what
+    // `total_count`'s "including paused/ended" has always claimed. Ending is a
+    // lifecycle transition; eviction is `remove_session`'s job (and the archive
+    // sweep's), because evicting on end dropped the turn's in-flight events.
+    assert_eq!(manager.total_count(), 2);
+    manager
+        .remove_session(&session2.id)
+        .expect("an ended session may be evicted");
     assert_eq!(manager.total_count(), 1);
 }
 

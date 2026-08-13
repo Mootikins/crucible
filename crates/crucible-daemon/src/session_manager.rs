@@ -481,8 +481,32 @@ impl SessionManager {
 
         // Drop recording sender to trigger graceful writer shutdown
         self.recording_senders.remove(session_id);
-        self.sessions.remove(session_id);
-        info!(session_id = %session_id, "Session ended and removed from memory");
+
+        // The session STAYS resident. Ending is a lifecycle transition; evicting
+        // is cache reclamation, and doing the second here made the first lossy.
+        //
+        // `session.end` arrives microseconds after a turn's last events are
+        // broadcast, while the persist task is still draining them. Evicting on
+        // end meant those events resolved to no session, and `persist_event`
+        // answered `Ok(())` without writing — so a turn's transcript came out
+        // missing whichever events had not been drained yet: usually none,
+        // sometimes `precognition_complete` alone, and under load occasionally
+        // the entire `session.jsonl`. That was a one-in-ten flake in
+        // `just test gated` and unreproducible in isolation.
+        //
+        // Nothing today should emit an event for a session that is not resident,
+        // so the fix is to keep the invariant true rather than to teach the
+        // writer to tolerate breaking it. (An external trigger — a webhook, a
+        // POST — would be a *reason* to revive a session into memory, and when
+        // that exists it should revive it, not persist behind its back.)
+        //
+        // Reclamation is the archive sweep's job and already was: it archives
+        // sessions idle past `auto_archive_hours` (72h default, every 30min),
+        // `archive_session` evicts, and it refuses to touch a session with
+        // connected subscribers. `total_count`'s own doc has always said the map
+        // holds "paused/ended" sessions; the eviction here was added later, for
+        // memory growth, and contradicted it.
+        info!(session_id = %session_id, "Session ended");
         Ok(session)
     }
 

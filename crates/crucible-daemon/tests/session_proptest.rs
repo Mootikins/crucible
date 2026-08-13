@@ -99,20 +99,16 @@ async fn state_transitions_follow_rules_fuzz() {
                 );
             }
 
-            if expected_state == SessionState::Ended {
-                // end_session removes the session from memory
-                assert!(
-                    manager.get_session(&session.id).is_none(),
-                    "Ended session should be removed from memory"
-                );
-            } else {
-                let actual = manager.get_session(&session.id).unwrap();
-                assert_eq!(
-                    actual.state, expected_state,
-                    "State mismatch after {:?}: expected {:?}, got {:?}",
-                    op, expected_state, actual.state
-                );
-            }
+            // One rule for every state, `Ended` included. This used to fork:
+            // `Ended` was asserted as *absent* because ending evicted, so the
+            // fuzzer could not check the state it left behind and a wrong final
+            // state would have read as a correct disappearance.
+            let actual = manager.get_session(&session.id).unwrap();
+            assert_eq!(
+                actual.state, expected_state,
+                "State mismatch after {:?}: expected {:?}, got {:?}",
+                op, expected_state, actual.state
+            );
         }
     }
 }
@@ -156,10 +152,15 @@ async fn ended_sessions_reject_all_state_changes_fuzz() {
                 result
             );
 
-            // end_session removes the session from memory, so get_session returns None
-            assert!(
-                manager.get_session(&session.id).is_none(),
-                "Ended session should be removed from memory"
+            // Resident throughout, and never leaves `Ended`. This is what makes
+            // the assertion above meaningful: the ops are refused by the state
+            // machine, not by the session having disappeared. Ending used to
+            // evict, so every op errored with `NotFound` and the rejection of an
+            // *ended* session was never actually exercised.
+            assert_eq!(
+                manager.get_session(&session.id).map(|s| s.state),
+                Some(SessionState::Ended),
+                "Op {op:?} must leave the ended session resident and ended"
             );
         }
     }
@@ -265,15 +266,15 @@ async fn concurrent_different_ops_maintain_consistency() {
 
     let (_pause_result, _end_result) = tokio::join!(pause_handle, end_handle);
 
-    // end_session removes from memory, so get_session may return None if End won the race
-    match manager.get_session(&session_id) {
-        Some(s) => assert_eq!(
-            s.state,
-            SessionState::Paused,
-            "If session still in memory, it must be Paused (End removes it)"
-        ),
-        None => {
-            // End won the race and removed the session
-        }
-    }
+    // Both interleavings converge, and the session is resident either way now
+    // that ending does not evict. `persist_guard` serializes the two, so either
+    // End ran first and Pause was refused (`pause_session` demands `Active`), or
+    // Pause ran first and End accepted a `Paused` session. Ended, not Paused, and
+    // never absent — the previous version allowed `None` and so could not tell
+    // "End won" apart from "the session was lost".
+    assert_eq!(
+        manager.get_session(&session_id).map(|s| s.state),
+        Some(SessionState::Ended),
+        "whichever op won, the session must be resident and Ended"
+    );
 }

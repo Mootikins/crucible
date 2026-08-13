@@ -108,12 +108,30 @@ impl TestDaemon {
         for (k, v) in hermetic_env_pairs(temp_dir.path()) {
             daemon_cmd.env(k, v);
         }
+        // Diagnosing a daemon-side race means reading the daemon's own log, and
+        // these fixtures discard it. `CRUCIBLE_TEST_DAEMON_LOG=<dir>` writes each
+        // daemon's stderr to `<dir>/<pid>.log`; unset, nothing changes.
+        let log_sink = std::env::var_os("CRUCIBLE_TEST_DAEMON_LOG").map(|dir| {
+            let dir = PathBuf::from(dir);
+            fs::create_dir_all(&dir).expect("create daemon log dir");
+            dir
+        });
+        let stderr = match &log_sink {
+            Some(dir) => {
+                let path = dir.join(format!("daemon-{}.log", std::process::id()));
+                Stdio::from(fs::File::create(path).expect("create daemon log"))
+            }
+            None => Stdio::null(),
+        };
+        if log_sink.is_some() {
+            daemon_cmd.env("RUST_LOG", "warn,crucible_daemon=debug");
+        }
         let mut process = daemon_cmd
             .args(["--config", config_path.to_str().unwrap(), "daemon", "serve"])
             .env("CRUCIBLE_SOCKET", &socket_path)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(stderr)
             .spawn()
             .expect("failed to spawn cru daemon serve");
 

@@ -1113,12 +1113,16 @@ async fn send_revives_ended_session_from_storage() {
     // so the revived session reuses it.
     h.inject_streaming_agent(vec![script::text("revived"), script::done()]);
 
-    // End the session: dropped from the in-memory `sessions` map.
+    // End the session. It stays resident and Ended — `end_session` no longer
+    // evicts, because doing so dropped the turn's still-draining events (see
+    // `end_session`). So this exercises the resident-but-Ended path; the
+    // non-resident one is `send_revives_evicted_session_from_storage` below.
     let sm = h.agent_manager.session_manager().clone();
     sm.end_session(&h.session_id).await.unwrap();
-    assert!(
-        sm.get_session(&h.session_id).is_none(),
-        "ended session should be evicted from memory"
+    assert_eq!(
+        sm.get_session(&h.session_id).map(|s| s.state),
+        Some(crucible_core::session::SessionState::Ended),
+        "an ended session stays resident until the archive sweep reclaims it"
     );
 
     // Sending to the ended session transparently revives it and accepts the turn.
@@ -1135,6 +1139,47 @@ async fn send_revives_ended_session_from_storage() {
     );
 
     // The turn is really processed end-to-end.
+    let user_message = h.wait_for("user_message").await;
+    assert_eq!(user_message.data["content"], "hello again");
+    assert_eq!(user_message.data["message_id"], message_id);
+
+    let complete = h.wait_for("message_complete").await;
+    assert_eq!(complete.data["message_id"], message_id);
+    assert_eq!(complete.data["full_response"], "revived");
+}
+
+/// The same promise for a session that is genuinely gone from memory.
+///
+/// Reached in production by the archive sweep, which is the only thing that
+/// evicts now: `remove_session` is the eviction verb it uses, and it accepts only
+/// an already-`Ended` session. Kept as its own test because the resident path
+/// above no longer touches `resume_session_from_storage`, so without this the
+/// from-storage revive would be uncovered.
+#[tokio::test]
+async fn send_revives_evicted_session_from_storage() {
+    let mut h = ReactorTestHarness::new().await;
+    h.inject_streaming_agent(vec![script::text("revived"), script::done()]);
+
+    let sm = h.agent_manager.session_manager().clone();
+    sm.end_session(&h.session_id).await.unwrap();
+    sm.remove_session(&h.session_id)
+        .expect("an ended session may be evicted");
+    assert!(
+        sm.get_session(&h.session_id).is_none(),
+        "the point of this test is a session that is NOT resident"
+    );
+
+    let message_id = h.send("hello again").await;
+
+    let revived = sm
+        .get_session(&h.session_id)
+        .expect("session should be revived into memory on send");
+    assert_eq!(
+        revived.state,
+        crucible_core::session::SessionState::Active,
+        "revived session should be Active, not Ended"
+    );
+
     let user_message = h.wait_for("user_message").await;
     assert_eq!(user_message.data["content"], "hello again");
     assert_eq!(user_message.data["message_id"], message_id);
