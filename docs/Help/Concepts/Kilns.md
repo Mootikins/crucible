@@ -11,6 +11,35 @@ tags:
 
 A **kiln** is a directory of markdown files that Crucible treats as a connected knowledge base. Think of it like an Obsidian vault — a living collection of notes that grows and evolves over time. As you write, link, and converse, the knowledge graph deepens naturally. That growing graph is what gives your agents their memory.
 
+
+## Crucible's own documentation, as a kiln
+
+`Help/` and `Guides/` ship inside the `cru` binary and extract on first daemon
+start. They are offered as a kiln named `crucible-docs`, **lazy** — never
+opened, indexed or searched until you ask for it, so Crucible's documentation
+cannot turn up in results about your own notes.
+
+```bash
+cru kiln list                      # crucible-docs is listed, unopened
+cru session connect-kiln crucible-docs
+```
+
+It is a kiln rather than a bespoke help index because `docs/` already is one —
+the same markdown, wikilinks and frontmatter that build the website. One source
+of documented truth, read with the same tools as anything else.
+
+Point it somewhere else, or replace it, by naming it yourself:
+
+```toml
+[kilns.crucible-docs]
+path = "~/src/crucible/docs"
+lazy = true
+```
+
+`Meta/` — the roadmap, decision log and planning notes — is deliberately not
+included. It is maintainer material, and an agent answering "how do I configure
+this" should not be retrieving a roadmap that competes with the answer.
+
 ## What Makes a Kiln
 
 A kiln is simply a folder containing:

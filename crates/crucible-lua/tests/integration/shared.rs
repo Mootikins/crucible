@@ -1,12 +1,6 @@
 //! Shared helpers for integration tests.
 
 use std::path::Path;
-use tempfile::TempDir;
-
-/// Helper to create a temp dir with tool files
-pub(super) async fn setup_tool_dir() -> TempDir {
-    TempDir::new().unwrap()
-}
 
 pub(super) fn create_plugin_files(root: &Path, name: &str, init_source: &str, module_source: &str) {
     let plugin_dir = root.join(name);

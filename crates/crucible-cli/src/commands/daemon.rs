@@ -89,6 +89,16 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
             info!(root = %root.display(), "extracted the bundled runtime tree");
         }
 
+        // The help corpus, for the same packaging reason. It is a kiln, not a
+        // bespoke index — `docs/` already is one — and it is never mounted on
+        // its own: connect it when you want to ask Crucible about itself.
+        if let Some(docs) = crucible_core::bundled_docs::ensure_bundled_docs() {
+            info!(
+                docs = %docs.display(),
+                "extracted the bundled help corpus; connect it as a kiln to search it"
+            );
+        }
+
         let config = CliConfig::load(config_path.clone(), None, None)?;
         let (plugin_sections, plugin_watch) =
             crucible_daemon::daemon_plugins::split_plugins_config(&config.plugins);

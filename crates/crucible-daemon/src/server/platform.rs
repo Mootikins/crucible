@@ -10,18 +10,13 @@ pub(crate) async fn handle_mcp_start(
     let transport = optional_param!(req, "transport", as_str).unwrap_or("sse");
     let port = optional_param!(req, "port", as_u64).unwrap_or(3847) as u16;
     let no_just = optional_param!(req, "no_just", as_bool).unwrap_or(false);
-    let just_dir = optional_param!(req, "just_dir", as_str);
+    // `just_dir` is still accepted and ignored: it fed the annotation-scanned
+    // Lua tool discovery that `cru mcp` no longer does, and dropping the param
+    // would break callers that send it.
+    let _ = optional_param!(req, "just_dir", as_str);
 
     match mcp_mgr
-        .start(
-            km,
-            transport,
-            port,
-            kiln_path,
-            no_just,
-            just_dir,
-            plugin_tools,
-        )
+        .start(km, transport, port, kiln_path, no_just, plugin_tools)
         .await
     {
         Ok(result) => Response::success(req.id, result),

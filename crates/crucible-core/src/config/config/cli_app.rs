@@ -764,15 +764,39 @@ verbose = false
     }
 
     /// Returns the effective kilns map, synthesizing from `kiln_path` if `kilns` is empty.
+    ///
+    /// Also offers the bundled help corpus as `crucible-docs`, lazily, so
+    /// `cru kiln list` can show it and a user can connect it without knowing
+    /// the version-stamped path it extracts to. Lazy is the whole point: it is
+    /// never opened, indexed or searched until asked for, so Crucible's own
+    /// documentation cannot turn up in results about your notes.
+    ///
+    /// Injected here rather than into `self.kilns`, which
+    /// [`Self::resolved_default_kiln`] reads directly — an entry in that field
+    /// sorts alphabetically and `crucible-docs` would quietly become the
+    /// default kiln for anyone who had not named one. A user entry of the same
+    /// name wins, so this can be overridden or pointed at a checkout.
     pub fn resolved_kilns(&self) -> HashMap<String, crate::config::config::registry::KilnEntry> {
-        if !self.kilns.is_empty() {
-            return self.kilns.clone();
+        let mut map = if self.kilns.is_empty() {
+            let mut synthesized = HashMap::new();
+            synthesized.insert(
+                "default".to_string(),
+                crate::config::config::registry::KilnEntry::Path(self.kiln_path.clone()),
+            );
+            synthesized
+        } else {
+            self.kilns.clone()
+        };
+
+        if let Some(docs) = crate::bundled_docs::bundled_docs_dir() {
+            map.entry("crucible-docs".to_string()).or_insert(
+                crate::config::config::registry::KilnEntry::Config {
+                    path: docs,
+                    lazy: true,
+                },
+            );
         }
-        let mut map = HashMap::new();
-        map.insert(
-            "default".to_string(),
-            crate::config::config::registry::KilnEntry::Path(self.kiln_path.clone()),
-        );
+
         map
     }
 
@@ -822,6 +846,48 @@ verbose = false
 
 #[cfg(test)]
 mod tests {
+    /// The bundled help corpus is offered, lazily, and never becomes the
+    /// default kiln.
+    ///
+    /// `resolved_default_kiln` picks the first entry alphabetically when the
+    /// user has not named one, and `crucible-docs` sorts ahead of most names.
+    /// Injecting it into `self.kilns` rather than only into `resolved_kilns()`
+    /// would silently make Crucible's own documentation the kiln every new
+    /// session opens.
+    #[test]
+    fn the_bundled_docs_kiln_is_offered_lazily_and_is_never_the_default() {
+        let config = CliAppConfig::default();
+
+        let kilns = config.resolved_kilns();
+        let docs = kilns
+            .get("crucible-docs")
+            .expect("the help corpus should be offered");
+        assert!(docs.lazy(), "it must never open on its own");
+
+        assert_ne!(
+            config.resolved_default_kiln(),
+            "crucible-docs",
+            "the help corpus must not become the default kiln"
+        );
+    }
+
+    /// A user entry of the same name wins, so the corpus can be pointed at a
+    /// checkout or replaced outright.
+    #[test]
+    fn a_user_crucible_docs_entry_overrides_the_bundled_one() {
+        let mut config = CliAppConfig::default();
+        config.kilns.insert(
+            "crucible-docs".to_string(),
+            crate::config::config::registry::KilnEntry::Path(std::path::PathBuf::from("/my/docs")),
+        );
+
+        let kilns = config.resolved_kilns();
+        assert_eq!(
+            kilns["crucible-docs"].path(),
+            std::path::PathBuf::from("/my/docs")
+        );
+    }
+
     use super::*;
     use crate::test_support::EnvVarGuard;
 
@@ -1080,8 +1146,9 @@ default_kiln = "vault"
         let toml_str = r#"kiln_path = "~/vault""#;
         let config: CliAppConfig = toml::from_str(toml_str).unwrap();
         let resolved = config.resolved_kilns();
-        assert_eq!(resolved.len(), 1);
         assert_eq!(resolved["default"].path(), PathBuf::from("~/vault"));
+        // `crucible-docs` is also offered; it is lazy and never the default.
+        assert_eq!(config.resolved_default_kiln(), "default");
     }
 
     #[test]
@@ -1094,9 +1161,11 @@ docs = "~/docs"
 "#;
         let config: CliAppConfig = toml::from_str(toml_str).unwrap();
         let resolved = config.resolved_kilns();
-        assert_eq!(resolved.len(), 2);
         assert!(resolved.contains_key("vault"));
         assert!(resolved.contains_key("docs"));
+        // `kiln_path` is not synthesized into a "default" entry once `[kilns]`
+        // names any; the bundled help corpus is offered alongside.
+        assert!(!resolved.contains_key("default"));
     }
 
     #[test]

@@ -193,22 +193,62 @@ fn ensure_bundled_runtime_at(target: Option<PathBuf>, on_disk: &[PathBuf]) -> Op
 /// [`bundled_runtime`]'s path rather than by deletion here.
 pub fn write_bundled_runtime(target: &Path) -> std::io::Result<()> {
     let stamp = bundled_stamp();
-    let stamp_path = target.join(STAMP_FILE);
+    write_embedded_tree::<BundledRuntime>(target, &stamp)
+}
 
+/// Write an embedded tree to `target`, stamping it last.
+///
+/// Shared by the runtime tree and the bundled docs, which differ only in which
+/// `Embed` they carry. The stamp goes last on purpose: an interrupted
+/// extraction leaves none, so the next run redoes it rather than trusting a
+/// half-written tree.
+pub(crate) fn write_embedded_tree<E: rust_embed::RustEmbed>(
+    target: &Path,
+    stamp: &str,
+) -> std::io::Result<()> {
     std::fs::create_dir_all(target)?;
-    for path in BundledRuntime::iter() {
-        let file =
-            BundledRuntime::get(&path).expect("rust-embed only iterates paths it can also get");
+    for path in E::iter() {
+        let file = E::get(&path).expect("rust-embed only iterates paths it can also get");
         let dest = target.join(path.as_ref());
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)?;
         }
         std::fs::write(dest, file.data)?;
     }
+    std::fs::write(target.join(STAMP_FILE), stamp)
+}
 
-    // Last, so an interrupted extraction leaves no stamp and the next run
-    // redoes it rather than trusting a half-written tree.
-    std::fs::write(stamp_path, stamp)
+/// Identity of an embedded tree: this crate's version plus a hash of content.
+///
+/// The version alone is not enough — an unreleased rebuild changes the files
+/// without changing the version, and a stamp that cannot see that would serve
+/// the previous build's content out of a directory named for the current one.
+pub(crate) fn embedded_stamp<E: rust_embed::RustEmbed>() -> String {
+    let mut hasher = blake3::Hasher::new();
+    // `iter()` yields in a stable order, but hashing is order-sensitive and a
+    // reordering would read as a content change; sort so the stamp tracks the
+    // files rather than the crate's iteration.
+    let mut paths: Vec<_> = E::iter().collect();
+    paths.sort();
+    for path in paths {
+        hasher.update(path.as_bytes());
+        if let Some(file) = E::get(&path) {
+            hasher.update(&file.data);
+        }
+    }
+    format!(
+        "{} {}",
+        env!("CARGO_PKG_VERSION"),
+        hasher.finalize().to_hex()
+    )
+}
+
+/// Name of the marker file recording which build wrote a tree.
+pub(crate) const STAMP_FILE: &str = ".stamp";
+
+/// Identity of the compiled-in runtime tree.
+fn bundled_stamp() -> String {
+    embedded_stamp::<BundledRuntime>()
 }
 
 /// Make `target` hold this build's tree, writing only if it does not already.
@@ -222,34 +262,6 @@ pub fn sync_bundled_runtime(target: &Path) -> std::io::Result<()> {
         return Ok(());
     }
     write_bundled_runtime(target)
-}
-
-/// Name of the marker file recording which build wrote a tree.
-const STAMP_FILE: &str = ".stamp";
-
-/// Identity of the compiled-in tree: the version, plus a hash of the content.
-///
-/// The version alone is not enough — an unreleased rebuild changes the files
-/// without changing the version, and a stamp that cannot see that would serve
-/// the previous build's Lua out of a directory named for the current one.
-fn bundled_stamp() -> String {
-    let mut hasher = blake3::Hasher::new();
-    // `iter()` yields in a stable order, but hashing is order-sensitive and a
-    // reordering would read as a content change; sort so the stamp tracks the
-    // files rather than the crate's iteration.
-    let mut paths: Vec<_> = BundledRuntime::iter().collect();
-    paths.sort();
-    for path in paths {
-        hasher.update(path.as_bytes());
-        if let Some(file) = BundledRuntime::get(&path) {
-            hasher.update(&file.data);
-        }
-    }
-    format!(
-        "{} {}",
-        env!("CARGO_PKG_VERSION"),
-        hasher.finalize().to_hex()
-    )
 }
 
 #[cfg(test)]

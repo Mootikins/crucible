@@ -60,7 +60,6 @@ impl McpServerManager {
         port: u16,
         kiln_path: &str,
         no_just: bool,
-        just_dir: Option<&str>,
         plugin_tools: Option<Arc<crate::plugin_tools::PluginRegistry>>,
     ) -> Result<serde_json::Value, String> {
         let mut state = self.state.lock().await;
@@ -99,7 +98,6 @@ impl McpServerManager {
         let server = if no_just {
             ExtendedMcpServer::kiln_only(kiln_path.to_string(), knowledge_repo, embedding_provider)
         } else {
-            let _ = just_dir;
             match ExtendedMcpServer::new(
                 kiln_path.to_string(),
                 knowledge_repo,
