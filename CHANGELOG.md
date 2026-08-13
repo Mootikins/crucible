@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **Web assets come from one place unless you say otherwise.** `cru web` served
+  its bundle from `web/dist` on disk in debug builds and from the embedded copy
+  in release ones, tying asset source to optimization level and baking the build
+  machine's absolute path into the binary — a moved binary pointed at nothing, or
+  at another checkout's stale `dist`. The embedded bundle is now the default in
+  every profile; `--static-dir` (or `[web] static_dir`) is how you serve a
+  directory from disk, in any profile. `just web` passes it for you.
+
 ## [0.24.0] - 2026-08-12
 
 The CLI stops lying. `cru stats -f csv` exited 0 and printed emoji prose;

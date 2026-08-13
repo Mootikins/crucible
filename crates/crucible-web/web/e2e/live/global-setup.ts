@@ -156,12 +156,29 @@ async function globalSetup(): Promise<void> {
     const port = await freePort();
     const baseURL = `http://127.0.0.1:${port}`;
     const logFd = openSync(path.join(tmpDir, 'web.log'), 'w');
-    child = spawn(cru, ['web', '--host', '127.0.0.1', '--port', String(port)], {
-      cwd: kilnDir,
-      env,
-      stdio: ['ignore', logFd, logFd],
-      detached: true,
-    });
+    // `--static-dir` is not optional: `cru web` otherwise serves the bundle
+    // rust-embed baked in at COMPILE time, and this tier builds `cru` before it
+    // builds `web/dist` — so a fresh checkout would boot a server with no
+    // assets, and an incremental run would serve the previous build. The flag
+    // points it at the dist this run just produced.
+    child = spawn(
+      cru,
+      [
+        'web',
+        '--host',
+        '127.0.0.1',
+        '--port',
+        String(port),
+        '--static-dir',
+        path.join(WEB_DIR, 'dist'),
+      ],
+      {
+        cwd: kilnDir,
+        env,
+        stdio: ['ignore', logFd, logFd],
+        detached: true,
+      },
+    );
     child.unref();
 
     const ready = await waitForHttp(`${baseURL}/api/config`, 60_000);

@@ -27,7 +27,9 @@ tokio = { workspace = true }
 tokio-stream = { workspace = true, features = ["sync"] }
 futures = { workspace = true }
 
-# Embedded frontend (web/dist) for release builds; debug serves from disk.
+# Embedded frontend (web/dist) — the default asset source in every profile;
+# `--static-dir` is the opt-out. No `debug-embed` here, but crucible-core enables
+# it and cargo unifies features, so any binary carrying both truly embeds.
 rust-embed = { version = "8", features = ["interpolate-folder-path"] }
 walkdir = "2.5"
 mime_guess = "2"

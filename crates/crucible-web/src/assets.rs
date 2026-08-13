@@ -1,8 +1,9 @@
-//! Static asset serving with conditional compilation
+//! Static asset serving
 //!
-//! - Release builds: assets embedded via rust-embed
-//! - Debug builds: served from filesystem
-//! - --web-dir flag overrides both
+//! Two sources, chosen by configuration and never by build profile:
+//!
+//! - default: the assets embedded in the binary via rust-embed
+//! - `--static-dir` (or `[web] static_dir`): serve that directory from disk
 
 use axum::{
     body::Body,
@@ -14,7 +15,7 @@ use axum::{
 use rust_embed::Embed;
 use tower_http::services::ServeDir;
 
-/// Embedded assets for release builds.
+/// Assets embedded into the binary — the only default source.
 ///
 /// `allow_missing` because `web/dist` is a build artifact of the frontend
 /// (bun), not a tracked file — so it is absent in a fresh clone. Without it
@@ -32,21 +33,30 @@ use tower_http::services::ServeDir;
 #[allow_missing = true]
 struct Assets;
 
-/// Create router for serving static assets
-pub fn static_routes(web_dir: Option<&str>) -> Router {
-    if let Some(dir) = web_dir {
-        // Explicit override: serve from specified directory
-        tracing::info!("Serving static assets from: {}", dir);
-        serve_from_dir(dir)
-    } else if cfg!(debug_assertions) {
-        // Debug mode: serve from filesystem
-        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/web/dist");
-        tracing::info!("Debug mode: serving static assets from: {}", dir);
-        serve_from_dir(dir)
-    } else {
-        // Release mode: serve embedded assets
-        tracing::info!("Release mode: serving embedded static assets");
-        serve_embedded()
+/// Create router for serving static assets.
+///
+/// The asset source is configuration, not build profile. There used to be a
+/// `cfg!(debug_assertions)` branch here that served
+/// `concat!(env!("CARGO_MANIFEST_DIR"), "/web/dist")` from disk, and it was
+/// wrong on four counts: it tied asset source to optimization level (no debug
+/// build could serve embedded assets, no release build could serve from disk);
+/// it baked the *build machine's* absolute path into the binary, so a moved
+/// binary pointed at nothing — or at another checkout's stale `dist`; it made
+/// "works in debug" divergence possible in the one layer the browser sees
+/// first; and it only announced which mode was live via `tracing::info!`, while
+/// `cru web` defaults to `LevelFilter::OFF` — so nothing told the operator which
+/// source was live. Nothing is lost either: `--static-dir` (and
+/// `[web] static_dir`) covers the disk case explicitly, in any profile.
+pub fn static_routes(static_dir: Option<&str>) -> Router {
+    match static_dir {
+        Some(dir) => {
+            tracing::info!("Serving static assets from: {}", dir);
+            serve_from_dir(dir)
+        }
+        None => {
+            tracing::info!("Serving embedded static assets");
+            serve_embedded()
+        }
     }
 }
 
@@ -67,7 +77,7 @@ fn serve_embedded() -> Router {
     if <Assets as Embed>::iter().next().is_none() {
         tracing::error!(
             "No embedded web assets: this binary was built without the frontend. \
-             Run `just web-build` and rebuild, or pass --web-dir to serve from a directory."
+             Run `just web-build` and rebuild, or pass --static-dir to serve from a directory."
         );
     }
     Router::new().fallback(embedded_handler)
@@ -120,10 +130,62 @@ fn respond_with_asset(path: &str, data: Vec<u8>) -> Response<Body> {
 
 #[cfg(test)]
 mod tests {
+    use super::static_routes;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+    };
+    use tower::ServiceExt;
+
+    async fn get(router: axum::Router, path: &str) -> (StatusCode, String) {
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri(path)
+                    .body(Body::empty())
+                    .expect("valid test request"),
+            )
+            .await
+            .expect("router is infallible");
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body collects");
+        (status, String::from_utf8_lossy(&bytes).into_owned())
+    }
+
+    /// An explicit directory wins: whatever is on disk there is what ships,
+    /// even for a name the embedded bundle also has.
+    #[tokio::test]
+    async fn explicit_static_dir_is_served_from_disk() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("index.html"), "<!-- from disk -->")
+            .expect("write fixture asset");
+
+        let router = static_routes(Some(dir.path().to_str().expect("utf-8 tempdir")));
+
+        let (status, body) = get(router, "/index.html").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, "<!-- from disk -->");
+    }
+
+    /// With no override the embedded handler serves every request — including
+    /// in a debug build, which this test binary is. Asserted through the 404
+    /// body because that is what distinguishes the two sources: the embedded
+    /// handler writes "Not Found", `ServeDir` returns an empty body. A
+    /// profile-dependent asset source would fail here.
+    #[tokio::test]
+    async fn default_uses_embedded_assets_in_any_build_profile() {
+        let (status, body) = get(static_routes(None), "/no-such-asset.xyz").await;
+
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body, "Not Found");
+    }
+
     /// PWA installability depends on the manifest and service worker being
     /// served with the right content types. Both the embedded path (above)
-    /// and the debug-mode `ServeDir` path resolve via mime_guess, so pin the
-    /// resolutions here to catch a mime_guess regression on upgrade.
+    /// and the `--static-dir` `ServeDir` path resolve via mime_guess, so pin
+    /// the resolutions here to catch a mime_guess regression on upgrade.
     #[test]
     fn pwa_assets_resolve_to_correct_mime_types() {
         let manifest = mime_guess::from_path("manifest.webmanifest")

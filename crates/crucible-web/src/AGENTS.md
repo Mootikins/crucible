@@ -28,7 +28,7 @@ server's proxy pins port 3000.
 - `crates/crucible-web/web/` - SolidJS frontend (`src/components/`, `src/contexts/`, `src/hooks/`, `src/lib/`; `dist/` is gitignored build output)
 - `crates/crucible-web/src/` - Rust backend (Axum server)
   - `server.rs` - Axum server config
-  - `assets.rs` - Static asset serving (rust-embed folder is `web/dist` relative to the cli crate)
+  - `assets.rs` - Static asset serving: embedded `web/dist` (rust-embed, path relative to this crate) in every build profile, or `--static-dir`/`[web] static_dir` to serve a directory from disk instead
   - `routes/` - REST/SSE route handlers
   - `services/` - Daemon RPC client wrapper
 

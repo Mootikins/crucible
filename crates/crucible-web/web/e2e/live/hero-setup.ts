@@ -175,9 +175,14 @@ async function globalSetup(): Promise<void> {
     const port = await freePort();
     const baseURL = `http://127.0.0.1:${port}`;
     const logFd = openSync(path.join(tmpDir, 'web.log'), 'w');
-    child = spawn(cru, ['web', '--host', '127.0.0.1', '--port', String(port)], {
-      cwd: kilnDir, env, stdio: ['ignore', logFd, logFd], detached: true,
-    });
+    // `--static-dir`: see global-setup — the embedded bundle is baked at
+    // compile time, and this tier builds `cru` before `web/dist`.
+    child = spawn(
+      cru,
+      ['web', '--host', '127.0.0.1', '--port', String(port),
+       '--static-dir', path.join(WEB_DIR, 'dist')],
+      { cwd: kilnDir, env, stdio: ['ignore', logFd, logFd], detached: true },
+    );
     child.unref();
 
     const ready = await waitForHttp(`${baseURL}/api/config`, 60_000);

@@ -348,6 +348,11 @@ test tier="quick" *args:
 # address a LAN client reaches it by works with no configuration — those
 # clients authenticate with the key from `cru web key`.
 #
+# `--static-dir` is what makes the frontend rebuild above take effect: the
+# binary's own assets are embedded at COMPILE time, so without the flag a
+# `bun run build` would change nothing until the Rust crate was rebuilt too.
+# Serving `dist/` from disk is a dev choice, not a build-profile one.
+#
 # For frontend hot reload, run `bun run dev` in crates/crucible-web/web
 # alongside this. Its proxy is hardcoded to localhost:3000, so changing the
 # port here leaves that dev server's /api pointing at nothing.
@@ -379,8 +384,9 @@ web-build pwa="on":
 #   dev server sends none of those headers. It builds `cru` and `web/dist`
 #   rather than skipping without them: the suite skips *green* when the binary
 #   is absent, so as a CI gate an unbuilt `cru` would report success while
-#   asserting nothing. Debug `cru` reads `web/dist` from disk (rust-embed has
-#   no `debug-embed`), so both are prerequisites.
+#   asserting nothing. Both are prerequisites: the setup starts `cru web` with
+#   `--static-dir <web>/dist`, because rust-embed bakes the bundle in at COMPILE
+#   time and `cru` is built here before the frontend is.
 # - `hero` — the cross-surface flow (TUI -> web -> TUI, one session), made
 #   deterministic by a fake Ollama server.
 #
