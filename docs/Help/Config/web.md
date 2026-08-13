@@ -215,11 +215,18 @@ be dropped with one `tracing::warn!` line, which meant a `*.example.com` entry p
 - a bare `.`, or a dot with nothing usable after it (`..example.com`, `.:3000`);
 - an address as a suffix (`.192.168.0.1`) — suffix matching is for names, so this could never
   match anything;
-- a **public suffix**: any single-label suffix (`.com`, `.io`, `.local`, `.internal`) plus a
-  short list of multi-label ones with the same property — `.co.uk`, `.github.io`,
-  `.trycloudflare.com`, `.ngrok.io` and similar shared apexes. Vite's docs put it plainly:
-  "you should never add Top-Level Domains like .com to the list." A domain you control under
-  one of them (`.crucible.co.uk`) is fine.
+- a **public suffix**: any single-label suffix (`.com`, `.io`, `.local`, `.internal`), plus a
+  **best-effort** list of multi-label shared apexes — `.co.uk`, `.github.io`,
+  `.trycloudflare.com`, `.ngrok.io` and the like. Vite's docs put it plainly: "you should never
+  add Top-Level Domains like .com to the list." A domain you control under one of them
+  (`.crucible.co.uk`) is fine. The list is hand-written rather than the Public Suffix List, so
+  an apex missing from it is accepted — it narrows the mistake, it does not close the class;
+- **any suffix entry inside an undelegated namespace** — `.local`, `.internal`, `.home.arpa`,
+  `.lan`, `.corp`, `.intranet` — refused *at every depth*, so `.node7.local` is out, not just
+  `.local`. Nobody owns a subtree there: whoever answers the query owns the name while they
+  answer it, so a suffix entry admits any name any peer on the network cares to claim. Name the
+  machine exactly instead (`node7.local`, no leading dot), which is one authority rather than a
+  namespace.
 
 ## Project registration from the web UI
 

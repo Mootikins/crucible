@@ -177,33 +177,48 @@ fn parse_allowed_host(entry: &str) -> Result<AllowedHost, InvalidAllowedHost> {
 ///
 /// A single-label apex is a TLD — Vite's docs put it plainly: "you should never
 /// add Top-Level Domains like .com to the list" — and that rule alone catches
-/// `.com`, `.io`, `.local` and `.internal`. [`DENIED_SUFFIXES`] extends it to
-/// the multi-label apexes with the same property.
+/// `.com`, `.io`, `.local` and `.internal`. The two lists below extend it, and
+/// they are checked differently because they are unsafe for different reasons.
+///
+/// [`UNDELEGATED_SPACES`] is refused **at any depth**. Nobody owns a subtree of
+/// mDNS or `.internal`: whoever answers the query owns the name for as long as
+/// they answer it, so `.node7.local` is not "names under my machine" but "any
+/// name any LAN peer cares to claim". That is a rebinding vehicle — a peer
+/// answers `app.node7.local` with their own address, serves hostile script from
+/// it, then answers with this server's address, and the origin never changes.
+///
+/// [`SHARED_APEXES`] is refused **only as the apex itself**, because there the
+/// sub-name genuinely is yours: `.myapp.trycloudflare.com` is your tunnel, while
+/// bare `.trycloudflare.com` hands the next subdomain along to a stranger.
 fn is_public_suffix(apex: &str) -> bool {
-    !apex.contains('.') || DENIED_SUFFIXES.contains(&apex)
+    !apex.contains('.')
+        || SHARED_APEXES.contains(&apex)
+        || UNDELEGATED_SPACES
+            .iter()
+            .any(|space| apex == *space || apex.ends_with(&format!(".{space}")))
 }
 
-/// Multi-label apexes refused for the same reason a TLD is.
+/// Namespaces with no ownership at all, refused at every depth.
+const UNDELEGATED_SPACES: &[&str] = &["local", "internal", "home.arpa", "intranet", "lan", "corp"];
+
+/// Multi-label apexes refused for the same reason a TLD is: the label to the
+/// left of them belongs to whoever registered it, which is not necessarily you.
 ///
-/// Deliberately a short hand-written list and not the Public Suffix List: a
-/// weekly-changing dependency is out of proportion to catching a config
-/// mistake, and the single-label rule above already covers every real TLD. What
-/// is left is what an operator here would plausibly type — names any peer on
-/// the network can claim, and the shared apexes of the tunnels this project
-/// documents, where the next subdomain along belongs to a stranger.
-///
-/// `local` and `internal` are listed even though the single-label rule already
-/// refuses them, because a reader checking whether mDNS names are covered looks
-/// at this list.
-const DENIED_SUFFIXES: &[&str] = &[
-    "local",
-    "internal",
-    "home.arpa",
+/// Deliberately a short hand-written list and **best-effort**, not the Public
+/// Suffix List: a weekly-changing dependency is out of proportion to catching a
+/// config mistake, and the single-label rule above already covers every real
+/// TLD. What is left is what an operator here would plausibly type — the shared
+/// apexes of the tunnels and hosts this project documents. An apex missing from
+/// this list is accepted, so the check narrows the mistake rather than closing
+/// the class.
+const SHARED_APEXES: &[&str] = &[
     "trycloudflare.com",
     "ngrok.io",
     "ngrok.app",
     "ngrok-free.app",
+    "ngrok-free.dev",
     "loca.lt",
+    "serveo.net",
     "github.io",
     "pages.dev",
     "workers.dev",
@@ -211,7 +226,15 @@ const DENIED_SUFFIXES: &[&str] = &[
     "netlify.app",
     "herokuapp.com",
     "onrender.com",
+    "fly.dev",
+    "railway.app",
+    "azurewebsites.net",
+    "s3.amazonaws.com",
     "co.uk",
+    "org.uk",
+    "ac.uk",
+    "me.uk",
+    "gov.uk",
     "com.au",
     "co.jp",
     "co.nz",
@@ -1006,13 +1029,44 @@ mod tests {
         }
 
         // …while a domain someone actually controls under one of them is fine.
-        let policy = policy_for_bind(
-            "127.0.0.1",
-            3000,
-            &[".crucible.co.uk".to_string(), ".node7.local".to_string()],
-            &[],
-        );
+        let policy = policy_for_bind("127.0.0.1", 3000, &[".crucible.co.uk".to_string()], &[]);
         assert!(policy.accepts_authority("app.crucible.co.uk"));
-        assert!(policy.accepts_authority("app.node7.local"));
+    }
+
+    #[test]
+    fn a_suffix_entry_inside_an_undelegated_namespace_refuses_to_start() {
+        // A registered domain gets you a subtree; mDNS and `.internal` do not.
+        // Whoever answers the query owns the name while they answer it, so
+        // `.node7.local` reads as "under my machine" and means "any name any LAN
+        // peer claims" — which is the rebinding vehicle the allow-list exists to
+        // refuse. Depth changes nothing about who may answer.
+        for entry in [
+            ".node7.local",
+            ".deep.node7.local",
+            ".svc.internal",
+            ".box.home.arpa",
+        ] {
+            let err = HostPolicy::from_bind_with_local_names(
+                "127.0.0.1",
+                3000,
+                &[entry.to_string()],
+                &[],
+            )
+            .expect_err(entry);
+            assert_eq!(
+                err,
+                InvalidAllowedHost::PublicSuffix {
+                    entry: entry.to_string()
+                },
+                "{entry} must be refused however deep it sits"
+            );
+        }
+
+        // The EXACT form stays available, and is the one to use: it names a
+        // single authority instead of a namespace, and the real host already
+        // holds that name against mDNS conflict resolution.
+        let policy = policy_for_bind("0.0.0.0", 3000, &["node7.local".to_string()], &[]);
+        assert!(policy.accepts_authority("node7.local:3000"));
+        assert!(!policy.accepts_authority("evil.node7.local:3000"));
     }
 }
