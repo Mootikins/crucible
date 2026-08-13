@@ -35,18 +35,17 @@ struct Assets;
 
 /// Create router for serving static assets.
 ///
-/// The asset source is configuration, not build profile. There used to be a
-/// `cfg!(debug_assertions)` branch here that served
-/// `concat!(env!("CARGO_MANIFEST_DIR"), "/web/dist")` from disk, and it was
-/// wrong on four counts: it tied asset source to optimization level (no debug
-/// build could serve embedded assets, no release build could serve from disk);
-/// it baked the *build machine's* absolute path into the binary, so a moved
-/// binary pointed at nothing — or at another checkout's stale `dist`; it made
-/// "works in debug" divergence possible in the one layer the browser sees
-/// first; and it only announced which mode was live via `tracing::info!`, while
-/// `cru web` defaults to `LevelFilter::OFF` — so nothing told the operator which
-/// source was live. Nothing is lost either: `--static-dir` (and
-/// `[web] static_dir`) covers the disk case explicitly, in any profile.
+/// The asset source is configuration, not build profile: embedded by default in
+/// every profile, and `--static-dir` (or `[web] static_dir`) to serve a
+/// directory. A `cfg!(debug_assertions)` branch used to decide it instead, which
+/// tied asset source to optimization level and baked the build machine's
+/// absolute `web/dist` into the binary. See the CHANGELOG entry for the rest.
+///
+/// The two sources are not quite equivalent: the embedded handler falls back to
+/// `index.html` for extension-less paths and `ServeDir` does not, so a deep link
+/// 404s under `--static-dir` and works on the default. Harmless while the app is
+/// one document at `/` — but if client-side routing ever lands, this is the one
+/// place dev and production would diverge again, in the opposite direction.
 pub fn static_routes(static_dir: Option<&str>) -> Router {
     match static_dir {
         Some(dir) => {

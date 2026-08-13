@@ -146,20 +146,21 @@ export const FileTreeView: Component<FileTreeViewProps> = (props) => {
    * Non-mouse pointerdown is zag's long-press path, and needs the same routing.
    */
   const attachContextRouter = (el: HTMLElement) => {
-    el.addEventListener(
-      'contextmenu',
-      (e) => {
-        if (shouldUseNativeMenu(e) || !routeToRow(e)) e.stopPropagation();
-      },
-      { capture: true },
-    );
-    el.addEventListener(
-      'pointerdown',
-      (e) => {
-        if (e.pointerType !== 'mouse' && !routeToRow(e)) e.stopPropagation();
-      },
-      { capture: true },
-    );
+    const onContextMenu = (e: MouseEvent) => {
+      if (shouldUseNativeMenu(e) || !routeToRow(e)) e.stopPropagation();
+    };
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.pointerType !== 'mouse' && !routeToRow(e)) e.stopPropagation();
+    };
+    el.addEventListener('contextmenu', onContextMenu, { capture: true });
+    el.addEventListener('pointerdown', onPointerDown, { capture: true });
+    // Not a leak either way — these live on the element and die with it — but
+    // the sibling ref helper above cleans up, and one of two neighbours doing it
+    // reads as an oversight in whichever one you notice second.
+    onCleanup(() => {
+      el.removeEventListener('contextmenu', onContextMenu, { capture: true });
+      el.removeEventListener('pointerdown', onPointerDown, { capture: true });
+    });
   };
 
   return (

@@ -51,14 +51,15 @@ pub struct HostPolicy {
 /// honoured or it stops the server.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum InvalidAllowedHost {
+    /// Covers the bare `.` too, which names nothing after its dot. That had its
+    /// own variant, reachable for exactly that one input and handled — like
+    /// every variant here — by `server.rs` stringifying it; YAGNI says the
+    /// message can carry the distinction instead of the type.
     #[error(
         "[web] allowed_hosts entry {entry:?} is not a `host`, `host:port`, or `.suffix` entry \
-         — a glob like `*.example.com` is spelled `.example.com`"
+         — a glob like `*.example.com` is spelled `.example.com`, and a lone `.` names nothing"
     )]
     Unparseable { entry: String },
-
-    #[error("[web] allowed_hosts entry {entry:?} names nothing after its leading dot")]
-    NoSuffix { entry: String },
 
     #[error(
         "[web] allowed_hosts entry {entry:?} is a public suffix — it would answer to every \
@@ -150,9 +151,7 @@ fn parse_allowed_host(entry: &str) -> Result<AllowedHost, InvalidAllowedHost> {
             .ok_or_else(unparseable);
     };
     if after_dot.is_empty() {
-        return Err(InvalidAllowedHost::NoSuffix {
-            entry: entry.to_string(),
-        });
+        return Err(unparseable());
     }
     let canonical = normalize_authority(after_dot).ok_or_else(unparseable)?;
     let (apex, port) = split_canonical(&canonical);
@@ -365,10 +364,19 @@ impl HostPolicy {
     ///
     /// Excludes the open-ended rules — "any IP literal on the bind port" from a
     /// wildcard bind, and any `.example.com` suffix entry — because those sets
-    /// are unbounded and cannot be enumerated. That costs the CORS list
-    /// nothing: a suffix entry describes a proxied or tunnelled deployment,
-    /// which the browser sees as *same*-origin, so CORS is never consulted for
-    /// it (see `build_cross_origin_allowlist`).
+    /// are unbounded and cannot be enumerated. Usually that costs nothing: a
+    /// suffix entry describes a proxied or tunnelled deployment, which the
+    /// browser sees as *same*-origin, so CORS is never consulted for it (see
+    /// `build_cross_origin_allowlist`).
+    ///
+    /// The exception is a proxy that does NOT rewrite `Host` — stock
+    /// `proxy_pass http://127.0.0.1:3000` without `proxy_set_header Host $host`
+    /// forwards `Host: 127.0.0.1:3000` while the browser sends
+    /// `Origin: https://app.example.com`. `websocket_origin_guard` then cannot
+    /// take its same-origin shortcut and falls back to this list, so migrating
+    /// an exact entry to `.example.com` can 403 the terminal upgrade. Keep the
+    /// exact entry alongside the suffix one, set `CRUCIBLE_CORS_ORIGINS`, or
+    /// (better) have the proxy forward the real `Host`.
     /// Exists so the CORS allow-list derives from the same source that decides
     /// `Host`: they were built independently, and a configured `allowed_hosts`
     /// entry passed the Host check while the CSP still blocked the terminal

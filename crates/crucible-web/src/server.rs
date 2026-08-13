@@ -29,9 +29,11 @@ pub async fn start_server(
     app_config: &CliAppConfig,
     standalone: bool,
 ) -> Result<()> {
-    // First, before the daemon is touched or a port is taken: a malformed
-    // `allowed_hosts` entry is a refusal to start, and the operator should get
-    // that on a machine that is otherwise exactly as they left it.
+    // First, before a port is taken: a malformed `allowed_hosts` entry is a
+    // refusal to start, and it should not cost the operator a bound port.
+    // Note it is NOT before the daemon is touched — `cru web`'s own handler
+    // calls `daemon_client()` (which auto-spawns one) and prints the banner
+    // before reaching here, so a refusal can still leave a daemon running.
     let host_policy =
         HostPolicy::from_web_config(web_config).map_err(|e| WebError::Config(e.to_string()))?;
 

@@ -348,8 +348,8 @@ test tier="quick" *args:
 # address a LAN client reaches it by works with no configuration — those
 # clients authenticate with the key from `cru web key`.
 #
-# `--static-dir` is what makes the frontend rebuild above take effect: the
-# binary's own assets are embedded at COMPILE time, so without the flag a
+# `--static-dir` is what makes this recipe's `web-build` dependency take effect:
+# the binary's own assets are embedded at COMPILE time, so without the flag a
 # `bun run build` would change nothing until the Rust crate was rebuilt too.
 # Serving `dist/` from disk is a dev choice, not a build-profile one.
 #
