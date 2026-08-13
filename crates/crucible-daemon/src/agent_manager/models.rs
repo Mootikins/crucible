@@ -55,6 +55,49 @@ impl AgentManager {
         (None, model_id.to_string())
     }
 
+    /// Refuse a model switch whose new provider is not cleared for a kiln the
+    /// session already has attached.
+    ///
+    /// The trust gate is attach-time by design — `tools/search.rs` passes
+    /// `provider_trust: None` on the strength of "connected kilns pass the
+    /// trust gate at attach time" (`server/session/scope.rs`). That holds only
+    /// while attach-time state stays valid, and switching the provider
+    /// invalidates it: attach a confidential kiln on a local model, switch to
+    /// a cloud one, and its notes become retrievable by a provider that was
+    /// never cleared for them.
+    ///
+    /// Refusing rather than detaching: dropping a kiln silently would lose
+    /// context the user is mid-conversation with, and the fix — detach, then
+    /// switch — is something only they can weigh.
+    fn refuse_switch_untrusted_for_attached_kilns(
+        &self,
+        session: &crucible_core::session::Session,
+        new_agent: &SessionAgent,
+    ) -> Result<(), AgentError> {
+        let trust =
+            crate::trust_resolution::resolve_provider_trust(new_agent, self.llm_config.as_ref());
+
+        let attached = std::iter::once(&session.kiln).chain(session.connected_kilns.iter());
+        for kiln in attached {
+            let Some(classification) =
+                crate::trust_resolution::find_workspace_and_resolve_classification(kiln)
+            else {
+                continue;
+            };
+            if trust.satisfies(classification) {
+                continue;
+            }
+            return Err(AgentError::InvalidConfig(format!(
+                "Provider trust level '{trust}' is insufficient for the attached kiln '{}' \
+                 (classification '{classification}'). Requires '{}' trust or higher. \
+                 Detach the kiln first if you want to switch.",
+                kiln.display(),
+                classification.required_trust_level()
+            )));
+        }
+        Ok(())
+    }
+
     pub async fn switch_model(
         &self,
         session_id: &str,
@@ -157,6 +200,8 @@ impl AgentManager {
             );
             agent_config.model = model_name;
         }
+
+        self.refuse_switch_untrusted_for_attached_kilns(&session, &agent_config)?;
 
         session.agent = Some(agent_config.clone());
 
