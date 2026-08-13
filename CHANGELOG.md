@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **`allowed_hosts` takes a `.domain` entry**, admitting the apex plus exactly one
+  label under it (`.crucible.example.com` covers `app.crucible.example.com`) — one
+  label rather than any depth, because a dangling NS record in a delegated subtree
+  is the primitive rebinding needs. A malformed entry now **stops the server**
+  instead of being dropped with one `warn` line, which is how a `*.example.com`
+  glob came to 403 from an allow-list that read as configured and behaved as
+  empty. Refused: globs, URLs, paths, an address as a suffix, a public suffix, and
+  any suffix inside a namespace with no ownership (`.local`, `.internal`,
+  `.home.arpa`) — mDNS has no delegation, so `.node7.local` admits whatever any
+  LAN peer cares to claim. Name the machine exactly (`node7.local`) instead.
+
+### Fixed
+- **The session cookie is marked `Secure` when a proxy terminated TLS for it.**
+  It never was, so an HTTPS deployment sent its session over a cookie a
+  downgrade attack could replay in cleartext. Conditional on the request rather
+  than unconditional, because a browser silently drops a `Secure` cookie that
+  arrives over `http://` — signing in would appear to work and leave you signed
+  out. Evidence is `X-Forwarded-Proto`'s leftmost hop, believed only from a
+  loopback peer, and every refusal to believe it is logged.
+- **Collapsing a folder in the file tree frees its rows.** ark-ui only set
+  `hidden` on branch content, so every folder ever opened stayed mounted for the
+  session and the tree re-ran prop getters across all of it on each expand or
+  select — the reason a large tree got slower the longer it was browsed.
+- **One context menu for the file tree instead of one per row.** Each row built
+  its own zag menu machine and portalled container, so a 1,000-row tree carried
+  1,000 of each.
+
 ### Changed
 - **Web assets come from one place unless you say otherwise.** `cru web` served
   its bundle from `web/dist` on disk in debug builds and from the embedded copy
