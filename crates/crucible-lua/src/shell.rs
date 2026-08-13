@@ -188,20 +188,24 @@ pub async fn spawn_command(
         // block stdout (or the reverse) — sequential draining deadlocks the
         // moment the other pipe's buffer fills.
         loop {
-            let out_next = async {
-                match out_reader.as_mut() {
-                    Some(r) => r.next_line().await,
-                    None => Ok(None),
-                }
-            };
-            let err_next = async {
-                match err_reader.as_mut() {
-                    Some(r) => r.next_line().await,
-                    None => Ok(None),
-                }
-            };
+            // Checked FIRST, because the branches below are disabled one by one
+            // as the streams end and `select!` panics with every branch disabled.
+            if out_reader.is_none() && err_reader.is_none() {
+                return Ok(());
+            }
+            // `if` preconditions, not `None => Ok(None)` arms. An exhausted
+            // reader used to leave a branch that completed INSTANTLY on every
+            // iteration, so once either stream hit EOF while the other was still
+            // open this loop stopped ever returning `Pending` — a hot spin. The
+            // timeout below then could not save it: on a current-thread runtime
+            // (`#[tokio::test]`, and any single-threaded caller) a task that
+            // never yields starves the timer driver that would fire it, so a
+            // `timeout_secs = 2` call ran until something killed it, burning a
+            // core. `select!` skips a disabled branch without evaluating its
+            // future, which is what makes the `expect`s below unreachable.
             tokio::select! {
-                line = out_next => match line {
+                line = async { out_reader.as_mut().expect("guarded by is_some").next_line().await },
+                    if out_reader.is_some() => match line {
                     Ok(Some(line)) => {
                         on_line("stdout", &line);
                         stdout_buf.push_str(&line);
@@ -210,7 +214,8 @@ pub async fn spawn_command(
                     Ok(None) => { out_reader = None; }
                     Err(e) => return Err(LuaError::Runtime(format!("stdout read failed: {e}"))),
                 },
-                line = err_next => match line {
+                line = async { err_reader.as_mut().expect("guarded by is_some").next_line().await },
+                    if err_reader.is_some() => match line {
                     Ok(Some(line)) => {
                         on_line("stderr", &line);
                         stderr_buf.push_str(&line);
@@ -219,9 +224,6 @@ pub async fn spawn_command(
                     Ok(None) => { err_reader = None; }
                     Err(e) => return Err(LuaError::Runtime(format!("stderr read failed: {e}"))),
                 },
-            }
-            if out_reader.is_none() && err_reader.is_none() {
-                return Ok(());
             }
         }
     };
@@ -766,5 +768,59 @@ mod tests {
 
         assert!(result.success);
         assert_eq!(result.stdout.trim(), "no-stdin");
+    }
+
+    /// A stream that ends while the other stays open must not spin the pump.
+    ///
+    /// The regression: once one reader hit EOF its `select!` branch completed
+    /// instantly on every iteration, so the pump never returned `Pending`. That
+    /// starved the timer driver on a current-thread runtime, so
+    /// `tokio::time::timeout(policy.timeout_secs, …)` could never fire and the
+    /// call ran until something else killed it — observed as a 120s nextest
+    /// timeout on an unrelated test in the same binary, with a core pegged.
+    ///
+    /// Driven from an OS thread with a std-channel deadline rather than
+    /// `#[tokio::test]` + `tokio::time::timeout`, because the bug's whole shape is
+    /// a starved runtime: an in-runtime deadline is exactly the thing that cannot
+    /// fire, so a regression would hang the suite instead of failing this test.
+    #[test]
+    fn a_stream_that_ends_early_does_not_spin_the_pump() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime");
+            // stdout closes immediately; stderr is held open by a sleep that far
+            // outlives the 1s policy timeout and never writes. So one reader is
+            // exhausted while the other is genuinely pending — the interleaving
+            // that used to spin.
+            let result = rt.block_on(spawn_command(
+                "sh",
+                &[
+                    "-c".to_string(),
+                    "echo done; exec 1>&-; sleep 60".to_string(),
+                ],
+                None,
+                None,
+                &ShellPolicy {
+                    blocked_commands: vec![],
+                    timeout_secs: 1,
+                    ..Default::default()
+                },
+                &mut |_stream, _line| {},
+            ));
+            let _ = tx.send(result.is_err());
+        });
+
+        let timed_out_at_the_policy_deadline =
+            rx.recv_timeout(std::time::Duration::from_secs(20)).expect(
+                "spawn_command never returned: the pump spun without yielding, so the policy \
+                 timeout could not fire",
+            );
+        assert!(
+            timed_out_at_the_policy_deadline,
+            "the call must end as a policy timeout, since the child outlives it"
+        );
     }
 }
