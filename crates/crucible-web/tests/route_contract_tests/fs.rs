@@ -36,7 +36,11 @@ async fn fs_list_returns_200_with_a_listing_envelope() {
     // listing to say so.
     let body = body_json(response).await;
     assert!(body["entries"].is_array(), "entries: {body}");
-    assert_eq!(body["truncated"], serde_json::json!(false), "truncated: {body}");
+    assert_eq!(
+        body["truncated"],
+        serde_json::json!(false),
+        "truncated: {body}"
+    );
 }
 
 #[tokio::test]

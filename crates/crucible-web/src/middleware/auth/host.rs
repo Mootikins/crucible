@@ -332,7 +332,10 @@ fn local_names_from(hostname: &str, canonical: Option<&str>) -> Vec<String> {
     if let Some(fqdn) = canonical
         .map(|c| c.trim().trim_end_matches('.').to_ascii_lowercase())
         .filter(|c| c != &host && !c.is_empty())
-        .filter(|c| c.strip_prefix(&format!("{host}.")).is_some_and(|d| !d.is_empty()))
+        .filter(|c| {
+            c.strip_prefix(&format!("{host}."))
+                .is_some_and(|d| !d.is_empty())
+        })
         .filter(|c| normalize_authority(c).is_some())
     {
         names.push(fqdn);
