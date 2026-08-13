@@ -220,6 +220,50 @@ describe('NotificationCenter — keyboard / backdrop', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  /** A bell-shaped anchor at the bottom-right, like the right ribbon's. */
+  function bellAt(x: number, y: number): HTMLElement {
+    const el = document.createElement('button');
+    document.body.appendChild(el);
+    // jsdom reports an all-zero rect, so the geometry has to be supplied.
+    vi.spyOn(el, 'getBoundingClientRect').mockReturnValue({
+      x, y, left: x, top: y, width: 40, height: 36,
+      right: x + 40, bottom: y + 36, toJSON: () => ({}),
+    } as DOMRect);
+    return el;
+  }
+
+  it('sits just above the bell rather than floating high', () => {
+    // The bug: placement came from `placeFlyout`, which aligns a submenu's TOP
+    // with its row and clamps using maxHeight — so a panel shorter than its cap
+    // ended up 265px above a bell at the bottom of the rail. Anchoring the
+    // BOTTOM pins it to the bell whatever the content height.
+    vi.stubGlobal('innerWidth', 1920);
+    vi.stubGlobal('innerHeight', 1080);
+    const anchor = bellAt(1880, 1044);
+
+    render(() => <NotificationCenter open={true} onClose={() => {}} anchor={anchor} />);
+    const panel = document.body.querySelector<HTMLElement>('[data-testid="notification-popout"]')!;
+
+    // 8px above the bell's top edge, expressed as a viewport-bottom offset.
+    expect(panel.style.bottom).toBe(`${1080 - 1044 + 8}px`);
+    // Flipped left of a rail that cannot hold 320px, and on screen.
+    expect(parseInt(panel.style.left, 10)).toBeLessThan(1880);
+    expect(parseInt(panel.style.left, 10)).toBeGreaterThanOrEqual(0);
+    // Capped by the room above the bell, not by a fixed 480.
+    expect(parseInt(panel.style.maxHeight, 10)).toBeLessThanOrEqual(1044 - 16);
+  });
+
+  it('does not call onClose when a click lands on the bell itself', () => {
+    // Portaled, `panelRef.parentElement` is the portal container, so a single
+    // containment check read a bell click as OUTSIDE — closing the popout just
+    // as the bell's own handler reopened it.
+    const onClose = vi.fn();
+    const anchor = bellAt(1880, 1044);
+    render(() => <NotificationCenter open={true} onClose={onClose} anchor={anchor} />);
+    fireEvent.mouseDown(anchor);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('does not call onClose when a child of the popout is clicked', () => {
     const onClose = vi.fn();
     mockState.notifications = [makeNotif({ message: 'child-click-target' })];

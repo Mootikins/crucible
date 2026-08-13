@@ -6,6 +6,9 @@ import type { Notification, NotificationType } from '@/lib/types';
 
 /** Fixed panel width — no measuring pass, so placement is a single sync call. */
 const PANEL_WIDTH = 320;
+/** Distance from the bell, and the minimum from a viewport edge. */
+const GAP = 8;
+const EDGE_MARGIN = 8;
 
 // ── Time grouping helpers ───────────────────────────────────────────────
 
@@ -135,19 +138,29 @@ export const NotificationCenter: Component<{
   anchor?: HTMLElement;
 }> = (props) => {
   const [visible, setVisible] = createSignal(false);
-  const [pos, setPos] = createSignal({ left: 0, top: 0, width: PANEL_WIDTH, maxHeight: 480 });
+  const [pos, setPos] = createSignal({ left: 0, bottom: 0, width: PANEL_WIDTH, maxHeight: 480 });
   let panelRef: HTMLDivElement | undefined;
 
   const place = () => {
     const anchor = props.anchor;
     if (!anchor) return;
-    setPos(
-      placeFlyout(
-        anchor.getBoundingClientRect(),
-        { width: window.innerWidth, height: window.innerHeight },
-        { width: PANEL_WIDTH, preferredHeight: Math.min(480, window.innerHeight * 0.7), gap: 8 },
-      ),
-    );
+    const rect = anchor.getBoundingClientRect();
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    // Horizontal placement is `placeFlyout`'s: it flips leftward when the right
+    // cannot hold 320px, which a 40px rail never can.
+    const { left } = placeFlyout(rect, viewport, { width: PANEL_WIDTH, gap: GAP });
+    // Vertical placement is NOT: `placeFlyout` aligns a submenu's TOP with its
+    // row and clamps with `maxHeight`, so a panel shorter than its cap floats
+    // high — measured 265px above a bell at the bottom of the rail. Anchoring
+    // the BOTTOM instead pins it just above the bell whatever its content
+    // height, with no measure-then-reposition pass.
+    setPos({
+      left,
+      bottom: Math.max(EDGE_MARGIN, viewport.height - rect.top + GAP),
+      width: PANEL_WIDTH,
+      // Never taller than the space between the top margin and the bell.
+      maxHeight: Math.max(120, Math.min(480, rect.top - GAP - EDGE_MARGIN)),
+    });
   };
 
   // Animate in/out
@@ -208,7 +221,7 @@ export const NotificationCenter: Component<{
           data-testid="notification-popout"
           style={{
             left: `${pos().left}px`,
-            top: `${pos().top}px`,
+            bottom: `${pos().bottom}px`,
             width: `${pos().width}px`,
             'max-height': `${pos().maxHeight}px`,
           }}
