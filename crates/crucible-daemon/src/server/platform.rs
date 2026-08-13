@@ -4,6 +4,7 @@ pub(crate) async fn handle_mcp_start(
     req: Request,
     km: &Arc<KilnManager>,
     mcp_mgr: &Arc<McpServerManager>,
+    plugin_tools: Option<Arc<crate::plugin_tools::PluginRegistry>>,
 ) -> Response {
     let kiln_path = require_param!(req, "kiln_path", as_str);
     let transport = optional_param!(req, "transport", as_str).unwrap_or("sse");
@@ -12,7 +13,15 @@ pub(crate) async fn handle_mcp_start(
     let just_dir = optional_param!(req, "just_dir", as_str);
 
     match mcp_mgr
-        .start(km, transport, port, kiln_path, no_just, just_dir)
+        .start(
+            km,
+            transport,
+            port,
+            kiln_path,
+            no_just,
+            just_dir,
+            plugin_tools,
+        )
         .await
     {
         Ok(result) => Response::success(req.id, result),

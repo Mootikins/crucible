@@ -24,19 +24,37 @@ Tools are functions that agents can call to interact with the world:
 
 ## Lua Tools
 
-Create tools using the Lua scripting language:
+A tool is declared in a plugin's spec table. There is one declaration form and
+one loader — see [[Help/Extending/Creating Plugins]].
 
 ```lua
--- tools/search_web.lua
+-- ~/.config/crucible/plugins/search-web/init.lua
 
---- Search the web for information
--- @tool name="search_web" description="Search the web for information"
--- @param query string "Search query"
-function search_web(args)
+local function search_web(args)
     local response = cru.http.get("https://api.search.com?q=" .. args.query)
     return { results = response.body }
 end
+
+return {
+    name = "search-web",
+    tools = {
+        search_web = {
+            desc = "Search the web for information",
+            params = { { name = "query", type = "string", desc = "Search query" } },
+            fn = search_web,
+        },
+    },
+}
 ```
+
+A tool declared this way is reachable from an internal agent and over `cru mcp`
+alike, because both serve the same plugin registry.
+
+> [!NOTE] `-- @tool` doc comments no longer declare anything
+> Earlier revisions showed an annotation form. Nothing parses it: a plugin that
+> returns a spec table has its exports read from that table and nothing else,
+> and the separate annotation loader that once fed `cru mcp` has been removed.
+> A tool declared only by a comment never reaches an agent.
 
 ## MCP Tools
 

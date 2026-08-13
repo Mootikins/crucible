@@ -75,7 +75,6 @@ mod paths;
 pub mod plugin_status;
 pub mod publications;
 mod ratelimit;
-mod registry;
 pub mod schedule;
 pub mod schema;
 pub mod session;
@@ -146,7 +145,6 @@ pub use lua_stdlib::register_lua_stdlib;
 pub use oil::{register_oil_module, LuaNode};
 pub use paths::{register_paths_module, PathsContext};
 pub use ratelimit::register_ratelimit_module;
-pub use registry::LuaToolRegistry;
 pub use schedule::register_schedule_module;
 pub use schema::{
     discovered_params_to_json_schema, generate_input_schema, type_to_string, FunctionSignature,

@@ -21,7 +21,7 @@ Crucible uses Lua for plugins, tools, and hooks. Fennel (a Lisp that compiles to
 | **Fennel** | Power users wanting macros | Lisp syntax, compiles to Lua |
 
 Both languages can:
-- Define MCP tools via annotations
+- Define tools in a plugin's spec table, served to agents and `cru mcp` alike
 - Register event hooks
 - Access the Crucible API (search, notes, graph)
 - Execute shell commands (with policy controls)

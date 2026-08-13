@@ -18,5 +18,3 @@ mod reload;
 mod shared;
 #[path = "integration/shell.rs"]
 mod shell;
-#[path = "integration/tools.rs"]
-mod tools;

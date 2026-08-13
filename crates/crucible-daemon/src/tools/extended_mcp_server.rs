@@ -27,21 +27,18 @@ use super::helpers::{make_server_info, text_success, McpResultExt};
 use super::mcp_gateway::McpGatewayManager;
 use super::toon_response::toon_success_smart;
 use super::CrucibleMcpServer;
-use crucible_core::discovery::DiscoveryPaths;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::events::{Reactor, ReactorEmitResult, SessionEvent};
 use crucible_core::traits::KnowledgeRepository;
-use crucible_lua::{LuaScriptHandlerRegistry, LuaToolRegistry};
 use rmcp::model::{CallToolResult, ContentBlock, Tool};
 use rmcp::service::RequestContext;
 use rmcp::ServerHandler;
 use serde_json::{json, Value};
 use std::borrow::Cow;
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 /// Extended MCP server exposing Crucible kiln tools plus Lua plugins.
 ///
@@ -55,7 +52,9 @@ use tracing::{debug, info, warn};
 /// Events are processed through the unified `Reactor` from crucible-core.
 pub struct ExtendedMcpServer {
     kiln_server: CrucibleMcpServer,
-    lua_registry: Arc<RwLock<LuaToolRegistry>>,
+    /// Tools contributed by loaded plugins — the same registry the agent
+    /// dispatches through, so `cru mcp` and an internal agent see one set.
+    plugin_tools: Option<Arc<crate::plugin_tools::PluginRegistry>>,
     reactor: Arc<RwLock<Reactor>>,
     /// Optional gateway for upstream MCP servers
     gateway: Option<Arc<RwLock<McpGatewayManager>>>,
@@ -70,12 +69,18 @@ pub struct ExtendedMcpServer {
     missing_docs
 )]
 impl ExtendedMcpServer {
-    /// Create a new extended MCP server with full plugin discovery.
+    /// Create a new extended MCP server.
+    ///
+    /// `plugin_tools` is the daemon's plugin registry — the same one the
+    /// internal agent dispatches through. `cru mcp` used to serve a *separate*
+    /// set, scraped out of `<kiln>/.crucible/plugins/*.lua` by `@tool` doc
+    /// comments, so the two surfaces advertised different tools from different
+    /// files by different rules. One registry now.
     pub async fn new(
         kiln_path: String,
         knowledge_repo: Arc<dyn KnowledgeRepository>,
         embedding_provider: Arc<dyn EmbeddingProvider>,
-        plugin_dir: impl AsRef<Path>,
+        plugin_tools: Option<Arc<crate::plugin_tools::PluginRegistry>>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let kiln_server = CrucibleMcpServer::new_with_delegation(
             kiln_path.clone(),
@@ -84,86 +89,13 @@ impl ExtendedMcpServer {
             None,
         );
 
-        let plugin_dir = plugin_dir.as_ref().to_path_buf();
-        let kiln_path_ref = Path::new(&kiln_path);
-
-        let lua_registry = {
-            let plugin_paths = DiscoveryPaths::new("plugins", Some(kiln_path_ref));
-            let existing_plugin_paths = plugin_paths.existing_paths();
-
-            match LuaToolRegistry::new() {
-                Ok(mut registry) => {
-                    for path in &existing_plugin_paths {
-                        if let Err(e) = registry.discover_from(path).await {
-                            warn!(
-                                "Failed to discover Lua tools from {}: {}",
-                                path.display(),
-                                e
-                            );
-                        } else {
-                            let count = registry.list_tools().len();
-                            if count > 0 {
-                                info!("Loaded {} Lua tools from {}", count, path.display());
-                            }
-                        }
-                    }
-                    if plugin_dir.exists()
-                        && !existing_plugin_paths.iter().any(|p| p == &plugin_dir)
-                    {
-                        if let Err(e) = registry.discover_from(&plugin_dir).await {
-                            warn!(
-                                "Failed to discover Lua tools from {}: {}",
-                                plugin_dir.display(),
-                                e
-                            );
-                        }
-                    }
-                    Arc::new(RwLock::new(registry))
-                }
-                Err(e) => {
-                    warn!("Failed to create Lua registry: {}", e);
-                    Arc::new(RwLock::new(
-                        LuaToolRegistry::new().expect("Lua registry must be creatable"),
-                    ))
-                }
-            }
-        };
-
-        let reactor = {
-            let mut reactor = Reactor::new();
-            let handler_paths = DiscoveryPaths::new("handlers", Some(kiln_path_ref));
-            let existing_handler_paths = handler_paths.existing_paths();
-
-            if !existing_handler_paths.is_empty() {
-                match LuaScriptHandlerRegistry::discover(&existing_handler_paths) {
-                    Ok(registry) => match registry.to_core_handlers() {
-                        Ok(handlers) => {
-                            let mut loaded = 0;
-                            for handler in handlers {
-                                let name = handler.name().to_string();
-                                if let Err(e) = reactor.register(handler) {
-                                    warn!("Failed to register Lua handler {}: {}", name, e);
-                                } else {
-                                    loaded += 1;
-                                    debug!("Registered Lua handler: {}", name);
-                                }
-                            }
-                            if loaded > 0 {
-                                info!("Loaded {} Lua handlers for MCP reactor", loaded);
-                            }
-                        }
-                        Err(e) => warn!("Failed to create core handlers from Lua: {}", e),
-                    },
-                    Err(e) => warn!("Failed to discover Lua handlers: {}", e),
-                }
-            }
-            Arc::new(RwLock::new(reactor))
-        };
-
         Ok(Self {
             kiln_server,
-            lua_registry,
-            reactor,
+            plugin_tools,
+            // Empty. Handlers used to be scanned out of the kiln here via
+            // `-- @handler` doc comments; a plugin's `crucible.on` is the one
+            // registration route now.
+            reactor: Arc::new(RwLock::new(Reactor::new())),
             gateway: None,
         })
     }
@@ -179,13 +111,9 @@ impl ExtendedMcpServer {
             embedding_provider,
             None,
         );
-        let lua_registry = Arc::new(RwLock::new(
-            LuaToolRegistry::new().expect("Failed to create Lua registry"),
-        ));
-
         Self {
             kiln_server,
-            lua_registry,
+            plugin_tools: None,
             reactor: Arc::new(RwLock::new(Reactor::new())),
             gateway: None,
         }
@@ -221,9 +149,10 @@ impl ExtendedMcpServer {
         let mut tools = self.kiln_server.list_tools();
         tools.extend(Self::discovery_tools());
 
-        let lua_registry = self.lua_registry.read().await;
-        for lua_tool in lua_registry.list_tools() {
-            tools.push(self.mcp_tool_from_lua(lua_tool));
+        if let Some(plugins) = &self.plugin_tools {
+            for def in plugins.tool_definitions() {
+                tools.push(Self::mcp_tool_from_plugin(&def));
+            }
         }
 
         if let Some(gw) = &self.gateway {
@@ -299,38 +228,26 @@ impl ExtendedMcpServer {
         ]
     }
 
-    fn mcp_tool_from_lua(&self, lt: &crucible_lua::LuaTool) -> Tool {
-        let schema = lt
-            .params
-            .iter()
-            .fold(serde_json::Map::new(), |mut map, param| {
-                let mut prop = serde_json::Map::new();
-                prop.insert("type".to_string(), json!(param.param_type));
-                if !param.description.is_empty() {
-                    prop.insert("description".to_string(), json!(param.description));
-                }
-                map.insert(param.name.clone(), Value::Object(prop));
-                map
-            });
-
-        let mut full_schema = serde_json::Map::new();
-        full_schema.insert("type".to_string(), json!("object"));
-        full_schema.insert("properties".to_string(), Value::Object(schema));
-
-        let required: Vec<_> = lt
-            .params
-            .iter()
-            .filter(|p| p.required)
-            .map(|p| p.name.clone())
-            .collect();
-        if !required.is_empty() {
-            full_schema.insert("required".to_string(), json!(required));
-        }
+    /// A plugin's `ToolDefinition` as an MCP `Tool`.
+    ///
+    /// The name is passed through unprefixed. The annotation path used to emit
+    /// `lua_<name>`, which meant the same tool was `greet` to an internal agent
+    /// and `lua_greet` over MCP.
+    fn mcp_tool_from_plugin(def: &crucible_core::traits::tools::ToolDefinition) -> Tool {
+        let schema = match &def.parameters {
+            Some(Value::Object(map)) => map.clone(),
+            _ => {
+                let mut empty = serde_json::Map::new();
+                empty.insert("type".to_string(), json!("object"));
+                empty.insert("properties".to_string(), json!({}));
+                empty
+            }
+        };
 
         Tool::new_with_raw(
-            Cow::Owned(format!("lua_{}", lt.name)),
-            Some(Cow::Owned(lt.description.clone())),
-            Arc::new(full_schema),
+            Cow::Owned(def.name.clone()),
+            Some(Cow::Owned(def.description.clone())),
+            Arc::new(schema),
         )
     }
 
@@ -352,7 +269,11 @@ impl ExtendedMcpServer {
     pub async fn tool_count(&self) -> usize {
         let kiln = self.kiln_server.tool_count();
         let discovery = Self::discovery_tools().len();
-        let lua = self.lua_registry.read().await.list_tools().len();
+        let lua = self
+            .plugin_tools
+            .as_ref()
+            .map(|p| p.tool_definitions().len())
+            .unwrap_or(0);
         let gateway = if let Some(gw) = &self.gateway {
             gw.read().await.tool_count()
         } else {
@@ -361,14 +282,10 @@ impl ExtendedMcpServer {
         kiln + discovery + lua + gateway
     }
 
-    #[must_use]
-    pub fn is_lua_tool(name: &str) -> bool {
-        name.starts_with("lua_")
-    }
-
     pub async fn has_lua_tool(&self, name: &str) -> bool {
-        let registry = self.lua_registry.read().await;
-        registry.get_tool(name).is_some()
+        self.plugin_tools
+            .as_ref()
+            .is_some_and(|p| p.tool_names().contains(name))
     }
 
     pub async fn call_lua_tool(
@@ -400,51 +317,44 @@ impl ExtendedMcpServer {
             _ => arguments,
         };
 
-        let registry = self.lua_registry.read().await;
-        match registry.execute(name, effective_args).await {
-            Ok(result) => {
-                if result.success {
-                    let result_text = serde_json::to_string(&result.content).unwrap_or_default();
+        let Some(plugins) = self.plugin_tools.clone() else {
+            return Err(rmcp::ErrorData::internal_error(
+                format!("No plugin registry available for tool '{name}'"),
+                None,
+            ));
+        };
 
-                    let post_event = SessionEvent::ToolCompleted {
-                        name: name.to_string(),
-                        result: result_text,
-                        error: None,
-                        terminate: false,
-                    };
-                    drop(registry);
-                    let (modified_result, _) = self.emit_event(post_event).await;
+        let executor = crate::plugin_tools::PluginToolExecutor::new(plugins);
+        let ctx = crucible_core::traits::tools::ExecutionContext::default();
+        let outcome = {
+            use crucible_core::traits::tools::ToolExecutor;
+            executor.execute_tool(name, effective_args, &ctx).await
+        };
 
-                    let final_content = match modified_result {
-                        SessionEvent::ToolCompleted { result: r, .. } => {
-                            serde_json::from_str(&r).unwrap_or(result.content)
-                        }
-                        _ => result.content,
-                    };
+        match outcome {
+            Ok(content) => {
+                let result_text = serde_json::to_string(&content).unwrap_or_default();
+                let post_event = SessionEvent::ToolCompleted {
+                    name: name.to_string(),
+                    result: result_text,
+                    error: None,
+                    terminate: false,
+                };
+                let (modified_result, _) = self.emit_event(post_event).await;
 
-                    match &final_content {
-                        Value::Object(_) | Value::Array(_) => Ok(toon_success_smart(final_content)),
-                        Value::String(s) => Ok(text_success(s.clone())),
-                        Value::Number(n) => Ok(text_success(n.to_string())),
-                        Value::Bool(b) => Ok(text_success(b.to_string())),
-                        Value::Null => Ok(CallToolResult::success(vec![])),
+                let final_content = match modified_result {
+                    SessionEvent::ToolCompleted { result: r, .. } => {
+                        serde_json::from_str(&r).unwrap_or(content)
                     }
-                } else {
-                    let error_msg = result.error.unwrap_or_else(|| "Unknown error".to_string());
+                    _ => content,
+                };
 
-                    let event = SessionEvent::ToolCompleted {
-                        name: name.to_string(),
-                        result: String::new(),
-                        error: Some(error_msg.clone()),
-                        terminate: false,
-                    };
-                    drop(registry);
-                    self.emit_event(event).await;
-
-                    Err(rmcp::ErrorData::internal_error(
-                        format!("Lua tool '{name}' failed: {error_msg}"),
-                        None,
-                    ))
+                match &final_content {
+                    Value::Object(_) | Value::Array(_) => Ok(toon_success_smart(final_content)),
+                    Value::String(s) => Ok(text_success(s.clone())),
+                    Value::Number(n) => Ok(text_success(n.to_string())),
+                    Value::Bool(b) => Ok(text_success(b.to_string())),
+                    Value::Null => Ok(CallToolResult::success(vec![])),
                 }
             }
             Err(e) => {
@@ -454,11 +364,10 @@ impl ExtendedMcpServer {
                     error: Some(e.to_string()),
                     terminate: false,
                 };
-                drop(registry);
                 self.emit_event(event).await;
 
                 Err(rmcp::ErrorData::internal_error(
-                    format!("Lua tool '{name}' failed: {e}"),
+                    format!("Plugin tool '{name}' failed: {e}"),
                     None,
                 ))
             }
@@ -663,7 +572,7 @@ impl ServerHandler for ExtendedMcpService {
 
         if self.inner.is_gateway_tool(name).await {
             self.inner.call_gateway_tool(name, arguments).await
-        } else if ExtendedMcpServer::is_lua_tool(name) || self.inner.has_lua_tool(name).await {
+        } else if self.inner.has_lua_tool(name).await {
             self.inner.call_lua_tool(name, arguments).await
         } else {
             self.inner.kiln_server.call_tool(request, context).await
@@ -732,7 +641,7 @@ mod tests {
             temp.path().to_str().unwrap().to_string(),
             knowledge_repo,
             embedding_provider,
-            temp.path(),
+            None,
         )
         .await
         .unwrap();
@@ -761,13 +670,22 @@ mod tests {
         assert_eq!(tools.len(), 16);
     }
 
-    #[test]
-    fn test_tool_name_routing() {
-        // Lua tools use lua_ prefix
-        assert!(ExtendedMcpServer::is_lua_tool("lua_summarize"));
-        assert!(ExtendedMcpServer::is_lua_tool("lua_transform"));
-        assert!(!ExtendedMcpServer::is_lua_tool("just_build"));
-        assert!(!ExtendedMcpServer::is_lua_tool("read_note"));
+    /// A plugin tool routes by registry membership, not by a name prefix.
+    ///
+    /// The annotation path published `lua_<name>`, so `is_lua_tool` sniffed
+    /// that prefix. Plugin tools carry the same name everywhere — the internal
+    /// agent's `greet` and MCP's `greet` are one tool — so membership is the
+    /// only test, and a server with no registry claims nothing.
+    #[tokio::test]
+    async fn a_server_without_a_plugin_registry_claims_no_plugin_tools() {
+        let temp = TempDir::new().unwrap();
+        let server = ExtendedMcpServer::kiln_only(
+            temp.path().to_str().unwrap().to_string(),
+            Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
+            Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
+        );
+        assert!(!server.has_lua_tool("greet").await);
+        assert!(!server.has_lua_tool("lua_greet").await);
     }
 
     #[test]

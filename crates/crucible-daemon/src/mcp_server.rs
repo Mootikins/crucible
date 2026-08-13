@@ -61,6 +61,7 @@ impl McpServerManager {
         kiln_path: &str,
         no_just: bool,
         just_dir: Option<&str>,
+        plugin_tools: Option<Arc<crate::plugin_tools::PluginRegistry>>,
     ) -> Result<serde_json::Value, String> {
         let mut state = self.state.lock().await;
 
@@ -98,14 +99,12 @@ impl McpServerManager {
         let server = if no_just {
             ExtendedMcpServer::kiln_only(kiln_path.to_string(), knowledge_repo, embedding_provider)
         } else {
-            let just_path = just_dir.map(std::path::PathBuf::from).unwrap_or_else(|| {
-                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
-            });
+            let _ = just_dir;
             match ExtendedMcpServer::new(
                 kiln_path.to_string(),
                 knowledge_repo,
                 embedding_provider,
-                &just_path,
+                plugin_tools.clone(),
             )
             .await
             {

@@ -1818,10 +1818,17 @@ impl RpcDispatcher {
     // ── MCP RPC wrappers ────────────────────────────────────────────────
 
     async fn handle_mcp_start(&self, req: &Request) -> RpcResult<serde_json::Value> {
+        // The same registry the internal agent dispatches through, so
+        // `cru mcp` and an agent advertise one set of plugin tools.
+        let plugin_tools = {
+            let guard = self.ctx.plugin_loader.lock().await;
+            guard.as_ref().map(|l| l.plugin_registry())
+        };
         let resp = crate::server::platform::handle_mcp_start(
             req.clone(),
             &self.ctx.kiln,
             &self.ctx.mcp_server_manager,
+            plugin_tools,
         )
         .await;
         map_server_resp(resp)
