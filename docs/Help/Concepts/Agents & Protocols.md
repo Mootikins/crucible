@@ -81,11 +81,15 @@ Start a chat session:
 cru chat
 ```
 
-Use a specific agent:
+Use a specific agent card:
 
 ```bash
-cru chat --agent Researcher
+cru session create --agent Researcher
 ```
+
+`cru chat` takes `--acp` (an external agent subprocess), not a card: it
+resolves its agent client-side rather than through the daemon's session
+create, which is where cards are looked up.
 
 ## Context Management
 

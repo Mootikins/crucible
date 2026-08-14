@@ -1,6 +1,6 @@
 ---
 source: crates/crucible-cli/tests/cli_help_snapshot_tests.rs
-assertion_line: 28
+assertion_line: 118
 expression: help
 ---
 Interactive AI chat with session persistence and tool access.
@@ -15,8 +15,8 @@ Examples:
   # Resume previous session
   cru chat --resume chat-20250102-1430-a1b2
 
-  # Use specific agent
-  cru chat --agent claude-code
+  # Use a specific ACP agent
+  cru chat --acp claude
 
   # Plan mode (read-only)
   cru chat --plan
@@ -28,8 +28,10 @@ Arguments:
           Optional one-shot query (if omitted, starts interactive mode)
 
 Options:
-  -a, --agent <AGENT>
-          Preferred ACP agent to use (claude-code, gemini-cli, codex, or custom profile)
+  -a, --acp <ACP>
+          ACP profile to use (claude, gemini, codex, cursor, opencode, or a profile defined under `[acp.agents.*]`). `--agent` is the old spelling of this flag and still works.
+          
+          `cru chat` takes no agent card: it resolves its agent CLI-side rather than through the daemon's create, so a card would need a fourth discovery site rooted at the CLI's cwd. Use `cru session create --agent <card>` for a card-backed session.
 
   -r, --resume <RESUME>
           Resume a previous session by ID (format: chat-YYYYMMDD-HHMM-xxxx)

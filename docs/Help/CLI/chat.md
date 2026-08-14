@@ -33,17 +33,22 @@ The chat command connects an AI agent to your knowledge base. The agent can sear
 
 ### Agent Selection
 
-#### `-a, --agent <AGENT>`
+#### `-a, --acp <PROFILE>`
 
-Preferred ACP agent to use. Skips the splash screen and connects directly.
+ACP profile to use — an external agent subprocess. Skips the splash screen and
+connects directly. `--agent` is the older spelling of this flag and still works.
 
 ```bash
-cru chat --agent claude-code
-cru chat --agent gemini-cli
-cru chat --agent codex
+cru chat --acp claude
+cru chat --acp gemini
+cru chat --acp codex
 ```
 
-Available agents: `claude-code`, `gemini-cli`, `codex`, `cursor`, or any custom profile defined in `config.toml`. The agent must be installed and available in your PATH.
+Available profiles: `claude`, `gemini`, `codex`, `cursor`, `opencode`, or any custom profile defined in `config.toml`. The agent must be installed and available in your PATH; `cru agents list` reports which are.
+
+`cru chat` does not take an agent card. It resolves its agent client-side,
+while cards are resolved by the daemon at session create — use
+`cru session create --agent <card>` for a card-backed session.
 
 #### `--provider <PROVIDER>`
 
@@ -130,7 +135,7 @@ cru chat --set perm.autoconfirm_session
 Environment variables to pass to the ACP agent. Can be repeated.
 
 ```bash
-cru chat --agent claude-code --env ANTHROPIC_BASE_URL=http://localhost:4000
+cru chat --acp claude --env ANTHROPIC_BASE_URL=http://localhost:4000
 ```
 
 ### Runtime
@@ -248,7 +253,7 @@ Agent: Based on your notes, the main techniques are...
 ### Use a Specific ACP Agent
 
 ```bash
-cru chat --agent claude-code "Summarize my notes on API design"
+cru chat --acp claude "Summarize my notes on API design"
 ```
 
 ### Resume a Previous Session

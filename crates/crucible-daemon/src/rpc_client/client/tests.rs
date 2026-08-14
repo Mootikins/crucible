@@ -246,7 +246,7 @@ fn session_create_request_omits_agent_type_when_none() {
     assert!(json.get("tool_policy").is_none());
 }
 
-/// `cru session create --card` is the only Rust caller that names a card, and
+/// `cru session create --agent` is the only Rust caller that names a card, and
 /// it must not land in `agent_name` — that field launches an ACP subprocess.
 #[test]
 fn agent_spec_card_reaches_the_wire_as_agent_card() {

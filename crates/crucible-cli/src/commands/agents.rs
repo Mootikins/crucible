@@ -101,6 +101,51 @@ fn resolve_path(path: &Path, _config_dir: Option<&PathBuf>) -> PathBuf {
 }
 
 /// List all registered agent cards
+/// An ACP profile as `cru agents list` shows it.
+///
+/// Flattened out of the daemon's `agents.list_profiles` reply at the edge so
+/// the rendering below is not four `["x"].as_str().unwrap_or("")` chains.
+struct AcpProfile {
+    name: String,
+    description: String,
+    available: bool,
+}
+
+/// The ACP profiles the daemon knows, or an empty list.
+///
+/// Best-effort on purpose. Cards are read straight off disk, so listing them
+/// must not start depending on a daemon: someone running `cru agents list` to
+/// find out why their card is not loading should not be told the daemon is
+/// down. An unreachable daemon simply means no ACP section.
+async fn acp_profiles() -> Vec<AcpProfile> {
+    let Ok(client) = crucible_daemon::DaemonClient::connect_or_start().await else {
+        return Vec::new();
+    };
+    let Ok(reply) = client.agents_list_profiles().await else {
+        return Vec::new();
+    };
+    reply
+        .get("profiles")
+        .and_then(|p| p.as_array())
+        .map(|entries| {
+            entries
+                .iter()
+                .map(|e| AcpProfile {
+                    name: e["name"].as_str().unwrap_or_default().to_string(),
+                    description: e["description"].as_str().unwrap_or_default().to_string(),
+                    available: e["available"].as_bool().unwrap_or(false),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// List both things `cru session create` can attach to a session.
+///
+/// Cards and ACP profiles are different kinds of agent — a card is a persona
+/// Crucible runs itself, a profile is an external subprocess — but "what can I
+/// talk to?" is one question, and answering half of it was why `--agent` and
+/// this command disagreed about what an agent is. Two sections, one command.
 async fn list(config: &CliConfig, tag: Option<String>, format: OutputFormat) -> Result<()> {
     let registry = load_agent_registry(config);
 
@@ -115,51 +160,120 @@ async fn list(config: &CliConfig, tag: Option<String>, format: OutputFormat) -> 
             .collect()
     };
 
-    if cards.is_empty() {
-        if let Some(t) = &tag {
-            println!("No agent cards found with tag '{}'.", t);
-        } else {
-            println!("No agent cards found.");
+    // A tag filter is a question about cards — profiles have no tags, so
+    // showing them all under a filtered heading would misreport them as matches.
+    let profiles = match tag {
+        Some(_) => Vec::new(),
+        None => acp_profiles().await,
+    };
+
+    if cards.is_empty() && profiles.is_empty() {
+        match &tag {
+            Some(t) => println!("No agent cards found with tag '{}'.", t),
+            None => println!("No agent cards or ACP profiles found."),
         }
         return Ok(());
     }
 
     match format {
         OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&cards)?;
-            println!("{}", json);
+            let json = serde_json::json!({
+                "cards": cards,
+                "acp_profiles": profiles
+                    .iter()
+                    .map(|p| serde_json::json!({
+                        "name": p.name,
+                        "description": p.description,
+                        "available": p.available,
+                    }))
+                    .collect::<Vec<_>>(),
+            });
+            println!("{}", serde_json::to_string_pretty(&json)?);
         }
         OutputFormat::Table => {
-            let rows: Vec<Vec<String>> = cards
-                .iter()
-                .map(|card| {
-                    vec![
-                        card.name.clone(),
-                        card.version.clone(),
-                        card.description.clone(),
-                    ]
-                })
-                .collect();
-            println!(
-                "{}",
-                crate::output::records_table(&["Name", "Version", "Description"], &rows)
-            );
+            if !cards.is_empty() {
+                let rows: Vec<Vec<String>> = cards
+                    .iter()
+                    .map(|card| {
+                        vec![
+                            card.name.clone(),
+                            card.version.clone(),
+                            card.description.clone(),
+                        ]
+                    })
+                    .collect();
+                println!("Agent cards (cru session create --agent <name>)");
+                println!(
+                    "{}",
+                    crate::output::records_table(&["Name", "Version", "Description"], &rows)
+                );
+            }
+            if !profiles.is_empty() {
+                let rows: Vec<Vec<String>> = profiles
+                    .iter()
+                    .map(|p| {
+                        vec![
+                            p.name.clone(),
+                            availability_label(p.available).to_string(),
+                            p.description.clone(),
+                        ]
+                    })
+                    .collect();
+                if !cards.is_empty() {
+                    println!();
+                }
+                println!("ACP profiles (cru session create --acp <name>)");
+                println!(
+                    "{}",
+                    crate::output::records_table(&["Name", "Installed", "Description"], &rows)
+                );
+            }
         }
         OutputFormat::Plain => {
-            println!("{:<25} {:<10} DESCRIPTION", "NAME", "VERSION");
-            println!("{}", "-".repeat(70));
-            for card in cards {
-                println!(
-                    "{:<25} {:<10} {}",
-                    card.name,
-                    card.version,
-                    truncate_description(&card.description)
-                );
+            if !cards.is_empty() {
+                println!("{:<25} {:<10} DESCRIPTION", "CARD", "VERSION");
+                println!("{}", "-".repeat(70));
+                for card in &cards {
+                    println!(
+                        "{:<25} {:<10} {}",
+                        card.name,
+                        card.version,
+                        truncate_description(&card.description)
+                    );
+                }
+            }
+            if !profiles.is_empty() {
+                if !cards.is_empty() {
+                    println!();
+                }
+                println!("{:<25} {:<10} DESCRIPTION", "ACP PROFILE", "INSTALLED");
+                println!("{}", "-".repeat(70));
+                for profile in &profiles {
+                    println!(
+                        "{:<25} {:<10} {}",
+                        profile.name,
+                        availability_label(profile.available),
+                        truncate_description(&profile.description)
+                    );
+                }
             }
         }
     }
 
     Ok(())
+}
+
+/// Whether an ACP profile's binary was found on PATH.
+///
+/// Worth a column: a profile is configuration, and the thing it names may
+/// simply not be installed — which is otherwise discovered as a spawn failure
+/// at the far end of `session create`.
+fn availability_label(available: bool) -> &'static str {
+    if available {
+        "yes"
+    } else {
+        "no"
+    }
 }
 
 /// Fit an agent-card description into the `cru agents list` table column.

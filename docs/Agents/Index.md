@@ -20,9 +20,9 @@ To use one of these agents:
    cru agents list
    ```
 
-3. Start a chat with it:
+3. Start a session with it:
    ```bash
-   cru chat --agent Researcher
+   cru session create --agent Researcher
    ```
 
 The format of the frontmatter, tool permissions, MCP bindings, and model specialty field is documented in [[Help/Extending/Agent Cards]].

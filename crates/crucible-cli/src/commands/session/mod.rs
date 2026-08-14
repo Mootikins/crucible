@@ -78,7 +78,7 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
         SessionCommands::Create {
             session_type,
             agent,
-            card,
+            acp,
             recording_mode,
             quiet,
             format,
@@ -94,7 +94,7 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
                 rpc::CreateParams {
                     session_type: &session_type,
                     agent: agent.as_deref(),
-                    card: card.as_deref(),
+                    acp: acp.as_deref(),
                     recording_mode: recording_mode.as_deref(),
                     quiet,
                     format: &format,

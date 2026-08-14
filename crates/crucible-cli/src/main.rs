@@ -307,7 +307,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
         // New ACP-based commands
         Some(Commands::Chat {
             query,
-            agent,
+            acp,
             resume,
             env,
             provider,
@@ -323,7 +323,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
         }) => {
             commands::chat::execute(commands::chat::ExecuteParams {
                 config,
-                agent_name: agent,
+                agent_name: acp,
                 query,
                 read_only: plan,
                 no_context,

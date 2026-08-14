@@ -112,15 +112,16 @@ pub enum SessionCommands {
         )]
         session_type: String,
 
-        /// ACP agent profile to configure for the new session (an external
-        /// agent subprocess). For an internal agent persona, use --card.
+        /// Agent card to configure for the new session — the prompt, model and
+        /// tool policy of an internal agent. `cru agents list` shows them.
         #[arg(short = 'a', long)]
         agent: Option<String>,
 
-        /// Agent card to configure for the new session (an internal agent's
-        /// prompt, model and tool policy). `cru agents list` shows them.
+        /// ACP profile to configure instead: an external agent subprocess
+        /// (claude, gemini, codex, cursor, opencode, or a profile defined
+        /// under `[acp.agents.*]`). `cru agents list` shows these too.
         #[arg(long)]
-        card: Option<String>,
+        acp: Option<String>,
 
         /// Recording mode (granular, coarse)
         #[arg(long)]

@@ -24,7 +24,7 @@ carries only the kiln's display name — `[chat]` and `[acp]` are not read from 
 
 ## `[chat]` — Chat Defaults
 
-Applied when you run `cru chat` without `--agent` or `--provider`.
+Applied when you run `cru chat` without `--acp` or `--provider`.
 
 ```toml
 [chat]
@@ -65,11 +65,11 @@ See [[Help/Config/llm|[llm]]] for the full provider reference.
 
 ## `[acp]` — ACP Agent Defaults
 
-Applied when you run `cru chat --agent <name>` or bring up the agent picker.
+Applied when you run `cru chat --acp <name>` or bring up the agent picker.
 
 ```toml
 [acp]
-# Default ACP agent to use when --agent is omitted (optional)
+# Default ACP agent to use when --acp is omitted (optional)
 default_agent = "opencode"  # or "claude", "gemini", "codex", "cursor"
 
 # Show splash picker in `cru chat` when no agent is chosen.
@@ -84,7 +84,7 @@ session_timeout_minutes = 30
 streaming_timeout_minutes = 15
 ```
 
-The `--agent` CLI flag always bypasses the picker regardless of `lazy_agent_selection`.
+The `--acp` CLI flag always bypasses the picker regardless of `lazy_agent_selection`.
 
 ### Custom ACP Agent Profiles
 
@@ -96,7 +96,7 @@ extends = "claude"
 env = { ANTHROPIC_BASE_URL = "http://localhost:4000" }
 ```
 
-The extended name is then selectable via `cru chat --agent my-claude`.
+The extended name is then selectable via `cru chat --acp my-claude`.
 
 See [[Help/Config/acp]] for every field on `[acp]` and `[acp.agents.<name>]`, including
 delegation and per-agent permissions.

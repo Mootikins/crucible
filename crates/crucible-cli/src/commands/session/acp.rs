@@ -19,51 +19,83 @@ fn wants_bare_id(quiet: bool, interactive: bool, format: &str) -> bool {
 
 /// Which agent implementation `session create` asks the daemon for.
 ///
-/// `--agent` and `--card` name two different namespaces that the wire once
-/// collapsed into one field: a profile launches an external ACP subprocess,
-/// a card is an internal agent's persona. They are refused together rather
-/// than ranked, because guessing which one a name belongs to would make a card
-/// called `claude` permanently unreachable — `claude`/`opencode`/`gemini`
-/// always exist as built-in profiles.
+/// `--agent` and `--acp` name two different namespaces that the wire once
+/// collapsed into one field: a card is an internal agent's persona, a profile
+/// launches an external ACP subprocess. They are refused together rather than
+/// ranked, because guessing which one a name belongs to would make a card
+/// called `claude` permanently unreachable — the built-in profiles (`claude`,
+/// `gemini`, `codex`, `cursor`, `opencode`) always exist, and
+/// `cru agents show "Claude Code"` is the documented example of a card named
+/// after one.
+///
+/// `--agent` is the card because that is what `cru agents` lists. The two
+/// disagreed until now: `cru agents list` showed cards while `--agent` took a
+/// profile, so the flag named the one thing the command did not.
 ///
 /// Pure so it is testable without a live `DaemonClient`; `create` needs one.
-fn agent_type_for(agent: Option<&str>, card: Option<&str>) -> Result<&'static str> {
-    match (agent, card) {
+fn agent_type_for(agent: Option<&str>, acp: Option<&str>) -> Result<&'static str> {
+    match (agent, acp) {
         (Some(_), Some(_)) => Err(anyhow!(
-            "--agent and --card are mutually exclusive: --agent names an ACP profile \
-             (an external agent subprocess), --card names an agent card (an internal \
-             agent persona)"
+            "--agent and --acp are mutually exclusive: --agent names an agent card \
+             (an internal agent persona), --acp names an ACP profile (an external \
+             agent subprocess)"
         )),
-        (Some(_), None) => Ok("acp"),
-        (None, _) => Ok("internal"),
+        (_, Some(_)) => Ok("acp"),
+        (_, None) => Ok("internal"),
     }
 }
 
-/// Substring the daemon's unknown-profile error is recognised by.
+/// Substring the daemon's unknown-card error is recognised by.
 ///
 /// Matching text is unpleasant, but the RPC code (`INVALID_PARAMS`) is shared
 /// with a dozen other create failures, and the alternative — the CLI listing
 /// cards itself — would be a fourth card-discovery site rooted at the CLI's cwd
 /// rather than the daemon's config dir, which is how the two would disagree.
-const UNKNOWN_PROFILE_MARKER: &str = "Unknown ACP agent profile";
+const UNKNOWN_CARD_MARKER: &str = "Unknown agent card";
 
-/// Translate the daemon's unknown-profile error into CLI vocabulary.
+/// Point `--agent <profile>` at `--acp`, but only once the daemon confirms the
+/// name really is a profile.
 ///
-/// The daemon names the wire fields (`agent_name`, `agent_card`) because the
-/// web and plugins call the same method; only here are they spelled `--agent`
-/// and `--card`, and pointing at the other flag is the whole reason a card was
-/// unreachable from the CLI (a card name always took the ACP branch).
-fn annotate_unknown_agent(error: anyhow::Error, agent: Option<&str>) -> anyhow::Error {
+/// `--agent` used to mean an ACP profile, so `cru session create --agent
+/// claude` is in people's shells and scripts today. After the rename it
+/// fails as an unknown *card*, and the daemon's message lists cards — accurate,
+/// and useless to someone who wanted the subprocess.
+///
+/// Asked rather than assumed: the built-in names could be hardcoded here, but
+/// profiles are also user-defined in `[acp.agents.*]`, so a hardcoded list would
+/// answer "no" for exactly the custom profile someone bothered to configure.
+/// The lookup only happens on the error path, where a round trip costs nothing.
+///
+/// `is_known_profile` is passed in rather than looked up here so this stays a
+/// pure function: the answer needs a live daemon, the wording does not.
+fn annotate_unknown_agent(
+    error: anyhow::Error,
+    agent: Option<&str>,
+    is_known_profile: bool,
+) -> anyhow::Error {
     let Some(name) = agent else { return error };
-    let message = error.to_string();
-    if !message.contains(UNKNOWN_PROFILE_MARKER) {
+    if !is_known_profile || !error.to_string().contains(UNKNOWN_CARD_MARKER) {
         return error;
     }
     anyhow!(
-        "{message}\n\n`--agent {name}` looks for an ACP agent profile. \
-         If '{name}' is an agent card, start the session with `--card {name}` instead \
-         (`cru agents list` shows the cards this kiln can see)."
+        "'{name}' is an ACP profile, not an agent card. Start the session with \
+         `--acp {name}` instead.\n\n\
+         `--agent` names an agent card — the prompt, model and tool policy of an \
+         internal agent, as listed by `cru agents list`. It named an ACP profile \
+         in earlier versions."
     )
+}
+
+/// Does the daemon know `name` as an ACP profile?
+///
+/// A null result means "no such profile" (`handle_agents_resolve_profile`), and
+/// an RPC failure means we cannot tell — both answer `false`, which leaves the
+/// daemon's own error (the one that lists the cards) as what the user sees.
+async fn is_known_acp_profile(client: &DaemonClient, name: &str) -> bool {
+    client
+        .agents_resolve_profile(name)
+        .await
+        .is_ok_and(|v| !v.is_null())
 }
 
 pub(super) mod rpc {
@@ -72,7 +104,7 @@ pub(super) mod rpc {
     pub(crate) struct CreateParams<'a> {
         pub session_type: &'a str,
         pub agent: Option<&'a str>,
-        pub card: Option<&'a str>,
+        pub acp: Option<&'a str>,
         pub recording_mode: Option<&'a str>,
         pub quiet: bool,
         pub format: &'a str,
@@ -167,15 +199,15 @@ pub(super) mod rpc {
             None => None,
         };
 
-        let agent_type = agent_type_for(params.agent, params.card)?;
+        let agent_type = agent_type_for(params.agent, params.acp)?;
 
         // The daemon owns default-agent resolution: it builds the config-derived
         // internal defaults (or resolves the named ACP profile / agent card) and
         // configures the session's agent as part of create. An unknown profile
         // or card fails here with no session created.
         let agent_spec = crucible_daemon::rpc_client::SessionAgentSpec {
-            agent_name: params.agent.map(str::to_string),
-            agent_card: params.card.map(str::to_string),
+            agent_name: params.acp.map(str::to_string),
+            agent_card: params.agent.map(str::to_string),
             ..Default::default()
         };
 
@@ -194,11 +226,24 @@ pub(super) mod rpc {
                 },
                 agent_spec,
             )
-            .await
-            // The daemon answers in wire vocabulary (`agent_name`/`agent_card`)
-            // because the web and plugins call it too; only the CLI knows those
-            // are spelled `--agent` and `--card` here.
-            .map_err(|e| annotate_unknown_agent(e, params.agent))?;
+            .await;
+        // The daemon answers in wire vocabulary (`agent_name`/`agent_card`)
+        // because the web and plugins call it too; only the CLI knows those are
+        // spelled `--acp` and `--agent` here.
+        let result = match result {
+            Ok(result) => result,
+            Err(e) => {
+                let looks_like_a_profile = match params.agent {
+                    Some(name) => is_known_acp_profile(client, name).await,
+                    None => false,
+                };
+                return Err(annotate_unknown_agent(
+                    e,
+                    params.agent,
+                    looks_like_a_profile,
+                ));
+            }
+        };
 
         let session_id = result["session_id"].as_str().unwrap_or("unknown");
 
@@ -216,7 +261,7 @@ pub(super) mod rpc {
                 "type": params.session_type,
                 "kiln": config.kiln_path.to_string_lossy(),
                 "agent": params.agent,
-                "card": params.card,
+                "acp": params.acp,
                 "title": params.title,
             });
             println!("{}", serde_json::to_string_pretty(&json)?);
@@ -238,11 +283,11 @@ pub(super) mod rpc {
             if let Some(mode) = params.recording_mode {
                 println!("Recording mode: {}", mode);
             }
-            if let Some(agent_name) = params.agent {
-                println!("Configured agent: {} (acp)", agent_name);
-            }
-            if let Some(card) = params.card {
+            if let Some(card) = params.agent {
                 println!("Configured agent: {} (card)", card);
+            }
+            if let Some(profile) = params.acp {
+                println!("Configured agent: {} (acp)", profile);
             }
             if let Some(t) = params.title {
                 println!("Title: {}", t);
@@ -676,20 +721,20 @@ pub(super) mod rpc {
 mod tests {
     use super::{agent_type_for, annotate_unknown_agent, wants_bare_id};
 
-    /// The regression this whole flag exists for: `agent_type` was hardcoded to
-    /// "acp" whenever `--agent` was present, so a card name always took the ACP
-    /// branch and `cru session create --agent <card>` could only ever error.
+    /// `--agent` names a card, which is what `cru agents list` shows. It named
+    /// an ACP profile until the two were split, which is why a card was
+    /// unreachable from the CLI at all.
     #[test]
-    fn a_card_takes_the_internal_branch() {
+    fn the_agent_flag_takes_the_internal_branch() {
         assert_eq!(
-            agent_type_for(None, Some("researcher")).unwrap(),
+            agent_type_for(Some("researcher"), None).unwrap(),
             "internal"
         );
     }
 
     #[test]
-    fn a_profile_still_takes_the_acp_branch() {
-        assert_eq!(agent_type_for(Some("claude"), None).unwrap(), "acp");
+    fn the_acp_flag_takes_the_acp_branch() {
+        assert_eq!(agent_type_for(None, Some("claude")).unwrap(), "acp");
     }
 
     /// No flags is an internal session on the config defaults — unchanged.
@@ -701,26 +746,39 @@ mod tests {
     /// Refused rather than ranked: the two names live in different namespaces
     /// and there is no correct precedence between them.
     #[test]
-    fn a_profile_and_a_card_together_are_refused() {
-        let err = agent_type_for(Some("claude"), Some("researcher")).unwrap_err();
+    fn a_card_and_a_profile_together_are_refused() {
+        let err = agent_type_for(Some("researcher"), Some("claude")).unwrap_err();
         assert!(err.to_string().contains("mutually exclusive"), "{err}");
     }
 
-    /// The discoverability half: an unknown `--agent` has to say `--card`,
-    /// because the daemon can only say `agent_card`.
+    /// The migration: `--agent claude` meant the subprocess in earlier
+    /// versions and is in people's shells. It now fails as an unknown card, and
+    /// the daemon's message helpfully lists cards — so the CLI has to be the one
+    /// to say "that is a profile, use --acp".
     #[test]
-    fn an_unknown_profile_points_at_the_card_flag() {
+    fn an_agent_that_is_really_a_profile_points_at_the_acp_flag() {
         let daemon = anyhow::anyhow!(
-            "RPC error: {{\"code\":-32602,\"message\":\"Unknown ACP agent profile: researcher. \
-             Available profiles: claude. Agent cards (select with agent_card, not agent_name): researcher\"}}"
+            "RPC error: {{\"code\":-32602,\"message\":\"Unknown agent card: claude. \
+             Available cards: researcher\"}}"
         );
-        let annotated = annotate_unknown_agent(daemon, Some("researcher")).to_string();
-        assert!(annotated.contains("--card researcher"), "{annotated}");
-        // The daemon's own text survives; the hint is added, not substituted.
+        let annotated = annotate_unknown_agent(daemon, Some("claude"), true).to_string();
+        assert!(annotated.contains("--acp claude"), "{annotated}");
+        assert!(annotated.contains("is an ACP profile"), "{annotated}");
+    }
+
+    /// A genuine typo is not a profile, so the daemon's message — which lists
+    /// the cards that do exist — is the better answer and survives untouched.
+    #[test]
+    fn an_unknown_card_that_is_no_profile_keeps_the_daemons_list() {
+        let daemon = anyhow::anyhow!(
+            "RPC error: Unknown agent card: resercher. Available cards: researcher"
+        );
+        let annotated = annotate_unknown_agent(daemon, Some("resercher"), false).to_string();
         assert!(
-            annotated.contains("Unknown ACP agent profile"),
+            annotated.contains("Available cards: researcher"),
             "{annotated}"
         );
+        assert!(!annotated.contains("--acp"), "{annotated}");
     }
 
     /// Anything else keeps its message: a trust refusal or a bad kiln has
@@ -729,7 +787,7 @@ mod tests {
     fn other_create_failures_are_left_alone() {
         let other = anyhow::anyhow!("RPC error: kiln is not a directory");
         assert_eq!(
-            annotate_unknown_agent(other, Some("claude")).to_string(),
+            annotate_unknown_agent(other, Some("claude"), true).to_string(),
             "RPC error: kiln is not a directory"
         );
     }

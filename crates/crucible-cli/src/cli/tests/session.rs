@@ -144,7 +144,7 @@ fn test_session_create_parses() {
     let Commands::Session(SessionCommands::Create {
         session_type,
         agent,
-        card,
+        acp,
         recording_mode,
         quiet,
         format,
@@ -157,7 +157,7 @@ fn test_session_create_parses() {
     };
     assert_eq!(session_type, "chat");
     assert_eq!(agent, None);
-    assert_eq!(card, None);
+    assert_eq!(acp, None);
     assert_eq!(recording_mode, None);
     assert!(!quiet);
     assert_eq!(format, "text");
@@ -190,18 +190,30 @@ fn test_session_create_with_type_parses() {
     assert_eq!(workspace, None);
 }
 
-/// `--card` is the only way to reach the internal agent-card branch: `--agent`
-/// means an ACP profile and always will, so a card name sent there resolves
-/// nothing.
+/// `--agent` names an agent card, matching what `cru agents list` shows. It
+/// named an ACP profile in earlier versions, which is why a card could not be
+/// selected from the CLI at all.
 #[test]
-fn test_session_create_parses_card() {
-    let Commands::Session(SessionCommands::Create { agent, card, .. }) =
-        parse(&["cru", "session", "create", "--card", "researcher"])
+fn test_session_create_agent_names_a_card() {
+    let Commands::Session(SessionCommands::Create { agent, acp, .. }) =
+        parse(&["cru", "session", "create", "--agent", "researcher"])
+    else {
+        panic!("Expected Session Create command");
+    };
+    assert_eq!(agent, Some("researcher".to_string()));
+    assert_eq!(acp, None);
+}
+
+/// The external-subprocess half, spelled to match `cru acp`.
+#[test]
+fn test_session_create_acp_names_a_profile() {
+    let Commands::Session(SessionCommands::Create { agent, acp, .. }) =
+        parse(&["cru", "session", "create", "--acp", "claude"])
     else {
         panic!("Expected Session Create command");
     };
     assert_eq!(agent, None);
-    assert_eq!(card, Some("researcher".to_string()));
+    assert_eq!(acp, Some("claude".to_string()));
 }
 
 #[test]

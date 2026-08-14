@@ -19,14 +19,19 @@ fn mock_agent_path() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_cru")).with_file_name("mock-acp-agent")
 }
 
+/// `--agent` is the card and `--acp` is the subprocess, and the help has to say
+/// which is which: they were one flag until agent cards became selectable, and
+/// `--agent` named the ACP profile then.
 #[test]
-fn session_create_help_shows_agent_flag() {
+fn session_create_help_distinguishes_the_card_and_acp_flags() {
     cru()
         .args(["session", "create", "--help"])
         .assert()
         .success()
         .stdout(predicate::str::contains("-a, --agent <AGENT>"))
-        .stdout(predicate::str::contains("ACP agent profile"));
+        .stdout(predicate::str::contains("Agent card"))
+        .stdout(predicate::str::contains("--acp <ACP>"))
+        .stdout(predicate::str::contains("ACP profile"));
 }
 
 #[test]
@@ -36,7 +41,7 @@ fn session_create_rejects_unknown_agent_profile() {
 
     daemon
         .command()
-        .args(["session", "create", "--agent", "nonexistent-profile"])
+        .args(["session", "create", "--acp", "nonexistent-profile"])
         .assert()
         .failure()
         .stderr(predicate::str::contains(
@@ -51,10 +56,10 @@ fn session_create_rejects_empty_agent_profile() {
 
     daemon
         .command()
-        .args(["session", "create", "--agent", ""])
+        .args(["session", "create", "--acp", ""])
         .assert()
         .failure()
-        // An empty `--agent` is a missing name, not an unknown profile — the
+        // An empty `--acp` is a missing name, not an unknown profile — the
         // daemon now says so specifically, and the refusal has to name the
         // parameter or there is nothing to act on.
         .stderr(predicate::str::contains("agent_name is required"));
@@ -68,12 +73,12 @@ fn session_create_accepts_builtin_acp_profiles() {
     for profile in ["claude", "opencode", "gemini", "codex", "cursor"] {
         daemon
             .command()
-            .args(["session", "create", "--agent", profile, "--format", "json"])
+            .args(["session", "create", "--acp", profile, "--format", "json"])
             .assert()
             .success()
             // The structured field, not the prose line: `Configured agent: …`
             // is printed only on a terminal, and a test harness never is.
-            .stdout(predicate::str::contains(format!(r#""agent": "{profile}""#)));
+            .stdout(predicate::str::contains(format!(r#""acp": "{profile}""#)));
     }
 }
 
@@ -94,10 +99,10 @@ fn session_acp_lifecycle_with_mock_agent_profile() {
 
     let create_output = daemon
         .command()
-        .args(["session", "create", "--agent", "mock", "--format", "json"])
+        .args(["session", "create", "--acp", "mock", "--format", "json"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(r#""agent": "mock""#))
+        .stdout(predicate::str::contains(r#""acp": "mock""#))
         .get_output()
         .stdout
         .clone();
@@ -150,14 +155,14 @@ fn session_acp_lifecycle_with_http_capable_mock() {
         .args([
             "session",
             "create",
-            "--agent",
+            "--acp",
             "mock-http",
             "--format",
             "json",
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains(r#""agent": "mock-http""#))
+        .stdout(predicate::str::contains(r#""acp": "mock-http""#))
         .get_output()
         .stdout
         .clone();
@@ -211,14 +216,14 @@ fn session_acp_lifecycle_with_stdio_only_mock() {
         .args([
             "session",
             "create",
-            "--agent",
+            "--acp",
             "mock-stdio",
             "--format",
             "json",
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains(r#""agent": "mock-stdio""#))
+        .stdout(predicate::str::contains(r#""acp": "mock-stdio""#))
         .get_output()
         .stdout
         .clone();

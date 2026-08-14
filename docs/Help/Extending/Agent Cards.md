@@ -149,14 +149,15 @@ cru agents show researcher
 cru agents validate
 
 # Create a session with a card-configured internal agent
-cru session create --card researcher
+cru session create --agent researcher
 # via RPC: session.create { configure_agent: true, agent_card: "researcher" }
 ```
 
-`--card` is not `--agent`: `--agent` names an *ACP profile* and launches an
+`--agent` is not `--acp`: `--acp` names an *ACP profile* and launches an
 external agent subprocess. They are refused together rather than ranked,
-because `claude`, `opencode` and `gemini` always exist as profiles — guessing
-would make a card of that name permanently unreachable.
+because `claude`, `gemini`, `codex`, `cursor` and `opencode` always exist as
+profiles — guessing would make a card of that name permanently unreachable, and
+`cru agents show "Claude Code"` is a documented example of exactly such a card.
 
 `agent_name` still selects a card on an internal session, but it is deprecated
 there: on an ACP session the same field names a subprocess *profile*, so one

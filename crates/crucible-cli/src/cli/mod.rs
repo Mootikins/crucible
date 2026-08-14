@@ -97,16 +97,23 @@ pub struct Cli {
 pub enum Commands {
     /// Interactive AI chat with session persistence and tool access
     #[command(
-        long_about = "Interactive AI chat with session persistence and tool access.\n\nExamples:\n  # Interactive chat session\n  cru chat\n\n  # One-shot query\n  cru chat \"Explain the architecture\"\n\n  # Resume previous session\n  cru chat --resume chat-20250102-1430-a1b2\n\n  # Use specific agent\n  cru chat --agent claude-code\n\n  # Plan mode (read-only)\n  cru chat --plan",
+        long_about = "Interactive AI chat with session persistence and tool access.\n\nExamples:\n  # Interactive chat session\n  cru chat\n\n  # One-shot query\n  cru chat \"Explain the architecture\"\n\n  # Resume previous session\n  cru chat --resume chat-20250102-1430-a1b2\n\n  # Use a specific ACP agent\n  cru chat --acp claude\n\n  # Plan mode (read-only)\n  cru chat --plan",
         visible_alias = "c"
     )]
     Chat {
         /// Optional one-shot query (if omitted, starts interactive mode)
         query: Option<String>,
 
-        /// Preferred ACP agent to use (claude-code, gemini-cli, codex, or custom profile)
-        #[arg(short = 'a', long)]
-        agent: Option<String>,
+        /// ACP profile to use (claude, gemini, codex, cursor, opencode, or a
+        /// profile defined under `[acp.agents.*]`). `--agent` is the old
+        /// spelling of this flag and still works.
+        ///
+        /// `cru chat` takes no agent card: it resolves its agent CLI-side
+        /// rather than through the daemon's create, so a card would need a
+        /// fourth discovery site rooted at the CLI's cwd. Use
+        /// `cru session create --agent <card>` for a card-backed session.
+        #[arg(short = 'a', long, alias = "agent")]
+        acp: Option<String>,
 
         /// Resume a previous session by ID (format: chat-YYYYMMDD-HHMM-xxxx)
         #[arg(short = 'r', long)]

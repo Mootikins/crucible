@@ -21,7 +21,7 @@ at). Every field has a default, so `[acp]` is optional.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `default_agent` | string | *(unset)* | Profile to use when `--agent` is omitted. Unset means auto-discover the first available agent. |
+| `default_agent` | string | *(unset)* | Profile to use when `--acp` is omitted. Unset means auto-discover the first available agent. |
 | `enable_discovery` | bool | `true` | Probe for installed agents |
 | `session_timeout_minutes` | integer | `30` | Idle minutes before an agent session is dropped |
 | `max_message_size_mb` | integer | `25` | Reject requests larger than this |
@@ -41,7 +41,7 @@ lazy_agent_selection = true
 `streaming_timeout_minutes` defaults to 15 rather than something tighter because reasoning
 models routinely go quiet for minutes at a time mid-turn.
 
-Passing `--agent` on the command line always bypasses the picker, whatever
+Passing `--acp` on the command line always bypasses the picker, whatever
 `lazy_agent_selection` says.
 
 ## `[acp.agents.<name>]` — agent profiles
