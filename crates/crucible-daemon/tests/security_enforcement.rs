@@ -24,6 +24,30 @@ use std::time::Duration;
 use tempfile::TempDir;
 use tokio::sync::broadcast;
 
+/// An `ollama` provider pinned to Local trust — the key `internal_agent()`
+/// already carries, so a session configured with it clears a confidential kiln.
+fn local_ollama_config() -> crucible_core::config::LlmConfig {
+    crucible_core::config::LlmConfig {
+        default: None,
+        providers: HashMap::from([(
+            "ollama".to_string(),
+            crucible_core::config::LlmProviderConfig {
+                provider_type: BackendType::Ollama,
+                endpoint: None,
+                default_model: None,
+                temperature: None,
+                max_tokens: None,
+                timeout_secs: None,
+                api_key: None,
+                available_models: None,
+                trust_level: Some(crucible_core::config::TrustLevel::Local),
+                name: None,
+            },
+        )]),
+        models: Default::default(),
+    }
+}
+
 fn internal_agent() -> SessionAgent {
     SessionAgent {
         agent_type: "internal".to_string(),
@@ -365,8 +389,14 @@ async fn workspace_symlink_escape_is_contained() {
 
 #[tokio::test]
 async fn delegation_trust_derives_from_child_provider() {
-    // Confidential kiln + (unresolvable ⇒ Cloud) provider: spawn must fail
-    // at the service-side trust gate, not a hardcoded tool-side check.
+    // Confidential kiln, a parent on a Local-trust provider, and a delegation
+    // to an ACP target (⇒ Cloud): the spawn must fail at the service-side
+    // trust gate, not a hardcoded tool-side check.
+    //
+    // The parent is deliberately Local and the child deliberately not: with
+    // both Cloud this could not tell "the gate read the child" from "the gate
+    // read the parent". A Cloud parent is also no longer constructible here —
+    // `configure_agent` refuses to attach one to a confidential kiln.
     let temp = TempDir::new().unwrap();
     let workspace = temp.path().to_path_buf();
     std::fs::create_dir_all(workspace.join(".crucible")).unwrap();
@@ -388,7 +418,7 @@ async fn delegation_trust_derives_from_child_provider() {
                 event_tx.clone(),
             )),
             mcp_gateway: None,
-            llm_config: None,
+            llm_config: Some(local_ollama_config()),
             acp_config: None,
             context_config: None,
             permission_config: None,
@@ -422,7 +452,9 @@ async fn delegation_trust_derives_from_child_provider() {
             parent_session_id: session.id.clone(),
             prompt: "leak the kiln".to_string(),
             context: None,
-            target_agent: None,
+            // An ACP profile, which `SessionAgent::from_profile` marks
+            // `agent_type: "acp"` — Cloud whatever the parent runs on.
+            target_agent: Some("claude".to_string()),
             description: None,
         })
         .await

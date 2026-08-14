@@ -82,8 +82,19 @@ pub(crate) fn resolve_provider_trust(
     agent: &SessionAgent,
     llm_config: Option<&LlmConfig>,
 ) -> TrustLevel {
-    // ACP agents (identified by agent_name) default to Cloud trust
-    if agent.agent_name.is_some() {
+    // An ACP agent is an external process that picks its own model, so the
+    // daemon cannot vouch for where the prompt ends up: Cloud.
+    //
+    // Keyed on `agent_type`, the same discriminator create time uses
+    // (`resolve_provider_trust_level_for_create`) and the same one
+    // `agent_factory`/`switch_model`/`scope` already branch on. Keying on
+    // `agent_name.is_some()` instead — as this did — made trust follow the
+    // presence of a *name* rather than the actual provider: an internal
+    // session that merely carried `agent_name` was reported Cloud, which is
+    // strictly below `Local` in `TrustLevel`'s ordering, so a local Ollama
+    // session was refused on a confidential kiln and had its confidential
+    // connected kilns silently dropped from precognition.
+    if agent.agent_type == "acp" {
         return TrustLevel::Cloud;
     }
     // Try to look up provider by key in the LLM config
@@ -292,10 +303,47 @@ data_classification = "confidential"
 
     #[test]
     fn provider_trust_acp_agent_returns_cloud() {
-        // ACP agents (with agent_name set) always return Cloud trust
+        // ACP agents (agent_type "acp") always return Cloud trust
         let agent = make_test_agent("acp", Some("claude"), None);
         let result = resolve_provider_trust(&agent, None);
         assert_eq!(result, TrustLevel::Cloud);
+    }
+
+    #[test]
+    fn provider_trust_follows_the_provider_not_the_agent_name() {
+        // An internal session that carries `agent_name` (the deprecated
+        // card alias, or a plugin that set it after create) is still an
+        // internal session: its trust is its provider's. Reading the name as
+        // "this is ACP" pinned it to Cloud, which is BELOW Local, so a local
+        // Ollama session was refused on a confidential kiln.
+        let mut providers = HashMap::new();
+        providers.insert(
+            "local-ollama".to_string(),
+            LlmProviderConfig {
+                provider_type: BackendType::Ollama,
+                endpoint: None,
+                default_model: None,
+                temperature: None,
+                max_tokens: None,
+                timeout_secs: None,
+                api_key: None,
+                available_models: None,
+                trust_level: Some(TrustLevel::Local),
+                name: None,
+            },
+        );
+        let llm_config = LlmConfig {
+            default: None,
+            providers,
+            models: Default::default(),
+        };
+
+        let agent = make_test_agent("internal", Some("researcher"), Some("local-ollama"));
+        assert_eq!(
+            resolve_provider_trust(&agent, Some(&llm_config)),
+            TrustLevel::Local
+        );
+        assert!(TrustLevel::Local.satisfies(DataClassification::Confidential));
     }
 
     #[test]

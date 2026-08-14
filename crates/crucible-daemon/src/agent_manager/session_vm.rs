@@ -265,6 +265,17 @@ impl AgentManager {
             .get_session(session_id)
             .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
 
+        // The same gate `switch_model` applies, and for the same reason:
+        // configure_agent is the other way a session's provider changes after
+        // its kilns have already passed the attach-time trust check.
+        //
+        // Checked on the incoming agent, before `apply_session_defaults` — the
+        // defaults only fill in prompt/temperature/max_tokens/thinking_budget/
+        // mode, none of which `resolve_provider_trust` reads, and refusing
+        // first avoids spinning up a session Lua VM for a call that cannot
+        // succeed.
+        self.refuse_untrusted_for_attached_kilns(&session, &agent)?;
+
         let agent = self.apply_session_defaults(session_id, agent);
         session.agent = Some(agent.clone());
 

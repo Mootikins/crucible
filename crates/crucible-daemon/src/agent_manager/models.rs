@@ -55,21 +55,27 @@ impl AgentManager {
         (None, model_id.to_string())
     }
 
-    /// Refuse a model switch whose new provider is not cleared for a kiln the
+    /// Refuse an agent change whose provider is not cleared for a kiln the
     /// session already has attached.
     ///
     /// The trust gate is attach-time by design — `tools/search.rs` passes
     /// `provider_trust: None` on the strength of "connected kilns pass the
-    /// trust gate at attach time" (`server/session/scope.rs`). That holds only
-    /// while attach-time state stays valid, and switching the provider
-    /// invalidates it: attach a confidential kiln on a local model, switch to
-    /// a cloud one, and its notes become retrievable by a provider that was
-    /// never cleared for them.
+    /// trust gate at attach time" (`server/session/scope.rs`), and
+    /// `search_across_kilns` skips trust filtering for the primary kiln
+    /// outright. That holds only while attach-time state stays valid, and
+    /// changing the provider invalidates it: attach a confidential kiln on a
+    /// local model, move to a cloud one, and its notes become retrievable by a
+    /// provider that was never cleared for them.
+    ///
+    /// Both ways an established session's provider can change call this —
+    /// `switch_model` and `configure_agent`. Gating only the first left the
+    /// create-time gate bypassable in two steps: create on a local provider,
+    /// then reconfigure onto a cloud one.
     ///
     /// Refusing rather than detaching: dropping a kiln silently would lose
     /// context the user is mid-conversation with, and the fix — detach, then
     /// switch — is something only they can weigh.
-    fn refuse_switch_untrusted_for_attached_kilns(
+    pub(super) fn refuse_untrusted_for_attached_kilns(
         &self,
         session: &crucible_core::session::Session,
         new_agent: &SessionAgent,
@@ -144,7 +150,7 @@ impl AgentManager {
             // place. Checked anyway so this branch is not a silent bypass if
             // ACP trust ever becomes model-dependent — the non-ACP path below
             // is the one that can actually change trust.
-            self.refuse_switch_untrusted_for_attached_kilns(&session, &agent_config)?;
+            self.refuse_untrusted_for_attached_kilns(&session, &agent_config)?;
 
             handle.lock().await.switch_model(model_id).await?;
 
@@ -209,7 +215,7 @@ impl AgentManager {
             agent_config.model = model_name;
         }
 
-        self.refuse_switch_untrusted_for_attached_kilns(&session, &agent_config)?;
+        self.refuse_untrusted_for_attached_kilns(&session, &agent_config)?;
 
         session.agent = Some(agent_config.clone());
 

@@ -871,6 +871,7 @@ mod providers_concurrency;
 mod reactor;
 mod review_capture;
 mod revive_cold;
+mod trust_gate;
 mod workspace;
 
 /// Mock agent that runs a scheduler-driven tool loop and records every event

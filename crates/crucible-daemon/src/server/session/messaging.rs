@@ -33,6 +33,13 @@ pub(crate) async fn handle_session_configure_agent(
                 "configured": true,
             }),
         ),
+        // How `configure_agent`'s trust gate refuses a provider the session's
+        // attached kilns do not clear. Caller-fixable, so it must not read as a
+        // daemon fault: crucible-web maps -32602 to 422 and everything else to
+        // 502. Same classification `scope_error` gives the variant.
+        Err(e @ AgentError::InvalidConfig(_)) => {
+            Response::error(req.id, INVALID_PARAMS, e.to_string())
+        }
         Err(e) => internal_error(req.id, e),
     }
 }
