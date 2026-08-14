@@ -114,3 +114,6 @@ reproduce.cast
 
 # graphify knowledge-graph output (regenerable, ~40MB)
 graphify-out/
+
+# Personal launch notes, kept out of the repo on purpose.
+LAUNCH-CHECKLIST.md
