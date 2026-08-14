@@ -102,17 +102,35 @@ config:
       description: Model id for Discord sessions (required)
     agent_type:
       type: string
-      description: Agent implementation to run
+      description: >-
+        Agent implementation to run: "internal" (the built-in agent) or "acp"
+        (an external agent subprocess named by agent_name).
       default: "internal"
     system_prompt:
       type: string
-      description: System prompt for Discord sessions (a Discord-shaped default applies when unset)
+      description: >-
+        System prompt for Discord sessions (a Discord-shaped default applies
+        when unset). Ignored when agent_card is set — the card's body is the
+        prompt.
     provider_key:
       type: string
       description: Named provider credential to use instead of the default
+    agent_card:
+      type: string
+      description: >-
+        Agent card giving the internal agent its persona — prompt, model, MCP
+        servers. Resolved by the daemon at session create against the
+        configured kiln, so `cru agents list` names what is available. The
+        access tier still decides the tool policy: it is applied over the
+        card's own `tools:` block, never under it. Internal agents only —
+        combine with agent_type = "acp" and session creation is refused.
     agent_name:
       type: string
-      description: Display name for the agent on this session
+      description: >-
+        ACP profile to launch (claude, opencode, gemini, or an [acp.agents.*]
+        profile). Requires agent_type = "acp"; on an internal agent it resolves
+        nothing and is refused, because it names a profile and not a card —
+        set agent_card for that.
 
 exports:
   auto_discover: true

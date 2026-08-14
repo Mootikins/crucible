@@ -10,6 +10,7 @@ use crate::protocol::{
 use crate::rpc::context::RpcContext;
 use crate::server::plugins::OptionAction;
 use crate::subscription::ClientId;
+use std::sync::Arc;
 
 pub type RpcResult<T> = Result<T, RpcError>;
 
@@ -221,11 +222,14 @@ macro_rules! dispatch_session_getter {
 }
 
 pub struct RpcDispatcher {
-    ctx: RpcContext,
+    /// Shared rather than owned: `Server` keeps a clone so plugin boot can hand
+    /// the same context to the Lua session bridge, and both paths must see one
+    /// set of managers.
+    ctx: Arc<RpcContext>,
 }
 
 impl RpcDispatcher {
-    pub fn new(ctx: RpcContext) -> Self {
+    pub fn new(ctx: Arc<RpcContext>) -> Self {
         Self { ctx }
     }
 
@@ -843,24 +847,18 @@ impl RpcDispatcher {
         };
         let req = &req;
 
-        let resp = crate::server::session::handle_session_create(
-            req.clone(),
-            &self.ctx.sessions,
-            &self.ctx.project_manager,
-            &self.ctx.data_home,
-            &self.ctx.llm_config,
-            &self.ctx.kiln,
-            &self.ctx.event_tx,
-            &self.ctx.agents,
-            self.ctx.mcp_config.as_ref(),
-        )
-        .await;
+        let resp = crate::server::session::handle_session_create(req.clone(), &self.ctx).await;
         let mapped = map_server_resp(resp);
 
         // Plugins register their `crucible.on` handlers inside
         // `on_session_start` (oci does), so these hooks have to fire on the
         // plugin runtime — not just the per-call `lua.init_session` executor,
         // which was the only place firing them.
+        //
+        // Stays above `RpcContext::create_session_resolved`, not inside it: the
+        // start/end hooks hold the plugin loader mutex across their Lua call,
+        // and a plugin that creates a session from inside `on_session_end`
+        // (reflection does) would deadlock on a create path that fired them.
         self.enforce_plugin_session_start(mapped, req).await
     }
 
@@ -1964,21 +1962,17 @@ mod tests {
         }
     }
 
-    fn test_context() -> RpcContext {
+    fn test_context() -> Arc<RpcContext> {
         use crate::agent_manager::{AgentManager, AgentManagerParams};
         use crate::background_manager::BackgroundJobManager;
 
         use crate::kiln_manager::KilnManager;
-        use crate::mcp_server::McpServerManager;
         use crate::project_manager::ProjectManager;
         use crate::session_manager::SessionManager;
-        use crate::subscription::SubscriptionManager;
         use crate::tools::workspace::WorkspaceTools;
-        use dashmap::DashMap;
         use tokio::sync::broadcast;
 
         let (event_tx, _) = broadcast::channel(16);
-        let (shutdown_tx, _) = broadcast::channel(1);
         let kiln_manager = Arc::new(KilnManager::new());
         let session_manager = Arc::new(SessionManager::new());
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
@@ -1995,28 +1989,21 @@ mod tests {
             workspace_tools: Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp"))),
         }));
 
-        RpcContext::new(
+        Arc::new(RpcContext::for_test(
             kiln_manager,
             session_manager,
             agent_manager,
-            Arc::new(SubscriptionManager::new()),
-            event_tx,
-            shutdown_tx,
             Arc::new(ProjectManager::new(std::path::PathBuf::from(
                 "/tmp/projects.json",
             ))),
-            Arc::new(DashMap::new()),
-            Arc::new(tokio::sync::Mutex::new(None)),
-            None,
-            Arc::new(McpServerManager::new()),
+            event_tx,
             None,
             std::path::PathBuf::from("/tmp"),
-            None,
-        )
+        ))
     }
 
     /// Context with a real plugin loader, so tests can plant isolation claims.
-    fn test_context_with_loader() -> RpcContext {
+    fn test_context_with_loader() -> Arc<RpcContext> {
         let ctx = test_context();
         let loader =
             crate::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())
@@ -2202,6 +2189,70 @@ mod tests {
         }
     }
 
+    /// `session.configure_agent` is gated by the attached kilns' data
+    /// classification, the same way `session.switch_model` is.
+    ///
+    /// Without it, create-time trust gating is bypassable in two steps: create
+    /// on a provider the kiln clears, then reconfigure onto one it does not and
+    /// keep the kiln. The refusal must arrive as `INVALID_PARAMS` — it is the
+    /// caller's request that is wrong, not the daemon.
+    #[tokio::test]
+    async fn configure_agent_over_rpc_is_refused_for_an_untrusted_attached_kiln() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let workspace = tmp.path().join("ws");
+        let kiln = workspace.join("notes");
+        std::fs::create_dir_all(&kiln).unwrap();
+        std::fs::create_dir_all(workspace.join(".crucible")).unwrap();
+        std::fs::write(
+            workspace.join(".crucible").join("project.toml"),
+            "[[kilns]]\npath = \"./notes\"\ndata_classification = \"confidential\"\n",
+        )
+        .unwrap();
+
+        let ctx = test_context();
+        let session = ctx
+            .sessions
+            .create_session(
+                crucible_core::session::SessionType::Chat,
+                kiln,
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+        let dispatcher = RpcDispatcher::new(ctx.clone());
+
+        // `test_context` carries no llm_config, so any provider resolves to
+        // Cloud — below the Local a Confidential kiln requires.
+        let req = make_request(
+            "session.configure_agent",
+            serde_json::json!({
+                "session_id": session.id,
+                "agent": {
+                    "agent_type": "internal",
+                    "provider": "ollama",
+                    "model": "llama3.2",
+                    "system_prompt": "",
+                },
+            }),
+        );
+        let resp = dispatcher.dispatch(ClientId::new(), req).await;
+        let err = resp.error.expect("the configure must be refused");
+        assert_eq!(err.code, INVALID_PARAMS);
+        assert!(
+            err.message.contains("insufficient for the attached kiln"),
+            "got: {}",
+            err.message
+        );
+        assert!(ctx
+            .sessions
+            .get_session(&session.id)
+            .unwrap()
+            .agent
+            .is_none());
+    }
+
     /// The third case, and the one that separates "external" from
     /// "unenforceable": a claim carrying an exec prefix launches the agent
     /// process inside the sandbox, so its tools are confined by where it runs.
@@ -2316,7 +2367,7 @@ mod tests {
     /// Lets a test observe whether a code path fired plugin start hooks at all:
     /// a session that went through them has a claim, one that skipped them does
     /// not — which is exactly the difference between sandboxed and not.
-    async fn test_context_claiming_isolation(dir: &std::path::Path) -> RpcContext {
+    async fn test_context_claiming_isolation(dir: &std::path::Path) -> Arc<RpcContext> {
         const CLAIMS_ISOLATION: &str = r#"
 crucible.on_session_start(function(session)
   crucible.require_isolation{ session = session.id, plugin = "sandbox" }
@@ -2695,7 +2746,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
 
     /// Build a context whose ProjectManager persists to `projects_path`.
     /// Mirrors `test_context` but lets the SCM tests isolate the registry.
-    fn scm_test_context(projects_path: std::path::PathBuf) -> RpcContext {
+    fn scm_test_context(projects_path: std::path::PathBuf) -> Arc<RpcContext> {
         use crate::agent_manager::{AgentManager, AgentManagerParams};
         use crate::background_manager::BackgroundJobManager;
         use crate::kiln_manager::KilnManager;
@@ -2725,7 +2776,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             workspace_tools: Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp"))),
         }));
 
-        RpcContext::new(
+        Arc::new(RpcContext::new(
             kiln_manager,
             session_manager,
             agent_manager,
@@ -2739,8 +2790,9 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             Arc::new(McpServerManager::new()),
             None,
             std::path::PathBuf::from("/tmp"),
+            None,
             Some(crucible_core::config::ScmConfig::default()),
-        )
+        ))
     }
 
     /// `scm.clone` rejects non-remote / hostile URLs at the RPC layer before

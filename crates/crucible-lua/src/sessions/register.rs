@@ -76,6 +76,73 @@ pub fn register_sessions_module(lua: &Lua) -> Result<(), LuaError> {
     Ok(())
 }
 
+/// Fields that name or override the session's agent.
+///
+/// `agent_type` is deliberately absent: on its own it selects an
+/// implementation, not an agent, and `agent_type = "acp"` with no name is an
+/// error on the create path where today it is a plain agent-less session.
+const AGENT_FIELDS: [&str; 7] = [
+    "agent_card",
+    "agent_name",
+    "provider",
+    "provider_key",
+    "model",
+    "endpoint",
+    "tool_policy",
+];
+
+/// Build the daemon's `session.create` params from a `cru.sessions.create`
+/// argument.
+///
+/// The whole options table crosses as one object instead of four plucked keys:
+/// the daemon deserializes it into the same request type its RPC handler uses,
+/// so a plugin reaches every create-time field (agent cards, isolation,
+/// recording) and the two sides cannot drift on a field name.
+fn create_params(args: &Value) -> Result<serde_json::Value, String> {
+    let mut params = match args {
+        Value::Table(t) => serde_json::to_value(t)
+            .map_err(|e| format!("create() options are not serializable: {e}"))?,
+        // Legacy positional: create("chat") — session type only.
+        Value::String(s) => {
+            let session_type = s.to_str().map(|s| s.to_string()).unwrap_or_default();
+            serde_json::json!({ "type": session_type })
+        }
+        _ => {
+            return Err("create() expects a table argument, e.g. { type = \"chat\" }".to_string());
+        }
+    };
+    let Some(obj) = params.as_object_mut() else {
+        return Err(
+            "create() expects named options, e.g. { type = \"chat\" }, not a list".to_string(),
+        );
+    };
+
+    // mlua encodes an empty Lua table as a JSON *object*, which the request's
+    // `Option<Vec<String>>` rejects. `kilns = {}` was tolerated by the
+    // hand-plucked `unwrap_or_default()` this replaced, so it stays tolerated.
+    for key in ["kilns", "connect_kilns"] {
+        if obj
+            .get(key)
+            .and_then(serde_json::Value::as_object)
+            .is_some_and(serde_json::Map::is_empty)
+        {
+            obj.insert(key.to_string(), serde_json::Value::Array(Vec::new()));
+        }
+    }
+
+    // The daemon only reads the agent fields when `configure_agent` is set, so
+    // without this a plugin that asked for an agent card would be silently
+    // ignored. Implied here rather than in the RPC contract: the CLI and the
+    // web layer both set the flag explicitly, and only Lua has a table where
+    // the caller's intent is this unambiguous. An explicit `configure_agent`
+    // in the table still wins.
+    if !obj.contains_key("configure_agent") && AGENT_FIELDS.iter().any(|f| obj.contains_key(*f)) {
+        obj.insert("configure_agent".to_string(), serde_json::Value::Bool(true));
+    }
+
+    Ok(params)
+}
+
 /// Register the sessions module with a real daemon API implementation.
 ///
 /// This replaces the stub functions registered by [`register_sessions_module`]
@@ -92,41 +159,21 @@ pub fn register_sessions_module_with_api(
     let cru: Table = globals.get("cru")?;
     let sessions: Table = cru.get("sessions")?;
 
-    // create({ type = "chat", kiln = "...", workspace = "...", kilns = {"..."} })
-    // Also supports legacy positional: create("chat", "/path/to/kiln")
+    // create({ type = "chat", kiln = "...", workspace = "...", kilns = {"..."},
+    //          agent_card = "..." })
+    // Also supports legacy positional: create("chat")
     let a = Arc::clone(&api);
     let create_fn = lua.create_async_function(move |lua, args: Value| {
         let a = Arc::clone(&a);
         async move {
-            let (session_type, kiln, workspace, connected_kilns) = match args {
-                Value::Table(ref t) => {
-                    let st: String = t
-                        .get::<String>("type")
-                        .unwrap_or_else(|_| "chat".to_string());
-                    let k: Option<String> = t.get("kiln").ok();
-                    let ws: Option<String> = t.get("workspace").ok();
-                    let kilns: Vec<String> = t.get::<Vec<String>>("kilns").unwrap_or_default();
-                    (st, k, ws, kilns)
-                }
-                Value::String(ref s) => {
-                    // Legacy positional: create("chat") — type only, no kiln
-                    let st = s
-                        .to_str()
-                        .map(|s| s.to_string())
-                        .unwrap_or_else(|_| "chat".to_string());
-                    (st, None, None, vec![])
-                }
-                _ => {
-                    let err = lua.create_string(
-                        "create() expects a table argument, e.g. { type = \"chat\" }",
-                    )?;
+            let params = match create_params(&args) {
+                Ok(params) => params,
+                Err(message) => {
+                    let err = lua.create_string(&message)?;
                     return Ok((Value::Nil, Value::String(err)));
                 }
             };
-            match a
-                .create_session(session_type, kiln, workspace, connected_kilns)
-                .await
-            {
+            match a.create_session(params).await {
                 Ok(val) => {
                     let lua_val = lua.to_value(&val)?;
                     Ok((lua_val, Value::Nil))

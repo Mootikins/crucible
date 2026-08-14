@@ -11,6 +11,8 @@
 //!   A4 — module-size ratchet against a frozen ledger.
 //!   A5 — `#[ignore]` reason strings parse, and the external test tier is
 //!        derived from them rather than hand-maintained.
+//!   A6 — a turn rebuilds its conversation tree before emitting the event that
+//!        gets appended to the file the rebuild reads.
 //!
 //! **A2 is not missing.** A2a–A2e live in the *CLI* crate's companion file,
 //! `crates/crucible-cli/tests/architecture_tests.rs`, because they scan the
@@ -1188,5 +1190,37 @@ fn every_lua_request_type_is_in_the_wire_table() {
         missing.is_empty(),
         "Lua request types with no WIRE_REQUEST_TYPES row — add one naming the \
          server file that deserializes it: {missing:?}"
+    );
+}
+
+// ===========================================================================
+// A6 — a turn reads history before it writes to history.
+// ===========================================================================
+
+// UNIQUE: both statements are independently correct and neither the compiler
+// nor a behavioural test can see the ordering — the loser of the race is a
+// writer task in another module, and forcing the losing interleaving needs a
+// `sleep` in production code. A source scan is the only standing enforcement.
+#[test]
+fn the_conversation_tree_is_rebuilt_before_the_turns_user_message_is_emitted() {
+    let send =
+        read(&workspace_root().join("crates/crucible-daemon/src/agent_manager/messaging/send.rs"));
+    let body = fn_body(&send, "async fn send_message_inner(");
+
+    let rebuild = body
+        .find("get_or_rebuild_session_tree(")
+        .expect("send_message_inner must fetch the session's conversation tree");
+    let emit = body
+        .find("SessionEventMessage::user_message(")
+        .expect("send_message_inner must emit the turn's user_message event");
+
+    assert!(
+        rebuild < emit,
+        "`get_or_rebuild_session_tree` must run BEFORE the `user_message` event \
+         is emitted. The rebuild reads `session.jsonl`; a separate writer task \
+         appends the emitted event to that same file. Emitting first races the \
+         append, and when the append wins the rebuilt tree already holds this \
+         turn's User node — `undo_depth() == 1` then reads false and the turn \
+         runs with Precognition silently skipped."
     );
 }

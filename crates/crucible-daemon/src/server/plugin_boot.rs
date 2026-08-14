@@ -13,12 +13,9 @@ impl Server {
         let mut loader_guard = self.plugin_loader.lock().await;
         if let Some(ref mut loader) = *loader_guard {
             // Upgrade sessions module with real daemon API before loading plugins
-            let session_api: Arc<dyn crucible_lua::DaemonSessionApi> =
-                Arc::new(crate::session_bridge::DaemonSessionBridge::new(
-                    self.session_manager.clone(),
-                    self.agent_manager.clone(),
-                    self.event_tx.clone(),
-                ));
+            let session_api: Arc<dyn crucible_lua::DaemonSessionApi> = Arc::new(
+                crate::session_bridge::DaemonSessionBridge::new(self.rpc_context.clone()),
+            );
             if let Err(e) = loader.upgrade_with_sessions(session_api) {
                 warn!("Failed to upgrade Lua sessions module: {}", e);
             }

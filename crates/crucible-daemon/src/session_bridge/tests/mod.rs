@@ -5,13 +5,62 @@ use crate::kiln_manager::KilnManager;
 use crate::session_manager::SessionManager;
 use crate::session_storage::FileSessionStorage;
 use crate::tools::workspace::WorkspaceTools;
-use crucible_core::config::BackendType;
+mod create;
+mod lifecycle;
+
+use crucible_core::config::{BackendType, LlmConfig};
 use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
 use std::collections::HashMap;
 use std::time::Duration;
 use tempfile::TempDir;
 
+/// The context a bridge runs against.
+///
+/// `data_home` is the test's own tempdir, never `crucible_home()`: a kiln-less
+/// `create` falls back to it, and reading the developer's real `~/.crucible`
+/// is the hermeticity failure that passes on CI and fails locally.
+fn bridge_ctx(
+    session_manager: Arc<SessionManager>,
+    agent_manager: Arc<AgentManager>,
+    event_tx: broadcast::Sender<SessionEventMessage>,
+    data_home: &std::path::Path,
+) -> Arc<RpcContext> {
+    bridge_ctx_with_llm_config(session_manager, agent_manager, event_tx, data_home, None)
+}
+
+/// As [`bridge_ctx`], with the LLM config the create path reads.
+///
+/// Separate rather than a parameter on every call site because only the create
+/// tests need one: `bridge_configure_agent_refuses_a_provider_the_attached_kiln_does_not_clear`
+/// depends on the absence of a config resolving its provider to Cloud.
+fn bridge_ctx_with_llm_config(
+    session_manager: Arc<SessionManager>,
+    agent_manager: Arc<AgentManager>,
+    event_tx: broadcast::Sender<SessionEventMessage>,
+    data_home: &std::path::Path,
+    llm_config: Option<LlmConfig>,
+) -> Arc<RpcContext> {
+    Arc::new(RpcContext::for_test(
+        Arc::new(KilnManager::new()),
+        session_manager,
+        agent_manager,
+        Arc::new(crate::project_manager::ProjectManager::new(
+            data_home.join("projects.json"),
+        )),
+        event_tx,
+        llm_config,
+        data_home.to_path_buf(),
+    ))
+}
+
 fn build_test_agent_manager(session_manager: Arc<SessionManager>) -> Arc<AgentManager> {
+    build_test_agent_manager_with_llm_config(session_manager, None)
+}
+
+fn build_test_agent_manager_with_llm_config(
+    session_manager: Arc<SessionManager>,
+    llm_config: Option<LlmConfig>,
+) -> Arc<AgentManager> {
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
     Arc::new(AgentManager::new(AgentManagerParams {
@@ -19,13 +68,26 @@ fn build_test_agent_manager(session_manager: Arc<SessionManager>) -> Arc<AgentMa
         session_manager,
         background_manager,
         mcp_gateway: None,
-        llm_config: None,
+        llm_config,
         acp_config: None,
         context_config: None,
         permission_config: None,
         plugin_loader: None,
         workspace_tools: Arc::new(WorkspaceTools::new(PathBuf::from("/tmp"))),
     }))
+}
+
+/// The LLM config the create-path fixtures resolve cards against.
+///
+/// Not `None`: `SessionAgent::from_card` maps a card's `specialty:` through
+/// `llm_config.models`, so with no config every specialty card silently
+/// inherits the base model and the mapping is untested.
+fn bridge_llm_config() -> LlmConfig {
+    let mut config = crate::test_fixtures::build_llm_config("ollama", BackendType::Ollama);
+    config
+        .models
+        .insert("research".to_string(), "ollama/llama3.2-deep".to_string());
+    config
 }
 
 fn make_test_agent(context_budget: Option<usize>) -> SessionAgent {
@@ -170,7 +232,8 @@ async fn bash_calling_rig(
         .configure_agent(&session.id, make_test_agent(None))
         .await
         .unwrap();
-    let bridge = DaemonSessionBridge::new(session_manager, agent_manager, event_tx);
+    let ctx = bridge_ctx(session_manager, agent_manager, event_tx, &workspace);
+    let bridge = DaemonSessionBridge::new(ctx);
     (tmp, bridge, session.id)
 }
 
@@ -254,69 +317,28 @@ async fn a_fire_and_forget_plugin_turn_never_broadcasts_a_permission_request() {
     );
 }
 
+/// The bridge's manager handles must be the context's, not merely managers of
+/// the same type: `create` delegates to the context while every other method
+/// uses the fields, and two `SessionManager`s would mean a plugin created
+/// sessions one place and read them from another.
 #[test]
-fn test_daemon_session_bridge_construction() {
-    // Create minimal dependencies for testing
+fn bridge_managers_are_the_contexts_own() {
+    let tmp = TempDir::new().unwrap();
     let (event_tx, _) = broadcast::channel(100);
-    let kiln_manager = Arc::new(KilnManager::new());
     let session_manager = Arc::new(SessionManager::new());
-    let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
-    let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
-        kiln_manager,
-        session_manager: session_manager.clone(),
-        background_manager,
-        mcp_gateway: None,
-        llm_config: None,
-        acp_config: None,
-        context_config: None,
-        permission_config: None,
-        plugin_loader: None,
-        workspace_tools: Arc::new(WorkspaceTools::new(PathBuf::from("/tmp"))),
-    }));
-
-    // Construct bridge
-    let bridge = DaemonSessionBridge::new(
+    let agent_manager = build_test_agent_manager(session_manager.clone());
+    let ctx = bridge_ctx(
         session_manager.clone(),
         agent_manager.clone(),
-        event_tx.clone(),
+        event_tx,
+        tmp.path(),
     );
 
-    // Verify bridge was created (no panic)
-    assert!(std::mem::size_of_val(&bridge) > 0);
-}
+    let bridge = DaemonSessionBridge::new(ctx.clone());
 
-#[test]
-fn test_daemon_session_bridge_delegates_to_managers() {
-    // Verify Arc cloning works (bridge holds Arc references)
-    let (event_tx, _) = broadcast::channel(100);
-    let kiln_manager = Arc::new(KilnManager::new());
-    let session_manager = Arc::new(SessionManager::new());
-    let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
-    let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
-        kiln_manager,
-        session_manager: session_manager.clone(),
-        background_manager,
-        mcp_gateway: None,
-        llm_config: None,
-        acp_config: None,
-        context_config: None,
-        permission_config: None,
-        plugin_loader: None,
-        workspace_tools: Arc::new(WorkspaceTools::new(PathBuf::from("/tmp"))),
-    }));
-
-    let sm_strong_count = Arc::strong_count(&session_manager);
-    let am_strong_count = Arc::strong_count(&agent_manager);
-
-    let _bridge = DaemonSessionBridge::new(
-        session_manager.clone(),
-        agent_manager.clone(),
-        event_tx.clone(),
-    );
-
-    // Verify Arc references are held (strong count increased)
-    assert_eq!(Arc::strong_count(&session_manager), sm_strong_count + 1);
-    assert_eq!(Arc::strong_count(&agent_manager), am_strong_count + 1);
+    assert!(Arc::ptr_eq(&bridge.session_manager, &ctx.sessions));
+    assert!(Arc::ptr_eq(&bridge.agent_manager, &ctx.agents));
+    assert!(Arc::ptr_eq(&bridge.ctx, &ctx));
 }
 
 #[test]
@@ -383,7 +405,13 @@ async fn context_usage_returns_expected_shape() {
         .unwrap();
 
     let (event_tx, _) = broadcast::channel(16);
-    let bridge = DaemonSessionBridge::new(session_manager.clone(), agent_manager.clone(), event_tx);
+    let ctx = bridge_ctx(
+        session_manager.clone(),
+        agent_manager.clone(),
+        event_tx,
+        tmp.path(),
+    );
+    let bridge = DaemonSessionBridge::new(ctx);
 
     let usage = bridge.context_usage(session.id.clone()).await.unwrap();
     let obj = usage.as_object().expect("expected object");
@@ -416,7 +444,13 @@ async fn compact_transitions_session_to_compacting() {
 
     let agent_manager = build_test_agent_manager(session_manager.clone());
     let (event_tx, _) = broadcast::channel(16);
-    let bridge = DaemonSessionBridge::new(session_manager.clone(), agent_manager.clone(), event_tx);
+    let ctx = bridge_ctx(
+        session_manager.clone(),
+        agent_manager.clone(),
+        event_tx,
+        tmp.path(),
+    );
+    let bridge = DaemonSessionBridge::new(ctx);
 
     bridge.compact(session.id.clone()).await.unwrap();
     let after = session_manager.get_session(&session.id).unwrap();
@@ -474,7 +508,8 @@ async fn remove_messages_last_n_rewinds_tree() {
     }
 
     let (event_tx, _) = broadcast::channel(16);
-    let bridge = DaemonSessionBridge::new(session_manager.clone(), agent_manager, event_tx);
+    let ctx = bridge_ctx(session_manager.clone(), agent_manager, event_tx, tmp.path());
+    let bridge = DaemonSessionBridge::new(ctx);
 
     let removed = bridge
         .remove_messages(
@@ -541,7 +576,8 @@ async fn remove_messages_indices_truncates_from_start() {
     }
 
     let (event_tx, _) = broadcast::channel(16);
-    let bridge = DaemonSessionBridge::new(session_manager.clone(), agent_manager, event_tx);
+    let ctx = bridge_ctx(session_manager.clone(), agent_manager, event_tx, tmp.path());
+    let bridge = DaemonSessionBridge::new(ctx);
 
     let removed = bridge
         .remove_messages(
@@ -605,7 +641,13 @@ async fn undo_rewinds_tree_and_emits_event() {
     }
 
     let (event_tx, mut event_rx) = broadcast::channel(16);
-    let bridge = DaemonSessionBridge::new(session_manager.clone(), agent_manager.clone(), event_tx);
+    let ctx = bridge_ctx(
+        session_manager.clone(),
+        agent_manager.clone(),
+        event_tx,
+        tmp.path(),
+    );
+    let bridge = DaemonSessionBridge::new(ctx);
 
     // Pre-undo state.
     assert!(bridge.can_undo(session.id.clone()).await.unwrap());
@@ -663,7 +705,8 @@ async fn remove_messages_invalid_range_type_errors() {
         .unwrap();
 
     let (event_tx, _) = broadcast::channel(16);
-    let bridge = DaemonSessionBridge::new(session_manager, agent_manager, event_tx);
+    let ctx = bridge_ctx(session_manager, agent_manager, event_tx, tmp.path());
+    let bridge = DaemonSessionBridge::new(ctx);
 
     let err = bridge
         .remove_messages(session.id, serde_json::json!({"type": "bogus"}))

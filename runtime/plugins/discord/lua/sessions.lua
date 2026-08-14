@@ -258,8 +258,8 @@ function M.get_or_create(channel_id, guild_id, author_id, opts)
         persist(guild_id)
     end
 
-    -- The kiln is required, not defaulted: `create_session` falls back to
-    -- `crucible_home()` when it is absent, which stages reflection proposals
+    -- The kiln is required, not defaulted: `create_session` falls back to the
+    -- daemon's data root when it is absent, which stages reflection proposals
     -- under `~/.crucible/.crucible/proposals/` where `cru proposals list`
     -- never looks. Refuse before creating anything.
     local kiln = config.get("kiln")
@@ -275,6 +275,32 @@ function M.get_or_create(channel_id, guild_id, author_id, opts)
         create_opts.kilns = kilns
     end
 
+    -- An agent card is resolved by the daemon at create, against this session's
+    -- kiln — the plugin cannot look one up itself, and the post-create
+    -- `configure_agent` below would overwrite whatever the card supplied. So on
+    -- this path the whole agent, tier included, is settled in one call.
+    local agent_card = config.get("agent_card")
+    if agent_card then
+        if config.get("agent_type", "internal") ~= "internal" then
+            return nil, "Discord plugin: agent_card configures the internal agent; it cannot be combined with agent_type = \"acp\""
+        end
+        if config.get("agent_name") then
+            return nil, "Discord plugin: set agent_card or agent_name, not both — agent_name names an ACP profile"
+        end
+        local provider = config.get("provider")
+        local model = config.get("model")
+        if not provider or not model then
+            return nil, "Discord plugin: provider and model must be configured"
+        end
+        create_opts.agent_card = agent_card
+        create_opts.provider = provider
+        create_opts.provider_key = config.get("provider_key")
+        create_opts.model = model
+        -- Last word over the card's own `tools:` block: the tier is this
+        -- sender's grant, the card is a file the operator wrote once.
+        create_opts.tool_policy = M.tool_policy_for(tier)
+    end
+
     local session, err = cru.sessions.create(create_opts)
     if not session then
         return nil, "Failed to create session: " .. tostring(err)
@@ -283,7 +309,7 @@ function M.get_or_create(channel_id, guild_id, author_id, opts)
     -- A session whose agent could not be configured answers every message with
     -- "NoAgentConfigured" for the full TTL if it is cached, so end it and
     -- report the failure instead.
-    if not M.configure_agent(session.id, tier) then
+    if not agent_card and not M.configure_agent(session.id, tier) then
         pcall(cru.sessions.end_session, session.id)
         return nil, "Discord plugin: could not configure an agent for this session"
     end
@@ -457,8 +483,24 @@ function M.access_tier(guild_id, author_id, roles)
     return tier
 end
 
+--- The tool policy a session at `tier` runs under.
+---
+--- One function because the tier reaches the agent by two routes now — in
+--- `create_opts` on the agent-card path, in `configure_agent` otherwise — and a
+--- second copy is how one of them ends up a tier behind.
+---
+--- An explicit `tool_policy` replaces the tier wholesale; that is the escape
+--- hatch for an operator who wants `bash` on a personal bot.
+function M.tool_policy_for(tier)
+    return config.get("tool_policy", TIERS[tier or "read"] or READ_TOOLS)
+end
+
 --- Configure the agent for a session with optional overrides from plugin config.
 --- Returns true when the session has a usable agent.
+---
+--- Not called on the agent-card path: `configure_agent` writes the *whole*
+--- agent, so running it after a card was resolved at create would replace the
+--- card's prompt and model with the ones below. See `M.get_or_create`.
 function M.configure_agent(session_id, tier)
     local provider = config.get("provider")
     local model = config.get("model")
@@ -470,9 +512,7 @@ function M.configure_agent(session_id, tier)
 
     local agent_config = {
         agent_type = config.get("agent_type", "internal"),
-        -- An explicit `tool_policy` replaces the tier wholesale; that is the
-        -- escape hatch for an operator who wants `bash` on a personal bot.
-        tool_policy = config.get("tool_policy", TIERS[tier or "read"] or READ_TOOLS),
+        tool_policy = M.tool_policy_for(tier),
         provider = provider,
         model = model,
         -- The citation sentence is conditional ("when kiln notes were
@@ -493,8 +533,22 @@ function M.configure_agent(session_id, tier)
     local provider_key = config.get("provider_key")
     if provider_key then agent_config.provider_key = provider_key end
 
+    -- `agent_name` names an ACP *profile* and nothing else. On an internal
+    -- agent it resolves no card and never did — it only ever set a field
+    -- nothing reads — so refuse it rather than let it look configured. A card
+    -- has to be named at create, where the daemon can resolve it against the
+    -- session's kiln; `configure_agent` has no kiln to resolve against.
     local agent_name = config.get("agent_name")
-    if agent_name then agent_config.agent_name = agent_name end
+    if agent_name then
+        if agent_config.agent_type ~= "acp" then
+            cru.log("warn",
+                "Discord plugin: [plugins.discord] agent_name names an ACP profile and needs "
+                .. "agent_type = \"acp\". For an internal agent persona set agent_card instead — "
+                .. "it is resolved at create (`cru.sessions.create{ agent_card = ... }`).")
+            return false
+        end
+        agent_config.agent_name = agent_name
+    end
 
     local _, err = cru.sessions.configure_agent(session_id, agent_config)
     if err then

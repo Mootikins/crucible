@@ -292,16 +292,35 @@ The trait is defined in `crucible-lua` as `DaemonSessionApi` and implemented by 
 
 ### cru.sessions.create(opts)
 
-Create a new session. Returns a session table with at least `{ id, session_type, state, kiln, workspace }`.
+Create a new session. Returns a session table with at least `{ id, session_type, state, kiln }`.
 
 ```lua
 local session, err = cru.sessions.create({
     type = "chat",                            -- session type (default: "chat")
-    kiln = "/path/to/notes",                  -- kiln path (default: crucible home)
+    kiln = "/path/to/notes",                  -- kiln path (default: the daemon's data root)
     workspace = "/path/to/workspace",         -- workspace path (optional)
     kilns = { "/extra/notes", "/more/docs" }, -- connected kilns for knowledge (optional)
+    agent_card = "researcher",                -- agent card to run the session as (optional)
+    tool_policy = { bash = "deny" },          -- per-tool allow/ask/deny (optional)
 })
 ```
+
+The options table is passed through to the daemon's `session.create` whole, so
+every field that RPC accepts is available here — `isolation`, `recording_mode`,
+`provider`/`model`/`endpoint` overrides, and `agent_card`. Naming any agent
+field implies `configure_agent = true`, so the daemon resolves and attaches the
+agent as part of create; pass `configure_agent = false` to opt out and configure
+it yourself afterwards.
+
+`agent_card` names a card from `<kiln>/.crucible/agents/` (or the workspace, or
+`~/.config/crucible/agents/`). An unknown name is an error and no session is
+created. `agent_name` selects an *ACP profile* and requires `agent_type = "acp"`;
+setting both `agent_card` and `agent_name` is refused.
+
+`tool_policy` is applied last, over a card's own `tools:` block. Set it here
+rather than with a follow-up `configure_agent`: that call writes the *whole*
+agent, so it would replace a card's prompt and model with whatever else you
+passed.
 
 Also accepts a string for the legacy positional form: `cru.sessions.create("chat")`.
 

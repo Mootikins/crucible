@@ -103,15 +103,19 @@ pub enum ResponsePart {
 pub trait DaemonSessionApi: Send + Sync + 'static {
     /// Create a new session.
     ///
-    /// Returns a JSON object with at least `{ id, session_type, state, kiln, workspace }`.
-    /// `kiln` defaults to `crucible_home()` when None.
-    /// `connected_kilns` are additional kilns the session can query for knowledge.
+    /// `params` is the caller's whole options table as JSON — the same shape
+    /// the daemon's `session.create` RPC takes (`type`, `kiln`, `workspace`,
+    /// `kilns`/`connect_kilns`, `agent_card`, `isolation`, …). It is a `Value`
+    /// rather than a typed struct because that request type lives in
+    /// `crucible-daemon`, which depends on this crate and not the reverse;
+    /// passing the object through means a plugin reaches the same fields an
+    /// RPC caller does without this crate re-declaring any of them.
+    ///
+    /// Returns a JSON object with at least `{ id, session_type, state, kiln }`.
+    /// An omitted `kiln` is resolved daemon-side, not here.
     fn create_session(
         &self,
-        session_type: String,
-        kiln: Option<String>,
-        workspace: Option<String>,
-        connected_kilns: Vec<String>,
+        params: serde_json::Value,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>>;
 
     /// Get a session by ID.

@@ -135,6 +135,7 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
             schedules: config.schedules.clone(),
             app_config: serde_json::to_value(&config).ok(),
             data_home: config.data_home.clone(),
+            config_home: None,
         })
         .await?;
 

@@ -13,10 +13,7 @@ use super::*;
 struct Fixture {
     tmp: TempDir,
     sm: Arc<SessionManager>,
-    pm: Arc<ProjectManager>,
-    km: Arc<KilnManager>,
-    am: Arc<AgentManager>,
-    event_tx: broadcast::Sender<SessionEventMessage>,
+    ctx: RpcContext,
 }
 
 impl Fixture {
@@ -29,14 +26,16 @@ impl Fixture {
         let km = Arc::new(KilnManager::new());
         let (event_tx, _rx) = broadcast::channel(16);
         let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), None);
-        Self {
-            tmp,
-            sm,
-            pm,
+        let ctx = RpcContext::for_test(
             km,
+            sm.clone(),
             am,
+            pm,
             event_tx,
-        }
+            None,
+            tmp.path().to_path_buf(),
+        );
+        Self { tmp, sm, ctx }
     }
 
     /// `session.create` with whatever `params` the caller wants merged in.
@@ -55,18 +54,7 @@ impl Fixture {
         }))
         .unwrap();
 
-        let response = handle_session_create(
-            request,
-            &self.sm,
-            &self.pm,
-            self.tmp.path(),
-            &None,
-            &self.km,
-            &self.event_tx,
-            &self.am,
-            None,
-        )
-        .await;
+        let response = handle_session_create(request, &self.ctx).await;
         assert!(
             response.error.is_none(),
             "session.create failed: {:?}",

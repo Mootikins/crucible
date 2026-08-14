@@ -46,6 +46,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 mod accept;
+mod bind;
 mod core;
 mod external_announce;
 mod file_event_hooks;
@@ -57,6 +58,7 @@ mod socket_lock;
 mod socket_privacy;
 pub(crate) mod ui_broadcast;
 use accept::{accept_error_is_transient, ACCEPT_ERROR_BACKOFF};
+pub use bind::BindWithPluginConfigParams;
 use socket_lock::acquire_socket_lock;
 use socket_privacy::{bind_private_listener, prepare_socket_dir};
 pub mod lua;
@@ -107,6 +109,10 @@ pub struct Server {
     lua_sessions: Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
     event_tx: broadcast::Sender<SessionEventMessage>,
     dispatcher: Arc<RpcDispatcher>,
+    /// The same context the dispatcher runs handlers against. Held so plugin
+    /// boot can give the Lua session bridge the daemon's real create path
+    /// instead of a second, thinner one.
+    rpc_context: Arc<RpcContext>,
     plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
     runtimepath: Vec<std::path::PathBuf>,
     plugin_watch: bool,
@@ -151,98 +157,7 @@ pub struct LuaSessionState {
     pub(crate) end_hooks_fired: bool,
 }
 
-/// Parameters for binding the server to a Unix socket with plugin configuration.
-pub struct BindWithPluginConfigParams {
-    pub path: std::path::PathBuf,
-    pub mcp_config: Option<crucible_core::config::McpConfig>,
-    pub plugin_config: std::collections::HashMap<String, serde_json::Value>,
-    pub runtimepath: Vec<std::path::PathBuf>,
-    pub plugin_watch: bool,
-    pub auto_archive_hours: Option<u64>,
-    pub llm_config: Option<crucible_core::config::LlmConfig>,
-    pub enrichment_config: Option<crucible_core::config::EmbeddingProviderConfig>,
-    pub max_precognition_chars: usize,
-    pub acp_config: Option<crucible_core::config::components::acp::AcpConfig>,
-    pub context_config: Option<crucible_core::config::ContextConfig>,
-    pub permission_config: Option<crucible_core::config::components::permissions::PermissionConfig>,
-    pub web_config: Option<crucible_core::config::WebConfig>,
-    pub schedules: Vec<crucible_core::config::ScheduleEntry>,
-    /// Full loaded app config as JSON — seeds the Lua `cru.config` store
-    /// before init.lua runs (TOML seeds, Lua overrides, RPC merges).
-    pub app_config: Option<serde_json::Value>,
-    /// Daemon data root — registry (`projects.json`), default session storage,
-    /// the home kiln, logs. `None` resolves to `crucible_home()` (the
-    /// `$CRUCIBLE_HOME`/`~/.crucible` default). Injected as a TempDir in tests so
-    /// the in-process daemon never reads the developer's real `~/.crucible`.
-    pub data_home: Option<std::path::PathBuf>,
-}
-
 impl Server {
-    /// Bind to a Unix socket path
-    #[allow(dead_code)] // convenience constructor used in integration tests
-    pub async fn bind(
-        path: &Path,
-        mcp_config: Option<&crucible_core::config::McpConfig>,
-    ) -> Result<Self> {
-        Self::bind_with_plugin_config(BindWithPluginConfigParams {
-            path: path.to_path_buf(),
-            mcp_config: mcp_config.cloned(),
-            plugin_config: std::collections::HashMap::new(),
-            runtimepath: Vec::new(),
-            plugin_watch: false,
-            auto_archive_hours: None,
-            llm_config: None,
-            enrichment_config: None,
-            max_precognition_chars: crucible_core::config::default_max_precognition_chars(),
-            acp_config: None,
-            context_config: None,
-            permission_config: None,
-            web_config: None,
-            schedules: Vec::new(),
-            app_config: None,
-            data_home: None,
-        })
-        .await
-    }
-
-    /// Test constructor: bind with an isolated data root injected as a value
-    /// (no `CRUCIBLE_HOME` env mutation). The daemon reads registry, sessions,
-    /// and the home kiln from `data_home` instead of the developer's real
-    /// `~/.crucible`.
-    ///
-    /// CAVEAT: this injects the *value* threaded through `Server`/`RpcContext`,
-    /// but it does NOT change the process-global `crucible_home()` that
-    /// `is_crucible_home()`/`FileSessionStorage::sessions_base()` still read. So
-    /// the injected home is treated as a *regular* kiln: sessions created under
-    /// it land at `{data_home}/.crucible/sessions`, whereas production (where
-    /// `data_home == crucible_home()`) uses the no-prefix `{home}/sessions`. A
-    /// test that seeds a session into the injected home kiln and expects the
-    /// production layout must instead pin `CRUCIBLE_HOME` via `EnvVarGuard` (see
-    /// the `session_storage` home-detection tests). Untangling that global is a
-    /// separate follow-up.
-    #[allow(dead_code)] // used by in-process integration-test fixtures
-    pub async fn bind_with_data_home(path: &Path, data_home: std::path::PathBuf) -> Result<Self> {
-        Self::bind_with_plugin_config(BindWithPluginConfigParams {
-            path: path.to_path_buf(),
-            mcp_config: None,
-            plugin_config: std::collections::HashMap::new(),
-            runtimepath: Vec::new(),
-            plugin_watch: false,
-            auto_archive_hours: None,
-            llm_config: None,
-            enrichment_config: None,
-            max_precognition_chars: crucible_core::config::default_max_precognition_chars(),
-            acp_config: None,
-            context_config: None,
-            permission_config: None,
-            web_config: None,
-            schedules: Vec::new(),
-            app_config: None,
-            data_home: Some(data_home),
-        })
-        .await
-    }
-
     /// Bind to a Unix socket path with plugin configuration
     pub async fn bind_with_plugin_config(params: BindWithPluginConfigParams) -> Result<Self> {
         // Verify (or privately create) the socket's parent dir first. This runs
@@ -309,6 +224,10 @@ impl Server {
             .data_home
             .clone()
             .unwrap_or_else(crucible_core::config::crucible_home);
+
+        // Same treatment for the global agent-card root: resolved once here so
+        // handlers read a value instead of the environment.
+        let config_home = params.config_home.clone().or_else(dirs::config_dir);
 
         let plugin_loader = Arc::new(Mutex::new(
             match DaemonPluginLoader::new(params.plugin_config.clone()) {
@@ -385,7 +304,7 @@ impl Server {
         let lua_sessions = Arc::new(DashMap::new());
         let mcp_server_manager = Arc::new(McpServerManager::new());
 
-        let ctx = RpcContext::new(
+        let ctx = Arc::new(RpcContext::new(
             kiln_manager.clone(),
             session_manager.clone(),
             agent_manager.clone(),
@@ -399,15 +318,16 @@ impl Server {
             mcp_server_manager.clone(),
             params.mcp_config.clone(),
             data_home.clone(),
+            config_home,
             scm_config,
-        );
+        ));
         // Same instance for both paths: delegated children fire plugin start
         // hooks and get their own isolation claim, and the once-only teardown
         // claim is shared, so a child ended by the delegation watcher and a
         // parent ended by `session.end` cannot double-fire a plugin teardown.
         delegation_service.bind_session_lifecycle(ctx.session_lifecycle.clone());
 
-        let dispatcher = Arc::new(RpcDispatcher::new(ctx));
+        let dispatcher = Arc::new(RpcDispatcher::new(ctx.clone()));
 
         info!("Daemon listening on {:?}", params.path);
         Ok(Self {
@@ -423,6 +343,7 @@ impl Server {
             lua_sessions,
             event_tx,
             dispatcher,
+            rpc_context: ctx,
             plugin_loader,
             runtimepath: params.runtimepath,
             plugin_watch: params.plugin_watch,

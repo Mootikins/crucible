@@ -280,21 +280,28 @@ pub async fn start_mock_daemon_with_errors(errors: MockErrors) -> (MockDaemon, D
 
 #[cfg(any(test, feature = "test-utils"))]
 /// Param-dependent scripted errors that the per-method [`MockErrors`] map can't
-/// express. Mirrors the real daemon: `session.create` now owns ACP-profile
-/// resolution, so an unknown profile fails atomically with `INVALID_PARAMS`
-/// (JSON-RPC `-32602`) and creates nothing. Agent name `"missing"` is the
-/// unknown-profile sentinel (matching `agents.resolve_profile`).
+/// express. Mirrors the real daemon: `session.create` now owns agent
+/// resolution, so an unresolvable agent fails atomically with `INVALID_PARAMS`
+/// (JSON-RPC `-32602`) and creates nothing. `"missing"` is the sentinel name.
+///
+/// The branch on `agent_type` is not cosmetic. `agent_name` names two different
+/// things daemon-side: an ACP profile when `agent_type` is `"acp"`, and an
+/// agent card otherwise — the deprecated alias this crate is the last caller of
+/// (`routes/session/mod.rs` sends a card name in `agent_name`). Collapsing the
+/// two here would let the web's card path pass a test the daemon fails.
 pub fn mock_rpc_error(method: &str, msg: &Value) -> Option<(i64, String)> {
-    if method == "session.create" {
-        let agent_name = msg
-            .get("params")
-            .and_then(|p| p.get("agent_name"))
-            .and_then(|v| v.as_str());
-        if agent_name == Some("missing") {
-            return Some((-32602, "Unknown ACP agent profile: missing".to_string()));
-        }
+    if method != "session.create" {
+        return None;
     }
-    None
+    let params = msg.get("params")?;
+    let str_param = |key: &str| params.get(key).and_then(|v| v.as_str());
+    if str_param("agent_name") != Some("missing") {
+        return None;
+    }
+    Some(match str_param("agent_type") {
+        Some("acp") => (-32602, "Unknown ACP agent profile: missing".to_string()),
+        _ => (-32602, "Unknown agent card: missing".to_string()),
+    })
 }
 
 #[cfg(any(test, feature = "test-utils"))]

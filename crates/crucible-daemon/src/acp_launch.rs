@@ -253,6 +253,22 @@ mod tests {
         assert_eq!(cmd, "npx");
         assert_eq!(args, vec!["@zed-industries/claude-agent-acp"]);
     }
+    /// Why `session.create`/`session.configure_agent` must keep `agent_name`
+    /// set on an ACP agent: it is the only input to profile resolution, and its
+    /// absence is not an error — the fallback at the top of
+    /// `build_client_config` execs the literal `acp`, which is nothing. The RPC
+    /// round trips that keep the name set are pinned in
+    /// `tests/rpc_session_create_agent_e2e.rs`.
+    #[test]
+    fn an_acp_agent_without_a_name_resolves_no_profile() {
+        let mut agent = test_session_agent("claude");
+        agent.agent_name = None;
+
+        let config = build_client_config(&agent, Path::new("/nonexistent"), None, None).unwrap();
+        assert_eq!(config.agent_path, PathBuf::from("acp"));
+        assert_eq!(config.agent_args, None);
+    }
+
     #[test]
     fn test_resolve_unknown_agent_uses_name_as_command() {
         let config = test_session_agent("my-custom-agent");

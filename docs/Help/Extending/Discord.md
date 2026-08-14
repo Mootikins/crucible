@@ -222,10 +222,27 @@ All keys live under `[plugins.discord]`.
 | `kilns` | `[]` | Additional kiln paths the session may *read*. See [Citations](#citations-and-the-precognition-prerequisite). |
 | `provider` | — | **Required.** LLM provider for Discord sessions. |
 | `model` | — | **Required.** Model id. |
-| `agent_type` | `"internal"` | Agent implementation. Leave it alone unless you have a reason. |
-| `system_prompt` | Discord-shaped default | Overrides the built-in prompt entirely, including its citation sentence. |
+| `agent_type` | `"internal"` | Agent implementation: `internal` or `acp`. Leave it alone unless you have a reason. |
+| `system_prompt` | Discord-shaped default | Overrides the built-in prompt entirely, including its citation sentence. Ignored when `agent_card` is set. |
 | `provider_key` | — | Named provider credential instead of the default. |
-| `agent_name` | — | Display name for the agent on the session. |
+| `agent_card` | — | [[Help/Extending/Agent Cards|Agent card]] giving the internal agent its persona. See [Running on an agent card](#running-on-an-agent-card). |
+| `agent_name` | — | ACP profile to launch. Requires `agent_type = "acp"`; refused on an internal agent. |
+
+### Running on an agent card
+
+`agent_card` names a card the daemon resolves at session create, against the
+kiln you configured — the card's prompt, model and MCP servers instead of
+`system_prompt` and `model`. `cru agents list` shows what a kiln can see.
+
+The access tier still decides what the session may *do*: the tier's tool policy
+is applied over the card's own `tools:` block, never under it. A card cannot
+widen a `read` sender to `write`.
+
+The card is named at create and nowhere else, because `session.configure_agent`
+writes the whole agent — configuring one afterwards would replace the card's
+prompt and model with the plugin's own. That is also why `agent_name` is refused
+on an internal agent: it names an ACP *profile*, resolves no card, and used to
+be set anyway.
 
 ### `kiln` is required, not defaulted
 

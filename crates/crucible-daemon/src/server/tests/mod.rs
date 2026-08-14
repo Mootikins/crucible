@@ -5,7 +5,6 @@ use observe::*;
 use serde_json::json;
 use serde_json::Value;
 use session::*;
-use std::collections::HashMap;
 use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -44,74 +43,12 @@ pub(super) async fn wait_for_lines(path: &Path, n: usize) -> String {
     panic!("session log at {} never reached {n} lines", path.display());
 }
 
-pub(super) fn build_llm_config(
-    default_key: &str,
-    provider_type: crucible_core::config::BackendType,
-) -> LlmConfig {
-    build_llm_config_with_trust(default_key, provider_type, None)
-}
-
-pub(super) fn build_llm_config_with_trust(
-    default_key: &str,
-    provider_type: crucible_core::config::BackendType,
-    trust_level: Option<crucible_core::config::TrustLevel>,
-) -> LlmConfig {
-    let mut providers = HashMap::new();
-    providers.insert(
-        default_key.to_string(),
-        crucible_core::config::LlmProviderConfig {
-            provider_type,
-            endpoint: None,
-            default_model: None,
-            temperature: None,
-            max_tokens: None,
-            timeout_secs: None,
-            api_key: None,
-            available_models: None,
-            trust_level,
-            name: None,
-        },
-    );
-    LlmConfig {
-        default: Some(default_key.to_string()),
-        providers,
-        models: Default::default(),
-    }
-}
-
-/// Build an `AgentManager` suitable for tests that don't actually drive an
-/// agent — they just need a value to pass to `handle_session_create` so the
-/// setup task has a handle for `list_providers`. The returned manager has no
-/// MCP gateway, no ACP config, no plugin loader.
-pub(super) fn test_agent_manager(
-    kiln_manager: Arc<KilnManager>,
-    session_manager: Arc<SessionManager>,
-    event_tx: broadcast::Sender<SessionEventMessage>,
-    llm_config: Option<LlmConfig>,
-) -> Arc<AgentManager> {
-    let background_manager = Arc::new(crate::background_manager::BackgroundJobManager::new(
-        event_tx,
-    ));
-    // These tests never drive workspace tools — WorkspaceTools just needs a
-    // path value. Use a per-process temp path rather than hardcoding /tmp.
-    let workspace_tools = Arc::new(crate::tools::workspace::WorkspaceTools::new(
-        std::env::temp_dir().join(format!("crucible-server-test-{}", std::process::id())),
-    ));
-    Arc::new(AgentManager::new(
-        crate::agent_manager::AgentManagerParams {
-            kiln_manager,
-            session_manager,
-            background_manager,
-            mcp_gateway: None,
-            llm_config,
-            acp_config: None,
-            context_config: None,
-            permission_config: None,
-            plugin_loader: None,
-            workspace_tools,
-        },
-    ))
-}
+// These three moved to `crate::test_fixtures` once `session_bridge::tests` and
+// `agent_manager::tests` wanted them too; re-exported so the ~20 call sites in
+// this subtree keep their bare names.
+pub(super) use crate::test_fixtures::{
+    build_llm_config, build_llm_config_with_trust, test_agent_manager,
+};
 
 pub(super) fn create_session_request(kiln: &Path, workspace: &Path, provider_key: &str) -> Request {
     serde_json::from_value(json!({

@@ -1,3 +1,4 @@
+use crate::rpc_client::client::session::build_create_request;
 use crate::rpc_client::client::*;
 use crate::Server;
 use tempfile::TempDir;
@@ -241,6 +242,96 @@ fn session_create_request_omits_agent_type_when_none() {
     // the same minimal payload it always did.
     assert!(json.get("configure_agent").is_none());
     assert!(json.get("agent_name").is_none());
+    assert!(json.get("agent_card").is_none());
+    assert!(json.get("tool_policy").is_none());
+}
+
+/// `cru session create --card` is the only Rust caller that names a card, and
+/// it must not land in `agent_name` — that field launches an ACP subprocess.
+#[test]
+fn agent_spec_card_reaches_the_wire_as_agent_card() {
+    let req = build_create_request(
+        SessionCreateParams {
+            session_type: "chat".to_string(),
+            kiln: None,
+            workspace: None,
+            connect_kilns: vec![],
+            recording_mode: None,
+            recording_path: None,
+            agent_type: Some("internal".to_string()),
+            isolation: None,
+        },
+        Some(SessionAgentSpec {
+            agent_card: Some("researcher".to_string()),
+            ..Default::default()
+        }),
+    );
+    let json = serde_json::to_value(&req).unwrap();
+    assert_eq!(json["agent_card"], "researcher");
+    assert_eq!(json["configure_agent"], serde_json::json!(true));
+    assert!(json.get("agent_name").is_none());
+}
+
+/// The plugin surface's field: a per-session tool policy that survives an
+/// agent card instead of needing a whole-agent `configure_agent` afterwards.
+#[test]
+fn session_create_request_tool_policy_roundtrips() {
+    use crucible_core::agent::ToolPolicy;
+
+    let req: SessionCreateRequest = serde_json::from_value(serde_json::json!({
+        "type": "chat",
+        "tool_policy": { "bash": "deny", "read_file": "allow" },
+    }))
+    .unwrap();
+    let policy = req.tool_policy.clone().expect("tool_policy deserialized");
+    assert_eq!(policy.get("bash"), Some(&ToolPolicy::Deny));
+    assert_eq!(policy.get("read_file"), Some(&ToolPolicy::Allow));
+    assert_eq!(
+        serde_json::to_value(&req).unwrap()["tool_policy"]["bash"],
+        "deny"
+    );
+}
+
+#[test]
+fn session_create_request_agent_card_roundtrips_and_is_distinct_from_agent_name() {
+    let json = serde_json::json!({
+        "type": "chat",
+        "configure_agent": true,
+        "agent_card": "researcher",
+    });
+    let req: SessionCreateRequest = serde_json::from_value(json).unwrap();
+    assert_eq!(req.agent_card.as_deref(), Some("researcher"));
+    // The card must not land in `agent_name`: on an ACP session that field
+    // launches a subprocess by profile name.
+    assert_eq!(req.agent_name, None);
+    let roundtrip = serde_json::to_value(&req).unwrap();
+    assert_eq!(roundtrip["agent_card"], "researcher");
+}
+
+/// `cru.sessions.create{ kilns = {...} }` is the spelling every plugin uses,
+/// and the Lua binding now sends its whole table through this type. Without
+/// the alias the Discord plugin's read kilns would deserialize to `None` and
+/// vanish with no error anywhere.
+#[test]
+fn session_create_request_accepts_kilns_as_an_alias_for_connect_kilns() {
+    let from_alias: SessionCreateRequest =
+        serde_json::from_value(serde_json::json!({ "kilns": ["/a", "/b"] })).unwrap();
+    assert_eq!(
+        from_alias.connect_kilns.as_deref(),
+        Some(["/a".to_string(), "/b".to_string()].as_slice())
+    );
+
+    let canonical: SessionCreateRequest =
+        serde_json::from_value(serde_json::json!({ "connect_kilns": ["/a"] })).unwrap();
+    assert_eq!(
+        canonical.connect_kilns.as_deref(),
+        Some(["/a".to_string()].as_slice())
+    );
+
+    // Only ever serialized under the canonical name.
+    let json = serde_json::to_value(&from_alias).unwrap();
+    assert!(json.get("kilns").is_none());
+    assert_eq!(json["connect_kilns"], serde_json::json!(["/a", "/b"]));
 }
 
 #[test]

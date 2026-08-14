@@ -26,7 +26,12 @@ pub struct SessionCreateRequest {
     pub kiln: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// `kilns` is accepted as an alias because the Lua binding has always
+    /// spelled it that way (`cru.sessions.create{ kilns = {...} }`, and the
+    /// Discord plugin sets it). The binding now serializes its whole table into
+    /// this struct, so the alias is what keeps the two spellings one shape
+    /// instead of silently dropping the plugin's connected kilns.
+    #[serde(default, alias = "kilns", skip_serializing_if = "Option::is_none")]
     pub connect_kilns: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recording_mode: Option<String>,
@@ -56,8 +61,34 @@ pub struct SessionCreateRequest {
     #[serde(default, skip_serializing_if = "is_false")]
     pub configure_agent: bool,
     /// ACP profile name; used when `configure_agent` and `agent_type == "acp"`.
+    ///
+    /// DEPRECATED on an internal session, where it is an alias for
+    /// [`Self::agent_card`]. It still resolves an agent card there because
+    /// `crucible-web` sends exactly that shape, but new callers should say
+    /// `agent_card`: one field cannot mean both "launch this ACP subprocess"
+    /// and "use this internal agent card" without `agent_type` silently
+    /// deciding which. Setting both fields is `INVALID_PARAMS`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_name: Option<String>,
+    /// Agent-card name for an internal session (a specialized internal agent:
+    /// card prompt/model/tools over the config-derived defaults). Ignored when
+    /// `agent_type == "acp"`, which selects a profile via `agent_name`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_card: Option<String>,
+    /// Per-tool `allow`/`ask`/`deny` for this session's agent, applied last —
+    /// after an agent card's own `tools:` block.
+    ///
+    /// Exists because it is the one part of an agent that a caller cannot
+    /// express at create and therefore has to walk back afterwards with
+    /// `session.configure_agent`, which is a whole-agent *replacement*: a
+    /// caller that resolved a card at create and then re-configured to set a
+    /// tool policy would silently discard the card's prompt and model. The
+    /// Discord plugin does exactly that, per Discord sender.
+    ///
+    /// No new authority: `session.configure_agent` already lets any caller on
+    /// this socket set any tool policy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_policy: Option<crucible_core::agent::ToolPolicyMap>,
     /// Internal-agent overrides applied on top of config-derived defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
@@ -99,12 +130,16 @@ pub struct SessionCreateParams {
 /// Optional agent spec for `session.create` that asks the daemon to resolve and
 /// configure the session's agent server-side (the "daemon owns defaults" path).
 ///
-/// `agent_name` selects an ACP profile (with `agent_type == "acp"`); the
+/// `agent_name` selects an ACP profile (with `agent_type == "acp"`);
+/// `agent_card` selects an agent card on an internal session; the
 /// provider/model/endpoint fields override internal-agent config defaults. An
 /// all-`None` spec on an internal session means "use the config defaults as-is".
 #[derive(Debug, Clone, Default)]
 pub struct SessionAgentSpec {
     pub agent_name: Option<String>,
+    /// Agent-card name for an internal session. Mutually exclusive with
+    /// `agent_name` — the daemon refuses both (`INVALID_PARAMS`).
+    pub agent_card: Option<String>,
     pub provider: Option<String>,
     pub provider_key: Option<String>,
     pub model: Option<String>,
@@ -114,7 +149,7 @@ pub struct SessionAgentSpec {
 /// Build the wire request. `agent = Some(..)` sets `configure_agent = true` so
 /// the daemon resolves + configures the agent as part of create; `None` keeps
 /// the back-compat "create agent-less, configure later" shape.
-fn build_create_request(
+pub(super) fn build_create_request(
     params: SessionCreateParams,
     agent: Option<SessionAgentSpec>,
 ) -> SessionCreateRequest {
@@ -143,6 +178,10 @@ fn build_create_request(
         isolation: params.isolation,
         configure_agent,
         agent_name: agent.agent_name,
+        agent_card: agent.agent_card,
+        // No Rust client sets a per-session tool policy at create; the plugin
+        // bridge deserializes the request straight from a Lua table.
+        tool_policy: None,
         provider: agent.provider,
         provider_key: agent.provider_key,
         model: agent.model,

@@ -144,6 +144,7 @@ fn test_session_create_parses() {
     let Commands::Session(SessionCommands::Create {
         session_type,
         agent,
+        card,
         recording_mode,
         quiet,
         format,
@@ -156,6 +157,7 @@ fn test_session_create_parses() {
     };
     assert_eq!(session_type, "chat");
     assert_eq!(agent, None);
+    assert_eq!(card, None);
     assert_eq!(recording_mode, None);
     assert!(!quiet);
     assert_eq!(format, "text");
@@ -186,6 +188,20 @@ fn test_session_create_with_type_parses() {
     assert_eq!(format, "text");
     assert_eq!(title, None);
     assert_eq!(workspace, None);
+}
+
+/// `--card` is the only way to reach the internal agent-card branch: `--agent`
+/// means an ACP profile and always will, so a card name sent there resolves
+/// nothing.
+#[test]
+fn test_session_create_parses_card() {
+    let Commands::Session(SessionCommands::Create { agent, card, .. }) =
+        parse(&["cru", "session", "create", "--card", "researcher"])
+    else {
+        panic!("Expected Session Create command");
+    };
+    assert_eq!(agent, None);
+    assert_eq!(card, Some("researcher".to_string()));
 }
 
 #[test]

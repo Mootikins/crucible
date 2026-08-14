@@ -265,8 +265,9 @@ function M.run(session)
 
     -- Fork a separate session for the review so it never touches the source
     -- session's prompt cache. It is NOT kiln-less: cru.sessions.create with no
-    -- kiln defaults to the crucible home, so the marker-based recursion guard
-    -- above (not the absence of a kiln) is what stops it reflecting on itself.
+    -- kiln defaults to the daemon's data root, so the marker-based recursion
+    -- guard above (not the absence of a kiln) is what stops it reflecting on
+    -- itself.
     local aux, err = cru.sessions.create({ type = "chat" })
     if err or not aux then
         cru.log("warn", "reflection: failed to create aux session: " .. tostring(err))

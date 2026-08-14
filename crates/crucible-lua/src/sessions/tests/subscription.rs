@@ -83,10 +83,7 @@ impl AsyncMockDaemonApi {
 impl DaemonSessionApi for AsyncMockDaemonApi {
     fn create_session(
         &self,
-        _: String,
-        _: Option<String>,
-        _: Option<String>,
-        _: Vec<String>,
+        _: serde_json::Value,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
         Box::pin(async { Ok(serde_json::json!({"id": "s1"})) })
     }

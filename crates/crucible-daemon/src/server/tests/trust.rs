@@ -21,24 +21,77 @@ async fn cloud_provider_confidential_kiln_returns_insufficient_error() {
 
     let (event_tx, _event_rx) = broadcast::channel(16);
     let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config.clone());
-    let response = handle_session_create(
-        request,
-        &sm,
-        &pm,
-        tmp.path(),
-        &llm_config,
-        &km,
-        &event_tx,
-        &am,
-        None,
-    )
-    .await;
+    let ctx = RpcContext::for_test(
+        km.clone(),
+        sm.clone(),
+        am.clone(),
+        pm.clone(),
+        event_tx.clone(),
+        llm_config.clone(),
+        tmp.path().to_path_buf(),
+    );
+    let response = handle_session_create(request, &ctx).await;
     let error = response.error.expect("expected trust-level rejection");
 
     assert_eq!(error.code, INVALID_PARAMS);
     assert!(error.message.contains("insufficient"));
     assert!(error.message.contains("cloud"));
     assert!(error.message.contains("confidential"));
+    assert_eq!(sm.list_sessions().len(), 0);
+}
+
+/// The plugin door answers the same as the RPC door.
+///
+/// `cru.sessions.create` used to call `SessionManager::create_session`
+/// directly, so a plugin could open a cloud-provider session on a confidential
+/// kiln that `session.create` would have refused — same daemon, same socket,
+/// two different answers. It now runs `create_session_resolved`, which is what
+/// makes this test a sibling of the one above rather than a near-copy.
+#[tokio::test]
+async fn bridge_create_refuses_a_cloud_provider_on_a_confidential_kiln() {
+    use crucible_lua::DaemonSessionApi;
+
+    let tmp = TempDir::new().unwrap();
+    let workspace = tmp.path().join("workspace");
+    let kiln = workspace.join("notes");
+    std::fs::create_dir_all(&kiln).unwrap();
+    write_workspace_config(&workspace, "./notes", Some("confidential"));
+
+    let llm_config = Some(build_llm_config(
+        "cloud",
+        crucible_core::config::BackendType::OpenAI,
+    ));
+
+    let sm = Arc::new(SessionManager::with_storage(Arc::new(
+        FileSessionStorage::new(),
+    )));
+    let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
+    let km = Arc::new(KilnManager::new());
+    let (event_tx, _event_rx) = broadcast::channel(16);
+    let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config.clone());
+    let bridge = crate::session_bridge::DaemonSessionBridge::new(Arc::new(RpcContext::for_test(
+        km,
+        sm.clone(),
+        am,
+        pm,
+        event_tx,
+        llm_config,
+        tmp.path().to_path_buf(),
+    )));
+
+    let err = bridge
+        .create_session(json!({
+            "type": "chat",
+            "kiln": kiln,
+            "workspace": workspace,
+            "provider_key": "cloud",
+        }))
+        .await
+        .expect_err("a plugin must not reach a kiln an RPC client cannot");
+
+    assert!(err.contains("insufficient"), "got: {err}");
+    assert!(err.contains("cloud"), "got: {err}");
+    assert!(err.contains("confidential"), "got: {err}");
     assert_eq!(sm.list_sessions().len(), 0);
 }
 
@@ -63,18 +116,16 @@ async fn local_provider_confidential_kiln_allows_session_creation() {
 
     let (event_tx, _event_rx) = broadcast::channel(16);
     let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config.clone());
-    let response = handle_session_create(
-        request,
-        &sm,
-        &pm,
-        tmp.path(),
-        &llm_config,
-        &km,
-        &event_tx,
-        &am,
-        None,
-    )
-    .await;
+    let ctx = RpcContext::for_test(
+        km.clone(),
+        sm.clone(),
+        am.clone(),
+        pm.clone(),
+        event_tx.clone(),
+        llm_config.clone(),
+        tmp.path().to_path_buf(),
+    );
+    let response = handle_session_create(request, &ctx).await;
 
     assert!(response.error.is_none());
     assert!(response.result.is_some());
@@ -102,18 +153,16 @@ async fn cloud_provider_public_or_missing_classification_allows_session_creation
 
     let (event_tx, _event_rx) = broadcast::channel(16);
     let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config.clone());
-    let response = handle_session_create(
-        request,
-        &sm,
-        &pm,
-        tmp.path(),
-        &llm_config,
-        &km,
-        &event_tx,
-        &am,
-        None,
-    )
-    .await;
+    let ctx = RpcContext::for_test(
+        km.clone(),
+        sm.clone(),
+        am.clone(),
+        pm.clone(),
+        event_tx.clone(),
+        llm_config.clone(),
+        tmp.path().to_path_buf(),
+    );
+    let response = handle_session_create(request, &ctx).await;
 
     assert!(response.error.is_none());
     assert!(response.result.is_some());
@@ -142,18 +191,16 @@ async fn untrusted_provider_internal_kiln_returns_error() {
 
     let (event_tx, _event_rx) = broadcast::channel(16);
     let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config.clone());
-    let response = handle_session_create(
-        request,
-        &sm,
-        &pm,
-        tmp.path(),
-        &llm_config,
-        &km,
-        &event_tx,
-        &am,
-        None,
-    )
-    .await;
+    let ctx = RpcContext::for_test(
+        km.clone(),
+        sm.clone(),
+        am.clone(),
+        pm.clone(),
+        event_tx.clone(),
+        llm_config.clone(),
+        tmp.path().to_path_buf(),
+    );
+    let response = handle_session_create(request, &ctx).await;
     let error = response.error.expect("expected trust-level rejection");
 
     assert_eq!(error.code, INVALID_PARAMS);
@@ -285,18 +332,17 @@ async fn switching_to_an_untrusted_provider_is_refused_while_a_confidential_kiln
     let (event_tx, _rx) = broadcast::channel(16);
     let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config.clone());
 
-    let response = handle_session_create(
-        create_session_request(&kiln, &workspace, "local"),
-        &sm,
-        &pm,
-        tmp.path(),
-        &llm_config,
-        &km,
-        &event_tx,
-        &am,
-        None,
-    )
-    .await;
+    let ctx = RpcContext::for_test(
+        km.clone(),
+        sm.clone(),
+        am.clone(),
+        pm.clone(),
+        event_tx.clone(),
+        llm_config.clone(),
+        tmp.path().to_path_buf(),
+    );
+    let response =
+        handle_session_create(create_session_request(&kiln, &workspace, "local"), &ctx).await;
     assert!(
         response.error.is_none(),
         "a local provider must be allowed a confidential kiln: {:?}",
@@ -392,18 +438,17 @@ async fn switching_providers_is_allowed_when_the_kiln_permits_it() {
     let (event_tx, _rx) = broadcast::channel(16);
     let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config.clone());
 
-    let response = handle_session_create(
-        create_session_request(&kiln, &workspace, "local"),
-        &sm,
-        &pm,
-        tmp.path(),
-        &llm_config,
-        &km,
-        &event_tx,
-        &am,
-        None,
-    )
-    .await;
+    let ctx = RpcContext::for_test(
+        km.clone(),
+        sm.clone(),
+        am.clone(),
+        pm.clone(),
+        event_tx.clone(),
+        llm_config.clone(),
+        tmp.path().to_path_buf(),
+    );
+    let response =
+        handle_session_create(create_session_request(&kiln, &workspace, "local"), &ctx).await;
     assert!(response.error.is_none(), "{:?}", response.error);
     let session_id = sm.list_sessions()[0].id.clone();
 

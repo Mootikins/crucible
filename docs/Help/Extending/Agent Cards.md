@@ -149,9 +149,19 @@ cru agents show researcher
 cru agents validate
 
 # Create a session with a card-configured internal agent
-cru session create --type chat   # then session.configure_agent, or:
-# via RPC: session.create { configure_agent: true, agent_name: "researcher" }
+cru session create --card researcher
+# via RPC: session.create { configure_agent: true, agent_card: "researcher" }
 ```
+
+`--card` is not `--agent`: `--agent` names an *ACP profile* and launches an
+external agent subprocess. They are refused together rather than ranked,
+because `claude`, `opencode` and `gemini` always exist as profiles — guessing
+would make a card of that name permanently unreachable.
+
+`agent_name` still selects a card on an internal session, but it is deprecated
+there: on an ACP session the same field names a subprocess *profile*, so one
+field meant two things depending on `agent_type`. Use `agent_card`. Setting both
+is rejected with `INVALID_PARAMS`.
 
 ## Writing Good Prompts
 

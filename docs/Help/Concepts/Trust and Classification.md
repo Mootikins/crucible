@@ -159,7 +159,8 @@ A few things to keep in mind:
 - **Kilns default to `public`.** If you don't classify a kiln, any provider can access it.
 - **Providers default based on type.** Cloud APIs get `cloud` trust. Local backends get `local` trust.
 - **You can override defaults.** Running Ollama on a remote server? Set its trust to `cloud`. Self-hosting an OpenAI-compatible API locally? Set it to `local`.
-- **Trust is checked at session creation.** Crucible validates the match before any data flows.
+- **External (ACP) agents are always `cloud`.** Claude Code, OpenCode and the rest pick their own model in their own process, so Crucible cannot vouch for where the prompt goes — they never clear a `confidential` kiln, whatever provider the session names.
+- **Trust is checked whenever the pairing changes**, not only at session creation: attaching a kiln to a live session, switching the model, and reconfiguring the session's agent all re-check. Otherwise a session could start on Ollama, attach your journal, and then move to a cloud provider with the kiln still attached. Crucible refuses the change rather than silently detaching the kiln — detach it yourself first if that is what you want.
 
 ## See Also
 

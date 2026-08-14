@@ -75,6 +75,8 @@ pub mod session_storage;
 pub mod skills;
 pub mod storage;
 pub mod subscription;
+#[cfg(test)]
+pub(crate) mod test_fixtures;
 pub mod test_support;
 pub mod tool_dispatch;
 pub mod tools;

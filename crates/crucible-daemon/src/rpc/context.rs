@@ -40,6 +40,13 @@ pub struct RpcContext {
     /// Runtime handlers (session list) read this instead of calling
     /// `crucible_home()`, so they honor the injected data_home in tests.
     pub data_home: std::path::PathBuf,
+    /// Root the global agent-card directory (`<config_home>/crucible/agents`)
+    /// hangs off — `dirs::config_dir()` in production. Injected as a value for
+    /// the same reason `data_home` is: global cards are first in discovery
+    /// precedence, so a handler that read the environment would resolve a
+    /// developer's personal cards in every test. `None` means "no global
+    /// cards".
+    pub config_home: Option<std::path::PathBuf>,
     /// Active workflow executions keyed by session id (Phase 3a).
     pub workflows: Arc<WorkflowRegistry>,
     /// SCM (git) config — `scm.clone` reads `projects_dir` from here.
@@ -69,6 +76,7 @@ impl RpcContext {
         mcp_server_manager: Arc<McpServerManager>,
         mcp_config: Option<McpConfig>,
         data_home: std::path::PathBuf,
+        config_home: Option<std::path::PathBuf>,
         scm_config: Option<ScmConfig>,
     ) -> Self {
         let session_lifecycle = SessionLifecycle::new(sessions.clone(), plugin_loader.clone());
@@ -87,9 +95,79 @@ impl RpcContext {
             mcp_server_manager,
             mcp_config,
             data_home,
+            config_home,
             workflows: Arc::new(WorkflowRegistry::new()),
             scm_config,
             session_lifecycle,
         }
+    }
+
+    /// A context for handler unit tests, built from the managers the test
+    /// actually cares about; everything else is empty (no plugin loader, no
+    /// MCP, no SCM).
+    ///
+    /// `data_home` is a parameter rather than `crucible_home()` for the usual
+    /// reason: a test that reads the developer's real `~/.crucible` passes on
+    /// CI and fails locally. `config_home` is `None` for the same reason —
+    /// no global agent cards unless a test asks for them.
+    #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn for_test(
+        kiln: Arc<KilnManager>,
+        sessions: Arc<SessionManager>,
+        agents: Arc<AgentManager>,
+        project_manager: Arc<crate::project_manager::ProjectManager>,
+        event_tx: broadcast::Sender<SessionEventMessage>,
+        llm_config: Option<LlmConfig>,
+        data_home: std::path::PathBuf,
+    ) -> Self {
+        Self::for_test_with_plugin_loader(
+            kiln,
+            sessions,
+            agents,
+            project_manager,
+            event_tx,
+            llm_config,
+            data_home,
+            Arc::new(Mutex::new(None)),
+        )
+    }
+
+    /// As [`Self::for_test`], with a live plugin loader.
+    ///
+    /// Separate because the loader handle is what `SessionLifecycle` locks
+    /// across plugin hook execution: a test that exercises a hook re-entering
+    /// the daemon needs the *same* handle the lifecycle holds, and every other
+    /// handler test is better off with no plugin runtime at all.
+    #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn for_test_with_plugin_loader(
+        kiln: Arc<KilnManager>,
+        sessions: Arc<SessionManager>,
+        agents: Arc<AgentManager>,
+        project_manager: Arc<crate::project_manager::ProjectManager>,
+        event_tx: broadcast::Sender<SessionEventMessage>,
+        llm_config: Option<LlmConfig>,
+        data_home: std::path::PathBuf,
+        plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
+    ) -> Self {
+        let (shutdown_tx, _) = broadcast::channel(1);
+        Self::new(
+            kiln,
+            sessions,
+            agents,
+            Arc::new(SubscriptionManager::new()),
+            event_tx,
+            shutdown_tx,
+            project_manager,
+            Arc::new(DashMap::new()),
+            plugin_loader,
+            llm_config,
+            Arc::new(McpServerManager::new()),
+            None,
+            data_home,
+            None,
+            None,
+        )
     }
 }

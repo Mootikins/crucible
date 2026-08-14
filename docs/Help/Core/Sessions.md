@@ -166,13 +166,23 @@ These commands control sessions at the daemon level. They're designed for script
 
 ```bash
 cru session create                        # Basic creation
-cru session create --agent claude         # With agent profile
+cru session create --agent claude         # With an ACP agent profile
+cru session create --card researcher      # With an agent card
 cru session create --title "Auth refactor" --workspace /path/to/project
 ID=$(cru session create -q)               # Capture session ID for scripting
 cru session create -f json                # Structured JSON output
 ```
 
 Create a new daemon session. The `-q`/`--quiet` flag prints only the session ID, which is handy for capturing in shell variables. Use `--title` to give the session a human-readable name and `--workspace` to pin it to a specific project directory.
+
+`--agent` and `--card` name different things and cannot be combined. `--agent`
+launches an external ACP agent subprocess by profile name (`claude`,
+`opencode`, `gemini`, or anything under `[acp.agents.*]`). `--card` runs the
+built-in internal agent with an [[Help/Extending/Agent Cards|agent card]]'s
+prompt, model, tool policy and MCP servers layered over your config defaults;
+`cru agents list` shows the cards a kiln can see. Either way the daemon
+resolves the name before the session exists, so an unknown one fails without
+leaving a session behind.
 
 #### Pause a Session
 

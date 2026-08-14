@@ -451,6 +451,11 @@ async fn create_session(
     // daemon resolves its default (home kiln).
     let agent_spec = crucible_daemon::rpc_client::SessionAgentSpec {
         agent_name: req.agent_name.clone(),
+        // The web's own request type still spells a card `agent_name` (the
+        // deprecated alias the daemon keeps for exactly this caller). Setting
+        // both fields is INVALID_PARAMS, so this stays None until the web
+        // frontend grows a card selector of its own.
+        agent_card: None,
         provider: req.provider.clone(),
         provider_key: None,
         model: req.model.clone(),

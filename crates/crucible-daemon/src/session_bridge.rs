@@ -5,9 +5,10 @@
 
 use crate::agent_manager::AgentManager;
 use crate::protocol::SessionEventMessage;
+use crate::rpc::RpcContext;
 use crate::session_manager::SessionManager;
 use crate::session_storage::{FileSessionStorage, SessionStorage};
-use crucible_core::session::{CommentAuthor, HunkId, LineRange, ReviewState, SessionType};
+use crucible_core::session::{CommentAuthor, HunkId, LineRange, ReviewState};
 use crucible_lua::{DaemonSessionApi, ResponsePart};
 use std::future::Future;
 use std::path::PathBuf;
@@ -20,21 +21,26 @@ type BoxFut<T> = Pin<Box<dyn Future<Output = Result<T, String>> + Send>>;
 
 /// Implements [`DaemonSessionApi`] using the daemon's real managers.
 pub struct DaemonSessionBridge {
+    /// The dispatcher's own context, so `create` runs the daemon's real create
+    /// path rather than a second, thinner one that skips scope refusal, trust
+    /// validation, agent resolution and the setup task.
+    ctx: Arc<RpcContext>,
     session_manager: Arc<SessionManager>,
     agent_manager: Arc<AgentManager>,
     event_tx: broadcast::Sender<SessionEventMessage>,
 }
 
 impl DaemonSessionBridge {
-    pub fn new(
-        session_manager: Arc<SessionManager>,
-        agent_manager: Arc<AgentManager>,
-        event_tx: broadcast::Sender<SessionEventMessage>,
-    ) -> Self {
+    /// The three manager handles are taken off the context rather than passed
+    /// beside it: they are the same `Arc`s, and two sources for one manager is
+    /// how a bridge ends up talking to a different `SessionManager` than the
+    /// create path it delegates to.
+    pub fn new(ctx: Arc<RpcContext>) -> Self {
         Self {
-            session_manager,
-            agent_manager,
-            event_tx,
+            session_manager: ctx.sessions.clone(),
+            agent_manager: ctx.agents.clone(),
+            event_tx: ctx.event_tx.clone(),
+            ctx,
         }
     }
 }
@@ -56,23 +62,28 @@ macro_rules! bridge_async {
 }
 
 impl DaemonSessionApi for DaemonSessionBridge {
-    fn create_session(
-        &self,
-        session_type: String,
-        kiln: Option<String>,
-        workspace: Option<String>,
-        connected_kilns: Vec<String>,
-    ) -> BoxFut<serde_json::Value> {
-        bridge_async!(self.session_manager, |sm| async move {
-            let st: SessionType = session_type
-                .parse()
-                .map_err(|_| format!("Invalid session type: {}", session_type))?;
-            let kiln_path = kiln
-                .map(PathBuf::from)
-                .unwrap_or_else(crucible_core::config::crucible_home);
-            let connected: Vec<PathBuf> = connected_kilns.into_iter().map(PathBuf::from).collect();
-            let session = sm
-                .create_session(st, kiln_path, workspace.map(PathBuf::from), connected, None)
+    /// A plugin create is the same create an RPC client gets.
+    ///
+    /// The params object is deserialized with the same request type
+    /// `handle_session_create` uses, so the two callers cannot drift on a field
+    /// name, and `create_session_resolved` then does the whole job: scope
+    /// refusal, trust validation against the kiln's classification, agent
+    /// resolution (including agent cards), project registration, kiln open,
+    /// recording and the setup task. The one step it does not do is
+    /// `enforce_session_start` — see that method's doc for why a plugin-side
+    /// create must not reach it yet.
+    ///
+    /// An omitted `kiln` stays omitted rather than being resolved to
+    /// `crucible_home()` here: the fallback belongs to the daemon's own data
+    /// root, and a path this bridge invented would be scope-checked as if the
+    /// caller had asked for it — which fails whenever the data root is `$HOME`.
+    fn create_session(&self, params: serde_json::Value) -> BoxFut<serde_json::Value> {
+        bridge_async!(self.ctx, |ctx| async move {
+            let request: crate::rpc_client::SessionCreateRequest =
+                serde_json::from_value(params)
+                    .map_err(|e| format!("Invalid create options: {e}"))?;
+            let session = ctx
+                .create_session_resolved(&request)
                 .await
                 .map_err(|e| e.to_string())?;
             Ok(serde_json::json!({

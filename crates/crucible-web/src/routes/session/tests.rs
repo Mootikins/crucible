@@ -490,6 +490,23 @@ async fn create_session_rejects_unknown_acp_agent() {
     assert_eq!(status, axum::http::StatusCode::UNPROCESSABLE_ENTITY);
 }
 
+/// `agent_name` with no `agent_type` is how this crate selects an agent *card*
+/// — the deprecated alias the daemon keeps for exactly this caller. It resolves
+/// on the internal branch, so an unresolvable name is a card error, and it must
+/// reach the client as 422 rather than a 502 daemon fault.
+#[tokio::test]
+async fn create_session_rejects_an_unknown_agent_card() {
+    let (status, body) = post_create_session(serde_json::json!({
+        "agent_name": "missing",
+    }))
+    .await;
+    assert_eq!(status, axum::http::StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        body.to_string().contains("Unknown agent card"),
+        "the daemon's card diagnostic must survive to the client: {body}"
+    );
+}
+
 #[tokio::test]
 async fn create_session_with_unknown_acp_agent_does_not_create_a_session() {
     // Regression: an unknown ACP agent must not orphan an agent-less

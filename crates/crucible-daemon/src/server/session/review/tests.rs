@@ -485,11 +485,17 @@ async fn the_lua_bridge_restores_a_resumed_sessions_queue_like_the_handler_does(
     fx.am.review.clear_session(&id);
     assert!(!fx.am.review.is_open(&id));
 
-    let bridge = crate::session_bridge::DaemonSessionBridge::new(
+    let bridge = crate::session_bridge::DaemonSessionBridge::new(Arc::new(RpcContext::for_test(
+        Arc::new(crate::kiln_manager::KilnManager::new()),
         fx.sm.clone(),
         fx.am.clone(),
+        Arc::new(crate::project_manager::ProjectManager::new(
+            fx.dir.path().join("projects.json"),
+        )),
         fx.event_tx.clone(),
-    );
+        None,
+        fx.dir.path().to_path_buf(),
+    )));
     let through_lua = bridge.review_list_hunks(id.clone()).await.unwrap();
     assert_eq!(
         through_lua.len(),

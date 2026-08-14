@@ -64,7 +64,7 @@ local function recording_api(opts)
 end
 
 describe("get_or_create", function()
-    -- Without a kiln, `create_session` falls back to `crucible_home()`, which
+    -- Without a kiln, `create_session` falls back to the daemon's data root, which
     -- stages reflection proposals under `~/.crucible/.crucible/proposals/`
     -- where `cru proposals list` never looks. Refusing before creating
     -- anything is the difference between a clear error and a session that
@@ -122,6 +122,113 @@ describe("get_or_create", function()
             local id, err = sessions.get_or_create("chan-no-provider", "g1")
             assert.is_nil(id)
             assert.truthy(err)
+            assert.equals(1, #calls.ended)
+        end)
+    end)
+end)
+
+-- An agent card is the internal agent's persona. Only the daemon can resolve
+-- one — it needs the session's kiln — so it has to be named at create. The
+-- reason it cannot instead be named afterwards is that `configure_agent` writes
+-- the *whole* agent: a card resolved at create and then re-configured would
+-- lose its prompt and model to the plugin's own defaults.
+describe("agent cards", function()
+    local card_cfg = {
+        ["discord.kiln"] = "/tmp/kiln",
+        ["discord.provider"] = "p",
+        ["discord.model"] = "m",
+        ["discord.agent_card"] = "researcher",
+    }
+
+    local function with_card(extra, fn)
+        local cfg = {}
+        for k, v in pairs(card_cfg) do cfg[k] = v end
+        for k, v in pairs(extra or {}) do cfg[k] = v end
+        local calls, api = recording_api()
+        with_env(cfg, api, function() fn(calls) end)
+    end
+
+    it("names the card at create and does not reconfigure afterwards", function()
+        with_card(nil, function(calls)
+            local id = sessions.get_or_create("chan-card", "g1", "u1")
+            assert.equals("chat-1", id)
+            assert.equals("researcher", calls.created[1].agent_card)
+            assert.equals("p", calls.created[1].provider)
+            assert.equals("m", calls.created[1].model)
+            -- The whole point: nothing overwrites the card afterwards.
+            assert.equals(0, calls.configured)
+        end)
+    end)
+
+    -- The tier is what a Discord sender is allowed to do; the card is a file
+    -- the operator wrote once. It has to travel with the create or the card
+    -- path would silently run on the card's own `tools:` block.
+    it("carries the sender's tier to create as the tool policy", function()
+        with_card({ ["discord.access"] = { ["user:writer"] = "write" } }, function(calls)
+            sessions.get_or_create("dm-card-writer", nil, "writer")
+            local policy = calls.created[1].tool_policy
+            assert.equals("allow", policy.write_file)
+            assert.equals("allow", policy.read_file)
+        end)
+        with_card(nil, function(calls)
+            sessions.get_or_create("dm-card-reader", nil, "reader")
+            local policy = calls.created[1].tool_policy
+            assert.is_nil(policy.write_file)
+            assert.equals("allow", policy.read_file)
+        end)
+    end)
+
+    -- `agent_name` is an ACP profile name; a card is not one. Refusing the
+    -- combination beats picking a winner nobody asked for.
+    it("refuses a card alongside agent_name or an acp agent_type", function()
+        with_card({ ["discord.agent_name"] = "claude" }, function(calls)
+            local id, err = sessions.get_or_create("chan-card-and-name", "g1")
+            assert.is_nil(id)
+            assert.truthy(err)
+            assert.equals(0, #calls.created)
+        end)
+        with_card({ ["discord.agent_type"] = "acp" }, function(calls)
+            local id, err = sessions.get_or_create("chan-card-and-acp", "g1")
+            assert.is_nil(id)
+            assert.truthy(err)
+            assert.equals(0, #calls.created)
+        end)
+    end)
+end)
+
+-- `agent_name` on an internal agent resolved nothing and never did: the field
+-- names an ACP profile, and the only card-resolution site is session create.
+-- It used to be set anyway, which read as configured and was not.
+describe("agent_name", function()
+    it("still reaches an acp agent", function()
+        local seen
+        local _, api = recording_api()
+        api.configure_agent = function(_, cfg) seen = cfg; return true, nil end
+        with_env({
+            ["discord.kiln"] = "/tmp/kiln",
+            ["discord.provider"] = "p",
+            ["discord.model"] = "m",
+            ["discord.agent_type"] = "acp",
+            ["discord.agent_name"] = "claude",
+        }, api, function()
+            sessions.get_or_create("chan-acp", "g1", "u1")
+        end)
+        assert.equals("acp", seen.agent_type)
+        assert.equals("claude", seen.agent_name)
+    end)
+
+    it("is refused on an internal agent", function()
+        local calls, api = recording_api()
+        with_env({
+            ["discord.kiln"] = "/tmp/kiln",
+            ["discord.provider"] = "p",
+            ["discord.model"] = "m",
+            ["discord.agent_name"] = "researcher",
+        }, api, function()
+            local id, err = sessions.get_or_create("chan-internal-name", "g1")
+            assert.is_nil(id)
+            assert.truthy(err)
+            -- Refused, not cached: the session it created is ended again.
             assert.equals(1, #calls.ended)
         end)
     end)

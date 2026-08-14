@@ -36,9 +36,13 @@ use tracing::debug;
 /// repo — composes itself in rather than being scanned: its Lua adds the
 /// directory to the path at load. The component brings itself, the host does
 /// not go looking.
-fn card_directories(workspace: &Path, kiln: Option<&Path>) -> Vec<PathBuf> {
+fn card_directories(
+    config_dir: Option<&Path>,
+    workspace: &Path,
+    kiln: Option<&Path>,
+) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    if let Some(config_dir) = dirs::config_dir() {
+    if let Some(config_dir) = config_dir {
         dirs.push(config_dir.join("crucible").join("agents"));
     }
     if let Some(kiln) = kiln {
@@ -51,12 +55,28 @@ fn card_directories(workspace: &Path, kiln: Option<&Path>) -> Vec<PathBuf> {
 }
 
 /// Discover agent cards visible to a session (workspace + kiln), keyed by
+/// card name, with the global config directory taken from the environment.
+pub fn discover_agent_cards(workspace: &Path, kiln: Option<&Path>) -> HashMap<String, AgentCard> {
+    discover_agent_cards_in(dirs::config_dir().as_deref(), workspace, kiln)
+}
+
+/// Discover agent cards visible to a session (workspace + kiln), keyed by
 /// card name. Best-effort: unreadable directories or invalid cards are
 /// skipped (the loader warns per file).
-pub fn discover_agent_cards(workspace: &Path, kiln: Option<&Path>) -> HashMap<String, AgentCard> {
+///
+/// `config_dir` is injected rather than read from the environment so it is
+/// testable: it is *first* in precedence, so reading `dirs::config_dir()` here
+/// would let any developer's own `~/.config/crucible/agents/` shadow a
+/// fixture's cards — passing on CI and failing locally, or worse, the other way
+/// around. `None` means "no global cards".
+pub fn discover_agent_cards_in(
+    config_dir: Option<&Path>,
+    workspace: &Path,
+    kiln: Option<&Path>,
+) -> HashMap<String, AgentCard> {
     let mut cards = HashMap::new();
     let mut loader = AgentCardLoader::new();
-    for dir in card_directories(workspace, kiln) {
+    for dir in card_directories(config_dir, workspace, kiln) {
         if !dir.is_dir() {
             continue;
         }
@@ -96,7 +116,7 @@ mod tests {
             "---\ndescription: Explores and synthesizes knowledge\nspecialty: reasoning\ntools:\n  semantic_search: true\n  read_note: true\n  create_note: ask\nmcps:\n  - context7\n---\n\nYou are a research assistant.\n",
         );
 
-        let cards = discover_agent_cards(kiln.path(), Some(kiln.path()));
+        let cards = discover_agent_cards_in(None, kiln.path(), Some(kiln.path()));
         let card = cards.get("Researcher").expect("card named from file stem");
         assert_eq!(card.version, "0.1.0");
         assert_eq!(card.specialty.as_deref(), Some("reasoning"));
@@ -117,7 +137,7 @@ mod tests {
             "---\nname: worker\nversion: 1.2.3\ndescription: base\nmodel: llama3.2\nprovider: ollama\ntemperature: 0.2\nmax_tokens: 1000\nmax_turns: 4\nmode: plan\ntools:\n  bash: deny\n---\n\nBase prompt.\n",
         );
 
-        let cards = discover_agent_cards(kiln.path(), Some(kiln.path()));
+        let cards = discover_agent_cards_in(None, kiln.path(), Some(kiln.path()));
         let card = cards.get("worker").unwrap();
         assert_eq!(card.description, "base");
         assert_eq!(card.version, "1.2.3");
@@ -148,7 +168,7 @@ mod tests {
             "---\ndescription: project helper\n---\n\nProject prompt.\n",
         );
 
-        let cards = discover_agent_cards(workspace.path(), Some(kiln.path()));
+        let cards = discover_agent_cards_in(None, workspace.path(), Some(kiln.path()));
         assert_eq!(cards["helper"].description, "project helper");
     }
 
@@ -176,7 +196,7 @@ mod tests {
             "---\ndescription: loads\n---\n\nPrompt.\n",
         );
 
-        let cards = discover_agent_cards(kiln.path(), Some(kiln.path()));
+        let cards = discover_agent_cards_in(None, kiln.path(), Some(kiln.path()));
         assert!(
             !cards.contains_key("ambient"),
             "a card in the kiln's visible tree must not load: {:?}",
@@ -202,8 +222,39 @@ mod tests {
             "good.md",
             "---\ndescription: fine\n---\n\nPrompt.\n",
         );
-        let cards = discover_agent_cards(kiln.path(), Some(kiln.path()));
+        let cards = discover_agent_cards_in(None, kiln.path(), Some(kiln.path()));
         assert!(!cards.contains_key("bad"));
         assert!(cards.contains_key("good"));
+    }
+
+    /// The injected config dir supplies global cards and is the *lowest*
+    /// precedence — a kiln card of the same name wins.
+    #[test]
+    fn injected_config_dir_supplies_global_cards_that_the_kiln_shadows() {
+        let config = TempDir::new().unwrap();
+        let kiln = TempDir::new().unwrap();
+        write_card(
+            &config.path().join("crucible").join("agents"),
+            "helper.md",
+            "---\ndescription: global helper\n---\n\nGlobal prompt.\n",
+        );
+        write_card(
+            &config.path().join("crucible").join("agents"),
+            "global_only.md",
+            "---\ndescription: global only\n---\n\nGlobal prompt.\n",
+        );
+        write_card(
+            &kiln.path().join(".crucible").join("agents"),
+            "helper.md",
+            "---\ndescription: kiln helper\n---\n\nKiln prompt.\n",
+        );
+
+        let cards = discover_agent_cards_in(Some(config.path()), kiln.path(), Some(kiln.path()));
+        assert_eq!(cards["helper"].description, "kiln helper");
+        assert_eq!(cards["global_only"].description, "global only");
+
+        // And nothing global leaks in when the caller injects None.
+        let cards = discover_agent_cards_in(None, kiln.path(), Some(kiln.path()));
+        assert!(!cards.contains_key("global_only"));
     }
 }

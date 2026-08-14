@@ -1,5 +1,4 @@
 use super::*;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex as StdMutex;
 
 mod crud;
@@ -11,7 +10,9 @@ mod subscription;
 
 /// Mock implementation of DaemonSessionApi for testing.
 pub(super) struct MockDaemonApi {
-    create_called: AtomicBool,
+    /// Whole params object from the most recent `create_session`, so tests can
+    /// assert what the Lua binding put on the wire (aliases, implied flags).
+    last_create_params: StdMutex<Option<serde_json::Value>>,
     /// Captures the most recent `set_output_validation` spec so tests
     /// can assert what string the Lua binding serialised. Wrapped in a
     /// `StdMutex` because `DaemonSessionApi` takes `&self` and tests
@@ -31,13 +32,18 @@ pub(super) struct MockDaemonApi {
 impl MockDaemonApi {
     pub(super) fn new() -> Self {
         Self {
-            create_called: AtomicBool::new(false),
+            last_create_params: StdMutex::new(None),
             last_validation_spec: StdMutex::new(None),
             last_undo_call: StdMutex::new(None),
             undo_turns_to_return: StdMutex::new(None),
             can_undo_value: StdMutex::new(true),
             undo_depth_value: StdMutex::new(2),
         }
+    }
+
+    /// Params object from the most recent `create_session`, or `None`.
+    pub(super) fn last_create_params(&self) -> Option<serde_json::Value> {
+        self.last_create_params.lock().unwrap().clone()
     }
 
     /// Snapshot of `(session_id, spec)` from the most recent
@@ -55,14 +61,20 @@ impl MockDaemonApi {
 impl DaemonSessionApi for MockDaemonApi {
     fn create_session(
         &self,
-        session_type: String,
-        kiln: Option<String>,
-        workspace: Option<String>,
-        _connected_kilns: Vec<String>,
+        params: serde_json::Value,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
-        self.create_called.store(true, Ordering::SeqCst);
-        let kiln = kiln.unwrap_or_else(|| "/default/crucible".to_string());
-        let ws = workspace.unwrap_or_else(|| kiln.clone());
+        *self.last_create_params.lock().unwrap() = Some(params.clone());
+        let field = |key: &str| params.get(key).and_then(|v| v.as_str()).map(str::to_string);
+        let session_type = field("type").unwrap_or_else(|| "chat".to_string());
+        let kiln = field("kiln").unwrap_or_else(|| "/default/crucible".to_string());
+        let ws = field("workspace").unwrap_or_else(|| kiln.clone());
+        // Echoed, not discarded: the binding's `kilns` → `connect_kilns` alias
+        // is only observable from Lua if the mock hands them back.
+        let connected = params
+            .get("kilns")
+            .or_else(|| params.get("connect_kilns"))
+            .cloned()
+            .unwrap_or_else(|| serde_json::Value::Array(Vec::new()));
         Box::pin(async move {
             Ok(serde_json::json!({
                 "id": format!("{}-2025-01-01T0000-abc123", session_type),
@@ -70,6 +82,7 @@ impl DaemonSessionApi for MockDaemonApi {
                 "state": "active",
                 "kiln": kiln,
                 "workspace": ws,
+                "connected_kilns": connected,
             }))
         })
     }
