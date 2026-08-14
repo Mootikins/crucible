@@ -29,6 +29,12 @@ pub const HOOK_NAMES: &[&str] = &[
     "tool:before_execute",
     "tool:display_start",
     "tool:display_complete",
+    // File-watch events. `server/file_event_hooks.rs` dispatches these; they
+    // were missing here, so `crucible.on("FileChanged", ...)` was rejected
+    // outright — the hook could not be registered at all, let alone fire.
+    "FileChanged",
+    "FileDeleted",
+    "FileMoved",
 ];
 
 /// Levenshtein distance, for the "did you mean" hint. Fifteen lines beats a

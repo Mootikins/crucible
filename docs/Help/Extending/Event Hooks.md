@@ -39,7 +39,7 @@ crucible.on(event_type, { pattern = "...", priority = 50 }, handler)
 
 | Argument | Type | Description |
 |---|---|---|
-| `event_type` | string | Event name (e.g. `"pre_tool_call"`). Must be one of the eleven below — **exact match, no globs**. |
+| `event_type` | string | Event name (e.g. `"pre_tool_call"`). Must be one of the fourteen below — **exact match, no globs**. |
 | `opts.pattern` | string, optional | Glob filter applied to the event's identifier (e.g. tool name). Default: match all. |
 | `opts.priority` | integer, optional | Lower runs first. Default: `100`. |
 | `handler` | `function(ctx, event)` | Called when the event fires and matches |
@@ -71,6 +71,14 @@ for them.
 | `tool:before_execute` | immediately before execution, after permission |
 | `tool:display_start` | to customise how a running tool card renders |
 | `tool:display_complete` | to customise how a finished tool card renders |
+| `FileChanged` | a watched file was created or modified |
+| `FileDeleted` | a watched file was removed |
+| `FileMoved` | a watched file was renamed or moved |
+
+The three file events come off the daemon's watcher rather than an agent turn,
+so they fire whether or not a session is mid-conversation — that is the point
+of them. They carry no tool name, so a handler that sets `opts.pattern` filters
+on an identifier they do not have and will not match; leave it unset.
 
 ### `pre_tool_call`
 

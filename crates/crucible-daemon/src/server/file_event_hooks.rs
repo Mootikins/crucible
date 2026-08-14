@@ -22,6 +22,28 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::{debug, warn};
 
+/// The names a handler registers against, one per file event.
+///
+/// Spelled out rather than taken from `type_name()` alone so each is a
+/// declaration `crucible.on`'s `HOOK_NAMES` contract test can see —
+/// `hook_names_matches_every_dispatch_site` asserts in both directions, and a
+/// name it cannot find in a dispatch site is reported as unreachable.
+/// `the_dispatch_names_match_the_events` below pins them to the real
+/// `type_name()`.
+const FILE_CHANGED_EVENT: &str = "FileChanged";
+const FILE_DELETED_EVENT: &str = "FileDeleted";
+const FILE_MOVED_EVENT: &str = "FileMoved";
+
+/// The handler-facing name for a file event.
+fn dispatch_name(event: &InternalSessionEvent) -> Option<&'static str> {
+    match event {
+        InternalSessionEvent::FileChanged { .. } => Some(FILE_CHANGED_EVENT),
+        InternalSessionEvent::FileDeleted { .. } => Some(FILE_DELETED_EVENT),
+        InternalSessionEvent::FileMoved { .. } => Some(FILE_MOVED_EVENT),
+        _ => None,
+    }
+}
+
 /// Rebuild the typed event from its broadcast form.
 ///
 /// The watcher's events reach subscribers already flattened to JSON, so the
@@ -76,15 +98,38 @@ pub fn spawn_file_event_hooks(
             let Some(internal) = to_internal_event(&msg) else {
                 continue;
             };
+            let Some(event_name) = dispatch_name(&internal) else {
+                continue;
+            };
             let event = SessionEvent::internal(internal);
 
-            let matched = handlers.handlers_for(&event);
+            // `runtime_handlers_for`, not `handlers_for`: the two are
+            // different halves of the registry and only one of them is
+            // written to. `crucible.on(...)` records into `runtime_handlers`;
+            // `handlers` was the annotation-discovered vec, which nothing
+            // populates any more. Reading the wrong half is why a
+            // `crucible.on("FileChanged", ...)` handler had never once fired —
+            // registered fine, matched nothing, silently.
+            //
+            // `None` for the identifier: a file event has no tool name, and a
+            // handler that declared a `pattern` is asking to filter on one, so
+            // it correctly does not match here.
+            let matched = handlers.runtime_handlers_for(event_name, None);
             if matched.is_empty() {
                 continue;
             }
 
-            if let Err(e) = crucible_lua::run_handler_chain(&lua, &matched, event) {
-                warn!(error = %e, "file event handler failed (continuing)");
+            for handler in matched {
+                if let Err(e) = handlers
+                    .execute_runtime_handler(&lua, &handler.name, &event, None)
+                    .await
+                {
+                    warn!(
+                        handler = %handler.name,
+                        error = %e,
+                        "file event handler failed (continuing)"
+                    );
+                }
             }
         }
     });
@@ -167,5 +212,124 @@ mod tests {
         // A file event with no path is meaningless: the payload requires `path`,
         // so this is a malformed decode and no handler fires on an empty path.
         assert!(to_internal_event(&msg("file_changed", json!({}))).is_none());
+    }
+
+    /// A handler registered with `crucible.on` actually fires on a file event.
+    ///
+    /// Everything above this tests `to_internal_event` — the translation — and
+    /// stops there, which is exactly how the dispatch stayed broken. The
+    /// registry has two disjoint halves: `crucible.on` writes `runtime_handlers`,
+    /// while this module read `handlers`, the annotation-discovered vec that
+    /// nothing populates. Handlers registered, matched nothing, and never ran,
+    /// with no error anywhere. This drives the real spawn end to end.
+    #[tokio::test]
+    async fn a_crucible_on_handler_fires_for_a_file_event() {
+        use crucible_lua::LuaScriptHandlerRegistry;
+
+        let lua = Arc::new(mlua::Lua::new());
+        let registry = Arc::new(LuaScriptHandlerRegistry::new());
+        crucible_lua::register_crucible_on_api(
+            &lua,
+            registry.runtime_handlers(),
+            registry.handler_functions(),
+        )
+        .expect("register crucible.on");
+
+        lua.load(
+            r#"
+            fired_path = nil
+            crucible.on("FileChanged", function(ctx, event)
+                fired_path = event.path
+            end)
+        "#,
+        )
+        .exec()
+        .expect("register handler");
+
+        assert_eq!(
+            registry.runtime_handlers_for("FileChanged", None).len(),
+            1,
+            "the handler should be registered before any event is sent"
+        );
+
+        let (tx, rx) = broadcast::channel(8);
+        spawn_file_event_hooks(rx, Arc::clone(&registry), Arc::clone(&lua));
+
+        tx.send(msg(
+            "file_changed",
+            json!({ "path": "/w/a.md", "kind": "modified" }),
+        ))
+        .expect("send");
+
+        // Poll rather than sleep a fixed interval: the dispatch is a spawned
+        // task and a fixed wait is either flaky or slow.
+        let mut fired: Option<String> = None;
+        for _ in 0..200 {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            fired = lua.globals().get("fired_path").ok().flatten();
+            if fired.is_some() {
+                break;
+            }
+        }
+
+        assert_eq!(
+            fired.as_deref(),
+            Some("/w/a.md"),
+            "a crucible.on(\"FileChanged\") handler never ran"
+        );
+    }
+
+    /// The dispatch constants are the real `type_name()`s.
+    ///
+    /// They exist as constants so `crucible.on`'s HOOK_NAMES contract test can
+    /// see them, which means they could drift from the events they name and
+    /// nothing else would notice — handlers would register against a name that
+    /// matches no dispatch.
+    #[test]
+    fn the_dispatch_names_match_the_events() {
+        for (event, expected) in [
+            (
+                InternalSessionEvent::FileChanged {
+                    path: PathBuf::from("/w/a.md"),
+                    kind: FileChangeKind::Modified,
+                },
+                FILE_CHANGED_EVENT,
+            ),
+            (
+                InternalSessionEvent::FileDeleted {
+                    path: PathBuf::from("/w/a.md"),
+                },
+                FILE_DELETED_EVENT,
+            ),
+            (
+                InternalSessionEvent::FileMoved {
+                    from: PathBuf::from("/w/a.md"),
+                    to: PathBuf::from("/w/b.md"),
+                },
+                FILE_MOVED_EVENT,
+            ),
+        ] {
+            assert_eq!(dispatch_name(&event), Some(expected));
+            assert_eq!(
+                SessionEvent::internal(event).type_name(),
+                expected,
+                "the constant must be the name the registry matches on"
+            );
+        }
+    }
+
+    /// Every name this module dispatches is one `crucible.on` accepts.
+    ///
+    /// The two lists live in different crates. When they disagreed, the whole
+    /// feature was dead: registration raised "unknown event `FileChanged`" and
+    /// dispatch read a vec nothing wrote to.
+    #[test]
+    fn every_dispatched_name_is_registerable() {
+        for name in [FILE_CHANGED_EVENT, FILE_DELETED_EVENT, FILE_MOVED_EVENT] {
+            assert!(
+                crucible_lua::HOOK_NAMES.contains(&name),
+                "`{name}` is dispatched here but `crucible.on` would reject it"
+            );
+        }
     }
 }
