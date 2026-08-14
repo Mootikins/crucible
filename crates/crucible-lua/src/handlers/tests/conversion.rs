@@ -6,9 +6,7 @@
 //! nothing failed. If you change the shape, these tests are the thing that
 //! makes you update the docs too.
 
-use crate::handlers::conversion::{
-    flat_json_to_session_event_json, session_event_to_flat_json, session_event_to_lua,
-};
+use crate::handlers::conversion::{session_event_to_flat_json, session_event_to_lua};
 use crucible_core::events::SessionEvent;
 use mlua::{Lua, LuaSerdeExt, Table};
 
@@ -127,45 +125,4 @@ fn script_and_file_handler_paths_agree_for_every_variant() {
             event.type_name()
         );
     }
-}
-
-/// A file handler returns the flat table it was given; the rebuilt JSON must
-/// deserialize back to the event it came from — including built-in variants,
-/// whose serde tag (`tool_called`) the flat shape replaces with `type_name()`
-/// (`ToolCalled`).
-#[test]
-fn flat_json_round_trips_to_the_original_event() {
-    for event in sample_events() {
-        let flat = session_event_to_flat_json(&event);
-        let rebuilt = flat_json_to_session_event_json(flat, &event);
-        let parsed: SessionEvent = serde_json::from_value(rebuilt.clone()).unwrap_or_else(|e| {
-            panic!(
-                "rebuilt JSON for {} does not deserialize: {e}\n{rebuilt:#}",
-                event.type_name()
-            )
-        });
-        assert_eq!(
-            serde_json::to_value(&parsed).unwrap(),
-            serde_json::to_value(&event).unwrap(),
-            "round-trip changed the event for {}",
-            event.type_name()
-        );
-    }
-}
-
-/// The envelope owns `type`/`event_type`/`summary`. A payload key with one of
-/// those names is overwritten (with a warning at the collision site) and does
-/// NOT survive the round-trip — the documented tradeoff of flattening.
-#[test]
-fn colliding_payload_keys_are_dropped_on_round_trip_by_design() {
-    let event = SessionEvent::Custom {
-        name: "weird_event".to_string(),
-        payload: serde_json::json!({ "summary": "payload-owned", "tool": "bash" }),
-    };
-    let flat = session_event_to_flat_json(&event);
-    // Envelope wins on the way in…
-    assert_ne!(flat["summary"], serde_json::json!("payload-owned"));
-    // …and the payload's value is gone on the way back.
-    let rebuilt = flat_json_to_session_event_json(flat, &event);
-    assert_eq!(rebuilt["payload"], serde_json::json!({ "tool": "bash" }));
 }

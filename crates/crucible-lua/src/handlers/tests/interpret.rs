@@ -1,8 +1,5 @@
 use crate::handlers::{interpret_handler_result, ScriptHandlerResult};
-use crucible_core::events::SessionEvent;
 use mlua::{Lua, Value};
-
-use super::create_test_handler;
 
 #[test]
 fn test_interpret_handler_result_cancel() {
@@ -103,56 +100,6 @@ fn test_inject_checked_before_cancel() {
         }
         _ => panic!("Expected Inject variant, not Cancel"),
     }
-}
-
-#[test]
-fn test_handler_returns_inject_with_default_position() {
-    let source = r#"
-        function test_handler(ctx, event)
-            return {inject={content="Continue with task"}}
-        end
-    "#;
-
-    let handler = create_test_handler(source);
-    let lua = Lua::new();
-    let event = SessionEvent::ToolCalled {
-        name: "test".to_string(),
-        args: serde_json::json!({}),
-        description: None,
-        source: None,
-    };
-
-    let result = handler.execute(&lua, &event);
-    assert!(result.is_ok(), "handler should execute successfully");
-    assert!(
-        result.unwrap().is_none(),
-        "Inject result returns None (processed by daemon)"
-    );
-}
-
-#[test]
-fn test_handler_returns_inject_with_custom_position() {
-    let source = r#"
-        function test_handler(ctx, event)
-            return {inject={content="Follow-up", position="user_suffix"}}
-        end
-    "#;
-
-    let handler = create_test_handler(source);
-    let lua = Lua::new();
-    let event = SessionEvent::ToolCalled {
-        name: "test".to_string(),
-        args: serde_json::json!({}),
-        description: None,
-        source: None,
-    };
-
-    let result = handler.execute(&lua, &event);
-    assert!(result.is_ok(), "handler should execute successfully");
-    assert!(
-        result.unwrap().is_none(),
-        "Inject result returns None (processed by daemon)"
-    );
 }
 
 #[test]
@@ -302,4 +249,44 @@ fn test_interpret_handled_without_terminate_defaults_false() {
         }
         other => panic!("Expected Handled, got: {:?}", other),
     }
+}
+
+/// `{cancel = true}` with no reason still cancels, with a default message.
+///
+/// Carried over from a registry test that drove this through
+/// `LuaScriptHandler::execute`. The handler chain is gone; the interpretation
+/// it was really asserting is still live, so the case moved rather than died.
+#[test]
+fn test_interpret_cancel_without_reason_uses_a_default() {
+    let lua = Lua::new();
+    let table = lua.create_table().unwrap();
+    table.set("cancel", true).unwrap();
+
+    match interpret_handler_result(&Value::Table(table)).unwrap() {
+        ScriptHandlerResult::Cancel { reason } => {
+            assert!(
+                !reason.is_empty(),
+                "a cancel with no reason needs a default"
+            );
+        }
+        other => panic!("Expected Cancel, got: {other:?}"),
+    }
+}
+
+/// `{cancel = false, ...}` is a transform, not a cancellation.
+///
+/// The distinction that matters: a handler returning a table with a falsy
+/// `cancel` key is returning data, and reading the key's presence rather than
+/// its value would abort the pipeline on it.
+#[test]
+fn test_interpret_cancel_false_is_a_transform() {
+    let lua = Lua::new();
+    let table = lua.create_table().unwrap();
+    table.set("cancel", false).unwrap();
+    table.set("data", "still valid").unwrap();
+
+    assert!(matches!(
+        interpret_handler_result(&Value::Table(table)).unwrap(),
+        ScriptHandlerResult::Transform(_)
+    ));
 }

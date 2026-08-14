@@ -553,6 +553,12 @@ pub mod tests {
         variables: Arc<std::sync::RwLock<std::collections::HashMap<String, serde_json::Value>>>,
     }
 
+    impl Default for MockRpc {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
     impl MockRpc {
         pub fn new() -> Self {
             Self {

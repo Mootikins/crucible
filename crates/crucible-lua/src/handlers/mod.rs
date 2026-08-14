@@ -49,7 +49,6 @@ mod before_execute;
 mod conversion;
 mod crucible_on;
 mod display_hooks;
-mod execution;
 mod permission;
 mod registry;
 mod script_handler;
@@ -61,17 +60,15 @@ pub use before_execute::{
     execute_tool_before_execute_hooks, ToolBeforeExecuteEvent, ToolBeforeExecuteResult,
     TOOL_BEFORE_EXECUTE_EVENT,
 };
-pub(crate) use conversion::{flat_json_to_session_event_json, session_event_to_flat_json};
 pub use crucible_on::{register_crucible_on_api, HOOK_NAMES};
 pub use display_hooks::{
     execute_tool_display_complete_hooks, execute_tool_display_start_hooks,
     ToolDisplayCompleteEvent, ToolDisplayCompleteHints, ToolDisplayStartEvent,
     ToolDisplayStartHints, TOOL_DISPLAY_COMPLETE_EVENT, TOOL_DISPLAY_START_EVENT,
 };
-pub use execution::{execute_handler, run_handler_chain, HandlerExecutionResult};
 pub use permission::{
     execute_permission_hooks, register_permission_hook_api, PermissionHook, PermissionHookResult,
     PermissionRequest, SHIPPED_DEFAULT_PRIORITY,
 };
 pub use registry::{LuaScriptHandlerRegistry, RuntimeHandler};
-pub use script_handler::{interpret_handler_result, LuaScriptHandler, ScriptHandlerResult};
+pub use script_handler::{interpret_handler_result, ScriptHandlerResult};

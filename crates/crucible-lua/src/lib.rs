@@ -47,7 +47,6 @@ mod ask;
 pub mod auth_plugin;
 mod context;
 mod context_attach;
-pub mod core_handler;
 pub mod discovered;
 mod error;
 mod error_ext;
@@ -77,8 +76,7 @@ pub mod publications;
 mod ratelimit;
 pub mod schedule;
 pub mod schema;
-pub mod session;
-mod session_api;
+pub mod session_api;
 mod session_defaults;
 mod sessions;
 mod shell;
@@ -123,7 +121,6 @@ pub use context::{
 pub use context_attach::{
     register_context_attach, AttachRejection, ContextAttachRegistry, DEFAULT_ATTACH_BUDGET_CHARS,
 };
-pub use core_handler::{LuaHandler, LuaHandlerMeta};
 pub use discovered::{
     DiscoveredCommand, DiscoveredHandler, DiscoveredParam, DiscoveredService, DiscoveredTool,
     DiscoveredView,
@@ -175,15 +172,14 @@ pub use ws::register_ws_module;
 pub const BUILTIN_INIT_LUA: &str = include_str!("../../../runtime/defaults/init.lua");
 // Handler system
 pub use handlers::{
-    execute_handler, execute_permission_hooks, execute_tool_before_execute_hooks,
+    execute_permission_hooks, execute_tool_before_execute_hooks,
     execute_tool_display_complete_hooks, execute_tool_display_start_hooks,
     interpret_handler_result, register_crucible_on_api, register_permission_hook_api,
-    run_handler_chain, HandlerExecutionResult, LuaScriptHandler, LuaScriptHandlerRegistry,
-    PermissionHook, PermissionHookResult, PermissionRequest, RuntimeHandler, ScriptHandlerResult,
-    ToolBeforeExecuteEvent, ToolBeforeExecuteResult, ToolDisplayCompleteEvent,
-    ToolDisplayCompleteHints, ToolDisplayStartEvent, ToolDisplayStartHints, HOOK_NAMES,
-    SHIPPED_DEFAULT_PRIORITY, TOOL_BEFORE_EXECUTE_EVENT, TOOL_DISPLAY_COMPLETE_EVENT,
-    TOOL_DISPLAY_START_EVENT,
+    LuaScriptHandlerRegistry, PermissionHook, PermissionHookResult, PermissionRequest,
+    RuntimeHandler, ScriptHandlerResult, ToolBeforeExecuteEvent, ToolBeforeExecuteResult,
+    ToolDisplayCompleteEvent, ToolDisplayCompleteHints, ToolDisplayStartEvent,
+    ToolDisplayStartHints, HOOK_NAMES, SHIPPED_DEFAULT_PRIORITY, TOOL_BEFORE_EXECUTE_EVENT,
+    TOOL_DISPLAY_COMPLETE_EVENT, TOOL_DISPLAY_START_EVENT,
 };
 pub use lifecycle::{
     load_plugin_spec, load_plugin_spec_from_source, CommandBuilder, HandlerBuilder, LifecycleError,
@@ -198,9 +194,6 @@ pub use mcp::{
 };
 pub use modes::{
     register_modes, ModeDefinition, ModePermissions, ModeRegistry, ModeStance, ToolSelector,
-};
-pub use session::{
-    LuaSession, LuaSessionBuilder, LuaSessionConfig, LuaSessionHandle, SessionState,
 };
 pub use session_api::{
     register_session_module, ChannelSessionRpc, Session, SessionCommand, SessionConfigRpc,

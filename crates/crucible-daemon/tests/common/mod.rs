@@ -209,6 +209,12 @@ impl TestDaemon {
             // global mutation) so the spawned daemon never reads the developer's
             // real ~/.crucible registry.
             .env("CRUCIBLE_HOME", temp_dir.path())
+            // And the DATA home. The daemon extracts the compiled-in runtime
+            // tree and help corpus to `<data_dir>/crucible/...` at startup;
+            // without this every daemon-spawning test writes them into the
+            // developer's real ~/.local/share, and a parallel run has many
+            // processes writing one path at once.
+            .env("XDG_DATA_HOME", temp_dir.path().join("data"))
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -249,6 +255,9 @@ impl TestDaemon {
             // Default the config home to this test's TempDir; a caller-supplied
             // CRUCIBLE_HOME in env_vars still overrides via the loop below.
             .env("CRUCIBLE_HOME", temp_dir.path())
+            // Same for the data home, which is where the compiled-in runtime
+            // tree and help corpus extract to. See `start()`.
+            .env("XDG_DATA_HOME", temp_dir.path().join("data"))
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null());

@@ -106,43 +106,6 @@ pub(crate) fn session_event_to_lua(lua: &Lua, event: &SessionEvent) -> LuaResult
     Ok(table)
 }
 
-/// Inverse of [`session_event_to_flat_json`].
-///
-/// A handler returns the same flat table it was given, so rebuild the shape
-/// `serde_json::from_value::<SessionEvent>` expects: the `Custom` envelope for
-/// custom events, the snake_case serde tag for built-in variants.
-pub(crate) fn flat_json_to_session_event_json(
-    flat: JsonValue,
-    original: &SessionEvent,
-) -> JsonValue {
-    let JsonValue::Object(mut map) = flat else {
-        return flat;
-    };
-    for key in ENVELOPE_KEYS {
-        map.remove(key);
-    }
-
-    if let SessionEvent::Custom { name, .. } = original {
-        // Lowercase `custom` is the serde tag; `SessionEvent::type_name()`
-        // returns the capitalised variant name and is not interchangeable.
-        return serde_json::json!({
-            "type": "custom",
-            "name": name,
-            "payload": JsonValue::Object(map),
-        });
-    }
-
-    // Built-in variant: restore the serde tag the flat shape replaced with
-    // `type_name()`. Taken from the original event rather than derived, so a
-    // rename in either scheme cannot desynchronise them.
-    if let Ok(JsonValue::Object(orig)) = serde_json::to_value(original) {
-        if let Some(tag) = orig.get("type") {
-            map.insert("type".into(), tag.clone());
-        }
-    }
-    JsonValue::Object(map)
-}
-
 /// Convert Lua table to JSON value
 pub(super) fn lua_table_to_json(table: &Table) -> LuaResult<JsonValue> {
     let mut map = serde_json::Map::new();
