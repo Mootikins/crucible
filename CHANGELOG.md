@@ -7,7 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-08-14
+
 ### Added
+- **Agent cards are selectable at session create, from the CLI and from a
+  plugin.** `cru session create --agent <card>` and `cru.sessions.create{
+  agent_card = "..." }` both start a session on a card's prompt, model, tool
+  policy and MCP servers, layered over your config defaults and resolved
+  daemon-side before the session exists — so an unknown card creates nothing.
+  Neither could reach a card before: the CLI hardcoded the ACP branch whenever
+  `--agent` was present, and the Lua binding had no field for one.
+- **`cru agents list` shows ACP profiles alongside agent cards**, with a column
+  for whether each profile's binary is actually installed. The daemon had been
+  probing that for a while with no CLI surface, so "what can I talk to?" needed
+  two commands and one of them did not exist.
+- **`cru session create --acp <profile>`** names an external agent subprocess.
+- **Crucible ships its own documentation as a lazy kiln.** `Help/` and `Guides/`
+  travel inside the binary and extract on first use, so an installed Crucible
+  can answer questions about itself from the same corpus the website is built
+  from. Never auto-mounted — nothing joins a session's retrieval unless you
+  connect it.
+- **`crucible.on("FileChanged" | "FileDeleted" | "FileMoved", ...)` fires.** It
+  was dead at two layers: the name was rejected at registration, and the
+  dispatcher read the half of the registry `crucible.on` does not write to.
+  Every test in the module covered the event translation and stopped before
+  delivery, which is why it stayed dead.
 - **`allowed_hosts` takes a `.domain` entry**, admitting the apex plus exactly one
   label under it (`.crucible.example.com` covers `app.crucible.example.com`) — one
   label rather than any depth, because a dangling NS record in a delegated subtree
@@ -35,6 +59,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   its own zag menu machine and portalled container, so a 1,000-row tree carried
   1,000 of each.
 
+- **A refused session no longer leaves an agent-less one behind.** The trust
+  gate that `session.create` runs when it configures an agent fired *after* the
+  session was persisted, so a refusal answered 422 and still left a row on disk
+  and in `session.list` that answered `NoAgentConfigured` for good. Checked
+  before anything is written now. It also reaches two cases the create-time
+  check cannot: a confidential kiln arriving in `connect_kilns` (only the
+  primary kiln was ever classified) and a card whose own `provider:` overrides
+  the one the request was gated on.
+- **`session.configure_agent` cannot raise a session's provider trust past its
+  attached kilns.** Its twin `switch_model` has refused that for a while, on the
+  grounds that attach-time trust stays valid only while the provider does.
+  `configure_agent` changes the provider just as thoroughly and checked nothing,
+  so the create-time gate was bypassable in two steps: create on a local
+  provider, then reconfigure onto a cloud one. That is load-bearing rather than
+  defence in depth — `search_across_kilns` skips trust filtering on the primary
+  kiln, citing the gate.
+- **Trust follows the provider, not a label.** `resolve_provider_trust` answered
+  "this is ACP" from the presence of an `agent_name`, while create time, the
+  agent factory and `switch_model` all ask `agent_type`. An internal session
+  merely carrying that field was reported Cloud — strictly below Local — so a
+  local Ollama session was refused on a confidential kiln and had its
+  confidential connected kilns silently dropped from precognition. The Discord
+  plugin set the field on every session.
+- **A plugin session is the same session an RPC client gets.** `cru.sessions.create`
+  called the session manager directly, skipping scope refusal, trust validation,
+  agent resolution, project registration, `km.open`, the recording writer and the
+  setup task — so a plugin could open a cloud-provider session on a confidential
+  kiln that `session.create` would have refused, on the same socket. Both doors
+  now run one create path. (Plugin sessions still fire no `session_start` hooks:
+  the hook machinery holds a non-reentrant lock across its Lua call, and the
+  reflection plugin creates a session from inside `on_session_end`.)
+- **A kiln-less `cru.sessions.create` resolves to the daemon's data root**, not
+  the process-global `~/.crucible`. The RPC path was moved off that deliberately;
+  the plugin bridge never got the same fix, so a plugin's sessions could land in
+  a different kiln from every other session on the same daemon.
+- **The conversation tree is rebuilt before the turn's `user_message` is
+  emitted.** A separate writer task appends the emitted event to `session.jsonl`,
+  which the rebuild reads, so the two raced: when the append won, the
+  first-user-message gate read false and the turn ran with Precognition silently
+  skipped — no warning, nothing in the transcript to say the answer was
+  ungrounded.
+- **Agent-card discovery no longer reads the developer's own config directory
+  during tests.** It called `dirs::config_dir()` unconditionally and put it first
+  in precedence, so `~/.config/crucible/agents/` entered every card-resolving
+  test.
 ### Changed
 - **Web assets come from one place unless you say otherwise.** `cru web` served
   its bundle from `web/dist` on disk in debug builds and from the embedded copy
@@ -67,6 +136,38 @@ deletions are large, and most of what replaced them is tests and the two feature
 below. There is also a new test tier for the process-boundary tests nothing had
 been running, which caught four failures on its first run.
 
+- **`--agent` names an agent card; `--acp` names an ACP profile.** `cru agents
+  list` shows cards, but `--agent` took an ACP profile — the flag named the one
+  thing the command did not, which is also why a card was unreachable from the
+  CLI. Both flags now agree with a command that already exists (`cru agents`,
+  `cru acp`). Kept as two flags rather than one that guesses: an ACP agent is a
+  subprocess that forces Cloud trust, runs its own tools, and is refused when a
+  plugin has claimed isolation, so which one you picked decides who executes
+  tools and where the prompt goes. `--agent <profile>` asks the daemon whether
+  the name really is a profile and, only then, tells you to say `--acp`.
+  `cru chat` keeps `--agent` as an alias for `--acp`: it resolves its agent
+  client-side rather than through the daemon's create, so it cannot take a card
+  at all and flipping the flag would point at a path that does not exist.
+- **`cru agents list --format json` returns an object**, `{ "cards": [...],
+  "acp_profiles": [...] }`, where it was a bare array of cards. A script doing
+  `cru agents list -f json | jq '.[].name'` needs `.cards[].name`.
+- **One shipped plugin tree.** The `docs/plugins/` examples are promoted into
+  `runtime/plugins/`, enabled by default, and the examples tree is gone — it had
+  drifted to the point that none of its plugins loaded. `kiln-expert` is removed
+  outright; it reimplemented three built-in tools.
+- **Every auto-detected directory is a `.crucible/` one.** Plugins, skills and
+  agent cards are discovered from `.crucible/` and nowhere else — a kiln's
+  visible top level belongs to notes, and a cloned or synced kiln could
+  otherwise introduce an agent card, which names a model, a prompt and a tool
+  set. A kiln that genuinely is a card library composes itself in with a line of
+  Lua instead of being scanned.
+- **A plugin is the one Lua import mechanism.** The annotation-based loader that
+  discovered handlers, tools and commands from `-- @handler` doc comments is
+  gone, along with a third parser that scanned for `@tool`. A load-bearing
+  comment fails silently when it is misspelt, and a plugin already did the job.
+- **`cru mcp` serves the plugin registry**, not a separately scanned set of
+  tools, so the tools an external MCP client sees are the tools the internal
+  agent dispatches.
 ### Added
 - **`cru search -c/--preview`** shows a content snippet per hit again. The
   parameter had been threaded through both formatters and then hardcoded `false`
