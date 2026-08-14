@@ -348,7 +348,10 @@ async fn removing_then_reinstalling_a_plugin_registers_its_tools_again() {
         .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
         .await
         .expect("load");
-    assert!(loader.plugin_registry().tool_names().contains("comeback_probe"));
+    assert!(loader
+        .plugin_registry()
+        .tool_names()
+        .contains("comeback_probe"));
 
     loader
         .deactivate_and_forget_plugin("comeback")
@@ -356,7 +359,10 @@ async fn removing_then_reinstalling_a_plugin_registers_its_tools_again() {
         .expect("remove");
 
     assert!(
-        !loader.plugin_registry().tool_names().contains("comeback_probe"),
+        !loader
+            .plugin_registry()
+            .tool_names()
+            .contains("comeback_probe"),
         "a removed plugin's tools must be unregistered"
     );
     assert_eq!(loader.plugin_handlers().plugin_handler_count("comeback"), 0);
@@ -381,7 +387,10 @@ async fn removing_then_reinstalling_a_plugin_registers_its_tools_again() {
         .expect("reinstalled plugin listed");
     assert_eq!(entry["state"], "Active", "got: {entry}");
     assert!(
-        loader.plugin_registry().tool_names().contains("comeback_probe"),
+        loader
+            .plugin_registry()
+            .tool_names()
+            .contains("comeback_probe"),
         "reinstall must register the plugin's tools again"
     );
 }

@@ -66,7 +66,10 @@ async fn install_then_remove_acts_on_the_running_loader_and_the_toml() {
         .await
         .expect("activation load");
     assert!(
-        loader.plugin_registry().tool_names().contains("fresh_probe"),
+        loader
+            .plugin_registry()
+            .tool_names()
+            .contains("fresh_probe"),
         "an installed plugin's tools must be registered without restart"
     );
     let info = loader.loaded_plugin_info();
@@ -86,12 +89,14 @@ async fn install_then_remove_acts_on_the_running_loader_and_the_toml() {
         .deactivate_and_forget_plugin("fresh")
         .await
         .expect("deactivate");
-    let removed =
-        plugin_ops::remove_at("fresh", true, &toml_path, &plugins_dir).expect("remove");
+    let removed = plugin_ops::remove_at("fresh", true, &toml_path, &plugins_dir).expect("remove");
     assert_eq!(removed.purged_dir, Some(plugins_dir.join("fresh")));
 
     assert!(
-        !loader.plugin_registry().tool_names().contains("fresh_probe"),
+        !loader
+            .plugin_registry()
+            .tool_names()
+            .contains("fresh_probe"),
         "a removed plugin's tools must be unregistered"
     );
     assert!(

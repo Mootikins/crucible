@@ -275,7 +275,11 @@ mod tests {
             format!("name: {name}\nversion: \"0.1.0\"\nmain: init.lua\n"),
         )
         .unwrap();
-        std::fs::write(dir.join("init.lua"), format!("return {{ name = '{name}' }}\n")).unwrap();
+        std::fs::write(
+            dir.join("init.lua"),
+            format!("return {{ name = '{name}' }}\n"),
+        )
+        .unwrap();
     }
 
     #[tokio::test]

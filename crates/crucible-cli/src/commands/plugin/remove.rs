@@ -83,7 +83,10 @@ mod tests {
             "purged_dir": "/plugins/greeter",
         });
         let out = render_remove_response(&resp, true);
-        assert!(out.contains("Removed plugin 'greeter' from /cfg/plugins.toml"), "got: {out}");
+        assert!(
+            out.contains("Removed plugin 'greeter' from /cfg/plugins.toml"),
+            "got: {out}"
+        );
         assert!(out.contains("Deleted /plugins/greeter"), "got: {out}");
     }
 

@@ -62,7 +62,10 @@ fn render_install_response(resp: &serde_json::Value) -> (String, Option<String>)
             let _ = writeln!(out, "Cloned '{name}' to {dest}");
         }
         Some("already_present") => {
-            let _ = writeln!(out, "Plugin '{name}' is already cloned; declaring in plugins.toml");
+            let _ = writeln!(
+                out,
+                "Plugin '{name}' is already cloned; declaring in plugins.toml"
+            );
         }
         _ => {}
     }
@@ -79,7 +82,10 @@ fn render_install_response(resp: &serde_json::Value) -> (String, Option<String>)
         );
         // Design decision: runtime-installed plugins are not added to the
         // file watcher until the next daemon start.
-        let _ = writeln!(out, "(Edits are not hot-watched until the daemon restarts.)");
+        let _ = writeln!(
+            out,
+            "(Edits are not hot-watched until the daemon restarts.)"
+        );
         (out, None)
     } else {
         let err = resp["error"]
@@ -149,10 +155,22 @@ mod tests {
             "plugins_toml": "/cfg/plugins.toml",
         });
         let (out, load_error) = render_install_response(&resp);
-        assert!(load_error.is_none(), "loaded install must not error: {load_error:?}");
-        assert!(out.contains("Cloned 'greeter' to /plugins/greeter"), "got: {out}");
-        assert!(out.contains("Declared 'greeter' in /cfg/plugins.toml"), "got: {out}");
-        assert!(out.contains("2 tool(s), 1 command(s), 0 service(s)"), "got: {out}");
+        assert!(
+            load_error.is_none(),
+            "loaded install must not error: {load_error:?}"
+        );
+        assert!(
+            out.contains("Cloned 'greeter' to /plugins/greeter"),
+            "got: {out}"
+        );
+        assert!(
+            out.contains("Declared 'greeter' in /cfg/plugins.toml"),
+            "got: {out}"
+        );
+        assert!(
+            out.contains("2 tool(s), 1 command(s), 0 service(s)"),
+            "got: {out}"
+        );
         assert!(
             !out.contains("Restart the daemon"),
             "daemon-routed install needs no restart: {out}"
@@ -175,7 +193,10 @@ mod tests {
         });
         let (out, load_error) = render_install_response(&resp);
         // The install DID happen on disk — say so before failing.
-        assert!(out.contains("Declared 'broken' in /cfg/plugins.toml"), "got: {out}");
+        assert!(
+            out.contains("Declared 'broken' in /cfg/plugins.toml"),
+            "got: {out}"
+        );
         let err = load_error.expect("loaded: false must produce an error for the exit code");
         assert!(err.contains("boom inside setup"), "got: {err}");
     }
@@ -192,6 +213,9 @@ mod tests {
         });
         let (_, load_error) = render_install_response(&resp);
         let err = load_error.expect("loaded: false must produce an error even without a reason");
-        assert!(err.contains("plugin list"), "point at the diagnostic surface, got: {err}");
+        assert!(
+            err.contains("plugin list"),
+            "point at the diagnostic surface, got: {err}"
+        );
     }
 }
