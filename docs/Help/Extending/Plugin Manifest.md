@@ -62,7 +62,6 @@ capabilities:
 
 dependencies:
   - name: core-utils
-    version: ">=1.0"
   - name: markdown-parser
     optional: true
 
@@ -131,17 +130,13 @@ Declare dependencies on other plugins:
 ```yaml
 dependencies:
   - name: core-utils
-    version: ">=1.0"      # Version constraint (optional)
   - name: optional-dep
     optional: true        # Won't block load if missing
 ```
 
-Version constraints support:
-- Exact: `"1.0.0"`
-- Minimum: `">=1.0"`
-- Range: `">=1.0 <2.0"`
-
-Plugins load in dependency order automatically.
+Dependencies are matched by name only — there are no version constraints.
+Plugins load in dependency order automatically, and a missing required
+dependency blocks the load.
 
 ### Exports
 

@@ -18,7 +18,6 @@
 //!
 //! dependencies:
 //!   - name: other-plugin
-//!     version: ">=1.0"
 //! ```
 
 use serde::{Deserialize, Serialize};
@@ -128,9 +127,6 @@ impl Capability {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PluginDependency {
     pub name: String,
-
-    #[serde(default)]
-    pub version: Option<String>,
 
     #[serde(default)]
     pub optional: bool,
@@ -428,7 +424,6 @@ capabilities:
 
 dependencies:
   - name: other-plugin
-    version: ">=1.0"
   - name: optional-dep
     optional: true
 
@@ -455,6 +450,28 @@ exports:
         assert_eq!(manifest.required_dependencies().count(), 1);
         assert_eq!(manifest.exports.tools.len(), 2);
         assert!(manifest.exports.auto_discover);
+    }
+
+    #[test]
+    fn dependency_version_field_is_ignored_for_backward_compat() {
+        // The dependency-level `version` constraint was parsed but never
+        // compared, so the field was deleted. Existing plugin.yaml files that
+        // still set it must keep parsing (no deny_unknown_fields here).
+        let yaml = r#"
+name: my-plugin
+version: "1.0.0"
+dependencies:
+  - name: other-plugin
+    version: ">=1.0"
+"#;
+        let manifest = PluginManifest::from_yaml(yaml).unwrap();
+        assert_eq!(
+            manifest.dependencies,
+            vec![PluginDependency {
+                name: "other-plugin".to_string(),
+                optional: false,
+            }]
+        );
     }
 
     #[test]
