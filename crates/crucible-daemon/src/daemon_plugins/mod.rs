@@ -677,8 +677,27 @@ end
             }
         }
 
-        self.loaded_specs = specs.clone();
+        self.remember_specs(&specs);
         Ok(specs)
+    }
+
+    /// Upsert by name. Assignment (`self.loaded_specs = specs`) here would drop
+    /// every previously loaded plugin's entry the moment `load_plugins` runs a
+    /// second time — which it does once `plugin.install` loads at runtime: an
+    /// Active plugin is skipped by `load_all` (`AlreadyLoaded`), so its spec is
+    /// absent from any later call's result. A spec with `name: None` never
+    /// matches an existing entry; it is pushed.
+    fn remember_specs(&mut self, specs: &[PluginSpec]) {
+        for spec in specs {
+            match self
+                .loaded_specs
+                .iter_mut()
+                .find(|s| s.name.is_some() && s.name == spec.name)
+            {
+                Some(existing) => *existing = spec.clone(),
+                None => self.loaded_specs.push(spec.clone()),
+            }
+        }
     }
 
     /// Plugin directories that failed discovery, as `{path, error}` objects.
@@ -1019,12 +1038,7 @@ end
         // were just dropped by re-registration.
         self.executor.lua().expire_registry_values();
 
-        let spec_name = spec.name.clone();
-        if let Some(existing) = self.loaded_specs.iter_mut().find(|s| s.name == spec_name) {
-            *existing = spec.clone();
-        } else {
-            self.loaded_specs.push(spec.clone());
-        }
+        self.remember_specs(std::slice::from_ref(&spec));
 
         // Re-executing init.lua re-ran `setup(cfg)` against the ORIGINAL TOML,
         // so every value the user changed in the settings pane just reverted.

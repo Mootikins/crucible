@@ -844,6 +844,81 @@ async fn bootstrap_skips_disabled_entries() {
     drop(tmp);
 }
 
+/// A second `load_plugins` call must merge into `loaded_specs`, not replace
+/// it. The assignment it used to do dropped every previously loaded plugin's
+/// entry: an Active plugin is skipped by `load_all` (`AlreadyLoaded`), so its
+/// spec is absent from the second call's result, and `plugin.list` reported
+/// its tool/command counts as 0 while the tools stayed registered and
+/// working. `plugin.install` loads at runtime via exactly this second call.
+#[tokio::test]
+async fn a_second_load_plugins_call_keeps_previously_loaded_specs() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let write_plugin = |name: &str| {
+        let dir = tmp.path().join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("init.lua"),
+            format!(
+                r#"return {{
+                    name = "{name}",
+                    version = "0.1.0",
+                    tools = {{ {name}_probe = {{ description = "x", fn = function() return "t" end }} }},
+                }}"#
+            ),
+        )
+        .unwrap();
+    };
+
+    write_plugin("alpha");
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    loader
+        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .await
+        .expect("first load");
+
+    // A new plugin dir appears (the install flow), and load_plugins runs again
+    // over the same search path.
+    write_plugin("beta");
+    loader
+        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .await
+        .expect("second load");
+
+    let info = loader.loaded_plugin_info();
+    let counts = |name: &str| {
+        let entry = info
+            .iter()
+            .find(|p| p["name"] == name)
+            .unwrap_or_else(|| panic!("'{name}' missing from plugin info: {info:#?}"));
+        (entry["state"].clone(), entry["tools"].clone())
+    };
+    assert_eq!(
+        counts("alpha"),
+        ("Active".into(), 1.into()),
+        "alpha's spec was dropped by the second load_plugins call"
+    );
+    assert_eq!(counts("beta"), ("Active".into(), 1.into()));
+}
+
+/// Two `name: None` specs must not merge with each other — `None == None`
+/// would make the first anonymous spec swallow every later one.
+#[test]
+fn remember_specs_never_merges_anonymous_specs() {
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    let anon = PluginSpec::default();
+    loader.remember_specs(std::slice::from_ref(&anon));
+    loader.remember_specs(std::slice::from_ref(&anon));
+    assert_eq!(loader.loaded_specs.len(), 2);
+
+    let named = PluginSpec {
+        name: Some("gamma".to_string()),
+        ..Default::default()
+    };
+    loader.remember_specs(std::slice::from_ref(&named));
+    loader.remember_specs(std::slice::from_ref(&named));
+    assert_eq!(loader.loaded_specs.len(), 3, "named specs upsert in place");
+}
+
 // ---------------------------------------------------------------------------
 // cru.kiln graph functions, through the registration the daemon performs
 // ---------------------------------------------------------------------------
