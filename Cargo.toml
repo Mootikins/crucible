@@ -80,7 +80,7 @@ num_cpus = "1.17"
 flume = "0.12"
 markdown-it = "0.6"
 toml = "1.0"
-toml_edit = "0.22"
+toml_edit = "0.25"
 futures-util = "0.3"
 tokio-stream = "0.1"
 tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
@@ -92,7 +92,7 @@ axum = "0.8"
 tower = "0.5"
 
 # MCP protocol
-rmcp = { version = "2.2", features = ["macros", "server"] }
+rmcp = { version = "3.1", features = ["macros", "server"] }
 
 # Testing utilities
 criterion = { version = "0.8", features = ["html_reports"] }
@@ -108,13 +108,13 @@ test-case = "3.3"
 
 # Database
 
-comfy-table = "7"
+comfy-table = "8"
 
 # Procedural macro dependencies
 syn = { version = "3.0", features = ["full"] }
 
 # Additional utilities for event system
-base64 = "0.22"
+base64 = "0.23"
 
 # Additional dependencies
 clap = { version = "4.6", features = ["derive"] }
