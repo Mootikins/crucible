@@ -1162,6 +1162,29 @@ end
         Ok(spec)
     }
 
+    /// Fully remove a plugin from the running daemon: deactivate + forget.
+    ///
+    /// The dependent check lives in `PluginManager::unload` and only fires for
+    /// Active plugins (`unload` early-returns Ok for any other state) — with
+    /// zero shipped plugins declaring dependencies that is acceptable; this
+    /// pins the actual behavior, not an aspirational one. The refusal arrives
+    /// as `LifecycleError::LoadError(String)` (no dedicated variant); the
+    /// message is forwarded verbatim, and a refusal leaves everything —
+    /// registrations included — exactly as it was.
+    ///
+    /// Reload-failure paths must NOT come through here: their `Error` entry
+    /// with `last_error` is the diagnostic surface, and `forget` would erase it.
+    pub async fn deactivate_and_forget_plugin(&mut self, name: &str) -> anyhow::Result<()> {
+        self.plugin_manager.unload(name)?;
+        self.make_plugin_inert(name);
+        self.loaded_specs.retain(|s| s.name.as_deref() != Some(name));
+        // Without forget, the entry stays in the manager map (state
+        // Discovered): plugin.list still shows it, and — because discover()
+        // skips known names — a reinstall loads nothing and reports success.
+        self.plugin_manager.forget(name);
+        Ok(())
+    }
+
     /// Clear `package.loaded` entries for modules whose `.lua` file lives under `lua_dir`.
     fn clear_plugin_lua_cache(&self, lua_dir: &std::path::Path) -> anyhow::Result<()> {
         let lua = self.executor.lua();

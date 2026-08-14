@@ -180,6 +180,25 @@ impl PluginManager {
         Ok(())
     }
 
+    /// Drop a plugin from the manager entirely: its map entry, its
+    /// owner-tagged registrations, and its lifecycle hooks.
+    ///
+    /// `unload` deliberately leaves the entry in the map (state `Discovered`)
+    /// so `plugin.list` keeps showing it — but removal wants it gone, and
+    /// `discover()` skips names it already knows, so without this a removed
+    /// plugin stayed listed forever and reinstalling it loaded nothing while
+    /// reporting success. Callers deactivate first (`unload` runs the
+    /// dependent check and the Lua-side cleanup); `forget` does neither.
+    pub fn forget(&mut self, name: &str) {
+        self.plugins.remove(name);
+        // `unload` only cleans registrations for Active plugins; a plugin
+        // being forgotten from Error/Disabled may still have owner-tagged
+        // spec exports lying around.
+        self.unregister_by_owner(name);
+        self.on_load_hooks.remove(name);
+        self.on_unload_hooks.remove(name);
+    }
+
     pub fn reload(&mut self, name: &str) -> LifecycleResult<()> {
         self.reload_plugin(name)
     }

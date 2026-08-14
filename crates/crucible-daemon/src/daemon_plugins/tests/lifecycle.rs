@@ -252,6 +252,140 @@ async fn re_executing_a_plugin_fires_its_session_hooks_exactly_once() {
     );
 }
 
+/// The install flow is "write the plugin dir, then call `load_plugins` again":
+/// the new plugin must come up without disturbing Active ones — `load_all`
+/// skips Active plugins (`AlreadyLoaded`), so an installed neighbour must not
+/// re-execute anyone's init.lua. NOTE: plugins in state Error ARE retried by
+/// every load_all pass — deliberate (installing a plugin retries your broken
+/// ones) — so this fixture contains no errored plugins.
+#[tokio::test]
+async fn a_second_load_plugins_call_picks_up_a_new_plugin_without_disturbing_active_ones() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let write_plugin = |name: &str| {
+        let dir = tmp.path().join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("init.lua"),
+            format!(
+                r#"
+                _G.{name}_exec_count = (_G.{name}_exec_count or 0) + 1
+                return {{
+                    name = "{name}",
+                    version = "0.1.0",
+                    tools = {{ {name}_probe = {{ description = "x", fn = function() return "t" end }} }},
+                }}"#
+            ),
+        )
+        .unwrap();
+    };
+
+    write_plugin("alpha");
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    loader
+        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .await
+        .expect("first load");
+
+    // The install flow: a new plugin dir appears, load_plugins runs again.
+    write_plugin("beta");
+    loader
+        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .await
+        .expect("second load");
+
+    let info = loader.loaded_plugin_info();
+    let state = |name: &str| {
+        info.iter()
+            .find(|p| p["name"] == name)
+            .unwrap_or_else(|| panic!("'{name}' missing from plugin info: {info:#?}"))["state"]
+            .clone()
+    };
+    assert_eq!(state("alpha"), "Active");
+    assert_eq!(state("beta"), "Active");
+    let tools = loader.plugin_registry().tool_names();
+    assert!(tools.contains("alpha_probe"), "got: {tools:?}");
+    assert!(tools.contains("beta_probe"), "got: {tools:?}");
+
+    let exec_count = |name: &str| -> i64 {
+        loader
+            .plugin_lua()
+            .load(format!("return _G.{name}_exec_count or 0"))
+            .eval()
+            .expect("read counter")
+    };
+    assert_eq!(
+        exec_count("alpha"),
+        1,
+        "installing beta must not re-execute alpha's init.lua"
+    );
+    assert_eq!(exec_count("beta"), 1);
+}
+
+/// remove = deactivate + forget: nothing registered, nothing running, not in
+/// `plugin.list` — and a REINSTALL works. `discover()` skips names still in
+/// the manager map, so without `forget` a removed plugin stayed listed forever
+/// and reinstalling it loaded nothing while reporting success.
+#[tokio::test]
+async fn removing_then_reinstalling_a_plugin_registers_its_tools_again() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let dir = tmp.path().join("comeback");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("init.lua"),
+        r#"
+        crucible.on("pre_tool_call", function() return nil end)
+        return {
+            name = "comeback",
+            version = "0.1.0",
+            tools = { comeback_probe = { description = "x", fn = function() return "t" end } },
+        }
+    "#,
+    )
+    .unwrap();
+
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    loader
+        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .await
+        .expect("load");
+    assert!(loader.plugin_registry().tool_names().contains("comeback_probe"));
+
+    loader
+        .deactivate_and_forget_plugin("comeback")
+        .await
+        .expect("remove");
+
+    assert!(
+        !loader.plugin_registry().tool_names().contains("comeback_probe"),
+        "a removed plugin's tools must be unregistered"
+    );
+    assert_eq!(loader.plugin_handlers().plugin_handler_count("comeback"), 0);
+    assert!(
+        !loader
+            .loaded_plugin_info()
+            .iter()
+            .any(|p| p["name"] == "comeback"),
+        "a removed plugin must leave plugin.list"
+    );
+
+    // Reinstall: the dir is still there (removal of files is plugin_ops'
+    // business); a fresh load_plugins pass must bring the plugin back whole.
+    loader
+        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .await
+        .expect("reinstall");
+    let info = loader.loaded_plugin_info();
+    let entry = info
+        .iter()
+        .find(|p| p["name"] == "comeback")
+        .expect("reinstalled plugin listed");
+    assert_eq!(entry["state"], "Active", "got: {entry}");
+    assert!(
+        loader.plugin_registry().tool_names().contains("comeback_probe"),
+        "reinstall must register the plugin's tools again"
+    );
+}
+
 /// The inverse: a handler registered inside `setup()` IS owned by the plugin.
 /// `setup()` used to run after the loading marker was cleared, so its
 /// registrations were unowned — reload could not remove them and appended
