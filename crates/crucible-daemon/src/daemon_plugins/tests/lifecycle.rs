@@ -200,6 +200,58 @@ async fn a_top_level_raise_does_not_swallow_later_registrations() {
     assert!(ran, "reloading the dead plugin deleted the user's handler");
 }
 
+/// Executing a plugin twice (= one reload) must leave exactly one copy of its
+/// session hooks, measured by FIRING them, which exercises the executor sync
+/// path (`fire_session_start` replaces the cached hook Vec from the Lua table
+/// on every fire, so clearing the table is sufficient — this pins that).
+/// oci's `on_session_start` owns a container isolation boundary and is
+/// `required = true`; running it twice per session is not cosmetic.
+#[tokio::test]
+async fn re_executing_a_plugin_fires_its_session_hooks_exactly_once() {
+    use crucible_lua::{Session, SessionConfigRpc};
+
+    struct TestRpc;
+    impl SessionConfigRpc for TestRpc {}
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let dir = tmp.path().join("hooker");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("init.lua"),
+        r#"
+        crucible.on_session_start(function(s)
+            _G.start_count = (_G.start_count or 0) + 1
+        end)
+        return { name = "hooker", version = "0.1.0" }
+    "#,
+    )
+    .unwrap();
+
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    loader
+        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .await
+        .expect("load");
+    loader.reload_plugin("hooker").await.expect("reload");
+
+    let session = Session::new("hook-once".to_string());
+    session.bind(Box::new(TestRpc));
+    loader
+        .fire_session_start(&session)
+        .await
+        .expect("fire start hooks");
+
+    let count: i64 = loader
+        .plugin_lua()
+        .load("return _G.start_count or 0")
+        .eval()
+        .expect("read counter");
+    assert_eq!(
+        count, 1,
+        "one reload must not leave a second copy of the session hook"
+    );
+}
+
 /// The inverse: a handler registered inside `setup()` IS owned by the plugin.
 /// `setup()` used to run after the loading marker was cleared, so its
 /// registrations were unowned — reload could not remove them and appended

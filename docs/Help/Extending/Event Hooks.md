@@ -291,6 +291,12 @@ Return `{ inject = { content = "...", position = "user_prefix" } }` to prepend/a
 
 Two named hooks for session lifecycle. These are separate from `crucible.on()`.
 
+Like `crucible.on()` handlers, lifecycle hooks registered during a plugin's
+load (its `init.lua` or `setup()`) belong to that plugin: reloading the plugin
+clears its hooks before re-running it, so a reload never leaves a second copy
+firing. Hooks registered outside a plugin load — your own `init.lua`, or a
+session VM — are unowned and are never cleared by any plugin's reload.
+
 ### `crucible.on_session_start(fn)`
 
 Fires once when a session begins. Use for per-session setup (starting containers, opening connections, seeding state).

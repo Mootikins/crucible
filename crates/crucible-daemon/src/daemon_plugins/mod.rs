@@ -832,13 +832,16 @@ end
     /// them — the loader mutex is what makes the Active-but-inert window
     /// unobservable.
     ///
-    /// Session-hook clearing and service-task aborts join this sequence as
-    /// those surfaces gain owner attribution. `IsolationRegistry` and
-    /// `StatusRegistry` are session-keyed, not plugin-keyed, so no
-    /// plugin-scoped release exists for them or is needed.
+    /// Service-task aborts join this sequence as that surface gains owner
+    /// attribution. `IsolationRegistry` and `StatusRegistry` are
+    /// session-keyed, not plugin-keyed, so no plugin-scoped release exists
+    /// for them or is needed.
     fn make_plugin_inert(&mut self, name: &str) {
         self.plugin_registry.remove_plugin(name);
         self.handler_registry.clear_plugin_handlers(name);
+        if let Err(e) = crucible_lua::clear_plugin_hooks(self.executor.lua(), name) {
+            warn!("clear session hooks for dead plugin '{name}': {e}");
+        }
         self.publications.release_plugin(name);
         self.options.release_plugin(name);
         // Dropped RegistryKeys only mark their slots; reclaim them so repeated
@@ -930,13 +933,16 @@ end
             source
         };
 
-        // Drop this plugin's previously-registered handlers, and mark it as
-        // the loading plugin so anything it registers now is attributed to it.
-        // Without both halves a reload appends a second copy of every
-        // `crucible.on` handler, and the stale copies keep firing against dead
-        // state — which, with `pre_tool_call` failing closed, denies every
-        // tool call in every session.
+        // Drop this plugin's previously-registered handlers and session hooks,
+        // and mark it as the loading plugin so anything it registers now is
+        // attributed to it. Without both halves a reload appends a second copy
+        // of every `crucible.on` handler and every session hook — stale
+        // handlers keep firing against dead state (and `pre_tool_call` fails
+        // closed, denying every tool call in every session), while a doubled
+        // `on_session_start` runs oci's container setup twice per session.
         self.handler_registry.clear_plugin_handlers(name);
+        crucible_lua::clear_plugin_hooks(lua, name)
+            .map_err(|e| anyhow::anyhow!("clear session hooks for '{name}': {e}"))?;
         lua.globals().set("__crucible_loading_plugin__", name)?;
 
         // Execute init.lua with eval_async — captures return value AND enables
