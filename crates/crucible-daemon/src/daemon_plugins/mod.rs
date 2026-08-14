@@ -1182,7 +1182,16 @@ end
     /// Reload-failure paths must NOT come through here: their `Error` entry
     /// with `last_error` is the diagnostic surface, and `forget` would erase it.
     pub async fn deactivate_and_forget_plugin(&mut self, name: &str) -> anyhow::Result<()> {
-        self.plugin_manager.unload(name)?;
+        match self.plugin_manager.unload(name) {
+            Ok(()) => {}
+            // Declared in plugins.toml but never discovered by this daemon
+            // (clone deleted by hand, bootstrap failed at boot): nothing to
+            // deactivate is not a refusal. Erroring here made a stale
+            // declaration unremovable for as long as the daemon ran — the
+            // caller's declared-in-TOML precondition already guards typos.
+            Err(crucible_lua::lifecycle::LifecycleError::NotFound(_)) => {}
+            Err(e) => return Err(e.into()),
+        }
         self.make_plugin_inert(name);
         self.loaded_specs
             .retain(|s| s.name.as_deref() != Some(name));

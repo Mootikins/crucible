@@ -337,6 +337,58 @@ pub(crate) async fn handle_plugin_run_command(
 
 // --- Install / remove handlers ---
 
+/// What `plugin.install`'s response says about the plugin after the
+/// activation `load_plugins` pass.
+#[derive(Debug)]
+pub(crate) struct InstallLoadReport {
+    pub loaded: bool,
+    pub tools: u64,
+    pub commands: u64,
+    pub services: u64,
+    pub error: Option<String>,
+}
+
+impl InstallLoadReport {
+    fn not_loaded(error: String) -> Self {
+        Self {
+            loaded: false,
+            tools: 0,
+            commands: 0,
+            services: 0,
+            error: Some(error),
+        }
+    }
+}
+
+/// Judge the install by the loader's post-load state (`loaded_plugin_info`),
+/// never by the activation pass's return value: a plugin that was ALREADY
+/// Active — manually cloned into the user plugins dir and loaded at boot,
+/// now being declared — is skipped by `load_all` as `AlreadyLoaded` and is
+/// absent from that pass's specs, but it is loaded, not broken. Judging by
+/// the pass result reported `loaded: false` with a fabricated error for a
+/// healthy plugin (and failed `cru plugin add`'s exit code).
+pub(crate) fn install_load_report(loader: &DaemonPluginLoader, name: &str) -> InstallLoadReport {
+    let info = loader.loaded_plugin_info();
+    match info.iter().find(|p| p["name"] == name) {
+        Some(entry) if entry["state"] == "Active" => InstallLoadReport {
+            loaded: true,
+            tools: entry["tools"].as_u64().unwrap_or(0),
+            commands: entry["commands"].as_u64().unwrap_or(0),
+            services: entry["services"].as_u64().unwrap_or(0),
+            error: None,
+        },
+        // Per-plugin fail-open: the pass succeeded but this plugin's own
+        // execution failed — its entry carries the reason.
+        Some(entry) => InstallLoadReport::not_loaded(
+            entry["last_error"]
+                .as_str()
+                .map(String::from)
+                .unwrap_or_else(|| "plugin did not load; see plugin.list".to_string()),
+        ),
+        None => InstallLoadReport::not_loaded("plugin did not load; see plugin.list".to_string()),
+    }
+}
+
 pub(crate) async fn handle_plugin_install(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
@@ -364,10 +416,7 @@ pub(crate) async fn handle_plugin_install(
     // plugin is visible in `plugin.list` as `state: Error` — so report
     // `installed: true, loaded: false` with the reason, not an opaque
     // failure. No TOML rollback.
-    let mut loaded = false;
-    let (mut tools, mut commands, mut services) = (0usize, 0usize, 0usize);
-    let mut load_error: Option<String> = None;
-    match crate::plugin_ops::plugins_dir() {
+    let report = match crate::plugin_ops::plugins_dir() {
         Ok(plugins_dir) => {
             let mut loader_guard = plugin_loader.lock().await;
             match loader_guard.as_mut() {
@@ -376,41 +425,26 @@ pub(crate) async fn handle_plugin_install(
                         .load_plugins(&[(plugins_dir, crucible_lua::PluginSource::User)])
                         .await
                     {
-                        Ok(specs) => {
-                            match specs
-                                .iter()
-                                .find(|s| s.name.as_deref() == Some(result.name.as_str()))
-                            {
-                                Some(spec) => {
-                                    loaded = true;
-                                    tools = spec.tools.len();
-                                    commands = spec.commands.len();
-                                    services = spec.services.len();
-                                }
-                                None => {
-                                    // Per-plugin fail-open: load_plugins succeeded
-                                    // but this plugin's execution failed — its
-                                    // entry carries the reason.
-                                    load_error = loader
-                                        .loaded_plugin_info()
-                                        .iter()
-                                        .find(|p| p["name"] == result.name)
-                                        .and_then(|p| p["last_error"].as_str().map(String::from))
-                                        .or_else(|| {
-                                            Some("plugin did not load; see plugin.list".to_string())
-                                        });
-                                }
-                            }
+                        Ok(_) => {
+                            let report = install_load_report(loader, &result.name);
                             spawn_plugin_services(loader);
+                            report
                         }
-                        Err(e) => load_error = Some(e.to_string()),
+                        Err(e) => InstallLoadReport::not_loaded(e.to_string()),
                     }
                 }
-                None => load_error = Some("plugin loader not initialized".to_string()),
+                None => InstallLoadReport::not_loaded("plugin loader not initialized".to_string()),
             }
         }
-        Err(e) => load_error = Some(e.to_string()),
-    }
+        Err(e) => InstallLoadReport::not_loaded(e.to_string()),
+    };
+    let InstallLoadReport {
+        loaded,
+        tools,
+        commands,
+        services,
+        error: load_error,
+    } = report;
 
     Response::success(
         req.id,
