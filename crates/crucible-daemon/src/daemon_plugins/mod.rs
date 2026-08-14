@@ -1448,9 +1448,11 @@ pub enum BootstrapOutcome {
     Cloned { dest: PathBuf },
 }
 
-/// Bootstrap a single plugin entry: clone if missing, check out pin if
-/// set. Returns a structured outcome so callers (CLI vs daemon startup)
-/// can decide how loudly to react to failures.
+/// Bootstrap a single plugin entry: clone into `plugins_dir` if missing,
+/// check out pin if set. Returns a structured outcome so callers (CLI vs
+/// daemon startup) can decide how loudly to react to failures. The target
+/// dir is a parameter so tests can inject a temp dir instead of touching
+/// the real `~/.config/crucible/plugins`.
 ///
 /// Pin handling: when a pin is set we drop `--depth 1` because a shallow
 /// clone often won't contain the target SHA on the tip. Tags and branch
@@ -1458,15 +1460,11 @@ pub enum BootstrapOutcome {
 /// bandwidth for correctness.
 pub async fn bootstrap_plugin_entry(
     entry: &crucible_core::config::PluginEntry,
+    plugins_dir: &std::path::Path,
 ) -> anyhow::Result<BootstrapOutcome> {
     if !entry.enabled {
         return Ok(BootstrapOutcome::Disabled);
     }
-
-    let plugins_dir = dirs::config_dir()
-        .ok_or_else(|| anyhow::anyhow!("could not determine config directory"))?
-        .join("crucible")
-        .join("plugins");
 
     let name = plugin_name_from_url(&entry.url)
         .ok_or_else(|| anyhow::anyhow!("Plugin URL '{}' has no usable name segment", entry.url))?;
@@ -1546,8 +1544,9 @@ pub async fn bootstrap_plugin_entry(
 pub async fn bootstrap_plugins(
     entries: &[crucible_core::config::PluginEntry],
 ) -> anyhow::Result<()> {
+    let plugins_dir = crate::plugin_ops::plugins_dir()?;
     for entry in entries {
-        match bootstrap_plugin_entry(entry).await {
+        match bootstrap_plugin_entry(entry, &plugins_dir).await {
             Ok(_) => {}
             Err(e) => {
                 warn!("Plugin bootstrap failed: {}", e);

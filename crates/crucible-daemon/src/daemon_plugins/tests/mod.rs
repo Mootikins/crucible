@@ -8,6 +8,7 @@
 //! guarantee, loading-marker attribution).
 use super::*;
 
+mod install;
 mod lifecycle;
 mod services;
 mod shipped;

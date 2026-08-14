@@ -337,7 +337,10 @@ pub(crate) async fn handle_plugin_run_command(
 
 // --- Install / remove handlers ---
 
-pub(crate) async fn handle_plugin_install(req: Request) -> Response {
+pub(crate) async fn handle_plugin_install(
+    req: Request,
+    plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
+) -> Response {
     let url = require_param!(req, "url", as_str).to_string();
     let branch = optional_param!(req, "branch", as_str).map(|s| s.to_string());
     let pin = optional_param!(req, "pin", as_str).map(|s| s.to_string());
@@ -349,37 +352,145 @@ pub(crate) async fn handle_plugin_install(req: Request) -> Response {
         enabled: true,
     };
 
-    match crate::plugin_ops::install(entry).await {
-        Ok(result) => Response::success(
-            req.id,
-            serde_json::json!({
-                "name": result.name,
-                "outcome": match result.outcome {
-                    crate::BootstrapOutcome::Cloned { ref dest } => serde_json::json!({
-                        "kind": "cloned",
-                        "dest": dest.to_string_lossy(),
-                    }),
-                    crate::BootstrapOutcome::AlreadyPresent => serde_json::json!({
-                        "kind": "already_present",
-                    }),
-                    crate::BootstrapOutcome::Disabled => serde_json::json!({
-                        "kind": "disabled",
-                    }),
-                },
-                "plugins_toml": result.plugins_toml.to_string_lossy(),
-            }),
-        ),
-        Err(e) => internal_error(req.id, e),
+    let result = match crate::plugin_ops::install(entry).await {
+        Ok(r) => r,
+        Err(e) => return internal_error(req.id, e),
+    };
+
+    // Activate on the running daemon: a second `load_plugins` pass over the
+    // user plugins dir is incremental — Active plugins are skipped
+    // (`AlreadyLoaded`) and `loaded_specs` merges. If activation fails, the
+    // install still happened on disk: the next boot loads it, and a broken
+    // plugin is visible in `plugin.list` as `state: Error` — so report
+    // `installed: true, loaded: false` with the reason, not an opaque
+    // failure. No TOML rollback.
+    let mut loaded = false;
+    let (mut tools, mut commands, mut services) = (0usize, 0usize, 0usize);
+    let mut load_error: Option<String> = None;
+    match crate::plugin_ops::plugins_dir() {
+        Ok(plugins_dir) => {
+            let mut loader_guard = plugin_loader.lock().await;
+            match loader_guard.as_mut() {
+                Some(loader) => {
+                    match loader
+                        .load_plugins(&[(plugins_dir, crucible_lua::PluginSource::User)])
+                        .await
+                    {
+                        Ok(specs) => {
+                            match specs
+                                .iter()
+                                .find(|s| s.name.as_deref() == Some(result.name.as_str()))
+                            {
+                                Some(spec) => {
+                                    loaded = true;
+                                    tools = spec.tools.len();
+                                    commands = spec.commands.len();
+                                    services = spec.services.len();
+                                }
+                                None => {
+                                    // Per-plugin fail-open: load_plugins succeeded
+                                    // but this plugin's execution failed — its
+                                    // entry carries the reason.
+                                    load_error = loader
+                                        .loaded_plugin_info()
+                                        .iter()
+                                        .find(|p| p["name"] == result.name)
+                                        .and_then(|p| p["last_error"].as_str().map(String::from))
+                                        .or_else(|| {
+                                            Some("plugin did not load; see plugin.list".to_string())
+                                        });
+                                }
+                            }
+                            spawn_plugin_services(loader);
+                        }
+                        Err(e) => load_error = Some(e.to_string()),
+                    }
+                }
+                None => load_error = Some("plugin loader not initialized".to_string()),
+            }
+        }
+        Err(e) => load_error = Some(e.to_string()),
     }
+
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "name": result.name,
+            "installed": true,
+            "loaded": loaded,
+            "tools": tools,
+            "commands": commands,
+            "services": services,
+            "error": load_error,
+            // The watcher's watch list is a boot-time snapshot; a plugin
+            // installed at runtime works but is not hot-reloaded on edit.
+            "watch": "not hot-watched until restart",
+            "outcome": match result.outcome {
+                crate::BootstrapOutcome::Cloned { ref dest } => serde_json::json!({
+                    "kind": "cloned",
+                    "dest": dest.to_string_lossy(),
+                }),
+                crate::BootstrapOutcome::AlreadyPresent => serde_json::json!({
+                    "kind": "already_present",
+                }),
+                crate::BootstrapOutcome::Disabled => serde_json::json!({
+                    "kind": "disabled",
+                }),
+            },
+            "plugins_toml": result.plugins_toml.to_string_lossy(),
+        }),
+    )
 }
 
-pub(crate) async fn handle_plugin_remove(req: Request) -> Response {
+pub(crate) async fn handle_plugin_remove(
+    req: Request,
+    plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
+) -> Response {
     let name = require_param!(req, "name", as_str).to_string();
     let purge = optional_param!(req, "purge", as_bool).unwrap_or(false);
 
-    // plugin_ops::remove is synchronous (no I/O off the runtime); run on
-    // spawn_blocking anyway because it does fs writes.
-    let result = tokio::task::spawn_blocking(move || crate::plugin_ops::remove(&name, purge)).await;
+    // Precondition FIRST: only plugins declared in plugins.toml are
+    // removable, and every bundled `runtime/plugins/*` plugin is not.
+    // Checking after deactivation instead would unload e.g. `oci` and THEN
+    // fail the TOML step — a silently unloaded isolation plugin, reachable
+    // from the web UI's remove button.
+    let toml_path = match crate::plugin_ops::plugins_toml_path() {
+        Ok(p) => p,
+        Err(e) => return internal_error(req.id, e),
+    };
+    match crate::plugin_ops::declared_at(&toml_path, &name) {
+        Ok(true) => {}
+        Ok(false) => {
+            return Response::error(
+                req.id,
+                INVALID_PARAMS,
+                format!(
+                    "plugin '{name}' is not declared in plugins.toml, so there is nothing to \
+                     remove; to turn off a bundled plugin, set `[plugins.{name}] enabled = false` \
+                     in config.toml"
+                ),
+            )
+        }
+        Err(e) => return internal_error(req.id, e),
+    }
+
+    // Deactivate + forget on the running daemon. A dependent-refusal here
+    // leaves plugins.toml untouched and reports why nothing happened.
+    {
+        let mut loader_guard = plugin_loader.lock().await;
+        if let Some(loader) = loader_guard.as_mut() {
+            if let Err(e) = loader.deactivate_and_forget_plugin(&name).await {
+                return internal_error(req.id, e);
+            }
+        }
+    }
+
+    // TOML commit; `remove` purges the clone dir only after the TOML write
+    // succeeded. Run on spawn_blocking because it does fs writes.
+    let result = {
+        let name = name.clone();
+        tokio::task::spawn_blocking(move || crate::plugin_ops::remove(&name, purge)).await
+    };
 
     match result {
         Ok(Ok(outcome)) => Response::success(
@@ -390,7 +501,16 @@ pub(crate) async fn handle_plugin_remove(req: Request) -> Response {
                 "purged_dir": outcome.purged_dir.map(|p| p.to_string_lossy().to_string()),
             }),
         ),
-        Ok(Err(e)) => internal_error(req.id, e),
+        // A concurrent plugins.toml write since the precondition check can
+        // land here: the plugin is deactivated but still declared, which the
+        // next daemon boot recovers by loading it again.
+        Ok(Err(e)) => internal_error(
+            req.id,
+            format!(
+                "plugin '{name}' was deactivated, but removing its plugins.toml entry failed \
+                 (still declared; the next daemon start will load it again): {e}"
+            ),
+        ),
         Err(e) => internal_error(req.id, e),
     }
 }

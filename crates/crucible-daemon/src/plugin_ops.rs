@@ -48,19 +48,31 @@ pub fn plugins_dir() -> Result<PathBuf> {
 /// Install a plugin: clone it (idempotent if already cloned) and
 /// declare it in `plugins.toml`. The TOML write is guarded by a
 /// file-level lock so CLI + daemon writes don't race.
+///
+/// Path-resolving wrapper over [`install_at`] for callers acting on the
+/// user's real config (CLI offline fallback, RPC handler).
 pub async fn install(entry: PluginEntry) -> Result<InstallOutcome> {
-    let toml_path = plugins_toml_path()?;
+    install_at(entry, &plugins_toml_path()?, &plugins_dir()?).await
+}
+
+/// [`install`]'s core with every path injected, so tests never touch the
+/// real `~/.config/crucible`.
+pub async fn install_at(
+    entry: PluginEntry,
+    toml_path: &Path,
+    plugins_dir: &Path,
+) -> Result<InstallOutcome> {
     let name = plugin_name_from_url(&entry.url)
         .ok_or_else(|| anyhow!("cannot derive plugin name from URL '{}'", entry.url))?;
 
     // Clone first. If the clone fails (bad URL, no network), don't
     // leave a phantom declaration behind in plugins.toml.
-    let outcome = bootstrap_plugin_entry(&entry)
+    let outcome = bootstrap_plugin_entry(&entry, plugins_dir)
         .await
         .with_context(|| format!("failed to install plugin '{name}'"))?;
 
     // Read-modify-write under exclusive lock.
-    with_locked_config(&toml_path, |config| {
+    with_locked_config(toml_path, |config| {
         if config
             .plugin
             .iter()
@@ -75,19 +87,30 @@ pub async fn install(entry: PluginEntry) -> Result<InstallOutcome> {
     Ok(InstallOutcome {
         name,
         outcome,
-        plugins_toml: toml_path,
+        plugins_toml: toml_path.to_path_buf(),
     })
 }
 
 /// Remove a plugin: drop it from `plugins.toml` and optionally
 /// delete its clone directory.
+///
+/// Path-resolving wrapper over [`remove_at`].
 pub fn remove(name: &str, purge: bool) -> Result<RemoveOutcome> {
-    let toml_path = plugins_toml_path()?;
+    remove_at(name, purge, &plugins_toml_path()?, &plugins_dir()?)
+}
+
+/// [`remove`]'s core with every path injected.
+pub fn remove_at(
+    name: &str,
+    purge: bool,
+    toml_path: &Path,
+    plugins_dir: &Path,
+) -> Result<RemoveOutcome> {
     if !toml_path.exists() {
         return Err(anyhow!("no plugins.toml found at {}", toml_path.display()));
     }
 
-    let found = with_locked_config(&toml_path, |config| {
+    let found = with_locked_config(toml_path, |config| {
         let before = config.plugin.len();
         config.plugin.retain(|p| p.name().as_deref() != Some(name));
         Ok(config.plugin.len() < before)
@@ -101,7 +124,7 @@ pub fn remove(name: &str, purge: bool) -> Result<RemoveOutcome> {
     }
 
     let purged_dir = if purge {
-        let dir = plugins_dir()?.join(name);
+        let dir = plugins_dir.join(name);
         if dir.exists() {
             std::fs::remove_dir_all(&dir)
                 .with_context(|| format!("failed to remove plugin dir {}", dir.display()))?;
@@ -115,9 +138,31 @@ pub fn remove(name: &str, purge: bool) -> Result<RemoveOutcome> {
 
     Ok(RemoveOutcome {
         name: name.to_string(),
-        plugins_toml: toml_path,
+        plugins_toml: toml_path.to_path_buf(),
         purged_dir,
     })
+}
+
+/// Whether `name` is declared in `plugins.toml`, read under the sidecar
+/// lock so a concurrent writer's in-flight edit isn't observed. A missing
+/// file declares nothing — every bundled `runtime/plugins/*` plugin lands
+/// here, which is how `plugin.remove` tells "removable" from "bundled".
+pub fn declared_at(toml_path: &Path, name: &str) -> Result<bool> {
+    if !toml_path.exists() {
+        return Ok(false);
+    }
+    let _lock = acquire_sidecar_lock(toml_path)?;
+    let content = std::fs::read_to_string(toml_path).unwrap_or_default();
+    let config: PluginsConfig = if content.is_empty() {
+        PluginsConfig::default()
+    } else {
+        toml::from_str(&content)
+            .with_context(|| format!("failed to parse {}", toml_path.display()))?
+    };
+    Ok(config
+        .plugin
+        .iter()
+        .any(|p| p.name().as_deref() == Some(name)))
 }
 
 /// Acquire an exclusive lock on the `plugins.toml.lock` sidecar
@@ -146,24 +191,8 @@ where
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
 
-    let lock_path = {
-        let mut p = toml_path.as_os_str().to_owned();
-        p.push(".lock");
-        PathBuf::from(p)
-    };
-    let lock_file: File = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(&lock_path)
-        .with_context(|| format!("failed to open {}", lock_path.display()))?;
-
-    lock_file
-        .try_lock_exclusive()
-        .map_err(|e| anyhow!("plugins.toml is locked by another process (retry shortly): {e}",))?;
-
-    // Lock is held until `lock_file` drops at function exit.
+    // Lock is held until `_lock` drops at function exit.
+    let _lock = acquire_sidecar_lock(toml_path)?;
     let content = std::fs::read_to_string(toml_path).unwrap_or_default();
     let mut config: PluginsConfig = if content.is_empty() {
         PluginsConfig::default()
@@ -199,6 +228,28 @@ where
     Ok(result)
 }
 
+/// Open (creating if needed) and exclusively lock the `plugins.toml.lock`
+/// sidecar. The returned handle holds the lock until dropped.
+fn acquire_sidecar_lock(toml_path: &Path) -> Result<File> {
+    let lock_path = {
+        let mut p = toml_path.as_os_str().to_owned();
+        p.push(".lock");
+        PathBuf::from(p)
+    };
+    let lock_file: File = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+        .with_context(|| format!("failed to open {}", lock_path.display()))?;
+
+    lock_file
+        .try_lock_exclusive()
+        .map_err(|e| anyhow!("plugins.toml is locked by another process (retry shortly): {e}",))?;
+    Ok(lock_file)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,6 +262,90 @@ mod tests {
             pin: None,
             enabled: true,
         }
+    }
+
+    /// Write a fake pre-cloned plugin so `bootstrap_plugin_entry`
+    /// short-circuits to `AlreadyPresent` before URL normalization —
+    /// no git, no network, no `file://` (the URL allowlist stays intact).
+    fn write_clone(plugins_dir: &Path, name: &str) {
+        let dir = plugins_dir.join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("plugin.yaml"),
+            format!("name: {name}\nversion: \"0.1.0\"\nmain: init.lua\n"),
+        )
+        .unwrap();
+        std::fs::write(dir.join("init.lua"), format!("return {{ name = '{name}' }}\n")).unwrap();
+    }
+
+    #[tokio::test]
+    async fn install_at_declares_an_already_cloned_plugin_in_the_given_toml() {
+        let tmp = tempdir().unwrap();
+        let toml_path = tmp.path().join("plugins.toml");
+        let plugins_dir = tmp.path().join("plugins");
+        write_clone(&plugins_dir, "repo");
+
+        let outcome = install_at(entry("user/repo"), &toml_path, &plugins_dir)
+            .await
+            .unwrap();
+        assert_eq!(outcome.name, "repo");
+        assert!(matches!(outcome.outcome, BootstrapOutcome::AlreadyPresent));
+
+        let written: PluginsConfig =
+            toml::from_str(&std::fs::read_to_string(&toml_path).unwrap()).unwrap();
+        assert_eq!(written.plugin.len(), 1);
+        assert_eq!(written.plugin[0].url, "user/repo");
+
+        // Installing the same plugin twice is a declaration conflict.
+        let err = install_at(entry("user/repo"), &toml_path, &plugins_dir)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("already declared"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn remove_at_drops_the_declaration_and_purges_only_on_request() {
+        let tmp = tempdir().unwrap();
+        let toml_path = tmp.path().join("plugins.toml");
+        let plugins_dir = tmp.path().join("plugins");
+        write_clone(&plugins_dir, "repo");
+        install_at(entry("user/repo"), &toml_path, &plugins_dir)
+            .await
+            .unwrap();
+
+        // Without purge the clone dir survives.
+        let removed = remove_at("repo", false, &toml_path, &plugins_dir).unwrap();
+        assert_eq!(removed.purged_dir, None);
+        assert!(plugins_dir.join("repo").exists());
+        let written: PluginsConfig =
+            toml::from_str(&std::fs::read_to_string(&toml_path).unwrap()).unwrap();
+        assert!(written.plugin.is_empty(), "declaration must be gone");
+
+        // Reinstall + purge deletes the dir too.
+        install_at(entry("user/repo"), &toml_path, &plugins_dir)
+            .await
+            .unwrap();
+        let removed = remove_at("repo", true, &toml_path, &plugins_dir).unwrap();
+        assert_eq!(removed.purged_dir, Some(plugins_dir.join("repo")));
+        assert!(!plugins_dir.join("repo").exists());
+    }
+
+    #[tokio::test]
+    async fn declared_at_reports_membership_and_a_missing_file_declares_nothing() {
+        let tmp = tempdir().unwrap();
+        let toml_path = tmp.path().join("plugins.toml");
+
+        // No plugins.toml at all — nothing is declared (every bundled
+        // runtime/plugins/* plugin lands here).
+        assert!(!declared_at(&toml_path, "repo").unwrap());
+
+        let plugins_dir = tmp.path().join("plugins");
+        write_clone(&plugins_dir, "repo");
+        install_at(entry("user/repo"), &toml_path, &plugins_dir)
+            .await
+            .unwrap();
+        assert!(declared_at(&toml_path, "repo").unwrap());
+        assert!(!declared_at(&toml_path, "other").unwrap());
     }
 
     #[test]
