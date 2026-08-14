@@ -80,11 +80,28 @@ impl AgentManager {
         session: &crucible_core::session::Session,
         new_agent: &SessionAgent,
     ) -> Result<(), AgentError> {
+        self.refuse_untrusted_for_kilns(
+            std::iter::once(&session.kiln).chain(session.connected_kilns.iter()),
+            new_agent,
+        )
+    }
+
+    /// The same refusal, against a kiln set rather than a live session.
+    ///
+    /// `session.create` needs this before it has a `Session` to pass. Checking
+    /// after the session exists would be too late in a way that shows: the
+    /// session is persisted and listed by then, so a refusal would leave an
+    /// agent-less row behind that answers `NoAgentConfigured` for good — which
+    /// is exactly what `session.create` resolves the agent early to avoid.
+    pub(crate) fn refuse_untrusted_for_kilns<'a>(
+        &self,
+        kilns: impl Iterator<Item = &'a std::path::PathBuf>,
+        new_agent: &SessionAgent,
+    ) -> Result<(), AgentError> {
         let trust =
             crate::trust_resolution::resolve_provider_trust(new_agent, self.llm_config.as_ref());
 
-        let attached = std::iter::once(&session.kiln).chain(session.connected_kilns.iter());
-        for kiln in attached {
+        for kiln in kilns {
             let Some(classification) =
                 crate::trust_resolution::find_workspace_and_resolve_classification(kiln)
             else {

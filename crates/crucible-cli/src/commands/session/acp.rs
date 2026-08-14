@@ -34,6 +34,13 @@ fn wants_bare_id(quiet: bool, interactive: bool, format: &str) -> bool {
 ///
 /// Pure so it is testable without a live `DaemonClient`; `create` needs one.
 fn agent_type_for(agent: Option<&str>, acp: Option<&str>) -> Result<&'static str> {
+    // An empty name is a missing name. The daemon filters `agent_card` to
+    // non-empty and would otherwise hand back a plain default-agent session
+    // plus the line `Configured agent:  (card)` — a flag that reads as honoured
+    // and did nothing. `--acp ""` already refuses daemon-side.
+    if let Some("") = agent {
+        return Err(anyhow!("--agent needs an agent card name"));
+    }
     match (agent, acp) {
         (Some(_), Some(_)) => Err(anyhow!(
             "--agent and --acp are mutually exclusive: --agent names an agent card \
@@ -735,6 +742,18 @@ mod tests {
     #[test]
     fn the_acp_flag_takes_the_acp_branch() {
         assert_eq!(agent_type_for(None, Some("claude")).unwrap(), "acp");
+    }
+
+    /// An empty `--agent` used to produce a default session and print
+    /// `Configured agent:  (card)` — the daemon filters the empty name away, so
+    /// the flag read as honoured and did nothing.
+    #[test]
+    fn an_empty_agent_name_is_refused() {
+        let err = agent_type_for(Some(""), None).unwrap_err();
+        assert!(
+            err.to_string().contains("needs an agent card name"),
+            "{err}"
+        );
     }
 
     /// No flags is an internal session on the config defaults — unchanged.

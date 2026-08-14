@@ -195,6 +195,28 @@ impl RpcContext {
             if let Some(policy) = params.tool_policy.clone() {
                 agent.tool_policy = Some(policy);
             }
+            // The resolved agent, against every kiln this session is about to
+            // hold — checked HERE, before `create_session` persists anything.
+            //
+            // `configure_agent` runs the same gate below, and running it only
+            // there was a bug: it fires after the session exists, so a refusal
+            // left an agent-less row on disk and in `session.list` answering
+            // `NoAgentConfigured` for good.
+            //
+            // Two things reach this that `validate_trust_level` above cannot.
+            // It classifies the primary kiln only, so a confidential kiln
+            // arriving in `connect_kilns` never reached a trust check at all
+            // (`tools/search.rs` then passes `provider_trust: None` on the
+            // strength of the attach-time gate). And it reads the *request's*
+            // provider, while a card's `provider:`/`specialty:` can override it
+            // — a local default resolving through a card onto a cloud provider
+            // passed the first gate on a provider it was no longer going to use.
+            self.agents
+                .refuse_untrusted_for_kilns(
+                    std::iter::once(&kiln).chain(connected_kilns.iter()),
+                    &agent,
+                )
+                .map_err(|e| SessionCreateError::Invalid(e.to_string()))?;
             Some(agent)
         } else {
             None

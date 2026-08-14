@@ -118,7 +118,12 @@ struct AcpProfile {
 /// find out why their card is not loading should not be told the daemon is
 /// down. An unreachable daemon simply means no ACP section.
 async fn acp_profiles() -> Vec<AcpProfile> {
-    let Ok(client) = crucible_daemon::DaemonClient::connect_or_start().await else {
+    // `connect`, never `connect_or_start`: listing is a read-only inspection,
+    // and `connect_or_start` spawns `cru daemon serve` — worse, on a version
+    // mismatch it shuts the running daemon down and starts a fresh one. Someone
+    // running `cru agents list` to find out why their card is not loading
+    // should not have it restart their daemon as a side effect.
+    let Ok(client) = crucible_daemon::DaemonClient::connect().await else {
         return Vec::new();
     };
     let Ok(reply) = client.agents_list_profiles().await else {

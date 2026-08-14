@@ -198,7 +198,7 @@ See the [plugin guide](./docs/Help/Extending/Creating%20Plugins.md) for the full
 | `cru web` | | Start the browser chat UI |
 | `cru process` | `p` | Parse, enrich, and store markdown files |
 | `cru init` | `i` | Initialize a new kiln |
-| `cru session create` | | Create a new session (add `--agent <profile>` for ACP) |
+| `cru session create` | | Create a new session (`--agent <card>`, or `--acp <profile>` for an external agent) |
 | `cru session list` | | List sessions (live by default, `--all` includes persisted) |
 | `cru session show <id>` | | Show session details (daemon first, file fallback) |
 | `cru session open <id>` | | Open a previous session in the TUI |

@@ -491,3 +491,88 @@ async fn switching_providers_is_allowed_when_the_kiln_permits_it() {
         .await
         .expect("a public kiln must not block a cloud provider");
 }
+
+/// A confidential kiln arriving in `connect_kilns` is refused, and refused
+/// *before* anything is written.
+///
+/// Two gates could catch this and only one is early enough.
+/// `validate_trust_level` classifies the primary kiln alone, so a confidential
+/// kiln attached at create never reached it — and `tools/search.rs` then passes
+/// `provider_trust: None` on the strength of "connected kilns pass the trust
+/// gate at attach time". The gate inside `configure_agent` does see connected
+/// kilns, but create calls it *after* `create_session` has persisted the row,
+/// so catching it there would answer 422 and still leave an agent-less session
+/// listed forever, answering `NoAgentConfigured`.
+///
+/// The `list_sessions()` assertion is the half that regresses silently: the
+/// refusal keeps working when the check moves back too late, and only the
+/// leftover row shows it.
+#[tokio::test]
+async fn a_confidential_connected_kiln_is_refused_without_creating_a_session() {
+    let tmp = TempDir::new().unwrap();
+    let workspace = tmp.path().join("workspace");
+    let public = workspace.join("public");
+    let secret = workspace.join("secret");
+    std::fs::create_dir_all(&public).unwrap();
+    std::fs::create_dir_all(&secret).unwrap();
+
+    // Only the *connected* kiln is confidential; the primary one is not, so
+    // the create-time classification check passes and cannot be what refuses.
+    let crucible_dir = workspace.join(".crucible");
+    std::fs::create_dir_all(&crucible_dir).unwrap();
+    std::fs::write(
+        crucible_dir.join("project.toml"),
+        "[[kilns]]\npath = \"./public\"\n\n\
+         [[kilns]]\npath = \"./secret\"\ndata_classification = \"confidential\"\n",
+    )
+    .unwrap();
+
+    let llm_config = Some(build_llm_config(
+        "cloud",
+        crucible_core::config::BackendType::OpenAI,
+    ));
+    let request: Request = serde_json::from_value(json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "session.create",
+        "params": {
+            "type": "chat",
+            "kiln": public,
+            "workspace": workspace,
+            "connect_kilns": [secret],
+            "provider_key": "cloud",
+            // The web always sets this, so this is its default create shape.
+            "configure_agent": true,
+        }
+    }))
+    .unwrap();
+
+    let storage = Arc::new(FileSessionStorage::new());
+    let sm = Arc::new(SessionManager::with_storage(storage));
+    let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
+    let km = Arc::new(KilnManager::new());
+
+    let (event_tx, _event_rx) = broadcast::channel(16);
+    let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), llm_config.clone());
+    let ctx = RpcContext::for_test(
+        km.clone(),
+        sm.clone(),
+        am.clone(),
+        pm.clone(),
+        event_tx.clone(),
+        llm_config.clone(),
+        tmp.path().to_path_buf(),
+    );
+
+    let response = handle_session_create(request, &ctx).await;
+    let error = response
+        .error
+        .expect("a confidential connected kiln must refuse a cloud provider");
+    assert_eq!(error.code, INVALID_PARAMS);
+    assert!(error.message.contains("insufficient"), "{}", error.message);
+    assert_eq!(
+        sm.list_sessions().len(),
+        0,
+        "the refusal must not leave a session behind"
+    );
+}

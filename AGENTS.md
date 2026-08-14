@@ -53,7 +53,7 @@ names between client and server (silent failure — verify `session.get_*` retur
 ### Hooks and ACP delegation
 
 - Plugins can fully handle tool calls: `crucible.on("pre_tool_call", opts, handler)` returns `{ handled = true, result = ... }` to replace execution, `{ cancel = true, reason = ... }` to block, or `nil` to observe. Supports `pattern` and `priority` opts; handlers may call async APIs. Reference implementation: `runtime/plugins/oci/`.
-- Crucible delegates to external agents (Claude Code, OpenCode, Gemini CLI) via ACP: `cru chat -a claude`, `cru session create --agent claude`, or the `delegate_session` tool. Trust/depth limits in `~/.config/crucible/config.toml` (`[acp.agents.*]` profiles can `extends` built-ins). Code: `crucible-daemon/src/acp/`, `agent_manager/`, `tools/mcp_server.rs`.
+- Crucible delegates to external agents (Claude Code, OpenCode, Gemini CLI) via ACP: `cru chat --acp claude`, `cru session create --acp claude`, or the `delegate_session` tool. (`--agent` on `session create` names an agent *card*, not an ACP profile.) Trust/depth limits in `~/.config/crucible/config.toml` (`[acp.agents.*]` profiles can `extends` built-ins). Code: `crucible-daemon/src/acp/`, `agent_manager/`, `tools/mcp_server.rs`.
 
 ## Workflow
 
