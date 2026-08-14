@@ -116,13 +116,6 @@ impl AgentManager {
         let message_id = format!("msg-{}", uuid::Uuid::new_v4());
         let original_content = content;
 
-        if !emit_event(
-            event_tx,
-            SessionEventMessage::user_message(session_id, &message_id, &original_content),
-        ) {
-            warn!(session_id = %session_id, "No subscribers for user_message event");
-        }
-
         // Scheduler-owned conversation tree: commit the user message
         // node before the agent turn starts. The tree is the
         // authoritative source of conversation state; the agent handle
@@ -138,9 +131,28 @@ impl AgentManager {
         // persisted session sees its prior history. Without this the
         // first-user-message gate (Precognition / digest) treats every
         // post-restart message as first.
+        //
+        // Fetched BEFORE this turn's `user_message` is emitted, and that
+        // ordering is load-bearing. The rebuild reads `session.jsonl`, which a
+        // separate writer task appends the emitted event to; issued after the
+        // emit, the two race. When the append won, the rebuilt tree already
+        // held this turn's User node, the append below made it the second, and
+        // `undo_depth() == 1` — the first-user-message gate — read false. The
+        // turn then ran with Precognition silently skipped: no warning, no
+        // `precognition_complete`, nothing in the transcript to say the answer
+        // was ungrounded. Reproduced by widening the window to 200ms, which
+        // turns `oneshot_precognition_query_e2e` red every run.
         let conversation_tree = self
             .get_or_rebuild_session_tree(session_id, &session.jsonl_path())
             .await;
+
+        if !emit_event(
+            event_tx,
+            SessionEventMessage::user_message(session_id, &message_id, &original_content),
+        ) {
+            warn!(session_id = %session_id, "No subscribers for user_message event");
+        }
+
         let snapshot_key_node = {
             let t = conversation_tree.lock().await;
             t.current()
