@@ -39,6 +39,17 @@ struct PluginExports {
     commands: HashMap<String, mlua::Function>,
 }
 
+/// A service function extracted from a plugin, tagged with its owner.
+///
+/// The owner tag is what lets the spawn site record the task's `JoinHandle`
+/// against the plugin — a bare `(service_name, Function)` pair left nothing
+/// to abort on reload, which is how the discord gateway got duplicated.
+pub struct PluginServiceFn {
+    pub plugin: String,
+    pub service: String,
+    pub func: mlua::Function,
+}
+
 /// Pull the service/tool/command `mlua::Function` handles out of a plugin's
 /// returned spec table.
 fn extract_exports(spec: &mlua::Table) -> PluginExports {
@@ -93,9 +104,12 @@ pub struct DaemonPluginLoader {
     executor: LuaExecutor,
     plugin_manager: PluginManager,
     loaded_specs: Vec<PluginSpec>,
-    /// Service functions extracted from plugins during loading.
-    /// Each entry is `(service_name, mlua::Function)`.
-    service_fns: Vec<(String, mlua::Function)>,
+    /// Service functions extracted from plugins during loading, drained by
+    /// the spawn site via [`Self::take_service_fns`].
+    service_fns: Vec<PluginServiceFn>,
+    /// Live service tasks by owning plugin, recorded by the spawn site so
+    /// reload/disable/remove can abort them ([`Self::abort_services`]).
+    service_tasks: HashMap<String, Vec<tokio::task::JoinHandle<()>>>,
     /// Shared registry of Lua-defined output validators.
     ///
     /// Plugins call `cru.context.register_validator(name, fn)` which inserts
@@ -252,6 +266,7 @@ impl DaemonPluginLoader {
             plugin_manager,
             loaded_specs: Vec::new(),
             service_fns: Vec::new(),
+            service_tasks: HashMap::new(),
             validator_registry,
             handler_registry,
             plugin_config,
@@ -747,11 +762,36 @@ end
 
     /// Drain and return all extracted service functions.
     ///
-    /// Each entry is `(service_name, mlua::Function)`. The functions hold
-    /// internal refs to the Lua VM and can be spawned as independent async
-    /// tasks via `func.call_async::<()>(())`.
-    pub fn take_service_fns(&mut self) -> Vec<(String, mlua::Function)> {
+    /// The functions hold internal refs to the Lua VM and can be spawned as
+    /// independent async tasks via `func.call_async::<()>(())`. Spawners must
+    /// hand the resulting handle back via [`Self::record_service_task`] —
+    /// see `server::plugins::spawn_plugin_services`, the one blessed spawn
+    /// path.
+    pub fn take_service_fns(&mut self) -> Vec<PluginServiceFn> {
         std::mem::take(&mut self.service_fns)
+    }
+
+    /// Record a spawned service task against its owning plugin so
+    /// reload/disable/remove can abort it.
+    pub fn record_service_task(&mut self, plugin: &str, handle: tokio::task::JoinHandle<()>) {
+        let handles = self.service_tasks.entry(plugin.to_string()).or_default();
+        // Opportunistic reap: services that ran to completion (or already
+        // died) would otherwise accumulate one finished handle per reload.
+        handles.retain(|h| !h.is_finished());
+        handles.push(handle);
+    }
+
+    /// Abort every recorded service task belonging to `plugin`.
+    ///
+    /// `JoinHandle::abort` cancels at the task's next await point — the
+    /// documented author contract: services are cancel-safe and get no stop
+    /// callback.
+    fn abort_services(&mut self, plugin: &str) {
+        if let Some(handles) = self.service_tasks.remove(plugin) {
+            for handle in handles {
+                handle.abort();
+            }
+        }
     }
 
     /// Load one plugin's spec and execute it in the daemon VM.
@@ -799,7 +839,11 @@ end
                         "Extracted service function '{}' from plugin '{}'",
                         svc_name, name
                     );
-                    self.service_fns.push((svc_name, func));
+                    self.service_fns.push(PluginServiceFn {
+                        plugin: name.to_string(),
+                        service: svc_name,
+                        func,
+                    });
                 }
                 self.plugin_registry.register_plugin(
                     name,
@@ -832,11 +876,10 @@ end
     /// them — the loader mutex is what makes the Active-but-inert window
     /// unobservable.
     ///
-    /// Service-task aborts join this sequence as that surface gains owner
-    /// attribution. `IsolationRegistry` and `StatusRegistry` are
-    /// session-keyed, not plugin-keyed, so no plugin-scoped release exists
-    /// for them or is needed.
+    /// `IsolationRegistry` and `StatusRegistry` are session-keyed, not
+    /// plugin-keyed, so no plugin-scoped release exists for them or is needed.
     fn make_plugin_inert(&mut self, name: &str) {
+        self.abort_services(name);
         self.plugin_registry.remove_plugin(name);
         self.handler_registry.clear_plugin_handlers(name);
         if let Err(e) = crucible_lua::clear_plugin_hooks(self.executor.lua(), name) {
@@ -1081,6 +1124,11 @@ end
             self.make_plugin_inert(name);
             anyhow::bail!("plugin '{name}' is disabled; enable it before reloading");
         }
+
+        // The old generation's services must die before the new one's are
+        // extracted and spawned — without this, reloading discord left two
+        // gateway loops both consuming events.
+        self.abort_services(name);
 
         let spec = match self.load_plugin_spec(name).await {
             Ok(spec) => spec,

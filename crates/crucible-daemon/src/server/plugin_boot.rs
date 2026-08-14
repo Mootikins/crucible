@@ -165,19 +165,7 @@ impl Server {
             // Each mlua::Function holds an internal ref to the Lua VM; mlua's
             // reentrant mutex serializes actual Lua execution, giving cooperative
             // multitasking without external coordination.
-            let service_fns = loader.take_service_fns();
-            if !service_fns.is_empty() {
-                info!("Spawning {} plugin service(s)", service_fns.len());
-            }
-            for (name, func) in service_fns {
-                info!("Starting service: {}", name);
-                tokio::spawn(async move {
-                    match func.call_async::<()>(()).await {
-                        Ok(()) => info!("Service '{}' completed", name),
-                        Err(e) => warn!("Service '{}' failed: {}", name, e),
-                    }
-                });
-            }
+            crate::server::plugins::spawn_plugin_services(loader);
 
             // Auto-generate LuaCATS stubs for IDE support
             if let Some(stubs_dir) = crucible_core::config::lua_stubs_dir() {

@@ -309,10 +309,39 @@ is the contract. Declaring spec-table handlers logs a warning at load.)
 
 See [[Help/Extending/Event Hooks]] for event types, return values, and patterns.
 
+## Providing Services
+
+A service is a long-running background task — a gateway connection, a poll
+loop. Declare it in the spec table; the daemon spawns each declared service
+as an independent async task when the plugin loads:
+
+```lua
+services = {
+    gateway = {
+        desc = "WebSocket gateway connection",
+        fn = function()
+            while true do
+                poll_upstream()
+                cru.timer.sleep(30)
+            end
+        end,
+    },
+}
+```
+
+**Cancellation contract:** when your plugin is reloaded, disabled, or
+removed, its running service tasks are **aborted at their next `await`
+point** — there is no stop callback and no drain period. Write services
+cancel-safe: do work in idempotent steps, hold no state that must be
+flushed on exit, and let external resources (sockets, subprocesses) be
+closed by drop. The old generation is always aborted before a reload spawns
+the new one, so at most one generation of a service runs at a time.
+
 ## Hot Reload
 
 `cru plugin reload <name>` (TUI `:reload <name>`) re-executes a plugin's
-`init.lua`, replacing its tools, commands, and handlers. Reloading a plugin
+`init.lua`, replacing its tools, commands, and handlers, and aborting its
+running service tasks before the new generation spawns. Reloading a plugin
 that fails to execute returns an error and leaves the plugin fully inert —
 see [[#Lifecycle States]]. To reload automatically when plugin files change
 on disk, enable the watcher:
@@ -651,7 +680,7 @@ From the TUI, use the `:reload` command:
 :reload              # Reload all plugins
 ```
 
-Crucible clears the plugin's module cache, re-reads the source files, and re-registers tools and hooks. If the reload fails (syntax error, a raising `setup()`, missing dependency), the reload reports the error and the plugin ends up **inert** in state `Error`: none of its tools, commands, handlers, or option declarations stay registered. The previous version does not keep running — fix the file and reload again.
+Crucible clears the plugin's module cache, re-reads the source files, and re-registers tools and hooks. If the reload fails (syntax error, a raising `setup()`, missing dependency), the reload reports the error and the plugin ends up **inert** in state `Error`: none of its tools, commands, handlers, or option declarations stay registered, and its service tasks are aborted. The previous version does not keep running — fix the file and reload again.
 
 ### Automatic File Watching
 

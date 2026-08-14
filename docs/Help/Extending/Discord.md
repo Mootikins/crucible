@@ -383,21 +383,18 @@ requester a `user:`/`role:` key named — runs interactively at all.
 If you want a tool available to the Discord bot, `allow` it explicitly in your
 permission rules. See [[Help/Concepts/Permission Precedence]].
 
-## Reloading: the daemon, not the plugin
+## Reloading
 
-**Do not use `plugin.reload` (or the web UI's reload button, or the plugin file
-watcher) on `discord`.** Reload re-spawns the plugin's declared services, and
-nothing cancels the already-running one: the old `gateway.connect` task keeps
-its socket. You end up with two live WSS connections on one token, and every
-message is answered twice.
+`plugin.reload` (and the web UI's reload button, and the plugin file watcher)
+tears the gateway down and re-spawns it: the running `gateway.connect` task is
+aborted at its next await point before the new generation's service starts, so
+there is one WSS connection per generation, never two. The reconnect goes
+through the normal connect path — `auto_connect` and the token check apply
+again.
 
-To pick up a change, restart the daemon:
-
-```
-cru daemon restart
-```
-
-If you have already double-spawned, a restart is also the fix.
+(Older daemons leaked the previous gateway on reload — two live sockets on one
+token, every message answered twice — and the fix was a daemon restart. That
+is no longer the case.)
 
 ## Gateway reliability
 
@@ -438,7 +435,8 @@ cru daemon restart
 
 The plugin is disabled between discovery and load, so its `init.lua` never
 runs, no service spawns, and no socket opens. `plugin.reload` and the file
-watcher cannot bring it back — reload bails for a disabled plugin.
+watcher cannot bring it back — reload bails for a disabled plugin, and the
+bail also aborts any service task still running from before the disable.
 
 > [!danger] Add the key to the section you already have
 > Do **not** append a second `[plugins.discord]` header. A working install

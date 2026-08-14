@@ -9,6 +9,7 @@
 use super::*;
 
 mod lifecycle;
+mod services;
 mod shipped;
 
 #[test]

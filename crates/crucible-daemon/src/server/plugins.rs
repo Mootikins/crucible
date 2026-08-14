@@ -1,4 +1,28 @@
 use super::*;
+use crate::daemon_plugins::PluginServiceFn;
+
+/// Drain extracted service functions, spawn each, and record the handle
+/// against its owning plugin so reload/disable/remove can abort it. The
+/// three call sites (boot, reload RPC, file watcher) previously each
+/// open-coded a bare `tokio::spawn` — which is exactly how the discord
+/// gateway got duplicated on reload.
+pub(crate) fn spawn_plugin_services(loader: &mut DaemonPluginLoader) {
+    for PluginServiceFn {
+        plugin,
+        service,
+        func,
+    } in loader.take_service_fns()
+    {
+        info!("Spawning service '{}' from plugin '{}'", service, plugin);
+        let handle = tokio::spawn(async move {
+            match func.call_async::<()>(()).await {
+                Ok(()) => info!("Service '{}' completed", service),
+                Err(e) => warn!("Service '{}' failed: {}", service, e),
+            }
+        });
+        loader.record_service_task(&plugin, handle);
+    }
+}
 
 pub(crate) async fn handle_plugin_reload(
     req: Request,
@@ -14,16 +38,7 @@ pub(crate) async fn handle_plugin_reload(
 
     match loader.reload_plugin(name).await {
         Ok(spec) => {
-            let service_fns = loader.take_service_fns();
-            for (svc_name, func) in service_fns {
-                info!("Re-spawning service after reload: {}", svc_name);
-                tokio::spawn(async move {
-                    match func.call_async::<()>(()).await {
-                        Ok(()) => info!("Service '{}' completed", svc_name),
-                        Err(e) => warn!("Service '{}' failed: {}", svc_name, e),
-                    }
-                });
-            }
+            spawn_plugin_services(loader);
 
             Response::success(
                 req.id,
@@ -594,17 +609,10 @@ pub(super) fn spawn_plugin_watcher(
                     match loader.reload_plugin(&name).await {
                         Ok(_spec) => {
                             info!("Plugin '{}' auto-reloaded due to file change", name);
-                            let service_fns = loader.take_service_fns();
-                            drop(guard);
-                            for (svc_name, func) in service_fns {
-                                info!("Re-spawning service after auto-reload: {}", svc_name);
-                                tokio::spawn(async move {
-                                    match func.call_async::<()>(()).await {
-                                        Ok(()) => info!("Service '{}' completed", svc_name),
-                                        Err(e) => warn!("Service '{}' failed: {}", svc_name, e),
-                                    }
-                                });
-                            }
+                            // Spawning inside the guard is safe — tokio::spawn
+                            // is not an await point — and required: recording
+                            // the handles needs the loader.
+                            spawn_plugin_services(loader);
                         }
                         Err(e) => {
                             warn!("Auto-reload failed for plugin '{}': {}", name, e);
