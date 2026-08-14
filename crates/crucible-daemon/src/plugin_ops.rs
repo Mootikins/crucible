@@ -3,8 +3,9 @@
 //! Both the `cru plugin add` / `cru plugin remove` CLI commands and the
 //! `plugin.install` / `plugin.remove` RPC handlers call into these
 //! functions. Centralizing the `plugins.toml` read-modify-write here
-//! gives us one place to enforce file-level locking (`fs2::FileExt`)
-//! so concurrent CLI and daemon writes can't corrupt the config.
+//! gives us one place to enforce locking (`fs2::FileExt` on the
+//! `plugins.toml.lock` sidecar) and atomic replacement, so concurrent
+//! CLI and daemon writes can't corrupt or lose each other's config.
 
 use anyhow::{anyhow, Context, Result};
 use crucible_core::config::{plugin_name_from_url, PluginEntry, PluginsConfig};
@@ -119,10 +120,19 @@ pub fn remove(name: &str, purge: bool) -> Result<RemoveOutcome> {
     })
 }
 
-/// Acquire an exclusive file lock on `plugins.toml` (creating it +
-/// any parent dirs if needed), run `mutate` on the parsed config,
-/// then atomically write it back. Lock is released when the lock
-/// file handle drops at the end of the function.
+/// Acquire an exclusive lock on the `plugins.toml.lock` sidecar
+/// (creating it + any parent dirs if needed), run `mutate` on the
+/// parsed config, then atomically replace the TOML via
+/// write-beside-then-rename. Lock is released when the sidecar
+/// handle drops at the end of the function.
+///
+/// The lock file is the lock; the TOML is only data. Locking the
+/// data file would break under the rename: writer B could lock the
+/// old inode while writer C locks the freshly renamed one — two
+/// holders, lost update. The sidecar is never renamed, so lock
+/// identity is stable, and the rename means unlocked readers (e.g.
+/// the boot-time load in `plugin_boot`) only ever see a complete
+/// file.
 ///
 /// Uses `try_lock_exclusive` rather than `lock_exclusive` so racing
 /// writers fail fast with a clear "busy, retry" error instead of
@@ -136,22 +146,24 @@ where
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
 
-    // Lock the TOML file itself. OpenOptions create=true is safe here
-    // because the lock guards both readers and writers — a future
-    // read-only consumer (e.g. `cru plugin list`) can take a shared
-    // lock against the same path.
-    let file: File = OpenOptions::new()
+    let lock_path = {
+        let mut p = toml_path.as_os_str().to_owned();
+        p.push(".lock");
+        PathBuf::from(p)
+    };
+    let lock_file: File = OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
         .truncate(false)
-        .open(toml_path)
-        .with_context(|| format!("failed to open {}", toml_path.display()))?;
+        .open(&lock_path)
+        .with_context(|| format!("failed to open {}", lock_path.display()))?;
 
-    file.try_lock_exclusive()
+    lock_file
+        .try_lock_exclusive()
         .map_err(|e| anyhow!("plugins.toml is locked by another process (retry shortly): {e}",))?;
 
-    // Lock is held until `file` drops at function exit.
+    // Lock is held until `lock_file` drops at function exit.
     let content = std::fs::read_to_string(toml_path).unwrap_or_default();
     let mut config: PluginsConfig = if content.is_empty() {
         PluginsConfig::default()
@@ -163,7 +175,25 @@ where
     let result = mutate(&mut config)?;
 
     let serialized = toml::to_string_pretty(&config).context("failed to serialize plugins.toml")?;
-    std::fs::write(toml_path, serialized)
+    let parent = toml_path.parent().unwrap_or_else(|| Path::new("."));
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)
+        .with_context(|| format!("failed to create temp file in {}", parent.display()))?;
+    {
+        use std::io::Write as _;
+        tmp.as_file_mut()
+            .write_all(serialized.as_bytes())
+            .context("failed to write plugins.toml contents")?;
+    }
+    // NamedTempFile creates 0600 and persist preserves it; plugins.toml
+    // is ordinary config, so restore the conventional 0644.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        tmp.as_file()
+            .set_permissions(std::fs::Permissions::from_mode(0o644))
+            .context("failed to set plugins.toml permissions")?;
+    }
+    tmp.persist(toml_path)
         .with_context(|| format!("failed to write {}", toml_path.display()))?;
 
     Ok(result)
@@ -199,6 +229,37 @@ mod tests {
             toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(written.plugin.len(), 1);
         assert_eq!(written.plugin[0].url, "user/repo");
+
+        // The rename must not leak NamedTempFile's private 0600 mode.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o644, "plugins.toml should be world-readable");
+        }
+    }
+
+    #[test]
+    fn with_locked_config_fails_fast_when_sidecar_lock_is_held() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("plugins.toml");
+
+        // Simulate another process mid-write: hold the sidecar lock.
+        let lock_path = tmp.path().join("plugins.toml.lock");
+        let held = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)
+            .unwrap();
+        held.try_lock_exclusive().unwrap();
+
+        let err = with_locked_config(&path, |_| Ok(())).unwrap_err();
+        assert!(
+            err.to_string().contains("locked by another process"),
+            "got: {err}"
+        );
     }
 
     #[test]
