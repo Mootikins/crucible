@@ -39,6 +39,32 @@ struct PluginExports {
     commands: HashMap<String, mlua::Function>,
 }
 
+/// Pull the service/tool/command `mlua::Function` handles out of a plugin's
+/// returned spec table.
+fn extract_exports(spec: &mlua::Table) -> PluginExports {
+    let mut exports = PluginExports::default();
+    if let Ok(svc_table) = spec.get::<mlua::Table>("services") {
+        for (name, entry) in svc_table.pairs::<String, mlua::Table>().flatten() {
+            if let Ok(func) = entry.get::<mlua::Function>("fn") {
+                exports.services.push((name, func));
+            }
+        }
+    }
+    for (field, target) in [
+        ("tools", &mut exports.tools),
+        ("commands", &mut exports.commands),
+    ] {
+        if let Ok(table) = spec.get::<mlua::Table>(field) {
+            for (name, entry) in table.pairs::<String, mlua::Table>().flatten() {
+                if let Ok(func) = entry.get::<mlua::Function>("fn") {
+                    target.insert(name, func);
+                }
+            }
+        }
+    }
+    exports
+}
+
 /// Split the raw `[plugins]` TOML table into per-plugin sections and the
 /// `watch` knob.
 ///
@@ -671,8 +697,10 @@ end
                     specs.push(spec);
                 }
                 Err(e) => {
+                    // Per-plugin fail-open at boot is load-bearing: one broken
+                    // plugin must not take the daemon down. `load_plugin_spec`
+                    // already marked it Error and made it inert.
                     warn!("Failed to extract spec for plugin '{}': {}", name, e);
-                    self.plugin_manager.mark_error(name, e.to_string());
                 }
             }
         }
@@ -726,7 +754,27 @@ end
         std::mem::take(&mut self.service_fns)
     }
 
+    /// Load one plugin's spec and execute it in the daemon VM.
+    ///
+    /// On ANY failure the plugin ends up marked `Error` and fully inert:
+    /// "not Active" must imply "nothing of this plugin's is registered or
+    /// running". Execute failures used to `mark_error` and still return
+    /// `Ok(spec)`, so `reload_plugin` reported success while the previous
+    /// generation's `crucible.on` handlers stayed live — and `pre_tool_call`
+    /// fails closed, so one stale handler could deny every tool call in every
+    /// session.
     async fn load_plugin_spec(&mut self, name: &str) -> anyhow::Result<PluginSpec> {
+        let result = self.load_plugin_spec_inner(name).await;
+        if let Err(e) = &result {
+            // Adjacent, with no await between them: the loader mutex is what
+            // makes the Error-but-still-registered window unobservable.
+            self.make_plugin_inert(name);
+            self.plugin_manager.mark_error(name, e.to_string());
+        }
+        result
+    }
+
+    async fn load_plugin_spec_inner(&mut self, name: &str) -> anyhow::Result<PluginSpec> {
         let plugin = self
             .plugin_manager
             .get(name)
@@ -761,21 +809,41 @@ end
                     exports.tools,
                     exports.commands,
                 );
+                Ok(spec)
             }
             Err(e) => {
                 warn!(
                     "Failed to execute plugin '{}' in daemon runtime: {}",
                     name, e
                 );
-                // The spec still describes the plugin, so keep returning it for
-                // display — but nothing was registered from it, so it is not
-                // Active. Reporting Active here is what let a dead reference
-                // plugin look healthy for months.
-                self.plugin_manager.mark_error(name, e.to_string());
+                // The spec still describes the plugin — record it so
+                // `plugin.list` shows what a broken plugin DECLARES alongside
+                // `state: Error`. (Losing this is what let a dead reference
+                // plugin look healthy for months.)
+                self.remember_specs(std::slice::from_ref(&spec));
+                Err(e)
             }
         }
+    }
 
-        Ok(spec)
+    /// Remove every registration attributed to `name`. "Not Active" must imply
+    /// "nothing of this plugin's is registered or running." Keep this
+    /// synchronous and call it adjacent to `mark_error` with no await between
+    /// them — the loader mutex is what makes the Active-but-inert window
+    /// unobservable.
+    ///
+    /// Session-hook clearing and service-task aborts join this sequence as
+    /// those surfaces gain owner attribution. `IsolationRegistry` and
+    /// `StatusRegistry` are session-keyed, not plugin-keyed, so no
+    /// plugin-scoped release exists for them or is needed.
+    fn make_plugin_inert(&mut self, name: &str) {
+        self.plugin_registry.remove_plugin(name);
+        self.handler_registry.clear_plugin_handlers(name);
+        self.publications.release_plugin(name);
+        self.options.release_plugin(name);
+        // Dropped RegistryKeys only mark their slots; reclaim them so repeated
+        // failed reloads don't grow the Lua registry.
+        self.executor.lua().expire_registry_values();
     }
 
     /// Execute a plugin's init.lua in the daemon's Lua executor (async).
@@ -844,6 +912,24 @@ end
         // second one to load silently gets the first one's module.
         self.clear_plugin_lua_cache(&lua_dir)?;
 
+        // Read (and for `.fnl`, compile) the source BEFORE the loading marker
+        // is set, so a read/compile failure cannot leave the marker behind.
+        //
+        // A `.fnl` main is compiled first. The discovery pass in `crucible-lua`
+        // already did this for its throwaway sandbox VM, so a Fennel plugin
+        // looked healthy right up to here and then died loading its own source
+        // as Lua ("syntax error near '-'", from the `;;;` header comment).
+        // No Fennel plugin had ever executed in the daemon.
+        let source = std::fs::read_to_string(init_path)
+            .map_err(|e| anyhow::anyhow!("read {}: {e}", init_path.display()))?;
+        let source = if init_path.extension().is_some_and(|ext| ext == "fnl") {
+            self.executor
+                .compile_fennel_source(&source)
+                .map_err(|e| anyhow::anyhow!("fennel compile {}: {e}", init_path.display()))?
+        } else {
+            source
+        };
+
         // Drop this plugin's previously-registered handlers, and mark it as
         // the loading plugin so anything it registers now is attributed to it.
         // Without both halves a reload appends a second copy of every
@@ -853,65 +939,39 @@ end
         self.handler_registry.clear_plugin_handlers(name);
         lua.globals().set("__crucible_loading_plugin__", name)?;
 
-        // Execute init.lua with eval_async — captures return value AND enables async Lua
-        let source = std::fs::read_to_string(init_path)
-            .map_err(|e| anyhow::anyhow!("read {}: {e}", init_path.display()))?;
-
-        // A `.fnl` main is compiled first. The discovery pass in `crucible-lua`
-        // already did this for its throwaway sandbox VM, so a Fennel plugin
-        // looked healthy right up to here and then died loading its own source
-        // as Lua ("syntax error near '-'", from the `;;;` header comment).
-        // No Fennel plugin had ever executed in the daemon.
-        let source = if init_path.extension().is_some_and(|ext| ext == "fnl") {
-            self.executor
-                .compile_fennel_source(&source)
-                .map_err(|e| anyhow::anyhow!("fennel compile {}: {e}", init_path.display()))?
-        } else {
-            source
-        };
-
-        let return_val: mlua::Value = lua
+        // Execute init.lua with eval_async — captures return value AND enables
+        // async Lua. Results are captured, not `?`-ed: the marker clear below
+        // must run on every exit path.
+        let eval_result: mlua::Result<mlua::Value> = lua
             .load(&source)
             .set_name(init_path.to_string_lossy().as_ref())
             .eval_async()
-            .await
-            .map_err(|e| anyhow::anyhow!("exec {}: {e}", init_path.display()))?;
-
-        // Anything registered after this point (e.g. from a lifecycle hook at
-        // session start) is not attributable to a load, so it is left
-        // unowned rather than mis-attributed to whichever plugin loaded last.
-        lua.globals()
-            .set("__crucible_loading_plugin__", mlua::Value::Nil)?;
+            .await;
 
         // Extract the callables from the returned spec table. The sandbox pass
         // in `load_plugin_spec` sees the same table but in a throwaway VM, so
         // its functions are useless — only these handles can be invoked.
-        let mut exports = PluginExports::default();
-        if let mlua::Value::Table(spec) = return_val {
-            self.call_plugin_setup(name, &spec).await?;
+        let executed: anyhow::Result<PluginExports> = match eval_result {
+            Err(e) => Err(anyhow::anyhow!("exec {}: {e}", init_path.display())),
+            Ok(mlua::Value::Table(spec)) => match self.call_plugin_setup(name, &spec).await {
+                Err(e) => Err(e),
+                Ok(()) => Ok(extract_exports(&spec)),
+            },
+            Ok(_) => Ok(PluginExports::default()),
+        };
 
-            // Extract service functions from the returned spec table
-            if let Ok(svc_table) = spec.get::<mlua::Table>("services") {
-                for (name, entry) in svc_table.pairs::<String, mlua::Table>().flatten() {
-                    if let Ok(func) = entry.get::<mlua::Function>("fn") {
-                        exports.services.push((name, func));
-                    }
-                }
-            }
-            for (field, target) in [
-                ("tools", &mut exports.tools),
-                ("commands", &mut exports.commands),
-            ] {
-                if let Ok(table) = spec.get::<mlua::Table>(field) {
-                    for (name, entry) in table.pairs::<String, mlua::Table>().flatten() {
-                        if let Ok(func) = entry.get::<mlua::Function>("fn") {
-                            target.insert(name, func);
-                        }
-                    }
-                }
-            }
-        }
+        // The marker is cleared UNCONDITIONALLY, after setup: setup-registered
+        // handlers belong to the plugin — they must be cleared on its reload —
+        // and a marker that survives a raise misattributes whatever loads next,
+        // up to and including the user's init.lua (which runs after all
+        // plugins; reloading the dead plugin would then delete the user's
+        // handlers). Anything registered after this point (e.g. from a
+        // lifecycle hook at session start) is not attributable to a load, so
+        // it is left unowned rather than mis-attributed.
+        lua.globals()
+            .set("__crucible_loading_plugin__", mlua::Value::Nil)?;
 
+        let exports = executed?;
         info!("Executed plugin in daemon runtime: {}", init_path.display());
         Ok(exports)
     }
@@ -1012,9 +1072,7 @@ end
             .get(name)
             .is_some_and(|p| p.state == crucible_lua::manifest::PluginState::Disabled)
         {
-            self.plugin_registry.remove_plugin(name);
-            self.handler_registry.clear_plugin_handlers(name);
-            self.executor.lua().expire_registry_values();
+            self.make_plugin_inert(name);
             anyhow::bail!("plugin '{name}' is disabled; enable it before reloading");
         }
 
@@ -1026,11 +1084,9 @@ end
                 // SUCCESSFUL load, so without this the previous version's
                 // tools/commands/handlers stayed registered while state said
                 // Error — 'broken' looked exactly like 'working'.
-                self.plugin_registry.remove_plugin(name);
-                self.handler_registry.clear_plugin_handlers(name);
-                // Dropped RegistryKeys only mark their slots; reclaim them so
-                // repeated failed reloads don't grow the Lua registry.
-                self.executor.lua().expire_registry_values();
+                // `load_plugin_spec` already made it inert; repeating the
+                // idempotent call keeps this arm correct on its own.
+                self.make_plugin_inert(name);
                 return Err(e);
             }
         };

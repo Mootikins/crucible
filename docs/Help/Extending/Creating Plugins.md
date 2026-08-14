@@ -312,8 +312,10 @@ See [[Help/Extending/Event Hooks]] for event types, return values, and patterns.
 ## Hot Reload
 
 `cru plugin reload <name>` (TUI `:reload <name>`) re-executes a plugin's
-`init.lua`, replacing its tools, commands, and handlers. To reload
-automatically when plugin files change on disk, enable the watcher:
+`init.lua`, replacing its tools, commands, and handlers. Reloading a plugin
+that fails to execute returns an error and leaves the plugin fully inert —
+see [[#Lifecycle States]]. To reload automatically when plugin files change
+on disk, enable the watcher:
 
 ```toml
 [plugins]
@@ -337,7 +339,7 @@ watch = true
 | `Discovered` | Manifest found, not yet loaded |
 | `Active` | Loaded and running |
 | `Disabled` | Explicitly disabled by user |
-| `Error` | Failed to load |
+| `Error` | Failed to load or execute. Guaranteed inert: nothing of the plugin's is registered or running. `plugin.list` still shows what it declares, plus `last_error` |
 
 ## Shell Commands
 
@@ -649,7 +651,7 @@ From the TUI, use the `:reload` command:
 :reload              # Reload all plugins
 ```
 
-Crucible clears the plugin's module cache, re-reads the source files, and re-registers tools and hooks. If the reload fails (syntax error, missing dependency), the previous version stays active and you'll see an error notification.
+Crucible clears the plugin's module cache, re-reads the source files, and re-registers tools and hooks. If the reload fails (syntax error, a raising `setup()`, missing dependency), the reload reports the error and the plugin ends up **inert** in state `Error`: none of its tools, commands, handlers, or option declarations stay registered. The previous version does not keep running — fix the file and reload again.
 
 ### Automatic File Watching
 
