@@ -21,7 +21,8 @@
 //! - Kiln shared: `KILN/handlers/` (version-controlled)
 //!
 //! Lua plugins use `@tool` doc comments to register tools.
-//! Lua handlers use `@handler` doc comments to register event handlers.
+//! Lua handlers register with `crucible.on` in a plugin; this server does
+//! not scan for them.
 
 use super::helpers::{make_server_info, text_success, McpResultExt};
 use super::mcp_gateway::McpGatewayManager;
@@ -282,20 +283,20 @@ impl ExtendedMcpServer {
         kiln + discovery + lua + gateway
     }
 
-    pub async fn has_lua_tool(&self, name: &str) -> bool {
+    pub async fn has_plugin_tool(&self, name: &str) -> bool {
         self.plugin_tools
             .as_ref()
             .is_some_and(|p| p.tool_names().contains(name))
     }
 
-    pub async fn call_lua_tool(
+    pub async fn call_plugin_tool(
         &self,
         name: &str,
         arguments: Value,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let _start = Instant::now();
 
-        debug!("Executing Lua tool: {} with args: {:?}", name, arguments);
+        debug!("Executing plugin tool: {} with args: {:?}", name, arguments);
 
         let pre_event = SessionEvent::ToolCalled {
             name: name.to_string(),
@@ -307,7 +308,7 @@ impl ExtendedMcpServer {
 
         if cancelled {
             return Err(rmcp::ErrorData::internal_error(
-                format!("Lua tool '{name}' execution cancelled by hook"),
+                format!("Plugin tool '{name}' execution cancelled by hook"),
                 None,
             ));
         }
@@ -572,8 +573,8 @@ impl ServerHandler for ExtendedMcpService {
 
         if self.inner.is_gateway_tool(name).await {
             self.inner.call_gateway_tool(name, arguments).await
-        } else if self.inner.has_lua_tool(name).await {
-            self.inner.call_lua_tool(name, arguments).await
+        } else if self.inner.has_plugin_tool(name).await {
+            self.inner.call_plugin_tool(name, arguments).await
         } else {
             self.inner.kiln_server.call_tool(request, context).await
         }
@@ -684,8 +685,8 @@ mod tests {
             Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
             Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
         );
-        assert!(!server.has_lua_tool("greet").await);
-        assert!(!server.has_lua_tool("lua_greet").await);
+        assert!(!server.has_plugin_tool("greet").await);
+        assert!(!server.has_plugin_tool("lua_greet").await);
     }
 
     #[test]

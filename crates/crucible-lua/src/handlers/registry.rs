@@ -7,27 +7,25 @@ use std::sync::{Arc, Mutex};
 use super::conversion::session_event_to_lua;
 use super::script_handler::{interpret_handler_result, ScriptHandlerResult};
 
-/// Registry of discovered Lua handlers
+/// Handlers registered at runtime by `crucible.on`.
 ///
-/// Manages a collection of `LuaScriptHandler` instances discovered from Lua/Fennel
-/// source files. Provides event matching and priority-ordered dispatch.
+/// Nothing is discovered from the filesystem: a handler exists because a
+/// plugin called `crucible.on(event, opts, fn)` at load. The registry held a
+/// second `Vec<LuaScriptHandler>` filled by annotation discovery, which was
+/// removed along with that loader — reading the wrong one of the two is what
+/// left the file-watch hook silently dead.
 ///
 /// # Example
 ///
 /// ```rust,ignore
-/// use crucible_lua::LuaScriptHandlerRegistry;
-/// use std::path::PathBuf;
+/// // Registration happens from Lua, via the api this registry backs.
+/// register_crucible_on_api(&lua, registry.runtime_handlers(), registry.handler_functions())?;
 ///
-/// // Discover handlers from directories
-/// let paths = vec![PathBuf::from("./handlers")];
-/// let registry = LuaScriptHandlerRegistry::discover(&paths)?;
-///
-/// // Check what handlers are available
-/// println!("Found {} handlers", registry.len());
-///
-/// // Get handlers matching an event
-/// for handler in registry.handlers_for(&event) {
-///     let result = handler.execute(&lua, &event)?;
+/// // Dispatch: select by event name, then execute each match.
+/// for handler in registry.runtime_handlers_for("tool_result", Some(tool_name)) {
+///     let outcome = registry
+///         .execute_runtime_handler(&lua, &handler.name, &event, Some(session_id))
+///         .await?;
 /// }
 /// ```
 #[derive(Debug, Clone)]

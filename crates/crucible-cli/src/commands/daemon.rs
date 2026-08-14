@@ -92,12 +92,24 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
         // The help corpus, for the same packaging reason. It is a kiln, not a
         // bespoke index — `docs/` already is one — and it is never mounted on
         // its own: connect it when you want to ask Crucible about itself.
-        if let Some(docs) = crucible_core::bundled_docs::ensure_bundled_docs() {
-            info!(
-                docs = %docs.display(),
-                "extracted the bundled help corpus; connect it as a kiln to search it"
-            );
-        }
+        //
+        // Off the startup path. Nothing at boot reads it — the kiln is lazy, so
+        // the bytes are wanted only if someone connects it — and writing 84
+        // files before binding the socket delays every daemon start, including
+        // the several hundred a test run spawns.
+        tokio::spawn(async {
+            if let Some(docs) =
+                tokio::task::spawn_blocking(crucible_core::bundled_docs::ensure_bundled_docs)
+                    .await
+                    .ok()
+                    .flatten()
+            {
+                info!(
+                    docs = %docs.display(),
+                    "extracted the bundled help corpus; connect it as a kiln to search it"
+                );
+            }
+        });
 
         let config = CliConfig::load(config_path.clone(), None, None)?;
         let (plugin_sections, plugin_watch) =

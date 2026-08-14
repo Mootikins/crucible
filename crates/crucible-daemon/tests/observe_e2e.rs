@@ -182,6 +182,11 @@ async fn test_session_resume_append() {
     tokio::io::AsyncWriteExt::write_all(&mut file, format!("{resumed}\n").as_bytes())
         .await
         .unwrap();
+    // Flush before dropping. `tokio::fs::File` buffers, and `Drop` cannot
+    // await, so it discards anything still buffered — under load the append
+    // was not always on disk when `load_events` read it back, and the
+    // assertion below saw 2 lines instead of 3.
+    tokio::io::AsyncWriteExt::flush(&mut file).await.unwrap();
     drop(file);
 
     // Verify full session

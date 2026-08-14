@@ -138,6 +138,14 @@ impl AgentManager {
                 )
             })?;
 
+            // Also gated, though it is a no-op today: `resolve_provider_trust`
+            // returns Cloud for any ACP agent regardless of model, so a
+            // confidential kiln could never have attached to one in the first
+            // place. Checked anyway so this branch is not a silent bypass if
+            // ACP trust ever becomes model-dependent — the non-ACP path below
+            // is the one that can actually change trust.
+            self.refuse_switch_untrusted_for_attached_kilns(&session, &agent_config)?;
+
             handle.lock().await.switch_model(model_id).await?;
 
             // Persist for display/resume. ACP ignores `agent_config.model` for

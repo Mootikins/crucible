@@ -18,6 +18,7 @@ use crucible_core::events::session_event::InternalSessionEvent;
 use crucible_core::events::SessionEvent;
 use crucible_core::protocol::session_events::{SessionEventPayload, SystemPayload};
 use crucible_core::protocol::SessionEventMessage;
+use crucible_lua::ScriptHandlerResult;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::{debug, warn};
@@ -120,15 +121,41 @@ pub fn spawn_file_event_hooks(
             }
 
             for handler in matched {
-                if let Err(e) = handlers
+                match handlers
                     .execute_runtime_handler(&lua, &handler.name, &event, None)
                     .await
                 {
-                    warn!(
+                    // `Event Hooks.md`: a handler that cancels stops the chain.
+                    // There is nothing to cancel here — the event already
+                    // happened and was already broadcast — but the *chain* half
+                    // of the contract still holds, and a handler asking to stop
+                    // it should not be silently ignored just because this event
+                    // class has no pipeline to abort.
+                    Ok(ScriptHandlerResult::Cancel { reason }) => {
+                        debug!(
+                            handler = %handler.name,
+                            reason = %reason,
+                            "file event handler stopped the chain"
+                        );
+                        break;
+                    }
+                    // Transform and Handled have no meaning for an event that
+                    // has already been broadcast: nothing downstream reads a
+                    // rewritten value. Logged rather than dropped in silence,
+                    // so an author who returns one finds out.
+                    Ok(ScriptHandlerResult::Transform(_) | ScriptHandlerResult::Handled { .. }) => {
+                        debug!(
+                            handler = %handler.name,
+                            "file event handler returned a value; file events are \
+                             notifications, so it has no effect"
+                        );
+                    }
+                    Ok(_) => {}
+                    Err(e) => warn!(
                         handler = %handler.name,
                         error = %e,
                         "file event handler failed (continuing)"
-                    );
+                    ),
                 }
             }
         }

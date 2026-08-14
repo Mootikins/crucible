@@ -1,7 +1,8 @@
 //! Schema types and generation for Lua tools
 //!
 //! Provides type representations and JSON Schema generation for tool parameters.
-//! Type information comes from LDoc annotations (see `annotations.rs`), not inline
+//! Type information comes from a plugin's spec-table declarations (see
+//! `discovered.rs`), not inline
 //! type syntax (Lua 5.4 doesn't support type annotations in syntax).
 //!
 //! ## Example

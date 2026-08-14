@@ -1,49 +1,40 @@
-//! Handler execution for Lua scripts
+//! Handler execution for Lua scripts.
 //!
-//! Executes Lua functions discovered via `@handler` (or `@hook`) annotations.
-//! This module provides the bridge between event bus events and Lua script execution.
+//! The bridge between daemon events and Lua. A handler is registered at load
+//! by calling [`register_crucible_on_api`]'s `crucible.on(event, opts, fn)` —
+//! there is no filesystem scan and no doc-comment form. An `AnnotationParser`
+//! that discovered handlers from `-- @handler` comments used to exist; it was
+//! a second, weaker loader for something a plugin already does, and a
+//! load-bearing comment fails silently when it is misspelt.
 //!
-//! ## Example
+//! ## Registration
 //!
 //! ```lua
-//! --- Filter search results
-//! -- @handler event="tool:after" pattern="search_*" priority=50
-//! function filter_results(ctx, event)
-//!     -- Modify event.result before returning
-//!     return event
-//! end
+//! -- In a plugin's init.lua
+//! crucible.on("tool_result", { pattern = "search_*", priority = 50 }, function(ctx, event)
+//!     return event  -- transformed
+//! end)
 //! ```
 //!
-//! ## Return Conventions
+//! `event` must be one of [`HOOK_NAMES`] — an unknown name is an error at
+//! registration, not a handler that never fires.
 //!
-//! Handlers follow neovim-style return conventions:
+//! ## Return conventions
 //!
-//! - **Return event table**: Transform - modified event continues through pipeline
-//! - **Return nil**: Pass-through - event unchanged, continues
-//! - **Return `{cancel=true, reason="..."}`**: Cancel - abort the pipeline
+//! Neovim-style, interpreted by [`interpret_handler_result`]:
 //!
-//! ## Lifecycle
+//! - **a table** — transform; the modified event continues the chain
+//! - **nil** — pass through unchanged
+//! - **`{cancel = true, reason = "..."}`** — abort the chain
+//! - **`{handled = true, result = ...}`** — replace execution with `result`
 //!
-//! 1. Handlers are discovered from Lua/Fennel sources via `AnnotationParser`
-//! 2. `LuaScriptHandler` is created from each `DiscoveredHandler`
-//! 3. Handlers are registered on the event bus or via `crucible.on()`
-//! 4. Events trigger matching handlers in priority order
+//! ## Dispatch
 //!
-//! ## Registry
-//!
-//! The `LuaScriptHandlerRegistry` provides centralized handler management:
-//!
-//! ```rust,ignore
-//! use crucible_lua::LuaScriptHandlerRegistry;
-//! use std::path::PathBuf;
-//!
-//! // Discover handlers from directories
-//! let paths = vec![PathBuf::from("./handlers"), PathBuf::from("./plugins")];
-//! let registry = LuaScriptHandlerRegistry::discover(&paths)?;
-//!
-//! // Get handlers matching an event
-//! let handlers = registry.handlers_for(&event);
-//! ```
+//! [`LuaScriptHandlerRegistry`] holds the registrations. A dispatch site calls
+//! `runtime_handlers_for(event_name, identifier)` to select, then
+//! `execute_runtime_handler` per match. `opts.pattern` globs the *identifier*
+//! (a tool name), not the event name, so a site with no identifier passes
+//! `None` and pattern-bearing handlers correctly do not match.
 
 mod before_execute;
 mod conversion;
