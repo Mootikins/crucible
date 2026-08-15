@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-08-15
+
+The consolidation release: one implementation per capability, and docs that
+tell the truth. Net −11,000 lines against 0.26.1.
+
+### Breaking
+- **The `text_search` MCP tool is now `grep_notes`, with no alias.** The old
+  name promised ranked full-text search and delivered literal grep; the new
+  name says what it does. Agent cards using `text_search: true` must rename to
+  `grep_notes: true`.
+- **`cru.shell.exec`/`spawn` no longer impose a 30-second default deadline.**
+  Commands run to completion — dev servers and long builds are never silently
+  killed. A shell policy can still set an explicit timeout, which still
+  enforces.
+- **`cru session search` uses the daemon exclusively.** The near-unreachable
+  ripgrep and in-memory fallback tiers (which disagreed with the daemon on
+  case sensitivity) are gone; an unreachable daemon is now a clear error.
+- **Dead CLI flags removed** so `--help` stops advertising no-ops:
+  `process --parallel`, `mcp --log-file`/`--just-dir`, `status --recent`, and
+  all thirteen inert `cru storage` sub-flags.
+
+### Added
+- **`grep_notes` gained real regex support** on ripgrep's engine crates
+  (`grep-regex`/`grep-searcher`): opt-in `regex` parameter (literal stays the
+  default), clear invalid-pattern errors, and `match_start`/`match_end`
+  offsets in the tool JSON — across the MCP tool, the `search_grep` RPC, and
+  `POST /api/search/grep`.
+- **Implicit-AND full-text queries**: a multi-word `cru search` query now
+  means "all words somewhere in the note" instead of adjacent-phrase; quoted
+  spans still force adjacency; FTS5 operators stay literal and stray quotes
+  cannot cause syntax errors.
+- **In-pane image zoom in the web UI** (WS-231): toolbar with fit/100%,
+  cursor-anchored wheel zoom that never triggers browser zoom, drag-to-pan,
+  and keyboard shortcuts — zoom state is local to the pane.
+- **New documentation** for previously undocumented shipped features: the
+  attributed-diff Review Ledger, Session Compaction, Footnotes, CLI pages for
+  `acp`/`lua`/`setup`/`session`, permission-chain internals, tool output
+  filtering, autolink, webhook signing schemes, and the remaining Lua plugin
+  API surface.
+
+### Changed
+- **Semantic search runs on a single backend.** The LanceDB vector index is
+  deleted — benchmarks showed its ANN configuration had unusable recall at
+  kiln sizes (0.13 recall@10 at 10k notes) and its per-note write pattern was
+  pathological — and the SQLite scan it mirrored is now tuned (raw-blob
+  scoring, top-k heap, deterministic ties): 3.2× faster with verified
+  identical results. `search_vectors` and `/api/search/vectors` keep their
+  contracts, gain exact scope filtering, honor the caller's limit (previously
+  hardcoded to 10), and now rank identically to the `semantic_search` tool.
+  Leftover `crucible-vectors.lance` directories are inert and safe to delete.
+  The dependency tree shrank by the entire lance/datafusion/arrow subtree
+  (271 crates), and `protoc` is no longer a build prerequisite.
+- **FTS5 maintenance is no longer quadratic**: per-note index updates go
+  through the term index (8.1ms → 0.63ms), snippets are computed only for
+  surviving rows, and the index is optimized after batch processing.
+
+### Fixed
+- **Shell policy statements now split on newlines** — a newline-separated
+  command can no longer ride a whitelist entry past per-statement checking.
+- **The docs kiln no longer misdescribes the product.** ~75 false or stale
+  feature claims corrected across Help, Guides, Concepts, and agent-card
+  docs; pages describing never-built designs carry explicit
+  rejected/not-implemented status; agent-card examples are loadable as
+  written.
+- Extensive dead code removed across every crate (dead parser stack,
+  duplicate config structs, consumer-less Lua extension points, dead RPC
+  methods, unused web components); the compiler-invisible kind, verified by
+  workspace-wide reference sweeps.
+
 ## [0.26.1] - 2026-08-14
 
 ### Fixed
