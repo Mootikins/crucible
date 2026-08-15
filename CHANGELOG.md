@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-08-14
+
+The plugin lifecycle release: "not running" now actually means not running.
+
+### Added
+- **`cru plugin add` and `cru plugin remove` act on the running daemon.** Add
+  clones, declares, loads, and spawns services without a restart; remove
+  deactivates the running plugin — handlers, hooks, tools, services,
+  publications, options — before touching `plugins.toml`, and refuses up
+  front for bundled plugins (the lever there is `enabled = false`). The CLI
+  routes through the `plugin.install`/`plugin.remove` RPCs and falls back to
+  the old TOML-only edit when no daemon is reachable, saying so. Reporting is
+  honest end to end: installed-but-failed-to-load exits non-zero with the
+  load error (web shows the same, not a green "Installed"), remove without
+  `--purge` says the kept directory loads again on the next restart or
+  install, and a purge failure is a warning on a successful removal rather
+  than an error claiming the entry is still declared.
+- **`cru plugin reload` of a broken plugin reports the failure** and leaves
+  the plugin fully inert; previously it answered `{"reloaded": true}` for a
+  plugin whose `setup()` had just raised, while the previous generation's
+  handlers kept firing.
+
+### Fixed
+- **A plugin that fails to load can no longer keep running.** Every failure
+  path — `setup()` raising, a top-level raise, a syntax error saved under the
+  file watcher, a manager-side reload failure — now lands in one
+  make-inert sequence: tools, commands, `crucible.on` handlers, session
+  hooks, publications, options, and service tasks are all withdrawn, and
+  `plugin.list` shows `state: Error` with the reason next to the counts the
+  plugin declares. Before, "broken" was indistinguishable from "working":
+  stale `pre_tool_call` handlers fail closed, so a half-dead plugin could
+  deny every matching tool call in every session.
+- **Reloading a plugin no longer duplicates its session hooks.** `oci`'s
+  container start/end hooks ran once per reload per session — hooks are now
+  owner-tagged like handlers and cleared when their plugin re-executes; hooks
+  registered by the user's `init.lua` are never touched. A top-level raise
+  also no longer leaks the attribution marker, which mis-attributed the
+  user's own registrations to the dead plugin and deleted them on its next
+  reload.
+- **Reloading a plugin aborts its service tasks.** Reloading `discord`
+  spawned a second gateway loop while the first kept consuming events — two
+  sockets on one token, every message answered twice, until a daemon
+  restart. Service handles are now recorded per plugin and aborted before
+  the new generation spawns; the cancel-safety contract is documented in
+  [[Creating Plugins]].
+- **`plugins.toml` is written atomically** (write-beside-then-rename) under a
+  sidecar `plugins.toml.lock`, so a crash mid-write can no longer leave an
+  empty file and the lock actually excludes concurrent CLI and daemon
+  writers. Locking the data file itself would have broken under the rename —
+  two writers each holding "the" lock on different inodes.
+- **A repo whose `plugin.yaml` name differs from its directory name**
+  (`crucible-discord` shipping `name: discord`) resolves through the clone
+  directory everywhere: install no longer reports the healthy plugin as
+  broken, and remove no longer silently no-ops while deleting the
+  declaration that made it removable.
+- `plugin.list` counts survive a second load pass (`loaded_specs` merges
+  instead of clobbering), and installing a plugin that was already loaded at
+  boot reports it loaded instead of fabricating a failure.
+
+### Removed
+- **`PluginDependency.version`** — parsed since the manifest existed,
+  compared against nothing, ever. Dependencies match by name; a `plugin.yaml`
+  still carrying `version:` under `dependencies` parses fine and the field is
+  ignored, which is what always happened.
+
 ## [0.25.0] - 2026-08-14
 
 ### Added
