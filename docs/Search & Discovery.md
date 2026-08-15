@@ -41,7 +41,9 @@ Structure that aids discovery:
 
 CLI tools for finding content:
 
+- `cru search` - Text and semantic search from the command line ([[Help/CLI/search]])
 - `cru chat` - Search through conversation with the AI agent
+- `cru session search` - Search past chat sessions ([[Guides/Session Search]])
 - `cru stats` - Kiln overview ([[Help/CLI/stats]])
 - MCP tools - Programmatic search via the MCP server (`cru mcp`)
 

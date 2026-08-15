@@ -23,7 +23,7 @@ sits in the order of everything else that can allow or deny a call is
 | Mode | Behavior | Use When |
 |------|----------|----------|
 | **Normal** | Auto-read, ask for writes | Normal interactive use (default) |
-| **Plan** | Read-only, creates plan files | Exploring options before acting |
+| **Plan** | Read-only tool set | Exploring options before acting |
 | **Auto** | Full access, minimal prompts | Trusted automated workflows |
 
 ## Normal Mode
@@ -37,16 +37,18 @@ This balances productivity with safety. You stay in control of destructive actio
 ## Plan Mode
 
 A read-only mode for exploration and planning. The agent:
-- Can read, search, and analyze
-- Cannot modify files or run commands
-- Creates a plan file instead of taking action
+- Sees only read-only tools (search, read, metadata) — write tools and
+  command execution are filtered out of its tool set entirely
+- Has each prompt prefixed with a plan-mode notice reminding it that write
+  tools are disabled
 
 Use plan mode when you want to:
 - Understand options before committing
 - Review proposed changes before execution
 - Explore unfamiliar codebases safely
 
-The plan file can later be executed in auto mode.
+Plan mode does not write anything itself — the agent describes its plan in
+the conversation, and you switch to normal or auto mode to execute it.
 
 ## Auto Mode
 

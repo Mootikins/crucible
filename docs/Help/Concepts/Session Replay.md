@@ -71,6 +71,8 @@ Recordings use JSONL (JSON Lines), where each line is one event. A recording fil
 
 Event types include `user_message`, `text_delta`, `tool_call`, `tool_result`, and others. You don't need to understand the format to use replay. It's there if you want to inspect or edit recordings.
 
+Separately from these session-event recordings, the daemon has a wire-level ACP record/replay stack (raw JSON-RPC frames captured via `CRUCIBLE_ACP_RECORD_DIR`, re-recorded with `just record-acp-fixture`) used to build deterministic test fixtures for the ACP client — a testing tool, not part of the `cru session replay` flow.
+
 ## Recording Your Own Sessions
 
 Start any chat session with the `--record` flag:

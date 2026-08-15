@@ -18,6 +18,7 @@ Complete reference for all Crucible CLI commands.
 |---------|-------------|
 | `cru chat` | Interactive AI chat with session persistence and tool access |
 | `cru process` | Process markdown files through the pipeline (parse, enrich, store) |
+| `cru search` | Search kiln notes using semantic and/or text search |
 | `cru init` | Initialize a new kiln (Crucible workspace) |
 | `cru stats` | Display kiln statistics |
 | `cru status` | Display storage status and statistics for the knowledge base |
@@ -28,30 +29,36 @@ Complete reference for all Crucible CLI commands.
 | Command | Description |
 |---------|-------------|
 | `cru agents` | Manage agent cards (list, show, validate) |
-| `cru mcp` | Start MCP server exposing Crucible tools for external AI agents |
+| `cru mcp` | Start MCP server exposing Crucible tools (SSE on port 3847 by default; `--stdio` for stdio transport) |
+| `cru acp` | Run Crucible as an ACP agent for editors (speaks ACP over stdio) — [[Help/CLI/acp]] |
 | `cru skills` | Discover and manage agent skills (list, show, search) |
-| `cru tools` | Discover and manage tools (list, show) |
+| `cru tools` | List tools available to agents (list) |
 
 ## Session & Configuration Commands
 
 | Command | Description |
 |---------|-------------|
-| `cru session` | Manage chat sessions (create, send, pause, resume, end, list, show, search) |
-| `cru config` | Manage Crucible configuration (initialize, view, export) |
+| `cru session` | Manage chat sessions (create, configure, send, pause, resume, end, list, show, search; also open, export, reindex, cleanup, load; hidden debugging subcommands: subscribe, replay, unpause) — [[Help/CLI/session]] |
+| `cru config` | Manage Crucible configuration (init, show, dump; `show --sources`/`--trace` traces where values came from) |
 | `cru auth` | Manage LLM provider credentials (login, logout, list) |
 | `cru set` | Configure a running session's settings (same syntax as TUI :set) |
+| `cru proposals` | Review reflection-pass proposals (list, show, accept, reject) |
 
 ## System & Development Commands
 
 | Command | Description |
 |---------|-------------|
-| `cru daemon` | Manage the Crucible daemon (start, stop, restart, status) |
-| `cru storage` | Manage storage operations (migration, verification, backup, cleanup) |
-| `cru tasks` | Manage tasks from a TASKS.md file (list, next, pick, done) |
+| `cru daemon` | Manage the Crucible daemon (start, stop, restart, status, logs; `serve` runs it in the foreground) |
+| `cru storage` | Storage info (mode, stats). `verify`, `cleanup`, `backup`, and `restore` are parsed but call daemon stubs that are not yet implemented — they print a warning and exit 0 |
+| `cru workflow` | Workflow notes (`type: workflow` frontmatter): list, show, start, approve, status, cancel |
+| `cru tasks` | Manage tasks from a TASKS.md file (list, next, pick, done, blocked) |
 | `cru plugin` | Manage and develop Lua plugins |
-| `cru web` | Start the web UI server for browser-based chat |
+| `cru install` | Install a plugin from a git URL (alias for `cru plugin add`) |
+| `cru lua` | Evaluate Lua code in the daemon's plugin runtime — [[Help/CLI/lua]] |
+| `cru setup` | Bootstrap the runtime directory (bundled plugins, themes, template init.lua) — [[Help/CLI/setup]] |
+| `cru web` | Start the web UI server for browser-based chat (`cru web webhook` mints webhook secrets) |
 | `cru doctor` | Run installation diagnostics (daemon, config, providers, kiln, embeddings) |
-| `cru completions` | Generate shell completion scripts (bash, zsh) |
+| `cru completions` | Generate shell completion scripts (bash, zsh, fish) |
 
 ## Global Options
 
@@ -81,15 +88,28 @@ same thing.
 
 **The default depends on where output is going.** For the record-list commands, a
 terminal gets `table` and a pipe or a redirect gets `plain`, so `cru models`
-reads well on screen and `cru models | while read -r ...` gets unadorned lines
-without you passing a flag. An explicit `--format` always wins.
+reads well on screen and piping it gets one record per line without you passing
+a flag. An explicit `--format` always wins. Note that `plain` is not fully
+unadorned everywhere: `cru models` in plain mode still prints an
+`Available models (N):` header and indents each line (and emits a
+`Fetching models from daemon...` progress line on stderr).
 
 `table` and `plain` are still accepted on the report commands as aliases for
 `text`, because `table` used to be their documented default.
 
-An unrecognised value is an error. Earlier versions accepted anything and
-silently fell back to human-readable output, which is how `csv` came to be
-advertised on commands that never had a CSV writer.
+How strict the value is depends on the command. The record-list and report
+commands parse `--format` as a closed enum, so an unrecognised value there is
+an error. The config and session commands take a free string instead: anything
+other than `json` silently falls back to the human-readable default (`toml` for
+`config show`/`config dump`, `text` for `session list`/`session show`).
+Similarly, `cru search --type` accepts any string and treats anything other
+than `semantic` or `text` as `both`.
+
+`-f json` is also not guaranteed to be machine-clean everywhere yet:
+`cru status -f json` still prints its progress/summary lines (info and timing)
+on stdout around the JSON payload, and `cru storage stats` does the same.
+Pipe-safe JSON is currently reliable for the record-list commands, `stats`,
+`doctor`, and `session search`.
 
 ## cru doctor
 
@@ -102,6 +122,7 @@ Run bounded installation diagnostics:
 - **Embedding backend** — confirms FastEmbed or Ollama embeddings are available
 - **Plugins** — asks the daemon how many plugins loaded (skipped if the daemon is down)
 - **Kiln references** — every kiln named by a `[projects.*]` entry exists in `[kilns]`
+- **Config validation** — the loaded config passed structural validation
 
 ```
 cru doctor
@@ -124,5 +145,9 @@ table, and always exits 0.
 - [[Help/CLI/process]] - Processing pipeline details
 - [[Help/CLI/chat]] - Chat command reference
 - [[Help/CLI/stats]] - Statistics command
+- [[Help/CLI/session]] - Session lifecycle and maintenance
+- [[Help/CLI/acp]] - Running Crucible as an ACP agent
+- [[Help/CLI/lua]] - Evaluating Lua against the daemon
+- [[Help/CLI/setup]] - Runtime directory bootstrap
 - [[Help/CLI/doctor]] - Installation diagnostics
 - [[Help/Config/storage]] - Storage configuration

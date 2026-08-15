@@ -33,7 +33,6 @@ context_files:
   - path/to/relevant/file.rs
   - path/to/another/file.rs
 verify: cargo test --workspace
-tdd: true
 ---
 
 ## Phase 1: Phase Name
@@ -52,10 +51,10 @@ tdd: true
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `description` | Yes | Brief description of what this task list accomplishes |
+| `title` | No | Display title for the task list |
+| `description` | No (recommended) | Brief description of what this task list accomplishes |
 | `context_files` | No | List of files relevant to this work (for agent context) |
 | `verify` | No | Command to run to verify completion (e.g., `just test`) |
-| `tdd` | No | Whether to follow TDD (test-driven development) workflow |
 
 ## Checkbox Symbols
 
@@ -64,12 +63,13 @@ Standard markdown checkboxes with extended statuses:
 | Symbol | Status | Description |
 |--------|--------|-------------|
 | `[ ]` | pending | Not started |
-| `[x]` | completed | Finished successfully |
+| `[x]` | done | Finished successfully (`[X]` also accepted) |
 | `[/]` | in_progress | Currently being worked on |
-| `[-]` | blocked | Cannot proceed, needs intervention |
-| `[!]` | urgent | High priority, needs immediate attention |
-| `[?]` | question | Needs clarification before starting |
-| `[w]` | waiting | Waiting on external dependency |
+| `[-]` | cancelled | Will not be done |
+| `[!]` | blocked | Cannot proceed, needs intervention |
+
+Any other symbol inside the brackets is not recognized and the task parses
+as **pending**.
 
 ## Inline Metadata
 
@@ -82,6 +82,10 @@ Metadata is embedded in task lines using `[key:: value]` syntax (Dataview-compat
 | `tests` | Test names to verify this task | `[tests:: test_foo, test_bar]` |
 | `priority` | Task priority (low/medium/high) | `[priority:: high]` |
 
+`id` and `deps` drive dependency resolution. Any other key — including
+`tests` and `priority` — parses into the task's generic metadata map, but
+nothing consumes it yet; such keys are conventions for human/agent readers.
+
 ### ID Format
 
 Task IDs follow the pattern: `{phase}.{section}.{task}`
@@ -91,23 +95,28 @@ Task IDs follow the pattern: `{phase}.{section}.{task}`
 
 ## CLI Commands
 
-The `cru tasks` command provides operations on TASKS.md files:
+The `cru tasks` command provides operations on TASKS.md files. The file path
+is a flag on the parent command (`--file`, default `TASKS.md` in the current
+directory), not a positional argument of the subcommands:
 
 ```bash
 # List all tasks with status
-cru tasks list [path]
+cru tasks list
 
 # Show next available task (respecting dependencies)
-cru tasks next [path]
+cru tasks next
 
 # Mark a task as in-progress
-cru tasks pick <task_id> [path]
+cru tasks pick <task_id>
 
 # Mark a task as completed
-cru tasks done <task_id> [path]
+cru tasks done <task_id>
 
-# Mark a task as blocked
-cru tasks blocked <task_id> [path]
+# Mark a task as blocked, with an optional reason
+cru tasks blocked <task_id> ["reason"]
+
+# Use a custom tasks file
+cru tasks --file ~/work/TASKS.md list
 ```
 
 ## Dependency Resolution

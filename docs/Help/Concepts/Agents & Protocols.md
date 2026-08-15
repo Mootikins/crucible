@@ -23,17 +23,20 @@ An **agent** is an AI that can take actions - not just answer questions, but sea
 
 ## Agent Cards
 
-An **agent card** configures how an AI behaves:
+An **agent card** configures how an AI behaves. It's a markdown file: YAML frontmatter for configuration, and the markdown body as the system prompt. The `tools:` block is a per-tool permission map (`true`/`allow`, `ask`, `false`/`deny`), not a membership list:
 
-```yaml
+```markdown
+---
 name: Researcher
-model: claude-3-opus
+description: Explores and synthesizes knowledge
 tools:
-  - semantic_search
-  - read_note
-instructions: |
-  You help explore and synthesize knowledge.
-  Always cite sources using [[wikilinks]].
+  semantic_search: true
+  read_note: true
+  bash: deny
+---
+
+You help explore and synthesize knowledge.
+Always cite sources using [[wikilinks]].
 ```
 
 See [[Help/Extending/Agent Cards]] for full details.
@@ -107,9 +110,11 @@ See [[Help/Task Management#Context Optimization]] for implementation details.
 
 When an agent calls a tool during a session, the daemon dispatches the call through a `ToolDispatcher` that routes to the correct executor (built-in tools, Lua plugins, or MCP servers).
 
-**Timeout**: Every tool call has a hard 30-second timeout. If a tool doesn't return within 30 seconds, the call is cancelled and the agent receives an error message like `Tool 'semantic_search' timed out after 30 seconds`. The agent can then retry or try a different approach.
+**Timeout**: Tool calls have a hard 30-second dispatch timeout. If a tool doesn't return within 30 seconds, the call is cancelled and the agent receives an error message like `Tool 'semantic_search' timed out after 30 seconds`. The agent can then retry or try a different approach.
 
-This timeout prevents runaway tool calls from blocking a session indefinitely. It applies uniformly to all tool types: built-in Rust tools, Lua plugin tools, and tools proxied from external MCP servers.
+The one exception is `delegate_session`, which legitimately runs a whole child session inside the call: it gets the delegation timeout (default 300 seconds) plus a 30-second margin as its outer backstop — the delegation layer cancels the child on its own timeout first.
+
+This timeout prevents runaway tool calls from blocking a session indefinitely. Aside from the delegation exception, it applies to all tool types: built-in Rust tools, Lua plugin tools, and tools proxied from external MCP servers.
 
 ## See Also
 

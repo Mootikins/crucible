@@ -416,6 +416,49 @@ oil.if_else(has_data,
 
 ---
 
+#### `maybe(value, fn)`
+
+Render only when a value is present: if `value` is `nil`, returns an empty node; otherwise calls `fn(value)` and returns its node.
+
+**Parameters:**
+- `value` (any): Value to check
+- `fn` (function): Called with `value` when it is non-nil; must return a Node
+
+**Returns:** Node (empty node when `value` is nil)
+
+Only `nil` short-circuits — `false`, `0`, and `""` all invoke the callback.
+
+**Example:**
+```lua
+oil.maybe(session.error, function(err)
+    return oil.text(err, { fg = "red" })
+end)
+```
+
+---
+
+#### `match_state(state, handlers)`
+
+Table-driven dispatch on a state value.
+
+**Parameters:**
+- `state` (any): Key to look up in `handlers`
+- `handlers` (table): Maps state keys to a Node, a string (rendered as text), or a zero-argument function returning a Node. The key `_` is the default handler.
+
+**Returns:** Node. When `state` has no handler and there is no `_` entry, an empty node — a missing state renders nothing rather than erroring.
+
+**Example:**
+```lua
+oil.match_state(status, {
+    loading = function() return oil.spinner("Loading...") end,
+    error = oil.text("Failed", { fg = "red" }),
+    done = "Complete",
+    _ = oil.text("Unknown state", { fg = "yellow" }),
+})
+```
+
+---
+
 ### Iteration
 
 #### `each(items, fn)`
@@ -511,42 +554,13 @@ Card(
 
 #### `scrollback(key, children...)`
 
-Scrollable content area. Preserves scroll position across renders.
+**Deprecated.** The scrollback widget was removed; this function is kept only for backward compatibility. It ignores `key` and returns its children as a plain fragment — no scrolling, no scroll-position state.
 
 **Parameters:**
-- `key` (string): Unique key for this scrollback area
+- `key` (string): Ignored
 - `children...`: Child nodes
 
-**Returns:** Node
-
-**Example:**
-```lua
-oil.scrollback("chat-messages",
-    oil.text("Message 1"),
-    oil.text("Message 2"),
-    oil.text("Message 3")
-)
-```
-
----
-
-#### `decrypt(content, revealed, frame?)`
-
-Animated decrypt/scramble effect.
-
-**Parameters:**
-- `content` (string): Text to decrypt
-- `revealed` (number): Number of characters revealed
-- `frame` (number, optional): Animation frame (default: 0)
-
-**Returns:** Node
-
-**Example:**
-```lua
--- Gradually reveal text
-oil.decrypt("Secret message", 6, 0)  -- "Secret█████████"
-oil.decrypt("Secret message", 14, 0) -- "Secret message"
-```
+**Returns:** Node (fragment of the children)
 
 ---
 

@@ -20,7 +20,9 @@ in and which one wins.
 
 ## Global Permissions
 
-Set in `~/.config/crucible/config.toml` or your kiln's `Config.toml`. Applies to all agent sessions unless overridden per-agent.
+Set in `~/.config/crucible/config.toml`. Applies to all agent sessions unless overridden
+per-agent. (A kiln's `.crucible/kiln.toml` holds only the kiln's display name — there is
+no kiln-level permissions file.)
 
 ```toml
 [permissions]
@@ -31,7 +33,7 @@ default = "ask"
 allow = [
   "bash:cargo *",
   "bash:git *",
-  "read:*",
+  "read_file:*",
 ]
 
 # Always deny these tools (no override possible)
@@ -42,7 +44,8 @@ deny = [
 
 # Ask user before running these tools
 ask = [
-  "write:*",
+  "write_file:*",
+  "edit_file:*",
   "bash:*",
 ]
 ```
@@ -52,22 +55,28 @@ ask = [
 Each ACP agent profile can have its own permission config. When present, it replaces the global `[permissions]` for sessions using that agent.
 
 ```toml
-# Claude: cautious — ask before any write or shell command
+# Claude: ask before anything, but wave read-shaped calls through
 [acp.agents.claude.permissions]
 default = "ask"
-deny = ["bash:rm *", "bash:sudo *"]
+allow = ["read:*", "search:*"]
 
-# OpenCode: permissive — allow by default, block only destructive commands
+# OpenCode: permissive — allow by default, refuse anything execute-shaped
 [acp.agents.opencode.permissions]
 default = "allow"
-deny = ["bash:rm -rf *", "bash:sudo *"]
-allow = ["bash:*", "read:*", "write:*"]
+deny = ["bash:*"]
 
-# Gemini: read-only — deny any write
+# Gemini: read-only — allow only read- and search-shaped calls
 [acp.agents.gemini.permissions]
 default = "deny"
-allow = ["read:*", "bash:cargo *", "bash:git status", "bash:git log *"]
+allow = ["read:*", "search:*"]
 ```
+
+**These profiles gate by ACP tool *kind*, not by command or path.** An external agent's
+native tool calls reach Crucible labeled only with a kind (`read`, `execute`, …), which
+the engine sees under a fixed name — see the kind vocabulary under Rule Format below.
+Command- and path-level patterns (`bash:rm *`, `read_file:*`) never match on this path,
+so a per-agent deny written that way is silently inert; gate by kind (`deny = ["bash:*"]`)
+or rely on the interactive prompt.
 
 ### Resolution Order
 
@@ -77,7 +86,11 @@ When a session starts, the permission config is resolved in this priority order:
 2. **Agent-specific `[acp.agents.<name>.permissions]`** — if present, used in full
 3. **Global `[permissions]`** — fallback when agent has no specific config
 
-Note: The `--permissions` flag only changes the `default` mode (allow/deny/ask). Explicit `deny` rules always fire regardless of the mode.
+Note: `--permissions ask` keeps the resolved config's rule lists and only resets the
+default. `--permissions allow` and `--permissions deny` are **unconditional** — the
+config is replaced with the requested default and *empty* rule lists, so an explicit
+`deny` rule does not fire under `--permissions allow` (and an `allow` rule cannot
+rescue a tool under `--permissions deny`).
 
 ## Per-Session Override (CLI)
 
@@ -107,25 +120,69 @@ Valid values: `allow`, `deny`, `ask`.
 
 ## Rule Format
 
-Rules follow the pattern `tool:pattern` where glob matching is supported.
+Rules follow the pattern `tool:pattern`. The `tool` part must match the tool's name
+**exactly** (or be `*`); the `pattern` part is a glob. What that name is — and what the
+glob is matched against — depends on which path enforces the rule.
+
+**Internal sessions and Lua `cru.tools.call`** check the tool's own name, as `cru tools`
+lists it: `read_file`, `write_file`, `edit_file`, `bash`, MCP gateway tools under their
+prefixed names (`gh_search_code`), and so on.
+
+- For `bash`, the pattern matches the **command string** (`cargo test --all`). Chained
+  commands (`git log; curl …`) are split and each piece must pass.
+- For every other tool, the pattern matches the **raw JSON arguments** of the call —
+  e.g. `{"path":"src/main.rs"}` — not a bare path. In practice that makes `*` (match any
+  invocation of this tool) the reliable pattern, and path-shaped patterns unreliable.
+
+**External ACP agents** (sessions gated by `[acp.agents.<name>.permissions]`, or by the
+global config as their fallback) are checked differently: the agent's native tool calls
+arrive labeled only with an ACP tool *kind*, and the engine sees the kind's fixed name —
+`read`, `edit`, `delete`, `write` (a move), `search`, `bash` (execute), `fetch`,
+`think`, `switch_mode`, or `acp_tool` (any call whose kind is unset or unrecognized).
+The input is the raw JSON arguments even for `bash`, so this path can gate by kind
+(`read:*`, `bash:*`) but **not** by command or path — `bash:cargo *` and `read_file:*`
+never match here. A per-agent `deny = ["bash:rm *"]` is silently inert.
 
 | Rule | Matches |
 |------|---------|
-| `bash:cargo *` | Any `cargo` command |
-| `bash:git *` | Any `git` subcommand |
-| `read:*` | Any file read |
-| `write:src/**` | Writes inside `src/` |
-| `mcp:github:*` | Any GitHub MCP tool |
-| `*` | Any tool (use carefully) |
+| `bash:cargo *` | Any `cargo` command — internal/Lua path only |
+| `bash:git *` | Any `git` subcommand — internal/Lua path only |
+| `read_file:*` | Any `read_file` call by an internal agent or Lua |
+| `write_file:*` | Any `write_file` call by an internal agent or Lua |
+| `edit_file:*` | Any `edit_file` call by an internal agent or Lua |
+| `gh_search_code:*` | The MCP gateway tool of that (prefixed) name |
+| `read:*` | Any read-kind call by an external ACP agent |
+| `bash:*` | Any `bash` call (internal) or execute-kind call (ACP) |
+| `plugin:<server>:<pattern>` | Parsed but matches nothing on today's call paths — see below |
+| `*:*` | Any tool (use carefully) |
+
+Path-shaped patterns like `write:src/**` belong to a structured request vocabulary the
+daemon's permission gate understands (a `read`/`write` grant on a bare path), but no
+current code path submits requests in that shape — today `read:*`/`write:*` fire only
+as ACP kind rules, matching JSON input, where only `*` is dependable.
+
+The three-part forms `mcp:<server>:<pattern>` and `plugin:<server>:<pattern>` parse and
+compile: the server name is compared exactly, and the pattern is globbed against the
+part of the checked input after its first `:`. But such a rule only fires when a
+permission check arrives with the tool named literally `mcp` or `plugin` and an input of
+the shape `<server>:<tool>` — and no current call path submits that shape. Tool calls
+are checked under the tool's own name (or its ACP kind name) with JSON arguments as
+input, so a `plugin:…` rule matches nothing today; to gate a plugin-provided tool, write
+a rule against the tool's own name as `cru tools` lists it, like any other tool. For any
+other three-part rule (`bash:git status:*`), everything after the first colon is the
+glob pattern.
 
 ## Denial Precedence
 
 The evaluation order is: hardcoded denials → deny rules → ask rules → allow rules → default.
 
-Explicit `deny` rules always fire. Even `--permissions allow` cannot override an explicit `deny` rule — the rule wins.
+Within a config, `deny` beats `ask` and `allow`: a call matching both a deny and an
+allow rule is denied. The one thing that outranks a written `deny` is the
+`--permissions allow` override, which discards the rule lists entirely (see the note
+under Resolution Order).
 
 ```toml
 [acp.agents.opencode.permissions]
 default = "allow"
-deny = ["bash:rm -rf *"]  # this ALWAYS fires, even with --permissions allow
+deny = ["bash:*"]  # fires before any allow rule — but not under --permissions allow
 ```

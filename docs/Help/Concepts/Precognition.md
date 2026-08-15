@@ -12,7 +12,7 @@ tags:
 
 # Precognition
 
-Precognition is Crucible's way of giving your agent a memory. Before every message you send reaches the LLM, Crucible searches your knowledge base for relevant notes and quietly injects them into the conversation. Your agent sees what you've written before, without you lifting a finger.
+Precognition is Crucible's way of giving your agent a memory. Before your opening message reaches the LLM, Crucible searches your knowledge base for relevant notes and quietly injects them into the conversation. Your agent sees what you've written before, without you lifting a finger.
 
 Think of it as your notes whispering context to the AI right when it needs it.
 
@@ -24,7 +24,7 @@ With Precognition turned on, your [[The Knowledge Graph|knowledge graph]] become
 
 ## How It Works
 
-The process is invisible. Here's what happens each time you send a message:
+The process is invisible. Here's what happens on the first message of a session (see [When It Activates](#when-it-activates)):
 
 1. **You type a message** and hit enter
 2. **Crucible searches** your vault using [[Semantic Search|semantic search]], finding notes whose meaning matches your message
@@ -37,9 +37,11 @@ If Precognition finds nothing relevant, it stays quiet and your message goes thr
 
 ## What Gets Searched
 
-Precognition searches at the **block level**, not the document level. Each paragraph, heading section, and list in your notes is indexed separately. This means the agent gets the specific paragraph that's relevant, not an entire 500-line document dumped into context.
+Precognition retrieves at the **note level**. During indexing, each block of a note is embedded and those block embeddings are averaged into one document vector per note; retrieval matches your message against those note vectors. What gets injected is the matching notes, so focused, single-topic notes surface more cleanly than sprawling ones.
 
 The search is semantic. If you ask about "staying productive while remote," Precognition can find notes about "work from home tips" or "focus strategies" even if those exact words don't appear in your message.
+
+Every kiln connected to the session is searched, not just the primary one. Results from all connected kilns are merged and ranked together, with two per-kiln guards: a kiln whose data classification exceeds the session provider's trust level is skipped entirely (see [[Trust and Classification]]), and a kiln indexed with a different embedding model than the current provider is skipped rather than compared against incompatible vectors.
 
 ## Configuration
 
@@ -55,11 +57,11 @@ Precognition is **on by default**. You can control it from within a chat session
 
 ### Number of Results
 
-Control how many note blocks get injected per message (1 to 20, default is 5):
+Control how many notes get injected per message (1 to 20, default is 5):
 
 ```
-:set precognition.results=3    # inject up to 3 blocks
-:set precognition.results=10   # inject up to 10 blocks
+:set precognition.results=3    # inject up to 3 notes
+:set precognition.results=10   # inject up to 10 notes
 ```
 
 More results means more context for the agent, but also uses more of the context window. Start with the default and adjust based on how your conversations feel.
@@ -71,6 +73,15 @@ More results means more context for the agent, but also uses more of the context
 ```
 
 This shows all current values, including `precognition` and `precognition.results`.
+
+### Customizing with Lua
+
+Plugins can reshape Precognition through two event seams:
+
+- `precognition_select` — runs after retrieval, before injection. A handler sees the retrieved notes and chooses which to keep (filter, reorder, cap).
+- `precognition_format` — controls how the selected notes are rendered into the injected context block, replacing the default formatting.
+
+Register handlers with `crucible.on("precognition_select", ...)` / `crucible.on("precognition_format", ...)`. See [[Help/Extending/Event Hooks]] for handler signatures and semantics.
 
 ## When It Activates
 
@@ -113,7 +124,7 @@ Precognition is only as good as your notes. A few habits make a big difference:
 
 **Tag your notes.** Tags in frontmatter help organize your vault and give Precognition more signal about what a note covers.
 
-**Keep notes focused.** A note about one topic is more useful than a note about everything. Block-level indexing helps, but focused notes produce cleaner search results.
+**Keep notes focused.** A note about one topic is more useful than a note about everything. Each note gets a single document vector, so a note that covers many topics dilutes its own signal.
 
 **Process regularly.** After adding or editing notes, run `cru process` so new content gets indexed. The daemon's file watcher can handle this automatically if configured.
 
@@ -123,7 +134,7 @@ You can also inject context manually with `/search query` during a chat. Here's 
 
 | | Precognition | Manual Search |
 |---|---|---|
-| Trigger | Automatic, every message | You type `/search` |
+| Trigger | Automatic, first message of a session | You type `/search` |
 | Effort | Zero | You choose the query |
 | Precision | Good for general relevance | Better when you know what you want |
 | Control | Background, hands-off | You see results and pick what to include |

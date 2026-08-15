@@ -24,8 +24,9 @@ The internal agent provides:
 - **Session logging** - Conversations saved as markdown files
 - **Task tracking** - ACP-style task lists as working memory
 - **Explicit search** - Use `/search` to inject context when needed
-
-Future: Precognition (auto-RAG), Lua hooks, session compaction.
+- **Precognition** - automatic kiln retrieval before each turn (tunable via the `precognition_select`/`precognition_format` hooks)
+- **Lua hooks** - the fourteen `crucible.on()` events plus session lifecycle hooks — see [[Help/Extending/Event Hooks]]
+- **Compaction** - `/compact` summarizes and continues in a new file
 
 ## Memory Architecture
 
@@ -219,37 +220,43 @@ The agent uses an ACP-style task list as working memory. Tasks track progress wi
 | `[~]` | in_progress | Currently working on |
 | `[x]` | completed | Finished |
 
-### Future: Lua Task Hooks
+## Precognition (Auto Context)
 
-> Task validation via Lua hooks is planned for v2.
+Precognition **ships**: the daemon searches your kiln before each LLM call and
+injects relevant context automatically. `/search` remains available for
+explicit injection, and the `precognition_select` / `precognition_format`
+hooks let Lua decide which notes survive and how they render — see
+[[Help/Extending/Event Hooks]].
 
-## Future: Precognition (Auto Context)
+## Lua Integration
 
-> This feature is planned for v2.
+Lua hooks and plugin storage **ship**.
 
-Precognition will automatically search your kiln before each LLM call and inject relevant context. For now, use `/search` explicitly.
+### Plugin Storage
 
-## Future: Lua Integration
-
-> Lua hooks and storage namespace are planned for v2.
-
-### Storage Namespace
-
-Plugins can use namespaced storage within the kiln:
+`cru.storage` is a key-value property store, automatically namespaced per
+plugin (`plugin:<name>`) — there is no `require("cru.storage")` module or
+`namespace()` call:
 
 ```lua
-local storage = require("cru.storage")  -- or require("crucible.storage")
+-- Set a property on an entity
+cru.storage.set("entity-id", "key", "value")
 
--- Get a namespace for your plugin
-local store = storage.namespace("my-plugin")
+-- Get a property (nil if missing)
+local val = cru.storage.get("entity-id", "key")
 
--- Append to a log
-store:append_log("events", entry)
+-- List all properties for an entity ({key = value, ...})
+local props = cru.storage.list("entity-id")
 
--- Read/write state
-local state = store:get_state("config")
-store:set_state("config", new_state)
+-- Find entity ids with a matching property
+local ids = cru.storage.find("status", "active")
+
+-- Delete a property (true if deleted)
+local ok = cru.storage.delete("entity-id", "key")
 ```
+
+All calls are async and scoped to the calling plugin's namespace; before a
+kiln's storage is open they are stubs that return nil/empty.
 
 ### Hook Points
 

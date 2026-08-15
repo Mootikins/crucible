@@ -36,7 +36,7 @@ is not counted as markdown by `cru stats`. `.rst` and `.adoc` are **not**
 indexed: reading them with a markdown parser would produce wrong headings and
 miss their links, so they need real parsers first.
 
-Your query is treated as literal words, not FTS5 query syntax: punctuation and operators like `AND` search for themselves.
+A multi-word query matches notes containing **all** of the words, anywhere in the note — wrap words in double quotes (`"exact phrase"`) to require them adjacent, in order. Everything else is literal, not FTS5 query syntax: punctuation and operators like `AND` search for themselves.
 
 ## MCP search tools
 
@@ -45,7 +45,7 @@ The same knowledge base is searchable programmatically by agents, through three 
 ### Available Search Tools
 
 1. **semantic_search** - Find notes by meaning using vector embeddings
-2. **text_search** - Fast full-text search with regex support
+2. **grep_notes** - Grep-style text search (ripgrep engine): literal by default, regex with `regex: true`; matches are file/line hits in file order, unranked
 3. **property_search** - Query notes by frontmatter properties and tags
 
 ## Semantic Search
@@ -80,10 +80,13 @@ Search notes using semantic similarity based on vector embeddings.
 
 ## Text Search
 
-Fast full-text search across markdown files.
+Grep-style content search across markdown files, built on ripgrep's engine
+crates. Matches the query literally by default; set `regex` for regular
+expression patterns (Rust regex syntax). Hits are returned in file order with
+`match_start`/`match_end` character offsets — no ranking or stemming.
 
 ### Tool Name
-`text_search`
+`grep_notes`
 
 ### Parameters
 
@@ -91,6 +94,7 @@ Fast full-text search across markdown files.
 |-----------|------|----------|---------|-------------|
 | `query` | string | Yes | - | Text to search for |
 | `folder` | string | No | null | Subfolder to search within |
+| `regex` | boolean | No | false | Treat `query` as a regex instead of a literal |
 | `case_insensitive` | boolean | No | true | Case-insensitive search |
 | `limit` | number | No | 10 | Maximum matches to return |
 
@@ -177,10 +181,11 @@ cru chat "Find all notes about machine learning"
 - Exploring topic connections
 - When you know the idea but not exact words
 
-**When to use text_search:**
+**When to use grep_notes:**
 - Finding exact phrases or terms
 - Locating action items (TODO, FIXME)
 - Quick literal lookups
+- Pattern matching with `regex: true` (e.g. `TODO\(\w+\)`)
 
 **When to use property_search:**
 - Filtering by metadata

@@ -85,44 +85,78 @@ default_kiln = "docs"
 | `kilns` | list | Named kilns from `[kilns]` that this project uses |
 | `default_kiln` | string | Primary kiln for session storage |
 
+### Kiln Attachment Fields
+
+Each `[[kilns]]` entry in `.crucible/project.toml` takes three fields:
+
+```toml title=".crucible/project.toml"
+[[kilns]]
+path = "./notes"
+name = "Main Notes"
+data_classification = "confidential"   # public | internal | confidential
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `path` | path | Kiln directory — absolute, or relative to the project root. Required |
+| `name` | string | Optional display label. **Parsed but unread** — it round-trips through config rewrites, but nothing consults it at runtime today |
+| `data_classification` | string | `"public"`, `"internal"`, or `"confidential"` (lowercase). Optional |
+
+`data_classification` is what the trust gates read: the daemon resolves a kiln's
+classification from its `[[kilns]]` entry, and multi-kiln search skips any non-primary
+kiln whose classification exceeds the session provider's `trust_level`. An entry with no
+classification resolves to *none*, which the search filter treats as public. See
+[[Help/Concepts/Trust and Classification]].
+
+## Project File Access from the Web UI
+
+Alongside `shell`, the `[security]` table in `.crucible/project.toml` has one more knob:
+
+```toml title=".crucible/project.toml"
+[security]
+project_files = "read-only"   # read-write (default) | read-only | off
+```
+
+It governs how the **web UI** (`cru web`) may touch files inside the registered project
+root that are *outside any attached kiln* — source code, configs, README. Kiln notes are
+always read-write; this policy is only about the project file tree. Values are
+kebab-case:
+
+| Value | Effect |
+|---|---|
+| `read-write` | Open and save any file under the project root (the default) |
+| `read-only` | Files open, but saves are refused |
+| `off` | Project files are not served by the web UI at all (kiln notes only) |
+
+It is enforced by the web server's file routes — the file browser's open and save
+paths, media serving under a project root, and canvas documents that live under one.
+The CLI, TUI, and agent tools do not consult it.
+
 ## Shell Security
 
-Plugins can execute shell commands via `shell::exec()`. This is controlled by whitelist/blacklist policies.
-
-### Default Whitelist
-
-Crucible ships with a default whitelist of common safe commands: `git`, `cargo`, `npm`, `docker`, etc.
-
-### Workspace Customization
+The `bash` tool honours a per-project shell policy from `.crucible/project.toml`:
 
 ```toml title=".crucible/project.toml"
 # .crucible/project.toml
 [security.shell]
-# Add project-specific tools
-whitelist = ["aws", "terraform"]
+# Non-empty whitelist restricts commands to these prefixes
+whitelist = ["git", "cargo", "aws", "terraform"]
 
-# Block specific subcommands
+# Blacklist blocks these prefixes (wins over the whitelist)
 blacklist = ["docker run"]
 ```
 
-### Interactive Approval
+Both lists are **prefix matches**, checked per shell statement — a chained command
+(`git log; curl …`) is split on `;`, `&&`, `||`, and `|` (operators inside quotes are
+left alone; a bare newline is **not** a split point), and every statement must pass, so
+an unrelated command can't ride a whitelisted prefix. An unset or empty
+policy imposes nothing; there is no built-in default whitelist in effect.
 
-When a plugin tries a non-whitelisted command, you're prompted:
-
-```
-┌─ Shell command not whitelisted ─────────────────────────┐
-│ Command: aws s3 ls                                      │
-│ Plugin:  deploy.lua                                     │
-│                                                         │
-│ Whitelist:                                              │
-│   [1] aws          [2] aws s3       [3] aws s3 ls       │
-│   [d] Deny         [b] Block                            │
-│                                                         │
-│ Save to: (w)orkspace  (g)lobal  (o)nce                  │
-└─────────────────────────────────────────────────────────┘
-```
-
-Choose the prefix granularity and where to save it.
+A violating command is **refused with an error**, not prompted for — there is currently
+no interactive approval UI for shell-policy violations. (Tool permissions in
+[[Help/Config/permissions]] are the layer that can prompt.) The policy is
+defense-in-depth against straightforward misuse, not a sandbox: env tricks and `eval`
+are out of scope.
 
 ## Restricting Providers Per Kiln
 

@@ -39,8 +39,10 @@ cru skills list -f json
 
 `json` emits an array of `{ name, scope, description, shadowed_count }`.
 
-When nothing is found, the command prints the directories it searched rather than an empty
-list.
+When nothing is found, the command prints a short hardcoded hint of common skill
+locations (personal, workspace, kiln) rather than an empty list. The hint names
+`<kiln>/skills/` for the kiln scope, but discovery actually reads
+`<kiln>/.crucible/skills/` — see the table below for the real search paths.
 
 ## `cru skills show`
 
@@ -51,7 +53,8 @@ license) followed by its full markdown body — the instructions an agent would 
 cru skills show commit
 ```
 
-If the name doesn't resolve, the command lists the available names instead of failing.
+If the name doesn't resolve, the daemon returns an RPC error and the command fails —
+use `cru skills list` to see the available names.
 
 ## `cru skills search`
 

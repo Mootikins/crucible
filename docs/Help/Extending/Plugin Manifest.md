@@ -65,17 +65,6 @@ dependencies:
   - name: markdown-parser
     optional: true
 
-exports:
-  tools:
-    - tasks_list
-    - tasks_add
-    - tasks_complete
-  commands:
-    - /tasks
-  views:
-    - task-board
-  auto_discover: false
-
 enabled: true
 ```
 
@@ -116,7 +105,10 @@ capabilities:
   - ui            # Create custom UI views
   - config        # Access user configuration
   - system        # Access system information
+  - websocket     # Open WebSocket connections
 ```
+
+Those nine values are the complete set.
 
 Capabilities are informational: all plugins share one Lua VM, so per-plugin
 module gating is not enforced. There is no restricted sandbox and no
@@ -134,30 +126,27 @@ dependencies:
     optional: true        # Won't block load if missing
 ```
 
-Dependencies are matched by name only — there are no version constraints.
-Plugins load in dependency order automatically, and a missing required
-dependency blocks the load.
+Dependencies are matched by name only — there are no version constraints, and
+a `version:` key under a dependency is silently ignored. Plugins load in
+dependency order automatically, and a missing required dependency blocks the
+load.
 
 ### Exports
-
-Explicitly declare what the plugin provides:
 
 ```yaml
 exports:
   tools:
     - my_tool_1
-    - my_tool_2
   commands:
     - /my-command
-  views:
-    - my-view
-  handlers:
-    - my_handler
-  auto_discover: true   # Reserved; plugin callables come from the spec table
+  auto_discover: false
 ```
 
-`auto_discover` is reserved. Plugin callables come exclusively from the spec
-table `init.lua` returns; annotated functions are not scanned for plugins.
+**Parsed but unused.** The `exports` block (its `tools`, `commands`, `views`,
+`handlers` lists and the `auto_discover` flag) is accepted by the manifest
+parser and then consulted by nothing. Plugin callables come exclusively from
+the spec table `init.lua` returns; annotated functions are not scanned for
+plugins. You can omit the block entirely.
 
 ### Configuration
 
@@ -187,86 +176,15 @@ Use this to temporarily disable a plugin without removing it.
 
 ## Programmatic Access
 
-```lua
--- In Lua, access plugin manager (cru.* is canonical, crucible.* is an alias)
-local plugins = cru.plugins
+There is no Lua API for querying the plugin manager — `cru.plugins` does not
+exist. To see what is installed and loaded, use the `plugin.list` RPC (the TUI
+and `cru plugin list` consume it).
 
--- List loaded plugins
-for name, plugin in pairs(plugins.list()) do
-    print(name, plugin.version)
-end
-
--- Check capabilities
-if plugins.has_capability("my-plugin", "shell") then
-    -- Plugin can run shell commands
-end
-```
-
-## Programmatic Registration (Rust API)
-
-Tools, commands, views, and handlers can be registered programmatically without annotations. This is useful for:
-
-- Dynamic tool creation at runtime
-- Temporary handlers that auto-remove
-- Testing and mocking
-- Plugin-generated tools
-
-### Builder Pattern
-
-```rust
-use crucible_lua::{PluginManager, ToolBuilder, HandlerBuilder};
-
-let mut manager = PluginManager::new();
-
-// Register a tool using the builder
-let tool = ToolBuilder::new("my_search")
-    .description("Search notes by query")
-    .param("query", "string")
-    .param_optional("limit", "number")
-    .returns("SearchResult[]")
-    .build();
-
-let handle = manager.register_tool(tool, None);  // No owner
-
-// Later: remove it
-manager.unregister(handle);
-```
-
-### Owned Registration
-
-Associate registrations with an owner for bulk removal:
-
-```rust
-// Register multiple items owned by a workflow
-let tool = ToolBuilder::new("workflow_tool").build();
-let handler = HandlerBuilder::new("workflow_handler", "tool_result").build();
-
-manager.register_tool(tool, Some("my_workflow"));
-manager.register_handler(handler, Some("my_workflow"));
-
-// Later: remove all items owned by this workflow
-let removed_count = manager.unregister_by_owner("my_workflow");
-```
-
-### Available Builders
-
-| Builder | Creates | Key Methods |
-|---------|---------|-------------|
-| `ToolBuilder` | `DiscoveredTool` | `param()`, `param_optional()`, `returns()` |
-| `CommandBuilder` | `DiscoveredCommand` | `hint()`, `handler_fn()`, `param()` |
-| `HandlerBuilder` | `DiscoveredHandler` | `pattern()`, `priority()`, `handler_fn()` |
-| `ViewBuilder` | `DiscoveredView` | `handler_fn()`, `view_fn()` |
-
-### Registration Methods
-
-| Method | Returns | Description |
-|--------|---------|-------------|
-| `register_tool(tool, owner)` | `RegistrationHandle` | Register a tool (owner: `Option<&str>`) |
-| `register_command(cmd, owner)` | `RegistrationHandle` | Register a command |
-| `register_view(view, owner)` | `RegistrationHandle` | Register a view |
-| `register_handler(handler, owner)` | `RegistrationHandle` | Register a handler |
-| `unregister(handle)` | `bool` | Remove by handle |
-| `unregister_by_owner(owner)` | `usize` | Remove all with owner |
+`crucible-lua` does contain a `PluginManager` registration API with builders
+(`ToolBuilder`, `HandlerBuilder`, ...), but registrations made through it feed
+only that standalone manager — the daemon's registry never consults them, so
+nothing registered that way reaches an agent. Treat it as internal; the spec
+table a plugin returns is the one registration path that works end to end.
 
 ## Validation Rules
 

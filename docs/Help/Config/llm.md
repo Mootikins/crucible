@@ -24,9 +24,13 @@ default_model = "llama3.2"
 endpoint = "http://localhost:11434"
 ```
 
-The `[llm]` section has one field:
+The `[llm]` section has three fields:
 
 - `default` — name of the provider to use by default
+- `providers` — the named provider instances (`[llm.providers.NAME]` tables)
+- `models` — a specialty → model mapping (`[llm.models]`) used by agent cards that
+  declare a `specialty:` but no explicit `model:`, e.g. `reasoning = "openai/o1"` or
+  `coder = "qwen2.5-coder"` (provider inherited when unprefixed)
 
 Each provider lives under `[llm.providers.NAME]` where `NAME` is whatever label you choose.
 
@@ -41,6 +45,9 @@ Each provider lives under `[llm.providers.NAME]` where `NAME` is whatever label 
 | `temperature` | float | no | Randomness 0.0–2.0 (default: 0.7) |
 | `max_tokens` | integer | no | Max response tokens (default: 4096) |
 | `timeout_secs` | integer | no | Request timeout in seconds (default: 120) |
+| `available_models` | list | no | Models to advertise for this provider (otherwise discovered dynamically) |
+| `trust_level` | string | no | Override the backend's default trust level — see [[Help/Concepts/Trust and Classification]] |
+| `name` | string | no | Custom display name shown in model lists/UI |
 
 ## Providers
 
@@ -112,7 +119,10 @@ export ANTHROPIC_API_KEY=your-api-key
 
 ### Other Providers
 
-Additional provider types are supported: `openrouter`, `zai`, `github-copilot`, `vertexai`, `cohere`, and `custom`. They follow the same `[llm.providers.NAME]` format. Run `cru models` to see all available models across your configured providers.
+Additional provider types are supported for chat: `openrouter`, `zai`, `github-copilot`,
+`cohere`, and `custom` (generic OpenAI-compatible). They follow the same
+`[llm.providers.NAME]` format. `vertexai` parses but has no chat backend at runtime. Run
+`cru models` to see all available models across your configured providers.
 
 ## Parameters
 
@@ -192,7 +202,10 @@ Change the active provider by setting `default` under `[llm]`, or switch at runt
 |----------|---------|
 | `OPENAI_API_KEY` | OpenAI API key |
 | `ANTHROPIC_API_KEY` | Anthropic API key |
-| `OLLAMA_HOST` | Ollama endpoint (default: localhost:11434) |
+
+These are read only where the config references them with `{env:VAR}`. The Ollama
+endpoint is configured with the provider's `endpoint` field — `OLLAMA_HOST` is consulted
+only by `cru init`'s provider detection, not by chat.
 
 ## Example Configurations
 

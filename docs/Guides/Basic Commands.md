@@ -18,6 +18,7 @@ This guide covers the essential Crucible commands you'll use daily.
 |---------|---------|
 | `cru` | Start interactive chat |
 | `cru process` | Index notes |
+| `cru search` | Search notes (text + semantic) |
 | `cru stats` | View kiln statistics |
 | `cru chat` | Chat with context |
 | `cru mcp` | Start MCP server |
@@ -55,11 +56,14 @@ This is the primary way to interact with your kiln. The AI agent can search, rea
 - `/plan` - Switch to read-only mode
 - `/auto` - Enable full-access mode
 - `/mode` - Cycle through modes
-- `/new` - Start a new session
-- `/resume` - Resume a recent session
-- `/models` - List or switch models
+- `/undo` - Undo the last exchange
+- `/help` - Show help
 - `Shift+Tab` - Cycle modes
 - `Ctrl+C` - Cancel (double to exit)
+
+Any other `/command` is forwarded to the agent as chat text. To resume a
+previous session, use `cru chat --resume <id>` or `cru session open <id>`; to
+switch models, use `:model`.
 
 ## cru process
 
@@ -126,15 +130,18 @@ cru chat "What do I know about Rust?"
 
 ### Options
 
-**Use internal agent:**
+**Choose a provider (internal agent):**
 ```bash
-cru chat --internal --provider ollama "Summarize my notes on testing"
+cru chat --provider ollama "Summarize my notes on testing"
 ```
 
 **Specify model:**
 ```bash
-cru chat --internal --provider openai --model gpt-4o "Help me plan"
+cru chat --provider openai --set model=gpt-4o "Help me plan"
 ```
+
+There is no `--model` flag — model selection uses the same `--set` syntax as
+the TUI `:set` command.
 
 ## cru config
 
@@ -144,8 +151,8 @@ Manage configuration:
 # Show current config
 cru config show
 
-# Show config file location
-cru config path
+# Show where each value came from (file, env, cli, default)
+cru config show --sources
 
 # Initialize default config
 cru config init
@@ -156,10 +163,16 @@ cru config init
 Start the MCP server for external tool integration:
 
 ```bash
+# Default: SSE transport on port 3847
+cru mcp
+
+# Stdio transport (for clients like Claude Desktop)
 cru mcp --stdio
 ```
 
-This exposes your kiln to AI tools like Claude Code.
+This exposes your kiln to AI tools like Claude Code. The server is hosted by
+the background daemon; pass the global `--standalone` flag to run it in-process
+instead.
 
 ## cru status
 
@@ -188,9 +201,12 @@ cru process --watch
 
 ### Finding Information
 
-All search happens through the chat interface or MCP tools:
+Search directly, through chat, or via MCP tools:
 
 ```bash
+# Direct search (text + semantic)
+cru search "project planning"
+
 # Interactive exploration
 cru chat "Help me find notes about project planning"
 

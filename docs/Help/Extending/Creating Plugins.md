@@ -219,10 +219,10 @@ main: init.lua
 description: Task management tools
 author: Your Name
 
-# Optional: declare dependencies
+# Optional: declare dependencies. Matched by NAME only — a `version:`
+# constraint here is parsed but never checked, so don't write one.
 dependencies:
   - name: core-utils
-    version: ">=1.0.0"
 
 # Optional: declared capabilities — INFORMATIONAL. All plugins share one
 # Lua VM, so per-plugin module gating is not enforced; treat this as
@@ -341,7 +341,8 @@ overlap the new generation briefly before it lands.
 
 ## Hot Reload
 
-`cru plugin reload <name>` (TUI `:reload <name>`) re-executes a plugin's
+TUI `:reload <name>` (or the `plugin.reload` RPC — there is no `cru plugin
+reload` CLI subcommand) re-executes a plugin's
 `init.lua`, replacing its tools, commands, and handlers, and aborting its
 running service tasks before the new generation spawns. Reloading a plugin
 that fails to execute returns an error and leaves the plugin fully inert —
@@ -372,9 +373,34 @@ watch = true
 | `Disabled` | Explicitly disabled by user |
 | `Error` | Failed to load or execute. Guaranteed inert: nothing of the plugin's is registered or running. `plugin.list` still shows what it declares, plus `last_error` |
 
+### Lifecycle Callbacks: `on_load` / `on_unload`
+
+The spec table may carry two optional lifecycle functions:
+
+```lua
+return {
+    name = "my-plugin",
+    on_load = function()
+        cru.log("info", "my-plugin loaded")
+    end,
+    on_unload = function()
+        -- flush state, drop caches
+    end,
+    -- ... tools, commands, services ...
+}
+```
+
+`on_load` runs when the plugin is loaded, `on_unload` when it is unloaded — a
+reload runs `on_unload` for the old generation, then `on_load` for the new.
+Both are called with no arguments; an error in either is logged (and recorded
+in the plugin's error log) but does not abort the load or unload. For
+per-*session* work, use `crucible.on_session_start` / `on_session_end`
+instead — see [[Help/Extending/Event Hooks]].
+
 ## Shell Commands
 
-Plugins can execute shell commands using `cru.shell()`:
+Plugins can execute shell commands using `cru.shell.exec()` (the module itself
+is not callable):
 
 ```lua
 tools = {
@@ -410,14 +436,18 @@ See [[Help/Config/workspaces]] for full security configuration.
 ### Shell Options
 
 ```lua
-local result = cru.shell("cargo", {"build"}, {
+local result = cru.shell.exec("cargo", {"build"}, {
     cwd = "/path/to/project",      -- Working directory
     env = { RUST_LOG = "debug" },  -- Environment variables
-    timeout = 60000,               -- Timeout in milliseconds
+    stdin = "input data",          -- Data piped to stdin (optional)
 })
 
--- result.stdout, result.stderr, result.exit_code
+-- result.success, result.stdout, result.stderr, result.exit_code
 ```
+
+There is no timeout by default — commands run to completion, so builds and
+long-running processes are never silently killed. A shell policy may set a
+deadline; there is no per-call option.
 
 ## Fennel Support
 
@@ -470,14 +500,11 @@ Views are custom UI components rendered in the TUI:
 -- @view name="graph"
 function M.graph_view()
     local oil = cru.oil
-    return oil.box({
-        direction = "column",
-        children = {
-            oil.text("Graph View", { bold = true }),
-            oil.divider(),
-            oil.text("Nodes: 42, Edges: 128"),
-        }
-    })
+    return oil.col(
+        oil.text("Graph View", { bold = true }),
+        oil.divider(),
+        oil.text("Nodes: 42, Edges: 128")
+    )
 end
 ```
 
@@ -503,9 +530,7 @@ describe("tasks_list", function()
 
     before_each(function()
         test_mocks.setup({
-            kiln = {
-                search = function() return {} end,
-            },
+            kiln = { notes = {} },
         })
     end)
 
@@ -515,7 +540,7 @@ describe("tasks_list", function()
 
     it("returns empty list when no tasks exist", function()
         local result = plugin.tools.tasks_list.fn({ file = "nonexistent.md" })
-        assert.equal(result.count, 0)
+        assert.equal(0, result.count)
     end)
 
     it("filters completed tasks when show_completed is false", function()
@@ -523,7 +548,7 @@ describe("tasks_list", function()
             file = "TASKS.md",
             show_completed = false,
         })
-        assert.equal(type(result.tasks), "table")
+        assert.equal("table", type(result.tasks))
     end)
 end)
 ```
@@ -543,37 +568,41 @@ cru plugin test path/to/my-plugin --verbose
 
 ### Assert API
 
-The test runner provides a rich assertion library:
+The test runner provides a rich assertion library. **Expected value comes
+first** — failures report `Expected: <first>` / `Actual: <second>`:
 
 ```lua
-assert.equal(actual, expected)       -- Strict equality (==)
-assert.deep_equal(actual, expected)  -- Deep table comparison
+assert.equal(expected, actual)       -- Strict equality (==); alias: assert.equals
+assert.deep_equal(expected, actual)  -- Deep table comparison
 assert.truthy(value)                 -- Not nil and not false
 assert.falsy(value)                  -- nil or false
-assert.error(function()              -- Expects the function to throw
+assert.has_error(function()          -- Expects the function to throw
     error("boom")
 end)
 ```
 
 ### Mocking Crucible APIs
 
-Tests run in a sandbox where `cru.*` APIs are replaced with mocks. Use `test_mocks` to configure what the mocks return:
+Tests run in a sandbox where `cru.*` APIs are replaced with mocks. `test_mocks.setup()` takes **data fixtures**, not replacement functions — the mock implementations are fixed, and your overrides feed them the data they answer with:
 
 ```lua
 before_each(function()
     test_mocks.setup({
         kiln = {
-            search = function(query)
-                return {
-                    { title = "Note 1", score = 0.9 },
-                    { title = "Note 2", score = 0.7 },
-                }
-            end,
+            -- kiln.search/get/list answer from these notes
+            notes = {
+                { path = "note1.md", title = "Note 1", content = "rust things" },
+                { path = "note2.md", title = "Note 2", content = "more rust" },
+            },
         },
         http = {
-            get = function(url)
-                return { status = 200, body = '{"ok": true}' }
-            end,
+            -- http.get/post/... answer from responses keyed by URL
+            responses = {
+                ["https://api.example.com/data"] = { status = 200, body = '{"ok": true}' },
+            },
+        },
+        fs = {
+            files = { ["config.toml"] = "key = 'value'" },
         },
     })
 end)
@@ -583,14 +612,20 @@ after_each(function()
 end)
 ```
 
+Mockable modules and their fixture keys: `kiln`/`graph` (`notes`, `outlinks`,
+`backlinks`, `neighbors`), `http` (`responses`), `fs` (`files`, `dirs`),
+`paths` (`kiln`, `workspace`, `session`, `state` — set one to `false` to make
+its accessor raise "not configured"), `session` (`temperature`, `model`,
+`mode`, ...), and `sessions` (`info`, `messages`, `response_parts`).
+
 After a test runs, you can inspect what the mocks recorded:
 
 ```lua
 it("calls search with the right query", function()
     plugin.tools.my_search.fn({ query = "rust" })
     local calls = test_mocks.get_calls("kiln", "search")
-    assert.equal(#calls, 1)
-    assert.equal(calls[1][1], "rust")
+    assert.equal(1, #calls)
+    assert.equal("rust", calls[1][1])
 end)
 ```
 

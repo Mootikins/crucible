@@ -41,15 +41,31 @@ S-expression syntax with compile-time macros, for power users:
 Create reusable extensions:
 
 - [[Help/Extending/Creating Plugins]] - Build and run Lua plugins
-- [[Help/Extending/Event Hooks]] - React to file changes and system events
+- [[Help/Extending/Plugin Manifest]] - `plugin.yaml` metadata, dependencies, capabilities
+- [[Help/Extending/Event Hooks]] - React to tool calls, sessions, and file events
+- [[Help/Extending/Custom Handlers]] - Advanced handler design notes
 - [[Help/Extending/Custom Tools]] - Add tools via MCP or Lua
+- [[Help/Extending/MCP Gateway]] - Connect external MCP servers
 - [[Help/Extending/Agent Cards]] - Configure AI agent behavior
+- [[Help/Extending/Internal Agent]] - The built-in agent, sessions, and memory
+- [[Help/Extending/Scripted UI]] - Theme the TUI and build statuslines from Lua
+- [[Help/Extending/HTTP Module]] - HTTP client for scripts and plugins
+- [[Help/Extending/Container Isolation]] - Route workspace tools into containers
+- [[Help/Extending/Worktree Sessions]] - Run sessions against git worktrees
+- [[Help/Extending/Discord]] - The Discord gateway plugin
+- [[Help/Extending/Script Agent Queries]] - Status of `ask.agent()` (not implemented)
+
+Full API references:
+
+- [[Help/Plugins/Lua Runtime API]] - The `cru.*` daemon-side API
+- [[Help/Plugins/Oil Lua API]] - Oil UI rendering primitives
 
 ## Workflows
 
 Automate multi-step processes:
 
-- [[Help/Extending/Workflow Authoring]] - Define workflow steps
+- [[Help/Workflows/Index]] - The shipped markdown workflow system
+- [[Help/Extending/Workflow Authoring]] - Unimplemented YAML design sketch
 
 ## Examples
 

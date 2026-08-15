@@ -45,7 +45,7 @@ Add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to persist across
 
 ### Step 3: Configure the Provider
 
-Add to your `config.toml` or `llm_providers.toml`.
+Add to your `~/.config/crucible/config.toml`.
 
 **Native ZAI (recommended):**
 

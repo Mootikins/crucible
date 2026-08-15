@@ -26,10 +26,21 @@ The TUI supports vim-style `:` commands for runtime configuration and control. T
 | `:set all` | Show all options |
 | `:model` | Open model picker |
 | `:model <name>` | Switch to model |
-| `:session list` | List sessions |
-| `:session load <id>` | Load session |
+| `:clear` | Clear conversation |
+| `:undo [N]` | Undo the last N agent turns (default 1) |
+| `:export <path>` | Export session to markdown |
+| `:messages` | Toggle the notification drawer (aliases: `:msgs`, `:notifications`) |
+| `:palette` | Open command palette (alias: `:commands`, key: `F1`) |
+| `:pick [source]` | Open a fuzzy picker (notes, files, commands) |
+| `:mcp` | Show MCP server status |
+| `:plugins` | Show loaded plugins |
+| `:reload [name]` | Reload a plugin (no name = all) |
+| `:config` | Show current configuration |
+| `:lua <expr>` | Evaluate Lua daemon-side (shorthand: `:= <expr>`) |
 | `:quit` / `:q` | Exit chat |
-| `:help` | Show help |
+| `:help [topic]` | Show help (alias: `:h`) |
+
+An unknown `:` command shows a warning with a did-you-mean suggestion.
 
 ## The `:set` Command
 
@@ -46,7 +57,7 @@ Crucible's `:set` command follows Vim conventions for runtime configuration.
 Examples:
 ```
 :set model=claude-3-5-sonnet
-:set thinkingbudget=8000
+:set thinkingbudget=high
 ```
 
 ### Boolean Options
@@ -62,7 +73,7 @@ Examples:
 ```
 :set thinking           # Enable thinking display
 :set nothinking         # Disable thinking display
-:set verbose!           # Toggle verbose mode
+:set precognition!      # Toggle precognition
 ```
 
 ### Querying Values
@@ -93,8 +104,8 @@ Examples:
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `thinking` | bool | Show thinking/reasoning tokens in UI |
-| `thinkingbudget` | number/preset | Token budget for extended thinking |
+| `thinking` | bool | Show thinking/reasoning tokens in this client (TUI-local) |
+| `thinkingbudget` | preset | Token budget for extended thinking (presets only) |
 
 **Thinking Budget Presets:**
 
@@ -107,9 +118,11 @@ Examples:
 | `high` | 8192 | Thorough reasoning |
 | `max` | unlimited | Maximum reasoning |
 
+`thinkingbudget` accepts presets only — a raw token count like
+`:set thinkingbudget=8000` is rejected with the list of valid presets.
+
 Examples:
 ```
-:set thinkingbudget=4096        # Set exact token count
 :set thinkingbudget=high        # Use preset
 :set thinkingbudget=off         # Disable thinking
 ```
@@ -118,15 +131,36 @@ Examples:
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `theme` | string | Syntax highlighting theme |
-| `verbose` | bool | Verbose output mode |
+| `syntax_theme` | string | Syntax highlighting theme for code blocks and diffs. Validated against the loaded theme set; `derived` follows the UI colorscheme |
+| `show_diffs` | bool | Render inline diffs for file-edit tool calls |
+| `completion_style` | enum | Popup presentation: `auto` (minimal anchored boxes for `@`/`[[` completions, full-width panel for `/` and `:`), `panel`, or `minimal` |
+
+### Agent Loop
+
+These sync to the daemon and are session-scoped:
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `maxiterations` | number/`none` | Cap on agent loop iterations per turn |
+| `executiontimeout` | seconds/`none` | Tool execution timeout |
+| `outputvalidation` | string | Output validation mode |
+| `validationretries` | number | Retries when output validation fails |
+
+### Context Management
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `contextbudget` | number/`none` | Context token budget (alias: `context_budget`) |
+| `contextstrategy` | enum | `truncate`, `sliding_window`, or `summarize` |
+| `contextwindow` | number/`none` | Sliding window size in message pairs |
+| `autocompact_threshold` | 0.0–1.0/`off`/`default` | Auto-compaction trigger as a fraction of the context budget |
 
 ### Precognition
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `precognition` | bool | Toggle precognition (auto-RAG context injection) |
-| `precognition.results` | number | Number of precognition results to inject (default: 5) |
+| `precognition` | bool | Toggle precognition (auto-RAG context injection, daemon-side) |
+| `precognition.results` | number | Number of precognition results to inject (1–20, default: 5) |
 
 ### Permissions
 
@@ -135,6 +169,12 @@ Examples:
 | `perm.show_diff` | bool | Show diffs in permission modals by default |
 | `perm.autoconfirm_session` | bool | Auto-approve all permissions for the session |
 | `perm.full_commands` | bool | Show the full command/args (wrapped) in permission prompts; off = compact one-line view. Default: on |
+
+### Unknown Keys
+
+A key the classifier doesn't recognize is not an error: it is stored locally
+(so `:set key?` round-trips) **and** mirrored into the daemon's app-config
+store, so `:lua cru.config.get(key)` and plugins see the same typed value.
 
 ## The `:model` Command
 
@@ -154,27 +194,40 @@ Examples:
 :model llama3.2
 ```
 
-Model changes persist for the session and sync to the daemon (if using daemon mode).
+Model changes persist for the session and sync to the daemon.
 
-## Session Commands
+## The `:pick` Command
 
-Manage chat sessions:
+Open a fuzzy picker popup:
 
 ```
-:session list           # Show available sessions
-:session load <id>      # Resume existing session
-:session new            # Start new session
+:pick                   # Pick from notes, files, and commands
+:pick notes             # Notes from your kiln
+:pick files             # Workspace files
+:pick commands          # Slash and REPL commands
 ```
 
-Sessions auto-save and can be resumed across TUI restarts.
+Selecting a note inserts a `[[wikilink]]`, a file inserts an `@path`
+attachment, and a command puts the command in the input. (`:pick sessions`
+is accepted but currently lists nothing — sessions aren't tracked in TUI
+state yet.)
 
 ## Other Commands
 
 ```
 :quit                   # Exit chat (alias: :q)
-:help                   # Show help
+:help [topic]           # Show help (alias: :h; topics: commands, keys, config, tools)
 :clear                  # Clear conversation (start fresh)
-:palette                # Open command palette
+:undo [N]               # Undo the last N agent turns (also /undo)
+:export <path>          # Export session to markdown (~ expands)
+:messages               # Toggle notification drawer
+:palette                # Open command palette (F1)
+:mcp                    # MCP servers with connection status and tool counts
+:plugins                # Loaded plugins with state and version
+:reload [name]          # Reload one plugin, or all when no name given
+:config                 # Show current configuration summary
+:lua <expr>             # Evaluate a Lua expression in the daemon's plugin
+                        # runtime; result renders as a system message (:= works too)
 ```
 
 ## Configuration Layers
@@ -203,9 +256,9 @@ Use `:set option??` to see where a value came from:
 ```
 :set thinkingbudget??
 # Output:
-# thinkingbudget = 8192
-#   [Command] 8192 (2025-01-20 14:30:00)
-#   [File] 4096 (base config)
+# thinkingbudget = high
+#   [Command] high (2025-01-20 14:30:00)
+#   [File] medium (base config)
 ```
 
 ## Option Shortcuts
@@ -214,11 +267,10 @@ Some options have short aliases:
 
 | Shortcut | Full Path |
 |----------|-----------|
-| `model` | `llm.providers.{provider}.default_model` |
+| `model` | (dynamic — resolved per provider) |
 | `thinking` | (virtual, TUI-only) |
 | `thinkingbudget` | `llm.thinking_budget` |
-| `theme` | `cli.highlighting.theme` |
-| `verbose` | `cli.verbose` |
+| `syntax_theme` | `cli.highlighting.theme` |
 
 ## Examples
 

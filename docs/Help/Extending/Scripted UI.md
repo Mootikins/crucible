@@ -23,8 +23,10 @@ statusline layout.
 >
 > An earlier version of this page documented `cru.popup`, `cru.ui` and
 > `cru.panel` modules for building interactive popups from scripts. Those were
-> never registered in a running daemon and have been removed. For asking the user
-> something from a handler, use `cru.interaction`.
+> never registered in a running daemon and have been removed. There is
+> currently **no script API for asking the user something from a handler** —
+> `cru.interaction` built request tables that nothing consumed, and asking an
+> LLM is likewise unimplemented (see [[Help/Extending/Script Agent Queries]]).
 
 ## Three things, three names
 
@@ -221,7 +223,10 @@ expression. Place it in a bar, then supply it from a handler:
 local sl = crucible.statusline
 
 sl.setup{
-  main = { items = { sl.mode, sl.align, sl.expr("git"):hl("Git") } },
+  prompt = {
+    sl.input,
+    { sl.mode, sl.align, sl.expr("git"):hl("Git") },
+  },
 }
 
 crucible.on("FileChanged", function(ctx)

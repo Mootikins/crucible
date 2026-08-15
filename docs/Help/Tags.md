@@ -109,7 +109,7 @@ Search for any of multiple tags (OR logic):
 }
 ```
 
-### Using text_search
+### Using grep_notes
 
 Find inline tags:
 ```json

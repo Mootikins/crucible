@@ -21,6 +21,7 @@ The governing principle is **propose, don't dispose.** Proposals are staged outs
 **Key facts:**
 
 - **Trigger:** `on_session_end`. Every finished session is eligible; trivial ones are skipped below a `min_turns` threshold.
+- **Requires configuration:** the plugin is **inert until you configure an auxiliary model** — without `plugins.reflection.model` it logs a warning and skips every session.
 - **Execution:** a forked auxiliary-model session (configurable, kept cheap) reviews the transcript. It never burdens the main session or its prompt cache.
 - **Output:** proposed notes staged in `KILN/.crucible/proposals/`, *outside* the indexed kiln.
 - **Disposition:** `cru proposals {list,show,accept,reject}` — a human decides.
@@ -79,11 +80,12 @@ The framing is conservative and propose-only: emitting nothing ("nothing to save
 
 ## Configuration
 
-Reflection ships as the default `reflection` runtime plugin. Configure it in `init.lua`:
+Reflection ships as the default `reflection` runtime plugin, but it does nothing until you name an auxiliary model: `model` has no default, and without one the plugin bails with a warning (`reflection: no aux model configured`) at every session end. Configure it in `init.lua`:
 
 ```lua
 require("reflection").setup({
-  model = "claude-haiku-4-5-20251001",  -- cheap auxiliary model
+  model = "claude-haiku-4-5-20251001",  -- required: cheap auxiliary model
+  provider = "anthropic",  -- optional: provider override for the aux model
   enabled = true,
   min_turns = 3,      -- skip trivial sessions
   max_proposals = 5,  -- cap staged notes per session
@@ -96,6 +98,7 @@ Or via TOML:
 ```toml
 [plugins.reflection]
 model = "claude-haiku-4-5-20251001"
+provider = "anthropic"  # optional
 enabled = true
 ```
 

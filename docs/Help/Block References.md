@@ -1,6 +1,7 @@
 ---
 title: Block References
-description: Reference for block ID syntax and embedding
+description: Reference for block reference link syntax — parsing status and planned behavior
+status: partial
 tags:
   - reference
   - syntax
@@ -8,27 +9,14 @@ tags:
 
 # Block References
 
-Block references allow you to link to and embed specific paragraphs, lists, or other content blocks within notes.
+Block references are Obsidian's mechanism for linking to a specific paragraph or list item inside a note, via `^id` markers and `[[Note#^id]]` links.
 
-## Creating Block IDs
+> [!warning] Implementation status
+> Only the **link syntax** is implemented. The parser recognizes `[[Note#^id]]` and captures the block reference on the parsed link (`WikiLink.block_ref`). Nothing else on this page exists yet: `^id` markers are **not extracted** from note content, block IDs are **not resolved** to blocks, `![[Note#^id]]` does **not** transclude anything (embeds render as ordinary links), and there is no `auto_block_ids` option. Sections below are marked accordingly.
 
-Add a block ID to any paragraph or list item:
+## Link Syntax (implemented: parsing only)
 
-```markdown
-This is an important paragraph. ^important-point
-
-- List item one
-- List item two ^key-item
-- List item three
-```
-
-Block IDs:
-- Start with `^`
-- Appear at the end of the line
-- Use lowercase letters, numbers, and hyphens
-- Must be unique within the note
-
-## Linking to Blocks
+A wikilink whose fragment starts with `^` is parsed as a block reference rather than a heading reference:
 
 ### Within the same note
 
@@ -48,35 +36,7 @@ See [[Other Note#^important-point]] for details.
 See [[Other Note#^important-point|the key insight]] for details.
 ```
 
-## Embedding Blocks
-
-Embed a specific block using the `!` prefix:
-
-```markdown
-![[Other Note#^important-point]]
-```
-
-This transcludes just that block, not the entire note.
-
-## Block ID Best Practices
-
-### Naming
-
-Choose descriptive, stable IDs:
-
-```markdown
-The main thesis of this paper is... ^thesis
-
-Key finding: productivity increased 40% ^finding-productivity
-
-Decision: We will use React for the frontend ^decision-frontend
-```
-
-### Avoid
-
-- Auto-generated IDs that might conflict
-- IDs that describe position (`^paragraph-3`)
-- Overly long IDs
+The parser stores the target and the `important-point` block ref on the link. Resolution stops at the note: the link resolves to `Other Note`, and the block ref is carried as metadata that nothing currently consumes.
 
 ## Heading References vs Block References
 
@@ -87,71 +47,37 @@ Decision: We will use React for the frontend ^decision-frontend
 | Uses heading text | Uses explicit ID |
 | May break if heading changes | Stable if ID preserved |
 
-## Finding Block References
+Both parse; neither fragment is resolved to a location inside the target note today.
 
-Search for notes with block IDs:
+## Not Implemented
 
-```json
-{
-  "query": "\\^[a-z][a-z0-9-]*$"
-}
-```
+Everything below describes Obsidian's behavior, kept here as the design target. **None of it exists in Crucible yet.**
 
-## How Block IDs Are Parsed
-
-Block IDs are resolved during markdown processing. The parser:
-1. Identifies blocks (paragraphs, lists, etc.)
-2. Extracts trailing `^id` patterns
-3. Stores block ID → content mapping
-4. Enables block-level linking and embedding
-
-## Automatic Block IDs
-
-Crucible can generate block IDs automatically for content hashing:
-
-```yaml
----
-auto_block_ids: true
----
-```
-
-Generated IDs use content hashes and are stable as long as content doesn't change.
-
-## Use Cases
-
-### Citing specific points
+### Authoring block IDs
 
 ```markdown
-In [[Research Paper#^methodology]], the authors describe...
+This is an important paragraph. ^important-point
+
+- List item two ^key-item
 ```
 
-### Building arguments
+The parser does not extract trailing `^id` markers from paragraphs or list items; they remain plain text in the note.
+
+### Embedding blocks
 
 ```markdown
-Given that:
-1. [[Premise One#^main-point]]
-2. [[Premise Two#^conclusion]]
-
-Therefore...
+![[Other Note#^important-point]]
 ```
 
-### Creating excerpts
+The `!` embed prefix parses (see [[Help/Wikilinks]]), but there is no transclusion — the embed renders as a regular link to the note, not the block's content.
 
-```markdown
-# Key Quotes
+### Automatic block IDs
 
-![[Book Notes#^quote-1]]
+There is no `auto_block_ids` frontmatter option and no content-hash ID generation.
 
-![[Book Notes#^quote-2]]
-```
+### Block ID → content mapping
 
-### Stable references
-
-When heading text might change, use block IDs for stability:
-
-```markdown
-This relates to [[API Design#^rate-limiting-decision]]
-```
+No block-level index exists; searching for `^id` patterns is just a text search over note content.
 
 ## See Also
 

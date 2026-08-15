@@ -1,6 +1,6 @@
 ---
 title: General Assistant
-type: agent
+type: agent-card
 version: "1.0.0"
 description: "Default general-purpose assistant for Crucible interactions"
 tags:

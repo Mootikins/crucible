@@ -26,6 +26,9 @@ Every tool call the agent makes walks this list top to bottom. The first layer
 that says **allow** or **deny** ends it; a layer with nothing to say falls
 through to the next.
 
+Two trust boundaries run *before* this list is consulted at all — an agent
+card's tool policy and a plugin's isolation claim. See "Above the chain" below.
+
 | # | Layer | Set by |
 |---|-------|--------|
 | 1 | CLI `--permissions` override | the flag you launched with |
@@ -127,6 +130,70 @@ This step is easy to forget and it changes behaviour: the same tool call that
 ### 7 — Prompt
 
 Whatever is left reaches you, with a diff preview where one can be synthesised.
+
+## Above the chain
+
+Two trust boundaries run before the chain is consulted. Neither is a layer in
+it: they decide whether the chain runs at all, and no layer can override them.
+
+### The agent-card gate decision
+
+An agent card can declare a per-tool policy — `deny`, `ask`, or `allow` — see
+[[Help/Extending/Agent Cards]].
+
+- **`deny` refuses outright, before everything** — including the
+  `pre_tool_call` hook loop. Checked that early deliberately: a hook that
+  handles a call returns before any gate, so a later check would let a plugin
+  see the arguments of, rewrite, or fabricate a result for a tool the session
+  policy refuses. Denied tools are also excluded from the tool definitions the
+  model sees; this is defense in depth.
+- **`ask` forces the chain**, even for a tool the daemon classifies as
+  read-only.
+- **`allow` skips the chain** — the saved patterns, the Lua hooks, the mode
+  rules and the mode stance are never consulted. The one thing still checked is
+  layer 2's deny: `[permissions]` deny rules are evaluated even for
+  card-allowed tools, so a card shipped by an untrusted kiln cannot sidestep a
+  configured deny. A card-allowed call is marked auto-approved ("agent card
+  policy") on its tool-call event.
+- **No policy** — the chain runs unless the tool is on the daemon's built-in
+  read-only list. An MCP server's `readOnlyHint` is deliberately not consulted
+  for this decision: a third-party server must not be able to annotate its way
+  past a mode's `default = "deny"`.
+
+The decision is `requires_permission_gate` in
+`crates/crucible-daemon/src/agent_manager/messaging/gate_decision.rs`; the
+`deny` half is enforced earlier, in `tool_call.rs`.
+
+### The plugin isolation gate
+
+A plugin that sandboxes a session — the `oci` plugin and its container, see
+[[Help/Extending/Container Isolation]] — calls `crucible.require_isolation` at
+session start. From then on the session is **default-deny for host execution**:
+a tool call that no `pre_tool_call` handler took over is refused before the
+chain runs, because executing it would run wherever the daemon runs — outside
+the sandbox. The handler taking the call over *is* the sandbox, which is why
+this gate sits after the hook loop.
+
+Whether a tool is "host-touching" is answered by its surface, declared by the
+executor that would run it — not by a list of names:
+
+- **Host** — touches the host filesystem or executes host processes. Refused
+  unless named on the claim's `exempt` list.
+- **Daemon** — reaches daemon-side state only: notes, embeddings, the kiln,
+  jobs. Passes untouched; containerizing a workspace says nothing about these.
+- **Unknown** — runs daemon-side but can reach anything (MCP gateway tools,
+  plugin Lua). Treated exactly like Host.
+
+The refusal message names the claiming plugin and points at its `exempt` list.
+No layer in the chain can rescue a refused call — the chain never runs. The
+claim is released at session end.
+
+### Order within one call
+
+Card `deny` → `pre_tool_call` handlers (a handled call bypasses everything
+below) → isolation gate → the gate decision (card `allow`/`ask`, else the
+read-only list) → config deny check when the chain is skipped → the
+seven-layer chain.
 
 ## Underneath all of it
 

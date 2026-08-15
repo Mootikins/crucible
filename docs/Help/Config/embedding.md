@@ -26,7 +26,7 @@ The `[enrichment]` section has two sub-tables, both optional:
 | Sub-table | Purpose |
 |---|---|
 | `[enrichment.provider]` | Which embedding backend to use + its settings |
-| `[enrichment.pipeline]` | Pipeline tuning (batch processing, retries, timeouts) |
+| `[enrichment.pipeline]` | Pipeline tuning — parsed, but currently only `max_precognition_chars` is read (see below) |
 
 Omitting the whole `[enrichment]` section is meaningful, though: the daemon then skips
 embedding generation, and semantic search returns nothing.
@@ -34,6 +34,10 @@ embedding generation, and semantic search returns nothing.
 ## Providers
 
 Select a provider by setting `type = "..."`. Each type has its own fields.
+
+**Supported at runtime:** `fastembed`, `ollama`, `openai`, and `mock`. The other types
+below (`cohere`, `vertexai`, `custom`, `burn`) still parse, but the daemon refuses to
+create a provider for them — see each entry.
 
 ### FastEmbed (default, local)
 
@@ -48,6 +52,11 @@ dimensions = 384
 # cache_dir = "/path/to/cache"     # optional
 # num_threads = 4                  # optional (auto-detected)
 ```
+
+`model` is the only field the FastEmbed backend actually reads. `batch_size`,
+`cache_dir`, and `num_threads` parse but are currently ignored — the daemon hardcodes a
+batch size of 32 and FastEmbed's default cache directory, and the vector dimension comes
+from the model itself.
 
 **Advantages:** no API key, offline, free, fast for batch processing.
 
@@ -76,7 +85,7 @@ model = "text-embedding-3-small"
 # dimensions = 1536                        # optional
 ```
 
-### Cohere
+### Cohere — parses, not supported at runtime
 
 ```toml
 [enrichment.provider]
@@ -85,7 +94,10 @@ api_key = "{env:COHERE_API_KEY}"           # required
 model = "embed-english-v3.0"
 ```
 
-### Vertex AI
+The config shape parses, but the daemon has no Cohere embedding backend — creating the
+provider fails with "Unsupported provider type".
+
+### Vertex AI — parses, not supported at runtime
 
 ```toml
 [enrichment.provider]
@@ -94,18 +106,21 @@ project_id = "my-gcp-project"              # required
 model = "text-embedding-004"
 ```
 
-Requires Google Cloud credentials configured in your environment.
+Same status as Cohere: parses, but the daemon cannot create a Vertex AI embedding
+provider.
 
-### Burn (GPU-accelerated local)
+### Burn — removed
 
 ```toml
 [enrichment.provider]
 type = "burn"
 ```
 
-Experimental local provider backed by the Burn ML framework.
+The Burn backend has been removed from the daemon. The config still parses, but creating
+the provider hard-errors with "Burn provider is no longer included in
+crucible-daemon::llm". Use `fastembed` for local embeddings.
 
-### Custom
+### Custom — parses, not supported at runtime
 
 ```toml
 [enrichment.provider]
@@ -115,7 +130,8 @@ model = "my-embedding-model"               # required
 dimensions = 768                           # required
 ```
 
-For HTTP-based providers that aren't first-class.
+Intended for HTTP-based providers that aren't first-class, but no runtime backend exists
+yet — creating the provider fails with "Unsupported provider type".
 
 ### Mock
 
@@ -125,6 +141,21 @@ type = "mock"
 ```
 
 Returns deterministic stub vectors. Used by tests and local dev.
+
+## `[enrichment.pipeline]`
+
+The pipeline table parses these fields: `worker_count`, `batch_size`, `max_queue_size`,
+`timeout_ms`, `retry_attempts`, `retry_delay_ms`, `circuit_breaker_threshold`,
+`circuit_breaker_timeout_ms`, and `max_precognition_chars`.
+
+**Only `max_precognition_chars` is currently read** (default 3000 — the aggregate
+character budget for precognition context snippets). The other eight fields are accepted
+but have no effect on the enrichment pipeline today; setting them changes nothing.
+
+```toml
+[enrichment.pipeline]
+max_precognition_chars = 3000
+```
 
 ## Dimensions
 
@@ -153,11 +184,10 @@ cru process --force       # regenerate all embeddings
 Embeddings live alongside the other daemon state in the kiln:
 
 ```
-<kiln>/.crucible/crucible-vectors.lance/    # the vector index
-<kiln>/.crucible/crucible-sqlite.db         # notes, blocks, links, properties
+<kiln>/.crucible/crucible-sqlite.db    # notes, blocks, links, properties — and embeddings
 ```
 
-The vector index can be rebuilt from the markdown source with `cru process --force` — it's cache, not source of truth.
+Each note's embedding is stored on its row in the SQLite database; semantic search is an exact cosine scan over that column. Embeddings can be rebuilt from the markdown source with `cru process --force` — cache, not source of truth (though rebuilding re-pays the embedding provider).
 
 ## Example Configurations
 
@@ -185,21 +215,11 @@ model = "nomic-embed-text"
 type = "openai"
 api_key = "{env:OPENAI_API_KEY}"
 model = "text-embedding-3-small"
-
-[enrichment.pipeline]
-batch_size = 100
 ```
 
-`[enrichment.provider]` has no `batch_size` for the `openai` type — batching for cloud
-providers is a pipeline setting.
-
-### Memory-Constrained
-
-```toml
-[enrichment.provider]
-type = "fastembed"
-batch_size = 8
-```
+`[enrichment.provider]` has no `batch_size` for the `openai` type, and the
+`[enrichment.pipeline]` `batch_size` field is currently unread — there is no working
+batching knob for cloud providers.
 
 ## Troubleshooting
 
@@ -209,11 +229,12 @@ For Ollama, check it's running: `ollama list`.
 
 ### Slow processing
 
-Increase `batch_size` or switch to FastEmbed (local, no network).
+Switch to FastEmbed (local, no network). `batch_size` only affects the `ollama` provider
+type — it is ignored by the others.
 
 ### Out of memory
 
-Decrease `batch_size`.
+For the `ollama` provider, decrease its `batch_size`.
 
 ### Switched models
 

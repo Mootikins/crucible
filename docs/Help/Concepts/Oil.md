@@ -38,8 +38,8 @@ Every frame of the Crucible TUI is built by composing an Oil tree top-down: chat
 
 Plugins can participate in two ways:
 
-1. **Custom views** — `cru.view.register(name, fn)` registers a named view that returns an Oil tree. Users open it with `/view name` or bind it to a key.
-2. **Status bar customization** — Lua can replace the default status bar renderer with its own Oil tree, accessing runtime state through the view's render callback.
+1. **Status bar customization** — `crucible.statusline.setup{}` composes the rows around the input from Lua items (badges, expressions, conditionals), with daemon-computed values pushed via `sl.expr`.
+2. **Theming** — `crucible.colorscheme.setup{}`, `crucible.hl.set/link`, and `crucible.ui.setup{}` restyle colors, highlight groups, and per-surface geometry without restarting.
 
 ## Relation to `crucible-oil` (the crate)
 

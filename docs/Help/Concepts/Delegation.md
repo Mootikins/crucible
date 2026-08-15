@@ -99,6 +99,7 @@ Delegation follows a principle of least privilege. Child agents run with restric
 **What children can't do:**
 
 - Re-delegate deeper than `max_depth` allows (depth is derived from the parent chain, so a child can't lift its own cap)
+- Delegate to themselves — a target matching the delegating agent's own name or card is rejected by a self-delegation guard, cutting off trivial infinite loops
 - Use tools their agent card marks `deny`
 - Read or write files outside the workspace, kilns, and session directory (filesystem containment)
 - Answer permission prompts — children run non-interactively, so a tool that would prompt is denied unless a permission pattern, Lua hook, or `[permissions]` config allows it

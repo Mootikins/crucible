@@ -65,17 +65,17 @@ The absolute path to your kiln directory.
 ## Example Output
 
 ```
-Kiln Statistics
+📊 Kiln Statistics
 
-Total files: 127
-Markdown files: 89
-Canvases: 2
-Plain text: 4
-Indexed: 95
-Total size: 2048 KB
-Kiln path: /home/user/my-kiln
+📁 Total files: 127
+📝 Markdown files: 89
+🎨 Canvases: 2
+📄 Plain text: 4
+🔍 Indexed: 95
+💾 Total size: 2048 KB
+🗂️  Kiln path: /home/user/my-kiln
 
-Kiln scan completed successfully.
+✅ Kiln scan completed successfully.
 ```
 
 Total files counts everything on disk, including images and attachments the kiln

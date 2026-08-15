@@ -116,16 +116,14 @@ clear error messages.
 Steps can carry attributes using Dataview-style inline metadata on the heading line:
 
 ```markdown
-## Build Artifacts [type:: fan] [timeout:: 5m]
+## Build Artifacts [type:: fan]
 ```
 
-Reserved attribute keys (interpreted by the execution runtime):
+The execution runtime interprets exactly one attribute key:
 
-- `[type:: gate|fan|ralph|<custom>]` — step execution kind. Custom types dispatch to Lua executors registered via `crucible.workflow.register`.
-- `[timeout:: <duration>]` — max wall-clock time (e.g. `30s`, `5m`, `1h`).
-- `[on_error:: halt|skip|retry|continue]` — per-step failure policy.
+- `[type:: gate|fan|ralph]` — step execution kind. `gate` pauses for human approval; `fan` and `ralph` are reserved but **not yet implemented** — steps annotated with them (or any unknown type) fall back to the default inline handler.
 
-Any `[k:: v]` pair is accepted on a heading; unrecognized keys are passed through to plugins.
+Any other `[k:: v]` pair is accepted on a heading, parsed, and preserved in the AST (visible in `cru workflow show`), but nothing interprets it yet.
 
 ## Agent Hints
 

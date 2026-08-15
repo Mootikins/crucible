@@ -9,23 +9,25 @@ tags:
 
 # Storage Configuration
 
-Crucible uses a **daemon-backed storage architecture**. All storage operations go through the daemon, which manages SQLite and LanceDB internally.
+Crucible uses a **daemon-backed storage architecture**. All storage operations go through the daemon, which manages SQLite internally.
 
 ## How It Works
 
 The daemon is the only storage backend. It starts automatically on first use via `DaemonClient::connect_or_start()` and manages all data access.
 
 Data is stored in:
-- `<kiln_path>/.crucible/crucible-sqlite.db` (notes, metadata, FTS index)
-- `<kiln_path>/.crucible/crucible-vectors.lance/` (vector embeddings)
+- `<kiln_path>/.crucible/crucible-sqlite.db` (notes, metadata, FTS index, vector embeddings)
 
 ## Configuration
 
 ```toml
 [storage]
-# Seconds of inactivity before daemon auto-shuts down (default: 300)
-idle_timeout_secs = 300
+idle_timeout_secs = 300   # default: 300
 ```
+
+`idle_timeout_secs` was intended as an idle auto-shutdown timeout, but **the daemon does
+not currently implement idle shutdown** — the only consumer is `cru status`, which
+displays the value. Setting it has no effect on daemon lifetime today.
 
 ## Daemon Socket
 

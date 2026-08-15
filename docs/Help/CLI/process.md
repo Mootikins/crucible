@@ -13,12 +13,16 @@ Process markdown files in your kiln to enable search and AI features.
 ## Synopsis
 
 ```
-cru process [OPTIONS]
+cru process [OPTIONS] [PATH]
 ```
 
 ## Description
 
 The `process` command parses all markdown files in your kiln and stores structured data in the local database. This enables semantic search, knowledge graph queries, and AI agent integration.
+
+The optional positional `PATH` targets a specific file or directory; when
+omitted, the entire kiln is processed. Processing itself runs inside the
+daemon — the CLI sends the request and reports the summary.
 
 **What gets processed:** `.md` and `.markdown` notes, `.canvas` documents, and
 `.txt` files. Notes and canvases contribute links to the graph; plain text is
@@ -58,21 +62,31 @@ Use Ctrl+C to stop watching.
 
 ### `--dry-run`
 
-Preview what would be processed without making changes.
+Preview without making database changes.
 
 ```bash
 cru process --dry-run
 ```
 
+For a single file this prints the file that would be processed. For a full
+kiln it does not enumerate files — it prints a one-line notice that the daemon
+would discover and process every indexable file (the `--json` summary reports
+`discovered: 0` in this case).
+
 ### `--parallel <N>`
 
-Set the number of parallel workers.
+Accepted for compatibility but currently a **no-op**: processing runs in the
+daemon, which manages its own parallelism.
+
+### `--json`
+
+Emit a single JSON summary (`target`, `mode`, `dry_run`, `discovered`,
+`processed`, `skipped`, `errors`) instead of human-readable text. Conflicts
+with `--watch`.
 
 ```bash
-cru process --parallel 4
+cru process --json
 ```
-
-Default: CPU cores / 2
 
 ## Incremental Processing
 
@@ -103,17 +117,13 @@ Files go through these stages:
 ## Example Output
 
 ```
-Initializing storage...
-✓ Storage initialized
-Creating processing pipeline...
-✓ Pipeline ready
-
-Processing 38 files through pipeline (with 4 workers)...
-[========================================] 38/38 Processing: My Note.md
-
+ℹ Initializing storage...
+✓ Storage initialized (daemon mode)
+Processing kiln via daemon...
 Pipeline processing complete!
-   Processed: 38 files
-   Skipped (unchanged): 0 files
+  Discovered: 38 indexable files
+  Processed: 38 files
+  Skipped (unchanged): 0 files
 ```
 
 ## Database Location
@@ -158,8 +168,7 @@ cru process --watch
 
 For large kilns (>1000 files):
 - Use incremental processing (default)
-- Adjust parallelism: `--parallel 8`
-- Use `--dry-run` to preview scope
+- Use `--json` when scripting to get a machine-readable summary
 
 ## See Also
 

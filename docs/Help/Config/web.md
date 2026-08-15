@@ -394,7 +394,17 @@ secret = "at-least-16-bytes-of-secret"
 secret = "a-different-at-least-16-byte-secret"
 ```
 
-Mint one with 32 random bytes and keep the file to yourself:
+The easiest way to mint an entry is the CLI, which writes `[webhooks.<name>]` into the
+file at mode `0600`, leaving other entries alone:
+
+```bash
+cru web webhook ci             # mint a new secret for /api/webhook/ci
+cru web webhook ci --rotate    # replace an existing one; without --rotate an existing
+                               # webhook is refused rather than silently invalidating
+                               # its sender
+```
+
+Or by hand, with 32 random bytes:
 
 ```bash
 mkdir -p ~/.config/crucible
@@ -424,7 +434,8 @@ answers only for the app's own origins. Defence in depth *behind* the signature,
 instead of it.
 
 Three signature headers are accepted, so an off-the-shelf sender works unmodified. They are
-tried strongest-first, and a delivery that carries a timestamped header is never downgraded
+tried in the table's order — `X-Crucible-Signature`, then `Stripe-Signature`, then
+`X-Hub-Signature-256` — and a delivery that carries a timestamped header is never downgraded
 to the body-only check — otherwise a caller who could send either would get to pick the
 weaker one.
 

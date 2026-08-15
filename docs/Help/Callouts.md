@@ -24,6 +24,12 @@ starts open:
 > Hidden until unfolded.
 ```
 
+Folding is a **web-frontend rendering feature**: the browser's markdown
+pipeline renders `[!type]-`/`[!type]+` as a collapsible block. The Rust core
+parser does not understand the fold marker — it still detects the callout
+type, but in the folded form the title is not captured (the `-`/`+` breaks
+its title match).
+
 ## All variants
 
 > [!note] Note
@@ -78,7 +84,9 @@ starts open:
 - Unknown types (e.g. `[!custom]`) fall back to `note` styling, matching
   Obsidian.
 - The title defaults to the capitalized type when omitted.
-- Callouts render in reading mode, chat messages, and hover previews; in the
+- Rendering (colors, icons, folding) lives in the **web frontend**: callouts
+  render in reading mode, chat messages, and hover previews; in the
   live-preview editor the block is tinted with the variant color while
-  staying editable.
+  staying editable. The Rust core parser only extracts the callout type,
+  title, and content for indexing.
 

@@ -9,7 +9,7 @@ tags:
 
 # Frontmatter
 
-Frontmatter is YAML metadata at the start of a note, enclosed by `---` delimiters.
+Frontmatter is metadata at the start of a note — YAML enclosed by `---` delimiters, or TOML enclosed by `+++` delimiters.
 
 ## Basic Format
 
@@ -22,6 +22,18 @@ tags:
 ---
 ```
 
+### TOML Frontmatter
+
+TOML frontmatter is fully supported as an alternative, using `+++` delimiters:
+
+<!-- crucible:not-config -->
+```toml
++++
+description = "A brief description of this note"
+tags = ["tag1", "tag2"]
++++
+```
+
 ## Required Fields
 
 For dev-kiln documentation, these fields are required:
@@ -32,14 +44,23 @@ For dev-kiln documentation, these fields are required:
 | `description` | string | Brief summary (1-2 sentences) |
 | `tags` | list | Categorization tags |
 
-## Optional Fields
+`title` and `tags` are extracted and indexed (titles participate in wikilink
+resolution; tags are searchable via `property_search`). `description` is only
+read as a typed field for task files and workflow notes; on ordinary notes it
+is stored as a generic property like any other.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `order` | number | Sort order within a folder |
-| `aliases` | list | Alternative names for wikilink resolution |
-| `created` | date | Creation timestamp |
-| `modified` | date | Last modification timestamp |
+## Conventional Fields
+
+These fields are conventions carried over from Obsidian-style vaults. Crucible
+stores them as **generic queryable properties** (available via
+`property_search`), but their special semantics are **not implemented**:
+
+| Field | Type | Convention | Status |
+|-------|------|------------|--------|
+| `order` | number | Sort order within a folder | Stored only — nothing sorts by it |
+| `aliases` | list | Alternative names for wikilink resolution | Stored only — wikilink resolution does not consult aliases |
+| `created` | date | Creation timestamp | Stored only — no date handling |
+| `modified` | date | Last modification timestamp | Stored only — no date handling |
 
 ## Example
 

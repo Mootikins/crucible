@@ -42,7 +42,7 @@ Links to a specific heading within "Note Name.md".
 [[Note Name#^block-id]]
 ```
 
-Links to a specific block within "Note Name.md". Block references start with `^` after the `#` symbol.
+Block references start with `^` after the `#` symbol. The reference is parsed and stored on the link, but block IDs are not extracted or resolved — the link resolves to the note itself (see [[Help/Block References]]).
 
 ### Combined: Heading with Alias
 
@@ -54,13 +54,16 @@ Links to a heading within a note, but displays custom text.
 
 ## Embed Syntax
 
+> [!warning] Not transcluded
+> The `!` prefix parses (the link is flagged as an embed), but **transclusion is not implemented**. An embed renders as an ordinary link to the target note — no content is inlined, for whole notes, headings, or blocks.
+
 ### Basic Embed
 
 ```markdown
 ![[Note Name]]
 ```
 
-Embeds (transcludes) the content of another note at the current location.
+Parsed as an embed of "Note Name"; currently rendered as a link.
 
 ### Embed with Heading
 
@@ -68,7 +71,7 @@ Embeds (transcludes) the content of another note at the current location.
 ![[Note Name#Heading]]
 ```
 
-Embeds only the content under a specific heading.
+The heading reference is captured on the parsed link; no heading-scoped content is embedded.
 
 ### Embed with Block Reference
 
@@ -76,7 +79,7 @@ Embeds only the content under a specific heading.
 ![[Note Name#^block-id]]
 ```
 
-Embeds a specific block identified by its block ID.
+The block reference is captured on the parsed link; block IDs are not extracted or resolved (see [[Help/Block References]]).
 
 ## Path Syntax
 
@@ -117,11 +120,14 @@ Wikilinks inside code blocks are **not parsed**.
 
 ### 4. Link Resolution
 
-At query time, the storage layer resolves wikilinks:
+The daemon's link index resolves each link target deterministically, in this order:
 
-1. **Exact match**: Search for note with exact title match
-2. **Path match**: Search for note at exact path
-3. **Fuzzy match**: Search for notes with similar names
+1. **Exact extension-less path**: `[[notes/async]]` → `notes/async.md` (a full path with extension also matches)
+2. **Unique title match**: exactly one note whose title matches
+3. **Unique file-stem match**: exactly one note whose filename stem matches
+4. **Ambiguous stem** (2+ notes share the stem): a deterministic winner is chosen — shortest path, then lexicographic — and the link is flagged ambiguous
+
+No match leaves the link dangling (unresolved). There is **no fuzzy-matching stage**; resolution is exact and deterministic so that backlinks and rename-rewrites are safe.
 
 ## Edge Cases
 

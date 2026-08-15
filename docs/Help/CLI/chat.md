@@ -180,13 +180,13 @@ Full tool access with automatic approval. Tool calls execute without confirmatio
 | `/default` | Switch to normal (ask-for-writes) mode |
 | `/plan` | Switch to plan (read-only) mode |
 | `/auto` | Switch to auto (full access) mode |
-| `/agent` | Show or list available agents |
-| `/new` | Start a new session |
-| `/resume` | Resume a recent session |
-| `/models` | List or switch models |
-| `/search` | Search the knowledge base |
-| `/commit` | Smart git commit workflow |
-| `/view` | Open or list Lua-defined views |
+| `/undo [N]` | Undo the last N exchanges (default 1) |
+| `/help [topic]` | Show help (same as `:help`) |
+
+Every mode the daemon declares gets its own slash command — a Lua-declared
+`review` mode is reachable as `/review`. Plugin-declared commands also run as
+slash commands. Anything else typed with a leading `/` is **not** an error: it
+is forwarded to the agent as ordinary chat text.
 
 ### REPL Commands
 
@@ -196,8 +196,6 @@ Full tool access with automatic approval. Tool calls execute without confirmatio
 | `:model <name>` | Switch to specific model |
 | `:set option=value` | Set runtime config option |
 | `:set thinkingbudget=high` | Enable extended thinking |
-| `:session list` | List available sessions |
-| `:session load <id>` | Resume existing session |
 | `:quit` / `:q` | Exit chat |
 
 See [[Help/TUI/Commands]] for complete REPL command reference.
@@ -207,7 +205,7 @@ See [[Help/TUI/Commands]] for complete REPL command reference.
 | Key | Action |
 |-----|--------|
 | `Ctrl+C` | Cancel / Exit |
-| `Alt+T` | Toggle thinking display |
+| `Ctrl+T` | Toggle thinking display |
 | `Shift+Tab` | Cycle mode (Normal, Plan, Auto) |
 
 ## Agent Access
@@ -216,7 +214,7 @@ In chat mode, the agent has access to these tools:
 
 **Read operations:**
 - `semantic_search` - Find conceptually related notes
-- `text_search` - Find exact text matches
+- `grep_notes` - Find exact text matches
 - `property_search` - Filter by metadata
 - `read_note` - Read note contents
 
@@ -307,7 +305,7 @@ For models that support reasoning tokens (Claude with thinking budget, DeepSeek-
 :set nothinking             # Hide thinking display
 ```
 
-Toggle thinking display with `Alt+T`.
+Toggle thinking display with `Ctrl+T`.
 
 **Presets:** `off`, `minimal` (512), `low` (1024), `medium` (4096), `high` (8192), `max` (unlimited)
 
@@ -318,12 +316,7 @@ Sessions auto-save and can be resumed:
 ```bash
 cru session list                          # See available sessions
 cru chat --resume chat-20250102-1430-a1b2 # Resume specific session
-```
-
-Or from within chat:
-```
-:session list
-:session load chat-20250102-1430-a1b2
+cru session open chat-20250102-1430-a1b2  # Same as chat --resume
 ```
 
 ## Statusline Notifications

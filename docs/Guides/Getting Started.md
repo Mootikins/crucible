@@ -110,7 +110,12 @@ Use `--force` to reinitialize an already-configured directory.
 
 #### First-run setup wizard
 
-If no global config exists yet (`~/.config/crucible/config.toml`), `cru init` automatically runs a first-run wizard that walks you through choosing an LLM provider, model, and embedding backend before creating the kiln or project.
+If no global config exists yet (`~/.config/crucible/config.toml`), running bare
+`cru` or interactive `cru chat` (no query, record, or replay arguments) on a
+terminal launches a first-run wizard that walks you through choosing an LLM
+provider and model. `cru init` does **not** run this wizard — it has its own
+prompts (directory type, name, data classification) and does not ask about
+providers or embeddings.
 
 ### Manual configuration
 
@@ -166,14 +171,15 @@ cru stats
 
 You should see:
 ```
-Kiln Statistics
+📊 Kiln Statistics
 
-Total files: 42
-Markdown files: 38
-Total size: 156 KB
-Kiln path: /home/user/Documents/my-kiln
+📁 Total files: 42
+📝 Markdown files: 38
+🔍 Indexed: 38
+💾 Total size: 156 KB
+🗂️  Kiln path: /home/user/Documents/my-kiln
 
-Kiln scan completed successfully.
+✅ Kiln scan completed successfully.
 ```
 
 ### 2. Process Your Notes
@@ -202,7 +208,7 @@ The first time you run `cru chat`, Crucible automatically starts a background da
 - **Plan**: Read-only, agent can search and read but not modify
 - **Auto**: Auto-approve tool calls without prompting
 
-**Slash commands:** `/mode`, `/plan`, `/auto`, `/default`, `/search`, `/new`, `/resume`, `/models`
+**Slash commands:** `/mode`, `/plan`, `/auto`, `/default`, `/undo`, `/help` (any other `/text` is sent to the agent as a chat message)
 **REPL commands:** `:model`, `:set`, `:export`, `:clear`, `:help`
 
 ## Understanding the Database
@@ -211,8 +217,7 @@ Crucible stores processed data under `.crucible/` inside the kiln:
 
 | Path | Contents |
 |------|----------|
-| `<kiln_path>/.crucible/crucible-sqlite.db` | Notes, blocks, links, properties |
-| `<kiln_path>/.crucible/crucible-vectors.lance/` | Block embeddings (LanceDB index) |
+| `<kiln_path>/.crucible/crucible-sqlite.db` | Notes, blocks, links, properties, embeddings |
 
 The SQLite database contains:
 - Parsed note metadata (frontmatter, tags)
@@ -238,7 +243,9 @@ Check that your kiln is registered under `[kilns]` in `~/.config/crucible/config
 
 ### Processing is slow
 
-Reduce parallel workers: `cru process --parallel 1`
+Processing runs inside the daemon, which manages its own parallelism — the
+`--parallel` flag is accepted but currently has no effect. The usual cause of
+slow processing is embedding generation; check your `[enrichment]` provider.
 
 ### Chat doesn't respond
 

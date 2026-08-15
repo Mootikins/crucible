@@ -46,7 +46,10 @@ default_model = "llama3.2"
 |--------|------|---------|-------------|
 | `kiln_path` | path | current dir | Path to your notes directory (kiln). Legacy — prefer `[kilns]`. |
 | `default_kiln` | string | first alphabetically | Name of the default kiln (session storage, tool scoping) |
+| `session_kiln` | path | *(unset)* | Kiln where `cru chat` stores sessions, if not the default kiln |
+| `data_home` | path | `$CRUCIBLE_HOME`, else `~/.crucible` | Daemon data root — project registry, default session storage, home kiln |
 | `agent_directories` | list | `[]` | Additional directories to search for agent cards |
+| `runtimepath` | list | `[]` | *Extra* runtime roots for plugins and themes, searched after the well-known ones (`~/.config/crucible/runtime`, `$CRUCIBLE_RUNTIME`, next to the binary). Skills discovery does not read it yet |
 
 ### [kilns] — Named Kiln Registry
 
@@ -122,9 +125,10 @@ Controls how text embeddings are generated for semantic search.
 type = "fastembed"
 ```
 
-**Provider types:** `fastembed` (default, local CPU), `ollama`, `openai`, `cohere`,
-`vertexai`, `burn`, `custom`, `mock`. Each has its own fields — see
-[[Help/Config/embedding|Embedding Configuration]].
+**Provider types with working backends:** `fastembed` (default, local CPU), `ollama`,
+`openai`, `mock`. The types `cohere`, `vertexai`, and `custom` parse but are not
+supported at runtime, and `burn` has been removed (creating it hard-errors). Each type
+has its own fields — see [[Help/Config/embedding|Embedding Configuration]].
 
 Without an `[enrichment]` section the daemon skips embedding generation entirely.
 
@@ -153,9 +157,26 @@ rules_files = ["AGENTS.md", "CLAUDE.md", ".rules", ".cursorrules"]
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `show_progress` | bool | `true` | Show progress bars for long operations |
-| `confirm_destructive` | bool | `true` | Confirm destructive operations |
-| `verbose` | bool | `false` | Enable verbose logging |
+| `show_progress` | bool | `true` | **Currently unread** — no code path consults it |
+| `confirm_destructive` | bool | `true` | **Currently unread** — no code path consults it |
+| `verbose` | bool | `false` | **Currently unread** — verbosity comes from the `-v` CLI flag |
+
+The one `[cli]` feature that is wired up is syntax highlighting:
+
+#### [cli.highlighting]
+
+Controls syntax highlighting for code blocks and diffs in `cru chat`.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | bool | `true` | Enable syntax highlighting |
+| `theme` | string | `"base16-ocean.dark"` | Syntect theme name |
+
+```toml
+[cli.highlighting]
+enabled = true
+theme = "base16-ocean.dark"
+```
 
 ### [llm] - Named LLM Providers
 
@@ -177,6 +198,18 @@ api_key = "OPENAI_API_KEY"  # Uses env var
 temperature = 0.9
 max_tokens = 8192
 ```
+
+`[llm]` has three keys: `default` (which provider to use), `providers` (the named
+instances above), and `models` — a specialty → model mapping used by agent cards that
+declare a `specialty:` instead of a fixed `model:`:
+
+```toml
+[llm.models]
+reasoning = "openai/o1"
+coder = "qwen2.5-coder"   # unprefixed = provider inherited
+```
+
+See [[Help/Config/llm|LLM Configuration]] for the full provider field reference.
 
 ### [mcp] - MCP Gateway Configuration
 
@@ -223,24 +256,36 @@ See [[Help/Config/mcp|MCP Configuration]] for full details.
 ```toml
 [logging]
 level = "info"           # off | error | warn | info | debug | trace
-format = "text"          # text | json | compact
-console = true
-file = false
-file_path = "~/.local/share/crucible/crucible.log"
-
-[logging.component_levels]
-crucible_core = "debug"
 ```
+
+`level` is the **only** field the logging setup reads. It sets the base level when
+neither `--log-level` nor `--verbose` is given (the flags win); `RUST_LOG` directives
+still override it per target (`RUST_LOG=crucible_daemon=debug`). With nothing set at
+all, the default is `warn` for server and stdio commands (`daemon serve`, foregrounded
+`daemon start`, `web`, `chat`, `mcp --stdio`, `acp`) and `off` for everything else —
+`cru mcp` without `--stdio` serves SSE and defaults to `off`. An unrecognized value falls back
+to that same default.
+
+The section parses eleven more fields — `format`, `console`, `file`, `file_path`,
+`component_levels`, `rotation`, `max_file_size`, `max_files`, `timestamps`, `target`,
+`ansi` — but they are **parsed and never read**: nothing in the tracing setup consults
+them, so setting them changes nothing. Log destination is decided by the command, not
+config: stdio commands (`chat`, `mcp --stdio`, `acp`) write to `~/.crucible/<command>.log`
+(override the path with `CRUCIBLE_LOG_FILE`); everything else logs to stderr.
+Per-component levels work today only via `RUST_LOG`, not `[logging.component_levels]`.
 
 ### Other sections
 
-| Section | Covered in |
-|---------|-----------|
-| `[acp]`, `[acp.agents.*]` | [[Help/Config/acp|ACP Configuration]] |
-| `[permissions]` | [[Help/Config/permissions|Permission Configuration]] |
-| `[storage]` | [[Help/Config/storage|Storage Configuration]] |
-| `[web]` | [[Help/Config/web|Web UI Configuration]] |
-| `[scm]`, `[server]`, `[[schedules]]`, `[plugins.*]`, `runtimepath` | `docs/Config.toml` |
+| Section | What it holds | Covered in |
+|---------|---------------|-----------|
+| `[acp]`, `[acp.agents.*]` | External agents over ACP | [[Help/Config/acp|ACP Configuration]] |
+| `[permissions]` | Tool allow/deny/ask rules | [[Help/Config/permissions|Permission Configuration]] |
+| `[storage]` | Daemon storage settings | [[Help/Config/storage|Storage Configuration]] |
+| `[web]` | Browser UI served by `cru web` | [[Help/Config/web|Web UI Configuration]] |
+| `[scm]` | Git integration — worktree detection, `scm.clone` destination | `docs/Config.toml` |
+| `[server]` | Daemon settings; `auto_archive_hours` is live, the TLS/limit fields are reserved | `docs/Config.toml` |
+| `[[schedules]]` | Recurring Lua snippets run on an interval | `docs/Config.toml` |
+| `[plugins.*]` | Free-form per-plugin tables, read by the plugin of that name | `docs/Config.toml` |
 
 ## Value References
 

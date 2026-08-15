@@ -2,7 +2,7 @@
 title: TUI User Stories
 description: Complete user stories for every implemented TUI feature, with acceptance criteria and test-tier mapping
 tags: [meta, ux, tui, user-stories, testing]
-updated: 2026-07-02
+updated: 2026-08-14
 ---
 
 # TUI User Stories
@@ -49,12 +49,12 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **Tests:** T1, T2 (input_area snapshots exist — extend for `!`).
 
 ### US-103: Slash commands
-**As a user**, I type `/` commands (`/help`, `/clear`, `/quit`, `/mode`, `/undo`, `/sessions`, `/files`, registry commands) and they execute locally or route to the agent.
-**Acceptance:** unknown command suggests nearest match (levenshtein); `/help` lists commands; `/clear` empties viewport; registry commands forward to agent.
+**As a user**, I type `/` commands and they execute locally or route onward.
+**Acceptance:** the built-ins are `/mode` (cycle), `/default`, `/undo [N]`, and `/help`; every declared mode is its own command (`/plan`, `/auto`, `/normal`, a Lua-declared `/review`); plugin-registered commands run via `plugin.run_command`; **any other `/` input — `/clear`, `/quit`, `/sessions`, `/files` included, none of which are registered — is forwarded to the agent as a plain chat message**, with no local effect and no suggestion (levenshtein typo suggestions exist for `:` commands only); `/help` lists the REPL commands plus registered slash commands.
 **Tests:** T1 dispatch matrix in `chat_app/command_handling.rs` (quit/clear/messages/model/config/export/undo, unknown-command suggestion), T2 (help render).
 
 ### US-104: REPL `:set` runtime config
-**As a user**, I use vim-style `:set key=value` (and `?`, `??`, `&`, `<`) to change runtime config (thinking budget, context strategy/budget/window, autocompact threshold, precognition, perm.*).
+**As a user**, I use vim-style `:set key=value` (and `?`, `??`, `&`, `^`) to change runtime config (thinking budget, context strategy/budget/window, autocompact threshold, precognition, perm.*).
 **Acceptance:** each documented key round-trips (set → query shows new value); invalid keys error with a message; session-scoped keys sync to the daemon; `:set key?` shows value, `&` resets; unknown (plugin/dynamic) keys store locally AND mirror into the daemon app-config store, so `:lua cru.config.get(key)` and plugins see the same typed value. Every advertised key must be REAL: `:set syntax_theme=<name>` switches diff/code-block highlighting live (validated against the loaded theme set plus `derived`, which follows the colorscheme; seeded from `cli.highlighting` at startup). Renamed from `:set theme=` when the UI gained its own colorscheme; the inert `verbose` knob was removed 2026-07-10.
 **Tests:** T1 per-key dispatch matrix in `chat_app/command_handling.rs` (test-case over every session-scoped key: daemon-sync emission, invalid-value warnings, query round-trip, reset), T2 (`:set` result notification render).
 
@@ -73,10 +73,10 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **Acceptance:** paste of N lines yields one buffer with N lines; no premature send; paste inside `:`/`!` modes stays literal.
 **Tests:** T1 multi-line substrate (`InputBuffer::insert_str`, Ctrl+J) in `user_story_tests/paste_tests.rs`; **GAP: bracketed-paste event plumbing not wired** (`CtEvent::Paste` → `Event::Tick` in `convert_event`), documented there. T4 (real bracketed-paste sequences).
 
-### US-107: Message queueing while streaming
-**As a user**, I can type and queue my next message while the agent streams; Ctrl+Enter force-sends.
-**Acceptance:** input stays responsive during streaming; queued message sends when the turn ends; Ctrl+Enter interrupts-and-sends.
-**Tests:** T1, T3 (stream fixture + queued input), T2 (queued indicator).
+### US-107: Typing while the agent streams
+**As a user**, I can keep typing while the agent streams; my draft is never lost, and Ctrl+Enter cancels the turn so I can send it.
+**Acceptance:** input stays responsive during streaming; there is **no queue-while-streaming** (the deferred message queue was removed) — Enter on a chat draft keeps the draft and shows a "Turn in progress — Esc cancels, then Enter to send" toast; `:` and `/` commands still execute on Enter mid-stream; Ctrl+Enter cancels the stream and preserves the draft so it can be sent once the turn stops.
+**Tests:** T1 `enter_while_streaming_preserves_typed_input` + `ctrl_enter_while_streaming_cancels_and_preserves_input` in `chat_app/input_handling.rs`.
 
 ## 2. Streaming & Display
 
@@ -163,8 +163,8 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **Tests:** T1 knob classification in `commands/set.rs`; T1 anchored rendering in `tests/popup_tests.rs` (`popup_anchored_renders_content_width_at_anchor_column`); T2 composited-frame behavior in `tests/popup_tests.rs::completion_style_behavior` (default minimal + panel override).
 
 ### US-502: Command palette
-**As a user**, F1 opens a palette of every command; typing filters; Enter executes the selection.
-**Acceptance:** palette lists slash + REPL commands with descriptions; execution matches typing the command; F1 again / Esc closes.
+**As a user**, F1 opens a palette of commands; typing filters; Enter executes the selection.
+**Acceptance:** F1 again / Esc closes; selecting a `/` or `:` entry executes it. **GAP:** the palette's entry list is a hardcoded 4-item stub (`semantic_search`, `create_note`, `/mode`, `/help`), not the full slash + REPL registry; selecting a tool entry only sets status text, it does not run the tool. (`:pick commands` lists the real registry.)
 **Tests:** T1 (open/filter/execute), T2 (palette snapshot).
 
 ### US-503: Model switching with lazy fetch
@@ -177,12 +177,12 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 ### US-601: Shell modal execution
 **As a user**, `!command` runs in a full-screen modal I can scroll (j/k/g/G/PgUp/PgDn); `i` inserts the output into chat input; Esc closes.
 **Acceptance:** exit code shown; long output scrolls; insert puts stdout at cursor; modal restores the chat view intact underneath.
-**Tests:** T1+T2 end-to-end via the `ShellModal` component in `user_story_tests/shell_tests.rs` (spawn → exit code → output → scroll); header/status + auto-follow unit-tested in `components/shell_modal.rs`. **Bug: `i`-insert closes the modal before stdout is inserted** (`#[ignore]` repro). T4 (one real-command smoke).
+**Tests:** T1+T2 end-to-end via the `ShellModal` component in `user_story_tests/shell_tests.rs` (spawn → exit code → output → scroll); header/status + auto-follow unit-tested in `components/shell_modal.rs`. The former `i`-insert-loses-stdout bug is fixed — `insert_key_inserts_output_in_one_step` pins close-and-insert as one step. T4 (one real-command smoke).
 
 ### US-602: Shell history
 **As a user**, `!` recalls my last 100 shell commands.
-**Acceptance:** up/down cycles history in shell mode; history persists within session; duplicates collapse.
-**Tests:** T1 storage + cap/eviction in `chat_app/tests.rs`. (Up/Down recall reads `InputBuffer` history; the dedicated `!`-history recall keybinding is not wired — see report.)
+**Acceptance:** history stored within session (cap 100); consecutive duplicates collapse. **GAP:** dedicated shell-history recall is not wired — Up/Down recall the general `InputBuffer` submission history, and the stored shell history is never read back.
+**Tests:** T1 storage + cap/eviction in `chat_app/tests.rs`.
 
 ## 7. Notifications
 
@@ -199,8 +199,8 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 ## 8. Scrollback & Layout
 
 ### US-801: Review history without losing my place
-**As a user**, I scroll up through graduated history (PageUp/Dn, mouse), the view holds position while new content arrives, and End/indicator jumps me back to live.
-**Acceptance:** scroll disables auto-follow; "new content" indicator appears; jump-to-bottom resumes following.
+**As a user**, I review graduated history through the terminal's own scrollback, and in-app scroll regions (the shell modal) hold position while new content arrives.
+**Acceptance:** in scroll regions, manual scroll disables auto-follow and jump-to-bottom resumes following. **GAP:** the main chat viewport binds no scroll keys and captures no mouse — PageUp/PageDn and wheel scrolling there are the terminal's, not the app's; an in-app "new content" indicator does not exist.
 **Tests:** T1 scroll state via the shell modal's scroll region (auto-follow off on manual scroll, jump-to-top/bottom) in `user_story_tests/scroll_tests.rs` + `components/shell_modal.rs`. The **main chat viewport graduates to the terminal's own scrollback (no app-held scroll state)**, so its scroll/auto-follow is T4-only. T4 (real terminal scroll region).
 
 ### US-802: Stable rendering across widths

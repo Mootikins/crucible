@@ -123,11 +123,13 @@ crucible.on("pre_tool_call", { pattern = "db_*", priority = 5 }, function(ctx, e
 end)
 ```
 
-Cancel rather than edit: `pre_tool_call` ignores a returned argument table, so a
-handler that "sanitises" `event.args` and returns it looks like it worked while
-the original query still runs. To run a checked version instead, return
-`{ handled = true, result = ... }` and issue the call yourself. See
-[[Help/Extending/Event Hooks|Event Hooks]] for the full set of return conventions.
+To rewrite the call instead of blocking it, **return** `{ args = { ... } }` —
+the executor honours a returned argument table, chains it through later
+handlers, and dispatches the rewritten call. Mutating `event.args` in place
+does nothing; the return value is the contract. You can also return
+`{ handled = true, result = ... }` to skip dispatch and supply the result
+yourself. See [[Help/Extending/Event Hooks|Event Hooks]] for the full set of
+return conventions.
 
 ## Runtime Behavior
 
@@ -187,7 +189,7 @@ behave exactly as before (all schemas attached, no bridge).
 **No tools appear:**
 - Check `allowed_tools` patterns match
 - Verify server started successfully
-- Check for `tool:discovered` events
+- Check server status with `:mcp` in the TUI
 
 **Tools not working:**
 - Verify prefixed names (use `gh_search_code` not `search_code`)

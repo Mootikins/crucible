@@ -24,14 +24,14 @@ require("reflection").setup({
 -- Colours
 crucible.colorscheme.setup({ colors = { primary = "term4" } })
 
--- Statusline
+-- Statusline: a row below the input
 local sl = crucible.statusline
 sl.setup({
-  main = {
-    anchor = "footer.below_input",
-    items  = { sl.mode, " ", sl.model{ max = 25 },
-               sl.align,
-               sl.any(sl.notification, sl.context) },
+  prompt = {
+    sl.input,
+    { sl.mode, " ", sl.model{ max = 25 },
+      sl.align,
+      sl.any(sl.notification, sl.context) },
   },
 })
 ```
@@ -114,7 +114,7 @@ The UI-config namespaces — `crucible.colorscheme`, `crucible.hl`,
 cru.log(level, msg)  -- Logging (debug, info, warn, error)
 cru.json.encode(tbl) -- Convert table to JSON string
 cru.json.decode(str) -- Parse JSON string to table
-cru.include          -- Load another config file
+crucible.include     -- Load another config file (crucible only — no cru.include)
 
 -- Also available via cru.*
 cru.http             -- HTTP requests (GET, POST, PUT, etc.)
@@ -152,29 +152,40 @@ cru.statusline.clear -- drop one
 crucible.log         -- same as cru.log
 crucible.json_encode -- same as cru.json.encode
 crucible.json_decode -- same as cru.json.decode
-crucible.include     -- same as cru.include
--- Standalone globals: http, fs, shell, oq, paths (backwards-compat)
+-- Standalone globals: http, fs, shell, oq, paths, graph (backwards-compat)
 ```
+
+> [!warning] `cru.config` and `crucible.config` are not the same function
+> `cru.config.get(key)` reads one **top-level** value of the merged app config
+> (`config.toml` seeded, `cru.config.set{}` overlaid) and takes no dotted
+> paths. On the daemon's plugin VM, `crucible.config.get("plugin.key")` walks
+> dotted keys into `[plugins.*]` config. This is a known trap — check which
+> one you mean before reaching for either.
 
 ## Statusline Configuration
 
-A bar is a **list of items**, so it reads the way it renders:
+The screen is three ordered lists — regions `top`, `prompt`, and `bottom` — and
+a region entry is either a **row** (a table of items) or, in `prompt`, the
+`sl.input` marker for the editor itself. Position in the list is the
+arrangement; there is no anchor and no ordering field:
 
 ```lua
 local sl = crucible.statusline
 
 sl.setup({
-  main = {
-    anchor = "footer.below_input",
-    items  = { sl.mode:hl("StatusMode"), " ", sl.model{ max = 25 },
-               sl.align,
-               sl.any(sl.notification, sl.context) },
+  prompt = {
+    sl.input,
+    { sl.mode:hl("StatusMode"), " ", sl.model{ max = 25 },
+      sl.align,
+      sl.any(sl.notification, sl.context) },
   },
 })
 ```
 
-Anchors: `top`, `bottom`, `footer.above_input`, `footer.below_input`. Defining
-more than one key gives you more than one bar.
+Move `sl.input` below a row and that row renders above the editor. A region you
+do not mention keeps the built-in default; a key that is not `top`, `prompt`,
+or `bottom` (the old `main = {...}` spelling, say) places nothing and logs a
+warning.
 
 ### Items
 
@@ -210,7 +221,7 @@ and `"mode:<name>"` for any declared mode.
 ### Values the daemon computes
 
 ```lua
-sl.setup({ main = { items = { sl.mode, sl.align, sl.expr("git") } } })
+sl.setup({ prompt = { sl.input, { sl.mode, sl.align, sl.expr("git") } } })
 
 crucible.on("FileChanged", function(ctx)
   local out = cru.shell.exec("git status -b --porcelain")
@@ -247,14 +258,14 @@ crucible.ui.setup({
 -- Code blocks follow the colours above
 crucible.syntax.setup({ theme = "derived" })
 
--- Statusline
+-- Statusline: input first, one row below it
 local sl = crucible.statusline
 sl.setup({
-  main = {
-    anchor = "footer.below_input",
-    items  = { sl.mode:hl("StatusMode"), " ", sl.model{ max = 25 },
-               sl.align,
-               sl.any(sl.notification, sl.context) },
+  prompt = {
+    sl.input,
+    { sl.mode:hl("StatusMode"), " ", sl.model{ max = 25 },
+      sl.align,
+      sl.any(sl.notification, sl.context) },
   },
 })
 

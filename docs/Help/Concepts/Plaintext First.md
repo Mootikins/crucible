@@ -48,7 +48,7 @@ Crucible enhances your files without changing them:
 | Portable markdown | Local database |
 | Always accessible | Rebuilt anytime |
 
-The database (SQLite by default) is a cache. Delete it and Crucible rebuilds it from your files. Your notes are never modified unless you ask.
+The database (SQLite by default) is a cache. Delete it and Crucible rebuilds it from your files - no content is lost. One caveat: embeddings for semantic search are not derivable from the files alone, so a rebuild recomputes them through your configured embedding provider (re-run `cru process`; for a cloud provider that means paying the API calls again). Your notes are never modified unless you ask.
 
 ## The Markdown Contract
 

@@ -14,7 +14,7 @@ aliases:
 
 # Lua Runtime API
 
-This page documents the `cru.*` Lua API available to plugins running inside the Crucible daemon. All modules are registered under both the `cru` and `crucible` namespaces. Some modules (like `http`, `oq`, `fs`) are also available as standalone globals for backwards compatibility.
+This page documents the `cru.*` Lua API available to plugins running inside the Crucible daemon. Modules are registered under both the `cru` and `crucible` namespaces, with two caveats: the UI-config namespaces (`crucible.colorscheme`, `crucible.ui`, `crucible.statusline`, ...) exist only under `crucible`, and `cru.config.get` / `crucible.config.get` are **different functions** (see [[Help/Lua/Configuration]]). Some modules (like `http`, `oq`, `fs`, `graph`) are also available as standalone globals for backwards compatibility.
 
 For TUI-specific Lua APIs (Oil rendering primitives), see [[Help/Plugins/Oil Lua API]].
 
@@ -51,6 +51,19 @@ Parse a JSON string into a Lua table.
 ```lua
 local tbl = cru.json.decode('{"name":"Alice","age":30}')
 print(tbl.name)  -- "Alice"
+```
+
+### cru.json.array(table)
+
+Mark a table as a JSON **list** and return it. Lua cannot tell an empty list
+from an empty map, and the encoder resolves the ambiguity as a map — so an
+unmarked empty list reaches a consumer as `{}` while a populated one is
+`[...]`. Tools returning result lists need the type to stay stable across
+"found nothing":
+
+```lua
+local results = cru.json.array({})
+-- encodes as [] rather than {}
 ```
 
 For more advanced data handling (YAML, TOML, TOON, jq queries), see the `oq` module registered as `cru.oq`.
@@ -139,8 +152,6 @@ end
   - `cwd` (string) — working directory
   - `env` (table) — additional environment variables as key/value pairs
   - `stdin` (string) — data to pipe to the process's stdin
-  - `timeout` (number) — seconds to wait for this call, overriding the policy
-    default. Capped at 3600.
 
 **Returns a table:**
 - `success` (bool) — `true` if exit code was 0
@@ -148,7 +159,23 @@ end
 - `stdout` (string)
 - `stderr` (string)
 
-Default timeout is 30 seconds; plugins running trusted commands can be granted a longer 300-second policy. Pass `timeout` per call for the ones that legitimately run for minutes — pulling or building a container image, say — rather than raising the default for every caller.
+There is no per-call timeout option, and the default shell policy sets no deadline — commands run to completion (use `cru.shell.spawn` for streaming output from long-running work). A policy configured with a timeout raises an error for calls that outlive it.
+
+### cru.shell.spawn(cmd, args, opts?)
+
+Like `exec`, but streams output as it arrives. `opts` takes `cwd` and `env` as
+above, plus `on_line(stream, line)` — called with `"stdout"` or `"stderr"` and
+each line as it is produced. Returns the same result table as `exec`. Useful
+for long-running commands (an image build, say) that should report progress
+instead of going silent.
+
+```lua
+cru.shell.spawn("docker", { "build", "." }, {
+  on_line = function(stream, line)
+    cru.log("info", line)
+  end,
+})
+```
 
 ### cru.shell.which(cmd)
 
@@ -515,6 +542,67 @@ pcall(cru.sessions.unsubscribe, session_id)
 local response = table.concat(parts)
 ```
 
+## Conversation Context
+
+The `cru.context` module manipulates a session's conversation context. All daemon-backed functions take an explicit `session_id` and return `(result, nil)` or `(nil, error_string)`; until the daemon wires the session API they are stubs returning `(nil, "no daemon connected")`. `estimate_tokens` is pure and always works. `cru.context.attach` is also registered on the per-session VMs, so `crucible.on` handlers can call it regardless of which VM they run in.
+
+### cru.context.estimate_tokens(text)
+
+Pure helper — no daemon needed. Returns a rough estimate: byte length divided by 4, rounded up — `"hello world"` (11 bytes) estimates to 3.
+
+### cru.context.usage(session_id)
+
+Returns `({ messages, prompt_tokens, budget, percent }, nil)` on success.
+
+```lua
+local u, err = cru.context.usage(session_id)
+if u and u.percent > 0.8 then cru.context.compact(session_id) end
+```
+
+### cru.context.compact(session_id)
+
+Compact the session's context. Returns `(true, nil)` on success.
+
+### cru.context.messages(session_id, opts?)
+
+Load conversation messages. `opts`: `{ role = "user"|"assistant"|"system", limit = N }`. A thin alias over the same daemon call as `cru.sessions.messages` — identical semantics, kept here so context-manipulating code can stay inside one namespace.
+
+### cru.context.remove(session_id, range)
+
+Remove messages. `range` is one of `{ type = "all" }`, `{ type = "last"|"first", n = N }`, or `{ type = "indices", start = S, ["end"] = E }`. Returns `(count_removed, nil)`.
+
+### cru.context.attach(session_id, content, opts?)
+
+Queue retrieved content for the session's **next LLM call**. Context only: attachments never reach the conversation tree or the session log — one turn's context, then gone.
+
+```lua
+crucible.on("tool_result", { pattern = "read_file" }, function(ctx, event)
+  local ft = event.args.path:match("%.(%w+)$")
+  if not ft then return end
+  local notes = cru.kiln.search("conventions for " .. ft)
+  cru.context.attach(ctx.session_id, notes, { key = "filetype:" .. ft })
+end)
+```
+
+Returns `(true, nil)` when queued, `(false, reason)` when dropped. Dropping is normal operation, not an error:
+
+- **Duplicate key** — `opts.key` deduplicates for the whole session (surviving drains), so a handler firing on every tool call attaches once.
+- **Budget exhausted** — a cumulative 2000-character budget per session, spent permanently. Deliberately tight: every attached character is re-sent on each subsequent LLM call.
+- **Empty content.**
+
+### cru.context.register_validator(name, fn)
+
+Register a named output validator. `fn` receives the agent's text response and returns `true`, `false`, or `(false, reason)`. A validator runs when a session agent's `output_validation` is set to `lua:<name>` — via `cru.sessions.set_output_validation(session_id, "lua:<name>")` (which also accepts the table form `{ type = "lua", name = "<name>" }`) or the `session.set_output_validation` RPC; on failure the reason is fed back to the agent for retry (`validation_retries`, default 3). A non-boolean or missing first return value counts as a failure with a descriptive reason, as does naming a validator that was never registered.
+
+```lua
+cru.context.register_validator("has_sources", function(text)
+  if text:match("%[%[") then return true end
+  return false, "response cites no notes"
+end)
+```
+
+Registered at plugin load, before the daemon-backed `cru.context` methods are wired — so registering validators from a plugin's `init.lua` works.
+
 ## Rate Limiting
 
 ### cru.ratelimit.new(opts)
@@ -700,6 +788,134 @@ services = {
 
 The `gateway.connect` function uses `cru.retry` with reconnection backoff, `cru.ws.connect` for the WebSocket, and `cru.timer` for heartbeat scheduling.
 
+## Supervised Services
+
+`cru.service` is a pure-Lua supervision layer over a service's start function: retry with backoff, a status registry, and config-schema resolution. **It is not the spawn mechanism.** Only the spec-table `services` field above gets a function spawned — `cru.service.define` on its own starts nothing, and the daemon never reads `cru.service`'s registry. The two compose: `define` returns a `{ desc, fn }` table shaped exactly like a spec-table entry.
+
+```lua
+local svc = cru.service.define({
+    name = "gateway",
+    desc = "Discord WebSocket gateway connection",
+    start = function() connect_loop() end,   -- required
+    stop = function() ws:close() end,        -- optional
+    health = function() return ws ~= nil end, -- optional
+    restart = { max_retries = 10, base_delay = 1.0, max_delay = 60.0 }, -- defaults shown
+})
+
+return {
+    name = "my-plugin",
+    services = { gateway = svc },  -- this line is what gets it spawned
+}
+```
+
+### cru.service.define(spec)
+
+Validates `name`, `desc`, `start` (required) and `stop`, `health` (optional), then returns `{ desc, fn }` where `fn` wraps `start` in `cru.retry` using the `restart` settings. An error raised as a table with `retryable = false` stops the retry loop; any other error is retried. When the wrapped function finally returns or gives up, the service is marked not running and the outcome is logged.
+
+If `spec.config` is a schema table, values are resolved **at define time**, per key. All three steps use the **service's `name`**, not the plugin's — name the service after the plugin if you want them to line up:
+
+1. keys marked `secret = true`: the env var `CRUCIBLE_<NAME>_<KEY>` (service name and key uppercased, non-alphanumerics replaced with `_` — `name = "gateway"` reads `CRUCIBLE_GATEWAY_*`)
+2. `crucible.config.get("<name>.<key>")` — the `[plugins.<name>]` section of config.toml
+3. the schema's `default`
+
+The resolved table is stored on the internal registry entry only — nothing passes it to `start`, and no accessor exposes it. A start function that needs the values must resolve them itself (the `web-search` plugin's `ws_config.lua` does exactly this, matching the env-var convention).
+
+### cru.service.status(name) / cru.service.list()
+
+`status` returns `nil` for an unknown name, else `{ name, desc, running, healthy }`. `list` returns the same shape for every defined service. `healthy` is `nil` when the service declared no `health` function; otherwise it is the health function's return value, with an error or falsy result reported as `false`.
+
+### cru.service.stop(name)
+
+Calls the service's `stop` function (errors logged, not raised), marks it not running, and returns `true`; returns `false` for an unknown name.
+
+> [!warning] Status is self-reported, and stop does not reach the daemon
+> The registry lives inside the plugin VM. `stop` invokes your `stop` callback and flips the Lua-side flag — it does not abort the daemon's spawned task. Conversely, when the daemon aborts a service task (plugin reload/disable/remove), no `stop` callback runs and the Lua wrapper never resumes, so `status` can keep reporting `running = true` for a task that is gone. Treat services as cancel-safe; treat `status` as advisory.
+
+## Session Status
+
+### crucible.set_status(opts) / crucible.clear_status(opts)
+
+A durable, session-scoped status slot in the UI — unlike `crucible.notify`,
+which is transient and easily missed. Slots are keyed, so the TUI and web
+render any plugin's slots generically; the `oci` plugin uses one to show
+whether a session is sandboxed.
+
+```lua
+crucible.set_status{
+  session = session.id,      -- required
+  key     = "oci",           -- required; one slot per key per session
+  text    = "sandboxed: alpine:latest",  -- required; keep it short
+  level   = "info",          -- info | warn | error (default info)
+  progress = 0.4,            -- optional: fraction 0..1, or `true` for a spinner
+}
+
+crucible.clear_status{ session = session.id, key = "oci" }
+```
+
+`progress = true` means indeterminate work (render a spinner); a number is a
+fraction complete, clamped to 0..1. Omit it for a state that is not work
+("sandboxed: alpine"). Setting empty text is not the same as clearing —
+`clear_status` removes the slot. A session's slots are dropped when it ends.
+
+## Publications
+
+### crucible.publish(key, value)
+
+Publish data about the plugin itself for clients to render — not
+session-scoped (that's what status slots are for). The daemon stores the
+value verbatim as JSON and every client reads the same answer, keyed by
+publication name and attributed to the publishing plugin.
+
+```lua
+crucible.publish("isolation", {
+  available = true,
+  profiles  = { "rust", "throwaway" },
+})
+```
+
+`value` must be JSON-encodable data (no functions or userdata). The publishing
+plugin's name is supplied by the loader, not the caller, and a plugin's
+publications are dropped when it reloads.
+
+## Options
+
+### crucible.options(tree)
+
+Declare a settings tree that every frontend renders in its own idiom — the
+settings pane in the TUI, a form on the web. The shape follows Ace3's
+AceConfig options tables: nested `group` nodes whose `args` hold typed leaves,
+with `get`/`set` accessors called when a value is read or written.
+
+```lua
+crucible.options{
+  type = "group",
+  args = {
+    image = {
+      type = "input", name = "Image", order = 1,
+      desc = "Image to run workspace tools in",
+      get = function() return config.image end,
+      set = function(_, v) config.image = v end,
+    },
+    runtime = {
+      type = "select", name = "Runtime", order = 2,
+      -- evaluated at render time, so only installed runtimes are offered
+      values = function() return installed_runtimes() end,
+    },
+    rebuild = { type = "execute", name = "Rebuild image", func = rebuild },
+  },
+}
+```
+
+Two properties are load-bearing:
+
+- **Any field may be a function**, evaluated when the tree is read — that is
+  what lets `values` describe the current box rather than the box at load.
+- **`get`/`set`/`disabled`/`hidden` inherit toward the root**, so one accessor
+  at the top serves every leaf; `false` breaks inheritance on a node that
+  means it.
+
+Values written through the pane persist via the daemon's option store.
+
 ## Plugin Tools and Commands
 
 A plugin's spec table can also declare `tools` (callable by the agent's model) and `commands` (invocable by clients, e.g. as slash commands). Both take a `desc`, an optional `params` list, and a `fn`:
@@ -742,6 +958,23 @@ Commands are listed over the `plugin.commands` RPC and invoked with `plugin.run_
 Two plugins claiming the same tool name resolve first-loaded-wins, also with a warning. Commands are a separate namespace: a command may share a name with a built-in tool.
 
 A tool or command declared without a `fn` is not registered — declaring one the plugin doesn't export would advertise a call that always fails.
+
+## Paths: the state() exception
+
+`cru.paths.kiln()`, `.workspace()`, and `.session()` read the `PathsContext` the module was registered with and **raise** when that path is unconfigured (they do not return `nil`). `cru.paths.state(plugin)` is different: it ignores `PathsContext` entirely and resolves against the daemon's data root at call time — `$CRUCIBLE_HOME`, else `~/.crucible` — returning `<data root>/plugin-state/<plugin>/`, created on demand. One Lua VM serves every plugin, so a state directory baked in at registration would be the same directory for all of them; instead each plugin names itself. Two consequences:
+
+- `paths.state("my-plugin")` works even where `paths.kiln()` raises.
+- Plugin state lives under the global data root, not inside the kiln or workspace.
+
+`plugin` must be a single path component: `""`, `"."`, `".."`, `"a/b"`, and absolute paths are refused.
+
+## Kiln access and the `vault` name
+
+The kiln API is `cru.kiln` / `crucible.kiln` — there is no `cru.vault` table. The old "vault" name survives in exactly one Lua-facing place: a plugin manifest may declare `capabilities: [vault]`, which parses as the `kiln` capability. (The Rust registration functions are still named `register_vault_module*`; that is internal naming only.)
+
+## Session-VM-only: cru.defaults and cru.modes
+
+`cru.defaults` (session default values like `system_prompt`, `temperature`) and `cru.modes` (mode definitions) are registered **only on the per-session Lua VM** — the VM that runs the shipped Lua defaults and a workspace's `.crucible/lua/init.lua`. The daemon's plugin VM never registers them, so referencing `cru.defaults` or `cru.modes` from a plugin's `init.lua` is a nil-index error. Set defaults and define modes from a workspace's `.crucible/lua/init.lua` (or a copied-out runtime defaults tree on the `runtimepath`), not from plugins.
 
 ## See Also
 

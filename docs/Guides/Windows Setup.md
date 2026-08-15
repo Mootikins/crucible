@@ -31,8 +31,7 @@ The primary configuration file location follows platform conventions:
 Each kiln (knowledge base) can have its own configuration:
 
 - **Kiln metadata**: `KILN_ROOT\.crucible\kiln.toml`
-- **SQLite database**: `KILN_ROOT\.crucible\crucible-sqlite.db`
-- **Vector index**: `KILN_ROOT\.crucible\crucible-vectors.lance\`
+- **SQLite database**: `KILN_ROOT\.crucible\crucible-sqlite.db` (notes, links, text index, embeddings)
 - **Agent cards**: `KILN_ROOT\.crucible\agents\`
 
 ### Discovery Paths

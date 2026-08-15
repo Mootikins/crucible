@@ -4,7 +4,6 @@ description: Lua scripting reference for Crucible
 status: implemented
 tags:
   - lua
-  - luau
   - fennel
   - scripting
   - reference
@@ -12,7 +11,7 @@ tags:
 
 # Lua Language Basics
 
-Crucible uses Luau (Lua with gradual types) for plugin development, with optional Fennel support.
+Crucible embeds PUC Lua 5.4 (via the `mlua` crate) for plugin development, with optional Fennel support.
 
 ## Why Lua?
 
@@ -21,19 +20,18 @@ Lua is one of the most widely-used scripting languages, with simple syntax that'
 ## Key Features
 
 - **Simple syntax**: Easy to learn if you know JavaScript or Python
-- **Gradual types**: Optional type annotations for documentation
 - **Fennel support**: Write in Lisp syntax, compile to Lua
 - **LLM-friendly**: Models generate high-quality Lua code
 
 ## The `cru` Namespace
 
-All built-in modules are accessible under the `cru` namespace (canonical). The `crucible` namespace is a backwards-compatible alias. Standalone globals like `http`, `fs`, `shell`, `oq`, and `paths` also still work.
+All built-in modules are accessible under the `cru` namespace (canonical). The `crucible` namespace mirrors most of it as a backwards-compatible alias. Standalone globals like `http`, `fs`, `shell`, `oq`, `paths`, and `graph` also still work.
 
 ```lua
 -- Canonical access
 cru.http.get(url)
 cru.fs.read(path)
-cru.shell("git", {"status"})
+cru.shell.exec("git", {"status"})
 cru.log("info", "message")
 cru.json.encode(tbl)
 cru.json.decode(str)
@@ -43,12 +41,19 @@ crucible.log("info", "message")   -- crucible.* alias
 http.get(url)                     -- standalone global
 ```
 
+> [!warning] One known divergence: `config`
+> `cru.config.get(key)` reads a single **top-level** app-config value (the
+> merged `config.toml` + `cru.config.set()` state, no dotted paths), while
+> `crucible.config.get("plugin.key")` — registered on the daemon's plugin VM —
+> does dotted-key descent into `[plugins.*]` config. Same name, different
+> semantics; pick by what you're reading, not by namespace habit.
+
 ### Core Modules
 
 | Module | Description |
 |--------|-------------|
 | `cru.log(level, msg)` | Logging (`"debug"`, `"info"`, `"warn"`, `"error"`) |
-| `cru.json` | `encode(table)` and `decode(string)` for JSON serialization |
+| `cru.json` | `encode(table)`, `decode(string)`, and `array(table)` (mark a table as a JSON list so an empty one encodes as `[]`, not `{}`) |
 | `cru.http` | HTTP client: `get`, `post`, `put`, `patch`, `delete`, `request` |
 | `cru.ws` | WebSocket client: `connect(url, opts?)` returning a connection object |
 | `cru.fs` | Filesystem operations |
@@ -66,8 +71,6 @@ http.get(url)                     -- standalone global
 | `cru.storage` | Plugin-scoped key-value store: `set(entity, key, val)`, `get(entity, key)`, `list(entity)`, `find(key, val)`, `delete(entity, key)` |
 | `cru.schedule` | Interval tasks: `cru.schedule({every=N}, fn)` returns handle; `cru.schedule.cancel(handle)` |
 | `cru.tools` | Tool registry: `get_tools()`, `run(name, args)` |
-| `cru.mcp` | MCP servers: `call(server, tool, input)`, `list_tools(server)` |
-| `cru.interaction` | UI modals: `ask(opts)`, `popup(opts)`, `panel(opts)`, `permission(opts)` |
 | `crucible.notify` | Notifications: `notify(msg, level?, opts?)`, `notify_once(msg)` |
 | `crucible.messages` | Notification panel: `toggle()`, `show()`, `hide()`, `clear()` |
 | `cru.oil` | UI building: `text()`, `col()`, `row()`, `spacer()`, `maybe()`, `match_state()` |
@@ -83,6 +86,10 @@ http.get(url)                     -- standalone global
 | `cru.emitter.new()` | Event emitter with `:on(event, fn)`, `:once(event, fn)`, `:off(event, id)`, `:emit(event, ...)` |
 | `cru.check` | Argument validation: `.string(val, name)`, `.number(val, name, opts)`, `.boolean(val, name)`, `.table(val, name)`, `.func(val, name)`, `.one_of(val, options, name)` -- all support `{optional=true}` |
 | `cru.spawn(fn)` | Spawn an async function as an independent tokio task (daemon context only) |
+| `cru.inspect(value, opts?)` | Pretty-print any value with cycle detection (`<cycle: table>`); opts: `max_depth`, `indent`. Also available as the global `inspect` |
+| `cru.tbl_deep_extend(behavior, ...)` | Deep-merge tables into a new table; `behavior` is `"force"` (last wins) or `"keep"` (first wins) |
+| `cru.tbl_get(t, ...)` | Safe nested access: `cru.tbl_get(cfg, "a", "b", "c")` returns the value or `nil` if any step is missing or not a table |
+| `cru.on_error` | Reserved error-handler slot, initialized to `nil`. Assignable, but nothing invokes it yet |
 
 ## Timer
 
@@ -190,7 +197,6 @@ Fennel is a Lisp that compiles to Lua. Use `.fnl` files if you prefer Lisp synta
 ## Resources
 
 - [Lua Reference Manual](https://www.lua.org/manual/5.4/)
-- [Luau Documentation](https://luau-lang.org/)
 - [Fennel Language](https://fennel-lang.org/)
 - [[Help/Concepts/Scripting Languages]] -- Language comparison
 - [[Help/Extending/Creating Plugins]] -- Plugin development guide

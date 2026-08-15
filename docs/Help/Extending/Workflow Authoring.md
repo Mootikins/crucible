@@ -12,7 +12,14 @@ aliases:
 
 # Workflow Authoring
 
-> **⚠️ Planned Feature**: This feature is not yet implemented. The documentation below describes the intended design.
+> **⚠️ Design document, not the shipped feature.** Nothing on this page is
+> implemented, and the YAML format below **conflicts with the workflow system
+> Crucible actually ships**: real workflows are *markdown notes* in your kiln,
+> parsed into goals, validation, and a step tree — see
+> [[Help/Workflows/Index]] and [[Help/Workflows/Workflow Syntax]]. There is no
+> YAML workflow engine, no `trigger:` support (no schedules, no webhooks), and
+> no `{{...}}` templating. Author workflows in markdown; treat this page as an
+> unadopted design sketch.
 
 Create automated workflows that combine multiple operations.
 
@@ -79,11 +86,14 @@ Use template variables in steps:
 
 ## Running Workflows
 
-```bash
-# Run a workflow manually
-cru workflow run "daily-review"
+The CLI that exists today runs *markdown* workflows (the subcommand is
+`start`, not `run`):
 
-# List available workflows
+```bash
+# Start a workflow execution against a new session
+cru workflow start "daily-review"
+
+# List workflow notes in the active kiln
 cru workflow list
 ```
 

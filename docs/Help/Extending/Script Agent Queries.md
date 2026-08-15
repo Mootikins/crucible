@@ -28,10 +28,6 @@ without hard-coding heuristics.
 
 ## What actually exists
 
-- [[Help/Lua/Ask Module]] — the global `ask` table builds question batches and answers.
-  It is a constructor API: nothing in it presents a question or waits for a reply.
-- `cru.interaction.ask` / `.popup` / `.panel` / `.permission` build interaction request
-  tables (`crates/crucible-lua/src/interaction.rs`).
 - Delegating a whole *task* to an external agent does work, but from the agent side rather
   than the script side — see [[Help/Concepts/Delegation]] and the `delegate_session` tool.
 
@@ -41,6 +37,5 @@ script call out.
 
 ## See Also
 
-- [[Help/Lua/Ask Module]] — the question/answer builders that do exist
 - [[Help/Extending/Creating Plugins]] — plugin development
 - [[Help/Extending/Custom Handlers]] — intercepting and transforming tool calls

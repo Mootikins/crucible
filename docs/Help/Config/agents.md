@@ -72,19 +72,13 @@ Applied when you run `cru chat --acp <name>` or bring up the agent picker.
 # Default ACP agent to use when --acp is omitted (optional)
 default_agent = "opencode"  # or "claude", "gemini", "codex", "cursor"
 
-# Show splash picker in `cru chat` when no agent is chosen.
-# true (default): interactive picker with j/k navigation.
-# false: use default_agent immediately, skip picker.
-lazy_agent_selection = true
-
-# Session timeout in minutes
-session_timeout_minutes = 30
-
 # Streaming response timeout in minutes
 streaming_timeout_minutes = 15
 ```
 
-The `--acp` CLI flag always bypasses the picker regardless of `lazy_agent_selection`.
+`[acp]` also parses `lazy_agent_selection`, `enable_discovery`,
+`session_timeout_minutes`, and `max_message_size_mb`, but those four fields are
+**currently unread** — no code path acts on them. See [[Help/Config/acp]].
 
 ### Custom ACP Agent Profiles
 

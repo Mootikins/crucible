@@ -28,12 +28,11 @@ Both languages can:
 
 ## Lua
 
-Lua is a simple, embeddable scripting language with massive adoption. Crucible uses **Luau** (Lua with gradual types) for enhanced tooling.
+Lua is a simple, embeddable scripting language with massive adoption. Crucible embeds **PUC Lua 5.4** via the `mlua` crate.
 
 **Strengths:**
 - Familiar syntax (if you know JavaScript/Python)
 - LLM-friendly (models generate excellent Lua)
-- Gradual types for documentation
 - Simple and easy to debug
 
 See [[Help/Lua/Language Basics]] for syntax and examples.
@@ -107,13 +106,14 @@ local view = cru.oil.col({ gap = 1 },
   (oil.when loading (oil.spinner)))
 ```
 
-See [[Help/Extending/Scripted UI]] for the full Oil component reference.
+See [[Help/Plugins/Oil Lua API]] for the full Oil component reference;
+[[Help/Extending/Scripted UI]] covers theming and statuslines.
 
 ## See Also
 
 - [[Help/Lua/Language Basics]] — Lua reference
 - [[Help/Lua/Configuration]] — Lua configuration
-- [[Help/Extending/Scripted UI]] — Oil UI DSL reference
+- [[Help/Plugins/Oil Lua API]] — Oil UI DSL reference
 - [[Help/Extending/Creating Plugins]] — Plugin development guide
 - [[Help/Extending/Custom Tools]] — Adding MCP tools
 - [[Help/Extending/Event Hooks]] — Reacting to events

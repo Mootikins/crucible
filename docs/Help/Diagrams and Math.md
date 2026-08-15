@@ -21,9 +21,10 @@ Related: [[Help/Callouts]], [[Help/Wikilinks]], [[Help/Block References]].
 ## Turning them off
 
 Both are on by default and can be switched off independently in
-**Settings → Editor**:
+**Settings → Editor**. The toggles apply to the **live-preview editor only**
+— the reading view and chat messages always render math and diagrams:
 
-| Setting | Effect when off |
+| Setting | Effect when off (live preview) |
 |---|---|
 | Render math | `$…$` and `$$…$$` stay as literal text |
 | Render diagrams | ` ```mermaid ` fences render as plain code blocks |
@@ -129,9 +130,9 @@ flowchart LR
 flowchart LR
   N["Note.md"] --> P["Parser"]
   P --> S[("SQLite")]
-  P --> V[("LanceDB")]
+  P --> F[("FTS index")]
   S --> Q{"Query"}
-  V --> Q
+  F --> Q
   Q --> A["Agent"]
   A -->|writes| N
 ```
@@ -253,4 +254,5 @@ surfaces:
 - [ ] Chat — paste a diagram and a formula into a message
 - [ ] Node labels show their text (a blank node means label sanitization broke)
 - [ ] `$5 and $20` still reads as prose
-- [ ] Both settings toggles switch their feature off, and back on
+- [ ] Both settings toggles switch their feature off, and back on, in the
+      live-preview editor (reading view and chat are unaffected by design)

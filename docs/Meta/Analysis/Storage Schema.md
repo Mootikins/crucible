@@ -77,8 +77,7 @@ The classification everything else turns on.
 | `notes` (path, content_hash, title, tags, links_to, properties, updated_at) | derived | reparsing markdown; `kiln.open --process --force` re-walks every file |
 | `notes_fts` | derived | re-reading note bodies; the kiln open path already backfills it |
 | `note_links` | derived | re-extracting wikilinks — v1 rows have no spans and cannot be upgraded in place, which is why v5's drop-and-recreate is legitimate |
-| `notes.embedding`, `.embedding_model`, `.embedding_dimensions` | **derived (costly)** | re-embedding every note |
-| `<kiln>/.crucible/crucible-vectors.lance` | **derived (costly)** | re-embedding every note |
+| `notes.embedding`, `.embedding_model`, `.embedding_dimensions` | **derived (costly)** | re-embedding every note. This column is the *only* vector store: every semantic entry point scores it with an exact cosine scan. (The former LanceDB mirror at `<kiln>/.crucible/crucible-vectors.lance` was deleted after benchmarking; an orphaned directory of that name in old kilns is dead weight and safe to remove.) |
 | `properties` | **CANONICAL** | nothing. `cru.storage.set` is its only writer, carrying plugin-authored values with no on-disk source |
 | `entities` | vestigial, empty | n/a — kept one release as a downgrade's foreign-key target |
 | `schema_migrations` | canonical-ish | reconstructible only by guessing. v1–v3 are idempotent, so losing it is survivable but not by design |

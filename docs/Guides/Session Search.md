@@ -21,14 +21,15 @@ This enables an **episodic memory pattern**: instead of starting every conversat
 
 - Crucible CLI installed
 - At least one past chat session (run `cru chat` to create one)
-- [ripgrep](https://github.com/BurntSushi/ripgrep) installed (optional, but recommended for speed)
 
 ## Usage
 
-All `search` output defaults to plain text. Pass `-f json` for structured output that works well with `jq`:
+All `search` output defaults to plain text. Pass `-f json` for structured
+output that works well with `jq`. The JSON is an object with a `matches` array,
+not a bare array:
 
 ```bash
-cru session search "authentication" -f json | jq '.[].session_id'
+cru session search "authentication" -f json | jq '.matches[].session_id'
 ```
 
 ### Basic Search
@@ -37,7 +38,7 @@ cru session search "authentication" -f json | jq '.[].session_id'
 cru session search "authentication"
 ```
 
-This searches all session JSONL files for the query and displays matching lines with context:
+This searches all session JSONL files for the query and displays the first matching line from each session:
 
 ```
 Sessions matching 'authentication':
@@ -59,20 +60,19 @@ The `-n` flag limits the number of results returned (default: 20).
 
 ## How It Works
 
-Session search uses a **two-tier strategy**:
-
-1. **Ripgrep (fast path)**: If `rg` is installed, Crucible delegates to ripgrep for blazing-fast search across all session files. Ripgrep uses parallelism and memory-mapped I/O, making it fast even with thousands of sessions.
-
-2. **In-memory fallback (slow path)**: If ripgrep isn't available, Crucible reads session files directly and performs line-by-line text matching. Slower, but works everywhere.
-
-You don't need to configure anything — Crucible automatically detects which path to use.
+Session search runs in the **daemon**: the CLI sends a `session.search` RPC,
+and the daemon scans the session logs under `<kiln>/.crucible/sessions/`. The
+daemon is auto-started on demand, so you don't need to configure anything. If
+the daemon can't be reached or started, the command fails with a connection
+error — like every other daemon-backed command.
 
 ### Search Behavior
 
-- **Case-insensitive**: Searches ignore case by default
-- **Context lines**: Results include 2 lines of context before and after each match
+- **Case-insensitive**: Search ignores case
+- **One match per session**: The daemon reports each session's first matching line (plus active sessions whose title matches)
 - **JSONL files**: Searches the raw session event log (`.jsonl`), not markdown
-- **Truncation**: Long matching lines are truncated to 100 characters for readability
+- **Truncation**: Matching lines are truncated to 100 characters for readability
+- **No context lines**: Only the matching line itself is shown
 
 ## Search Tips
 
@@ -118,17 +118,17 @@ You can read these files directly:
 
 ```bash
 # Find session markdown files
-ls ~/your-kiln/sessions/*/session.md
+ls ~/your-kiln/.crucible/sessions/*/session.md
 
 # Read a specific session
-cat ~/your-kiln/sessions/chat-20260115-1430-a1b2/session.md
+cat ~/your-kiln/.crucible/sessions/chat-20260115-1430-a1b2/session.md
 ```
 
 Or search them with standard tools:
 
 ```bash
 # Search markdown files with ripgrep
-rg "authentication" ~/your-kiln/sessions/*/session.md
+rg "authentication" ~/your-kiln/.crucible/sessions/*/session.md
 ```
 
 ## Troubleshooting
@@ -139,20 +139,16 @@ rg "authentication" ~/your-kiln/sessions/*/session.md
 - Try a broader search term
 - Verify your kiln path is correct
 
+### "Failed to connect to daemon"
+
+Session search requires the daemon. It is normally auto-started; if the error
+persists, start it explicitly with `cru daemon start` and check
+`cru daemon status`.
+
 ### Search is slow
 
-Install [ripgrep](https://github.com/BurntSushi/ripgrep) for significantly faster search:
-
-```bash
-# macOS
-brew install ripgrep
-
-# Ubuntu/Debian
-sudo apt install ripgrep
-
-# Cargo
-cargo install ripgrep
-```
+Search runs in the daemon, so slowness usually means the daemon itself is
+struggling — check `cru daemon status` and `cru daemon logs`.
 
 ### Results are hard to read
 

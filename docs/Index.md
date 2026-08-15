@@ -78,6 +78,8 @@ Navigate by topic:
 - **[[Help/Config/agents]]** — Agent configuration options
 - **[[Help/Delegation Patterns]]** — Broadcast / router / supervisor recipes in Lua
 - **[[Help/Concepts/Session Replay]]** — Play a recorded session back without LLM calls
+- **[[Help/Concepts/Session Compaction]]** — Compaction knobs and their current status
+- **[[Help/Concepts/Review Ledger]]** — Attributed diffs, the review queue, and the review gate
 
 ### Scripting Languages
 - **[[Help/Concepts/Scripting Languages]]** — Overview
@@ -89,6 +91,7 @@ Navigate by topic:
 - **[[Help/Frontmatter]]** — YAML metadata for notes
 - **[[Help/Tags]]** — Organizing with `#tags`
 - **[[Help/Block References]]** — Linking to paragraphs with `^block-id`
+- **[[Help/Footnotes]]** — Footnote syntax and parsing status
 - **[[Help/Diagrams and Math]]** — Mermaid diagrams and LaTeX math in notes
 - **[[Help/Concepts/Canvas]]** — Infinite-canvas boards in the JSON Canvas format
 

@@ -8,7 +8,7 @@ tags:
 
 # Workflows
 
-Workflows let you define multi-step processes — the *what* and *why* of a task — in plain markdown. The system parses workflow notes into a typed AST that can be inspected today and (in a future phase) executed end-to-end.
+Workflows let you define multi-step processes — the *what* and *why* of a task — in plain markdown. The system parses workflow notes into a typed AST that can be inspected and executed via the daemon's workflow engine (see [Execution](#execution) below for what is implemented).
 
 ## What Workflows Do
 
@@ -134,6 +134,16 @@ output without calling an LLM. Handy for CI and demos.
 `[type:: fan]` lands — every step currently runs on the session's
 configured agent regardless of the `@agent` suffix. The daemon logs a
 warning when it sees a mismatched hint so you aren't surprised.
+
+## Roadmap
+
+Planned engine work, in rough order (tracked in the product map, `Meta/Product.md`, not bundled with these docs):
+
+- **`fan`** — dispatch each child of a fan step as a delegated child session, reusing the existing delegation limits (depth, trust, concurrency, result size). This is what makes parallel groups run LLM turns concurrently and makes `@agent` hints route.
+- **`ralph`** — repeat a step until the workflow's runnable `## Validation` entries pass, with a bounded attempt count.
+- **Typed outputs** — an optional schema on `-> name` outputs, validated before binding into scope, and a warning for `**bold**` tokens that match no output name (today they pass through silently).
+- **`verify`** — an adversarial-check step: independent child turns try to refute the previous step's output; majority refutation fails the step.
+- **Run budgets** — a token ceiling per run that pauses at a gate instead of failing when reached.
 
 ## Example Use Cases
 

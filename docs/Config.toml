@@ -127,14 +127,19 @@ timeout_secs = 120
 # fails to load. See Help/Config/embedding.md for every provider's fields.
 
 [enrichment.provider]
-type = "fastembed"                    # fastembed | ollama | openai | cohere |
-                                      # vertexai | burn | custom | mock
+type = "fastembed"                    # working: fastembed | ollama | openai | mock.
+                                      # cohere/vertexai/custom parse but have no
+                                      # runtime backend; burn is removed (hard-errors).
 model = "BAAI/bge-small-en-v1.5"
-batch_size = 32
-dimensions = 384
+# For fastembed, `model` is the only field that is read: batch_size, cache_dir,
+# and num_threads parse but are IGNORED (batch size is hardcoded to 32, and the
+# vector dimension comes from the model). The ollama type does read batch_size.
 
-# Pipeline tuning. Optional; every key below shows its default.
+# Pipeline tuning. Parses, but ONLY max_precognition_chars is currently read —
+# the other eight keys have no effect today.
 [enrichment.pipeline]
+max_precognition_chars = 3000         # char budget for precognition snippets
+# Parsed but currently unread:
 # worker_count = 8                    # default: num_cpus
 # batch_size = 16
 # max_queue_size = 1000
@@ -143,7 +148,6 @@ dimensions = 384
 # retry_delay_ms = 1000
 # circuit_breaker_threshold = 5
 # circuit_breaker_timeout_ms = 60000
-# max_precognition_chars = 3000
 
 # =============================================================================
 # [chat] - Chat defaults
@@ -169,12 +173,13 @@ agent_preference = "crucible"         # "crucible" (default) or "acp"
 # delegation, and per-agent permissions.
 
 [acp]
-enable_discovery = true
-session_timeout_minutes = 30
-max_message_size_mb = 25
-streaming_timeout_minutes = 15
-lazy_agent_selection = true
+streaming_timeout_minutes = 15        # time allowed for one complete response
 # default_agent = "claude"            # omit to auto-discover
+# Parsed but currently unread — no code path acts on them:
+# enable_discovery = true
+# session_timeout_minutes = 30
+# max_message_size_mb = 25
+# lazy_agent_selection = true
 
 # [acp.agents.my-claude]
 # extends = "claude"
@@ -183,14 +188,18 @@ lazy_agent_selection = true
 # =============================================================================
 # [cli] - CLI behaviour
 # =============================================================================
+# Only [cli.highlighting] is wired up. show_progress, confirm_destructive, and
+# verbose parse but are currently unread (verbosity comes from the -v flag).
 
-[cli]
-show_progress = true
-confirm_destructive = true
-verbose = false
+[cli.highlighting]
+enabled = true
+theme = "base16-ocean.dark"
 
-# [cli.highlighting]
-# enabled = true
+# Parsed but currently unread:
+# [cli]
+# show_progress = true
+# confirm_destructive = true
+# verbose = false
 
 # =============================================================================
 # [context] - Project rules files
@@ -204,9 +213,13 @@ verbose = false
 # =============================================================================
 # [storage] - Daemon storage
 # =============================================================================
-# SQLite lives at <kiln>/.crucible/crucible-sqlite.db, the vector index at
-# <kiln>/.crucible/crucible-vectors.lance/. Old `storage.mode` values are
+# SQLite lives at <kiln>/.crucible/crucible-sqlite.db and holds everything,
+# embeddings included (a leftover crucible-vectors.lance/ directory from older
+# versions is unused and safe to delete). Old `storage.mode` values are
 # accepted and ignored.
+#
+# idle_timeout_secs parses and is displayed by `cru status`, but the daemon
+# does not implement idle auto-shutdown — setting it has no effect today.
 
 # [storage]
 # idle_timeout_secs = 300

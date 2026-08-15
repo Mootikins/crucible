@@ -27,7 +27,7 @@ and are scoped to the session's kiln.
 | `delete_note` | Delete a note |
 | `list_notes` | List notes in a directory |
 | `semantic_search` | Embedding-based similarity search |
-| `text_search` | Full-text search |
+| `grep_notes` | Grep-style text search (ripgrep engine; literal or regex), unranked file-order hits |
 | `property_search` | Search by frontmatter property, including tags |
 | `get_kiln_info` | Kiln root path and statistics |
 
@@ -67,9 +67,11 @@ classifies and filters them:
 | Prefix | Source |
 |--------|--------|
 | *(none)* | `builtin` — the tables above |
-| `lua_` | A tool registered by a Lua or Fennel plugin |
 | `just_` | A `justfile` recipe exposed as a tool |
 | `gh_`, `mcp_`, or a name containing `::` | An upstream MCP server reached through the gateway |
+
+Tools registered by Lua or Fennel plugins are exposed under their registered names with no
+prefix added, so `discover_tools` classifies them alongside the built-ins.
 
 ## Declaring capabilities on a card
 

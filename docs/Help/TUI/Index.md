@@ -16,11 +16,11 @@ Crucible's Terminal User Interface (TUI) provides an interactive chat experience
 
 The TUI uses the **Oil** renderer — a React-like immediate-mode UI with flexbox layout (taffy):
 
-- **ChatApp** - Main application state and event handling
-- **InputBox** - Text input with cursor
+- **OilChatApp** - Main application state and event handling
+- **InputComponent** - Text input with cursor
 - **StatusBar** - Mode indicator, status, model info
-- **MessageList** - Conversation history with markdown rendering
-- **Popup** - Command/file/agent autocomplete
+- **ContainerList** - Conversation history with markdown rendering
+- **PopupOverlay** - Command/file/note autocomplete
 
 ## Key Concepts
 
@@ -42,7 +42,7 @@ Events propagate top-down through layers:
 
 Three session modes control agent permissions (see [[Help/TUI/Modes]]):
 - **Normal** - Auto-read, ask for writes (default)
-- **Plan** - Read-only, creates plan files
+- **Plan** - Read-only tool set
 - **Auto** - Full access, minimal prompts
 
 Toggle with `Shift+Tab`.
@@ -62,15 +62,15 @@ Quick reference (see [[Help/TUI/Keybindings]] for complete list):
 | `Enter` | Send message / confirm |
 | `Ctrl+C` | Cancel (double to exit) |
 | `Shift+Tab` | Cycle mode |
-| `Alt+T` | Toggle reasoning panel |
-| `Alt+M` | Toggle mouse capture |
+| `Ctrl+T` | Toggle thinking display |
+| `F1` | Open command palette |
 | `/` | Open command popup |
-| `@` | Open file/agent popup |
+| `@` | Open file popup |
 | `[[` | Open notes popup |
 | `!` | Execute shell command |
-| `Esc` | Dismiss popup/dialog |
+| `Esc` | Dismiss popup / cancel streaming |
 
-Readline-style editing (`Ctrl+A/E/W/U/K`, `Alt+B/F`) is supported in the input box.
+Readline-style editing (`Ctrl+A/E/W/U`, `Alt+B/F`) is supported in the input box.
 
 ## REPL Commands
 

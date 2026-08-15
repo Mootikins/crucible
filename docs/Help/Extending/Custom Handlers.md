@@ -120,7 +120,7 @@ Handlers live in plugins, and register with `crucible.on` at load:
 Registration is daemon-wide — a handler fires for every session, and filters on
 what it is given (`ctx.session_id`, the event payload, `opts.pattern`) rather
 than on where it was installed from. See [[Help/Extending/Event Hooks]] for the
-eleven events and the cancel / handled / transform contract, and
+fourteen events and the cancel / handled / transform contract, and
 [[Help/Extending/Creating Plugins]] for how a kiln can ship a plugin.
 
 ### Basic Structure

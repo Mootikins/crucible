@@ -52,6 +52,26 @@ with only a `debug!` line to say so.
 `opts.pattern` is the only glob, and it filters the event's *identifier* (the
 tool name), never the event name.
 
+`cru.on` is the same function — registered on both namespaces, so
+`cru.on("pre_tool_call", fn)` and `crucible.on("pre_tool_call", fn)` are
+interchangeable.
+
+## Two Registries, One Order
+
+Handlers live in **two registries**: each session's VM (files evaluated per
+session — the built-in defaults, your `init.lua`, the workspace's
+`.crucible/lua/init.lua`) and the daemon's plugin VM (plugin `init.lua`s, plus
+your `init.lua` evaluated after plugins load). They cannot be merged — a Lua
+function is only valid against the VM that created it — so dispatch runs them
+in a fixed order: **session-VM handlers first, then plugin-VM handlers**,
+each registry in ascending priority. Transforms chain across the boundary:
+a plugin handler sees arguments a session handler already rewrote.
+
+The two precognition hooks are the exception to chaining:
+`precognition_select` and `precognition_format` take the **first usable
+Transform** and stop — session VM before plugin VM — because a selection is a
+decision, not a patch.
+
 ## Event Types
 
 The complete set. Every entry is a live dispatch site, kept in step with
@@ -297,7 +317,7 @@ clears its hooks before re-running it, so a reload never leaves a second copy
 firing. Hooks registered outside a plugin load — your own `init.lua`, or a
 session VM — are unowned and are never cleared by any plugin's reload.
 
-### `crucible.on_session_start(fn)`
+### `crucible.on_session_start(fn, opts?)`
 
 Fires once when a session begins. Use for per-session setup (starting containers, opening connections, seeding state).
 
@@ -311,8 +331,26 @@ The `session` argument exposes:
 - `session.id` — session id (string, read-only)
 - `session.workspace` — the session's working directory, or nil (string, read-only)
 
-Handlers may call async APIs (`cru.shell.exec`, `cru.http`, ...) — lifecycle
-hooks run inside the daemon's async runtime.
+By default a hook that raises is logged and the session continues. Pass
+`{ required = true }` to escalate: a raising required hook **refuses the
+session**. This is for hooks that establish a boundary the session must not
+run without — the `oci` plugin marks its container-acquisition hook required
+so a failed sandbox never silently falls back to the host.
+
+```lua
+crucible.on_session_start(function(session)
+  acquire_container(session)   -- raising here aborts session creation
+end, { required = true })
+```
+
+**Where the hook runs decides what it may do.** On the plugin-VM path the
+hooks are fired asynchronously, so they may call async APIs
+(`cru.shell.exec`, `cru.http`, ...), and `required = true` is honoured. Hooks
+registered on the **session VM** (your `init.lua` or the workspace's
+`.crucible/lua/init.lua` deciding a session's opening configuration) run
+**synchronously** during session-VM construction: they cannot await async
+APIs, they fail open per hook, and `required` is not honoured there —
+session refusal stays with the plugin loader, where isolation claims live.
 
 
 ### `crucible.on_session_end(fn)`

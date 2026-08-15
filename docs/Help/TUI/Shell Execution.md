@@ -6,7 +6,7 @@ tags: [help, tui, shell]
 
 # Shell Execution
 
-Crucible's TUI allows you to execute shell commands directly and optionally share their output with the AI agent.
+Crucible's TUI allows you to execute shell commands directly and optionally insert their output into your next message.
 
 ## Quick Start
 
@@ -25,37 +25,50 @@ A modal window opens showing the command output in real-time.
 When a shell command runs, a full-screen modal displays:
 
 - **Command**: The command being executed
-- **Status**: Running, completed (exit code), or failed
-- **Output**: Real-time streaming stdout/stderr
+- **Status**: Running, exit code with duration, or cancelled (header icon)
+- **Output**: Real-time streaming stdout/stderr (stderr in red)
 
 ### Modal Keybindings
+
+While the command is **running**:
 
 | Key | Action |
 |-----|--------|
 | `j` / `Down` | Scroll down one line |
 | `k` / `Up` | Scroll up one line |
-| `d` | Scroll down half page |
-| `u` | Scroll up half page |
-| `G` | Jump to bottom |
-| `g` | Jump to top |
-| `Ctrl+C` | Cancel running command |
-| `s` | Save and send full output to agent |
-| `t` | Save and send truncated output (last 50 lines) |
+| `d` / `u` | Scroll down / up half a page |
+| `PageDown` / `PageUp` | Scroll by a full page |
+| `Ctrl+C` | Cancel the running command |
+
+After the command **finishes** (or is cancelled), these are added:
+
+| Key | Action |
+|-----|--------|
+| `i` | Insert the full output into the chat input |
+| `t` | Insert truncated output (last 20 lines) |
 | `e` | Open output in `$EDITOR` |
-| `Enter` / `Escape` | Dismiss modal |
+| `g` / `G` | Jump to top / bottom |
+| `q` / `Escape` | Dismiss modal |
 
-## Sending Output to Agent
+## Inserting Output into the Composer
 
-After a command completes, you can share the output with the AI:
+After a command completes, you can pull the output into your next message:
 
-- Press `s` to send the **full output** as context
-- Press `t` to send only the **last 50 lines** (useful for long build logs)
+- Press `i` to insert the **full output** at the cursor
+- Press `t` to insert only the **last 20 lines** (useful for long build logs)
 
-The agent receives the output formatted with the command, exit code, and working directory.
+The output is inserted into the chat input as a fenced code block prefixed
+with "Here is the output of a shell command I ran", including the command
+line itself. Exit code, duration, and working directory are **not** part of
+the inserted text — they are recorded in the saved output file (below).
+Nothing is sent until you press Enter, so you can edit or add context first.
+
+After the modal closes, the transcript shows a shell-execution entry with the
+command, exit code, and the tail of its output.
 
 ## Output Persistence
 
-Shell outputs are saved to your session directory:
+Closing the modal saves the output to your session directory:
 
 ```
 <kiln>/.crucible/sessions/<session-id>/shell/<timestamp>-<command>.output
@@ -82,7 +95,7 @@ nothing to commit, working tree clean
 !cargo test
 ```
 
-Then press `t` to send failures to the agent for debugging help.
+Then press `t` to put the failures in your message and ask for debugging help.
 
 ### Checking Git Status
 
@@ -90,7 +103,7 @@ Then press `t` to send failures to the agent for debugging help.
 !git diff --stat
 ```
 
-Press `s` to share changes with the agent for commit message suggestions.
+Press `i` to include the changes when asking for commit message suggestions.
 
 ### Build Errors
 
@@ -98,14 +111,15 @@ Press `s` to share changes with the agent for commit message suggestions.
 !cargo build 2>&1
 ```
 
-Press `s` to let the agent help diagnose compilation errors.
+Press `i` and ask the agent to diagnose the compilation errors.
 
 ## Tips
 
 - Commands run in the current working directory (where you started `cru chat`)
-- Long-running commands show a spinner; press `Ctrl+C` to cancel
+- The header shows a pending icon while running; press `Ctrl+C` to cancel
 - Use `e` to open output in your editor for manual selection/copying
-- The modal auto-scrolls to bottom during streaming; scroll up to pause
+- The modal follows the output as it streams; scrolling manually stops the
+  auto-follow, and completion jumps back to the top of the output
 
 ## See Also
 

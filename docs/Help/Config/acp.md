@@ -22,27 +22,24 @@ at). Every field has a default, so `[acp]` is optional.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `default_agent` | string | *(unset)* | Profile to use when `--acp` is omitted. Unset means auto-discover the first available agent. |
-| `enable_discovery` | bool | `true` | Probe for installed agents |
-| `session_timeout_minutes` | integer | `30` | Idle minutes before an agent session is dropped |
-| `max_message_size_mb` | integer | `25` | Reject requests larger than this |
 | `streaming_timeout_minutes` | integer | `15` | Time allowed for one complete response |
-| `lazy_agent_selection` | bool | `true` | Show the agent picker on startup instead of creating an agent immediately |
+| `enable_discovery` | bool | `true` | **Currently unread** — agents are discovered unconditionally |
+| `session_timeout_minutes` | integer | `30` | **Currently unread** — no idle-drop is wired to it |
+| `max_message_size_mb` | integer | `25` | **Currently unread** — no size check is wired to it |
+| `lazy_agent_selection` | bool | `true` | **Currently unread** — nothing consults it |
 
 ```toml
 [acp]
 default_agent = "claude"
-enable_discovery = true
-session_timeout_minutes = 30
-max_message_size_mb = 25
 streaming_timeout_minutes = 15
-lazy_agent_selection = true
 ```
+
+Of the scalar fields, `default_agent` and `streaming_timeout_minutes` are the two with
+behavior behind them. The other four parse and round-trip through `cru config`, but no
+code path reads them today.
 
 `streaming_timeout_minutes` defaults to 15 rather than something tighter because reasoning
 models routinely go quiet for minutes at a time mid-turn.
-
-Passing `--acp` on the command line always bypasses the picker, whatever
-`lazy_agent_selection` says.
 
 ## `[acp.agents.<name>]` — agent profiles
 
@@ -56,7 +53,7 @@ defines its own command. The profile name is what you pass to `cru chat -a <name
 | `args` | array of string | *(from `extends`)* | Arguments passed to the command |
 | `env` | table | `{}` | Environment variables for the agent process |
 | `description` | string | *(unset)* | Human-readable label |
-| `capabilities` | array of string | *(unset)* | Capabilities the profile advertises |
+| `capabilities` | array of string | *(unset)* | Informational only — merged into the resolved profile but never enforced or acted on |
 | `delegation` | table | *(unset)* | See the delegation sub-table below |
 | `permissions` | table | *(unset)* | Per-agent override of the global `[permissions]` |
 
@@ -141,7 +138,6 @@ See [[Help/Config/permissions]] for pattern syntax and
 ```toml
 [acp]
 default_agent = "claude-proxy"
-lazy_agent_selection = false
 streaming_timeout_minutes = 30
 
 [acp.agents.claude-proxy]

@@ -45,104 +45,54 @@ External Agent (e.g. Claude Code)
 
 ## Sessions
 
-ACP is session-oriented. Every agent interaction happens within a session that tracks state across multiple turns.
+ACP is session-oriented. Every agent interaction happens within a session that tracks state across multiple turns. State persists between prompts within a session, and a host can load a prior session to continue its conversation.
 
-### Lifecycle
+Don't confuse ACP sessions with Crucible's *internal* daemon sessions. The daemon exposes its own JSON-RPC surface (`session.create`, `session.send_message`, `session.subscribe`, ...) over the Unix socket — that is Crucible's private client protocol, not ACP. When Crucible hosts or serves ACP, it bridges between the two.
 
-1. **Create**: `session.create` initializes a new session, returning a `session_id`
-2. **Configure**: `session.configure_agent` sets model, system prompt, tools, and permissions
-3. **Interact**: `session.send_message` sends user messages and streams agent responses
-4. **Subscribe**: `session.subscribe` opens an event stream for real-time updates
-5. **Pause/Resume**: `session.pause` and `session.resume` suspend and restore sessions
-6. **End**: `session.end` terminates the session and cleans up resources
+## Wire Methods
 
-Sessions have a `status` field: `active`, `paused`, or `ended`. State persists between messages within a session. The host can resume a paused session without losing conversation history.
-
-### Session Configuration
-
-When configuring an agent, the host provides:
-
-- **Model**: which LLM to use (e.g. `claude-sonnet-4-20250514`, `gpt-4o`)
-- **System prompt**: base instructions for the agent
-- **Tools**: MCP tool definitions the agent can call
-- **Permissions**: capability scoping (see Permissions below)
-- **Working directory**: filesystem context for the agent process
-
-## Message Types
+The ACP wire protocol is JSON-RPC 2.0 over stdio. The methods that matter in practice:
 
 | Method | Direction | Description |
 |--------|-----------|-------------|
-| `session.create` | host → agent | Create new session |
-| `session.configure_agent` | host → agent | Set agent configuration |
-| `session.send_message` | host → agent | Send user message |
-| `session.switch_model` | host → agent | Change model mid-session |
-| `session.cancel` | host → agent | Cancel in-progress response |
-| `session.subscribe` | host → agent | Subscribe to event stream |
-| `session.unsubscribe` | host → agent | Unsubscribe from events |
-| `session.pause` | host → agent | Suspend session |
-| `session.resume` | host → agent | Resume suspended session |
-| `session.end` | host → agent | Terminate session |
-| event: `message` | agent → host | Streaming response chunk |
-| event: `thinking` | agent → host | Agent thinking/reasoning content |
-| event: `tool_call` | agent → host | Agent requesting tool use |
-| event: `tool_result` | agent → host | Tool execution result |
-| event: `done` | agent → host | Turn complete |
-| event: `error` | agent → host | Error notification |
-
-All messages use JSON-RPC 2.0 format. Each request carries a unique numeric ID for response matching.
+| `initialize` | client → agent | Version handshake and capability exchange |
+| `session/new` | client → agent | Create a new session (with working directory) |
+| `session/prompt` | client → agent | Send a user prompt; the response ends the turn with a stop reason |
+| `session/load` | client → agent | Resume a previously created session |
+| `session/cancel` | client → agent | Cancel the in-progress turn |
+| `session/close` | client → agent | Close a session and release its resources |
+| `session/update` | agent → client | Streaming notification: message chunks, thought chunks, `tool_call` / `tool_call_update` entries |
+| `session/request_permission` | agent → client | Ask the client to approve a tool call (allow/reject, once/always) |
 
 ## Streaming
 
-ACP supports streaming responses through its event subscription model. The flow works like this:
+A prompt turn streams through `session/update` notifications:
 
-1. Host calls `session.subscribe` to open an event channel
-2. Host sends `session.send_message` with the user's input
-3. Agent emits events as it processes:
-   - `message` chunks: incremental text of the response
-   - `thinking` chunks: reasoning content (if the model supports it)
-   - `tool_call` events: when the agent wants to use a tool, with name and arguments
-   - `tool_result` events: results returned after tool execution
-   - `done`: signals the turn is complete
-4. Host renders chunks in real-time (TUI streaming, web SSE, etc.)
+1. Client sends `session/prompt` with the user's input
+2. The agent emits `session/update` notifications as it works: incremental message text, thought chunks (if the model exposes reasoning), and `tool_call` / `tool_call_update` entries as tools start and finish
+3. If a tool needs approval, the agent sends `session/request_permission` and waits for the client's answer
+4. The `session/prompt` response returns with a stop reason (`end_turn`, `cancelled`, ...) when the turn completes
 
-The streaming callback can return `false` to cancel the current response, which maps to `session.cancel` on the wire.
+The client renders updates in real time (TUI streaming, web SSE, etc.) and can cancel mid-turn with `session/cancel`.
 
 ## Permissions
 
-ACP defines capability scoping so hosts can restrict what agents are allowed to do. Crucible enforces permissions before forwarding tool calls to MCP.
+Crucible does **not** enforce a per-capability ACP permission model. Tool calls from a hosted agent go through the same permission gate as every other session — permission patterns, agent-card tool policy, Lua hooks, and the `[permissions]` config (see [[Help/Concepts/Permission Precedence]]) — and interactive approvals surface as ACP `session/request_permission` requests.
 
-Available permissions:
-
-| Permission | Grants |
-|------------|--------|
-| `read_kiln` | Read notes from the kiln |
-| `write_kiln` | Create or modify notes |
-| `run_tools` | Execute MCP tools |
-| `web_search` | Internet access |
-
-Permissions are set during `session.configure_agent`. The host validates each tool call against the agent's granted permissions. A `write_kiln` call from an agent that only has `read_kiln` will be rejected before it reaches the MCP layer.
-
-Custom agent profiles can specify capabilities in `config.toml`:
-
-```toml
-[acp.agents.read-only-claude]
-extends = "claude"
-capabilities = ["read_kiln", "run_tools"]
-```
+The `capabilities` field on an `[acp.agents.*]` profile is parsed and stored but **never read for enforcement**. Setting `capabilities = ["read_kiln"]` on a profile has no effect today; do not rely on it to restrict an agent. Use the permission system instead.
 
 ## Protocol Details
 
 ### Handshake
 
-When Crucible spawns an agent subprocess, it performs a version handshake. The current protocol wire version is `1`. Crucible tracks ACP spec revision `0.10.6` internally for compatibility checks. Versions are compatible if they share the same major version number.
+When Crucible spawns an agent subprocess, it performs a version handshake via `initialize`. The current protocol wire version is `1`. Versions are compatible if they share the same major version number.
 
 ### Transport Configuration
 
-The ACP transport layer has configurable parameters:
+Timeouts and limits under `[acp]` in `config.toml`:
 
-- **Timeout**: 30 seconds default per operation
-- **Max message size**: 10 MB default
-- **Debug logging**: toggleable per session
+- `streaming_timeout_minutes` (default 15) — how long a streaming turn may go without completing before it is cut off. This is the one that is actually enforced.
+- `session_timeout_minutes` (default 30) and `max_message_size_mb` (default 25) — parsed and stored, but **currently unread**: no code path enforces them. Treat them as reserved.
 
 ### Error Handling
 
@@ -219,7 +169,7 @@ What the host gets is the ordinary internal Crucible agent, exposed through a di
 5. **`session/cancel`** — forwarded to the daemon to stop the turn; the prompt returns `stop_reason = cancelled`.
 6. **`session/load`** — resumes an existing daemon session so the host can continue a prior conversation.
 
-Because sessions are real daemon sessions, Precognition, kiln tools, and session digests all apply automatically — the host does not need to know anything about Crucible's knowledge graph.
+Because sessions are real daemon sessions, Precognition and kiln tools apply automatically — the host does not need to know anything about Crucible's knowledge graph.
 
 **Not yet wired (v1):** session modes, model listing/switching and forking over ACP, host-side filesystem/terminal capabilities (tools run daemon-side exactly as for internal sessions), and authentication (none advertised). Non-permission interaction primitives (free-form questions, panels) have no ACP analogue and are auto-declined.
 

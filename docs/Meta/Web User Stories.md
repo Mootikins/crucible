@@ -2,7 +2,7 @@
 title: Web User Stories
 description: User stories for the web UI's chat and kiln-editing flows, with acceptance criteria and test-tier mapping
 tags: [meta, ux, web, user-stories, testing]
-updated: 2026-08-10
+updated: 2026-08-15
 ---
 
 # Web User Stories
@@ -85,7 +85,7 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 ## 2. Kiln & Note Editing
 
 ### WS-201: Browse workspace files and kiln notes
-**As a user**, the file tree shows a real hierarchical folder tree for the selected root; clicking opens the file. (Superseded/expanded by **WS-217** — the unified explorer.)
+**As a user**, the file tree shows a real hierarchical folder tree for the selected root; clicking opens the file. (Superseded/expanded by **WS-217** — the unified explorer. The Files panel is no longer a standalone left tab: it is embedded in the **Navigator** panel, which absorbed Files/Sessions/Search.)
 **Acceptance:** kiln roots build the whole tree from `list_notes` (folders split from kiln-relative paths); project roots lazy-load one level via `fs.list_dir`; folders expand/collapse with type icons; click opens via `openFileInEditor`.
 **Tests:** W1 SHIPPED 2026-07-18 — the tree *UI* GAP is now covered: `FileTreeView.test.tsx` (real zag machine — `role=tree`, `aria-level`, folders-first order, click→open-leaf-exactly-once routing-seam guard, branch-click-does-not-open, `aria-current="page"`), `kiln-builder`/`collection`/`reconcile`/`tree-root`/`treeRootStore` suites. **Remaining GAP:** W2 Playwright (context-menu interactive open, drag) and W4 live (`fs.list_dir` project walk against a real daemon) still deferred; the daemon `fs.list_dir` security properties are Rust-unit-covered (`server::fs::tests`).
 
@@ -168,11 +168,11 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 
 ### WS-216: A real terminal, a clean panel roster, one background hierarchy
 **As a user**, the Terminal tab is a real shell (xterm.js over a PTY), every tab in the default layout is an implemented panel, and panel chrome shares one background hierarchy.
-**Acceptance:** the terminal panel runs the user's `$SHELL` in a PTY over `/api/terminal/ws` (localhost-only, same gate as `/api/shell`) with ANSI colors from the ember palette, resize sync, scrollback, and a reconnect affordance when the session ends; the placeholder panels (Explorer/Search/Source Control/Outline/Problems/Output "Coming Soon" stubs) are DELETED — components, registrations, and default-layout tabs — leaving Sessions+Files / Backlinks+Activity / Terminal+Chat as the default; backgrounds follow one rule — app canvas `shell-bg` (header, ribbons, tab bars, status bar), panel content `shell-panel` (editor, terminal, panels; the active tab carries `shell-panel` so it fuses with its content, Obsidian-style), `surface-elevated` for raised rows, `surface-overlay` only for popups/floating windows.
+**Acceptance:** the terminal panel runs the user's `$SHELL` in a PTY over `/api/terminal/ws` (localhost-only, same gate as `/api/shell`) with ANSI colors from the ember palette, resize sync, scrollback, and a reconnect affordance when the session ends; the placeholder panels (Explorer/Search/Source Control/Outline/Problems/Output "Coming Soon" stubs) are DELETED — components, registrations, and default-layout tabs. The default roster (updated since: the **Navigator absorbed the separate Files/Sessions/Search tabs** into one left panel with a scope swapper) is: left **Navigator** (single tab), right **Backlinks + Activity**, bottom **Terminal + Chat**; persisted layouts with the retired tabs are remapped by `migrateRetiredPanels` (`windowStoreInternals.ts`); backgrounds follow one rule — app canvas `shell-bg` (header, ribbons, tab bars, status bar), panel content `shell-panel` (editor, terminal, panels; the active tab carries `shell-panel` so it fuses with its content, Obsidian-style), `surface-elevated` for raised rows, `surface-overlay` only for popups/floating windows.
 **Tests:** W2 (`terminal.story.spec.ts` — mocked PTY WebSocket: prompt renders in xterm, input echoes, drop → reconnect), W1 (windowing/store suites updated to the implemented-only roster; `panel-placeholders.spec.ts` deleted with its subject).
 
 ### WS-217: Unified file-tree explorer — pick any kiln or project root
-**As a user**, a top-right dropdown lets me browse any registered **project** or **kiln** as a real hierarchical file tree, and the tree stays live as files change.
+**As a user**, a top-right dropdown lets me browse any registered **project** or **kiln** as a real hierarchical file tree, and the tree stays live as files change. (The explorer now lives inside the **Navigator** left panel — see WS-216's roster note.)
 **Acceptance:** the dropdown groups roots as Projects / Kilns (from `project.list` + `kiln.list`, deduped), selection persists across reload (localStorage); selecting a kiln builds the whole tree from `list_notes`, selecting a project lazy-walks one folder level per expand via the new daemon `fs.list_dir` RPC; keyboard/ARIA tree (`role=tree`, roving focus, arrows in/out of folders, Enter=open, F2 reserved for Phase-2 rename), sort (name/modified asc/desc), collapse-all, reveal-active, read-only right-click menu (Open/Copy path/Reveal-in-tree); kiln trees patch in place on live `GET /api/fs/events` SSE (non-`.md` leaves ignored), project roots refresh-on-interaction (manual refresh + window-focus refetch of expanded folders). **Security (daemon-side):** `fs.list_dir` is registry-allowlisted (fail-closed), rejects `rel_path` traversal before disk, canonicalize-and-contains, drops per-entry symlinks escaping the root, and hides dotfiles + gitignored entries by default (`show_ignored` reveals).
 **Tests:** W1 (`FileTreeView`/`RootDropdown`/`kiln-builder`/`collection`/`reconcile`/`tree-root`/`treeRootStore` — 173 assertions incl. path-splitting, roster grouping/persistence/dedup, reconciler idempotence + `moved`==delete+create convergence), Rust (`server::fs::tests` — nested walk, gitignore/dotfile hiding, symlink-escape exclusion, traversal rejection, dirs-first sort; `web::fs_events::tests` — daemon→SSE event mapping). **GAP:** W2 Playwright interactive (context-menu open, keyboard journey) and W4 live (`fs.list_dir` + live SSE against a real daemon) deferred; project live-watching (`ProjectManager` watcher) deferred to a follow-up.
 **Scope:** Phase 1 of a 3-phase plan. **Phase 2** = drag-to-move, rename, mkdir, delete-to-trash, DnD drop-lines; **Phase 3** = deterministic resolved-link index + wikilink auto-rewrite on move. Seams laid: node `status` field (future git/diff decoration), daemon-as-single-write-authority. (Phase-2 DnD SHIPPED as WS-218; the `FileDragSource` seam types were superseded by `lib/file-dnd`.)
@@ -222,6 +222,11 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **Acceptance:** `SessionStatusChips` renders the **effective** review policy the daemon reports — an ACP session in `normal` mode reads "review at turn end", never "gated", because the daemon cannot enforce a pre-write gate on an external agent (open question 1). A mode with no gate gets no chip, and a daemon that predates the field gets no chip rather than a guessed one. While the daemon's `review_gate` event says `blocked`, a distinct "waiting on review" chip names the file it is waiting on and clears when the gate releases; the owed count ignores the user's own `external` edits. `ToolCard` stamps the daemon call id and publishes the tool name, offers one accept/reject pair per composed hunk still live, and marks the call **superseded** when nothing it wrote survives — at which point the accept/reject controls vanish, because the action unit is gone. A card says nothing review-shaped until the ledger has actually been read, and a call that proposed no edit is never called superseded.
 **Tests:** W1 (`SessionStatusChips.review.test.tsx` — effective vs configured policy, ACP degradation, missing-field silence, blocked/released chip, count excludes external; `ToolCard.review.test.tsx` — call-id stamping, gutter-chip highlight, superseded detection incl. the not-yet-loaded and no-edit cases, accept/reject naming the composed hunk).
 
+### WS-231: Zoom an image in its pane
+**As a user**, opening an image gives me a real viewer: I zoom with the plain scroll wheel over the image, drag to pan once it overflows, and the pane's zoom never touches browser page zoom.
+**Acceptance:** an image tab renders `ImageViewer` (keyed on the path, so a different image always opens at fit and zoom state stays pane-local). Toolbar: zoom out / live percentage / zoom in / fit-to-pane / 1:1, in the shared canvas-toolbar style, each button's title and aria-label naming its shortcut. Plain wheel over the image zooms about the cursor — no Ctrl, because ctrl+scroll triggers browser page zoom, which is the UX this pane exists to avoid — and the event is consumed so it never scrolls the pane. Fit is contain-downscale-only (a 16px icon is not blown up to pane size); explicit zoom clamps to 10%–1000% on a ×1.25 step / exponential wheel curve. Drag pans via native scroll offsets with pointer capture; double-click toggles fit ↔ 100% anchored at the click point; with the pane focused, `+`/`=` zoom in, `-` zooms out, `0` refits, `1` is actual size. Cursor-anchor and fit maths live DOM-free in `lib/image-viewer.ts` (the `canvas-viewport.ts` discipline).
+**Tests:** W1 (`lib/__tests__/image-viewer.test.ts` — bounds, step/wheel curve, fit calculation, cursor-anchored scroll incl. flex-centering and clamping; `FileViewerPanel.test.tsx` — toolbar with named shortcuts, button/keyboard zoom, reset-on-new-image). GAP: no W2 journey — wheel/drag geometry needs a real layout, which jsdom cannot measure.
+
 ### WS-HERO: One session across web and terminal (cross-surface)
 **As a user**, a session and its kiln notes are shared truth across the browser and the terminal — the daemon is the hypervisor, the consoles are stateless.
 **Acceptance:** the web console resumes a session started in `cru chat` (turn 1 hydrates both sides); opening `from-tui.md` in the real editor shows the terminal's write; editing + saving changes the bytes on disk; a web-sent turn 2 is later visible from `cru chat --resume`; final history is 3 turns and the file carries both the terminal and browser edits.
@@ -233,10 +238,9 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 
 The four-surface shell from the "Crucible Shell Options" design (turn 5): Home → Inbox → Session ↔ Edit, one connected app. All state stays daemon-side; the surfaces are views over tabs in the window manager.
 
-### WS-301: Land on Home and pick up where I left off
+### WS-301: Land on Home and pick up where I left off — NOT IMPLEMENTED
 **As a user**, opening the web UI with an empty workspace lands me on Home: a greeting, kiln stats, resume-a-session, recent notes, and a needs-you strip when something waits on me.
-**Acceptance:** Home tab auto-opens when the restored layout has no center tabs; resume rows open the session; recent notes (sorted by `updated_at`) open in the editor; the needs-you strip appears only when the attention count > 0 and opens the Inbox; new-session and open-editor actions work.
-**Tests:** W1 (`HomePanel.test.tsx` — greeting/relative-time helpers, all-clear vs needs-you, entry points, note ordering via mocked `listNotes`).
+**Status:** not implemented in the current shell. No `home` content type is registered (`register-panels.tsx`), so the auto-open-on-empty-layout behavior does not exist; the `HomePanel` component and its W1 suite are gone from the tree. Resume/recent/needs-you affordances live in the Navigator (sessions scope) and Inbox instead. Revive or retire this story before building on it.
 
 ### WS-302: See and answer everything waiting on me in the Inbox
 **As a user**, the Inbox shows every pending interaction at the top — answerable in place without switching tabs — and every session with live status below.
@@ -310,6 +314,42 @@ The four-surface shell from the "Crucible Shell Options" design (turn 5): Home �
 **Why the gate came first:** nine of fifteen knobs the daemon advertised in `METHODS` had no web route at all, and nothing failed — a knob missing from the axum Router is not a compile error in any crate. Gate **A2e** (`crucible-cli/tests/architecture_tests.rs`) now fails when the daemon advertises a knob the web cannot reach, *and* when a landed route is still listed as missing, so the ledger records work outstanding rather than work forgotten.
 **The trap this closes:** `session.set_execution_timeout`'s wire field is `timeout_secs`. A request struct named after the knob compiles, passes review, returns 200, and drops the value. Route existence does not prove a value survives, so each knob is asserted in both directions instead.
 **Tests:** Rust A2e (route existence for all fifteen; ledger now empty) and `routes/session_config/tests.rs` (per-knob round-trip through the mock daemon — PUT's value read off the wire under the daemon's field name, GET's value under the web's response key, with per-knob-distinct values so a mis-wired route cannot pass by coincidence; plus `GET /api/session/{id}/mode`). W1 (`AdvancedSessionSettings.test.tsx` — load, per-knob commit, `null` on clear, non-nullable retries, enum spelling, unknown-enum passthrough, prompt debounce).
+
+---
+
+## 4. Shipped-feature stubs (stories owed under the "every feature adds a story" rule)
+
+These features shipped without a WS entry. Each gets a stub here; flesh out acceptance criteria and promote tests when the story is next touched.
+
+### WS-226: Canvas — spatial notes on an infinite surface
+**As a user**, I open a `.canvas` document as a center tab and arrange cards (notes, files, links) on a pannable, zoomable surface.
+**Acceptance (stub):** `canvas` registers as a center panel; documents load/save via `GET`/`PUT /api/canvas?path=…`; a canvas must live in a kiln and may only reference files inside that same kiln — the read path strips (quarantines) out-of-kiln references rather than reporting them.
+**Tests:** W1 (`CanvasPanel.test.tsx`, `CanvasCard.test.tsx`, `CanvasLinkNode.test.tsx`, `lib/__tests__/canvas-doc.test.ts`, `canvas-viewport.test.ts`). GAP: no W2/W3 journey.
+
+### WS-227: Browse agent skills
+**As a user**, a Skills panel in the left region lists the skills available to the session's kiln, searchable, with per-skill detail.
+**Acceptance (stub):** `skills` registers left; backed by `GET /api/skills` (kiln + optional scope), `GET /api/skills/search`, `GET /api/skills/{name}`.
+**Tests:** W1 (`SkillsPanel.test.tsx`). GAP: no W2 journey.
+
+### WS-228: Manage plugins from the browser
+**As a user**, a Plugins panel lists installed plugins, lets me install/remove/reload them, run plugin commands, and edit plugin options.
+**Acceptance (stub):** `plugins` registers left; seven endpoints: `GET`/`POST /api/plugins`, `DELETE /api/plugins/{name}`, `POST /api/plugins/{name}/reload`, `GET /api/plugins/publications`, `GET /api/plugins/options`, `POST /api/plugins/{name}/option`, `POST /api/plugins/command`.
+**Tests:** W1 (`PluginPanel.test.tsx`, `PluginSettings.test.tsx`). GAP: no W2 journey.
+
+### WS-229: Search the kiln — text and semantic
+**As a user**, the Navigator's search scope gives me one debounced box that searches notes as literal text (ripgrep) or by vector similarity, with hits that open in the editor.
+**Acceptance (stub):** `SearchPanel` is embedded in the Navigator (no standalone tab); backed by `POST /api/search/grep`, `POST /api/search/semantic`, and `POST /api/search/vectors`.
+**Tests:** W1 (`SearchPanel.test.tsx`). GAP: no W2 journey.
+
+### WS-230: Clone a repo and start working in it
+**As a user**, pasting a repo URL (https, git@, or `owner/repo` shorthand) in the new-session launchpad or the explorer's root dropdown clones it and registers it as a project.
+**Acceptance (stub):** `POST /api/scm/clone` proxies the daemon's `scm.clone` (long timeout) into `[scm] projects_dir`; callers are `CenterComposer` and `RootDropdown`.
+**Tests:** W1 (`CenterComposer.test.tsx`, `RootDropdown.test.tsx` clone paths). GAP: no live-tier clone.
+
+### WS-315: Sign in when the server demands it
+**As a user**, on a non-localhost deployment a 401 pops a sign-in modal; pasting the API key (from `cru web key`) signs me in without the key ever being readable by page JS.
+**Acceptance (stub):** the api layer dispatches `crucible:auth-required` on 401 → `AuthTokenPrompt` modal → `POST /api/auth/login` exchanges the key for an HttpOnly session cookie → reload; Settings also accepts the key. `POST /api/auth/logout` revokes the presented session server-side, but **no UI affordance calls it yet** (GAP).
+**Tests:** W1 (`AuthTokenPrompt.test.tsx`, `lib/__tests__/api-token.test.ts`); Rust (`routes/auth.rs` login/logout/expiry suite).
 
 ---
 

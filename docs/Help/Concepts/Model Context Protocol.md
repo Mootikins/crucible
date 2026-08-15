@@ -149,11 +149,11 @@ Client POSTs JSON-RPC for client→server messages
 
 ## Crucible as MCP Server
 
-Running `cru mcp` starts Crucible's built-in MCP server on stdio. External agents (Claude Desktop, Claude Code, Cursor, etc.) connect to it and gain access to your kiln.
+Running `cru mcp` starts Crucible's built-in MCP server. The default transport is **SSE on port 3847**; pass `--stdio` for stdio transport (what Claude Desktop and most `mcp add` flows expect). External agents (Claude Desktop, Claude Code, Cursor, etc.) connect to it and gain access to your kiln.
 
 ### Available Tools
 
-Crucible exposes 12 tools across three categories:
+Crucible exposes 10 tools across three categories:
 
 **Note Tools (6)**
 
@@ -171,10 +171,10 @@ Crucible exposes 12 tools across three categories:
 | Tool | Description |
 |------|-------------|
 | `semantic_search` | Search notes using semantic similarity |
-| `text_search` | Fast full-text search across notes |
+| `grep_notes` | Grep-style text search across notes (literal or regex) |
 | `property_search` | Search notes by frontmatter properties (includes tags) |
 
-**Kiln Tools (3)**
+**Kiln Tools (1)**
 
 | Tool | Description |
 |------|-------------|
@@ -182,25 +182,26 @@ Crucible exposes 12 tools across three categories:
 
 ### Connecting External Agents
 
-Add Crucible as an MCP server in Claude Code:
+Add Crucible as an MCP server in Claude Code (stdio transport):
 
 ```bash
-claude mcp add crucible -- cru mcp
+claude mcp add crucible -- cru mcp --stdio
 ```
 
-Or start the server directly for other clients:
+Or start the SSE server directly for clients that connect over HTTP:
 
 ```bash
-cru mcp
+cru mcp              # SSE on port 3847
+cru mcp --port 4000  # custom port
 ```
 
-The server communicates over stdio using JSON-RPC 2.0. Any MCP-compatible client can connect.
+Both transports speak JSON-RPC 2.0. Any MCP-compatible client can connect.
 
 ### Extended Server
 
-Beyond the 12 core tools, Crucible's MCP server also exposes:
+Beyond the 10 core tools, Crucible's MCP server also exposes:
 
-- **Lua plugin tools**: Scripts from `plugins/` directories, prefixed with `lua_`
+- **Lua plugin tools**: Tools registered by plugins, exposed under their registered names (no prefix is added)
 - **Gateway tools**: Tools from upstream MCP servers with configured prefixes
 
 These dynamic tools are discovered at startup and appear alongside the built-in tools.
@@ -262,4 +263,3 @@ The initialization handshake includes protocol version negotiation and capabilit
 - [[Help/Concepts/Agents & Protocols]]: overview of agent architecture
 - [[Help/Extending/MCP Gateway]]: connecting external MCP servers
 - [[Help/Config/mcp]]: MCP server configuration reference
-- [[Help/CLI/mcp]]: `cru mcp` command reference

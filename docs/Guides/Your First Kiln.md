@@ -97,9 +97,11 @@ cru process
 
 You should see:
 ```
-Processing 1 files through pipeline...
+Processing kiln via daemon...
 Pipeline processing complete!
-   Processed: 1 files
+  Discovered: 1 indexable files
+  Processed: 1 files
+  Skipped (unchanged): 0 files
 ```
 
 ### 6. Verify Setup
@@ -193,7 +195,12 @@ cru process --watch
 
 ### Search
 
-Find content semantically:
+Find content directly:
+```bash
+cru search "project planning"
+```
+
+Or ask the agent:
 ```bash
 cru chat "Find notes about project planning"
 ```
