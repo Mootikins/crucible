@@ -35,8 +35,10 @@ pub struct ShellPolicy {
     pub blocked_commands: Vec<String>,
     /// Default working directory
     pub default_cwd: Option<PathBuf>,
-    /// Maximum execution time in seconds
-    pub timeout_secs: u64,
+    /// Maximum execution time in seconds; `None` (the default) imposes no
+    /// deadline — plugins run builds and servers whose duration the policy
+    /// cannot predict, and a default cap silently killed them.
+    pub timeout_secs: Option<u64>,
     /// Whether to capture stderr
     pub capture_stderr: bool,
 }
@@ -52,7 +54,7 @@ impl Default for ShellPolicy {
                 "chown".to_string(),
             ],
             default_cwd: None,
-            timeout_secs: 30,
+            timeout_secs: None,
             capture_stderr: true,
         }
     }
@@ -65,7 +67,7 @@ impl ShellPolicy {
             allowed_commands: Vec::new(),
             blocked_commands: Vec::new(),
             default_cwd: None,
-            timeout_secs: 300,
+            timeout_secs: None,
             capture_stderr: true,
         }
     }
@@ -182,7 +184,6 @@ pub async fn spawn_command(
     let mut stdout_buf = String::new();
     let mut stderr_buf = String::new();
 
-    let timeout = std::time::Duration::from_secs(policy.timeout_secs);
     let pump = async {
         // Both streams are drained concurrently so a chatty stderr cannot
         // block stdout (or the reverse) — sequential draining deadlocks the
@@ -228,18 +229,26 @@ pub async fn spawn_command(
         }
     };
 
-    let outcome = tokio::time::timeout(timeout, pump).await;
-    if outcome.is_err() {
-        // `kill_on_drop` alone reaps only when the handle drops, which is at the
-        // end of this scope; killing here stops the work at the deadline the
-        // caller asked for rather than whenever the error finishes unwinding.
-        let _ = child.start_kill();
-        return Err(LuaError::Runtime(format!(
-            "Command '{}' timed out after {} seconds",
-            cmd, policy.timeout_secs
-        )));
+    match policy.timeout_secs {
+        Some(secs) => {
+            let deadline = std::time::Duration::from_secs(secs);
+            match tokio::time::timeout(deadline, pump).await {
+                Ok(result) => result?,
+                Err(_) => {
+                    // `kill_on_drop` alone reaps only when the handle drops,
+                    // which is at the end of this scope; killing here stops the
+                    // work at the deadline the caller asked for rather than
+                    // whenever the error finishes unwinding.
+                    let _ = child.start_kill();
+                    return Err(LuaError::Runtime(format!(
+                        "Command '{}' timed out after {} seconds",
+                        cmd, secs
+                    )));
+                }
+            }
+        }
+        None => pump.await?,
     }
-    outcome.expect("checked above")?;
 
     let status = child
         .wait()
@@ -298,7 +307,28 @@ pub async fn exec_command(
         command.stdin(Stdio::piped());
     }
 
-    let timeout = std::time::Duration::from_secs(policy.timeout_secs);
+    // Await a child's output, honoring the policy deadline when one is set.
+    async fn output_with_deadline<F>(
+        fut: F,
+        timeout_secs: Option<u64>,
+        cmd: &str,
+    ) -> Result<std::process::Output, LuaError>
+    where
+        F: std::future::Future<Output = std::io::Result<std::process::Output>>,
+    {
+        let io_result = match timeout_secs {
+            Some(secs) => tokio::time::timeout(std::time::Duration::from_secs(secs), fut)
+                .await
+                .map_err(|_| {
+                    LuaError::Runtime(format!(
+                        "Command '{}' timed out after {} seconds",
+                        cmd, secs
+                    ))
+                })?,
+            None => fut.await,
+        };
+        io_result.map_err(|e| LuaError::Runtime(format!("Failed to execute '{}': {}", cmd, e)))
+    }
 
     // If stdin data is provided, spawn the process and pipe it
     let output = if let Some(data) = stdin_data {
@@ -315,25 +345,9 @@ pub async fn exec_command(
             drop(stdin);
         }
 
-        tokio::time::timeout(timeout, child.wait_with_output())
-            .await
-            .map_err(|_| {
-                LuaError::Runtime(format!(
-                    "Command '{}' timed out after {} seconds",
-                    cmd, policy.timeout_secs
-                ))
-            })?
-            .map_err(|e| LuaError::Runtime(format!("Failed to execute '{}': {}", cmd, e)))?
+        output_with_deadline(child.wait_with_output(), policy.timeout_secs, cmd).await?
     } else {
-        tokio::time::timeout(timeout, command.output())
-            .await
-            .map_err(|_| {
-                LuaError::Runtime(format!(
-                    "Command '{}' timed out after {} seconds",
-                    cmd, policy.timeout_secs
-                ))
-            })?
-            .map_err(|e| LuaError::Runtime(format!("Failed to execute '{}': {}", cmd, e)))?
+        output_with_deadline(command.output(), policy.timeout_secs, cmd).await?
     };
 
     Ok(ExecResult {
@@ -515,6 +529,61 @@ pub fn register_shell_module(lua: &Lua, policy: ShellPolicy) -> Result<(), LuaEr
 mod tests {
     use super::*;
 
+    /// The default policy imposes no deadline: plugins legitimately run
+    /// commands with no natural end (dev servers) or unbounded duration
+    /// (builds, PDF extraction of large files), and a default cap silently
+    /// killed them. A policy can still opt into a deadline with `Some(_)`.
+    #[test]
+    fn default_policy_has_no_timeout() {
+        assert_eq!(ShellPolicy::default().timeout_secs, None);
+        assert_eq!(ShellPolicy::permissive().timeout_secs, None);
+    }
+
+    /// With no timeout configured, a command outliving the old 30s-default
+    /// window's *shape* (represented by a multi-second sleep) completes
+    /// normally instead of being killed at a deadline.
+    #[tokio::test]
+    async fn exec_without_timeout_lets_slow_commands_finish() {
+        let policy = ShellPolicy {
+            blocked_commands: vec![],
+            timeout_secs: None,
+            ..Default::default()
+        };
+        let result = exec_command(
+            "sh",
+            &["-c".to_string(), "sleep 2; echo done".to_string()],
+            None,
+            None,
+            None,
+            &policy,
+        )
+        .await
+        .expect("exec should not time out");
+        assert!(result.success);
+        assert_eq!(result.stdout.trim(), "done");
+    }
+
+    /// An explicit deadline still enforces.
+    #[tokio::test]
+    async fn exec_with_explicit_timeout_still_kills() {
+        let policy = ShellPolicy {
+            blocked_commands: vec![],
+            timeout_secs: Some(1),
+            ..Default::default()
+        };
+        let err = exec_command(
+            "sh",
+            &["-c".to_string(), "sleep 5".to_string()],
+            None,
+            None,
+            None,
+            &policy,
+        )
+        .await
+        .expect_err("should time out");
+        assert!(err.to_string().contains("timed out"));
+    }
+
     /// Streaming exists so long-running commands can report progress. `exec`
     /// buffers everything and returns at completion, so a five-minute image
     /// build emits nothing until it is over — no status API can fix that from
@@ -524,7 +593,7 @@ mod tests {
     async fn spawn_streams_lines_as_they_arrive_and_still_returns_the_whole_output() {
         let policy = ShellPolicy {
             blocked_commands: vec![],
-            timeout_secs: 30,
+            timeout_secs: Some(30),
             ..Default::default()
         };
         let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(String, String)>::new()));
@@ -576,7 +645,7 @@ mod tests {
     async fn spawn_reports_a_failing_command_without_losing_its_output() {
         let policy = ShellPolicy {
             blocked_commands: vec![],
-            timeout_secs: 30,
+            timeout_secs: Some(30),
             ..Default::default()
         };
         let result = spawn_command(
@@ -608,7 +677,7 @@ mod tests {
             &lua,
             ShellPolicy {
                 blocked_commands: vec![],
-                timeout_secs: 30,
+                timeout_secs: Some(30),
                 ..Default::default()
             },
         )
@@ -805,7 +874,7 @@ mod tests {
                 None,
                 &ShellPolicy {
                     blocked_commands: vec![],
-                    timeout_secs: 1,
+                    timeout_secs: Some(1),
                     ..Default::default()
                 },
                 &mut |_stream, _line| {},

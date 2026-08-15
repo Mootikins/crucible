@@ -71,7 +71,6 @@ return {
     assert_eq!(spec.tools.len(), 1);
     assert_eq!(spec.commands.len(), 1);
     assert_eq!(spec.handlers.len(), 1);
-    assert_eq!(spec.views.len(), 1);
 }
 
 #[test]
@@ -187,53 +186,6 @@ return {
 }
 
 #[test]
-fn test_view_spec_with_handler() {
-    let source = r#"
-return {
-    name = "view-test",
-    version = "1.0.0",
-    views = {
-        ["my-view"] = {
-            desc = "A custom view",
-            fn = function(ctx) end,
-            handler = function(key, ctx) end,
-        },
-    },
-}
-"#;
-    let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
-        .unwrap()
-        .unwrap();
-
-    assert_eq!(spec.views.len(), 1);
-    assert_eq!(spec.views[0].name, "my-view");
-    assert_eq!(spec.views[0].description, "A custom view");
-    assert!(spec.views[0].handler_fn.is_some());
-}
-
-#[test]
-fn test_view_spec_without_handler() {
-    let source = r#"
-return {
-    name = "view-test",
-    version = "1.0.0",
-    views = {
-        ["simple-view"] = {
-            desc = "Simple",
-            fn = function(ctx) end,
-        },
-    },
-}
-"#;
-    let spec = load_plugin_spec_from_source(source, Path::new("test/init.lua"))
-        .unwrap()
-        .unwrap();
-
-    assert_eq!(spec.views.len(), 1);
-    assert!(spec.views[0].handler_fn.is_none());
-}
-
-#[test]
 fn test_command_spec_with_hint() {
     let source = r#"
 return {
@@ -323,20 +275,10 @@ fn test_spec_plugin_full_lifecycle() {
         Some("[query]".to_string())
     );
 
-    assert_eq!(manager.handlers().len(), 1);
-    assert_eq!(manager.handlers()[0].event_type, "note:created");
-    assert_eq!(manager.handlers()[0].priority, 50);
-
-    assert_eq!(manager.views().len(), 1);
-    assert_eq!(manager.views()[0].name, "graph");
-    assert!(manager.views()[0].handler_fn.is_some());
-
     // Unload and verify cleanup
     manager.unload("spec-test").unwrap();
     assert_eq!(manager.tools().len(), 0);
     assert_eq!(manager.commands().len(), 0);
-    assert_eq!(manager.handlers().len(), 0);
-    assert_eq!(manager.views().len(), 0);
 }
 
 #[test]
@@ -357,8 +299,6 @@ fn test_spec_plugin_without_manifest() {
 
     assert_eq!(manager.tools().len(), 1);
     assert_eq!(manager.commands().len(), 1);
-    assert_eq!(manager.handlers().len(), 1);
-    assert_eq!(manager.views().len(), 1);
 }
 
 #[test]

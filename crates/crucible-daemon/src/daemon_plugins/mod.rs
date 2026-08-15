@@ -4,8 +4,10 @@
 //! registers daemon-appropriate modules (networking, filesystem, shell,
 //! JSON query, paths) and discovers/loads plugins.
 //!
-//! UI modules (oil, popup, panel, statusline) are intentionally excluded —
-//! the daemon is headless.
+//! The daemon is headless, but `cru.oil` (node constructors, via
+//! `LuaExecutor::new()`) and the statusline expression registry
+//! ([`DaemonPluginLoader::register_statusline_exprs`]) are still registered:
+//! plugins *build* UI descriptions daemon-side and clients render them.
 
 pub mod bootstrap;
 pub mod option_store;
@@ -178,8 +180,9 @@ impl DaemonPluginLoader {
     /// - `cru.kiln` / `cru.graph` — Kiln and graph stubs (upgraded with storage later)
     /// - `cru.schedule` — Interval-based scheduled callbacks
     ///
-    /// **Not** registered (UI-only):
-    /// - `cru.oil`, `cru.popup`, `cru.panel`, `cru.statusline`
+    /// `cru.oil` comes with `LuaExecutor::new()`, and statusline expressions
+    /// are bound later via [`Self::register_statusline_exprs`] — both build
+    /// UI *descriptions* that clients render; nothing here draws.
     pub fn new(plugin_config: HashMap<String, serde_json::Value>) -> anyhow::Result<Self> {
         let executor = LuaExecutor::new().map_err(|e| anyhow::anyhow!("LuaExecutor init: {e}"))?;
 

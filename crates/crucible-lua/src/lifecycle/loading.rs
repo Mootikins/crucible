@@ -164,10 +164,6 @@ impl PluginManager {
             .retain(|t| !t.item.source_path.starts_with(dir_prefix.as_ref()));
         self.commands
             .retain(|c| !c.item.source_path.starts_with(dir_prefix.as_ref()));
-        self.views
-            .retain(|v| !v.item.source_path.starts_with(dir_prefix.as_ref()));
-        self.handlers
-            .retain(|h| !h.item.source_path.starts_with(dir_prefix.as_ref()));
 
         let plugin = self
             .plugins

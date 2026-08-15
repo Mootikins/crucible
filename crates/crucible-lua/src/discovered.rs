@@ -1,8 +1,8 @@
 //! The shapes a plugin's exports take once discovered.
 //!
-//! `DiscoveredTool`, `DiscoveredHandler`, `DiscoveredCommand`, `DiscoveredView`
-//! and `DiscoveredService` are what a plugin's **spec table** is parsed into
-//! (`lifecycle/spec.rs`) and what the registries and builders pass around.
+//! `DiscoveredTool`, `DiscoveredHandler`, `DiscoveredCommand` and
+//! `DiscoveredService` are what a plugin's **spec table** is parsed into
+//! (`lifecycle/spec.rs`).
 //!
 //! This module used to also hold `AnnotationParser`, which scraped LDoc-style
 //! `-- @tool` / `-- @handler` doc comments out of `.lua` and `.fnl` files as a
@@ -64,16 +64,6 @@ pub struct DiscoveredCommand {
     /// Name of the handler function in the source
     pub handler_fn: String,
     /// Whether this is a Fennel source
-    pub is_fennel: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct DiscoveredView {
-    pub name: String,
-    pub description: String,
-    pub source_path: String,
-    pub view_fn: String,
-    pub handler_fn: Option<String>,
     pub is_fennel: bool,
 }
 

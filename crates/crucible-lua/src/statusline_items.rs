@@ -17,14 +17,19 @@
 //! ```lua
 //! local sl = crucible.statusline
 //! sl.setup{
-//!   main = {
-//!     anchor = "footer.below_input",
-//!     items  = { sl.mode:hl("StatusMode"), " ", sl.model{ max = 25 },
-//!                sl.align,
-//!                sl.any(sl.notification, sl.context) },
+//!   prompt = {
+//!     sl.input,
+//!     { sl.mode:hl("StatusMode"), " ", sl.model{ max = 25 },
+//!       sl.align,
+//!       sl.any(sl.notification, sl.context) },
 //!   },
 //! }
 //! ```
+//!
+//! A [`Region`] (`top`, `prompt`, `bottom`) is an ordered list of rows;
+//! position in the list is the arrangement. There are no named bars or
+//! anchors — that model (`main = { anchor = ..., items = ... }`) was
+//! replaced, see [`Region`].
 //!
 //! Evaluation splits by who owns the fact. Built-ins are TUI-local and cost no
 //! RPC — the TUI already knows the mode, the model, the context usage. Only

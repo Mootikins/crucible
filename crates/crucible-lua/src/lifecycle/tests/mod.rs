@@ -6,7 +6,6 @@ mod discovery;
 mod error_log;
 mod hooks;
 mod loading;
-mod registration;
 mod spec;
 
 pub(super) fn create_test_plugin(dir: &Path, name: &str, version: &str) -> PathBuf {

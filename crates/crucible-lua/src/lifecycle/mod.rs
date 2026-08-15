@@ -1,6 +1,5 @@
 //! Plugin lifecycle management
 
-mod builders;
 mod dependency;
 mod discovery;
 mod error;
@@ -15,7 +14,7 @@ mod spec;
 #[cfg(test)]
 mod tests;
 
-use crate::discovered::{DiscoveredCommand, DiscoveredHandler, DiscoveredTool, DiscoveredView};
+use crate::discovered::{DiscoveredCommand, DiscoveredTool};
 use crate::manifest::{LoadedPlugin, PluginSource};
 use mlua::{Lua, RegistryKey};
 use registration::RegisteredItem;
@@ -24,11 +23,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tracing::warn;
 
-pub use builders::{CommandBuilder, HandlerBuilder, ToolBuilder, ViewBuilder};
 pub use discovery::PluginDiscoveryError;
 pub use error::{LifecycleError, LifecycleResult};
 pub use error_log::{PluginErrorEntry, PluginErrorLog};
-pub use registration::RegistrationHandle;
 pub use spec::{load_plugin_spec, load_plugin_spec_from_source, PluginSpec};
 
 pub struct PluginManager {
@@ -38,8 +35,6 @@ pub struct PluginManager {
     path_sources: HashMap<PathBuf, PluginSource>,
     tools: Vec<RegisteredItem<DiscoveredTool>>,
     commands: Vec<RegisteredItem<DiscoveredCommand>>,
-    views: Vec<RegisteredItem<DiscoveredView>>,
-    handlers: Vec<RegisteredItem<DiscoveredHandler>>,
     lua: Lua,
     on_unload_hooks: HashMap<String, RegistryKey>,
     on_load_hooks: HashMap<String, RegistryKey>,
@@ -65,8 +60,6 @@ impl std::fmt::Debug for PluginManager {
             .field("search_paths", &self.search_paths)
             .field("tools_count", &self.tools.len())
             .field("commands_count", &self.commands.len())
-            .field("views_count", &self.views.len())
-            .field("handlers_count", &self.handlers.len())
             .field("on_unload_hooks_count", &self.on_unload_hooks.len())
             .field("on_load_hooks_count", &self.on_load_hooks.len())
             .field(
@@ -92,8 +85,6 @@ impl PluginManager {
             path_sources: HashMap::new(),
             tools: Vec::new(),
             commands: Vec::new(),
-            views: Vec::new(),
-            handlers: Vec::new(),
             lua,
             on_unload_hooks: HashMap::new(),
             on_load_hooks: HashMap::new(),

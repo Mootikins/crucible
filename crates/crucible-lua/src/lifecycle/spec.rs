@@ -1,7 +1,6 @@
 use super::{LifecycleError, LifecycleResult};
 use crate::discovered::{
     DiscoveredCommand, DiscoveredHandler, DiscoveredParam, DiscoveredService, DiscoveredTool,
-    DiscoveredView,
 };
 use crate::error::format_lua_error;
 use crate::manifest::Capability;
@@ -22,7 +21,6 @@ pub struct PluginSpec {
     pub tools: Vec<DiscoveredTool>,
     pub commands: Vec<DiscoveredCommand>,
     pub handlers: Vec<DiscoveredHandler>,
-    pub views: Vec<DiscoveredView>,
     pub services: Vec<DiscoveredService>,
     pub has_setup: bool,
     /// Where the plugin was discovered from (user, runtime, kiln, etc.)
@@ -260,31 +258,6 @@ pub fn load_plugin_spec_from_source(
                         is_fennel,
                     });
                 }
-            }
-        }
-    }
-
-    // Extract views
-    if let Ok(Value::Table(views_table)) = table.get::<Value>("views") {
-        for pair in views_table.pairs::<String, Value>() {
-            if let Ok((view_name, Value::Table(view_def))) = pair {
-                let desc = view_def.get::<String>("desc").unwrap_or_default();
-                // Check if handler fn is present (it's a Lua function, so we just check for non-nil)
-                let has_handler =
-                    matches!(view_def.get::<Value>("handler"), Ok(Value::Function(_)));
-
-                spec.views.push(DiscoveredView {
-                    name: view_name.clone(),
-                    description: desc,
-                    source_path: source_path_str.clone(),
-                    view_fn: view_name.clone(),
-                    handler_fn: if has_handler {
-                        Some(format!("{}_handler", view_name))
-                    } else {
-                        None
-                    },
-                    is_fennel,
-                });
             }
         }
     }

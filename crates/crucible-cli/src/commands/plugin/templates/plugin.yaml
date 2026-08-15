@@ -4,6 +4,3 @@ description: "A Crucible plugin"
 main: init.lua
 
 capabilities: []
-
-exports:
-  auto_discover: true

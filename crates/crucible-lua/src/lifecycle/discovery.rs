@@ -1,4 +1,4 @@
-use super::registration::{RegisteredItem, RegistrationHandle};
+use super::registration::RegisteredItem;
 use super::spec::{load_plugin_spec, parse_capability, PluginSpec};
 use super::{LifecycleError, LifecycleResult, PluginManager};
 use crate::error::format_lua_error;
@@ -130,7 +130,7 @@ impl PluginManager {
 
                         // Validate as plugin name
                         match PluginManifest::from_yaml(&format!(
-                            "name: \"{}\"\nversion: \"0.0.0\"\nmain: \"{}\"\nexports:\n  auto_discover: false\n",
+                            "name: \"{}\"\nversion: \"0.0.0\"\nmain: \"{}\"\n",
                             stem,
                             path.file_name().unwrap().to_string_lossy()
                         )) {
@@ -166,12 +166,10 @@ impl PluginManager {
 
         let plugin_dir = plugin.dir.clone();
         let main_path = plugin.main_path();
-        let auto_discover = plugin.manifest.exports.auto_discover;
 
         debug!(
-            "Discovering exports for plugin {}: auto_discover={}, dir={}",
+            "Discovering exports for plugin {}: dir={}",
             name,
-            auto_discover,
             plugin_dir.display()
         );
 
@@ -184,12 +182,11 @@ impl PluginManager {
             match load_plugin_spec(&main_path) {
                 Ok(Some(spec)) => {
                     debug!(
-                        "Loaded spec for plugin {}: {} tools, {} commands, {} handlers, {} views",
+                        "Loaded spec for plugin {}: {} tools, {} commands, {} handlers",
                         name,
                         spec.tools.len(),
                         spec.commands.len(),
                         spec.handlers.len(),
-                        spec.views.len()
                     );
 
                     // Update manifest metadata from spec if available
@@ -348,7 +345,6 @@ impl PluginManager {
                     debug!("Registered {} from spec: {}", kind, name);
                     existing.push(RegisteredItem {
                         item,
-                        handle: RegistrationHandle::new(),
                         owner: Some(owner.to_string()),
                     });
                 }
@@ -359,9 +355,5 @@ impl PluginManager {
         push_unique(&mut self.commands, spec.commands, "command", owner, |c| {
             &c.name
         });
-        push_unique(&mut self.handlers, spec.handlers, "handler", owner, |h| {
-            &h.name
-        });
-        push_unique(&mut self.views, spec.views, "view", owner, |v| &v.name);
     }
 }

@@ -3,14 +3,12 @@
 //! Executes Lua (and Fennel) scripts with async support and
 //! optional thread safety via the `send` feature.
 
-use crate::ask::register_ask_module;
 use crate::error::LuaError;
 #[cfg(feature = "fennel")]
 use crate::fennel::FennelCompiler;
 use crate::fs::register_fs_module;
 use crate::hooks::register_hooks_module;
 use crate::http::register_http_module;
-use crate::interaction::register_interaction_module;
 use crate::oil::register_oil_module;
 use crate::session_api::{register_session_module, Session, SessionManager};
 use crate::types::{LuaExecutionResult, LuaTool, ToolResult};
@@ -287,14 +285,8 @@ end
         )?;
         cru_ns.set("json", json_table)?;
 
-        // Register ask module for user interaction
-        register_ask_module(lua)?;
-
         // Register oil module for UI building
         register_oil_module(lua)?;
-
-        // Register interaction module for unified interaction bindings
-        register_interaction_module(lua)?;
 
         // Register cru.config.set()/get() for unified config
         crate::config::register_app_config_api(lua, &cru_ns)?;

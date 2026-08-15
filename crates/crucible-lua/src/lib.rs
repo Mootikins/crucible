@@ -43,7 +43,6 @@
 //! - `fennel` (default): Bundle the Fennel compiler (~255KB)
 //! - `send`: Enable `Send+Sync` on Lua state for multi-threaded use
 
-mod ask;
 pub mod auth_plugin;
 mod context;
 mod context_attach;
@@ -58,7 +57,6 @@ mod graph;
 mod handlers;
 mod hooks;
 mod http;
-mod interaction;
 pub mod isolation;
 mod json_query;
 pub mod lifecycle;
@@ -86,7 +84,6 @@ mod timer;
 mod tools_api;
 mod types;
 mod vault;
-mod views;
 mod ws;
 
 #[cfg(test)]
@@ -102,13 +99,6 @@ pub mod theme;
 pub mod theme_wire;
 pub mod ui_geometry;
 
-pub use ask::{
-    core_answer_to_lua, core_batch_to_lua, core_question_to_lua, core_response_to_lua,
-    lua_answer_table_to_core, lua_answer_to_core, lua_batch_table_to_core, lua_batch_to_core,
-    lua_question_table_to_core, lua_question_to_core, lua_response_table_to_core,
-    lua_response_to_core, register_ask_module, EventPushCallback, LuaAskBatch, LuaAskBatchResponse,
-    LuaAskContext, LuaAskError, LuaAskQuestion, LuaQuestionAnswer,
-};
 pub use auth_plugin::{fire_provider_auth_hooks, get_provider_auth_hooks};
 pub use config::{
     get_app_config, get_layout, get_theme_config, get_ui_geometry, list_available_themes,
@@ -123,7 +113,6 @@ pub use context_attach::{
 };
 pub use discovered::{
     DiscoveredCommand, DiscoveredHandler, DiscoveredParam, DiscoveredService, DiscoveredTool,
-    DiscoveredView,
 };
 pub use error::{format_lua_error, LuaError};
 pub use executor::LuaExecutor;
@@ -136,7 +125,6 @@ pub use hooks::{
     get_session_start_required_flags, register_hooks_module,
 };
 pub use http::register_http_module;
-pub use interaction::{lua_ask_to_core, lua_permission_to_core, register_interaction_module};
 pub use json_query::{
     detect_format, encode_to_format, json_to_lua, lua_to_json, parse_auto, parse_with_format,
     register_oq_module, Format,
@@ -185,16 +173,14 @@ pub use handlers::{
     TOOL_DISPLAY_COMPLETE_EVENT, TOOL_DISPLAY_START_EVENT,
 };
 pub use lifecycle::{
-    load_plugin_spec, load_plugin_spec_from_source, CommandBuilder, HandlerBuilder, LifecycleError,
-    LifecycleResult, PluginManager, PluginSpec, RegistrationHandle, ToolBuilder, ViewBuilder,
+    load_plugin_spec, load_plugin_spec_from_source, LifecycleError, LifecycleResult, PluginManager,
+    PluginSpec,
 };
 pub use manifest::{
-    Capability, ExportDeclarations, LoadedPlugin, ManifestError, ManifestResult, PluginDependency,
-    PluginManifest, PluginSource, PluginState,
+    Capability, LoadedPlugin, ManifestError, ManifestResult, PluginDependency, PluginManifest,
+    PluginSource, PluginState,
 };
-pub use mcp::{
-    register_mcp_module, register_mcp_module_stub, LuaMcpClient, McpToolInfo, McpToolResult,
-};
+pub use mcp::register_mcp_module_stub;
 pub use modes::{
     register_modes, ModeDefinition, ModePermissions, ModeRegistry, ModeStance, ToolSelector,
 };

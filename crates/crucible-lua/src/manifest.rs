@@ -68,9 +68,6 @@ pub struct PluginManifest {
     pub dependencies: Vec<PluginDependency>,
 
     #[serde(default)]
-    pub exports: ExportDeclarations,
-
-    #[serde(default)]
     pub enabled: Option<bool>,
 }
 
@@ -132,24 +129,6 @@ pub struct PluginDependency {
     pub optional: bool,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct ExportDeclarations {
-    #[serde(default)]
-    pub tools: Vec<String>,
-
-    #[serde(default)]
-    pub commands: Vec<String>,
-
-    #[serde(default)]
-    pub views: Vec<String>,
-
-    #[serde(default)]
-    pub handlers: Vec<String>,
-
-    #[serde(default)]
-    pub auto_discover: bool,
-}
-
 impl PluginManifest {
     pub fn from_yaml(yaml: &str) -> ManifestResult<Self> {
         let manifest: Self = serde_yaml::from_str(yaml)?;
@@ -178,7 +157,6 @@ impl PluginManifest {
     /// Create a default manifest from a directory path (no plugin.yaml required).
     ///
     /// Uses the directory stem as the plugin name with version "0.0.0".
-    /// Sets `auto_discover: true` so Lua files are scanned for exports.
     pub fn from_directory_defaults(dir: &Path) -> ManifestResult<Self> {
         let name = dir
             .file_stem()
@@ -202,10 +180,6 @@ impl PluginManifest {
             main: "init.lua".to_string(),
             capabilities: Vec::new(),
             dependencies: Vec::new(),
-            exports: ExportDeclarations {
-                auto_discover: true,
-                ..Default::default()
-            },
             enabled: None,
         })
     }
@@ -448,8 +422,24 @@ exports:
         assert!(!manifest.has_capability(Capability::Network));
         assert_eq!(manifest.dependencies.len(), 2);
         assert_eq!(manifest.required_dependencies().count(), 1);
-        assert_eq!(manifest.exports.tools.len(), 2);
-        assert!(manifest.exports.auto_discover);
+    }
+
+    #[test]
+    fn exports_block_is_ignored_for_backward_compat() {
+        // `exports` (tools/commands/views/handlers/auto_discover) was parsed
+        // but never consumed, so the field was deleted. Existing plugin.yaml
+        // files that still declare it must keep parsing (no
+        // deny_unknown_fields here).
+        let yaml = r#"
+name: my-plugin
+version: "1.0.0"
+exports:
+  tools:
+    - search
+  auto_discover: true
+"#;
+        let manifest = PluginManifest::from_yaml(yaml).unwrap();
+        assert_eq!(manifest.name, "my-plugin");
     }
 
     #[test]
@@ -587,7 +577,6 @@ enabled: false
         assert_eq!(manifest.name, "my-plugin");
         assert_eq!(manifest.version, "0.0.0");
         assert_eq!(manifest.main, "init.lua");
-        assert!(manifest.exports.auto_discover);
         assert!(manifest.capabilities.is_empty());
         assert!(manifest.dependencies.is_empty());
     }

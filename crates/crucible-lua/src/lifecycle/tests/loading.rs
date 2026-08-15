@@ -268,10 +268,6 @@ fn test_load_shipped_plugins() {
         !manager.commands().is_empty(),
         "Should have discovered commands from plugins"
     );
-    assert!(
-        !manager.views().is_empty(),
-        "Should have discovered views from plugins"
-    );
 
     let tool_names: Vec<_> = manager.tools().iter().map(|t| &t.name).collect();
     assert!(
@@ -285,22 +281,6 @@ fn test_load_shipped_plugins() {
     assert!(
         tool_names.contains(&&"graph_stats".to_string()),
         "graph_stats tool not found"
-    );
-
-    let view_names: Vec<_> = manager.views().iter().map(|v| &v.name).collect();
-    assert!(
-        view_names.contains(&&"graph".to_string()),
-        "graph view not found"
-    );
-
-    let views = manager.views();
-    let fennel_view = views
-        .iter()
-        .find(|v| v.name == "graph")
-        .expect("graph view should exist");
-    assert!(
-        fennel_view.is_fennel,
-        "graph view should be from Fennel source"
     );
 }
 

@@ -4,13 +4,10 @@
 //! 1. Plugin discovery from directories
 //! 2. Manifest loading and validation
 //! 3. Plugin loading with dependency resolution
-//! 4. Tool/Command/View/Handler registration
-//! 5. Programmatic registration API
-//! 6. Plugin unloading and reloading
+//! 4. Tool/Command registration from spec tables
+//! 5. Plugin unloading and reloading
 
-use crucible_lua::{
-    CommandBuilder, HandlerBuilder, PluginManager, PluginState, ToolBuilder, ViewBuilder,
-};
+use crucible_lua::{PluginManager, PluginState};
 use std::fs;
 use tempfile::TempDir;
 
@@ -290,115 +287,6 @@ fn test_cannot_unload_if_depended_upon() {
 }
 
 // ============================================================================
-// PROGRAMMATIC REGISTRATION
-// ============================================================================
-
-#[test]
-fn test_register_tool_programmatically() {
-    let mut manager = PluginManager::new();
-
-    let tool = ToolBuilder::new("custom_search")
-        .description("A custom search tool")
-        .param("query", "string")
-        .param_optional("limit", "number")
-        .returns("SearchResult[]")
-        .build();
-
-    let handle = manager.register_tool(tool, None);
-
-    assert_eq!(manager.tools().len(), 1);
-    assert_eq!(manager.tools()[0].name, "custom_search");
-    assert_eq!(manager.tools()[0].params.len(), 2);
-
-    assert!(manager.unregister(handle));
-    assert_eq!(manager.tools().len(), 0);
-}
-
-#[test]
-fn test_register_command_programmatically() {
-    let mut manager = PluginManager::new();
-
-    let cmd = CommandBuilder::new("tasks")
-        .description("Manage tasks")
-        .hint("[add|list|done] <args>")
-        .param("action", "string")
-        .build();
-
-    let handle = manager.register_command(cmd, None);
-
-    assert_eq!(manager.commands().len(), 1);
-    assert_eq!(manager.commands()[0].name, "tasks");
-    assert!(manager.commands()[0].input_hint.is_some());
-
-    assert!(manager.unregister(handle));
-    assert_eq!(manager.commands().len(), 0);
-}
-
-#[test]
-fn test_register_handler_programmatically() {
-    let mut manager = PluginManager::new();
-
-    let handler = HandlerBuilder::new("log_calls", "tool:before")
-        .pattern("*")
-        .priority(100)
-        .build();
-
-    let handle = manager.register_handler(handler, None);
-
-    assert_eq!(manager.handlers().len(), 1);
-    assert_eq!(manager.handlers()[0].event_type, "tool:before");
-    assert_eq!(manager.handlers()[0].priority, 100);
-
-    assert!(manager.unregister(handle));
-    assert_eq!(manager.handlers().len(), 0);
-}
-
-#[test]
-fn test_register_view_programmatically() {
-    let mut manager = PluginManager::new();
-
-    let view = ViewBuilder::new("graph")
-        .description("Interactive graph view")
-        .handler_fn("render_graph")
-        .build();
-
-    let handle = manager.register_view(view, None);
-
-    assert_eq!(manager.views().len(), 1);
-    assert_eq!(manager.views()[0].name, "graph");
-    assert_eq!(
-        manager.views()[0].handler_fn,
-        Some("render_graph".to_string())
-    );
-
-    assert!(manager.unregister(handle));
-    assert_eq!(manager.views().len(), 0);
-}
-
-#[test]
-fn test_register_with_owner() {
-    let mut manager = PluginManager::new();
-
-    let tool1 = ToolBuilder::new("owned_tool").build();
-    let tool2 = ToolBuilder::new("orphan_tool").build();
-    let cmd = CommandBuilder::new("owned_cmd").build();
-
-    manager.register_tool(tool1, Some("my_workflow"));
-    manager.register_tool(tool2, None);
-    manager.register_command(cmd, Some("my_workflow"));
-
-    assert_eq!(manager.tools().len(), 2);
-    assert_eq!(manager.commands().len(), 1);
-
-    let removed = manager.unregister_by_owner("my_workflow");
-
-    assert_eq!(removed, 2);
-    assert_eq!(manager.tools().len(), 1);
-    assert_eq!(manager.tools()[0].name, "orphan_tool");
-    assert_eq!(manager.commands().len(), 0);
-}
-
-// ============================================================================
 // SPEC-BASED PLUGIN DISCOVERY
 // ============================================================================
 
@@ -518,8 +406,7 @@ fn test_multiple_spec_plugins() {
 
 #[test]
 fn test_plugin_manager_debug() {
-    let mut manager = PluginManager::new();
-    manager.register_tool(ToolBuilder::new("test").build(), None);
+    let manager = PluginManager::new();
 
     let debug_str = format!("{:?}", manager);
     assert!(debug_str.contains("PluginManager"));

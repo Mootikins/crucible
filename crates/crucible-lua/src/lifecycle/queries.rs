@@ -1,5 +1,5 @@
 use super::PluginManager;
-use crate::discovered::{DiscoveredCommand, DiscoveredHandler, DiscoveredTool, DiscoveredView};
+use crate::discovered::{DiscoveredCommand, DiscoveredTool};
 use crate::manifest::{Capability, LoadedPlugin, PluginState};
 
 impl PluginManager {
@@ -23,14 +23,6 @@ impl PluginManager {
 
     pub fn commands(&self) -> Vec<&DiscoveredCommand> {
         self.commands.iter().map(|c| &c.item).collect()
-    }
-
-    pub fn views(&self) -> Vec<&DiscoveredView> {
-        self.views.iter().map(|v| &v.item).collect()
-    }
-
-    pub fn handlers(&self) -> Vec<&DiscoveredHandler> {
-        self.handlers.iter().map(|h| &h.item).collect()
     }
 
     pub fn plugin_has_capability(&self, name: &str, cap: Capability) -> bool {

@@ -16,7 +16,7 @@ use std::path::Path;
 /// stubbed — but they were registered nowhere in production, so autocomplete
 /// advertised an API that did not exist. A stub for a nonexistent function is
 /// worse than a stale doc: it looks authoritative.
-const UI_ONLY_MODULES: &[&str] = &["oil", "interaction"];
+const UI_ONLY_MODULES: &[&str] = &["oil"];
 
 const UI_NOTE: &str = "UI-only: requires TUI context, not available in daemon plugins";
 
