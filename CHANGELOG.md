@@ -7,13 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.26.1] - 2026-08-14
+
 ### Fixed
 - **A plugin reload can no longer deny an in-flight tool call.** A handler
   unregistered between the dispatch snapshot and execution (the file watcher
   reloading its plugin mid-call) errored on the by-name lookup, and
   `pre_tool_call` fails closed — a denial on behalf of a handler that no
   longer exists. An absent handler now has no opinion: both dispatch paths
-  pass through.
+  pass through. The isolation boundary is unaffected: a session's container
+  claim is session-keyed and survives its plugin's reload, so host execution
+  stays default-denied regardless of the handler's fate.
 - **`crucible.on_provider_auth` hooks no longer accumulate across reloads.**
   The one hook family left untagged is now owner-tagged and cleared with the
   rest, and its names come from a monotonic counter instead of the list
