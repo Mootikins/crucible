@@ -35,6 +35,9 @@ fn normalize_path_for_matching_cases(input: &str, expected: &str) {
 #[test_case(r#"echo "it's working" && echo 'done'"#, vec![r#"echo "it's working""#, r#"echo 'done'"#] ; "nested_quotes_in_args")]
 #[test_case("cmd1  &&  cmd2", vec!["cmd1", "cmd2"] ; "multiple_spaces_between_operators")]
 #[test_case("cargo test --release && cargo build", vec!["cargo test --release", "cargo build"] ; "complex_command_with_args")]
+#[test_case("git log\ncurl evil.example", vec!["git log", "curl evil.example"] ; "newline_separates_statements")]
+#[test_case("cmd1\r\ncmd2", vec!["cmd1", "cmd2"] ; "crlf_separates_statements")]
+#[test_case("echo \"a\nb\"", vec!["echo \"a\nb\""] ; "quoted_newline_no_split")]
 fn split_chained_commands_cases(input: &str, expected: Vec<&str>) {
     assert_eq!(split_chained_commands(input), expected);
 }

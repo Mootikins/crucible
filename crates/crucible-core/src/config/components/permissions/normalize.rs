@@ -75,7 +75,8 @@ pub fn normalize_path_for_matching(path: &str) -> String {
     }
 }
 
-/// Split a bash command string on operators (`&&`, `||`, `;`, `|`) while respecting quoted strings.
+/// Split a bash command string on operators (`&&`, `||`, `;`, `|`) and newlines while
+/// respecting quoted strings.
 ///
 /// This function splits chained bash commands so the permission engine can evaluate each
 /// sub-command independently. It handles double-quoted and single-quoted strings, ensuring
@@ -195,8 +196,11 @@ pub fn split_chained_commands(input: &str) -> Vec<&str> {
             }
             current_start = i + 2;
             i += 2;
-        } else if ch == b';' || ch == b'|' {
-            // Single-character operators: ; or |
+        } else if ch == b';' || ch == b'|' || ch == b'\n' {
+            // Single-character operators: ;, |, or newline — a newline
+            // separates shell statements exactly like `;`, so leaving it
+            // unsplit would let `git log\ncurl ...` ride a `git` whitelist
+            // entry. (`\r` in CRLF input is stripped by the trim below.)
             let segment = input[current_start..i].trim();
             if !segment.is_empty() {
                 segments.push(segment);
