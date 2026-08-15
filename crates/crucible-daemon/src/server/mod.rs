@@ -66,6 +66,7 @@ pub mod lua_plugin_suite;
 pub mod note_refactor;
 pub mod observe;
 pub mod platform;
+pub mod plugin_install;
 pub mod plugins;
 pub mod session;
 pub mod storage;

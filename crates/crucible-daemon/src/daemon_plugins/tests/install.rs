@@ -153,7 +153,7 @@ async fn installing_an_already_active_plugin_reports_loaded_not_failure() {
         .await
         .expect("activation load");
 
-    let report = crate::server::plugins::install_load_report(
+    let report = crate::server::plugin_install::install_load_report(
         &loader,
         "veteran",
         &tmp.path().join("veteran"),
@@ -183,7 +183,7 @@ async fn install_load_report_surfaces_failure_and_absence() {
         .await
         .expect("load_plugins is fail-open per plugin");
 
-    let report = crate::server::plugins::install_load_report(&loader, "brokentool", &dir);
+    let report = crate::server::plugin_install::install_load_report(&loader, "brokentool", &dir);
     assert!(!report.loaded);
     assert!(
         report
@@ -194,7 +194,7 @@ async fn install_load_report_surfaces_failure_and_absence() {
         report.error
     );
 
-    let report = crate::server::plugins::install_load_report(
+    let report = crate::server::plugin_install::install_load_report(
         &loader,
         "neverseen",
         &tmp.path().join("neverseen"),
@@ -260,7 +260,7 @@ async fn a_manifest_name_differing_from_the_repo_name_still_installs_and_removes
 
     // Install must report the plugin loaded, resolving through the dir.
     let report =
-        crate::server::plugins::install_load_report(&loader, "crucible-greeter", &clone_dir);
+        crate::server::plugin_install::install_load_report(&loader, "crucible-greeter", &clone_dir);
     assert!(
         report.loaded,
         "a healthy plugin must not be reported broken because its manifest \
