@@ -190,9 +190,15 @@ impl LuaScriptHandlerRegistry {
                 .handler_functions
                 .lock()
                 .expect("handler_functions: poisoned while executing Lua handler function");
-            let key = handler_functions
-                .get(name)
-                .ok_or_else(|| mlua::Error::RuntimeError(format!("Handler not found: {}", name)))?;
+            let Some(key) = handler_functions.get(name) else {
+                // Unregistered between the dispatch snapshot and execution — a
+                // plugin reload clears its names while a call is in flight. An
+                // absent handler has no opinion; erroring instead lands in
+                // `pre_tool_call`'s fail-closed arm and denies the tool call
+                // on behalf of a handler that no longer exists.
+                tracing::debug!(handler = %name, "handler unregistered mid-dispatch; passing through");
+                return Ok(ScriptHandlerResult::PassThrough);
+            };
             lua.registry_value(key)?
         };
 

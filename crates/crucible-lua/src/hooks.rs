@@ -161,6 +161,9 @@ pub fn clear_plugin_hooks(lua: &Lua, plugin: &str) -> LuaResult<()> {
         "on_session_end_owners",
         &[],
     )?;
+    // Auth hooks live in the same `__crucible_hooks__` container but carry a
+    // name→function side table, so their clearing is owned by their module.
+    crate::auth_plugin::clear_plugin_auth_hooks(lua, plugin)?;
     Ok(())
 }
 

@@ -207,7 +207,7 @@ async fn execute_runtime_handler_returns_handled() {
 }
 
 #[tokio::test]
-async fn execute_runtime_handler_not_found() {
+async fn execute_runtime_handler_passes_through_on_an_unknown_name() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
@@ -216,10 +216,14 @@ async fn execute_runtime_handler_not_found() {
         payload: serde_json::json!({}),
     };
 
+    // An unknown name means the handler is gone (reload cleared it) or never
+    // existed; either way it has no opinion. Erroring here used to land in
+    // `pre_tool_call`'s fail-closed arm and deny the tool call.
     let result = registry
         .execute_runtime_handler(&lua, "nonexistent", &event, None)
-        .await;
-    assert!(result.is_err());
+        .await
+        .expect("an unknown handler name is not an error");
+    assert!(matches!(result, ScriptHandlerResult::PassThrough));
 }
 
 #[test]
@@ -604,5 +608,76 @@ async fn returning_the_event_with_a_cancel_payload_key_is_not_a_cancellation() {
     assert!(
         matches!(result, ScriptHandlerResult::Transform(_)),
         "an echoed event must stay a transform, got {result:?}"
+    );
+}
+
+/// A handler can be unregistered between the dispatch snapshot and execution
+/// — a plugin reload (file watcher, no human in the loop) clears its names
+/// while a tool call is in flight. An absent handler has no opinion about
+/// the event: erroring here landed in `pre_tool_call`'s fail-closed arm and
+/// denied the tool call on behalf of a handler that no longer exists.
+#[tokio::test]
+async fn an_unregistered_handler_has_no_opinion_instead_of_failing_closed() {
+    let lua = Lua::new();
+    let registry = LuaScriptHandlerRegistry::new();
+    register_crucible_on_api(
+        &lua,
+        registry.runtime_handlers.clone(),
+        registry.handler_functions.clone(),
+    )
+    .unwrap();
+
+    lua.globals()
+        .set("__crucible_loading_plugin__", "alpha")
+        .unwrap();
+    lua.load(r#"crucible.on("pre_tool_call", function() return { cancel = true } end)"#)
+        .exec()
+        .unwrap();
+    let stale_name = registry.runtime_handlers_for("pre_tool_call", None)[0]
+        .name
+        .clone();
+
+    // The reload's clear lands between snapshot and execution.
+    registry.clear_plugin_handlers("alpha");
+
+    let event = SessionEvent::Custom {
+        name: "pre_tool_call".to_string(),
+        payload: serde_json::json!({ "tool": "bash" }),
+    };
+    let result = registry
+        .execute_runtime_handler(&lua, &stale_name, &event, None)
+        .await
+        .expect("an unregistered handler must not surface as an error");
+    assert!(
+        matches!(result, ScriptHandlerResult::PassThrough),
+        "got: {result:?}"
+    );
+}
+
+/// Same contract for the JSON-payload dispatch path (`tool:before_execute`,
+/// display hooks).
+#[tokio::test]
+async fn an_unregistered_json_handler_has_no_opinion_instead_of_failing_closed() {
+    let lua = Lua::new();
+    let registry = LuaScriptHandlerRegistry::new();
+    register_crucible_on_api(
+        &lua,
+        registry.runtime_handlers.clone(),
+        registry.handler_functions.clone(),
+    )
+    .unwrap();
+
+    let result = crate::handlers::before_execute::execute_runtime_json_handler(
+        &lua,
+        &registry,
+        "runtime_handler_999",
+        serde_json::json!({}),
+        None,
+    )
+    .await
+    .expect("an unregistered handler must not surface as an error");
+    assert!(
+        matches!(result, ScriptHandlerResult::PassThrough),
+        "got: {result:?}"
     );
 }

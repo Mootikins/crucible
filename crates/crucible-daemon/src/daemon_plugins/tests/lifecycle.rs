@@ -503,3 +503,32 @@ async fn a_reload_that_fails_in_the_manager_leaves_the_plugin_inert_and_errored(
         "Error must mean inert: no tools from the previous generation"
     );
 }
+
+/// Auth hooks ride the same owner-tag contract as session hooks: executing a
+/// plugin twice (= one reload) leaves exactly one copy of its
+/// `crucible.on_provider_auth` registration. They were the one hook family
+/// left untagged — one copy accumulated per reload, forever.
+#[tokio::test]
+async fn re_executing_a_plugin_does_not_duplicate_its_provider_auth_hooks() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let dir = tmp.path().join("author");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("init.lua"),
+        r#"
+        crucible.on_provider_auth(function(ctx) return nil end)
+        return { name = "author", version = "0.1.0" }
+    "#,
+    )
+    .unwrap();
+
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    loader
+        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .await
+        .expect("load");
+    loader.reload_plugin("author").await.expect("reload");
+
+    let hooks = crucible_lua::get_provider_auth_hooks(&loader.plugin_lua()).expect("hooks");
+    assert_eq!(hooks.len(), 1, "one reload must not mean two auth hooks");
+}

@@ -91,9 +91,13 @@ pub(super) async fn execute_runtime_json_handler(
             .handler_functions
             .lock()
             .expect("handler_functions: poisoned while executing Lua display handler");
-        let key = handler_functions
-            .get(name)
-            .ok_or_else(|| mlua::Error::RuntimeError(format!("Handler not found: {}", name)))?;
+        let Some(key) = handler_functions.get(name) else {
+            // Same contract as `execute_runtime_handler`: a handler
+            // unregistered mid-dispatch (plugin reload in flight) has no
+            // opinion, and must not surface as a fail-closed error.
+            tracing::debug!(handler = %name, "handler unregistered mid-dispatch; passing through");
+            return Ok(ScriptHandlerResult::PassThrough);
+        };
         lua.registry_value(key)?
     };
 
