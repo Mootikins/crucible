@@ -439,3 +439,67 @@ async fn a_setup_registered_handler_is_owned_so_reload_does_not_duplicate_it() {
         "one reload must not leave a second copy of the handler"
     );
 }
+
+/// A reload that fails inside `PluginManager` — the everyday trigger is
+/// saving init.lua with a syntax error while the watcher is on — must leave
+/// the plugin inert and marked Error. `unload` succeeds (state Discovered),
+/// then `load`'s sandbox eval fails; bailing there left the previous
+/// generation's tools, handlers, hooks and services fully live while
+/// plugin.list said `Discovered` with no error — "broken looks exactly like
+/// working", the failure this branch exists to eliminate.
+#[tokio::test]
+async fn a_reload_that_fails_in_the_manager_leaves_the_plugin_inert_and_errored() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let dir = tmp.path().join("brittle");
+    std::fs::create_dir_all(&dir).unwrap();
+    let good = r#"
+        crucible.on("turn:complete", function() end)
+        return {
+            name = "brittle",
+            version = "0.1.0",
+            tools = { brittle_probe = { description = "x", fn = function() return "t" end } },
+        }
+    "#;
+    std::fs::write(dir.join("init.lua"), good).unwrap();
+
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    loader
+        .load_plugins(&[(tmp.path().to_path_buf(), PluginSource::Runtime)])
+        .await
+        .expect("initial load");
+    assert!(loader
+        .plugin_registry()
+        .tool_names()
+        .contains("brittle_probe"));
+
+    // The operator saves a syntax error; the watcher reloads.
+    std::fs::write(dir.join("init.lua"), "this is not lua").unwrap();
+    let err = loader.reload_plugin("brittle").await;
+    assert!(
+        err.is_err(),
+        "a reload that cannot parse must report failure"
+    );
+
+    let info = loader.loaded_plugin_info();
+    let entry = info
+        .iter()
+        .find(|p| p["name"] == "brittle")
+        .expect("still listed for diagnosis");
+    assert_eq!(entry["state"], "Error", "got: {entry}");
+    assert!(
+        entry["last_error"].as_str().is_some_and(|e| !e.is_empty()),
+        "the failure must be visible in plugin.list: {entry}"
+    );
+    assert_eq!(
+        loader.plugin_handlers().plugin_handler_count("brittle"),
+        0,
+        "Error must mean inert: no live handlers from the previous generation"
+    );
+    assert!(
+        !loader
+            .plugin_registry()
+            .tool_names()
+            .contains("brittle_probe"),
+        "Error must mean inert: no tools from the previous generation"
+    );
+}

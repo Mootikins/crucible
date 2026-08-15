@@ -29,6 +29,10 @@ pub struct RemoveOutcome {
     pub name: String,
     pub plugins_toml: PathBuf,
     pub purged_dir: Option<PathBuf>,
+    /// The TOML commit lands before the purge, so a purge failure must not
+    /// fail the whole removal — and must not surface as an error message
+    /// claiming the entry is "still declared" when it is already gone.
+    pub purge_error: Option<String>,
 }
 
 /// Resolve the user's `plugins.toml` path. Returns an error if the
@@ -123,23 +127,31 @@ pub fn remove_at(
         ));
     }
 
-    let purged_dir = if purge {
+    let (purged_dir, purge_error) = if purge {
         let dir = plugins_dir.join(name);
         if dir.exists() {
-            std::fs::remove_dir_all(&dir)
-                .with_context(|| format!("failed to remove plugin dir {}", dir.display()))?;
-            Some(dir)
+            match std::fs::remove_dir_all(&dir) {
+                Ok(()) => (Some(dir), None),
+                Err(e) => (
+                    None,
+                    Some(format!(
+                        "failed to remove plugin dir {}: {e}",
+                        dir.display()
+                    )),
+                ),
+            }
         } else {
-            None
+            (None, None)
         }
     } else {
-        None
+        (None, None)
     };
 
     Ok(RemoveOutcome {
         name: name.to_string(),
         plugins_toml: toml_path.to_path_buf(),
         purged_dir,
+        purge_error,
     })
 }
 
@@ -419,5 +431,37 @@ mod tests {
         .unwrap();
 
         assert!(!err, "no plugin should have been removed");
+    }
+
+    /// The TOML commit lands before the purge, so a purge failure must not
+    /// fail the removal — and must not produce an error claiming the entry
+    /// is "still declared" when it is already gone. The removal succeeded;
+    /// the purge outcome is reported separately.
+    #[test]
+    fn remove_at_reports_purge_failure_without_lying_about_the_toml() {
+        let tmp = tempdir().unwrap();
+        let toml_path = tmp.path().join("plugins.toml");
+        let plugins_dir = tmp.path().join("plugins");
+        std::fs::create_dir_all(&plugins_dir).unwrap();
+        // A FILE where the clone dir should be: remove_dir_all fails on it.
+        std::fs::write(plugins_dir.join("ghost"), "not a directory").unwrap();
+        with_locked_config(&toml_path, |c| {
+            c.plugin.push(entry("user/ghost"));
+            Ok(())
+        })
+        .unwrap();
+
+        let outcome = remove_at("ghost", true, &toml_path, &plugins_dir)
+            .expect("a purge failure must not fail the removal itself");
+
+        assert!(outcome.purged_dir.is_none());
+        assert!(
+            outcome.purge_error.is_some(),
+            "the purge failure must be reported, not swallowed"
+        );
+        assert!(
+            !declared_at(&toml_path, "ghost").unwrap(),
+            "the TOML entry really is gone — no message may claim otherwise"
+        );
     }
 }

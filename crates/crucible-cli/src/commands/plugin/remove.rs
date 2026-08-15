@@ -41,6 +41,18 @@ fn render_remove_response(resp: &serde_json::Value, purge: bool) -> String {
     let toml = resp["plugins_toml"].as_str().unwrap_or("plugins.toml");
     let mut out = String::new();
     let _ = writeln!(out, "Removed plugin '{name}' from {toml}");
+    // Distinguishes this path from the offline fallback, whose output is
+    // otherwise identical — the user should know the running daemon changed.
+    let _ = writeln!(out, "Unloaded from the running daemon.");
+    if let Some(err) = resp["purge_error"].as_str() {
+        // The removal itself succeeded; only the directory deletion failed.
+        let _ = writeln!(out, "Warning: {err}");
+        let _ = writeln!(
+            out,
+            "The directory remains and will load again until deleted."
+        );
+        return out;
+    }
     match resp["purged_dir"].as_str() {
         Some(dir) => {
             let _ = writeln!(out, "Deleted {dir}");
@@ -48,7 +60,19 @@ fn render_remove_response(resp: &serde_json::Value, purge: bool) -> String {
         None if purge => {
             let _ = writeln!(out, "(No plugin directory found to delete.)");
         }
-        None => {}
+        None => {
+            // Loading is directory-driven, not declaration-driven: a kept
+            // clone in the search path comes back on the next daemon restart
+            // or plugin install's load pass. Don't let "removed" read as
+            // gone-for-good.
+            if let Some(dir) = resp["kept_dir"].as_str() {
+                let _ = writeln!(
+                    out,
+                    "Directory kept at {dir}; it will load again on the next daemon \
+                     restart or plugin install. Use --purge to delete it."
+                );
+            }
+        }
     }
     out
 }
@@ -102,13 +126,37 @@ mod tests {
     }
 
     #[test]
-    fn a_plain_remove_stays_quiet_about_the_directory() {
+    fn a_plain_remove_warns_that_the_kept_directory_loads_again() {
         let resp = json!({
             "name": "greeter",
             "plugins_toml": "/cfg/plugins.toml",
             "purged_dir": null,
+            "kept_dir": "/plugins/greeter",
         });
         let out = render_remove_response(&resp, false);
-        assert!(!out.contains("directory"), "got: {out}");
+        assert!(
+            out.contains("Directory kept at /plugins/greeter"),
+            "got: {out}"
+        );
+        assert!(out.contains("--purge"), "got: {out}");
+    }
+
+    #[test]
+    fn a_purge_failure_is_a_warning_that_does_not_claim_the_toml_survived() {
+        let resp = json!({
+            "name": "greeter",
+            "plugins_toml": "/cfg/plugins.toml",
+            "purged_dir": null,
+            "purge_error": "failed to remove plugin dir /plugins/greeter: EACCES",
+        });
+        let out = render_remove_response(&resp, true);
+        assert!(out.contains("Warning:"), "got: {out}");
+        assert!(out.contains("EACCES"), "got: {out}");
+        // The TOML edit succeeded — output must not claim otherwise.
+        assert!(
+            out.contains("Removed plugin 'greeter' from /cfg/plugins.toml"),
+            "got: {out}"
+        );
+        assert!(!out.contains("still declared"), "got: {out}");
     }
 }

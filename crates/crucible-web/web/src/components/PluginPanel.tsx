@@ -98,11 +98,21 @@ export const PluginPanel: Component = () => {
     setInstalling(true);
     try {
       const result = await installPlugin({ url });
-      const status =
-        result.outcome.kind === 'cloned'
-          ? `Installed ${result.name}`
-          : `${result.name} already present; declared in plugins.toml`;
-      notificationActions.addNotification('success', status);
+      if (result.loaded === false) {
+        // The install itself succeeded (clone + plugins.toml), but the plugin
+        // failed to activate — a green "Installed" here would report a broken
+        // plugin as working.
+        notificationActions.addNotification(
+          'error',
+          `Installed ${result.name} but it failed to load: ${result.error ?? 'see plugin list'}`,
+        );
+      } else {
+        const status =
+          result.outcome.kind === 'cloned'
+            ? `Installed ${result.name}: ${result.tools}T ${result.commands}C ${result.services}S`
+            : `${result.name} already present; declared in plugins.toml`;
+        notificationActions.addNotification('success', status);
+      }
       setInstallUrl('');
       setShowInstall(false);
       await refetch();
@@ -120,8 +130,20 @@ export const PluginPanel: Component = () => {
     setConfirmRemove(null);
     try {
       const result = await removePlugin(target.name, target.purge);
-      const dirNote = result.purged_dir ? ` (deleted ${result.purged_dir})` : '';
-      notificationActions.addNotification('success', `Removed ${target.name}${dirNote}`);
+      if (result.purge_error) {
+        // Removal succeeded; only the directory deletion failed.
+        notificationActions.addNotification(
+          'error',
+          `Removed ${target.name}, but deleting its directory failed: ${result.purge_error}`,
+        );
+      } else {
+        const dirNote = result.purged_dir
+          ? ` (deleted ${result.purged_dir})`
+          : result.kept_dir
+            ? ` (directory kept; loads again until purged)`
+            : '';
+        notificationActions.addNotification('success', `Removed ${target.name}${dirNote}`);
+      }
       await refetch();
     } catch (err) {
       notificationActions.addNotification('error', `Remove failed: ${err}`);

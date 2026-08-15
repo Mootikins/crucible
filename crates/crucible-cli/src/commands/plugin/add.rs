@@ -130,7 +130,8 @@ async fn install_offline(args: AddArgs) -> Result<()> {
         result.name,
         result.plugins_toml.display()
     );
-    println!("Restart the daemon or start a new session to load it.");
+    // Only a restart loads daemon plugins — a new session does not.
+    println!("Restart the daemon to load it.");
 
     Ok(())
 }

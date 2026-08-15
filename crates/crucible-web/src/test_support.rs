@@ -653,10 +653,18 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             "name": "installed-plugin",
             "outcome": { "kind": "cloned", "dest": "/tmp/installed-plugin" },
             "plugins_toml": "/tmp/plugins.toml",
+            "installed": true,
+            "loaded": true,
+            "tools": 0,
+            "commands": 0,
+            "services": 0,
+            "error": Value::Null,
         }),
         "plugin.remove" => json!({
             "name": "removed-plugin",
             "plugins_toml": "/tmp/plugins.toml",
+            "purge_error": Value::Null,
+            "kept_dir": Value::Null,
             "purged_dir": Value::Null,
         }),
         // ── review.* ───────────────────────────────────────────────────────

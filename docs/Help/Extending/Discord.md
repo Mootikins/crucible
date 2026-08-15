@@ -388,7 +388,8 @@ permission rules. See [[Help/Concepts/Permission Precedence]].
 `plugin.reload` (and the web UI's reload button, and the plugin file watcher)
 tears the gateway down and re-spawns it: the running `gateway.connect` task is
 aborted at its next await point before the new generation's service starts, so
-there is one WSS connection per generation, never two. The reconnect goes
+gateway generations never accumulate — you don't end up with two long-lived
+connections answering every message twice. The reconnect goes
 through the normal connect path — `auto_connect` and the token check apply
 again.
 

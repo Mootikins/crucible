@@ -153,7 +153,11 @@ async fn installing_an_already_active_plugin_reports_loaded_not_failure() {
         .await
         .expect("activation load");
 
-    let report = crate::server::plugins::install_load_report(&loader, "veteran");
+    let report = crate::server::plugins::install_load_report(
+        &loader,
+        "veteran",
+        &tmp.path().join("veteran"),
+    );
     assert!(
         report.loaded,
         "an already-Active plugin is loaded, not broken: {:?}",
@@ -179,7 +183,7 @@ async fn install_load_report_surfaces_failure_and_absence() {
         .await
         .expect("load_plugins is fail-open per plugin");
 
-    let report = crate::server::plugins::install_load_report(&loader, "brokentool");
+    let report = crate::server::plugins::install_load_report(&loader, "brokentool", &dir);
     assert!(!report.loaded);
     assert!(
         report
@@ -190,7 +194,11 @@ async fn install_load_report_surfaces_failure_and_absence() {
         report.error
     );
 
-    let report = crate::server::plugins::install_load_report(&loader, "neverseen");
+    let report = crate::server::plugins::install_load_report(
+        &loader,
+        "neverseen",
+        &tmp.path().join("neverseen"),
+    );
     assert!(!report.loaded);
     assert!(
         report
@@ -199,5 +207,81 @@ async fn install_load_report_surfaces_failure_and_absence() {
             .is_some_and(|e| e.contains("plugin.list")),
         "absence points at the diagnostic surface: {:?}",
         report.error
+    );
+}
+
+/// A repo named `crucible-greeter` whose plugin.yaml says `name: greeter` is
+/// a thoroughly conventional layout, and it puts two naming authorities in
+/// play: plugins.toml and the clone dir go by the URL name, the plugin
+/// manager by the manifest name. Resolution must go through the clone
+/// DIRECTORY, or install reports a healthy plugin as broken and remove
+/// silently no-ops (unload's NotFound swallowed, TOML entry gone, plugin
+/// still running and now unremovable).
+#[tokio::test]
+async fn a_manifest_name_differing_from_the_repo_name_still_installs_and_removes() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let toml_path = tmp.path().join("plugins.toml");
+    let plugins_dir = tmp.path().join("plugins");
+    let clone_dir = plugins_dir.join("crucible-greeter");
+    std::fs::create_dir_all(&clone_dir).unwrap();
+    std::fs::write(
+        clone_dir.join("plugin.yaml"),
+        "name: greeter\nversion: \"0.1.0\"\nmain: init.lua\n",
+    )
+    .unwrap();
+    std::fs::write(
+        clone_dir.join("init.lua"),
+        r#"return {
+            name = "greeter",
+            version = "0.1.0",
+            tools = { greeter_probe = { description = "x", fn = function() return "t" end } },
+        }"#,
+    )
+    .unwrap();
+
+    plugin_ops::install_at(
+        crucible_core::config::PluginEntry {
+            url: "user/crucible-greeter".to_string(),
+            branch: None,
+            pin: None,
+            enabled: true,
+        },
+        &toml_path,
+        &plugins_dir,
+    )
+    .await
+    .expect("install");
+
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    loader
+        .load_plugins(&[(plugins_dir.clone(), PluginSource::User)])
+        .await
+        .expect("activation load");
+
+    // Install must report the plugin loaded, resolving through the dir.
+    let report =
+        crate::server::plugins::install_load_report(&loader, "crucible-greeter", &clone_dir);
+    assert!(
+        report.loaded,
+        "a healthy plugin must not be reported broken because its manifest \
+         name differs from its repo name: {:?}",
+        report.error
+    );
+
+    // Remove must reach the actual plugin, resolving through the dir.
+    let resolved = loader
+        .plugin_name_for_dir(&clone_dir)
+        .expect("the clone dir maps to the manager key");
+    assert_eq!(resolved, "greeter");
+    loader
+        .deactivate_and_forget_plugin(&resolved)
+        .await
+        .expect("deactivate");
+    assert!(
+        !loader
+            .plugin_registry()
+            .tool_names()
+            .contains("greeter_probe"),
+        "remove must deactivate the ACTUAL plugin, not no-op on the URL name"
     );
 }

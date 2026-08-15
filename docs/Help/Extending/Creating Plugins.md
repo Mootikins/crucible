@@ -334,8 +334,10 @@ removed, its running service tasks are **aborted at their next `await`
 point** — there is no stop callback and no drain period. Write services
 cancel-safe: do work in idempotent steps, hold no state that must be
 flushed on exit, and let external resources (sockets, subprocesses) be
-closed by drop. The old generation is always aborted before a reload spawns
-the new one, so at most one generation of a service runs at a time.
+closed by drop. The old generation's abort is requested before a reload
+spawns the new one and takes effect at its next `await` point, so
+generations never accumulate — but a task deep in synchronous work may
+overlap the new generation briefly before it lands.
 
 ## Hot Reload
 

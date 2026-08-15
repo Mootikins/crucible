@@ -1105,13 +1105,22 @@ end
             anyhow::bail!("plugin '{}' not found", name);
         }
 
-        self.plugin_manager
+        // A failure in either manager step must leave the plugin inert AND
+        // marked Error. `unload` succeeds (state Discovered) before `load`
+        // evals the file, so bailing bare on a `load` failure — the everyday
+        // trigger is saving init.lua with a syntax error while the watcher
+        // is on — left the previous generation's tools, handlers, hooks and
+        // services fully live while plugin.list said `Discovered` with no
+        // error: broken looked exactly like installed-but-not-loaded.
+        if let Err(e) = self
+            .plugin_manager
             .unload(name)
-            .map_err(|e| anyhow::anyhow!("unload plugin '{}': {e}", name))?;
-
-        self.plugin_manager
-            .load(name)
-            .map_err(|e| anyhow::anyhow!("reload plugin '{}': {e}", name))?;
+            .and_then(|()| self.plugin_manager.load(name))
+        {
+            self.make_plugin_inert(name);
+            self.plugin_manager.mark_error(name, e.to_string());
+            anyhow::bail!("reload plugin '{name}': {e}");
+        }
 
         // `load` returns Ok for a disabled plugin — skipping one is not an
         // error — so reload must re-check before executing. Otherwise the kill
@@ -1167,6 +1176,20 @@ end
 
         info!("Reloaded plugin '{}' successfully", name);
         Ok(spec)
+    }
+
+    /// Manager key (manifest `name`) for the plugin discovered at `dir`.
+    ///
+    /// plugins.toml declarations and clone directories go by the URL's last
+    /// segment; the plugin manager goes by `plugin.yaml`'s `name`. For a repo
+    /// `crucible-discord` whose manifest says `name: discord` the two differ,
+    /// and resolving by URL name silently misses the running plugin — the
+    /// directory is the one identity both sides share.
+    pub fn plugin_name_for_dir(&self, dir: &std::path::Path) -> Option<String> {
+        self.plugin_manager
+            .list()
+            .find(|p| p.dir == dir)
+            .map(|p| p.manifest.name.clone())
     }
 
     /// Fully remove a plugin from the running daemon: deactivate + forget.

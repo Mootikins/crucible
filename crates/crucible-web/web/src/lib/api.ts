@@ -1634,6 +1634,14 @@ export interface InstallPluginResult {
   name: string;
   outcome: { kind: 'cloned'; dest: string } | { kind: 'already_present' } | { kind: 'disabled' };
   plugins_toml: string;
+  installed: boolean;
+  // Whether the plugin actually activated on the running daemon. "Installed"
+  // must not read as success while the plugin sits broken in the daemon.
+  loaded: boolean;
+  tools: number;
+  commands: number;
+  services: number;
+  error: string | null;
 }
 
 /**
@@ -1651,6 +1659,11 @@ export interface RemovePluginResult {
   name: string;
   plugins_toml: string;
   purged_dir: string | null;
+  // The TOML removal succeeded but deleting the directory failed.
+  purge_error: string | null;
+  // Removed without purge: the directory remains and loads again on the
+  // next daemon restart or plugin install.
+  kept_dir: string | null;
 }
 
 /** Remove a plugin by name. If `purge`, the cloned directory is also deleted. */
