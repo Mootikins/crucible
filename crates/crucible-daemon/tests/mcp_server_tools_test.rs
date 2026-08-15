@@ -26,7 +26,7 @@ const EXPECTED_TOOLS: &[&str] = &[
     "list_notes",
     // Search tools (3)
     "semantic_search",
-    "text_search",
+    "grep_notes",
     "property_search",
     // Kiln tools (1)
     "get_kiln_info",
@@ -106,6 +106,26 @@ async fn test_mcp_server_has_all_expected_tools() {
             tool_names
         );
     }
+}
+
+/// The grep-style search tool is `grep_notes`; the old `text_search` name is
+/// gone with no compatibility alias — the name promised ranked full-text
+/// search, and the tool is a grep.
+#[tokio::test]
+async fn grep_notes_replaces_text_search_with_no_alias() {
+    let server = create_test_server();
+
+    let tools = server.list_tools();
+    let tool_names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
+
+    assert!(
+        tool_names.iter().any(|n| n == "grep_notes"),
+        "grep_notes should be listed. Found: {tool_names:?}"
+    );
+    assert!(
+        !tool_names.iter().any(|n| n == "text_search"),
+        "text_search must not survive as an alias. Found: {tool_names:?}"
+    );
 }
 
 /// Test that no unexpected tools are exposed
@@ -200,7 +220,7 @@ async fn test_tool_categories() {
     assert_eq!(note_count, 6, "Should have 6 note tools");
 
     // Search tools (3)
-    let search_tools = ["semantic_search", "text_search", "property_search"];
+    let search_tools = ["semantic_search", "grep_notes", "property_search"];
     let search_count = search_tools
         .iter()
         .filter(|t| tool_names.iter().any(|n| n == *t))

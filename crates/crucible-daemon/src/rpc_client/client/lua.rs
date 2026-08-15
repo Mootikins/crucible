@@ -27,35 +27,6 @@ pub struct LuaInitSessionResponse {
     pub session_id: String,
     #[serde(default)]
     pub commands: Vec<serde_json::Value>,
-    #[serde(default)]
-    pub views: Vec<serde_json::Value>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct LuaRegisterHooksRequest {
-    pub session_id: String,
-    pub hooks: Vec<serde_json::Value>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct LuaRegisterHooksResponse {
-    pub status: String,
-    pub registered: usize,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct LuaExecuteHookRequest {
-    pub session_id: String,
-    pub hook_name: String,
-    #[serde(default)]
-    pub context: serde_json::Value,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct LuaExecuteHookResponse {
-    pub executed: usize,
-    #[serde(default)]
-    pub results: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -170,20 +141,6 @@ impl DaemonClient {
         params: LuaInitSessionRequest,
     ) -> Result<LuaInitSessionResponse> {
         self.typed_call("lua.init_session", params).await
-    }
-
-    pub async fn lua_register_hooks(
-        &self,
-        params: LuaRegisterHooksRequest,
-    ) -> Result<LuaRegisterHooksResponse> {
-        self.typed_call("lua.register_hooks", params).await
-    }
-
-    pub async fn lua_execute_hook(
-        &self,
-        params: LuaExecuteHookRequest,
-    ) -> Result<LuaExecuteHookResponse> {
-        self.typed_call("lua.execute_hook", params).await
     }
 
     pub async fn lua_shutdown_session(

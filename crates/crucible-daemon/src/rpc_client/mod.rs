@@ -21,13 +21,12 @@ pub use client::workflow::{
 };
 pub use client::{
     DaemonCapabilities, DaemonClient, LuaDiscoverPluginsRequest, LuaDiscoverPluginsResponse,
-    LuaExecuteHookRequest, LuaExecuteHookResponse, LuaGenerateStubsRequest,
-    LuaGenerateStubsResponse, LuaInitSessionRequest, LuaInitSessionResponse,
-    LuaPluginHealthRequest, LuaPluginHealthResponse, LuaRegisterCommandsRequest,
-    LuaRegisterCommandsResponse, LuaRegisterHooksRequest, LuaRegisterHooksResponse,
-    LuaRunPluginTestsRequest, LuaRunPluginTestsResponse, LuaShutdownSessionRequest,
-    LuaShutdownSessionResponse, PluginTestFailure, PluginTestLoadFailure, SessionAgentSpec,
-    SessionCreateParams, SessionCreateRequest, SessionEvent, VersionCheck,
+    LuaGenerateStubsRequest, LuaGenerateStubsResponse, LuaInitSessionRequest,
+    LuaInitSessionResponse, LuaPluginHealthRequest, LuaPluginHealthResponse,
+    LuaRegisterCommandsRequest, LuaRegisterCommandsResponse, LuaRunPluginTestsRequest,
+    LuaRunPluginTestsResponse, LuaShutdownSessionRequest, LuaShutdownSessionResponse,
+    PluginTestFailure, PluginTestLoadFailure, SessionAgentSpec, SessionCreateParams,
+    SessionCreateRequest, SessionEvent, VersionCheck,
 };
 pub use error_ext::ChatResultExt;
 pub use storage::{DaemonNoteStore, DaemonStorageClient};

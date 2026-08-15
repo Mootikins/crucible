@@ -371,11 +371,13 @@ impl ReconnectingDaemon {
     }
 
     /// Ripgrep-style content search. `root` containment (registered project or
-    /// open kiln) is enforced daemon-side.
+    /// open kiln) is enforced daemon-side. `regex` switches `query` from
+    /// literal substring to regex matching.
     pub async fn search_grep(
         &self,
         root: &str,
         query: &str,
+        regex: bool,
         glob: Option<&str>,
         limit: usize,
         case_insensitive: bool,
@@ -389,7 +391,14 @@ impl ReconnectingDaemon {
             let glob = glob.clone();
             Box::pin(async move {
                 daemon
-                    .search_grep(&root, &query, glob.as_deref(), limit, case_insensitive)
+                    .search_grep(
+                        &root,
+                        &query,
+                        regex,
+                        glob.as_deref(),
+                        limit,
+                        case_insensitive,
+                    )
                     .await
             })
         })

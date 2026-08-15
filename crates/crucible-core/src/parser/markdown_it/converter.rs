@@ -28,59 +28,7 @@ impl AstConverter {
     }
 
     fn walk_node(node: &Node, content: &mut NoteContent) -> ParserResult<()> {
-        // Extract custom Obsidian-style syntax nodes
-
-        // 1. Wikilinks
-        if let Some(wikilink) = node.cast::<super::plugins::wikilink::WikilinkNode>() {
-            // Same span math as Wikilink::parse: the target token starts right
-            // after the `[[` / `![[` delimiter.
-            let start = wikilink.offset + if wikilink.is_embed { 3 } else { 2 };
-            content.wikilinks.push(Wikilink {
-                target: wikilink.target.clone(),
-                alias: wikilink.alias.clone(),
-                offset: wikilink.offset,
-                target_span: (start, start + wikilink.target.len()),
-                is_embed: wikilink.is_embed,
-                block_ref: wikilink.block_ref.clone(),
-                heading_ref: wikilink.heading_ref.clone(),
-            });
-        }
-
-        // 2. Tags
-        if let Some(tag) = node.cast::<super::plugins::tag::TagNode>() {
-            content.tags.push(Tag::new(tag.name.clone(), tag.offset));
-        }
-
-        // 3. Callouts
-        if let Some(callout) = node.cast::<super::plugins::callout::CalloutNode>() {
-            let crucible_callout = if let Some(title) = &callout.title {
-                Callout::with_title(
-                    callout.callout_type.clone(),
-                    title.clone(),
-                    callout.content.clone(),
-                    callout.offset,
-                )
-            } else {
-                Callout::new(
-                    callout.callout_type.clone(),
-                    callout.content.clone(),
-                    callout.offset,
-                )
-            };
-            content.callouts.push(crucible_callout);
-        }
-
-        // 4. LaTeX expressions
-        if let Some(latex) = node.cast::<super::plugins::latex::LatexNode>() {
-            content.latex_expressions.push(LatexExpression::new(
-                latex.expression.clone(),
-                latex.is_block,
-                latex.offset,
-                latex.expression.len() + if latex.is_block { 4 } else { 2 }, // Include delimiters
-            ));
-        }
-
-        // 5. Headings (from CommonMark ATX heading syntax)
+        // 1. Headings (from CommonMark ATX heading syntax)
         if let Some(heading) = node.cast::<ATXHeading>() {
             let text = Self::extract_text(node);
             if !text.is_empty() {
@@ -91,7 +39,7 @@ impl AstConverter {
             }
         }
 
-        // 6. Horizontal rules / thematic breaks (---, ***, ___)
+        // 2. Horizontal rules / thematic breaks (---, ***, ___)
         if let Some(hr) = node.cast::<ThematicBreak>() {
             let offset = node.srcmap.map(|s| s.get_byte_offsets().0).unwrap_or(0);
             let style = match hr.marker {
@@ -108,7 +56,7 @@ impl AstConverter {
                 .push(HorizontalRule::new(raw_content, style, offset));
         }
 
-        // 7. Code blocks (fenced code blocks ```language ... ```)
+        // 3. Code blocks (fenced code blocks ```language ... ```)
         if let Some(fence) = node.cast::<CodeFence>() {
             let offset = node.srcmap.map(|s| s.get_byte_offsets().0).unwrap_or(0);
             // Extract language from info string (first word)
@@ -123,7 +71,7 @@ impl AstConverter {
                 .push(CodeBlock::new(language, fence.content.clone(), offset));
         }
 
-        // 8. Ordered lists
+        // 4. Ordered lists
         if node.cast::<OrderedList>().is_some() {
             let offset = node.srcmap.map(|s| s.get_byte_offsets().0).unwrap_or(0);
             let mut list_block = ListBlock::new(ListType::Ordered, offset);
@@ -142,7 +90,7 @@ impl AstConverter {
             content.lists.push(list_block);
         }
 
-        // 9. Unordered (bullet) lists
+        // 5. Unordered (bullet) lists
         if node.cast::<BulletList>().is_some() {
             let offset = node.srcmap.map(|s| s.get_byte_offsets().0).unwrap_or(0);
             let mut list_block = ListBlock::new(ListType::Unordered, offset);
@@ -161,7 +109,7 @@ impl AstConverter {
             content.lists.push(list_block);
         }
 
-        // 10. Tables (GFM tables)
+        // 6. Tables (GFM tables)
         if node.cast::<MdTable>().is_some() {
             let offset = node.srcmap.map(|s| s.get_byte_offsets().0).unwrap_or(0);
             let (rows, columns, headers) = Self::extract_table_structure(node);
@@ -333,7 +281,6 @@ mod tests {
     fn setup_parser() -> MarkdownIt {
         let mut md = MarkdownIt::new();
         markdown_it::plugins::cmark::add(&mut md);
-        super::super::plugins::add_wikilink_plugin(&mut md);
         md
     }
 
@@ -347,18 +294,6 @@ mod tests {
         assert_eq!(content.headings.len(), 1);
         assert_eq!(content.headings[0].text, "Heading");
         assert!(!content.paragraphs.is_empty());
-    }
-
-    #[test]
-    fn test_convert_wikilinks() {
-        let md = setup_parser();
-        let ast = md.parse("Link to [[Other Note]] here.");
-
-        let content = AstConverter::convert(&ast).unwrap();
-
-        assert_eq!(content.wikilinks.len(), 1);
-        assert_eq!(content.wikilinks[0].target, "Other Note");
-        assert_eq!(content.wikilinks[0].alias, None);
     }
 
     #[test]

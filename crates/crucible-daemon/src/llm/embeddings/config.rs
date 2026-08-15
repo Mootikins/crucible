@@ -1,67 +1,6 @@
 //! Configuration for embedding providers
 
-use serde::{Deserialize, Serialize};
-
-use super::error::{EmbeddingError, EmbeddingResult};
-
-/// Type of embedding provider
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ProviderType {
-    /// Ollama local/remote embedding service
-    Ollama,
-    /// OpenAI embedding API
-    OpenAI,
-}
-
-impl ProviderType {
-    /// Parse provider type from string
-    #[allow(clippy::should_implement_trait)]
-    pub fn from_str(s: &str) -> EmbeddingResult<Self> {
-        match s.to_lowercase().as_str() {
-            "ollama" => Ok(ProviderType::Ollama),
-            "openai" => Ok(ProviderType::OpenAI),
-            _ => Err(EmbeddingError::ConfigError(format!(
-                "Unknown provider type: {}. Valid options: ollama, openai",
-                s
-            ))),
-        }
-    }
-
-    /// Get default endpoint for this provider
-    pub fn default_endpoint(&self) -> &'static str {
-        match self {
-            ProviderType::Ollama => "http://localhost:11434",
-            ProviderType::OpenAI => "https://api.openai.com/v1",
-        }
-    }
-
-    /// Get default model for this provider
-    pub fn default_model(&self) -> &'static str {
-        match self {
-            ProviderType::Ollama => "nomic-embed-text",
-            ProviderType::OpenAI => "text-embedding-3-small",
-        }
-    }
-
-    /// Get expected embedding dimensions for this provider's default model
-    pub fn default_dimensions(&self) -> usize {
-        match self {
-            ProviderType::Ollama => 768,  // nomic-embed-text
-            ProviderType::OpenAI => 1536, // text-embedding-3-small
-        }
-    }
-
-    /// Whether this provider requires an API key
-    pub fn requires_api_key(&self) -> bool {
-        match self {
-            ProviderType::Ollama => false,
-            ProviderType::OpenAI => true,
-        }
-    }
-}
-
-// Re-export canonical EmbeddingProviderConfig as EmbeddingConfig for compatibility
+// Re-export canonical EmbeddingProviderConfig as EmbeddingConfig for compatibility.
 pub use crucible_core::config::EmbeddingProviderConfig as EmbeddingConfig;
 
 pub use crucible_core::config::BackendType;
@@ -83,53 +22,6 @@ pub fn expected_dimensions_for_model(provider: &BackendType, model: &str) -> usi
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_provider_type_from_str() {
-        assert_eq!(
-            ProviderType::from_str("ollama").unwrap(),
-            ProviderType::Ollama
-        );
-        assert_eq!(
-            ProviderType::from_str("Ollama").unwrap(),
-            ProviderType::Ollama
-        );
-        assert_eq!(
-            ProviderType::from_str("OLLAMA").unwrap(),
-            ProviderType::Ollama
-        );
-
-        assert_eq!(
-            ProviderType::from_str("openai").unwrap(),
-            ProviderType::OpenAI
-        );
-        assert_eq!(
-            ProviderType::from_str("OpenAI").unwrap(),
-            ProviderType::OpenAI
-        );
-        assert_eq!(
-            ProviderType::from_str("OPENAI").unwrap(),
-            ProviderType::OpenAI
-        );
-
-        assert!(ProviderType::from_str("unknown").is_err());
-        assert!(ProviderType::from_str("").is_err());
-    }
-
-    #[test]
-    fn test_provider_defaults() {
-        let ollama = ProviderType::Ollama;
-        assert_eq!(ollama.default_endpoint(), "http://localhost:11434");
-        assert_eq!(ollama.default_model(), "nomic-embed-text");
-        assert_eq!(ollama.default_dimensions(), 768);
-        assert!(!ollama.requires_api_key());
-
-        let openai = ProviderType::OpenAI;
-        assert_eq!(openai.default_endpoint(), "https://api.openai.com/v1");
-        assert_eq!(openai.default_model(), "text-embedding-3-small");
-        assert_eq!(openai.default_dimensions(), 1536);
-        assert!(openai.requires_api_key());
-    }
 
     #[test]
     fn test_config_validation_success() {

@@ -17,7 +17,6 @@ use crate::pipeline::{NotePipeline, NotePipelineConfig};
 use crate::watch::{EventFilter, WatchManager, WatchManagerConfig};
 use crucible_core::processing::InMemoryChangeDetectionStore;
 use crucible_core::storage::note_store::NoteRecord;
-use crucible_core::storage::VectorStore;
 use crucible_core::traits::{KnowledgeRepository, NoteInfo};
 use crucible_core::EXCLUDED_DIRS;
 
@@ -49,8 +48,6 @@ pub fn normalize_note_path(file_path: &Path, kiln_path: &Path) -> Option<String>
 }
 
 // Backend-specific imports
-use crate::storage::lance::vector_index::DEFAULT_EMBEDDING_DIM;
-use crate::storage::lance::LanceVectorIndex;
 use crate::storage::sqlite::{adapters as sqlite_adapters, SqliteClientHandle, SqliteConfig};
 
 // ===========================================================================
@@ -61,13 +58,15 @@ use crate::storage::sqlite::{adapters as sqlite_adapters, SqliteClientHandle, Sq
 // Backend Abstraction
 // ===========================================================================
 
-/// Per-kiln storage. SQLite owns metadata, properties, and the
-/// `KnowledgeRepository` surface; LanceDB owns the vector index. Both
-/// always present; there is no single-backend mode.
+/// Per-kiln storage. SQLite owns everything: note metadata, properties, the
+/// `KnowledgeRepository` surface, the FTS5 text index, and the
+/// `notes.embedding` column that backs semantic search. (The former LanceDB
+/// vector index was deleted after measurement showed a tuned SQLite scan
+/// returning identical results 3.2x faster, with usable recall — the IVF_PQ
+/// index had 0.132 recall@10k at kiln sizes.)
 #[derive(Clone)]
 pub struct StorageHandle {
     pub sqlite: SqliteClientHandle,
-    pub vectors: Arc<LanceVectorIndex>,
     /// FTS5 full-text index over note titles and bodies. Backs
     /// `search_text` — the thing `cru search` needs to see inside a note.
     pub text: Arc<crate::storage::sqlite::FtsIndex>,
@@ -76,7 +75,7 @@ pub struct StorageHandle {
 impl StorageHandle {
     /// Stable label for diagnostic logs.
     pub fn backend_name(&self) -> &'static str {
-        "sqlite+lance"
+        "sqlite"
     }
 
     /// Note metadata store (SQLite).
@@ -89,49 +88,33 @@ impl StorageHandle {
         self.sqlite.as_property_store()
     }
 
-    /// Vector similarity search.
+    /// Scope-aware vector similarity search (exact cosine over
+    /// `notes.embedding`).
     ///
-    /// Returns (document_id, score) pairs sorted by similarity descending.
-    /// Vector index lives in LanceDB; the document_id is the note path
-    /// stored at upsert time and looked up in SQLite if metadata hydration
-    /// is required.
-    ///
-    /// Scope-aware vector search.
-    ///
-    /// Over-fetches the Lance index (~2x `limit`, capped at 4x) so the
-    /// SQLite scope post-filter doesn't return fewer than `limit` results
-    /// when the filter rejects some hits. Lance is the similarity oracle;
-    /// SQLite is the scope oracle. Both layers must approve for a hit to
-    /// reach the caller.
+    /// Returns (document_id, score) pairs sorted by similarity descending,
+    /// tie-broken by path ascending. The scope filter is applied at the SQL
+    /// layer (`Filter::Scope`), so out-of-scope rows never occupy result
+    /// slots — the old Lance over-fetch + post-filter could return fewer
+    /// than `limit` hits when strangers dominated the similarity ranking.
     pub async fn search_vectors(
         &self,
         vector: Vec<f32>,
         limit: usize,
         authority: &crucible_core::storage::Scope,
     ) -> Result<Vec<(String, f64)>> {
-        let fetch = limit.max(1).saturating_mul(2).min(limit.max(1) * 4);
-        let matches = self.vectors.search(&vector, fetch).await?;
-
-        // Post-filter: hydrate each match through the SQLite note store
-        // (scoped read). If the record is missing or out-of-scope, drop it.
-        // `NoteStore::get` is already authority-aware so we get both
-        // existence and visibility in one call.
-        let note_store = self.sqlite.as_note_store();
-        let mut filtered: Vec<(String, f64)> = Vec::with_capacity(matches.len());
-        for m in matches {
-            let visible = note_store
-                .get(&m.id, authority)
-                .await
-                .map(|opt| opt.is_some())
-                .unwrap_or(false);
-            if visible {
-                filtered.push((m.id, m.similarity as f64));
-                if filtered.len() >= limit {
-                    break;
-                }
-            }
-        }
-        Ok(filtered)
+        let results = self
+            .sqlite
+            .as_note_store()
+            .search(
+                &vector,
+                limit,
+                Some(crucible_core::storage::Filter::Scope(authority.clone())),
+            )
+            .await?;
+        Ok(results
+            .into_iter()
+            .map(|r| (r.note.path, r.score as f64))
+            .collect())
     }
 
     /// List notes by metadata filter. Always reads from SQLite.
@@ -329,6 +312,13 @@ async fn backfill_text_index(
         }
         indexed += 1;
     }
+    if indexed > 0 {
+        // Merge the freshly written segments once, instead of leaving the
+        // first queries after a backfill to pay for the fragmentation.
+        if let Err(e) = text.optimize().await {
+            tracing::warn!(error = %e, "FTS optimize after backfill failed; search still works, just slower");
+        }
+    }
     info!(notes = indexed, "Text index backfilled");
 }
 
@@ -444,8 +434,7 @@ impl KilnManager {
 
         info!("Opening kiln at {:?}", db_path);
 
-        let handle =
-            create_storage_handle(&db_path, &canonical, self.enrichment_config.as_ref()).await?;
+        let handle = create_storage_handle(&db_path, &canonical).await?;
         info!(
             "Kiln opened with {} backend at {:?}",
             handle.backend_name(),
@@ -588,9 +577,9 @@ impl KilnManager {
     ///
     /// Deletions route back through `handle_file_deleted` rather than hitting
     /// the note store directly, so a reconciled delete is byte-for-byte the
-    /// same operation as a live one — including dropping the Lance vector,
-    /// which would otherwise keep answering semantic searches with notes that
-    /// no longer exist.
+    /// same operation as a live one — including dropping the FTS row, which
+    /// would otherwise keep answering text searches with notes that no
+    /// longer exist.
     ///
     /// Note that the candidate set comes from a scope-filtered `list`, whose
     /// SQL matches each note's recorded `properties.scope.path` against
@@ -770,15 +759,9 @@ impl KilnManager {
         };
         let event = conn.handle.as_note_store().delete(&relative_path).await?;
 
-        // Drop the note's vector too, or it orphans in the Lance index and can
-        // eat the similarity over-fetch window for later searches.
-        if let Err(e) = conn.handle.vectors.delete(&relative_path).await {
-            tracing::warn!(path = %relative_path, ?e, "failed to remove deleted note from vector index");
-        }
-
-        // Same for the text index: a stale row there is worse than a stale
-        // vector, because it returns a hit the user can click on and open
-        // nothing.
+        // Drop the note from the text index too: a stale row there returns a
+        // hit the user can click on and open nothing. (The embedding needs no
+        // separate cleanup — it lives on the deleted `notes` row.)
         if let Err(e) = conn.handle.text.remove(&relative_path).await {
             tracing::warn!(path = %relative_path, ?e, "failed to remove deleted note from text index");
         }
@@ -849,6 +832,17 @@ impl KilnManager {
                 Err(e) => {
                     errors.push((path.clone(), e.to_string()));
                 }
+            }
+        }
+
+        // A batch of delete+insert pairs leaves the FTS term index spread
+        // across segments that every query then consults; merging them here
+        // is subsecond (measured 0.25s at 12k notes) and took a churned
+        // index's phrase queries from 24.7ms back to 16.1ms. On an
+        // already-merged index it is near a no-op, so no threshold.
+        if processed > 0 {
+            if let Err(e) = conn.handle.text.optimize().await {
+                warn!(error = %e, "FTS optimize after batch failed; search still works, just slower");
             }
         }
 
@@ -1027,57 +1021,28 @@ async fn create_pipeline(
     let config = pipeline_config(enrichment_config);
 
     let pipeline = NotePipeline::with_config(change_detector, enricher, note_store, config)
-        .with_vector_store(handle.vectors.clone())
         .with_text_index(handle.text.clone());
 
     Ok(pipeline)
 }
 
-/// Create a storage handle for the given database path.
-/// Open both backends for a kiln. SQLite for metadata + properties at
-/// `<kiln>/.crucible/crucible-sqlite.db`; LanceDB vector index at
-/// `<kiln>/.crucible/crucible-vectors.lance/`.
+/// Open a kiln's storage: SQLite for metadata, properties, text index and
+/// embeddings, at `<kiln>/.crucible/crucible-sqlite.db`.
 ///
 /// `kiln_path` is the kiln root (canonicalized by `open()`); the SQLite
 /// handle is bound to it so `as_knowledge_repository()` enforces
 /// `Scope::Workspace(kiln_path)` authority on reads.
-async fn create_storage_handle(
-    sqlite_db_path: &Path,
-    kiln_path: &Path,
-    enrichment_config: Option<&EmbeddingProviderConfig>,
-) -> Result<StorageHandle> {
+async fn create_storage_handle(sqlite_db_path: &Path, kiln_path: &Path) -> Result<StorageHandle> {
     let sqlite_config = SqliteConfig::new(sqlite_db_path);
     let sqlite = sqlite_adapters::create_sqlite_client(sqlite_config)
         .await?
         .with_kiln_path(kiln_path.to_path_buf());
 
-    let lance_dir = sqlite_db_path
-        .parent()
-        .map(|p| p.join("crucible-vectors.lance"))
-        .unwrap_or_else(|| PathBuf::from("crucible-vectors.lance"));
-
-    // The Lance index dimension is fixed at open time and must match the
-    // configured embedding model, or every upsert fails the length check and
-    // semantic search silently returns nothing (the default fastembed model is
-    // 384-dim, OpenAI 1536 — not the old hardcoded 768).
-    let dimension = enrichment_config
-        .and_then(|c| c.dimensions())
-        .map(|d| d as usize)
-        .unwrap_or(DEFAULT_EMBEDDING_DIM);
-    let vectors = Arc::new(
-        LanceVectorIndex::open_with_dimension(lance_dir.to_string_lossy().as_ref(), dimension)
-            .await?,
-    );
-
     // No setup call: `notes_fts` is created by the migration ladder, which ran
     // when `sqlite`'s pool opened the database.
     let text = Arc::new(crate::storage::sqlite::FtsIndex::new(sqlite.pool().clone()));
 
-    Ok(StorageHandle {
-        sqlite,
-        vectors,
-        text,
-    })
+    Ok(StorageHandle { sqlite, text })
 }
 
 // ===========================================================================

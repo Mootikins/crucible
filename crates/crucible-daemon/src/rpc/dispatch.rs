@@ -128,8 +128,6 @@ pub const METHODS: &[&str] = &[
     "plugin.install",
     "plugin.remove",
     "lua.init_session",
-    "lua.register_hooks",
-    "lua.execute_hook",
     "lua.shutdown_session",
     "lua.discover_plugins",
     "lua.plugin_health",
@@ -414,8 +412,6 @@ impl RpcDispatcher {
 
             // Lua RPC handlers
             "lua.init_session" => to_response(id, self.handle_lua_init_session(&req).await),
-            "lua.register_hooks" => to_response(id, self.handle_lua_register_hooks(&req).await),
-            "lua.execute_hook" => to_response(id, self.handle_lua_execute_hook(&req).await),
             "lua.shutdown_session" => to_response(id, self.handle_lua_shutdown_session(&req).await),
             "lua.discover_plugins" => to_response(id, self.handle_lua_discover_plugins(&req).await),
             "lua.plugin_health" => to_response(id, self.handle_lua_plugin_health(&req).await),
@@ -1488,19 +1484,6 @@ impl RpcDispatcher {
             &self.ctx.plugin_loader,
         )
         .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_lua_register_hooks(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::lua::handle_lua_register_hooks(req.clone(), &self.ctx.lua_sessions)
-                .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_lua_execute_hook(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::lua::handle_lua_execute_hook(req.clone(), &self.ctx.lua_sessions).await;
         map_server_resp(resp)
     }
 
@@ -2672,7 +2655,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
     async fn end_then_shutdown_fires_on_session_end_hook_exactly_once() {
         use crate::server::LuaSessionState;
         use crucible_core::session::SessionType;
-        use crucible_lua::{LuaExecutor, LuaScriptHandlerRegistry, Session as LuaSession};
+        use crucible_lua::{LuaExecutor, Session as LuaSession};
         use tempfile::TempDir;
 
         let tempdir = TempDir::new().unwrap();
@@ -2717,7 +2700,6 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
         let lua = executor.lua().clone();
         let state = LuaSessionState {
             executor,
-            registry: LuaScriptHandlerRegistry::new(),
             end_hooks_fired: false,
         };
         ctx.lua_sessions

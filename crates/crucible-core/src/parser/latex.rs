@@ -81,11 +81,6 @@ impl SyntaxExtension for LatexExtension {
 }
 
 impl LatexExtension {
-    /// Check if this extension supports LaTeX (convenience method for tests)
-    pub fn supports_latex(&self) -> bool {
-        true
-    }
-
     /// Extract block LaTeX expressions ($$...$$)
     fn extract_block_latex(
         &self,

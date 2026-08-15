@@ -267,3 +267,51 @@ async fn punctuation_in_a_query_does_not_error() {
 
     server.shutdown().await;
 }
+
+/// A multi-word query means "all words somewhere in the note", not "these
+/// words adjacent". The old handler quoted the whole query as one FTS5
+/// phrase, so `zqxjvbn wbtqkdh` found nothing unless the words happened to
+/// sit next to each other. User quotes still force adjacency.
+#[tokio::test]
+async fn multi_word_query_matches_words_that_are_not_adjacent() {
+    let server = TestServer::start().await.expect("Failed to start server");
+    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+
+    let client = DaemonClient::connect_to(&server.socket_path)
+        .await
+        .expect("Failed to connect");
+    client
+        .kiln_open(kiln_dir.path())
+        .await
+        .expect("kiln_open failed");
+
+    std::fs::write(
+        kiln_dir.path().join("spread.md"),
+        "# Spread\n\nzqxjvbn appears here, and much later wbtqkdh does too.\n",
+    )
+    .expect("failed to write note");
+    wait_until_indexed(&client, kiln_dir.path(), "spread").await;
+
+    let hits = client
+        .search_text(kiln_dir.path(), "zqxjvbn wbtqkdh", 20)
+        .await
+        .expect("search_text RPC failed");
+    assert!(
+        hits.iter().any(|h| h.path.contains("spread")),
+        "non-adjacent words must both count; got {:?}",
+        hits.iter().map(|h| &h.path).collect::<Vec<_>>()
+    );
+
+    // Quotes still mean adjacency: this exact phrase appears nowhere.
+    let hits = client
+        .search_text(kiln_dir.path(), "\"zqxjvbn wbtqkdh\"", 20)
+        .await
+        .expect("search_text RPC failed");
+    assert!(
+        hits.is_empty(),
+        "a user-quoted phrase must stay adjacency-only; got {:?}",
+        hits.iter().map(|h| &h.path).collect::<Vec<_>>()
+    );
+
+    server.shutdown().await;
+}

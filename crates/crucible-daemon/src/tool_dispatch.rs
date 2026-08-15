@@ -20,7 +20,7 @@ use crate::tools::notes::{
     CreateNoteParams, DeleteNoteParams, ListNotesParams, ReadMetadataParams, ReadNoteParams,
     UpdateNoteParams,
 };
-use crate::tools::search::{PropertySearchParams, SemanticSearchParams, TextSearchParams};
+use crate::tools::search::{GrepNotesParams, PropertySearchParams, SemanticSearchParams};
 use crate::tools::tool_discovery::{DiscoverToolsParams, GetToolSchemaParams, ToolDiscovery};
 
 /// Names of the progressive-disclosure discovery tools handled directly by
@@ -438,9 +438,9 @@ impl ToolExecutor for McpToolExecutor {
                     .semantic_search(Self::parse_params::<SemanticSearchParams>(params)?)
                     .await
             }
-            "text_search" => {
+            "grep_notes" => {
                 self.server
-                    .text_search(Self::parse_params::<TextSearchParams>(params)?)
+                    .grep_notes(Self::parse_params::<GrepNotesParams>(params)?)
                     .await
             }
             "property_search" => {

@@ -472,12 +472,12 @@ async fn search_vectors(
 }
 
 /// `POST /api/search/semantic` — text semantic search over a kiln's notes.
-/// Embeds the query with the kiln's embedding provider, then vector-searches
-/// the Lance index. Two daemon RPCs (`embed.query` + `search_vectors`) mirror
-/// the CLI's `run_semantic_search`. Each hit's `document_id` is the
-/// kiln-relative note path; `path` is the absolute path for the editor to open.
-/// Requires an embedding provider (else `embed.query` fails) AND processed
-/// notes (an empty Lance index yields no hits).
+/// Embeds the query with the kiln's embedding provider, then cosine-scans the
+/// embeddings in the kiln's SQLite store. Two daemon RPCs (`embed.query` +
+/// `search_vectors`) mirror the CLI's `run_semantic_search`. Each hit's
+/// `document_id` is the kiln-relative note path; `path` is the absolute path
+/// for the editor to open. Requires an embedding provider (else `embed.query`
+/// fails) AND processed notes (no embeddings yields no hits).
 #[derive(Debug, Deserialize)]
 struct SemanticSearchRequest {
     kiln: PathBuf,
@@ -532,6 +532,9 @@ async fn search_semantic(
 struct GrepSearchRequest {
     root: String,
     query: String,
+    /// Treat `query` as a regex (Rust regex syntax) instead of a literal.
+    #[serde(default)]
+    regex: bool,
     #[serde(default)]
     glob: Option<String>,
     #[serde(default = "default_grep_limit")]
@@ -557,6 +560,7 @@ async fn search_grep(
         .search_grep(
             &req.root,
             &req.query,
+            req.regex,
             req.glob.as_deref(),
             req.limit,
             req.case_insensitive,

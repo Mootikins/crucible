@@ -14,7 +14,7 @@
 /// Read-only tools available in "plan" mode when Lua declares no modes.
 pub const PLAN_TOOL_NAMES: &[&str] = &[
     "semantic_search",
-    "text_search",
+    "grep_notes",
     "property_search",
     "list_notes",
     "read_note",

@@ -176,36 +176,6 @@ pub enum McpTransportConfig {
     },
 }
 
-/// Configuration for an upstream MCP server connection
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct McpClientConfig {
-    /// Unique name for this upstream (e.g., "github", "filesystem")
-    pub name: String,
-
-    /// Transport configuration
-    pub transport: McpTransportConfig,
-
-    /// Prefix to add to tool names (e.g., "gh_" -> "gh_search_repositories")
-    #[serde(default)]
-    pub prefix: Option<String>,
-
-    /// Whitelist of allowed tools (glob patterns supported)
-    #[serde(default)]
-    pub allowed_tools: Option<Vec<String>>,
-
-    /// Blacklist of blocked tools (glob patterns supported)
-    #[serde(default)]
-    pub blocked_tools: Option<Vec<String>>,
-
-    /// Whether to auto-reconnect on disconnection
-    #[serde(default = "default_auto_reconnect")]
-    pub auto_reconnect: bool,
-}
-
-fn default_auto_reconnect() -> bool {
-    true
-}
-
 // =============================================================================
 // MCP Traits - Interface Segregation
 // =============================================================================

@@ -46,7 +46,7 @@ use super::notes::{
     CreateNoteParams, DeleteNoteParams, ListNotesParams, ReadMetadataParams, ReadNoteParams,
     UpdateNoteParams,
 };
-use super::search::{PropertySearchParams, SemanticSearchParams, TextSearchParams};
+use super::search::{GrepNotesParams, PropertySearchParams, SemanticSearchParams};
 
 /// Unified MCP server exposing all Crucible tools
 ///
@@ -421,12 +421,14 @@ impl CrucibleMcpServer {
         self.search_tools.semantic_search(params).await
     }
 
-    #[tool(description = "Fast full-text search across notes")]
-    pub async fn text_search(
+    #[tool(
+        description = "Grep-style text search over notes (ripgrep engine): literal substring by default, set regex=true for regex patterns. Unranked file/line matches; for meaning-based discovery use semantic_search."
+    )]
+    pub async fn grep_notes(
         &self,
-        params: Parameters<TextSearchParams>,
+        params: Parameters<GrepNotesParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        self.search_tools.text_search(params).await
+        self.search_tools.grep_notes(params).await
     }
 
     #[tool(description = "Search notes by frontmatter properties (includes tags)")]
@@ -687,7 +689,7 @@ impl ServerHandler for CrucibleMcpServer {
             "Crucible knowledge management server with {tool_count} tools. \
                 Notes: create_note, read_note, update_note, delete_note, list_notes, \
                 read_metadata. \
-                Search: semantic_search, text_search, property_search. \
+                Search: semantic_search, grep_notes, property_search. \
                 Workspace: read_file, edit_file, write_file, bash, glob, grep. \
                 Kiln: get_kiln_info. \
                 Delegation: delegate_session \

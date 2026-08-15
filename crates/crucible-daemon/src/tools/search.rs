@@ -16,202 +16,22 @@
 
 #![allow(clippy::doc_markdown, clippy::manual_let_else, missing_docs)]
 
+use super::grep_engine::{grep_search, GrepSearchError};
 use super::helpers::{json_success, McpResultExt};
 use crate::multi_kiln_search::KilnSearchSource;
 use crucible_core::serde_helpers::default_true;
 use crucible_core::storage::NoteStore;
 use crucible_core::{enrichment::EmbeddingProvider, traits::KnowledgeRepository};
-use globset::Glob;
-use grep::matcher::Matcher;
-use grep::regex::RegexMatcher;
-use grep::searcher::{sinks::UTF8, BinaryDetection, SearcherBuilder};
-use ignore::WalkBuilder;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{model::CallToolResult, tool, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use std::path::Path;
 use std::sync::Arc;
 use walkdir::WalkDir;
 
 /// Default value for limit parameter
 fn default_limit() -> usize {
     10
-}
-
-/// Max characters retained in a grep hit's `text` snippet (long lines are
-/// truncated so a minified/generated line can't blow up a response).
-const GREP_SNIPPET_CAP: usize = 300;
-
-/// A single content-search hit.
-///
-/// `match_start`/`match_end` are **character** offsets into `text` (post-trim),
-/// suitable for `<mark>` highlighting in the web UI. Only the first match on a
-/// line is reported. Wire keys (`path`/`rel_path`/`line`/`text`/`match_start`/
-/// `match_end`) are the `search_grep` RPC + `POST /api/search/grep` contract.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct GrepHit {
-    /// Absolute path to the matched file.
-    pub path: String,
-    /// Path relative to the search's `rel_base` (forward-slash separators).
-    pub rel_path: String,
-    /// 1-based line number.
-    pub line: u64,
-    /// The matched line, trimmed of surrounding whitespace and capped at
-    /// [`GREP_SNIPPET_CAP`] characters.
-    pub text: String,
-    /// Character offset of the first match's start within `text`.
-    pub match_start: usize,
-    /// Character offset of the first match's end within `text`.
-    pub match_end: usize,
-}
-
-/// Result of a `search_grep` call: the hits plus whether they were capped at
-/// the requested limit. Matches the `POST /api/search/grep` response body.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct GrepSearchResponse {
-    pub hits: Vec<GrepHit>,
-    pub truncated: bool,
-}
-
-/// Literal-substring content search (ripgrep-style) over files under
-/// `walk_root`, honoring `.gitignore` and skipping binary files.
-///
-/// This is the single grep engine shared by the `text_search` MCP tool and the
-/// `search_grep` RPC/HTTP endpoint.
-///
-/// * `walk_root` — directory tree to walk.
-/// * `rel_base` — paths in `GrepHit::rel_path` are reported relative to this
-///   (usually the same as `walk_root`, but `text_search` reports relative to
-///   the kiln root while walking a subfolder).
-/// * `query` — treated as a **literal** substring (regex-escaped).
-/// * `glob` — optional name filter (e.g. `*.md`); `None`/empty/`"null"` searches
-///   all files. Matched against the file's base name.
-/// * `limit` — max hits; when reached, `truncated` is `true`.
-/// * `case_insensitive` — ASCII/Unicode-insensitive matching when set.
-///
-/// Returns `(hits, truncated)`.
-pub(crate) fn grep_search(
-    walk_root: &Path,
-    rel_base: &Path,
-    query: &str,
-    glob: Option<&str>,
-    limit: usize,
-    case_insensitive: bool,
-) -> Result<(Vec<GrepHit>, bool), anyhow::Error> {
-    if query.is_empty() || limit == 0 {
-        return Ok((Vec::new(), false));
-    }
-
-    let pattern = if case_insensitive {
-        format!("(?i){}", regex::escape(query))
-    } else {
-        regex::escape(query)
-    };
-    let matcher = RegexMatcher::new_line_matcher(&pattern)?;
-
-    // Name filter. An explicit empty/"null" glob (LLMs sometimes send the
-    // literal string) is treated as "no filter".
-    let glob_matcher = match glob {
-        Some(g) if !g.is_empty() && g != "null" => Some(Glob::new(g)?.compile_matcher()),
-        _ => None,
-    };
-
-    // Quit scanning a file at the first NUL byte so binary files can't leak
-    // garbage lines into results.
-    let mut searcher = SearcherBuilder::new()
-        .binary_detection(BinaryDetection::quit(b'\x00'))
-        .line_number(true)
-        .build();
-
-    let mut hits: Vec<GrepHit> = Vec::new();
-    let mut truncated = false;
-
-    for entry in WalkBuilder::new(walk_root)
-        .standard_filters(true)
-        .build()
-        .filter_map(Result::ok)
-    {
-        if !entry.file_type().is_some_and(|ft| ft.is_file()) {
-            continue;
-        }
-        let path = entry.path();
-
-        if let Some(ref gm) = glob_matcher {
-            let name = path.file_name().unwrap_or_default();
-            if !gm.is_match(name) {
-                continue;
-            }
-        }
-
-        let abs = path.to_string_lossy().to_string();
-        let rel = path
-            .strip_prefix(rel_base)
-            .unwrap_or(path)
-            .to_string_lossy()
-            .replace('\\', "/");
-
-        let search_result = searcher.search_path(
-            &matcher,
-            path,
-            UTF8(|lnum, line| {
-                let (text, match_start, match_end) = format_grep_hit(&matcher, line);
-                hits.push(GrepHit {
-                    path: abs.clone(),
-                    rel_path: rel.clone(),
-                    line: lnum,
-                    text,
-                    match_start,
-                    match_end,
-                });
-                // Stop this file (and, below, the whole walk) once capped.
-                Ok(hits.len() < limit)
-            }),
-        );
-        // A per-file read error (e.g. permissions) shouldn't abort the search.
-        let _ = search_result;
-
-        if hits.len() >= limit {
-            truncated = true;
-            break;
-        }
-    }
-
-    Ok((hits, truncated))
-}
-
-/// Trim a matched line, cap it, and re-express the first match's byte span as
-/// character offsets into the trimmed+capped snippet. Leading-whitespace
-/// trimming shifts the offsets accordingly.
-fn format_grep_hit(matcher: &RegexMatcher, line: &str) -> (String, usize, usize) {
-    // Byte span of the first match in the raw line (matcher operates on the
-    // untrimmed line, so offsets are relative to it).
-    let raw_match = matcher.find(line.as_bytes()).ok().flatten();
-
-    let lead_bytes = line.len() - line.trim_start().len();
-    let trimmed = line.trim();
-
-    // Match byte offsets relative to the trimmed line (clamped into range).
-    let (mb_start, mb_end) = match raw_match {
-        Some(m) => (
-            m.start().saturating_sub(lead_bytes).min(trimmed.len()),
-            m.end().saturating_sub(lead_bytes).min(trimmed.len()),
-        ),
-        None => (0, 0),
-    };
-
-    // Byte → char offset (boundaries are valid: regex matches and whitespace
-    // trims both fall on char boundaries of a `&str`).
-    let byte_to_char = |b: usize| trimmed.get(..b).map_or(0, |s| s.chars().count());
-    let mut cs = byte_to_char(mb_start);
-    let mut ce = byte_to_char(mb_end);
-
-    let capped: String = trimmed.chars().take(GREP_SNIPPET_CAP).collect();
-    let cap_len = capped.chars().count();
-    cs = cs.min(cap_len);
-    ce = ce.min(cap_len);
-
-    (capped, cs, ce)
 }
 
 /// Custom schema for JSON object (used for required `serde_json::Value` fields).
@@ -243,12 +63,16 @@ pub struct SemanticSearchParams {
     limit: usize,
 }
 
-/// Parameters for text search
+/// Parameters for grep-style note search (`grep_notes`)
 #[derive(Deserialize, JsonSchema)]
-pub struct TextSearchParams {
+pub struct GrepNotesParams {
     query: String,
     /// Optional folder to search within (relative to kiln root)
     folder: Option<String>,
+    /// Treat `query` as a regular expression (Rust regex syntax) instead of a
+    /// literal string
+    #[serde(default)]
+    regex: bool,
     #[serde(default = "default_true")]
     case_insensitive: bool,
     #[serde(default = "default_limit")]
@@ -357,10 +181,12 @@ impl SearchTools {
         }))
     }
 
-    #[tool(description = "Fast full-text search across notes")]
-    pub async fn text_search(
+    #[tool(
+        description = "Grep-style text search over notes (ripgrep engine): literal substring by default, set regex=true for regex patterns (Rust regex syntax). Returns file/line matches with match offsets, in file order — no ranking or stemming. For meaning-based discovery use semantic_search."
+    )]
+    pub async fn grep_notes(
         &self,
-        params: Parameters<TextSearchParams>,
+        params: Parameters<GrepNotesParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
         let query = params.query.clone();
@@ -386,11 +212,21 @@ impl SearchTools {
             &search_path,
             std::path::Path::new(&self.kiln_path),
             &query,
+            params.regex,
             Some("*.md"),
             limit,
             case_insensitive,
         )
-        .mcp_err_ctx("Text search failed")?;
+        .map_err(|e| match e {
+            // A bad user pattern is the caller's mistake, not an internal
+            // failure — name the syntax problem so it can be corrected.
+            GrepSearchError::InvalidRegex(_) => {
+                rmcp::ErrorData::invalid_params(e.to_string(), None)
+            }
+            GrepSearchError::Other(err) => {
+                rmcp::ErrorData::internal_error(format!("Text search failed: {err:#}"), None)
+            }
+        })?;
 
         let matches: Vec<serde_json::Value> = hits
             .into_iter()
@@ -399,6 +235,8 @@ impl SearchTools {
                     "path": h.rel_path,
                     "line_number": h.line,
                     "line_content": h.text,
+                    "match_start": h.match_start,
+                    "match_end": h.match_end,
                 })
             })
             .collect();
@@ -646,10 +484,10 @@ mod tests {
         SearchTools::new(kiln_path, knowledge_repo, embedding_provider)
     }
 
-    // ===== text_search tests =====
+    // ===== grep_notes tests =====
 
     #[tokio::test]
-    async fn test_text_search_basic() {
+    async fn test_grep_notes_basic() {
         let temp_dir = TempDir::new().unwrap();
         let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
@@ -662,14 +500,15 @@ mod tests {
 
         let search_tools = create_search_tools(kiln_path);
 
-        let params = Parameters(TextSearchParams {
+        let params = Parameters(GrepNotesParams {
             query: "TODO".to_string(),
             folder: None,
+            regex: false,
             case_insensitive: true,
             limit: 10,
         });
 
-        let result = search_tools.text_search(params).await;
+        let result = search_tools.grep_notes(params).await;
         assert!(result.is_ok());
 
         let call_result = result.unwrap();
@@ -686,7 +525,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_text_search_case_sensitive() {
+    async fn test_grep_notes_case_sensitive() {
         let temp_dir = TempDir::new().unwrap();
         let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
@@ -699,32 +538,34 @@ mod tests {
         let search_tools = create_search_tools(kiln_path);
 
         // Case insensitive - should find both
-        let params = Parameters(TextSearchParams {
+        let params = Parameters(GrepNotesParams {
             query: "todo".to_string(),
             folder: None,
+            regex: false,
             case_insensitive: true,
             limit: 10,
         });
 
-        let result = search_tools.text_search(params).await.unwrap();
+        let result = search_tools.grep_notes(params).await.unwrap();
         let parsed = parse_tool_json(&result);
         assert_eq!(parsed["count"], 2);
 
         // Case sensitive - should find only one
-        let params = Parameters(TextSearchParams {
+        let params = Parameters(GrepNotesParams {
             query: "todo".to_string(),
             folder: None,
+            regex: false,
             case_insensitive: false,
             limit: 10,
         });
 
-        let result = search_tools.text_search(params).await.unwrap();
+        let result = search_tools.grep_notes(params).await.unwrap();
         let parsed = parse_tool_json(&result);
         assert_eq!(parsed["count"], 1);
     }
 
     #[tokio::test]
-    async fn test_text_search_with_folder() {
+    async fn test_grep_notes_with_folder() {
         let temp_dir = TempDir::new().unwrap();
         let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
@@ -741,14 +582,15 @@ mod tests {
         let search_tools = create_search_tools(kiln_path);
 
         // Search only in subfolder
-        let params = Parameters(TextSearchParams {
+        let params = Parameters(GrepNotesParams {
             query: "Match".to_string(),
             folder: Some("subfolder".to_string()),
+            regex: false,
             case_insensitive: true,
             limit: 10,
         });
 
-        let result = search_tools.text_search(params).await.unwrap();
+        let result = search_tools.grep_notes(params).await.unwrap();
         let parsed = parse_tool_json(&result);
         assert_eq!(parsed["count"], 1);
         let matches = parsed["matches"].as_array().unwrap();
@@ -756,7 +598,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_text_search_limit() {
+    async fn test_grep_notes_limit() {
         let temp_dir = TempDir::new().unwrap();
         let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
@@ -769,18 +611,166 @@ mod tests {
 
         let search_tools = create_search_tools(kiln_path);
 
-        let params = Parameters(TextSearchParams {
+        let params = Parameters(GrepNotesParams {
             query: "match".to_string(),
             folder: None,
+            regex: false,
             case_insensitive: true,
             limit: 3,
         });
 
-        let result = search_tools.text_search(params).await.unwrap();
+        let result = search_tools.grep_notes(params).await.unwrap();
         let parsed = parse_tool_json(&result);
         let matches = parsed["matches"].as_array().unwrap();
         assert_eq!(matches.len(), 3); // Limited to 3
         assert_eq!(parsed["truncated"], true);
+    }
+
+    // ===== regex-mode tests =====
+
+    #[tokio::test]
+    async fn regex_mode_matches_patterns() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+
+        fs::write(
+            temp_dir.path().join("test.md"),
+            "foo123bar\nfoobar\nno match\n",
+        )
+        .unwrap();
+
+        let search_tools = create_search_tools(kiln_path);
+
+        let params = Parameters(GrepNotesParams {
+            query: r"foo[0-9]+bar".to_string(),
+            folder: None,
+            regex: true,
+            case_insensitive: false,
+            limit: 10,
+        });
+
+        let result = search_tools.grep_notes(params).await.unwrap();
+        let parsed = parse_tool_json(&result);
+        assert_eq!(parsed["count"], 1, "regex should match only foo123bar");
+        let matches = parsed["matches"].as_array().unwrap();
+        assert_eq!(matches[0]["line_content"], "foo123bar");
+    }
+
+    #[tokio::test]
+    async fn literal_mode_does_not_interpret_metachars() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+
+        // "foo.bar" as a regex would match "fooXbar"; as a literal it must not.
+        fs::write(temp_dir.path().join("test.md"), "fooXbar\nfoo.bar\n").unwrap();
+
+        let search_tools = create_search_tools(kiln_path);
+
+        let params = Parameters(GrepNotesParams {
+            query: "foo.bar".to_string(),
+            folder: None,
+            regex: false,
+            case_insensitive: false,
+            limit: 10,
+        });
+
+        let result = search_tools.grep_notes(params).await.unwrap();
+        let parsed = parse_tool_json(&result);
+        assert_eq!(parsed["count"], 1, "literal dot must not match fooXbar");
+        let matches = parsed["matches"].as_array().unwrap();
+        assert_eq!(matches[0]["line_content"], "foo.bar");
+    }
+
+    #[tokio::test]
+    async fn invalid_regex_returns_syntax_error() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+        fs::write(temp_dir.path().join("test.md"), "content\n").unwrap();
+
+        let search_tools = create_search_tools(kiln_path);
+
+        let params = Parameters(GrepNotesParams {
+            query: "foo(".to_string(),
+            folder: None,
+            regex: true,
+            case_insensitive: false,
+            limit: 10,
+        });
+
+        let err = search_tools
+            .grep_notes(params)
+            .await
+            .expect_err("unbalanced paren should be rejected");
+        assert!(
+            err.message.contains("Invalid regex"),
+            "error should identify the regex as invalid: {}",
+            err.message
+        );
+        assert!(
+            err.message.contains("unclosed group") || err.message.contains("error"),
+            "error should name the syntax problem: {}",
+            err.message
+        );
+    }
+
+    #[tokio::test]
+    async fn grep_notes_reports_match_offsets() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+
+        fs::write(temp_dir.path().join("test.md"), "a needle here\n").unwrap();
+
+        let search_tools = create_search_tools(kiln_path);
+
+        let params = Parameters(GrepNotesParams {
+            query: "needle".to_string(),
+            folder: None,
+            regex: false,
+            case_insensitive: false,
+            limit: 10,
+        });
+
+        let result = search_tools.grep_notes(params).await.unwrap();
+        let parsed = parse_tool_json(&result);
+        let matches = parsed["matches"].as_array().unwrap();
+        assert_eq!(matches[0]["match_start"], 2);
+        assert_eq!(matches[0]["match_end"], 8);
+    }
+
+    #[tokio::test]
+    async fn regex_mode_respects_case_sensitivity() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+
+        fs::write(
+            temp_dir.path().join("test.md"),
+            "TODO5 upper\ntodo7 lower\n",
+        )
+        .unwrap();
+
+        let search_tools = create_search_tools(kiln_path.clone());
+
+        // Insensitive: both lines match the pattern.
+        let params = Parameters(GrepNotesParams {
+            query: r"todo[0-9]".to_string(),
+            folder: None,
+            regex: true,
+            case_insensitive: true,
+            limit: 10,
+        });
+        let parsed = parse_tool_json(&search_tools.grep_notes(params).await.unwrap());
+        assert_eq!(parsed["count"], 2);
+
+        // Sensitive: only the lowercase line matches.
+        let params = Parameters(GrepNotesParams {
+            query: r"todo[0-9]".to_string(),
+            folder: None,
+            regex: true,
+            case_insensitive: false,
+            limit: 10,
+        });
+        let parsed = parse_tool_json(&search_tools.grep_notes(params).await.unwrap());
+        assert_eq!(parsed["count"], 1);
     }
 
     // ===== property_search tests =====
@@ -921,15 +911,16 @@ mod tests {
     // ===== Security Tests for Path Traversal =====
 
     #[tokio::test]
-    async fn test_text_search_folder_traversal() {
+    async fn test_grep_notes_folder_traversal() {
         let temp_dir = TempDir::new().unwrap();
         let kiln_path = temp_dir.path().to_string_lossy().to_string();
         let search_tools = create_search_tools(kiln_path);
 
         let result = search_tools
-            .text_search(Parameters(TextSearchParams {
+            .grep_notes(Parameters(GrepNotesParams {
                 query: "test".to_string(),
                 folder: Some("../../../etc".to_string()),
+                regex: false,
                 case_insensitive: true,
                 limit: 10,
             }))
@@ -948,15 +939,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_text_search_absolute_folder() {
+    async fn test_grep_notes_absolute_folder() {
         let temp_dir = TempDir::new().unwrap();
         let kiln_path = temp_dir.path().to_string_lossy().to_string();
         let search_tools = create_search_tools(kiln_path);
 
         let result = search_tools
-            .text_search(Parameters(TextSearchParams {
+            .grep_notes(Parameters(GrepNotesParams {
                 query: "test".to_string(),
                 folder: Some("/etc".to_string()),
+                regex: false,
                 case_insensitive: true,
                 limit: 10,
             }))
@@ -1029,8 +1021,8 @@ mod tests {
 
         let schemas: &[(&str, String)] = &[
             (
-                "TextSearchParams",
-                sanitize(schemars::schema_for!(TextSearchParams)),
+                "GrepNotesParams",
+                sanitize(schemars::schema_for!(GrepNotesParams)),
             ),
             (
                 "SemanticSearchParams",

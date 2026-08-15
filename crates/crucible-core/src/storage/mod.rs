@@ -21,7 +21,6 @@ pub mod note_store;
 pub mod property_store;
 pub mod scope;
 pub mod traits;
-pub mod vector_store;
 
 // Re-export main types for convenience
 pub use error::{StorageError, StorageResult};
@@ -32,4 +31,3 @@ pub use note_store::{
 pub use property_store::PropertyStore;
 pub use scope::{Scope, ScopeError};
 pub use traits::{ContentHasher, QuotaUsage, StorageBackend, StorageStats};
-pub use vector_store::{VectorMatch, VectorStore};

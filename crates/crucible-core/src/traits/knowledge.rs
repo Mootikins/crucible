@@ -82,8 +82,9 @@ pub trait KnowledgeRepository: Send + Sync {
     /// List notes, optionally filtered by a directory path
     async fn list_notes(&self, path: Option<&str>) -> Result<Vec<NoteInfo>>;
 
-    /// Search for notes using vector embeddings
-    async fn search_vectors(&self, _vector: Vec<f32>) -> Result<Vec<SearchResult>> {
+    /// Search for notes using vector embeddings, returning at most `limit`
+    /// hits ranked by similarity descending.
+    async fn search_vectors(&self, _vector: Vec<f32>, _limit: usize) -> Result<Vec<SearchResult>> {
         // Default implementation returns empty if not supported
         Ok(Vec::new())
     }

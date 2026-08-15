@@ -6,7 +6,7 @@
 //! ## Tool Categories
 //!
 //! - **`NoteTools`** (6): `create_note`, `read_note`, `read_metadata`, `update_note`, `delete_note`, `list_notes`
-//! - **`SearchTools`** (3): `semantic_search`, `text_search`, `property_search`
+//! - **`SearchTools`** (3): `semantic_search`, `grep_notes`, `property_search`
 //! - **`KilnTools`** (1): `get_kiln_info`
 //! - **`CrucibleMcpServer`** (12): Unified MCP server exposing all tools via stdio transport
 
@@ -17,6 +17,7 @@ pub mod diff_synth;
 pub mod error_utils;
 pub mod extended_mcp_server;
 pub mod gateway_executor;
+pub mod grep_engine;
 pub mod helpers;
 pub mod kiln;
 pub mod mcp_client;

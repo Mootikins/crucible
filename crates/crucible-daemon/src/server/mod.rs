@@ -23,12 +23,11 @@ use crate::tools::workspace::WorkspaceTools;
 use anyhow::Result;
 use chrono::Utc;
 use crucible_core::config::{DataClassification, LlmConfig, TrustLevel};
-use crucible_core::events::SessionEvent;
 use crucible_core::session::RecordingMode;
 use crucible_lua::stubs::StubGenerator;
 use crucible_lua::{
     register_crucible_on_api, LuaExecutor, LuaScriptHandlerRegistry, PluginManager,
-    ScriptHandlerResult, Session as LuaSession, SessionConfigRpc,
+    Session as LuaSession, SessionConfigRpc,
 };
 use dashmap::DashMap;
 
@@ -145,7 +144,6 @@ impl SessionConfigRpc for NoopSessionRpc {}
 
 pub struct LuaSessionState {
     pub(crate) executor: LuaExecutor,
-    pub(crate) registry: LuaScriptHandlerRegistry,
     /// Set to `true` after `on_session_end` hooks fire for this session.
     ///
     /// Both `session.end` and `lua.shutdown_session` try to fire

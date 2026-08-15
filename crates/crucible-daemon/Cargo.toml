@@ -29,10 +29,6 @@ futures = { workspace = true }
 tokio-util = { version = "0.7", features = ["rt"] }
 crucible-core = { path = "../crucible-core", features = ["test-utils"] }
 
-lancedb = { version = "0.31.0", default-features = false }
-arrow-array = "58"
-arrow-schema = "58"
-
 crucible-lua = { path = "../crucible-lua", features = ["send"] }
 genai = "0.6"
 async-stream = "0.3"

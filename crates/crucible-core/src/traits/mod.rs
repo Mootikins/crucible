@@ -38,8 +38,7 @@ pub use tools::{
 pub use input::{ChatEvent, InputMode, KeyAction, KeyCode, KeyPattern, Modifiers, SessionAction};
 // MCP abstractions
 pub use mcp::{
-    ContentBlock, McpClientConfig, McpError, McpServerInfo, McpToolInfo, McpTransportConfig,
-    ToolCallResult,
+    ContentBlock, McpError, McpServerInfo, McpToolInfo, McpTransportConfig, ToolCallResult,
 };
 pub use permission_gate::PermissionGate;
 pub use undoable::Undoable;

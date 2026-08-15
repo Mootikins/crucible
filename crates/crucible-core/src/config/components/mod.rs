@@ -8,7 +8,6 @@ pub mod cli;
 pub mod context;
 pub mod defaults;
 pub mod discovery;
-pub mod gateway;
 pub mod handlers;
 pub mod llm;
 pub mod mcp;
@@ -31,7 +30,6 @@ pub use defaults::{
     DEFAULT_ZAI_MODEL, OPENAI_HARDCODED_MODELS, OPENAI_MODEL_PREFIXES, ZAI_MODELS,
 };
 pub use discovery::{DiscoveryPathsConfig, TypeDiscoveryConfig};
-pub use gateway::{GatewayConfig, UpstreamServerConfig as GatewayUpstreamServerConfig};
 pub use handlers::{
     BuiltinHandlersTomlConfig, HandlerConfig, HandlersConfig, ToolSelectorHandlerConfig,
 };

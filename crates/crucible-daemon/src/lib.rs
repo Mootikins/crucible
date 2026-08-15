@@ -23,9 +23,8 @@
 //!
 
 // `spawn_delegation`'s future nests deeply enough that auto-trait resolution
-// blows the default limit once lance's moka cache pulls in
-// `portable_atomic::AtomicU64` (deep `PhantomData` chain). Not a real cycle —
-// rustc just needs more headroom.
+// can blow the default limit (deep `PhantomData` chains in dependency types).
+// Not a real cycle — rustc just needs more headroom.
 #![recursion_limit = "256"]
 
 pub mod acp;
@@ -118,12 +117,11 @@ pub use rpc_client::DaemonAgentHandle;
 pub use rpc_client::{ChatResultExt, DaemonNoteStore, DaemonStorageClient};
 pub use rpc_client::{
     DaemonCapabilities, DaemonClient, LuaDiscoverPluginsRequest, LuaDiscoverPluginsResponse,
-    LuaExecuteHookRequest, LuaExecuteHookResponse, LuaGenerateStubsRequest,
-    LuaGenerateStubsResponse, LuaInitSessionRequest, LuaInitSessionResponse,
-    LuaPluginHealthRequest, LuaPluginHealthResponse, LuaRegisterHooksRequest,
-    LuaRegisterHooksResponse, LuaRunPluginTestsRequest, LuaRunPluginTestsResponse,
-    LuaShutdownSessionRequest, LuaShutdownSessionResponse, PluginTestFailure,
-    PluginTestLoadFailure, SessionEvent, VersionCheck,
+    LuaGenerateStubsRequest, LuaGenerateStubsResponse, LuaInitSessionRequest,
+    LuaInitSessionResponse, LuaPluginHealthRequest, LuaPluginHealthResponse,
+    LuaRunPluginTestsRequest, LuaRunPluginTestsResponse, LuaShutdownSessionRequest,
+    LuaShutdownSessionResponse, PluginTestFailure, PluginTestLoadFailure, SessionEvent,
+    VersionCheck,
 };
 pub use scm::ScmCloneResponse;
 pub use server::{BindWithPluginConfigParams, Server};
@@ -135,6 +133,6 @@ pub use skills::{
     SkillParser, SkillResult, SkillScope, SkillSource,
 };
 pub use subscription::{ClientId, SubscriptionManager};
-pub use tools::search::{GrepHit, GrepSearchResponse};
+pub use tools::grep_engine::{GrepHit, GrepSearchResponse};
 pub use tools_bridge::DaemonToolsBridge;
 pub use watch::*;

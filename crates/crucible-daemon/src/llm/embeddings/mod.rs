@@ -20,12 +20,6 @@ pub mod openai;
 #[cfg(feature = "fastembed")]
 pub mod fastembed;
 
-/// GGUF model loading for embedding models.
-pub mod gguf_model;
-
-/// Inference backend abstraction for pluggable model execution.
-pub mod inference;
-
 /// Provider trait and common functionality.
 pub mod provider;
 
@@ -36,7 +30,7 @@ pub mod mock;
 #[cfg(test)]
 pub(crate) mod test_helpers;
 
-pub use config::{BackendType, EmbeddingConfig, ProviderType};
+pub use config::{BackendType, EmbeddingConfig};
 pub use crucible_core::enrichment::EmbeddingProvider;
 pub use error::{EmbeddingError, EmbeddingResult};
 #[cfg(feature = "fastembed")]

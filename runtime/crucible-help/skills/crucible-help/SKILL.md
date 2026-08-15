@@ -42,7 +42,7 @@ A local-first AI assistant where every conversation becomes a searchable, linkab
 
 ## Tools Available
 
-When chatting, agents access: `semantic_search`, `text_search`, `property_search`, `read_note`, `list_notes`. In act mode: `create_note`, `update_note`, `delete_note`.
+When chatting, agents access: `semantic_search`, `grep_notes`, `property_search`, `read_note`, `list_notes`. In act mode: `create_note`, `update_note`, `delete_note`.
 
 ## Further Reading
 

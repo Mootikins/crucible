@@ -51,11 +51,10 @@ pub mod workflow;
 // re-exports externally need to land here; the rest remain reachable at
 // `client::<submodule>::<Type>` if needed internally.
 pub use lua::{
-    LuaDiscoverPluginsRequest, LuaDiscoverPluginsResponse, LuaExecuteHookRequest,
-    LuaExecuteHookResponse, LuaGenerateStubsRequest, LuaGenerateStubsResponse,
-    LuaInitSessionRequest, LuaInitSessionResponse, LuaPluginHealthRequest, LuaPluginHealthResponse,
-    LuaRegisterCommandsRequest, LuaRegisterCommandsResponse, LuaRegisterHooksRequest,
-    LuaRegisterHooksResponse, LuaRunPluginTestsRequest, LuaRunPluginTestsResponse,
+    LuaDiscoverPluginsRequest, LuaDiscoverPluginsResponse, LuaGenerateStubsRequest,
+    LuaGenerateStubsResponse, LuaInitSessionRequest, LuaInitSessionResponse,
+    LuaPluginHealthRequest, LuaPluginHealthResponse, LuaRegisterCommandsRequest,
+    LuaRegisterCommandsResponse, LuaRunPluginTestsRequest, LuaRunPluginTestsResponse,
     LuaShutdownSessionRequest, LuaShutdownSessionResponse, PluginTestFailure,
     PluginTestLoadFailure,
 };

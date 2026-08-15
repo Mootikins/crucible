@@ -181,7 +181,7 @@ async fn test_search_vectors_via_knowledge_repository() {
     // Use the KnowledgeRepository trait method - this is what semantic_search calls
     let test_vector: Vec<f32> = vec![0.5, 0.5, 0.0];
     let results = storage
-        .search_vectors(test_vector)
+        .search_vectors(test_vector, 10)
         .await
         .expect("KnowledgeRepository::search_vectors failed");
 

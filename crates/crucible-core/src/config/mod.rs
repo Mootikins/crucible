@@ -34,7 +34,6 @@ pub mod components;
 mod config;
 pub mod credentials;
 mod enrichment;
-mod global;
 mod includes;
 mod io_helpers;
 mod kiln_config;
@@ -57,10 +56,9 @@ pub use components::mcp;
 pub use components::{
     AcpConfig, AgentPreference, AgentProfile, BackendType, ChatConfig, CliConfig,
     CompiledPermissions, ContextConfig, DataClassification, DelegationConfig, DiscoveryPathsConfig,
-    GatewayConfig, GatewayUpstreamServerConfig, HandlersConfig, HighlightingConfig, LlmConfig,
-    LlmProviderConfig, McpConfig, PermissionConfig, PermissionDecision, PermissionEngine,
-    PermissionMode, StorageConfig, TransportType, TrustLevel, TypeDiscoveryConfig,
-    UpstreamServerConfig,
+    HandlersConfig, HighlightingConfig, LlmConfig, LlmProviderConfig, McpConfig, PermissionConfig,
+    PermissionDecision, PermissionEngine, PermissionMode, StorageConfig, TransportType, TrustLevel,
+    TypeDiscoveryConfig, UpstreamServerConfig,
 };
 pub use config::registry::{KilnEntry, ProjectEntry};
 pub use config::{
@@ -83,7 +81,6 @@ pub use enrichment::{
     EmbeddingProviderConfig, EnrichmentConfig, FastEmbedConfig, MockConfig, OllamaConfig,
     OpenAIConfig, PipelineConfig, VertexAIConfig,
 };
-pub use global::GlobalConfig;
 pub use includes::{process_file_references, IncludeError, ResolveMode};
 pub use kiln_config::{read_kiln_config, write_kiln_config, KilnConfig, KilnMeta};
 pub use patterns::{

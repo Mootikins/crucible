@@ -94,11 +94,6 @@ impl SyntaxExtension for CalloutExtension {
 }
 
 impl CalloutExtension {
-    /// Check if this extension supports callouts (convenience method for tests)
-    pub fn supports_callouts(&self) -> bool {
-        true
-    }
-
     /// Extract nested content for callout blocks (continuation lines)
     fn extract_nested_content(
         &self,

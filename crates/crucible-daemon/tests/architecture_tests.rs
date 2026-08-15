@@ -671,7 +671,6 @@ const SIZE_LEDGER: &[&str] = &[
     "crates/crucible-daemon/src/rpc_client/client/mod.rs",
     "crates/crucible-daemon/src/session_bridge.rs",
     "crates/crucible-daemon/src/session_manager.rs",
-    "crates/crucible-daemon/src/storage/lance/note_store.rs",
     "crates/crucible-daemon/src/storage/sqlite/note_store.rs",
     "crates/crucible-daemon/src/tools/mcp_server.rs",
     "crates/crucible-daemon/src/tools/search.rs",
@@ -1063,14 +1062,6 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
     ),
     (
         "LuaInitSessionRequest",
-        "crates/crucible-daemon/src/server/lua.rs",
-    ),
-    (
-        "LuaRegisterHooksRequest",
-        "crates/crucible-daemon/src/server/lua.rs",
-    ),
-    (
-        "LuaExecuteHookRequest",
         "crates/crucible-daemon/src/server/lua.rs",
     ),
     (

@@ -7,7 +7,7 @@ mod is_safe_tests {
     #[test_case(
         &[
             "read_file", "glob", "grep", "read_note", "read_metadata",
-            "text_search", "property_search", "semantic_search",
+            "grep_notes", "property_search", "semantic_search",
             "get_kiln_info", "list_notes",
         ],
         true;

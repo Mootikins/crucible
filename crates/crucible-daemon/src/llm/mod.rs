@@ -19,7 +19,6 @@
 //!
 //! - [`embeddings`]: Text embedding generation and management
 //! - [`model_discovery`]: Local GGUF model discovery and cataloging
-//! - [`reranking`]: Note reranking for improved search relevance
 //!
 //! ## Example
 //!
@@ -47,7 +46,6 @@
 
 pub mod embeddings;
 pub mod model_discovery;
-pub mod reranking;
 
 // Re-export commonly used types at crate root
 pub use embeddings::{
@@ -58,10 +56,6 @@ pub use embeddings::{
     EmbeddingResponse, // Response type (data)
     EmbeddingResult,   // Result type alias
 };
-
-#[cfg(feature = "fastembed")]
-pub use reranking::FastEmbedReranker;
-pub use reranking::{RerankResult, RerankerModelInfo};
 
 // Re-export core enrichment config types for convenience
 pub use crucible_core::enrichment::{

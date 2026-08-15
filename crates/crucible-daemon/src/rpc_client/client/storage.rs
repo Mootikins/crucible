@@ -139,8 +139,8 @@ pub struct McpStartRequest {
 ///
 /// `scope` is the request authority — defaults server-side to
 /// `Scope::Workspace { path: kiln }` when absent. Hits whose stored
-/// `properties.scope` is outside the authority are filtered out (via a
-/// SQLite post-filter on the Lance hit IDs).
+/// `properties.scope` is outside the authority are filtered out at the SQL
+/// layer, so out-of-scope notes never occupy result slots.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SearchVectorsRequest {
     pub kiln: String,
@@ -184,6 +184,9 @@ pub struct EmbedQueryRequest {
 pub struct GrepSearchRequest {
     pub root: String,
     pub query: String,
+    /// Compile `query` as a regex (Rust regex syntax) instead of matching it
+    /// as a literal substring.
+    pub regex: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub glob: Option<String>,
     pub limit: usize,
@@ -381,11 +384,13 @@ impl DaemonClient {
 
     /// Ripgrep-style content search over `root` (which must be inside a
     /// registered project or open kiln — the daemon enforces containment).
+    /// `regex` switches `query` from literal substring to regex matching.
     /// Returns the hits plus whether they were capped at `limit`.
     pub async fn search_grep(
         &self,
         root: &str,
         query: &str,
+        regex: bool,
         glob: Option<&str>,
         limit: usize,
         case_insensitive: bool,
@@ -395,6 +400,7 @@ impl DaemonClient {
             GrepSearchRequest {
                 root: root.to_string(),
                 query: query.to_string(),
+                regex,
                 glob: glob.map(str::to_string),
                 limit,
                 case_insensitive,

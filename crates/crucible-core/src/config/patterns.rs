@@ -71,7 +71,7 @@ pub struct FilePatterns {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct ToolPatterns {
-    /// Tools that are always allowed (e.g., "read_note", "text_search")
+    /// Tools that are always allowed (e.g., "read_note", "grep_notes")
     pub always_allow: Vec<String>,
 }
 
@@ -257,7 +257,7 @@ impl PatternStore {
     ///
     /// let mut store = PatternStore::new();
     /// store.add_tool_pattern("read_note").unwrap();
-    /// store.add_tool_pattern("text_search").unwrap();
+    /// store.add_tool_pattern("grep_notes").unwrap();
     ///
     /// // This will fail - too permissive
     /// assert!(store.add_tool_pattern("*").is_err());
@@ -476,14 +476,11 @@ mod tests {
     fn add_tool_pattern_works() {
         let mut store = PatternStore::new();
         store.add_tool_pattern("read_note").unwrap();
-        store.add_tool_pattern("text_search").unwrap();
+        store.add_tool_pattern("grep_notes").unwrap();
 
         assert_eq!(store.tools.always_allow.len(), 2);
         assert!(store.tools.always_allow.contains(&"read_note".to_string()));
-        assert!(store
-            .tools
-            .always_allow
-            .contains(&"text_search".to_string()));
+        assert!(store.tools.always_allow.contains(&"grep_notes".to_string()));
     }
 
     #[test]
@@ -566,7 +563,7 @@ mod tests {
         overlay.add_bash_pattern("npm ").unwrap();
         overlay.add_bash_pattern("cargo ").unwrap(); // duplicate
         overlay.add_file_pattern("tests/").unwrap();
-        overlay.add_tool_pattern("text_search").unwrap();
+        overlay.add_tool_pattern("grep_notes").unwrap();
 
         let merged = base.merge(&overlay);
 
@@ -583,7 +580,7 @@ mod tests {
         // Tool patterns merged
         assert_eq!(merged.tools.always_allow.len(), 2);
         assert!(merged.matches_tool("read_note"));
-        assert!(merged.matches_tool("text_search"));
+        assert!(merged.matches_tool("grep_notes"));
     }
 
     #[test]
@@ -627,7 +624,7 @@ allowed_prefixes = ["npm install", "cargo build", "git "]
 allowed_prefixes = ["src/", "tests/"]
 
 [tools]
-always_allow = ["read_note", "text_search"]
+always_allow = ["read_note", "grep_notes"]
 "#;
 
         let store: PatternStore = toml::from_str(toml_str).unwrap();
@@ -643,7 +640,7 @@ always_allow = ["read_note", "text_search"]
 
         assert_eq!(store.tools.always_allow.len(), 2);
         assert!(store.matches_tool("read_note"));
-        assert!(store.matches_tool("text_search"));
+        assert!(store.matches_tool("grep_notes"));
     }
 
     #[tokio::test]

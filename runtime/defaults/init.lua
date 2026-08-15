@@ -100,7 +100,10 @@ cru.modes.normal = {
 cru.modes.plan = {
   description = "Read-only exploration",
   tools = {
-    "read_*", "list_*", "get_*", "*_search", "glob", "grep", "skill_view",
+    -- `grep_notes` is named explicitly: it is the one read-only search tool
+    -- the `*_search` glob no longer covers since the text_search rename.
+    "read_*", "list_*", "get_*", "*_search", "grep_notes", "glob", "grep",
+    "skill_view",
   },
   permissions = "ask",
 }

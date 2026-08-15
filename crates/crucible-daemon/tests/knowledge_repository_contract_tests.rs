@@ -44,7 +44,7 @@ async fn contract_search_vectors_returns_empty_for_unmatched_embeddings() {
     let repository = MockKnowledgeRepository;
 
     let results = repository
-        .search_vectors(vec![0.13, 0.42, 0.99])
+        .search_vectors(vec![0.13, 0.42, 0.99], 10)
         .await
         .expect("vector search should not fail for well-formed vectors");
 

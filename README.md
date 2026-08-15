@@ -32,7 +32,7 @@ The difference is architectural, not a feature checklist.
 |---|---|---|---|
 | Source of truth | Markdown on your disk | The vendor's servers | Markdown on your disk |
 | Chat history | A note in the same graph — linkable, greppable, versionable | In your vendor account | Outside the note graph |
-| Index | SQLite + LanceDB, rebuildable from the files | Not exposed | Varies by plugin |
+| Index | SQLite, rebuildable from the files | Not exposed | Varies by plugin |
 | Retrieval granularity | Blocks (paragraph-level embeddings) | Not exposed | Varies by plugin |
 | LLM choice | Any provider, or a local model | The vendor's | Varies by plugin |
 | Extension surface | Lua/Fennel against a headless daemon | None | The editor's plugin API |
@@ -106,7 +106,7 @@ cru mcp
 ```
 
 Notes: `create_note`, `read_note`, `update_note`, `delete_note`, `list_notes`, `read_metadata`.
-Search: `semantic_search`, `text_search`, `property_search`. Plus `get_kiln_info`,
+Search: `semantic_search`, `grep_notes`, `property_search`. Plus `get_kiln_info`,
 `delegate_session`, and job control.
 
 ### Agent Integration (ACP)

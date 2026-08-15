@@ -1,9 +1,11 @@
 //! Content-search (ripgrep-style) RPC: `search_grep`.
 //!
 //! Backs the web `POST /api/search/grep` endpoint. Walks an absolute `root`,
-//! literal-substring-matching file contents (honoring `.gitignore`, skipping
-//! binaries) via the shared [`grep_search`](crate::tools::search::grep_search)
-//! engine — the same one the `text_search` MCP tool uses.
+//! matching file contents — literal substring by default, regex when the
+//! `regex` param is set (honoring `.gitignore`, skipping binaries) — via the
+//! shared [`grep_search`](crate::tools::grep_engine::grep_search) engine (ripgrep's
+//! `grep-regex`/`grep-searcher` crates) — the same one the `grep_notes` MCP
+//! tool uses.
 //!
 //! # Containment (load-bearing, daemon-side)
 //!
@@ -16,7 +18,7 @@
 //! followed out of the tree either.
 
 use super::*;
-use crate::tools::search::grep_search;
+use crate::tools::grep_engine::{grep_search, GrepSearchError};
 
 /// Default hit cap when the caller omits `limit`.
 const GREP_DEFAULT_LIMIT: usize = 100;
@@ -31,6 +33,7 @@ pub(crate) async fn handle_search_grep(
 ) -> Response {
     let root = require_param!(req, "root", as_str);
     let query = require_param!(req, "query", as_str);
+    let regex = optional_param!(req, "regex", as_bool).unwrap_or(false);
     let glob = optional_param!(req, "glob", as_str).map(str::to_string);
     let case_insensitive = optional_param!(req, "case_insensitive", as_bool).unwrap_or(true);
     let limit = optional_param!(req, "limit", as_u64)
@@ -47,6 +50,7 @@ pub(crate) async fn handle_search_grep(
         &canonical_root,
         &canonical_root,
         query,
+        regex,
         glob.as_deref(),
         limit,
         case_insensitive,
@@ -55,7 +59,12 @@ pub(crate) async fn handle_search_grep(
             req.id,
             serde_json::json!({ "hits": hits, "truncated": truncated }),
         ),
-        Err(e) => internal_error(req.id, e),
+        // A regex that doesn't compile is the caller's mistake, not a daemon
+        // failure — reject it as INVALID_PARAMS with the parser's message.
+        Err(e @ GrepSearchError::InvalidRegex(_)) => {
+            Response::error(req.id, INVALID_PARAMS, e.to_string())
+        }
+        Err(GrepSearchError::Other(e)) => internal_error(req.id, e),
     }
 }
 
@@ -243,6 +252,83 @@ mod tests {
         assert_eq!(hits.len(), 1);
         // rel_path is relative to the searched root (the subdir).
         assert_eq!(hits[0]["rel_path"], "note.md");
+    }
+
+    #[tokio::test]
+    async fn regex_param_enables_pattern_matching() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let store = tempfile::TempDir::new().unwrap();
+        let proj = tmp.path();
+        fs::write(proj.join("a.md"), "TODO7: tag\nTODOx: not a digit\n").unwrap();
+
+        let (pm, km, root) = registered(store.path(), proj);
+
+        let resp = handle_search_grep(
+            req(serde_json::json!({
+                "root": root.to_string_lossy(),
+                "query": r"TODO[0-9]:",
+                "regex": true,
+            })),
+            &pm,
+            &km,
+        )
+        .await;
+
+        let hits = hits_of(&resp)["hits"].as_array().unwrap();
+        assert_eq!(hits.len(), 1, "only the digit line should match");
+        assert_eq!(hits[0]["line"], 1);
+    }
+
+    #[tokio::test]
+    async fn invalid_regex_is_rejected_as_invalid_params() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let store = tempfile::TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.md"), "content\n").unwrap();
+
+        let (pm, km, root) = registered(store.path(), tmp.path());
+
+        let resp = handle_search_grep(
+            req(serde_json::json!({
+                "root": root.to_string_lossy(),
+                "query": "foo(",
+                "regex": true,
+            })),
+            &pm,
+            &km,
+        )
+        .await;
+
+        assert!(resp.result.is_none());
+        let err = resp.error.expect("error response");
+        assert_eq!(err.code, INVALID_PARAMS);
+        assert!(
+            err.message.contains("Invalid regex"),
+            "message should identify the bad regex: {}",
+            err.message
+        );
+    }
+
+    #[tokio::test]
+    async fn metachars_stay_literal_without_regex_param() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let store = tempfile::TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.md"), "fooXbar\nfoo.bar\n").unwrap();
+
+        let (pm, km, root) = registered(store.path(), tmp.path());
+
+        let resp = handle_search_grep(
+            req(serde_json::json!({
+                "root": root.to_string_lossy(),
+                "query": "foo.bar",
+            })),
+            &pm,
+            &km,
+        )
+        .await;
+
+        let hits = hits_of(&resp)["hits"].as_array().unwrap();
+        assert_eq!(hits.len(), 1, "literal dot must not match fooXbar");
+        assert_eq!(hits[0]["text"], "foo.bar");
     }
 
     #[tokio::test]

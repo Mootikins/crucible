@@ -313,7 +313,11 @@ impl KnowledgeRepository for MockKnowledgeRepository {
         Ok(vec![])
     }
 
-    async fn search_vectors(&self, _vector: Vec<f32>) -> crucible_core::Result<Vec<SearchResult>> {
+    async fn search_vectors(
+        &self,
+        _vector: Vec<f32>,
+        _limit: usize,
+    ) -> crucible_core::Result<Vec<SearchResult>> {
         Ok(self.results.clone())
     }
 }

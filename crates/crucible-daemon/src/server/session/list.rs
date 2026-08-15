@@ -61,7 +61,7 @@ pub(crate) async fn handle_session_list(
         // home is scanned but "never OPEN[ed] as a kiln — that is the leak this
         // split fixes" (`61f28c144`), and an open kiln is a watched kiln, so
         // opening it here indexed every session body under the data root into
-        // SQLite and LanceDB. Listing never needed it — the lookup below reads
+        // the kiln index. Listing never needed it — the lookup below reads
         // the in-memory map and `storage.list`, not `KilnManager`.
         let home = data_home.to_path_buf();
         if !kilns.iter().any(|(k, _, _)| k == &home) {
@@ -283,8 +283,7 @@ mod tests {
     /// leak this split fixes" (commit `61f28c144`). Listing sessions opened it
     /// anyway, and an open kiln is a *watched* kiln, so every session body
     /// under the data root — including a chat integration's transcript of a
-    /// stranger's messages — was parsed into SQLite and embedded into LanceDB
-    /// permanently.
+    /// stranger's messages — was parsed, embedded and indexed permanently.
     ///
     /// The open was never load-bearing: `list_sessions_filtered_async` reads
     /// the in-memory map and `storage.list(kiln_path)`, and never consults

@@ -37,6 +37,7 @@ impl KnowledgeRepository for MockKnowledgeRepository {
     async fn search_vectors(
         &self,
         _vector: Vec<f32>,
+        _limit: usize,
     ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
         Ok(vec![])
     }

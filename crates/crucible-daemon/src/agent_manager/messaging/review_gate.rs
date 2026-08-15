@@ -81,8 +81,9 @@ pub(super) fn gate_subject(
         // `bash` is equally unknowable and deliberately does NOT take that
         // fallback. Almost every turn ends in a build or test command, so
         // gating bash on the session would block the agent on the edits it
-        // just made, every turn, and `normal` mode would feel broken. What
-        // bash writes is caught by the watcher backstop and labelled instead.
+        // just made, every turn, and `normal` mode would feel broken. Bash
+        // writes are still captured and attributed by the bracket watcher
+        // (needs_review_bracket("bash") is true); they just aren't gated.
         "bash" => GateSubject::Ungated,
         _ => {
             if write_targets.is_empty() {

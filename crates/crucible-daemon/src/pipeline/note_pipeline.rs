@@ -21,7 +21,7 @@ use crate::enrichment::Enricher;
 use anyhow::{Context, Result};
 use crucible_core::parser::{traits::MarkdownParser, CrucibleParser};
 use crucible_core::processing::{ChangeDetectionStore, FileState, ProcessingResult};
-use crucible_core::storage::{NoteRecord, NoteStore, VectorStore};
+use crucible_core::storage::{NoteRecord, NoteStore};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -63,13 +63,10 @@ pub struct NotePipeline {
     /// Enricher for embeddings and metadata (Phase 3)
     enricher: Arc<Enricher>,
 
-    /// Storage for notes (Phase 4) - backend-agnostic via NoteStore trait
+    /// Storage for notes (Phase 4) - backend-agnostic via NoteStore trait.
+    /// The note's embedding is persisted here too (`notes.embedding`), which
+    /// is the one and only vector store semantic search reads.
     note_store: Arc<dyn NoteStore>,
-
-    /// Vector index for embeddings (Phase 4 — Lance-backed). When set,
-    /// the pipeline writes the per-note embedding here keyed by note path.
-    /// `None` in tests that don't exercise vector search.
-    vector_store: Option<Arc<dyn VectorStore>>,
 
     /// FTS5 full-text index (Phase 4). When set, the pipeline writes each
     /// note's title and full body here so `search_text` can find words that
@@ -98,7 +95,6 @@ impl NotePipeline {
             change_detector,
             enricher,
             note_store,
-            vector_store: None,
             text_index: None,
             config,
             kiln_root: None,
@@ -119,18 +115,10 @@ impl NotePipeline {
             change_detector,
             enricher,
             note_store,
-            vector_store: None,
             text_index: None,
             config,
             kiln_root: None,
         }
-    }
-
-    /// Attach a Lance-backed vector index. The pipeline writes each note's
-    /// embedding to this index after the SQLite metadata upsert succeeds.
-    pub fn with_vector_store(mut self, vectors: Arc<dyn VectorStore>) -> Self {
-        self.vector_store = Some(vectors);
-        self
     }
 
     /// Attach the FTS5 text index. The pipeline writes each note's title and
@@ -256,12 +244,11 @@ impl NotePipeline {
         // Phase 4: Storage
         let phase4_start = std::time::Instant::now();
 
-        // Convert EnrichedNote to NoteRecord for storage
+        // Convert EnrichedNote to NoteRecord for storage. The embedding rides
+        // along on the record: `notes.embedding` is the single vector store,
+        // read by every semantic entry point (the `search_vectors` RPC, the
+        // `semantic_search` agent tool, and precognition).
         let note_record = self.enriched_to_record(&enriched, &path_str)?;
-
-        // Capture the embedding before move so we can also write it to the
-        // Lance vector index. Cheap clone — this is the only copy made.
-        let embedding_for_vectors = note_record.embedding.clone();
 
         // Store via NoteStore trait (works with any backend)
         self.note_store
@@ -293,35 +280,6 @@ impl NotePipeline {
                     ?e,
                     "could not re-read note for the text index"
                 ),
-            }
-        }
-
-        // Mirror the embedding into the Lance vector index keyed by note path.
-        //
-        // Both copies are read, by different callers — this comment used to
-        // claim the SQLite copy "is no longer queried", which is false. The
-        // `search_vectors` RPC goes to Lance (`kiln_manager.rs`), while the
-        // `semantic_search` agent tool and precognition reach
-        // `SqliteNoteStore::search`, a brute-force cosine over
-        // `notes.embedding`. That split is drift, not design: someone migrated
-        // the RPC path and did not notice the tool path. Unifying them changes
-        // ranking behaviour and needs its own plan; until then treat BOTH as
-        // derived-but-costly (recoverable only by re-paying a provider) and
-        // never destroy either in a migration. Settled by
-        // `repository.rs::a_kiln_with_no_lance_index_still_returns_semantic_hits`
-        // and recorded in `docs/Meta/Analysis/Storage Schema.md`.
-        if let (Some(vectors), Some(embedding)) =
-            (self.vector_store.as_ref(), embedding_for_vectors)
-        {
-            if let Err(e) = vectors.upsert(&path_str, embedding).await {
-                // Surfaced at error level: a persistent upsert failure (e.g. an
-                // embedding/index dimension mismatch) silently voids semantic
-                // search for this note, so it must not hide in warn noise.
-                tracing::error!(
-                    path = %path_str,
-                    ?e,
-                    "vector index upsert failed; metadata persisted but search will miss this note"
-                );
             }
         }
 

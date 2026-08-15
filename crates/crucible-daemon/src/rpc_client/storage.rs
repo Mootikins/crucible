@@ -175,11 +175,15 @@ impl KnowledgeRepository for DaemonStorageClient {
             .collect())
     }
 
-    async fn search_vectors(&self, vector: Vec<f32>) -> CoreResult<Vec<KnowledgeSearchResult>> {
+    async fn search_vectors(
+        &self,
+        vector: Vec<f32>,
+        limit: usize,
+    ) -> CoreResult<Vec<KnowledgeSearchResult>> {
         // Use the backend-agnostic search_vectors RPC method
         let results = self
             .client
-            .search_vectors(&self.kiln, &vector, 20, None)
+            .search_vectors(&self.kiln, &vector, limit, None)
             .await
             .map_err(|e| CrucibleError::DatabaseError(e.to_string()))?;
 

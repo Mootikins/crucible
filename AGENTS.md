@@ -13,7 +13,7 @@ TUI-first, plugin-driven).
 |-------|---------|
 | `crucible-core` | Domain types, traits, parser, config (`Provider`, `CanChat`, `ParsedNote`, `AppConfig`) |
 | `crucible-cli` | TUI (`OilChatApp`), REPL, commands; `cru web` behind default-on `web` feature |
-| `crucible-daemon` | RPC server, sessions, enrichment, ACP host (`acp/`), embeddings (`llm/`), SQLite (`storage/sqlite/`) + LanceDB (`storage/lance/`), skills, tools |
+| `crucible-daemon` | RPC server, sessions, enrichment, ACP host (`acp/`), embeddings (`llm/`), SQLite (`storage/sqlite/`), skills, tools |
 | `crucible-web` | Axum server + SolidJS frontend (`web/`, embedded via rust-embed) |
 | `crucible-oil` | Terminal rendering primitives |
 | `crucible-lua` | Lua/Luau scripting with Fennel support |

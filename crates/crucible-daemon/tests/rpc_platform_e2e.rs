@@ -103,10 +103,6 @@ async fn test_lua_session_lifecycle() {
         init_result["commands"].is_array(),
         "Should return a commands array"
     );
-    assert!(
-        init_result["views"].is_array(),
-        "Should return a views array"
-    );
 
     // Shutdown the Lua session
     let shutdown_result = client

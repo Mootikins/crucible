@@ -4,7 +4,6 @@ use crucible_core::config::{
     DataClassification, KilnConfig, KilnMeta, ProjectConfig,
 };
 use crucible_core::storage::Scope;
-use crucible_core::storage::VectorStore;
 
 /// Derive the read authority for a kiln-scoped RPC request.
 ///
@@ -249,7 +248,7 @@ pub(crate) async fn handle_search_vectors(req: Request, km: &Arc<KilnManager>) -
         Err(e) => return internal_error(req.id, e),
     };
 
-    // Execute vector search with scope post-filtering.
+    // Execute vector search; scope filters at the SQL layer.
     match handle.search_vectors(vector, limit, &scope).await {
         Ok(results) => {
             let json_results: Vec<_> = results
@@ -282,12 +281,9 @@ pub(crate) async fn handle_search_text(req: Request, km: &Arc<KilnManager>) -> R
         Err(e) => return internal_error(req.id, e),
     };
 
-    // FTS5 MATCH takes a query *syntax*, not a literal: a bare `foo-bar` or a
-    // stray quote is a syntax error, which would surface to the user as
-    // "search failed" for input that is obviously just words. Quote it as a
-    // phrase so anything a user types is searched literally.
-    let escaped = query.replace('"', "\"\"");
-    let fts_query = format!("\"{escaped}\"");
+    // Implicit AND over words, user quotes for phrases, operators and
+    // punctuation kept literal — see `build_match_query` for the contract.
+    let fts_query = crate::storage::sqlite::fts::build_match_query(query);
 
     match handle.text.search(&fts_query, limit).await {
         Ok(results) => {
@@ -638,13 +634,9 @@ pub(crate) async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> R
     }
 
     match note_store.delete(path).await {
-        Ok(_event) => {
-            // Remove the note's vector too so it doesn't orphan in Lance.
-            if let Err(e) = handle.vectors.delete(path).await {
-                tracing::warn!(path, ?e, "failed to remove deleted note from vector index");
-            }
-            Response::success(req.id, serde_json::json!({"status": "ok"}))
-        }
+        // The embedding lives on the deleted `notes` row, so there is no
+        // separate vector index to clean up.
+        Ok(_event) => Response::success(req.id, serde_json::json!({"status": "ok"})),
         Err(e) => internal_error(req.id, e),
     }
 }

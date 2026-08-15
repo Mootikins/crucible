@@ -355,7 +355,7 @@ local READ_TOOLS = {
     read_note = "allow",
     list_notes = "allow",
     semantic_search = "allow",
-    text_search = "allow",
+    grep_notes = "allow",
 }
 
 --- The read set plus the tools that change the kiln. Still no `bash`: its blast

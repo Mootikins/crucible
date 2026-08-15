@@ -16,7 +16,7 @@ use std::collections::HashSet;
 ///
 /// **MCP Tools (10 read-only):**
 /// - `semantic_search` — Search notes using semantic similarity
-/// - `text_search` — Fast full-text search across notes
+/// - `grep_notes` — Grep-style text search across notes
 /// - `property_search` — Search notes by frontmatter properties (includes tags)
 /// - `list_notes` — List notes in a directory
 /// - `read_note` — Read note content with optional line range
@@ -66,7 +66,7 @@ pub fn is_safe(tool_name: &str) -> bool {
             | "glob"
             | "grep"
             | "semantic_search"
-            | "text_search"
+            | "grep_notes"
             | "property_search"
             | "list_notes"
             | "read_note"

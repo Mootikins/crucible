@@ -439,86 +439,47 @@ async fn open_named_kilns_warns_on_missing_name() {
 }
 
 // =========================================================================
-// Memory Scoping — Lance post-filter
+// Memory Scoping — search_vectors
 // =========================================================================
 //
-// These tests verify the LanceDB → SQLite post-filter pipeline. Lance
-// is the similarity oracle; SQLite is the scope oracle. A hit must
-// pass BOTH to reach the caller.
-
-/// Default LanceDB dim (matches `LanceVectorIndex::open`).
-const LANCE_DIM: usize = 768;
+// These tests pin `StorageHandle::search_vectors`: exact cosine over
+// `notes.embedding`, with the scope filter applied at the SQL layer
+// (`Filter::Scope`) rather than the old Lance over-fetch + post-filter.
 
 fn unit_embedding() -> Vec<f32> {
-    let mut v = vec![0.0_f32; LANCE_DIM];
+    let mut v = vec![0.0_f32; 8];
     v[0] = 1.0;
     v
 }
 
-/// Seed a note into a kiln by upserting a NoteRecord with both a
-/// known embedding (so Lance picks it up) and an explicit scope.
+/// Seed a note into a kiln with the given embedding and an explicit scope.
+async fn seed_scoped_note_with_embedding(
+    km: &KilnManager,
+    kiln: &Path,
+    path: &str,
+    embedding: Vec<f32>,
+    scope: crucible_core::storage::Scope,
+) {
+    let handle = km.get_or_open(kiln).await.unwrap();
+    let record =
+        crucible_core::storage::NoteRecord::new(path, crucible_core::parser::BlockHash::zero())
+            .with_title(path)
+            .with_embedding(embedding)
+            .with_scope(scope);
+    handle.as_note_store().upsert(record).await.unwrap();
+}
+
 async fn seed_note_with_scope(
     km: &KilnManager,
     kiln: &Path,
     path: &str,
     scope: crucible_core::storage::Scope,
 ) {
-    let handle = km.get_or_open(kiln).await.unwrap();
-    let emb = unit_embedding();
-    let record =
-        crucible_core::storage::NoteRecord::new(path, crucible_core::parser::BlockHash::zero())
-            .with_title(path)
-            .with_embedding(emb.clone())
-            .with_scope(scope);
-
-    // Upsert into SQLite (scope-stamped) and Lance (vector key).
-    let store = handle.as_note_store();
-    store.upsert(record.clone()).await.unwrap();
-    // Lance keys by note path; if upsert fails the test will surface
-    // it as an empty hit list (the assertion below).
-    handle
-        .vectors
-        .upsert(path, emb)
-        .await
-        .expect("Lance upsert");
+    seed_scoped_note_with_embedding(km, kiln, path, unit_embedding(), scope).await;
 }
 
 #[tokio::test]
-async fn storage_handle_uses_configured_embedding_dimension() {
-    use crucible_core::config::FastEmbedConfig;
-
-    // Configured 384-dim model (the default fastembed) must open a 384-dim
-    // index — the old code hardcoded 768, so every non-768 upsert silently
-    // failed the length check and semantic search returned nothing.
-    let tmp = TempDir::new().unwrap();
-    let db = tmp.path().join(".crucible").join("crucible-sqlite.db");
-    std::fs::create_dir_all(db.parent().unwrap()).unwrap();
-    let cfg = EmbeddingProviderConfig::FastEmbed(FastEmbedConfig {
-        dimensions: 384,
-        ..Default::default()
-    });
-    let handle = create_storage_handle(&db, tmp.path(), Some(&cfg))
-        .await
-        .unwrap();
-    assert_eq!(handle.vectors.dimension(), 384);
-    handle
-        .vectors
-        .upsert("notes/x.md", vec![0.1_f32; 384])
-        .await
-        .expect("384-dim upsert lands");
-
-    // No enrichment config → default dimension (fresh dir, index dim is fixed at open).
-    let tmp2 = TempDir::new().unwrap();
-    let db2 = tmp2.path().join(".crucible").join("crucible-sqlite.db");
-    std::fs::create_dir_all(db2.parent().unwrap()).unwrap();
-    let handle2 = create_storage_handle(&db2, tmp2.path(), None)
-        .await
-        .unwrap();
-    assert_eq!(handle2.vectors.dimension(), DEFAULT_EMBEDDING_DIM);
-}
-
-#[tokio::test]
-async fn lance_search_vectors_post_filters_by_scope() {
+async fn search_vectors_filters_scope_at_sql_layer() {
     let tmp = TempDir::new().unwrap();
     let kiln_path = tmp.path().to_path_buf();
     std::fs::create_dir_all(kiln_path.join(".crucible")).unwrap();
@@ -552,13 +513,13 @@ async fn lance_search_vectors_post_filters_by_scope() {
     assert!(ids.contains(&"own.md"), "got: {:?}", ids);
     assert!(
         !ids.contains(&"stranger.md"),
-        "Lance post-filter leaked cross-scope: {:?}",
+        "scope filter leaked cross-scope: {:?}",
         ids
     );
 }
 
 #[tokio::test]
-async fn lance_results_excluded_when_scope_mismatch() {
+async fn search_vectors_returns_empty_when_every_note_is_cross_scope() {
     // A pure-cross-scope kiln (every note belongs to a stranger workspace)
     // returns an empty hit list under workspace authority.
     let tmp = TempDir::new().unwrap();
@@ -595,6 +556,69 @@ async fn lance_results_excluded_when_scope_mismatch() {
     assert!(
         hits.is_empty(),
         "every note is cross-scope, must return no hits — got {:?}",
+        hits
+    );
+}
+
+/// Regression for the over-fetch window: the old pipeline fetched ~2x `limit`
+/// from Lance and post-filtered by scope, so when out-of-scope notes
+/// dominated the similarity ranking the caller got FEWER than `limit`
+/// in-scope hits even though enough existed. Scope now filters at the SQL
+/// layer, so strangers can never occupy result slots.
+#[tokio::test]
+async fn out_of_scope_top_hits_do_not_shrink_the_result_set() {
+    let tmp = TempDir::new().unwrap();
+    let kiln_path = tmp.path().to_path_buf();
+    std::fs::create_dir_all(kiln_path.join(".crucible")).unwrap();
+    let km = KilnManager::new();
+    km.open(&kiln_path).await.unwrap();
+
+    let own_scope = crucible_core::storage::Scope::workspace_unchecked(&kiln_path);
+    let stranger_scope = crucible_core::storage::Scope::Workspace {
+        path: std::path::PathBuf::from("/strangers/kiln"),
+    };
+
+    // 12 stranger notes that match the query PERFECTLY — under the old
+    // 2x-limit over-fetch they fill the whole fetch window for limit=5.
+    for i in 0..12 {
+        seed_scoped_note_with_embedding(
+            &km,
+            &kiln_path,
+            &format!("stranger{:02}.md", i),
+            unit_embedding(),
+            stranger_scope.clone(),
+        )
+        .await;
+    }
+    // 5 in-scope notes that match less well.
+    let mut own_embedding = unit_embedding();
+    own_embedding[1] = 0.8;
+    for i in 0..5 {
+        seed_scoped_note_with_embedding(
+            &km,
+            &kiln_path,
+            &format!("own{:02}.md", i),
+            own_embedding.clone(),
+            own_scope.clone(),
+        )
+        .await;
+    }
+
+    let handle = km.get(&kiln_path).await.unwrap();
+    let hits = handle
+        .search_vectors(unit_embedding(), 5, &own_scope)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        hits.len(),
+        5,
+        "in-scope notes exist to fill limit=5; got {:?}",
+        hits
+    );
+    assert!(
+        hits.iter().all(|(id, _)| id.starts_with("own")),
+        "only in-scope notes may occupy result slots: {:?}",
         hits
     );
 }
@@ -849,13 +873,9 @@ async fn a_partially_filled_text_index_is_completed_on_the_next_open() {
     std::fs::write(root.join("first.md"), "# First\n\nalpha body.\n").unwrap();
     std::fs::write(root.join("second.md"), "# Second\n\nzqxjvbn body.\n").unwrap();
 
-    let handle = create_storage_handle(
-        &root.join(".crucible").join("crucible-sqlite.db"),
-        &root,
-        None,
-    )
-    .await
-    .unwrap();
+    let handle = create_storage_handle(&root.join(".crucible").join("crucible-sqlite.db"), &root)
+        .await
+        .unwrap();
 
     for (path, title) in [("first.md", "First"), ("second.md", "Second")] {
         handle
@@ -907,13 +927,9 @@ async fn opening_a_kiln_backfills_a_text_index_that_was_never_written() {
     )
     .unwrap();
 
-    let handle = create_storage_handle(
-        &root.join(".crucible").join("crucible-sqlite.db"),
-        &root,
-        None,
-    )
-    .await
-    .unwrap();
+    let handle = create_storage_handle(&root.join(".crucible").join("crucible-sqlite.db"), &root)
+        .await
+        .unwrap();
 
     // Stand in for a note indexed by an older build: metadata present, no
     // text-index row.

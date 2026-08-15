@@ -351,7 +351,7 @@ impl ExtendedMcpServer {
                 };
 
                 match &final_content {
-                    Value::Object(_) | Value::Array(_) => Ok(toon_success_smart(final_content)),
+                    Value::Object(_) | Value::Array(_) => Ok(toon_success_smart(&final_content)),
                     Value::String(s) => Ok(text_success(s.clone())),
                     Value::Number(n) => Ok(text_success(n.to_string())),
                     Value::Bool(b) => Ok(text_success(b.to_string())),

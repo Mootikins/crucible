@@ -43,7 +43,7 @@ pub async fn search_across_kilns(
         }
         let results = match source
             .knowledge_repo
-            .search_vectors(query_embedding.clone())
+            .search_vectors(query_embedding.clone(), top_k)
             .await
         {
             Ok(results) => results,
@@ -106,6 +106,7 @@ mod tests {
         async fn search_vectors(
             &self,
             _vector: Vec<f32>,
+            _limit: usize,
         ) -> crucible_core::Result<Vec<SearchResult>> {
             if self.should_fail {
                 Err(crucible_core::CrucibleError::DatabaseError(

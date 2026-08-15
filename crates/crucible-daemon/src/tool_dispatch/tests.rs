@@ -109,19 +109,15 @@ mod dispatch {
     }
 
     #[tokio::test]
-    async fn red_dispatch_text_search_is_not_unknown_tool() {
+    async fn red_dispatch_grep_notes_is_not_unknown_tool() {
         let (_temp, dispatcher) = test_dispatcher_with_mcp();
         let result = dispatcher
-            .dispatch_tool(
-                "text_search",
-                json!({ "query": "test" }),
-                Default::default(),
-            )
+            .dispatch_tool("grep_notes", json!({ "query": "test" }), Default::default())
             .await;
 
         assert!(
             !matches!(result, Err(ref err) if err.contains("Unknown tool")),
-            "text_search should not route to Unknown tool error: {result:?}"
+            "grep_notes should not route to Unknown tool error: {result:?}"
         );
     }
 

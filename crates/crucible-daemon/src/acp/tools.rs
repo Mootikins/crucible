@@ -252,8 +252,8 @@ pub fn discover_tools(registry: &mut ToolRegistry, _kiln_path: &str) -> Result<u
     // Register SearchTools (3 tools)
     let search_tools = vec![
         create_tool(
-            "text_search",
-            "Search for notes by text content",
+            "grep_notes",
+            "Grep-style text search over note content",
             "search",
             serde_json::json!({
                 "type": "object",
@@ -356,7 +356,7 @@ impl ToolExecutor {
             "list_notes" => self.execute_note_tool(tool_name, params).await,
 
             // SearchTools (3 tools)
-            "text_search" => self.execute_search_tool(tool_name, params).await,
+            "grep_notes" => self.execute_search_tool(tool_name, params).await,
             "property_search" => self.execute_search_tool(tool_name, params).await,
             "semantic_search" => self.execute_search_tool(tool_name, params).await,
 

@@ -159,7 +159,11 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
         Ok(filtered)
     }
 
-    async fn search_vectors(&self, vector: Vec<f32>) -> CrucibleResult<Vec<SearchResult>> {
+    async fn search_vectors(
+        &self,
+        vector: Vec<f32>,
+        limit: usize,
+    ) -> CrucibleResult<Vec<SearchResult>> {
         use crucible_core::storage::{Filter, NoteStore};
 
         let scope_filter = self.kiln_path.as_ref().map(|p| {
@@ -170,7 +174,7 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
 
         let results = self
             .store
-            .search(&vector, 10, scope_filter)
+            .search(&vector, limit, scope_filter)
             .await
             .map_err(|e| CrucibleError::DatabaseError(format!("Search failed: {}", e)))?;
 
@@ -367,18 +371,42 @@ mod tests {
         let (repo, _) = setup_test_repo().await;
 
         // Search for vector similar to rust.md's embedding
-        let results = repo.search_vectors(vec![0.0, 1.0, 0.0]).await.unwrap();
+        let results = repo.search_vectors(vec![0.0, 1.0, 0.0], 10).await.unwrap();
         assert!(!results.is_empty());
 
         // First result should be rust.md (exact match)
         assert_eq!(results[0].document_id.0, "notes/rust.md");
     }
 
+    /// Regression: the repository used to hardcode k=10 into the store call,
+    /// so any caller limit above 10 (the `semantic_search` tool fans out with
+    /// the user's `limit`) was silently truncated per kiln.
+    #[tokio::test]
+    async fn search_vectors_honors_caller_limit_beyond_ten() {
+        let config = SqliteConfig::memory();
+        let pool = SqlitePool::new(config).unwrap();
+        let store = Arc::new(SqliteNoteStore::new(pool));
+
+        for i in 0..15 {
+            let note = NoteRecord::new(format!("bulk/note{:02}.md", i), BlockHash::zero())
+                .with_title(format!("Bulk {}", i))
+                .with_embedding(vec![1.0, i as f32 * 0.01, 0.0]);
+            NoteStore::upsert(store.as_ref(), note).await.unwrap();
+        }
+
+        let repo = SqliteKnowledgeRepository::new(Arc::clone(&store));
+        let results = repo.search_vectors(vec![1.0, 0.0, 0.0], 15).await.unwrap();
+        assert_eq!(results.len(), 15, "limit=15 must not be capped at 10");
+
+        let results = repo.search_vectors(vec![1.0, 0.0, 0.0], 3).await.unwrap();
+        assert_eq!(results.len(), 3, "limit=3 must cap the result set");
+    }
+
     #[tokio::test]
     async fn test_search_vectors_scores() {
         let (repo, _) = setup_test_repo().await;
 
-        let results = repo.search_vectors(vec![1.0, 0.0, 0.0]).await.unwrap();
+        let results = repo.search_vectors(vec![1.0, 0.0, 0.0], 10).await.unwrap();
         assert!(!results.is_empty());
 
         // Scores should be in descending order (higher is more similar)
@@ -390,35 +418,23 @@ mod tests {
         }
     }
 
-    /// Settles which of two contradictory claims about vector search is true.
+    /// Drift regression, single-store edition.
     ///
-    /// `pipeline/note_pipeline.rs` used to comment that "Lance is the source of
-    /// truth for similarity search; the SQLite copy persists for now but is no
-    /// longer queried". The call chain says otherwise:
+    /// Historically two vector paths coexisted (the `search_vectors` RPC went
+    /// to a Lance index, the `semantic_search` tool and precognition to
+    /// SQLite cosine), and this test settled that the SQLite column was read
+    /// in production. The Lance path has since been deleted; the test now
+    /// pins the surviving invariant: the full production chain
     /// `search_across_kilns` → `KnowledgeRepository::search_vectors` →
-    /// `SqliteKnowledgeRepository::search_vectors` →
-    /// `SqliteNoteStore::search`, which brute-forces cosine similarity over
-    /// `notes.embedding`. This test decides it empirically: there is no Lance
-    /// directory anywhere in the fixture, so a hit can only have come from
-    /// SQLite.
-    ///
-    /// Two vector paths coexist, split by caller rather than by design — the
-    /// `search_vectors` RPC goes to Lance, the `semantic_search` agent tool and
-    /// precognition go to SQLite cosine. Unifying them changes ranking, so it
-    /// is deliberately not this test's business; the comment was corrected
-    /// instead.
+    /// `SqliteNoteStore::search` answers semantic queries from
+    /// `notes.embedding` alone — there is no second store to drift from.
     #[tokio::test]
-    async fn a_kiln_with_no_lance_index_still_returns_semantic_hits() {
+    async fn semantic_hits_come_from_the_sqlite_embedding_column() {
         use crate::multi_kiln_search::{search_across_kilns, KilnSearchSource};
 
         let tempdir = tempfile::TempDir::new().unwrap();
         let kiln_path = tempdir.path().to_path_buf();
         let (_repo, store) = setup_test_repo().await;
-
-        assert!(
-            !kiln_path.join("crucible-vectors.lance").exists(),
-            "the fixture must have no Lance index for the result to mean anything"
-        );
 
         let sources = vec![KilnSearchSource {
             kiln_path: kiln_path.clone(),
@@ -432,7 +448,7 @@ mod tests {
 
         assert!(
             !results.is_empty(),
-            "the SQLite embedding column is read in production, not merely persisted"
+            "the SQLite embedding column answers production semantic search"
         );
         assert_eq!(results[0].document_id.0, "notes/rust.md");
     }
@@ -515,7 +531,7 @@ mod tests {
             "sibling-workspace 'Sibling Private' leaked through workspace-authority read"
         );
 
-        let results = repo.search_vectors(vec![0.5, 0.5, 0.0]).await.unwrap();
+        let results = repo.search_vectors(vec![0.5, 0.5, 0.0], 10).await.unwrap();
         for result in &results {
             assert_ne!(
                 result.document_id.0, "notes/sibling_private.md",

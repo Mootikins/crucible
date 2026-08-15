@@ -108,11 +108,13 @@ pub struct WebConfig {
     /// beneath it. Registration is therefore contained the same way
     /// `scm.clone` contains its destination.
     ///
-    /// Default: EMPTY, which means "no new roots" — the web API can only
-    /// register paths that already sit inside a registered project (adding a
-    /// worktree or a subproject of something you already trust). Creating a
-    /// brand-new root stays a deliberate local act: run `cru` inside the
-    /// directory, or list its parent here.
+    /// Default: EMPTY, which leaves the hardcoded floor (filesystem root,
+    /// home directory, credential stores, config trees are always refused) as
+    /// the only gate — any other ordinary directory registers, exactly as
+    /// running `cru` inside it would. Setting a non-empty list additionally
+    /// confines registration to paths contained in one of the entries; a
+    /// non-empty list whose entries are all invalid refuses everything
+    /// (fails closed).
     #[serde(default)]
     pub registration_roots: Vec<String>,
 

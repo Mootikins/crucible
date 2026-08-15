@@ -15,7 +15,7 @@ use tempfile::TempDir;
 /// kiln session advertised each of them to the model twice.
 const EXPECTED_TOOL_NAMES: &[&str] = &[
     "semantic_search",
-    "text_search",
+    "grep_notes",
     "property_search",
     "list_notes",
     "read_note",
