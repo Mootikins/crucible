@@ -5,7 +5,6 @@ pub enum Event {
     Key(KeyEvent),
     Resize { width: u16, height: u16 },
     Tick,
-    Quit,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,7 +20,6 @@ pub enum InputAction {
     Home,
     End,
     Submit,
-    Cancel,
     Complete,
     HistoryPrev,
     HistoryNext,
@@ -216,7 +214,7 @@ impl InputBuffer {
                 }
                 self.cursor = self.content.len();
             }
-            InputAction::Cancel | InputAction::Complete | InputAction::None => {}
+            InputAction::Complete | InputAction::None => {}
         }
         None
     }

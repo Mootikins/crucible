@@ -38,17 +38,9 @@ pub struct McpArgs {
     #[arg(long)]
     pub kiln_path: Option<PathBuf>,
 
-    /// Override justfile directory (default: PWD)
-    #[arg(long)]
-    pub just_dir: Option<PathBuf>,
-
     /// Disable Just tools
     #[arg(long)]
     pub no_just: bool,
-
-    /// Log file path (default: ~/.crucible/logs/mcp.log for stdio mode)
-    #[arg(long)]
-    pub log_file: Option<PathBuf>,
 }
 
 impl Default for McpArgs {
@@ -57,9 +49,7 @@ impl Default for McpArgs {
             stdio: false,
             port: 3847,
             kiln_path: None,
-            just_dir: None,
             no_just: false,
-            log_file: None,
         }
     }
 }
@@ -88,16 +78,6 @@ pub async fn execute(config: CliConfig, args: McpArgs) -> Result<()> {
         Some("sse")
     };
 
-    // Determine Just directory
-    let just_dir = args
-        .just_dir
-        .map(|d| d.to_string_lossy().to_string())
-        .or_else(|| {
-            std::env::current_dir()
-                .ok()
-                .map(|p| p.to_string_lossy().to_string())
-        });
-
     info!("Starting Crucible MCP server...");
     info!("Kiln path: {}", kiln_path.display());
     info!("Transport: {}", if args.stdio { "stdio" } else { "SSE" });
@@ -112,7 +92,7 @@ pub async fn execute(config: CliConfig, args: McpArgs) -> Result<()> {
             transport,
             Some(args.port),
             args.no_just,
-            just_dir.as_deref(),
+            None,
         )
         .await?;
 
@@ -148,9 +128,7 @@ mod tests {
         assert!(!args.stdio);
         assert_eq!(args.port, 3847);
         assert!(args.kiln_path.is_none());
-        assert!(args.just_dir.is_none());
         assert!(!args.no_just);
-        assert!(args.log_file.is_none());
     }
 
     #[test]

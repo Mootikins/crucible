@@ -137,7 +137,7 @@ async fn test_process_executes_pipeline() -> Result<()> {
     let config = create_process_test_config(kiln_path.clone(), db_path.clone());
 
     // When: Running the process command
-    let result = process::execute(config, None, false, false, false, false, None, false).await;
+    let result = process::execute(config, None, false, false, false, false, false).await;
 
     // Then: Command should succeed
     assert!(
@@ -162,21 +162,11 @@ async fn test_storage_persists_across_runs() -> Result<()> {
     let config = create_process_test_config(kiln_path.clone(), db_path.clone());
 
     // When: Running process command the first time
-    process::execute(
-        config.clone(),
-        None,
-        false,
-        false,
-        false,
-        false,
-        None,
-        false,
-    )
-    .await?;
+    process::execute(config.clone(), None, false, false, false, false, false).await?;
 
     // And: Running process command a second time (same database)
     let config2 = create_process_test_config(kiln_path, db_path);
-    let result = process::execute(config2, None, false, false, false, false, None, false).await;
+    let result = process::execute(config2, None, false, false, false, false, false).await;
 
     // Then: Second run should succeed
     assert!(result.is_ok(), "Second run should access persisted storage");
@@ -198,21 +188,11 @@ async fn test_change_detection_skips_unchanged_files() -> Result<()> {
     let config = create_process_test_config(kiln_path.clone(), db_path.clone());
 
     // When: Processing files initially
-    process::execute(
-        config.clone(),
-        None,
-        false,
-        false,
-        false,
-        false,
-        None,
-        false,
-    )
-    .await?;
+    process::execute(config.clone(), None, false, false, false, false, false).await?;
 
     // And: Processing again without any file changes
     let config2 = create_process_test_config(kiln_path.clone(), db_path.clone());
-    let result = process::execute(config2, None, false, false, false, false, None, false).await;
+    let result = process::execute(config2, None, false, false, false, false, false).await;
 
     assert!(result.is_ok());
 
@@ -224,7 +204,7 @@ async fn test_change_detection_skips_unchanged_files() -> Result<()> {
 
     // And: Processing again
     let config3 = create_process_test_config(kiln_path, db_path);
-    let result2 = process::execute(config3, None, false, false, false, false, None, false).await;
+    let result2 = process::execute(config3, None, false, false, false, false, false).await;
 
     assert!(result2.is_ok());
 
@@ -245,21 +225,11 @@ async fn test_force_flag_overrides_change_detection() -> Result<()> {
     let config = create_process_test_config(kiln_path.clone(), db_path.clone());
 
     // When: Processing initially
-    process::execute(
-        config.clone(),
-        None,
-        false,
-        false,
-        false,
-        false,
-        None,
-        false,
-    )
-    .await?;
+    process::execute(config.clone(), None, false, false, false, false, false).await?;
 
     // And: Processing again with --force flag
     let config_force = create_process_test_config(kiln_path, db_path);
-    let result = process::execute(config_force, None, true, false, false, false, None, false).await;
+    let result = process::execute(config_force, None, true, false, false, false, false).await;
 
     // Then: Should reprocess all files despite no changes
     assert!(result.is_ok(), "Force flag should cause reprocessing");
@@ -289,7 +259,6 @@ async fn test_process_single_file() -> Result<()> {
         false,
         false,
         false,
-        None,
         false,
     )
     .await;
@@ -314,7 +283,7 @@ async fn test_all_pipeline_phases_execute() -> Result<()> {
     let config = create_process_test_config(kiln_path, db_path);
 
     // When: Processing files
-    let result = process::execute(config, None, false, false, false, false, None, false).await;
+    let result = process::execute(config, None, false, false, false, false, false).await;
 
     // Then: All 5 pipeline phases should execute
     assert!(result.is_ok(), "Pipeline execution should succeed");
@@ -340,7 +309,7 @@ async fn test_verbose_without_flag_is_quiet() -> Result<()> {
     let config = create_process_test_config(kiln_path, db_path);
 
     // WHEN: Processing without --verbose
-    let result = process::execute(config, None, false, false, false, false, None, false).await;
+    let result = process::execute(config, None, false, false, false, false, false).await;
 
     // THEN: Should succeed with minimal output
     // (verbose=false is default, so this tests baseline behavior)
@@ -367,7 +336,7 @@ async fn test_verbose_shows_phase_timings() -> Result<()> {
     let config = create_process_test_config(kiln_path, db_path);
 
     // WHEN: Processing with --verbose
-    let result = process::execute(config, None, false, false, true, false, None, false).await;
+    let result = process::execute(config, None, false, false, true, false, false).await;
 
     // THEN: Should succeed and show timing information
     assert!(result.is_ok());
@@ -389,7 +358,7 @@ async fn test_verbose_shows_detailed_parse_info() -> Result<()> {
     let config = create_process_test_config(kiln_path, db_path);
 
     // WHEN: Processing with --verbose
-    let result = process::execute(config, None, false, false, true, false, None, false).await;
+    let result = process::execute(config, None, false, false, true, false, false).await;
 
     // THEN: Should show parse details
     assert!(result.is_ok());
@@ -411,17 +380,7 @@ async fn test_verbose_shows_merkle_diff_details() -> Result<()> {
     let config = create_process_test_config(kiln_path.clone(), db_path.clone());
 
     // Process initially
-    process::execute(
-        config.clone(),
-        None,
-        false,
-        false,
-        false,
-        false,
-        None,
-        false,
-    )
-    .await?;
+    process::execute(config.clone(), None, false, false, false, false, false).await?;
 
     // Modify a file
     std::fs::write(
@@ -431,7 +390,7 @@ async fn test_verbose_shows_merkle_diff_details() -> Result<()> {
 
     // WHEN: Reprocessing with --verbose
     let config2 = create_process_test_config(kiln_path, db_path);
-    let result = process::execute(config2, None, false, false, true, false, None, false).await;
+    let result = process::execute(config2, None, false, false, true, false, false).await;
 
     // THEN: Should show Merkle diff details
     assert!(result.is_ok());
@@ -453,7 +412,7 @@ async fn test_verbose_shows_enrichment_progress() -> Result<()> {
     let config = create_process_test_config(kiln_path, db_path);
 
     // WHEN: Processing with --verbose
-    let result = process::execute(config, None, false, false, true, false, None, false).await;
+    let result = process::execute(config, None, false, false, true, false, false).await;
 
     // THEN: Should show enrichment details
     assert!(result.is_ok());
@@ -475,7 +434,7 @@ async fn test_verbose_shows_storage_operations() -> Result<()> {
     let config = create_process_test_config(kiln_path, db_path);
 
     // WHEN: Running with --verbose
-    let result = process::execute(config, None, false, false, true, false, None, false).await;
+    let result = process::execute(config, None, false, false, true, false, false).await;
 
     // THEN: Should show storage details
     assert!(result.is_ok());
@@ -501,7 +460,7 @@ async fn test_dry_run_discovers_files_without_processing() -> Result<()> {
     let config = create_process_test_config(kiln_path, db_path.clone());
 
     // WHEN: Running process command with --dry-run
-    let result = process::execute(config, None, false, false, false, true, None, false).await;
+    let result = process::execute(config, None, false, false, false, true, false).await;
 
     // THEN: Command should succeed
     assert!(
@@ -526,21 +485,11 @@ async fn test_dry_run_respects_change_detection() -> Result<()> {
     let config = create_process_test_config(kiln_path.clone(), db_path.clone());
 
     // Process initially
-    process::execute(
-        config.clone(),
-        None,
-        false,
-        false,
-        false,
-        false,
-        None,
-        false,
-    )
-    .await?;
+    process::execute(config.clone(), None, false, false, false, false, false).await?;
 
     // WHEN: Running dry-run without changes
     let config_dry = create_process_test_config(kiln_path, db_path);
-    let result = process::execute(config_dry, None, false, false, false, true, None, false).await;
+    let result = process::execute(config_dry, None, false, false, false, true, false).await;
 
     // THEN: Should show which files would be skipped
     assert!(result.is_ok());
@@ -562,31 +511,11 @@ async fn test_dry_run_with_force_shows_all_files() -> Result<()> {
     let config = create_process_test_config(kiln_path.clone(), db_path.clone());
 
     // Process initially
-    process::execute(
-        config.clone(),
-        None,
-        false,
-        false,
-        false,
-        false,
-        None,
-        false,
-    )
-    .await?;
+    process::execute(config.clone(), None, false, false, false, false, false).await?;
 
     // WHEN: Running dry-run with --force (bypass change detection)
     let config_dry_force = create_process_test_config(kiln_path, db_path);
-    let result = process::execute(
-        config_dry_force,
-        None,
-        true,
-        false,
-        false,
-        true,
-        None,
-        false,
-    )
-    .await;
+    let result = process::execute(config_dry_force, None, true, false, false, true, false).await;
 
     // THEN: Should show all files would be processed
     assert!(result.is_ok());
@@ -608,7 +537,7 @@ async fn test_dry_run_shows_detailed_preview() -> Result<()> {
     let config = create_process_test_config(kiln_path, db_path);
 
     // WHEN: Running with --dry-run
-    let result = process::execute(config, None, false, false, false, true, None, false).await;
+    let result = process::execute(config, None, false, false, false, true, false).await;
 
     // THEN: Should succeed
     assert!(result.is_ok());
@@ -630,7 +559,7 @@ async fn test_dry_run_with_verbose() -> Result<()> {
     let config = create_process_test_config(kiln_path, db_path);
 
     // WHEN: Running with both --dry-run and --verbose
-    let result = process::execute(config, None, false, false, true, true, None, false).await;
+    let result = process::execute(config, None, false, false, true, true, false).await;
 
     // THEN: Should succeed and show detailed information
     assert!(result.is_ok());
@@ -740,7 +669,7 @@ end
     let config = create_process_test_config(kiln_path, db_path);
 
     // WHEN: Processing files
-    let result = process::execute(config, None, false, false, false, false, None, false).await;
+    let result = process::execute(config, None, false, false, false, false, false).await;
 
     // THEN: Should succeed and handlers should have been loaded
     assert!(result.is_ok(), "Process command should succeed");

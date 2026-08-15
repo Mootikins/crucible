@@ -337,14 +337,6 @@ fn test_status_with_detailed_flag() {
     cmd.assert().success();
 }
 
-#[test]
-fn test_status_with_recent_flag() {
-    let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("status").arg("--recent").arg("--help");
-
-    cmd.assert().success();
-}
-
 // ============================================================================
 // Storage Command Tests
 // ============================================================================

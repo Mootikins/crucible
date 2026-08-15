@@ -7,67 +7,23 @@ pub enum StorageCommands {
     Mode,
 
     /// Show detailed storage statistics
-    Stats {
-        /// Show per-backend breakdown
-        #[arg(long)]
-        by_backend: bool,
-
-        /// Include deduplication statistics
-        #[arg(long)]
-        deduplication: bool,
-    },
+    Stats,
 
     /// Verify content integrity
     Verify {
         /// Path to verify (optional - verifies all storage if omitted)
         #[arg(value_name = "PATH")]
         path: Option<PathBuf>,
-
-        /// Repair any inconsistencies found
-        #[arg(long)]
-        repair: bool,
     },
 
     /// Perform maintenance operations
-    Cleanup {
-        /// Run garbage collection
-        #[arg(long)]
-        gc: bool,
-
-        /// Rebuild indexes
-        #[arg(long)]
-        rebuild_indexes: bool,
-
-        /// Optimize storage layout
-        #[arg(long)]
-        optimize: bool,
-
-        /// Force cleanup even if system is busy
-        #[arg(long)]
-        force: bool,
-
-        /// Dry run - show what would be done
-        #[arg(long)]
-        dry_run: bool,
-    },
+    Cleanup,
 
     /// Export or backup storage data
     Backup {
         /// Backup destination path
         #[arg(value_name = "DEST")]
         dest: PathBuf,
-
-        /// Include content blocks
-        #[arg(long)]
-        include_content: bool,
-
-        /// Compress backup
-        #[arg(long)]
-        compress: bool,
-
-        /// Verify backup after creation
-        #[arg(long)]
-        verify: bool,
     },
 
     /// Import or restore storage data
@@ -75,13 +31,5 @@ pub enum StorageCommands {
         /// Backup source path
         #[arg(value_name = "SOURCE")]
         source: PathBuf,
-
-        /// Merge with existing data
-        #[arg(long)]
-        merge: bool,
-
-        /// Skip verification during import
-        #[arg(long)]
-        skip_verify: bool,
     },
 }

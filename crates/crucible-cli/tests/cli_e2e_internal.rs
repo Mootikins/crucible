@@ -113,6 +113,81 @@ fn session_show_without_daemon_for_missing_id_is_graceful_error() {
 }
 
 #[test]
+fn session_search_without_daemon_is_graceful_error() {
+    // The daemon RPC is the only session-search mechanism — there is no
+    // client-side fallback. With an unusable socket the command must fail
+    // with the standard daemon-connection error, not silently scan files.
+    let temp = tempfile::tempdir().expect("failed to create temp dir");
+    let config_path = write_config(temp.path(), "");
+    let (_socket_temp, bad_socket) = invalid_socket_path();
+
+    cru()
+        .env("CRUCIBLE_SOCKET", &bad_socket)
+        .arg("--config")
+        .arg(&config_path)
+        .args(["session", "search", "anything"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Failed to connect to daemon"))
+        .stderr(predicate::str::contains("panicked").not());
+}
+
+#[test]
+#[ignore = "requires: cru binary"]
+fn session_search_uses_daemon_rpc() {
+    let daemon = TestDaemon::start();
+
+    // The daemon scans `<kiln>/.crucible/sessions/*/session.jsonl`; the kiln
+    // lives next to the config written by `write_config`.
+    let kiln = daemon
+        .config_path
+        .parent()
+        .expect("config has parent dir")
+        .join("kiln");
+    let session_id = "chat-20260814-1200-test";
+    let session_dir = kiln.join(".crucible").join("sessions").join(session_id);
+    std::fs::create_dir_all(&session_dir).expect("create session dir");
+    std::fs::write(
+        session_dir.join("session.jsonl"),
+        "{\"type\":\"user_message\",\"content\":\"How do I calibrate the QUANTUM flux capacitor?\"}\n",
+    )
+    .expect("write session log");
+
+    // Lowercase query against uppercase content: the daemon's search is
+    // case-insensitive, and that is now the one and only behavior.
+    let output = daemon
+        .command()
+        .args(["session", "search", "quantum flux", "-f", "json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: serde_json::Value =
+        serde_json::from_slice(&output).expect("search -f json prints a JSON object");
+    let matches = json["matches"]
+        .as_array()
+        .expect("output shape is {\"matches\": [...]}");
+    assert_eq!(matches.len(), 1);
+    assert_eq!(matches[0]["session_id"].as_str(), Some(session_id));
+    assert_eq!(matches[0]["line"].as_u64(), Some(1));
+
+    // A query that matches nothing keeps the same shape.
+    let output = daemon
+        .command()
+        .args(["session", "search", "nonexistent_term_xyz", "-f", "json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json: serde_json::Value =
+        serde_json::from_slice(&output).expect("search -f json prints a JSON object");
+    assert_eq!(json["matches"].as_array().map(Vec::len), Some(0));
+}
+
+#[test]
 #[ignore = "requires: cru binary"]
 fn session_internal_lifecycle_with_real_daemon() {
     let daemon = TestDaemon::start();

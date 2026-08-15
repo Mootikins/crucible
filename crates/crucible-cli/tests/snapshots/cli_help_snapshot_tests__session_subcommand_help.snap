@@ -19,7 +19,7 @@ Examples:
   cru session show <id>                           # Show session details
   cru session open <id>                           # Open in TUI
   cru session export <id> -o session.md           # Export to markdown
-  cru session search "rust"                       # Search by title
+  cru session search "rust"                       # Search session content
 
 Scripting (non-interactive):
   ID=$(cru session create -q)                     # Capture session ID
@@ -29,7 +29,7 @@ Usage: session <COMMAND>
 
 Commands:
   list       List recent sessions
-  search     Search sessions by title
+  search     Search past session content (plus active-session titles)
   show       Show session details
   open       Open a previous session in the TUI (same as `cru chat --resume`)
   export     Export session to markdown file

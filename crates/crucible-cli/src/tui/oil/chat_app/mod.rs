@@ -37,7 +37,7 @@ pub use messages::ChatAppMsg;
 pub use model_state::{McpServerDisplay, ModelListState, PluginStatusEntry};
 use popup_state::{PermissionState, PopupState, PrecognitionState, ShellHistoryState};
 use state::MessageQueueState;
-pub use state::{mode_label, mode_style, next_mode, InputMode, Role, DEFAULT_MODE, DEFAULT_MODES};
+pub use state::{mode_label, mode_style, next_mode, Role, DEFAULT_MODE, DEFAULT_MODES};
 
 // ─── Main Struct ─────────────────────────────────────────────────────────────
 
@@ -237,7 +237,6 @@ impl App for OilChatApp {
             // The app holds no width-dependent cached state — every render
             // wraps from source — so there's nothing else to invalidate.
             Event::Resize { .. } => Action::Continue,
-            Event::Quit => Action::Quit,
         }
     }
 

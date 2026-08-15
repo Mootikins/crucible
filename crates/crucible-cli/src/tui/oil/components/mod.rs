@@ -6,7 +6,6 @@ mod input_component;
 mod interaction_modal;
 mod notification_area;
 mod notification_component;
-mod popup_component;
 mod popup_overlay;
 mod shell_modal;
 mod shell_render;
@@ -20,15 +19,15 @@ mod turn_indicator;
 
 pub use command_panel::CommandPanel;
 pub use crucible_oil::components::DrawerKind;
+pub use crucible_oil::INPUT_MAX_CONTENT_LINES;
 pub use drawer::Drawer;
-pub use input_area::{InputArea, InputMode, INPUT_MAX_CONTENT_LINES};
+pub use input_area::InputMode;
 pub use input_component::InputComponent;
 pub use interaction_modal::{
     InteractionModal, InteractionModalMsg, InteractionModalOutput, InteractionMode,
 };
 pub use notification_area::NotificationArea;
 pub use notification_component::{NotificationComponent, NotificationEntry};
-pub use popup_component::PopupComponent;
 pub use popup_overlay::{
     popup_item, popup_item_with_desc, PopupOverlay, FOCUS_POPUP, POPUP_MAX_VISIBLE,
 };

@@ -180,8 +180,6 @@ impl OilChatApp {
             }
             AutocompleteKind::Command => Self::filter_commands(
                 &[
-                    ("semantic_search", "Search notes by meaning", "tool"),
-                    ("create_note", "Create a new note", "tool"),
                     ("/mode", "Cycle chat mode", "command"),
                     ("/help", "Show help", "command"),
                 ],
@@ -484,10 +482,6 @@ impl OilChatApp {
                 ));
                 items
             }
-            PickSource::Sessions => {
-                // Sessions aren't tracked in TUI state yet; show empty.
-                vec![]
-            }
             PickSource::All => {
                 let mut items = Vec::new();
                 items.extend(Self::filter_to_popup_items(
@@ -556,7 +550,6 @@ impl OilChatApp {
                     PickSource::Commands => {
                         self.set_input(label);
                     }
-                    PickSource::Sessions => {}
                 }
             }
             AutocompleteKind::None => {}

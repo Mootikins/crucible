@@ -14,22 +14,22 @@ use crucible_daemon::DaemonClient;
 pub async fn execute(config: CliConfig, command: StorageCommands) -> Result<()> {
     match command {
         StorageCommands::Mode => execute_mode(&config).await,
-        StorageCommands::Stats { .. } => execute_stats(config).await,
-        StorageCommands::Verify { path, .. } => {
+        StorageCommands::Stats => execute_stats(config).await,
+        StorageCommands::Verify { path } => {
             let kiln = path.unwrap_or_else(|| config.kiln_path.clone());
             rpc_stub("Verifying storage integrity...", |c| async move {
                 c.storage_verify(&kiln).await
             })
             .await
         }
-        StorageCommands::Cleanup { .. } => {
+        StorageCommands::Cleanup => {
             let kiln = config.kiln_path.clone();
             rpc_stub("Starting storage cleanup...", |c| async move {
                 c.storage_cleanup(&kiln).await
             })
             .await
         }
-        StorageCommands::Backup { dest, .. } => {
+        StorageCommands::Backup { dest } => {
             let kiln = config.kiln_path.clone();
             rpc_stub(
                 &format!("Starting backup to: {}", dest.display()),
@@ -37,7 +37,7 @@ pub async fn execute(config: CliConfig, command: StorageCommands) -> Result<()> 
             )
             .await
         }
-        StorageCommands::Restore { source, .. } => {
+        StorageCommands::Restore { source } => {
             if !source.exists() {
                 return Err(anyhow::anyhow!(
                     "Backup file does not exist: {}",

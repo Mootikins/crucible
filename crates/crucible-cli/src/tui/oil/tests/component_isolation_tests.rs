@@ -6,12 +6,12 @@
 use crate::tui::oil::app::ViewContext;
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::{
-    popup_item, popup_item_with_desc, InputArea, PopupOverlay, StatusBar, INPUT_MAX_CONTENT_LINES,
+    popup_item, popup_item_with_desc, InputComponent, PopupOverlay, StatusBar,
 };
 use crucible_oil::ansi::{strip_ansi, visible_width};
 use crucible_oil::focus::FocusContext;
 use crucible_oil::node::{col, row, spacer, styled, text, PopupItemNode};
-use crucible_oil::render::{render_to_plain_text, render_to_string, render_with_cursor};
+use crucible_oil::render::{render_to_plain_text, render_to_string};
 use crucible_oil::style::{Color, Style};
 use insta::assert_snapshot;
 
@@ -31,25 +31,6 @@ fn render_ansi(component: &impl Component, width: usize) -> String {
 
 fn has_ansi_codes(s: &str) -> bool {
     s.contains("\x1b[")
-}
-
-/// Extract RGB values from ANSI truecolor background escape code \x1b[48;2;R;G;Bm
-fn extract_ansi_bg_color(s: &str) -> Option<(i32, i32, i32)> {
-    // Look for pattern: \x1b[48;2;R;G;Bm
-    for part in s.split("\x1b[") {
-        if let Some(rest) = part.strip_prefix("48;2;") {
-            let end = rest.find('m')?;
-            let color_str = &rest[..end];
-            let parts: Vec<&str> = color_str.split(';').collect();
-            if parts.len() >= 3 {
-                let r: i32 = parts[0].parse().ok()?;
-                let g: i32 = parts[1].parse().ok()?;
-                let b: i32 = parts[2].parse().ok()?;
-                return Some((r, g, b));
-            }
-        }
-    }
-    None
 }
 
 /// Extract RGB values from ANSI truecolor foreground escape code \x1b[38;2;R;G;Bm
@@ -427,250 +408,6 @@ mod status_bar_tests {
     }
 }
 
-mod input_area_tests {
-    use super::*;
-
-    #[test]
-    fn renders_prompt_for_normal_mode() {
-        let input = InputArea::new("hello world", 11, 80);
-        let plain = render_plain(&input, 80);
-
-        assert!(
-            plain.contains(" > "),
-            "Normal mode should show '>' prompt: {:?}",
-            plain
-        );
-    }
-
-    #[test]
-    fn renders_prompt_for_command_mode() {
-        let input = InputArea::new(":set model gpt-4", 16, 80);
-        let plain = render_plain(&input, 80);
-
-        assert!(
-            plain.contains(" : "),
-            "Command mode should show ':' prompt: {:?}",
-            plain
-        );
-        // Content should NOT include the leading ':'
-        assert!(plain.contains("set model"));
-    }
-
-    #[test]
-    fn renders_prompt_for_shell_mode() {
-        let input = InputArea::new("!ls -la", 7, 80);
-        let plain = render_plain(&input, 80);
-
-        assert!(
-            plain.contains(" ! "),
-            "Shell mode should show '!' prompt: {:?}",
-            plain
-        );
-        // Content should NOT include the leading '!'
-        assert!(plain.contains("ls -la"));
-    }
-
-    #[test]
-    fn has_top_and_bottom_edges() {
-        let input = InputArea::new("test", 4, 40);
-        let plain = render_plain(&input, 40);
-        let lines: Vec<&str> = plain.lines().collect();
-
-        // Should have at least 3 lines: top edge, content, bottom edge
-        assert!(
-            lines.len() >= 3,
-            "Input should have top edge, content, bottom edge: {:?}",
-            lines
-        );
-
-        // Top edge should be solid blocks
-        assert!(
-            lines[0].contains('▄'),
-            "Top edge should have ▄ characters: {:?}",
-            lines[0]
-        );
-
-        // Bottom edge should be solid blocks
-        let last = lines.last().unwrap();
-        assert!(
-            last.contains('▀'),
-            "Bottom edge should have ▀ characters: {:?}",
-            last
-        );
-    }
-
-    #[test]
-    fn different_modes_have_different_colors() {
-        let normal = InputArea::new("hello", 5, 80);
-        let command = InputArea::new(":help", 5, 80);
-        let shell = InputArea::new("!pwd", 4, 80);
-
-        let normal_ansi = render_ansi(&normal, 80);
-        let command_ansi = render_ansi(&command, 80);
-        let shell_ansi = render_ansi(&shell, 80);
-
-        // All should have ANSI codes
-        assert!(has_ansi_codes(&normal_ansi));
-        assert!(has_ansi_codes(&command_ansi));
-        assert!(has_ansi_codes(&shell_ansi));
-
-        // And they should differ
-        assert_ne!(normal_ansi, command_ansi);
-        assert_ne!(command_ansi, shell_ansi);
-    }
-
-    #[test]
-    fn content_wraps_at_width() {
-        let long_text = "a".repeat(150);
-        let input = InputArea::new(&long_text, 150, 80);
-        let plain = render_plain(&input, 80);
-
-        // Should have multiple content lines (plus edges)
-        let lines: Vec<&str> = plain.lines().collect();
-        assert!(
-            lines.len() > 3,
-            "Long content should wrap to multiple lines"
-        );
-    }
-
-    #[test]
-    fn respects_max_content_lines() {
-        let very_long = "x".repeat(1000);
-        let input = InputArea::new(&very_long, 1000, 80);
-        let plain = render_plain(&input, 80);
-        let lines: Vec<&str> = plain.lines().collect();
-
-        // Total lines should be bounded: edges (2) + max content lines
-        let max_total = 2 + INPUT_MAX_CONTENT_LINES;
-        assert!(
-            lines.len() <= max_total,
-            "Should not exceed max lines ({}): got {}",
-            max_total,
-            lines.len()
-        );
-    }
-
-    #[test]
-    fn fits_width() {
-        let input = InputArea::new("Test input with some content", 28, 60);
-        let plain = render_plain(&input, 60);
-
-        assert_fits_width(&plain, 60);
-    }
-
-    #[test]
-    fn cursor_tracking_works() {
-        let input = InputArea::new("hello", 3, 80).set_focused(true);
-        let focus = FocusContext::new();
-        let ctx = ViewContext::new(&focus);
-        let node = input.view(&ctx);
-
-        let result = render_with_cursor(&node, 80);
-        assert!(
-            result.cursor.visible,
-            "Cursor should be visible when focused"
-        );
-    }
-
-    #[test]
-    fn snapshot_empty_input() {
-        let input = InputArea::new("", 0, 80);
-        assert_snapshot!("input_area_empty", render_plain(&input, 80));
-    }
-
-    #[test]
-    fn snapshot_command_mode() {
-        let input = InputArea::new(":set thinking on", 16, 80);
-        assert_snapshot!("input_area_command", render_plain(&input, 80));
-    }
-
-    #[test]
-    fn snapshot_shell_mode() {
-        let input = InputArea::new("!cargo test", 11, 80);
-        assert_snapshot!("input_area_shell", render_plain(&input, 80));
-    }
-
-    #[test]
-    fn input_area_bg_distinct_from_terminal() {
-        // RED: fails until Bug 1 is fixed — Normal mode bg is identical to terminal bg
-        // Terminal background is Rgb(40,44,52). Normal mode should differ by >= 20 on at least one channel.
-        let input = InputArea::new("hello world", 11, 80);
-        let ansi = render_ansi(&input, 80);
-
-        let (r, g, b) =
-            extract_ansi_bg_color(&ansi).expect("Should have ANSI background color code");
-
-        // Terminal background is Rgb(40,44,52)
-        let terminal_r = 40i32;
-        let terminal_g = 44i32;
-        let terminal_b = 52i32;
-
-        // Assert at least one channel differs by >= 20 units
-        let r_delta = (r - terminal_r).abs();
-        let g_delta = (g - terminal_g).abs();
-        let b_delta = (b - terminal_b).abs();
-
-        let max_delta = r_delta.max(g_delta).max(b_delta);
-        assert!(
-            max_delta >= 20,
-            "Normal mode bg should differ from terminal bg by >= 20 on at least one channel. Got Rgb({},{},{}) vs terminal Rgb({},{},{}). Deltas: R={}, G={}, B={}",
-            r, g, b, terminal_r, terminal_g, terminal_b, r_delta, g_delta, b_delta
-        );
-    }
-
-    #[test]
-    fn input_area_command_mode_bg_distinct() {
-        // PASS: Command mode should have distinct color (Rgb(60,50,20))
-        let input = InputArea::new(":help", 5, 80);
-        let ansi = render_ansi(&input, 80);
-
-        let (r, g, b) =
-            extract_ansi_bg_color(&ansi).expect("Should have ANSI background color code");
-
-        // Terminal background is Rgb(40,44,52)
-        let terminal_r = 40i32;
-        let terminal_g = 44i32;
-        let terminal_b = 52i32;
-
-        let r_delta = (r - terminal_r).abs();
-        let g_delta = (g - terminal_g).abs();
-        let b_delta = (b - terminal_b).abs();
-
-        let max_delta = r_delta.max(g_delta).max(b_delta);
-        assert!(
-            max_delta >= 20,
-            "Command mode bg should differ from terminal bg by >= 20. Got Rgb({},{},{}) vs Rgb({},{},{})",
-            r, g, b, terminal_r, terminal_g, terminal_b
-        );
-    }
-
-    #[test]
-    fn input_area_shell_mode_bg_distinct() {
-        // PASS: Shell mode should have distinct color (Rgb(60,30,30))
-        let input = InputArea::new("!pwd", 4, 80);
-        let ansi = render_ansi(&input, 80);
-
-        let (r, g, b) =
-            extract_ansi_bg_color(&ansi).expect("Should have ANSI background color code");
-
-        // Terminal background is Rgb(40,44,52)
-        let terminal_r = 40i32;
-        let terminal_g = 44i32;
-        let terminal_b = 52i32;
-
-        let r_delta = (r - terminal_r).abs();
-        let g_delta = (g - terminal_g).abs();
-        let b_delta = (b - terminal_b).abs();
-
-        let max_delta = r_delta.max(g_delta).max(b_delta);
-        assert!(
-            max_delta >= 20,
-            "Shell mode bg should differ from terminal bg by >= 20. Got Rgb({},{},{}) vs Rgb({},{},{})",
-            r, g, b, terminal_r, terminal_g, terminal_b
-        );
-    }
-}
-
 mod popup_overlay_tests {
     use super::*;
 
@@ -989,7 +726,7 @@ mod layout_tests {
     #[test]
     fn nested_components_render_correctly() {
         let status = StatusBar::new().mode("normal").model("test-model");
-        let input = InputArea::new("Hello", 5, 80);
+        let input = InputComponent::new("Hello", 5, 80);
 
         let focus = FocusContext::new();
         let ctx = ViewContext::new(&focus);

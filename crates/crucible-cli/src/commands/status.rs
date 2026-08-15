@@ -17,7 +17,6 @@ pub async fn execute(
     path: Option<PathBuf>,
     format: TextFormat,
     detailed: bool,
-    recent: bool,
 ) -> Result<()> {
     let start_time = Instant::now();
 
@@ -30,7 +29,7 @@ pub async fn execute(
         show_path_status(&path, detailed)?;
     } else {
         output::info("Gathering global storage status...");
-        show_global_status(&config, &storage, format, detailed, recent).await?;
+        show_global_status(&config, &storage, format, detailed).await?;
     }
 
     // Show performance metrics
@@ -83,7 +82,6 @@ async fn show_global_status(
     storage: &crate::factories::StorageHandle,
     format: TextFormat,
     detailed: bool,
-    _recent: bool,
 ) -> Result<()> {
     // Daemon is the only storage mode
     let mode = "daemon";

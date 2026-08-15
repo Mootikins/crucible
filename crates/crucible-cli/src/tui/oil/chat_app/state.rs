@@ -66,33 +66,6 @@ pub fn next_mode(current: &str, available: &[String]) -> Option<std::sync::Arc<s
         .map(|m| m.as_str().into())
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum InputMode {
-    #[default]
-    Normal,
-    Command,
-    Shell,
-}
-
-impl InputMode {
-    pub fn bg_color(&self) -> Color {
-        let t = theme::active();
-        match self {
-            InputMode::Normal => t.resolve_color(t.colors.background),
-            InputMode::Command => t.resolve_color(t.colors.command_bg),
-            InputMode::Shell => t.resolve_color(t.colors.shell_bg),
-        }
-    }
-
-    pub fn prompt(&self) -> &'static str {
-        match self {
-            InputMode::Normal => " > ",
-            InputMode::Command => " : ",
-            InputMode::Shell => " ! ",
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum AutocompleteKind {
     #[default]
@@ -122,7 +95,6 @@ pub enum PickSource {
     #[default]
     All,
     Notes,
-    Sessions,
     Commands,
     Files,
 }

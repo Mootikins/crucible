@@ -121,12 +121,11 @@ fn help_text(category: Option<&str>) -> String {
              Up/Down        — Navigate popup / history"
             .to_string(),
         Some("config") | Some("settings") => {
-            ":set thinkingbudget=med       — Thinking budget preset\n\
+            ":set thinkingbudget=medium    — Thinking budget preset\n\
              :set contextbudget=128000     — Context token budget (or 'none')\n\
              :set contextstrategy=truncate — Context strategy (truncate|sliding_window)\n\
              :set contextwindow=20         — Sliding window size (message pairs)\n\
              :set precognition             — Toggle auto-RAG\n\
-             :set verbose            — Verbose output\n\
              :set thinking           — Show thinking blocks\n\
              :set model=<name>       — Switch LLM model\n\
              :set                    — Show modified settings\n\
@@ -775,14 +774,13 @@ impl OilChatApp {
             return Action::Continue;
         }
 
-        let bool_value = match value.to_lowercase().as_str() {
-            "true" | "1" | "yes" | "on" => true,
-            "false" | "0" | "no" | "off" => false,
-            _ => {
+        let bool_value = match crate::tui::oil::commands::parse_bool(value) {
+            Ok(b) => b,
+            Err(message) => {
                 self.notification_area
                     .add(crucible_core::types::Notification::warning(format!(
-                        "Invalid value for {}: '{}'. Use true/false",
-                        key, value
+                        "{}: {}",
+                        key, message
                     )));
                 return Action::Continue;
             }
@@ -924,13 +922,12 @@ impl OilChatApp {
         let pick_source = match source {
             None | Some("all") => PickSource::All,
             Some("notes" | "note") => PickSource::Notes,
-            Some("sessions" | "session") => PickSource::Sessions,
             Some("commands" | "command" | "cmd") => PickSource::Commands,
             Some("files" | "file") => PickSource::Files,
             Some(unknown) => {
                 self.notification_area
                     .add(crucible_core::types::Notification::warning(format!(
-                        "Unknown pick source: '{}'. Valid: notes, sessions, commands, files",
+                        "Unknown pick source: '{}'. Valid: notes, commands, files, all",
                         unknown
                     )));
                 return Action::Continue;

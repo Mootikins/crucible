@@ -551,7 +551,6 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
                 debug!(
                     session_id = %response.session_id,
                     commands = response.commands.len(),
-                    views = response.views.len(),
                     "Initialized Lua session via daemon RPC"
                 );
                 // Plugin-declared slash commands: `/name` dispatches to the
@@ -633,16 +632,9 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
                 params = params.with_working_dir(wd);
             }
 
-            match selection {
-                AgentSelection::Acp(_) | AgentSelection::Internal => {
-                    let (handle, _session_id, event_rx) =
-                        factories::create_daemon_agent_with_events(&config, &params).await?;
-                    Ok((handle, Some(event_rx)))
-                }
-                AgentSelection::Cancelled => {
-                    anyhow::bail!("Agent selection was cancelled")
-                }
-            }
+            let (handle, _session_id, event_rx) =
+                factories::create_daemon_agent_with_events(&config, &params).await?;
+            Ok((handle, Some(event_rx)))
         }
     };
 

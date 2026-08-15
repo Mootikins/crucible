@@ -1,9 +1,7 @@
 use anyhow::Result;
-use crucible_daemon::DaemonClient;
 use serde::Serialize;
 
 use crate::cli::ToolsCommands;
-use crate::common::daemon_client;
 use crate::config::CliConfig;
 use crate::formatting::OutputFormat;
 
@@ -17,17 +15,15 @@ pub async fn execute(_config: CliConfig, command: ToolsCommands) -> Result<()> {
         ToolsCommands::List {
             permissions,
             format,
-        } => list(permissions, OutputFormat::for_stdout(format)).await,
+        } => list(permissions, OutputFormat::for_stdout(format)),
     }
 }
 
-async fn list(permissions: bool, format: OutputFormat) -> Result<()> {
-    let client = daemon_client().await?;
-
+fn list(permissions: bool, format: OutputFormat) -> Result<()> {
     if permissions {
-        list_permissions(&client).await
+        list_permissions()
     } else {
-        list_normal(&client, format).await
+        list_normal(format)
     }
 }
 
@@ -37,7 +33,7 @@ async fn list(permissions: bool, format: OutputFormat) -> Result<()> {
 /// arm and the text arm, so adding a tool meant remembering both.
 const BUILTIN_TOOLS: [&str; 5] = ["read", "edit", "write", "bash", "delete"];
 
-async fn list_normal(_client: &DaemonClient, format: OutputFormat) -> Result<()> {
+fn list_normal(format: OutputFormat) -> Result<()> {
     match format {
         OutputFormat::Json => {
             let tools: Vec<ToolOutput> = BUILTIN_TOOLS
@@ -68,16 +64,14 @@ async fn list_normal(_client: &DaemonClient, format: OutputFormat) -> Result<()>
     Ok(())
 }
 
-async fn list_permissions(_client: &DaemonClient) -> Result<()> {
+fn list_permissions() -> Result<()> {
     println!("# Add these to [permissions].allow in crucible.toml");
     println!();
 
     println!("# Built-in Tools");
-    println!("read:*");
-    println!("edit:*");
-    println!("write:*");
-    println!("bash:*");
-    println!("delete:*");
+    for name in BUILTIN_TOOLS {
+        println!("{name}:*");
+    }
     println!();
     println!("# MCP Server tools will appear here when a chat session is running");
     println!("# Start a chat session first to discover tools: cru chat");

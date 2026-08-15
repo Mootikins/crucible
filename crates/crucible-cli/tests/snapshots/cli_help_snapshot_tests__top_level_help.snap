@@ -20,7 +20,7 @@ Commands:
   storage      Manage storage operations (migration, verification, backup, cleanup)
   agents       Manage agent cards (list, show, validate)
   tasks        Manage tasks from a TASKS.md file (list, next, pick, done)
-  workflow     Inspect workflow notes in the active kiln (list, show)
+  workflow     Inspect and run workflow notes in the active kiln
   daemon       Manage the Crucible daemon (start, stop, status, logs)
   skills       Discover and manage agent skills (list, show, search)
   proposals    Review reflection-pass proposals (list, show, accept, reject)

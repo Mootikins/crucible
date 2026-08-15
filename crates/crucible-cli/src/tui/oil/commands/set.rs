@@ -1,8 +1,5 @@
 //! SetCommand parser for vim-style `:set` commands.
 
-#[allow(unused_imports)] // WIP: fmt not yet used
-use std::fmt;
-
 use crate::tui::oil::config::ThinkingPreset;
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -427,7 +424,6 @@ fn is_tui_local_key(key: &str) -> bool {
             | "perm.show_diff"
             | "perm.autoconfirm_session"
             | "perm.full_commands"
-            | "theme"
     )
 }
 
@@ -450,7 +446,7 @@ fn is_daemon_rpc_key(key: &str) -> bool {
     )
 }
 
-fn parse_bool(value: &str) -> Result<bool, String> {
+pub(crate) fn parse_bool(value: &str) -> Result<bool, String> {
     match value.to_ascii_lowercase().as_str() {
         "true" | "1" | "yes" | "on" => Ok(true),
         "false" | "0" | "no" | "off" => Ok(false),

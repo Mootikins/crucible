@@ -1,15 +1,6 @@
-use crate::tui::oil::component::Component;
 use crate::tui::oil::theme;
-use crate::tui::oil::ViewContext;
-use crucible_oil::node::Node;
 use crucible_oil::style::Color;
 use crucible_oil::InputStyle;
-
-// Re-export Oil's InputArea and related items
-#[allow(unused_imports)] // WIP: clamp_input_lines, wrap_content not yet used
-pub use crucible_oil::{
-    clamp_input_lines, wrap_content, InputArea as OilInputArea, INPUT_MAX_CONTENT_LINES,
-};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum InputMode {
@@ -87,62 +78,9 @@ impl InputStyle for InputMode {
     }
 }
 
-/// CLI wrapper around Oil's InputArea that implements Component trait
-#[derive(Debug, Clone)]
-pub struct InputArea {
-    inner: OilInputArea,
-}
-
-impl InputArea {
-    pub fn new(content: impl Into<String>, cursor: usize, width: usize) -> Self {
-        Self {
-            inner: OilInputArea::new(content, cursor, width),
-        }
-    }
-
-    pub fn set_focused(mut self, focused: bool) -> Self {
-        self.inner = self.inner.focused(focused);
-        self
-    }
-
-    pub fn with_popup(mut self, show_popup: bool) -> Self {
-        self.inner = self.inner.with_popup(show_popup);
-        self
-    }
-
-    pub fn content(&self) -> &str {
-        &self.inner.content
-    }
-
-    pub fn cursor(&self) -> usize {
-        self.inner.cursor
-    }
-
-    pub fn width(&self) -> usize {
-        self.inner.width
-    }
-
-    pub fn is_focused(&self) -> bool {
-        self.inner.focused
-    }
-
-    pub fn show_popup(&self) -> bool {
-        self.inner.show_popup
-    }
-}
-
-impl Component for InputArea {
-    fn view(&self, ctx: &ViewContext<'_>) -> Node {
-        let mode = InputMode::from_content(&self.inner.content);
-        self.inner.view(&mode, ctx.focus)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::oil::component::ComponentHarness;
-    use crucible_oil::render::render_to_plain_text;
 
     #[test]
     fn input_mode_detection() {
@@ -181,44 +119,5 @@ mod tests {
             untouched,
             "a mode the theme did not name keeps its palette colour"
         );
-    }
-
-    #[test]
-    fn input_area_renders_prompt() {
-        let input = InputArea::new("hello", 5, 80);
-        let mut h = ComponentHarness::new(80, 5);
-        h.render_component(&input);
-        let plain = render_to_plain_text(
-            &input.view(&crate::tui::oil::ViewContext::new(h.focus())),
-            80,
-        );
-        assert!(plain.contains(">"));
-        assert!(plain.contains("hello"));
-    }
-
-    #[test]
-    fn command_mode_shows_colon_prompt() {
-        let input = InputArea::new(":set model gpt-4", 16, 80);
-        let mut h = ComponentHarness::new(80, 5);
-        h.render_component(&input);
-        let plain = render_to_plain_text(
-            &input.view(&crate::tui::oil::ViewContext::new(h.focus())),
-            80,
-        );
-        assert!(plain.contains(":"));
-        assert!(plain.contains("set model"));
-    }
-
-    #[test]
-    fn shell_mode_shows_bang_prompt() {
-        let input = InputArea::new("!ls -la", 7, 80);
-        let mut h = ComponentHarness::new(80, 5);
-        h.render_component(&input);
-        let plain = render_to_plain_text(
-            &input.view(&crate::tui::oil::ViewContext::new(h.focus())),
-            80,
-        );
-        assert!(plain.contains("!"));
-        assert!(plain.contains("ls -la"));
     }
 }

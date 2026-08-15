@@ -112,21 +112,9 @@ async fn list(
 /// Show skill details
 async fn show(config: &CliConfig, name: String) -> Result<()> {
     let client = daemon_client().await?;
+    // A missing skill surfaces as an RPC error from the daemon, so `?` above
+    // is the not-found path — no fallback listing here.
     let response = client.skills_get(&name, &config.kiln_path).await?;
-
-    if response.is_null() || response.get("name").is_none() {
-        println!("Skill not found: {}", name);
-        println!("\nAvailable skills:");
-        let list_response = client.skills_list(&config.kiln_path, None).await?;
-        if let Some(skills) = list_response["skills"].as_array() {
-            for skill in skills {
-                if let Some(skill_name) = skill["name"].as_str() {
-                    println!("  - {}", skill_name);
-                }
-            }
-        }
-        return Ok(());
-    }
 
     println!("Name: {}", response["name"].as_str().unwrap_or("unknown"));
     println!("Scope: {}", response["scope"].as_str().unwrap_or("unknown"));

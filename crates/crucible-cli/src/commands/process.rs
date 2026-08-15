@@ -44,8 +44,6 @@ struct ProcessSummary {
 /// * `watch` - If true, continue watching for changes after initial processing
 /// * `verbose` - If true, show detailed progress and timing information
 /// * `dry_run` - If true, preview changes without writing to database
-/// * `parallel` - Optional number of parallel workers (unused -- daemon handles parallelism)
-#[allow(clippy::too_many_arguments)]
 pub async fn execute(
     config: CliConfig,
     path: Option<PathBuf>,
@@ -53,7 +51,6 @@ pub async fn execute(
     watch: bool,
     verbose: bool,
     dry_run: bool,
-    _parallel: Option<usize>,
     json: bool,
 ) -> Result<()> {
     info!("Starting process command");

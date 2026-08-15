@@ -4,7 +4,6 @@ use std::sync::{Mutex, OnceLock};
 mod list;
 mod misc;
 mod reindex;
-mod search;
 mod show;
 
 pub(super) fn env_lock() -> &'static Mutex<()> {

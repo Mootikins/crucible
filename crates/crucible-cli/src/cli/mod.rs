@@ -189,17 +189,9 @@ pub enum Commands {
         #[arg(long)]
         kiln_path: Option<std::path::PathBuf>,
 
-        /// Override justfile directory (default: PWD)
-        #[arg(long)]
-        just_dir: Option<std::path::PathBuf>,
-
         /// Disable Just tools
         #[arg(long)]
         no_just: bool,
-
-        /// Log file path (default: ~/.crucible/logs/mcp.log for stdio mode)
-        #[arg(long)]
-        log_file: Option<std::path::PathBuf>,
     },
 
     /// Run Crucible as an ACP agent for editors (speaks ACP over stdio)
@@ -214,7 +206,7 @@ pub enum Commands {
 
     /// Process kiln files through the pipeline (parse, enrich, store)
     #[command(
-        long_about = "Process markdown files through the pipeline: parse, enrich with embeddings, and store in the knowledge graph.\n\nExamples:\n  # Process entire kiln\n  cru process\n\n  # Process specific file\n  cru process docs/notes.md\n\n  # Watch for changes\n  cru process --watch\n\n  # Force reprocess all files\n  cru process --force\n\n  # Dry run to preview changes\n  cru process --dry-run\n\n  # Use 4 parallel workers\n  cru process --parallel 4",
+        long_about = "Process markdown files through the pipeline: parse, enrich with embeddings, and store in the knowledge graph.\n\nExamples:\n  # Process entire kiln\n  cru process\n\n  # Process specific file\n  cru process docs/notes.md\n\n  # Watch for changes\n  cru process --watch\n\n  # Force reprocess all files\n  cru process --force\n\n  # Dry run to preview changes\n  cru process --dry-run",
         visible_alias = "p"
     )]
     Process {
@@ -233,10 +225,6 @@ pub enum Commands {
         /// Preview what would be processed without making database changes
         #[arg(long)]
         dry_run: bool,
-
-        /// Number of parallel workers for processing (default: num_cpus / 2)
-        #[arg(short = 'j', long = "parallel")]
-        parallel: Option<usize>,
 
         /// Emit a single JSON result summary instead of human-readable text
         #[arg(long, conflicts_with = "watch")]
@@ -300,7 +288,7 @@ pub enum Commands {
 
     /// Display storage status and statistics for the knowledge base
     #[command(
-        long_about = "Display storage status and statistics for the knowledge base.\n\nShows current storage mode, usage metrics, and recent activity. Supports detailed analysis and format options.\n\nExamples:\n  # Show global storage status\n  cru status\n\n  # Analyze specific path\n  cru status docs/\n\n  # Detailed block-level information\n  cru status --detailed\n\n  # Include recent changes\n  cru status --recent\n\n  # JSON output\n  cru status -f json"
+        long_about = "Display storage status and statistics for the knowledge base.\n\nShows current storage mode and usage metrics. Supports detailed analysis and format options.\n\nExamples:\n  # Show global storage status\n  cru status\n\n  # Analyze specific path\n  cru status docs/\n\n  # Detailed block-level information\n  cru status --detailed\n\n  # JSON output\n  cru status -f json"
     )]
     Status {
         /// Path to analyze (optional - shows global status if omitted)
@@ -314,10 +302,6 @@ pub enum Commands {
         /// Show detailed block-level information
         #[arg(long)]
         detailed: bool,
-
-        /// Include recent change activity
-        #[arg(long)]
-        recent: bool,
     },
 
     /// Run installation diagnostics for Crucible
@@ -343,7 +327,7 @@ Examples:
     /// Manage storage operations (migration, verification, backup, cleanup)
     #[command(
         subcommand,
-        long_about = "Manage storage operations including migration, verification, backup, and cleanup.\n\nSupports mode switching, integrity checks, maintenance, and data export/import.\n\nExamples:\n  # Show current storage mode\n  cru storage mode\n\n  # Display storage statistics\n  cru storage stats\n\n  # Verify content integrity\n  cru storage verify\n\n  # Backup storage data\n  cru storage backup ~/backup.json\n\n  # Restore from backup\n  cru storage restore ~/backup.json\n\n  # Cleanup and optimize\n  cru storage cleanup --gc --optimize"
+        long_about = "Manage storage operations including migration, verification, backup, and cleanup.\n\nSupports mode switching, integrity checks, maintenance, and data export/import.\n\nExamples:\n  # Show current storage mode\n  cru storage mode\n\n  # Display storage statistics\n  cru storage stats\n\n  # Verify content integrity\n  cru storage verify\n\n  # Backup storage data\n  cru storage backup ~/backup.json\n\n  # Restore from backup\n  cru storage restore ~/backup.json\n\n  # Cleanup and optimize\n  cru storage cleanup"
     )]
     Storage(StorageCommands),
 
@@ -369,12 +353,11 @@ Examples:
         command: crate::commands::tasks::TasksSubcommand,
     },
 
-    /// Inspect workflow notes in the active kiln (list, show)
+    /// Inspect and run workflow notes in the active kiln
     ///
     /// Workflows are markdown notes with `type: workflow` in frontmatter.
-    /// Phase 1 ships parsing and read-only views; execution is planned.
     #[command(
-        long_about = "Inspect workflow notes in the active kiln.\n\nWorkflows are markdown notes whose frontmatter declares `type: workflow`. This command parses them into a typed AST and renders goals, validation criteria, gates, and the step tree. Execution is not yet implemented.\n\nExamples:\n  # List all workflows in the kiln\n  cru workflow list\n\n  # Show a workflow by filename stem, title, or path\n  cru workflow show deploy\n  cru workflow show \"Deploy Feature\"\n  cru workflow show workflows/deploy.md\n\n  # JSON output for scripting\n  cru workflow list -f json\n  cru workflow show deploy -f json"
+        long_about = "Inspect and run workflow notes in the active kiln.\n\nWorkflows are markdown notes whose frontmatter declares `type: workflow`. This command parses them into a typed AST, renders goals, validation criteria, gates, and the step tree, and can execute them: start a run, approve gates, check status, and cancel.\n\nExamples:\n  # List all workflows in the kiln\n  cru workflow list\n\n  # Show a workflow by filename stem, title, or path\n  cru workflow show deploy\n  cru workflow show \"Deploy Feature\"\n  cru workflow show workflows/deploy.md\n\n  # Run a workflow\n  cru workflow start deploy\n  cru workflow status <session>\n  cru workflow approve <session>\n  cru workflow cancel <session>\n\n  # JSON output for scripting\n  cru workflow list -f json\n  cru workflow show deploy -f json"
     )]
     Workflow {
         #[command(subcommand)]
@@ -458,7 +441,7 @@ Examples:
     /// Manage chat sessions (create, configure, send, pause, resume, end)
     #[command(
         subcommand,
-        long_about = "Manage chat sessions through their full lifecycle.\n\nLifecycle: create -> configure -> send -> pause -> resume -> end\n\nExamples:\n  cru session create --title \"My task\"           # Create and name a session\n  cru session configure <id> -p openai -m gpt-4  # Set backend\n  cru session send <id> \"message\"                 # Send and stream response\n  cru session pause <id>                          # Pause\n  cru session resume <id>                         # Resume from paused\n  cru session end <id>                            # End when done\n\n  cru session list                                # List recent sessions\n  cru session show <id>                           # Show session details\n  cru session open <id>                           # Open in TUI\n  cru session export <id> -o session.md           # Export to markdown\n  cru session search \"rust\"                       # Search by title\n\nScripting (non-interactive):\n  ID=$(cru session create -q)                     # Capture session ID\n  CRU_SESSION=$ID cru session send \"hello\"        # Use env var",
+        long_about = "Manage chat sessions through their full lifecycle.\n\nLifecycle: create -> configure -> send -> pause -> resume -> end\n\nExamples:\n  cru session create --title \"My task\"           # Create and name a session\n  cru session configure <id> -p openai -m gpt-4  # Set backend\n  cru session send <id> \"message\"                 # Send and stream response\n  cru session pause <id>                          # Pause\n  cru session resume <id>                         # Resume from paused\n  cru session end <id>                            # End when done\n\n  cru session list                                # List recent sessions\n  cru session show <id>                           # Show session details\n  cru session open <id>                           # Open in TUI\n  cru session export <id> -o session.md           # Export to markdown\n  cru session search \"rust\"                       # Search session content\n\nScripting (non-interactive):\n  ID=$(cru session create -q)                     # Capture session ID\n  CRU_SESSION=$ID cru session send \"hello\"        # Use env var",
         visible_aliases = ["s", "sess"]
     )]
     Session(SessionCommands),

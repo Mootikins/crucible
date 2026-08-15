@@ -35,7 +35,7 @@ pub enum SessionCommands {
         include_children: bool,
     },
 
-    /// Search sessions by title
+    /// Search past session content (plus active-session titles)
     Search {
         /// Search query
         query: String,

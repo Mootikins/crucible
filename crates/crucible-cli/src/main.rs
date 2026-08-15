@@ -88,7 +88,8 @@ fn wants_first_run_setup(command: &Option<Commands>) -> bool {
 
 async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Result<()> {
     // Install ring as the rustls CryptoProvider before any TLS usage.
-    // Both ring and aws-lc-rs are compiled (via lancedb), so rustls can't auto-detect.
+    // Both ring and aws-lc-rs are compiled (via transitive deps), so rustls
+    // can't auto-detect.
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     let config_result = config::CliConfig::load(
@@ -345,17 +346,13 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             stdio,
             port,
             kiln_path,
-            just_dir,
             no_just,
-            log_file,
         }) => {
             let args = commands::mcp::McpArgs {
                 stdio,
                 port,
                 kiln_path,
-                just_dir,
                 no_just,
-                log_file,
             };
             commands::mcp::execute(config, args).await?
         }
@@ -367,20 +364,10 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             force,
             watch,
             dry_run,
-            parallel,
             json,
         }) => {
-            commands::process::execute(
-                config,
-                path,
-                force,
-                watch,
-                cli.verbose,
-                dry_run,
-                parallel,
-                json,
-            )
-            .await?
+            commands::process::execute(config, path, force, watch, cli.verbose, dry_run, json)
+                .await?
         }
 
         Some(Commands::Search {
@@ -401,8 +388,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             path,
             format,
             detailed,
-            recent,
-        }) => commands::status::execute(config, path, format, detailed, recent).await?,
+        }) => commands::status::execute(config, path, format, detailed).await?,
 
         Some(Commands::Doctor { format }) => {
             commands::doctor::execute(cli_config_path, format).await?

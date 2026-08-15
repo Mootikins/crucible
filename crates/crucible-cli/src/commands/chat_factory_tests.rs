@@ -20,10 +20,6 @@ fn test_factory_pattern_compiles() {
                 // In real code, this creates an InternalAgentHandle
                 Ok(())
             }
-            AgentSelection::Cancelled => {
-                // Factory should bail on cancellation
-                anyhow::bail!("Agent selection was cancelled")
-            }
         }
     }
 
@@ -54,35 +50,6 @@ fn test_agent_selection_internal() {
     }
 }
 
-/// Test that AgentSelection::Cancelled variant works
-#[test]
-fn test_agent_selection_cancelled() {
-    let selection = AgentSelection::Cancelled;
-
-    match selection {
-        AgentSelection::Cancelled => {} // Expected
-        _ => panic!("Expected Cancelled variant"),
-    }
-}
-
-/// Test factory error handling for cancelled selection
-#[tokio::test]
-async fn test_factory_handles_cancellation() {
-    async fn test_factory(selection: AgentSelection) -> anyhow::Result<String> {
-        match selection {
-            AgentSelection::Acp(name) => Ok(format!("acp:{}", name)),
-            AgentSelection::Internal => Ok("internal".to_string()),
-            AgentSelection::Cancelled => {
-                anyhow::bail!("Agent selection was cancelled")
-            }
-        }
-    }
-
-    let result = test_factory(AgentSelection::Cancelled).await;
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("cancelled"));
-}
-
 /// Test factory creates correct output for ACP selection
 #[tokio::test]
 async fn test_factory_creates_acp_agent() {
@@ -90,9 +57,6 @@ async fn test_factory_creates_acp_agent() {
         match selection {
             AgentSelection::Acp(name) => Ok(format!("acp:{}", name)),
             AgentSelection::Internal => Ok("internal".to_string()),
-            AgentSelection::Cancelled => {
-                anyhow::bail!("Agent selection was cancelled")
-            }
         }
     }
 
@@ -108,9 +72,6 @@ async fn test_factory_creates_internal_agent() {
         match selection {
             AgentSelection::Acp(name) => Ok(format!("acp:{}", name)),
             AgentSelection::Internal => Ok("internal".to_string()),
-            AgentSelection::Cancelled => {
-                anyhow::bail!("Agent selection was cancelled")
-            }
         }
     }
 
@@ -129,11 +90,10 @@ async fn test_factory_closure_captures_environment() {
 
         async move {
             match selection {
-                AgentSelection::Acp(name) => Ok(format!("acp:{}:{}", name, captured_config)),
-                AgentSelection::Internal => Ok(format!("internal:{}", captured_config)),
-                AgentSelection::Cancelled => {
-                    anyhow::bail!("Agent selection was cancelled")
+                AgentSelection::Acp(name) => {
+                    anyhow::Ok(format!("acp:{}:{}", name, captured_config))
                 }
+                AgentSelection::Internal => Ok(format!("internal:{}", captured_config)),
             }
         }
     };
@@ -150,7 +110,6 @@ fn test_agent_selection_exhaustive_match() {
         match selection {
             AgentSelection::Acp(_) => "acp",
             AgentSelection::Internal => "internal",
-            AgentSelection::Cancelled => "cancelled",
         }
     }
 
@@ -159,7 +118,6 @@ fn test_agent_selection_exhaustive_match() {
         "acp"
     );
     assert_eq!(handle_selection(AgentSelection::Internal), "internal");
-    assert_eq!(handle_selection(AgentSelection::Cancelled), "cancelled");
 }
 
 /// Test that factory can propagate errors
@@ -173,9 +131,6 @@ async fn test_factory_propagates_errors() {
             AgentSelection::Internal => {
                 anyhow::bail!("Internal agent creation failed")
             }
-            AgentSelection::Cancelled => {
-                anyhow::bail!("Agent selection was cancelled")
-            }
         }
     }
 
@@ -185,9 +140,6 @@ async fn test_factory_propagates_errors() {
 
     let internal_result = failing_factory(AgentSelection::Internal).await;
     assert!(internal_result.is_err());
-
-    let cancelled_result = failing_factory(AgentSelection::Cancelled).await;
-    assert!(cancelled_result.is_err());
 }
 
 // Integration test notes:
@@ -195,7 +147,6 @@ async fn test_factory_propagates_errors() {
 // The actual factory closure in run_interactive_chat() creates real agents:
 // - AgentSelection::Acp -> factories::create_agent() -> Box<dyn AgentHandle>
 // - AgentSelection::Internal -> factories::create_agent() -> Box<dyn AgentHandle>
-// - AgentSelection::Cancelled -> Error
 //
 // These tests verify the factory pattern structure and behavior.
 // Full integration requires:

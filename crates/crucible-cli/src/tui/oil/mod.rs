@@ -41,7 +41,7 @@ pub use chat_app::{
 };
 pub use chat_runner::OilChatRunner;
 pub use component::{Component, ComponentHarness};
-pub use components::{InputArea, InputMode, StatusBar, INPUT_MAX_CONTENT_LINES};
+pub use components::{InputMode, StatusBar, INPUT_MAX_CONTENT_LINES};
 pub use composer::{pad_popup_region, ComposerConfig};
 pub use containers::{ChatNode, ContainerList};
 pub use event::{Event, InputAction, InputBuffer};
