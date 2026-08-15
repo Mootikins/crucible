@@ -47,13 +47,6 @@ allow = [
     # MPL-2.0: `colored`, `nucleo-matcher`, `option-ext`. Section 3.2 expressly
     # permits distributing a Larger Work under other terms.
     "MPL-2.0",
-    #
-    # CDDL-1.0: `inferno`, reached only because LanceDB declares `lance-testing`
-    # as a normal dependency rather than a dev-dependency, dragging a flamegraph
-    # profiler into every consumer's release build. This entry is a WORKAROUND,
-    # not an endorsement — CDDL is GPL-incompatible and sits on many corporate
-    # denylists. Remove it once the upstream dependency is gated.
-    "CDDL-1.0",
 ]
 
 # `ring` and the aws-lc crates use `AND` expressions across several licences;

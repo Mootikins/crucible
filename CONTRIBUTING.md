@@ -25,15 +25,13 @@ install for you:
 
 | Tool | Needed for | `just setup` |
 |------|-----------|--------------|
-| `protobuf-compiler` (`protoc`) | LanceDB's `lance` crate compiles protobufs in its build script | reports it, prints your platform's install command |
 | [`bun`](https://bun.sh) | the SolidJS web frontend — **not** npm or yarn | reports it, prints the install command |
 | `jq` | the justfile resolves the cargo target directory with it | not checked — install it yourself |
 | `cargo-nextest` | the Rust test runner; `cargo test` is not the supported path | installs |
 | `cargo-deny` | dependency licence gate (`just lint license`) | installs |
 | Playwright chromium | web E2E tests (`just web-test`) | installs |
 
-Without `protoc`, `cargo build` fails while compiling `lance`; the CI workflow installs
-it in every Rust job for the same reason. Without `jq`, any recipe that runs the built
+Without `jq`, any recipe that runs the built
 `cru` binary — including `just ci`, via `test plugins` — fails.
 
 If Playwright reports missing system libraries, run `bunx playwright install-deps

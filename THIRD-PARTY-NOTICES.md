@@ -360,13 +360,12 @@ as `Apache-2.0 OR GPL-2.0-only`; Crucible elects **Apache-2.0**.
 
 ---
 
-## Rust crates (810)
+## Rust crates (602)
 
 Linked into the released binary.
 
 | Package | Version | Licence |
 |---------|---------|---------|
-| `addr2line` | 0.25.1 | Apache-2.0 OR MIT |
 | `adler2` | 2.0.1 | 0BSD OR MIT OR Apache-2.0 |
 | `agent-client-protocol` | 0.10.4 | Apache-2.0 |
 | `agent-client-protocol-schema` | 0.11.4 | Apache-2.0 |
@@ -375,9 +374,7 @@ Linked into the released binary.
 | `aho-corasick` | 1.1.4 | Unlicense OR MIT |
 | `aligned` | 0.4.3 | MIT OR Apache-2.0 |
 | `aligned-vec` | 0.6.4 | MIT |
-| `alloca` | 0.4.0 | MIT |
 | `allocator-api2` | 0.2.21 | MIT OR Apache-2.0 |
-| `anes` | 0.1.6 | MIT OR Apache-2.0 |
 | `anstream` | 1.0.0 | MIT OR Apache-2.0 |
 | `anstyle` | 1.0.14 | MIT OR Apache-2.0 |
 | `anstyle-parse` | 1.0.0 | MIT OR Apache-2.0 |
@@ -390,31 +387,12 @@ Linked into the released binary.
 | `arraydeque` | 0.5.1 | MIT/Apache-2.0 |
 | `arrayref` | 0.3.9 | BSD-2-Clause |
 | `arrayvec` | 0.7.7 | MIT OR Apache-2.0 |
-| `arrow` | 58.4.0 | Apache-2.0 |
-| `arrow-arith` | 58.4.0 | Apache-2.0 |
-| `arrow-array` | 58.4.0 | Apache-2.0 AND MIT |
-| `arrow-buffer` | 58.4.0 | Apache-2.0 |
-| `arrow-cast` | 58.4.0 | Apache-2.0 |
-| `arrow-csv` | 58.4.0 | Apache-2.0 |
-| `arrow-data` | 58.4.0 | Apache-2.0 |
-| `arrow-ipc` | 58.4.0 | Apache-2.0 |
-| `arrow-json` | 58.4.0 | Apache-2.0 |
-| `arrow-ord` | 58.4.0 | Apache-2.0 |
-| `arrow-row` | 58.4.0 | Apache-2.0 |
-| `arrow-schema` | 58.4.0 | Apache-2.0 |
-| `arrow-select` | 58.4.0 | Apache-2.0 |
-| `arrow-string` | 58.4.0 | Apache-2.0 |
 | `as-slice` | 0.2.1 | MIT OR Apache-2.0 |
 | `async-broadcast` | 0.7.2 | MIT OR Apache-2.0 |
-| `async-channel` | 2.5.0 | Apache-2.0 OR MIT |
 | `async-compression` | 0.4.42 | MIT OR Apache-2.0 |
-| `async-lock` | 3.4.2 | Apache-2.0 OR MIT |
-| `async-recursion` | 1.1.1 | MIT OR Apache-2.0 |
 | `async-stream` | 0.3.6 | MIT |
 | `async-stream-impl` | 0.3.6 | MIT |
 | `async-trait` | 0.1.91 | MIT OR Apache-2.0 |
-| `async_cell` | 0.2.3 | MIT |
-| `atoi` | 2.0.0 | MIT |
 | `atomic-waker` | 1.1.2 | Apache-2.0 OR MIT |
 | `av-scenechange` | 0.14.1 | MIT |
 | `av1-grain` | 0.2.5 | BSD-2-Clause |
@@ -424,42 +402,29 @@ Linked into the released binary.
 | `axum` | 0.8.9 | MIT |
 | `axum-core` | 0.5.6 | MIT |
 | `axum-macros` | 0.5.1 | MIT |
-| `backtrace` | 0.3.76 | MIT OR Apache-2.0 |
 | `base64` | 0.13.1 | MIT/Apache-2.0 |
 | `base64` | 0.22.1 | MIT OR Apache-2.0 |
-| `bigdecimal` | 0.4.10 | MIT/Apache-2.0 |
 | `bincode` | 1.3.3 | MIT |
 | `bit-set` | 0.5.3 | MIT/Apache-2.0 |
 | `bit-set` | 0.8.0 | Apache-2.0 OR MIT |
 | `bit-vec` | 0.6.3 | MIT/Apache-2.0 |
 | `bit-vec` | 0.8.0 | Apache-2.0 OR MIT |
 | `bit_field` | 0.10.3 | Apache-2.0/MIT |
-| `bitflags` | 1.3.2 | MIT/Apache-2.0 |
 | `bitflags` | 2.13.1 | MIT OR Apache-2.0 |
-| `bitpacking` | 0.9.3 | MIT |
 | `bitstream-io` | 4.10.0 | MIT/Apache-2.0 |
-| `bitvec` | 1.1.1 | MIT |
-| `blake2` | 0.10.6 | MIT OR Apache-2.0 |
 | `blake3` | 1.8.5 | CC0-1.0 OR Apache-2.0 OR Apache-2.0 WITH LLVM-exception |
 | `block-buffer` | 0.10.4 | MIT OR Apache-2.0 |
 | `block-buffer` | 0.12.1 | MIT OR Apache-2.0 |
 | `bstr` | 1.12.3 | MIT OR Apache-2.0 |
-| `bytecheck` | 0.8.2 | MIT |
-| `bytecheck_derive` | 0.8.2 | MIT |
-| `bytecount` | 0.6.9 | Apache-2.0/MIT |
 | `bytemuck` | 1.25.0 | Zlib OR Apache-2.0 OR MIT |
 | `byteorder` | 1.5.0 | Unlicense OR MIT |
 | `byteorder-lite` | 0.1.0 | Unlicense OR MIT |
 | `bytes` | 1.12.0 | MIT |
 | `cassowary` | 0.3.0 | MIT / Apache-2.0 |
-| `cast` | 0.3.0 | MIT OR Apache-2.0 |
 | `castaway` | 0.2.4 | MIT |
-| `cedarwood` | 0.5.0 | BSD-2-Clause |
 | `cfg-if` | 1.0.4 | MIT OR Apache-2.0 |
 | `chacha20` | 0.10.1 | MIT OR Apache-2.0 |
 | `chrono` | 0.4.45 | MIT OR Apache-2.0 |
-| `chrono-tz` | 0.10.4 | MIT OR Apache-2.0 |
-| `ciborium` | 0.2.2 | Apache-2.0 |
 | `ciborium-io` | 0.2.2 | Apache-2.0 |
 | `ciborium-ll` | 0.2.2 | Apache-2.0 |
 | `clap` | 4.6.4 | MIT OR Apache-2.0 |
@@ -486,33 +451,23 @@ Linked into the released binary.
 | `constant_time_eq` | 0.4.2 | CC0-1.0 OR MIT-0 OR Apache-2.0 |
 | `convert_case` | 0.10.0 | MIT |
 | `convert_case` | 0.4.0 | MIT |
-| `cpp_demangle` | 0.4.5 | MIT OR Apache-2.0 |
 | `cpufeatures` | 0.2.17 | MIT OR Apache-2.0 |
 | `cpufeatures` | 0.3.0 | MIT OR Apache-2.0 |
 | `crc32fast` | 1.5.0 | MIT OR Apache-2.0 |
-| `criterion` | 0.8.2 | Apache-2.0 OR MIT |
-| `criterion-plot` | 0.8.2 | Apache-2.0 OR MIT |
-| `crossbeam-channel` | 0.5.15 | MIT OR Apache-2.0 |
 | `crossbeam-deque` | 0.8.6 | MIT OR Apache-2.0 |
 | `crossbeam-epoch` | 0.9.18 | MIT OR Apache-2.0 |
-| `crossbeam-queue` | 0.3.12 | MIT OR Apache-2.0 |
-| `crossbeam-skiplist` | 0.1.3 | MIT OR Apache-2.0 |
 | `crossbeam-utils` | 0.8.21 | MIT OR Apache-2.0 |
 | `crossterm` | 0.28.1 | MIT |
 | `crossterm` | 0.29.0 | MIT |
-| `crucible-cli` | 0.24.0 | MIT OR Apache-2.0 |
-| `crucible-core` | 0.24.0 | MIT OR Apache-2.0 |
-| `crucible-daemon` | 0.24.0 | MIT OR Apache-2.0 |
-| `crucible-lua` | 0.24.0 | MIT OR Apache-2.0 |
-| `crucible-oil` | 0.24.0 | MIT OR Apache-2.0 |
-| `crucible-web` | 0.24.0 | MIT OR Apache-2.0 |
-| `crunchy` | 0.2.4 | MIT |
+| `crucible-cli` | 0.26.1 | MIT OR Apache-2.0 |
+| `crucible-core` | 0.26.1 | MIT OR Apache-2.0 |
+| `crucible-daemon` | 0.26.1 | MIT OR Apache-2.0 |
+| `crucible-lua` | 0.26.1 | MIT OR Apache-2.0 |
+| `crucible-oil` | 0.26.1 | MIT OR Apache-2.0 |
+| `crucible-web` | 0.26.1 | MIT OR Apache-2.0 |
 | `crypto-common` | 0.1.7 | MIT OR Apache-2.0 |
 | `crypto-common` | 0.2.2 | MIT OR Apache-2.0 |
-| `csv` | 1.4.0 | Unlicense/MIT |
-| `csv-core` | 0.1.13 | Unlicense/MIT |
 | `ctutils` | 0.4.2 | Apache-2.0 OR MIT |
-| `daachorse` | 2.1.1 | MIT OR Apache-2.0 |
 | `darling` | 0.20.11 | MIT |
 | `darling` | 0.23.0 | MIT |
 | `darling_core` | 0.20.11 | MIT |
@@ -522,37 +477,6 @@ Linked into the released binary.
 | `dary_heap` | 0.3.9 | MIT OR Apache-2.0 |
 | `dashmap` | 6.2.1 | MIT |
 | `data-encoding` | 2.11.0 | MIT |
-| `datafusion` | 53.1.0 | Apache-2.0 |
-| `datafusion-catalog` | 53.1.0 | Apache-2.0 |
-| `datafusion-catalog-listing` | 53.1.0 | Apache-2.0 |
-| `datafusion-common` | 53.1.0 | Apache-2.0 |
-| `datafusion-common-runtime` | 53.1.0 | Apache-2.0 |
-| `datafusion-datasource` | 53.1.0 | Apache-2.0 |
-| `datafusion-datasource-arrow` | 53.1.0 | Apache-2.0 |
-| `datafusion-datasource-csv` | 53.1.0 | Apache-2.0 |
-| `datafusion-datasource-json` | 53.1.0 | Apache-2.0 |
-| `datafusion-doc` | 53.1.0 | Apache-2.0 |
-| `datafusion-execution` | 53.1.0 | Apache-2.0 |
-| `datafusion-expr` | 53.1.0 | Apache-2.0 |
-| `datafusion-expr-common` | 53.1.0 | Apache-2.0 |
-| `datafusion-functions` | 53.1.0 | Apache-2.0 |
-| `datafusion-functions-aggregate` | 53.1.0 | Apache-2.0 |
-| `datafusion-functions-aggregate-common` | 53.1.0 | Apache-2.0 |
-| `datafusion-functions-nested` | 53.1.0 | Apache-2.0 |
-| `datafusion-functions-table` | 53.1.0 | Apache-2.0 |
-| `datafusion-functions-window` | 53.1.0 | Apache-2.0 |
-| `datafusion-functions-window-common` | 53.1.0 | Apache-2.0 |
-| `datafusion-macros` | 53.1.0 | Apache-2.0 |
-| `datafusion-optimizer` | 53.1.0 | Apache-2.0 |
-| `datafusion-physical-expr` | 53.1.0 | Apache-2.0 |
-| `datafusion-physical-expr-adapter` | 53.1.0 | Apache-2.0 |
-| `datafusion-physical-expr-common` | 53.1.0 | Apache-2.0 |
-| `datafusion-physical-optimizer` | 53.1.0 | Apache-2.0 |
-| `datafusion-physical-plan` | 53.1.0 | Apache-2.0 |
-| `datafusion-pruning` | 53.1.0 | Apache-2.0 |
-| `datafusion-session` | 53.1.0 | Apache-2.0 |
-| `datafusion-sql` | 53.1.0 | Apache-2.0 |
-| `debugid` | 0.8.0 | Apache-2.0 |
 | `deranged` | 0.5.8 | MIT OR Apache-2.0 |
 | `derivative` | 2.2.0 | MIT/Apache-2.0 |
 | `derive_builder` | 0.20.2 | MIT OR Apache-2.0 |
@@ -567,6 +491,7 @@ Linked into the released binary.
 | `dirs` | 6.0.0 | MIT OR Apache-2.0 |
 | `dirs-sys` | 0.5.0 | MIT OR Apache-2.0 |
 | `displaydoc` | 0.2.6 | MIT OR Apache-2.0 |
+| `dns-lookup` | 3.0.1 | MIT/Apache-2.0 |
 | `doc-comment` | 0.3.4 | MIT |
 | `document-features` | 0.2.12 | MIT OR Apache-2.0 |
 | `downcast-rs` | 1.2.1 | MIT/Apache-2.0 |
@@ -581,7 +506,6 @@ Linked into the released binary.
 | `erased-serde` | 0.4.10 | MIT OR Apache-2.0 |
 | `errno` | 0.3.14 | MIT OR Apache-2.0 |
 | `esaxx-rs` | 0.1.10 | Apache-2.0 |
-| `ethnum` | 1.5.3 | MIT OR Apache-2.0 |
 | `event-listener` | 5.4.1 | Apache-2.0 OR MIT |
 | `event-listener-strategy` | 0.5.4 | Apache-2.0 OR MIT |
 | `eventsource-stream` | 0.2.3 | MIT OR Apache-2.0 |
@@ -590,7 +514,6 @@ Linked into the released binary.
 | `fallible-streaming-iterator` | 0.1.9 | MIT/Apache-2.0 |
 | `fancy-regex` | 0.13.0 | MIT |
 | `fancy-regex` | 0.16.2 | MIT |
-| `fast-float2` | 0.2.3 | MIT OR Apache-2.0 |
 | `fastembed` | 5.13.2 | Apache-2.0 |
 | `faster-hex` | 0.10.0 | MIT |
 | `fastrand` | 2.4.1 | Apache-2.0 OR MIT |
@@ -599,9 +522,6 @@ Linked into the released binary.
 | `file-id` | 0.2.3 | MIT OR Apache-2.0 |
 | `filedescriptor` | 0.8.3 | MIT |
 | `filetime` | 0.2.29 | MIT/Apache-2.0 |
-| `findshlibs` | 0.10.2 | MIT OR Apache-2.0 |
-| `fixedbitset` | 0.5.7 | MIT OR Apache-2.0 |
-| `flatbuffers` | 25.12.19 | Apache-2.0 |
 | `flate2` | 1.1.9 | MIT OR Apache-2.0 |
 | `flume` | 0.12.0 | Apache-2.0/MIT |
 | `fnv` | 1.0.7 | Apache-2.0 / MIT |
@@ -609,9 +529,6 @@ Linked into the released binary.
 | `foldhash` | 0.2.0 | Zlib |
 | `form_urlencoded` | 1.2.2 | MIT OR Apache-2.0 |
 | `fs2` | 0.4.3 | MIT/Apache-2.0 |
-| `fsst` | 8.0.0 | Apache-2.0 |
-| `fst` | 0.4.7 | Unlicense/MIT |
-| `funty` | 2.0.0 | MIT |
 | `futures` | 0.3.33 | MIT OR Apache-2.0 |
 | `futures-channel` | 0.3.33 | MIT OR Apache-2.0 |
 | `futures-core` | 0.3.33 | MIT OR Apache-2.0 |
@@ -629,7 +546,6 @@ Linked into the released binary.
 | `getrandom` | 0.4.3 | MIT OR Apache-2.0 |
 | `gguf` | 0.1.2 | MIT |
 | `gif` | 0.14.2 | MIT OR Apache-2.0 |
-| `gimli` | 0.32.3 | MIT OR Apache-2.0 |
 | `gix` | 0.85.0 | MIT OR Apache-2.0 |
 | `gix-actor` | 0.41.1 | MIT OR Apache-2.0 |
 | `gix-attributes` | 0.33.2 | MIT OR Apache-2.0 |
@@ -711,24 +627,18 @@ Linked into the released binary.
 | `http-range-header` | 0.4.2 | MIT |
 | `httparse` | 1.10.1 | MIT OR Apache-2.0 |
 | `httpdate` | 1.0.3 | MIT OR Apache-2.0 |
-| `humantime` | 2.3.0 | MIT OR Apache-2.0 |
 | `hybrid-array` | 0.4.13 | MIT OR Apache-2.0 |
 | `hyper` | 1.10.1 | MIT |
 | `hyper-rustls` | 0.27.9 | Apache-2.0 OR ISC OR MIT |
 | `hyper-util` | 0.1.20 | MIT |
-| `hyperloglogplus` | 0.4.1 | MIT |
 | `iana-time-zone` | 0.1.65 | MIT OR Apache-2.0 |
 | `icu_collections` | 2.2.0 | Unicode-3.0 |
-| `icu_locale` | 2.2.0 | Unicode-3.0 |
 | `icu_locale_core` | 2.2.0 | Unicode-3.0 |
-| `icu_locale_data` | 2.2.0 | Unicode-3.0 |
 | `icu_normalizer` | 2.2.0 | Unicode-3.0 |
 | `icu_normalizer_data` | 2.2.0 | Unicode-3.0 |
 | `icu_properties` | 2.2.0 | Unicode-3.0 |
 | `icu_properties_data` | 2.2.0 | Unicode-3.0 |
 | `icu_provider` | 2.2.0 | Unicode-3.0 |
-| `icu_segmenter` | 2.2.0 | Unicode-3.0 |
-| `icu_segmenter_data` | 2.2.0 | Unicode-3.0 |
 | `ident_case` | 1.0.1 | MIT/Apache-2.0 |
 | `idna` | 0.3.0 | MIT OR Apache-2.0 |
 | `idna` | 1.1.0 | MIT OR Apache-2.0 |
@@ -740,13 +650,10 @@ Linked into the released binary.
 | `indexmap` | 2.14.0 | Apache-2.0 OR MIT |
 | `indicatif` | 0.17.11 | MIT |
 | `indoc` | 2.0.7 | MIT OR Apache-2.0 |
-| `inferno` | 0.11.21 | CDDL-1.0 |
 | `inotify` | 0.11.2 | ISC |
 | `inotify-sys` | 0.1.5 | ISC |
 | `instability` | 0.3.12 | MIT |
-| `io-uring` | 0.7.13 | MIT OR Apache-2.0 |
 | `ipnet` | 2.12.0 | MIT OR Apache-2.0 |
-| `is-terminal` | 0.4.17 | MIT |
 | `is_terminal_polyfill` | 1.70.2 | MIT OR Apache-2.0 |
 | `itertools` | 0.13.0 | MIT OR Apache-2.0 |
 | `itertools` | 0.14.0 | MIT OR Apache-2.0 |
@@ -754,50 +661,15 @@ Linked into the released binary.
 | `jaq-core` | 3.0.0-beta | MIT |
 | `jaq-json` | 2.0.0-alpha | MIT |
 | `jaq-std` | 3.0.0-beta | MIT |
-| `jieba-macros` | 0.10.3 | MIT |
-| `jieba-rs` | 0.10.3 | MIT |
 | `jiff` | 0.2.29 | Unlicense OR MIT |
-| `jsonb` | 0.5.6 | Apache-2.0 |
-| `kanaria` | 0.2.0 | MIT |
 | `konst` | 0.2.20 | Zlib |
 | `konst_macro_rules` | 0.2.19 | Zlib |
 | `kstring` | 2.0.2 | MIT OR Apache-2.0 |
-| `lance` | 8.0.0 | Apache-2.0 |
-| `lance-arrow` | 8.0.0 | Apache-2.0 |
-| `lance-arrow-scalar` | 58.0.0 | Apache-2.0 |
-| `lance-arrow-stats` | 58.0.0 | Apache-2.0 |
-| `lance-bitpacking` | 8.0.0 | Apache-2.0 |
-| `lance-core` | 8.0.0 | Apache-2.0 |
-| `lance-datafusion` | 8.0.0 | Apache-2.0 |
-| `lance-datagen` | 8.0.0 | Apache-2.0 |
-| `lance-derive` | 8.0.0 | Apache-2.0 |
-| `lance-encoding` | 8.0.0 | Apache-2.0 |
-| `lance-file` | 8.0.0 | Apache-2.0 |
-| `lance-index` | 8.0.0 | Apache-2.0 |
-| `lance-io` | 8.0.0 | Apache-2.0 |
-| `lance-linalg` | 8.0.0 | Apache-2.0 |
-| `lance-namespace` | 8.0.0 | Apache-2.0 |
-| `lance-namespace-impls` | 8.0.0 | Apache-2.0 |
-| `lance-namespace-reqwest-client` | 0.8.6 | Apache-2.0 |
-| `lance-select` | 8.0.0 | Apache-2.0 |
-| `lance-table` | 8.0.0 | Apache-2.0 |
-| `lance-testing` | 8.0.0 | Apache-2.0 |
-| `lance-tokenizer` | 8.0.0 | Apache-2.0 |
-| `lancedb` | 0.31.0 | Apache-2.0 |
 | `lazy_static` | 1.5.0 | MIT OR Apache-2.0 |
 | `lebe` | 0.5.3 | BSD-3-Clause |
-| `lexical-core` | 1.0.6 | MIT/Apache-2.0 |
-| `lexical-parse-float` | 1.0.6 | MIT/Apache-2.0 |
-| `lexical-parse-integer` | 1.0.6 | MIT/Apache-2.0 |
-| `lexical-util` | 1.0.7 | MIT/Apache-2.0 |
-| `lexical-write-float` | 1.0.6 | MIT/Apache-2.0 |
-| `lexical-write-integer` | 1.0.6 | MIT/Apache-2.0 |
 | `libc` | 0.2.189 | MIT OR Apache-2.0 |
 | `libm` | 0.2.16 | MIT |
-| `libsais-rs` | 0.2.0 | Apache-2.0 |
 | `libsqlite3-sys` | 0.38.1 | MIT |
-| `lindera` | 3.0.7 | MIT |
-| `lindera-dictionary` | 3.0.7 | MIT |
 | `linked-hash-map` | 0.5.6 | MIT/Apache-2.0 |
 | `linkify` | 0.10.0 | MIT OR Apache-2.0 |
 | `linux-raw-sys` | 0.12.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
@@ -808,9 +680,6 @@ Linked into the released binary.
 | `log` | 0.4.33 | MIT OR Apache-2.0 |
 | `loop9` | 0.1.5 | MIT |
 | `lru` | 0.12.5 | MIT |
-| `lz4` | 1.28.1 | MIT |
-| `lz4-sys` | 1.11.1+lz4-1.10.0 | MIT |
-| `lz4_flex` | 0.13.1 | MIT |
 | `macro_rules_attribute` | 0.2.2 | Apache-2.0 OR MIT OR Zlib |
 | `macro_rules_attribute-proc_macro` | 0.2.2 | Apache-2.0 OR MIT OR Zlib |
 | `markdown-it` | 0.6.1 | MIT |
@@ -819,7 +688,6 @@ Linked into the released binary.
 | `matrixmultiply` | 0.3.10 | MIT/Apache-2.0 |
 | `maybe-async` | 0.2.11 | MIT |
 | `maybe-rayon` | 0.1.1 | MIT |
-| `md-5` | 0.10.6 | MIT OR Apache-2.0 |
 | `mdurl` | 0.3.1 | MIT |
 | `memchr` | 2.8.2 | Unlicense OR MIT |
 | `memmap2` | 0.9.11 | MIT OR Apache-2.0 |
@@ -830,16 +698,11 @@ Linked into the released binary.
 | `mio` | 1.2.1 | MIT |
 | `mlua` | 0.12.0 | MIT |
 | `mlua-sys` | 0.11.0 | MIT |
-| `moka` | 0.12.15 | (MIT OR Apache-2.0) AND Apache-2.0 |
 | `monostate` | 0.1.18 | MIT OR Apache-2.0 |
 | `monostate-impl` | 0.1.18 | MIT OR Apache-2.0 |
 | `moxcms` | 0.8.1 | BSD-3-Clause OR Apache-2.0 |
-| `munge` | 0.4.7 | MIT |
-| `munge_macro` | 0.4.7 | MIT |
-| `ndarray` | 0.16.1 | MIT OR Apache-2.0 |
 | `ndarray` | 0.17.2 | MIT OR Apache-2.0 |
 | `new_debug_unreachable` | 1.0.6 | MIT |
-| `nix` | 0.26.4 | MIT |
 | `nix` | 0.28.0 | MIT |
 | `nix` | 0.31.3 | MIT |
 | `no_std_io2` | 0.9.4 | Apache-2.0 OR MIT |
@@ -856,87 +719,55 @@ Linked into the released binary.
 | `num-complex` | 0.4.6 | MIT OR Apache-2.0 |
 | `num-conv` | 0.2.2 | MIT OR Apache-2.0 |
 | `num-derive` | 0.4.2 | MIT OR Apache-2.0 |
-| `num-format` | 0.4.4 | MIT/Apache-2.0 |
 | `num-integer` | 0.1.46 | MIT OR Apache-2.0 |
 | `num-rational` | 0.4.2 | MIT OR Apache-2.0 |
 | `num-traits` | 0.2.19 | MIT OR Apache-2.0 |
 | `num_cpus` | 1.17.0 | MIT OR Apache-2.0 |
 | `number_prefix` | 0.4.0 | MIT |
-| `object` | 0.37.3 | Apache-2.0 OR MIT |
-| `object_store` | 0.13.2 | MIT/Apache-2.0 |
 | `once_cell` | 1.21.4 | MIT OR Apache-2.0 |
 | `onig` | 6.5.3 | MIT |
 | `onig_sys` | 69.9.3 | MIT |
-| `oorandom` | 11.1.5 | MIT |
 | `openssl-probe` | 0.2.1 | MIT OR Apache-2.0 |
 | `option-ext` | 0.2.0 | MPL-2.0 |
 | `oq` | 0.1.0 | MIT OR Apache-2.0 |
 | `ordered-float` | 2.10.1 | MIT |
-| `ordered-float` | 5.3.0 | MIT |
 | `ort` | 2.0.0-rc.11 | MIT OR Apache-2.0 |
 | `ort-sys` | 2.0.0-rc.11 | MIT OR Apache-2.0 |
-| `page_size` | 0.6.0 | MIT/Apache-2.0 |
 | `parking` | 2.2.1 | Apache-2.0 OR MIT |
 | `parking_lot` | 0.12.5 | MIT OR Apache-2.0 |
 | `parking_lot_core` | 0.9.12 | MIT OR Apache-2.0 |
 | `paste` | 1.0.15 | MIT OR Apache-2.0 |
 | `pastey` | 0.1.1 | MIT OR Apache-2.0 |
 | `pastey` | 0.2.3 | MIT OR Apache-2.0 |
-| `path_abs` | 0.5.1 | MIT OR Apache-2.0 |
 | `percent-encoding` | 2.3.2 | MIT OR Apache-2.0 |
-| `permutation` | 0.4.1 | Apache-2.0/MIT |
 | `pest` | 2.8.6 | MIT OR Apache-2.0 |
 | `pest_derive` | 2.8.6 | MIT OR Apache-2.0 |
 | `pest_generator` | 2.8.6 | MIT OR Apache-2.0 |
 | `pest_meta` | 2.8.6 | MIT OR Apache-2.0 |
-| `petgraph` | 0.8.3 | MIT OR Apache-2.0 |
-| `phf` | 0.12.1 | MIT |
-| `phf` | 0.13.1 | MIT |
-| `phf_codegen` | 0.13.1 | MIT |
-| `phf_generator` | 0.13.1 | MIT |
-| `phf_shared` | 0.12.1 | MIT |
-| `phf_shared` | 0.13.1 | MIT |
-| `pin-project` | 1.1.13 | Apache-2.0 OR MIT |
-| `pin-project-internal` | 1.1.13 | Apache-2.0 OR MIT |
 | `pin-project-lite` | 0.2.17 | Apache-2.0 OR MIT |
 | `plist` | 1.9.0 | MIT |
-| `plotters` | 0.3.7 | MIT |
-| `plotters-backend` | 0.3.7 | MIT |
-| `plotters-svg` | 0.3.7 | MIT |
 | `png` | 0.18.1 | MIT OR Apache-2.0 |
 | `portable-atomic` | 1.13.1 | Apache-2.0 OR MIT |
 | `portable-pty` | 0.9.0 | MIT |
 | `potential_utf` | 0.1.5 | Unicode-3.0 |
 | `powerfmt` | 0.2.0 | MIT OR Apache-2.0 |
-| `pprof` | 0.15.0 | Apache-2.0 |
 | `ppv-lite86` | 0.2.21 | MIT OR Apache-2.0 |
 | `proc-macro2` | 1.0.106 | MIT OR Apache-2.0 |
 | `process-wrap` | 9.1.0 | Apache-2.0 OR MIT |
 | `prodash` | 31.0.0 | MIT |
 | `profiling` | 1.0.18 | MIT OR Apache-2.0 |
 | `profiling-procmacros` | 1.0.18 | MIT OR Apache-2.0 |
-| `prost` | 0.14.4 | Apache-2.0 |
-| `prost-derive` | 0.14.4 | Apache-2.0 |
-| `prost-types` | 0.14.4 | Apache-2.0 |
 | `psm` | 0.1.31 | MIT OR Apache-2.0 |
-| `ptr_meta` | 0.3.1 | MIT |
-| `ptr_meta_derive` | 0.3.1 | MIT |
 | `pxfm` | 0.1.29 | BSD-3-Clause OR Apache-2.0 |
 | `qoi` | 0.4.1 | MIT/Apache-2.0 |
 | `quick-error` | 2.0.1 | MIT/Apache-2.0 |
-| `quick-xml` | 0.26.0 | MIT |
 | `quick-xml` | 0.39.4 | MIT |
 | `quote` | 1.0.46 | MIT OR Apache-2.0 |
-| `radium` | 0.7.0 | MIT |
-| `rancor` | 0.1.2 | MIT |
 | `rand` | 0.10.2 | MIT OR Apache-2.0 |
 | `rand` | 0.9.4 | MIT OR Apache-2.0 |
 | `rand_chacha` | 0.9.0 | MIT OR Apache-2.0 |
 | `rand_core` | 0.10.1 | MIT OR Apache-2.0 |
 | `rand_core` | 0.9.5 | MIT OR Apache-2.0 |
-| `rand_distr` | 0.5.1 | MIT OR Apache-2.0 |
-| `rand_xoshiro` | 0.7.0 | MIT OR Apache-2.0 |
-| `rangemap` | 1.7.1 | MIT/Apache-2.0 |
 | `ratatui` | 0.29.0 | MIT |
 | `rav1e` | 0.8.1 | BSD-2-Clause |
 | `ravif` | 0.13.0 | BSD-3-Clause |
@@ -951,22 +782,16 @@ Linked into the released binary.
 | `regex-automata` | 0.4.16 | MIT OR Apache-2.0 |
 | `regex-bites` | 0.1.6 | MIT OR Apache-2.0 |
 | `regex-syntax` | 0.8.11 | MIT OR Apache-2.0 |
-| `rend` | 0.5.4 | MIT |
 | `reqwest` | 0.12.28 | MIT OR Apache-2.0 |
 | `reqwest` | 0.13.4 | MIT OR Apache-2.0 |
 | `rgb` | 0.8.53 | MIT |
 | `ring` | 0.17.14 | Apache-2.0 AND ISC |
-| `rkyv` | 0.8.17 | MIT |
-| `rkyv_derive` | 0.8.17 | MIT |
 | `rmcp` | 2.2.0 | Apache-2.0 |
 | `rmcp-macros` | 2.2.0 | Apache-2.0 |
-| `roaring` | 0.11.4 | MIT OR Apache-2.0 |
 | `rusqlite` | 0.40.1 | MIT |
 | `rust-embed` | 8.12.0 | MIT |
 | `rust-embed-impl` | 8.12.0 | MIT |
 | `rust-embed-utils` | 8.12.0 | MIT |
-| `rust-stemmers` | 1.2.0 | MIT/BSD-3-Clause |
-| `rustc-demangle` | 0.1.28 | MIT/Apache-2.0 |
 | `rustc-hash` | 1.1.0 | Apache-2.0/MIT |
 | `rustc-hash` | 2.1.2 | Apache-2.0 OR MIT |
 | `rustix` | 0.38.44 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
@@ -985,8 +810,6 @@ Linked into the released binary.
 | `schemars_derive` | 1.2.1 | MIT |
 | `scopeguard` | 1.2.0 | MIT OR Apache-2.0 |
 | `self_cell` | 1.2.2 | Apache-2.0 OR GPL-2.0-only |
-| `semver` | 1.0.28 | MIT OR Apache-2.0 |
-| `seq-macro` | 0.3.6 | MIT OR Apache-2.0 |
 | `serde` | 1.0.229 | MIT OR Apache-2.0 |
 | `serde-value` | 0.7.0 | MIT |
 | `serde_core` | 1.0.229 | MIT OR Apache-2.0 |
@@ -994,20 +817,16 @@ Linked into the released binary.
 | `serde_derive_internals` | 0.29.1 | MIT OR Apache-2.0 |
 | `serde_json` | 1.0.151 | MIT OR Apache-2.0 |
 | `serde_path_to_error` | 0.1.20 | MIT OR Apache-2.0 |
-| `serde_repr` | 0.1.20 | MIT OR Apache-2.0 |
 | `serde_spanned` | 0.6.9 | MIT OR Apache-2.0 |
 | `serde_spanned` | 1.1.1 | MIT OR Apache-2.0 |
 | `serde_urlencoded` | 0.7.1 | MIT/Apache-2.0 |
 | `serde_with` | 3.21.0 | MIT OR Apache-2.0 |
 | `serde_with_macros` | 3.21.0 | MIT OR Apache-2.0 |
 | `serde_yaml` | 0.9.34+deprecated | MIT OR Apache-2.0 |
-| `serde_yaml_ng` | 0.10.0 | MIT |
 | `serial2` | 0.2.37 | BSD-2-Clause OR Apache-2.0 |
 | `sha1` | 0.10.6 | MIT OR Apache-2.0 |
 | `sha1` | 0.11.0 | MIT OR Apache-2.0 |
 | `sha1-checked` | 0.10.0 | MIT OR Apache-2.0 |
-| `sha1_smol` | 1.0.1 | BSD-3-Clause |
-| `sha2` | 0.10.9 | MIT OR Apache-2.0 |
 | `sha2` | 0.11.0 | MIT OR Apache-2.0 |
 | `sharded-slab` | 0.1.7 | MIT |
 | `shell-words` | 1.1.1 | MIT/Apache-2.0 |
@@ -1017,40 +836,25 @@ Linked into the released binary.
 | `signal-hook-registry` | 1.4.8 | MIT OR Apache-2.0 |
 | `simd-adler32` | 0.3.9 | MIT |
 | `simd_helpers` | 0.1.0 | MIT |
-| `simdutf8` | 0.1.5 | MIT OR Apache-2.0 |
 | `similar` | 3.1.1 | Apache-2.0 |
-| `siphasher` | 1.0.3 | MIT/Apache-2.0 |
 | `slab` | 0.4.12 | MIT |
 | `slotmap` | 1.1.1 | Zlib |
 | `smallvec` | 1.15.2 | MIT OR Apache-2.0 |
 | `smawk` | 0.3.3 | MIT |
-| `snafu` | 0.8.9 | MIT OR Apache-2.0 |
-| `snafu` | 0.9.1 | MIT OR Apache-2.0 |
-| `snafu-derive` | 0.8.9 | MIT OR Apache-2.0 |
-| `snafu-derive` | 0.9.1 | MIT OR Apache-2.0 |
 | `socket2` | 0.6.4 | MIT OR Apache-2.0 |
 | `socks` | 0.3.4 | MIT/Apache-2.0 |
-| `spin` | 0.10.1 | MIT |
 | `spin` | 0.9.8 | MIT |
 | `spm_precompiled` | 0.1.4 | Apache-2.0 |
-| `sqlparser` | 0.61.0 | Apache-2.0 |
-| `sqlparser_derive` | 0.5.0 | Apache-2.0 |
 | `sse-stream` | 0.2.5 | MIT OR Apache-2.0 |
 | `stable_deref_trait` | 1.2.1 | MIT OR Apache-2.0 |
 | `stacker` | 0.1.24 | MIT OR Apache-2.0 |
 | `static_assertions` | 1.1.0 | MIT OR Apache-2.0 |
-| `std_prelude` | 0.2.12 | MIT |
-| `stfu8` | 0.2.7 | MIT OR Apache-2.0 |
-| `stop-words` | 0.10.0 | MIT OR Apache-2.0 |
-| `str_stack` | 0.1.1 | MIT/Apache-2.0 |
 | `strsim` | 0.11.1 | MIT |
 | `strum` | 0.26.3 | MIT |
 | `strum` | 0.28.0 | MIT |
 | `strum_macros` | 0.26.4 | MIT |
 | `strum_macros` | 0.28.0 | MIT |
 | `subtle` | 2.6.1 | BSD-3-Clause |
-| `symbolic-common` | 12.18.3 | MIT |
-| `symbolic-demangle` | 12.18.3 | MIT |
 | `syn` | 1.0.109 | MIT OR Apache-2.0 |
 | `syn` | 2.0.119 | MIT OR Apache-2.0 |
 | `syn` | 3.0.3 | MIT OR Apache-2.0 |
@@ -1058,8 +862,6 @@ Linked into the released binary.
 | `synstructure` | 0.13.2 | MIT |
 | `syntect` | 5.3.0 | MIT |
 | `taffy` | 0.12.2 | MIT |
-| `tagptr` | 0.2.0 | MIT/Apache-2.0 |
-| `tap` | 1.0.1 | MIT |
 | `tempfile` | 3.27.0 | MIT OR Apache-2.0 |
 | `termcolor` | 1.4.1 | Unlicense OR MIT |
 | `textwrap` | 0.16.2 | MIT |
@@ -1067,14 +869,12 @@ Linked into the released binary.
 | `thiserror` | 2.0.19 | MIT OR Apache-2.0 |
 | `thiserror-impl` | 1.0.69 | MIT OR Apache-2.0 |
 | `thiserror-impl` | 2.0.19 | MIT OR Apache-2.0 |
-| `thread-tree` | 0.3.3 | MIT OR Apache-2.0 |
 | `thread_local` | 1.1.9 | MIT OR Apache-2.0 |
 | `tiff` | 0.11.3 | MIT |
 | `tiktoken-rs` | 0.9.1 | MIT |
 | `time` | 0.3.47 | MIT OR Apache-2.0 |
 | `time-core` | 0.1.8 | MIT OR Apache-2.0 |
 | `tinystr` | 0.8.3 | Unicode-3.0 |
-| `tinytemplate` | 1.2.1 | Apache-2.0 OR MIT |
 | `tinyvec` | 1.11.0 | Zlib OR Apache-2.0 OR MIT |
 | `tinyvec_macros` | 0.1.1 | MIT OR Apache-2.0 OR Zlib |
 | `tokenizers` | 0.22.2 | Apache-2.0 |
@@ -1110,14 +910,12 @@ Linked into the released binary.
 | `tui-textarea` | 0.7.0 | MIT |
 | `tungstenite` | 0.29.0 | MIT OR Apache-2.0 |
 | `tungstenite` | 0.30.0 | MIT OR Apache-2.0 |
-| `twox-hash` | 2.1.2 | MIT |
 | `typed-arena` | 2.0.2 | MIT |
 | `typeid` | 1.0.3 | MIT OR Apache-2.0 |
 | `typenum` | 1.20.1 | MIT OR Apache-2.0 |
 | `ucd-trie` | 0.1.7 | MIT OR Apache-2.0 |
 | `unicase` | 2.9.0 | MIT OR Apache-2.0 |
 | `unicode-bidi` | 0.3.18 | MIT OR Apache-2.0 |
-| `unicode-blocks` | 0.1.10 | MIT |
 | `unicode-bom` | 2.0.3 | Apache-2.0 |
 | `unicode-general-category` | 0.6.0 | Apache-2.0 |
 | `unicode-ident` | 1.0.24 | (MIT OR Apache-2.0) AND Unicode-3.0 |
@@ -1135,7 +933,6 @@ Linked into the released binary.
 | `ureq` | 2.12.1 | MIT OR Apache-2.0 |
 | `url` | 2.5.8 | MIT OR Apache-2.0 |
 | `urlencoding` | 2.1.3 | MIT |
-| `utf8-ranges` | 1.0.5 | Unlicense/MIT |
 | `utf8-width` | 0.1.8 | MIT |
 | `utf8_iter` | 1.0.4 | Apache-2.0 OR MIT |
 | `utf8parse` | 0.2.2 | Apache-2.0 OR MIT |
@@ -1150,11 +947,9 @@ Linked into the released binary.
 | `winnow` | 0.7.15 | MIT |
 | `winnow` | 1.0.3 | MIT |
 | `writeable` | 0.6.3 | Unicode-3.0 |
-| `wyz` | 0.5.1 | MIT |
 | `x11rb` | 0.13.2 | MIT OR Apache-2.0 |
 | `x11rb-protocol` | 0.13.2 | MIT OR Apache-2.0 |
 | `xmlparser` | 0.13.6 | MIT/Apache-2.0 |
-| `xxhash-rust` | 0.8.15 | BSL-1.0 |
 | `y4m` | 0.8.0 | MIT |
 | `yaml-rust` | 0.4.5 | MIT/Apache-2.0 |
 | `yansi` | 1.0.1 | MIT OR Apache-2.0 |
@@ -1170,9 +965,6 @@ Linked into the released binary.
 | `zerovec-derive` | 0.11.3 | Unicode-3.0 |
 | `zlib-rs` | 0.6.4 | Zlib |
 | `zmij` | 1.0.21 | MIT |
-| `zstd` | 0.13.3 | MIT |
-| `zstd-safe` | 7.2.4 | MIT OR Apache-2.0 |
-| `zstd-sys` | 2.0.16+zstd.1.5.7 | MIT/Apache-2.0 |
 | `zune-core` | 0.5.1 | MIT OR Apache-2.0 OR Zlib |
 | `zune-inflate` | 0.2.54 | MIT OR Apache-2.0 OR Zlib |
 | `zune-jpeg` | 0.5.15 | MIT OR Apache-2.0 OR Zlib |

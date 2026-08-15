@@ -58,8 +58,6 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Install protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - name: Fail if web/dist is present
         run: |
           if [ -e crates/crucible-web/web/dist ]; then
@@ -80,8 +78,6 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Install protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - name: Assert the build refuses to ship without the UI
         env:
           CRUCIBLE_REQUIRE_WEB_UI: "1"

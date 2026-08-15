@@ -25,7 +25,7 @@ default:
 
 # === Setup ===
 
-# Idempotent. protoc and bun are reported, not installed: their package name
+# Idempotent. bun is reported, not installed: its package name
 # differs per platform and guessing wrong is worse than saying so.
 #
 # Install everything `just ci` needs beyond a Rust toolchain
@@ -34,20 +34,6 @@ setup:
     set -euo pipefail
 
     missing=0
-
-    if ! command -v protoc >/dev/null 2>&1; then
-        missing=1
-        echo "MISSING: protoc (protobuf-compiler) — crucible-cli, crucible-daemon and crucible-web pull prost-build and will not compile without it."
-        case "$(uname -s)" in
-            Darwin) echo "  brew install protobuf" ;;
-            Linux)
-                echo "  Debian/Ubuntu: sudo apt-get install -y protobuf-compiler"
-                echo "  Fedora:        sudo dnf install -y protobuf-compiler"
-                echo "  Arch:          sudo pacman -S protobuf"
-                ;;
-            *) echo "  Install the 'protobuf-compiler' package for your platform." ;;
-        esac
-    fi
 
     if ! command -v bun >/dev/null 2>&1; then
         missing=1
