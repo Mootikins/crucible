@@ -101,7 +101,6 @@ export default defineConfig({
 					label: 'Configuration',
 					items: [
 						{ slug: 'help/configuration' },
-						{ slug: 'help/configuration/configuration-guide' },
 						{ slug: 'help/config/llm' },
 						{ slug: 'help/config/embedding' },
 						{ slug: 'help/config/storage' },
@@ -125,9 +124,15 @@ export default defineConfig({
 					items: [
 						{ slug: 'help/cli' },
 						{ slug: 'help/cli/chat' },
+						{ slug: 'help/cli/session' },
 						{ slug: 'help/cli/process' },
 						{ slug: 'help/cli/search' },
 						{ slug: 'help/cli/stats' },
+						{ slug: 'help/cli/doctor' },
+						{ slug: 'help/cli/skills' },
+						{ slug: 'help/cli/acp' },
+						{ slug: 'help/cli/lua' },
+						{ slug: 'help/cli/setup' },
 					],
 				},
 				{

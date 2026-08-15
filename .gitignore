@@ -101,6 +101,8 @@ crates/crucible-cli/proptest-regressions/
 # Debug artifacts
 *.png
 *.txt
+# ...but generated test-tier manifests are required by architecture tests on CI
+!assets/test-tiers/*.txt
 .ruff_cache/
 .playwright-mcp/
 reproduce.jsonl
