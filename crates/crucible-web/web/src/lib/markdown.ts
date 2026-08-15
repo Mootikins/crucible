@@ -519,12 +519,6 @@ export function renderMarkdown(content: string): string {
   return sanitizeHtml(renderedHtml);
 }
 
-export async function renderMarkdownAsync(content: string): Promise<string> {
-  const renderedHtml = getRenderer().render(content);
-  const highlightedHtml = await highlightCodeBlocks(renderedHtml);
-  return renderMermaidBlocks(sanitizeHtml(highlightedHtml));
-}
-
 /** Join a relative POSIX path onto a base dir, resolving `.`/`..`. */
 function resolvePath(baseDir: string, rel: string): string {
   const out: string[] = [];
@@ -567,8 +561,9 @@ function resolveDocImages(html: string, baseDir?: string): string {
 }
 
 /**
- * Reading-view render: like {@link renderMarkdownAsync} but permits embedded
- * HTML (sanitized), floats a copy button over each code block, and resolves
+ * Reading-view render: async pipeline (syntax highlighting + mermaid) that
+ * permits embedded HTML (sanitized), floats a copy button over each code
+ * block, and resolves
  * relative image srcs against `baseDir` (the document's directory) so local
  * images load. For rendering whole documents (notes, project READMEs) rather
  * than chat turns.

@@ -29,8 +29,9 @@ import { appReady, openSessionsList } from '../helpers/nav';
  *
  * Both legs write into `state.kilnDir`, but by different routes, and that is
  * worth knowing when this breaks: a web-created session's tool `workspace` is
- * the registered PROJECT root — `SessionPanel.handleCreateSession` passes
- * `workspace: project.path` explicitly — while a plain `cru chat` (no
+ * the registered PROJECT root — the composer's create flow
+ * (`CenterComposer.submit` → `SessionContext.createSession`) passes the
+ * selected project workspace explicitly — while a plain `cru chat` (no
  * `--workspace`) defaults its workspace to the kiln. hero-setup registers the
  * kiln dir as the project, so the two coincide here, as they do for a real
  * user working in one directory. If the harness ever registers a project that
