@@ -292,5 +292,16 @@ mod tests {
             .unwrap()
             .expect("first answer wins");
         assert_eq!(headers.get("X-Who"), Some(&"beta".to_string()));
+
+        // A SECOND clear exercises the rebuilt tables — the one path where a
+        // skew introduced by the first rebuild would surface.
+        crate::hooks::clear_plugin_hooks(&lua, "beta").unwrap();
+        crate::hooks::clear_plugin_hooks(&lua, "gamma").unwrap();
+        let last = get_provider_auth_hooks(&lua).unwrap();
+        assert_eq!(last.len(), 1, "only the unowned hook survives every clear");
+        let headers = fire_provider_auth_hooks(&lua, &last, "prov", "model")
+            .unwrap()
+            .expect("the unowned hook still fires its own function");
+        assert_eq!(headers.get("X-Who"), Some(&"user".to_string()));
     }
 }

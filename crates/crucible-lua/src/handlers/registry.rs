@@ -176,7 +176,10 @@ impl LuaScriptHandlerRegistry {
     ///
     /// # Returns
     ///
-    /// Returns `Ok(ScriptHandlerResult)` on success, or `Err` if handler not found or execution fails.
+    /// Returns `Ok(ScriptHandlerResult)` on success, or `Err` if execution
+    /// fails. An unknown `name` is NOT an error: the handler was unregistered
+    /// between the dispatch snapshot and execution (plugin reload mid-call)
+    /// and has no opinion — `PassThrough` is returned.
     pub async fn execute_runtime_handler(
         &self,
         lua: &Lua,
