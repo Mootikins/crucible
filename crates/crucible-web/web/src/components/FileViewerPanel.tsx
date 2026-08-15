@@ -19,6 +19,7 @@ import { listKilns, rawFileUrl } from '@/lib/api';
 import { swrLocal } from '@/lib/local-cache';
 import { windowActions } from '@/stores/windowStore';
 import { PanelShell } from './PanelShell';
+import { ImageViewer } from './ImageViewer';
 import { Menu } from '@ark-ui/solid';
 import { Portal } from 'solid-js/web';
 import { attachNativeMenuGuard } from '@/lib/context-menu';
@@ -367,15 +368,17 @@ const FileViewerPanel: Component<FileViewerPanelProps> = (props) => {
   // decides what is drawn and does nothing about what was already scheduled.
   if (isImage()) {
     return (
-      <PanelShell class="overflow-auto">
-        <div class="h-full w-full flex items-center justify-center p-4">
-          <img
-            src={rawFileUrl(props.filePath)}
-            alt={props.filePath.split('/').pop() ?? props.filePath}
-            class="max-h-full max-w-full object-contain"
-            data-testid="file-image"
-          />
-        </div>
+      <PanelShell class="overflow-hidden">
+        {/* Keyed on the path: a different image in this pane starts over at
+            fit instead of inheriting the previous image's zoom/pan. */}
+        <Show when={props.filePath} keyed>
+          {(path) => (
+            <ImageViewer
+              src={rawFileUrl(path)}
+              alt={path.split('/').pop() ?? path}
+            />
+          )}
+        </Show>
       </PanelShell>
     );
   }

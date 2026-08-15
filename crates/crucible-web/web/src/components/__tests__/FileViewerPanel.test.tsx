@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@solidjs/testing-library';
+import { render, screen, cleanup, fireEvent } from '@solidjs/testing-library';
+import { createSignal } from 'solid-js';
 import { getGlobalRegistry, resetGlobalRegistry } from '@/lib/panel-registry';
 import { registerPanels } from '@/lib/register-panels';
 
@@ -135,6 +136,52 @@ describe('FileViewerPanel — rendering', () => {
     // is never coming.
     expect(document.querySelector('.cm-editor')).toBeNull();
     expect(screen.queryByText('Loading file...')).toBeNull();
+  });
+
+  it('gives an image the zoom toolbar, with shortcuts named for screen readers', () => {
+    render(() => <FileViewerPanel filePath="/kiln/assets/shot.png" />);
+
+    expect(screen.getByLabelText('Zoom in (plus key)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Zoom out (minus key)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Fit to pane (zero key)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Actual size, 100% (one key)')).toBeInTheDocument();
+    // Opens at fit; with no measured pane/image that reads as 100%.
+    expect(screen.getByTestId('image-zoom-level').textContent).toBe('100%');
+  });
+
+  it('zoom buttons and keyboard shortcuts move the zoom level', () => {
+    render(() => <FileViewerPanel filePath="/kiln/assets/shot.png" />);
+
+    fireEvent.click(screen.getByTestId('image-zoom-in'));
+    expect(screen.getByTestId('image-zoom-level').textContent).toBe('125%');
+    fireEvent.click(screen.getByTestId('image-zoom-in'));
+    expect(screen.getByTestId('image-zoom-level').textContent).toBe('156%');
+    fireEvent.click(screen.getByTestId('image-zoom-out'));
+    expect(screen.getByTestId('image-zoom-level').textContent).toBe('125%');
+
+    const scroller = screen.getByTestId('image-scroller');
+    fireEvent.keyDown(scroller, { key: '0' });
+    expect(screen.getByTestId('image-zoom-level').textContent).toBe('100%');
+    fireEvent.keyDown(scroller, { key: '+' });
+    expect(screen.getByTestId('image-zoom-level').textContent).toBe('125%');
+    fireEvent.keyDown(scroller, { key: '-' });
+    expect(screen.getByTestId('image-zoom-level').textContent).toBe('100%');
+    fireEvent.click(screen.getByTestId('image-zoom-actual'));
+    expect(screen.getByTestId('image-zoom-level').textContent).toBe('100%');
+  });
+
+  it('a different image resets zoom to fit', () => {
+    const [path, setPath] = createSignal('/kiln/assets/shot.png');
+    render(() => <FileViewerPanel filePath={path()} />);
+
+    fireEvent.click(screen.getByTestId('image-zoom-in'));
+    expect(screen.getByTestId('image-zoom-level').textContent).toBe('125%');
+
+    setPath('/kiln/assets/other.png');
+    expect(screen.getByTestId('image-zoom-level').textContent).toBe('100%');
+    expect(screen.getByTestId('file-image').getAttribute('src')).toBe(
+      '/api/file/raw?path=%2Fkiln%2Fassets%2Fother.png',
+    );
   });
 
   it('leaves text files to the editor', () => {
