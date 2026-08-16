@@ -273,6 +273,15 @@ test tier="quick" *args:
             # "regenerate the tier file", with the fix in the message.
             just build fixtures
             cargo build -p crucible-cli --bin cru
+            # The PTY harness gives the child a hermetic HOME with no kiln, so
+            # `ensure_valid_kiln` falls back to ascending to the git root. A
+            # working tree usually has a `.crucible/` there and a fresh clone
+            # never does (it is gitignored), so without this the PTY tests hit
+            # the interactive "No kiln found" wizard and every wait_for_* times
+            # out. Doing it here rather than in the CI job keeps local and CI on
+            # the same path — a prerequisite only CI satisfies is how a tier
+            # starts passing in one place and failing in the other.
+            mkdir -p .crucible
             cargo nextest run --profile ci $scope --run-ignored ignored-only \
                 -E "not ($(external_filter))" "$@"
             ;;

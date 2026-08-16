@@ -41,6 +41,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   write-denied. `session.export_to_file` refuses a destination a host process
   would later execute, and note tools write only note extensions (`.md`,
   `.markdown`) — use `write_file` for anything else.
+- **The web dev server moved from port 5173 to 5273** (`CRUCIBLE_WEB_PORT` to
+  override). 5173 is Vite's default and therefore contested by every Vite
+  project on the machine; Playwright's `reuseExistingServer` would attach to
+  whichever one answered and fail every spec against a foreign application.
+  Affects local development only — `cru web` still serves on 3000.
 
 ## [0.27.0] - 2026-08-15
 

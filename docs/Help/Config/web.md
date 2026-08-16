@@ -505,7 +505,7 @@ stripped first.
 
 The server allows its own origins automatically: `http://<host>:<port>`,
 `http://127.0.0.1:<port>`, and `http://localhost:<port>` (plus the Vite dev server on
-`http://localhost:5173` in debug builds). Add more with a comma-separated
+`http://localhost:5273`, or `CRUCIBLE_WEB_PORT` if set, in debug builds). Add more with a comma-separated
 `CRUCIBLE_CORS_ORIGINS`:
 
 ```bash

@@ -282,6 +282,17 @@ fn with_security_headers(app: Router) -> Router {
 /// cross-origin cases — the vite dev server, and whatever the operator names in
 /// `CRUCIBLE_CORS_ORIGINS` — plus the app's own origin spellings, which cost
 /// nothing and keep a hand-typed `curl -H Origin:` working.
+/// The Vite dev server's port, read from the same `CRUCIBLE_WEB_PORT` variable
+/// as `web/vite.config.ts` and `web/playwright.config.ts` so the three cannot
+/// drift. The default is deliberately not Vite's 5173 — see the debug-only CORS
+/// entry below.
+fn dev_web_port() -> u16 {
+    std::env::var("CRUCIBLE_WEB_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(5273)
+}
+
 fn build_cross_origin_allowlist(host_policy: &HostPolicy) -> Vec<HeaderValue> {
     let mut origins = Vec::new();
 
@@ -313,7 +324,13 @@ fn build_cross_origin_allowlist(host_policy: &HostPolicy) -> Vec<HeaderValue> {
     }
 
     if cfg!(debug_assertions) {
-        add_origin("http://localhost:5173");
+        // The Vite dev server. Kept in lockstep with `CRUCIBLE_WEB_PORT` in
+        // web/vite.config.ts — this entry exists for exactly one origin, so if
+        // that port moves and this does not, the dev UI cannot reach a real
+        // `cru web` and the allowlist still looks correct. Not 5173: that is
+        // Vite's default and therefore contested by every Vite project on the
+        // box, which is why the dev server moved off it.
+        add_origin(&format!("http://localhost:{}", dev_web_port()));
     }
 
     if let Ok(extra_origins) = std::env::var("CRUCIBLE_CORS_ORIGINS") {
@@ -376,7 +393,7 @@ mod tests {
         assert!(has_origin("http://localhost:3000"));
         assert!(has_origin("http://127.0.0.1:3000"));
         if cfg!(debug_assertions) {
-            assert!(has_origin("http://localhost:5173"));
+            assert!(has_origin(&format!("http://localhost:{}", dev_web_port())));
         }
     }
 
