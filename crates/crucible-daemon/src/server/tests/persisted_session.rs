@@ -165,7 +165,7 @@ async fn seed_scoped_session(
     tokio::fs::write(dir.join("session.jsonl"), body)
         .await
         .unwrap();
-    (session.id, dir)
+    (session.id.to_string(), dir)
 }
 
 fn listed_ids(resp: &Response) -> Vec<String> {
@@ -488,5 +488,129 @@ async fn session_cleanup_sweeps_every_kiln_only_when_explicitly_asked() {
     assert!(
         !kilnless.exists(),
         "kiln-less sessions need a collector too"
+    );
+}
+
+// ── The id inside meta.json is caller input ───────────────────────────
+//
+// `session.cleanup`, `session.list_persisted` and `session.search` all resolve
+// `{sessions_root}/{summary.id}` — where `summary.id` is the `id` *field
+// inside* the session's `meta.json`, not the directory it was found in. A kiln
+// shared or synced between machines carries that file, and migration used to
+// publish it verbatim, so the field arrives from outside the daemon.
+
+/// Materialize a session directory named `dir_name` whose persisted `id` field
+/// says `persisted_id`. Written as raw JSON on purpose: a `Session` cannot be
+/// built with an id like this in Rust, which is the property under test.
+async fn seed_session_with_persisted_id(
+    sm: &SessionManager,
+    kilns: Vec<PathBuf>,
+    dir_name: &str,
+    persisted_id: &str,
+) -> PathBuf {
+    let session =
+        crucible_core::session::Session::new(crucible_core::session::SessionType::Chat, kilns);
+    let mut meta = serde_json::to_value(&session).unwrap();
+    meta["id"] = serde_json::Value::String(persisted_id.to_string());
+    let dir = sm.sessions_root().join(dir_name);
+    tokio::fs::create_dir_all(&dir).await.unwrap();
+    tokio::fs::write(
+        dir.join("meta.json"),
+        serde_json::to_string_pretty(&meta).unwrap(),
+    )
+    .await
+    .unwrap();
+    dir
+}
+
+#[tokio::test]
+async fn cleanup_never_removes_a_directory_named_by_a_persisted_id() {
+    let tmp = TempDir::new().unwrap();
+    let sm = manager_for(&tmp);
+    let kiln = tmp.path().join("mine");
+
+    // A sibling of the sessions root: `{data_home}/backups`. It holds a
+    // transcript-shaped file (so cleanup's age check has something to read)
+    // alongside material that is not ours to delete — `remove_dir_all` takes
+    // the whole directory, not the file that qualified it.
+    let bystander = tmp.path().join("backups");
+    std::fs::create_dir_all(&bystander).unwrap();
+    std::fs::write(
+        bystander.join("session.jsonl"),
+        "{\"type\":\"user\",\"ts\":\"2020-01-01T12:00:00Z\",\"content\":\"old\"}",
+    )
+    .unwrap();
+    std::fs::write(bystander.join("id_ed25519"), "PRIVATE KEY").unwrap();
+
+    seed_session_with_persisted_id(&sm, vec![kiln.clone()], "chat-poisoned", "../backups").await;
+
+    let req = make_request(
+        "session.cleanup",
+        json!({ "older_than_days": 1, "dry_run": false, "kiln": kiln.to_string_lossy() }),
+    );
+    let resp = handle_session_cleanup(req, &sm).await;
+
+    assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
+    assert!(
+        bystander.join("id_ed25519").exists(),
+        "cleanup removed a directory outside the sessions root: {:?}",
+        resp.result
+    );
+    assert_eq!(
+        resp.result.as_ref().unwrap()["deleted"],
+        serde_json::json!([]),
+        "cleanup reported deleting a session it must never have seen"
+    );
+}
+
+#[tokio::test]
+async fn list_persisted_never_reads_a_transcript_named_by_a_persisted_id() {
+    let tmp = TempDir::new().unwrap();
+    let sm = manager_for(&tmp);
+    let kiln = tmp.path().join("mine");
+
+    let bystander = tmp.path().join("backups");
+    std::fs::create_dir_all(&bystander).unwrap();
+    std::fs::write(
+        bystander.join("session.jsonl"),
+        "{\"type\":\"user\",\"ts\":\"2026-01-01T12:00:01Z\",\"content\":\"MY-BANK-PASSWORD\"}",
+    )
+    .unwrap();
+
+    seed_session_with_persisted_id(&sm, vec![kiln.clone()], "chat-poisoned", "../backups").await;
+
+    let req = make_request(
+        "session.list_persisted",
+        json!({ "kiln": kiln.to_string_lossy() }),
+    );
+    let resp = handle_session_list_persisted(req, &sm).await;
+
+    let rendered = format!("{:?}", resp.result);
+    assert!(
+        !rendered.contains("MY-BANK-PASSWORD"),
+        "the listing read a transcript from outside the sessions root: {rendered}"
+    );
+}
+
+/// The directory name is the id. A `meta.json` that disagrees is either
+/// corrupt or planted, and either way the session must not be served under a
+/// name the daemon never filed it under.
+#[tokio::test]
+async fn a_session_whose_persisted_id_is_not_a_path_component_is_not_listed() {
+    let tmp = TempDir::new().unwrap();
+    let sm = manager_for(&tmp);
+    let kiln = tmp.path().join("mine");
+    seed_session_with_persisted_id(&sm, vec![kiln.clone()], "chat-poisoned", "../backups").await;
+
+    let req = make_request(
+        "session.list_persisted",
+        json!({ "kiln": kiln.to_string_lossy() }),
+    );
+    let resp = handle_session_list_persisted(req, &sm).await;
+
+    assert!(
+        listed_ids(&resp).is_empty(),
+        "a session with an unusable persisted id was listed: {:?}",
+        listed_ids(&resp)
     );
 }

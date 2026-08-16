@@ -122,7 +122,7 @@ async fn test_switch_model_rejected_during_active_request() {
         .unwrap();
 
     agent_manager.request_state.insert(
-        session.id.clone(),
+        session.id.to_string(),
         super::RequestState {
             cancel_tx: None,
             task_handle: None,
@@ -154,7 +154,7 @@ async fn test_switch_model_invalidates_cache() {
         .unwrap();
 
     agent_manager.install_agent_for_test(
-        session.id.clone(),
+        session.id.to_string(),
         Arc::new(Mutex::new(Box::new(MockAgent))),
     );
 

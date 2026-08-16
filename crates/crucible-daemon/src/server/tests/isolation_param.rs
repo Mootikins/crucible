@@ -129,7 +129,7 @@ async fn isolation_survives_a_round_trip_through_session_storage() {
     // Drop it from memory, then reload the way resume does.
     f.sm.end_session(&id).await.expect("end");
     let reloaded =
-        f.sm.resume_session_from_storage(&id)
+        f.sm.resume_session_from_storage(&crate::test_support::sid(&id))
             .await
             .expect("resume from storage");
 

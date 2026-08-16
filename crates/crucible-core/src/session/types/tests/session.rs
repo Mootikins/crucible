@@ -64,7 +64,7 @@ fn test_session_storage_paths() {
 
     assert_eq!(
         session.storage_path(&sessions_root),
-        sessions_root.join(&session.id)
+        sessions_root.join(session.id.as_str())
     );
     assert!(session.log_path(&sessions_root).ends_with("session.md"));
     assert!(session

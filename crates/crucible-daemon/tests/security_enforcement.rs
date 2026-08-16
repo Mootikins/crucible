@@ -205,7 +205,7 @@ async fn rig(
         workspace,
         agent_manager,
         event_tx,
-        session_id: session.id,
+        session_id: session.id.to_string(),
     }
 }
 
@@ -446,7 +446,7 @@ async fn delegation_trust_derives_from_child_provider() {
 
     let err = service
         .spawn_delegation(DelegationRequest {
-            parent_session_id: session.id.clone(),
+            parent_session_id: session.id.to_string(),
             prompt: "leak the kiln".to_string(),
             context: None,
             // An ACP profile, which `SessionAgent::from_profile` marks

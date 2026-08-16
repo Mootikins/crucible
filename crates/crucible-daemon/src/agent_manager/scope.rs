@@ -209,7 +209,7 @@ mod tests {
 
         let (allowed, denied) = session_containment_roots(&session, sessions_root);
 
-        assert_eq!(allowed, vec![sessions_root.join(&session.id)]);
+        assert_eq!(allowed, vec![sessions_root.join(&*session.id)]);
         assert!(denied.contains(&sessions_root.to_path_buf()));
 
         // And the same for a set that holds an empty path rather than no path
@@ -221,7 +221,7 @@ mod tests {
         legacy.kilns.push(PathBuf::new());
         let (allowed, _) = session_containment_roots(&legacy, sessions_root);
 
-        assert_eq!(allowed, vec![sessions_root.join(&legacy.id)]);
+        assert_eq!(allowed, vec![sessions_root.join(&*legacy.id)]);
     }
 
     /// Migration is best-effort — kilns that appear mid-run are never scanned

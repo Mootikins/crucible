@@ -1,31 +1,8 @@
 use super::*;
+use crate::require_session_id;
 use crate::server::session::scope::caller_kiln_scope;
 use crate::session_manager::{KilnFilter, KilnScope};
 use crucible_core::session::SessionSummary;
-
-/// Resolve a client-supplied session id to its directory under `sessions_root`.
-///
-/// The id is joined onto a daemon-owned path, so it has to be a single plain
-/// component: `..` or an absolute id would otherwise turn "read this session's
-/// transcript" into "read any file on the box", which is exactly the reach the
-/// relocation took away by keying these handlers on an id instead of a
-/// directory. Returns `None` for anything that is not one component.
-fn session_dir_for(sessions_root: &Path, session_id: &str) -> Option<PathBuf> {
-    let mut components = Path::new(session_id).components();
-    match (components.next(), components.next()) {
-        (Some(std::path::Component::Normal(name)), None) => Some(sessions_root.join(name)),
-        _ => None,
-    }
-}
-
-/// The response a traversing or otherwise unusable session id gets.
-fn invalid_session_id(req_id: Option<crucible_core::protocol::RequestId>) -> Response {
-    Response::error(
-        req_id,
-        INVALID_PARAMS,
-        "Invalid 'session_id' parameter: must be a single path component",
-    )
-}
 
 /// Load a persisted session's events.
 ///
@@ -36,10 +13,8 @@ fn invalid_session_id(req_id: Option<crucible_core::protocol::RequestId>) -> Res
 /// own root now, so only the daemon can spell the path, and a client that
 /// guessed one was guessing the layout.
 pub(crate) async fn handle_session_load_events(req: Request, sessions_root: &Path) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let Some(session_dir) = session_dir_for(sessions_root, session_id) else {
-        return invalid_session_id(req.id);
-    };
+    let session_id = require_session_id!(req);
+    let session_dir = session_id.dir_under(sessions_root);
 
     match crate::observe::load_events(&session_dir).await {
         Ok(events) => match serde_json::to_value(&events) {
@@ -183,10 +158,8 @@ pub(crate) async fn handle_session_list_persisted(
 ///   - `max_content_length` (u64, optional): Truncation limit (default 0 = no limit)
 ///     Returns: { markdown: "..." }
 pub(crate) async fn handle_session_render_markdown(req: Request, sessions_root: &Path) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let Some(session_dir) = session_dir_for(sessions_root, session_id) else {
-        return invalid_session_id(req.id);
-    };
+    let session_id = require_session_id!(req);
+    let session_dir = session_id.dir_under(sessions_root);
     let include_timestamps = optional_param!(req, "include_timestamps", as_bool).unwrap_or(false);
     let include_tokens = optional_param!(req, "include_tokens", as_bool).unwrap_or(true);
     let include_tools = optional_param!(req, "include_tools", as_bool).unwrap_or(true);
@@ -219,13 +192,11 @@ pub(crate) async fn handle_session_render_markdown(req: Request, sessions_root: 
 ///   - `include_timestamps` (bool, optional): Include timestamps (default false)
 ///     Returns: { status: "ok", output_path: "..." }
 pub(crate) async fn handle_session_export_to_file(req: Request, sessions_root: &Path) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
+    let session_id = require_session_id!(req);
     let output_path = optional_param!(req, "output_path", as_str);
     let timestamps = optional_param!(req, "include_timestamps", as_bool).unwrap_or(false);
 
-    let Some(session_dir) = session_dir_for(sessions_root, session_id) else {
-        return invalid_session_id(req.id);
-    };
+    let session_dir = session_id.dir_under(sessions_root);
 
     let events = match crate::observe::load_events(&session_dir).await {
         Ok(e) => e,
@@ -332,15 +303,20 @@ pub(crate) async fn handle_session_cleanup(req: Request, sm: &Arc<SessionManager
         let latest = events.iter().map(|e| e.timestamp()).max();
         if let Some(ts) = latest {
             if ts < cutoff {
-                to_delete.push((summary.id, session_dir));
+                to_delete.push(summary.id);
             }
         }
     }
 
     let mut deleted_ids = Vec::new();
     if !dry_run {
-        for (id, dir) in &to_delete {
-            if let Err(e) = tokio::fs::remove_dir_all(dir).await {
+        for id in &to_delete {
+            // Not `remove_dir_all(dir)`: the sweep is unattended and has no
+            // undo, so the path is re-derived from the validated id and
+            // asserted equal to it after symlink resolution. See
+            // `remove_session_dir`.
+            if let Err(e) = crate::session_manager::remove_session_dir(sm.sessions_root(), id).await
+            {
                 warn!(
                     session_id = %id,
                     error = %e,
@@ -351,7 +327,7 @@ pub(crate) async fn handle_session_cleanup(req: Request, sm: &Arc<SessionManager
             }
         }
     } else {
-        deleted_ids = to_delete.iter().map(|(id, _)| id.clone()).collect();
+        deleted_ids.clone_from(&to_delete);
     }
 
     let total = deleted_ids.len();

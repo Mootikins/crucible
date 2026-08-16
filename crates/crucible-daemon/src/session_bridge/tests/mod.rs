@@ -231,7 +231,7 @@ async fn bash_calling_rig(
         .unwrap();
     let ctx = bridge_ctx(session_manager, agent_manager, event_tx, &workspace);
     let bridge = DaemonSessionBridge::new(ctx);
-    (tmp, bridge, session.id)
+    (tmp, bridge, session.id.to_string())
 }
 
 /// A Discord (or any plugin) turn has no Crucible principal on the other
@@ -408,7 +408,7 @@ async fn context_usage_returns_expected_shape() {
     );
     let bridge = DaemonSessionBridge::new(ctx);
 
-    let usage = bridge.context_usage(session.id.clone()).await.unwrap();
+    let usage = bridge.context_usage(session.id.to_string()).await.unwrap();
     let obj = usage.as_object().expect("expected object");
     assert!(obj.contains_key("messages"));
     assert!(obj.contains_key("prompt_tokens"));
@@ -445,7 +445,7 @@ async fn compact_transitions_session_to_compacting() {
     );
     let bridge = DaemonSessionBridge::new(ctx);
 
-    bridge.compact(session.id.clone()).await.unwrap();
+    bridge.compact(session.id.to_string()).await.unwrap();
     let after = session_manager.get_session(&session.id).unwrap();
     assert_eq!(
         format!("{}", after.state),
@@ -504,7 +504,7 @@ async fn remove_messages_last_n_rewinds_tree() {
 
     let removed = bridge
         .remove_messages(
-            session.id.clone(),
+            session.id.to_string(),
             serde_json::json!({"type": "last", "n": 2}),
         )
         .await
@@ -570,7 +570,7 @@ async fn remove_messages_indices_truncates_from_start() {
 
     let removed = bridge
         .remove_messages(
-            session.id.clone(),
+            session.id.to_string(),
             serde_json::json!({"type": "indices", "start": 1, "end": 3}),
         )
         .await
@@ -637,9 +637,9 @@ async fn undo_rewinds_tree_and_emits_event() {
     let bridge = DaemonSessionBridge::new(ctx);
 
     // Pre-undo state.
-    assert!(bridge.can_undo(session.id.clone()).await.unwrap());
-    assert_eq!(bridge.undo_depth(session.id.clone()).await.unwrap(), 2);
-    let history = bridge.undo_history(session.id.clone()).await.unwrap();
+    assert!(bridge.can_undo(session.id.to_string()).await.unwrap());
+    assert_eq!(bridge.undo_depth(session.id.to_string()).await.unwrap(), 2);
+    let history = bridge.undo_history(session.id.to_string()).await.unwrap();
     assert_eq!(history.len(), 2);
     assert_eq!(history[0]["turn_index"].as_u64(), Some(0));
     assert_eq!(history[0]["messages_removed"].as_u64(), Some(2));
@@ -647,7 +647,7 @@ async fn undo_rewinds_tree_and_emits_event() {
     assert_eq!(history[1]["messages_removed"].as_u64(), Some(2));
 
     // Undo one turn.
-    let turns_undone = bridge.undo(session.id.clone(), 1).await.unwrap();
+    let turns_undone = bridge.undo(session.id.to_string(), 1).await.unwrap();
     assert_eq!(turns_undone, 1);
 
     // session_undo event should have been broadcast.
@@ -663,8 +663,8 @@ async fn undo_rewinds_tree_and_emits_event() {
     assert!(saw_event, "expected a session_undo broadcast event");
 
     // Post-undo state: depth dropped, one turn still undoable.
-    assert_eq!(bridge.undo_depth(session.id.clone()).await.unwrap(), 1);
-    let history2 = bridge.undo_history(session.id.clone()).await.unwrap();
+    assert_eq!(bridge.undo_depth(session.id.to_string()).await.unwrap(), 1);
+    let history2 = bridge.undo_history(session.id.to_string()).await.unwrap();
     assert_eq!(history2.len(), 1);
     assert_eq!(history2[0]["turn_index"].as_u64(), Some(0));
 }
@@ -694,7 +694,7 @@ async fn remove_messages_invalid_range_type_errors() {
     let bridge = DaemonSessionBridge::new(ctx);
 
     let err = bridge
-        .remove_messages(session.id, serde_json::json!({"type": "bogus"}))
+        .remove_messages(session.id.to_string(), serde_json::json!({"type": "bogus"}))
         .await
         .unwrap_err();
     assert!(err.contains("unknown range type"), "got: {err}");

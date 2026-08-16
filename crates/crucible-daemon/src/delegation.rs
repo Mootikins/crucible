@@ -434,7 +434,7 @@ impl DelegationSpawner for DelegationService {
         // a semaphore is atomic: two racing spawns cannot both pass the cap.
         let semaphore = self
             .permits
-            .entry(parent.id.clone())
+            .entry(parent.id.to_string())
             .or_insert_with(|| {
                 Arc::new(Semaphore::new(
                     delegation_cfg.max_concurrent_delegations as usize,
@@ -471,13 +471,13 @@ impl DelegationSpawner for DelegationService {
         }
 
         let mut info = JobInfo::new(
-            parent.id.clone(),
+            parent.id.to_string(),
             JobKind::Subagent {
                 prompt: req.prompt.clone(),
                 context: req.context.clone(),
             },
         );
-        info.id = child.id.clone();
+        info.id = child.id.to_string();
         info.session_path = Some(child.storage_path(self.session_manager.sessions_root()));
 
         let full_prompt = match &req.context {
@@ -521,10 +521,10 @@ impl DelegationSpawner for DelegationService {
 
         let (result_tx, _) = watch::channel(None);
         self.records.insert(
-            child.id.clone(),
+            child.id.to_string(),
             DelegationRecord {
                 info: info.clone(),
-                parent_session_id: parent.id.clone(),
+                parent_session_id: parent.id.to_string(),
                 result_tx: result_tx.clone(),
             },
         );
@@ -593,7 +593,7 @@ impl DelegationSpawner for DelegationService {
                 m.cleanup_session(&child_id);
             }
 
-            if let Some(mut record) = records.get_mut(&child_id) {
+            if let Some(mut record) = records.get_mut(child_id.as_str()) {
                 record.info = result.info.clone();
             }
             // send_replace, not send: `send` fails (and DISCARDS the value)
@@ -605,8 +605,8 @@ impl DelegationSpawner for DelegationService {
         });
 
         Ok(DelegationSpawned {
-            delegation_id: child.id.clone(),
-            child_session_id: child.id,
+            delegation_id: child.id.to_string(),
+            child_session_id: child.id.into(),
             message_id,
         })
     }

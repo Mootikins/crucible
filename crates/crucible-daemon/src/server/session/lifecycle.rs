@@ -1,5 +1,5 @@
 use super::super::*;
-use crate::{optional_param, require_param};
+use crate::{optional_param, require_param, require_session_id};
 
 pub(crate) async fn handle_session_pause(req: Request, sm: &Arc<SessionManager>) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
@@ -37,7 +37,7 @@ pub(crate) async fn handle_session_resume_from_storage(
     req: Request,
     sm: &Arc<SessionManager>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
+    let session_id = &require_session_id!(req);
 
     // Optional pagination params
     let limit = optional_param!(req, "limit", as_u64).map(|n| n as usize);
@@ -114,7 +114,7 @@ pub(crate) async fn handle_session_delete(
     sm: &Arc<SessionManager>,
     am: &Arc<AgentManager>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
+    let session_id = &require_session_id!(req);
 
     match sm.delete_session(session_id).await {
         Ok(()) => {
@@ -145,7 +145,7 @@ pub(crate) async fn handle_session_archive(
     sm: &Arc<SessionManager>,
     am: &Arc<AgentManager>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
+    let session_id = &require_session_id!(req);
 
     match sm.archive_session(session_id).await {
         Ok(session) => {
@@ -176,7 +176,7 @@ pub(crate) async fn handle_session_unarchive(
     sm: &Arc<SessionManager>,
     am: &Arc<AgentManager>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
+    let session_id = &require_session_id!(req);
 
     match sm.unarchive_session(session_id).await {
         Ok(session) => {
@@ -206,7 +206,11 @@ pub(crate) async fn handle_session_replay(
         .unwrap_or(1.0);
 
     let recording_path = PathBuf::from(recording_path);
-    let replay_session_id = format!("replay-{}", uuid::Uuid::new_v4());
+    // A UUID is hex and hyphens, so this is a valid id by construction; the
+    // `expect` is a tripwire on the format string, not a runtime possibility.
+    let replay_session_id =
+        crucible_core::session::SessionId::parse(&format!("replay-{}", uuid::Uuid::new_v4()))
+            .expect("a uuid-suffixed replay id is a single path component");
 
     match ReplaySession::new(
         recording_path,
@@ -221,7 +225,7 @@ pub(crate) async fn handle_session_replay(
             Response::success(
                 req.id,
                 serde_json::json!({
-                    "session_id": replay_session_id,
+                    "session_id": replay_session_id.as_str(),
                     "status": "replaying",
                     "speed": speed,
                 }),

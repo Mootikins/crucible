@@ -2718,8 +2718,10 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             executor,
             end_hooks_fired: false,
         };
-        ctx.lua_sessions
-            .insert(session_id.clone(), Arc::new(tokio::sync::Mutex::new(state)));
+        ctx.lua_sessions.insert(
+            session_id.to_string(),
+            Arc::new(tokio::sync::Mutex::new(state)),
+        );
 
         let dispatcher = RpcDispatcher::new(ctx);
 

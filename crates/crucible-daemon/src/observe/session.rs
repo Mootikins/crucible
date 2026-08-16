@@ -77,7 +77,6 @@ pub async fn list_sessions(sessions_dir: impl AsRef<Path>) -> Result<Vec<Session
 mod tests {
     use super::*;
     use crate::observe::id::SessionType;
-    use chrono::Utc;
     use std::path::PathBuf;
     use tempfile::TempDir;
 
@@ -209,7 +208,7 @@ mod tests {
     async fn test_load_events_roundtrip() {
         let dir = TempDir::new().unwrap();
         let sessions_dir = dir.path().join("sessions");
-        let id = SessionId::new(SessionType::Chat, Utc::now());
+        let id = SessionId::generate(SessionType::Chat);
 
         let session_dir = write_log(
             &sessions_dir,
@@ -258,7 +257,7 @@ mod tests {
 
         let mut ids = Vec::new();
         for _ in 0..3 {
-            let id = SessionId::new(SessionType::Chat, Utc::now());
+            let id = SessionId::generate(SessionType::Chat);
             write_log(&sessions_dir, &id, &as_jsonl(&[LogEvent::user("hi")])).await;
             ids.push(id);
         }
@@ -292,8 +291,8 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let log = sample_wire_log();
 
-        // `type-YYYYMMDD-HHMM-hhhh` with a 4-hex-char hash — `list_sessions`
-        // goes through `SessionId::parse`, which rejects anything else.
+        // Any name that is a usable path component; `list_sessions` filters on
+        // that and nothing else.
         for i in 0..500 {
             let dir = tmp.path().join(format!("chat-20260811-0000-{i:04x}"));
             std::fs::create_dir_all(&dir).unwrap();
@@ -329,19 +328,32 @@ mod tests {
         );
     }
 
-    /// A directory whose name is not a session id is not a session.
+    /// A directory whose name cannot be a session id is not a session — the
+    /// hidden names the sessions root uses for its own bookkeeping, migration's
+    /// `.migrating` staging directory above all.
+    ///
+    /// It deliberately does *not* filter on the id **format**. The parser this
+    /// walk used to call accepted only `chat-20260104-1530-a1b2` while
+    /// `Session::new` mints `chat-2026-01-04T1530-a1b2c3`, so the filter
+    /// removed every session a running daemon writes and kept none. The rule is
+    /// "is this a usable path component", nothing more.
     #[tokio::test]
-    async fn list_sessions_skips_directories_that_are_not_session_ids() {
+    async fn list_sessions_skips_directories_that_cannot_be_session_ids() {
         let dir = TempDir::new().unwrap();
         let sessions_dir = dir.path().join("sessions");
-        fs::create_dir_all(sessions_dir.join("not-a-session-id"))
+        fs::create_dir_all(sessions_dir.join(".migrating"))
             .await
             .unwrap();
-        let id = SessionId::new(SessionType::Chat, Utc::now());
-        write_log(&sessions_dir, &id, &as_jsonl(&[LogEvent::user("hi")])).await;
+
+        let minted = SessionId::generate(SessionType::Chat);
+        write_log(&sessions_dir, &minted, &as_jsonl(&[LogEvent::user("hi")])).await;
+        // A plainly named directory is still a session: nothing about the
+        // sessions root reserves the daemon's own naming scheme.
+        let handmade = SessionId::parse("notes-from-tuesday").unwrap();
+        write_log(&sessions_dir, &handmade, &as_jsonl(&[LogEvent::user("hi")])).await;
 
         let listed = list_sessions(&sessions_dir).await.unwrap();
-        assert_eq!(listed, vec![id]);
+        assert_eq!(listed, vec![minted, handmade]);
     }
 
     /// `LogEvent`'s `type` tags and the wire envelope's `type` values share one
@@ -415,7 +427,7 @@ mod tests {
     async fn a_log_holding_both_shapes_yields_both() {
         let dir = TempDir::new().unwrap();
         let sessions_dir = dir.path().join("sessions");
-        let id = SessionId::new(SessionType::Chat, Utc::now());
+        let id = SessionId::generate(SessionType::Chat);
 
         // A LogEvent line (as `inject_context` and `fork` write it), then the
         // wire lines the broadcast path appends.

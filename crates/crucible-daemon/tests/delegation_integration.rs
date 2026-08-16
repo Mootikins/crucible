@@ -165,7 +165,7 @@ async fn setup_with_plugin(
         service,
         lifecycle,
         event_rx,
-        parent_id: session.id,
+        parent_id: session.id.to_string(),
     }
 }
 
@@ -316,10 +316,12 @@ async fn child_is_a_real_parent_linked_session_and_ends_on_completion() {
     // The child persisted as a real session in the parent's kiln, linked via
     // parent_session_id, and was ended when its turn completed.
     let storage = FileSessionStorage::new(h.session_manager.sessions_root().to_path_buf());
-    let child =
-        crucible_daemon::session_storage::SessionStorage::load(&storage, &spawned.child_session_id)
-            .await
-            .expect("child session persisted");
+    let child = crucible_daemon::session_storage::SessionStorage::load(
+        &storage,
+        &crucible_core::session::SessionId::parse(&spawned.child_session_id).unwrap(),
+    )
+    .await
+    .expect("child session persisted");
     assert_eq!(
         child.parent_session_id.as_deref(),
         Some(h.parent_id.as_str())
@@ -468,7 +470,7 @@ async fn depth_limit_blocks_nested_delegation() {
     let err = h
         .service
         .spawn_delegation(DelegationRequest {
-            parent_session_id: nested.id.clone(),
+            parent_session_id: nested.id.to_string(),
             prompt: "delegate deeper".to_string(),
             context: None,
             target_agent: None,
@@ -638,7 +640,7 @@ async fn factory_failure_fails_spawn_and_emits_failed_event() {
 
     let err = service
         .spawn_delegation(DelegationRequest {
-            parent_session_id: session.id.clone(),
+            parent_session_id: session.id.to_string(),
             prompt: "will fail to build".to_string(),
             context: None,
             target_agent: None,
@@ -846,7 +848,7 @@ async fn child_tool_calls_are_dispatched_by_the_scheduler() {
 
     let spawned = service
         .spawn_delegation(DelegationRequest {
-            parent_session_id: session.id.clone(),
+            parent_session_id: session.id.to_string(),
             prompt: "read the probe file".to_string(),
             context: None,
             target_agent: None,
@@ -932,10 +934,12 @@ async fn delegation_to_agent_card_builds_specialized_child() {
         .expect("await");
 
     let storage = FileSessionStorage::new(h.session_manager.sessions_root().to_path_buf());
-    let child =
-        crucible_daemon::session_storage::SessionStorage::load(&storage, &spawned.child_session_id)
-            .await
-            .expect("child session persisted");
+    let child = crucible_daemon::session_storage::SessionStorage::load(
+        &storage,
+        &crucible_core::session::SessionId::parse(&spawned.child_session_id).unwrap(),
+    )
+    .await
+    .expect("child session persisted");
     let agent = child.agent.expect("child has agent config");
     assert_eq!(agent.agent_type, "internal");
     assert_eq!(agent.agent_card_name.as_deref(), Some("researcher"));
@@ -1073,7 +1077,7 @@ async fn card_tool_policy_deny_blocks_child_tool_call() {
 
     let spawned = service
         .spawn_delegation(DelegationRequest {
-            parent_session_id: session.id.clone(),
+            parent_session_id: session.id.to_string(),
             prompt: "try to run bash".to_string(),
             context: None,
             target_agent: Some("no-bash".to_string()),
@@ -1127,10 +1131,12 @@ async fn max_depth_two_allows_one_level_of_nesting_and_blocks_the_next() {
     // FROM the child session id. It has ended, but its persisted agent
     // config is what matters; re-register it as live for the spawn.
     let storage = FileSessionStorage::new(h.session_manager.sessions_root().to_path_buf());
-    let child =
-        crucible_daemon::session_storage::SessionStorage::load(&storage, &first.child_session_id)
-            .await
-            .expect("child persisted");
+    let child = crucible_daemon::session_storage::SessionStorage::load(
+        &storage,
+        &crucible_core::session::SessionId::parse(&first.child_session_id).unwrap(),
+    )
+    .await
+    .expect("child persisted");
     assert!(
         child.agent.as_ref().unwrap().delegation_config.is_some(),
         "with max_depth=2 the child must keep delegation for one more level"
@@ -1156,10 +1162,12 @@ async fn max_depth_two_allows_one_level_of_nesting_and_blocks_the_next() {
         .expect("second-level completes");
 
     // The grandchild must NOT carry delegation (a third level would exceed).
-    let grandchild =
-        crucible_daemon::session_storage::SessionStorage::load(&storage, &second.child_session_id)
-            .await
-            .expect("grandchild persisted");
+    let grandchild = crucible_daemon::session_storage::SessionStorage::load(
+        &storage,
+        &crucible_core::session::SessionId::parse(&second.child_session_id).unwrap(),
+    )
+    .await
+    .expect("grandchild persisted");
     assert!(
         grandchild
             .agent
@@ -1305,7 +1313,7 @@ async fn card_specialty_resolves_through_llm_models_table() {
     for target in ["thinker", "coder", "mystic"] {
         let spawned = service
             .spawn_delegation(DelegationRequest {
-                parent_session_id: session.id.clone(),
+                parent_session_id: session.id.to_string(),
                 prompt: "task".to_string(),
                 context: None,
                 target_agent: Some(target.to_string()),
@@ -1319,7 +1327,7 @@ async fn card_specialty_resolves_through_llm_models_table() {
             .expect("await");
         let child = crucible_daemon::session_storage::SessionStorage::load(
             &storage,
-            &spawned.child_session_id,
+            &crucible_core::session::SessionId::parse(&spawned.child_session_id).unwrap(),
         )
         .await
         .expect("child persisted");

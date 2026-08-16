@@ -236,7 +236,7 @@ async fn a_human_edit_during_the_review_gates_hold_is_not_attributed_to_the_held
         .await
         .expect("configure agent");
     manager.install_agent_for_test(
-        session.id.clone(),
+        session.id.to_string(),
         Arc::new(Mutex::new(Box::new(StreamingMockAgent {
             events: vec![script::tool_call(
                 "call-held",

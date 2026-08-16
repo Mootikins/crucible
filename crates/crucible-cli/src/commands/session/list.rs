@@ -96,7 +96,7 @@ pub(super) async fn list_persisted(
             .map_err(|_| anyhow!("Invalid session type: {}", type_filter))?;
         ids.retain(|id_str| {
             SessionId::parse(id_str)
-                .map(|id| id.session_type() == filter_type)
+                .map(|id| id.session_type() == Some(filter_type))
                 .unwrap_or(false)
         });
     }

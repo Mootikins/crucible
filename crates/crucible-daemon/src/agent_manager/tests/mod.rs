@@ -474,7 +474,7 @@ impl ReactorTestHarness {
         let (event_tx, event_rx) = broadcast::channel::<SessionEventMessage>(64);
         Self {
             agent_manager,
-            session_id: session.id,
+            session_id: session.id.to_string(),
             event_tx,
             event_rx,
             _tmp: tmp,

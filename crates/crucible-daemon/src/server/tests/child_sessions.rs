@@ -17,14 +17,14 @@ fn write_child_session(
     let child = Session::new(SessionType::Agent, vec![kiln.to_path_buf()])
         .with_parent(parent_id.to_string())
         .with_title("delegated task");
-    let dir = sessions_root.join(&child.id);
+    let dir = sessions_root.join(&*child.id);
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         dir.join("meta.json"),
         serde_json::to_string_pretty(&child).unwrap(),
     )
     .unwrap();
-    child.id
+    child.id.to_string()
 }
 
 #[tokio::test]

@@ -11,6 +11,7 @@
 //! the scan is a handful of `read_dir` calls against directories that are
 //! normally absent.
 
+use crucible_core::session::SessionId;
 use crucible_core::Project;
 use std::path::{Path, PathBuf};
 use tracing::{info, warn};
@@ -176,6 +177,50 @@ pub async fn migrate_sessions(sessions_root: &Path, kilns: &[PathBuf]) -> Migrat
     report
 }
 
+/// The id a legacy session directory may be published under, or `None`.
+///
+/// Migration is the one path that moves a `meta.json` written by *somewhere
+/// else* into the daemon's sessions root — a kiln can be shared, synced, or
+/// restored from another machine's backup, which is the portability the kiln
+/// design is for. Two strings have to be checked, not one:
+///
+/// - the **directory name**, which becomes `{sessions_root}/{name}`;
+/// - the **`id` field inside `meta.json`**, which every later handler resolves
+///   against the sessions root and which `session.cleanup` hands to
+///   `remove_dir_all`. On the non-collision path this file was published byte
+///   for byte, so an id of `"../keys"` arrived intact.
+///
+/// Either one failing means the session stays in the kiln. Not deleted, not
+/// rewritten into something plausible: findable, where its owner left it, with
+/// a line in the log saying why.
+async fn publishable_id(source: &Path, session_id: &str) -> Option<SessionId> {
+    let dir_id = SessionId::parse(session_id)
+        .inspect_err(|e| {
+            warn!(error = %e, source = %source.display(),
+                  "Legacy session directory is not named like a session; leaving it in the kiln");
+        })
+        .ok()?;
+
+    for name in ["meta.json", "session.json"] {
+        let Ok(raw) = tokio::fs::read_to_string(source.join(name)).await else {
+            continue;
+        };
+        let Ok(meta) = serde_json::from_str::<serde_json::Value>(&raw) else {
+            continue;
+        };
+        let Some(persisted) = meta.get("id").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        if let Err(e) = SessionId::parse(persisted) {
+            warn!(error = %e, source = %source.display(), file = name,
+                  "Legacy session metadata carries an id that is not a session id; leaving it in the kiln");
+            return None;
+        }
+    }
+
+    Some(dir_id)
+}
+
 async fn migrate_one(
     source: &Path,
     sessions_root: &Path,
@@ -183,7 +228,12 @@ async fn migrate_one(
     kiln: &Path,
     report: &mut MigrationReport,
 ) {
-    let dest = sessions_root.join(session_id);
+    let Some(validated) = publishable_id(source, session_id).await else {
+        report.skipped += 1;
+        return;
+    };
+    let session_id = validated.as_str();
+    let dest = validated.dir_under(sessions_root);
     if !dest.exists() {
         match relocate(source, &dest, None).await {
             Ok(()) => report.moved += 1,
@@ -202,15 +252,24 @@ async fn migrate_one(
     // would destroy a real transcript either way, so the loser gets a suffix
     // derived from its kiln path: stable across runs (so a re-run is idempotent
     // rather than accumulating copies) and traceable back to where it came from.
-    let suffixed = format!("{session_id}--{}", kiln_tag(kiln));
-    let dest = sessions_root.join(&suffixed);
+    // Still an id, so still validated: `kiln_tag` is hex and the base was
+    // checked above, but the invariant is that nothing reaches the sessions
+    // root except through `SessionId`, and a *derived* name is exactly where an
+    // invariant like that gets quietly dropped.
+    let Ok(suffixed) = SessionId::parse(&format!("{session_id}--{}", kiln_tag(kiln))) else {
+        warn!(session_id = %session_id, kiln = %kiln.display(),
+              "Disambiguated name is not a usable session id; leaving the session in the kiln");
+        report.skipped += 1;
+        return;
+    };
+    let dest = suffixed.dir_under(sessions_root);
     if dest.exists() {
         warn!(session_id = %session_id, kiln = %kiln.display(),
               "Session id already present under both its own and its disambiguated name; leaving it in the kiln");
         report.skipped += 1;
         return;
     }
-    match relocate(source, &dest, Some(&suffixed)).await {
+    match relocate(source, &dest, Some(suffixed.as_str())).await {
         Ok(()) => {
             info!(session_id = %session_id, migrated_as = %suffixed, kiln = %kiln.display(),
                   "Session id collided during relocation; stored under a kiln-derived name");
@@ -378,7 +437,7 @@ mod tests {
     /// `FileSessionStorage::load` will actually parse.
     fn session_meta(id: &str, title: &str) -> String {
         let mut session = Session::new(SessionType::Chat, vec![PathBuf::from("/kiln")]);
-        session.id = id.to_string();
+        session.id = SessionId::parse(id).expect("a valid test session id");
         session.title = Some(title.to_string());
         serde_json::to_string_pretty(&session).unwrap()
     }
@@ -537,19 +596,32 @@ mod tests {
 
         let suffixed = format!("chat-1--{}", kiln_tag(&second));
         let storage = FileSessionStorage::new(root.clone());
-        let loser = storage.load(&suffixed).await.unwrap();
+        let loser = storage
+            .load(&SessionId::parse(&suffixed).unwrap())
+            .await
+            .unwrap();
         assert_eq!(loser.id, suffixed, "persisted id must follow the directory");
 
         // Exactly what `resume_session_from_storage` does on the way back in.
         storage.save(&loser).await.unwrap();
 
         assert_eq!(
-            storage.load("chat-1").await.unwrap().title.as_deref(),
+            storage
+                .load(&SessionId::parse("chat-1").unwrap())
+                .await
+                .unwrap()
+                .title
+                .as_deref(),
             Some("a"),
             "resuming the disambiguated session overwrote the winner"
         );
         assert_eq!(
-            storage.load(&suffixed).await.unwrap().title.as_deref(),
+            storage
+                .load(&SessionId::parse(&suffixed).unwrap())
+                .await
+                .unwrap()
+                .title
+                .as_deref(),
             Some("b")
         );
     }
@@ -580,7 +652,7 @@ mod tests {
         );
         assert_eq!(
             FileSessionStorage::new(root.clone())
-                .load("chat-1")
+                .load(&SessionId::parse("chat-1").unwrap())
                 .await
                 .unwrap()
                 .title
@@ -611,6 +683,72 @@ mod tests {
             "not a directory"
         );
         assert!(!staging_root(tmp.path()).join("dest").exists());
+    }
+
+    /// Migration is how a foreign `meta.json` gets into the sessions root.
+    /// The kiln it comes from may be shared, synced, or restored from someone
+    /// else's backup, so its `id` field is not the daemon's own writing — and
+    /// on the non-collision path it used to be published verbatim, after which
+    /// `session.cleanup` resolves `{sessions_root}/{that string}` and calls
+    /// `remove_dir_all` on it.
+    #[tokio::test]
+    async fn a_session_whose_persisted_id_traverses_is_left_in_the_kiln() {
+        let tmp = TempDir::new().unwrap();
+        let kiln = tmp.path().join("shared-vault");
+        let root = tmp.path().join("home").join("sessions");
+        let mut meta = serde_json::from_str::<serde_json::Value>(&session_meta("chat-1", "a"))
+            .expect("a valid session body");
+        meta["id"] = serde_json::Value::String("../keys".into());
+        seed_session(
+            &kiln,
+            "chat-1",
+            &serde_json::to_string_pretty(&meta).unwrap(),
+        )
+        .await;
+
+        let report = migrate_sessions(&root, std::slice::from_ref(&kiln)).await;
+
+        assert_eq!(
+            report,
+            MigrationReport {
+                skipped: 1,
+                ..Default::default()
+            },
+            "a session with an unusable persisted id must not be published"
+        );
+        assert!(
+            !root.join("chat-1").exists(),
+            "the poisoned session was published into the sessions root"
+        );
+        assert!(
+            kiln.join(".crucible")
+                .join("sessions")
+                .join("chat-1")
+                .exists(),
+            "the session must stay where it is, not be destroyed"
+        );
+    }
+
+    /// The directory name is joined onto the sessions root too. `read_dir`
+    /// never yields `.` or `..`, but it does yield whatever a shared kiln
+    /// happens to contain.
+    #[tokio::test]
+    async fn a_legacy_directory_whose_name_is_not_a_path_component_is_left_alone() {
+        let tmp = TempDir::new().unwrap();
+        let kiln = tmp.path().join("shared-vault");
+        let root = tmp.path().join("home").join("sessions");
+        seed_session(&kiln, ".migrating", &session_meta("chat-1", "a")).await;
+
+        let report = migrate_sessions(&root, std::slice::from_ref(&kiln)).await;
+
+        assert_eq!(
+            report,
+            MigrationReport {
+                skipped: 1,
+                ..Default::default()
+            }
+        );
+        assert!(!root.join(".migrating").exists());
     }
 
     #[test]

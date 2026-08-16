@@ -51,7 +51,7 @@ async fn concurrent_send_to_same_session_returns_error() {
         .unwrap();
 
     agent_manager.request_state.insert(
-        session.id.clone(),
+        session.id.to_string(),
         super::RequestState {
             cancel_tx: None,
             task_handle: None,
@@ -82,7 +82,7 @@ async fn cancel_during_streaming_emits_ended_event() {
         .unwrap();
 
     agent_manager.install_agent_for_test(
-        session.id.clone(),
+        session.id.to_string(),
         Arc::new(Mutex::new(Box::new(PendingMockAgent) as BoxedAgentHandle)),
     );
 
@@ -116,7 +116,7 @@ async fn empty_stream_without_done_cleans_up_request_state() {
         .unwrap();
 
     agent_manager.install_agent_for_test(
-        session.id.clone(),
+        session.id.to_string(),
         Arc::new(Mutex::new(Box::new(MockAgent) as BoxedAgentHandle)),
     );
 
@@ -132,7 +132,9 @@ async fn empty_stream_without_done_cleans_up_request_state() {
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     assert!(
-        !agent_manager.request_state.contains_key(&session.id),
+        !agent_manager
+            .request_state
+            .contains_key(session.id.as_str()),
         "request_state should be cleaned up after empty stream completes"
     );
 }
@@ -157,7 +159,7 @@ async fn parallel_workflow_steps_serialize_llm_turns_on_one_session() {
         .unwrap();
 
     agent_manager.install_agent_for_test(
-        session.id.clone(),
+        session.id.to_string(),
         Arc::new(Mutex::new(Box::new(StreamingMockAgent {
             events: vec![script::text("branch result"), script::done()],
         }) as BoxedAgentHandle)),
@@ -224,7 +226,7 @@ async fn scope_mutation_rejected_when_request_slot_occupied() {
 
     // Simulate an in-flight turn holding the slot.
     agent_manager.request_state.insert(
-        session.id.clone(),
+        session.id.to_string(),
         super::RequestState {
             cancel_tx: None,
             task_handle: None,
@@ -244,7 +246,9 @@ async fn scope_mutation_rejected_when_request_slot_occupied() {
     // The in-flight turn still owns the slot — the rejected mutation must not
     // have touched it.
     assert!(
-        agent_manager.request_state.contains_key(&session.id),
+        agent_manager
+            .request_state
+            .contains_key(session.id.as_str()),
         "rejected mutation must leave the existing slot claim intact",
     );
 }
@@ -264,7 +268,9 @@ async fn scope_mutation_releases_request_slot_on_completion() {
         .expect("connect_kiln on an idle session should succeed");
 
     assert!(
-        !agent_manager.request_state.contains_key(&session.id),
+        !agent_manager
+            .request_state
+            .contains_key(session.id.as_str()),
         "slot must be free once the mutation returns",
     );
 }

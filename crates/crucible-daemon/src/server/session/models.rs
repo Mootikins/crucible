@@ -176,7 +176,7 @@ pub(crate) async fn handle_session_fork(
         Err(e) => return internal_error(req.id, e),
     };
 
-    let parent_dir = sm.session_dir(parent_id);
+    let parent_dir = sm.session_dir(&parent.id);
     let events = match crate::observe::load_events(&parent_dir).await {
         Ok(e) => e,
         Err(e) => {

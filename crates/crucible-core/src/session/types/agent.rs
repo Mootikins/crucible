@@ -451,7 +451,7 @@ fn narrow_tool_policy(
 ///
 /// Format: `{type}-{YYYY-MM-DDTHHMM}-{random6}`
 /// Example: `chat-2025-01-08T1530-a1b2c3`
-pub(super) fn generate_session_id(type_prefix: &str) -> String {
+pub(crate) fn generate_session_id(type_prefix: &str) -> String {
     use rand::RngExt;
     let timestamp = Utc::now().format("%Y-%m-%dT%H%M");
     let mut rng = rand::rng();

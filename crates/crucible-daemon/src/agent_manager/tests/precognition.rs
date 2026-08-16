@@ -25,7 +25,7 @@ async fn test_precognition_skipped_when_disabled() {
         .unwrap();
 
     agent_manager.install_agent_for_test(
-        session.id.clone(),
+        session.id.to_string(),
         Arc::new(Mutex::new(Box::new(StreamingMockAgent {
             events: vec![script::text("ok"), script::done()],
         }))),
@@ -65,7 +65,7 @@ async fn test_precognition_skipped_for_search_command() {
         .unwrap();
 
     agent_manager.install_agent_for_test(
-        session.id.clone(),
+        session.id.to_string(),
         Arc::new(Mutex::new(Box::new(StreamingMockAgent {
             events: vec![script::text("ok"), script::done()],
         }))),
@@ -110,7 +110,7 @@ async fn test_precognition_skipped_when_no_kiln() {
         .unwrap();
 
     agent_manager.install_agent_for_test(
-        session.id.clone(),
+        session.id.to_string(),
         Arc::new(Mutex::new(Box::new(StreamingMockAgent {
             events: vec![script::text("ok"), script::done()],
         }))),
@@ -155,7 +155,7 @@ async fn test_precognition_complete_event_emitted_when_enrichment_runs() {
         .unwrap();
 
     agent_manager.install_agent_for_test(
-        session.id.clone(),
+        session.id.to_string(),
         Arc::new(Mutex::new(Box::new(StreamingMockAgent {
             events: vec![script::text("ok"), script::done()],
         }))),
@@ -216,7 +216,7 @@ async fn test_precognition_runs_only_on_first_user_message_of_session() {
     // message after it. Reused for both turns; scripted_events_stream
     // returns once Done is yielded so the cached handle survives.
     agent_manager.install_agent_for_test(
-        session.id.clone(),
+        session.id.to_string(),
         Arc::new(Mutex::new(Box::new(MultiTurnScriptedAgent {
             scripts: std::sync::Mutex::new(vec![
                 vec![script::text("ok"), script::done()],
@@ -293,7 +293,7 @@ async fn test_precognition_does_not_re_fire_when_session_has_prior_history() {
     agent_cfg.precognition_enabled = true;
     am.configure_agent(&session_id, agent_cfg).await.unwrap();
     am.install_agent_for_test(
-        session_id.clone(),
+        session_id.to_string(),
         Arc::new(Mutex::new(Box::new(StreamingMockAgent {
             events: vec![script::text("ok"), script::done()],
         }))),
@@ -379,7 +379,7 @@ async fn test_precognition_enriched_content_reaches_agent() {
     let received = Arc::new(StdMutex::new(None::<String>));
     let received_messages = Arc::new(StdMutex::new(None));
     agent_manager.install_agent_for_test(
-        session.id.clone(),
+        session.id.to_string(),
         Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
             received_prompt: received.clone(),
             received_messages: received_messages.clone(),
@@ -521,7 +521,7 @@ async fn test_precognition_emits_note_info_in_event() {
         .unwrap();
 
     agent_manager.install_agent_for_test(
-        session.id.clone(),
+        session.id.to_string(),
         Arc::new(Mutex::new(Box::new(StreamingMockAgent {
             events: vec![script::text("ok"), script::done()],
         }))),
@@ -645,7 +645,7 @@ async fn setup_precog_session_with_handler(
 
     let received_messages = Arc::new(StdMutex::new(None));
     agent_manager.install_agent_for_test(
-        session_id.clone(),
+        session_id.to_string(),
         Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
             received_prompt: Arc::new(StdMutex::new(None)),
             received_messages: received_messages.clone(),
@@ -657,7 +657,7 @@ async fn setup_precog_session_with_handler(
 
     (
         agent_manager,
-        session_id,
+        session_id.to_string(),
         event_tx,
         event_rx,
         received_messages,
@@ -871,7 +871,7 @@ async fn precognition_disabled_mid_session_stops_enriching() {
 
     let turn1_messages = Arc::new(StdMutex::new(None));
     agent_manager.install_agent_for_test(
-        session.id.clone(),
+        session.id.to_string(),
         Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
             received_prompt: Arc::new(StdMutex::new(None)),
             received_messages: turn1_messages.clone(),
@@ -927,7 +927,7 @@ async fn precognition_disabled_mid_session_stops_enriching() {
     // state so nothing from the control turn can be mistaken for turn 2's.
     let turn2_messages = Arc::new(StdMutex::new(None));
     agent_manager.install_agent_for_test(
-        session.id.clone(),
+        session.id.to_string(),
         Arc::new(Mutex::new(Box::new(PromptCapturingAgent {
             received_prompt: Arc::new(StdMutex::new(None)),
             received_messages: turn2_messages.clone(),

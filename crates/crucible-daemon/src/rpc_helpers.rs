@@ -52,6 +52,50 @@ macro_rules! optional_param {
     };
 }
 
+/// Extract a session id parameter and validate it as a path component.
+///
+/// The session-id door on the RPC side. Every handler that names a session
+/// eventually resolves `{sessions_root}/{id}` and reads, rewrites or removes
+/// what it finds, so the string off the wire becomes a
+/// [`SessionId`](crucible_core::session::SessionId) here, at the boundary,
+/// rather than being carried as a `String` to whichever call site builds the
+/// path. `..`, an absolute path, and a separator are all
+/// `INVALID_PARAMS` — the same answer, from one place, for every method.
+///
+/// # Example
+///
+/// ```text
+/// let session_id = require_session_id!(req);              // "session_id"
+/// let parent = require_session_id!(req, "parent_session_id");
+/// ```
+#[macro_export]
+macro_rules! require_session_id {
+    ($req:expr) => {
+        $crate::require_session_id!($req, "session_id")
+    };
+    ($req:expr, $name:literal) => {
+        match $req.params.get($name).and_then(|v| v.as_str()) {
+            Some(raw) => match ::crucible_core::session::SessionId::parse(raw) {
+                Ok(id) => id,
+                Err(e) => {
+                    return $crate::protocol::Response::error(
+                        $req.id.clone(),
+                        $crate::protocol::INVALID_PARAMS,
+                        format!("Invalid '{}' parameter: {}", $name, e),
+                    )
+                }
+            },
+            None => {
+                return $crate::protocol::Response::error(
+                    $req.id.clone(),
+                    $crate::protocol::INVALID_PARAMS,
+                    concat!("Missing or invalid '", $name, "' parameter"),
+                )
+            }
+        }
+    };
+}
+
 /// Deserialize the whole `params` object into the request type the client
 /// serializes, or the `INVALID_PARAMS` response to return in its place.
 ///
@@ -87,7 +131,7 @@ pub fn typed_params<T: serde::de::DeserializeOwned>(
 // Re-export macros for use in sibling modules via `use crate::rpc_helpers::*`
 // These are preemptive exports - not all are used yet but will be as handlers grow
 #[allow(unused_imports)]
-pub use crate::{optional_param, require_param};
+pub use crate::{optional_param, require_param, require_session_id};
 
 #[cfg(test)]
 mod tests {

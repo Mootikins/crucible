@@ -18,7 +18,7 @@
 use crate::session_manager::SessionError;
 use async_trait::async_trait;
 use chrono::Utc;
-use crucible_core::session::{Session, SessionSummary};
+use crucible_core::session::{Session, SessionId, SessionSummary};
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
@@ -46,7 +46,7 @@ pub trait SessionStorage: Send + Sync {
     /// Load a session from storage.
     ///
     /// Returns `SessionError::NotFound` if the session doesn't exist.
-    async fn load(&self, session_id: &str) -> Result<Session, SessionError>;
+    async fn load(&self, session_id: &SessionId) -> Result<Session, SessionError>;
 
     /// List every persisted session.
     ///
@@ -75,13 +75,13 @@ pub trait SessionStorage: Send + Sync {
     /// Use `offset` to skip events and `limit` to cap the number returned.
     async fn load_events(
         &self,
-        session_id: &str,
+        session_id: &SessionId,
         limit: Option<usize>,
         offset: Option<usize>,
     ) -> Result<Vec<serde_json::Value>, SessionError>;
 
     /// Count total events in the session's JSONL log.
-    async fn count_events(&self, session_id: &str) -> Result<usize, SessionError>;
+    async fn count_events(&self, session_id: &SessionId) -> Result<usize, SessionError>;
 }
 
 /// File-based session storage rooted at a single directory.
@@ -108,8 +108,12 @@ impl FileSessionStorage {
     }
 
     /// Storage directory for a session id.
-    fn session_dir(&self, session_id: &str) -> PathBuf {
-        self.sessions_root.join(session_id)
+    ///
+    /// Takes the validated id rather than a `&str`: the join is what turns an
+    /// identifier into filesystem reach, and [`SessionId`] is the only type
+    /// that has been through the check.
+    fn session_dir(&self, session_id: &SessionId) -> PathBuf {
+        session_id.dir_under(&self.sessions_root)
     }
 }
 
@@ -131,7 +135,7 @@ impl SessionStorage for FileSessionStorage {
         Ok(())
     }
 
-    async fn load(&self, session_id: &str) -> Result<Session, SessionError> {
+    async fn load(&self, session_id: &SessionId) -> Result<Session, SessionError> {
         let dir = self.session_dir(session_id);
         // Try meta.json first, fall back to legacy session.json for backward compatibility
         let meta_path = dir.join("meta.json");
@@ -173,12 +177,35 @@ impl SessionStorage for FileSessionStorage {
         let mut entries = fs::read_dir(&self.sessions_root).await?;
 
         while let Some(entry) = entries.next_entry().await? {
-            if entry.file_type().await.map(|t| t.is_dir()).unwrap_or(false) {
-                let session_id = entry.file_name().to_string_lossy().to_string();
-                if let Ok(session) = self.load(&session_id).await {
-                    summaries.push(SessionSummary::from(&session));
-                }
+            if !entry.file_type().await.map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
             }
+            // Anything the daemon did not file is not a session: migration's
+            // `.migrating` staging directory, an editor's dotfile, a name that
+            // is not valid UTF-8.
+            let Some(session_id) = entry
+                .file_name()
+                .to_str()
+                .and_then(|name| SessionId::parse(name).ok())
+            else {
+                continue;
+            };
+            let Ok(session) = self.load(&session_id).await else {
+                continue;
+            };
+            // The directory name IS the id. A `meta.json` claiming a different
+            // one is either corrupt or planted, and serving it would hand every
+            // caller downstream — `session.cleanup` most of all — a path that
+            // points at a directory other than the one this summary describes.
+            if session.id != session_id {
+                tracing::warn!(
+                    directory = %session_id,
+                    persisted_id = %session.id,
+                    "Skipping a session whose meta.json names a different id than its directory"
+                );
+                continue;
+            }
+            summaries.push(SessionSummary::from(&session));
         }
 
         Ok(summaries)
@@ -258,7 +285,7 @@ impl SessionStorage for FileSessionStorage {
 
     async fn load_events(
         &self,
-        session_id: &str,
+        session_id: &SessionId,
         limit: Option<usize>,
         offset: Option<usize>,
     ) -> Result<Vec<serde_json::Value>, SessionError> {
@@ -294,7 +321,7 @@ impl SessionStorage for FileSessionStorage {
         Ok(events)
     }
 
-    async fn count_events(&self, session_id: &str) -> Result<usize, SessionError> {
+    async fn count_events(&self, session_id: &SessionId) -> Result<usize, SessionError> {
         let jsonl_path = self.session_dir(session_id).join("session.jsonl");
 
         if !jsonl_path.exists() {
@@ -355,7 +382,7 @@ mod tests {
         let meta = tmp
             .path()
             .join("sessions")
-            .join(&session.id)
+            .join(&*session.id)
             .join("meta.json");
         assert!(meta.exists(), "meta.json should be at {}", meta.display());
         assert!(
@@ -453,7 +480,9 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let storage = storage_in(&tmp);
 
-        let result = storage.load("nonexistent-session").await;
+        let result = storage
+            .load(&crate::test_support::sid("nonexistent-session"))
+            .await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), SessionError::NotFound(_)));
     }
@@ -674,12 +703,15 @@ mod tests {
 
         // Load events for session with no JSONL file
         let events = storage
-            .load_events("nonexistent", None, None)
+            .load_events(&crate::test_support::sid("nonexistent"), None, None)
             .await
             .unwrap();
         assert!(events.is_empty());
 
-        let count = storage.count_events("nonexistent").await.unwrap();
+        let count = storage
+            .count_events(&crate::test_support::sid("nonexistent"))
+            .await
+            .unwrap();
         assert_eq!(count, 0);
     }
 

@@ -62,7 +62,10 @@ impl SessionStorage for GatedStorage {
         self.inner.save(session).await
     }
 
-    async fn load(&self, session_id: &str) -> Result<Session, SessionError> {
+    async fn load(
+        &self,
+        session_id: &crucible_core::session::SessionId,
+    ) -> Result<Session, SessionError> {
         self.inner.load(session_id).await
     }
 
@@ -85,14 +88,17 @@ impl SessionStorage for GatedStorage {
 
     async fn load_events(
         &self,
-        session_id: &str,
+        session_id: &crucible_core::session::SessionId,
         limit: Option<usize>,
         offset: Option<usize>,
     ) -> Result<Vec<serde_json::Value>, SessionError> {
         self.inner.load_events(session_id, limit, offset).await
     }
 
-    async fn count_events(&self, session_id: &str) -> Result<usize, SessionError> {
+    async fn count_events(
+        &self,
+        session_id: &crucible_core::session::SessionId,
+    ) -> Result<usize, SessionError> {
         self.inner.count_events(session_id).await
     }
 }

@@ -4,8 +4,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::path::{Path, PathBuf};
 
-use super::agent::{generate_session_id, SessionAgent};
+use super::agent::SessionAgent;
 use super::enums::{RecordingMode, SessionState, SessionType};
+use super::id::SessionId;
 
 /// A session is a continuous sequence of agent actions in a workspace.
 ///
@@ -28,7 +29,7 @@ use super::enums::{RecordingMode, SessionState, SessionType};
 #[serde(remote = "Self")]
 pub struct Session {
     /// Unique identifier (e.g., "chat-2025-01-08T1530-abc123")
-    pub id: String,
+    pub id: SessionId,
 
     /// Session type determines logging format and behavior
     pub session_type: SessionType,
@@ -143,8 +144,7 @@ impl Session {
     /// The workspace defaults to the first kiln — the daemon reads
     /// `workspace == kilns[0]` as its "no workspace" sentinel.
     pub fn new(session_type: SessionType, kilns: Vec<PathBuf>) -> Self {
-        let type_prefix = session_type.as_prefix();
-        let id = generate_session_id(type_prefix);
+        let id = SessionId::generate(session_type);
 
         Self {
             id,
@@ -261,7 +261,7 @@ impl Session {
     /// a global read here made every caller — tests included — depend on the
     /// developer's real `~/.crucible`.
     pub fn storage_path(&self, sessions_root: &Path) -> PathBuf {
-        sessions_root.join(&self.id)
+        self.id.dir_under(sessions_root)
     }
 
     /// Get the path to the markdown log file.

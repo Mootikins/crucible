@@ -301,7 +301,7 @@ impl RpcContext {
             };
             let (writer, tx) = RecordingWriter::new(
                 recording_path,
-                session.id.clone(),
+                session.id.to_string(),
                 RecordingMode::Granular,
                 None,
             );

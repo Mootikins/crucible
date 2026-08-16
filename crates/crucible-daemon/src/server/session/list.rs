@@ -323,7 +323,7 @@ mod tests {
         tokio::fs::write(dir.join("session.jsonl"), body)
             .await
             .unwrap();
-        session.id
+        session.id.to_string()
     }
 
     fn matched_ids(resp: &Response) -> Vec<String> {

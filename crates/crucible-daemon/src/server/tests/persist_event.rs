@@ -33,7 +33,10 @@ impl SessionStorage for FailingStorage {
     async fn save(&self, _s: &crucible_core::session::Session) -> Result<(), SessionError> {
         Ok(())
     }
-    async fn load(&self, _id: &str) -> Result<crucible_core::session::Session, SessionError> {
+    async fn load(
+        &self,
+        _id: &crucible_core::session::SessionId,
+    ) -> Result<crucible_core::session::Session, SessionError> {
         Err(SessionError::NotFound("mock".to_string()))
     }
     async fn list(&self) -> Result<Vec<SessionSummary>, SessionError> {
@@ -56,13 +59,16 @@ impl SessionStorage for FailingStorage {
     }
     async fn load_events(
         &self,
-        _id: &str,
+        _id: &crucible_core::session::SessionId,
         _limit: Option<usize>,
         _offset: Option<usize>,
     ) -> Result<Vec<serde_json::Value>, SessionError> {
         Ok(vec![])
     }
-    async fn count_events(&self, _id: &str) -> Result<usize, SessionError> {
+    async fn count_events(
+        &self,
+        _id: &crucible_core::session::SessionId,
+    ) -> Result<usize, SessionError> {
         Ok(0)
     }
 }
@@ -140,7 +146,10 @@ async fn test_persist_event_keeps_precognition_notes() {
         async fn save(&self, _s: &crucible_core::session::Session) -> Result<(), SessionError> {
             Ok(())
         }
-        async fn load(&self, _id: &str) -> Result<crucible_core::session::Session, SessionError> {
+        async fn load(
+            &self,
+            _id: &crucible_core::session::SessionId,
+        ) -> Result<crucible_core::session::Session, SessionError> {
             Err(SessionError::NotFound("mock".to_string()))
         }
         async fn list(&self) -> Result<Vec<SessionSummary>, SessionError> {
@@ -164,13 +173,16 @@ async fn test_persist_event_keeps_precognition_notes() {
         }
         async fn load_events(
             &self,
-            _id: &str,
+            _id: &crucible_core::session::SessionId,
             _limit: Option<usize>,
             _offset: Option<usize>,
         ) -> Result<Vec<serde_json::Value>, SessionError> {
             Ok(vec![])
         }
-        async fn count_events(&self, _id: &str) -> Result<usize, SessionError> {
+        async fn count_events(
+            &self,
+            _id: &crucible_core::session::SessionId,
+        ) -> Result<usize, SessionError> {
             Ok(0)
         }
     }
@@ -347,7 +359,7 @@ async fn test_sweep_cleans_up_agent_state_for_archived_sessions() {
     // Simulate per-turn agent state that the sweep must free.
     let agent_manager = sweep_test_agent_manager();
     agent_manager.snapshots.insert(
-        session.id.clone(),
+        session.id.to_string(),
         0,
         crate::workspace_snapshot::WorkspaceSnapshot::default(),
     );

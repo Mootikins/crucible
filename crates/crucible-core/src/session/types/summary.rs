@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use super::enums::{SessionState, SessionType};
+use super::id::SessionId;
 use super::session::Session;
 
 /// Summary of a session for listing.
@@ -13,7 +14,7 @@ use super::session::Session;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionSummary {
     /// Session ID
-    pub id: String,
+    pub id: SessionId,
     /// Session type
     pub session_type: SessionType,
     /// Kilns this session can query

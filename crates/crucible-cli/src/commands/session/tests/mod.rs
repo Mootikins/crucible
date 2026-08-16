@@ -41,7 +41,7 @@ pub(super) fn env_lock() -> &'static Mutex<()> {
 /// replaces wrote `LogEvent`, a shape no production path ever appended, so
 /// `cru session show` was green against a format it would never meet.
 pub(super) async fn setup_test_session(sessions_dir: &std::path::Path) -> SessionId {
-    let id = SessionId::new(SessionType::Chat, chrono::Utc::now());
+    let id = SessionId::generate(SessionType::Chat);
     let session_dir = sessions_dir.join(id.as_str());
     tokio::fs::create_dir_all(&session_dir).await.unwrap();
 

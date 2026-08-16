@@ -56,8 +56,13 @@ async fn roundtrip(events: Vec<SessionEventMessage>) -> Vec<SessionEventMessage>
     handle.await.expect("join writer").expect("writer ok");
 
     let (replay_tx, mut replay_rx) = broadcast::channel(64);
-    let replay =
-        ReplaySession::new(path, 0.0, replay_tx, "replay-session".to_string()).expect("replay");
+    let replay = ReplaySession::new(
+        path,
+        0.0,
+        replay_tx,
+        crucible_core::session::SessionId::parse("replay-session").unwrap(),
+    )
+    .expect("replay");
     let replay_handle = replay.start();
 
     let collected = collect_replay_events(&mut replay_rx).await;
@@ -278,8 +283,13 @@ async fn empty_recording_produces_only_replay_complete() {
     handle.await.expect("join writer").expect("writer ok");
 
     let (replay_tx, mut replay_rx) = broadcast::channel(16);
-    let replay =
-        ReplaySession::new(path, 0.0, replay_tx, "replay-empty".to_string()).expect("replay");
+    let replay = ReplaySession::new(
+        path,
+        0.0,
+        replay_tx,
+        crucible_core::session::SessionId::parse("replay-empty").unwrap(),
+    )
+    .expect("replay");
     let replay_handle = replay.start();
 
     let evt = tokio::time::timeout(Duration::from_secs(5), replay_rx.recv())
@@ -319,7 +329,7 @@ async fn harness_fixture_roundtrips_through_replay() {
         path.to_path_buf(),
         0.0,
         replay_tx,
-        "replay-fixture".to_string(),
+        crucible_core::session::SessionId::parse("replay-fixture").unwrap(),
     )
     .expect("replay");
     let replay_handle = replay.start();

@@ -126,7 +126,12 @@ mod tests {
         let path = create_test_recording("replay-test", events);
 
         let (tx, _rx) = broadcast::channel(16);
-        let result = ReplaySession::new(path.to_path_buf(), 0.0, tx, "replay-test".to_string());
+        let result = ReplaySession::new(
+            path.to_path_buf(),
+            0.0,
+            tx,
+            crucible_core::session::SessionId::parse("replay-test").unwrap(),
+        );
 
         assert!(result.is_ok(), "ReplaySession should accept fixture");
     }

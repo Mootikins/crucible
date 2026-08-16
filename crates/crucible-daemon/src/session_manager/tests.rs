@@ -126,8 +126,8 @@ async fn test_create_session_no_workspace_gets_scratch_dir() {
 
     // Workspace is a session-unique scratch dir, not the kiln.
     assert_ne!(session.workspace, kiln);
-    assert_eq!(session.workspace, scratch_base.join(&session.id));
-    assert!(session.workspace.ends_with(&session.id));
+    assert_eq!(session.workspace, scratch_base.join(&*session.id));
+    assert!(session.workspace.ends_with(&*session.id));
     assert!(session.workspace.is_dir(), "scratch dir should be created");
 }
 
@@ -498,7 +498,10 @@ async fn test_delete_session() {
 async fn test_delete_session_not_found() {
     let manager = temp_session_manager();
 
-    let err = manager.delete_session("missing-session").await.unwrap_err();
+    let err = manager
+        .delete_session(&crate::test_support::sid("missing-session"))
+        .await
+        .unwrap_err();
 
     assert!(matches!(err, SessionError::NotFound(_)));
 }
@@ -747,7 +750,7 @@ impl SessionStorage for FailingSaveStorage {
     async fn save(&self, _session: &Session) -> Result<(), SessionError> {
         Err(SessionError::IoError("simulated disk failure".to_string()))
     }
-    async fn load(&self, _id: &str) -> Result<Session, SessionError> {
+    async fn load(&self, _id: &crucible_core::session::SessionId) -> Result<Session, SessionError> {
         Err(SessionError::NotFound("not impl".to_string()))
     }
     async fn list(&self) -> Result<Vec<SessionSummary>, SessionError> {
@@ -761,13 +764,16 @@ impl SessionStorage for FailingSaveStorage {
     }
     async fn load_events(
         &self,
-        _id: &str,
+        _id: &crucible_core::session::SessionId,
         _limit: Option<usize>,
         _offset: Option<usize>,
     ) -> Result<Vec<serde_json::Value>, SessionError> {
         Ok(vec![])
     }
-    async fn count_events(&self, _id: &str) -> Result<usize, SessionError> {
+    async fn count_events(
+        &self,
+        _id: &crucible_core::session::SessionId,
+    ) -> Result<usize, SessionError> {
         Ok(0)
     }
 }
@@ -824,10 +830,10 @@ impl SessionStorage for GatedSaveStorage {
         self.order
             .lock()
             .unwrap()
-            .push((session.id.clone(), session.state));
+            .push((session.id.to_string(), session.state));
         Ok(())
     }
-    async fn load(&self, id: &str) -> Result<Session, SessionError> {
+    async fn load(&self, id: &crucible_core::session::SessionId) -> Result<Session, SessionError> {
         self.inner.load(id).await
     }
     async fn list(&self) -> Result<Vec<SessionSummary>, SessionError> {
@@ -841,13 +847,16 @@ impl SessionStorage for GatedSaveStorage {
     }
     async fn load_events(
         &self,
-        id: &str,
+        id: &crucible_core::session::SessionId,
         limit: Option<usize>,
         offset: Option<usize>,
     ) -> Result<Vec<serde_json::Value>, SessionError> {
         self.inner.load_events(id, limit, offset).await
     }
-    async fn count_events(&self, id: &str) -> Result<usize, SessionError> {
+    async fn count_events(
+        &self,
+        id: &crucible_core::session::SessionId,
+    ) -> Result<usize, SessionError> {
         self.inner.count_events(id).await
     }
 }
@@ -922,3 +931,12 @@ async fn ending_a_session_outlasts_a_concurrent_last_activity_persist() {
         "ended session reappeared in the active list"
     );
 }
+
+// ── Session ids are path components, not free text ────────────────────
+//
+// The escapes these ids used to buy — `delete_session("../Documents")`,
+// `archive_session("/abs/path")` — cannot be written here any more: every
+// mutator that resolves `{sessions_root}/{id}` takes a `SessionId`, and there
+// is no way to build one out of a traversing string. The attack is only
+// expressible where the string still exists, at the RPC boundary, so the tests
+// for it live in `server/tests/session_id_boundary.rs`.

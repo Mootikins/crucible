@@ -181,7 +181,7 @@ async fn bridge_create_with_an_unknown_card_errors_and_creates_no_session() {
     let before: Vec<String> = session_manager
         .list_sessions()
         .into_iter()
-        .map(|s| s.id)
+        .map(|s| s.id.to_string())
         .collect();
     assert_eq!(before.len(), 1);
 
@@ -203,7 +203,7 @@ async fn bridge_create_with_an_unknown_card_errors_and_creates_no_session() {
     let after: Vec<String> = session_manager
         .list_sessions()
         .into_iter()
-        .map(|s| s.id)
+        .map(|s| s.id.to_string())
         .collect();
     assert_eq!(after, before, "a refused create must register no session");
 }
@@ -480,7 +480,7 @@ async fn bridge_configure_agent_refuses_a_provider_the_attached_kiln_does_not_cl
     // a Confidential kiln does not clear.
     let err = bridge
         .configure_agent(
-            session.id.clone(),
+            session.id.to_string(),
             serde_json::to_value(make_test_agent(None)).unwrap(),
         )
         .await

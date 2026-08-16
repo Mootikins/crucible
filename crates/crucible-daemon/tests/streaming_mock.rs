@@ -58,7 +58,7 @@ impl TestHarness {
             .await
             .expect("failed to create session");
 
-        let session_id = session.id.clone();
+        let session_id = session.id.to_string();
 
         Self {
             temp_dir,

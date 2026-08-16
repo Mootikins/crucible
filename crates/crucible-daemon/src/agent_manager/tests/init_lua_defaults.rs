@@ -28,7 +28,7 @@ async fn session_with_defaults() -> (TempDir, Arc<AgentManager>, String) {
         .await
         .unwrap();
     let agent_manager = Arc::new(create_test_agent_manager(session_manager));
-    let id = session.id.clone();
+    let id = session.id.to_string();
     (tmp, agent_manager, id)
 }
 

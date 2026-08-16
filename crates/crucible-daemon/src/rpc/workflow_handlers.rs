@@ -296,10 +296,12 @@ async fn resolve_or_rehydrate(ctx: &RpcContext, session_id: &str) -> Option<Exec
     if let Some(h) = ctx.workflows.get(session_id) {
         return Some(h);
     }
-    ctx.sessions.get_session(session_id)?;
+    // The path comes off the resident session's own validated id, never off
+    // the caller's string.
+    let session = ctx.sessions.get_session(session_id)?;
     let path = ctx
         .sessions
-        .session_dir(session_id)
+        .session_dir(&session.id)
         .join(WORKFLOW_STATE_FILE);
     let snapshot = read_snapshot(&path).await?;
     if snapshot.status.is_terminal() {
@@ -319,10 +321,10 @@ async fn read_snapshot(path: &Path) -> Option<WorkflowSnapshot> {
 }
 
 async fn persist_snapshot(ctx: &RpcContext, session_id: &str, snapshot: &WorkflowSnapshot) {
-    if ctx.sessions.get_session(session_id).is_none() {
+    let Some(session) = ctx.sessions.get_session(session_id) else {
         return;
-    }
-    let dir = ctx.sessions.session_dir(session_id);
+    };
+    let dir = ctx.sessions.session_dir(&session.id);
     let path = dir.join(WORKFLOW_STATE_FILE);
     if let Err(e) = tokio::fs::create_dir_all(&dir).await {
         tracing::warn!(session_id = %session_id, error = %e, "failed to create session dir for workflow snapshot");
@@ -341,12 +343,12 @@ async fn persist_snapshot(ctx: &RpcContext, session_id: &str, snapshot: &Workflo
 }
 
 async fn remove_snapshot(ctx: &RpcContext, session_id: &str) {
-    if ctx.sessions.get_session(session_id).is_none() {
+    let Some(session) = ctx.sessions.get_session(session_id) else {
         return;
-    }
+    };
     let path = ctx
         .sessions
-        .session_dir(session_id)
+        .session_dir(&session.id)
         .join(WORKFLOW_STATE_FILE);
     let _ = tokio::fs::remove_file(path).await;
 }

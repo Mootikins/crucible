@@ -130,7 +130,7 @@ async fn create_delegation_parent(
         .configure_agent(&session.id, agent)
         .await
         .expect("parent agent should be configured");
-    session.id
+    session.id.to_string()
 }
 
 async fn next_event(

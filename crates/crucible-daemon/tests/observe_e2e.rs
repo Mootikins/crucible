@@ -6,7 +6,6 @@
 //! 3. Export to Markdown (both imperative and serde-based)
 //! 4. Verify content correctness
 
-use chrono::Utc;
 use crucible_daemon::{
     events::TokenUsage, load_events, render_to_markdown, serde_md, LogEvent, RenderOptions,
     SessionId, SessionType,
@@ -42,7 +41,7 @@ fn sample_conversation() -> Vec<LogEvent> {
 /// had no production callers, so every test that used it was round-tripping
 /// against a format the daemon never produced.
 async fn write_session_log(sessions_dir: &Path, lines: &[String]) -> PathBuf {
-    let id = SessionId::new(SessionType::Chat, Utc::now());
+    let id = SessionId::generate(SessionType::Chat);
     let session_dir = sessions_dir.join(id.as_str());
     tokio::fs::create_dir_all(&session_dir).await.unwrap();
     tokio::fs::write(session_dir.join("session.jsonl"), lines.join("\n") + "\n")

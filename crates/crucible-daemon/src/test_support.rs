@@ -12,6 +12,15 @@ use crucible_core::traits::KnowledgeRepository;
 use crucible_core::turn::{StopReason, TurnError, TurnEvent};
 use std::time::Duration;
 
+/// A literal session id for tests, through the same validation production uses.
+///
+/// Tests name sessions with fixed strings; this is how they get a
+/// [`SessionId`](crucible_core::session::SessionId) without a second, laxer
+/// constructor existing for their benefit.
+pub fn sid(id: &str) -> crucible_core::session::SessionId {
+    crucible_core::session::SessionId::parse(id).expect("a valid test session id")
+}
+
 /// Canonical mock implementation of KnowledgeRepository for testing
 ///
 /// Returns empty/default values for all methods. Use this in tests that need
@@ -246,7 +255,7 @@ impl crate::session_storage::SessionStorage for TempSessionStorage {
 
     async fn load(
         &self,
-        session_id: &str,
+        session_id: &crucible_core::session::SessionId,
     ) -> Result<crucible_core::session::Session, crate::session_manager::SessionError> {
         self.inner.load(session_id).await
     }
@@ -277,7 +286,7 @@ impl crate::session_storage::SessionStorage for TempSessionStorage {
 
     async fn load_events(
         &self,
-        session_id: &str,
+        session_id: &crucible_core::session::SessionId,
         limit: Option<usize>,
         offset: Option<usize>,
     ) -> Result<Vec<serde_json::Value>, crate::session_manager::SessionError> {
@@ -286,7 +295,7 @@ impl crate::session_storage::SessionStorage for TempSessionStorage {
 
     async fn count_events(
         &self,
-        session_id: &str,
+        session_id: &crucible_core::session::SessionId,
     ) -> Result<usize, crate::session_manager::SessionError> {
         self.inner.count_events(session_id).await
     }

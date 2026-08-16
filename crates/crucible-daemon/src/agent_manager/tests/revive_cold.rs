@@ -60,7 +60,7 @@ async fn session_surviving_a_restart() -> (TempDir, TempDir, String) {
     // Everything in memory goes; only what reached disk remains.
     drop(am);
     drop(sm);
-    (data_home, kiln, id)
+    (data_home, kiln, id.to_string())
 }
 
 /// A fresh `AgentManager` over `data_home`, holding no session state — a cold

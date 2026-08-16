@@ -26,7 +26,7 @@ impl ReplaySession {
         recording_path: PathBuf,
         speed: f64,
         event_tx: broadcast::Sender<SessionEventMessage>,
-        replay_session_id: String,
+        replay_session_id: crucible_core::session::SessionId,
     ) -> Result<Self> {
         let file = std::fs::File::open(&recording_path)
             .with_context(|| format!("recording file not found: {}", recording_path.display()))?;
@@ -87,7 +87,7 @@ impl ReplaySession {
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("."));
         let mut replay_session = Session::new(SessionType::Chat, vec![replay_kiln]);
-        replay_session.id = replay_session_id.clone();
+        replay_session.id = replay_session_id;
         replay_session.title = Some(format!("replay:{}", recording_path.display()));
 
         Ok(Self {
@@ -205,6 +205,11 @@ fn is_keypress_event(event_name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    /// A literal test id, through the same validation production uses.
+    fn sid(s: &str) -> crucible_core::session::SessionId {
+        crucible_core::session::SessionId::parse(s).expect("a valid test session id")
+    }
+
     use super::*;
     use chrono::{Duration, Utc};
     use serde_json::json;
@@ -277,7 +282,7 @@ mod tests {
             PathBuf::from("/definitely/not/a/real/recording.jsonl"),
             1.0,
             tx,
-            "replay-1".to_string(),
+            sid("replay-1"),
         );
         assert!(replay.is_err());
     }
@@ -291,7 +296,7 @@ mod tests {
 
         let (tx, mut rx) = broadcast::channel(16);
         let replay =
-            ReplaySession::new(path, 0.0, tx, "replay-session".to_string()).expect("create replay");
+            ReplaySession::new(path, 0.0, tx, sid("replay-session")).expect("create replay");
 
         let handle = replay.start();
         let first = rx.recv().await.expect("first event");
@@ -311,7 +316,7 @@ mod tests {
         write_recording(&path, &events, None, None);
 
         let (tx, _rx) = broadcast::channel(16);
-        let replay = ReplaySession::new(path.clone(), 1.0, tx, "replay-session".to_string())
+        let replay = ReplaySession::new(path.clone(), 1.0, tx, sid("replay-session"))
             .expect("create replay");
 
         assert_eq!(replay.replay_session.session_type, SessionType::Chat);
@@ -326,7 +331,7 @@ mod tests {
         write_recording(&path, &events, None, None);
 
         let (tx, mut rx) = broadcast::channel(16);
-        let replay = ReplaySession::new(path, 1.0, tx, "replay-1x".to_string()).expect("create");
+        let replay = ReplaySession::new(path, 1.0, tx, sid("replay-1x")).expect("create");
 
         let start = Instant::now();
         let handle = replay.start();
@@ -346,7 +351,7 @@ mod tests {
         write_recording(&path, &events, None, None);
 
         let (tx, mut rx) = broadcast::channel(16);
-        let replay = ReplaySession::new(path, 2.0, tx, "replay-2x".to_string()).expect("create");
+        let replay = ReplaySession::new(path, 2.0, tx, sid("replay-2x")).expect("create");
 
         let start = Instant::now();
         let handle = replay.start();
@@ -366,8 +371,7 @@ mod tests {
         write_recording(&path, &events, None, None);
 
         let (tx, mut rx) = broadcast::channel(16);
-        let replay =
-            ReplaySession::new(path, 0.0, tx, "replay-instant".to_string()).expect("create");
+        let replay = ReplaySession::new(path, 0.0, tx, sid("replay-instant")).expect("create");
 
         let start = Instant::now();
         let handle = replay.start();
@@ -387,8 +391,7 @@ mod tests {
         write_recording(&path, &events, None, Some("not-json"));
 
         let (tx, mut rx) = broadcast::channel(16);
-        let replay =
-            ReplaySession::new(path, 0.0, tx, "replay-malformed".to_string()).expect("create");
+        let replay = ReplaySession::new(path, 0.0, tx, sid("replay-malformed")).expect("create");
         let handle = replay.start();
 
         let first = rx.recv().await.expect("first");
@@ -423,8 +426,7 @@ mod tests {
         write_recording(&path, &events, None, None);
 
         let (tx, mut rx) = broadcast::channel(16);
-        let replay =
-            ReplaySession::new(path, 0.0, tx, "replay-no-key".to_string()).expect("create");
+        let replay = ReplaySession::new(path, 0.0, tx, sid("replay-no-key")).expect("create");
         let handle = replay.start();
 
         let received = rx.recv().await.expect("text event");

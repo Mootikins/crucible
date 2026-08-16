@@ -78,7 +78,7 @@ impl AgentHandle for DaemonLikeRecursingAgent {
 async fn set_mode_does_not_recurse_when_cached_handle_rpcs_back() {
     let (_tmp, session_manager, session, agent_manager) = setup_with_agent().await;
 
-    let recursing = DaemonLikeRecursingAgent::new(session.id.clone());
+    let recursing = DaemonLikeRecursingAgent::new(session.id.to_string());
     let set_mode_str_calls = recursing.set_mode_str_calls.clone();
     let apply_mode_calls = recursing.apply_mode_calls.clone();
     let manager_cell = recursing.manager.clone();
@@ -86,7 +86,7 @@ async fn set_mode_does_not_recurse_when_cached_handle_rpcs_back() {
         Box::new(recursing) as BoxedAgentHandle
     ));
     let _ = manager_cell.set(agent_manager.clone());
-    agent_manager.install_agent_for_test(session.id.clone(), handle.clone());
+    agent_manager.install_agent_for_test(session.id.to_string(), handle.clone());
 
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(3),
@@ -136,7 +136,7 @@ async fn set_mode_does_not_block_when_cached_handle_is_busy_with_a_turn() {
         reject: Arc::new(AtomicBool::new(false)),
         current_mode: "normal".to_string(),
     }) as BoxedAgentHandle));
-    agent_manager.install_agent_for_test(session.id.clone(), handle.clone());
+    agent_manager.install_agent_for_test(session.id.to_string(), handle.clone());
 
     let _guard = handle.lock().await;
 
@@ -186,7 +186,7 @@ async fn direct_mode_change_clears_an_earlier_deferred_mode() {
         reject: Arc::new(AtomicBool::new(false)),
         current_mode: "normal".to_string(),
     }) as BoxedAgentHandle));
-    agent_manager.install_agent_for_test(session.id.clone(), handle.clone());
+    agent_manager.install_agent_for_test(session.id.to_string(), handle.clone());
 
     // Turn in flight → "plan" is deferred.
     let busy = handle.lock().await;
@@ -235,7 +235,7 @@ async fn mode_change_after_eviction_clears_an_earlier_deferred_mode() {
         reject: Arc::new(AtomicBool::new(false)),
         current_mode: "normal".to_string(),
     }) as BoxedAgentHandle));
-    agent_manager.install_agent_for_test(session.id.clone(), handle.clone());
+    agent_manager.install_agent_for_test(session.id.to_string(), handle.clone());
 
     let busy = handle.lock().await;
     agent_manager
@@ -273,7 +273,7 @@ async fn pending_mode_is_drained_into_handle_on_next_lock_acquisition() {
         reject: Arc::new(AtomicBool::new(false)),
         current_mode: "normal".to_string(),
     }) as BoxedAgentHandle));
-    agent_manager.install_agent_for_test(session.id.clone(), handle.clone());
+    agent_manager.install_agent_for_test(session.id.to_string(), handle.clone());
 
     agent_manager.slot(&session.id).set_pending_mode("plan");
 

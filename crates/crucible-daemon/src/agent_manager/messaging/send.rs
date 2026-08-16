@@ -496,6 +496,11 @@ impl AgentManager {
         &self,
         session_id: &str,
     ) -> Result<crucible_core::session::Session, AgentError> {
+        // Reviving reads `{sessions_root}/{id}` off disk, so the id has to be
+        // one the daemon could have filed. An unusable one names no session.
+        let validated = crucible_core::session::SessionId::parse(session_id)
+            .map_err(|e| AgentError::SessionNotFound(e.to_string()))?;
+
         if let Some(session) = self.session_manager.get_session(session_id) {
             // Resident but ended: reached because `end_session` keeps the session
             // in memory (see its comment — evicting there lost in-flight events).
@@ -507,7 +512,7 @@ impl AgentManager {
             }
             let revived = self
                 .session_manager
-                .resume_session_from_storage(session_id)
+                .resume_session_from_storage(&validated)
                 .await?;
             info!(session_id = %session_id, "Reactivated an ended session on send");
             return Ok(revived);
@@ -515,7 +520,7 @@ impl AgentManager {
 
         match self
             .session_manager
-            .resume_session_from_storage(session_id)
+            .resume_session_from_storage(&validated)
             .await
         {
             Ok(session) => {

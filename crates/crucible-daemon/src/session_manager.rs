@@ -6,7 +6,9 @@
 use crate::session_storage::{FileSessionStorage, SessionStorage};
 use chrono::{DateTime, Utc};
 use crucible_core::protocol::SessionEventMessage;
-use crucible_core::session::{RecordingMode, Session, SessionState, SessionSummary, SessionType};
+use crucible_core::session::{
+    RecordingMode, Session, SessionId, SessionState, SessionSummary, SessionType,
+};
 use dashmap::DashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -87,15 +89,58 @@ impl KilnScope {
     }
 }
 
+/// Remove exactly `{sessions_root}/{session_id}` and refuse anything else.
+///
+/// The last gate in front of `remove_dir_all`, and deliberately not a
+/// `starts_with(sessions_root)` test. §7 of the containment design: "beneath a
+/// root" is not the property that matters, because both destructive escapes
+/// adversarial review demonstrated produced a path that *was* beneath a root
+/// and was still the wrong directory. The assertion is **equality** — after
+/// resolving every symlink, what we are about to delete has to be the
+/// directory the validated id names, sitting directly in the resolved sessions
+/// root.
+///
+/// What that catches beyond [`SessionId`]'s own validation: a symlink at
+/// `{sessions_root}/{id}` pointing at someone's home directory. The id is a
+/// perfectly ordinary component, the path is beneath the root by every lexical
+/// test, and the target is not ours. Comparing canonical forms is the only
+/// check that sees it.
+///
+/// It is not TOCTOU-proof — `canonicalize` and `remove_dir_all` are two
+/// syscalls — and it is not claimed to be. That is what §2's capability handle
+/// (`cap-std`, one `openat2` with `RESOLVE_BENEATH`) is for; this is the
+/// userspace layer under it.
+pub(crate) async fn remove_session_dir(
+    sessions_root: &Path,
+    session_id: &SessionId,
+) -> Result<(), SessionError> {
+    let expected = session_id.dir_under(sessions_root);
+
+    let resolved_root = tokio::fs::canonicalize(sessions_root).await?;
+    let resolved = tokio::fs::canonicalize(&expected).await?;
+
+    if resolved != session_id.dir_under(&resolved_root) {
+        return Err(SessionError::IoError(format!(
+            "refusing to delete {}: it resolves to {}, which is not {}/{session_id}",
+            expected.display(),
+            resolved.display(),
+            resolved_root.display(),
+        )));
+    }
+
+    tokio::fs::remove_dir_all(&resolved).await?;
+    Ok(())
+}
+
 /// Manages active sessions in the daemon.
 ///
 /// Sessions can be created, listed, paused, resumed, and ended.
 /// The manager tracks all active sessions and their state.
 /// Sessions are automatically persisted to storage on create and state changes.
 pub struct SessionManager {
-    sessions: DashMap<String, Session>,
+    sessions: DashMap<SessionId, Session>,
     storage: Arc<dyn SessionStorage>,
-    recording_senders: DashMap<String, mpsc::Sender<SessionEventMessage>>,
+    recording_senders: DashMap<SessionId, mpsc::Sender<SessionEventMessage>>,
     /// Base directory under which per-session scratch workspaces are created
     /// for sessions started without an explicit workspace. When `None`, such
     /// sessions fall back to `workspace == kiln` (the historical behavior).
@@ -131,8 +176,8 @@ impl SessionManager {
     ///
     /// Exists so callers that write beside the transcript (workflow snapshots,
     /// recordings, review journals) do not each re-derive the layout.
-    pub fn session_dir(&self, session_id: &str) -> PathBuf {
-        self.sessions_root().join(session_id)
+    pub fn session_dir(&self, session_id: &SessionId) -> PathBuf {
+        session_id.dir_under(self.sessions_root())
     }
 
     /// Create a session manager with a custom storage backend.
@@ -199,7 +244,7 @@ impl SessionManager {
             // containment are derived. On failure, fall back to the historical
             // `workspace == kiln` behavior — never fail session creation over a
             // scratch directory.
-            let scratch = base.join(&session.id);
+            let scratch = session.id.dir_under(base);
             match std::fs::create_dir_all(&scratch) {
                 Ok(()) => {
                     session = session.with_workspace(scratch);
@@ -273,7 +318,7 @@ impl SessionManager {
     /// Ids of persisted child sessions of `parent_id`. Used by the
     /// archive/delete cascades: children are lifecycle-subordinate to their
     /// parent and must not outlive it in listings.
-    pub async fn child_session_ids(&self, parent_id: &str) -> Vec<String> {
+    pub async fn child_session_ids(&self, parent_id: &str) -> Vec<SessionId> {
         self.storage
             .list()
             .await
@@ -296,7 +341,7 @@ impl SessionManager {
     /// The resumed session with state set to Active
     pub async fn resume_session_from_storage(
         &self,
-        session_id: &str,
+        session_id: &SessionId,
     ) -> Result<Session, SessionError> {
         // Load from storage
         let mut session = self.storage.load(session_id).await?;
@@ -323,7 +368,7 @@ impl SessionManager {
     /// Returns events in chronological order (oldest first).
     pub async fn load_session_events(
         &self,
-        session_id: &str,
+        session_id: &SessionId,
         limit: Option<usize>,
         offset: Option<usize>,
     ) -> Result<Vec<serde_json::Value>, SessionError> {
@@ -331,7 +376,10 @@ impl SessionManager {
     }
 
     /// Count total events for a session.
-    pub async fn count_session_events(&self, session_id: &str) -> Result<usize, SessionError> {
+    pub async fn count_session_events(
+        &self,
+        session_id: &SessionId,
+    ) -> Result<usize, SessionError> {
         self.storage.count_events(session_id).await
     }
 
@@ -399,7 +447,7 @@ impl SessionManager {
         use std::collections::HashSet;
 
         let mut results = Vec::new();
-        let mut seen_ids: HashSet<String> = HashSet::new();
+        let mut seen_ids: HashSet<SessionId> = HashSet::new();
 
         // First, collect in-memory sessions (they have the latest state)
         for entry in self.sessions.iter() {
@@ -496,8 +544,12 @@ impl SessionManager {
         Ok(previous)
     }
 
-    pub fn set_recording_sender(&self, session_id: &str, tx: mpsc::Sender<SessionEventMessage>) {
-        self.recording_senders.insert(session_id.to_string(), tx);
+    pub fn set_recording_sender(
+        &self,
+        session_id: &SessionId,
+        tx: mpsc::Sender<SessionEventMessage>,
+    ) {
+        self.recording_senders.insert(session_id.clone(), tx);
     }
 
     pub fn get_recording_sender(
@@ -555,7 +607,7 @@ impl SessionManager {
         Ok(session)
     }
 
-    pub async fn delete_session(&self, session_id: &str) -> Result<(), SessionError> {
+    pub async fn delete_session(&self, session_id: &SessionId) -> Result<(), SessionError> {
         let was_in_memory = self.sessions.get(session_id).is_some();
 
         if let Some(session) = self.get_session(session_id) {
@@ -566,7 +618,7 @@ impl SessionManager {
 
         self.sessions.remove(session_id);
         self.recording_senders.remove(session_id);
-        self.session_locks.remove(session_id);
+        self.session_locks.remove(session_id.as_str());
 
         let session_dir = self.session_dir(session_id);
         let persisted_exists = session_dir.exists();
@@ -580,14 +632,14 @@ impl SessionManager {
             // which repositories this session claimed keep refs in, so once it
             // is deleted those refs pin trees that nothing will ever collect.
             crate::review::drop_keep_refs(&session_dir, session_id).await;
-            tokio::fs::remove_dir_all(&session_dir).await?;
+            remove_session_dir(self.sessions_root(), session_id).await?;
         }
 
         info!(session_id = %session_id, "Session deleted");
         Ok(())
     }
 
-    pub async fn archive_session(&self, session_id: &str) -> Result<Session, SessionError> {
+    pub async fn archive_session(&self, session_id: &SessionId) -> Result<Session, SessionError> {
         if let Some(session) = self.get_session(session_id) {
             if matches!(session.state, SessionState::Active | SessionState::Paused) {
                 self.end_session(session_id).await?;
@@ -622,7 +674,7 @@ impl SessionManager {
         Ok(session)
     }
 
-    pub async fn unarchive_session(&self, session_id: &str) -> Result<Session, SessionError> {
+    pub async fn unarchive_session(&self, session_id: &SessionId) -> Result<Session, SessionError> {
         let _guard = self.persist_guard(session_id).await;
 
         let session_dir = self.session_dir(session_id);
