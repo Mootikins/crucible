@@ -69,6 +69,28 @@ mod per_request_spawn_tests {
         F: Fn(String) -> Fut + Clone + Send + 'static,
         Fut: std::future::Future<Output = Response> + Send + 'static,
     {
+        spawn_loop_with_shutdown(max_inflight, unarmed_shutdown(), serve)
+    }
+
+    /// A latch no test arms, for the loops that are not about shutdown.
+    fn unarmed_shutdown() -> Arc<DeferredShutdown> {
+        Arc::new(DeferredShutdown::new(broadcast::channel(1).0))
+    }
+
+    /// As `spawn_loop`, against a shutdown latch the caller owns.
+    fn spawn_loop_with_shutdown<F, Fut>(
+        max_inflight: usize,
+        shutdown: Arc<DeferredShutdown>,
+        serve: F,
+    ) -> (
+        tokio::io::BufReader<tokio::net::unix::OwnedReadHalf>,
+        tokio::net::unix::OwnedWriteHalf,
+        tokio::task::JoinHandle<Result<()>>,
+    )
+    where
+        F: Fn(String) -> Fut + Clone + Send + 'static,
+        Fut: std::future::Future<Output = Response> + Send + 'static,
+    {
         let (server_side, client_side) = tokio::net::UnixStream::pair().expect("socketpair");
         let (server_read, server_write) = server_side.into_split();
         let (client_read, client_write) = client_side.into_split();
@@ -77,6 +99,7 @@ mod per_request_spawn_tests {
             Arc::new(Mutex::new(server_write)),
             ClientId::new(),
             max_inflight,
+            shutdown,
             serve,
         ));
         (tokio::io::BufReader::new(client_read), client_write, task)
@@ -212,6 +235,42 @@ mod per_request_spawn_tests {
         task.await.expect("loop task").expect("clean EOF");
     }
 
+    /// A shutdown armed by a handler reaches the accept loop — but only once its
+    /// confirmation has been written to the socket.
+    ///
+    /// The daemon exits within a scheduling slice of that signal, so the reply
+    /// has to be on the wire first; signalling from inside the handler left
+    /// `cru daemon stop` and the lifecycle e2e test reading EOF instead of their
+    /// own confirmation whenever the machine was loaded enough to deschedule the
+    /// writer. `dispatching_shutdown_confirms_before_it_signals` is the other
+    /// half: the handler arms and does not signal.
+    #[tokio::test]
+    async fn an_armed_shutdown_is_signalled_once_its_reply_is_written() {
+        let shutdown = unarmed_shutdown();
+        let mut signal = shutdown.subscribe();
+        let armer = shutdown.clone();
+        let (mut reader, mut writer, task) =
+            spawn_loop_with_shutdown(4, shutdown, move |line: String| {
+                let armer = armer.clone();
+                async move {
+                    let req: Request = serde_json::from_str(&line).expect("parse request");
+                    armer.arm();
+                    Response::success(req.id, serde_json::json!("shutting down"))
+                }
+            });
+
+        send(&mut writer, 1, "shutdown").await;
+        assert_eq!(next_reply_id(&mut reader).await, 1);
+
+        tokio::time::timeout(std::time::Duration::from_secs(10), signal.recv())
+            .await
+            .expect("the armed shutdown must reach the accept loop")
+            .expect("the signal sender outlives the loop");
+
+        drop(writer);
+        task.await.expect("loop task").expect("clean EOF");
+    }
+
     /// A client that stops draining must still close the connection, now that the
     /// write happens inside a handler rather than in the read loop. Without the
     /// cancellation token the loop would go on accepting requests whose replies
@@ -231,6 +290,7 @@ mod per_request_spawn_tests {
             Arc::new(Mutex::new(server_write)),
             ClientId::new(),
             4,
+            unarmed_shutdown(),
             move |line: String| async move {
                 let req: Request = serde_json::from_str(&line).expect("parse request");
                 // Well past any plausible SO_SNDBUF + SO_RCVBUF.

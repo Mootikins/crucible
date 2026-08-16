@@ -547,9 +547,11 @@ impl RpcDispatcher {
         Ok(serde_json::json!("pong"))
     }
 
+    /// Arms the shutdown rather than signalling it: the connection fires it
+    /// after this confirmation has been written. See [`DeferredShutdown`].
     fn handle_shutdown(&self) -> RpcResult<serde_json::Value> {
         tracing::info!("Shutdown requested via RPC");
-        let _ = self.ctx.shutdown_tx.send(());
+        self.ctx.shutdown.arm();
         Ok(serde_json::json!("shutting down"))
     }
 
@@ -2766,6 +2768,50 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             count, 1,
             "on_session_end fired {count} times; expected exactly 1 \
              (session.end and lua.shutdown_session must not both fire)"
+        );
+    }
+
+    /// The `shutdown` RPC confirms first and stops the daemon second.
+    ///
+    /// `Server::run` breaks its accept loop the instant the signal lands and the
+    /// process exits behind it, so a handler that signals inline is racing the
+    /// reply the caller is still blocked reading — `cru daemon stop` and the
+    /// lifecycle e2e test both see EOF instead of their own confirmation. The
+    /// handler therefore only *arms* the shutdown; the connection fires it once
+    /// the confirmation is on the wire.
+    #[tokio::test]
+    async fn dispatching_shutdown_confirms_before_it_signals() {
+        let ctx = test_context();
+        let mut signal = ctx.shutdown.subscribe();
+        let dispatcher = RpcDispatcher::new(ctx.clone());
+
+        let resp = dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request("shutdown", serde_json::json!({})),
+            )
+            .await;
+
+        assert_eq!(
+            resp.result.as_ref().and_then(|v| v.as_str()),
+            Some("shutting down"),
+            "the caller is owed a confirmation: {resp:?}"
+        );
+        assert!(
+            matches!(
+                signal.try_recv(),
+                Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+            ),
+            "shutdown was signalled from inside the handler, before the \
+             confirmation could be written"
+        );
+
+        // The armed request is not lost — the connection fires it once the
+        // confirmation is on the wire.
+        ctx.shutdown.fire_if_armed();
+        assert!(
+            signal.try_recv().is_ok(),
+            "the armed shutdown never reached the accept loop"
         );
     }
 

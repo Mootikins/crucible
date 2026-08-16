@@ -260,11 +260,17 @@ const MAX_INFLIGHT_PER_CONNECTION: usize = 32;
 /// — is unobservable through a dispatcher whose handlers all return promptly. It
 /// also puts the connection's framing and concurrency on one side of a line and
 /// dispatch on the other.
+///
+/// `shutdown` is the one thing framing owes the daemon back: the `shutdown`
+/// handler arms it and this loop fires it after the confirmation is written, so
+/// the process teardown that follows cannot outrun the reply. See
+/// [`DeferredShutdown`].
 async fn serve_requests<F, Fut>(
     reader: tokio::net::unix::OwnedReadHalf,
     writer: Arc<Mutex<OwnedWriteHalf>>,
     client_id: ClientId,
     max_inflight: usize,
+    shutdown: Arc<DeferredShutdown>,
     serve: F,
 ) -> Result<()>
 where
@@ -316,6 +322,7 @@ where
         let serve = serve.clone();
         let writer = writer.clone();
         let closed_for_handler = closed.clone();
+        let shutdown = shutdown.clone();
         handlers.spawn(async move {
             let _permit = permit;
             let response = serve(owned).await;
@@ -327,12 +334,14 @@ where
                 }
             };
             output.push('\n');
-            if write_line_or_close(&writer, output.as_bytes(), client_id)
-                .await
-                .is_err()
-            {
+            let written = write_line_or_close(&writer, output.as_bytes(), client_id).await;
+            if written.is_err() {
                 closed_for_handler.cancel();
             }
+            // After the write *attempt*, never before it: the daemon can be gone
+            // a scheduling slice later. A client that asked to shut down and then
+            // stopped reading still gets its shutdown — only the ordering changes.
+            shutdown.fire_if_armed();
         });
     };
 
@@ -379,6 +388,7 @@ pub(super) async fn handle_client(
         writer,
         client_id,
         MAX_INFLIGHT_PER_CONNECTION,
+        ctx.shutdown.clone(),
         move |line: String| {
             let ctx = dispatch_ctx.clone();
             async move {

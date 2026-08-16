@@ -11,8 +11,52 @@ use crate::subscription::SubscriptionManager;
 use crate::workflow_registry::WorkflowRegistry;
 use crucible_core::config::{LlmConfig, McpConfig, ScmConfig};
 use dashmap::DashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
+
+/// The daemon's shutdown signal, with the latch that keeps an RPC-initiated
+/// shutdown from outrunning its own reply.
+///
+/// `Server::run` breaks its accept loop as soon as the signal lands and the
+/// process exits behind it, while the reply to `shutdown` is written by a
+/// separate connection task. Signalling from inside the handler therefore races
+/// the confirmation the caller is blocked reading: on a loaded machine the
+/// daemon is gone first and the caller sees EOF. So `shutdown` *arms* the
+/// signal and the connection *fires* it once the confirmation is on the wire.
+///
+/// Signals and tests hold the sender directly (`Server::shutdown_handle`); they
+/// have no reply to order against.
+pub struct DeferredShutdown {
+    tx: broadcast::Sender<()>,
+    armed: AtomicBool,
+}
+
+impl DeferredShutdown {
+    pub fn new(tx: broadcast::Sender<()>) -> Self {
+        Self {
+            tx,
+            armed: AtomicBool::new(false),
+        }
+    }
+
+    /// Accept a shutdown request without acting on it yet.
+    pub fn arm(&self) {
+        self.armed.store(true, Ordering::Release);
+    }
+
+    /// Signal an armed shutdown; a no-op for every reply that did not arm one.
+    /// Called once per written reply, so the swap is what makes it fire once.
+    pub fn fire_if_armed(&self) {
+        if self.armed.swap(false, Ordering::AcqRel) {
+            let _ = self.tx.send(());
+        }
+    }
+
+    pub fn subscribe(&self) -> broadcast::Receiver<()> {
+        self.tx.subscribe()
+    }
+}
 
 pub struct RpcContext {
     pub kiln: Arc<KilnManager>,
@@ -20,7 +64,7 @@ pub struct RpcContext {
     pub agents: Arc<AgentManager>,
     pub subscriptions: Arc<SubscriptionManager>,
     pub event_tx: broadcast::Sender<SessionEventMessage>,
-    pub shutdown_tx: broadcast::Sender<()>,
+    pub shutdown: Arc<DeferredShutdown>,
     pub project_manager: Arc<crate::project_manager::ProjectManager>,
     pub lua_sessions: Arc<DashMap<String, Arc<Mutex<crate::server::LuaSessionState>>>>,
     pub plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
@@ -87,7 +131,7 @@ impl RpcContext {
             agents,
             subscriptions,
             event_tx,
-            shutdown_tx,
+            shutdown: Arc::new(DeferredShutdown::new(shutdown_tx)),
             project_manager,
             lua_sessions,
             plugin_loader,

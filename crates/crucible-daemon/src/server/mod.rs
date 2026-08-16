@@ -14,7 +14,7 @@ use crate::protocol::{
 };
 use crate::recording::RecordingWriter;
 use crate::replay::ReplaySession;
-use crate::rpc::{RpcContext, RpcDispatcher};
+use crate::rpc::{DeferredShutdown, RpcContext, RpcDispatcher};
 use crate::rpc_helpers::{optional_param, require_param};
 use crate::session_manager::{KilnFilter, SessionManager};
 use crate::session_storage::{FileSessionStorage, SessionStorage};
@@ -803,6 +803,7 @@ impl Server {
                                 plugin_loader: self.plugin_loader.clone(),
                                 llm_config: self.llm_config.clone(),
                                 mcp_server_manager: self.mcp_server_manager.clone(),
+                                shutdown: self.rpc_context.shutdown.clone(),
                                 authorized_uid: self.authorized_uid,
                             });
                             let event_rx = ctx.event_tx.subscribe();
@@ -902,6 +903,10 @@ struct ServerContext {
     plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
     llm_config: Option<LlmConfig>,
     mcp_server_manager: Arc<McpServerManager>,
+    /// The same latch the `shutdown` handler arms — cloned from the dispatcher's
+    /// context so the connection fires exactly the shutdown its own reply
+    /// confirmed. See [`crate::rpc::DeferredShutdown`].
+    shutdown: Arc<DeferredShutdown>,
     /// Copied from `Server::authorized_uid`; `handle_client` refuses any peer
     /// whose `SO_PEERCRED` uid is not this.
     authorized_uid: u32,
