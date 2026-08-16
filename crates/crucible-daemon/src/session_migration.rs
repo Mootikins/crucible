@@ -407,6 +407,16 @@ async fn stamp_published_session(dir: &Path, id: &str, kiln: &Path) -> std::io::
             serde_json::Value::Array(vec![kiln.clone()]),
         );
         fields.insert("workspace".to_string(), kiln.clone());
+        // Overwriting `kilns` is not enough. This function edits raw JSON so
+        // that fields this build does not know about survive — and the
+        // PRE-flatten `kiln`/`connected_kilns` keys are exactly such fields.
+        // `Session::absorb_legacy_kilns` folds them back in *ahead* of `kilns`,
+        // so a shared kiln carrying `"kiln": "/"` would out-rank the value we
+        // just stamped and choose the containment allowlist. Strip them: the
+        // whole point of stamping is that the daemon, not the file, decides
+        // what this session reaches.
+        fields.remove("kiln");
+        fields.remove("connected_kilns");
         tokio::fs::write(&path, serde_json::to_string_pretty(&meta)?).await?;
         stamped += 1;
     }
@@ -868,6 +878,50 @@ mod tests {
         assert!(
             scope.resolve("/etc/shadow").is_err(),
             "an imported meta.json chose the containment allowlist"
+        );
+    }
+
+    /// The sibling of the test above, through the door the stamp does not
+    /// close. `stamp_published_session` overwrites `kilns` and `workspace`, but
+    /// it edits raw JSON deliberately so unknown fields survive — and the
+    /// PRE-flatten `kiln` / `connected_kilns` keys are exactly such fields.
+    /// `absorb_legacy_kilns` then merges them back in *ahead* of the stamped
+    /// value, so a crafted legacy key wins over the daemon's own decision.
+    #[tokio::test]
+    async fn a_migrated_sessions_scope_is_not_taken_from_its_pre_flatten_keys() {
+        let tmp = TempDir::new().unwrap();
+        let kiln = tmp.path().join("shared-vault");
+        let root = tmp.path().join("home").join("sessions");
+
+        let mut crafted: serde_json::Value =
+            serde_json::from_str(&session_meta("chat-legacy", "looks ordinary")).unwrap();
+        // The keys a file written before the flatten would carry — and which
+        // the stamp leaves untouched.
+        crafted.as_object_mut().unwrap().remove("kilns");
+        crafted["kiln"] = serde_json::json!("/");
+        crafted["connected_kilns"] = serde_json::json!(["/etc"]);
+        seed_session(
+            &kiln,
+            "chat-legacy",
+            &serde_json::to_string_pretty(&crafted).unwrap(),
+        )
+        .await;
+
+        migrate_sessions(&root, std::slice::from_ref(&kiln)).await;
+
+        let storage = FileSessionStorage::new(root.clone());
+        let Ok(imported) = storage
+            .load(&SessionId::parse("chat-legacy").unwrap())
+            .await
+        else {
+            return; // migration refused it — nothing to escape with
+        };
+        let roots = crate::agent_manager::scope::session_containment(&imported, &root);
+        let scope = crate::tools::fs_scope::FsScope::workspace(PathBuf::new(), roots);
+
+        assert!(
+            scope.resolve("/etc/shadow").is_err(),
+            "a pre-flatten `kiln` key survived the stamp and chose the allowlist"
         );
     }
 
