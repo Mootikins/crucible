@@ -14,7 +14,15 @@ export default defineConfig(({ mode }) => ({
     dedupe: ['solid-js', 'solid-js/web', 'solid-js/store'],
   },
   server: {
-    port: 5173,
+    // NOT 5173. That is Vite's default, so every Vite project on the box wants
+    // it — and Playwright's `reuseExistingServer` will happily attach to
+    // whichever one answers, then fail every spec at app boot with no hint that
+    // it is testing a foreign application. That cost real debugging time twice.
+    // Override with CRUCIBLE_WEB_PORT; playwright.config.ts reads the same var.
+    port: Number(process.env.CRUCIBLE_WEB_PORT ?? 5273),
+    // Fail loudly on a busy port instead of silently drifting to the next one,
+    // which would put the app somewhere Playwright is not looking.
+    strictPort: true,
     host: true, // Listen on all interfaces
     // Dev server only: accept any Host header so the app is reachable over the
     // LAN by hostname (phones, other machines) instead of localhost alone.

@@ -14,7 +14,7 @@ End-to-end tests for the Crucible web interface using Playwright.
 
 2. **No backend required for most tests.** Specs use mocked API/SSE responses
    via `e2e/helpers/{mock-api.ts,mock-sse.ts}`. The Playwright config
-   (`playwright.config.ts`) auto-starts `bun run dev` on port 5173, so the dev
+   (`playwright.config.ts`) auto-starts `bun run dev` on port 5273 (CRUCIBLE_WEB_PORT), so the dev
    server is the only running prerequisite — and it starts itself.
 
 3. **For tests that hit a real backend** (rare; comment out `page.route()`
@@ -116,7 +116,7 @@ debugging without writing a spec.
 ### Setup
 
 ```bash
-bun run dev                                    # dev server (5173+)
+bun run dev                                    # dev server (5273; CRUCIBLE_WEB_PORT)
 bunx playwright-cli install                    # if not already installed
 ```
 
@@ -124,7 +124,7 @@ bunx playwright-cli install                    # if not already installed
 
 1. **Open a layout** (port may vary):
    ```bash
-   playwright-cli open "http://localhost:5173/flexlayout-test.html?layout=test_with_borders"
+   playwright-cli open "http://localhost:5273/flexlayout-test.html?layout=test_with_borders"
    ```
    Other layouts: `basic_drag_disabled`, `splitter_handle`, `docked_panes`.
 
@@ -164,7 +164,7 @@ playwright-cli run-code "
 To reproduce a splitter-resize bug in the main UI:
 
 ```bash
-playwright-cli open "http://localhost:5173/"
+playwright-cli open "http://localhost:5273/"
 playwright-cli run-code "$(cat e2e/scripts/center-resize-repro.js)"
 ```
 
@@ -175,7 +175,7 @@ resize path works in that run; equal widths reproduce the failure.
 
 ## Notes
 
-- Tests target `http://localhost:5173` (Vite dev server). The Playwright
+- Tests target `http://localhost:5273` (Vite dev server, CRUCIBLE_WEB_PORT). The Playwright
   webServer config starts it automatically; do not start it manually for CI runs.
 - Use explicit assertions (`await expect(element).toBeVisible()`) — implicit
   waits hide flakes.

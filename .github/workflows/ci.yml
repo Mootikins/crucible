@@ -144,6 +144,31 @@ jobs:
       - uses: ./.github/actions/rust-prereqs
       - run: just test plugins
 
+  test-gated:
+    # `just test gated` is designed as a blocking gate — its selection is
+    # NEGATIVE (every ignored test except the generated external list), so a
+    # newly added ignored test lands here by default, fail-closed. It ran in no
+    # GitHub job until now, which is exactly how a gate stops gating: 74 tests,
+    # including the whole PTY tier, passed locally and were verified nowhere.
+    name: Gated Suites (PTY + daemon-spawning)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/rust-prereqs
+      # Four of these tests shell out to it (`#[ignore = "requires: ripgrep"]`),
+      # and `just setup` checks for it for the same reason.
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+      # The PTY harness gives the child a hermetic HOME with no kiln, so
+      # `ensure_valid_kiln` falls back to ascending to the git root. A developer
+      # tree has a `.crucible/` there; a fresh checkout does not (it is
+      # gitignored), so `cru chat` hits the interactive "No kiln found" wizard
+      # and every wait_for_* times out. Create it explicitly rather than letting
+      # 37 tests fail on a directory nobody mentions.
+      - name: Provide a repo-root kiln for the PTY harness
+        run: mkdir -p .crucible
+      - run: just test gated
+
   test-web-unit:
     name: Web Unit Tests
     runs-on: ubuntu-latest

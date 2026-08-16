@@ -14,7 +14,7 @@
 
 ```bash
 bun install          # Install dependencies
-bun run dev          # Dev server with hot reload (localhost:5173)
+bun run dev          # Dev server with hot reload (localhost:5273)
 bun run build        # Production build to dist/
 bun run preview      # Preview production build
 ```

@@ -8,7 +8,7 @@ import { readState } from '../e2e/live/_state';
  * security headers exist at all.
  *
  * Why this file exists: every other Playwright suite runs against the Vite dev
- * server (`baseURL: http://localhost:5173`, mocked backend). That server emits
+ * server (`baseURL: http://localhost:5273`, mocked backend). That server emits
  * no Content-Security-Policy, no `nosniff` and no `Referrer-Policy`, and never
  * touches an axum route — so a CSP that blocks a stylesheet, a worker or an
  * image passes the whole suite green while the shipped product is broken. That

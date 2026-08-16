@@ -14,6 +14,16 @@ import { defineConfig, devices } from '@playwright/test';
  * The live tier (e2e/live/) has its own config (playwright.live.config.ts): it
  * boots a real `cru web` + daemon + mock-acp-agent instead of the Vite server.
  */
+/**
+ * Kept in lockstep with vite.config.ts, which reads the same variable.
+ *
+ * The default is deliberately NOT Vite's 5173: `reuseExistingServer` below
+ * attaches to whatever is already listening, and on a box running more than one
+ * Vite project that is somebody else's app. The failure is silent and total —
+ * 115/116 specs fail at app boot, looking like a product regression.
+ */
+const PORT = Number(process.env.CRUCIBLE_WEB_PORT ?? 5273);
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -50,7 +60,7 @@ export default defineConfig({
   },
 
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL: `http://localhost:${PORT}`,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -83,7 +93,9 @@ export default defineConfig({
 
   webServer: {
     command: 'bun run dev',
-    port: 5173,
+    port: PORT,
+    // Safe to reuse only because PORT is ours and vite.config.ts sets
+    // `strictPort`: anything answering there is this app or nothing.
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
   },
