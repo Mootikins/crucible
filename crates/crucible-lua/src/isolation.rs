@@ -12,11 +12,14 @@
 //! *category*: anything that can touch the filesystem or execute is handled
 //! in-container or refused.
 //!
-//! What "host-touching" means is answered by the tool's
-//! [`ToolSurface`], declared by the executor that would run it, not by a list
-//! of names kept in step by hand. That is what lets kiln tools survive a claim
-//! by construction: they are `Daemon`-surface, and a kiln tool added later
-//! inherits that instead of falling off an allowlist nobody updated.
+//! What "host-touching" means is answered by the tool's [`ToolSurface`],
+//! classified per *tool* — an exhaustive `match` whose missing arm is a compile
+//! error — not by a list of names kept in step by hand, and not by the executor
+//! that happens to route the call. Per executor was a confused deputy: one
+//! answer covered ~20 tools of which three wrote the host filesystem. That is
+//! what lets kiln tools survive a claim by construction: they are
+//! `Daemon`-surface, while a tool nobody classified answers `Unknown` and is
+//! refused here rather than inheriting its neighbours' trust.
 
 use crucible_core::traits::tools::ToolSurface;
 use mlua::{Lua, Result as LuaResult, Table};

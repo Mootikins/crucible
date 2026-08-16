@@ -83,6 +83,18 @@ pub(crate) fn absolutize(path: &Path) -> PathBuf {
 /// result is normalized by construction — asserted below rather than left to
 /// a comment, because that assumption is the entire fix.
 fn resolve_existing_ancestors(lexical: &Path) -> PathBuf {
+    resolve_existing_ancestors_within(lexical, MAX_DANGLING_LINK_HOPS)
+}
+
+/// Link hops spent on targets that do not exist.
+///
+/// `canonicalize` has the kernel's budget (40 on Linux) and never reaches this
+/// walk — only a link whose target is *missing* gets here, so a cycle is the
+/// one way to spend many hops. Small enough to end one, large enough that no
+/// honest chain of not-yet-created links hits it.
+const MAX_DANGLING_LINK_HOPS: usize = 16;
+
+fn resolve_existing_ancestors_within(lexical: &Path, hops: usize) -> PathBuf {
     debug_assert!(
         !lexical
             .components()
@@ -100,6 +112,25 @@ fn resolve_existing_ancestors(lexical: &Path) -> PathBuf {
             }
             return result;
         }
+
+        // A DANGLING symlink is the one thing the ancestor walk cannot see.
+        // `canonicalize` fails on it for the same reason it fails on a name
+        // that does not exist, so the arm below re-appends the link's OWN
+        // name — and both resolved forms then say "inside the root" while
+        // `fs::write` follows the link and creates the target outside it.
+        // Nothing here needs `bash` or a prior write: a git checkout can carry
+        // the symlink, and the target's non-existence is the whole trick.
+        //
+        // Following it is what keeps this module's promise that the path
+        // checked is the path used, and what leaves the symlink escape a
+        // reachable OUTCOME rather than a silent permit — design §5, the shape
+        // behind CVE-2026-39861 and CVE-2026-50549.
+        if hops > 0 {
+            if let Some(followed) = follow_link(&existing, &remainder) {
+                return resolve_existing_ancestors_within(&followed, hops - 1);
+            }
+        }
+
         match (existing.file_name(), existing.parent()) {
             (Some(name), Some(parent)) => {
                 remainder.push(name.to_os_string());
@@ -110,6 +141,32 @@ fn resolve_existing_ancestors(lexical: &Path) -> PathBuf {
             _ => return lexical.to_path_buf(),
         }
     }
+}
+
+/// What `link` points at with `remainder` re-attached, or `None` when `link` is
+/// not a symlink.
+///
+/// A relative target resolves against the link's own directory, which is what
+/// the kernel does. The result goes back through [`absolutize`] so the
+/// recursive call keeps its precondition — a target may be spelled with `..`.
+fn follow_link(link: &Path, remainder: &[std::ffi::OsString]) -> Option<PathBuf> {
+    if !link
+        .symlink_metadata()
+        .is_ok_and(|meta| meta.file_type().is_symlink())
+    {
+        return None;
+    }
+    let target = link.read_link().ok()?;
+    let mut followed = if target.is_absolute() {
+        target
+    } else {
+        link.parent()
+            .map_or_else(|| target.clone(), |dir| dir.join(&target))
+    };
+    for part in remainder.iter().rev() {
+        followed.push(part);
+    }
+    Some(absolutize(&followed))
 }
 
 /// A caller-supplied path in both the forms containment must be judged on.

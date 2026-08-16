@@ -40,6 +40,7 @@ pub mod embedding;
 mod empty_providers;
 pub mod enrichment;
 pub mod event_emitter;
+pub(crate) mod execution_roots;
 pub mod file_watch_bridge;
 pub mod internal_events;
 pub mod kiln_manager;

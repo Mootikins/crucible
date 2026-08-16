@@ -80,6 +80,12 @@ pub fn daemon_plugin_paths(runtimepath: &[std::path::PathBuf]) -> Vec<(PathBuf, 
         }
     }
 
+    // Every directory above is one the daemon executes Lua out of, so the
+    // write-protected set has to name it. Recording here rather than asking
+    // `protected` to rebuild the same list is what keeps the two from drifting:
+    // a tree that reaches this return is protected by the act of reaching it.
+    crate::execution_roots::record(paths.iter().map(|(dir, _)| dir.clone()));
+
     paths
 }
 

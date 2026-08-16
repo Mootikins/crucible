@@ -45,6 +45,7 @@ pub fn synthesize_diffs(tool_name: &str, args: &Value) -> Vec<FileDiff> {
         ToolKind::EditOrStrReplace => synth_edit(args),
         ToolKind::Write => synth_write(args),
         ToolKind::MultiEdit => synth_multi_edit(args),
+        ToolKind::Delete => synth_delete(args),
         ToolKind::Unknown => Vec::new(),
     }
 }
@@ -54,6 +55,10 @@ enum ToolKind {
     EditOrStrReplace,
     Write,
     MultiEdit,
+    /// A removal. It carries no content, so it is not a `Write` with an empty
+    /// body — the distinction is what lets the approver be told the file goes
+    /// away rather than becomes blank.
+    Delete,
     Unknown,
 }
 
@@ -70,6 +75,12 @@ fn normalize_tool_name(name: &str) -> ToolKind {
         "write_file" | "write" | "Write" | "WriteFile" | "write_text_file" | "create_file"
         | "update_note" | "create_note" => ToolKind::Write,
         "multi_edit" | "MultiEdit" => ToolKind::MultiEdit,
+        // The one note tool that cannot be undone was the one the approver was
+        // shown nothing for: absent from this list, it fell to `Unknown` and
+        // the permission popup rendered no diff at all. Membership here is an
+        // enumerated literal where a new mutating tool defaults to invisible —
+        // see the design's enumerated-literal audit.
+        "delete_note" => ToolKind::Delete,
         _ => ToolKind::Unknown,
     }
 }
@@ -133,6 +144,20 @@ fn synth_write(args: &Value) -> Vec<FileDiff> {
         return Vec::new();
     }
     vec![FileDiff::from_contents(path, None, new_content)]
+}
+
+/// A removal names a file and destroys it. The old side stays `None` because
+/// this module does not read — telling the approver *which* file disappears is
+/// the whole of what was missing, and an empty new side is the honest
+/// rendering of "nothing survives".
+fn synth_delete(args: &Value) -> Vec<FileDiff> {
+    let Some(obj) = args.as_object() else {
+        return Vec::new();
+    };
+    let Some(path) = extract_path(obj) else {
+        return Vec::new();
+    };
+    vec![FileDiff::from_contents(path, None, "")]
 }
 
 /// Every replacement in one diff, joined so the renderer emits a hunk per
@@ -261,6 +286,49 @@ mod tests {
         assert_eq!(diffs.len(), 1);
         assert_eq!(diffs[0].old_content.as_deref(), Some("one\n\ntwo"));
         assert_eq!(diffs[0].new_content, "1\n\n2");
+    }
+
+    /// A destructive tool the approver was shown nothing for.
+    ///
+    /// `delete_note` was absent from `normalize_tool_name`, so it fell to
+    /// `Unknown` and the permission popup rendered no diff at all — the one
+    /// tool in the note family that cannot be undone was the one the approver
+    /// got the least information about. There is no old side, because this
+    /// module never reads; what the approver needs is the path and the fact
+    /// that nothing survives, which is exactly an empty new side.
+    #[test]
+    fn a_delete_shows_the_approver_the_file_it_will_destroy() {
+        let diffs = synthesize_diffs("delete_note", &json!({"path": "Meta/Design.md"}));
+        assert_eq!(diffs.len(), 1, "a delete must render something");
+        assert_eq!(diffs[0].path, "Meta/Design.md");
+        assert_eq!(diffs[0].old_content, None);
+        assert_eq!(
+            diffs[0].new_content, "",
+            "an empty new side is the honest rendering of a removal"
+        );
+    }
+
+    /// Every note tool that mutates the filesystem is claimed by this module.
+    /// The audit finding was that membership here is an enumerated literal
+    /// where a new mutating tool defaults to *no diff shown*, so the note
+    /// family is pinned as a set rather than one name at a time.
+    #[test]
+    fn every_mutating_note_tool_synthesizes_a_diff() {
+        for (tool, args) in [
+            ("create_note", json!({"path": "n.md", "content": "x"})),
+            ("update_note", json!({"path": "n.md", "content": "x"})),
+            ("delete_note", json!({"path": "n.md"})),
+        ] {
+            assert_ne!(
+                normalize_tool_name(tool),
+                ToolKind::Unknown,
+                "{tool} mutates the filesystem and must not fall to Unknown"
+            );
+            assert!(
+                !synthesize_diffs(tool, &args).is_empty(),
+                "{tool} must show the approver a diff"
+            );
+        }
     }
 
     #[test]

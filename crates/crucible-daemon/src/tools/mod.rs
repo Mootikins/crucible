@@ -30,6 +30,7 @@ pub mod output_filter;
 pub(crate) mod path_resolution;
 pub(crate) mod protected;
 pub mod search;
+pub mod surface;
 pub mod tool_discovery;
 pub mod tool_modes;
 pub mod toon_response;

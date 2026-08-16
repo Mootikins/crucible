@@ -235,7 +235,7 @@ async fn migrate_one(
     let session_id = validated.as_str();
     let dest = validated.dir_under(sessions_root);
     if !dest.exists() {
-        match relocate(source, &dest, None).await {
+        match relocate(source, &dest, session_id, kiln).await {
             Ok(()) => report.moved += 1,
             Err(e) => {
                 warn!(session_id = %session_id, source = %source.display(), error = %e,
@@ -269,7 +269,7 @@ async fn migrate_one(
         report.skipped += 1;
         return;
     }
-    match relocate(source, &dest, Some(suffixed.as_str())).await {
+    match relocate(source, &dest, suffixed.as_str(), kiln).await {
         Ok(()) => {
             info!(session_id = %session_id, migrated_as = %suffixed, kiln = %kiln.display(),
                   "Session id collided during relocation; stored under a kiln-derived name");
@@ -300,17 +300,16 @@ fn staging_root(sessions_root: &Path) -> PathBuf {
 /// cannot cross whatever `dest` is mounted on (a kiln on another filesystem is
 /// ordinary — an external drive, a synced folder).
 ///
-/// `new_id`, when set, is written into the session's metadata before the move
-/// completes: storage keys reads on the directory name and writes on
-/// `session.id`, so a session relocated under any name but its own has to carry
-/// that name inside it too.
+/// `id` and `kiln` are stamped into the session's metadata before the move
+/// completes — see [`stamp_published_session`] for why both, and why
+/// unconditionally.
 ///
 /// `dest` only ever appears complete. The rename path is atomic already; the
 /// copy path stages under [`staging_root`] and renames into place, so a process
 /// killed mid-copy leaves the source intact and nothing at `dest` — where a
 /// partial `dest` would look like a real session to the next pass and push the
 /// intact original onto the collision path.
-async fn relocate(source: &Path, dest: &Path, new_id: Option<&str>) -> std::io::Result<()> {
+async fn relocate(source: &Path, dest: &Path, id: &str, kiln: &Path) -> std::io::Result<()> {
     let Some(parent) = dest.parent() else {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -319,13 +318,11 @@ async fn relocate(source: &Path, dest: &Path, new_id: Option<&str>) -> std::io::
     };
     tokio::fs::create_dir_all(parent).await?;
 
-    // Rewritten in the source, before anything moves. Crash after this and the
-    // next pass re-derives the same suffix from the same kiln path and rewrites
-    // the same value — idempotent, and never a window where the metadata has
+    // Stamped in the source, before anything moves. Crash after this and the
+    // next pass derives the same values from the same directory and kiln and
+    // writes them again — idempotent, and never a window where the metadata has
     // been updated for a directory that does not exist yet.
-    if let Some(new_id) = new_id {
-        rewrite_session_id(source, new_id).await?;
-    }
+    stamp_published_session(source, id, kiln).await?;
 
     if tokio::fs::rename(source, dest).await.is_ok() {
         return Ok(());
@@ -351,17 +348,43 @@ async fn relocate(source: &Path, dest: &Path, new_id: Option<&str>) -> std::io::
     Ok(())
 }
 
-/// Point a relocated session's persisted id at the directory it now lives in.
+/// Overwrite the two things a migrated session may not bring with it: the id it
+/// answers to, and the roots its tools run against.
 ///
-/// `FileSessionStorage` resolves a load by directory name and every write by
-/// `session.id`. Let those disagree and the first save of a disambiguated
-/// session lands in the winner's directory, overwriting its `meta.json` and
-/// appending the loser's turns to its log — precisely the loss the suffix
-/// exists to prevent.
+/// Migration is the one path that imports a `meta.json` the daemon did not
+/// write — a kiln can be shared, synced, or restored from someone else's
+/// backup. `publishable_id` rejects the values that are not *usable*; this
+/// function replaces the ones that are usable but are not the daemon's to
+/// believe. Both fields are stamped unconditionally, on every publish, because
+/// "valid" and "true" are different questions and only the second one matters
+/// here:
+///
+/// - **`id`.** `FileSessionStorage` resolves a load by directory name and every
+///   write by `session.id`. A crafted directory `chat-evil` whose `meta.json`
+///   says `chat-victim` passes every id check ever written — both strings are
+///   perfectly good session ids — and then resuming it writes into the victim's
+///   directory and carves the victim's transcript out of the read denial. The
+///   id is not validated into agreement with the directory, it is *set* to it,
+///   which is also what the collision path needed when it filed a session under
+///   a suffixed name.
+/// - **`kilns` / `workspace`.** These are not identifiers, so no id check would
+///   ever have looked at them, but `agent_manager::scope::session_containment`
+///   reads them verbatim as the session's default-deny ALLOWLIST. An imported
+///   `meta.json` naming `"/"` therefore chose the containment for a session
+///   that looks perfectly ordinary in a listing. Migration knows exactly one
+///   root about this session — the kiln it just took it out of — so that is
+///   what it writes. A stale workspace is a resumed session opening in the
+///   wrong directory; an imported one is an allowlist the attacker picked.
 ///
 /// Edited as raw JSON so that fields this build does not know about survive.
-async fn rewrite_session_id(dir: &Path, new_id: &str) -> std::io::Result<()> {
-    let mut rewritten = 0;
+async fn stamp_published_session(dir: &Path, id: &str, kiln: &Path) -> std::io::Result<()> {
+    // Not `json!(kiln)`: that macro unwraps, and `Path`'s `Serialize` fails on
+    // a path that is not valid UTF-8 — which would panic the daemon inside the
+    // migration every start does, rather than skipping one session. Converted
+    // once, as a value, so the failure joins the ordinary "leave it in the
+    // kiln" path.
+    let kiln = serde_json::to_value(kiln).map_err(std::io::Error::other)?;
+    let mut stamped = 0;
     // `load` prefers `meta.json` and falls back to the older `session.json`;
     // whichever are present must agree with the directory.
     for name in ["meta.json", "session.json"] {
@@ -378,11 +401,16 @@ async fn rewrite_session_id(dir: &Path, new_id: &str) -> std::io::Result<()> {
                 format!("{} is not a JSON object", path.display()),
             ));
         };
-        fields.insert("id".to_string(), serde_json::Value::String(new_id.into()));
+        fields.insert("id".to_string(), serde_json::Value::String(id.into()));
+        fields.insert(
+            "kilns".to_string(),
+            serde_json::Value::Array(vec![kiln.clone()]),
+        );
+        fields.insert("workspace".to_string(), kiln.clone());
         tokio::fs::write(&path, serde_json::to_string_pretty(&meta)?).await?;
-        rewritten += 1;
+        stamped += 1;
     }
-    if rewritten == 0 {
+    if stamped == 0 {
         // No metadata means nothing can carry the new id, and a directory whose
         // name and contents disagree is the bug this function exists to close.
         // Fail, so the caller leaves the session in the kiln where it is at
@@ -675,7 +703,9 @@ mod tests {
         let dest = tmp.path().join("dest");
         tokio::fs::write(&dest, "not a directory").await.unwrap();
 
-        assert!(relocate(&source, &dest, None).await.is_err());
+        assert!(relocate(&source, &dest, "chat-1", tmp.path())
+            .await
+            .is_err());
 
         assert!(source.join("meta.json").exists());
         assert_eq!(
@@ -726,6 +756,118 @@ mod tests {
                 .join("chat-1")
                 .exists(),
             "the session must stay where it is, not be destroyed"
+        );
+    }
+
+    /// A session is named by the directory it lives in. `meta.json` carries an
+    /// `id` too, and every WRITE resolves against that field rather than
+    /// against the directory the session was loaded from — so a `meta.json`
+    /// naming a *different* session turns a load of one directory into a write
+    /// to another. Migration is the door: a shared or synced kiln's
+    /// `meta.json` is not the daemon's own writing, and both strings arrive
+    /// from outside.
+    #[tokio::test]
+    async fn a_migrated_session_cannot_name_another_sessions_directory() {
+        use crate::session_manager::SessionManager;
+        use std::sync::Arc;
+
+        let tmp = TempDir::new().unwrap();
+        let kiln = tmp.path().join("shared-vault");
+        let root = tmp.path().join("home").join("sessions");
+
+        // A real session already filed in the root.
+        let storage = FileSessionStorage::new(root.clone());
+        let victim: Session = serde_json::from_str(&session_meta("chat-victim", "victim")).unwrap();
+        storage.save(&victim).await.unwrap();
+
+        // The crafted kiln: directory `chat-evil`, persisted id `chat-victim`,
+        // and a kiln set naming the filesystem root — `kilns` and `workspace`
+        // ARE the containment allowlist a session is rebuilt with.
+        let mut crafted: serde_json::Value =
+            serde_json::from_str(&session_meta("chat-victim", "pwned")).unwrap();
+        crafted["kilns"] = serde_json::json!(["/"]);
+        crafted["workspace"] = serde_json::json!("/");
+        seed_session(
+            &kiln,
+            "chat-evil",
+            &serde_json::to_string_pretty(&crafted).unwrap(),
+        )
+        .await;
+
+        migrate_sessions(&root, std::slice::from_ref(&kiln)).await;
+
+        // Whatever migration decided, resuming what it published must not
+        // reach a directory other than its own.
+        let sm = SessionManager::with_storage(Arc::new(storage.clone()));
+        let resumed = sm
+            .resume_session_from_storage(&SessionId::parse("chat-evil").unwrap())
+            .await;
+
+        // Containment is derived from the loaded session: its `storage_path`
+        // (the read carve-out) and its `kilns`/`workspace` (the allowlist).
+        if let Ok(resumed) = &resumed {
+            let roots = crate::agent_manager::scope::session_containment(resumed, &root);
+            let scope = crate::tools::fs_scope::FsScope::workspace(PathBuf::new(), roots);
+            let victim_log = root.join("chat-victim").join("session.jsonl");
+            assert!(
+                scope.resolve(&victim_log.to_string_lossy()).is_err(),
+                "resuming one session carved out another session's transcript for reading"
+            );
+        }
+
+        let after = storage
+            .load(&SessionId::parse("chat-victim").unwrap())
+            .await
+            .unwrap();
+        assert_eq!(
+            after.title.as_deref(),
+            Some("victim"),
+            "loading one session's directory overwrote another session's meta.json"
+        );
+        assert_ne!(
+            after.kilns,
+            vec![PathBuf::from("/")],
+            "the victim's containment allowlist was rewritten from a foreign kiln"
+        );
+    }
+
+    /// `kilns` and `workspace` in a `meta.json` are not identifiers, but they
+    /// are the DEFAULT-DENY ALLOWLIST a resumed session's tools run under —
+    /// `session_containment` reads them verbatim. Migration imports them from
+    /// a kiln the daemon did not write, so a session that looks ordinary in a
+    /// listing can carry a scope root of `/`.
+    #[tokio::test]
+    async fn a_migrated_sessions_scope_is_not_taken_from_the_file_it_arrived_in() {
+        let tmp = TempDir::new().unwrap();
+        let kiln = tmp.path().join("shared-vault");
+        let root = tmp.path().join("home").join("sessions");
+
+        let mut crafted: serde_json::Value =
+            serde_json::from_str(&session_meta("chat-import", "looks ordinary")).unwrap();
+        crafted["kilns"] = serde_json::json!(["/"]);
+        crafted["workspace"] = serde_json::json!("/");
+        seed_session(
+            &kiln,
+            "chat-import",
+            &serde_json::to_string_pretty(&crafted).unwrap(),
+        )
+        .await;
+
+        migrate_sessions(&root, std::slice::from_ref(&kiln)).await;
+
+        let storage = FileSessionStorage::new(root.clone());
+        let Ok(imported) = storage
+            .load(&SessionId::parse("chat-import").unwrap())
+            .await
+        else {
+            return; // migration refused it — nothing to escape with
+        };
+        let roots = crate::agent_manager::scope::session_containment(&imported, &root);
+        let scope = crate::tools::fs_scope::FsScope::workspace(PathBuf::new(), roots);
+
+        assert!(
+            scope.resolve("/etc/shadow").is_err(),
+            "an imported meta.json chose the containment allowlist"
         );
     }
 

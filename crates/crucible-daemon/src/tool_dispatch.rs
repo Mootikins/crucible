@@ -27,7 +27,7 @@ use crate::tools::tool_discovery::{DiscoverToolsParams, GetToolSchemaParams, Too
 /// the dispatcher (not routed to a provider). `invoke_tool` is intentionally
 /// absent: it is unwrapped to its inner tool upstream in
 /// `handle_tool_call_in_stream` and never reaches dispatch.
-const DISCOVERY_TOOL_NAMES: &[&str] = &["discover_tools", "get_tool_schema"];
+pub(crate) const DISCOVERY_TOOL_NAMES: &[&str] = &["discover_tools", "get_tool_schema"];
 
 /// How long the blocking hydration path waits for providers to list their tools.
 ///
@@ -103,10 +103,10 @@ impl DaemonToolDispatcher {
         let mut tool_surfaces = HashMap::new();
         for provider in &providers {
             if let Some(Ok(defs)) = provider.list_tools().now_or_never() {
-                let surface = provider.surface();
                 for def in defs {
                     tool_names.insert(def.name.clone());
                     let tool_ref = Self::tool_ref_from_definition(&def);
+                    let surface = provider.surface(&def.name);
                     tool_surfaces.entry(def.name.clone()).or_insert(surface);
                     tool_refs.entry(def.name).or_insert(tool_ref);
                 }
@@ -176,10 +176,10 @@ impl DaemonToolDispatcher {
         let mut discovered_surfaces = HashMap::new();
         for provider in &self.providers {
             if let Ok(defs) = provider.list_tools().await {
-                let surface = provider.surface();
                 for def in defs {
                     discovered_names.insert(def.name.clone());
                     let tool_ref = Self::tool_ref_from_definition(&def);
+                    let surface = provider.surface(&def.name);
                     discovered_surfaces
                         .entry(def.name.clone())
                         .or_insert(surface);
@@ -245,10 +245,10 @@ impl DaemonToolDispatcher {
                         let Ok(Ok(defs)) = listed else {
                             continue;
                         };
-                        let surface = provider.surface();
                         for def in defs {
                             names.insert(def.name.clone());
                             let tool_ref = DaemonToolDispatcher::tool_ref_from_definition(&def);
+                            let surface = provider.surface(&def.name);
                             surfaces.entry(def.name.clone()).or_insert(surface);
                             refs.entry(def.name).or_insert(tool_ref);
                         }
@@ -514,19 +514,21 @@ impl ToolExecutor for McpToolExecutor {
         Ok(tools)
     }
 
-    /// Notes, search, the kiln, jobs, skills and delegation — all of it lands
-    /// in daemon-side storage or the daemon's own managers. None of it is
-    /// affected by whether the session's *workspace* is containerized, which
-    /// is why these survive an isolation claim with no exemption.
+    /// Per tool, never per executor.
     ///
-    /// NOTE(crucible): `delegate_session` rides on this classification and so
-    /// stops being refused inside an isolated session. That is only safe once
-    /// `create_child_session` fires plugin `on_session_start` and the child
-    /// acquires its own claim — until then a sandboxed parent can delegate a
-    /// child that runs every tool on the host. The two changes belong to the
-    /// same phase and must land together.
-    fn surface(&self) -> ToolSurface {
-        ToolSurface::Daemon
+    /// This method used to return a flat `ToolSurface::Daemon` for the whole
+    /// catalog, justified as "all of it lands in daemon-side storage or the
+    /// daemon's own managers". That was false for `create_note`, `update_note`
+    /// and `delete_note`, which reach `std::fs` on the host in this process —
+    /// so an isolated session refused `bash` and `write_file` while
+    /// `create_note` wrote the host filesystem. It was also *inherited*: a new
+    /// `#[tool]` on `CrucibleMcpServer` became `Daemon` with nobody deciding.
+    ///
+    /// Now a name with no classification answers `Unknown` and is refused, and
+    /// `builtin_surfaces_cover_every_advertised_tool` fails the build with the
+    /// tool's name in the message.
+    fn surface(&self, tool: &str) -> ToolSurface {
+        crate::tools::surface::classify(tool)
     }
 }
 
@@ -616,11 +618,13 @@ impl ToolDispatcher for DaemonToolDispatcher {
     async fn tool_surface(&self, name: &str) -> ToolSurface {
         // The progressive-disclosure bridge belongs to no provider: it is
         // answered by this dispatcher out of its own catalog and touches
-        // nothing. Left unclassified it would fall to `Unknown` and be refused
-        // inside every sandboxed session — the agent could not even ask what
-        // tools exist.
+        // nothing. No provider lists it, so it is absent from `tool_surfaces`
+        // and would fall to `Unknown` and be refused inside every sandboxed
+        // session — the agent could not even ask what tools exist. Classified
+        // in the same table as everything else rather than answered `Daemon`
+        // here, so the exhaustiveness check covers it too.
         if DISCOVERY_TOOL_NAMES.contains(&name) {
-            return ToolSurface::Daemon;
+            return crate::tools::surface::classify(name);
         }
 
         self.hydrate_tool_names().await;

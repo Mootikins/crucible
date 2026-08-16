@@ -28,8 +28,14 @@ use super::helpers::{json_success, McpResultExt};
 use super::utils::parse_yaml_frontmatter;
 use crucible_core::storage::NoteStore;
 use helpers::{
-    ensure_md_suffix, extract_content_without_frontmatter, serialize_frontmatter_to_yaml,
+    extract_content_without_frontmatter, resolve_note_write, serialize_frontmatter_to_yaml,
 };
+
+/// How a note name becomes a note path, and the rule that says the result has
+/// to be a note — re-exported for the other note-writing sink in this crate
+/// (`acp::tools::ToolExecutor`), which had its own hand-rolled copy of the
+/// first and none of the second. One definition, because two would drift.
+pub(crate) use helpers::{ensure_md_suffix, reject_non_note};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{model::CallToolResult, tool, tool_router};
 use std::sync::Arc;
@@ -136,10 +142,11 @@ impl NoteTools {
         let content = params.content;
         let frontmatter = params.frontmatter;
 
-        // Security: containment, plus the protected set — a note tool creates
-        // files, so it is a write path like `write_file` and answers to the
-        // same hardcoded deny.
-        let full_path = self.scope.resolve_for_write(&path)?;
+        // Security: containment, the protected set, and the extension rule —
+        // a note tool creates files, so it is a write path like `write_file`
+        // and answers to the same hardcoded deny, and what it creates has to
+        // be a note or `ToolSurface::Daemon` is a lie about its reach.
+        let full_path = resolve_note_write(&self.scope, &path)?;
 
         // Build final content with optional frontmatter
         let final_content = if let Some(fm) = frontmatter {
@@ -322,8 +329,8 @@ impl NoteTools {
         let new_content = params.content;
         let new_frontmatter = params.frontmatter;
 
-        // Security: Validate path to prevent traversal attacks
-        let full_path = self.scope.resolve_for_write(&path)?;
+        // Security: containment, the protected set, and the extension rule.
+        let full_path = resolve_note_write(&self.scope, &path)?;
 
         if !full_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(
@@ -396,8 +403,10 @@ impl NoteTools {
         let params = params.0;
         let path = ensure_md_suffix(params.path);
 
-        // Security: Validate path to prevent traversal attacks
-        let full_path = self.scope.resolve_for_write(&path)?;
+        // Security: containment, the protected set, and the extension rule —
+        // `delete_note` is the destructive half of the same authority, so a
+        // path it may not write is a path it may not remove.
+        let full_path = resolve_note_write(&self.scope, &path)?;
 
         if !full_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(

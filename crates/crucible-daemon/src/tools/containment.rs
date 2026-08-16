@@ -283,6 +283,26 @@ impl RootSet {
             Access::Read => carved,
             Access::Write => &[],
         };
+
+        // A transcript directory is a SHAPE, not a list of instances, and it
+        // sits outside the ranking for the same reason a denial that can be
+        // out-ranked is not a denial. See [`enters_transcript_dir`].
+        //
+        // The read carve-out is the single thing that precedes it, because the
+        // REAL sessions root has this very shape: `data_home` is `~/.crucible`,
+        // so a session's own storage directory is `~/.crucible/sessions/{id}`
+        // and the rule would otherwise deny a session the spilled tool output
+        // the carve-out exists to hand back. Checked against `carved` after it
+        // has been emptied for writes, so a write can never reach this branch
+        // and the exception cannot widen into one.
+        if covers_any(carved.iter(), resolved).is_none()
+            && [resolved.lexical(), resolved.canonical()]
+                .into_iter()
+                .any(enters_transcript_dir)
+        {
+            return Containment::Outside;
+        }
+
         let by_name = form_permits(allowed, carved, denied, resolved.lexical(), Form::Lexical);
         let when_resolved = form_permits(
             allowed,
@@ -303,6 +323,47 @@ impl RootSet {
             _ => Containment::Outside,
         }
     }
+}
+
+/// Whether `path` passes through a legacy in-kiln transcript directory —
+/// `.crucible/sessions`, at ANY depth.
+///
+/// This was a per-scope-root literal: `session_containment` denied
+/// `<root>/.crucible/sessions` for each root the session was given. That is the
+/// confused-deputy shape the rest of this module is about — an item inheriting
+/// its container's blanket answer. A project filed BENEATH a kiln or workspace
+/// has its own `.crucible/sessions`, is not itself a scope root, and so was
+/// admitted by the enclosing root's permit; so was any nested kiln, and so was
+/// a sibling checkout vendored into one.
+///
+/// `PROTECTED_DIRS` already matches `.crucible` structurally, but only for
+/// writes. This is the read half, and reads are what the transcript threat
+/// model is about in the other direction: a transcript names every path,
+/// command and secret a previous session touched.
+///
+/// Both components, adjacent: `.crucible/` alone holds `notes/` and `index/`
+/// that ordinary work reads, and denying the whole control directory here would
+/// duplicate `FsScope::enters_control_dir`, which is scoped to kiln-anchored
+/// tools on purpose.
+///
+/// The shape is not only the LEGACY layout's. `data_home` is `~/.crucible`, so
+/// the flat sessions root is `~/.crucible/sessions` and matches this component
+/// for component — which is why [`RootSet::judge_resolved`] lets the read
+/// carve-out answer first. Everything else under either spelling is denied,
+/// including the rest of the flat root, which `denied` also names outright.
+fn enters_transcript_dir(path: &Path) -> bool {
+    let mut components = path.components();
+    while let Some(component) = components.next() {
+        if component.as_os_str() == ".crucible"
+            && components
+                .clone()
+                .next()
+                .is_some_and(|next| next.as_os_str() == "sessions")
+        {
+            return true;
+        }
+    }
+    false
 }
 
 /// Normalize a list of roots, dropping the empty path.

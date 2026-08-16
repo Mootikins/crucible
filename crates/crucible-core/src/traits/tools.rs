@@ -40,9 +40,18 @@ pub enum ToolError {
 /// answers the security question instead: if nothing intercepts the call, does
 /// running it touch the host?
 ///
-/// Declared per *executor* rather than per tool name, so a tool added to an
-/// existing executor inherits the classification instead of silently defaulting
-/// to whatever an allowlist forgot.
+/// Answered per *tool*, not per executor. An executor-wide answer is a confused
+/// deputy: `McpToolExecutor` declared `Daemon` for ~20 tools on the theory that
+/// they only touch daemon storage, while three of them wrote the host
+/// filesystem — and every tool added to it afterwards inherited that answer with
+/// nobody deciding. The classification lives with the tools, as an exhaustive
+/// `match` whose missing arm is a compile error
+/// (`crucible_daemon::tools::surface`).
+///
+/// Deliberately **no `Default`**. A default would let a classification lookup be
+/// written `.unwrap_or_default()`, which is "unclassified means allowed"
+/// reintroduced as a one-line edit. Without one, callers must handle absence
+/// explicitly, and absence must resolve to `Unknown`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ToolSurface {
     /// Touches the host filesystem or executes host processes. Refused in an
@@ -105,13 +114,26 @@ pub trait ToolExecutor: Send + Sync {
     /// Returns a vector of tool definitions, or a `ToolError`.
     async fn list_tools(&self) -> ToolResult<Vec<ToolDefinition>>;
 
-    /// What this executor's tools can reach. See [`ToolSurface`].
+    /// What running `tool` on this executor would reach. See [`ToolSurface`].
+    ///
+    /// Takes the tool name because one executor serves tools of different
+    /// reach: `McpToolExecutor` answered a single `Daemon` for its whole
+    /// catalog while `create_note`/`update_note`/`delete_note` wrote the host
+    /// filesystem, so an isolated session refused `bash` and permitted a write
+    /// into a directory the daemon later executes.
     ///
     /// Required rather than defaulted on purpose: a default of `Unknown` would
     /// be safe but silently refuse a new knowledge executor's tools inside
     /// every sandboxed session, and a default of `Daemon` would silently open
-    /// the sandbox. Every executor states its own answer.
-    fn surface(&self) -> ToolSurface;
+    /// the sandbox. Every executor answers for itself, and no answer may
+    /// depend on nothing but the executor's identity.
+    ///
+    /// An executor serving built-ins delegates to
+    /// `crucible_daemon::tools::surface::classify`, whose `match` cannot be
+    /// completed without classifying a new tool. Executors serving foreign
+    /// code — plugin Lua, MCP gateway upstreams — answer `Unknown` for every
+    /// name, including names that collide with a built-in.
+    fn surface(&self, tool: &str) -> ToolSurface;
 }
 
 /// Execution context for tool invocations
@@ -352,7 +374,7 @@ mod tests {
             Ok(self.tools.clone())
         }
 
-        fn surface(&self) -> ToolSurface {
+        fn surface(&self, _tool: &str) -> ToolSurface {
             ToolSurface::Unknown
         }
     }

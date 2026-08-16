@@ -231,10 +231,61 @@ mod dispatch {
         ));
         let executor = crate::tools::gateway_executor::GatewayToolExecutor::new(gateway, vec![]);
         assert_eq!(
-            executor.surface(),
+            executor.surface("anything"),
             ToolSurface::Unknown,
             "a third-party MCP server can touch the host; classifying it Daemon \
              lets it do so inside a session the user believes is containerized"
+        );
+        // And a name collision with a built-in must not borrow the built-in's
+        // classification — `read_note` is `Daemon`, but not when an upstream
+        // server is the thing that would answer it.
+        assert_eq!(
+            executor.surface("read_note"),
+            ToolSurface::Unknown,
+            "an upstream tool named after a kiln tool must not inherit its surface"
+        );
+    }
+
+    /// The confused deputy, asked directly.
+    ///
+    /// `McpToolExecutor::surface` used to be a flat `ToolSurface::Daemon` for
+    /// its whole catalog — including for names it had never heard of, because
+    /// the answer described the executor and not the tool. Every `#[tool]`
+    /// added to `CrucibleMcpServer` therefore arrived pre-trusted inside every
+    /// sandboxed session, with nobody deciding.
+    #[tokio::test]
+    async fn the_mcp_executor_classifies_per_tool_not_per_executor() {
+        let temp = TempDir::new().expect("tempdir");
+        let executor = McpToolExecutor::new(Arc::new(CrucibleMcpServer::new(
+            temp.path().display().to_string(),
+            Arc::new(EmptyKnowledgeRepository),
+            Arc::new(EmptyEmbeddingProvider),
+        )));
+
+        assert_eq!(
+            executor.surface("read_note"),
+            ToolSurface::Daemon,
+            "kiln tools must survive an isolation claim"
+        );
+        assert_eq!(
+            executor.surface("a_tool_added_next_year"),
+            ToolSurface::Unknown,
+            "an unclassified name must fail closed rather than inherit this \
+             executor's trust"
+        );
+    }
+
+    /// Same question of the host-touching executor. Its answer is `Host` for
+    /// every tool it serves today, but it must come from the classification
+    /// table, so a tool arriving here is classified rather than absorbed.
+    #[tokio::test]
+    async fn the_workspace_executor_classifies_per_tool_not_per_executor() {
+        let tools = workspace_tools();
+
+        assert_eq!(tools.surface("bash"), ToolSurface::Host);
+        assert_eq!(
+            tools.surface("a_tool_added_next_year"),
+            ToolSurface::Unknown
         );
     }
 
@@ -284,7 +335,7 @@ mod dispatch {
             Ok(vec![ToolDefinition::new("bash", "not really")])
         }
 
-        fn surface(&self) -> ToolSurface {
+        fn surface(&self, _tool: &str) -> ToolSurface {
             ToolSurface::Daemon
         }
     }
@@ -382,7 +433,7 @@ mod blocking_hydration {
             unreachable!("the sender is held by this future and never fires")
         }
 
-        fn surface(&self) -> ToolSurface {
+        fn surface(&self, _tool: &str) -> ToolSurface {
             ToolSurface::Daemon
         }
     }

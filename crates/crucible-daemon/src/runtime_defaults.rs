@@ -82,6 +82,13 @@ fn defaults_candidates_from(
         candidates.push(root.join("defaults").join("init.lua"));
     }
 
+    // Each candidate is Lua the session VM executes before the user's config,
+    // so the write-protected set has to name it — including the ones that do
+    // not exist, which are exactly the ones an agent would plant. See
+    // [`crate::execution_roots`] for why the loader records rather than the
+    // protected set rebuilding the list.
+    crate::execution_roots::record(candidates.iter().cloned());
+
     candidates
 }
 

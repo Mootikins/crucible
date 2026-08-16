@@ -103,8 +103,8 @@ use std::path::{Path, PathBuf};
 /// a check that is bypassed by holding shift.
 const PROTECTED_DIRS: &[&str] = &[".crucible", ".git", ".claude", ".codex", ".opencode", ".pi"];
 
-/// Files the user's own shell executes at startup, protected **only in the
-/// home directory itself**.
+/// Files in the user's home directory that a trusted host process later reads
+/// as commands to run, protected **only in the home directory itself**.
 ///
 /// Design §6 names shell rc files, and they are the same class: `bash -c`
 /// does not read them, but the user's next interactive terminal does, with
@@ -123,6 +123,12 @@ const SHELL_STARTUP_FILES: &[&str] = &[
     ".zshenv",
     ".zprofile",
     ".zlogin",
+    // Not a shell rc, same class and the same place: `.git/config` is in
+    // `PROTECTED_DIRS` precisely for `core.fsmonitor` and `core.pager`
+    // (CVE-2026-55607), and `~/.gitconfig` sets those same keys for EVERY
+    // repository on the machine. Protecting the per-repo instance while leaving
+    // the global one writable protects nothing.
+    ".gitconfig",
 ];
 
 /// Why a write was refused, kept as a value so the refusal can say something
@@ -152,10 +158,11 @@ impl Protection {
                  still allowed."
             ),
             Self::ShellStartup(name) => format!(
-                "Refusing to write '{user_path}': `~/{name}` is read and executed by the user's \
-                 own shell on its next start, with the user's privileges. Writes to shell startup \
-                 files in the home directory are never permitted. A copy of the same file inside \
-                 a dotfiles repository is writable — no shell reads that one."
+                "Refusing to write '{user_path}': `~/{name}` is read by a trusted host process — \
+                 the user's own shell, or git — which runs commands out of it with the user's \
+                 privileges. Writes to these files in the home directory are never permitted. A \
+                 copy of the same file inside a dotfiles repository is writable — nothing reads \
+                 that one."
             ),
             Self::LinkTarget { link } => format!(
                 "Refusing to write '{user_path}': '{}' is a symlink pointing at it, so writing \
@@ -253,31 +260,33 @@ fn link_at_a_protected_path(candidate: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Roots that are write-denied for every session, discovered once per process.
+/// Roots that are write-denied for every session.
 ///
 /// These are the parts of the design's §6 set that are not expressible as a
-/// directory name — the trees the daemon loads plugins, bundled skills and
-/// agent cards from, at paths that depend on how Crucible was installed:
+/// directory name — the trees the daemon loads plugins, defaults, bundled
+/// skills, agent cards and configuration from, at paths that depend on how
+/// Crucible was installed and on what the environment and config say:
 ///
 /// - the runtime roots (`~/.config/crucible/runtime`,
 ///   `<prefix>/share/crucible/runtime`, `<repo>/runtime` in a checkout).
 ///   `runtime/plugins/*/init.lua` is Lua the daemon executes, and a developer
 ///   whose workspace IS the Crucible checkout has it inside an allowed root.
-/// - `~/.config/crucible`, which holds `agents/`, `skills/` and `plugins/` for
-///   the personal scope. `~/.crucible` needs no entry — the name covers it.
+/// - `~/.config/crucible` (and `$CRUCIBLE_CONFIG_DIR`), which holds `agents/`,
+///   `skills/`, `plugins/` and `config.toml`. `~/.crucible` needs no entry —
+///   the name covers it.
+/// - whatever `$CRUCIBLE_RUNTIME`, `$CRUCIBLE_PLUGIN_PATH` and the config
+///   `runtimepath` add, which is the half this function used to miss entirely:
+///   it was built from `runtime_roots::for_current_exe()`, a function that
+///   deliberately consults no environment variable, while three loaders layered
+///   env vars on top of it.
 ///
-/// Memoised because it stats the filesystem and is asked for once per agent
-/// build. The values are stable for the life of the process: they depend on
-/// the executable's location and the user's config directory, neither of which
-/// moves under a running daemon.
-pub(crate) fn daemon_roots() -> &'static [PathBuf] {
-    static ROOTS: std::sync::OnceLock<Vec<PathBuf>> = std::sync::OnceLock::new();
-    ROOTS.get_or_init(|| {
-        crucible_core::runtime_roots::for_current_exe()
-            .into_iter()
-            .chain(dirs::config_dir().map(|dir| dir.join("crucible")))
-            .collect()
-    })
+/// Delegated wholesale to [`crate::execution_roots`] rather than rebuilt here,
+/// so this is not a second list to keep in step — it is the loaders' own answer.
+/// Not memoised for that reason: the config `runtimepath` is not known until
+/// the config is read, and a session built before that read must not be
+/// protected by less than one built after it.
+pub(crate) fn daemon_roots() -> Vec<PathBuf> {
+    crate::execution_roots::all()
 }
 
 #[cfg(test)]
@@ -423,6 +432,32 @@ mod tests {
         assert!(
             !refuses(&home.join("notes.md")),
             "and the home directory itself is not thereby read-only"
+        );
+    }
+
+    /// `.git/config` is in `PROTECTED_DIRS` precisely for `core.fsmonitor` and
+    /// `core.pager` (CVE-2026-55607). `~/.gitconfig` sets those same keys for
+    /// every repository on the machine, so protecting the per-repo instance
+    /// while leaving the global one writable protects nothing.
+    #[test]
+    fn the_global_git_config_is_protected_like_a_repositorys_own() {
+        let home = tempfile::TempDir::new().unwrap();
+        assert_eq!(
+            shell_startup_file(&home.path().join(".gitconfig"), Some(home.path())),
+            Some(".gitconfig"),
+            "~/.gitconfig sets core.fsmonitor and core.pager for every repository"
+        );
+        assert!(
+            refuses(&home.path().join("repo").join(".git").join("config")),
+            "precondition: the per-repository instance was already protected"
+        );
+        assert_eq!(
+            shell_startup_file(
+                &home.path().join("dotfiles").join(".gitconfig"),
+                Some(home.path())
+            ),
+            None,
+            "a dotfiles-repo copy is read by nothing until the user links it"
         );
     }
 

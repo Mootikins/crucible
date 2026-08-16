@@ -62,14 +62,13 @@ impl DaemonToolsBridge {
         let isolation = self.isolation.as_ref()?;
         match session {
             Some(id) => {
-                // Everything behind this bridge is `WorkspaceTools`, so the
-                // surface is `Host` by construction — there is no kiln tool
-                // here that a `Daemon` surface would wave through.
-                if isolation.host_execution_allowed(
-                    id,
-                    name,
-                    crucible_core::traits::tools::ToolSurface::Host,
-                ) {
+                // Asked of the executor that will actually run the call rather
+                // than asserted `Host` here. Same answer for all six workspace
+                // tools, but a name this bridge cannot place answers `Unknown`
+                // and is refused, instead of a second hand-maintained belief
+                // about what sits behind the bridge.
+                let surface = self.workspace_tools.surface(name);
+                if isolation.host_execution_allowed(id, name, surface) {
                     return None;
                 }
                 let plugin = isolation

@@ -32,12 +32,13 @@ use std::path::{Path, PathBuf};
 /// the denied root", including the `..`-through-a-missing-directory spelling of
 /// it, because roots are normalized before the comparison.
 ///
-/// **Denied** is every place a *transcript* lives: the flat sessions root, and
-/// — because migration is not guaranteed to have emptied them — the legacy
-/// in-kiln `{root}/.crucible/sessions` of every scope root. Derived from the
-/// workspace as well as from the kilns: a project directory that used to be
-/// someone's kiln still holds one, and the workspace is a scope root like any
-/// other.
+/// **Denied** is every place a *transcript* lives: the flat sessions root
+/// named here, and — because migration is not guaranteed to have emptied them —
+/// the legacy in-kiln `.crucible/sessions`, which [`RootSet`] denies by SHAPE at
+/// any depth rather than being named per root here. The shape is the point: it
+/// used to be `{root}/.crucible/sessions` for each scope root, which missed
+/// every project filed *beneath* a kiln or workspace — those have one too and
+/// are not themselves roots, so they inherited the enclosing root's permit.
 ///
 /// **Carved out** is the session's own storage directory, which lives inside
 /// the denied sessions root. It is the one genuine nested exception, and the
@@ -68,16 +69,13 @@ pub(crate) fn session_containment(session: &Session, sessions_root: &Path) -> Ro
         .cloned()
         .chain(std::iter::once(session.workspace.clone()))
         .collect();
-    let denied: Vec<PathBuf> = std::iter::once(sessions_root.to_path_buf())
-        .chain(
-            scope
-                .iter()
-                .filter(|root| !root.as_os_str().is_empty())
-                .map(|root| root.join(".crucible").join("sessions")),
-        )
-        .collect();
+    // The legacy in-kiln transcript directory is denied by SHAPE
+    // (`RootSet`'s `.crucible/sessions` rule) rather than named per scope root:
+    // a project filed beneath a kiln or workspace has one too and is not itself
+    // a root, so the literal missed it.
+    let denied = std::iter::once(sessions_root.to_path_buf());
     RootSet::scoped(scope, denied)
-        .protect(crate::tools::protected::daemon_roots().iter().cloned())
+        .protect(crate::tools::protected::daemon_roots())
         .carve_out(std::iter::once(session.storage_path(sessions_root)))
 }
 
@@ -311,6 +309,40 @@ mod tests {
         }
     }
 
+    /// A project filed BENEATH a kiln or workspace has its own
+    /// `.crucible/sessions` and is not itself a scope root, so the per-root
+    /// literal never named it and the enclosing root's blanket permit admitted
+    /// it. Same confused-deputy shape as the rest of this design: an item
+    /// inheriting its container's answer.
+    #[test]
+    fn a_nested_projects_transcript_directory_is_denied_though_it_is_not_a_scope_root() {
+        let sessions_root = Path::new("/data/sessions");
+        let mut session = Session::new(SessionType::Chat, vec![PathBuf::from("/kilns/a")]);
+        session.workspace = PathBuf::from("/repo");
+
+        let roots = session_containment(&session, sessions_root);
+
+        for nested in [
+            "/kilns/a/projects/inner/.crucible/sessions/chat-old/session.jsonl",
+            "/repo/vendor/dep/.crucible/sessions/chat-old/session.jsonl",
+            "/repo/a/b/c/d/.crucible/sessions/chat-old/meta.json",
+        ] {
+            assert!(
+                !reaches(&roots, Path::new(nested)),
+                "{nested} is a transcript directory wherever it sits"
+            );
+        }
+        assert!(
+            reaches(&roots, Path::new("/kilns/a/projects/inner/Note.md")),
+            "and a nested project is otherwise ordinary content"
+        );
+        assert!(
+            reaches(&roots, Path::new("/repo/vendor/dep/.crucible/kiln.toml")),
+            "the rule is `.crucible/sessions`, not the whole control directory — \
+             the kiln-anchored tools have their own broader rule for that"
+        );
+    }
+
     /// The transcript threat model is tampering, not reading.
     ///
     /// A transcript is replayed into a future context, so an agent that can
@@ -353,6 +385,43 @@ mod tests {
         );
     }
 
+    /// The same carve-out, against the sessions root production actually uses.
+    ///
+    /// `data_home` is `~/.crucible`, so the real root is
+    /// `~/.crucible/sessions` — which matches the legacy in-kiln transcript
+    /// SHAPE component for component. A shape rule that answers ahead of the
+    /// ranking therefore denies a session its own spilled tool output on every
+    /// real installation, while every test above passes because a synthetic
+    /// `/data/sessions` root has no `.crucible` in it. The fixture is the
+    /// whole test: the rule and the carve-out only collide at the real path.
+    #[test]
+    fn a_session_reads_its_own_output_under_the_sessions_root_production_uses() {
+        let sessions_root = Path::new("/home/u/.crucible/sessions");
+        let mut session = Session::new(SessionType::Chat, vec![PathBuf::from("/kilns/a")]);
+        session.workspace = PathBuf::from("/repo");
+        let own = session.storage_path(sessions_root);
+
+        let roots = session_containment(&session, sessions_root);
+
+        assert!(
+            reaches(&roots, &own.join("tools").join("bash-1.txt")),
+            "the carve-out is why the sessions root is a read denial with an \
+             exception rather than a wall; the shape rule must not out-rank it"
+        );
+        // The denial the carve-out sits inside is unchanged.
+        assert!(
+            !reaches(
+                &roots,
+                &sessions_root.join("chat-other").join("session.jsonl")
+            ),
+            "another session's transcript stays unreachable"
+        );
+        assert!(
+            !can_write(&roots, &own.join("session.jsonl")),
+            "the carve-out is a READ exception and nothing more"
+        );
+    }
+
     /// The legacy in-kiln transcript directory gets the same treatment, since
     /// migration is best-effort and a kiln that predates it still holds one.
     #[test]
@@ -381,7 +450,8 @@ mod tests {
     #[test]
     fn the_runtime_tree_the_daemon_executes_is_write_denied_but_readable() {
         let sessions_root = Path::new("/data/sessions");
-        let runtime = crate::tools::protected::daemon_roots()
+        let roots_of_the_daemon = crate::tools::protected::daemon_roots();
+        let runtime = roots_of_the_daemon
             .first()
             .expect("the daemon always names at least one runtime root")
             .clone();
@@ -397,6 +467,58 @@ mod tests {
         assert!(
             !can_write(&roots, &plugin),
             "but writing one is code execution in the daemon on its next start"
+        );
+    }
+
+    /// A tree named on the config `runtimepath` is a tree the daemon loads and
+    /// EXECUTES Lua from, exactly like the shipped runtime — and
+    /// `docs/Help/Extending/Creating Plugins.md` documents putting a KILN on it
+    /// (`runtimepath = ["~/kilns/work"]   # loads ~/kilns/work/plugins/`).
+    /// A kiln is a session scope root, so the tree is inside the allowlist and
+    /// writable: an agent with nothing but `write_file` plants
+    /// `<kiln>/plugins/evil/init.lua` (or `<kiln>/defaults/init.lua`) and the
+    /// daemon runs it with host privileges on its next start. That is
+    /// CVE-2026-25725's shape, and neither path exists beforehand.
+    #[test]
+    fn a_runtimepath_tree_the_daemon_executes_is_write_denied_but_readable() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let sessions_root = tmp.path().join("sessions");
+        let kiln = tmp.path().join("kilns").join("work");
+        std::fs::create_dir_all(kiln.join("plugins")).unwrap();
+
+        // Precondition: the daemon really does load plugins from this tree.
+        let searched = crate::daemon_plugins::daemon_plugin_paths(std::slice::from_ref(&kiln));
+        assert!(
+            searched.iter().any(|(dir, _)| dir == &kiln.join("plugins")),
+            "precondition: the daemon searches <runtimepath>/plugins: {searched:?}"
+        );
+        // And executes `<runtimepath>/defaults/init.lua` on every session VM.
+        assert!(
+            crate::runtime_defaults::defaults_candidates(std::slice::from_ref(&kiln), None)
+                .contains(&kiln.join("defaults").join("init.lua")),
+            "precondition: the session VM runs <runtimepath>/defaults/init.lua"
+        );
+
+        let session = Session::new(SessionType::Chat, vec![kiln.clone()]);
+        let roots = session_containment(&session, &sessions_root);
+
+        let plugin = kiln.join("plugins").join("evil").join("init.lua");
+        let defaults = kiln.join("defaults").join("init.lua");
+        assert!(
+            reaches(&roots, &plugin),
+            "a plugin's source must stay readable — this is not a denial"
+        );
+        for lua in [&plugin, &defaults] {
+            assert!(!lua.exists(), "{} must not exist yet", lua.display());
+            assert!(
+                !can_write(&roots, lua),
+                "{} is Lua the daemon executes on its next start",
+                lua.display()
+            );
+        }
+        assert!(
+            can_write(&roots, &kiln.join("Note.md")),
+            "protecting the plugin tree must not cost the kiln's notes"
         );
     }
 

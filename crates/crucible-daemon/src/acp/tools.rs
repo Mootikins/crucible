@@ -20,6 +20,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::acp::{ClientError, Result};
+use crate::tools::containment::RootSet;
+use crate::tools::fs_scope::FsScope;
+use crate::tools::notes::{ensure_md_suffix, reject_non_note};
 
 /// Descriptor for a registered tool
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -313,6 +316,12 @@ pub fn discover_tools(registry: &mut ToolRegistry, _kiln_path: &str) -> Result<u
 #[derive(Debug)]
 pub struct ToolExecutor {
     kiln_path: PathBuf,
+    /// The kiln as a capability, for the same reason `NoteTools` holds one: the
+    /// note operations here build paths from caller strings, and
+    /// `kiln_path.join(caller)` lets an absolute component REPLACE the base
+    /// (design shape 1; RUSTSEC-2022-0043, CVE-2023-37274). `kiln_path` above
+    /// stays as the display and metadata base and is never joined onto.
+    scope: FsScope,
 }
 
 impl ToolExecutor {
@@ -322,7 +331,15 @@ impl ToolExecutor {
     ///
     /// * `kiln_path` - Path to the kiln for tool operations
     pub fn new(kiln_path: PathBuf) -> Self {
-        Self { kiln_path }
+        Self {
+            scope: FsScope::kiln(kiln_path.clone(), RootSet::Ambient),
+            kiln_path,
+        }
+    }
+
+    /// `FsScope` speaks `rmcp::ErrorData`; this module speaks [`ClientError`].
+    fn contained(err: rmcp::ErrorData) -> ClientError {
+        ClientError::InvalidConfig(err.message.to_string())
     }
 
     /// Execute a tool by name with the given parameters
@@ -399,11 +416,12 @@ impl ToolExecutor {
             name_or_path
         };
 
-        // If it looks like a path (contains / or \), use it directly
+        // If it looks like a path (contains / or \), use it directly — through
+        // the scope, which is what makes "directly" mean "inside the kiln".
         if cleaned.contains('/') || cleaned.contains('\\') {
-            let full_path = self.kiln_path.join(cleaned);
+            let full_path = self.scope.resolve(cleaned).map_err(Self::contained)?;
             if full_path.exists() {
-                return Ok(full_path);
+                return Ok(full_path.as_path().to_path_buf());
             }
             return Err(ClientError::NotFound(format!(
                 "Note not found at path: {}",
@@ -422,43 +440,23 @@ impl ToolExecutor {
         self.find_note_by_name(&search_name).await
     }
 
-    /// Find a note by name (recursively searches kiln)
+    /// Find a note by name (recursively searches kiln).
+    ///
+    /// The walk goes through the scope rather than `read_dir` directly: a
+    /// walker writes its own paths, so filtering the caller's string would
+    /// leave the search itself free to surface the control directory.
     async fn find_note_by_name(&self, name: &str) -> Result<PathBuf> {
-        use tokio::fs;
-
-        // Try direct path first (most common case)
-        let direct_path = self.kiln_path.join(name);
+        let direct_path = self.scope.resolve(name).map_err(Self::contained)?;
         if direct_path.exists() {
-            return Ok(direct_path);
+            return Ok(direct_path.as_path().to_path_buf());
         }
 
-        // Recursively search for the note
-        let mut stack = vec![self.kiln_path.clone()];
-
-        while let Some(dir) = stack.pop() {
-            let mut entries = fs::read_dir(&dir)
-                .await
-                .map_err(|e| ClientError::FileSystem(format!("Failed to read directory: {}", e)))?;
-
-            while let Some(entry) = entries
-                .next_entry()
-                .await
-                .map_err(|e| ClientError::FileSystem(format!("Failed to read entry: {}", e)))?
-            {
-                let path = entry.path();
-
-                if path.is_dir() {
-                    // Add subdirectory to search
-                    stack.push(path);
-                } else if let Some(file_name) = path.file_name() {
-                    if file_name == name {
-                        return Ok(path);
-                    }
-                }
-            }
-        }
-
-        Err(ClientError::NotFound(format!("Note not found: {}", name)))
+        let root = self.scope.resolve("").map_err(Self::contained)?;
+        self.scope
+            .walk_files(&root)
+            .find(|entry| entry.file_name() == std::ffi::OsStr::new(name))
+            .map(|entry| entry.path().to_path_buf())
+            .ok_or_else(|| ClientError::NotFound(format!("Note not found: {}", name)))
     }
 
     /// Execute a note tool
@@ -473,28 +471,29 @@ impl ToolExecutor {
                 let path = Self::get_required_param(&params, "path")?;
                 let content = Self::get_required_param(&params, "content")?;
 
-                // Resolve the path (supports note names)
-                let full_path = if path.contains('/') || path.contains('\\') {
-                    // Looks like a path, use directly
-                    self.kiln_path.join(&path)
-                } else {
-                    // Note name - create in root with .md extension
-                    let file_name = if path.ends_with(".md") {
-                        path.clone()
-                    } else {
-                        format!("{}.md", path)
-                    };
-                    self.kiln_path.join(file_name)
-                };
+                // The same suffix rule as the daemon-side note tools, from the
+                // same function — this module used to hand-roll a third copy.
+                let requested = ensure_md_suffix(path.clone());
 
-                // Execute the tool by directly writing the file
-                tokio::fs::write(&full_path, &content).await.map_err(|e| {
-                    ClientError::FileSystem(format!("Failed to create note: {}", e))
-                })?;
+                // Containment and the protected set, then the rule that a note
+                // tool writes notes — the same two the daemon-side `create_note`
+                // answers to, because this sink reaches `fs::write` just as
+                // directly.
+                let full_path = self
+                    .scope
+                    .resolve_for_write(&requested)
+                    .map_err(Self::contained)?;
+                reject_non_note(&requested, full_path.as_path()).map_err(Self::contained)?;
+
+                tokio::fs::write(full_path.as_path(), &content)
+                    .await
+                    .map_err(|e| {
+                        ClientError::FileSystem(format!("Failed to create note: {}", e))
+                    })?;
 
                 Ok(serde_json::json!({
                     "path": path,
-                    "full_path": full_path.to_string_lossy(),
+                    "full_path": full_path.as_path().to_string_lossy(),
                     "status": "created"
                 }))
             }
@@ -622,7 +621,7 @@ mod tests {
             Ok(self.tools.clone())
         }
 
-        fn surface(&self) -> crucible_core::traits::ToolSurface {
+        fn surface(&self, _tool: &str) -> crucible_core::traits::ToolSurface {
             crucible_core::traits::ToolSurface::Unknown
         }
     }
@@ -746,6 +745,76 @@ mod tests {
         let output = executor.execute("get_kiln_info", json!({})).await.unwrap();
         assert_eq!(output["exists"], json!(true));
         assert_eq!(output["is_directory"], json!(true));
+    }
+
+    /// The second copy of the note tools, and the second copy of the bug.
+    ///
+    /// `resolve_note_path` and `create_note` here built paths with
+    /// `self.kiln_path.join(caller_string)`, and `join` lets an absolute
+    /// component REPLACE the base — shape 1 of the design's three, the one with
+    /// RUSTSEC-2022-0043 and CVE-2023-37274 behind it. This executor is not
+    /// currently wired to a session, which is exactly why it needed fixing
+    /// rather than documenting: the next caller inherits whatever it does.
+    #[tokio::test]
+    async fn the_acp_executor_contains_note_paths_to_its_kiln() {
+        let temp = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let secret = outside.path().join("secret.txt");
+        std::fs::write(&secret, "SENTINEL").unwrap();
+        let executor = ToolExecutor::new(temp.path().to_path_buf());
+
+        for path in [
+            secret.to_string_lossy().into_owned(),
+            "../".repeat(8) + "etc/passwd",
+        ] {
+            assert!(
+                executor
+                    .execute("read_note", json!({ "path": path }))
+                    .await
+                    .is_err(),
+                "read_note must not leave the kiln via {path}"
+            );
+            assert!(
+                executor
+                    .execute("create_note", json!({ "path": path, "content": "x" }))
+                    .await
+                    .is_err(),
+                "create_note must not leave the kiln via {path}"
+            );
+        }
+        assert_eq!(
+            std::fs::read_to_string(&secret).unwrap(),
+            "SENTINEL",
+            "no refused call may have written outside the kiln"
+        );
+    }
+
+    /// The same extension rule as the daemon-side note tools: this executor
+    /// writes with `tokio::fs::write` and had no rule at all, so
+    /// `create_note {"path": "plugins/evil/init.lua"}` authored Lua.
+    #[tokio::test]
+    async fn the_acp_executor_creates_only_notes() {
+        let temp = TempDir::new().unwrap();
+        std::fs::create_dir_all(temp.path().join("plugins")).unwrap();
+        let executor = ToolExecutor::new(temp.path().to_path_buf());
+
+        assert!(executor
+            .execute(
+                "create_note",
+                json!({ "path": "plugins/init.lua", "content": "os.execute('id')" })
+            )
+            .await
+            .is_err());
+        assert!(!temp.path().join("plugins/init.lua").exists());
+
+        executor
+            .execute(
+                "create_note",
+                json!({ "path": "Real Note", "content": "hi" }),
+            )
+            .await
+            .expect("a bare name is still a note");
+        assert!(temp.path().join("Real Note.md").exists());
     }
 
     #[test]

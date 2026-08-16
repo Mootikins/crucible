@@ -670,11 +670,15 @@ impl ToolExecutor for WorkspaceTools {
         Ok(tools)
     }
 
-    /// `bash`, `read_file`, `write_file`, `edit_file`, `glob`, `grep` — every
-    /// one of them reads, writes or executes on the host filesystem. This is
-    /// the executor an isolating plugin exists to intercept.
-    fn surface(&self) -> ToolSurface {
-        ToolSurface::Host
+    /// Deferred to the per-tool table rather than answered `Host` outright.
+    ///
+    /// Every tool this executor serves today *is* `Host` — and
+    /// `every_workspace_tool_is_host_surface` asserts exactly that — but the
+    /// answer has to come from the same place every other executor's does, or
+    /// "the executor decides" survives here and the next tool added inherits a
+    /// classification instead of receiving one.
+    fn surface(&self, tool: &str) -> ToolSurface {
+        crate::tools::surface::classify(tool)
     }
 }
 

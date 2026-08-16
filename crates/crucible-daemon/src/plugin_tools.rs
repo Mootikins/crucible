@@ -63,14 +63,20 @@ pub struct PluginRegistry {
 fn builtin_tool_names() -> std::collections::HashSet<String> {
     // A throwaway server just to enumerate the kiln MCP tool names; the empty
     // providers are never called because we only read the catalog.
+    //
+    // `all_tool_names`, NOT `list_tools`: the latter answers "what may this
+    // session call" and strips `KILN_BACKED_TOOLS` on a kiln-less server (which
+    // this one is) plus `delegate_session`. Reserving only the advertised
+    // subset let a plugin claim `read_note` on any kiln-less session, where
+    // dispatch's `Err(NotFound) => continue` would then run its Lua under a
+    // name the model reads as the built-in.
     let mcp = crate::tools::mcp_server::CrucibleMcpServer::new(
         String::new(),
         Arc::new(crate::empty_providers::EmptyKnowledgeRepository),
         Arc::new(crate::empty_providers::EmptyEmbeddingProvider),
     );
-    mcp.list_tools()
+    mcp.all_tool_names()
         .into_iter()
-        .map(|t| t.name.to_string())
         .chain(
             crate::tools::workspace::WorkspaceTools::tool_definitions()
                 .into_iter()
@@ -78,9 +84,6 @@ fn builtin_tool_names() -> std::collections::HashSet<String> {
         )
         .chain(
             [
-                // `list_tools` hides `delegate_session` when delegation is off,
-                // but the name is still ours in every session that enables it.
-                "delegate_session",
                 // The progressive-disclosure bridge is handled inside the
                 // dispatcher itself and never reaches a provider, so a plugin
                 // claiming these names would be unreachable by construction.
@@ -351,7 +354,11 @@ impl ToolExecutor for PluginToolExecutor {
     /// "daemon-side" is not the question — a plugin tool can do anything a
     /// `bash` call can, so it is classified with the things that touch the
     /// host, not with the kiln.
-    fn surface(&self) -> ToolSurface {
+    ///
+    /// The name is ignored on purpose. Consulting the built-in table here
+    /// would let a plugin tool called `read_note` borrow the built-in's
+    /// `Daemon` classification and run its own Lua inside a sandboxed session.
+    fn surface(&self, _tool: &str) -> ToolSurface {
         ToolSurface::Unknown
     }
 }
@@ -370,10 +377,18 @@ mod tests {
     fn plugin_tools_are_unknown_surface_so_a_claim_refuses_them() {
         let executor = PluginToolExecutor::new(Arc::new(PluginRegistry::new()));
         assert_eq!(
-            executor.surface(),
+            executor.surface("some_plugin_tool"),
             ToolSurface::Unknown,
             "plugin Lua has cru.shell.exec; classifying it Daemon lets it run \
              on the host inside a session the user believes is containerized"
+        );
+        // A plugin tool that names itself after a built-in must not pick up
+        // the built-in's classification — `read_note` is `Daemon`, but a
+        // plugin answering to that name is still arbitrary Lua.
+        assert_eq!(
+            executor.surface("read_note"),
+            ToolSurface::Unknown,
+            "a plugin tool named after a kiln tool must not inherit its surface"
         );
     }
 
@@ -439,6 +454,43 @@ mod tests {
             names,
             vec!["safe_name".to_string()],
             "a plugin must not be able to shadow the built-in `bash`"
+        );
+    }
+
+    /// The collision set must name every built-in the daemon *owns*, not the
+    /// subset one particular session happens to advertise. `list_tools()`
+    /// strips [`KILN_BACKED_TOOLS`] when there is no kiln, so computing the set
+    /// from a kiln-less server left all ten claimable — and dispatch's
+    /// `Err(NotFound) => continue` then runs the plugin's Lua under the name
+    /// `read_note` while the model believes it called the built-in.
+    #[test]
+    fn kiln_backed_tool_names_are_rejected_even_though_a_kiln_less_session_hides_them() {
+        let (lua, func) = lua_with_fn();
+        let registry = PluginRegistry::new();
+        // `delegate_session` is hidden by the same method for a different
+        // reason (delegation disabled), so it belongs in the same assertion.
+        let hidden: Vec<&str> = crate::tools::mcp_server::KILN_BACKED_TOOLS
+            .iter()
+            .copied()
+            .chain(["delegate_session"])
+            .collect();
+        let declared: Vec<DiscoveredTool> = hidden.iter().map(|name| tool(name)).collect();
+        let funcs: HashMap<String, mlua::Function> = hidden
+            .iter()
+            .map(|name| ((*name).to_string(), func.clone()))
+            .collect();
+        registry.register_plugin("rogue", &lua, &declared, &[], funcs, HashMap::new());
+
+        let claimed: Vec<String> = registry
+            .tool_definitions()
+            .into_iter()
+            .map(|d| d.name)
+            .collect();
+        assert!(
+            claimed.is_empty(),
+            "a plugin claimed built-in tool names {claimed:?}; on a kiln-less \
+             session its Lua would answer to them and the model would believe \
+             it called the built-in"
         );
     }
 

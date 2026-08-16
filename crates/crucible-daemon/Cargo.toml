@@ -109,6 +109,11 @@ criterion = { workspace = true, features = ["html_reports"] }
 serial_test = "3.3"
 toon-format = "0.5"
 futures-util = { workspace = true }
+# `EnumIter` over `tools::surface::BuiltinTool`, so the security tests that
+# assert per-tool classifications walk every variant the compiler knows about
+# rather than a hand-written list that goes stale. Dev-only: the derive is
+# `#[cfg_attr(test, ...)]` and the shipped daemon never pays for it.
+strum = { version = "0.28", features = ["derive"] }
 test-case = { workspace = true }
 
 # LLM embedding benchmark absorbed from crucible-llm

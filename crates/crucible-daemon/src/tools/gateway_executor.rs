@@ -87,7 +87,10 @@ impl ToolExecutor for GatewayToolExecutor {
     /// process but are third-party code reached over a pipe: a filesystem MCP
     /// server is host-touching in every way that matters, and the daemon has
     /// no way to tell one from a calculator.
-    fn surface(&self) -> ToolSurface {
+    ///
+    /// The name is ignored on purpose — an upstream server naming a tool
+    /// `read_note` must not inherit the built-in's `Daemon` classification.
+    fn surface(&self, _tool: &str) -> ToolSurface {
         ToolSurface::Unknown
     }
 }
