@@ -227,3 +227,37 @@ async fn test_valid_nested_path_allowed() {
 
     assert!(result.is_ok(), "Should allow valid nested path");
 }
+
+/// A note tool creates files, so it is a write path and answers to the same
+/// protected set as `write_file`.
+///
+/// The kiln scope already refuses `.crucible/` at any depth, so what this
+/// pins is the rest of the set — a git hook, another harness's settings —
+/// which the control-directory rule says nothing about. `.md` gets appended
+/// to the name, which makes the payload inert for git but not for anything
+/// that globs a directory, and "inert by accident" is not a boundary.
+#[tokio::test]
+async fn create_note_refuses_a_protected_directory() {
+    let temp_dir = TempDir::new().unwrap();
+    let note_tools = NoteTools::new(temp_dir.path().to_string_lossy().to_string());
+
+    for path in [
+        ".git/hooks/post-checkout",
+        ".claude/settings.json",
+        "nested/.codex/config.toml",
+    ] {
+        let err = note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: path.to_string(),
+                content: "payload".to_string(),
+                frontmatter: None,
+            }))
+            .await
+            .expect_err("a protected write must be refused");
+        assert!(err.message.contains("protected"), "{path}: {}", err.message);
+        assert!(
+            !temp_dir.path().join(path).parent().unwrap().exists(),
+            "{path}: the refused call must not have created the directory either"
+        );
+    }
+}

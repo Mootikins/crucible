@@ -13,9 +13,11 @@
 #![allow(missing_docs)]
 
 pub mod autolink;
+pub mod containment;
 pub mod diff_synth;
 pub mod error_utils;
 pub mod extended_mcp_server;
+pub(crate) mod fs_scope;
 pub mod gateway_executor;
 pub mod grep_engine;
 pub mod helpers;
@@ -25,6 +27,8 @@ pub mod mcp_gateway;
 pub mod mcp_server;
 pub mod notes;
 pub mod output_filter;
+pub(crate) mod path_resolution;
+pub(crate) mod protected;
 pub mod search;
 pub mod tool_discovery;
 pub mod tool_modes;

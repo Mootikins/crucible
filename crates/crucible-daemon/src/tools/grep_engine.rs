@@ -12,6 +12,35 @@ use grep::searcher::{sinks::UTF8, BinaryDetection, SearcherBuilder};
 use ignore::WalkBuilder;
 use std::path::Path;
 
+/// A directory to walk, together with the rule for what it may yield.
+///
+/// The two travel together because separating them is the bug: `grep_notes`
+/// validated its start directory and then let the walker recurse into whatever
+/// lived beneath it, which under a kiln that encloses the sessions root is
+/// every transcript on the machine. A caller cannot name a walk root here
+/// without saying, in the same expression, what the walk is allowed to return.
+pub(crate) struct WalkScope<'a> {
+    root: &'a Path,
+    admits: &'a dyn Fn(&Path) -> bool,
+}
+
+impl<'a> WalkScope<'a> {
+    /// A walk contained by `admits` — the session's filesystem scope.
+    pub(crate) fn contained(root: &'a Path, admits: &'a dyn Fn(&Path) -> bool) -> Self {
+        Self { root, admits }
+    }
+
+    /// A walk with no containment, for the surfaces the USER drives directly
+    /// (the `search_grep` RPC and `POST /api/search/grep`), where the path came
+    /// from the person at the keyboard rather than from a model.
+    pub(crate) fn user_driven(root: &'a Path) -> Self {
+        Self {
+            root,
+            admits: &|_| true,
+        }
+    }
+}
+
 /// Max characters retained in a grep hit's `text` snippet (long lines are
 /// truncated so a minified/generated line can't blow up a response).
 const GREP_SNIPPET_CAP: usize = 300;
@@ -62,14 +91,15 @@ pub enum GrepSearchError {
 }
 
 /// Content search (ripgrep engine: `grep-regex` + `grep-searcher`) over files
-/// under `walk_root`, honoring `.gitignore` and skipping binary files.
+/// under the walk root, honoring `.gitignore` and skipping binary files.
 ///
 /// This is the single grep engine shared by the `grep_notes` MCP tool and the
 /// `search_grep` RPC/HTTP endpoint.
 ///
-/// * `walk_root` — directory tree to walk.
+/// * `walk` — directory tree to walk, paired with the rule for what it may
+///   yield ([`WalkScope`]).
 /// * `rel_base` — paths in `GrepHit::rel_path` are reported relative to this
-///   (usually the same as `walk_root`, but `grep_notes` reports relative to
+///   (usually the same as the walk root, but `grep_notes` reports relative to
 ///   the kiln root while walking a subfolder).
 /// * `query` — a **literal** substring by default (regex-escaped); a regular
 ///   expression (Rust regex syntax) when `regex` is set.
@@ -83,7 +113,7 @@ pub enum GrepSearchError {
 ///
 /// Returns `(hits, truncated)`.
 pub(crate) fn grep_search(
-    walk_root: &Path,
+    walk: WalkScope<'_>,
     rel_base: &Path,
     query: &str,
     regex: bool,
@@ -134,7 +164,7 @@ pub(crate) fn grep_search(
     let mut hits: Vec<GrepHit> = Vec::new();
     let mut truncated = false;
 
-    for entry in WalkBuilder::new(walk_root)
+    for entry in WalkBuilder::new(walk.root)
         .standard_filters(true)
         .build()
         .filter_map(Result::ok)
@@ -143,6 +173,14 @@ pub(crate) fn grep_search(
             continue;
         }
         let path = entry.path();
+
+        // The containment rule applies to what the walk YIELDS. `standard_filters`
+        // skips hidden entries BELOW the root but never the root itself, so a
+        // caller who names a hidden directory is handed its contents — and no
+        // filter of ripgrep's knows anything about the session's roots anyway.
+        if !(walk.admits)(path) {
+            continue;
+        }
 
         if let Some(ref gm) = glob_matcher {
             let name = path.file_name().unwrap_or_default();

@@ -46,8 +46,11 @@ pub(crate) async fn handle_search_grep(
         Err(msg) => return Response::error(req.id, INVALID_PARAMS, msg),
     };
 
+    // User-driven: `root` came from the person at the keyboard (TUI / web
+    // search), was validated against the registered projects and kilns above,
+    // and is not a model-supplied path.
     match grep_search(
-        &canonical_root,
+        crate::tools::grep_engine::WalkScope::user_driven(&canonical_root),
         &canonical_root,
         query,
         regex,

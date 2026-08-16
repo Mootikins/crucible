@@ -15,9 +15,7 @@
 //! This decides whether persisting a chat integration's channel→session map is
 //! worth anything: if the id cannot be revived, remembering it is pointless.
 
-use super::{
-    create_test_agent_manager, script, test_agent, test_workspace_tools, StreamingMockAgent,
-};
+use super::{create_test_agent_manager, script, test_agent, StreamingMockAgent};
 use crate::agent_manager::{AgentManager, AgentManagerParams};
 use crate::background_manager::BackgroundJobManager;
 use crate::kiln_manager::KilnManager;
@@ -96,7 +94,6 @@ async fn cold_manager(
         context_config: None,
         permission_config: None,
         plugin_loader: None,
-        workspace_tools: test_workspace_tools(),
     });
     (sm, am, event_tx)
 }

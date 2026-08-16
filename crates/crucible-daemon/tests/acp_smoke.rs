@@ -23,11 +23,10 @@ use crucible_daemon::background_manager::BackgroundJobManager;
 use crucible_daemon::delegation::{DelegationRequest, DelegationService, DelegationSpawner};
 use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::recording::RecordingWriter;
-use crucible_daemon::tools::workspace::WorkspaceTools;
 use crucible_daemon::{AgentManager, AgentManagerParams, KilnManager, SessionManager};
 use futures::StreamExt;
 use std::future::Future;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -105,7 +104,6 @@ fn build_delegation_stack(
             context_config: None,
             permission_config: None,
             plugin_loader: None,
-            workspace_tools: Arc::new(WorkspaceTools::new(PathBuf::from("/tmp"))),
         },
         service.clone(),
     ));

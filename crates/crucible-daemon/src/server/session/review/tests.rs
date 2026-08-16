@@ -25,7 +25,6 @@ impl Fixture {
         use crate::agent_manager::AgentManagerParams;
         use crate::background_manager::BackgroundJobManager;
         use crate::kiln_manager::KilnManager;
-        use crate::tools::workspace::WorkspaceTools;
 
         let dir = TempDir::new().unwrap();
         git(dir.path(), &["init", "-q"]).await;
@@ -48,7 +47,6 @@ impl Fixture {
             context_config: None,
             permission_config: None,
             plugin_loader: None,
-            workspace_tools: Arc::new(WorkspaceTools::new(dir.path().to_path_buf())),
         }));
 
         Self {

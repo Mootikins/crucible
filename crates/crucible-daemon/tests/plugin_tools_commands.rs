@@ -8,7 +8,6 @@
 use crucible_core::session::{Session, SessionType};
 use crucible_daemon::background_manager::BackgroundJobManager;
 use crucible_daemon::test_support::temp_session_manager;
-use crucible_daemon::tools::workspace::WorkspaceTools;
 use crucible_daemon::{AgentManager, AgentManagerParams, DaemonPluginLoader, KilnManager};
 use crucible_lua::PluginSource;
 use std::collections::HashMap;
@@ -106,7 +105,6 @@ async fn plugin_declared_tool_is_dispatchable_by_the_agent() {
         context_config: None,
         permission_config: None,
         plugin_loader: Some(Arc::new(tokio::sync::Mutex::new(Some(loader)))),
-        workspace_tools: Arc::new(WorkspaceTools::new(tmp.path().to_path_buf())),
     });
 
     let session = Session::new(SessionType::Chat, vec![tmp.path().to_path_buf()]);

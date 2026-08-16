@@ -6,14 +6,6 @@ use crate::agent_manager::messaging::review_capture::{delegated_child_id, needs_
 use crucible_core::agent::ToolPolicy;
 use crucible_core::session::ReviewState;
 
-/// Held in a static so it outlives every manager built from it; these
-/// tests never dispatch a tool, so one shared directory is enough.
-fn tools_root() -> &'static std::path::Path {
-    static DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
-    DIR.get_or_init(|| tempfile::tempdir().expect("tools tempdir"))
-        .path()
-}
-
 fn manager() -> AgentManager {
     let (event_tx, _) = broadcast::channel(16);
     AgentManager::new(AgentManagerParams {
@@ -26,7 +18,6 @@ fn manager() -> AgentManager {
         context_config: None,
         permission_config: None,
         plugin_loader: None,
-        workspace_tools: Arc::new(WorkspaceTools::new(tools_root())),
     })
 }
 

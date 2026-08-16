@@ -199,13 +199,9 @@ impl CrucibleMcpServer {
         !self.kiln_path.as_os_str().is_empty()
     }
 
-    /// Create a new MCP server for a kiln
-    ///
-    /// # Arguments
-    ///
-    /// * `kiln_path` - Path to the kiln directory
-    /// * `knowledge_repo` - Repository for semantic search
-    /// * `embedding_provider` - Provider for generating embeddings
+    /// A server for a kiln, UNCONTAINED beyond that kiln — for the catalogs and
+    /// user-driven hosts with no session to answer to. Session-facing callers
+    /// use [`Self::new_with_workspace_and_delegation`].
     pub fn new(
         kiln_path: String,
         knowledge_repo: Arc<dyn KnowledgeRepository>,
@@ -218,9 +214,11 @@ impl CrucibleMcpServer {
             knowledge_repo,
             embedding_provider,
             None,
+            crate::tools::containment::RootSet::Ambient,
         )
     }
 
+    /// As [`Self::new`], with delegation. Also uncontained beyond the kiln.
     pub fn new_with_delegation(
         kiln_path: String,
         knowledge_repo: Arc<dyn KnowledgeRepository>,
@@ -234,21 +232,33 @@ impl CrucibleMcpServer {
             knowledge_repo,
             embedding_provider,
             delegation_context,
+            crate::tools::containment::RootSet::Ambient,
         )
     }
 
+    /// The session-facing constructor.
+    ///
+    /// `containment` is a required argument rather than a builder step: a rule
+    /// you can forget to apply is the "every call site elects to call it"
+    /// property this design exists to remove, and its absence has to be spelled
+    /// `RootSet::Ambient` where a reviewer sees it. Without it each kiln family
+    /// knows only its own kiln — not enough when the kiln ENCLOSES something
+    /// the session may not read, which is every kiln-less session, whose kiln
+    /// is the data root above the sessions root.
     pub fn new_with_workspace_and_delegation(
         kiln_path: String,
         workspace_path: PathBuf,
         knowledge_repo: Arc<dyn KnowledgeRepository>,
         embedding_provider: Arc<dyn EmbeddingProvider>,
         delegation_context: Option<DelegationContext>,
+        containment: crate::tools::containment::RootSet,
     ) -> Self {
         let kiln_path_buf = PathBuf::from(&kiln_path);
         Self {
-            note_tools: NoteTools::new(kiln_path.clone()),
-            search_tools: SearchTools::new(kiln_path.clone(), knowledge_repo, embedding_provider),
-            kiln_tools: KilnTools::new(kiln_path),
+            note_tools: NoteTools::new(kiln_path.clone()).with_containment(containment.clone()),
+            search_tools: SearchTools::new(kiln_path.clone(), knowledge_repo, embedding_provider)
+                .with_containment(containment.clone()),
+            kiln_tools: KilnTools::new(kiln_path).with_containment(containment),
             workspace_path,
             kiln_path: kiln_path_buf,
             delegation_context,
@@ -904,6 +914,7 @@ mod tests {
             Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
             Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
             None,
+            crate::tools::containment::RootSet::Ambient,
         );
 
         let found = server
@@ -956,6 +967,7 @@ mod tests {
             Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
             Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
             None,
+            crate::tools::containment::RootSet::Ambient,
         );
 
         for (name, marker) in [

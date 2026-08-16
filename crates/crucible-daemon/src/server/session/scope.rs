@@ -4,6 +4,7 @@ use super::create::validate_trust_level;
 use crate::agent_manager::AgentError;
 use crate::project_manager::forbidden_root_reason;
 use crate::session_manager::KilnScope;
+use crate::tools::path_resolution::ResolvedPath;
 use crate::trust_resolution::{find_workspace_and_resolve_classification, resolve_provider_trust};
 use crucible_core::Session;
 
@@ -61,27 +62,59 @@ pub(crate) fn refuse_forbidden_scope(
     path: &Path,
     sessions_root: &Path,
 ) -> Result<(), String> {
-    // Decide on the resolved path so a symlink cannot present an innocent name
-    // for a forbidden target. Leniently: a path that does not exist yet still
-    // has its existing ancestors resolved, so `<symlink-to-sessions-root>/new`
-    // is judged where it actually lands. Both sides go through the same
-    // resolution, or a data home behind a symlink (`/tmp` on macOS) would make
-    // the sessions-root rule silently never match.
-    let resolved = crate::tools::workspace::canonicalize_lenient(path);
-    let resolved = resolved.as_path();
-    if let Some(why) = forbidden_root_reason(resolved, dirs::home_dir().as_deref()) {
+    // Before resolution, because resolution anchors a relative path at the
+    // working directory and `""` would become the daemon's cwd — an ordinary
+    // directory that clears the floor. The pre-resolution form refused `""`
+    // for an accidental reason (`Path::new("").parent()` is `None`, which
+    // `forbidden_root_reason` reads as the filesystem root); it is refused
+    // here on purpose, because an empty path names nothing and every builder
+    // downstream treats it as a universal root.
+    if path.as_os_str().is_empty() {
         return Err(format!(
-            "Refusing '{}' as a session {kind}: {why}",
-            resolved.display()
+            "Refusing an empty path as a session {kind}: it names no directory"
         ));
     }
-    let sessions_root = crate::tools::workspace::canonicalize_lenient(sessions_root);
-    if !sessions_root.as_os_str().is_empty() && resolved.starts_with(&sessions_root) {
-        return Err(format!(
-            "Refusing '{}' as a session {kind}: it is inside the session storage root, \
-             which holds every recorded transcript",
-            resolved.display()
-        ));
+
+    // Decided on BOTH resolved forms of the path — the `..`-clamped lexical
+    // one and the one walked back through its deepest existing ancestor.
+    //
+    // The lexical form is what closes `{data}/not-yet/../sessions/{victim}`:
+    // nothing on that path needs to exist for it to name a transcript, and a
+    // resolution that only understands existing directories hands it back with
+    // the `..` still in it. The resolved form is what closes a symlink
+    // presenting an innocent name for a forbidden target. Neither subsumes the
+    // other, and this is a *denial*, so any form landing somewhere forbidden
+    // refuses — the broad match is the fail-closed one here.
+    //
+    // The sessions root gets the same treatment, or a data home behind a
+    // symlink (`/tmp` on macOS) would make that rule silently never match.
+    let resolved = ResolvedPath::resolve(path);
+    for candidate in [resolved.lexical(), resolved.canonical()] {
+        if let Some(why) = forbidden_root_reason(candidate, dirs::home_dir().as_deref()) {
+            return Err(format!(
+                "Refusing '{}' as a session {kind}: {why}",
+                candidate.display()
+            ));
+        }
+    }
+
+    // An unset sessions root is skipped rather than resolved: resolution
+    // anchors a relative path at the working directory, which would turn `""`
+    // into "refuse everything under the daemon's cwd".
+    if sessions_root.as_os_str().is_empty() {
+        return Ok(());
+    }
+    let sessions_root = ResolvedPath::resolve(sessions_root);
+    for candidate in [resolved.lexical(), resolved.canonical()] {
+        for root in [sessions_root.lexical(), sessions_root.canonical()] {
+            if candidate.starts_with(root) {
+                return Err(format!(
+                    "Refusing '{}' as a session {kind}: it is inside the session storage root, \
+                     which holds every recorded transcript",
+                    candidate.display()
+                ));
+            }
+        }
     }
     Ok(())
 }
@@ -341,5 +374,94 @@ mod tests {
         std::os::unix::fs::symlink(&victim, &link).unwrap();
 
         assert!(refuse_forbidden_scope("kiln", &link, &sessions_root).is_err());
+    }
+
+    /// An empty path is not a narrow scope, it is no scope: `Path::starts_with("")`
+    /// is true of every path and `"".components()` counts zero, so an empty
+    /// root out-ranks every denial at the shallowest possible depth. The
+    /// builders drop it; the gate must not be the place it gets blessed.
+    #[test]
+    fn an_empty_path_is_refused_as_scope() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        assert!(
+            refuse_forbidden_scope("kiln", Path::new(""), &tmp.path().join("sessions")).is_err()
+        );
+        assert!(
+            refuse_forbidden_scope("workspace", Path::new(""), &tmp.path().join("sessions"))
+                .is_err()
+        );
+    }
+
+    /// A data home behind a symlink (`/tmp` on macOS, a relocated
+    /// `~/.crucible` anywhere) gives the sessions root two spellings, and the
+    /// caller picks which one to name. Judging the caller's spelling against
+    /// only the resolved root misses the symlinked one entirely — which is how
+    /// the rule ends up silently never matching.
+    #[cfg(unix)]
+    #[test]
+    fn a_kiln_named_through_a_symlinked_data_home_is_refused_as_scope() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let real_home = tmp.path().join("real-home");
+        let innocent = tmp.path().join("notes");
+        std::fs::create_dir_all(real_home.join("sessions")).unwrap();
+        std::fs::create_dir_all(&innocent).unwrap();
+        std::os::unix::fs::symlink(&real_home, tmp.path().join("home")).unwrap();
+        // The decoy resolves out of the sessions root, so only its NAME —
+        // spelled through the symlinked data home — places it there.
+        let decoy = tmp.path().join("home").join("sessions").join("chat-decoy");
+        std::os::unix::fs::symlink(&innocent, &decoy).unwrap();
+
+        let sessions_root = tmp.path().join("home").join("sessions");
+        assert!(
+            refuse_forbidden_scope("kiln", &decoy, &sessions_root).is_err(),
+            "the sessions-root rule must hold under the spelling the caller used"
+        );
+    }
+
+    /// The other direction of the same rule, and the one only the lexical form
+    /// can catch: a path *named* inside the sessions root that resolves
+    /// somewhere innocent. Attaching it would put a sessions-root path into
+    /// the session's allowed roots — where, being deeper than the deny root,
+    /// it out-ranks the denial — and answering at all tells the caller which
+    /// session ids exist.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_named_inside_the_sessions_root_is_refused_as_scope() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let sessions_root = tmp.path().join("sessions");
+        let innocent = tmp.path().join("notes");
+        std::fs::create_dir_all(&sessions_root).unwrap();
+        std::fs::create_dir_all(&innocent).unwrap();
+        let decoy = sessions_root.join("chat-decoy");
+        std::os::unix::fs::symlink(&innocent, &decoy).unwrap();
+
+        assert!(
+            refuse_forbidden_scope("kiln", &decoy, &sessions_root).is_err(),
+            "a kiln named inside the sessions root must be refused however it resolves"
+        );
+    }
+
+    /// `canonicalize_lenient` re-appends the un-resolved remainder, so a `..`
+    /// that traverses through a directory which does not exist yet survives
+    /// into the comparison — and `starts_with` then misses the sessions root
+    /// the path actually lands in.
+    #[test]
+    fn a_traversal_through_a_missing_directory_is_still_refused_as_scope() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let data_home = tmp.path();
+        let sessions_root = data_home.join("sessions");
+        let victim = sessions_root.join("chat-victim");
+        std::fs::create_dir_all(&victim).unwrap();
+
+        let dodge = data_home
+            .join("not-yet")
+            .join("..")
+            .join("sessions")
+            .join("chat-victim");
+        assert!(
+            refuse_forbidden_scope("kiln", &dodge, &sessions_root).is_err(),
+            "a `..` through a missing directory dodged the sessions-root refusal: {}",
+            dodge.display()
+        );
     }
 }

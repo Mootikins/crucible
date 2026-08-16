@@ -207,6 +207,7 @@ async fn test_acp_delegation_pipeline_all_fixes_work() {
         knowledge_repo,
         embedding_provider,
         None,
+        crucible_daemon::tools::containment::RootSet::Ambient,
     )
     .await
     {
@@ -314,6 +315,7 @@ async fn test_acp_delegation_pipeline_all_fixes_work() {
         knowledge_repo,
         embedding_provider,
         Some(delegation_context(true)),
+        crucible_daemon::tools::containment::RootSet::Ambient,
     )
     .await
     {

@@ -15,7 +15,6 @@ use crucible_core::traits::chat::AgentHandle;
 use crucible_core::turn::{StopReason, TurnEvent};
 use crucible_daemon::delegation::{DelegationRequest, DelegationService, DelegationSpawner};
 use crucible_daemon::test_support::temp_session_manager;
-use crucible_daemon::tools::workspace::WorkspaceTools;
 use crucible_daemon::{AgentManager, AgentManagerParams, KilnManager};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -183,7 +182,6 @@ async fn rig(
         context_config: None,
         permission_config,
         plugin_loader: None,
-        workspace_tools: Arc::new(WorkspaceTools::new(workspace.clone())),
     }));
     let args_clone = args.clone();
     agent_manager.set_agent_factory_override(Box::new(move |_, _| {
@@ -420,7 +418,6 @@ async fn delegation_trust_derives_from_child_provider() {
             context_config: None,
             permission_config: None,
             plugin_loader: None,
-            workspace_tools: Arc::new(WorkspaceTools::new(workspace.clone())),
         },
         service.clone(),
     ));
@@ -523,7 +520,6 @@ async fn card_allow_does_not_override_config_deny() {
         context_config: None,
         permission_config: Some(config),
         plugin_loader: None,
-        workspace_tools: Arc::new(WorkspaceTools::new(workspace.clone())),
     }));
     agent_manager.set_agent_factory_override(Box::new(move |_, _| {
         Box::pin(async move {

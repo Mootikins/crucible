@@ -98,6 +98,12 @@ pub struct AcpAgentHandleParams<'a> {
     /// How to run the agent inside a plugin's sandbox, from the session's
     /// isolation claim. `None` when nothing claimed the session.
     pub sandbox_exec: Option<crucible_lua::SandboxExec>,
+    /// The session's filesystem containment, for the in-process MCP server this
+    /// handle exposes to the external agent. Its note/search/kiln tools take
+    /// model-supplied paths exactly as the internal dispatcher's do, so they
+    /// answer to the same root set — a containment rule enforced on one agent
+    /// type and not the other is the tool-family split all over again.
+    pub containment: crate::tools::containment::RootSet,
 }
 
 impl AcpAgentHandle {
@@ -131,6 +137,7 @@ impl AcpAgentHandle {
             acp_config,
             permission_handler,
             sandbox_exec,
+            containment,
         } = params;
 
         let agent_name = agent_config
@@ -187,6 +194,7 @@ impl AcpAgentHandle {
                 repo,
                 embed,
                 delegation_context,
+                containment,
             )
             .await
             {

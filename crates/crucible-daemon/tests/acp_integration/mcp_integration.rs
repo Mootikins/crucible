@@ -269,6 +269,7 @@ async fn start_mcp_host(
         knowledge_repo,
         embedding_provider,
         None,
+        crucible_daemon::tools::containment::RootSet::Ambient,
     )
     .await
     {

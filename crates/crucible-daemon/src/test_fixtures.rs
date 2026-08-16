@@ -66,11 +66,6 @@ pub(crate) fn test_agent_manager(
     let background_manager = Arc::new(crate::background_manager::BackgroundJobManager::new(
         event_tx,
     ));
-    // These tests never drive workspace tools — WorkspaceTools just needs a
-    // path value. Use a per-process temp path rather than hardcoding /tmp.
-    let workspace_tools = Arc::new(crate::tools::workspace::WorkspaceTools::new(
-        std::env::temp_dir().join(format!("crucible-daemon-test-{}", std::process::id())),
-    ));
     Arc::new(AgentManager::new(AgentManagerParams {
         kiln_manager,
         session_manager,
@@ -81,6 +76,5 @@ pub(crate) fn test_agent_manager(
         context_config: None,
         permission_config: None,
         plugin_loader: None,
-        workspace_tools,
     }))
 }

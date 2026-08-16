@@ -18,7 +18,6 @@ use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::session_lifecycle::SessionLifecycle;
 use crucible_daemon::test_support::temp_session_manager;
 use crucible_daemon::test_support::{MockSubagentBehavior, MockSubagentHandle};
-use crucible_daemon::tools::workspace::WorkspaceTools;
 use crucible_daemon::{
     AgentManager, AgentManagerParams, FileSessionStorage, KilnManager, SessionManager,
 };
@@ -132,7 +131,6 @@ async fn setup_with_plugin(
             context_config: None,
             permission_config: None,
             plugin_loader: Some(plugin_loader.clone()),
-            workspace_tools: Arc::new(WorkspaceTools::new(temp.path().to_path_buf())),
         },
         service.clone(),
     ));
@@ -614,7 +612,6 @@ async fn factory_failure_fails_spawn_and_emits_failed_event() {
             context_config: None,
             permission_config: None,
             plugin_loader: None,
-            workspace_tools: Arc::new(WorkspaceTools::new(temp.path().to_path_buf())),
         },
         service.clone(),
     ));
@@ -823,7 +820,6 @@ async fn child_tool_calls_are_dispatched_by_the_scheduler() {
             context_config: None,
             permission_config: None,
             plugin_loader: None,
-            workspace_tools: Arc::new(WorkspaceTools::new(temp.path().to_path_buf())),
         },
         service.clone(),
     ));
@@ -1043,7 +1039,6 @@ async fn card_tool_policy_deny_blocks_child_tool_call() {
             context_config: None,
             permission_config: None,
             plugin_loader: None,
-            workspace_tools: Arc::new(WorkspaceTools::new(temp.path().to_path_buf())),
         },
         service.clone(),
     ));
@@ -1264,7 +1259,6 @@ async fn card_specialty_resolves_through_llm_models_table() {
             context_config: None,
             permission_config: None,
             plugin_loader: None,
-            workspace_tools: Arc::new(WorkspaceTools::new(temp.path().to_path_buf())),
         },
         service.clone(),
     ));

@@ -1,7 +1,11 @@
-//! Tests for [`super`]: the workspace tool set.
+//! Tests for [`super::super`]: the workspace tool set.
 //!
-//! A sibling file rather than an inline `mod tests`, for the file-size gate —
-//! same shape as `agent_factory/tests.rs`.
+//! A sibling directory rather than an inline `mod tests`, for the file-size
+//! gate — same shape as `agent_factory/tests.rs`. Containment lives next door
+//! in [`containment`]: it is the half a reviewer reads on its own, and it is
+//! the half that grows every time an escape is found.
+
+mod containment;
 
 use super::*;
 
@@ -23,13 +27,16 @@ fn a_session_dir_env_var_resolves_to_the_session_dir() {
 
     let tools = WorkspaceTools::new(&workspace)
         .with_env("CRU_SESSION_DIR", session_dir.to_string_lossy().to_string())
-        .with_allowed_roots(vec![session_dir.clone()]);
+        .with_containment(RootSet::scoped(
+            vec![workspace.clone(), session_dir.clone()],
+            vec![],
+        ));
 
     let resolved = tools
         .resolve_path("$CRU_SESSION_DIR/tools/bash-1.txt")
         .expect("the session dir is an allowed root");
     assert_eq!(
-        std::fs::read_to_string(resolved).unwrap(),
+        std::fs::read_to_string(resolved.as_path()).unwrap(),
         "spilled",
         "the model must be able to read back what was spilled for it"
     );
@@ -47,7 +54,8 @@ fn an_unknown_env_var_is_not_expanded_and_stays_contained() {
     let tmp = tempfile::TempDir::new().unwrap();
     let workspace = tmp.path().join("workspace");
     std::fs::create_dir_all(&workspace).unwrap();
-    let tools = WorkspaceTools::new(&workspace).with_allowed_roots(vec![]);
+    let tools = WorkspaceTools::new(&workspace)
+        .with_containment(RootSet::scoped(vec![workspace.clone()], vec![]));
 
     // `$HOME` is not in the tool's env map, so it stays literal and is
     // judged as a relative path under the workspace — never the real home.
@@ -55,7 +63,7 @@ fn an_unknown_env_var_is_not_expanded_and_stays_contained() {
     if let Ok(p) = &resolved {
         let home = dirs::home_dir().expect("a home dir on this box");
         assert!(
-            !p.starts_with(&home),
+            !p.as_path().starts_with(&home),
             "process env must not be expanded: {} reached {}",
             "$HOME/.ssh/id_rsa",
             p.display()
@@ -495,16 +503,16 @@ async fn grep_finds_a_literal_pattern_that_begins_with_a_dash() {
     );
 }
 
-/// The `..` guard used to be gated on `allowed_roots.is_some()`, so on the
-/// unconstrained instance — the one the daemon builds for plugin tool calls,
-/// and the one an untrusted message reaches — `../../etc/*` walked straight
-/// out. `create_workspace()` builds exactly that instance, which is why this
-/// test is meaningful here.
+/// The `..` guard used to be gated on containment being configured, so on the
+/// ambient instance — the one the daemon builds for plugin tool calls, and the
+/// one an untrusted message reaches — `../../etc/*` walked straight out.
+/// `create_workspace()` builds exactly that instance, which is why this test is
+/// meaningful here.
 #[tokio::test]
-async fn glob_parent_traversal_is_rejected_even_with_no_allowed_roots() {
+async fn glob_parent_traversal_is_rejected_even_on_an_ambient_tool_set() {
     let (temp, tools) = create_workspace();
     assert!(
-        tools.allowed_roots.is_none(),
+        tools.scope.is_ambient(),
         "this test is only meaningful on an unconstrained instance"
     );
     tokio::fs::write(temp.path().join("inside.rs"), "")
@@ -545,180 +553,4 @@ async fn glob_absolute_pattern_does_not_escape_the_search_path() {
             );
         }
     }
-}
-
-/// The transcript leak the flat-kiln work closes.
-///
-/// A kiln-less session's kiln is the daemon's data root, which *contains* the
-/// sessions root — so granting the kiln root alone put every session ever
-/// recorded inside containment. The deny root removes that subtree; the
-/// session's own storage dir, granted as a deeper allowed root, survives it.
-#[test]
-fn a_session_cannot_read_another_sessions_transcript() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let data_root = tmp.path().join("crucible");
-    let sessions_root = data_root.join("sessions");
-    let workspace = tmp.path().join("workspace");
-    let own_dir = sessions_root.join("chat-mine");
-    let other_dir = sessions_root.join("chat-theirs");
-    std::fs::create_dir_all(&workspace).unwrap();
-    std::fs::create_dir_all(&own_dir).unwrap();
-    std::fs::create_dir_all(&other_dir).unwrap();
-    std::fs::write(data_root.join("Note.md"), "kiln note").unwrap();
-    std::fs::write(own_dir.join("session.jsonl"), "mine").unwrap();
-    std::fs::write(other_dir.join("session.jsonl"), "theirs").unwrap();
-
-    let tools = WorkspaceTools::new(&workspace)
-        .with_allowed_roots(vec![data_root.clone(), own_dir.clone()])
-        .with_denied_roots(vec![sessions_root.clone()]);
-
-    assert!(
-        tools
-            .resolve_path(&other_dir.join("session.jsonl").to_string_lossy())
-            .is_err(),
-        "another session's transcript must be outside containment"
-    );
-    assert!(
-        tools
-            .resolve_path(&sessions_root.to_string_lossy())
-            .is_err(),
-        "the sessions root itself must not be enumerable"
-    );
-    assert!(
-        tools
-            .resolve_path(&own_dir.join("session.jsonl").to_string_lossy())
-            .is_ok(),
-        "a session must still reach its own storage"
-    );
-    assert!(
-        tools
-            .resolve_path(&data_root.join("Note.md").to_string_lossy())
-            .is_ok(),
-        "denying the sessions root must not cost the kiln around it"
-    );
-}
-
-/// An empty kiln set degrades capabilities, never containment.
-///
-/// A kiln-less session whose workspace was also detached had
-/// `workspace_root == ""`, and `with_allowed_roots` seeds the root list with
-/// it. `Path::starts_with("")` is true for every path and `"".components()`
-/// counts zero, so the deepest-match rule answered "permitted, depth 0" for
-/// the whole filesystem — containment was off, not merely narrow.
-#[test]
-fn an_empty_root_denies_everything_instead_of_permitting_it() {
-    let tools = WorkspaceTools::new("").with_allowed_roots(vec![]);
-
-    assert!(
-        tools.resolve_path("/etc/shadow").is_err(),
-        "an empty allowed root must deny, not permit the whole filesystem"
-    );
-    assert!(
-        tools.resolve_path("/").is_err(),
-        "an empty allowed root must not admit the filesystem root"
-    );
-}
-
-/// Same rule, reached the other way: an empty string handed in as an *extra*
-/// root must not widen a set that was otherwise contained.
-#[test]
-fn an_empty_extra_root_does_not_widen_containment() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let workspace = tmp.path().join("workspace");
-    std::fs::create_dir_all(&workspace).unwrap();
-
-    let tools = WorkspaceTools::new(&workspace).with_allowed_roots(vec![std::path::PathBuf::new()]);
-
-    assert!(
-        tools.resolve_path("/etc/shadow").is_err(),
-        "an empty extra root must not disable containment"
-    );
-    assert!(
-        tools
-            .resolve_path(&workspace.join("f.txt").to_string_lossy())
-            .is_ok(),
-        "the real workspace root must still be reachable"
-    );
-}
-
-/// `grep` containment-checked only the directory it was pointed at and then
-/// let ripgrep recurse, so `grep(path = <data root>)` printed every other
-/// session's transcript verbatim — the exact subtree `denied_roots` exists to
-/// close. `glob` post-filters what it yields; `grep` must too.
-#[tokio::test]
-#[ignore = "requires: ripgrep"]
-async fn grep_does_not_yield_matches_from_a_denied_subtree() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let data_root = tmp.path().join("crucible");
-    let sessions_root = data_root.join("sessions");
-    let workspace = tmp.path().join("workspace");
-    let own_dir = sessions_root.join("chat-mine");
-    let other_dir = sessions_root.join("chat-theirs");
-    std::fs::create_dir_all(&workspace).unwrap();
-    std::fs::create_dir_all(&own_dir).unwrap();
-    std::fs::create_dir_all(&other_dir).unwrap();
-    std::fs::write(data_root.join("Note.md"), "password hunting notes").unwrap();
-    std::fs::write(own_dir.join("session.jsonl"), "password mine").unwrap();
-    std::fs::write(other_dir.join("session.jsonl"), "password theirs").unwrap();
-
-    let tools = WorkspaceTools::new(&workspace)
-        .with_allowed_roots(vec![data_root.clone(), own_dir.clone()])
-        .with_denied_roots(vec![sessions_root.clone()]);
-
-    let result = tools
-        .grep(
-            "password".to_string(),
-            Some(data_root.to_string_lossy().to_string()),
-            None,
-            None,
-        )
-        .await
-        .expect("the data root is an allowed root, so the search itself is permitted");
-    let content = format!("{:?}", result.content);
-
-    assert!(
-        !content.contains("theirs"),
-        "another session's transcript must not be yielded by grep: {content}"
-    );
-    assert!(
-        content.contains("hunting"),
-        "the kiln around the denied subtree must still be searchable: {content}"
-    );
-    assert!(
-        content.contains("mine"),
-        "a session must still grep its own storage: {content}"
-    );
-}
-
-/// Legacy transcripts left inside a kiln by an incomplete migration are the
-/// same secret in a different place. A kiln appearing mid-run is never
-/// scanned and `migrate_one` skips on failure, so `{kiln}/.crucible/sessions`
-/// has to be denied rather than assumed empty.
-#[test]
-fn a_kilns_own_legacy_session_directory_is_not_readable() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let kiln = tmp.path().join("kiln");
-    let legacy = kiln.join(".crucible").join("sessions").join("chat-old");
-    let workspace = tmp.path().join("workspace");
-    std::fs::create_dir_all(&workspace).unwrap();
-    std::fs::create_dir_all(&legacy).unwrap();
-    std::fs::write(kiln.join("Note.md"), "kiln note").unwrap();
-    std::fs::write(legacy.join("session.jsonl"), "legacy").unwrap();
-
-    let tools = WorkspaceTools::new(&workspace)
-        .with_allowed_roots(vec![kiln.clone()])
-        .with_denied_roots(vec![kiln.join(".crucible").join("sessions")]);
-
-    assert!(
-        tools
-            .resolve_path(&legacy.join("session.jsonl").to_string_lossy())
-            .is_err(),
-        "a legacy in-kiln transcript must be outside containment"
-    );
-    assert!(
-        tools
-            .resolve_path(&kiln.join("Note.md").to_string_lossy())
-            .is_ok(),
-        "denying the legacy sessions dir must not cost the kiln around it"
-    );
 }

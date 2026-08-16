@@ -78,6 +78,11 @@ pub struct CreateAgentFromSessionConfigParams<'a> {
     /// claim. Only ACP agents use it — an internal agent's tools are
     /// intercepted before they execute, so there is no process to relocate.
     pub sandbox_exec: Option<crucible_lua::SandboxExec>,
+    /// The session's filesystem containment, forwarded to the ACP agent's
+    /// in-process MCP server. Unused by internal agents, whose tools are
+    /// contained where they are dispatched (`AgentManager`) rather than where
+    /// their definitions are enumerated here.
+    pub containment: crate::tools::containment::RootSet,
 }
 
 /// Build a `DelegationContext` for a session's MCP server.
@@ -647,6 +652,7 @@ pub async fn create_agent_from_session_config(
         embedding_provider,
         plugin_tools,
         sandbox_exec,
+        containment,
     } = params;
     if agent_config.agent_type == "acp" {
         let handle = AcpAgentHandle::new(AcpAgentHandleParams {
@@ -662,6 +668,7 @@ pub async fn create_agent_from_session_config(
             acp_config,
             permission_handler: acp_permission_handler,
             sandbox_exec,
+            containment,
         })
         .await
         .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;

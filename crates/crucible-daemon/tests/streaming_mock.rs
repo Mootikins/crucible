@@ -7,7 +7,6 @@ use crucible_core::session::SessionType;
 use crucible_daemon::background_manager::BackgroundJobManager;
 use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::test_support::temp_session_manager;
-use crucible_daemon::tools::workspace::WorkspaceTools;
 use crucible_daemon::{AgentManager, AgentManagerParams, KilnManager, SessionManager};
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -45,7 +44,6 @@ impl TestHarness {
             context_config: None,
             permission_config: None,
             plugin_loader: None,
-            workspace_tools: Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp"))),
         });
 
         let session = session_manager

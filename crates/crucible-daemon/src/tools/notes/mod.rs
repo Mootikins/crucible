@@ -22,17 +22,16 @@ mod params;
 #[cfg(test)]
 mod tests;
 
+use super::containment::RootSet;
+use super::fs_scope::FsScope;
 use super::helpers::{json_success, McpResultExt};
-use super::utils::{
-    parse_yaml_frontmatter, validate_folder_within_kiln, validate_path_within_kiln,
-};
+use super::utils::parse_yaml_frontmatter;
 use crucible_core::storage::NoteStore;
 use helpers::{
     ensure_md_suffix, extract_content_without_frontmatter, serialize_frontmatter_to_yaml,
 };
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{model::CallToolResult, tool, tool_router};
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub use params::{
@@ -43,7 +42,12 @@ pub use params::{
 #[derive(Clone)]
 #[allow(missing_docs)]
 pub struct NoteTools {
-    kiln_path: String,
+    /// The kiln as a capability rather than a path: kiln-relative names only,
+    /// the kiln is a boundary of its own, the control directory is protected,
+    /// and every reachability question — including the ones a walk asks — goes
+    /// to the session's root set. Holding a `String` here is what let
+    /// `read_note` hand over a transcript `read_file` refused.
+    scope: FsScope,
     /// Optional `NoteStore` for faster metadata reads
     note_store: Option<Arc<dyn NoteStore>>,
 }
@@ -53,7 +57,7 @@ impl NoteTools {
     #[must_use]
     pub fn new(kiln_path: String) -> Self {
         Self {
-            kiln_path,
+            scope: FsScope::kiln(kiln_path, RootSet::Ambient),
             note_store: None,
         }
     }
@@ -65,56 +69,58 @@ impl NoteTools {
     #[must_use]
     pub fn with_note_store(kiln_path: String, note_store: Arc<dyn NoteStore>) -> Self {
         Self {
-            kiln_path,
+            scope: FsScope::kiln(kiln_path, RootSet::Ambient),
             note_store: Some(note_store),
         }
     }
 
+    /// Contain these tools to the session's roots. Without it the scope knows
+    /// only its own kiln, which is not enough whenever the kiln ENCLOSES
+    /// something the session may not read.
+    #[must_use]
+    pub(crate) fn with_containment(mut self, containment: RootSet) -> Self {
+        self.scope = self.scope.with_containment(containment);
+        self
+    }
+
+    /// The kiln root, for the callers that need a base rather than a path:
+    /// storage-authority derivation and relative reporting.
+    pub(super) fn kiln_path(&self) -> String {
+        self.scope.anchor().to_string_lossy().into_owned()
+    }
+
+    pub(super) fn scope(&self) -> &FsScope {
+        &self.scope
+    }
+
+    /// A bare filename is looked up by walking the kiln — so the walk is the
+    /// thing that has to be contained. Filtering only the caller's string would
+    /// leave `read_note {"path": "session.jsonl"}` finding a transcript it was
+    /// never allowed to name.
     fn resolve_note_name(&self, path: &str) -> Result<String, rmcp::ErrorData> {
         if path.contains('/') || path.contains('\\') {
             return Ok(path.to_string());
         }
 
-        let kiln_path = Path::new(&self.kiln_path);
-        let resolved = self.find_note_by_name(kiln_path, path).ok_or_else(|| {
-            rmcp::ErrorData::invalid_params(format!("File not found: {path}"), None)
-        })?;
-
-        let relative = resolved.strip_prefix(kiln_path).map_err(|_| {
-            rmcp::ErrorData::invalid_params(
-                format!("Resolved path escapes kiln directory: {path}"),
-                None,
-            )
-        })?;
-
-        Ok(relative.to_string_lossy().to_string())
-    }
-
-    fn find_note_by_name(&self, kiln_path: &Path, name: &str) -> Option<PathBuf> {
-        let direct_path = kiln_path.join(name);
-        if direct_path.is_file() {
-            return Some(direct_path);
+        let direct = self.scope.resolve(path)?;
+        if direct.as_path().is_file() {
+            return Ok(path.to_string());
         }
 
-        let mut stack = vec![kiln_path.to_path_buf()];
-        while let Some(dir) = stack.pop() {
-            if let Ok(entries) = std::fs::read_dir(&dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.is_dir() {
-                        stack.push(path);
-                    } else if path
-                        .file_name()
-                        .and_then(|file_name| file_name.to_str())
-                        .is_some_and(|file_name| file_name == name)
-                    {
-                        return Some(path);
-                    }
-                }
-            }
-        }
+        let root = self.scope.resolve("")?;
+        let found = self
+            .scope
+            .walk_files(&root)
+            .find(|entry| entry.file_name() == std::ffi::OsStr::new(path))
+            .ok_or_else(|| {
+                rmcp::ErrorData::invalid_params(format!("File not found: {path}"), None)
+            })?;
 
-        None
+        Ok(self
+            .scope
+            .relativize(found.path())
+            .to_string_lossy()
+            .to_string())
     }
 }
 
@@ -130,8 +136,10 @@ impl NoteTools {
         let content = params.content;
         let frontmatter = params.frontmatter;
 
-        // Security: Validate path to prevent traversal attacks
-        let full_path = validate_path_within_kiln(&self.kiln_path, &path)?;
+        // Security: containment, plus the protected set — a note tool creates
+        // files, so it is a write path like `write_file` and answers to the
+        // same hardcoded deny.
+        let full_path = self.scope.resolve_for_write(&path)?;
 
         // Build final content with optional frontmatter
         let final_content = if let Some(fm) = frontmatter {
@@ -141,7 +149,7 @@ impl NoteTools {
             content
         };
 
-        std::fs::write(&full_path, &final_content).mcp_err_ctx("Failed to write file")?;
+        std::fs::write(full_path.as_path(), &final_content).mcp_err_ctx("Failed to write file")?;
 
         // TODO: Trigger re-parsing via crucible_core::parser after note creation
 
@@ -161,7 +169,7 @@ impl NoteTools {
         let resolved_path = self.resolve_note_name(&path)?;
 
         // Security: Validate path to prevent traversal attacks
-        let full_path = validate_path_within_kiln(&self.kiln_path, &resolved_path)?;
+        let full_path = self.scope.resolve(&resolved_path)?;
 
         if !full_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(
@@ -170,7 +178,8 @@ impl NoteTools {
             ));
         }
 
-        let content = std::fs::read_to_string(&full_path).mcp_err_ctx("Failed to read file")?;
+        let content =
+            std::fs::read_to_string(full_path.as_path()).mcp_err_ctx("Failed to read file")?;
 
         let lines: Vec<&str> = content.lines().collect();
         let total_lines = lines.len();
@@ -213,15 +222,14 @@ impl NoteTools {
         let path = ensure_md_suffix(params.path);
 
         // Security: Validate path to prevent traversal attacks
-        let full_path = validate_path_within_kiln(&self.kiln_path, &path)?;
+        let full_path = self.scope.resolve(&path)?;
 
         // Try NoteStore first for faster indexed access
         if let Some(ref note_store) = self.note_store {
             // Workspace authority derived from this MCP server's bound kiln.
-            let authority = crucible_core::storage::Scope::workspace(&self.kiln_path)
-                .unwrap_or_else(|_| {
-                    crucible_core::storage::Scope::workspace_unchecked(&self.kiln_path)
-                });
+            let kiln = self.kiln_path();
+            let authority = crucible_core::storage::Scope::workspace(&kiln)
+                .unwrap_or_else(|_| crucible_core::storage::Scope::workspace_unchecked(&kiln));
             if let Ok(Some(note_record)) = note_store.get(&path, &authority).await {
                 // Build frontmatter from NoteRecord
                 let mut frontmatter = serde_json::json!({
@@ -266,7 +274,8 @@ impl NoteTools {
             ));
         }
 
-        let content = std::fs::read_to_string(&full_path).mcp_err_ctx("Failed to read file")?;
+        let content =
+            std::fs::read_to_string(full_path.as_path()).mcp_err_ctx("Failed to read file")?;
 
         // Parse frontmatter
         let frontmatter = parse_yaml_frontmatter(&content).unwrap_or_else(|| serde_json::json!({}));
@@ -283,7 +292,7 @@ impl NoteTools {
             .count();
 
         // Get file metadata
-        let metadata = std::fs::metadata(&full_path).ok();
+        let metadata = std::fs::metadata(full_path.as_path()).ok();
         let modified = metadata
             .as_ref()
             .and_then(|m| m.modified().ok())
@@ -314,7 +323,7 @@ impl NoteTools {
         let new_frontmatter = params.frontmatter;
 
         // Security: Validate path to prevent traversal attacks
-        let full_path = validate_path_within_kiln(&self.kiln_path, &path)?;
+        let full_path = self.scope.resolve_for_write(&path)?;
 
         if !full_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(
@@ -325,7 +334,7 @@ impl NoteTools {
 
         // Read existing file
         let existing_content =
-            std::fs::read_to_string(&full_path).mcp_err_ctx("Failed to read file")?;
+            std::fs::read_to_string(full_path.as_path()).mcp_err_ctx("Failed to read file")?;
 
         // Track what fields are being updated
         let mut updated_fields = Vec::new();
@@ -367,7 +376,8 @@ impl NoteTools {
             final_content
         };
 
-        std::fs::write(&full_path, &final_file_content).mcp_err_ctx("Failed to update file")?;
+        std::fs::write(full_path.as_path(), &final_file_content)
+            .mcp_err_ctx("Failed to update file")?;
 
         // TODO: Trigger re-parsing via crucible_core::parser after note update
 
@@ -387,7 +397,7 @@ impl NoteTools {
         let path = ensure_md_suffix(params.path);
 
         // Security: Validate path to prevent traversal attacks
-        let full_path = validate_path_within_kiln(&self.kiln_path, &path)?;
+        let full_path = self.scope.resolve_for_write(&path)?;
 
         if !full_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(
@@ -396,7 +406,7 @@ impl NoteTools {
             ));
         }
 
-        std::fs::remove_file(&full_path).mcp_err_ctx("Failed to delete file")?;
+        std::fs::remove_file(full_path.as_path()).mcp_err_ctx("Failed to delete file")?;
 
         // TODO: Trigger re-parsing via crucible_core::parser after note deletion
 
@@ -418,7 +428,7 @@ impl NoteTools {
         let recursive = params.recursive;
 
         // Security: Validate folder to prevent traversal attacks
-        let search_path = validate_folder_within_kiln(&self.kiln_path, folder.as_deref())?;
+        let search_path = self.scope.resolve_folder(folder.as_deref())?;
 
         if !search_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(

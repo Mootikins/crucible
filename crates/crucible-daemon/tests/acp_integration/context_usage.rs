@@ -33,7 +33,6 @@ use crucible_core::protocol::session_events::{ContextLimitResolvedPayload, Conte
 use crucible_core::session::{SessionAgent, SessionType};
 use crucible_daemon::background_manager::BackgroundJobManager;
 use crucible_daemon::protocol::SessionEventMessage;
-use crucible_daemon::tools::workspace::WorkspaceTools;
 use crucible_daemon::{
     AgentManager, AgentManagerParams, FileSessionStorage, KilnManager, SessionManager,
 };
@@ -63,7 +62,6 @@ async fn delegated_turn_events(env: &[(&str, &str)]) -> Vec<SessionEventMessage>
         context_config: None,
         permission_config: None,
         plugin_loader: None,
-        workspace_tools: Arc::new(WorkspaceTools::new(temp.path().to_path_buf())),
     });
 
     let session = session_manager

@@ -47,7 +47,6 @@ impl AgentManager {
             context_config: _,   // daemon config
             permission_config: _, // daemon config
             plugin_loader: _,    // shared service
-            tool_dispatcher: _,  // the fallback dispatcher, not a per-session one
             lua_validators: _,   // startup-bound OnceLock
             plugin_handlers: _,  // startup-bound OnceLock
             isolation: _,        // startup-bound OnceLock

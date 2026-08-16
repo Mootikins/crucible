@@ -294,7 +294,6 @@ impl Server {
                     context_config: params.context_config.clone(),
                     permission_config: params.permission_config.clone(),
                     plugin_loader: Some(plugin_loader.clone()),
-                    workspace_tools: Arc::clone(&workspace_tools),
                 },
                 delegation_service.clone(),
             )

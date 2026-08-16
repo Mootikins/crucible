@@ -4,7 +4,6 @@ use crate::background_manager::BackgroundJobManager;
 use crate::kiln_manager::KilnManager;
 use crate::session_manager::SessionManager;
 use crate::test_support::temp_session_manager;
-use crate::tools::workspace::WorkspaceTools;
 mod create;
 mod lifecycle;
 
@@ -73,7 +72,6 @@ fn build_test_agent_manager_with_llm_config(
         context_config: None,
         permission_config: None,
         plugin_loader: None,
-        workspace_tools: Arc::new(WorkspaceTools::new(PathBuf::from("/tmp"))),
     }))
 }
 
@@ -206,7 +204,6 @@ async fn bash_calling_rig(
         context_config: None,
         permission_config: None,
         plugin_loader: None,
-        workspace_tools: Arc::new(WorkspaceTools::new(workspace.clone())),
     }));
     agent_manager.set_agent_factory_override(Box::new(|_, _| {
         Box::pin(async {

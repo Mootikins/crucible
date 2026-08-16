@@ -11,7 +11,6 @@ use crate::agent_manager::{AgentManager, AgentManagerParams};
 use crate::background_manager::BackgroundJobManager;
 use crate::kiln_manager::KilnManager;
 use crate::test_support::temp_session_manager;
-use crate::tools::WorkspaceTools;
 use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -93,7 +92,6 @@ fn manager_with(providers: std::collections::HashMap<String, LlmProviderConfig>)
         context_config: None,
         permission_config: None,
         plugin_loader: None,
-        workspace_tools: Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp"))),
     })
 }
 

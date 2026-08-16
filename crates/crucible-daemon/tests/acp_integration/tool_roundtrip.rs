@@ -444,6 +444,7 @@ async fn test_acp_tool_roundtrip_with_mcp_server() {
         knowledge_repo,
         embedding_provider,
         None,
+        crucible_daemon::tools::containment::RootSet::Ambient,
     )
     .await
     {

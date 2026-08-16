@@ -79,6 +79,7 @@ impl InProcessMcpHost {
         knowledge_repo: Arc<dyn KnowledgeRepository>,
         embedding_provider: Arc<dyn EmbeddingProvider>,
         delegation_context: Option<DelegationContext>,
+        containment: crate::tools::containment::RootSet,
     ) -> CrucibleMcpServer {
         CrucibleMcpServer::new_with_workspace_and_delegation(
             kiln_path.to_string_lossy().to_string(),
@@ -86,15 +87,22 @@ impl InProcessMcpHost {
             knowledge_repo,
             embedding_provider,
             delegation_context,
+            containment,
         )
     }
 
+    /// `containment` is the session's root set. It is a required argument
+    /// rather than a builder step because this server hands note, search and
+    /// kiln tools to an EXTERNAL agent process over HTTP — the caller has to
+    /// answer "contained by what" before the surface exists, and
+    /// `RootSet::Ambient` is a legitimate answer only outside a session.
     pub async fn start(
         kiln_path: PathBuf,
         workspace_path: PathBuf,
         knowledge_repo: Arc<dyn KnowledgeRepository>,
         embedding_provider: Arc<dyn EmbeddingProvider>,
         delegation_context: Option<DelegationContext>,
+        containment: crate::tools::containment::RootSet,
     ) -> AcpResult<Self> {
         use rmcp::transport::streamable_http_server::{
             session::local::LocalSessionManager, tower::StreamableHttpService,
@@ -125,6 +133,7 @@ impl InProcessMcpHost {
             knowledge_repo,
             embedding_provider,
             delegation_context,
+            containment,
         );
 
         let service = StreamableHttpService::new(
@@ -198,6 +207,61 @@ mod tests {
 
     use crate::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
 
+    /// The MCP surface an EXTERNAL agent connects to answers to the same root
+    /// set the internal dispatcher does.
+    ///
+    /// An ACP session's `read_note` takes a model-supplied path exactly as the
+    /// internal one's does, so containing one door and not the other is the
+    /// tool-family split with a process boundary drawn through it — which is
+    /// the shape of Claude Code's CVE-2026-39861. The case that needs it is the
+    /// kiln that ENCLOSES the sessions root, i.e. every kiln-less session.
+    #[tokio::test]
+    async fn the_acp_mcp_server_is_contained_by_the_sessions_roots() {
+        use crucible_core::session::SessionType;
+
+        let home = TempDir::new().unwrap();
+        let sessions_root = home.path().join("sessions");
+        let victim = sessions_root.join("chat-victim");
+        std::fs::create_dir_all(&victim).unwrap();
+        std::fs::write(victim.join("session.jsonl"), "MY-BANK-PASSWORD").unwrap();
+        std::fs::write(home.path().join("note.md"), "kiln-grounded content").unwrap();
+
+        // The kiln IS the data root, which is what a kiln-less session gets.
+        let session =
+            crucible_core::Session::new(SessionType::Chat, vec![home.path().to_path_buf()]);
+        let containment =
+            crate::agent_manager::scope::session_containment(&session, &sessions_root);
+
+        let server = InProcessMcpHost::build_server(
+            home.path(),
+            home.path(),
+            Arc::new(MockKnowledgeRepository),
+            Arc::new(MockEmbeddingProvider),
+            None,
+            containment,
+        );
+
+        let read = |path: &str| {
+            let params = serde_json::from_value::<crate::tools::notes::ReadNoteParams>(
+                serde_json::json!({ "path": path }),
+            )
+            .unwrap();
+            server.read_note(rmcp::handler::server::wrapper::Parameters(params))
+        };
+
+        let leaked = format!("{:?}", read("sessions/chat-victim/session.jsonl").await);
+        assert!(
+            !leaked.contains("MY-BANK-PASSWORD"),
+            "the ACP agent's note tools reached another session's transcript: {leaked}"
+        );
+
+        let note = format!("{:?}", read("note.md").await);
+        assert!(
+            note.contains("kiln-grounded content"),
+            "and the denial must not cost the kiln around it: {note}"
+        );
+    }
+
     /// The server an external ACP agent connects to must resolve note tools
     /// against the session's *kiln*, not its workspace. The two differ
     /// whenever a project's kiln is not its root (e.g. a `./docs` kiln):
@@ -231,6 +295,7 @@ mod tests {
             Arc::new(MockKnowledgeRepository),
             Arc::new(MockEmbeddingProvider),
             None,
+            crate::tools::containment::RootSet::Ambient,
         );
 
         let params = serde_json::from_value::<crate::tools::notes::ReadNoteParams>(
@@ -265,6 +330,7 @@ mod tests {
             knowledge_repo,
             embedding_provider,
             None,
+            crate::tools::containment::RootSet::Ambient,
         )
         .await
         {
@@ -308,6 +374,7 @@ mod tests {
             knowledge_repo,
             embedding_provider,
             None,
+            crate::tools::containment::RootSet::Ambient,
         )
         .await
         {

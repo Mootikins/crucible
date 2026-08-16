@@ -2,7 +2,6 @@ use crucible_core::config::BackendType;
 use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
 use crucible_daemon::background_manager::BackgroundJobManager;
 use crucible_daemon::test_support::temp_session_manager;
-use crucible_daemon::tools::workspace::WorkspaceTools;
 use crucible_daemon::{AgentManager, AgentManagerParams, KilnManager, SessionManager};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -24,7 +23,6 @@ fn make_agent_manager() -> (AgentManager, Arc<SessionManager>, TempDir) {
         context_config: None,
         permission_config: None,
         plugin_loader: None,
-        workspace_tools: Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp"))),
     });
     (agent_manager, session_manager, tmp)
 }

@@ -109,5 +109,6 @@ pub fn mock_handle_params<'a>(
         acp_config: None,
         permission_handler: None,
         sandbox_exec: None,
+        containment: crucible_daemon::tools::containment::RootSet::Ambient,
     }
 }

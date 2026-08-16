@@ -1,6 +1,5 @@
 use super::*;
 use crate::test_support::temp_session_manager;
-use crate::tools::workspace::WorkspaceTools;
 use async_trait::async_trait;
 use crucible_core::events::handler::{Handler, HandlerContext, HandlerResult};
 use crucible_core::events::{InternalSessionEvent, SessionEvent};
@@ -655,18 +654,10 @@ fn test_agent() -> SessionAgent {
     }
 }
 
-/// Manager-level fallback `WorkspaceTools` for tests, rooted in a per-run
-/// tempdir instead of a literal `/tmp`. The literal violated the project's
-/// own no-hardcoded-`/tmp` rule and shared one real directory across every
-/// test (and every *user*) on the machine — a test observing tool output
-/// could read another run's writes. Held in a static so the dir outlives
-/// every manager built from it; the OS reaps it with the rest of tempdir.
-fn test_workspace_tools() -> Arc<WorkspaceTools> {
-    Arc::new(WorkspaceTools::new(test_workspace_root().to_path_buf()))
-}
-
 /// Root of the shared test workspace, for tests that must place real files
-/// where the fallback dispatcher's tools will read them.
+/// where a session's tools will read them. Held in a static so the dir
+/// outlives every manager built from it; the OS reaps it with the rest of
+/// tempdir.
 pub(super) fn test_workspace_root() -> &'static std::path::Path {
     static DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
     DIR.get_or_init(|| tempfile::tempdir().expect("test workspace tempdir"))
@@ -686,7 +677,6 @@ fn create_test_agent_manager(session_manager: Arc<SessionManager>) -> AgentManag
         context_config: None,
         permission_config: None,
         plugin_loader: None,
-        workspace_tools: test_workspace_tools(),
     })
 }
 
@@ -706,7 +696,6 @@ fn create_test_agent_manager_with_providers(
         context_config: None,
         permission_config: None,
         plugin_loader: None,
-        workspace_tools: test_workspace_tools(),
     })
 }
 
@@ -730,7 +719,6 @@ fn create_test_agent_manager_with_enrichment(
         context_config: None,
         permission_config: None,
         plugin_loader: None,
-        workspace_tools: test_workspace_tools(),
     })
 }
 
@@ -750,7 +738,6 @@ fn create_test_agent_manager_with_llm_config(
         context_config: None,
         permission_config: None,
         plugin_loader: None,
-        workspace_tools: test_workspace_tools(),
     })
 }
 
@@ -851,7 +838,6 @@ fn create_test_agent_manager_with_both(
         context_config: None,
         permission_config: None,
         plugin_loader: None,
-        workspace_tools: test_workspace_tools(),
     })
 }
 

@@ -1999,7 +1999,6 @@ mod tests {
 
         use crate::kiln_manager::KilnManager;
         use crate::project_manager::ProjectManager;
-        use crate::tools::workspace::WorkspaceTools;
         use tokio::sync::broadcast;
 
         let (event_tx, _) = broadcast::channel(16);
@@ -2016,7 +2015,6 @@ mod tests {
             context_config: None,
             permission_config: None,
             plugin_loader: None,
-            workspace_tools: Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp"))),
         }));
 
         Arc::new(RpcContext::for_test(
@@ -2780,7 +2778,6 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
         use crate::mcp_server::McpServerManager;
         use crate::project_manager::ProjectManager;
         use crate::subscription::SubscriptionManager;
-        use crate::tools::workspace::WorkspaceTools;
         use dashmap::DashMap;
         use tokio::sync::broadcast;
 
@@ -2799,7 +2796,6 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             context_config: None,
             permission_config: None,
             plugin_loader: None,
-            workspace_tools: Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp"))),
         }));
 
         Arc::new(RpcContext::new(

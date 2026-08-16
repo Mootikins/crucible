@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 fn create_test_agent_manager_with_workspace_root(
     session_manager: Arc<SessionManager>,
-    workspace_root: &Path,
+    _workspace_root: &Path,
 ) -> AgentManager {
     let (event_tx, _) = broadcast::channel(16);
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
@@ -20,7 +20,6 @@ fn create_test_agent_manager_with_workspace_root(
         context_config: None,
         permission_config: None,
         plugin_loader: None,
-        workspace_tools: Arc::new(WorkspaceTools::new(workspace_root.to_path_buf())),
     })
 }
 
@@ -187,8 +186,17 @@ async fn regression_workspace_equals_kiln_tools_still_work() {
     );
 }
 
+/// A session with no workspace gets a session dispatcher like any other.
+///
+/// It used to get the daemon-GLOBAL one instead, whose `WorkspaceTools` has no
+/// containment at all — so `session.set_workspace` with no `workspace` key
+/// (which falls back to `default_kiln()`, and to `""` when there is none)
+/// traded a contained tool set for an uncontained one. An absent workspace
+/// degrades capabilities; it must not degrade containment. The tools anchor at
+/// the session's own storage directory, which is the one place it certainly
+/// has, and its kiln stays attached — so the kiln-backed tools stay too.
 #[tokio::test]
-async fn empty_workspace_uses_default_dispatcher_without_panic() {
+async fn a_workspace_less_session_still_gets_a_contained_dispatcher() {
     let kiln_dir = TempDir::new().unwrap();
     let default_workspace_root = TempDir::new().unwrap();
 
@@ -201,25 +209,54 @@ async fn empty_workspace_uses_default_dispatcher_without_panic() {
     let session = Session::new(SessionType::Chat, vec![kiln_dir.path().to_path_buf()])
         .with_workspace(PathBuf::new());
     session_manager.register_transient(session.clone());
+    let session_dir = session.storage_path(session_manager.sessions_root());
+    std::fs::create_dir_all(&session_dir).unwrap();
 
     let dispatcher = agent_manager
         .get_or_create_session_dispatcher(&session)
         .await;
-    let result = dispatcher
+
+    assert!(dispatcher.has_tool("bash"));
+    assert!(
+        dispatcher.has_tool("list_notes"),
+        "the session's kiln is still attached, so its tools are still advertised"
+    );
+
+    let pwd = dispatcher
         .dispatch_tool("bash", json!({ "command": "pwd" }), Default::default())
         .await
         .unwrap();
-
-    let pwd = result
+    let pwd = pwd
         .get("result")
         .and_then(serde_json::Value::as_str)
-        .unwrap();
-    let default_root = default_workspace_root.path().to_string_lossy().to_string();
-
-    assert!(dispatcher.has_tool("bash"));
-    assert!(!dispatcher.has_tool("list_notes"));
+        .unwrap()
+        .to_string();
     assert!(
-        pwd.contains(&default_root),
-        "empty workspace should use default workspace dispatcher root: {pwd}"
+        pwd.contains(&session_dir.to_string_lossy().to_string()),
+        "a workspace-less session anchors at its own storage dir, not a daemon-wide root: {pwd}"
     );
+
+    // The point of the change: the tool set is contained, not ambient.
+    let escape = dispatcher
+        .dispatch_tool(
+            "read_file",
+            json!({ "path": "/etc/passwd" }),
+            Default::default(),
+        )
+        .await;
+    assert!(
+        escape.is_err(),
+        "a workspace-less session must still be contained: {escape:?}"
+    );
+    let in_kiln = kiln_dir.path().join("note.md");
+    std::fs::write(&in_kiln, "KILN-CONTENT").unwrap();
+    let read = dispatcher
+        .dispatch_tool(
+            "read_file",
+            json!({ "path": in_kiln.to_string_lossy() }),
+            Default::default(),
+        )
+        .await
+        .expect("its kiln is still readable");
+    assert!(format!("{read:?}").contains("KILN-CONTENT"));
 }

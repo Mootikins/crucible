@@ -19,55 +19,31 @@
 #![allow(clippy::needless_pass_by_value)] // Tools take owned strings for JSON compat
 
 use super::helpers::{text_success, McpResultExt};
+use crate::tools::containment::RootSet;
+use crate::tools::fs_scope::{ContainedPath, FsScope, WritablePath};
 use rmcp::model::{CallToolResult, ContentBlock, Tool};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
-/// Canonicalize a path for containment checks even when it doesn't exist
-/// yet: canonicalize the deepest existing ancestor (resolving symlinks and
-/// `..`), then re-append the non-existent remainder.
-pub(crate) fn canonicalize_lenient(path: &std::path::Path) -> PathBuf {
-    let mut existing = path.to_path_buf();
-    let mut remainder: Vec<std::ffi::OsString> = Vec::new();
-    loop {
-        if let Ok(canonical) = existing.canonicalize() {
-            let mut result = canonical;
-            for part in remainder.iter().rev() {
-                result.push(part);
-            }
-            return result;
-        }
-        match (existing.file_name(), existing.parent()) {
-            (Some(name), Some(parent)) => {
-                remainder.push(name.to_os_string());
-                existing = parent.to_path_buf();
-            }
-            _ => return path.to_path_buf(),
-        }
-    }
-}
-
 /// Workspace tools for file and shell operations
 #[derive(Debug, Clone)]
 pub struct WorkspaceTools {
-    /// Workspace root directory
-    workspace_root: PathBuf,
+    /// This tool set's filesystem capability: the workspace root every relative
+    /// path and `bash` invocation is anchored at, plus the default-deny
+    /// allowlist every path a tool touches must clear. Built once, by the
+    /// caller, from the session's kilns, workspace and own storage directory —
+    /// see [`crate::agent_manager::scope::session_containment`].
+    ///
+    /// There is no separate `workspace_root` field, and that is deliberate: a
+    /// root path a tool can join onto is the ambient authority this type is
+    /// supposed to have given up. Caller input becomes a path exactly once,
+    /// through [`FsScope::resolve`].
+    scope: FsScope,
     /// Default timeout for bash commands (ms)
     default_timeout_ms: u64,
     /// Extra environment variables injected into bash commands
     env_vars: HashMap<String, String>,
-    /// Filesystem containment: when set, every path a tool touches must
-    /// resolve inside one of these roots (workspace, kilns, session dir,
-    /// configured extras). `None` = uncontained (construction sites that
-    /// predate containment; agent-session dispatchers always set it).
-    allowed_roots: Option<Vec<PathBuf>>,
-    /// Subtracted from [`Self::allowed_roots`]: subtrees that an allowed root
-    /// happens to contain but that this session must not reach. Longest match
-    /// wins, so a narrower allowed root punches back through a denied one —
-    /// which is how a session reaches its own storage dir while the sessions
-    /// root around it (every other session's transcript) stays closed.
-    denied_roots: Vec<PathBuf>,
     /// Project `[security.shell]` policy, resolved at construction (never
     /// re-read at call time). `None` or an empty policy = no restriction
     /// beyond the permission gate.
@@ -78,11 +54,9 @@ impl WorkspaceTools {
     /// Create new workspace tools
     pub fn new(workspace_root: impl Into<PathBuf>) -> Self {
         Self {
-            workspace_root: workspace_root.into(),
+            scope: FsScope::workspace(workspace_root.into(), RootSet::Ambient),
             default_timeout_ms: 120_000,
             env_vars: HashMap::new(),
-            allowed_roots: None,
-            denied_roots: Vec::new(),
             shell_policy: None,
         }
     }
@@ -101,64 +75,20 @@ impl WorkspaceTools {
         self
     }
 
-    /// Contain all file operations to the workspace root plus the given
-    /// additional roots (kiln, connected kilns, session dir, …).
+    /// Contain every file operation to `containment` — a default-deny
+    /// allowlist, built by the caller so that the roots and the carve-outs
+    /// inside them are decided in one place rather than assembled here from
+    /// two loose vectors.
     ///
-    /// Empty paths are dropped rather than stored. An empty kiln set is a
-    /// legitimate session shape, and a session with no workspace either
-    /// carries `workspace: ""` — so `""` reaches here as an ordinary root.
-    /// `Path::starts_with("")` is true for every path and `"".components()`
-    /// counts zero, which makes an empty root a *universal* root at the
-    /// shallowest possible depth: containment off, and every deny root
-    /// out-ranked. Absence of roots denies (see [`Self::is_permitted`]), so
-    /// dropping them is the fail-closed reading.
+    /// Note what this does NOT do: it does not fold the scope's anchor into
+    /// the allowlist. The anchor is where relative paths and `bash` are
+    /// anchored; whether the session may *read* it is a policy question its
+    /// caller answers. Adding it here was how a detached workspace put `""`
+    /// into the allowlist.
     #[must_use]
-    pub fn with_allowed_roots(mut self, extra_roots: Vec<PathBuf>) -> Self {
-        let roots = std::iter::once(self.workspace_root.clone())
-            .chain(extra_roots)
-            .filter(|root| !root.as_os_str().is_empty())
-            .collect();
-        self.allowed_roots = Some(roots);
+    pub(crate) fn with_containment(mut self, containment: RootSet) -> Self {
+        self.scope = self.scope.with_containment(containment);
         self
-    }
-
-    /// Carve subtrees back out of the allowed roots (see [`Self::denied_roots`]).
-    #[must_use]
-    pub fn with_denied_roots(mut self, denied_roots: Vec<PathBuf>) -> Self {
-        self.denied_roots = denied_roots
-            .into_iter()
-            .filter(|root| !root.as_os_str().is_empty())
-            .collect();
-        self
-    }
-
-    /// Whether a canonical path sits inside containment.
-    ///
-    /// Deepest matching root decides. Comparing only against the allowed set
-    /// would let an allowed root that *contains* a denied one (a kiln at the
-    /// data root, say) re-open the subtree the denial exists to close.
-    fn is_permitted(&self, canonical: &Path) -> bool {
-        let Some(roots) = &self.allowed_roots else {
-            return true;
-        };
-        // The empty-path filter is repeated here, not merely at construction:
-        // `""` matching every path at depth 0 is the difference between
-        // "narrow scope" and "no scope at all", and it must not depend on
-        // which builder a root arrived through.
-        let depth_of = |roots: &[PathBuf]| {
-            roots
-                .iter()
-                .filter(|root| !root.as_os_str().is_empty())
-                .map(|root| canonicalize_lenient(root))
-                .filter(|root| canonical.starts_with(root))
-                .map(|root| root.components().count())
-                .max()
-        };
-        match (depth_of(roots), depth_of(&self.denied_roots)) {
-            (Some(allowed), Some(denied)) => allowed > denied,
-            (Some(_), None) => true,
-            (None, _) => false,
-        }
     }
 
     /// Apply a project shell policy to the `bash` tool.
@@ -215,38 +145,24 @@ impl WorkspaceTools {
         out
     }
 
-    /// Resolve a path (absolute or relative to workspace) and enforce
-    /// containment when configured.
+    /// Resolve a path (absolute or relative to the anchor) through the scope.
     ///
-    /// Containment canonicalizes the deepest existing ancestor (defeating
-    /// `..` and symlink escapes for reads AND writes of not-yet-existing
-    /// files) and requires the result to sit under an allowed root.
-    fn resolve_path(&self, path: &str) -> Result<PathBuf, rmcp::ErrorData> {
-        let p = PathBuf::from(self.expand_env_vars(path));
-        let resolved = if p.is_absolute() {
-            p
-        } else {
-            self.workspace_root.join(p)
-        };
+    /// Both resolved forms must clear containment, and what comes back is a
+    /// [`ContainedPath`] carrying the canonical one — so the path checked is
+    /// the path opened, with no symlink swapped in between, and no tool below
+    /// can reach the filesystem without having asked.
+    fn resolve_path(&self, path: &str) -> Result<ContainedPath, rmcp::ErrorData> {
+        self.scope.resolve(&self.expand_env_vars(path))
+    }
 
-        if self.allowed_roots.is_none() {
-            return Ok(resolved);
-        }
-
-        let canonical = canonicalize_lenient(&resolved);
-        if self.is_permitted(&canonical) {
-            // Return the CANONICAL path so the checked path is the used
-            // path (no symlink swapped in between check and use).
-            Ok(canonical)
-        } else {
-            Err(rmcp::ErrorData::invalid_params(
-                format!(
-                    "Path '{path}' is outside this session's allowed roots \
-                     (workspace, kilns, session dir). Use a path inside the workspace."
-                ),
-                None,
-            ))
-        }
+    /// The same, for a path about to be MODIFIED.
+    ///
+    /// Everything `resolve_path` checks, plus the protected set no
+    /// configuration reopens and the write-denied roots. A separate return
+    /// type rather than a flag: `write_file` and `edit_file` cannot be handed
+    /// a path that only cleared the read check, because it does not typecheck.
+    fn resolve_path_for_write(&self, path: &str) -> Result<WritablePath, rmcp::ErrorData> {
+        self.scope.resolve_for_write(&self.expand_env_vars(path))
     }
 
     /// Get tool definitions for registration
@@ -264,7 +180,7 @@ impl WorkspaceTools {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let resolved = self.resolve_path(&path)?;
 
-        let content = tokio::fs::read_to_string(&resolved)
+        let content = tokio::fs::read_to_string(resolved.as_path())
             .await
             .mcp_err_ctx("Read error")?;
 
@@ -300,9 +216,9 @@ impl WorkspaceTools {
         new_string: String,
         replace_all: Option<bool>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let resolved = self.resolve_path(&path)?;
+        let resolved = self.resolve_path_for_write(&path)?;
 
-        let content = tokio::fs::read_to_string(&resolved)
+        let content = tokio::fs::read_to_string(resolved.as_path())
             .await
             .mcp_err_ctx("Read error")?;
 
@@ -317,7 +233,7 @@ impl WorkspaceTools {
             (content.replacen(&old_string, &new_string, 1), 1)
         };
 
-        tokio::fs::write(&resolved, &new_content)
+        tokio::fs::write(resolved.as_path(), &new_content)
             .await
             .mcp_err_ctx("Write error")?;
 
@@ -330,16 +246,16 @@ impl WorkspaceTools {
         path: String,
         content: String,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let resolved = self.resolve_path(&path)?;
+        let resolved = self.resolve_path_for_write(&path)?;
 
         // Create parent directories if needed
-        if let Some(parent) = resolved.parent() {
+        if let Some(parent) = resolved.as_path().parent() {
             tokio::fs::create_dir_all(parent)
                 .await
                 .mcp_err_ctx("Mkdir error")?;
         }
 
-        tokio::fs::write(&resolved, &content)
+        tokio::fs::write(resolved.as_path(), &content)
             .await
             .mcp_err_ctx("Write error")?;
 
@@ -403,7 +319,7 @@ impl WorkspaceTools {
 
         let mut cmd = Command::new("bash");
         cmd.arg("-c").arg(&command);
-        cmd.current_dir(&self.workspace_root);
+        cmd.current_dir(self.scope.anchor());
         for (key, value) in &self.env_vars {
             cmd.env(key, value);
         }
@@ -438,18 +354,19 @@ impl WorkspaceTools {
         path: Option<String>,
         limit: Option<usize>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let search_path = match path {
-            Some(p) => self.resolve_path(&p)?,
-            None => self.workspace_root.clone(),
-        };
+        // No `path` means the anchor, and the anchor goes through the same
+        // door as any other name — it is where relative paths land, not a
+        // grant, so a session that may not read its own workspace may not
+        // enumerate it either.
+        let search_path = self.resolve_path(path.as_deref().unwrap_or(""))?;
 
         // Containment must cover the PATTERN too, not just the search path.
         // Two ways a pattern leaves the search path, and neither check may be
-        // conditional on `allowed_roots`: the instance the daemon builds for
-        // plugin tool calls has none (`server/mod.rs`), and that is precisely
-        // the caller an untrusted message can reach. `..` was gated on
-        // `allowed_roots.is_some()` and so `../../etc/*` walked out of exactly
-        // the instance that needed the guard most.
+        // conditional on the tool set being contained: the instance the daemon
+        // builds for plugin tool calls is ambient (`server/mod.rs`), and that
+        // is precisely the caller an untrusted message can reach. `..` was
+        // gated on containment being configured, and so `../../etc/*` walked
+        // out of exactly the instance that needed the guard most.
         //
         // The allowed-roots filter on the yielded paths below stays as
         // belt-and-braces for the contained case; it cannot substitute for
@@ -482,21 +399,16 @@ impl WorkspaceTools {
             ));
         }
 
-        let full_pattern = search_path.join(&pattern);
+        let full_pattern = search_path.as_path().join(&pattern);
         let pattern_str = full_pattern.to_string_lossy();
         let max_results = limit.unwrap_or(100);
 
         let paths: Vec<String> = glob::glob(&pattern_str)
             .mcp_err_ctx("Glob error")?
             .filter_map(std::result::Result::ok)
-            .filter(|p| self.is_permitted(&canonicalize_lenient(p)))
+            .filter(|p| self.scope.admits(p))
             .take(max_results + 1)
-            .map(|p| {
-                p.strip_prefix(&self.workspace_root)
-                    .unwrap_or(&p)
-                    .display()
-                    .to_string()
-            })
+            .map(|p| self.scope.relativize(&p).display().to_string())
             .collect();
 
         let truncated = paths.len() > max_results;
@@ -524,7 +436,7 @@ impl WorkspaceTools {
     /// dropped: nothing downstream can attribute it to a permitted file.
     fn grep_line_is_permitted(&self, line: &str) -> bool {
         match line.split_once('\0') {
-            Some((path, _)) => self.is_permitted(&canonicalize_lenient(Path::new(path))),
+            Some((path, _)) => self.scope.admits(Path::new(path)),
             None => false,
         }
     }
@@ -537,10 +449,7 @@ impl WorkspaceTools {
         glob: Option<String>,
         limit: Option<usize>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
-        let search_path = match path {
-            Some(p) => self.resolve_path(&p)?,
-            None => self.workspace_root.clone(),
-        };
+        let search_path = self.resolve_path(path.as_deref().unwrap_or(""))?;
 
         let max_matches = limit.unwrap_or(50);
 
@@ -568,7 +477,7 @@ impl WorkspaceTools {
             cmd.arg("--glob").arg(g);
         }
 
-        cmd.arg("--").arg(&pattern).arg(&search_path);
+        cmd.arg("--").arg(&pattern).arg(search_path.as_path());
 
         let output = cmd.output().await.mcp_err_ctx("Grep error")?;
 

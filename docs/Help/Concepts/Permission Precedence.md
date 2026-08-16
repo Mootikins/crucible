@@ -197,19 +197,52 @@ seven-layer chain.
 
 ## Underneath all of it
 
-Four things are not part of the chain and cannot be overridden by any layer in
+Five things are not part of the chain and cannot be overridden by any layer in
 it:
 
 - **Hardcoded denies** — a small set of calls the daemon refuses outright.
-- **Workspace containment** — paths outside the session's workspace are refused,
-  and the offending path is redacted from the error rather than echoed back.
+- **Protected paths** — a hardcoded set of directories that agent tools may
+  **read but never write**, whatever the chain above decided: `.crucible/`,
+  `.git/`, the other harnesses' `.claude/` `.codex/` `.opencode/` `.pi/`, the
+  `runtime/` tree Crucible loads plugins from, `~/.config/crucible`, every
+  session-transcript directory, and the shell startup files (`~/.bashrc`,
+  `~/.zshrc`, …) **in your home directory** — a copy of the same file inside a
+  dotfiles repository stays writable, because no shell reads that one.
+  Nothing in the chain reaches this — a blanket
+  `--permissions allow` decides that a tool *call* runs, and this decides what
+  a *path* is, so the call runs and the write is still refused. There is no
+  configuration key that re-opens one.
+
+  The reason is that these are the files a trusted process later executes or
+  reads as instructions: a plugin, an agent card, a skill, a git hook, another
+  harness's settings, or a transcript replayed into a future context. An agent
+  that can write one has escaped through the thing that consumes it rather
+  than through the filesystem. It applies to paths that **do not exist yet** —
+  creating the file is the attack — and to what a symlink at a protected path
+  points to.
+
+  Reads are deliberately untouched. Explaining your own plugin is ordinary
+  work; rewriting it is not.
+- **Filesystem containment** — a default-deny allowlist of the session's kilns,
+  its workspace and its own session directory, with every transcript subtree
+  those enclose carved back out. Every filesystem-touching tool goes through one
+  capability handle to reach a path — `read_file`, `write_file`, `glob` and
+  `grep` alongside the note, search and kiln tools — so the rule cannot differ
+  between them, and a tool cannot obtain a path without having asked. The
+  refusal names the path you asked for and, when a symlink carried it out of
+  containment, where it landed.
+
+  Scoped honestly: this holds for the file tools. `bash` reaches the filesystem
+  through a shell the daemon does not mediate, so containment is defense in
+  depth for a session rather than a boundary around it until the kernel-level
+  backstop lands.
 - **The shell policy** — parsing and vetting of shell commands, independent of
   whether `bash` was permitted.
 - **Plan-mode tool filtering** — plan mode removes tools from what the agent can
   see at all. A tool that is not advertised cannot be called, so no permission
   question arises.
 
-The first three are floors. Plan mode's filtering is a floor too, but note that
+The first four are floors. Plan mode's filtering is a floor too, but note that
 the *policy* half of plan mode is declared in Lua like any other mode's — see
 [[Help/TUI/Modes]].
 

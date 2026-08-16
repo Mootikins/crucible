@@ -7,6 +7,8 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use super::containment::RootSet;
+use super::fs_scope::FsScope;
 use super::helpers::json_success;
 use crucible_core::storage::NoteStore;
 use rmcp::{model::CallToolResult, tool, tool_router};
@@ -14,7 +16,10 @@ use rmcp::{model::CallToolResult, tool, tool_router};
 #[derive(Clone)]
 #[allow(missing_docs)]
 pub struct KilnTools {
-    kiln_path: String,
+    /// The kiln as a capability rather than a path — see [`super::fs_scope`].
+    /// `get_kiln_info` walks, and a count is an oracle: unfiltered it reports
+    /// how many sessions the machine has recorded.
+    scope: FsScope,
     note_store: Option<Arc<dyn NoteStore>>,
 }
 
@@ -23,9 +28,21 @@ impl KilnTools {
     #[must_use]
     pub fn new(kiln_path: String) -> Self {
         Self {
-            kiln_path,
+            scope: FsScope::kiln(kiln_path, RootSet::Ambient),
             note_store: None,
         }
+    }
+
+    /// Contain these tools to the session's roots — see
+    /// [`super::notes::NoteTools::with_containment`].
+    #[must_use]
+    pub(crate) fn with_containment(mut self, containment: RootSet) -> Self {
+        self.scope = self.scope.with_containment(containment);
+        self
+    }
+
+    fn kiln_path(&self) -> String {
+        self.scope.anchor().to_string_lossy().into_owned()
     }
 
     /// Create `KilnTools` with a `NoteStore` for accurate indexed statistics
@@ -35,7 +52,7 @@ impl KilnTools {
     #[must_use]
     pub fn with_note_store(kiln_path: String, note_store: Arc<dyn NoteStore>) -> Self {
         Self {
-            kiln_path,
+            scope: FsScope::kiln(kiln_path, RootSet::Ambient),
             note_store: Some(note_store),
         }
     }
@@ -46,20 +63,17 @@ impl KilnTools {
     #[tool(description = "Get comprehensive kiln information")]
     pub async fn get_kiln_info(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         // Extract kiln name from path
-        let name = std::path::Path::new(&self.kiln_path)
-            .file_name()
-            .map_or_else(
-                || "unknown".to_string(),
-                |n| n.to_string_lossy().into_owned(),
-            );
+        let name = self.scope.anchor().file_name().map_or_else(
+            || "unknown".to_string(),
+            |n| n.to_string_lossy().into_owned(),
+        );
 
         // Use indexed data from NoteStore when available — workspace
         // authority bound to this MCP server's kiln.
         if let Some(store) = &self.note_store {
-            let authority = crucible_core::storage::Scope::workspace(&self.kiln_path)
-                .unwrap_or_else(|_| {
-                    crucible_core::storage::Scope::workspace_unchecked(&self.kiln_path)
-                });
+            let kiln = self.kiln_path();
+            let authority = crucible_core::storage::Scope::workspace(&kiln)
+                .unwrap_or_else(|_| crucible_core::storage::Scope::workspace_unchecked(&kiln));
             let notes = store.list(&authority).await.map_err(|e| rmcp::ErrorData {
                 code: rmcp::model::ErrorCode(-32603), // INTERNAL_ERROR
                 message: format!("Failed to list notes: {e}").into(),
@@ -91,18 +105,15 @@ impl KilnTools {
         let mut total_size = 0;
         let mut md_files = 0;
 
-        for entry in walkdir::WalkDir::new(&self.kiln_path)
-            .follow_links(false)
-            .into_iter()
-            .filter_entry(|e| {
-                if e.file_type().is_dir() {
-                    !e.file_name().to_string_lossy().starts_with('.') || e.depth() == 0
-                } else {
-                    true
-                }
-            })
-            .filter_map(std::result::Result::ok)
-            .filter(|e| e.file_type().is_file())
+        // Through the scope: the hidden-directory skip this walk used to carry
+        // does nothing when the transcripts sit at `{kiln}/sessions/` rather
+        // than `{kiln}/.crucible/`, which is the shape of every kiln-less
+        // session (whose kiln is the data root).
+        let root = self.scope.resolve("")?;
+        for entry in self
+            .scope
+            .walk_files(&root)
+            .filter(|e| !in_hidden_directory(self.scope.relativize(e.path())))
         {
             total_files += 1;
             if let Ok(metadata) = entry.metadata() {
@@ -126,6 +137,21 @@ impl KilnTools {
     }
 }
 
+/// Whether a kiln-relative path lives under a dot-directory.
+///
+/// A *counting* convention, not containment: `get_kiln_info` reports what the
+/// kiln holds, and `.git`/`.obsidian` are not it. Containment has already run —
+/// this filter can only ever narrow what the scope admitted, never widen it,
+/// which is why it is safe to leave as a per-tool rule. Hidden *files* are
+/// counted, as they always were; only directories are skipped.
+fn in_hidden_directory(relative: &std::path::Path) -> bool {
+    let mut components: Vec<_> = relative.components().collect();
+    components.pop();
+    components
+        .iter()
+        .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,7 +163,7 @@ mod tests {
         let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
         let kiln_tools = KilnTools::new(kiln_path);
-        assert_eq!(kiln_tools.kiln_path, temp_dir.path().to_string_lossy());
+        assert_eq!(kiln_tools.kiln_path(), temp_dir.path().to_string_lossy());
     }
 
     #[tokio::test]

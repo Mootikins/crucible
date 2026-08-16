@@ -16,7 +16,9 @@
 
 #![allow(clippy::doc_markdown, clippy::manual_let_else, missing_docs)]
 
-use super::grep_engine::{grep_search, GrepSearchError};
+use super::containment::RootSet;
+use super::fs_scope::FsScope;
+use super::grep_engine::{grep_search, GrepSearchError, WalkScope};
 use super::helpers::{json_success, McpResultExt};
 use crate::multi_kiln_search::KilnSearchSource;
 use crucible_core::serde_helpers::default_true;
@@ -27,7 +29,6 @@ use rmcp::{model::CallToolResult, tool, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::sync::Arc;
-use walkdir::WalkDir;
 
 /// Default value for limit parameter
 fn default_limit() -> usize {
@@ -45,7 +46,10 @@ fn json_object_schema(_gen: &mut schemars::SchemaGenerator) -> schemars::Schema 
 #[derive(Clone)]
 #[allow(missing_docs)]
 pub struct SearchTools {
-    kiln_path: String,
+    /// The kiln as a capability rather than a path — see [`super::fs_scope`].
+    /// `grep_notes` and the `property_search` fallback both WALK, so the rule
+    /// has to apply to what they yield, not only to the folder a caller names.
+    scope: FsScope,
     embedding_provider: Arc<dyn EmbeddingProvider>,
     /// Optional NoteStore for indexed property searches
     note_store: Option<Arc<dyn NoteStore>>,
@@ -101,11 +105,24 @@ impl SearchTools {
             knowledge_repo,
         }];
         Self {
-            kiln_path,
+            scope: FsScope::kiln(kiln_path, RootSet::Ambient),
             embedding_provider,
             note_store: None,
             search_sources,
         }
+    }
+
+    /// Contain these tools to the session's roots — see
+    /// [`super::notes::NoteTools::with_containment`].
+    #[must_use]
+    pub(crate) fn with_containment(mut self, containment: RootSet) -> Self {
+        self.scope = self.scope.with_containment(containment);
+        self
+    }
+
+    /// The kiln root, for storage-authority derivation and relative reporting.
+    fn kiln_path(&self) -> String {
+        self.scope.anchor().to_string_lossy().into_owned()
     }
 
     pub fn with_note_store(
@@ -155,7 +172,7 @@ impl SearchTools {
             embedding,
             limit,
             None,
-            std::path::Path::new(&self.kiln_path),
+            self.scope.anchor(),
         )
         .await
         .mcp_err_ctx("Note search failed")?;
@@ -195,8 +212,7 @@ impl SearchTools {
         let case_insensitive = params.case_insensitive;
         let limit = params.limit;
 
-        // Security: Validate folder to prevent traversal attacks
-        let search_path = validate_folder_within_kiln(&self.kiln_path, folder.as_deref())?;
+        let search_path = self.scope.resolve_folder(folder.as_deref())?;
 
         if !search_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(
@@ -208,9 +224,10 @@ impl SearchTools {
         // Reuse the shared grep engine, restricting to notes (`*.md`) and
         // reporting paths relative to the kiln root even when a subfolder is
         // walked.
+        let admits = |path: &std::path::Path| self.scope.admits(path);
         let (hits, truncated) = grep_search(
-            &search_path,
-            std::path::Path::new(&self.kiln_path),
+            WalkScope::contained(search_path.as_path(), &admits),
+            self.scope.anchor(),
             &query,
             params.regex,
             Some("*.md"),
@@ -285,10 +302,9 @@ impl SearchTools {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         // Get all notes from the store — workspace authority derived from
         // the kiln this MCP server is bound to.
-        let authority =
-            crucible_core::storage::Scope::workspace(&self.kiln_path).unwrap_or_else(|_| {
-                crucible_core::storage::Scope::workspace_unchecked(&self.kiln_path)
-            });
+        let kiln = self.kiln_path();
+        let authority = crucible_core::storage::Scope::workspace(&kiln)
+            .unwrap_or_else(|_| crucible_core::storage::Scope::workspace_unchecked(&kiln));
         let all_notes = note_store
             .list(&authority)
             .await
@@ -357,12 +373,13 @@ impl SearchTools {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let mut matches = Vec::new();
 
-        // Walk all markdown files
-        for entry in WalkDir::new(&self.kiln_path)
-            .follow_links(false)
-            .into_iter()
-            .filter_map(std::result::Result::ok)
-            .filter(|e| e.file_type().is_file())
+        // Through the scope, so the walk cannot rake in a denied subtree under
+        // an allowed kiln. This fallback had no filter whatsoever — not even
+        // the hidden-directory skip the other walkers carry.
+        let root = self.scope.resolve("")?;
+        for entry in self
+            .scope
+            .walk_files(&root)
             .filter(|e| crucible_core::kiln::is_note_file(e.path()))
         {
             // Read file and parse frontmatter
@@ -384,10 +401,9 @@ impl SearchTools {
             });
 
             if matches_all {
-                let relative_path = entry
-                    .path()
-                    .strip_prefix(&self.kiln_path)
-                    .unwrap_or(entry.path())
+                let relative_path = self
+                    .scope
+                    .relativize(entry.path())
                     .to_string_lossy()
                     .to_string();
 
@@ -453,8 +469,8 @@ fn match_tags_property(tags: &[String], search_value: &serde_json::Value) -> boo
     }
 }
 
-// Use shared utilities for frontmatter parsing and path validation
-use super::utils::{parse_yaml_frontmatter, validate_folder_within_kiln};
+// Use shared utilities for frontmatter parsing
+use super::utils::parse_yaml_frontmatter;
 
 /// Extract the JSON payload from a tool result, panicking (rather than silently
 /// skipping assertions) if the result has no text content or invalid JSON.

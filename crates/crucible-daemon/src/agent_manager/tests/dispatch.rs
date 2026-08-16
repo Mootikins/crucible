@@ -706,9 +706,11 @@ async fn cleanup_session_leaves_no_per_session_residue() {
         session_id.to_string(),
         Arc::new(Mutex::new(Box::new(MockAgent))),
     );
+    let dispatcher: Arc<dyn crate::tool_dispatch::ToolDispatcher> =
+        Arc::new(crate::tool_dispatch::DaemonToolDispatcher::new(vec![]));
     agent_manager
         .slot(session_id)
-        .seed_build_for_test(None, Some(&agent_manager.tool_dispatcher));
+        .seed_build_for_test(None, Some(&dispatcher));
     agent_manager.slot(session_id).set_pending_mode("plan");
     agent_manager
         .slot(session_id)

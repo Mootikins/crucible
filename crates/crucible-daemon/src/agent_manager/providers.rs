@@ -206,10 +206,8 @@ mod tests {
     use crate::background_manager::BackgroundJobManager;
     use crate::kiln_manager::KilnManager;
     use crate::test_support::temp_session_manager;
-    use crate::tools::workspace::WorkspaceTools;
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::{HashMap, HashSet};
-    use std::path::PathBuf;
     use std::sync::Arc;
     use tokio::sync::broadcast;
 
@@ -227,7 +225,6 @@ mod tests {
             context_config: None,
             permission_config: None,
             plugin_loader: None,
-            workspace_tools: Arc::new(WorkspaceTools::new(PathBuf::from("/tmp"))),
         })
     }
 

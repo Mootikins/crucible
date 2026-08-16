@@ -390,7 +390,6 @@ pub struct AgentManager {
     context_config: Option<crucible_core::config::ContextConfig>,
     permission_config: Option<PermissionConfig>,
     plugin_loader: Option<Arc<Mutex<Option<DaemonPluginLoader>>>>,
-    tool_dispatcher: Arc<dyn ToolDispatcher>,
     /// Lua validator registry + plugin `Lua` handle. Populated once at
     /// daemon startup via [`AgentManager::set_lua_validators`] after the
     /// plugin loader has finished initializing. `OnceLock` keeps the
@@ -464,7 +463,6 @@ pub struct AgentManagerParams {
     pub context_config: Option<crucible_core::config::ContextConfig>,
     pub permission_config: Option<PermissionConfig>,
     pub plugin_loader: Option<Arc<Mutex<Option<DaemonPluginLoader>>>>,
-    pub workspace_tools: Arc<WorkspaceTools>,
 }
 
 impl AgentManager {
@@ -485,9 +483,6 @@ impl AgentManager {
         params: AgentManagerParams,
         delegation_service: Arc<DelegationService>,
     ) -> Self {
-        let tool_dispatcher: Arc<dyn ToolDispatcher> = Arc::new(DaemonToolDispatcher::new(vec![
-            params.workspace_tools as Arc<dyn ToolExecutor>,
-        ]));
         Self {
             request_state: Arc::new(DashMap::new()),
             slots: Arc::new(DashMap::new()),
@@ -505,7 +500,6 @@ impl AgentManager {
             context_config: params.context_config,
             permission_config: params.permission_config,
             plugin_loader: params.plugin_loader,
-            tool_dispatcher,
             lua_validators: std::sync::OnceLock::new(),
             plugin_handlers: std::sync::OnceLock::new(),
             isolation: std::sync::OnceLock::new(),
@@ -912,8 +906,17 @@ impl AgentManager {
             Err(generation) => generation,
         };
 
-        // Build new dispatcher for this session
-        let dispatcher = if !session.workspace.as_os_str().is_empty() {
+        // Build new dispatcher for this session.
+        //
+        // Unconditionally. This used to be gated on a non-empty workspace and
+        // otherwise fell through to the daemon-GLOBAL dispatcher, whose
+        // `WorkspaceTools` is ambient — so detaching the workspace of a
+        // kiln-less session (`session.set_workspace` with no `workspace` key,
+        // which falls back to `default_kiln()` and thus to `""`) swapped a
+        // contained tool set for an uncontained one. An empty kiln set and an
+        // absent workspace degrade CAPABILITIES; there must be no path that
+        // lets them degrade containment.
+        let dispatcher = {
             use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
             use crate::tool_dispatch::McpToolExecutor;
             use crate::tools::mcp_server::CrucibleMcpServer;
@@ -982,6 +985,20 @@ impl AgentManager {
                     default_kiln.as_deref(),
                 )
             });
+            // Security posture for the session's tools: a default-deny
+            // allowlist of the session's kilns and workspace, with every
+            // transcript subtree they enclose carved back out and only THIS
+            // session's own storage dir re-admitted. Built once here, never
+            // re-read at call time; the rules are in `session_containment`.
+            // It is handed to BOTH tool sets — the workspace family and the
+            // kiln family — because a rule enforced by one door and not the
+            // other is the shape that made `read_note` return a transcript
+            // `read_file` refused.
+            let sessions_root = self.session_manager.sessions_root().to_path_buf();
+            let session_dir = session.storage_path(&sessions_root);
+            let containment =
+                crate::agent_manager::scope::session_containment(session, &sessions_root);
+
             let mcp = Arc::new(
                 CrucibleMcpServer::new_with_workspace_and_delegation(
                     default_kiln
@@ -993,44 +1010,32 @@ impl AgentManager {
                     knowledge_repo,
                     embedding_provider,
                     delegation_context,
+                    containment.clone(),
                 )
                 .with_search_sources(search_sources),
             );
 
-            // Security posture for the session's workspace tools: file
-            // operations are contained to the workspace + kilns + this
-            // session's own storage dir (spill reads), and the project's
-            // `[security.shell]` policy applies to bash. Both are resolved
-            // ONCE here, never re-read at call time.
-            //
-            // Only THIS session's storage dir is reachable, never the sessions
-            // root around it: that root holds every transcript the daemon has
-            // ever recorded, so granting the kiln roots alone handed the agent
-            // `read_file`/`glob` over every past conversation. Denying the
-            // sessions root — plus each kiln's legacy in-kiln one, which
-            // migration is not guaranteed to have emptied — and re-granting
-            // this session's own directory is the subtraction; see
-            // `session_containment_roots`. (`bash` is not scoped by
-            // `allowed_roots` at all — it answers to the shell policy instead
-            // — and closing that gap is deliberately out of scope here.)
+            // The project's `[security.shell]` policy applies to bash the same
+            // way. (`bash` is not scoped by the allowlist at all — it answers
+            // to the shell policy instead — and closing that gap is
+            // deliberately out of scope here.)
             let shell_policy = crucible_core::config::read_project_config(&session.workspace)
                 .map(|c| c.security.shell);
-            let sessions_root = self.session_manager.sessions_root().to_path_buf();
-            let (allowed_roots, denied_roots) =
-                crate::agent_manager::scope::session_containment_roots(session, &sessions_root);
+            // Where relative paths and `bash` are anchored — NOT a grant. A
+            // session whose workspace was detached carries `""`, which names no
+            // directory; its own storage dir is the one place it certainly
+            // has, and it is already inside the allowlist.
+            let tool_root = if session.workspace.as_os_str().is_empty() {
+                session_dir.clone()
+            } else {
+                session.workspace.clone()
+            };
             let mut providers: Vec<Arc<dyn ToolExecutor>> = vec![
                 Arc::new(
-                    WorkspaceTools::new(&session.workspace)
+                    WorkspaceTools::new(&tool_root)
                         .with_env("CRU_SESSION", &session.id)
-                        .with_env(
-                            "CRU_SESSION_DIR",
-                            session
-                                .storage_path(&sessions_root)
-                                .to_string_lossy()
-                                .to_string(),
-                        )
-                        .with_allowed_roots(allowed_roots)
-                        .with_denied_roots(denied_roots)
+                        .with_env("CRU_SESSION_DIR", session_dir.to_string_lossy().to_string())
+                        .with_containment(containment)
                         .with_shell_policy(shell_policy),
                 ) as Arc<dyn ToolExecutor>,
                 Arc::new(McpToolExecutor::new(mcp)),
@@ -1066,9 +1071,7 @@ impl AgentManager {
                 );
             }
 
-            Arc::new(DaemonToolDispatcher::new(providers))
-        } else {
-            self.tool_dispatcher.clone()
+            Arc::new(DaemonToolDispatcher::new(providers)) as Arc<dyn ToolDispatcher>
         };
 
         // Cache and return
@@ -1393,7 +1396,7 @@ pub(crate) mod precognition;
 pub(crate) mod precognition_gate;
 pub mod providers;
 mod residue;
-mod scope;
+pub(crate) mod scope;
 pub(crate) mod session_vm;
 mod slot;
 pub(crate) mod stream_config;

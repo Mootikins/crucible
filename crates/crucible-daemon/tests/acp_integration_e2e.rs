@@ -292,6 +292,7 @@ async fn test_mcp_host_initializes() {
         knowledge_repo,
         embedding_provider,
         None, // no delegation context
+        crucible_daemon::tools::containment::RootSet::Ambient,
     )
     .await
     {
@@ -430,6 +431,7 @@ async fn test_mcp_host_initializes_with_delegation_context() {
         knowledge_repo,
         embedding_provider,
         Some(delegation_ctx),
+        crucible_daemon::tools::containment::RootSet::Ambient,
     )
     .await
     {

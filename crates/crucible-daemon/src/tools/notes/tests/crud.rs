@@ -14,7 +14,7 @@ fn test_note_tools_creation() {
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
     let note_tools = NoteTools::new(kiln_path);
-    assert_eq!(note_tools.kiln_path, temp_dir.path().to_string_lossy());
+    assert_eq!(note_tools.kiln_path(), temp_dir.path().to_string_lossy());
 }
 
 #[tokio::test]

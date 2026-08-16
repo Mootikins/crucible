@@ -773,6 +773,19 @@ impl AgentManager {
             sandbox_exec: self
                 .isolation()
                 .and_then(|reg| reg.sandbox_exec(session_id)),
+            // For an ACP agent, this is the containment of the kiln tools it
+            // reaches over MCP. A session that has gone missing gets the empty
+            // allowlist, which reaches nothing — the fail-closed reading, and
+            // the same one `session_containment` gives a kiln-less session.
+            containment: session_for_factory
+                .as_ref()
+                .map(|session| {
+                    crate::agent_manager::scope::session_containment(
+                        session,
+                        self.session_manager.sessions_root(),
+                    )
+                })
+                .unwrap_or_else(|| crate::tools::containment::RootSet::scoped(vec![], vec![])),
         })
         .await?;
 
