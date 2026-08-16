@@ -66,7 +66,10 @@ impl DaemonToolsBridge {
                 // than asserted `Host` here. Same answer for all six workspace
                 // tools, but a name this bridge cannot place answers `Unknown`
                 // and is refused, instead of a second hand-maintained belief
-                // about what sits behind the bridge.
+                // about what sits behind the bridge. `WorkspaceTools::surface`
+                // answers only for the tools it serves — it used to hand back
+                // the whole built-in table, so a kiln tool's `Daemon` passed
+                // this gate on the word of an executor that cannot run it.
                 let surface = self.workspace_tools.surface(name);
                 if isolation.host_execution_allowed(id, name, surface) {
                     return None;
@@ -250,6 +253,52 @@ mod tests {
             .await
             .expect_err("an isolated session's plugin must not run bash on the host");
         assert!(err.contains("isolated") && err.contains("oci"), "{err}");
+    }
+
+    /// The gate must take its answer from the executor that would run the
+    /// call, and `WorkspaceTools` runs six tools.
+    ///
+    /// It answered out of the whole built-in table instead, so asking it about
+    /// `create_note` returned `Daemon` — the classification of a tool behind a
+    /// completely different executor — and the isolation claim passed. Nothing
+    /// escapes today only because execution then fails `NotFound` further
+    /// down; the gate's verdict came from the wrong authority, which is one
+    /// provider-list edit away from mattering.
+    #[tokio::test]
+    async fn a_tool_this_bridge_cannot_run_is_not_cleared_by_another_executors_surface() {
+        let (bridge, _iso) = isolated_bridge(Some("s-sandboxed"));
+
+        let err = bridge
+            .call_tool(
+                "create_note".to_string(),
+                json!({"path": "x.md", "content": "hi"}),
+                Some("s-sandboxed".to_string()),
+            )
+            .await
+            .expect_err("a name this executor does not serve must not pass the gate");
+
+        assert!(
+            err.contains("Permission denied"),
+            "the isolation gate must be what refuses this, not a downstream \
+             NotFound: {err}"
+        );
+    }
+
+    /// ...and the gate stays open for the tools it really does serve, on a
+    /// session nobody claimed.
+    #[tokio::test]
+    async fn a_workspace_tool_still_clears_the_gate_on_an_unclaimed_session() {
+        let (bridge, _iso) = isolated_bridge(Some("s-sandboxed"));
+        let result = bridge
+            .call_tool(
+                "read_file".to_string(),
+                json!({"path": "nope.txt"}),
+                Some("s-free".to_string()),
+            )
+            .await;
+        if let Err(e) = result {
+            assert!(!e.contains("Permission denied"), "{e}");
+        }
     }
 
     /// Isolation is per session, so an unsandboxed one is unaffected.

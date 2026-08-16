@@ -160,12 +160,29 @@ impl SessionStorage for FileSessionStorage {
             }
         })?;
 
-        serde_json::from_str(&json).map_err(|e| {
+        let session: Session = serde_json::from_str(&json).map_err(|e| {
             SessionError::IoError(format!(
                 "Failed to parse session '{}' JSON: {}",
                 session_id, e
             ))
-        })
+        })?;
+
+        // Same rule `list` applies, at the other door. A load is keyed on the
+        // directory; every subsequent write — `save`, `append_event`,
+        // `append_markdown` — is keyed on `session.id`. Handing back a session
+        // whose id names a *different* directory therefore turns reading one
+        // session into writing another, which is the whole of the attack
+        // migration's stamp closes on the way in. Enforced here as well because
+        // migration is not the only way a `meta.json` can come to disagree with
+        // the directory holding it, and this is the sink rather than one door.
+        if session.id != *session_id {
+            return Err(SessionError::IoError(format!(
+                "Session '{}' holds metadata naming '{}'; refusing to load a session that names another session's directory",
+                session_id, session.id
+            )));
+        }
+
+        Ok(session)
     }
 
     async fn list(&self) -> Result<Vec<SessionSummary>, SessionError> {
@@ -369,6 +386,38 @@ mod tests {
         let loaded = storage.load(&session_id).await.unwrap();
         assert_eq!(loaded.id, session_id);
         assert_eq!(loaded.session_type, SessionType::Chat);
+    }
+
+    /// A load is keyed on the directory and every write that follows is keyed
+    /// on `session.id`, so a `meta.json` naming another session turns reading
+    /// one directory into writing another. Migration stamps the id on the way
+    /// in; this is the same rule at the sink, for metadata that came to
+    /// disagree some other way.
+    #[tokio::test]
+    async fn loading_a_directory_whose_metadata_names_another_session_fails() {
+        let tmp = TempDir::new().unwrap();
+        let storage = storage_in(&tmp);
+
+        let victim = session_in(&tmp, SessionType::Chat);
+        storage.save(&victim).await.unwrap();
+
+        // A directory of its own, whose metadata claims to be the victim.
+        let evil_id = SessionId::parse("chat-evil").unwrap();
+        let mut evil = session_in(&tmp, SessionType::Chat);
+        evil.id = victim.id.clone();
+        let dir = evil_id.dir_under(&FileSessionStorage::root_for(tmp.path()));
+        fs::create_dir_all(&dir).await.unwrap();
+        fs::write(
+            dir.join("meta.json"),
+            serde_json::to_string_pretty(&evil).unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            storage.load(&evil_id).await.is_err(),
+            "loading one session's directory handed back another session's id"
+        );
     }
 
     #[tokio::test]

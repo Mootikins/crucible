@@ -11,6 +11,8 @@
 //! (`read_file`, `glob`, `grep`); this answers "may plan mode see this tool at
 //! all" and includes `skill_view`. Two questions, two lists.
 
+use crucible_core::types::mode::BuiltinMode;
+
 /// Read-only tools available in "plan" mode when Lua declares no modes.
 pub const PLAN_TOOL_NAMES: &[&str] = &[
     "semantic_search",
@@ -59,13 +61,23 @@ pub fn is_builtin_mode(name: &str) -> bool {
 /// [`ToolSelector::names_exactly`] is the operator half: a glob does not
 /// count, so a plugin cannot pick a name that slips through a selector written
 /// before it existed.
+///
+/// "Restricted mode" is asked of [`BuiltinMode::is_read_only`] rather than by
+/// comparing the id to `"plan"`, for the reason `agent_factory::mode_exposes_tool`
+/// gives at length: the literal used to be repeated across four places that
+/// could disagree about one mode, and this was the copy left behind when that
+/// one was refactored. Latent only because `Plan` is currently the sole
+/// read-only mode — the next one would have defaulted to plugin tools
+/// ADMITTED, which is the wrong direction for a mode whose whole claim is that
+/// it cannot cause effects.
 pub fn plugin_tool_barred(
     mode_id: &str,
     tool_name: &str,
     plugin_tool_names: &std::collections::HashSet<String>,
     modes: Option<&crucible_lua::ModeRegistry>,
 ) -> bool {
-    if mode_id != "plan" || !plugin_tool_names.contains(tool_name) {
+    let read_only = BuiltinMode::from_id(mode_id).is_some_and(BuiltinMode::is_read_only);
+    if !read_only || !plugin_tool_names.contains(tool_name) {
         return false;
     }
     // No registry is the un-configured state, and it fails CLOSED: with no
@@ -186,6 +198,33 @@ mod plugin_admission_tests {
             !plugin_tool_barred("review", "web_search", &plugin_tools(), Some(&modes)),
             "an undeclared mode is not this function's question to answer"
         );
+    }
+
+    /// The predicate, not the literal.
+    ///
+    /// This rule and `agent_factory::mode_exposes_tool` are two halves of one
+    /// answer — what a restricted mode may see — and they disagreed: the other
+    /// half was refactored onto [`BuiltinMode::is_read_only`] with a comment
+    /// naming the four-places problem, and this one kept comparing the id to
+    /// `"plan"`. Harmless while `Plan` is the only read-only mode, which is
+    /// also why nothing caught it; the next read-only mode would have
+    /// defaulted to plugin tools ADMITTED.
+    ///
+    /// It is a coupling test rather than a reproduction, and deliberately so:
+    /// there is no second read-only mode to reproduce with, so what it pins is
+    /// that the two stay derived from the same predicate as `BuiltinMode`
+    /// grows.
+    #[test]
+    fn every_read_only_builtin_mode_bars_plugin_tools() {
+        let modes = registry(ToolSelector::Patterns(vec!["read_*".into()]));
+        for name in BUILTIN_MODE_NAMES {
+            let read_only = BuiltinMode::from_id(name).unwrap().is_read_only();
+            assert_eq!(
+                plugin_tool_barred(name, "web_search", &plugin_tools(), Some(&modes)),
+                read_only,
+                "'{name}' must bar unnamed plugin tools iff it is read-only"
+            );
+        }
     }
 
     /// A built-in tool is never subject to this rule.

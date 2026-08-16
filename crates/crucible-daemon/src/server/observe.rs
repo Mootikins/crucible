@@ -183,12 +183,94 @@ pub(crate) async fn handle_session_render_markdown(req: Request, sessions_root: 
     Response::success(req.id, serde_json::json!({ "markdown": md }))
 }
 
+/// Where an export is allowed to land, resolved into the path that will
+/// actually be opened.
+///
+/// This handler used to be the daemon's one write sink that reached the
+/// filesystem without asking anything: `PathBuf::from(output_path)` straight
+/// into `tokio::fs::write`. `session.export_to_file` with
+/// `"output_path": "/home/u/.bashrc"` overwrote that file with transcript
+/// markdown. [`protected::write_protection`] having exactly one caller
+/// ([`crate::tools::fs_scope::FsScope::resolve_for_write`]) is precisely why
+/// nobody noticed — a rule with one call site is a rule about that call site.
+///
+/// There are two destinations here and only one of them is caller-supplied:
+///
+/// * **No `output_path`** — `session.md` beside the session's own transcript.
+///   Not a path a caller can influence beyond the id, which
+///   [`require_session_id!`] has already validated as a single component, so
+///   the assertion is **equality** rather than containment, exactly as
+///   [`crate::session_manager::remove_session_dir`] makes it and for the same
+///   reason: a symlink at `{sessions_root}/{id}` is beneath the root by every
+///   lexical test and is still not our directory.
+///
+///   It deliberately does *not* go through [`protected::write_protection`].
+///   The production sessions root is `~/.crucible/sessions`, so `.crucible` is
+///   a component of every default export; that rule is about an agent writing
+///   into the daemon's own configuration, and the daemon writing a transcript
+///   beside itself is the thing the rule protects rather than a thing it
+///   protects against.
+///
+/// * **An explicit `output_path`** — an export outside the workspace **is**
+///   legitimate, and this is that allowance stated rather than left implicit.
+///   `cru session export -o ~/notes/transcript.md` is a user asking their own
+///   CLI, over the per-uid 0700 socket, to put a file where they want it with
+///   their own privileges. Containing it to a kiln or a workspace would refuse
+///   an ordinary request and buy nothing, since the caller could equally have
+///   run `cru session show > ~/notes/transcript.md`.
+///
+///   The allowance is over *containment*, and over containment only. Rule 3 of
+///   [`protected`] — "no configuration can re-open it" — means no caller
+///   either: `~/.bashrc`, `.git/config`, a file under `.crucible/plugins/` or
+///   another harness's `.claude/` is not a place to put a document, it is a
+///   place where a trusted host process later executes what it finds. Those
+///   are refused here whoever asks.
+///
+/// The path returned is the *resolved* form that was judged, so the path
+/// checked and the path written are the same path. Two syscalls still, so this
+/// is not TOCTOU-proof and is not claimed to be — the same caveat
+/// `remove_session_dir` carries.
+async fn export_destination(
+    output_path: Option<&str>,
+    session_id: &crucible_core::session::SessionId,
+    sessions_root: &Path,
+) -> Result<PathBuf, String> {
+    use crate::tools::{path_resolution::ResolvedPath, protected};
+
+    let Some(requested) = output_path else {
+        let expected = session_id.dir_under(sessions_root);
+        let resolved_root = tokio::fs::canonicalize(sessions_root)
+            .await
+            .map_err(|e| format!("cannot resolve the sessions root: {e}"))?;
+        let resolved_dir = tokio::fs::canonicalize(&expected)
+            .await
+            .map_err(|e| format!("cannot resolve {}: {e}", expected.display()))?;
+        if resolved_dir != session_id.dir_under(&resolved_root) {
+            return Err(format!(
+                "refusing to export to {}: it resolves to {}, which is not {}/{session_id}",
+                expected.display(),
+                resolved_dir.display(),
+                resolved_root.display(),
+            ));
+        }
+        return Ok(resolved_dir.join("session.md"));
+    };
+
+    let resolved = ResolvedPath::resolve(Path::new(requested));
+    if let Some(protection) = protected::write_protection(&resolved) {
+        return Err(protection.message(requested));
+    }
+    Ok(resolved.canonical().to_path_buf())
+}
+
 /// Export a session to a markdown file.
 ///
 /// Params:
 ///   - `session_id` (string, required): The session id.
 ///   - `output_path` (string, optional): Output file path (default: the
-///     session's own `session.md`)
+///     session's own `session.md`). Free to point outside any kiln or
+///     workspace — see [`export_destination`] for what that allowance does and
+///     does not cover.
 ///   - `include_timestamps` (bool, optional): Include timestamps (default false)
 ///     Returns: { status: "ok", output_path: "..." }
 pub(crate) async fn handle_session_export_to_file(req: Request, sessions_root: &Path) -> Response {
@@ -203,17 +285,19 @@ pub(crate) async fn handle_session_export_to_file(req: Request, sessions_root: &
         Err(e) => return internal_error(req.id, e),
     };
 
+    // Judged before the markdown is rendered so a refused destination costs
+    // nothing, and before any file is touched so a refusal leaves no trace.
+    let out_path = match export_destination(output_path, &session_id, sessions_root).await {
+        Ok(path) => path,
+        Err(message) => return Response::error(req.id, INVALID_PARAMS, message),
+    };
+
     let options = crate::observe::RenderOptions {
         include_timestamps: timestamps,
         ..Default::default()
     };
 
     let md = crate::observe::render_to_markdown(&events, &options);
-
-    let out_path = match output_path {
-        Some(p) => PathBuf::from(p),
-        None => session_dir.join("session.md"),
-    };
 
     if let Err(e) = tokio::fs::write(&out_path, &md).await {
         return internal_error(req.id, e);

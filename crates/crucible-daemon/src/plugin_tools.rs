@@ -60,41 +60,14 @@ pub struct PluginRegistry {
 /// Plugin-vs-plugin collisions resolve first-load-wins, likewise with a warning
 /// — load order is the only tiebreaker available and neither plugin has a claim
 /// on the name.
-fn builtin_tool_names() -> std::collections::HashSet<String> {
-    // A throwaway server just to enumerate the kiln MCP tool names; the empty
-    // providers are never called because we only read the catalog.
-    //
-    // `all_tool_names`, NOT `list_tools`: the latter answers "what may this
-    // session call" and strips `KILN_BACKED_TOOLS` on a kiln-less server (which
-    // this one is) plus `delegate_session`. Reserving only the advertised
-    // subset let a plugin claim `read_note` on any kiln-less session, where
-    // dispatch's `Err(NotFound) => continue` would then run its Lua under a
-    // name the model reads as the built-in.
-    let mcp = crate::tools::mcp_server::CrucibleMcpServer::new(
-        String::new(),
-        Arc::new(crate::empty_providers::EmptyKnowledgeRepository),
-        Arc::new(crate::empty_providers::EmptyEmbeddingProvider),
-    );
-    mcp.all_tool_names()
-        .into_iter()
-        .chain(
-            crate::tools::workspace::WorkspaceTools::tool_definitions()
-                .into_iter()
-                .map(|t| t.name.to_string()),
-        )
-        .chain(
-            [
-                // The progressive-disclosure bridge is handled inside the
-                // dispatcher itself and never reaches a provider, so a plugin
-                // claiming these names would be unreachable by construction.
-                "discover_tools",
-                "get_tool_schema",
-                "invoke_tool",
-            ]
-            .into_iter()
-            .map(String::from),
-        )
-        .collect()
+fn builtin_tool_names() -> std::collections::BTreeSet<String> {
+    // Shared with the gateway's collision check
+    // (`McpGatewayManager::add_upstream`), which defends the same property
+    // from the other side: a prefix of `read_` in front of an upstream tool
+    // named `note` shadows `read_note` just as a plugin declaring `read_note`
+    // would. One set means neither can drift into reserving less than the
+    // other.
+    crate::tools::surface::reserved_tool_names()
 }
 
 impl PluginRegistry {

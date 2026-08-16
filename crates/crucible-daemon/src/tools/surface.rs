@@ -18,9 +18,17 @@
 //! So the classification is a total function of a tool identity enum, and the
 //! `match` in [`BuiltinTool::surface`] carries no wildcard arm. rustc's
 //! exhaustiveness check is the enforcement: a new variant does not compile
-//! until someone classifies it. The module-level
-//! `deny(clippy::wildcard_enum_match_arm)` is what stops that compile error
-//! being silenced with `_ => ToolSurface::Daemon` later.
+//! until someone classifies it.
+//!
+//! Silencing that compile error with `_ => ToolSurface::Daemon` is caught by
+//! the two module-level denies below — but only under `cargo clippy`, which
+//! `just ci` runs and `cargo test` does not. Both lints are needed and neither
+//! is redundant: clippy reports a wildcard covering *one* remaining variant as
+//! `match_wildcard_for_single_variants` and only a wildcard covering two or
+//! more as `wildcard_enum_match_arm`. Tools are added one at a time, so the
+//! single-variant lint is the one that actually fires — with only
+//! `wildcard_enum_match_arm` denied, a session added a `DumpEnv` variant with
+//! `_ => ToolSurface::Daemon` and the whole suite went green.
 //!
 //! The other half of the guarantee is [`classify`]: a name with no variant is
 //! [`ToolSurface::Unknown`], which the isolation gate refuses exactly as it
@@ -36,8 +44,11 @@
 //! classification.
 
 #![deny(clippy::wildcard_enum_match_arm)]
+#![deny(clippy::match_wildcard_for_single_variants)]
 
 use crucible_core::traits::tools::ToolSurface;
+use std::collections::BTreeSet;
+use std::sync::Arc;
 
 /// A tool Crucible itself defines and runs in the daemon process.
 ///
@@ -230,6 +241,65 @@ impl BuiltinTool {
 #[must_use]
 pub fn classify(name: &str) -> ToolSurface {
     BuiltinTool::from_name(name).map_or(ToolSurface::Unknown, BuiltinTool::surface)
+}
+
+/// Every tool name the daemon's own executors put in front of a model.
+///
+/// The full catalog, deliberately: [`CrucibleMcpServer::all_tool_names`] and
+/// not `list_tools`, because `list_tools` answers "what may *this* session
+/// call" — it strips `KILN_BACKED_TOOLS` on a kiln-less server and
+/// `delegate_session` without a delegation context. A caller asking "is this
+/// name ours" that used the session-filtered set would leave every name one
+/// session shape happens to hide open for a plugin or an upstream MCP server
+/// to claim.
+///
+/// [`CrucibleMcpServer::all_tool_names`]: crate::tools::mcp_server::CrucibleMcpServer::all_tool_names
+pub(crate) fn advertised_builtin_names() -> BTreeSet<String> {
+    // A throwaway server purely to read its catalog; the empty providers are
+    // never called because nothing here executes a tool.
+    let mcp = crate::tools::mcp_server::CrucibleMcpServer::new(
+        String::new(),
+        Arc::new(crate::empty_providers::EmptyKnowledgeRepository),
+        Arc::new(crate::empty_providers::EmptyEmbeddingProvider),
+    );
+
+    mcp.all_tool_names()
+        .into_iter()
+        .chain(
+            crate::tools::workspace::WorkspaceTools::tool_definitions()
+                .into_iter()
+                .map(|t| t.name.to_string()),
+        )
+        // The progressive-disclosure bridge belongs to no executor —
+        // `DaemonToolDispatcher` answers it out of its own catalog — so nothing
+        // above lists it.
+        .chain(
+            crate::tool_dispatch::DISCOVERY_TOOL_NAMES
+                .iter()
+                .map(|n| (*n).to_string()),
+        )
+        .collect()
+}
+
+/// Names foreign code may not claim: plugin Lua tools and MCP gateway
+/// upstreams both fail registration on a collision rather than shadowing a
+/// built-in.
+///
+/// One set, two callers, because they defend the same property from opposite
+/// sides: a plugin declaring `read_note`, and a gateway with prefix `read_`
+/// serving a tool `note`. Shadowing is worse than a duplicate name — the
+/// model reads the built-in's meaning and third-party code answers, and on
+/// the external MCP surface the gateway is consulted *before* the kiln server,
+/// so the built-in never runs.
+pub(crate) fn reserved_tool_names() -> BTreeSet<String> {
+    let mut names = advertised_builtin_names();
+    // `invoke_tool` is the deferred-tool bridge: the provider attaches it and
+    // `handle_tool_call_in_stream` unwraps it to the inner call, so it reaches
+    // no executor and has no `BuiltinTool` variant. It still has to be
+    // reserved — foreign code answering to that name would intercept every
+    // deferred tool call the model makes.
+    names.insert("invoke_tool".to_string());
+    names
 }
 
 #[cfg(test)]

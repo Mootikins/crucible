@@ -39,6 +39,12 @@ pub enum GatewayError {
     /// Invalid prefix format.
     #[error("Invalid prefix '{0}': {1}")]
     InvalidPrefix(String, String),
+    /// An upstream tool's prefixed name is a Crucible built-in.
+    #[error(
+        "Upstream '{0}' would expose '{1}', which is a Crucible built-in tool name; \
+         change the server's prefix"
+    )]
+    ShadowsBuiltin(String, String),
 }
 
 /// Result type for gateway operations.
@@ -252,6 +258,23 @@ impl McpGatewayManager {
         let mut client = UpstreamClient::new(config);
         client.connect().await?;
 
+        self.index_upstream(client)
+    }
+
+    /// Take a connected client into the catalog, or refuse it outright.
+    ///
+    /// Refusing the whole upstream rather than dropping the offending tool:
+    /// the operator chose the prefix, the fix is to change it, and silently
+    /// serving a server minus one tool is how a shadowing attempt becomes
+    /// invisible.
+    fn index_upstream(&mut self, mut client: UpstreamClient) -> GatewayResult<()> {
+        let name = client.name.clone();
+
+        if let Some(shadowed) = Self::shadowed_builtin(client.tools()) {
+            client.disconnect();
+            return Err(GatewayError::ShadowsBuiltin(name, shadowed));
+        }
+
         for tool in client.tools() {
             self.tool_index
                 .insert(tool.prefixed_name.clone(), name.clone());
@@ -259,6 +282,27 @@ impl McpGatewayManager {
 
         self.upstreams.insert(name, client);
         Ok(())
+    }
+
+    /// The built-in name one of these tools would shadow, if any.
+    ///
+    /// [`Self::validate_prefix`] cannot answer this: it sees the prefix alone,
+    /// and every built-in name is a legal `[A-Za-z0-9_]+` prefix plus a legal
+    /// remainder. `read_` is a perfectly reasonable prefix for a documents
+    /// server right up until that server exposes a tool called `note` — and
+    /// `ExtendedMcpServer::call_tool` asks `is_gateway_tool` *before* falling
+    /// through to the kiln server, so on the external MCP surface the upstream
+    /// would answer to `read_note` and the built-in would never run.
+    ///
+    /// Checked against the same reserved set the plugin registry uses, and
+    /// checked per tool rather than per prefix, because the collision is a
+    /// property of prefix+name together.
+    fn shadowed_builtin(tools: &[McpToolInfo]) -> Option<String> {
+        let reserved = crate::tools::surface::reserved_tool_names();
+        tools
+            .iter()
+            .find(|t| reserved.contains(&t.prefixed_name))
+            .map(|t| t.prefixed_name.clone())
     }
 
     fn validate_prefix(prefix: &str) -> GatewayResult<()> {
@@ -429,6 +473,14 @@ impl McpGatewayManager {
         }
 
         client.connect().await?;
+
+        // Re-checked, not assumed from `add_upstream`: a reconnected server
+        // answers `tools/list` again and can return a name it did not serve
+        // before.
+        if let Some(shadowed) = Self::shadowed_builtin(client.tools()) {
+            client.disconnect();
+            return Err(GatewayError::ShadowsBuiltin(name.to_string(), shadowed));
+        }
 
         for tool in client.tools() {
             self.tool_index
@@ -605,6 +657,105 @@ mod tests {
         assert!(McpGatewayManager::validate_prefix("fs_").is_ok());
         assert!(McpGatewayManager::validate_prefix("my_tool_").is_ok());
         assert!(McpGatewayManager::validate_prefix("MCP123_").is_ok());
+    }
+
+    fn upstream_tool(prefix: &str, name: &str) -> McpToolInfo {
+        McpToolInfo {
+            name: name.to_string(),
+            prefixed_name: format!("{prefix}{name}"),
+            description: None,
+            input_schema: serde_json::json!({"type": "object"}),
+            upstream: "docs".to_string(),
+            read_only: None,
+        }
+    }
+
+    /// A prefix is validated in isolation, and every built-in name splits into
+    /// a legal prefix and a legal remainder — so `read_` in front of an
+    /// upstream tool named `note` produces `read_note`, and
+    /// `ExtendedMcpServer::call_tool` asks the gateway before the kiln server.
+    /// The upstream would answer to the built-in's name on the external MCP
+    /// surface, with the model reading the built-in's meaning.
+    #[test]
+    fn an_upstream_may_not_expose_a_prefixed_name_that_is_a_builtin() {
+        let tools = vec![upstream_tool("read_", "note")];
+
+        assert_eq!(
+            McpGatewayManager::shadowed_builtin(&tools).as_deref(),
+            Some("read_note"),
+            "prefix + upstream name is what collides; neither half looks wrong alone"
+        );
+    }
+
+    /// Whole-catalog, not per-session: `bash` is a `WorkspaceTools` name and
+    /// `delegate_session` is filtered out of `list_tools` unless delegation is
+    /// wired, so a set derived from what one session may call would leave both
+    /// claimable.
+    #[test]
+    fn the_reserved_set_covers_workspace_and_session_filtered_builtins() {
+        for (prefix, name) in [("ba", "sh"), ("delegate_", "session"), ("invoke_", "tool")] {
+            let tools = vec![upstream_tool(prefix, name)];
+            assert!(
+                McpGatewayManager::shadowed_builtin(&tools).is_some(),
+                "'{prefix}{name}' is a built-in an upstream must not answer to"
+            );
+        }
+    }
+
+    /// The check is a collision test, not a ban on prefixes that look like
+    /// built-ins. A documents server keeping `read_` for tools Crucible has no
+    /// name for is unaffected.
+    #[test]
+    fn a_prefix_resembling_a_builtin_is_fine_until_a_name_actually_collides() {
+        let tools = vec![
+            upstream_tool("read_", "manual"),
+            upstream_tool("read_", "changelog"),
+        ];
+        assert_eq!(McpGatewayManager::shadowed_builtin(&tools), None);
+    }
+
+    /// A connected client with a colliding name reaches the catalog through
+    /// `index_upstream`, which must leave nothing behind: no index entry means
+    /// `has_tool` stays false, so `ExtendedMcpServer` falls through to the
+    /// kiln server as it did before the upstream was configured.
+    #[test]
+    fn a_shadowing_upstream_is_refused_and_indexes_nothing() {
+        let mut manager = McpGatewayManager::new();
+        let mut client = UpstreamClient::new(test_config("docs", "read_"));
+        client.tools = vec![
+            upstream_tool("read_", "note"),
+            upstream_tool("read_", "toc"),
+        ];
+        client.state = ConnectionState::Connected;
+
+        let err = manager
+            .index_upstream(client)
+            .expect_err("an upstream shadowing a built-in must not be registered");
+
+        assert!(
+            matches!(err, GatewayError::ShadowsBuiltin(ref up, ref tool)
+                if up == "docs" && tool == "read_note"),
+            "{err}"
+        );
+        assert!(!manager.has_tool("read_note"));
+        assert!(
+            !manager.has_tool("read_toc"),
+            "the whole upstream is refused, not just the colliding tool"
+        );
+        assert_eq!(manager.upstream_count(), 0);
+    }
+
+    /// ...and the ordinary case still registers.
+    #[test]
+    fn an_upstream_with_no_collision_is_indexed() {
+        let mut manager = McpGatewayManager::new();
+        let mut client = UpstreamClient::new(test_config("docs", "docs_"));
+        client.tools = vec![upstream_tool("docs_", "note")];
+        client.state = ConnectionState::Connected;
+
+        manager.index_upstream(client).expect("no collision");
+        assert!(manager.has_tool("docs_note"));
+        assert_eq!(manager.upstream_count(), 1);
     }
 
     #[test]

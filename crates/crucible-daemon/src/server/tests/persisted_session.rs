@@ -138,6 +138,137 @@ async fn session_export_to_file_writes_markdown() {
     assert!(content.contains("Hello world"));
 }
 
+// ── session.export_to_file: where an export may land ───────────────
+//
+// `PathBuf::from(output_path)` straight into `tokio::fs::write` made this the
+// one write sink in the daemon that reached the filesystem without asking
+// anything, on a branch whose entire subject is that every write asks.
+// `session.export_to_file {"output_path": "/home/u/.bashrc"}` overwrote that
+// file with transcript markdown.
+//
+// The test above is the allowance half and stays exactly as it was: an
+// ordinary path outside every kiln and workspace is a legitimate export
+// target, because a user telling their own CLI where to put a document is not
+// an escape. The tests below are its limit.
+
+/// Seed a session with three sample events directly under `sessions_root`.
+fn seed_session_under(sessions_root: &std::path::Path) -> String {
+    let session_id = "chat-20260101-1200-abcd".to_string();
+    let session_dir = sessions_root.join(&session_id);
+    std::fs::create_dir_all(&session_dir).unwrap();
+    let events = [
+        "{\"type\":\"init\",\"ts\":\"2026-01-01T12:00:00Z\",\"session_id\":\"chat-20260101-1200-abcd\"}",
+        "{\"type\":\"user\",\"ts\":\"2026-01-01T12:00:01Z\",\"content\":\"Hello world\"}",
+    ];
+    std::fs::write(session_dir.join("session.jsonl"), events.join("\n") + "\n").unwrap();
+    session_id
+}
+
+/// A destination a trusted host process later reads as configuration or
+/// executes is refused however it is reached — an RPC caller included.
+///
+/// Named directories rather than `~/.bashrc`: the shell-startup rule is keyed
+/// on the *real* home directory, so exercising it here would mean a broken
+/// implementation writing into the developer's own dotfiles. `protected.rs`
+/// covers that rule directly; what this pins is that `export_to_file` consults
+/// the rule at all.
+#[tokio::test]
+async fn session_export_refuses_an_output_path_a_host_process_would_execute() {
+    for relative in [
+        ".claude/settings.json",
+        ".crucible/plugins/evil.lua",
+        ".git/config",
+    ] {
+        let tmp = TempDir::new().unwrap();
+        let (sessions_root, session_id) = seed_session(&tmp);
+        let output = tmp.path().join(relative);
+        std::fs::create_dir_all(output.parent().unwrap()).unwrap();
+
+        let req = make_request(
+            "session.export_to_file",
+            json!({
+                "session_id": session_id,
+                "output_path": output.to_string_lossy().to_string(),
+            }),
+        );
+        let resp = handle_session_export_to_file(req, &sessions_root).await;
+
+        assert!(
+            resp.error.is_some(),
+            "exporting to {relative} should be refused, got {:?}",
+            resp.result
+        );
+        assert!(
+            !output.exists(),
+            "{relative} was written despite the refusal"
+        );
+    }
+}
+
+/// The default destination is inside `.crucible` in every real deployment
+/// (`~/.crucible/sessions/<id>/session.md`), so routing it through the
+/// protected-path rule would refuse every ordinary export. The rule is about
+/// an agent writing into the daemon's configuration; the daemon writing a
+/// transcript beside its own transcript is the thing being protected.
+#[tokio::test]
+async fn session_export_defaults_to_its_own_markdown_under_the_crucible_root() {
+    let tmp = TempDir::new().unwrap();
+    let sessions_root = tmp.path().join(".crucible").join("sessions");
+    let session_id = seed_session_under(&sessions_root);
+
+    let req = make_request(
+        "session.export_to_file",
+        json!({ "session_id": session_id }),
+    );
+    let resp = handle_session_export_to_file(req, &sessions_root).await;
+
+    assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
+    let written = sessions_root.join(&session_id).join("session.md");
+    assert!(
+        written.exists(),
+        "the session's own session.md should exist"
+    );
+    assert!(std::fs::read_to_string(&written)
+        .unwrap()
+        .contains("Hello world"));
+}
+
+/// The equality assertion, in `remove_session_dir`'s sense: a symlink at
+/// `{sessions_root}/{id}` is beneath the root by every lexical test and is
+/// still not our directory, so the default export must not follow it.
+#[tokio::test]
+async fn session_export_refuses_a_session_directory_that_resolves_elsewhere() {
+    let tmp = TempDir::new().unwrap();
+    let sessions_root = tmp.path().join("sessions");
+    std::fs::create_dir_all(&sessions_root).unwrap();
+
+    let elsewhere = tmp.path().join("elsewhere");
+    let session_id = "chat-20260101-1200-abcd";
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    std::fs::write(
+        elsewhere.join("session.jsonl"),
+        "{\"type\":\"user\",\"ts\":\"2026-01-01T12:00:01Z\",\"content\":\"Hello world\"}\n",
+    )
+    .unwrap();
+    std::os::unix::fs::symlink(&elsewhere, sessions_root.join(session_id)).unwrap();
+
+    let req = make_request(
+        "session.export_to_file",
+        json!({ "session_id": session_id }),
+    );
+    let resp = handle_session_export_to_file(req, &sessions_root).await;
+
+    assert!(
+        resp.error.is_some(),
+        "a session directory resolving outside the sessions root should be refused, got {:?}",
+        resp.result
+    );
+    assert!(
+        !elsewhere.join("session.md").exists(),
+        "the export followed the symlink out of the sessions root"
+    );
+}
+
 // ── Scoped handlers: list_persisted and cleanup ────────────────────
 //
 // These two read and delete across the flat sessions root, so the per-kiln

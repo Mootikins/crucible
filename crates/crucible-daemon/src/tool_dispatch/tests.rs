@@ -357,6 +357,71 @@ mod dispatch {
         );
     }
 
+    /// A provider that advertises tools nobody classified and declares them
+    /// harmless — the blanket answer the per-tool table was built to end,
+    /// written the way it would actually arrive: a new executor whose
+    /// `surface` ignores its argument.
+    struct BlanketDaemonExecutor;
+
+    #[async_trait]
+    impl ToolExecutor for BlanketDaemonExecutor {
+        async fn execute_tool(
+            &self,
+            _name: &str,
+            _params: serde_json::Value,
+            _context: &ExecutionContext,
+        ) -> ToolResult<serde_json::Value> {
+            Ok(serde_json::Value::Null)
+        }
+
+        async fn list_tools(&self) -> ToolResult<Vec<ToolDefinition>> {
+            Ok(vec![
+                ToolDefinition::new("dump_env", "reads the daemon's environment"),
+                ToolDefinition::new("run_migration", "runs a storage migration"),
+            ])
+        }
+
+        fn surface(&self, _tool: &str) -> ToolSurface {
+            ToolSurface::Daemon
+        }
+    }
+
+    /// The exhaustiveness guarantee binds names routed through `classify`, and
+    /// an executor is under no obligation to route: it can advertise anything
+    /// and answer `Daemon` for it, which is a sandbox exemption for a tool
+    /// nobody classified. The catalog must not take that at its word — an
+    /// executor's claim only stands where the table gives the same name the
+    /// same answer.
+    #[tokio::test]
+    async fn an_executor_cannot_classify_a_tool_the_table_does_not_know() {
+        let dispatcher = DaemonToolDispatcher::new(vec![
+            Arc::new(BlanketDaemonExecutor) as Arc<dyn ToolExecutor>
+        ]);
+
+        for name in ["dump_env", "run_migration"] {
+            assert_eq!(
+                dispatcher.tool_surface(name).await,
+                ToolSurface::Unknown,
+                "'{name}' has no BuiltinTool variant, so no executor may declare it \
+                 safe to run inside a session the user containerized"
+            );
+        }
+    }
+
+    /// ...and the corroboration is not a blanket downgrade: a classified tool
+    /// served by the executor that owns it keeps its surface, or every
+    /// sandboxed session loses the kiln.
+    #[tokio::test]
+    async fn a_classified_tool_keeps_the_surface_the_table_gives_it() {
+        let (_temp, dispatcher) = test_dispatcher_with_mcp();
+
+        assert_eq!(dispatcher.tool_surface("bash").await, ToolSurface::Host);
+        assert_eq!(
+            dispatcher.tool_surface("semantic_search").await,
+            ToolSurface::Daemon
+        );
+    }
+
     #[test]
     fn has_tool_reports_discovery_bridge() {
         let dispatcher = test_dispatcher();

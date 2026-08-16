@@ -40,6 +40,40 @@ pub(crate) const DISCOVERY_TOOL_NAMES: &[&str] = &["discover_tools", "get_tool_s
 /// the moment that `RwLock` gains a writer.
 const BLOCKING_HYDRATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// The surface recorded for `name`: the executor's answer, but only where the
+/// per-tool table agrees with it.
+///
+/// [`ToolExecutor::surface`] takes the tool name and an implementation is free
+/// to ignore it — the exhaustiveness guarantee in [`crate::tools::surface`]
+/// binds names routed through `classify`, not executors. A provider
+/// advertising `dump_env` and answering `ToolSurface::Daemon` for every name
+/// would hand itself a sandbox exemption for a tool nobody classified, and the
+/// gate would honour it, because the gate asks the catalog and the catalog
+/// took the executor at its word.
+///
+/// So a claim is only as good as the table's agreement. `Unknown` claims stand
+/// (that is the floor, and it is what plugin and gateway executors answer for
+/// everything); a claim the table does not corroborate is recorded as
+/// `Unknown`, which the isolation gate refuses. Absence still denies — a name
+/// the table does not know cannot be talked into a classification by the code
+/// that would run it.
+fn corroborated_surface(claimed: ToolSurface, name: &str) -> ToolSurface {
+    let table = crate::tools::surface::classify(name);
+    if claimed == table {
+        return claimed;
+    }
+    if claimed != ToolSurface::Unknown {
+        tracing::warn!(
+            tool = %name,
+            ?claimed,
+            ?table,
+            "executor claimed a surface the built-in table does not give this tool; \
+             recording Unknown so an isolated session refuses it"
+        );
+    }
+    ToolSurface::Unknown
+}
+
 /// Flatten an rmcp `CallToolResult` into a JSON value: parse the joined text
 /// content as JSON when possible, otherwise return it as a string. Errors map
 /// to `Err` so callers surface them as tool errors.
@@ -106,7 +140,7 @@ impl DaemonToolDispatcher {
                 for def in defs {
                     tool_names.insert(def.name.clone());
                     let tool_ref = Self::tool_ref_from_definition(&def);
-                    let surface = provider.surface(&def.name);
+                    let surface = corroborated_surface(provider.surface(&def.name), &def.name);
                     tool_surfaces.entry(def.name.clone()).or_insert(surface);
                     tool_refs.entry(def.name).or_insert(tool_ref);
                 }
@@ -179,7 +213,7 @@ impl DaemonToolDispatcher {
                 for def in defs {
                     discovered_names.insert(def.name.clone());
                     let tool_ref = Self::tool_ref_from_definition(&def);
-                    let surface = provider.surface(&def.name);
+                    let surface = corroborated_surface(provider.surface(&def.name), &def.name);
                     discovered_surfaces
                         .entry(def.name.clone())
                         .or_insert(surface);
@@ -248,7 +282,8 @@ impl DaemonToolDispatcher {
                         for def in defs {
                             names.insert(def.name.clone());
                             let tool_ref = DaemonToolDispatcher::tool_ref_from_definition(&def);
-                            let surface = provider.surface(&def.name);
+                            let surface =
+                                corroborated_surface(provider.surface(&def.name), &def.name);
                             surfaces.entry(def.name.clone()).or_insert(surface);
                             refs.entry(def.name).or_insert(tool_ref);
                         }

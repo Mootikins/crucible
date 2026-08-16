@@ -677,7 +677,23 @@ impl ToolExecutor for WorkspaceTools {
     /// answer has to come from the same place every other executor's does, or
     /// "the executor decides" survives here and the next tool added inherits a
     /// classification instead of receiving one.
+    ///
+    /// Only for the tools it serves, though. The question is "what does
+    /// running this *on this executor* reach", and running `create_note` here
+    /// reaches nothing — [`Self::execute_tool`] answers `NotFound`. Passing
+    /// the whole built-in table through made this executor an authority on
+    /// tools it cannot run, which `DaemonToolsBridge::isolation_refusal` then
+    /// consulted: it asked `WorkspaceTools` for the surface of any name a
+    /// plugin called, and got `create_note`'s `Daemon` back from a table
+    /// describing a different executor. Unserved names are `Unknown`, which is
+    /// both the honest answer and the one the isolation gate refuses.
     fn surface(&self, tool: &str) -> ToolSurface {
+        if !Self::tool_definitions()
+            .iter()
+            .any(|def| def.name.as_ref() == tool)
+        {
+            return ToolSurface::Unknown;
+        }
         crate::tools::surface::classify(tool)
     }
 }

@@ -10,48 +10,11 @@ use super::*;
 use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
 use crate::tools::mcp_server::{CrucibleMcpServer, KILN_BACKED_TOOLS};
 use crate::tools::workspace::WorkspaceTools;
+use crucible_core::traits::tools::ToolExecutor;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use strum::IntoEnumIterator;
 use tempfile::TempDir;
-
-/// Every tool name the daemon's own executors put in front of a model.
-fn advertised_builtin_names() -> BTreeSet<String> {
-    let temp = TempDir::new().expect("tempdir");
-    let server = CrucibleMcpServer::new(
-        temp.path().display().to_string(),
-        Arc::new(EmptyKnowledgeRepository),
-        Arc::new(EmptyEmbeddingProvider),
-    );
-
-    let mut names: BTreeSet<String> = server
-        .list_tools()
-        .into_iter()
-        .map(|t| t.name.to_string())
-        .collect();
-
-    names.extend(
-        WorkspaceTools::tool_definitions()
-            .into_iter()
-            .map(|t| t.name.to_string()),
-    );
-
-    // `list_tools` filters `delegate_session` out unless a `DelegationContext`
-    // is wired, which needs spawner mocks this module has no business owning.
-    // Naming it here keeps it inside the coverage claim rather than outside it.
-    names.insert("delegate_session".to_string());
-
-    // The progressive-disclosure bridge belongs to no executor —
-    // `DaemonToolDispatcher` answers it out of its own catalog — so nothing
-    // above lists it.
-    names.extend(
-        crate::tool_dispatch::DISCOVERY_TOOL_NAMES
-            .iter()
-            .map(|n| (*n).to_string()),
-    );
-
-    names
-}
 
 fn classified_names() -> BTreeSet<String> {
     BuiltinTool::iter().map(|t| t.name().to_string()).collect()
@@ -59,6 +22,14 @@ fn classified_names() -> BTreeSet<String> {
 
 /// The gap rustc cannot close: a tool added to `CrucibleMcpServer` or
 /// `WorkspaceTools` with no [`BuiltinTool`] variant.
+///
+/// Asserted over [`advertised_builtin_names`], which is the *whole* catalog:
+/// `CrucibleMcpServer::all_tool_names`, never the session-filtered
+/// `list_tools`. The filtered set is what a particular session may call — it
+/// drops `delegate_session` without a delegation context and every
+/// `KILN_BACKED_TOOLS` name on a kiln-less server — so a coverage claim built
+/// from it silently excuses exactly the tools some session shape hides, and
+/// has to hand-patch names back in to stay honest.
 ///
 /// It fails *closed* at runtime — [`classify`] answers `Unknown` and the
 /// isolation gate refuses it — which is the safe direction but a silent one,
@@ -177,6 +148,144 @@ fn every_variant_round_trips_through_its_wire_name() {
             Some(tool),
             "'{}' does not resolve back to its own variant",
             tool.name()
+        );
+    }
+}
+
+/// An executor under test, labelled by the type that provides it.
+type LabelledExecutor = (&'static str, Arc<dyn ToolExecutor>);
+
+/// Every executor a production dispatcher registers, in the order
+/// `AgentManager::tool_dispatcher` builds them.
+///
+/// The `TempDir` comes back with them because `WorkspaceTools` anchors on a
+/// directory; nothing here executes a tool, but the root must outlive the
+/// executor.
+fn production_executors() -> (TempDir, Vec<LabelledExecutor>) {
+    let temp = TempDir::new().expect("tempdir");
+
+    let mcp = Arc::new(CrucibleMcpServer::new(
+        temp.path().display().to_string(),
+        Arc::new(EmptyKnowledgeRepository),
+        Arc::new(EmptyEmbeddingProvider),
+    ));
+    let gateway = Arc::new(tokio::sync::RwLock::new(
+        crate::tools::mcp_gateway::McpGatewayManager::new(),
+    ));
+
+    let executors: Vec<LabelledExecutor> = vec![
+        (
+            "WorkspaceTools",
+            Arc::new(WorkspaceTools::new(temp.path())) as Arc<dyn ToolExecutor>,
+        ),
+        (
+            "McpToolExecutor",
+            Arc::new(crate::tool_dispatch::McpToolExecutor::new(mcp)),
+        ),
+        (
+            "GatewayToolExecutor",
+            Arc::new(crate::tools::gateway_executor::GatewayToolExecutor::new(
+                gateway,
+                vec!["any".to_string()],
+            )),
+        ),
+        (
+            "PluginToolExecutor",
+            Arc::new(crate::plugin_tools::PluginToolExecutor::new(Arc::new(
+                crate::plugin_tools::PluginRegistry::new(),
+            ))),
+        ),
+    ];
+
+    (temp, executors)
+}
+
+/// The hole the exhaustiveness check does not cover: `ToolExecutor::surface`
+/// is free-form.
+///
+/// rustc binds every name routed through [`classify`], but nothing forces an
+/// executor to route. `surface(&self, tool: &str)` may ignore its argument
+/// entirely — a provider advertising `dump_env` and `run_migration` while
+/// answering `ToolSurface::Daemon` for every name compiles, passes the whole
+/// suite, and hands itself an exemption from the isolation gate for two tools
+/// nobody classified.
+///
+/// So: an executor may always answer `Unknown` — that is the floor, and it is
+/// what the executors serving foreign code answer for everything they run —
+/// but a claim of anything else has to be one the table gives that same name.
+/// No executor invents a classification.
+#[tokio::test]
+async fn no_executor_claims_a_surface_the_table_does_not_give_that_name() {
+    let (_temp, executors) = production_executors();
+
+    for (label, executor) in executors {
+        for def in executor.list_tools().await.expect("list_tools") {
+            let claimed = executor.surface(&def.name);
+            if claimed == ToolSurface::Unknown {
+                continue;
+            }
+            assert_eq!(
+                claimed,
+                classify(&def.name),
+                "{label} advertises '{}' and answers {claimed:?} for it, which is not \
+                 what the built-in table says. An executor may answer Unknown about \
+                 anything, but a classification it invents is a sandbox exemption \
+                 nobody reviewed",
+                def.name
+            );
+            assert_ne!(
+                classify(&def.name),
+                ToolSurface::Unknown,
+                "{label} advertises '{}' with a classification, but the table does \
+                 not know the name — add a BuiltinTool variant for it",
+                def.name
+            );
+        }
+    }
+}
+
+/// The other half of D1's rule, stated as a property of the executors that
+/// serve foreign code: they answer `Unknown` even for a name the table knows,
+/// so a plugin tool or an upstream MCP tool called `read_note` cannot borrow
+/// the built-in's `Daemon`.
+#[test]
+fn a_foreign_executor_answers_unknown_even_for_a_builtin_name() {
+    let gateway = Arc::new(tokio::sync::RwLock::new(
+        crate::tools::mcp_gateway::McpGatewayManager::new(),
+    ));
+    let gw = crate::tools::gateway_executor::GatewayToolExecutor::new(gateway, vec![]);
+    let plugins = crate::plugin_tools::PluginToolExecutor::new(Arc::new(
+        crate::plugin_tools::PluginRegistry::new(),
+    ));
+
+    for name in ["read_note", "semantic_search", "bash"] {
+        assert_eq!(gw.surface(name), ToolSurface::Unknown, "gateway '{name}'");
+        assert_eq!(
+            plugins.surface(name),
+            ToolSurface::Unknown,
+            "plugin '{name}'"
+        );
+    }
+}
+
+/// An executor answers only for what it runs.
+///
+/// `WorkspaceTools` handed back the whole built-in table, so asking it about
+/// `create_note` produced `Daemon` — a classification describing a different
+/// executor — and `DaemonToolsBridge::isolation_refusal` asks exactly this
+/// question of exactly this executor.
+#[test]
+fn workspace_tools_does_not_answer_for_tools_it_does_not_serve() {
+    let temp = TempDir::new().expect("tempdir");
+    let tools = WorkspaceTools::new(temp.path());
+
+    assert_eq!(tools.surface("bash"), ToolSurface::Host);
+    for name in ["create_note", "semantic_search", "delegate_session"] {
+        assert_eq!(
+            tools.surface(name),
+            ToolSurface::Unknown,
+            "'{name}' is not served by WorkspaceTools; answering for it makes this \
+             executor an authority on a tool it cannot run"
         );
     }
 }
