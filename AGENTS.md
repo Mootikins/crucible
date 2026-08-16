@@ -30,7 +30,7 @@ thin rendering/input layers. If a web frontend would need to duplicate it, it's 
 ### Terminology — do not use interchangeably
 
 - **Project** — where work output goes. A registered directory (git root or invocation dir). `.crucible/project.toml`.
-- **Kiln** — where accrued knowledge goes: notes, sessions, linked content. `.crucible/kiln.toml`.
+- **Kiln** — where accrued knowledge goes: notes, linked content. `.crucible/kiln.toml`. A session *attaches* kilns (a flat set, no primary); it is not *stored* in one — transcripts live under the daemon data root (`~/.crucible/sessions/`) regardless of attachment.
 - **Workspace** — a specific instance of a project directory (often the root, could be a worktree). Runtime concept, **no config file**. Do NOT rename existing correct uses: `session.workspace`, `WorkspaceTools`, `workspace: &Path`, Lua `paths.workspace()`. Old `workspace.toml` is still read as a backward-compat fallback.
 
 ### Type ownership

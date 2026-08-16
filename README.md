@@ -19,7 +19,7 @@ Local-first. No cloud. No lock-in. Your conversations, notes, and wikilinks form
 Memory and knowledge are too fundamental to be an afterthought. Most AI tools treat conversations as disposable — Crucible makes them the foundation.
 
 - **Knowledge-grounded agents.** Precognition auto-injects relevant context from your knowledge graph before each LLM turn. Block-level embeddings power semantic search at paragraph granularity. The more you use it, the smarter your agents get.
-- **Sessions are notes.** Every chat saves as markdown in your kiln. Search them, link them with wikilinks, version them in git. Conversations become permanent, connectable knowledge.
+- **Sessions are searchable knowledge.** Every chat saves as markdown under the daemon data root, searchable with `cru session search` and scoped by the kilns a session shares with yours. What a session *learns* goes into your kiln as notes; the transcript itself stays out of it, so a kiln stays shareable.
 - **Neovim-like architecture.** Lua/Fennel plugins, TUI-first, headless daemon with RPC. Most behaviors beyond the knowledge core can be scripted.
 - **Bring any LLM.** Ollama, OpenAI, Anthropic, Cohere, OpenRouter, GitHub Copilot, Vertex AI, or a custom HTTP endpoint. Embeddings run locally by default.
 - **Plaintext first.** No proprietary formats. Files are the source of truth. The database is optional acceleration.
@@ -91,7 +91,7 @@ First run prompts for a kiln path and detects available LLM providers. A backgro
 
 ### Agent Chat
 
-Interactive conversations with full session persistence. The TUI supports streaming markdown, tool calls, and multi-turn context. Sessions save as markdown files organized by workspace.
+Interactive conversations with full session persistence. The TUI supports streaming markdown, tool calls, and multi-turn context. Sessions save under the daemon data root (`~/.crucible/sessions/`) and carry a flat set of attached kilns as their knowledge scope.
 
 ### Knowledge Graph
 

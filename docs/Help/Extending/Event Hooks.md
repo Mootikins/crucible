@@ -159,10 +159,11 @@ and how the snippet character budget is spent across them.
 
 ```lua
 crucible.on("precognition_select", function(ctx, event)
-  -- Keep only strong matches from the primary kiln, best first.
+  -- Keep only strong matches, best first. To restrict to one corpus, compare
+  -- `note.kiln_path` — a session's kilns are a flat set with no primary.
   local picked = {}
   for _, note in ipairs(event.results) do
-    if note.score > 0.7 and note.is_primary_kiln then
+    if note.score > 0.7 then
       picked[#picked + 1] = { index = note.index }
     end
   end
@@ -174,7 +175,7 @@ Event fields:
 - `event.user_message` — the query text (string)
 - `event.note_count` — number of retrieved notes
 - `event.char_budget` — total snippet characters the handler may allocate
-- `event.results` — array of `{ index, title, score, snippet, kiln_path, is_primary_kiln }`
+- `event.results` — array of `{ index, title, score, snippet, kiln_path }`
 
 Return an array of `{ index = n, snippet = "..." }`, where `index` is the
 handle from `event.results` and `snippet` optionally replaces that note's text.

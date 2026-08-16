@@ -319,14 +319,19 @@ The trait is defined in `crucible-lua` as `DaemonSessionApi` and implemented by 
 
 ### cru.sessions.create(opts)
 
-Create a new session. Returns a session table with at least `{ id, session_type, state, kiln }`.
+Create a new session. Returns a session table with at least `{ id, session_type, state, kilns }`.
+
+`kilns` is the session's whole knowledge scope — a flat set with no primary
+member. Omit it (or pass an empty table) for a tools-only session with no note
+tools, precognition, or semantic search. **`kiln` and `connect_kilns` are no
+longer accepted and are ignored without error**, so a caller still passing
+either silently gets the default set.
 
 ```lua
 local session, err = cru.sessions.create({
     type = "chat",                            -- session type (default: "chat")
-    kiln = "/path/to/notes",                  -- kiln path (default: the daemon's data root)
+    kilns = { "/path/to/notes", "/more/docs" }, -- knowledge scope (optional; omitted = none)
     workspace = "/path/to/workspace",         -- workspace path (optional)
-    kilns = { "/extra/notes", "/more/docs" }, -- connected kilns for knowledge (optional)
     agent_card = "researcher",                -- agent card to run the session as (optional)
     tool_policy = { bash = "deny" },          -- per-tool allow/ask/deny (optional)
 })

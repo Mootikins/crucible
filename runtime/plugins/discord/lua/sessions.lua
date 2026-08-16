@@ -340,9 +340,11 @@ end
 --- path alike.
 ---
 --- Two tiers, because one bot instance serves people the operator trusts
---- differently. Reads are bounded by `allowed_roots` — the session kiln, its
---- connected kilns and the session dir — so "read" means *within the kilns you
---- configured*, not the filesystem.
+--- differently. Reads are bounded by the session's `RootSet` allowlist — its
+--- attached kilns, its workspace and its own session dir, default-deny outside
+--- them, with transcript directories and the trees the daemon executes Lua from
+--- carved out — so "read" means *within the kilns you configured*, not the
+--- filesystem.
 ---
 --- Anything absent from a tier keeps default behaviour: `is_safe` reads pass,
 --- everything else reaches the gate and is denied for want of an approver. Note
@@ -359,7 +361,7 @@ local READ_TOOLS = {
 }
 
 --- The read set plus the tools that change the kiln. Still no `bash`: its blast
---- radius is not bounded by `allowed_roots`, so it stays a deliberate opt-in
+--- radius is not bounded by the `RootSet` allowlist, so it stays a deliberate opt-in
 --- via `[plugins.discord] tool_policy` rather than riding along with "write".
 local WRITE_TOOLS = {}
 for tool, policy in pairs(READ_TOOLS) do WRITE_TOOLS[tool] = policy end

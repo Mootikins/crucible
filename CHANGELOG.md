@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+- **Sessions no longer live inside kilns.** Every session now stores at
+  `{data_home}/sessions/{id}/` (`~/.crucible/sessions/` by default). Existing
+  sessions are **relocated automatically on the first daemon start** after
+  upgrading — see "Where your old sessions went" in
+  [docs/Help/Core/Sessions.md](docs/Help/Core/Sessions.md) for what happens to
+  id collisions and to sessions the move could not complete. Kilns become
+  shareable without shipping your conversations with them.
+- **A session's kilns are one flat set; there is no primary kiln.** The wire
+  shape is `{session_id, kilns, workspace}`, replacing `kiln` +
+  `connected_kilns`. Any member may be detached, including the one the session
+  was created with. A session may hold zero kilns — that is a tools-only agent
+  with no note tools, precognition, or semantic search, not an error.
+- **Lua: `cru.sessions.create` accepts only `kilns`.** `kiln` and
+  `connect_kilns` are ignored without error, so a caller using either silently
+  gets the default set. `precognition_select` payloads no longer carry
+  `is_primary_kiln` — key on `kiln_path`, which was already present and says
+  more.
+- **`session.reindex` is retired** (returns `METHOD_NOT_FOUND`) and
+  `cru session reindex` with it. Sessions live outside kilns and are no longer
+  indexed as kiln notes; delete any `sessions/*` note rows an earlier reindex
+  left in a kiln database.
+- **Session ids are validated path components.** `session.load_events`,
+  `render_markdown` and `export_to_file` take `session_id` instead of
+  `session_dir`, and an id that is not a single safe component is refused.
+- **`cru session cleanup` is kiln-scoped by default.** It deletes only sessions
+  whose kiln set overlaps the scope you name; pass `--all-kilns` for the old
+  machine-wide behavior.
+- **Agent filesystem access is an allowlist, default-deny.** Tools reach the
+  session's kilns, its workspace, and its own session directory; transcript
+  directories and the trees the daemon loads Lua from are carved out and
+  write-denied. `session.export_to_file` refuses a destination a host process
+  would later execute, and note tools write only note extensions (`.md`,
+  `.markdown`) — use `write_file` for anything else.
+
 ## [0.27.0] - 2026-08-15
 
 The consolidation release: one implementation per capability, and docs that

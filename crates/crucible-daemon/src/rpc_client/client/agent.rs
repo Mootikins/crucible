@@ -202,8 +202,8 @@ impl DaemonClient {
         .await
     }
 
-    /// Attach a kiln to a session's connected set. Returns the updated scope
-    /// `{session_id, kiln, workspace, connected_kilns}`.
+    /// Attach a kiln to a session's set. Returns the updated scope
+    /// `{session_id, kilns, workspace}`.
     pub async fn session_connect_kiln(
         &self,
         session_id: &str,
@@ -219,7 +219,8 @@ impl DaemonClient {
         .await
     }
 
-    /// Detach a connected kiln (the primary kiln cannot be detached).
+    /// Detach a kiln from the session's set. Any member may be detached — the
+    /// set is flat, including the kiln the session was created with.
     pub async fn session_disconnect_kiln(
         &self,
         session_id: &str,

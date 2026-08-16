@@ -736,7 +736,8 @@ impl ReconnectingDaemon {
         .await
     }
 
-    /// Detach a connected kiln (the primary kiln cannot be detached).
+    /// Detach a kiln from the session's set. Any member may be detached — the
+    /// set is flat, including the kiln the session was created with.
     pub async fn session_disconnect_kiln(
         &self,
         session_id: &str,

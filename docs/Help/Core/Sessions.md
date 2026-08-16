@@ -53,14 +53,43 @@ Sessions are managed by the daemon (`cru daemon serve`):
 
 ## Session Storage
 
-Sessions are saved to your kiln's sessions directory. Session IDs follow the format `chat-YYYYMMDD-HHMM-xxxx` (e.g., `chat-20250102-1430-a1b2`).
+Sessions are saved under the daemon's data root — `~/.crucible/sessions/` by
+default — **not** inside a kiln. A session *attaches* kilns as its knowledge
+scope; where it is filed is a separate question from what it can read.
 
 ```
-~/your-workspace/sessions/
-├── chat-20250102-1430-a1b2.jsonl
-├── chat-20250121-0900-c3d4.jsonl
-└── ...
+~/.crucible/sessions/
+├── chat-2026-01-02T1430-a1b2c3/
+│   ├── meta.json       # kilns, workspace, agent, state
+│   ├── session.jsonl   # append-only event log
+│   └── session.md      # human-readable transcript
+└── chat-2026-01-21T0900-c3d4e5/
 ```
+
+Because transcripts live outside kilns, a kiln can be shared, synced, or
+committed to git without carrying your conversations with it.
+
+### Where your old sessions went
+
+Sessions used to live in `{kiln}/.crucible/sessions/`. **The first daemon start
+after upgrading moves them** to the layout above, and this happens once,
+automatically, for every kiln the daemon knows about (your config's kilns and
+every registered project's).
+
+Two cases worth knowing:
+
+- **Id collisions.** Two kilns could each hold a session with the same id. The
+  first keeps its id; the other is republished as `{id}--{8 hex}`, derived from
+  the kiln it came from, so it is stable across re-runs. Both survive — nothing
+  is overwritten.
+- **Sessions the move could not complete.** If a session cannot be relocated
+  (unreadable, or both the id and its disambiguated name are taken) it is left
+  where it is and logged as skipped. It stays on disk in
+  `{kiln}/.crucible/sessions/`, but `cru session list` and `cru session search`
+  read only the new root, so it will not appear until you move it by hand.
+
+Run the daemon with `RUST_LOG=info` on the first start after upgrading if you
+want to see the migration report.
 
 ### Session Log Format
 
@@ -361,7 +390,7 @@ Auto-archived sessions can be unarchived at any time. No data is lost.
 
 ## Session Configuration
 
-Session behavior is configured through the `[chat]` section in `~/.config/crucible/config.toml`. The daemon manages session persistence automatically; sessions always save to your kiln's `sessions/` directory.
+Session behavior is configured through the `[chat]` section in `~/.config/crucible/config.toml`. The daemon manages session persistence automatically; sessions always save under the daemon data root (`~/.crucible/sessions/`), never inside a kiln.
 
 ```toml
 [chat]
