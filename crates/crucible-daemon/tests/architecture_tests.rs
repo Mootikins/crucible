@@ -634,6 +634,55 @@ fn vendor_llm_sdks_are_not_imported_directly() {
 
 const LINE_BUDGET: usize = 1000;
 
+/// Lines inside `#[cfg(test)]` blocks, which the budget does not count.
+///
+/// The budget exists to make someone think about where a module's seams are —
+/// a reader navigating production code. Test modules are append-only by nature
+/// and grow with rigour, so counting them means a well-tested module trips the
+/// gate for its tests and the cheapest way out is to write fewer of them. That
+/// is backwards, and it produced a false positive: `session_migration.rs` was
+/// 455 lines of code and 555 of tests, and the "fix" was a mechanical split at
+/// a seam nobody chose.
+///
+/// Brace-matched from the attribute rather than truncating at the first
+/// `#[cfg(test)]`, so a file with several test blocks — or code after one —
+/// is counted correctly rather than generously.
+fn test_module_lines(contents: &str) -> usize {
+    let lines: Vec<&str> = contents.lines().collect();
+    let mut total = 0;
+    let mut i = 0;
+    while i < lines.len() {
+        if lines[i].trim_start().starts_with("#[cfg(test)]") {
+            let start = i;
+            // Walk to the first `{`, then to its match.
+            let mut depth = 0i32;
+            let mut opened = false;
+            while i < lines.len() {
+                for c in lines[i].chars() {
+                    match c {
+                        '{' => {
+                            depth += 1;
+                            opened = true;
+                        }
+                        '}' => depth -= 1,
+                        _ => {}
+                    }
+                }
+                if opened && depth <= 0 {
+                    break;
+                }
+                i += 1;
+            }
+            // An unbalanced tail (or a `#[cfg(test)] use ...;`) counts as nothing.
+            if opened {
+                total += i.min(lines.len() - 1) - start + 1;
+            }
+        }
+        i += 1;
+    }
+    total
+}
+
 /// Files already over the line budget when this gate was introduced.
 /// Sorted; entries may only be removed (split the file), never added.
 const SIZE_LEDGER: &[&str] = &[
@@ -684,11 +733,35 @@ const SIZE_LEDGER: &[&str] = &[
 
 // UNIQUE: clippy has no file-LOC lint (cognitive_complexity is per-function); the size ratchet with a shrinking-only ledger cannot be expressed as a compiler/linter rule. Source-scan is the only enforcement of the 1000-line module budget.
 #[test]
+fn test_module_lines_counts_only_cfg_test_blocks() {
+    // Nothing to exclude.
+    assert_eq!(test_module_lines("fn a() {}\nfn b() {}\n"), 0);
+    // The ordinary shape: attribute, module, closing brace — all three counted.
+    assert_eq!(
+        test_module_lines("fn a() {}\n#[cfg(test)]\nmod tests {\n    fn t() {}\n}\n"),
+        4
+    );
+    // Code AFTER a test block is still production code. Truncating at the first
+    // `#[cfg(test)]` — the tempting simplification — would lose these two lines
+    // and let a file grow past the budget unnoticed.
+    assert_eq!(
+        test_module_lines("#[cfg(test)]\nmod t {\n}\nfn after() {\n}\n"),
+        3
+    );
+    // Two blocks both count.
+    assert_eq!(
+        test_module_lines("#[cfg(test)]\nmod a {\n}\nfn x() {}\n#[cfg(test)]\nmod b {\n}\n"),
+        6
+    );
+}
+
+#[test]
 fn no_new_oversized_modules() {
     let ledger: BTreeSet<&str> = SIZE_LEDGER.iter().copied().collect();
     let mut offenders = Vec::new();
     for (rel, contents) in workspace_src_files() {
         let lines = contents.lines().count();
+        let lines = lines - test_module_lines(&contents);
         if lines > LINE_BUDGET && !ledger.contains(rel.as_str()) {
             offenders.push(format!("{rel} ({lines} lines)"));
         }
@@ -696,9 +769,11 @@ fn no_new_oversized_modules() {
     offenders.sort();
     assert!(
         offenders.is_empty(),
-        "New file(s) exceed the {LINE_BUDGET}-line budget. SPLIT the file into \
-         focused modules — do NOT add it to SIZE_LEDGER (the ledger only \
-         shrinks). Offending files:\n  - {}",
+        "New file(s) exceed the {LINE_BUDGET}-line budget, counting production \
+         code only (`#[cfg(test)]` blocks are excluded). This is a prompt to \
+         decide where the module's seams SHOULD be, not a line target — split \
+         at a boundary you would defend in review, and do NOT add it to \
+         SIZE_LEDGER (the ledger only shrinks). Offending files:\n  - {}",
         offenders.join("\n  - ")
     );
 }
