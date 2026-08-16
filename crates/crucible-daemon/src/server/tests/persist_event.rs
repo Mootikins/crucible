@@ -1,15 +1,17 @@
 use super::*;
 use crate::session_manager::SessionError;
 use crate::session_storage::SessionStorage;
+use crate::test_support::temp_session_manager;
 use async_trait::async_trait;
 use crucible_core::session::{SessionSummary, SessionType};
 
 /// Minimal AgentManager for exercising the sweep's cleanup call.
 fn sweep_test_agent_manager() -> AgentManager {
     let (event_tx, _) = broadcast::channel(16);
+    let session_manager = temp_session_manager();
     AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
-        session_manager: Arc::new(SessionManager::new()),
+        session_manager,
         background_manager: Arc::new(BackgroundJobManager::new(event_tx)),
         mcp_gateway: None,
         llm_config: None,
@@ -21,21 +23,20 @@ fn sweep_test_agent_manager() -> AgentManager {
     })
 }
 
-struct FailingStorage;
+struct FailingStorage(PathBuf);
 
 #[async_trait]
 impl SessionStorage for FailingStorage {
+    fn sessions_root(&self) -> &Path {
+        &self.0
+    }
     async fn save(&self, _s: &crucible_core::session::Session) -> Result<(), SessionError> {
         Ok(())
     }
-    async fn load(
-        &self,
-        _id: &str,
-        _k: &Path,
-    ) -> Result<crucible_core::session::Session, SessionError> {
+    async fn load(&self, _id: &str) -> Result<crucible_core::session::Session, SessionError> {
         Err(SessionError::NotFound("mock".to_string()))
     }
-    async fn list(&self, _k: &Path) -> Result<Vec<SessionSummary>, SessionError> {
+    async fn list(&self) -> Result<Vec<SessionSummary>, SessionError> {
         Ok(vec![])
     }
     async fn append_event(
@@ -56,13 +57,12 @@ impl SessionStorage for FailingStorage {
     async fn load_events(
         &self,
         _id: &str,
-        _k: &Path,
         _limit: Option<usize>,
         _offset: Option<usize>,
     ) -> Result<Vec<serde_json::Value>, SessionError> {
         Ok(vec![])
     }
-    async fn count_events(&self, _id: &str, _k: &Path) -> Result<usize, SessionError> {
+    async fn count_events(&self, _id: &str) -> Result<usize, SessionError> {
         Ok(0)
     }
 }
@@ -70,13 +70,12 @@ impl SessionStorage for FailingStorage {
 #[tokio::test]
 async fn test_persist_event_returns_error_on_storage_failure() {
     let tmp = TempDir::new().unwrap();
-    let sm = Arc::new(SessionManager::new());
+    let sm = temp_session_manager();
     let session = sm
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -88,7 +87,7 @@ async fn test_persist_event_returns_error_on_storage_failure() {
         serde_json::json!({"content": "hello"}),
     );
 
-    let storage = FailingStorage;
+    let storage = FailingStorage(sm.sessions_root().to_path_buf());
     let result = persist_event(&event, &sm, &storage).await;
     assert!(
         result.is_err(),
@@ -99,13 +98,12 @@ async fn test_persist_event_returns_error_on_storage_failure() {
 #[tokio::test]
 async fn test_persist_event_skips_non_persistent_events() {
     let tmp = TempDir::new().unwrap();
-    let sm = Arc::new(SessionManager::new());
+    let sm = temp_session_manager();
     let session = sm
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -117,7 +115,7 @@ async fn test_persist_event_skips_non_persistent_events() {
         serde_json::json!({"chunk": "partial"}),
     );
 
-    let storage = FailingStorage;
+    let storage = FailingStorage(sm.sessions_root().to_path_buf());
     let result = persist_event(&event, &sm, &storage).await;
     assert!(
         result.is_ok(),
@@ -132,21 +130,20 @@ async fn test_persist_event_skips_non_persistent_events() {
 async fn test_persist_event_keeps_precognition_notes() {
     use std::sync::Mutex;
 
-    struct CapturingStorage(Mutex<Vec<String>>);
+    struct CapturingStorage(Mutex<Vec<String>>, PathBuf);
 
     #[async_trait]
     impl SessionStorage for CapturingStorage {
+        fn sessions_root(&self) -> &Path {
+            &self.1
+        }
         async fn save(&self, _s: &crucible_core::session::Session) -> Result<(), SessionError> {
             Ok(())
         }
-        async fn load(
-            &self,
-            _id: &str,
-            _k: &Path,
-        ) -> Result<crucible_core::session::Session, SessionError> {
+        async fn load(&self, _id: &str) -> Result<crucible_core::session::Session, SessionError> {
             Err(SessionError::NotFound("mock".to_string()))
         }
-        async fn list(&self, _k: &Path) -> Result<Vec<SessionSummary>, SessionError> {
+        async fn list(&self) -> Result<Vec<SessionSummary>, SessionError> {
             Ok(vec![])
         }
         async fn append_event(
@@ -168,25 +165,23 @@ async fn test_persist_event_keeps_precognition_notes() {
         async fn load_events(
             &self,
             _id: &str,
-            _k: &Path,
             _limit: Option<usize>,
             _offset: Option<usize>,
         ) -> Result<Vec<serde_json::Value>, SessionError> {
             Ok(vec![])
         }
-        async fn count_events(&self, _id: &str, _k: &Path) -> Result<usize, SessionError> {
+        async fn count_events(&self, _id: &str) -> Result<usize, SessionError> {
             Ok(0)
         }
     }
 
     let tmp = TempDir::new().unwrap();
-    let sm = Arc::new(SessionManager::new());
+    let sm = temp_session_manager();
     let session = sm
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -205,7 +200,7 @@ async fn test_persist_event_keeps_precognition_notes() {
         }),
     );
 
-    let storage = CapturingStorage(Mutex::new(Vec::new()));
+    let storage = CapturingStorage(Mutex::new(Vec::new()), sm.sessions_root().to_path_buf());
     persist_event(&event, &sm, &storage).await.unwrap();
 
     let written = storage.0.lock().unwrap();
@@ -292,19 +287,14 @@ async fn a_session_initialized_is_persisted_once_the_model_is_known() {
 #[tokio::test]
 async fn test_sweep_and_archive_stale_sessions_archives_inactive_sessions_without_subscribers() {
     let tmp = TempDir::new().unwrap();
-    // Isolate the daemon data home to a separate empty TempDir, injected into the
-    // sweep, so its home session scan can't pick up the developer's real
-    // ~/.crucible sessions and inflate the archived count.
-    let home_dir = TempDir::new().unwrap();
-    let session_manager = SessionManager::new();
+    let session_manager = temp_session_manager();
     let subscription_manager = SubscriptionManager::new();
 
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -315,14 +305,11 @@ async fn test_sweep_and_archive_stale_sessions_archives_inactive_sessions_withou
         .await
         .unwrap();
 
-    let kiln_manager = KilnManager::new();
     let archived = sweep_and_archive_stale_sessions(
         &session_manager,
-        &kiln_manager,
         &subscription_manager,
         &sweep_test_agent_manager(),
         72,
-        home_dir.path(),
     )
     .await
     .unwrap();
@@ -330,8 +317,8 @@ async fn test_sweep_and_archive_stale_sessions_archives_inactive_sessions_withou
     assert_eq!(archived, 1);
     assert!(session_manager.get_session(&session.id).is_none());
 
-    let persisted = FileSessionStorage::new()
-        .load(&session.id, tmp.path())
+    let persisted = FileSessionStorage::new(session_manager.sessions_root().to_path_buf())
+        .load(&session.id)
         .await
         .unwrap();
     assert!(persisted.archived);
@@ -340,20 +327,14 @@ async fn test_sweep_and_archive_stale_sessions_archives_inactive_sessions_withou
 #[tokio::test]
 async fn test_sweep_cleans_up_agent_state_for_archived_sessions() {
     let tmp = TempDir::new().unwrap();
-    // Isolate the daemon data home to a separate empty TempDir, injected into the
-    // sweep, so its home session scan can't pick up the developer's real
-    // ~/.crucible sessions and inflate the archived count.
-    let home_dir = TempDir::new().unwrap();
-    let session_manager = SessionManager::new();
+    let session_manager = temp_session_manager();
     let subscription_manager = SubscriptionManager::new();
-    let kiln_manager = KilnManager::new();
 
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -374,11 +355,9 @@ async fn test_sweep_cleans_up_agent_state_for_archived_sessions() {
 
     let archived = sweep_and_archive_stale_sessions(
         &session_manager,
-        &kiln_manager,
         &subscription_manager,
         &agent_manager,
         72,
-        home_dir.path(),
     )
     .await
     .unwrap();
@@ -404,16 +383,14 @@ async fn test_sweep_cleans_up_agent_state_for_archived_sessions() {
 #[tokio::test]
 async fn the_sweep_reclaims_a_stale_ended_session_that_is_still_resident() {
     let tmp = TempDir::new().unwrap();
-    let home_dir = TempDir::new().unwrap();
-    let session_manager = SessionManager::new();
+    let session_manager = temp_session_manager();
     let subscription_manager = SubscriptionManager::new();
 
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -428,15 +405,11 @@ async fn the_sweep_reclaims_a_stale_ended_session_that_is_still_resident() {
         "precondition: ending keeps the session resident"
     );
 
-    let kiln_manager = KilnManager::new();
-    kiln_manager.open(tmp.path()).await.unwrap();
     let archived = sweep_and_archive_stale_sessions(
         &session_manager,
-        &kiln_manager,
         &subscription_manager,
         &sweep_test_agent_manager(),
         72,
-        home_dir.path(),
     )
     .await
     .unwrap();
@@ -446,8 +419,8 @@ async fn the_sweep_reclaims_a_stale_ended_session_that_is_still_resident() {
         session_manager.get_session(&session.id).is_none(),
         "and evicted: the sweep is the only thing that frees it now"
     );
-    let persisted = FileSessionStorage::new()
-        .load(&session.id, tmp.path())
+    let persisted = FileSessionStorage::new(session_manager.sessions_root().to_path_buf())
+        .load(&session.id)
         .await
         .unwrap();
     assert!(persisted.archived);
@@ -456,19 +429,14 @@ async fn the_sweep_reclaims_a_stale_ended_session_that_is_still_resident() {
 #[tokio::test]
 async fn test_sweep_archives_stale_persisted_sessions_not_in_memory() {
     let tmp = TempDir::new().unwrap();
-    // Isolate the daemon data home to a separate empty TempDir, injected into the
-    // sweep, so its home session scan can't pick up the developer's real
-    // ~/.crucible sessions and inflate the archived count.
-    let home_dir = TempDir::new().unwrap();
-    let session_manager = SessionManager::new();
+    let session_manager = temp_session_manager();
     let subscription_manager = SubscriptionManager::new();
 
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -488,87 +456,18 @@ async fn test_sweep_archives_stale_persisted_sessions_not_in_memory() {
         "precondition: this test is about a session that is not in memory"
     );
 
-    let kiln_manager = KilnManager::new();
-    kiln_manager.open(tmp.path()).await.unwrap();
-
     let archived = sweep_and_archive_stale_sessions(
         &session_manager,
-        &kiln_manager,
         &subscription_manager,
         &sweep_test_agent_manager(),
         72,
-        home_dir.path(),
     )
     .await
     .unwrap();
 
     assert_eq!(archived, 1);
-    let persisted = FileSessionStorage::new()
-        .load(&session.id, tmp.path())
-        .await
-        .unwrap();
-    assert!(persisted.archived);
-}
-
-/// Legacy meta.json files can carry a RELATIVE kiln path ("./docs") from
-/// before kiln paths were canonicalized. Archiving with the file's
-/// self-reported kiln resolves against the daemon's cwd and misses — the
-/// sweep must archive under the kiln directory it actually scanned.
-#[tokio::test]
-async fn test_sweep_archives_sessions_whose_meta_has_relative_kiln_path() {
-    let tmp = TempDir::new().unwrap();
-    // Isolate the daemon data home to a separate empty TempDir, injected into the
-    // sweep, so its home session scan can't pick up the developer's real
-    // ~/.crucible sessions and inflate the archived count.
-    let home_dir = TempDir::new().unwrap();
-    let session_manager = SessionManager::new();
-    let subscription_manager = SubscriptionManager::new();
-
-    let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            tmp.path().to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
-        .await
-        .unwrap();
-    session_manager
-        .update_last_activity(&session.id, Utc::now() - ChronoDuration::hours(80))
-        .await
-        .unwrap();
-    session_manager.end_session(&session.id).await.unwrap();
-
-    // Rewrite the persisted meta.json with a legacy relative kiln path.
-    let meta_path = tmp
-        .path()
-        .join(".crucible")
-        .join("sessions")
-        .join(&session.id)
-        .join("meta.json");
-    let mut meta: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
-    meta["kiln"] = serde_json::json!("./docs");
-    std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
-
-    let kiln_manager = KilnManager::new();
-    kiln_manager.open(tmp.path()).await.unwrap();
-
-    let archived = sweep_and_archive_stale_sessions(
-        &session_manager,
-        &kiln_manager,
-        &subscription_manager,
-        &sweep_test_agent_manager(),
-        72,
-        home_dir.path(),
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(archived, 1);
-    let persisted = FileSessionStorage::new()
-        .load(&session.id, tmp.path())
+    let persisted = FileSessionStorage::new(session_manager.sessions_root().to_path_buf())
+        .load(&session.id)
         .await
         .unwrap();
     assert!(persisted.archived);
@@ -577,19 +476,14 @@ async fn test_sweep_archives_sessions_whose_meta_has_relative_kiln_path() {
 #[tokio::test]
 async fn test_sweep_and_archive_stale_sessions_skips_sessions_with_active_subscribers() {
     let tmp = TempDir::new().unwrap();
-    // Isolate the daemon data home to a separate empty TempDir, injected into the
-    // sweep, so its home session scan can't pick up the developer's real
-    // ~/.crucible sessions and inflate the archived count.
-    let home_dir = TempDir::new().unwrap();
-    let session_manager = SessionManager::new();
+    let session_manager = temp_session_manager();
     let subscription_manager = SubscriptionManager::new();
 
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -603,14 +497,11 @@ async fn test_sweep_and_archive_stale_sessions_skips_sessions_with_active_subscr
     let client = ClientId::new();
     subscription_manager.subscribe(client, &session.id);
 
-    let kiln_manager = KilnManager::new();
     let archived = sweep_and_archive_stale_sessions(
         &session_manager,
-        &kiln_manager,
         &subscription_manager,
         &sweep_test_agent_manager(),
         72,
-        home_dir.path(),
     )
     .await
     .unwrap();
@@ -730,7 +621,7 @@ async fn test_granular_session_creates_recording_file() {
     let mut client = server.connect().await;
 
     let create_req = format!(
-        r#"{{"jsonrpc":"2.0","id":1,"method":"session.create","params":{{"type":"chat","kiln":"{}","recording_mode":"granular"}}}}"#,
+        r#"{{"jsonrpc":"2.0","id":1,"method":"session.create","params":{{"type":"chat","kilns":["{}"],"recording_mode":"granular"}}}}"#,
         kiln_path.display()
     );
     client.write_all(create_req.as_bytes()).await.unwrap();
@@ -750,10 +641,7 @@ async fn test_granular_session_creates_recording_file() {
     // Wait for recording writer flush (500ms interval + margin)
     tokio::time::sleep(Duration::from_millis(700)).await;
 
-    let session_dir = kiln_path
-        .join(".crucible")
-        .join("sessions")
-        .join(&session_id);
+    let session_dir = server.sessions_root().join(&session_id);
     let recording_path = session_dir.join("recording.jsonl");
 
     assert!(
@@ -782,7 +670,7 @@ async fn test_non_granular_session_has_no_recording_file() {
     let mut client = server.connect().await;
 
     let create_req = format!(
-        r#"{{"jsonrpc":"2.0","id":1,"method":"session.create","params":{{"type":"chat","kiln":"{}"}}}}"#,
+        r#"{{"jsonrpc":"2.0","id":1,"method":"session.create","params":{{"type":"chat","kilns":["{}"]}}}}"#,
         kiln_path.display()
     );
     client.write_all(create_req.as_bytes()).await.unwrap();
@@ -801,10 +689,7 @@ async fn test_non_granular_session_has_no_recording_file() {
 
     tokio::time::sleep(Duration::from_millis(300)).await;
 
-    let session_dir = kiln_path
-        .join(".crucible")
-        .join("sessions")
-        .join(&session_id);
+    let session_dir = server.sessions_root().join(&session_id);
     let recording_path = session_dir.join("recording.jsonl");
 
     assert!(
@@ -825,7 +710,7 @@ async fn test_granular_recording_stops_on_session_end() {
     let mut client = server.connect().await;
 
     let create_req = format!(
-        r#"{{"jsonrpc":"2.0","id":1,"method":"session.create","params":{{"type":"chat","kiln":"{}","recording_mode":"granular"}}}}"#,
+        r#"{{"jsonrpc":"2.0","id":1,"method":"session.create","params":{{"type":"chat","kilns":["{}"],"recording_mode":"granular"}}}}"#,
         kiln_path.display()
     );
     client.write_all(create_req.as_bytes()).await.unwrap();
@@ -863,10 +748,7 @@ async fn test_granular_recording_stops_on_session_end() {
     // Wait for writer to flush footer
     tokio::time::sleep(Duration::from_millis(300)).await;
 
-    let session_dir = kiln_path
-        .join(".crucible")
-        .join("sessions")
-        .join(&session_id);
+    let session_dir = server.sessions_root().join(&session_id);
     let recording_path = session_dir.join("recording.jsonl");
     let content = tokio::fs::read_to_string(&recording_path).await.unwrap();
     let lines: Vec<&str> = content.lines().collect();
@@ -899,13 +781,12 @@ async fn test_granular_recording_stops_on_session_end() {
 #[tokio::test]
 async fn an_event_that_arrives_after_the_session_ended_is_still_written() {
     let tmp = TempDir::new().unwrap();
-    let sm = Arc::new(SessionManager::new());
+    let sm = temp_session_manager();
     let session = sm
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -913,7 +794,7 @@ async fn an_event_that_arrives_after_the_session_ended_is_still_written() {
 
     sm.end_session(&session.id).await.unwrap();
 
-    let storage = FileSessionStorage::new();
+    let storage = FileSessionStorage::new(sm.sessions_root().to_path_buf());
     let event = SessionEventMessage::new(
         session.id.clone(),
         "precognition_complete",
@@ -921,10 +802,7 @@ async fn an_event_that_arrives_after_the_session_ended_is_still_written() {
     );
     persist_event(&event, &sm, &storage).await.unwrap();
 
-    let persisted = storage
-        .load_events(&session.id, tmp.path(), None, None)
-        .await
-        .unwrap();
+    let persisted = storage.load_events(&session.id, None, None).await.unwrap();
     let events: Vec<&str> = persisted
         .iter()
         .filter_map(|e| e["event"].as_str())
@@ -941,20 +819,19 @@ async fn an_event_that_arrives_after_the_session_ended_is_still_written() {
 #[tokio::test]
 async fn an_event_for_a_deleted_session_is_dropped_rather_than_recreating_it() {
     let tmp = TempDir::new().unwrap();
-    let sm = Arc::new(SessionManager::new());
+    let sm = temp_session_manager();
     let session = sm
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
         .unwrap();
-    sm.delete_session(&session.id, tmp.path()).await.unwrap();
+    sm.delete_session(&session.id).await.unwrap();
 
-    let storage = FileSessionStorage::new();
+    let storage = FileSessionStorage::new(sm.sessions_root().to_path_buf());
     let event = SessionEventMessage::new(
         session.id.clone(),
         "precognition_complete",
@@ -962,10 +839,7 @@ async fn an_event_for_a_deleted_session_is_dropped_rather_than_recreating_it() {
     );
     persist_event(&event, &sm, &storage).await.unwrap();
 
-    let persisted = storage
-        .load_events(&session.id, tmp.path(), None, None)
-        .await
-        .unwrap();
+    let persisted = storage.load_events(&session.id, None, None).await.unwrap();
     assert!(
         persisted.is_empty(),
         "a deleted session must stay deleted; got {persisted:?}"

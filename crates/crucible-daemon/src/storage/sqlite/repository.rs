@@ -439,7 +439,6 @@ mod tests {
         let sources = vec![KilnSearchSource {
             kiln_path: kiln_path.clone(),
             knowledge_repo: create_knowledge_repository(store),
-            is_primary: true,
         }];
 
         let results = search_across_kilns(&sources, vec![0.0, 1.0, 0.0], 5, None, &kiln_path)

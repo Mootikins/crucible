@@ -118,7 +118,7 @@ async fn test_events_auto_persisted() {
 
     // Create a session
     let create_req = format!(
-        r#"{{"jsonrpc":"2.0","id":1,"method":"session.create","params":{{"type":"chat","kiln":"{}"}}}}"#,
+        r#"{{"jsonrpc":"2.0","id":1,"method":"session.create","params":{{"type":"chat","kilns":["{}"]}}}}"#,
         kiln_path.display()
     );
     client.write_all(create_req.as_bytes()).await.unwrap();
@@ -137,10 +137,7 @@ async fn test_events_auto_persisted() {
     let event = SessionEventMessage::user_message(&session_id, "msg-1", "hello world");
     event_tx.send(event).unwrap();
 
-    let session_dir = kiln_path
-        .join(".crucible")
-        .join("sessions")
-        .join(&session_id);
+    let session_dir = server.sessions_root().join(&session_id);
     let jsonl_path = session_dir.join("session.jsonl");
 
     // Poll for the write instead of sleeping a fixed 100ms. Persistence is

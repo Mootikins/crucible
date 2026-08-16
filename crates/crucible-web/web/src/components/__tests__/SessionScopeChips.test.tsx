@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, cleanup, waitFor, fireEvent, screen } from '@solidjs/testing-library';
+import { render, cleanup, waitFor, fireEvent, screen, within } from '@solidjs/testing-library';
 import { SessionScopeChips } from '../SessionScopeChips';
 import type { Session } from '@/lib/types';
 
@@ -17,21 +17,18 @@ vi.mock('@/contexts/ChatContext', () => ({
 
 const connectMock = vi.fn().mockResolvedValue({
   session_id: 's1',
-  kiln: '/kilns/main',
+  kilns: ['/kilns/main', '/kilns/extra'],
   workspace: '/kilns/main',
-  connected_kilns: ['/kilns/extra'],
 });
 const disconnectMock = vi.fn().mockResolvedValue({
   session_id: 's1',
-  kiln: '/kilns/main',
+  kilns: ['/kilns/main'],
   workspace: '/kilns/main',
-  connected_kilns: [],
 });
 const setWorkspaceMock = vi.fn().mockResolvedValue({
   session_id: 's1',
-  kiln: '/kilns/main',
+  kilns: ['/kilns/main'],
   workspace: '/kilns/main',
-  connected_kilns: [],
 });
 
 vi.mock('@/lib/api', () => ({
@@ -48,9 +45,8 @@ vi.mock('@/lib/api', () => ({
 const baseSession = (): Session => ({
   id: 's1',
   session_type: 'chat',
-  kiln: '/kilns/main',
+  kilns: ['/kilns/main'],
   workspace: '/kilns/main',
-  connected_kilns: [],
   state: 'active',
   title: null,
   agent_model: null,
@@ -92,16 +88,46 @@ describe('SessionScopeChips', () => {
     await waitFor(() => expect(setWorkspaceMock).toHaveBeenCalledWith('s1', null));
   });
 
-  it('primary kiln is locked (disabled); toggling a connected kiln detaches it', async () => {
-    mockSession = { ...baseSession(), connected_kilns: ['/kilns/extra'] };
+  it('every attached kiln toggles off, including the first', async () => {
+    mockSession = { ...baseSession(), kilns: ['/kilns/main', '/kilns/extra'] };
     render(() => <SessionScopeChips />);
     expect(screen.getByTestId('scope-kiln').textContent).toContain('main +1');
     fireEvent.click(screen.getByTestId('scope-kiln'));
     await waitFor(() => expect(screen.getByText('extra')).toBeTruthy());
+    // Flattening removed the locked primary row: no member is privileged.
     const mainOption = screen.getByText('main').closest('button') as HTMLButtonElement;
-    expect(mainOption.disabled).toBe(true);
+    expect(mainOption.disabled).toBe(false);
     fireEvent.click(screen.getByText('extra'));
     await waitFor(() => expect(disconnectMock).toHaveBeenCalledWith('s1', '/kilns/extra'));
+  });
+
+  it('detaching the only attached kiln is offered like any other detach', async () => {
+    mockSession = baseSession();
+    render(() => <SessionScopeChips />);
+    fireEvent.click(screen.getByTestId('scope-kiln'));
+    const popout = await screen.findByTestId('scope-kiln-popout');
+    const only = within(popout).getByText('main').closest('button') as HTMLButtonElement;
+    expect(only.disabled).toBe(false);
+    fireEvent.click(only);
+    await waitFor(() => expect(disconnectMock).toHaveBeenCalledWith('s1', '/kilns/main'));
+  });
+
+  it('a kiln-less session reads as tools-only, and says the note tools are gone', async () => {
+    mockSession = { ...baseSession(), kilns: [], workspace: '' };
+    render(() => <SessionScopeChips />);
+    expect(screen.getByTestId('scope-kiln').textContent).toContain('No kiln');
+    fireEvent.click(screen.getByTestId('scope-kiln'));
+    const note = await screen.findByTestId('scope-kiln-empty');
+    // A legitimate state, described — not an error, and not silent about the
+    // capabilities it costs.
+    expect(note.textContent).toMatch(/tools-only/i);
+    expect(note.textContent).toMatch(/note/i);
+  });
+
+  it('a kiln-less session never borrows the home kiln as its label', () => {
+    mockSession = { ...baseSession(), kilns: [], workspace: '' };
+    render(() => <SessionScopeChips />);
+    expect(screen.getByTestId('scope-kiln').textContent).not.toContain('Home kiln');
   });
 
   it('toggling an unconnected kiln attaches it', async () => {

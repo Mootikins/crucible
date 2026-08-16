@@ -167,9 +167,8 @@ async fn session_create_emits_setup_events_for_internal_agent() {
     let resp = client
         .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: Some(kiln_dir.path().to_path_buf()),
+            kilns: vec![kiln_dir.path().to_path_buf()],
             workspace: None,
-            connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
             agent_type: Some("internal".to_string()),
@@ -265,9 +264,8 @@ async fn session_create_omits_llm_events_for_acp_agent() {
     let resp = client
         .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: Some(kiln_dir.path().to_path_buf()),
+            kilns: vec![kiln_dir.path().to_path_buf()],
             workspace: None,
-            connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
             agent_type: Some("acp".to_string()),

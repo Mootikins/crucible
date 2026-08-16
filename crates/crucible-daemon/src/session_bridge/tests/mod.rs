@@ -3,7 +3,7 @@ use crate::agent_manager::{AgentManager, AgentManagerParams};
 use crate::background_manager::BackgroundJobManager;
 use crate::kiln_manager::KilnManager;
 use crate::session_manager::SessionManager;
-use crate::session_storage::FileSessionStorage;
+use crate::test_support::temp_session_manager;
 use crate::tools::workspace::WorkspaceTools;
 mod create;
 mod lifecycle;
@@ -195,9 +195,7 @@ async fn bash_calling_rig(
 ) -> (TempDir, DaemonSessionBridge, String) {
     let tmp = TempDir::new().unwrap();
     let workspace = tmp.path().to_path_buf();
-    let session_manager = Arc::new(SessionManager::with_storage(Arc::new(
-        FileSessionStorage::new(),
-    )));
+    let session_manager = temp_session_manager();
     let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
         session_manager: session_manager.clone(),
@@ -221,9 +219,8 @@ async fn bash_calling_rig(
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            workspace.clone(),
+            vec![workspace.clone()],
             Some(workspace.clone()),
-            vec![],
             None,
         )
         .await
@@ -325,7 +322,7 @@ async fn a_fire_and_forget_plugin_turn_never_broadcasts_a_permission_request() {
 fn bridge_managers_are_the_contexts_own() {
     let tmp = TempDir::new().unwrap();
     let (event_tx, _) = broadcast::channel(100);
-    let session_manager = Arc::new(SessionManager::new());
+    let session_manager = temp_session_manager();
     let agent_manager = build_test_agent_manager(session_manager.clone());
     let ctx = bridge_ctx(
         session_manager.clone(),
@@ -385,14 +382,12 @@ fn parse_range_requires_start_end_for_indices() {
 #[tokio::test]
 async fn context_usage_returns_expected_shape() {
     let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -429,14 +424,12 @@ async fn context_usage_returns_expected_shape() {
 #[tokio::test]
 async fn compact_transitions_session_to_compacting() {
     let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -464,14 +457,12 @@ async fn compact_transitions_session_to_compacting() {
 #[tokio::test]
 async fn remove_messages_last_n_rewinds_tree() {
     let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -535,14 +526,12 @@ async fn remove_messages_last_n_rewinds_tree() {
 #[tokio::test]
 async fn remove_messages_indices_truncates_from_start() {
     let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -596,14 +585,12 @@ async fn remove_messages_indices_truncates_from_start() {
 #[tokio::test]
 async fn undo_rewinds_tree_and_emits_event() {
     let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -685,14 +672,12 @@ async fn undo_rewinds_tree_and_emits_event() {
 #[tokio::test]
 async fn remove_messages_invalid_range_type_errors() {
     let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await

@@ -25,7 +25,6 @@ use crate::protocol::{RpcError, SessionEventMessage, INTERNAL_ERROR, INVALID_PAR
 use crate::rpc::context::RpcContext;
 use crate::rpc::dispatch::RpcResult;
 use crate::rpc::params::parse_params;
-use crate::session_storage::FileSessionStorage;
 use crate::workflow_handlers::DaemonInlineHandler;
 use crate::workflow_registry::{ExecutionHandle, WorkflowStatusSnapshot};
 use crucible_core::parser::types::{Frontmatter, FrontmatterFormat, ParsedNote, WorkflowDoc};
@@ -297,8 +296,11 @@ async fn resolve_or_rehydrate(ctx: &RpcContext, session_id: &str) -> Option<Exec
     if let Some(h) = ctx.workflows.get(session_id) {
         return Some(h);
     }
-    let session = ctx.sessions.get_session(session_id)?;
-    let path = FileSessionStorage::session_dir_for(&session).join(WORKFLOW_STATE_FILE);
+    ctx.sessions.get_session(session_id)?;
+    let path = ctx
+        .sessions
+        .session_dir(session_id)
+        .join(WORKFLOW_STATE_FILE);
     let snapshot = read_snapshot(&path).await?;
     if snapshot.status.is_terminal() {
         // Terminal state shouldn't be on disk — clean it up so a later
@@ -317,10 +319,10 @@ async fn read_snapshot(path: &Path) -> Option<WorkflowSnapshot> {
 }
 
 async fn persist_snapshot(ctx: &RpcContext, session_id: &str, snapshot: &WorkflowSnapshot) {
-    let Some(session) = ctx.sessions.get_session(session_id) else {
+    if ctx.sessions.get_session(session_id).is_none() {
         return;
-    };
-    let dir = FileSessionStorage::session_dir_for(&session);
+    }
+    let dir = ctx.sessions.session_dir(session_id);
     let path = dir.join(WORKFLOW_STATE_FILE);
     if let Err(e) = tokio::fs::create_dir_all(&dir).await {
         tracing::warn!(session_id = %session_id, error = %e, "failed to create session dir for workflow snapshot");
@@ -339,10 +341,13 @@ async fn persist_snapshot(ctx: &RpcContext, session_id: &str, snapshot: &Workflo
 }
 
 async fn remove_snapshot(ctx: &RpcContext, session_id: &str) {
-    let Some(session) = ctx.sessions.get_session(session_id) else {
+    if ctx.sessions.get_session(session_id).is_none() {
         return;
-    };
-    let path = FileSessionStorage::session_dir_for(&session).join(WORKFLOW_STATE_FILE);
+    }
+    let path = ctx
+        .sessions
+        .session_dir(session_id)
+        .join(WORKFLOW_STATE_FILE);
     let _ = tokio::fs::remove_file(path).await;
 }
 

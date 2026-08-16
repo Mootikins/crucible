@@ -83,14 +83,15 @@ pub enum SessionCommands {
         timestamps: bool,
     },
 
-    /// Rebuild session index from JSONL files
+    /// Retired: sessions are no longer indexed as kiln notes
+    #[command(hide = true)]
     Reindex {
         /// Re-index all sessions even if already indexed
         #[arg(long)]
         force: bool,
     },
 
-    /// Clean up old sessions
+    /// Clean up old sessions in this kiln's scope
     Cleanup {
         /// Delete sessions older than this many days
         #[arg(long, default_value = "30")]
@@ -99,6 +100,10 @@ pub enum SessionCommands {
         /// Dry run - show what would be deleted
         #[arg(long)]
         dry_run: bool,
+
+        /// Sweep every session on this machine, not just this kiln's
+        #[arg(long)]
+        all_kilns: bool,
     },
 
     /// Create a new daemon session

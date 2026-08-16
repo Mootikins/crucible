@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::temp_session_manager;
 
 #[tokio::test]
 async fn test_configure_agent() {
@@ -18,8 +19,7 @@ async fn test_configure_agent() {
 
 #[tokio::test]
 async fn test_configure_agent_not_found() {
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let agent_manager = create_test_agent_manager(session_manager);
 
     let result = agent_manager
@@ -45,8 +45,7 @@ async fn test_send_message_no_agent() {
 
 #[tokio::test]
 async fn test_cancel_nonexistent() {
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let agent_manager = create_test_agent_manager(session_manager);
 
     let cancelled = agent_manager.cancel("nonexistent").await;
@@ -89,8 +88,7 @@ async fn test_switch_model_no_agent() {
 
 #[tokio::test]
 async fn test_switch_model_session_not_found() {
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let agent_manager = create_test_agent_manager(session_manager);
 
     let result = agent_manager
@@ -102,8 +100,7 @@ async fn test_switch_model_session_not_found() {
 
 #[tokio::test]
 async fn test_switch_model_rejects_empty_model_id() {
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let agent_manager = create_test_agent_manager(session_manager);
 
     let result = agent_manager.switch_model("any-session", "", None).await;

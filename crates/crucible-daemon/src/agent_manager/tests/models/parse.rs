@@ -1,11 +1,11 @@
 use super::super::*;
+use crate::test_support::temp_session_manager;
 
 #[tokio::test]
 async fn test_parse_provider_model_llm_config_found() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
 
     let mut providers = std::collections::HashMap::new();
     providers.insert(
@@ -38,8 +38,7 @@ async fn test_parse_provider_model_llm_config_found() {
 async fn test_parse_provider_model_llm_config_not_found() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
 
     let mut providers = std::collections::HashMap::new();
     providers.insert(
@@ -71,8 +70,7 @@ async fn test_parse_provider_model_llm_config_not_found() {
 async fn test_parse_provider_model_legacy_takes_precedence() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
 
     let mut llm_providers = std::collections::HashMap::new();
     llm_providers.insert(
@@ -100,8 +98,7 @@ async fn test_parse_provider_model_legacy_takes_precedence() {
 
 #[tokio::test]
 async fn test_parse_provider_model_empty_string() {
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let agent_manager = create_test_agent_manager(session_manager);
 
     let (provider_key, model_name) = agent_manager.parse_provider_model("");
@@ -119,8 +116,7 @@ async fn test_parse_provider_model_empty_string() {
 async fn test_parse_provider_model_trailing_slash() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
 
     let mut providers = std::collections::HashMap::new();
     providers.insert(
@@ -154,8 +150,7 @@ async fn test_parse_provider_model_trailing_slash() {
 async fn test_parse_provider_model_whitespace() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
 
     let mut providers = std::collections::HashMap::new();
     providers.insert(
@@ -188,8 +183,7 @@ async fn test_parse_provider_model_whitespace() {
 async fn test_parse_provider_model_case_sensitivity() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
 
     let mut providers = std::collections::HashMap::new();
     providers.insert(

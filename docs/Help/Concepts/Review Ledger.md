@@ -18,7 +18,7 @@ The evidence is the filesystem, not the agent's claims: changes are keyed on git
 
 ## What gets tracked
 
-When a session's first message is sent, the daemon opens a ledger over the session's workspace, its [[Kilns|kiln]], and any connected kilns. Each root is normalised to its git repository top level and the current tree is captured once as `session_base`. Roots outside git are skipped — there is nothing to diff — and a session with no git-backed root simply has no ledger and no gate.
+When a session's first message is sent, the daemon opens a ledger over the session's workspace and every [[Kilns|kiln]] it is attached to. Each root is normalised to its git repository top level and the current tree is captured once as `session_base`. Roots outside git are skipped — there is nothing to diff — and a session with no git-backed root simply has no ledger and no gate.
 
 Around each tool call that could write (any tool not known to be read-only), the daemon records the tree before and after. If the trees differ, that becomes an **interval** attributed to that call's `tool_call_id`. A call that wrote nothing produces no interval. Two brackets open on the same root at the same time — typically a parent and a delegated child — are marked *contested*, and contested intervals are excluded from attribution rather than guessed at.
 

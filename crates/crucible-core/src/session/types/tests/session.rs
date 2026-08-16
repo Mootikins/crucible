@@ -9,16 +9,20 @@ use crate::config::BackendType;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+/// A session's kiln set, in one call, for tests that only care about scope.
+fn session_with_kilns(kilns: &[&str]) -> Session {
+    Session::new(SessionType::Chat, kilns.iter().map(PathBuf::from).collect())
+}
+
 #[test]
 fn test_session_new() {
     let kiln = PathBuf::from("/home/user/notes");
-    let session = Session::new(SessionType::Chat, kiln.clone());
+    let session = Session::new(SessionType::Chat, vec![kiln.clone()]);
 
     assert!(session.id.starts_with("chat-"));
     assert_eq!(session.session_type, SessionType::Chat);
-    assert_eq!(session.kiln, kiln);
-    assert_eq!(session.workspace, kiln); // defaults to kiln
-    assert!(session.connected_kilns.is_empty());
+    assert_eq!(session.kilns, vec![kiln.clone()]);
+    assert_eq!(session.workspace, kiln); // sentinel: defaults to the first kiln
     assert_eq!(session.state, SessionState::Active);
 }
 
@@ -26,18 +30,18 @@ fn test_session_new() {
 fn test_session_with_workspace() {
     let kiln = PathBuf::from("/home/user/notes");
     let workspace = PathBuf::from("/home/user/project");
-    let session = Session::new(SessionType::Agent, kiln.clone()).with_workspace(workspace.clone());
+    let session =
+        Session::new(SessionType::Agent, vec![kiln.clone()]).with_workspace(workspace.clone());
 
-    assert_eq!(session.kiln, kiln);
+    assert_eq!(session.kilns, vec![kiln]);
     assert_eq!(session.workspace, workspace);
 }
 
 #[test]
-fn test_session_with_connected_kilns() {
+fn test_session_reaches_every_kiln_in_its_set() {
     let kiln = PathBuf::from("/home/user/notes");
     let reference = PathBuf::from("/home/user/reference");
-    let session =
-        Session::new(SessionType::Chat, kiln.clone()).with_connected_kiln(reference.clone());
+    let session = Session::new(SessionType::Chat, vec![kiln.clone()]).with_kiln(reference.clone());
 
     assert!(session.can_access_kiln(&kiln));
     assert!(session.can_access_kiln(&reference));
@@ -45,23 +49,95 @@ fn test_session_with_connected_kilns() {
 }
 
 #[test]
-fn test_session_storage_paths() {
-    let kiln = PathBuf::from("/home/user/notes");
-    let session = Session::new(SessionType::Chat, kiln);
+fn test_add_kiln_reports_whether_the_set_changed() {
+    let mut session = session_with_kilns(&["/home/user/notes"]);
 
-    let storage = session.storage_path();
-    assert!(storage
-        .to_string_lossy()
-        .contains(".crucible/sessions/chat-"));
-    assert!(session.log_path().ends_with("session.md"));
-    assert!(session.jsonl_path().ends_with("session.jsonl"));
-    assert!(session.artifacts_path().ends_with("artifacts"));
+    assert!(session.add_kiln(PathBuf::from("/home/user/reference")));
+    assert!(!session.add_kiln(PathBuf::from("/home/user/reference")));
+    assert_eq!(session.kilns.len(), 2);
+}
+
+#[test]
+fn test_session_storage_paths() {
+    let sessions_root = PathBuf::from("/home/user/.crucible/sessions");
+    let session = session_with_kilns(&["/home/user/notes"]);
+
+    assert_eq!(
+        session.storage_path(&sessions_root),
+        sessions_root.join(&session.id)
+    );
+    assert!(session.log_path(&sessions_root).ends_with("session.md"));
+    assert!(session
+        .jsonl_path(&sessions_root)
+        .ends_with("session.jsonl"));
+    assert!(session
+        .artifacts_path(&sessions_root)
+        .ends_with("artifacts"));
+}
+
+#[test]
+fn test_legacy_meta_json_merges_kiln_and_connected_kilns() {
+    // A meta.json written before the kiln set was flattened.
+    let legacy = r#"{
+        "id": "chat-2025-01-08T1530-abc123",
+        "session_type": "chat",
+        "kiln": "/home/user/notes",
+        "workspace": "/home/user/project",
+        "connected_kilns": ["/home/user/reference", "/home/user/notes"],
+        "state": "active",
+        "started_at": "2025-01-08T15:30:00Z"
+    }"#;
+
+    let session: Session = serde_json::from_str(legacy).unwrap();
+
+    // Primary first, connected after, duplicates collapsed.
+    assert_eq!(
+        session.kilns,
+        vec![
+            PathBuf::from("/home/user/notes"),
+            PathBuf::from("/home/user/reference"),
+        ]
+    );
+    assert_eq!(session.workspace, PathBuf::from("/home/user/project"));
+
+    // The legacy spelling is not written back, and the flat one round-trips.
+    let json = serde_json::to_string(&session).unwrap();
+    assert!(!json.contains("connected_kilns"));
+    assert!(!json.contains("\"kiln\""));
+    let reloaded: Session = serde_json::from_str(&json).unwrap();
+    assert_eq!(reloaded, session);
+}
+
+#[test]
+fn test_legacy_meta_json_without_connected_kilns() {
+    let legacy = r#"{
+        "id": "chat-2025-01-08T1530-abc123",
+        "session_type": "chat",
+        "kiln": "/home/user/notes",
+        "workspace": "/home/user/notes",
+        "state": "active",
+        "started_at": "2025-01-08T15:30:00Z"
+    }"#;
+
+    let session: Session = serde_json::from_str(legacy).unwrap();
+    assert_eq!(session.kilns, vec![PathBuf::from("/home/user/notes")]);
+}
+
+#[test]
+fn test_session_without_kilns_round_trips() {
+    let session = Session::new(SessionType::Chat, Vec::new());
+
+    let json = serde_json::to_string(&session).unwrap();
+    let reloaded: Session = serde_json::from_str(&json).unwrap();
+
+    assert!(reloaded.kilns.is_empty());
+    assert_eq!(reloaded, session);
 }
 
 #[test]
 fn test_session_state_transitions() {
     let kiln = PathBuf::from("/home/user/notes");
-    let mut session = Session::new(SessionType::Chat, kiln);
+    let mut session = Session::new(SessionType::Chat, vec![kiln]);
 
     assert!(session.is_active());
 
@@ -81,7 +157,7 @@ fn test_session_state_transitions() {
 #[test]
 fn test_session_serialization() {
     let kiln = PathBuf::from("/home/user/notes");
-    let session = Session::new(SessionType::Chat, kiln).with_title("Test session");
+    let session = Session::new(SessionType::Chat, vec![kiln]).with_title("Test session");
 
     let json = serde_json::to_string(&session).unwrap();
     assert!(json.contains("\"session_type\":\"chat\""));
@@ -128,7 +204,7 @@ fn test_session_with_agent() {
     };
 
     let kiln = PathBuf::from("/home/user/notes");
-    let session = Session::new(SessionType::Chat, kiln).with_agent(agent.clone());
+    let session = Session::new(SessionType::Chat, vec![kiln]).with_agent(agent.clone());
 
     assert!(session.agent.is_some());
     assert_eq!(session.agent.as_ref().unwrap().model, "gpt-4o");
@@ -192,7 +268,7 @@ fn test_session_summary_includes_agent_model() {
     };
 
     let kiln = PathBuf::from("/home/user/notes");
-    let session = Session::new(SessionType::Chat, kiln).with_agent(agent);
+    let session = Session::new(SessionType::Chat, vec![kiln]).with_agent(agent);
 
     let summary = SessionSummary::from(&session);
     assert_eq!(summary.agent_model, Some("claude-3-5-sonnet".to_string()));
@@ -219,7 +295,7 @@ fn test_session_parent_session_id_backward_compat_old_json_without_field() {
 fn test_session_parent_session_id_round_trip() {
     // parent_session_id: Some("parent-123") should round-trip correctly
     let kiln = PathBuf::from("/home/user/notes");
-    let session = Session::new(SessionType::Chat, kiln).with_title("Child session");
+    let session = Session::new(SessionType::Chat, vec![kiln]).with_title("Child session");
 
     // Manually set parent_session_id (no builder method yet, just for test)
     let mut session_with_parent = session;
@@ -236,7 +312,7 @@ fn test_session_parent_session_id_round_trip() {
 fn test_session_parent_session_id_omitted_when_none() {
     // When parent_session_id is None, it should be omitted from JSON
     let kiln = PathBuf::from("/home/user/notes");
-    let session = Session::new(SessionType::Chat, kiln);
+    let session = Session::new(SessionType::Chat, vec![kiln]);
 
     let json = serde_json::to_string(&session).unwrap();
     // parent_session_id should not appear in JSON when None
@@ -247,7 +323,7 @@ fn test_session_parent_session_id_omitted_when_none() {
 fn test_session_default_no_recording_mode() {
     // Session::new() should have recording_mode: None
     let kiln = PathBuf::from("/home/user/notes");
-    let session = Session::new(SessionType::Chat, kiln);
+    let session = Session::new(SessionType::Chat, vec![kiln]);
 
     assert_eq!(session.recording_mode, None);
     assert!(!session.is_granular());
@@ -274,7 +350,7 @@ fn test_session_last_activity_serde_compat() {
 fn test_session_last_activity_omitted_when_none() {
     // When last_activity is None, it should be omitted from JSON
     let kiln = PathBuf::from("/home/user/notes");
-    let mut session = Session::new(SessionType::Chat, kiln);
+    let mut session = Session::new(SessionType::Chat, vec![kiln]);
     session.last_activity = None;
 
     let json = serde_json::to_string(&session).unwrap();
@@ -285,6 +361,6 @@ fn test_session_last_activity_omitted_when_none() {
 fn test_session_last_activity_set_on_creation() {
     // New sessions should have last_activity set
     let kiln = PathBuf::from("/home/user/notes");
-    let session = Session::new(SessionType::Chat, kiln);
+    let session = Session::new(SessionType::Chat, vec![kiln]);
     assert!(session.last_activity.is_some());
 }

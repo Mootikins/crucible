@@ -31,7 +31,7 @@ impl AgentManager {
         session_id: &str,
         original_content: &str,
         results: &[crucible_core::SearchResult],
-        primary_kiln: &std::path::Path,
+        label_kilns: bool,
         state: &SessionEventState,
         plugin_handlers: Option<&(
             std::sync::Arc<crucible_lua::LuaScriptHandlerRegistry>,
@@ -53,7 +53,7 @@ impl AgentManager {
         if let Some(custom) = custom_formatted {
             custom
         } else {
-            Self::precognition_context_block(results, primary_kiln)
+            Self::precognition_context_block(results, label_kilns)
         }
     }
 
@@ -65,7 +65,7 @@ impl AgentManager {
     /// content is meta-instruction rather than chat history.
     fn precognition_context_block(
         results: &[crucible_core::SearchResult],
-        primary_kiln: &std::path::Path,
+        label_kilns: bool,
     ) -> String {
         if results.is_empty() {
             return String::new();
@@ -76,7 +76,7 @@ impl AgentManager {
             let kiln_label = result
                 .kiln_path
                 .as_ref()
-                .filter(|path| path != &primary_kiln)
+                .filter(|_| label_kilns)
                 .and_then(|path| path.file_name())
                 .and_then(|name| name.to_str())
                 .map(|name| format!(" [from: {name}]"))
@@ -198,7 +198,6 @@ impl AgentManager {
         session_id: &str,
         original_content: &str,
         results: &[crucible_core::SearchResult],
-        primary_kiln: &std::path::Path,
         char_budget: usize,
         state: &SessionEventState,
         plugin_handlers: Option<&(
@@ -222,12 +221,6 @@ impl AgentManager {
                         .as_ref()
                         .and_then(|path| path.to_str())
                         .unwrap_or_default(),
-                    // Otherwise only derivable by string-comparing kiln_path
-                    // against the session kiln, which is a trap.
-                    "is_primary_kiln": r
-                        .kiln_path
-                        .as_ref()
-                        .is_none_or(|path| path.as_path() == primary_kiln),
                 })
             })
             .collect();
@@ -311,62 +304,32 @@ impl AgentManager {
         None
     }
 
-    /// Collect search sources from the primary kiln and any connected kilns.
-    /// Connected kilns are skipped if they lack enrichment config or use a
-    /// different embedding model than the primary kiln.
+    /// Collect one search source per kiln the session reaches.
+    ///
+    /// A kiln that will not open is dropped with a warning rather than failing
+    /// the fan-out: one unreadable corpus must not cost the session the rest.
+    /// Callers check `enrichment_config()` before calling — all kilns share the
+    /// one config, so there is no per-kiln embedding model to reconcile.
     pub(super) async fn collect_kiln_search_sources(
         &self,
         session_id: &str,
         session: &crucible_core::session::Session,
-        primary_handle: &crate::kiln_manager::StorageHandle,
-        primary_config: &crucible_core::config::EmbeddingProviderConfig,
     ) -> Vec<KilnSearchSource> {
-        let mut sources = vec![KilnSearchSource {
-            kiln_path: session.kiln.clone(),
-            knowledge_repo: primary_handle.as_knowledge_repository(),
-            is_primary: true,
-        }];
+        let mut sources = Vec::with_capacity(session.kilns.len());
 
-        for connected_kiln in &session.connected_kilns {
-            let connected_handle = match self.kiln_manager.get_or_open(connected_kiln).await {
-                Ok(handle) => handle,
-                Err(error) => {
-                    warn!(
-                        session_id = %session_id,
-                        kiln = %connected_kiln.display(),
-                        error = %error,
-                        "Failed to open connected kiln for precognition"
-                    );
-                    continue;
-                }
-            };
-
-            let Some(connected_config) = self.kiln_manager.enrichment_config().cloned() else {
-                debug!(
+        for kiln in &session.kilns {
+            match self.kiln_manager.get_or_open(kiln).await {
+                Ok(handle) => sources.push(KilnSearchSource {
+                    kiln_path: kiln.clone(),
+                    knowledge_repo: handle.as_knowledge_repository(),
+                }),
+                Err(error) => warn!(
                     session_id = %session_id,
-                    kiln = %connected_kiln.display(),
-                    "Skipping connected kiln without enrichment config"
-                );
-                continue;
-            };
-
-            if connected_config.model_name() != primary_config.model_name() {
-                // TODO: Compare stored model metadata instead of just model names (currently all kilns share one enrichment config)
-                warn!(
-                    session_id = %session_id,
-                    kiln = %connected_kiln.display(),
-                    primary_model = primary_config.model_name(),
-                    connected_model = connected_config.model_name(),
-                    "Skipping connected kiln with mismatched embedding model"
-                );
-                continue;
+                    kiln = %kiln.display(),
+                    error = %error,
+                    "Failed to open kiln for precognition"
+                ),
             }
-
-            sources.push(KilnSearchSource {
-                kiln_path: connected_kiln.clone(),
-                knowledge_repo: connected_handle.as_knowledge_repository(),
-                is_primary: false,
-            });
         }
 
         sources
@@ -428,31 +391,20 @@ impl AgentManager {
         agent_config: &SessionAgent,
         event_tx: &broadcast::Sender<SessionEventMessage>,
     ) -> Option<crucible_core::traits::ContextMessage> {
-        let kiln_path = session.kiln.as_path();
-
         // Every failure below this point emits, because the gate already said
         // Precognition should run for this turn. A silent `None` leaves the
         // transcript unable to say whether the answer was grounded — which is
         // the whole reason `PrecognitionComplete` is persisted rather than
-        // being a live-only notification. `kilns_searched` is 0 when the primary
-        // kiln never opened and 1 once it did.
-        let handle = match self.kiln_manager.get_or_open(kiln_path).await {
-            Ok(h) => h,
-            Err(error) => {
-                warn!(session_id = %session_id, error = %error, "Failed to open kiln for precognition");
-                emit_precognition_event(event_tx, session_id, original_content, 0, 0, 1, None);
-                return None;
-            }
-        };
-
+        // being a live-only notification.
+        //
         // The one silent path, and deliberately so: no enrichment provider
         // configured is the default state, not a failure. Emitting here would
         // report a grounding failure on the first message of every session that
         // has never configured embeddings.
-        let primary_config = self.kiln_manager.enrichment_config().cloned()?;
+        let enrichment_config = self.kiln_manager.enrichment_config().cloned()?;
 
         let embedding_provider = match crate::embedding::get_or_create_embedding_provider(
-            &primary_config,
+            &enrichment_config,
         )
         .await
         {
@@ -473,10 +425,13 @@ impl AgentManager {
             }
         };
 
-        let sources = self
-            .collect_kiln_search_sources(session_id, session, &handle, &primary_config)
-            .await;
+        let sources = self.collect_kiln_search_sources(session_id, session).await;
         let kilns_searched = sources.len();
+        if sources.is_empty() {
+            warn!(session_id = %session_id, "No kiln opened for precognition");
+            emit_precognition_event(event_tx, session_id, original_content, 0, 0, 1, None);
+            return None;
+        }
 
         let mut results = self
             .execute_multi_kiln_search(ExecuteMultiKilnSearchParams {
@@ -491,6 +446,10 @@ impl AgentManager {
             .await?;
 
         let char_budget = self.kiln_manager.max_precognition_chars();
+        // Name the kiln each note came from only when there is more than one to
+        // tell apart. No member of a flat set is the "unlabelled" one, so the
+        // choice is per-session, not per-kiln.
+        let label_kilns = kilns_searched > 1;
 
         // Selection seam: Lua may narrow, reorder and re-snippet before the
         // budget backstop below. Runs ahead of `precognition_format`, which
@@ -509,7 +468,6 @@ impl AgentManager {
                 session_id,
                 original_content,
                 &results,
-                &session.kiln,
                 char_budget,
                 &state,
                 plugin_pair.as_ref(),
@@ -531,13 +489,13 @@ impl AgentManager {
                 session_id,
                 original_content,
                 &results,
-                &session.kiln,
+                label_kilns,
                 &state,
                 plugin_pair.as_ref(),
             )
             .await
         };
-        let note_info = extract_note_info(&results, &session.kiln);
+        let note_info = extract_note_info(&results, label_kilns);
         let deduped_count = note_info.len();
 
         emit_precognition_event(
@@ -732,7 +690,7 @@ fn apply_precognition_char_cap(results: &mut [crucible_core::SearchResult], cap:
 // configurable via Lua or session config.
 pub(super) fn extract_note_info(
     results: &[crucible_core::SearchResult],
-    primary_kiln: &std::path::Path,
+    label_kilns: bool,
 ) -> Vec<crucible_core::traits::chat::PrecognitionNoteInfo> {
     let mut seen = std::collections::HashSet::new();
     results
@@ -747,7 +705,7 @@ pub(super) fn extract_note_info(
             let kiln_label = r
                 .kiln_path
                 .as_ref()
-                .filter(|kp| kp.as_path() != primary_kiln)
+                .filter(|_| label_kilns)
                 .and_then(|kp| kp.file_name())
                 .and_then(|name| name.to_str())
                 .map(|name| name.to_string());

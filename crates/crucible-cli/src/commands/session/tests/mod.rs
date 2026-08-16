@@ -1,10 +1,32 @@
+use crate::config::CliConfig;
 use crucible_daemon::{SessionId, SessionType};
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
 mod list;
 mod misc;
 mod reindex;
 mod show;
+
+/// A CLI config whose session store lives inside `tmp`.
+///
+/// `data_home`, not `kiln_path`: sessions no longer live inside a kiln, so
+/// `io::sessions_dir` reads the data root — and leaving it unset would point
+/// these tests at the developer's real `~/.crucible`.
+pub(super) fn test_config(tmp: &Path) -> CliConfig {
+    CliConfig {
+        kiln_path: tmp.to_path_buf(),
+        data_home: Some(tmp.to_path_buf()),
+        ..Default::default()
+    }
+}
+
+/// The sessions root [`test_config`] resolves to, created on disk.
+pub(super) fn test_sessions_dir(tmp: &Path) -> PathBuf {
+    let path = crate::commands::session::io::sessions_dir(&test_config(tmp));
+    std::fs::create_dir_all(&path).unwrap();
+    path
+}
 
 pub(super) fn env_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();

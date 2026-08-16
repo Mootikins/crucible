@@ -105,7 +105,7 @@ async fn test_e2e_lua_degraded_daemon_starts_with_broken_plugin() {
     let kiln_path = kiln_dir.to_string_lossy();
 
     let create_req = format!(
-        r#"{{"jsonrpc":"2.0","id":3,"method":"session.create","params":{{"type":"chat","kiln":"{}"}}}}"#,
+        r#"{{"jsonrpc":"2.0","id":3,"method":"session.create","params":{{"type":"chat","kilns":["{}"]}}}}"#,
         kiln_path
     );
     let response = conn.call(&create_req).await;
@@ -190,7 +190,7 @@ async fn test_e2e_lua_degraded_state_detectable_via_rpc() {
 
     // Create session
     let create_req = format!(
-        r#"{{"jsonrpc":"2.0","id":3,"method":"session.create","params":{{"type":"chat","kiln":"{}"}}}}"#,
+        r#"{{"jsonrpc":"2.0","id":3,"method":"session.create","params":{{"type":"chat","kilns":["{}"]}}}}"#,
         kiln_path
     );
     let response = conn.call(&create_req).await;
@@ -250,7 +250,9 @@ async fn test_e2e_lua_degraded_state_detectable_via_rpc() {
         session_id
     );
     let response = conn.call(&end_req).await;
-    let result = response.get("result").expect("Session end should succeed");
+    let result = response
+        .get("result")
+        .unwrap_or_else(|| panic!("Session end should succeed: {response}"));
     let state = result.get("state").and_then(|v| v.as_str()).unwrap_or("");
     assert!(
         state.to_lowercase().contains("ended"),

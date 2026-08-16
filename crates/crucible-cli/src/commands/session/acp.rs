@@ -222,9 +222,8 @@ pub(super) mod rpc {
             .session_create_with_agent(
                 crucible_daemon::rpc_client::SessionCreateParams {
                     session_type: params.session_type.to_string(),
-                    kiln: Some(config.session_storage_path()),
+                    kilns: vec![config.session_kiln_path()],
                     workspace: params.workspace.map(|p| p.to_path_buf()),
-                    connect_kilns: vec![],
                     recording_mode: recording_mode_parsed,
                     recording_path: None,
                     agent_type: Some(agent_type.to_string()),
@@ -260,13 +259,25 @@ pub(super) mod rpc {
 
         let is_quiet = wants_bare_id(params.quiet, crate::output::is_interactive(), params.format);
 
+        // Echoed from the daemon's answer, not re-derived from local config:
+        // the daemon owns the kiln-set fallback, so a locally guessed kiln
+        // would be wrong for every kiln-less create.
+        let kilns: Vec<String> = result["kilns"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|k| k.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+
         if is_quiet {
             println!("{}", session_id);
         } else if params.format == "json" {
             let json = serde_json::json!({
                 "session_id": session_id,
                 "type": params.session_type,
-                "kiln": config.kiln_path.to_string_lossy(),
+                "kilns": kilns,
                 "agent": params.agent,
                 "acp": params.acp,
                 "title": params.title,
@@ -278,15 +289,19 @@ pub(super) mod rpc {
             println!("  export CRU_SESSION={}", session_id);
             println!(
                 "  export CRU_SESSION_DIR={}",
-                config
-                    .kiln_path
-                    .join(".crucible")
-                    .join("sessions")
+                crate::commands::session::io::sessions_dir(config)
                     .join(session_id)
                     .display()
             );
             println!("Type: {}", params.session_type);
-            println!("Kiln: {}", config.kiln_path.display());
+            println!(
+                "Kilns: {}",
+                if kilns.is_empty() {
+                    "(none)".to_string()
+                } else {
+                    kilns.join(", ")
+                }
+            );
             if let Some(mode) = params.recording_mode {
                 println!("Recording mode: {}", mode);
             }
@@ -370,7 +385,6 @@ pub(super) mod rpc {
     }
 
     pub(crate) async fn send(
-        config: &CliConfig,
         session_id: &str,
         message: &str,
         raw: bool,
@@ -396,7 +410,7 @@ pub(super) mod rpc {
             Err(e) if e.to_string().contains("not found") => {
                 eprintln!("Session not in memory, loading from storage...");
                 client
-                    .session_resume_from_storage(session_id, &config.kiln_path, None, None)
+                    .session_resume_from_storage(session_id, None, None)
                     .await?;
                 client
                     .session_send_message_with_permissions(
@@ -703,13 +717,9 @@ pub(super) mod rpc {
         Ok(())
     }
 
-    pub(crate) async fn load(
-        client: &DaemonClient,
-        config: &CliConfig,
-        session_id: &str,
-    ) -> Result<()> {
+    pub(crate) async fn load(client: &DaemonClient, session_id: &str) -> Result<()> {
         let result = client
-            .session_resume_from_storage(session_id, &config.kiln_path, None, None)
+            .session_resume_from_storage(session_id, None, None)
             .await?;
 
         println!("Loaded session: {}", session_id);

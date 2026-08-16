@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::temp_session_manager;
 
 /// A mock agent whose stream never yields — blocks forever until cancelled.
 struct PendingMockAgent;
@@ -277,8 +278,7 @@ async fn scope_mutation_releases_request_slot_on_completion() {
 /// two handles to the same `Mutex`, not two equal-looking VMs.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_first_uses_share_one_session_vm() {
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let agent_manager = Arc::new(create_test_agent_manager(session_manager));
     let session_id = "shared-vm-session";
 
@@ -321,8 +321,7 @@ async fn concurrent_first_uses_share_one_session_vm() {
 /// that hang into a failure.
 #[tokio::test]
 async fn reading_plugin_state_does_not_queue_behind_the_loader_lock() {
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let (event_tx, _rx) = broadcast::channel(16);
     let loader = Arc::new(Mutex::new(None));
     let agent_manager = AgentManager::new(AgentManagerParams {

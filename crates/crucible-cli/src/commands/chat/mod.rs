@@ -482,7 +482,7 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
         info!("Will resume session: {}", session_id);
         runner = runner.with_resume_session(session_id.clone());
 
-        match fetch_resume_history(session_id, &config.kiln_path).await {
+        match fetch_resume_history(session_id).await {
             Ok(history) if !history.is_empty() => {
                 info!(
                     count = history.len(),
@@ -586,12 +586,11 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
 
     runner = runner.with_slash_commands(known_slash_commands());
 
+    // Scratch home for TUI-side artifacts (saved shell output). Under the
+    // daemon's sessions root, not inside a kiln: a kiln holds knowledge, and
+    // shipping a kiln should not ship somebody's captured shell output.
     let session_id = format!("chat-{}", chrono::Utc::now().format("%Y%m%d-%H%M%S"));
-    let session_dir = config
-        .kiln_path
-        .join(".crucible")
-        .join("sessions")
-        .join(&session_id);
+    let session_dir = crate::commands::session::io::sessions_dir(&config).join(&session_id);
     std::fs::create_dir_all(&session_dir).ok();
     runner = runner.with_session_dir(session_dir);
 
@@ -865,13 +864,10 @@ async fn apply_rpc_action(
     }
 }
 
-async fn fetch_resume_history(
-    session_id: &str,
-    kiln_path: &std::path::Path,
-) -> Result<Vec<serde_json::Value>> {
+async fn fetch_resume_history(session_id: &str) -> Result<Vec<serde_json::Value>> {
     let client = crate::common::daemon_client().await?;
     let result = client
-        .session_resume_from_storage(session_id, kiln_path, None, None)
+        .session_resume_from_storage(session_id, None, None)
         .await?;
 
     Ok(result

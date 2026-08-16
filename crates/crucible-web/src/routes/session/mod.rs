@@ -130,11 +130,10 @@ pub fn session_routes_with(policy: EndpointPolicy) -> Router<AppState> {
 struct CreateSessionRequest {
     #[serde(default = "default_session_type")]
     session_type: String,
-    /// Kiln for the session; omitted → daemon default (home kiln).
-    kiln: Option<PathBuf>,
-    /// Additional knowledge kilns to attach at creation.
+    /// The session's kiln set — flat, no member privileged. Empty or omitted →
+    /// daemon default (home kiln).
     #[serde(default)]
-    connect_kilns: Vec<PathBuf>,
+    kilns: Vec<PathBuf>,
     workspace: Option<PathBuf>,
     /// LLM provider (e.g., "ollama", "openai", "anthropic")
     provider: Option<String>,
@@ -447,7 +446,7 @@ async fn create_session(
     // created — see `daemon_err`) or builds config-derived internal
     // defaults, configures the session's agent as part of create, and returns
     // the resolved model in `agent_model`. The web no longer keeps its own copy
-    // of "what is the default agent". No kiln → omitted from the wire so the
+    // of "what is the default agent". No kilns → omitted from the wire so the
     // daemon resolves its default (home kiln).
     let agent_spec = crucible_daemon::rpc_client::SessionAgentSpec {
         agent_name: req.agent_name.clone(),
@@ -464,9 +463,8 @@ async fn create_session(
 
     let params = crucible_daemon::rpc_client::SessionCreateParams {
         session_type: req.session_type.clone(),
-        kiln: req.kiln.clone(),
+        kilns: req.kilns.clone(),
         workspace: req.workspace.clone(),
-        connect_kilns: req.connect_kilns.clone(),
         recording_mode: None,
         recording_path: None,
         agent_type: req.agent_type.clone(),
@@ -528,20 +526,33 @@ async fn list_sessions(
     Ok(Json(result))
 }
 
-#[derive(Debug, Deserialize)]
-struct SearchSessionsQuery {
-    q: String,
-    kiln: Option<PathBuf>,
-    limit: Option<usize>,
-}
-
+/// `GET /api/sessions/search?q=…&kiln=…&kiln=…&limit=…`
+///
+/// `kiln` repeats. Search scope is kiln-set *overlap*, so the caller states
+/// every kiln it is cleared for rather than one member standing in for the
+/// rest — one member matches only the sessions sharing that one. Parsed from
+/// the raw pairs because `serde_urlencoded`, which `Query` uses, cannot
+/// deserialize a repeated key into a sequence.
 async fn search_sessions(
     State(state): State<AppState>,
-    axum::extract::Query(query): axum::extract::Query<SearchSessionsQuery>,
+    axum::extract::Query(params): axum::extract::Query<Vec<(String, String)>>,
 ) -> Result<Json<serde_json::Value>, WebError> {
+    let mut query = None;
+    let mut kilns: Vec<PathBuf> = Vec::new();
+    let mut limit = None;
+    for (key, value) in params {
+        match key.as_str() {
+            "q" => query = Some(value),
+            "kiln" => kilns.push(PathBuf::from(value)),
+            "limit" => limit = value.parse::<usize>().ok(),
+            _ => {}
+        }
+    }
+    let query = query.ok_or_else(|| WebError::Validation("Missing 'q' parameter".into()))?;
+
     let results = state
         .daemon
-        .session_search(&query.q, query.kiln.as_deref(), query.limit.or(Some(20)))
+        .session_search(&query, &kilns, limit.or(Some(20)))
         .await
         .daemon_err()?;
 
@@ -559,7 +570,6 @@ async fn get_session(
 
 #[derive(Debug, Deserialize)]
 struct HistoryQuery {
-    kiln: PathBuf,
     limit: Option<usize>,
     offset: Option<usize>,
 }
@@ -571,7 +581,7 @@ async fn get_session_history(
 ) -> Result<Json<serde_json::Value>, WebError> {
     let result = state
         .daemon
-        .session_resume_from_storage(&id, &query.kiln, query.limit, query.offset)
+        .session_resume_from_storage(&id, query.limit, query.offset)
         .await
         .daemon_err()?;
 
@@ -593,18 +603,15 @@ async fn resume_session(
 ) -> Result<Json<serde_json::Value>, WebError> {
     // Transparent resume: sessions are always resumable. Try the warm path
     // (session still resident and merely paused); on any failure — ended,
-    // evicted, or not in memory — fall back to reloading it from its kiln's
-    // storage so an idle session is never a dead end for the UI.
+    // evicted, or not in memory — fall back to reloading it from the daemon's
+    // session store so an idle session is never a dead end for the UI.
     let result = match state.daemon.session_resume(&id).await {
         Ok(result) => result,
-        Err(_) => {
-            let kiln = resolve_session_kiln(&state, &id).await?;
-            state
-                .daemon
-                .session_resume_from_storage(&id, std::path::Path::new(&kiln), None, None)
-                .await
-                .map_err(|e| map_session_not_found(e, &id))?
-        }
+        Err(_) => state
+            .daemon
+            .session_resume_from_storage(&id, None, None)
+            .await
+            .map_err(|e| map_session_not_found(e, &id))?,
     };
 
     let session_id = id.as_str();
@@ -632,10 +639,9 @@ async fn archive_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<ArchiveResponse>, WebError> {
-    let kiln = resolve_session_kiln(&state, &id).await?;
     state
         .daemon
-        .session_archive(&id, std::path::Path::new(&kiln))
+        .session_archive(&id)
         .await
         .map_err(|e| map_session_not_found(e, &id))?;
     state.events.remove_session(&id).await;
@@ -646,10 +652,9 @@ async fn unarchive_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<ArchiveResponse>, WebError> {
-    let kiln = resolve_session_kiln(&state, &id).await?;
     state
         .daemon
-        .session_unarchive(&id, std::path::Path::new(&kiln))
+        .session_unarchive(&id)
         .await
         .map_err(|e| map_session_not_found(e, &id))?;
     Ok(Json(ArchiveResponse { archived: false }))
@@ -659,56 +664,13 @@ async fn delete_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<DeleteResponse>, WebError> {
-    let kiln = resolve_session_kiln(&state, &id).await?;
     state
         .daemon
-        .session_delete(&id, std::path::Path::new(&kiln))
+        .session_delete(&id)
         .await
         .map_err(|e| map_session_not_found(e, &id))?;
     state.events.remove_session(&id).await;
     Ok(Json(DeleteResponse { deleted: true }))
-}
-
-async fn resolve_session_kiln(state: &AppState, session_id: &str) -> Result<String, WebError> {
-    match state.daemon.session_get(session_id).await {
-        Ok(session) => {
-            return session
-                .get("kiln")
-                .and_then(|value| value.as_str())
-                .map(|value| value.to_string())
-                .ok_or_else(|| WebError::Validation("Session has no kiln path".to_string()));
-        }
-        Err(e) => {
-            let message = e.to_string();
-            if !message.contains("Session not found") {
-                return Err(WebError::Daemon(message));
-            }
-        }
-    }
-
-    let sessions = state
-        .daemon
-        .session_list(None, None, None, None, Some(true))
-        .await
-        .daemon_err()?;
-
-    let kiln = sessions
-        .get("sessions")
-        .and_then(|value| value.as_array())
-        .and_then(|items| {
-            items.iter().find_map(|item| {
-                let id = item.get("session_id").and_then(|value| value.as_str())?;
-                if id == session_id {
-                    item.get("kiln")
-                        .and_then(|value| value.as_str())
-                        .map(str::to_string)
-                } else {
-                    None
-                }
-            })
-        });
-
-    kiln.ok_or_else(|| WebError::NotFound(format!("Session not found: {session_id}")))
 }
 
 async fn cancel_session(
@@ -903,29 +865,15 @@ async fn export_session(
     ),
     WebError,
 > {
-    // Get session metadata to find kiln path
+    // Metadata only — the daemon resolves the session's own directory from the
+    // id, so the web no longer keeps a copy of the storage layout (it kept two
+    // arms of one, and both were wrong once sessions left kilns).
     let session = state.daemon.session_get(&id).await.daemon_err()?;
-    let kiln_str = session.get("kiln").and_then(|v| v.as_str()).unwrap_or("");
-
-    if kiln_str.is_empty() {
-        return Err(WebError::Validation(
-            "Session has no kiln path, cannot export".to_string(),
-        ));
-    }
-
-    let kiln = std::path::Path::new(kiln_str);
-
-    // Build session directory path (mirrors FileSessionStorage::session_dir_by_id)
-    let session_dir = if crucible_core::config::is_crucible_home(kiln) {
-        kiln.join("sessions").join(&id)
-    } else {
-        kiln.join(".crucible").join("sessions").join(&id)
-    };
 
     // Try to render markdown from persisted session events
     let markdown = match state
         .daemon
-        .session_render_markdown(&session_dir, Some(true), None, Some(true), None)
+        .session_render_markdown(&id, Some(true), None, Some(true), None)
         .await
     {
         Ok(md) => md,

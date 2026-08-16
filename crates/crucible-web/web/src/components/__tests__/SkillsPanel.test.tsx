@@ -11,9 +11,8 @@ vi.mock('@/contexts/SessionContext', () => ({
     currentSession: (): Session => ({
       id: 's1',
       session_type: 'chat',
-      kiln: '/tmp/k',
+      kilns: ['/tmp/k'],
       workspace: '/tmp/k',
-      connected_kilns: [],
       state: 'active',
       title: null,
       agent_model: null,

@@ -2,7 +2,7 @@
 export const MOCK_SESSION = {
   session_id: 'test-session-001',
   type: 'chat' as const,
-  kiln: '/home/user/notes',
+  kilns: ['/home/user/notes'],
   workspace: '/home/user/project',
   state: 'active' as const,
   title: 'Test Session',
@@ -13,15 +13,14 @@ export const MOCK_SESSION = {
 
 // The single-session GET (session.get) shape, distinct from the list shape
 // above: model/mode live in a nested `agent` object, there is NO top-level
-// `agent_model`, and there's `connected_kilns`/`continued_from` (see
+// `agent_model`, and there's `continued_from` (see
 // handle_session_get). Returning this from the GET mock keeps getSession()
 // mapping bugs (e.g. reading model from the wrong level) from hiding.
 export const MOCK_SESSION_DETAIL = {
   session_id: 'test-session-001',
   type: 'chat' as const,
-  kiln: '/home/user/notes',
+  kilns: ['/home/user/notes'],
   workspace: '/home/user/project',
-  connected_kilns: ['/home/user/notes'],
   state: 'active' as const,
   title: 'Test Session',
   continued_from: null,
@@ -31,7 +30,7 @@ export const MOCK_SESSION_DETAIL = {
 export const MOCK_SESSION_2 = {
   session_id: 'test-session-002',
   type: 'chat' as const,
-  kiln: '/home/user/notes',
+  kilns: ['/home/user/notes'],
   workspace: '/home/user/project',
   state: 'active' as const,
   title: 'Second Session',

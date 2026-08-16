@@ -16,6 +16,7 @@ use crucible_daemon::daemon_plugins::DaemonPluginLoader;
 use crucible_daemon::delegation::{DelegationRequest, DelegationService, DelegationSpawner};
 use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::session_lifecycle::SessionLifecycle;
+use crucible_daemon::test_support::temp_session_manager;
 use crucible_daemon::test_support::{MockSubagentBehavior, MockSubagentHandle};
 use crucible_daemon::tools::workspace::WorkspaceTools;
 use crucible_daemon::{
@@ -107,8 +108,7 @@ async fn setup_with_plugin(
     plugin_init: Option<&str>,
 ) -> Harness {
     let temp = TempDir::new().expect("temp dir");
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let (event_tx, event_rx) = broadcast::channel(64);
 
     let loader = match plugin_init {
@@ -147,9 +147,8 @@ async fn setup_with_plugin(
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            temp.path().to_path_buf(),
+            vec![temp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -316,18 +315,11 @@ async fn child_is_a_real_parent_linked_session_and_ends_on_completion() {
 
     // The child persisted as a real session in the parent's kiln, linked via
     // parent_session_id, and was ended when its turn completed.
-    let parent = h
-        .session_manager
-        .get_session(&h.parent_id)
-        .expect("parent session");
-    let storage = FileSessionStorage::new();
-    let child = crucible_daemon::session_storage::SessionStorage::load(
-        &storage,
-        &spawned.child_session_id,
-        &parent.kiln,
-    )
-    .await
-    .expect("child session persisted");
+    let storage = FileSessionStorage::new(h.session_manager.sessions_root().to_path_buf());
+    let child =
+        crucible_daemon::session_storage::SessionStorage::load(&storage, &spawned.child_session_id)
+            .await
+            .expect("child session persisted");
     assert_eq!(
         child.parent_session_id.as_deref(),
         Some(h.parent_id.as_str())
@@ -604,8 +596,7 @@ async fn factory_failure_fails_spawn_and_emits_failed_event() {
     // Second override call is ignored (first wins), so build a dedicated
     // harness whose override always errors.
     let temp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let (event_tx, event_rx) = broadcast::channel(64);
     let service = DelegationService::new(session_manager.clone(), event_tx.clone());
     let agent_manager = Arc::new(AgentManager::new_with_delegation(
@@ -632,9 +623,8 @@ async fn factory_failure_fails_spawn_and_emits_failed_event() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            temp.path().to_path_buf(),
+            vec![temp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -815,8 +805,7 @@ async fn child_tool_calls_are_dispatched_by_the_scheduler() {
 
     let temp = TempDir::new().unwrap();
     std::fs::write(temp.path().join("probe.txt"), "TOOL-PROBE-CONTENT").unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let (event_tx, mut event_rx) = broadcast::channel(256);
     let service = DelegationService::new(session_manager.clone(), event_tx.clone());
     let agent_manager = Arc::new(AgentManager::new_with_delegation(
@@ -844,9 +833,8 @@ async fn child_tool_calls_are_dispatched_by_the_scheduler() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            temp.path().to_path_buf(),
+            vec![temp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -918,7 +906,11 @@ async fn delegation_to_agent_card_builds_specialized_child() {
     let parent = h.session_manager.get_session(&h.parent_id).unwrap();
     // `.crucible/agents/`, not the kiln's visible `agents/`: the latter is no
     // longer a discovery path.
-    let agents_dir = parent.kiln.join(".crucible").join("agents");
+    let agents_dir = parent
+        .default_kiln()
+        .expect("parent has a kiln")
+        .join(".crucible")
+        .join("agents");
     std::fs::create_dir_all(&agents_dir).unwrap();
     std::fs::write(
         agents_dir.join("researcher.md"),
@@ -939,14 +931,11 @@ async fn delegation_to_agent_card_builds_specialized_child() {
         .await
         .expect("await");
 
-    let storage = FileSessionStorage::new();
-    let child = crucible_daemon::session_storage::SessionStorage::load(
-        &storage,
-        &spawned.child_session_id,
-        &parent.kiln,
-    )
-    .await
-    .expect("child session persisted");
+    let storage = FileSessionStorage::new(h.session_manager.sessions_root().to_path_buf());
+    let child =
+        crucible_daemon::session_storage::SessionStorage::load(&storage, &spawned.child_session_id)
+            .await
+            .expect("child session persisted");
     let agent = child.agent.expect("child has agent config");
     assert_eq!(agent.agent_type, "internal");
     assert_eq!(agent.agent_card_name.as_deref(), Some("researcher"));
@@ -1034,8 +1023,7 @@ async fn card_tool_policy_deny_blocks_child_tool_call() {
     }
 
     let temp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let (event_tx, _event_rx) = broadcast::channel(256);
     let service = DelegationService::new(session_manager.clone(), event_tx.clone());
     let agent_manager = Arc::new(AgentManager::new_with_delegation(
@@ -1072,9 +1060,8 @@ async fn card_tool_policy_deny_blocks_child_tool_call() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            temp.path().to_path_buf(),
+            vec![temp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -1139,15 +1126,11 @@ async fn max_depth_two_allows_one_level_of_nesting_and_blocks_the_next() {
     // The child kept a delegation config (one more level fits) — delegate
     // FROM the child session id. It has ended, but its persisted agent
     // config is what matters; re-register it as live for the spawn.
-    let parent = h.session_manager.get_session(&h.parent_id).unwrap();
-    let storage = FileSessionStorage::new();
-    let child = crucible_daemon::session_storage::SessionStorage::load(
-        &storage,
-        &first.child_session_id,
-        &parent.kiln,
-    )
-    .await
-    .expect("child persisted");
+    let storage = FileSessionStorage::new(h.session_manager.sessions_root().to_path_buf());
+    let child =
+        crucible_daemon::session_storage::SessionStorage::load(&storage, &first.child_session_id)
+            .await
+            .expect("child persisted");
     assert!(
         child.agent.as_ref().unwrap().delegation_config.is_some(),
         "with max_depth=2 the child must keep delegation for one more level"
@@ -1173,13 +1156,10 @@ async fn max_depth_two_allows_one_level_of_nesting_and_blocks_the_next() {
         .expect("second-level completes");
 
     // The grandchild must NOT carry delegation (a third level would exceed).
-    let grandchild = crucible_daemon::session_storage::SessionStorage::load(
-        &storage,
-        &second.child_session_id,
-        &parent.kiln,
-    )
-    .await
-    .expect("grandchild persisted");
+    let grandchild =
+        crucible_daemon::session_storage::SessionStorage::load(&storage, &second.child_session_id)
+            .await
+            .expect("grandchild persisted");
     assert!(
         grandchild
             .agent
@@ -1250,8 +1230,7 @@ async fn card_specialty_resolves_through_llm_models_table() {
     // inherit from the spawning context. This card pins no model but declares
     // `specialty: reasoning`, which the config maps to a provider/model.
     let temp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let (event_tx, _) = broadcast::channel(64);
     let service = DelegationService::new(session_manager.clone(), event_tx.clone());
     let llm_config = crucible_core::config::LlmConfig {
@@ -1310,9 +1289,8 @@ async fn card_specialty_resolves_through_llm_models_table() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            temp.path().to_path_buf(),
+            vec![temp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -1322,7 +1300,7 @@ async fn card_specialty_resolves_through_llm_models_table() {
         .await
         .unwrap();
 
-    let storage = FileSessionStorage::new();
+    let storage = FileSessionStorage::new(session_manager.sessions_root().to_path_buf());
     let mut resolved = std::collections::HashMap::new();
     for target in ["thinker", "coder", "mystic"] {
         let spawned = service
@@ -1342,7 +1320,6 @@ async fn card_specialty_resolves_through_llm_models_table() {
         let child = crucible_daemon::session_storage::SessionStorage::load(
             &storage,
             &spawned.child_session_id,
-            temp.path(),
         )
         .await
         .expect("child persisted");

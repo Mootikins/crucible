@@ -104,15 +104,15 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
     /// Create a new session.
     ///
     /// `params` is the caller's whole options table as JSON — the same shape
-    /// the daemon's `session.create` RPC takes (`type`, `kiln`, `workspace`,
-    /// `kilns`/`connect_kilns`, `agent_card`, `isolation`, …). It is a `Value`
-    /// rather than a typed struct because that request type lives in
-    /// `crucible-daemon`, which depends on this crate and not the reverse;
-    /// passing the object through means a plugin reaches the same fields an
-    /// RPC caller does without this crate re-declaring any of them.
+    /// the daemon's `session.create` RPC takes (`type`, `kilns`, `workspace`,
+    /// `agent_card`, `isolation`, …). It is a `Value` rather than a typed
+    /// struct because that request type lives in `crucible-daemon`, which
+    /// depends on this crate and not the reverse; passing the object through
+    /// means a plugin reaches the same fields an RPC caller does without this
+    /// crate re-declaring any of them.
     ///
-    /// Returns a JSON object with at least `{ id, session_type, state, kiln }`.
-    /// An omitted `kiln` is resolved daemon-side, not here.
+    /// Returns a JSON object with at least `{ id, session_type, state, kilns }`.
+    /// An omitted `kilns` is resolved daemon-side, not here.
     fn create_session(
         &self,
         params: serde_json::Value,

@@ -5,6 +5,7 @@ import type { SkillSummary, SkillDetail } from '@/lib/api';
 import { notificationActions } from '@/stores/notificationStore';
 import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';
+import { sessionDefaultKiln } from '@/lib/session-scope';
 
 const SEARCH_DEBOUNCE_MS = 200;
 
@@ -16,7 +17,8 @@ function useKilnPath() {
   const { currentSession } = useSessionSafe();
   return createResource<string | null>(async () => {
     const sess = currentSession();
-    if (sess?.kiln) return sess.kiln;
+    const kiln = sess ? sessionDefaultKiln(sess) : null;
+    if (kiln) return kiln;
     try {
       const config = await getConfig();
       return config.kiln_path || null;

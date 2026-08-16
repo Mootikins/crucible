@@ -8,7 +8,7 @@ tags: [help, cli, sessions]
 
 Manage daemon sessions through their full lifecycle: create, configure, send, pause,
 resume, end — plus inspection (`list`, `show`, `search`), the TUI bridge (`open`), and
-maintenance (`export`, `reindex`, `cleanup`, `load`). `s` and `sess` are aliases for
+maintenance (`export`, `cleanup`, `load`). `s` and `sess` are aliases for
 `session`.
 
 Every subcommand that takes a `SESSION_ID` accepts it as an optional positional; when
@@ -120,15 +120,17 @@ Opens the session in the TUI — the same as `cru chat --resume <id>`.
 Exports the transcript to markdown. `-o/--output <file>` (defaults to `session.md` in
 the session's directory), `--timestamps` to include them.
 
-### `cru session reindex`
-
-Rebuilds the session index from the JSONL files on disk. `--force` re-indexes sessions
-that are already indexed.
-
 ### `cru session cleanup`
 
 Deletes old sessions. `--older-than <days>` (default 30), `--dry-run` to list what
-would be deleted without deleting.
+would be deleted without deleting, `--all-kilns` to widen past the invoking kiln.
+
+Sessions all live in one root, so the scope is mandatory rather than implied by a
+directory: by default only sessions sharing a kiln with the invoking one are
+eligible, and the printed summary echoes the scope the daemon actually applied.
+
+`cru session reindex` is retired and hidden — sessions are no longer indexed as
+kiln notes. Invoking it prints why and exits 0.
 
 ### `cru session load [<id>]`
 

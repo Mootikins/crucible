@@ -381,7 +381,7 @@ fn rpc_scope_mutation_field_names_match_across_the_wire() {
     // is a single assertion on the shared builder.
     let scope_response = fn_body(&server, "fn scope_response(");
     let response_fields = captures(r#""([a-z_][a-z0-9_]*)""#, &scope_response);
-    let expected: BTreeSet<String> = ["session_id", "kiln", "workspace", "connected_kilns"]
+    let expected: BTreeSet<String> = ["session_id", "kilns", "workspace"]
         .into_iter()
         .map(str::to_string)
         .collect();

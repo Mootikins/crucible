@@ -3,8 +3,6 @@
 
 use super::*;
 use crate::agent_manager::messaging::review_capture::{delegated_child_id, needs_review_bracket};
-use crate::session_manager::SessionManager;
-use crate::session_storage::FileSessionStorage;
 use crucible_core::agent::ToolPolicy;
 use crucible_core::session::ReviewState;
 
@@ -20,9 +18,7 @@ fn manager() -> AgentManager {
     let (event_tx, _) = broadcast::channel(16);
     AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
-        session_manager: Arc::new(SessionManager::with_storage(Arc::new(
-            FileSessionStorage::new(),
-        ))),
+        session_manager: temp_session_manager(),
         background_manager: Arc::new(BackgroundJobManager::new(event_tx)),
         mcp_gateway: None,
         llm_config: None,
@@ -193,15 +189,12 @@ async fn a_human_edit_during_the_review_gates_hold_is_not_attributed_to_the_held
     // storage does not land inside the repo under review.
     let kiln = tempfile::tempdir().expect("kiln tempdir");
 
-    let session_manager = Arc::new(SessionManager::with_storage(Arc::new(
-        FileSessionStorage::new(),
-    )));
+    let session_manager = temp_session_manager();
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            kiln.path().to_path_buf(),
+            vec![kiln.path().to_path_buf()],
             Some(repo.path().to_path_buf()),
-            vec![],
             None,
         )
         .await

@@ -1,7 +1,7 @@
 //! Session management for the daemon.
 //!
 //! Manages active sessions and provides CRUD operations. Sessions are stored
-//! in their owning kiln's `.crucible/sessions/` directory.
+//! under the daemon's sessions root (see [`crate::session_storage`]).
 
 use crate::session_storage::{FileSessionStorage, SessionStorage};
 use chrono::{DateTime, Utc};
@@ -13,6 +13,80 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{debug, info};
 
+/// How a listing constrains the session's kiln set.
+///
+/// [`Self::Kilnless`] exists because zero kilns is a legitimate session shape
+/// — a tools-only agent — and it matches no [`Self::Attached`] filter. Without
+/// an explicit variant such a session vanished from every listing: the
+/// no-kiln-argument path in `handle_session_list` fans out over the open kilns
+/// and the data home, and a kiln-less session belongs to none of them.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum KilnFilter<'a> {
+    /// No constraint on the kiln set.
+    #[default]
+    Any,
+    /// Sessions that have this kiln attached.
+    Attached(&'a Path),
+    /// Sessions with an empty kiln set.
+    Kilnless,
+}
+
+impl KilnFilter<'_> {
+    #[must_use]
+    pub fn matches(&self, kilns: &[PathBuf]) -> bool {
+        match self {
+            Self::Any => true,
+            Self::Attached(kiln) => kilns.iter().any(|k| k == Path::new(kiln)),
+            Self::Kilnless => kilns.is_empty(),
+        }
+    }
+}
+
+/// A caller's own kiln set, and the reach it grants over the flat backlog.
+///
+/// One root now holds every session on the box, so the per-kiln directory that
+/// used to bound a handler is gone and scope has to be stated instead. The rule
+/// is **kiln-set overlap**: a session is in a caller's reach iff the two sets
+/// share at least one member. `session.search`, `session.list`,
+/// `session.list_persisted` and `session.cleanup` all answer to this one
+/// predicate — they are the four handlers that read or delete across the root,
+/// and a second spelling of the rule is a second place for it to be wrong.
+///
+/// It cannot be pushed into [`KilnFilter`], which tests one kiln at a time:
+/// overlap is a property of the *pair* of sets, and testing `kilns[0]` alone
+/// tests a fraction of the caller's reach — a caller on `[a, b]` misses every
+/// session that shares only `b`.
+///
+/// An empty scope overlaps nothing, which is the fail-closed answer *and* the
+/// right one for a kiln-less tools-only session (§4.1: an empty kiln set
+/// degrades capabilities). Each handler decides for itself what an empty scope
+/// means — an empty result, or a refusal for a destructive verb.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct KilnScope(Vec<PathBuf>);
+
+impl KilnScope {
+    #[must_use]
+    pub fn new(kilns: Vec<PathBuf>) -> Self {
+        Self(kilns)
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Whether `kilns` shares at least one member with this scope.
+    #[must_use]
+    pub fn overlaps(&self, kilns: &[PathBuf]) -> bool {
+        kilns.iter().any(|k| self.0.contains(k))
+    }
+
+    #[must_use]
+    pub fn kilns(&self) -> &[PathBuf] {
+        &self.0
+    }
+}
+
 /// Manages active sessions in the daemon.
 ///
 /// Sessions can be created, listed, paused, resumed, and ended.
@@ -22,12 +96,6 @@ pub struct SessionManager {
     sessions: DashMap<String, Session>,
     storage: Arc<dyn SessionStorage>,
     recording_senders: DashMap<String, mpsc::Sender<SessionEventMessage>>,
-    /// Last-known kiln for every session this manager has seen, kept even
-    /// after the session leaves the in-memory `sessions` map (end/eviction).
-    /// This is how a transparent revive resolves which kiln's storage to load
-    /// from without depending on the kiln being currently open. Cleared only
-    /// when a session is deleted.
-    session_kilns: DashMap<String, PathBuf>,
     /// Base directory under which per-session scratch workspaces are created
     /// for sessions started without an explicit workspace. When `None`, such
     /// sessions fall back to `workspace == kiln` (the historical behavior).
@@ -48,9 +116,23 @@ pub struct SessionManager {
 }
 
 impl SessionManager {
-    /// Create a new session manager with default file-based storage.
-    pub fn new() -> Self {
-        Self::with_storage(Arc::new(FileSessionStorage::new()))
+    /// Create a new session manager with file-based storage rooted at
+    /// `sessions_root` (see [`FileSessionStorage::root_for`]).
+    pub fn new(sessions_root: PathBuf) -> Self {
+        Self::with_storage(Arc::new(FileSessionStorage::new(sessions_root)))
+    }
+
+    /// Root directory holding every session's storage.
+    pub fn sessions_root(&self) -> &Path {
+        self.storage.sessions_root()
+    }
+
+    /// Storage directory for one session: `{sessions_root}/{session_id}`.
+    ///
+    /// Exists so callers that write beside the transcript (workflow snapshots,
+    /// recordings, review journals) do not each re-derive the layout.
+    pub fn session_dir(&self, session_id: &str) -> PathBuf {
+        self.sessions_root().join(session_id)
     }
 
     /// Create a session manager with a custom storage backend.
@@ -59,7 +141,6 @@ impl SessionManager {
             sessions: DashMap::new(),
             storage,
             recording_senders: DashMap::new(),
-            session_kilns: DashMap::new(),
             session_workspace_dir: None,
             session_locks: DashMap::new(),
         }
@@ -94,21 +175,19 @@ impl SessionManager {
     ///
     /// # Arguments
     /// * `session_type` - The type of session (Chat, Agent, Workflow)
-    /// * `kiln` - The kiln path where the session will be stored
-    /// * `workspace` - Optional workspace path (defaults to kiln)
-    /// * `connected_kilns` - Additional kilns this session can query
+    /// * `kilns` - Every kiln this session can query; flat and order-insensitive
+    /// * `workspace` - Optional workspace path (defaults to the first kiln)
     ///
     /// # Returns
     /// The created session, or an error if persistence fails
     pub async fn create_session(
         &self,
         session_type: SessionType,
-        kiln: PathBuf,
+        kilns: Vec<PathBuf>,
         workspace: Option<PathBuf>,
-        connected_kilns: Vec<PathBuf>,
         recording_mode: Option<RecordingMode>,
     ) -> Result<Session, SessionError> {
-        let mut session = Session::new(session_type, kiln);
+        let mut session = Session::new(session_type, kilns);
 
         if let Some(ws) = workspace {
             session = session.with_workspace(ws);
@@ -135,10 +214,6 @@ impl SessionManager {
             }
         }
 
-        if !connected_kilns.is_empty() {
-            session = session.with_connected_kilns(connected_kilns);
-        }
-
         if let Some(mode) = recording_mode {
             session = session.with_recording_mode(mode);
         }
@@ -150,8 +225,6 @@ impl SessionManager {
 
         // Store in active sessions
         let session_clone = session.clone();
-        self.session_kilns
-            .insert(session_id.clone(), session_clone.kiln.clone());
         self.sessions.insert(session_id.clone(), session);
 
         info!(session_id = %session_id, session_type = %session_clone.session_type, "Session created");
@@ -177,9 +250,8 @@ impl SessionManager {
         agent: crucible_core::session::SessionAgent,
         title: Option<String>,
     ) -> Result<Session, SessionError> {
-        let mut session = Session::new(SessionType::Agent, parent.kiln.clone())
+        let mut session = Session::new(SessionType::Agent, parent.kilns.clone())
             .with_workspace(parent.workspace.clone())
-            .with_connected_kilns(parent.connected_kilns.clone())
             .with_isolation(parent.isolation.clone())
             .with_parent(parent.id.clone());
         session.agent = Some(agent);
@@ -188,8 +260,6 @@ impl SessionManager {
         let session_id = session.id.clone();
         self.storage.save(&session).await?;
         let session_clone = session.clone();
-        self.session_kilns
-            .insert(session_id.clone(), session_clone.kiln.clone());
         self.sessions.insert(session_id.clone(), session);
 
         info!(
@@ -200,12 +270,12 @@ impl SessionManager {
         Ok(session_clone)
     }
 
-    /// Ids of persisted child sessions of `parent_id` in `kiln`. Used by the
+    /// Ids of persisted child sessions of `parent_id`. Used by the
     /// archive/delete cascades: children are lifecycle-subordinate to their
     /// parent and must not outlive it in listings.
-    pub async fn child_session_ids(&self, parent_id: &str, kiln: &Path) -> Vec<String> {
+    pub async fn child_session_ids(&self, parent_id: &str) -> Vec<String> {
         self.storage
-            .list(kiln)
+            .list()
             .await
             .unwrap_or_default()
             .into_iter()
@@ -221,17 +291,15 @@ impl SessionManager {
     ///
     /// # Arguments
     /// * `session_id` - The ID of the session to resume
-    /// * `kiln` - The kiln path where the session is stored
     ///
     /// # Returns
     /// The resumed session with state set to Active
     pub async fn resume_session_from_storage(
         &self,
         session_id: &str,
-        kiln: &Path,
     ) -> Result<Session, SessionError> {
         // Load from storage
-        let mut session = self.storage.load(session_id, kiln).await?;
+        let mut session = self.storage.load(session_id).await?;
 
         // Always-resumable: a session loaded from storage becomes live
         // regardless of its persisted lifecycle state. `Session::resume()`
@@ -244,8 +312,6 @@ impl SessionManager {
 
         // Store in memory
         let session_clone = session.clone();
-        self.session_kilns
-            .insert(session.id.clone(), session.kiln.clone());
         self.sessions.insert(session.id.clone(), session);
 
         info!(session_id = %session_id, "Session resumed from storage");
@@ -258,22 +324,15 @@ impl SessionManager {
     pub async fn load_session_events(
         &self,
         session_id: &str,
-        kiln: &Path,
         limit: Option<usize>,
         offset: Option<usize>,
     ) -> Result<Vec<serde_json::Value>, SessionError> {
-        self.storage
-            .load_events(session_id, kiln, limit, offset)
-            .await
+        self.storage.load_events(session_id, limit, offset).await
     }
 
     /// Count total events for a session.
-    pub async fn count_session_events(
-        &self,
-        session_id: &str,
-        kiln: &Path,
-    ) -> Result<usize, SessionError> {
-        self.storage.count_events(session_id, kiln).await
+    pub async fn count_session_events(&self, session_id: &str) -> Result<usize, SessionError> {
+        self.storage.count_events(session_id).await
     }
 
     /// Get a session by ID.
@@ -282,27 +341,14 @@ impl SessionManager {
     }
 
     pub fn register_transient(&self, session: Session) {
-        self.session_kilns
-            .insert(session.id.clone(), session.kiln.clone());
         self.sessions.insert(session.id.clone(), session);
     }
 
     pub async fn update_session(&self, session: &Session) -> Result<(), SessionError> {
         let _guard = self.persist_guard(&session.id).await;
         self.storage.save(session).await?;
-        self.session_kilns
-            .insert(session.id.clone(), session.kiln.clone());
         self.sessions.insert(session.id.clone(), session.clone());
         Ok(())
-    }
-
-    /// Last-known kiln for a session, even after it has left the in-memory
-    /// `sessions` map (ended or evicted). Used by the send path to resolve
-    /// which kiln's storage to revive an idle session from. Returns `None`
-    /// only for sessions this manager has never seen (e.g. after a daemon
-    /// restart), where the caller must fall back to another kiln source.
-    pub fn session_kiln(&self, session_id: &str) -> Option<PathBuf> {
-        self.session_kilns.get(session_id).map(|r| r.clone())
     }
 
     /// List all active sessions.
@@ -316,10 +362,9 @@ impl SessionManager {
     /// List sessions filtered by criteria (in-memory only).
     ///
     /// For listing that includes persisted sessions, use `list_sessions_filtered_async`.
-    #[allow(dead_code)] // sync counterpart of list_sessions_filtered_async, exercised by tests
     pub fn list_sessions_filtered(
         &self,
-        kiln: Option<&PathBuf>,
+        kiln: KilnFilter<'_>,
         workspace: Option<&PathBuf>,
         session_type: Option<SessionType>,
         state: Option<SessionState>,
@@ -329,7 +374,7 @@ impl SessionManager {
             .iter()
             .filter(|r| {
                 let s = r.value();
-                kiln.is_none_or(|k| &s.kiln == k)
+                kiln.matches(&s.kilns)
                     && workspace.is_none_or(|w| &s.workspace == w)
                     && session_type.is_none_or(|t| s.session_type == t)
                     && state.is_none_or(|st| s.state == st)
@@ -345,7 +390,7 @@ impl SessionManager {
     /// In-memory sessions take precedence over storage (they have the latest state).
     pub async fn list_sessions_filtered_async(
         &self,
-        kiln: Option<&PathBuf>,
+        kiln: KilnFilter<'_>,
         workspace: Option<&PathBuf>,
         session_type: Option<SessionType>,
         state: Option<SessionState>,
@@ -359,7 +404,7 @@ impl SessionManager {
         // First, collect in-memory sessions (they have the latest state)
         for entry in self.sessions.iter() {
             let s = entry.value();
-            if kiln.is_none_or(|k| &s.kiln == k)
+            if kiln.matches(&s.kilns)
                 && workspace.is_none_or(|w| &s.workspace == w)
                 && session_type.is_none_or(|t| s.session_type == t)
                 && state.is_none_or(|st| s.state == st)
@@ -370,20 +415,20 @@ impl SessionManager {
             }
         }
 
-        // Then, load persisted sessions from storage (if kiln is specified)
-        if let Some(kiln_path) = kiln {
-            if let Ok(persisted) = self.storage.list(kiln_path).await {
-                for summary in persisted {
-                    if seen_ids.contains(&summary.id) {
-                        continue;
-                    }
-                    if workspace.is_none_or(|w| &summary.workspace == w)
-                        && session_type.is_none_or(|t| summary.session_type == t)
-                        && state.is_none_or(|st| summary.state == st)
-                        && (include_archived || !summary.archived)
-                    {
-                        results.push(summary);
-                    }
+        // Then, persisted sessions. One root holds them all, so `kiln` is a
+        // filter over each summary's kiln set rather than a directory to scan.
+        if let Ok(persisted) = self.storage.list().await {
+            for summary in persisted {
+                if seen_ids.contains(&summary.id) {
+                    continue;
+                }
+                if kiln.matches(&summary.kilns)
+                    && workspace.is_none_or(|w| &summary.workspace == w)
+                    && session_type.is_none_or(|t| summary.session_type == t)
+                    && state.is_none_or(|st| summary.state == st)
+                    && (include_archived || !summary.archived)
+                {
+                    results.push(summary);
                 }
             }
         }
@@ -510,7 +555,7 @@ impl SessionManager {
         Ok(session)
     }
 
-    pub async fn delete_session(&self, session_id: &str, kiln: &Path) -> Result<(), SessionError> {
+    pub async fn delete_session(&self, session_id: &str) -> Result<(), SessionError> {
         let was_in_memory = self.sessions.get(session_id).is_some();
 
         if let Some(session) = self.get_session(session_id) {
@@ -521,10 +566,9 @@ impl SessionManager {
 
         self.sessions.remove(session_id);
         self.recording_senders.remove(session_id);
-        self.session_kilns.remove(session_id);
         self.session_locks.remove(session_id);
 
-        let session_dir = FileSessionStorage::sessions_base(kiln).join(session_id);
+        let session_dir = self.session_dir(session_id);
         let persisted_exists = session_dir.exists();
 
         if !was_in_memory && !persisted_exists {
@@ -539,15 +583,11 @@ impl SessionManager {
             tokio::fs::remove_dir_all(&session_dir).await?;
         }
 
-        info!(session_id = %session_id, kiln = %kiln.display(), "Session deleted");
+        info!(session_id = %session_id, "Session deleted");
         Ok(())
     }
 
-    pub async fn archive_session(
-        &self,
-        session_id: &str,
-        kiln: &Path,
-    ) -> Result<Session, SessionError> {
+    pub async fn archive_session(&self, session_id: &str) -> Result<Session, SessionError> {
         if let Some(session) = self.get_session(session_id) {
             if matches!(session.state, SessionState::Active | SessionState::Paused) {
                 self.end_session(session_id).await?;
@@ -557,7 +597,7 @@ impl SessionManager {
         // After `end_session` above, never before: the guard is not reentrant.
         let _guard = self.persist_guard(session_id).await;
 
-        let session_dir = FileSessionStorage::sessions_base(kiln).join(session_id);
+        let session_dir = self.session_dir(session_id);
         let meta_path = session_dir.join("meta.json");
         let legacy_path = session_dir.join("session.json");
 
@@ -578,18 +618,14 @@ impl SessionManager {
         self.sessions.remove(session_id);
         self.recording_senders.remove(session_id);
 
-        info!(session_id = %session_id, kiln = %kiln.display(), "Session archived");
+        info!(session_id = %session_id, "Session archived");
         Ok(session)
     }
 
-    pub async fn unarchive_session(
-        &self,
-        session_id: &str,
-        kiln: &Path,
-    ) -> Result<Session, SessionError> {
+    pub async fn unarchive_session(&self, session_id: &str) -> Result<Session, SessionError> {
         let _guard = self.persist_guard(session_id).await;
 
-        let session_dir = FileSessionStorage::sessions_base(kiln).join(session_id);
+        let session_dir = self.session_dir(session_id);
         let meta_path = session_dir.join("meta.json");
         let legacy_path = session_dir.join("session.json");
 
@@ -607,7 +643,7 @@ impl SessionManager {
 
         tokio::fs::write(&meta_path, serde_json::to_string_pretty(&session)?).await?;
 
-        info!(session_id = %session_id, kiln = %kiln.display(), "Session unarchived");
+        info!(session_id = %session_id, "Session unarchived");
         Ok(session)
     }
 
@@ -703,73 +739,62 @@ impl SessionManager {
     /// Returns how many sessions were titled. Emits `title_changed` per hit.
     pub async fn title_untitled_sessions(
         &self,
-        kilns: &[PathBuf],
         event_tx: &tokio::sync::broadcast::Sender<SessionEventMessage>,
     ) -> usize {
         let mut titled = 0;
-        let mut seen = std::collections::HashSet::new();
-        for kiln in kilns {
-            for summary in self
-                .list_sessions_filtered_async(Some(kiln), None, None, None, false)
-                .await
-            {
-                if !seen.insert(summary.id.clone()) {
-                    continue;
-                }
-                // Delegated children are titled at creation and hidden from
-                // listings — never re-title them.
-                if summary.parent_session_id.is_some() {
-                    continue;
-                }
-                if summary
-                    .title
-                    .as_deref()
-                    .is_some_and(|t| !t.trim().is_empty())
-                {
-                    continue;
-                }
-                // First user message from the log; empty sessions stay untitled
-                // (the archive sweep owns those).
-                let Ok(events) = self
-                    .storage
-                    .load_events(&summary.id, kiln, Some(200), None)
-                    .await
-                else {
-                    continue;
-                };
-                let first_user = events.iter().find_map(|e| {
-                    if e.get("event").and_then(|v| v.as_str()) != Some("user_message") {
-                        return None;
-                    }
-                    e.get("data")?.get("content")?.as_str().map(str::to_string)
-                });
-                let Some(first_user) = first_user else {
-                    continue;
-                };
-                let title = crate::agent_manager::title::truncate_to_title(&first_user);
-
-                // In-memory sessions go through set_title (persists too);
-                // cold ones get patched directly in storage.
-                if self.set_title(&summary.id, title.clone()).await.is_err() {
-                    let Ok(mut session) = self.storage.load(&summary.id, kiln).await else {
-                        continue;
-                    };
-                    session.title = Some(title.clone());
-                    if self.storage.save(&session).await.is_err() {
-                        continue;
-                    }
-                }
-                crate::event_emitter::emit_event(
-                    event_tx,
-                    SessionEventMessage::new(
-                        &summary.id,
-                        "title_changed",
-                        serde_json::json!({ "title": title }),
-                    ),
-                );
-                info!(session_id = %summary.id, title = %title, "Catch-up title applied");
-                titled += 1;
+        for summary in self
+            .list_sessions_filtered_async(KilnFilter::Any, None, None, None, false)
+            .await
+        {
+            // Delegated children are titled at creation and hidden from
+            // listings — never re-title them.
+            if summary.parent_session_id.is_some() {
+                continue;
             }
+            if summary
+                .title
+                .as_deref()
+                .is_some_and(|t| !t.trim().is_empty())
+            {
+                continue;
+            }
+            // First user message from the log; empty sessions stay untitled
+            // (the archive sweep owns those).
+            let Ok(events) = self.storage.load_events(&summary.id, Some(200), None).await else {
+                continue;
+            };
+            let first_user = events.iter().find_map(|e| {
+                if e.get("event").and_then(|v| v.as_str()) != Some("user_message") {
+                    return None;
+                }
+                e.get("data")?.get("content")?.as_str().map(str::to_string)
+            });
+            let Some(first_user) = first_user else {
+                continue;
+            };
+            let title = crate::agent_manager::title::truncate_to_title(&first_user);
+
+            // In-memory sessions go through set_title (persists too);
+            // cold ones get patched directly in storage.
+            if self.set_title(&summary.id, title.clone()).await.is_err() {
+                let Ok(mut session) = self.storage.load(&summary.id).await else {
+                    continue;
+                };
+                session.title = Some(title.clone());
+                if self.storage.save(&session).await.is_err() {
+                    continue;
+                }
+            }
+            crate::event_emitter::emit_event(
+                event_tx,
+                SessionEventMessage::new(
+                    &summary.id,
+                    "title_changed",
+                    serde_json::json!({ "title": title }),
+                ),
+            );
+            info!(session_id = %summary.id, title = %title, "Catch-up title applied");
+            titled += 1;
         }
         titled
     }
@@ -792,12 +817,6 @@ impl SessionManager {
 
         self.storage.save(&session).await?;
         Ok(())
-    }
-}
-
-impl Default for SessionManager {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

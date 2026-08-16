@@ -383,7 +383,7 @@ fn relative_bases(stream_ctx: &StreamContext) -> Vec<PathBuf> {
         .session_manager
         .get_session(&stream_ctx.session_id)
     {
-        for base in std::iter::once(&session.kiln).chain(session.connected_kilns.iter()) {
+        for base in &session.kilns {
             if !bases.contains(base) {
                 bases.push(base.clone());
             }

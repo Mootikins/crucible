@@ -67,9 +67,8 @@ async fn create_session(client: &DaemonClient, kiln: &std::path::Path) -> String
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: Some(kiln.to_path_buf()),
+            kilns: vec![kiln.to_path_buf()],
             workspace: None,
-            connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
             agent_type: None,
@@ -95,45 +94,44 @@ async fn connect_then_disconnect_kiln_roundtrips() {
         .expect("Failed to connect");
     let session_id = create_session(&client, kiln_dir.path()).await;
 
+    let created_with = vec![serde_json::json!(kiln_dir.path())];
+    let with_extra = vec![
+        serde_json::json!(kiln_dir.path()),
+        serde_json::json!(extra_kiln.path()),
+    ];
+
     let scope = client
         .session_connect_kiln(&session_id, extra_kiln.path())
         .await
         .expect("connect_kiln failed");
-    let connected = scope["connected_kilns"].as_array().unwrap();
-    assert_eq!(connected.len(), 1);
-    assert_eq!(
-        connected[0].as_str().unwrap(),
-        extra_kiln.path().to_string_lossy()
-    );
+    assert_eq!(scope["kilns"].as_array(), Some(&with_extra));
 
     // Idempotent: connecting again doesn't duplicate.
     let scope = client
         .session_connect_kiln(&session_id, extra_kiln.path())
         .await
         .expect("second connect_kiln failed");
-    assert_eq!(scope["connected_kilns"].as_array().unwrap().len(), 1);
+    assert_eq!(scope["kilns"].as_array(), Some(&with_extra));
 
     let scope = client
         .session_disconnect_kiln(&session_id, extra_kiln.path())
         .await
         .expect("disconnect_kiln failed");
-    assert!(scope["connected_kilns"]
-        .as_array()
-        .map(|a| a.is_empty())
-        .unwrap_or(true));
+    assert_eq!(scope["kilns"].as_array(), Some(&created_with));
 
-    // Persisted: session.get reflects the final (empty) connected set.
+    // Persisted: session.get reflects the final set.
     let session = client.session_get(&session_id).await.unwrap();
-    assert!(session["connected_kilns"]
-        .as_array()
-        .map(|a| a.is_empty())
-        .unwrap_or(true));
+    assert_eq!(session["kilns"].as_array(), Some(&created_with));
 
     server.shutdown().await;
 }
 
+/// No kiln in the set is privileged any more: the one a session was created
+/// with detaches like any other, and re-attaching it is an ordinary idempotent
+/// connect rather than an "already primary" error. Flattening removed the
+/// distinction, and this is the test that used to assert it.
 #[tokio::test]
-async fn primary_kiln_cannot_be_detached_or_reattached() {
+async fn the_kiln_a_session_was_created_with_detaches_like_any_other() {
     let server = TestServer::start().await.expect("Failed to start server");
     let kiln_dir = tempfile::tempdir().unwrap();
 
@@ -142,22 +140,24 @@ async fn primary_kiln_cannot_be_detached_or_reattached() {
         .expect("Failed to connect");
     let session_id = create_session(&client, kiln_dir.path()).await;
 
-    let err = client
+    let scope = client
         .session_disconnect_kiln(&session_id, kiln_dir.path())
         .await
-        .expect_err("detaching the primary kiln must fail");
-    assert!(
-        err.to_string().contains("primary kiln"),
-        "unexpected error: {err}"
+        .expect("detaching the create-time kiln is allowed");
+    assert_eq!(
+        scope["kilns"].as_array().map(Vec::len),
+        Some(0),
+        "the set must be empty after detaching its only member: {:?}",
+        scope["kilns"]
     );
 
-    let err = client
+    let scope = client
         .session_connect_kiln(&session_id, kiln_dir.path())
         .await
-        .expect_err("attaching the primary kiln must fail");
-    assert!(
-        err.to_string().contains("primary kiln"),
-        "unexpected error: {err}"
+        .expect("re-attaching it is an ordinary connect");
+    assert_eq!(
+        scope["kilns"].as_array(),
+        Some(&vec![serde_json::json!(kiln_dir.path())])
     );
 
     server.shutdown().await;
@@ -242,12 +242,12 @@ async fn connect_kiln_rejected_by_trust_leaves_kiln_unopened() {
         "rejected kiln leaked into kiln.list: {listed}"
     );
 
-    // Session scope is unchanged — no connected kiln was added.
+    // Session scope is unchanged — the rejected kiln was never added.
     let session = client.session_get(&session_id).await.unwrap();
-    assert!(session["connected_kilns"]
-        .as_array()
-        .map(|a| a.is_empty())
-        .unwrap_or(true));
+    assert_eq!(
+        session["kilns"].as_array(),
+        Some(&vec![serde_json::json!(kiln_dir.path())])
+    );
 
     server.shutdown().await;
 }

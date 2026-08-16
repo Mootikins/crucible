@@ -295,7 +295,7 @@ mod session_helpers {
     /// Build a session.create request
     pub fn session_create_request(id: u32, kiln_path: &str) -> String {
         format!(
-            r#"{{"jsonrpc":"2.0","id":{},"method":"session.create","params":{{"type":"chat","kiln":"{}"}}}}"#,
+            r#"{{"jsonrpc":"2.0","id":{},"method":"session.create","params":{{"type":"chat","kilns":["{}"]}}}}"#,
             id, kiln_path
         )
     }
@@ -471,8 +471,9 @@ async fn test_e2e_session_persistence() {
     let response = conn.call(&session_create_request(1, &kiln_path)).await;
     let session_id = get_str(get_result(&response), "session_id");
 
-    // Check that meta.json was created
-    let session_dir = kiln_dir.join(".crucible").join("sessions").join(session_id);
+    // Check that meta.json was created — under the daemon's sessions root, not
+    // inside the kiln.
+    let session_dir = daemon.sessions_root().join(session_id);
 
     // Poll for file to exist with timeout (avoids flaky sleep)
     let meta_file = session_dir.join("meta.json");

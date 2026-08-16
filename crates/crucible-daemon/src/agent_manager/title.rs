@@ -57,7 +57,10 @@ impl AgentManager {
         };
 
         let tree = self
-            .get_or_rebuild_session_tree(session_id, &session.jsonl_path())
+            .get_or_rebuild_session_tree(
+                session_id,
+                &session.jsonl_path(self.session_manager.sessions_root()),
+            )
             .await;
         let (first_user, first_agent) = {
             let tree = tree.lock().await;

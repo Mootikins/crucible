@@ -33,8 +33,7 @@ Commands:
   show       Show session details
   open       Open a previous session in the TUI (same as `cru chat --resume`)
   export     Export session to markdown file
-  reindex    Rebuild session index from JSONL files
-  cleanup    Clean up old sessions
+  cleanup    Clean up old sessions in this kiln's scope
   create     Create a new daemon session
   pause      Pause a daemon session
   resume     Resume a paused daemon session

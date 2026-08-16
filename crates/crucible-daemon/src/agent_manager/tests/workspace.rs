@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::temp_session_manager;
 use crucible_core::session::Session;
 use serde_json::json;
 use std::path::{Path, PathBuf};
@@ -28,8 +29,7 @@ async fn session_workspace_used_for_workspace_tools() {
     let kiln_dir = TempDir::new().unwrap();
     let workspace_dir = TempDir::new().unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let agent_manager = create_test_agent_manager_with_workspace_root(
         session_manager.clone(),
         workspace_dir.path(),
@@ -38,9 +38,8 @@ async fn session_workspace_used_for_workspace_tools() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            kiln_dir.path().to_path_buf(),
+            vec![kiln_dir.path().to_path_buf()],
             Some(workspace_dir.path().to_path_buf()),
-            vec![],
             None,
         )
         .await
@@ -83,8 +82,7 @@ async fn session_kiln_used_for_crucible_mcp_server() {
     )
     .unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let agent_manager = create_test_agent_manager_with_workspace_root(
         session_manager.clone(),
         workspace_dir.path(),
@@ -93,9 +91,8 @@ async fn session_kiln_used_for_crucible_mcp_server() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            kiln_dir.path().to_path_buf(),
+            vec![kiln_dir.path().to_path_buf()],
             Some(workspace_dir.path().to_path_buf()),
-            vec![],
             None,
         )
         .await
@@ -139,17 +136,15 @@ async fn regression_workspace_equals_kiln_tools_still_work() {
     let shared_dir = TempDir::new().unwrap();
     std::fs::write(shared_dir.path().join("shared-note.md"), "# shared\n").unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let agent_manager =
         create_test_agent_manager_with_workspace_root(session_manager.clone(), shared_dir.path());
 
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            shared_dir.path().to_path_buf(),
+            vec![shared_dir.path().to_path_buf()],
             Some(shared_dir.path().to_path_buf()),
-            vec![],
             None,
         )
         .await
@@ -197,14 +192,13 @@ async fn empty_workspace_uses_default_dispatcher_without_panic() {
     let kiln_dir = TempDir::new().unwrap();
     let default_workspace_root = TempDir::new().unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let agent_manager = create_test_agent_manager_with_workspace_root(
         session_manager.clone(),
         default_workspace_root.path(),
     );
 
-    let session = Session::new(SessionType::Chat, kiln_dir.path().to_path_buf())
+    let session = Session::new(SessionType::Chat, vec![kiln_dir.path().to_path_buf()])
         .with_workspace(PathBuf::new());
     session_manager.register_transient(session.clone());
 

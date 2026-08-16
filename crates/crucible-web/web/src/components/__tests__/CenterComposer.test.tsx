@@ -172,7 +172,7 @@ describe('CenterComposer', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(createSessionMock).toHaveBeenCalledTimes(1));
     const [scope, opts] = createSessionMock.mock.calls[0];
-    expect(scope.kiln).toBe('/home/user/kilns/helios');
+    expect(scope.kilns).toEqual(['/home/user/kilns/helios']);
     expect(opts.initialMessage).toBe('hello world');
   });
 

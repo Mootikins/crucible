@@ -7,7 +7,7 @@ use crucible_daemon::{
 };
 use futures::future::BoxFuture;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
@@ -533,22 +533,21 @@ impl ReconnectingDaemon {
         .await
     }
 
+    /// `kilns` is the caller's whole kiln set: `session.search` scopes by
+    /// kiln-set overlap, so sending a subset hides the sessions that share the
+    /// members left out.
     pub async fn session_search(
         &self,
         query: &str,
-        kiln_path: Option<&Path>,
+        kilns: &[PathBuf],
         limit: Option<usize>,
     ) -> anyhow::Result<serde_json::Value> {
         let query = query.to_string();
-        let kiln_path = kiln_path.map(Path::to_path_buf);
+        let kilns = kilns.to_vec();
         self.call_with_reconnect("session.search", move |daemon| {
             let query = query.clone();
-            let kiln_path = kiln_path.clone();
-            Box::pin(async move {
-                daemon
-                    .session_search(&query, kiln_path.as_deref(), limit)
-                    .await
-            })
+            let kilns = kilns.clone();
+            Box::pin(async move { daemon.session_search(&query, &kilns, limit).await })
         })
         .await
     }
@@ -565,18 +564,15 @@ impl ReconnectingDaemon {
     pub async fn session_resume_from_storage(
         &self,
         session_id: &str,
-        kiln: &Path,
         limit: Option<usize>,
         offset: Option<usize>,
     ) -> anyhow::Result<serde_json::Value> {
         let session_id = session_id.to_string();
-        let kiln = kiln.to_path_buf();
         self.call_with_reconnect("session.resume_from_storage", move |daemon| {
             let session_id = session_id.clone();
-            let kiln = kiln.clone();
             Box::pin(async move {
                 daemon
-                    .session_resume_from_storage(&session_id, &kiln, limit, offset)
+                    .session_resume_from_storage(&session_id, limit, offset)
                     .await
             })
         })
@@ -610,47 +606,29 @@ impl ReconnectingDaemon {
         .await
     }
 
-    pub async fn session_delete(
-        &self,
-        session_id: &str,
-        kiln: &Path,
-    ) -> anyhow::Result<serde_json::Value> {
+    pub async fn session_delete(&self, session_id: &str) -> anyhow::Result<serde_json::Value> {
         let session_id = session_id.to_string();
-        let kiln = kiln.to_path_buf();
         self.call_with_reconnect("session.delete", move |daemon| {
             let session_id = session_id.clone();
-            let kiln = kiln.clone();
-            Box::pin(async move { daemon.session_delete(&session_id, &kiln).await })
+            Box::pin(async move { daemon.session_delete(&session_id).await })
         })
         .await
     }
 
-    pub async fn session_archive(
-        &self,
-        session_id: &str,
-        kiln: &Path,
-    ) -> anyhow::Result<serde_json::Value> {
+    pub async fn session_archive(&self, session_id: &str) -> anyhow::Result<serde_json::Value> {
         let session_id = session_id.to_string();
-        let kiln = kiln.to_path_buf();
         self.call_with_reconnect("session.archive", move |daemon| {
             let session_id = session_id.clone();
-            let kiln = kiln.clone();
-            Box::pin(async move { daemon.session_archive(&session_id, &kiln).await })
+            Box::pin(async move { daemon.session_archive(&session_id).await })
         })
         .await
     }
 
-    pub async fn session_unarchive(
-        &self,
-        session_id: &str,
-        kiln: &Path,
-    ) -> anyhow::Result<serde_json::Value> {
+    pub async fn session_unarchive(&self, session_id: &str) -> anyhow::Result<serde_json::Value> {
         let session_id = session_id.to_string();
-        let kiln = kiln.to_path_buf();
         self.call_with_reconnect("session.unarchive", move |daemon| {
             let session_id = session_id.clone();
-            let kiln = kiln.clone();
-            Box::pin(async move { daemon.session_unarchive(&session_id, &kiln).await })
+            Box::pin(async move { daemon.session_unarchive(&session_id).await })
         })
         .await
     }
@@ -1212,19 +1190,19 @@ impl ReconnectingDaemon {
 
     pub async fn session_render_markdown(
         &self,
-        session_dir: &Path,
+        session_id: &str,
         include_timestamps: Option<bool>,
         include_tokens: Option<bool>,
         include_tools: Option<bool>,
         max_content_length: Option<usize>,
     ) -> anyhow::Result<String> {
-        let session_dir = session_dir.to_path_buf();
+        let session_id = session_id.to_string();
         self.call_with_reconnect("session.render_markdown", move |daemon| {
-            let session_dir = session_dir.clone();
+            let session_id = session_id.clone();
             Box::pin(async move {
                 daemon
                     .session_render_markdown(
-                        &session_dir,
+                        &session_id,
                         include_timestamps,
                         include_tokens,
                         include_tools,

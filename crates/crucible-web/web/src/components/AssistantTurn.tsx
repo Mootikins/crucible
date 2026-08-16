@@ -10,6 +10,7 @@
  * fine-grained without any wrapper churn or DOM remounts.
  */
 import { Component, For, Show, createMemo, createSignal, createEffect, onCleanup } from 'solid-js';
+import { sessionDefaultKiln } from '@/lib/session-scope';
 import { Copy, Check, RefreshCw } from 'lucide-solid';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ToolCard } from './ToolCard';
@@ -124,7 +125,8 @@ export const AssistantTurn: Component<{
 
   const sessionKiln = () => {
     const sid = chat.sessionId?.();
-    return sessionCtx.sessions().find((s) => s.id === sid)?.kiln;
+    const s = sessionCtx.sessions().find((x) => x.id === sid);
+    return s ? sessionDefaultKiln(s) ?? undefined : undefined;
   };
 
   // One click-delegation implementation shared with the note reading view

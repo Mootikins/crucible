@@ -154,14 +154,14 @@ fn the_knowledge_base_list_is_session_context_not_cached_prefix() {
     let prompt = build_enriched_prompt(
         Path::new("/workspace"),
         Some(tmp.path()),
-        &[],
+        std::slice::from_ref(&tmp.path().to_path_buf()),
         "base",
         "",
         "",
     );
 
     assert!(prompt.volatile.contains("Knowledge bases:"));
-    assert!(prompt.volatile.contains("My Kiln (primary)"));
+    assert!(prompt.volatile.contains("My Kiln"));
     assert!(!prompt.stable.contains("Knowledge bases:"));
 }
 
@@ -179,7 +179,7 @@ fn build_enriched_prompt_includes_kiln_names() {
     let result = build_enriched_prompt(
         Path::new("/workspace"),
         Some(tmp.path()),
-        &[],
+        std::slice::from_ref(&tmp.path().to_path_buf()),
         "base",
         "",
         "",
@@ -189,10 +189,7 @@ fn build_enriched_prompt_includes_kiln_names() {
         result.contains("Knowledge bases:"),
         "should have kb section"
     );
-    assert!(
-        result.contains("My Kiln (primary)"),
-        "should list primary kiln"
-    );
+    assert!(result.contains("My Kiln"), "should list the session's kiln");
 }
 
 #[test]
@@ -217,7 +214,7 @@ fn test_unsupported_agent_type() {
             lua: None,
             workspace: Path::new("/tmp"),
             kiln_path: None,
-            connected_kilns: &[],
+            session_kilns: &[],
             parent_session_id: None,
             background_spawner: None,
             delegation_spawner: None,
@@ -403,7 +400,7 @@ async fn rules_file_contents_reach_the_system_prompt() {
         lua: None,
         workspace: ws.path(),
         kiln_path: None,
-        connected_kilns: &[],
+        session_kilns: &[],
         parent_session_id: None,
         background_spawner: None,
         delegation_spawner: None,
@@ -471,7 +468,7 @@ async fn session_generation_and_context_settings_reach_the_agent_handle() {
         lua: None,
         workspace: ws.path(),
         kiln_path: None,
-        connected_kilns: &[],
+        session_kilns: &[],
         parent_session_id: None,
         background_spawner: None,
         delegation_spawner: None,
@@ -508,7 +505,7 @@ async fn test_create_ollama_agent() {
         lua: None,
         workspace: Path::new("/tmp"),
         kiln_path: None,
-        connected_kilns: &[],
+        session_kilns: &[],
         parent_session_id: None,
         background_spawner: None,
         delegation_spawner: None,
@@ -539,7 +536,7 @@ async fn internal_agent_type_dispatches_to_internal_branch() {
         lua: None,
         workspace: Path::new("/tmp"),
         kiln_path: None,
-        connected_kilns: &[],
+        session_kilns: &[],
         parent_session_id: None,
         background_spawner: None,
         delegation_spawner: None,
@@ -572,7 +569,7 @@ async fn acp_agent_type_dispatches_to_acp_branch() {
         lua: None,
         workspace: Path::new("/tmp"),
         kiln_path: None,
-        connected_kilns: &[],
+        session_kilns: &[],
         parent_session_id: None,
         background_spawner: None,
         delegation_spawner: None,

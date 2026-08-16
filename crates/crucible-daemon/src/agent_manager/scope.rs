@@ -1,4 +1,4 @@
-//! Mid-session scope mutations: connected kilns and workspace.
+//! Mid-session scope mutations: the session's kiln set and workspace.
 //!
 //! Detach is always safe (it only shrinks future retrieval/tool scope);
 //! attach-side trust validation lives in the RPC handlers, which have the
@@ -19,6 +19,43 @@ use crate::event_emitter::emit_event;
 use crucible_core::Session;
 use std::path::{Path, PathBuf};
 
+/// The filesystem containment for a session's workspace tools: `(allowed,
+/// denied)`, deepest match wins.
+///
+/// Allowed is the session's kilns plus its own storage directory. Denied is
+/// every place a *transcript* lives: the flat sessions root, and — because
+/// migration is not guaranteed to have emptied them — each kiln's legacy
+/// in-kiln `{kiln}/.crucible/sessions`. A kiln appearing mid-run is never
+/// scanned and `migrate_one` deliberately skips on failure, so the legacy
+/// subtree has to be denied rather than assumed gone.
+///
+/// Empty paths are filtered out on the way in. A kiln-less session with no
+/// workspace carries `""` in both roles, and `""` as an allowed root is a
+/// universal root at depth 0 — containment off, every denial out-ranked. An
+/// empty kiln set degrades capabilities; it must never degrade containment.
+pub(crate) fn session_containment_roots(
+    session: &Session,
+    sessions_root: &Path,
+) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    let allowed = session
+        .kilns
+        .iter()
+        .cloned()
+        .chain(std::iter::once(session.storage_path(sessions_root)))
+        .filter(|root| !root.as_os_str().is_empty())
+        .collect();
+    let denied = std::iter::once(sessions_root.to_path_buf())
+        .chain(
+            session
+                .kilns
+                .iter()
+                .map(|kiln| kiln.join(".crucible").join("sessions")),
+        )
+        .filter(|root| !root.as_os_str().is_empty())
+        .collect();
+    (allowed, denied)
+}
+
 impl AgentManager {
     /// Evict everything that baked the old scope in at build time.
     ///
@@ -38,9 +75,8 @@ impl AgentManager {
     ) {
         if let Some(tx) = event_tx {
             let data = serde_json::json!({
-                "kiln": session.kiln,
+                "kilns": session.kilns,
                 "workspace": session.workspace,
-                "connected_kilns": session.connected_kilns,
             });
             if !emit_event(
                 tx,
@@ -83,8 +119,7 @@ impl AgentManager {
         Ok(session)
     }
 
-    /// Attach a kiln to the session's connected set. Idempotent; the primary
-    /// kiln cannot be attached twice.
+    /// Attach a kiln to the session's kiln set. Idempotent.
     pub async fn connect_kiln(
         &self,
         session_id: &str,
@@ -93,22 +128,13 @@ impl AgentManager {
     ) -> Result<Session, AgentError> {
         let kiln = kiln.to_path_buf();
         self.mutate_scope(session_id, event_tx, move |session| {
-            if session.kiln == kiln {
-                return Err(AgentError::InvalidConfig(
-                    "kiln is already the session's primary kiln".to_string(),
-                ));
-            }
-            if session.connected_kilns.contains(&kiln) {
-                return Ok(false);
-            }
-            session.connected_kilns.push(kiln);
-            Ok(true)
+            Ok(session.add_kiln(kiln))
         })
         .await
     }
 
-    /// Detach a connected kiln. The primary kiln cannot be detached — the
-    /// session itself is stored there.
+    /// Detach a kiln. Any kiln may go, including the one the session was
+    /// created with — the set is flat and the session is not stored in it.
     pub async fn disconnect_kiln(
         &self,
         session_id: &str,
@@ -116,15 +142,9 @@ impl AgentManager {
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
     ) -> Result<Session, AgentError> {
         self.mutate_scope(session_id, event_tx, |session| {
-            if session.kiln == kiln {
-                return Err(AgentError::InvalidConfig(
-                    "cannot detach the session's primary kiln — the session is stored there"
-                        .to_string(),
-                ));
-            }
-            let before = session.connected_kilns.len();
-            session.connected_kilns.retain(|k| k != kiln);
-            Ok(session.connected_kilns.len() != before)
+            let before = session.kilns.len();
+            session.kilns.retain(|k| k != kiln);
+            Ok(session.kilns.len() != before)
         })
         .await
     }
@@ -151,7 +171,12 @@ impl AgentManager {
                         .to_string(),
                 ));
             }
-            let new_workspace = workspace.unwrap_or_else(|| session.kiln.clone());
+            let new_workspace = workspace.unwrap_or_else(|| {
+                session
+                    .default_kiln()
+                    .map(Path::to_path_buf)
+                    .unwrap_or_default()
+            });
             if session.workspace == new_workspace {
                 return Ok(false);
             }
@@ -164,7 +189,61 @@ impl AgentManager {
 
 #[cfg(test)]
 mod tests {
-    // Scope-mutation behavior is covered end-to-end in
+    // Scope-MUTATION behavior is covered end-to-end in
     // tests/rpc_session_scope_e2e.rs — the mutations need a real
-    // SessionManager + storage, which the RPC test server provides.
+    // SessionManager + storage, which the RPC test server provides. What is
+    // unit-testable here is the containment set the mutations feed.
+    use super::session_containment_roots;
+    use crucible_core::session::SessionType;
+    use crucible_core::Session;
+    use std::path::{Path, PathBuf};
+
+    /// A tools-only agent is a legitimate shape, and it must come out of this
+    /// with LESS reach, not unlimited reach. Its own storage dir is the whole
+    /// allowed set — no `""` from the absent kiln, no `""` from the absent
+    /// workspace, and nothing that would out-rank the sessions-root denial.
+    #[test]
+    fn a_kilnless_session_gets_only_its_own_storage_directory() {
+        let sessions_root = Path::new("/data/sessions");
+        let session = Session::new(SessionType::Chat, vec![]);
+
+        let (allowed, denied) = session_containment_roots(&session, sessions_root);
+
+        assert_eq!(allowed, vec![sessions_root.join(&session.id)]);
+        assert!(denied.contains(&sessions_root.to_path_buf()));
+
+        // And the same for a set that holds an empty path rather than no path
+        // — what a pre-flatten `meta.json` with `"kiln": ""` deserializes to.
+        // `""` as an allowed root matches every path at depth 0: containment
+        // off, and the sessions-root denial out-ranked by the shallowest
+        // possible allow.
+        let mut legacy = Session::new(SessionType::Chat, vec![]);
+        legacy.kilns.push(PathBuf::new());
+        let (allowed, _) = session_containment_roots(&legacy, sessions_root);
+
+        assert_eq!(allowed, vec![sessions_root.join(&legacy.id)]);
+    }
+
+    /// Migration is best-effort — kilns that appear mid-run are never scanned
+    /// and `migrate_one` skips on failure — so the pre-relocation transcript
+    /// directory inside each kiln has to be denied, not assumed empty.
+    #[test]
+    fn every_kilns_legacy_transcript_directory_is_denied() {
+        let sessions_root = Path::new("/data/sessions");
+        let session = Session::new(
+            SessionType::Chat,
+            vec![PathBuf::from("/kilns/a"), PathBuf::from("/kilns/b")],
+        );
+
+        let (allowed, denied) = session_containment_roots(&session, sessions_root);
+
+        assert!(allowed.contains(&PathBuf::from("/kilns/a")));
+        assert!(allowed.contains(&PathBuf::from("/kilns/b")));
+        for kiln in ["/kilns/a", "/kilns/b"] {
+            assert!(
+                denied.contains(&Path::new(kiln).join(".crucible").join("sessions")),
+                "{kiln}'s legacy in-kiln transcripts must be denied: {denied:?}"
+            );
+        }
+    }
 }

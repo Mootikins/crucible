@@ -1,10 +1,9 @@
 use crucible_core::config::BackendType;
 use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
 use crucible_daemon::background_manager::BackgroundJobManager;
+use crucible_daemon::test_support::temp_session_manager;
 use crucible_daemon::tools::workspace::WorkspaceTools;
-use crucible_daemon::{
-    AgentManager, AgentManagerParams, FileSessionStorage, KilnManager, SessionManager,
-};
+use crucible_daemon::{AgentManager, AgentManagerParams, KilnManager, SessionManager};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -12,8 +11,7 @@ use tokio::sync::broadcast;
 
 fn make_agent_manager() -> (AgentManager, Arc<SessionManager>, TempDir) {
     let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let (event_tx, _) = broadcast::channel(16);
     let bg = Arc::new(BackgroundJobManager::new(event_tx));
     let agent_manager = AgentManager::new(AgentManagerParams {
@@ -76,9 +74,8 @@ async fn unknown_agent_type_stores_config_without_error() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -110,9 +107,8 @@ async fn unsupported_agent_type_fails_at_send_message_time() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -154,9 +150,8 @@ async fn acp_agent_type_with_agent_name_stores_successfully() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -187,9 +182,8 @@ async fn internal_agent_type_with_mock_provider_stores_successfully() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -220,9 +214,8 @@ async fn internal_agent_type_with_ollama_stores_config() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -253,9 +246,8 @@ async fn configure_agent_routing_decision_acp_vs_internal() {
     let session1 = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -263,9 +255,8 @@ async fn configure_agent_routing_decision_acp_vs_internal() {
     let session2 = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await

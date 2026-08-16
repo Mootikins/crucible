@@ -57,7 +57,7 @@ pub(super) fn create_session_request(kiln: &Path, workspace: &Path, provider_key
         "method": "session.create",
         "params": {
             "type": "chat",
-            "kiln": kiln,
+            "kilns": [kiln],
             "workspace": workspace,
             "provider_key": provider_key
         }
@@ -120,7 +120,7 @@ pub(super) async fn create_chat_session(client: &mut UnixStream, kiln: &Path, id
             "method": "session.create",
             "params": {
                 "type": "chat",
-                "kiln": kiln,
+                "kilns": [kiln],
             }
         }),
     )
@@ -179,6 +179,13 @@ impl TestServer {
             shutdown_tx,
             task,
         }
+    }
+
+    /// Where this server writes sessions. Sessions live under the daemon's
+    /// own data root now, not in a kiln, so tests that read a transcript off
+    /// disk have to ask the server rather than compose a kiln path.
+    pub(super) fn sessions_root(&self) -> PathBuf {
+        FileSessionStorage::root_for(self.tmp.path())
     }
 
     /// Connects a new client to the running server.

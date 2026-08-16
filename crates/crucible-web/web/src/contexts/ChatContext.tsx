@@ -256,14 +256,14 @@ export const ChatProvider: ParentComponent<ChatProviderProps> = (props) => {
     setIsStreaming,
   });
 
-  const loadHistory = async (sessionId: string, kiln: string, signal?: AbortSignal) => {
+  const loadHistory = async (sessionId: string, signal?: AbortSignal) => {
     setIsLoadingHistory(true);
     try {
       // Explicit high limit: the server pages from the FRONT, and a long
       // agentic turn can log hundreds of thinking events — the default page
       // cut off the tail, which holds the tool results and message_complete
       // (i.e. the assistant's actual text).
-      const response = await getSessionHistory(sessionId, kiln, 10000, undefined, signal);
+      const response = await getSessionHistory(sessionId, 10000, undefined, signal);
       const loadedMessages: Message[] = [];
 
       // Pre-tool narration segments of the CURRENT turn, in order. A segmented

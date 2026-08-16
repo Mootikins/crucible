@@ -86,18 +86,74 @@ impl AgentManager {
     /// profile, and every debug-profile test that ends a session exercises the
     /// runtime half for free.
     ///
-    /// A delegated child's review teardown is the one step that cannot have
-    /// finished by the time this runs: the harvest is ordered and therefore
-    /// spawned, so its entries clear a beat later. Asserting on it would fire
-    /// for every delegated child rather than for a real leak.
+    /// It asserts on [`leaked_stores`] rather than the raw residue: two of the
+    /// stores can be re-populated by a task that is still running, and this
+    /// check has no way to wait for one.
     pub(super) fn debug_assert_no_residue(&self, session_id: &str, review_spawned: bool) {
-        let mut residue = self.session_residue(session_id);
-        if review_spawned {
-            residue.retain(|store| *store != "review");
-        }
+        let leaked = leaked_stores(self.session_residue(session_id), review_spawned);
         debug_assert!(
-            residue.is_empty(),
-            "cleanup_session left per-session state behind: {residue:?}"
+            leaked.is_empty(),
+            "cleanup_session left per-session state behind: {leaked:?}"
         );
+    }
+}
+
+/// The residue that is a genuine leak, as opposed to the residue a still-running
+/// task can put back after teardown released it.
+///
+/// Two stores are dropped, and both for the same reason: asserting on them is
+/// asserting on a race, not on this manager's bookkeeping.
+///
+/// - `review`, when the harvest was spawned. A delegated child's ledger cannot
+///   have cleared by the time the check runs — the harvest is ordered, and
+///   therefore spawned — so asserting would fire for every delegated child.
+/// - `seq_counters`, always. `forget_session` is called *last* precisely
+///   because "the spawns above can still emit, and a re-created counter is
+///   cheaper than a duplicate `seq`" — so a re-minted counter is the documented,
+///   intended outcome, not a leak. It is also reachable well outside teardown's
+///   own spawns: a session's startup status burst is emitted from its own task,
+///   and a trailing `providers_listed` landing between `forget_session` and this
+///   check re-mints the counter. That turned an ordinary `session.end` into a
+///   debug-build panic answering INTERNAL_ERROR, about once in ten.
+///
+/// Dropping it here costs no coverage. The counter is still checked by
+/// [`AgentManager::session_residue`], which
+/// `cleanup_session_leaves_no_per_session_residue` asserts empty with nothing
+/// else running, and its growth bound is asserted directly by
+/// `ending_sessions_does_not_grow_the_seq_counter_map`.
+fn leaked_stores(mut residue: Vec<&'static str>, review_spawned: bool) -> Vec<&'static str> {
+    residue.retain(|store| match *store {
+        "seq_counters" => false,
+        "review" => !review_spawned,
+        _ => true,
+    });
+    residue
+}
+
+#[cfg(test)]
+mod tests {
+    use super::leaked_stores;
+
+    /// The seq counter is the one store whose presence after teardown proves
+    /// nothing: any task still emitting for the session re-mints it, which
+    /// `forget_session` documents as harmless. Everything else is a leak.
+    #[test]
+    fn a_re_minted_seq_counter_is_not_a_leak() {
+        assert_eq!(
+            leaked_stores(vec!["seq_counters"], false),
+            Vec::<&str>::new()
+        );
+        assert_eq!(
+            leaked_stores(vec!["slots", "seq_counters"], false),
+            ["slots"]
+        );
+    }
+
+    /// The pre-existing carve-out, kept: a delegated child's ledger clears a
+    /// beat after the spawned harvest, but an *unspawned* one had its chance.
+    #[test]
+    fn a_spawned_review_harvest_is_not_a_leak_but_a_synchronous_one_is() {
+        assert_eq!(leaked_stores(vec!["review"], true), Vec::<&str>::new());
+        assert_eq!(leaked_stores(vec!["review"], false), ["review"]);
     }
 }

@@ -120,14 +120,12 @@ fn create_params(args: &Value) -> Result<serde_json::Value, String> {
     // mlua encodes an empty Lua table as a JSON *object*, which the request's
     // `Option<Vec<String>>` rejects. `kilns = {}` was tolerated by the
     // hand-plucked `unwrap_or_default()` this replaced, so it stays tolerated.
-    for key in ["kilns", "connect_kilns"] {
-        if obj
-            .get(key)
-            .and_then(serde_json::Value::as_object)
-            .is_some_and(serde_json::Map::is_empty)
-        {
-            obj.insert(key.to_string(), serde_json::Value::Array(Vec::new()));
-        }
+    if obj
+        .get("kilns")
+        .and_then(serde_json::Value::as_object)
+        .is_some_and(serde_json::Map::is_empty)
+    {
+        obj.insert("kilns".to_string(), serde_json::Value::Array(Vec::new()));
     }
 
     // The daemon only reads the agent fields when `configure_agent` is set, so
@@ -159,7 +157,7 @@ pub fn register_sessions_module_with_api(
     let cru: Table = globals.get("cru")?;
     let sessions: Table = cru.get("sessions")?;
 
-    // create({ type = "chat", kiln = "...", workspace = "...", kilns = {"..."},
+    // create({ type = "chat", kilns = {"..."}, workspace = "...",
     //          agent_card = "..." })
     // Also supports legacy positional: create("chat")
     let a = Arc::clone(&api);

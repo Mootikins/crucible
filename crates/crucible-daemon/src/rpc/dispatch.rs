@@ -346,7 +346,18 @@ impl RpcDispatcher {
                 to_response(id, self.handle_session_export_to_file(&req).await)
             }
             "session.cleanup" => to_response(id, self.handle_session_cleanup(&req).await),
-            "session.reindex" => to_response(id, self.handle_session_reindex(&req).await),
+            // Retired rather than repointed: it indexed `{kiln}/.crucible/sessions`
+            // into that kiln's NoteStore, and sessions no longer live in a kiln.
+            // A flat backlog has no per-kiln session corpus to rebuild, and
+            // rebuilding one would re-create the cross-session read it removed.
+            "session.reindex" => Response::error(
+                id,
+                METHOD_NOT_FOUND,
+                "session.reindex is retired: sessions are stored outside kilns and are no \
+                 longer indexed as kiln notes. Delete any existing `sessions/*` note rows \
+                 left by an earlier reindex."
+                    .to_string(),
+            ),
 
             // Agent operation handlers
             "session.configure_agent" => {
@@ -1154,33 +1165,42 @@ impl RpcDispatcher {
     }
 
     async fn handle_session_load_events(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::observe::handle_session_load_events(req.clone()).await;
+        let resp = crate::server::observe::handle_session_load_events(
+            req.clone(),
+            self.ctx.sessions.sessions_root(),
+        )
+        .await;
         map_server_resp(resp)
     }
 
     async fn handle_session_list_persisted(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::observe::handle_session_list_persisted(req.clone()).await;
+        let resp =
+            crate::server::observe::handle_session_list_persisted(req.clone(), &self.ctx.sessions)
+                .await;
         map_server_resp(resp)
     }
 
     async fn handle_session_render_markdown(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::observe::handle_session_render_markdown(req.clone()).await;
+        let resp = crate::server::observe::handle_session_render_markdown(
+            req.clone(),
+            self.ctx.sessions.sessions_root(),
+        )
+        .await;
         map_server_resp(resp)
     }
 
     async fn handle_session_export_to_file(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::observe::handle_session_export_to_file(req.clone()).await;
+        let resp = crate::server::observe::handle_session_export_to_file(
+            req.clone(),
+            self.ctx.sessions.sessions_root(),
+        )
+        .await;
         map_server_resp(resp)
     }
 
     async fn handle_session_cleanup(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::observe::handle_session_cleanup(req.clone()).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_reindex(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
-            crate::server::observe::handle_session_reindex(req.clone(), &self.ctx.kiln).await;
+            crate::server::observe::handle_session_cleanup(req.clone(), &self.ctx.sessions).await;
         map_server_resp(resp)
     }
 
@@ -1961,6 +1981,7 @@ mod tests {
     use super::*;
     use crate::protocol::RequestId;
     use crate::rpc::RpcContext;
+    use crate::test_support::temp_session_manager;
     use std::sync::Arc;
 
     fn make_request(method: &str, params: serde_json::Value) -> Request {
@@ -1978,13 +1999,12 @@ mod tests {
 
         use crate::kiln_manager::KilnManager;
         use crate::project_manager::ProjectManager;
-        use crate::session_manager::SessionManager;
         use crate::tools::workspace::WorkspaceTools;
         use tokio::sync::broadcast;
 
         let (event_tx, _) = broadcast::channel(16);
         let kiln_manager = Arc::new(KilnManager::new());
-        let session_manager = Arc::new(SessionManager::new());
+        let session_manager = temp_session_manager();
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
         let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
             kiln_manager: kiln_manager.clone(),
@@ -2043,9 +2063,8 @@ mod tests {
             .sessions
             .create_session(
                 SessionType::Chat,
-                kiln_root.clone(),
+                vec![kiln_root.clone()],
                 Some(kiln_root.clone()),
-                Vec::new(),
                 None,
             )
             .await
@@ -2224,9 +2243,8 @@ mod tests {
             .sessions
             .create_session(
                 crucible_core::session::SessionType::Chat,
-                kiln,
+                vec![kiln],
                 None,
-                vec![],
                 None,
             )
             .await
@@ -2321,9 +2339,8 @@ mod tests {
             .sessions
             .create_session(
                 SessionType::Chat,
-                kiln.path().to_path_buf(),
+                vec![kiln.path().to_path_buf()],
                 None,
-                vec![],
                 None,
             )
             .await
@@ -2427,7 +2444,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
 
         let parent = ctx
             .sessions
-            .create_session(SessionType::Chat, kiln.clone(), None, vec![], None)
+            .create_session(SessionType::Chat, vec![kiln.clone()], None, None)
             .await
             .expect("create parent");
 
@@ -2667,9 +2684,8 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             .sessions
             .create_session(
                 SessionType::Chat,
-                kiln_root.clone(),
+                vec![kiln_root.clone()],
                 Some(kiln_root.clone()),
-                Vec::new(),
                 None,
             )
             .await
@@ -2761,7 +2777,6 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
         use crate::kiln_manager::KilnManager;
         use crate::mcp_server::McpServerManager;
         use crate::project_manager::ProjectManager;
-        use crate::session_manager::SessionManager;
         use crate::subscription::SubscriptionManager;
         use crate::tools::workspace::WorkspaceTools;
         use dashmap::DashMap;
@@ -2770,7 +2785,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
         let (event_tx, _) = broadcast::channel(16);
         let (shutdown_tx, _) = broadcast::channel(1);
         let kiln_manager = Arc::new(KilnManager::new());
-        let session_manager = Arc::new(SessionManager::new());
+        let session_manager = temp_session_manager();
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
         let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
             kiln_manager: kiln_manager.clone(),

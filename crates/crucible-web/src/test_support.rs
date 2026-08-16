@@ -432,7 +432,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             "session_id": "test-session-001",
             "state": "active",
             "session_type": "chat",
-            "kiln": "/tmp/test-kiln"
+            "kilns": ["/tmp/test-kiln"]
         }),
         "session.pause" => json!({"ok": true}),
         "session.resume" => json!({"ok": true}),
@@ -515,15 +515,13 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         "project.get" => Value::Null,
         "session.connect_kiln" => json!({
             "session_id": "test-session-001",
-            "kiln": "/tmp/test-kiln",
+            "kilns": ["/tmp/test-kiln", "/tmp/extra-kiln"],
             "workspace": "/tmp/test-kiln",
-            "connected_kilns": ["/tmp/extra-kiln"],
         }),
         "session.disconnect_kiln" => json!({
             "session_id": "test-session-001",
-            "kiln": "/tmp/test-kiln",
+            "kilns": ["/tmp/test-kiln"],
             "workspace": "/tmp/test-kiln",
-            "connected_kilns": [],
         }),
         "session.set_workspace" => {
             let workspace = msg
@@ -533,9 +531,8 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 .unwrap_or("/tmp/test-kiln");
             json!({
                 "session_id": "test-session-001",
-                "kiln": "/tmp/test-kiln",
+                "kilns": ["/tmp/test-kiln"],
                 "workspace": workspace,
-                "connected_kilns": [],
             })
         }
         "session.set_thinking_budget" => json!(null),

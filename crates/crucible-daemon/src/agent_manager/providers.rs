@@ -205,8 +205,7 @@ mod tests {
     use crate::agent_manager::tests::{clear_provider_env, ENV_LOCK};
     use crate::background_manager::BackgroundJobManager;
     use crate::kiln_manager::KilnManager;
-    use crate::session_manager::SessionManager;
-    use crate::session_storage::FileSessionStorage;
+    use crate::test_support::temp_session_manager;
     use crate::tools::workspace::WorkspaceTools;
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
     use std::collections::{HashMap, HashSet};
@@ -220,9 +219,7 @@ mod tests {
 
         AgentManager::new(AgentManagerParams {
             kiln_manager: Arc::new(KilnManager::new()),
-            session_manager: Arc::new(SessionManager::with_storage(Arc::new(
-                FileSessionStorage::new(),
-            ))),
+            session_manager: temp_session_manager(),
             background_manager,
             mcp_gateway: None,
             llm_config: config,

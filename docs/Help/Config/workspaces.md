@@ -83,7 +83,7 @@ default_kiln = "docs"
 |---|---|---|
 | `path` | path | Project root directory |
 | `kilns` | list | Named kilns from `[kilns]` that this project uses |
-| `default_kiln` | string | Primary kiln for session storage |
+| `default_kiln` | string | Kiln a session in this project attaches by default. Not a storage location — transcripts live under `~/.crucible/sessions/` regardless |
 
 ### Kiln Attachment Fields
 

@@ -6,9 +6,8 @@ import type { Project, Session } from '@/lib/types';
 const session = (over: Partial<Session>): Session => ({
   id: 'sid',
   session_type: 'chat',
-  kiln: '/kilns/main',
+  kilns: ['/kilns/main'],
   workspace: '/kilns/main',
-  connected_kilns: [],
   state: 'active',
   title: 'a session',
   agent_model: 'm',
@@ -123,5 +122,18 @@ describe('SessionTree', () => {
     expect(baseProps.onSelectProject).toHaveBeenCalledWith('/repo');
     // Group is still expanded (name click doesn't toggle).
     expect(getByTestId('session-group-crucible').getAttribute('aria-expanded')).toBe('true');
+  });
+
+  // Zero kilns is a legitimate session shape, so a row must say nothing about
+  // kilns rather than resolve the empty path — `kilnLabel('')` is "Home kiln",
+  // which would claim an attachment the session does not have.
+  it('a kiln-less session row carries no kiln name', () => {
+    const projects = [project('/repo', 'crucible', { root: '/repo', is_worktree: false })];
+    const sessions = [session({ id: 'tools-only', kilns: [], workspace: '/repo' })];
+    const kilnName = (p: string) => (p ? p.split('/').pop()! : 'Home kiln');
+    const { getByTestId } = render(() => (
+      <SessionTree sessions={sessions} projects={projects} {...baseProps} kilnName={kilnName} />
+    ));
+    expect(getByTestId('session-item-tools-only').textContent).not.toContain('Home kiln');
   });
 });

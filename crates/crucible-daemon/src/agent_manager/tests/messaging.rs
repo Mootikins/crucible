@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::temp_session_manager;
 
 #[tokio::test]
 async fn send_message_emits_text_delta_events_in_order() {
@@ -1341,14 +1342,12 @@ async fn at_mention_attaches_the_file_contents_to_the_turn() {
     )
     .unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             Some(tmp.path().to_path_buf()),
-            vec![],
             None,
         )
         .await

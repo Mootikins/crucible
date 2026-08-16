@@ -71,7 +71,7 @@ command, exit code, and the tail of its output.
 Closing the modal saves the output to your session directory:
 
 ```
-<kiln>/.crucible/sessions/<session-id>/shell/<timestamp>-<command>.output
+~/.crucible/sessions/<session-id>/shell/<timestamp>-<command>.output
 ```
 
 File format:

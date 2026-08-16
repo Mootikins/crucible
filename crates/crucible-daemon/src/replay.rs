@@ -86,7 +86,7 @@ impl ReplaySession {
             .parent()
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("."));
-        let mut replay_session = Session::new(SessionType::Chat, replay_kiln);
+        let mut replay_session = Session::new(SessionType::Chat, vec![replay_kiln]);
         replay_session.id = replay_session_id.clone();
         replay_session.title = Some(format!("replay:{}", recording_path.display()));
 

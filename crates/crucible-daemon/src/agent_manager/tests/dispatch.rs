@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::temp_session_manager;
 
 mod event_dispatch {
     use super::*;
@@ -6,8 +7,7 @@ mod event_dispatch {
 
     #[tokio::test]
     async fn handler_executes_when_event_fires() {
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
 
         let session_state = agent_manager.get_or_create_session_state("test-session");
@@ -42,8 +42,7 @@ mod event_dispatch {
 
     #[tokio::test]
     async fn multiple_handlers_run_in_priority_order() {
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
 
         let session_state = agent_manager.get_or_create_session_state("test-session");
@@ -88,8 +87,7 @@ mod event_dispatch {
 
     #[tokio::test]
     async fn handler_errors_dont_break_chain() {
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
 
         let session_state = agent_manager.get_or_create_session_state("test-session");
@@ -132,8 +130,7 @@ mod event_dispatch {
 
     #[tokio::test]
     async fn handlers_are_session_scoped() {
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
 
         let session_state_1 = agent_manager.get_or_create_session_state("session-1");
@@ -184,8 +181,7 @@ mod event_dispatch {
 
     #[tokio::test]
     async fn handler_receives_event_payload() {
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
 
         let session_state = agent_manager.get_or_create_session_state("test-session");
@@ -229,8 +225,7 @@ mod event_dispatch {
 
     #[tokio::test]
     async fn handler_can_return_cancel() {
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
 
         let session_state = agent_manager.get_or_create_session_state("test-session");
@@ -270,8 +265,7 @@ mod event_dispatch {
 
     #[tokio::test]
     async fn handler_returns_inject_collected_by_dispatch() {
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
 
         let session_state = agent_manager.get_or_create_session_state("test-session");
@@ -317,8 +311,7 @@ mod event_dispatch {
     async fn plugin_vm_turn_complete_handler_fires_and_injects() {
         use crucible_lua::{register_crucible_on_api, LuaScriptHandlerRegistry};
 
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
         let session_state = agent_manager.get_or_create_session_state("test-session");
 
@@ -368,8 +361,7 @@ mod event_dispatch {
     async fn plugin_inject_overrides_session_inject() {
         use crucible_lua::{register_crucible_on_api, LuaScriptHandlerRegistry};
 
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
         let session_state = agent_manager.get_or_create_session_state("test-session");
         {
@@ -422,8 +414,7 @@ mod event_dispatch {
 
     #[tokio::test]
     async fn second_inject_replaces_first() {
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
 
         let session_state = agent_manager.get_or_create_session_state("test-session");
@@ -465,8 +456,7 @@ mod event_dispatch {
 
     #[tokio::test]
     async fn inject_includes_position() {
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
 
         let session_state = agent_manager.get_or_create_session_state("test-session");
@@ -504,8 +494,7 @@ mod event_dispatch {
 
     #[tokio::test]
     async fn continuation_flag_passed_to_handlers() {
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
 
         let session_state = agent_manager.get_or_create_session_state("test-session");
@@ -563,8 +552,7 @@ mod event_dispatch {
 
     #[tokio::test]
     async fn no_inject_when_handler_returns_nil() {
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
 
         let session_state = agent_manager.get_or_create_session_state("test-session");
@@ -600,8 +588,7 @@ mod event_dispatch {
 
 #[tokio::test]
 async fn cleanup_session_cancels_pending_requests() {
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let agent_manager = create_test_agent_manager(session_manager);
 
     let session_id = "test-session";
@@ -644,8 +631,7 @@ async fn cancel_drops_pending_permission_senders() {
     use crate::agent_manager::PendingPermission;
     use crucible_core::interaction::PermRequest;
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let agent_manager = create_test_agent_manager(session_manager);
 
     let session_id = "cancel-pending-perm";
@@ -703,8 +689,7 @@ async fn cleanup_session_leaves_no_per_session_residue() {
     use crucible_core::interaction::PermRequest;
     use crucible_core::session::{Comment, CommentAuthor, LineRange, PhysicalRoot, TreeSha};
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let agent_manager = create_test_agent_manager(session_manager);
     let session_id = "residue-session";
 
@@ -799,8 +784,7 @@ async fn cleanup_session_leaves_no_per_session_residue() {
 /// cycles must leave N-0 entries, not N.
 #[tokio::test]
 async fn ending_sessions_does_not_grow_the_seq_counter_map() {
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let agent_manager = create_test_agent_manager(session_manager);
     let (event_tx, _event_rx) = broadcast::channel(16);
 

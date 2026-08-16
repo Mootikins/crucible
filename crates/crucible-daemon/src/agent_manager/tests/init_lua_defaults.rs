@@ -11,19 +11,18 @@
 //! effect, so a default that registers against a missing API fails loudly.
 
 use super::*;
+use crate::test_support::temp_session_manager;
 use crucible_core::config::components::permissions::PermissionDecision;
 use crucible_lua::{execute_permission_hooks, PermissionHookResult, PermissionRequest};
 
 async fn session_with_defaults() -> (TempDir, Arc<AgentManager>, String) {
     let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -231,14 +230,12 @@ async fn a_user_init_lua_can_replace_a_shipped_default() {
     )
     .unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -267,14 +264,12 @@ async fn a_user_init_lua_can_append_to_a_shipped_default() {
     )
     .unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -311,14 +306,12 @@ async fn on_session_start_fires_and_can_set_this_sessions_values() {
     )
     .unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -348,14 +341,12 @@ async fn on_session_start_sees_the_global_default_and_can_extend_it() {
     )
     .unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -386,14 +377,12 @@ async fn a_failing_start_hook_does_not_break_the_session() {
     )
     .unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -426,14 +415,12 @@ async fn a_user_hook_overrides_the_shipped_auto_approve() {
     )
     .unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -509,14 +496,12 @@ async fn a_user_defined_mode_can_be_selected() {
     )
     .unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -565,14 +550,12 @@ async fn a_shipped_mode_can_be_removed() {
     std::fs::create_dir_all(&lua_dir).unwrap();
     std::fs::write(lua_dir.join("init.lua"), "cru.modes.auto = nil").unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await

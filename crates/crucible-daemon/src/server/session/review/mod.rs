@@ -52,7 +52,9 @@ pub(crate) async fn ensure_loaded(am: &AgentManager, sm: &SessionManager, sessio
     let Some(session) = sm.get_session(session_id) else {
         return;
     };
-    let path = session.storage_path().join("review.jsonl");
+    let path = session
+        .storage_path(sm.sessions_root())
+        .join("review.jsonl");
     if !path.exists() {
         return;
     }
@@ -118,8 +120,8 @@ pub(crate) async fn rebase(
     // The same root set the send path opens the ledger over, re-derived rather
     // than read from the ledger: the case this exists to recover from includes
     // a ledger that lost its base records and so has no roots left to name.
-    let mut roots = vec![session.workspace.clone(), session.kiln.clone()];
-    roots.extend(session.connected_kilns.iter().cloned());
+    let mut roots = vec![session.workspace.clone()];
+    roots.extend(session.kilns.iter().cloned());
 
     // The storage directory rather than the journal path: a session that has
     // never run a turn has no journal registered, and a rebase whose records
@@ -127,7 +129,11 @@ pub(crate) async fn rebase(
     // keep ref for the base it just captured.
     let statuses = am
         .review
-        .rebase_session(session_id, &session.storage_path(), &roots)
+        .rebase_session(
+            session_id,
+            &session.storage_path(sm.sessions_root()),
+            &roots,
+        )
         .await?;
     emit_review_changed(event_tx, session_id, "rebased");
     Ok(statuses)

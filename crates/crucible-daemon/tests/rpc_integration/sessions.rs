@@ -17,9 +17,8 @@ async fn test_session_create_and_list() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: Some(kiln_dir.path().to_path_buf()),
+            kilns: vec![kiln_dir.path().to_path_buf()],
             workspace: None,
-            connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
             agent_type: None,
@@ -67,9 +66,8 @@ async fn test_session_subscribe_and_unsubscribe() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: Some(kiln_dir.path().to_path_buf()),
+            kilns: vec![kiln_dir.path().to_path_buf()],
             workspace: None,
-            connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
             agent_type: None,
@@ -113,9 +111,8 @@ async fn test_daemon_agent_handle_creation() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: Some(kiln_dir.path().to_path_buf()),
+            kilns: vec![kiln_dir.path().to_path_buf()],
             workspace: None,
-            connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
             agent_type: None,
@@ -152,9 +149,8 @@ async fn test_session_configure_agent() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: Some(kiln_dir.path().to_path_buf()),
+            kilns: vec![kiln_dir.path().to_path_buf()],
             workspace: None,
-            connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
             agent_type: None,
@@ -222,9 +218,8 @@ async fn test_session_send_message_returns_message_id() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: Some(kiln_dir.path().to_path_buf()),
+            kilns: vec![kiln_dir.path().to_path_buf()],
             workspace: None,
-            connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
             agent_type: None,
@@ -276,9 +271,8 @@ async fn test_send_message_with_is_interactive_false_accepted() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: Some(kiln_dir.path().to_path_buf()),
+            kilns: vec![kiln_dir.path().to_path_buf()],
             workspace: None,
-            connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
             agent_type: None,
@@ -325,9 +319,8 @@ async fn test_send_message_with_permission_override_accepted() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: Some(kiln_dir.path().to_path_buf()),
+            kilns: vec![kiln_dir.path().to_path_buf()],
             workspace: None,
-            connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
             agent_type: None,
@@ -379,9 +372,8 @@ async fn test_session_cancel() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: Some(kiln_dir.path().to_path_buf()),
+            kilns: vec![kiln_dir.path().to_path_buf()],
             workspace: None,
-            connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
             agent_type: None,

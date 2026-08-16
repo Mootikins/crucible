@@ -60,14 +60,18 @@ The `-n` flag limits the number of results returned (default: 20).
 
 ## How It Works
 
-Session search runs in the **daemon**: the CLI sends a `session.search` RPC,
-and the daemon scans the session logs under `<kiln>/.crucible/sessions/`. The
-daemon is auto-started on demand, so you don't need to configure anything. If
-the daemon can't be reached or started, the command fails with a connection
-error — like every other daemon-backed command.
+Session search runs in the **daemon**: the CLI sends a `session.search` RPC
+carrying the kilns it is attached to, and the daemon scans the session logs
+under `~/.crucible/sessions/`. The daemon is auto-started on demand, so you
+don't need to configure anything. If the daemon can't be reached or started,
+the command fails with a connection error — like every other daemon-backed
+command.
 
 ### Search Behavior
 
+- **Scoped by kiln overlap**: Every session lives in one flat root now, so the
+  directory is no longer the boundary — a session is searchable only if its
+  kiln set shares a member with yours. A search with no kilns matches nothing
 - **Case-insensitive**: Search ignores case
 - **One match per session**: The daemon reports each session's first matching line (plus active sessions whose title matches)
 - **JSONL files**: Searches the raw session event log (`.jsonl`), not markdown
@@ -118,17 +122,17 @@ You can read these files directly:
 
 ```bash
 # Find session markdown files
-ls ~/your-kiln/.crucible/sessions/*/session.md
+ls ~/.crucible/sessions/*/session.md
 
 # Read a specific session
-cat ~/your-kiln/.crucible/sessions/chat-20260115-1430-a1b2/session.md
+cat ~/.crucible/sessions/chat-20260115-1430-a1b2/session.md
 ```
 
 Or search them with standard tools:
 
 ```bash
 # Search markdown files with ripgrep
-rg "authentication" ~/your-kiln/.crucible/sessions/*/session.md
+rg "authentication" ~/.crucible/sessions/*/session.md
 ```
 
 ## Troubleshooting
@@ -137,7 +141,7 @@ rg "authentication" ~/your-kiln/.crucible/sessions/*/session.md
 
 - Check that you have past sessions: `cru session list`
 - Try a broader search term
-- Verify your kiln path is correct
+- Verify you are in a kiln the sessions were attached to — search only reaches sessions sharing one
 
 ### "Failed to connect to daemon"
 

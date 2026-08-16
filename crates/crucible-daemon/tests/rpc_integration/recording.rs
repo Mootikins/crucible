@@ -18,9 +18,8 @@ async fn test_session_create_with_granular_recording_mode() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: Some(kiln_dir.path().to_path_buf()),
+            kilns: vec![kiln_dir.path().to_path_buf()],
             workspace: None,
-            connect_kilns: vec![],
             recording_mode: Some("granular".to_string()),
             recording_path: None,
             agent_type: None,
@@ -56,9 +55,8 @@ async fn test_session_create_with_no_recording_mode() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: Some(kiln_dir.path().to_path_buf()),
+            kilns: vec![kiln_dir.path().to_path_buf()],
             workspace: None,
-            connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
             agent_type: None,
@@ -122,9 +120,8 @@ async fn test_recording_footer_regression_drop_ends_session() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: Some(kiln_dir.path().to_path_buf()),
+            kilns: vec![kiln_dir.path().to_path_buf()],
             workspace: None,
-            connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
             agent_type: None,

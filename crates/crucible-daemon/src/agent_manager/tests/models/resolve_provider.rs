@@ -1,11 +1,11 @@
 use super::super::*;
+use crate::test_support::temp_session_manager;
 
 #[tokio::test]
 async fn test_resolve_provider_config_from_llm_config() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
 
     let mut providers = std::collections::HashMap::new();
     providers.insert(
@@ -41,8 +41,7 @@ async fn test_resolve_provider_config_from_llm_config() {
 async fn test_resolve_provider_config_from_providers_config() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
 
     let mut providers = std::collections::HashMap::new();
     providers.insert(
@@ -74,8 +73,7 @@ async fn test_resolve_provider_config_from_providers_config() {
 async fn test_resolve_provider_config_does_not_use_legacy_providers_config() {
     use crucible_core::config::LlmConfig;
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
 
     let llm_config = LlmConfig::default();
     let agent_manager = create_test_agent_manager_with_providers(session_manager, llm_config);
@@ -89,8 +87,7 @@ async fn test_resolve_provider_config_does_not_use_legacy_providers_config() {
 
 #[tokio::test]
 async fn test_resolve_provider_config_not_found() {
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let agent_manager = create_test_agent_manager(session_manager);
 
     let resolved = agent_manager.resolve_provider_config("nonexistent");
@@ -104,8 +101,7 @@ async fn test_resolve_provider_config_not_found() {
 async fn test_resolve_provider_config_llm_config_wins_over_providers_config() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
 
     let mut llm_providers = std::collections::HashMap::new();
     llm_providers.insert(

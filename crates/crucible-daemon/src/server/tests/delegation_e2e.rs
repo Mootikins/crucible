@@ -168,8 +168,7 @@ async fn delegate_session_works_through_production_server_wiring() {
                     "id": req_id,
                     "method": "session.resume_from_storage",
                     "params": {
-                        "session_id": parent_id,
-                        "kiln": server.kiln_path.to_string_lossy()
+                        "session_id": parent_id
                     }
                 }),
             )

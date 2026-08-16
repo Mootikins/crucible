@@ -1079,11 +1079,15 @@ fn discover_indexable_files(kiln_path: &Path) -> Vec<PathBuf> {
 }
 
 /// Expand a leading `~/` to the user's home directory.
-fn expand_tilde_path(path: &Path) -> PathBuf {
+pub(crate) fn expand_tilde_path(path: &Path) -> PathBuf {
     let s = path.to_string_lossy();
-    if s.starts_with("~/") || s == "~" {
+    if let Some(rest) = s.strip_prefix("~/") {
         if let Some(home) = dirs::home_dir() {
-            return home.join(&s[2..]);
+            return home.join(rest);
+        }
+    } else if s == "~" {
+        if let Some(home) = dirs::home_dir() {
+            return home;
         }
     }
     path.to_path_buf()

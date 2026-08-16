@@ -9,6 +9,7 @@
 //! absent into `false` would silently unsandbox one that did not.
 
 use super::*;
+use crate::test_support::temp_session_manager;
 
 struct Fixture {
     tmp: TempDir,
@@ -19,9 +20,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let tmp = TempDir::new().unwrap();
-        let sm = Arc::new(SessionManager::with_storage(Arc::new(
-            FileSessionStorage::new(),
-        )));
+        let sm = temp_session_manager();
         let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
         let km = Arc::new(KilnManager::new());
         let (event_tx, _rx) = broadcast::channel(16);
@@ -42,7 +41,7 @@ impl Fixture {
     async fn create(&self, params: Value) -> String {
         let kiln = self.tmp.path().join("kiln");
         std::fs::create_dir_all(&kiln).unwrap();
-        let mut merged = json!({ "type": "chat", "kiln": kiln });
+        let mut merged = json!({ "type": "chat", "kilns": [kiln] });
         for (k, v) in params.as_object().unwrap() {
             merged[k] = v.clone();
         }
@@ -126,12 +125,11 @@ async fn isolation_false_is_stored_as_an_explicit_opt_out_not_as_absent() {
 async fn isolation_survives_a_round_trip_through_session_storage() {
     let f = Fixture::new();
     let id = f.create(json!({ "isolation": "heavy" })).await;
-    let kiln = f.tmp.path().join("kiln");
 
     // Drop it from memory, then reload the way resume does.
     f.sm.end_session(&id).await.expect("end");
     let reloaded =
-        f.sm.resume_session_from_storage(&id, &kiln)
+        f.sm.resume_session_from_storage(&id)
             .await
             .expect("resume from storage");
 

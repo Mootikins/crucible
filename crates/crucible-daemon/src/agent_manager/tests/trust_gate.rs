@@ -5,6 +5,7 @@
 //! `tools/search.rs` passes `provider_trust: None` outright, both on the
 //! strength of "the kiln passed the trust gate when it was attached". These
 //! tests are what keeps that strength honest.
+use crate::test_support::temp_session_manager;
 
 use super::*;
 use crucible_core::config::{LlmConfig, LlmProviderConfig, TrustLevel};
@@ -71,7 +72,12 @@ async fn session_on(
     connected: Vec<PathBuf>,
 ) -> crucible_core::session::Session {
     session_manager
-        .create_session(SessionType::Chat, kiln, None, connected, None)
+        .create_session(
+            SessionType::Chat,
+            std::iter::once(kiln).chain(connected).collect(),
+            None,
+            None,
+        )
         .await
         .unwrap()
 }
@@ -82,7 +88,7 @@ async fn session_on(
 async fn configure_agent_cannot_raise_provider_trust_past_an_attached_kiln() {
     let tmp = TempDir::new().unwrap();
     let kiln = confidential_kiln(tmp.path());
-    let session_manager = Arc::new(SessionManager::new());
+    let session_manager = temp_session_manager();
     let session = session_on(&session_manager, kiln, vec![]).await;
     let am =
         create_test_agent_manager_with_llm_config(session_manager.clone(), straddling_providers());
@@ -125,7 +131,7 @@ async fn configure_agent_checks_connected_kilns_not_only_the_primary() {
     let public = tmp.path().join("public");
     std::fs::create_dir_all(&public).unwrap();
 
-    let session_manager = Arc::new(SessionManager::new());
+    let session_manager = temp_session_manager();
     let session = session_on(&session_manager, public, vec![confidential]).await;
     let am =
         create_test_agent_manager_with_llm_config(session_manager.clone(), straddling_providers());
@@ -151,7 +157,7 @@ async fn configure_agent_checks_connected_kilns_not_only_the_primary() {
 async fn switch_model_cannot_raise_provider_trust_past_an_attached_kiln() {
     let tmp = TempDir::new().unwrap();
     let kiln = confidential_kiln(tmp.path());
-    let session_manager = Arc::new(SessionManager::new());
+    let session_manager = temp_session_manager();
     let session = session_on(&session_manager, kiln, vec![]).await;
     let am =
         create_test_agent_manager_with_llm_config(session_manager.clone(), straddling_providers());
@@ -185,7 +191,7 @@ async fn switch_model_cannot_raise_provider_trust_past_an_attached_kiln() {
 async fn a_named_internal_agent_is_trusted_at_its_providers_level() {
     let tmp = TempDir::new().unwrap();
     let kiln = confidential_kiln(tmp.path());
-    let session_manager = Arc::new(SessionManager::new());
+    let session_manager = temp_session_manager();
     let session = session_on(&session_manager, kiln, vec![]).await;
     let am =
         create_test_agent_manager_with_llm_config(session_manager.clone(), straddling_providers());
@@ -206,7 +212,7 @@ async fn a_named_internal_agent_is_trusted_at_its_providers_level() {
 async fn an_acp_agent_is_cloud_whatever_its_provider_key_says() {
     let tmp = TempDir::new().unwrap();
     let kiln = confidential_kiln(tmp.path());
-    let session_manager = Arc::new(SessionManager::new());
+    let session_manager = temp_session_manager();
     let session = session_on(&session_manager, kiln, vec![]).await;
     let am =
         create_test_agent_manager_with_llm_config(session_manager.clone(), straddling_providers());

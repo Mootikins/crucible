@@ -16,7 +16,7 @@ mod modes;
 mod notifications;
 mod params;
 pub(crate) mod review;
-mod scope;
+pub(crate) mod scope;
 
 pub(crate) use create::handle_session_create;
 // Re-exported for tests.rs (accessed via `use session::*`).
@@ -115,7 +115,12 @@ fn spawn_setup_task(
 ) {
     let sid = session.id.clone();
     let workspace_path = session.workspace.clone();
-    let kiln_path = session.kiln.clone();
+    // The setup event and the note indexer both want one kiln; a session with
+    // none indexes nothing, which is what an empty path yields.
+    let kiln_path = session
+        .default_kiln()
+        .unwrap_or(Path::new(""))
+        .to_path_buf();
     // Agent config is populated by a later `session.configure_agent` call, so
     // at create time we almost always observe `None` here and the event
     // carries empty strings. Task 1.3 (CLI) will still render progressively;

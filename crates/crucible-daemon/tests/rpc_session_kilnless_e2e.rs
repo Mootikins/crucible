@@ -1,16 +1,22 @@
 //! End-to-end tests for kiln-less session creation — the branch's headline
-//! feature: `session.create` with `kiln` omitted should resolve to the
-//! daemon's default home kiln (its data root), producing a "floating" session
-//! that still composes with the mid-session scope RPCs.
+//! feature: `session.create` with `kilns` omitted yields a session with NO
+//! kiln, a tools-only agent that still composes with the mid-session scope
+//! RPCs.
+//!
+//! Zero kilns is a legitimate state (§4.1), not a request for a default. The
+//! daemon used to substitute its own data root, which is the PARENT of the
+//! sessions root — so every kiln-less session carried an allowed root
+//! enclosing every transcript the daemon had ever written, and `grep` walked
+//! straight into it. An empty kiln set degrades capabilities (no note or kiln
+//! tools, no precognition, no semantic search); it must never degrade
+//! containment.
 //!
 //! HERMETICITY: `bind_with_data_home` injects the daemon's data root as a
 //! *value* threaded through `Server`/`RpcContext` (no `CRUCIBLE_HOME` env
 //! mutation), and every data-root-aware handler reads that value —
-//! `handle_session_list`, `handle_kiln_list`, the archive sweep, and (since the
-//! `data_home` parameter was threaded through `rpc/dispatch.rs`)
-//! `handle_session_create`. So the kiln-less session's kiln resolves to the
-//! injected tempdir, which is what the exact-path assertions below check, and
-//! nothing here touches the developer's real `~/.crucible`.
+//! `handle_session_list`, `handle_kiln_list`, the archive sweep, and
+//! `handle_session_create`. Nothing here touches the developer's real
+//! `~/.crucible`.
 //!
 //! No test in this file is `#[ignore]`d: they run in `just test ci`. The
 //! 22-line header that used to explain why they all were described the
@@ -28,9 +34,10 @@ use tokio::task::JoinHandle;
 
 struct TestServer {
     _temp_dir: TempDir,
-    /// The isolated data root injected into the daemon (the tempdir path). A
-    /// correctly-behaving kiln-less `session.create` resolves its home kiln to
-    /// exactly this directory.
+    /// The isolated data root injected into the daemon (the tempdir path).
+    /// A kiln-less `session.create` must NOT resolve it as a kiln — it is the
+    /// parent of the sessions root — but it is still where the per-session
+    /// scratch workspace lands.
     data_home: PathBuf,
     socket_path: PathBuf,
     _server_handle: JoinHandle<()>,
@@ -85,15 +92,13 @@ impl TestServer {
     }
 }
 
-/// Create a session with the `kiln` param omitted (`None`) — the kiln-less
-/// path that makes the daemon fall back to its default home kiln.
+/// Create a session with an empty kiln set — the tools-only path.
 async fn create_kilnless_session(client: &DaemonClient) -> serde_json::Value {
     client
         .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: None,
+            kilns: vec![],
             workspace: None,
-            connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
             agent_type: None,
@@ -122,19 +127,19 @@ async fn kilnless_create_succeeds_and_returns_active_session() {
         "kiln-less session should keep its requested type"
     );
 
-    // The response echoes the resolved kiln — for a kiln-less create it must be
-    // the injected data root, not the developer's real `~/.crucible`.
+    // The response echoes the resolved kiln set, and for a kiln-less create
+    // it is empty — the data root is emphatically not substituted in.
     assert_eq!(
-        created["kiln"].as_str(),
-        server.data_home.to_str(),
-        "kiln-less create should resolve the kiln to the injected data root"
+        created["kilns"].as_array().map(Vec::as_slice),
+        Some(&[][..]),
+        "a kiln-less create must attach no kiln at all"
     );
 
     server.shutdown().await;
 }
 
 #[tokio::test]
-async fn kilnless_kiln_resolves_to_injected_data_home() {
+async fn kilnless_session_persists_an_empty_kiln_set() {
     let server = TestServer::start().await.expect("Failed to start server");
     let client = DaemonClient::connect_to(&server.socket_path)
         .await
@@ -143,14 +148,14 @@ async fn kilnless_kiln_resolves_to_injected_data_home() {
     let created = create_kilnless_session(&client).await;
     let session_id = created["session_id"].as_str().unwrap().to_string();
 
-    // Re-read via session.get: the persisted kiln must equal the daemon's
-    // injected data root exactly (the home-kiln default), proving the kiln-less
-    // fallback honors `data_home` rather than the process-global crucible_home.
+    // Re-read via session.get: empty on the wire must be empty on disk too.
+    // The data root in particular must not have crept back in — it encloses
+    // the sessions root, and an allowed root there is the transcript leak.
     let session = client.session_get(&session_id).await.unwrap();
     assert_eq!(
-        session["kiln"].as_str(),
-        server.data_home.to_str(),
-        "session.get kiln should be the injected data home ({})",
+        session["kilns"].as_array().map(Vec::as_slice),
+        Some(&[][..]),
+        "a kiln-less session must persist an empty kiln set, not {}",
         server.data_home.display()
     );
 
@@ -171,7 +176,7 @@ async fn kilnless_no_workspace_gets_session_scratch_dir() {
     // scratch workspace under `<data_home>/workspaces/<session_id>` — NOT the
     // kiln path. This is the session's filesystem containment boundary.
     let session = client.session_get(&session_id).await.unwrap();
-    let kiln = session["kiln"].as_str().expect("kiln present");
+    assert!(session["kilns"].as_array().unwrap().is_empty());
     let workspace = session["workspace"].as_str().expect("workspace present");
 
     let expected = server.data_home.join("workspaces").join(&session_id);
@@ -179,10 +184,6 @@ async fn kilnless_no_workspace_gets_session_scratch_dir() {
         workspace,
         expected.to_str().unwrap(),
         "kiln-less workspace should be a session-unique scratch dir under <data_home>/workspaces"
-    );
-    assert_ne!(
-        workspace, kiln,
-        "scratch workspace must not fall back to the kiln path"
     );
     assert!(
         expected.is_dir(),
@@ -210,11 +211,12 @@ async fn kilnless_session_composes_with_scope_mutations() {
         .session_connect_kiln(&session_id, extra_kiln.path())
         .await
         .expect("connect_kiln on a kiln-less session failed");
-    let connected = scope["connected_kilns"].as_array().unwrap();
-    assert_eq!(connected.len(), 1, "extra kiln should be connected");
-    assert_eq!(
-        connected[0].as_str(),
-        Some(extra_kiln.path().to_string_lossy().as_ref())
+    let attached = scope["kilns"].as_array().unwrap();
+    assert!(
+        attached
+            .iter()
+            .any(|k| k.as_str() == Some(extra_kiln.path().to_string_lossy().as_ref())),
+        "extra kiln should be attached: {attached:?}"
     );
 
     let scope = client
@@ -222,25 +224,24 @@ async fn kilnless_session_composes_with_scope_mutations() {
         .await
         .expect("disconnect_kiln on a kiln-less session failed");
     assert!(
-        scope["connected_kilns"]
+        !scope["kilns"]
             .as_array()
-            .map(|a| a.is_empty())
-            .unwrap_or(true),
-        "connected set should be empty after disconnect"
+            .unwrap()
+            .iter()
+            .any(|k| k.as_str() == Some(extra_kiln.path().to_string_lossy().as_ref())),
+        "the extra kiln should be gone after disconnect: {:?}",
+        scope["kilns"]
     );
 
-    // Persisted: the primary (kiln-less-resolved) kiln is unchanged and still
-    // the injected data root; the scope mutation only touched the extra kiln.
+    // Persisted: attach then detach round-trips back to the empty set the
+    // session was created with, rather than leaving a substituted default
+    // behind.
     let session = client.session_get(&session_id).await.unwrap();
     assert_eq!(
-        session["kiln"].as_str(),
-        server.data_home.to_str(),
-        "scope mutations must not change the kiln-less primary kiln"
+        session["kilns"].as_array().map(Vec::as_slice),
+        Some(&[][..]),
+        "scope mutations must round-trip back to the empty kiln set"
     );
-    assert!(session["connected_kilns"]
-        .as_array()
-        .map(|a| a.is_empty())
-        .unwrap_or(true));
 
     server.shutdown().await;
 }

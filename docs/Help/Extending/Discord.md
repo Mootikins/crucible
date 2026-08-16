@@ -348,9 +348,8 @@ with the rest of the default; re-add it if you want citations.
 
 > [!warning] Prerequisites before you can observe a citation
 > Precognition is on by default, but it retrieves nothing without an embedding
-> provider and an indexed kiln — and **connected kilns are skipped entirely
-> when there is no enrichment config**, or when the embedding model does not
-> match the primary kiln's
+> provider and an indexed kiln — and **the fan-out is skipped entirely when
+> there is no enrichment config**
 > (`crates/crucible-daemon/src/agent_manager/precognition/mod.rs`). So:
 >
 > 1. Configure `[enrichment.provider]` — see [[Help/Config/embedding]].
@@ -453,7 +452,7 @@ hash changes, reverting your edit. Config is the only durable lever.
 ## What is retained
 
 - **Every Discord message routed to the bot, and every reply**, in the
-  session transcript at `<kiln>/.crucible/sessions/<session-id>/session.jsonl`.
+  session transcript at `~/.crucible/sessions/<session-id>/session.jsonl`.
   Message content is stored verbatim. Nothing expires it automatically;
   `cru session cleanup --older-than <days>` is the tool, and `--dry-run` shows
   what it would remove.

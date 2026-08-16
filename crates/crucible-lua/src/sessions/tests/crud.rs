@@ -12,7 +12,7 @@ async fn sessions_with_mock_api_create_returns_id() {
     let result: Table = lua
         .load(
             r#"
-            local session, err = cru.sessions.create({ type = "chat", kiln = "/tmp/kiln" })
+            local session, err = cru.sessions.create({ type = "chat", kilns = { "/tmp/kiln" } })
             assert(err == nil, "unexpected error: " .. tostring(err))
             return session
             "#,
@@ -28,7 +28,8 @@ async fn sessions_with_mock_api_create_returns_id() {
         id
     );
     assert_eq!(result.get::<String>("state").unwrap(), "active");
-    assert_eq!(result.get::<String>("kiln").unwrap(), "/tmp/kiln");
+    let kilns: Table = result.get("kilns").unwrap();
+    assert_eq!(kilns.get::<String>(1).unwrap(), "/tmp/kiln");
 }
 
 #[tokio::test]
@@ -50,8 +51,9 @@ async fn sessions_with_mock_api_create_no_kiln_uses_default() {
 
     let id: String = result.get("id").unwrap();
     assert!(id.starts_with("chat-"));
-    // kiln should be the mock default
-    assert_eq!(result.get::<String>("kiln").unwrap(), "/default/crucible");
+    // kilns should be the mock default
+    let kilns: Table = result.get("kilns").unwrap();
+    assert_eq!(kilns.get::<String>(1).unwrap(), "/default/crucible");
 }
 
 #[tokio::test]
@@ -76,26 +78,22 @@ async fn sessions_with_mock_api_create_with_kilns() {
 
     let id: String = result.get("id").unwrap();
     assert!(id.starts_with("chat-"));
-    // No explicit kiln → uses mock default
-    assert_eq!(result.get::<String>("kiln").unwrap(), "/default/crucible");
-    // The connected kilns actually crossed the boundary. They used to be
+    // The whole kiln set crossed the boundary, in order. It used to be
     // plucked into a positional argument the mock threw away, so this file
-    // asserted nothing about them.
-    let connected: Table = result.get("connected_kilns").unwrap();
-    assert_eq!(connected.len().unwrap(), 2);
-    assert_eq!(connected.get::<String>(1).unwrap(), "/tmp/notes");
-    assert_eq!(connected.get::<String>(2).unwrap(), "/tmp/docs");
+    // asserted nothing about it.
+    let kilns: Table = result.get("kilns").unwrap();
+    assert_eq!(kilns.len().unwrap(), 2);
+    assert_eq!(kilns.get::<String>(1).unwrap(), "/tmp/notes");
+    assert_eq!(kilns.get::<String>(2).unwrap(), "/tmp/docs");
 }
 
-/// `kilns` is the plugin spelling and `connect_kilns` is the wire name; the
-/// binding sends the table's own key and the request type aliases it.
+/// `kilns` is both the plugin spelling and the wire name now, so the binding
+/// sends the table's own key untranslated.
 ///
 /// Asserted on the JSON because that is the whole hop this side owns: an
 /// ordered list of strings has to survive mlua's table encoding intact (a
 /// dropped element or an object instead of an array is what a hand-rolled
-/// conversion got wrong). That the daemon then reads it as `connect_kilns` is
-/// pinned where the alias lives — `session_bridge`'s
-/// `bridge_create_accepts_the_lua_kilns_spelling`.
+/// conversion got wrong).
 #[tokio::test]
 async fn create_sends_kilns_as_an_ordered_array() {
     let mock = Arc::new(MockDaemonApi::new());
@@ -143,19 +141,6 @@ async fn create_tolerates_an_empty_kilns_table() {
         Some(&serde_json::json!([])),
         "an empty kilns table must reach the daemon as an array"
     );
-
-    // The wire spelling has the same problem, and the binding rewrites both —
-    // fixing only the one the plugins use would leave the other broken for the
-    // caller who read the RPC docs.
-    let _: Table = lua
-        .load(r#"return (cru.sessions.create({ type = "chat", connect_kilns = {} }))"#)
-        .eval_async()
-        .await
-        .unwrap();
-    assert_eq!(
-        mock.last_create_params().unwrap().get("connect_kilns"),
-        Some(&serde_json::json!([]))
-    );
 }
 
 /// Every create-time field reaches the daemon, not just the four the binding
@@ -176,7 +161,6 @@ async fn create_forwards_the_whole_options_table() {
             r#"
             local session, err = cru.sessions.create({
                 type = "chat",
-                kiln = "/tmp/kiln",
                 workspace = "/tmp/ws",
                 kilns = { "/tmp/notes" },
                 configure_agent = true,
@@ -203,7 +187,6 @@ async fn create_forwards_the_whole_options_table() {
         params,
         serde_json::json!({
             "type": "chat",
-            "kiln": "/tmp/kiln",
             "workspace": "/tmp/ws",
             "kilns": ["/tmp/notes"],
             "configure_agent": true,

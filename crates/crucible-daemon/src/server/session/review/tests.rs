@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::temp_session_manager;
 use crucible_core::protocol::RequestId;
 use crucible_core::session::{GateBlock, PhysicalRoot, TreeSha};
 use tempfile::TempDir;
@@ -36,7 +37,7 @@ impl Fixture {
 
         let (event_tx, events) = broadcast::channel(64);
         let kiln_manager = Arc::new(KilnManager::new());
-        let session_manager = Arc::new(SessionManager::new());
+        let session_manager = temp_session_manager();
         let am = Arc::new(AgentManager::new(AgentManagerParams {
             kiln_manager,
             session_manager: session_manager.clone(),
@@ -464,10 +465,10 @@ async fn the_lua_bridge_restores_a_resumed_sessions_queue_like_the_handler_does(
 
     let fx = Fixture::new("one\n").await;
     let kiln = TempDir::new().unwrap();
-    let session = Session::new(SessionType::Chat, kiln.path().to_path_buf())
+    let session = Session::new(SessionType::Chat, vec![kiln.path().to_path_buf()])
         .with_workspace(fx.dir.path().to_path_buf());
     let id = session.id.clone();
-    let storage = session.storage_path();
+    let storage = session.storage_path(fx.sm.sessions_root());
     fx.sm.register_transient(session);
 
     fx.am

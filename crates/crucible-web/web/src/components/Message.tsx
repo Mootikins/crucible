@@ -9,6 +9,7 @@ import { Copy, Check, Pencil } from 'lucide-solid';
 import { PrecognitionBadge } from './PrecognitionBadge';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
+import { sessionDefaultKiln } from '@/lib/session-scope';
 import type { Message as MessageType } from '@/lib/types';
 import { renderPlainWithWikilinks } from '@/lib/markdown';
 import { formatAbsoluteTime } from '@/lib/format-time';
@@ -28,7 +29,8 @@ export const Message: Component<MessageProps> = (props) => {
    */
   const sessionKiln = () => {
     const sid = chat.sessionId?.();
-    return sessionCtx.sessions().find((s) => s.id === sid)?.kiln;
+    const s = sessionCtx.sessions().find((x) => x.id === sid);
+    return s ? sessionDefaultKiln(s) ?? undefined : undefined;
   };
   const handleMarkdownClick = makeMarkdownClickHandler();
   const isUser = () => props.message.role === 'user';

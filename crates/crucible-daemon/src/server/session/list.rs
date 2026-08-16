@@ -1,8 +1,21 @@
 use super::super::*;
+use super::scope::caller_kiln_scope;
 use crate::{optional_param, require_param};
 
 use crucible_core::session::{SessionState, SessionSummary, SessionType};
 
+/// List sessions.
+///
+/// Params:
+///   - `kilns` (array of strings, optional): The **caller's whole kiln set**;
+///     a session is listed if its own set overlaps it
+///   - `kiln` (string, optional): the single-member spelling of `kilns`
+///   - `workspace`, `type`, `state`, `include_archived`, `include_children`
+///
+/// Unlike the other three backlog-spanning handlers, an absent scope here is
+/// not "nothing": this is the listing the TUI resumes from, so it falls back to
+/// what the daemon can see without being told — the open kilns, the data home,
+/// and the kiln-less sessions that belong to no kiln at all.
 pub(crate) async fn handle_session_list(
     req: Request,
     sm: &Arc<SessionManager>,
@@ -10,7 +23,7 @@ pub(crate) async fn handle_session_list(
     data_home: &std::path::Path,
 ) -> Response {
     // Parse optional filters
-    let kiln = optional_param!(req, "kiln", as_str).map(PathBuf::from);
+    let scope = caller_kiln_scope(&req);
     let workspace = optional_param!(req, "workspace", as_str).map(PathBuf::from);
     let session_type =
         optional_param!(req, "type", as_str).and_then(|s| s.parse::<SessionType>().ok());
@@ -26,7 +39,21 @@ pub(crate) async fn handle_session_list(
     // behavior, but not first-class in visibility.
     let include_children = optional_param!(req, "include_children", as_bool).unwrap_or(false);
 
-    let mut sessions = if kiln.is_none() {
+    let mut sessions = if !scope.is_empty() {
+        // Same overlap rule as `session.search`: the caller's whole set, not
+        // one member of it.
+        let mut listed = sm
+            .list_sessions_filtered_async(
+                KilnFilter::Any,
+                workspace.as_ref(),
+                session_type,
+                state,
+                include_archived,
+            )
+            .await;
+        listed.retain(|s| scope.overlaps(&s.kilns));
+        listed
+    } else {
         // When no kiln is specified, load sessions from all open kilns + crucible home
         let mut all_sessions = Vec::new();
         let mut seen_ids = std::collections::HashSet::new();
@@ -40,12 +67,28 @@ pub(crate) async fn handle_session_list(
             }
         };
 
-        // First, get sessions from all open kilns
+        // Sessions with an EMPTY kiln set, first. Every other branch here
+        // filters on kiln membership, so a kiln-less session — a legitimate
+        // tools-only agent, and the shape a `session.disconnect_kiln` of the
+        // last kiln produces — matched none of them and disappeared from every
+        // listing, including the one the TUI resumes from.
+        collect_from(
+            sm.list_sessions_filtered_async(
+                KilnFilter::Kilnless,
+                workspace.as_ref(),
+                session_type,
+                state,
+                include_archived,
+            )
+            .await,
+        );
+
+        // Then, sessions from all open kilns
         let kilns = km.list().await;
         for (kiln_path, _, _) in &kilns {
             let filtered = sm
                 .list_sessions_filtered_async(
-                    Some(kiln_path),
+                    KilnFilter::Attached(kiln_path),
                     workspace.as_ref(),
                     session_type,
                     state,
@@ -67,7 +110,7 @@ pub(crate) async fn handle_session_list(
         if !kilns.iter().any(|(k, _, _)| k == &home) {
             let home_sessions = sm
                 .list_sessions_filtered_async(
-                    Some(&home),
+                    KilnFilter::Attached(&home),
                     workspace.as_ref(),
                     session_type,
                     state,
@@ -78,15 +121,6 @@ pub(crate) async fn handle_session_list(
         }
 
         all_sessions
-    } else {
-        sm.list_sessions_filtered_async(
-            kiln.as_ref(),
-            workspace.as_ref(),
-            session_type,
-            state,
-            include_archived,
-        )
-        .await
     };
 
     if !include_children {
@@ -99,7 +133,7 @@ pub(crate) async fn handle_session_list(
             serde_json::json!({
                 "session_id": s.id,
                 "type": s.session_type.as_prefix(),
-                "kiln": s.kiln,
+                "kilns": s.kilns,
                 "workspace": s.workspace,
                 "state": format!("{}", s.state),
                 "started_at": s.started_at.to_rfc3339(),
@@ -122,31 +156,39 @@ pub(crate) async fn handle_session_list(
     )
 }
 
+/// Search persisted session transcripts.
+///
+/// Params:
+///   - `query` (string, required): Substring to match, case-insensitive
+///   - `kilns` (array of strings, optional): The **caller's whole kiln set**,
+///     not directories to scan
+///   - `kiln` (string, optional): the single-member spelling of `kilns`
+///   - `limit` (u64, optional): Max matches to return (default 20)
+///
+/// Every session now lives in one flat root, so the corpus is no longer
+/// partitioned by directory and scope has to be stated rather than walked to.
+/// A session is searchable only if its kiln set **overlaps** the caller's.
+/// That is deliberately narrower than the backlog: with the per-kiln directory
+/// boundary gone and no privacy predicate yet (Phase 2), anything wider would
+/// read corpora the caller was never cleared for. With no kilns there is no
+/// scope at all, so the result is empty rather than everything — which is also
+/// what a kiln-less tools-only session gets.
+///
+/// Overlap is over the caller's *whole* set. Passing one member (`kilns[0]`
+/// standing in for the rest) tests a fraction of the caller's reach: a caller
+/// on `[A, B]` would miss every session that shares only `B`.
 pub(crate) async fn handle_session_search(req: Request, sm: &Arc<SessionManager>) -> Response {
     let query = require_param!(req, "query", as_str);
-    let kiln = optional_param!(req, "kiln", as_str).map(PathBuf::from);
     let limit = optional_param!(req, "limit", as_u64).unwrap_or(20) as usize;
 
-    // Determine sessions directory
-    let sessions_path = if let Some(kiln_path) = kiln {
-        kiln_path.join(".crucible").join("sessions")
-    } else {
+    let scope = caller_kiln_scope(&req);
+    if scope.is_empty() {
         return Response::success(
             req.id,
             serde_json::json!({
                 "matches": [],
                 "total": 0,
-                "note": "Specify 'kiln' parameter to search sessions"
-            }),
-        );
-    };
-
-    if !sessions_path.exists() {
-        return Response::success(
-            req.id,
-            serde_json::json!({
-                "matches": [],
-                "total": 0
+                "note": "Specify 'kilns' to scope the search to sessions that share one"
             }),
         );
     }
@@ -154,34 +196,18 @@ pub(crate) async fn handle_session_search(req: Request, sm: &Arc<SessionManager>
     let query_lower = query.to_lowercase();
     let mut matches = Vec::new();
 
-    let read_dir = match tokio::fs::read_dir(&sessions_path).await {
-        Ok(rd) => rd,
-        Err(e) => {
-            return internal_error(
-                req.id,
-                anyhow::anyhow!("Failed to read sessions dir: {}", e),
-            )
-        }
-    };
+    // Sessions whose kiln set overlaps the caller's, persisted and in-memory.
+    // `KilnFilter` tests one kiln at a time, so the overlap is applied here
+    // rather than pushed down: it is a property of the *pair* of kiln sets.
+    let reachable = sm
+        .list_sessions_filtered_async(KilnFilter::Any, None, None, None, true)
+        .await;
 
-    let mut rd = read_dir;
-    while let Ok(Some(entry)) = rd.next_entry().await {
+    for summary in reachable.iter().filter(|s| scope.overlaps(&s.kilns)) {
         if matches.len() >= limit {
             break;
         }
-        let session_dir = entry.path();
-        if !session_dir.is_dir() {
-            continue;
-        }
-        let session_id = session_dir
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("")
-            .to_string();
-        let jsonl_path = session_dir.join("session.jsonl");
-        if !jsonl_path.exists() {
-            continue;
-        }
+        let jsonl_path = sm.session_dir(&summary.id).join("session.jsonl");
         let content = match tokio::fs::read_to_string(&jsonl_path).await {
             Ok(c) => c,
             Err(_) => continue,
@@ -196,7 +222,7 @@ pub(crate) async fn handle_session_search(req: Request, sm: &Arc<SessionManager>
                     line.to_string()
                 };
                 matches.push(serde_json::json!({
-                    "session_id": session_id,
+                    "session_id": summary.id,
                     "line": line_num + 1,
                     "context": truncated
                 }));
@@ -205,11 +231,10 @@ pub(crate) async fn handle_session_search(req: Request, sm: &Arc<SessionManager>
         }
     }
 
-    // Also include active sessions matching by title
-    let active_sessions = sm
-        .list_sessions_filtered_async(None, None, None, None, true)
-        .await;
-    for session in &active_sessions {
+    // Supplement for flush lag: an in-process session's transcript may not be
+    // on disk yet, so match its title too. Same scope as the corpus pass.
+    let active_sessions = sm.list_sessions_filtered(KilnFilter::Any, None, None, None, true);
+    for session in active_sessions.iter().filter(|s| scope.overlaps(&s.kilns)) {
         if matches.len() >= limit {
             break;
         }
@@ -246,9 +271,8 @@ pub(crate) async fn handle_session_get(req: Request, sm: &Arc<SessionManager>) -
             let mut response = serde_json::json!({
                 "session_id": session.id,
                 "type": session.session_type.as_prefix(),
-                "kiln": session.kiln,
+                "kilns": session.kilns,
                 "workspace": session.workspace,
-                "connected_kilns": session.connected_kilns,
                 "state": format!("{}", session.state),
                 "started_at": session.started_at.to_rfc3339(),
                 "title": session.title,
@@ -276,7 +300,246 @@ mod tests {
     use super::*;
     use crate::kiln_manager::KilnManager;
     use crate::session_manager::SessionManager;
+    use crate::session_storage::FileSessionStorage;
+    use crucible_core::session::Session;
     use tempfile::TempDir;
+
+    fn search_request(params: serde_json::Value) -> Request {
+        serde_json::from_value(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "session.search",
+            "params": params,
+        }))
+        .unwrap()
+    }
+
+    /// Persist a session attached to `kilns` with `body` as its transcript.
+    async fn seed_session(sm: &SessionManager, kilns: Vec<PathBuf>, body: &str) -> String {
+        let session = Session::new(SessionType::Chat, kilns);
+        sm.update_session(&session).await.unwrap();
+        let dir = sm.session_dir(&session.id);
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        tokio::fs::write(dir.join("session.jsonl"), body)
+            .await
+            .unwrap();
+        session.id
+    }
+
+    fn matched_ids(resp: &Response) -> Vec<String> {
+        resp.result.as_ref().unwrap()["matches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["session_id"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    /// The per-kiln directory scan was the isolation boundary; with one flat
+    /// root, kiln-set overlap has to be it instead. A session that shares no
+    /// kiln with the caller stays out of the result set.
+    #[tokio::test]
+    async fn search_returns_only_sessions_sharing_a_kiln_with_the_caller() {
+        let tmp = TempDir::new().unwrap();
+        let sm = SessionManager::new(FileSessionStorage::root_for(tmp.path()));
+        let mine = tmp.path().join("mine");
+        let theirs = tmp.path().join("theirs");
+
+        let ours = seed_session(&sm, vec![mine.clone()], "{\"content\":\"needle\"}\n").await;
+        let foreign = seed_session(&sm, vec![theirs], "{\"content\":\"needle\"}\n").await;
+
+        let resp = handle_session_search(
+            search_request(serde_json::json!({
+                "query": "needle",
+                "kiln": mine.to_string_lossy(),
+            })),
+            &Arc::new(sm),
+        )
+        .await;
+
+        let ids = matched_ids(&resp);
+        assert!(ids.contains(&ours), "own-kiln session missing: {ids:?}");
+        assert!(
+            !ids.contains(&foreign),
+            "session from an unshared kiln leaked: {ids:?}"
+        );
+    }
+
+    /// Overlap is over the caller's WHOLE set. Scoping to one member tests a
+    /// fraction of what the caller reaches, so a session sharing any other
+    /// member is wrongly invisible.
+    #[tokio::test]
+    async fn search_spans_every_kiln_in_the_callers_set() {
+        let tmp = TempDir::new().unwrap();
+        let sm = SessionManager::new(FileSessionStorage::root_for(tmp.path()));
+        let a = tmp.path().join("a");
+        let b = tmp.path().join("b");
+        let elsewhere = tmp.path().join("elsewhere");
+
+        let on_a = seed_session(&sm, vec![a.clone()], "{\"content\":\"needle\"}\n").await;
+        let on_b = seed_session(&sm, vec![b.clone()], "{\"content\":\"needle\"}\n").await;
+        let foreign = seed_session(&sm, vec![elsewhere], "{\"content\":\"needle\"}\n").await;
+
+        let resp = handle_session_search(
+            search_request(serde_json::json!({
+                "query": "needle",
+                "kilns": [a.to_string_lossy(), b.to_string_lossy()],
+            })),
+            &Arc::new(sm),
+        )
+        .await;
+
+        let ids = matched_ids(&resp);
+        assert!(ids.contains(&on_a), "first-kiln session missing: {ids:?}");
+        assert!(
+            ids.contains(&on_b),
+            "session sharing only the caller's second kiln missing: {ids:?}"
+        );
+        assert!(
+            !ids.contains(&foreign),
+            "session from an unshared kiln leaked: {ids:?}"
+        );
+    }
+
+    /// A caller with no kilns has no overlap with anything — the tools-only
+    /// session searches its way into an empty result set, not the backlog.
+    #[tokio::test]
+    async fn search_from_a_kiln_less_caller_returns_nothing() {
+        let tmp = TempDir::new().unwrap();
+        let sm = SessionManager::new(FileSessionStorage::root_for(tmp.path()));
+        seed_session(
+            &sm,
+            vec![tmp.path().join("somewhere")],
+            "{\"content\":\"needle\"}\n",
+        )
+        .await;
+
+        let resp = handle_session_search(
+            search_request(serde_json::json!({ "query": "needle", "kilns": [] })),
+            &Arc::new(sm),
+        )
+        .await;
+
+        assert!(matched_ids(&resp).is_empty());
+    }
+
+    /// No scope is not "every scope": without `kiln` there is nothing the
+    /// caller is provably cleared to read, so the backlog stays closed.
+    #[tokio::test]
+    async fn search_without_a_kiln_scope_returns_nothing() {
+        let tmp = TempDir::new().unwrap();
+        let sm = SessionManager::new(FileSessionStorage::root_for(tmp.path()));
+        seed_session(
+            &sm,
+            vec![tmp.path().join("somewhere")],
+            "{\"content\":\"needle\"}\n",
+        )
+        .await;
+
+        let resp = handle_session_search(
+            search_request(serde_json::json!({ "query": "needle" })),
+            &Arc::new(sm),
+        )
+        .await;
+
+        assert!(matched_ids(&resp).is_empty());
+    }
+
+    /// Zero kilns is a legitimate session shape, and every branch of the
+    /// no-kiln-argument listing filters on kiln MEMBERSHIP — so a tools-only
+    /// session matched none of them and disappeared from `session.list`
+    /// entirely: unresumable in the TUI, invisible in the web listing, with
+    /// nothing to explain where it went.
+    #[tokio::test]
+    async fn a_kiln_less_session_still_appears_in_the_listing() {
+        let km = Arc::new(KilnManager::new());
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().to_path_buf();
+        let sm = Arc::new(SessionManager::new(FileSessionStorage::root_for(
+            &data_home,
+        )));
+
+        let kiln_less = seed_session(&sm, vec![], "").await;
+        // Attached to the data home, which is the one kiln this listing
+        // reaches without a KilnManager open — the control for "the new
+        // branch did not displace the old ones".
+        let attached = seed_session(&sm, vec![data_home.clone()], "").await;
+
+        let req: Request = serde_json::from_value(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "session.list",
+            "params": {},
+        }))
+        .unwrap();
+
+        let resp = handle_session_list(req, &sm, &km, &data_home).await;
+        let ids: Vec<String> = resp.result.as_ref().unwrap()["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["session_id"].as_str().unwrap().to_string())
+            .collect();
+
+        assert!(
+            ids.contains(&kiln_less),
+            "a session with no kilns vanished from session.list: {ids:?}"
+        );
+        assert_eq!(
+            ids.iter().filter(|id| **id == kiln_less).count(),
+            1,
+            "the kiln-less branch must dedup against the others: {ids:?}"
+        );
+        assert!(
+            ids.contains(&attached),
+            "the new branch must not cost the ordinary listing: {ids:?}"
+        );
+    }
+
+    /// The fourth scoped handler answers to the same predicate as the other
+    /// three: a caller attached to `[a, b]` that can only spell one kiln sees
+    /// half its own sessions, and the ones it cannot see are its own.
+    #[tokio::test]
+    async fn listing_spans_every_kiln_in_the_callers_set() {
+        let km = Arc::new(KilnManager::new());
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().to_path_buf();
+        let sm = Arc::new(SessionManager::new(FileSessionStorage::root_for(
+            &data_home,
+        )));
+        let a = tmp.path().join("a");
+        let b = tmp.path().join("b");
+
+        let on_a = seed_session(&sm, vec![a.clone()], "").await;
+        let on_b = seed_session(&sm, vec![b.clone()], "").await;
+        let foreign = seed_session(&sm, vec![tmp.path().join("elsewhere")], "").await;
+
+        let req: Request = serde_json::from_value(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "session.list",
+            "params": { "kilns": [a.to_string_lossy(), b.to_string_lossy()] },
+        }))
+        .unwrap();
+
+        let resp = handle_session_list(req, &sm, &km, &data_home).await;
+        let ids: Vec<String> = resp.result.as_ref().unwrap()["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["session_id"].as_str().unwrap().to_string())
+            .collect();
+
+        assert!(ids.contains(&on_a), "first-kiln session missing: {ids:?}");
+        assert!(
+            ids.contains(&on_b),
+            "session sharing only the caller's second kiln missing: {ids:?}"
+        );
+        assert!(
+            !ids.contains(&foreign),
+            "session from an unshared kiln leaked: {ids:?}"
+        );
+    }
 
     /// `server/mod.rs` documents the invariant this handler broke: the title
     /// sweep scans `~/.crucible` "but never OPENS home as a kiln — that is the
@@ -291,9 +554,11 @@ mod tests {
     #[tokio::test]
     async fn listing_sessions_never_opens_the_data_root_as_a_kiln() {
         let km = Arc::new(KilnManager::new());
-        let sm = Arc::new(SessionManager::new());
         let tmp = TempDir::new().unwrap();
         let data_home = tmp.path().to_path_buf();
+        let sm = Arc::new(SessionManager::new(FileSessionStorage::root_for(
+            &data_home,
+        )));
 
         let req: Request = serde_json::from_value(serde_json::json!({
             "jsonrpc": "2.0",

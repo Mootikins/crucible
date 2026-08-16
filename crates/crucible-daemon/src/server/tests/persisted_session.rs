@@ -1,19 +1,27 @@
 use super::*;
 
 // ── Session Observe Handler Tests ──────────────────────────────────
+//
+// Every handler here is keyed on a session *id* against an injected sessions
+// root. That root is a `TempDir`, never the developer's `~/.crucible`, and the
+// handlers can no longer be pointed at an arbitrary directory — which is the
+// whole point of the relocation: a caller that could name the directory could
+// name any directory.
 
-/// Create a test session directory with a JSONL file containing sample events.
-fn create_test_session_dir(tmp: &TempDir) -> PathBuf {
-    let session_dir = tmp.path().join("chat-20260101-1200-abcd");
+/// A sessions root holding one session whose JSONL has three sample events.
+/// Returns the root and the session id.
+fn seed_session(tmp: &TempDir) -> (PathBuf, String) {
+    let sessions_root = tmp.path().join("sessions");
+    let session_id = "chat-20260101-1200-abcd".to_string();
+    let session_dir = sessions_root.join(&session_id);
     std::fs::create_dir_all(&session_dir).unwrap();
-    let jsonl = session_dir.join("session.jsonl");
     let events = [
         "{\"type\":\"init\",\"ts\":\"2026-01-01T12:00:00Z\",\"session_id\":\"chat-20260101-1200-abcd\"}",
         "{\"type\":\"user\",\"ts\":\"2026-01-01T12:00:01Z\",\"content\":\"Hello world\"}",
         "{\"type\":\"assistant\",\"ts\":\"2026-01-01T12:00:02Z\",\"content\":\"Hi there!\"}",
     ];
-    std::fs::write(&jsonl, events.join("\n") + "\n").unwrap();
-    session_dir
+    std::fs::write(session_dir.join("session.jsonl"), events.join("\n") + "\n").unwrap();
+    (sessions_root, session_id)
 }
 
 fn make_request(method: &str, params: Value) -> Request {
@@ -29,13 +37,10 @@ fn make_request(method: &str, params: Value) -> Request {
 #[tokio::test]
 async fn session_load_events_returns_events_from_jsonl() {
     let tmp = TempDir::new().unwrap();
-    let session_dir = create_test_session_dir(&tmp);
+    let (sessions_root, session_id) = seed_session(&tmp);
 
-    let req = make_request(
-        "session.load_events",
-        json!({ "session_dir": session_dir.to_string_lossy().to_string() }),
-    );
-    let resp = handle_session_load_events(req).await;
+    let req = make_request("session.load_events", json!({ "session_id": session_id }));
+    let resp = handle_session_load_events(req, &sessions_root).await;
 
     assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
     let result = resp.result.unwrap();
@@ -47,32 +52,61 @@ async fn session_load_events_returns_events_from_jsonl() {
 }
 
 #[tokio::test]
-async fn session_load_events_missing_dir_returns_empty() {
+async fn session_load_events_unknown_id_returns_empty() {
     let tmp = TempDir::new().unwrap();
-    let missing = tmp.path().join("nonexistent");
+    let (sessions_root, _) = seed_session(&tmp);
 
     let req = make_request(
         "session.load_events",
-        json!({ "session_dir": missing.to_string_lossy().to_string() }),
+        json!({ "session_id": "chat-does-not-exist" }),
     );
-    let resp = handle_session_load_events(req).await;
+    let resp = handle_session_load_events(req, &sessions_root).await;
 
     assert!(resp.error.is_none());
     let result = resp.result.unwrap();
-    let events = result.as_array().unwrap();
-    assert!(events.is_empty());
+    assert!(result.as_array().unwrap().is_empty());
+}
+
+/// A traversing id must not reach outside the sessions root. `session_id` is
+/// joined onto a daemon-owned path, so `../` in it would otherwise be a
+/// readable-anything primitive over the RPC surface.
+#[tokio::test]
+async fn session_load_events_refuses_an_id_that_escapes_the_sessions_root() {
+    let tmp = TempDir::new().unwrap();
+    let (sessions_root, session_id) = seed_session(&tmp);
+    // A sibling of the sessions root, shaped like a session so that reaching it
+    // would succeed rather than merely miss.
+    let outside = tmp.path().join("elsewhere").join(&session_id);
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(
+        outside.join("session.jsonl"),
+        "{\"type\":\"user\",\"ts\":\"2026-01-01T12:00:01Z\",\"content\":\"secret\"}\n",
+    )
+    .unwrap();
+
+    let req = make_request(
+        "session.load_events",
+        json!({ "session_id": format!("../elsewhere/{session_id}") }),
+    );
+    let resp = handle_session_load_events(req, &sessions_root).await;
+
+    let leaked = serde_json::to_string(&resp).unwrap();
+    assert!(
+        !leaked.contains("secret"),
+        "a traversing session id reached outside the sessions root: {leaked}"
+    );
 }
 
 #[tokio::test]
 async fn session_render_markdown_produces_output() {
     let tmp = TempDir::new().unwrap();
-    let session_dir = create_test_session_dir(&tmp);
+    let (sessions_root, session_id) = seed_session(&tmp);
 
     let req = make_request(
         "session.render_markdown",
-        json!({ "session_dir": session_dir.to_string_lossy().to_string() }),
+        json!({ "session_id": session_id }),
     );
-    let resp = handle_session_render_markdown(req).await;
+    let resp = handle_session_render_markdown(req, &sessions_root).await;
 
     assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
     let result = resp.result.unwrap();
@@ -84,17 +118,17 @@ async fn session_render_markdown_produces_output() {
 #[tokio::test]
 async fn session_export_to_file_writes_markdown() {
     let tmp = TempDir::new().unwrap();
-    let session_dir = create_test_session_dir(&tmp);
+    let (sessions_root, session_id) = seed_session(&tmp);
     let output = tmp.path().join("exported.md");
 
     let req = make_request(
         "session.export_to_file",
         json!({
-            "session_dir": session_dir.to_string_lossy().to_string(),
+            "session_id": session_id,
             "output_path": output.to_string_lossy().to_string(),
         }),
     );
-    let resp = handle_session_export_to_file(req).await;
+    let resp = handle_session_export_to_file(req, &sessions_root).await;
 
     assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
     let result = resp.result.unwrap();
@@ -104,27 +138,67 @@ async fn session_export_to_file_writes_markdown() {
     assert!(content.contains("Hello world"));
 }
 
+// ── Scoped handlers: list_persisted and cleanup ────────────────────
+//
+// These two read and delete across the flat sessions root, so the per-kiln
+// directory that used to bound them is gone. Kiln-set overlap replaces it,
+// exactly as `handle_session_search` does it.
+
+/// A session manager rooted at `tmp/sessions`.
+fn manager_for(tmp: &TempDir) -> Arc<SessionManager> {
+    Arc::new(SessionManager::new(FileSessionStorage::root_for(
+        tmp.path(),
+    )))
+}
+
+/// Persist a session attached to `kilns` with `body` as its transcript.
+async fn seed_scoped_session(
+    sm: &SessionManager,
+    kilns: Vec<PathBuf>,
+    body: &str,
+) -> (String, PathBuf) {
+    let session =
+        crucible_core::session::Session::new(crucible_core::session::SessionType::Chat, kilns);
+    sm.update_session(&session).await.unwrap();
+    let dir = sm.session_dir(&session.id);
+    tokio::fs::create_dir_all(&dir).await.unwrap();
+    tokio::fs::write(dir.join("session.jsonl"), body)
+        .await
+        .unwrap();
+    (session.id, dir)
+}
+
+fn listed_ids(resp: &Response) -> Vec<String> {
+    resp.result.as_ref().unwrap()["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["id"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// Seeded through `Session::new` — the id the daemon actually mints
+/// (`chat-2026-01-04T1530-a1b2c3`), not the `SessionId::parse` shape
+/// (`chat-20260104-1530-a1b2`) the old directory walk filtered on. The two
+/// schemes have never agreed, so a handler that enumerated the root through
+/// `SessionId` saw none of a running daemon's sessions.
 #[tokio::test]
 async fn session_list_persisted_returns_sessions() {
     let tmp = TempDir::new().unwrap();
-    let kiln = tmp.path().join("kiln");
-    let sessions_dir = kiln.join(".crucible").join("sessions");
-    std::fs::create_dir_all(&sessions_dir).unwrap();
-
-    let sid = "chat-20260101-1200-abcd";
-    let session_dir = sessions_dir.join(sid);
-    std::fs::create_dir_all(&session_dir).unwrap();
-    std::fs::write(
-        session_dir.join("session.jsonl"),
+    let sm = manager_for(&tmp);
+    let kiln = tmp.path().join("mine");
+    let (sid, _) = seed_scoped_session(
+        &sm,
+        vec![kiln.clone()],
         "{\"type\":\"user\",\"ts\":\"2026-01-01T12:00:01Z\",\"content\":\"Test message\"}",
     )
-    .unwrap();
+    .await;
 
     let req = make_request(
         "session.list_persisted",
-        json!({ "kiln": kiln.to_string_lossy().to_string() }),
+        json!({ "kiln": kiln.to_string_lossy() }),
     );
-    let resp = handle_session_list_persisted(req).await;
+    let resp = handle_session_list_persisted(req, &sm).await;
 
     assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
     let result = resp.result.unwrap();
@@ -136,16 +210,16 @@ async fn session_list_persisted_returns_sessions() {
 }
 
 #[tokio::test]
-async fn session_list_persisted_empty_kiln_returns_empty() {
+async fn session_list_persisted_empty_root_returns_empty() {
     let tmp = TempDir::new().unwrap();
-    let kiln = tmp.path().join("empty-kiln");
-    std::fs::create_dir_all(&kiln).unwrap();
+    let sm = manager_for(&tmp);
+    std::fs::create_dir_all(sm.sessions_root()).unwrap();
 
     let req = make_request(
         "session.list_persisted",
-        json!({ "kiln": kiln.to_string_lossy().to_string() }),
+        json!({ "kiln": tmp.path().join("mine").to_string_lossy() }),
     );
-    let resp = handle_session_list_persisted(req).await;
+    let resp = handle_session_list_persisted(req, &sm).await;
 
     assert!(resp.error.is_none());
     let result = resp.result.unwrap();
@@ -153,31 +227,120 @@ async fn session_list_persisted_empty_kiln_returns_empty() {
     assert_eq!(result["sessions"].as_array().unwrap().len(), 0);
 }
 
+/// `title` is not metadata — it is the first 50 characters of the session's
+/// first user message. Listing over the flat root without a scope filter
+/// therefore hands back the opening line of every conversation on the box,
+/// including kilns the caller never attached.
+#[tokio::test]
+async fn session_list_persisted_returns_only_sessions_sharing_a_kiln_with_the_caller() {
+    let tmp = TempDir::new().unwrap();
+    let sm = manager_for(&tmp);
+    let mine = tmp.path().join("mine");
+    let theirs = tmp.path().join("theirs");
+
+    let (ours, _) = seed_scoped_session(
+        &sm,
+        vec![mine.clone()],
+        "{\"type\":\"user\",\"ts\":\"2026-01-01T12:00:01Z\",\"content\":\"my own question\"}",
+    )
+    .await;
+    let (foreign, _) = seed_scoped_session(
+        &sm,
+        vec![theirs],
+        "{\"type\":\"user\",\"ts\":\"2026-01-01T12:00:02Z\",\"content\":\"a secret from another corpus\"}",
+    )
+    .await;
+
+    let req = make_request(
+        "session.list_persisted",
+        json!({ "kiln": mine.to_string_lossy() }),
+    );
+    let resp = handle_session_list_persisted(req, &sm).await;
+
+    let ids = listed_ids(&resp);
+    assert!(ids.contains(&ours), "own-kiln session missing: {ids:?}");
+    assert!(
+        !ids.contains(&foreign),
+        "session from an unshared kiln leaked: {ids:?}"
+    );
+    let body = serde_json::to_string(resp.result.as_ref().unwrap()).unwrap();
+    assert!(
+        !body.contains("a secret from another corpus"),
+        "message content from an unshared kiln leaked: {body}"
+    );
+}
+
+/// Overlap is over the caller's WHOLE kiln set, the same rule
+/// `session.search` follows. A caller attached to `[a, b]` that can only spell
+/// one of them sees a fraction of its own reach — its `b` sessions read as
+/// another corpus's.
+#[tokio::test]
+async fn session_list_persisted_spans_every_kiln_in_the_callers_set() {
+    let tmp = TempDir::new().unwrap();
+    let sm = manager_for(&tmp);
+    let a = tmp.path().join("a");
+    let b = tmp.path().join("b");
+    let elsewhere = tmp.path().join("elsewhere");
+    let msg = "{\"type\":\"user\",\"ts\":\"2026-01-01T12:00:01Z\",\"content\":\"hello\"}";
+
+    let (on_a, _) = seed_scoped_session(&sm, vec![a.clone()], msg).await;
+    let (on_b, _) = seed_scoped_session(&sm, vec![b.clone()], msg).await;
+    let (foreign, _) = seed_scoped_session(&sm, vec![elsewhere], msg).await;
+
+    let req = make_request(
+        "session.list_persisted",
+        json!({ "kilns": [a.to_string_lossy(), b.to_string_lossy()] }),
+    );
+    let resp = handle_session_list_persisted(req, &sm).await;
+
+    let ids = listed_ids(&resp);
+    assert!(ids.contains(&on_a), "first-kiln session missing: {ids:?}");
+    assert!(
+        ids.contains(&on_b),
+        "session sharing only the caller's second kiln missing: {ids:?}"
+    );
+    assert!(
+        !ids.contains(&foreign),
+        "session from an unshared kiln leaked: {ids:?}"
+    );
+}
+
+/// No scope is not every scope, the same rule `session.search` follows.
+#[tokio::test]
+async fn session_list_persisted_without_a_kiln_scope_returns_nothing() {
+    let tmp = TempDir::new().unwrap();
+    let sm = manager_for(&tmp);
+    seed_scoped_session(
+        &sm,
+        vec![tmp.path().join("somewhere")],
+        "{\"type\":\"user\",\"ts\":\"2026-01-01T12:00:01Z\",\"content\":\"hello\"}",
+    )
+    .await;
+
+    let req = make_request("session.list_persisted", json!({}));
+    let resp = handle_session_list_persisted(req, &sm).await;
+
+    assert!(resp.error.is_none());
+    assert!(listed_ids(&resp).is_empty());
+}
+
 #[tokio::test]
 async fn session_cleanup_dry_run_does_not_delete() {
     let tmp = TempDir::new().unwrap();
-    let kiln = tmp.path().join("kiln");
-    let sessions_dir = kiln.join(".crucible").join("sessions");
-    std::fs::create_dir_all(&sessions_dir).unwrap();
-
-    let sid = "chat-20200101-1200-a0b1";
-    let session_dir = sessions_dir.join(sid);
-    std::fs::create_dir_all(&session_dir).unwrap();
-    std::fs::write(
-        session_dir.join("session.jsonl"),
+    let sm = manager_for(&tmp);
+    let kiln = tmp.path().join("mine");
+    let (_, session_dir) = seed_scoped_session(
+        &sm,
+        vec![kiln.clone()],
         "{\"type\":\"user\",\"ts\":\"2020-01-01T12:00:00Z\",\"content\":\"Old message\"}",
     )
-    .unwrap();
+    .await;
 
     let req = make_request(
         "session.cleanup",
-        json!({
-            "kiln": kiln.to_string_lossy().to_string(),
-            "older_than_days": 1,
-            "dry_run": true,
-        }),
+        json!({ "older_than_days": 1, "dry_run": true, "kiln": kiln.to_string_lossy() }),
     );
-    let resp = handle_session_cleanup(req).await;
+    let resp = handle_session_cleanup(req, &sm).await;
 
     assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
     let result = resp.result.unwrap();
@@ -189,32 +352,141 @@ async fn session_cleanup_dry_run_does_not_delete() {
 #[tokio::test]
 async fn session_cleanup_deletes_old_sessions() {
     let tmp = TempDir::new().unwrap();
-    let kiln = tmp.path().join("kiln");
-    let sessions_dir = kiln.join(".crucible").join("sessions");
-    std::fs::create_dir_all(&sessions_dir).unwrap();
-
-    let sid = "chat-20200101-1200-a0b2";
-    let session_dir = sessions_dir.join(sid);
-    std::fs::create_dir_all(&session_dir).unwrap();
-    std::fs::write(
-        session_dir.join("session.jsonl"),
+    let sm = manager_for(&tmp);
+    let kiln = tmp.path().join("mine");
+    let (_, session_dir) = seed_scoped_session(
+        &sm,
+        vec![kiln.clone()],
         "{\"type\":\"user\",\"ts\":\"2020-01-01T12:00:00Z\",\"content\":\"Old message\"}",
     )
-    .unwrap();
+    .await;
 
     let req = make_request(
         "session.cleanup",
-        json!({
-            "kiln": kiln.to_string_lossy().to_string(),
-            "older_than_days": 1,
-            "dry_run": false,
-        }),
+        json!({ "older_than_days": 1, "dry_run": false, "kiln": kiln.to_string_lossy() }),
     );
-    let resp = handle_session_cleanup(req).await;
+    let resp = handle_session_cleanup(req, &sm).await;
 
     assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
     let result = resp.result.unwrap();
     assert_eq!(result["dry_run"], false);
     assert_eq!(result["total"], 1);
     assert!(!session_dir.exists(), "old session should be deleted");
+}
+
+/// The destructive counterpart of the listing rule: `cru session cleanup` run
+/// from one kiln must not reach into another kiln's sessions. There is no
+/// confirmation prompt and no undo, so the blast radius has to be the scope
+/// the caller named.
+#[tokio::test]
+async fn session_cleanup_deletes_only_sessions_sharing_a_kiln_with_the_caller() {
+    let tmp = TempDir::new().unwrap();
+    let sm = manager_for(&tmp);
+    let mine = tmp.path().join("mine");
+    let theirs = tmp.path().join("theirs");
+    let old = "{\"type\":\"user\",\"ts\":\"2020-01-01T12:00:00Z\",\"content\":\"Old message\"}";
+
+    let (_, ours) = seed_scoped_session(&sm, vec![mine.clone()], old).await;
+    let (_, foreign) = seed_scoped_session(&sm, vec![theirs], old).await;
+
+    let req = make_request(
+        "session.cleanup",
+        json!({ "older_than_days": 1, "dry_run": false, "kiln": mine.to_string_lossy() }),
+    );
+    let resp = handle_session_cleanup(req, &sm).await;
+
+    assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
+    assert!(!ours.exists(), "own-kiln session should be deleted");
+    assert!(
+        foreign.exists(),
+        "cleanup deleted a session from a kiln the caller never named"
+    );
+}
+
+/// The destructive side of the same overlap rule: a caller attached to
+/// `[a, b]` that can only name one of them has to run cleanup twice, and the
+/// second run is the one nobody remembers. Same predicate as the listing.
+#[tokio::test]
+async fn session_cleanup_spans_every_kiln_in_the_callers_set() {
+    let tmp = TempDir::new().unwrap();
+    let sm = manager_for(&tmp);
+    let a = tmp.path().join("a");
+    let b = tmp.path().join("b");
+    let old = "{\"type\":\"user\",\"ts\":\"2020-01-01T12:00:00Z\",\"content\":\"Old message\"}";
+
+    let (_, on_a) = seed_scoped_session(&sm, vec![a.clone()], old).await;
+    let (_, on_b) = seed_scoped_session(&sm, vec![b.clone()], old).await;
+    let (_, foreign) = seed_scoped_session(&sm, vec![tmp.path().join("elsewhere")], old).await;
+
+    let req = make_request(
+        "session.cleanup",
+        json!({
+            "older_than_days": 1,
+            "dry_run": false,
+            "kilns": [a.to_string_lossy(), b.to_string_lossy()],
+        }),
+    );
+    let resp = handle_session_cleanup(req, &sm).await;
+
+    assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
+    assert!(!on_a.exists(), "first-kiln session should be deleted");
+    assert!(
+        !on_b.exists(),
+        "session sharing only the caller's second kiln survived the sweep"
+    );
+    assert!(
+        foreign.exists(),
+        "cleanup deleted a session from a kiln the caller never named"
+    );
+}
+
+/// A scope has to be stated. Silently defaulting to the whole backlog is the
+/// machine-wide delete this handler must never perform by accident.
+#[tokio::test]
+async fn session_cleanup_without_a_scope_deletes_nothing() {
+    let tmp = TempDir::new().unwrap();
+    let sm = manager_for(&tmp);
+    let (_, dir) = seed_scoped_session(
+        &sm,
+        vec![tmp.path().join("mine")],
+        "{\"type\":\"user\",\"ts\":\"2020-01-01T12:00:00Z\",\"content\":\"Old message\"}",
+    )
+    .await;
+
+    let req = make_request(
+        "session.cleanup",
+        json!({ "older_than_days": 1, "dry_run": false }),
+    );
+    let resp = handle_session_cleanup(req, &sm).await;
+
+    assert!(resp.error.is_some(), "unscoped cleanup should be refused");
+    assert!(dir.exists(), "unscoped cleanup deleted a session");
+}
+
+/// Sweeping every kiln stays possible, but only when the caller says so in
+/// as many words — which is also the only way a kiln-less session (a
+/// legitimate state) can ever be collected.
+#[tokio::test]
+async fn session_cleanup_sweeps_every_kiln_only_when_explicitly_asked() {
+    let tmp = TempDir::new().unwrap();
+    let sm = manager_for(&tmp);
+    let old = "{\"type\":\"user\",\"ts\":\"2020-01-01T12:00:00Z\",\"content\":\"Old message\"}";
+
+    let (_, ours) = seed_scoped_session(&sm, vec![tmp.path().join("mine")], old).await;
+    let (_, foreign) = seed_scoped_session(&sm, vec![tmp.path().join("theirs")], old).await;
+    let (_, kilnless) = seed_scoped_session(&sm, vec![], old).await;
+
+    let req = make_request(
+        "session.cleanup",
+        json!({ "older_than_days": 1, "dry_run": false, "all_kilns": true }),
+    );
+    let resp = handle_session_cleanup(req, &sm).await;
+
+    assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
+    assert!(!ours.exists());
+    assert!(!foreign.exists());
+    assert!(
+        !kilnless.exists(),
+        "kiln-less sessions need a collector too"
+    );
 }

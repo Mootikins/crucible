@@ -1,9 +1,47 @@
 use super::*;
+use crate::server::session::scope::caller_kiln_scope;
+use crate::session_manager::{KilnFilter, KilnScope};
+use crucible_core::session::SessionSummary;
 
-pub(crate) async fn handle_session_load_events(req: Request) -> Response {
-    let session_dir = require_param!(req, "session_dir", as_str);
+/// Resolve a client-supplied session id to its directory under `sessions_root`.
+///
+/// The id is joined onto a daemon-owned path, so it has to be a single plain
+/// component: `..` or an absolute id would otherwise turn "read this session's
+/// transcript" into "read any file on the box", which is exactly the reach the
+/// relocation took away by keying these handlers on an id instead of a
+/// directory. Returns `None` for anything that is not one component.
+fn session_dir_for(sessions_root: &Path, session_id: &str) -> Option<PathBuf> {
+    let mut components = Path::new(session_id).components();
+    match (components.next(), components.next()) {
+        (Some(std::path::Component::Normal(name)), None) => Some(sessions_root.join(name)),
+        _ => None,
+    }
+}
 
-    match crate::observe::load_events(session_dir).await {
+/// The response a traversing or otherwise unusable session id gets.
+fn invalid_session_id(req_id: Option<crucible_core::protocol::RequestId>) -> Response {
+    Response::error(
+        req_id,
+        INVALID_PARAMS,
+        "Invalid 'session_id' parameter: must be a single path component",
+    )
+}
+
+/// Load a persisted session's events.
+///
+/// Params:
+///   - `session_id` (string, required): The session id.
+///
+/// Keyed on the id rather than a directory: sessions live under the daemon's
+/// own root now, so only the daemon can spell the path, and a client that
+/// guessed one was guessing the layout.
+pub(crate) async fn handle_session_load_events(req: Request, sessions_root: &Path) -> Response {
+    let session_id = require_param!(req, "session_id", as_str);
+    let Some(session_dir) = session_dir_for(sessions_root, session_id) else {
+        return invalid_session_id(req.id);
+    };
+
+    match crate::observe::load_events(&session_dir).await {
         Ok(events) => match serde_json::to_value(&events) {
             Ok(v) => Response::success(req.id, v),
             Err(e) => internal_error(req.id, e),
@@ -12,43 +50,82 @@ pub(crate) async fn handle_session_load_events(req: Request) -> Response {
     }
 }
 
-/// List persisted sessions from a kiln's session directory.
+/// The sessions within a caller's reach, newest first.
+///
+/// `scope` is `None` for the deliberately unbounded sweep; otherwise a session
+/// qualifies iff its kiln set overlaps the caller's — [`KilnScope::overlaps`],
+/// the one predicate `session.search` and `session.list` also answer to.
+/// `KilnFilter` cannot express it (it tests one kiln at a time), so the listing
+/// is unfiltered and the overlap is applied here.
+///
+/// Two things ride on going through the [`SessionManager`] rather than reading
+/// the sessions root directly:
+///
+/// 1. **Scope.** The flat root holds every session on the box, so kiln-set
+///    overlap is what bounds a handler now that the per-kiln directory does
+///    not.
+/// 2. **It sees the sessions that exist.** `observe::list_sessions` keeps only
+///    directory names `SessionId::parse` accepts (`chat-20260104-1530-a1b2`),
+///    while `Session::new` mints ids as `chat-2026-01-04T1530-a1b2c3`. The two
+///    schemes have never agreed, so a directory walk filtered through
+///    `SessionId` matches nothing a running daemon writes.
+async fn scoped_sessions(sm: &SessionManager, scope: Option<&KilnScope>) -> Vec<SessionSummary> {
+    let mut sessions = sm
+        .list_sessions_filtered_async(KilnFilter::Any, None, None, None, true)
+        .await;
+    if let Some(scope) = scope {
+        sessions.retain(|s| scope.overlaps(&s.kilns));
+    }
+    sessions.sort_by_key(|s| std::cmp::Reverse(s.started_at));
+    sessions
+}
+
+/// List persisted sessions.
 ///
 /// Params:
-///   - `kiln` (string, required): Path to the kiln
+///   - `kilns` (array of strings, optional): The **caller's whole kiln set**,
+///     not directories to scan
+///   - `kiln` (string, optional): the single-member spelling of `kilns`
 ///   - `session_type` (string, optional): Filter by type ("chat", "agent", etc.)
 ///   - `limit` (u64, optional): Max sessions to return (default 50, newest first)
 ///     Returns: { sessions: [...], total: N }
-pub(crate) async fn handle_session_list_persisted(req: Request) -> Response {
-    let kiln = require_param!(req, "kiln", as_str);
-    let session_type_filter = optional_param!(req, "session_type", as_str);
+///
+/// `title` here is not metadata — it is the first 50 characters of the
+/// session's first user message, built below. Listing the whole root would
+/// therefore hand back the opening line of every conversation on the box, so
+/// the result is scoped to sessions whose kiln set overlaps the caller's.
+/// With no kilns there is no scope at all, and the answer is empty rather than
+/// everything — the same fail-closed shape `session.search` uses until the
+/// Phase 2 privacy predicate lands.
+pub(crate) async fn handle_session_list_persisted(
+    req: Request,
+    sm: &Arc<SessionManager>,
+) -> Response {
+    let session_type_filter = optional_param!(req, "session_type", as_str)
+        .and_then(|t| t.parse::<crate::observe::SessionType>().ok());
     let limit = optional_param!(req, "limit", as_u64).unwrap_or(50) as usize;
 
-    let sessions_path = FileSessionStorage::sessions_base(Path::new(kiln));
-
-    if !sessions_path.exists() {
-        return Response::success(req.id, serde_json::json!({ "sessions": [], "total": 0 }));
+    let scope = caller_kiln_scope(&req);
+    if scope.is_empty() {
+        return Response::success(
+            req.id,
+            serde_json::json!({
+                "sessions": [],
+                "total": 0,
+                "note": "Specify 'kilns' to scope the listing to sessions that share one"
+            }),
+        );
     }
 
-    let mut ids = match crate::observe::list_sessions(&sessions_path).await {
-        Ok(ids) => ids,
-        Err(e) => return internal_error(req.id, e),
-    };
-
-    // Filter by session type if specified
-    if let Some(type_filter) = session_type_filter {
-        if let Ok(filter_type) = type_filter.parse::<crate::observe::SessionType>() {
-            ids.retain(|id| id.session_type() == filter_type);
-        }
+    let mut sessions = scoped_sessions(sm, Some(&scope)).await;
+    if let Some(filter_type) = session_type_filter {
+        sessions.retain(|s| s.session_type == filter_type);
     }
-
-    // Newest first, then limit
-    ids.reverse();
-    ids.truncate(limit);
+    sessions.truncate(limit);
 
     let mut session_entries = Vec::new();
-    for id in &ids {
-        let session_dir = sessions_path.join(id.as_str());
+    for summary in &sessions {
+        let session_dir = sm.session_dir(&summary.id);
         let events = crate::observe::load_events(&session_dir)
             .await
             .unwrap_or_default();
@@ -79,8 +156,8 @@ pub(crate) async fn handle_session_list_persisted(req: Request) -> Response {
             .unwrap_or_else(|| "(empty)".to_string());
 
         session_entries.push(serde_json::json!({
-            "id": id.as_str(),
-            "session_type": format!("{}", id.session_type()),
+            "id": summary.id,
+            "session_type": format!("{}", summary.session_type),
             "message_count": msg_count,
             "title": title,
         }));
@@ -99,21 +176,24 @@ pub(crate) async fn handle_session_list_persisted(req: Request) -> Response {
 /// Render a persisted session's events to markdown.
 ///
 /// Params:
-///   - `session_dir` (string, required): Path to the session directory
+///   - `session_id` (string, required): The session id.
 ///   - `include_timestamps` (bool, optional): Include timestamps (default false)
 ///   - `include_tokens` (bool, optional): Include token stats (default true)
 ///   - `include_tools` (bool, optional): Include tool details (default true)
 ///   - `max_content_length` (u64, optional): Truncation limit (default 0 = no limit)
 ///     Returns: { markdown: "..." }
-pub(crate) async fn handle_session_render_markdown(req: Request) -> Response {
-    let session_dir = require_param!(req, "session_dir", as_str);
+pub(crate) async fn handle_session_render_markdown(req: Request, sessions_root: &Path) -> Response {
+    let session_id = require_param!(req, "session_id", as_str);
+    let Some(session_dir) = session_dir_for(sessions_root, session_id) else {
+        return invalid_session_id(req.id);
+    };
     let include_timestamps = optional_param!(req, "include_timestamps", as_bool).unwrap_or(false);
     let include_tokens = optional_param!(req, "include_tokens", as_bool).unwrap_or(true);
     let include_tools = optional_param!(req, "include_tools", as_bool).unwrap_or(true);
     let max_content_length =
         optional_param!(req, "max_content_length", as_u64).unwrap_or(0) as usize;
 
-    let events = match crate::observe::load_events(session_dir).await {
+    let events = match crate::observe::load_events(&session_dir).await {
         Ok(e) => e,
         Err(e) => return internal_error(req.id, e),
     };
@@ -133,18 +213,21 @@ pub(crate) async fn handle_session_render_markdown(req: Request) -> Response {
 /// Export a session to a markdown file.
 ///
 /// Params:
-///   - `session_dir` (string, required): Path to the session directory
-///   - `output_path` (string, optional): Output file path (default: session_dir/session.md)
+///   - `session_id` (string, required): The session id.
+///   - `output_path` (string, optional): Output file path (default: the
+///     session's own `session.md`)
 ///   - `include_timestamps` (bool, optional): Include timestamps (default false)
 ///     Returns: { status: "ok", output_path: "..." }
-pub(crate) async fn handle_session_export_to_file(req: Request) -> Response {
-    let session_dir_str = require_param!(req, "session_dir", as_str);
+pub(crate) async fn handle_session_export_to_file(req: Request, sessions_root: &Path) -> Response {
+    let session_id = require_param!(req, "session_id", as_str);
     let output_path = optional_param!(req, "output_path", as_str);
     let timestamps = optional_param!(req, "include_timestamps", as_bool).unwrap_or(false);
 
-    let session_dir = Path::new(session_dir_str);
+    let Some(session_dir) = session_dir_for(sessions_root, session_id) else {
+        return invalid_session_id(req.id);
+    };
 
-    let events = match crate::observe::load_events(session_dir).await {
+    let events = match crate::observe::load_events(&session_dir).await {
         Ok(e) => e,
         Err(e) => return internal_error(req.id, e),
     };
@@ -177,35 +260,71 @@ pub(crate) async fn handle_session_export_to_file(req: Request) -> Response {
 /// Clean up old persisted sessions.
 ///
 /// Params:
-///   - `kiln` (string, required): Path to the kiln
 ///   - `older_than_days` (u64, required): Delete sessions older than N days
+///   - `kilns` (array of strings, optional): The **caller's whole kiln set**.
+///     Only sessions whose own set overlaps it are eligible for deletion.
+///   - `kiln` (string, optional): the single-member spelling of `kilns`
+///   - `all_kilns` (bool, optional): Sweep the whole backlog instead (default false)
 ///   - `dry_run` (bool, optional): If true, just report what would be deleted (default false)
-///     Returns: { deleted: [...], total: N, dry_run: bool }
-pub(crate) async fn handle_session_cleanup(req: Request) -> Response {
-    let kiln = require_param!(req, "kiln", as_str);
+///     Returns: { deleted: [...], total: N, dry_run: bool, scope: "..." }
+///
+/// One flat root now holds every session on the box, so an unscoped sweep here
+/// is a machine-wide delete with no confirmation and no undo. A scope is
+/// therefore mandatory: it bounds the blast radius to sessions that share a
+/// kiln with the caller, and widening to the whole backlog has to be asked for
+/// by name. `all_kilns` is also the only way a kiln-less session — a legitimate
+/// state per §4.1 — is ever collected, since it overlaps nothing.
+pub(crate) async fn handle_session_cleanup(req: Request, sm: &Arc<SessionManager>) -> Response {
     let older_than_days = require_param!(req, "older_than_days", as_u64);
     let dry_run = optional_param!(req, "dry_run", as_bool).unwrap_or(false);
+    let all_kilns = optional_param!(req, "all_kilns", as_bool).unwrap_or(false);
+    let requested = caller_kiln_scope(&req);
 
-    let sessions_path = FileSessionStorage::sessions_base(Path::new(kiln));
+    // `all_kilns` wins over a named scope deliberately: it is the more explicit
+    // of the two, and a caller that sent both meant the wider one.
+    let scope = match (all_kilns, requested.is_empty()) {
+        (true, _) => None,
+        (false, false) => Some(requested),
+        (false, true) => {
+            return Response::error(
+                req.id,
+                INVALID_PARAMS,
+                "session.cleanup needs a scope: pass 'kilns' to delete only sessions that \
+                 share one, or 'all_kilns': true to sweep every session on this machine",
+            )
+        }
+    };
 
-    if !sessions_path.exists() {
+    let scope_label = match &scope {
+        Some(scope) => scope
+            .kilns()
+            .iter()
+            .map(|k| k.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join(", "),
+        None => "all_kilns".to_string(),
+    };
+
+    if !sm.sessions_root().exists() {
         return Response::success(
             req.id,
-            serde_json::json!({ "deleted": [], "total": 0, "dry_run": dry_run }),
+            serde_json::json!({
+                "deleted": [],
+                "total": 0,
+                "dry_run": dry_run,
+                "scope": scope_label,
+            }),
         );
     }
 
-    let ids = match crate::observe::list_sessions(&sessions_path).await {
-        Ok(ids) => ids,
-        Err(e) => return internal_error(req.id, e),
-    };
+    let candidates = scoped_sessions(sm, scope.as_ref()).await;
 
     let cutoff = chrono::Utc::now() - chrono::Duration::days(older_than_days as i64);
 
     let mut to_delete = Vec::new();
 
-    for id in ids {
-        let session_dir = sessions_path.join(id.as_str());
+    for summary in candidates {
+        let session_dir = sm.session_dir(&summary.id);
         let events = crate::observe::load_events(&session_dir)
             .await
             .unwrap_or_default();
@@ -213,7 +332,7 @@ pub(crate) async fn handle_session_cleanup(req: Request) -> Response {
         let latest = events.iter().map(|e| e.timestamp()).max();
         if let Some(ts) = latest {
             if ts < cutoff {
-                to_delete.push((id, session_dir));
+                to_delete.push((summary.id, session_dir));
             }
         }
     }
@@ -228,14 +347,11 @@ pub(crate) async fn handle_session_cleanup(req: Request) -> Response {
                     "Failed to delete session directory"
                 );
             } else {
-                deleted_ids.push(id.as_str().to_string());
+                deleted_ids.push(id.clone());
             }
         }
     } else {
-        deleted_ids = to_delete
-            .iter()
-            .map(|(id, _)| id.as_str().to_string())
-            .collect();
+        deleted_ids = to_delete.iter().map(|(id, _)| id.clone()).collect();
     }
 
     let total = deleted_ids.len();
@@ -245,96 +361,7 @@ pub(crate) async fn handle_session_cleanup(req: Request) -> Response {
             "deleted": deleted_ids,
             "total": total,
             "dry_run": dry_run,
-        }),
-    )
-}
-
-/// Reindex persisted sessions into the kiln's NoteStore.
-///
-/// Params:
-///   - `kiln` (string, required): Path to the kiln
-///   - `force` (bool, optional): Re-index even if already present (default false)
-///     Returns: { indexed: N, skipped: N, errors: N }
-pub(crate) async fn handle_session_reindex(req: Request, km: &Arc<KilnManager>) -> Response {
-    let kiln_str = require_param!(req, "kiln", as_str);
-    let force = optional_param!(req, "force", as_bool).unwrap_or(false);
-
-    let kiln_path = Path::new(kiln_str);
-    let sessions_path = FileSessionStorage::sessions_base(kiln_path);
-
-    if !sessions_path.exists() {
-        return Response::success(
-            req.id,
-            serde_json::json!({ "indexed": 0, "skipped": 0, "errors": 0 }),
-        );
-    }
-
-    let ids = match crate::observe::list_sessions(&sessions_path).await {
-        Ok(ids) => ids,
-        Err(e) => return internal_error(req.id, e),
-    };
-
-    let handle = match km.get_or_open(kiln_path).await {
-        Ok(h) => h,
-        Err(e) => return internal_error(req.id, e),
-    };
-
-    let note_store = handle.as_note_store();
-
-    let mut indexed = 0u32;
-    let mut skipped = 0u32;
-    let mut errors = 0u32;
-
-    for id in &ids {
-        let session_dir = sessions_path.join(id.as_str());
-        let path = format!("sessions/{}", id.as_str());
-
-        if !force {
-            // Internal observability scan: bind to this kiln so the scope
-            // filter accepts only this kiln's session notes (plus unstamped
-            // legacy rows). System-level authority was the pre-prune shape.
-            let authority = crucible_core::storage::Scope::workspace_unchecked(kiln_path);
-            match note_store.get(&path, &authority).await {
-                Ok(Some(_)) => {
-                    skipped += 1;
-                    continue;
-                }
-                Ok(None) => {}
-                Err(_) => {}
-            }
-        }
-
-        let events = match crate::observe::load_events(&session_dir).await {
-            Ok(e) => e,
-            Err(_) => {
-                errors += 1;
-                continue;
-            }
-        };
-
-        let content = match crate::observe::extract_session_content(id.as_str(), &events) {
-            Some(c) => c,
-            None => {
-                skipped += 1;
-                continue;
-            }
-        };
-
-        let record = content.to_note_record(None);
-        if note_store.upsert(record).await.is_err() {
-            errors += 1;
-            continue;
-        }
-
-        indexed += 1;
-    }
-
-    Response::success(
-        req.id,
-        serde_json::json!({
-            "indexed": indexed,
-            "skipped": skipped,
-            "errors": errors,
+            "scope": scope_label,
         }),
     )
 }

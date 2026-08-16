@@ -69,9 +69,8 @@ describe('selectSession auto-resume', () => {
     return {
       id,
       session_type: 'chat',
-      kiln: '/tmp/test-kiln',
+      kilns: ['/tmp/test-kiln'],
       workspace: '/tmp/test-workspace',
-      connected_kilns: [],
       state,
       title: 'Test Session',
       agent_model: 'test-model',
@@ -189,7 +188,7 @@ describe('selectSession auto-resume', () => {
     screen.getByTestId('select').click();
 
     await waitFor(() => {
-      expect(api.getSessionHistory).toHaveBeenCalledWith('test-id', '/tmp/test-kiln', 1, 0);
+      expect(api.getSessionHistory).toHaveBeenCalledWith('test-id', 1, 0);
     });
 
     await waitFor(() => {
@@ -204,9 +203,8 @@ function makeChatSession(id = 'new-id'): Session {
   return {
     id,
     session_type: 'chat',
-    kiln: '/kilns/main',
+    kilns: ['/kilns/main'],
     workspace: '/kilns/main',
-    connected_kilns: [],
     state: 'active',
     title: null,
     agent_model: null,
@@ -229,7 +227,7 @@ describe('applySessionScope', () => {
     const { createSession, applySessionScope, currentSession, sessions } = useSession();
     return (
       <div>
-        <button data-testid="create" onClick={() => void createSession({ kiln: '/kilns/main' })}>
+        <button data-testid="create" onClick={() => void createSession({ kilns: ['/kilns/main'] })}>
           create
         </button>
         <button
@@ -237,22 +235,17 @@ describe('applySessionScope', () => {
           onClick={() =>
             applySessionScope({
               session_id: 'new-id',
-              kiln: '/kilns/main',
+              kilns: ['/kilns/main', '/kilns/extra'],
               workspace: '/repos/app',
-              connected_kilns: ['/kilns/extra'],
             })
           }
         >
           apply
         </button>
         <span data-testid="cur-workspace">{currentSession()?.workspace ?? '-'}</span>
-        <span data-testid="cur-connected">
-          {(currentSession()?.connected_kilns ?? []).join(',')}
-        </span>
+        <span data-testid="cur-connected">{(currentSession()?.kilns ?? []).join(',')}</span>
         <span data-testid="list-workspace">{sessions()[0]?.workspace ?? '-'}</span>
-        <span data-testid="list-connected">
-          {(sessions()[0]?.connected_kilns ?? []).join(',')}
-        </span>
+        <span data-testid="list-connected">{(sessions()[0]?.kilns ?? []).join(',')}</span>
       </div>
     );
   }
@@ -275,9 +268,9 @@ describe('applySessionScope', () => {
     await waitFor(() =>
       expect(screen.getByTestId('cur-workspace').textContent).toBe('/repos/app'),
     );
-    expect(screen.getByTestId('cur-connected').textContent).toBe('/kilns/extra');
+    expect(screen.getByTestId('cur-connected').textContent).toBe('/kilns/main,/kilns/extra');
     expect(screen.getByTestId('list-workspace').textContent).toBe('/repos/app');
-    expect(screen.getByTestId('list-connected').textContent).toBe('/kilns/extra');
+    expect(screen.getByTestId('list-connected').textContent).toBe('/kilns/main,/kilns/extra');
   });
 });
 
@@ -313,13 +306,13 @@ describe('createSession param forwarding', () => {
   it('forwards an internal create with the chosen kiln and applies the model', async () => {
     await renderWithRun((ctx) =>
       void ctx.createSession(
-        { kiln: '/kilns/main' },
+        { kilns: ['/kilns/main'] },
         { initialMessage: 'hi', model: 'openai/gpt-4o' },
       ),
     );
 
     await waitFor(() =>
-      expect(api.createSession).toHaveBeenCalledWith({ kiln: '/kilns/main' }),
+      expect(api.createSession).toHaveBeenCalledWith({ kilns: ['/kilns/main'] }),
     );
     await waitFor(() =>
       expect(api.switchModel).toHaveBeenCalledWith('new-id', 'openai/gpt-4o'),
@@ -338,26 +331,25 @@ describe('createSession param forwarding', () => {
     const params = (api.createSession as ReturnType<typeof vi.fn<any>>).mock.calls[0][0] as {
       agent_type?: string;
       agent_name?: string;
-      kiln?: string;
+      kilns?: string[];
     };
     expect(params.agent_type).toBe('acp');
     expect(params.agent_name).toBe('claude');
-    expect(params.kiln).toBeUndefined();
+    expect(params.kilns).toBeUndefined();
     expect(api.switchModel).not.toHaveBeenCalled();
   });
 
-  it('forwards additional kilns as connect_kilns', async () => {
+  it('forwards every kiln in one flat set', async () => {
     await renderWithRun((ctx) =>
       void ctx.createSession(
-        { kiln: '/kilns/main', connect_kilns: ['/kilns/extra'] },
+        { kilns: ['/kilns/main', '/kilns/extra'] },
         { initialMessage: 'multi-kiln' },
       ),
     );
 
     await waitFor(() =>
       expect(api.createSession).toHaveBeenCalledWith({
-        kiln: '/kilns/main',
-        connect_kilns: ['/kilns/extra'],
+        kilns: ['/kilns/main', '/kilns/extra'],
       }),
     );
   });
@@ -466,7 +458,7 @@ describe('adopting the focused pane’s session', () => {
   }
 
   it('adopts a session announced by a restored pane', async () => {
-    vi.mocked(api.getSession).mockResolvedValue({ id: 's-restored', kiln: '/k' } as Session);
+    vi.mocked(api.getSession).mockResolvedValue({ id: 's-restored', kilns: ['/k'] } as Session);
 
     render(() => (
       <SessionProvider>
@@ -485,7 +477,7 @@ describe('adopting the focused pane’s session', () => {
 
   it('follows a switch to another pane', async () => {
     vi.mocked(api.getSession).mockImplementation((id: string) =>
-      Promise.resolve({ id, kiln: '/k' } as Session),
+      Promise.resolve({ id, kilns: ['/k'] } as Session),
     );
 
     render(() => (
@@ -502,7 +494,7 @@ describe('adopting the focused pane’s session', () => {
   });
 
   it('does not refetch a session that is already current', async () => {
-    vi.mocked(api.getSession).mockResolvedValue({ id: 's-same', kiln: '/k' } as Session);
+    vi.mocked(api.getSession).mockResolvedValue({ id: 's-same', kilns: ['/k'] } as Session);
 
     render(() => (
       <SessionProvider>

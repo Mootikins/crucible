@@ -276,6 +276,21 @@ impl TestDaemon {
         })
     }
 
+    /// The `CRUCIBLE_HOME` this daemon was given.
+    #[allow(dead_code)]
+    pub fn data_home(&self) -> &std::path::Path {
+        self.temp_dir.path()
+    }
+
+    /// Where this daemon writes sessions. Sessions live under the daemon's own
+    /// data root now rather than inside a kiln, so a test that reads a
+    /// transcript off disk has to ask the daemon rather than compose a kiln
+    /// path.
+    #[allow(dead_code)]
+    pub fn sessions_root(&self) -> PathBuf {
+        self.temp_dir.path().join("sessions")
+    }
+
     /// Manually stop the daemon process
     pub async fn stop(&mut self) -> Result<()> {
         if let Some(mut p) = self.process.take() {

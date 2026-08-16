@@ -4,6 +4,7 @@
 //!
 //! Split out of `tests/mod.rs` because that file reached the 1000-line module
 //! budget; the fixtures it shares still live there.
+use crate::test_support::temp_session_manager;
 
 use super::*;
 
@@ -23,9 +24,7 @@ fn create_rig_with_llm_config(
     DaemonSessionBridge,
     broadcast::Receiver<SessionEventMessage>,
 ) {
-    let session_manager = Arc::new(SessionManager::with_storage(Arc::new(
-        FileSessionStorage::new(),
-    )));
+    let session_manager = temp_session_manager();
     let agent_manager =
         build_test_agent_manager_with_llm_config(session_manager.clone(), Some(llm_config.clone()));
     let (event_tx, events) = broadcast::channel(256);
@@ -57,7 +56,7 @@ async fn bridge_create_resolves_an_agent_card_from_the_kiln() {
     let created = bridge
         .create_session(serde_json::json!({
             "type": "chat",
-            "kiln": tmp.path().to_string_lossy(),
+            "kilns": [tmp.path().to_string_lossy()],
             "configure_agent": true,
             "agent_card": "researcher",
         }))
@@ -94,7 +93,7 @@ async fn bridge_create_maps_a_cards_specialty_through_llm_models() {
     let created = bridge
         .create_session(serde_json::json!({
             "type": "chat",
-            "kiln": tmp.path().to_string_lossy(),
+            "kilns": [tmp.path().to_string_lossy()],
             "configure_agent": true,
             "agent_card": "digger",
         }))
@@ -135,7 +134,7 @@ async fn bridge_create_tool_policy_overrides_the_cards_own_tools() {
     let created = bridge
         .create_session(serde_json::json!({
             "type": "chat",
-            "kiln": tmp.path().to_string_lossy(),
+            "kilns": [tmp.path().to_string_lossy()],
             "configure_agent": true,
             "agent_card": "loose",
             "tool_policy": { "bash": "deny", "read_file": "allow" },
@@ -175,7 +174,7 @@ async fn bridge_create_with_an_unknown_card_errors_and_creates_no_session() {
     bridge
         .create_session(serde_json::json!({
             "type": "chat",
-            "kiln": tmp.path().to_string_lossy(),
+            "kilns": [tmp.path().to_string_lossy()],
         }))
         .await
         .expect("a plain create to have something for the bad one to disturb");
@@ -189,7 +188,7 @@ async fn bridge_create_with_an_unknown_card_errors_and_creates_no_session() {
     let err = bridge
         .create_session(serde_json::json!({
             "type": "chat",
-            "kiln": tmp.path().to_string_lossy(),
+            "kilns": [tmp.path().to_string_lossy()],
             "configure_agent": true,
             "agent_card": "nope",
         }))
@@ -209,14 +208,15 @@ async fn bridge_create_with_an_unknown_card_errors_and_creates_no_session() {
     assert_eq!(after, before, "a refused create must register no session");
 }
 
-/// A kiln-less plugin create resolves to the daemon's own data root.
+/// A kiln-less plugin create attaches no kiln at all — the same tools-only
+/// session the RPC door produces.
 ///
-/// The bridge must send `kiln: None` rather than pre-resolving
-/// `crucible_home()`: a path the bridge invented would be scope-checked as if
-/// the caller had asked for it, which fails outright whenever the data root is
-/// `$HOME` — and it would ignore an injected root, as this test's tempdir is.
+/// It used to resolve to the daemon's data root, which is the PARENT of the
+/// sessions root: every kiln-less session then carried an allowed root
+/// enclosing every transcript the daemon had ever written, and `grep` walked
+/// straight into it. Zero kilns degrades capabilities, never containment.
 #[tokio::test]
-async fn bridge_create_without_a_kiln_lands_in_the_daemons_data_root() {
+async fn bridge_create_without_a_kiln_attaches_no_kiln() {
     let tmp = TempDir::new().unwrap();
     let (session_manager, bridge) = create_rig(tmp.path());
 
@@ -225,14 +225,11 @@ async fn bridge_create_without_a_kiln_lands_in_the_daemons_data_root() {
         .await
         .expect("kiln-less bridge create");
 
-    assert_eq!(
-        created["kiln"].as_str(),
-        Some(&*tmp.path().to_string_lossy())
-    );
+    assert_eq!(created["kilns"], serde_json::json!([]));
     let session = session_manager
         .get_session(created["id"].as_str().unwrap())
         .unwrap();
-    assert_eq!(session.kiln, tmp.path());
+    assert!(session.kilns.is_empty(), "got: {:?}", session.kilns);
 }
 
 /// The bridge deserializes with the same request type the RPC handler uses, so
@@ -256,8 +253,9 @@ async fn bridge_create_rejects_agent_card_and_agent_name_together() {
     assert!(session_manager.list_sessions().is_empty());
 }
 
-/// `kilns` is the plugin spelling; `connect_kilns` is the wire name. The alias
-/// is the only thing keeping a plugin's read kilns from vanishing silently.
+/// `kilns` is both the plugin spelling and the wire name, and it carries the
+/// whole set in order — the flatten collapsed `kiln` + `connect_kilns` into
+/// it, so nothing here translates between two spellings any more.
 #[tokio::test]
 async fn bridge_create_accepts_the_lua_kilns_spelling() {
     let tmp = TempDir::new().unwrap();
@@ -268,8 +266,7 @@ async fn bridge_create_accepts_the_lua_kilns_spelling() {
     let created = bridge
         .create_session(serde_json::json!({
             "type": "chat",
-            "kiln": tmp.path().to_string_lossy(),
-            "kilns": [other.to_string_lossy()],
+            "kilns": [tmp.path().to_string_lossy(), other.to_string_lossy()],
         }))
         .await
         .expect("bridge create with kilns");
@@ -277,7 +274,7 @@ async fn bridge_create_accepts_the_lua_kilns_spelling() {
     let session = session_manager
         .get_session(created["id"].as_str().unwrap())
         .unwrap();
-    assert_eq!(session.connected_kilns, vec![other]);
+    assert_eq!(session.kilns, vec![tmp.path().to_path_buf(), other]);
 }
 
 /// A plugin-created session announces itself exactly like an RPC-created one.
@@ -302,7 +299,7 @@ async fn bridge_create_emits_session_initialized() {
     let created = bridge
         .create_session(serde_json::json!({
             "type": "chat",
-            "kiln": tmp.path().to_string_lossy(),
+            "kilns": [tmp.path().to_string_lossy()],
             "configure_agent": true,
             "agent_card": "researcher",
         }))
@@ -391,7 +388,7 @@ async fn a_card_session_is_trusted_at_its_providers_level() {
     let created = bridge
         .create_session(serde_json::json!({
             "type": "chat",
-            "kiln": kiln.to_string_lossy(),
+            "kilns": [kiln.to_string_lossy()],
             "workspace": workspace.to_string_lossy(),
             "configure_agent": true,
             "agent_card": "researcher",
@@ -431,7 +428,7 @@ async fn an_acp_profile_session_is_refused_the_kiln_a_card_session_clears() {
     let err = bridge
         .create_session(serde_json::json!({
             "type": "chat",
-            "kiln": kiln.to_string_lossy(),
+            "kilns": [kiln.to_string_lossy()],
             "workspace": workspace.to_string_lossy(),
             "configure_agent": true,
             "agent_type": "acp",
@@ -465,9 +462,9 @@ async fn bridge_configure_agent_refuses_a_provider_the_attached_kiln_does_not_cl
     )
     .unwrap();
 
-    let session_manager = Arc::new(SessionManager::new());
+    let session_manager = temp_session_manager();
     let session = session_manager
-        .create_session(SessionType::Chat, kiln, None, vec![], None)
+        .create_session(SessionType::Chat, vec![kiln], None, None)
         .await
         .unwrap();
     let agent_manager = build_test_agent_manager(session_manager.clone());

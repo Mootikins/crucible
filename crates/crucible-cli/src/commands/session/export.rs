@@ -23,7 +23,7 @@ pub(super) async fn export(
 
     if let Ok(client) = daemon_client().await {
         if let Ok(output_path_str) = client
-            .session_export_to_file(&session_dir, output.as_deref(), Some(timestamps))
+            .session_export_to_file(session_id.as_str(), output.as_deref(), Some(timestamps))
             .await
         {
             println!("Exported session to: {}", output_path_str);

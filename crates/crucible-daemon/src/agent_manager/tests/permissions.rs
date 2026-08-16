@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::temp_session_manager;
 
 mod is_safe_tests {
     use super::*;
@@ -271,8 +272,7 @@ mod permission_channel_tests {
     #[test_case(RespondScenario::WrongPermissionId; "respond_to_wrong_permission_id_returns_error")]
     #[tokio::test]
     async fn respond_to_permission_outcomes(scenario: RespondScenario) {
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
 
         // NonexistentSession has no awaited permission; the other three await one.
@@ -339,8 +339,7 @@ mod permission_channel_tests {
 
     #[tokio::test]
     async fn await_permission_creates_pending_request() {
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
 
         let session_id = "test-session";
@@ -370,8 +369,7 @@ mod permission_channel_tests {
     /// 300 s timeout on a session that no longer exists.
     #[tokio::test]
     async fn cleanup_session_unblocks_a_waiting_permission_prompt() {
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
 
         let session_id = "cleanup-unblocks-prompt";
@@ -388,8 +386,7 @@ mod permission_channel_tests {
 
     #[tokio::test]
     async fn channel_drop_results_in_recv_error() {
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
 
         let session_id = "test-session";
@@ -414,8 +411,7 @@ mod permission_channel_tests {
 
     #[tokio::test]
     async fn multiple_sessions_have_isolated_permissions() {
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
 
         let session1 = "session-1";
@@ -470,8 +466,7 @@ mod permission_channel_tests {
     #[test_case(ListPendingScenario::UnknownSession; "list_pending_permissions_empty_for_unknown_session")]
     #[tokio::test]
     async fn list_pending_permissions_outcomes(scenario: ListPendingScenario) {
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
 
         let session_id = "test-session";
@@ -520,8 +515,7 @@ mod permission_channel_tests {
 
     #[tokio::test]
     async fn list_all_pending_permissions_aggregates_across_sessions() {
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
 
         let (id1, _rx1) =
@@ -563,15 +557,13 @@ mod permission_channel_tests {
         use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
         let tmp = TempDir::new().unwrap();
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session_manager = temp_session_manager();
 
         let session = session_manager
             .create_session(
                 SessionType::Chat,
-                tmp.path().to_path_buf(),
+                vec![tmp.path().to_path_buf()],
                 None,
-                vec![],
                 None,
             )
             .await

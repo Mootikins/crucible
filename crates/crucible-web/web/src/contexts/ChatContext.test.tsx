@@ -46,9 +46,8 @@ const mockListSessions = api.listSessions as ReturnType<typeof vi.fn>;
 const mockSession: Session = {
   id: 'test-session-1',
   session_type: 'chat',
-  kiln: '/tmp/test-kiln',
+  kilns: ['/tmp/test-kiln'],
   workspace: '/tmp/test-workspace',
-  connected_kilns: [],
   state: 'active',
   title: 'Test Session',
   agent_model: 'test-model',
@@ -282,9 +281,8 @@ describe('session switching', () => {
   const mockSession2: Session = {
     id: 'test-session-2',
     session_type: 'chat',
-    kiln: '/tmp/test-kiln',
+    kilns: ['/tmp/test-kiln'],
     workspace: '/tmp/test-workspace',
-    connected_kilns: [],
     state: 'active',
     title: 'Test Session 2',
     agent_model: 'test-model',
@@ -694,7 +692,7 @@ describe('isLoadingHistory', () => {
       {
         ...mockSession,
         id: 'test-session-1',
-        kiln: '/tmp/test-kiln',
+        kilns: ['/tmp/test-kiln'],
       },
     ]);
     mockGetSessionHistory.mockResolvedValue({
@@ -727,7 +725,6 @@ describe('isLoadingHistory', () => {
 
     expect(mockGetSessionHistory).toHaveBeenCalledWith(
       'test-session-1',
-      '/tmp/test-kiln',
       10000,
       undefined,
       expect.any(AbortSignal),

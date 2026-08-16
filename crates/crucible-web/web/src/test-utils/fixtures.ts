@@ -13,9 +13,8 @@ import type {
 export const mockSession = {
   id: 'session-001',
   session_type: 'chat' as SessionType,
-  kiln: 'default',
+  kilns: ['default'],
   workspace: 'workspace-001',
-  connected_kilns: [],
   state: 'active' as SessionState,
   title: 'Test Session',
   agent_model: 'ollama:neural-chat',
@@ -94,9 +93,8 @@ export const mockSearchResults = {
     {
       id: 'session-001',
       title: 'Test Session',
-      kiln: 'default',
+      kilns: ['default'],
       workspace: 'workspace-001',
-      connected_kilns: [],
       state: 'active' as SessionState,
       session_type: 'chat' as SessionType,
       started_at: '2026-03-10T10:00:00Z',
@@ -107,9 +105,8 @@ export const mockSearchResults = {
     {
       id: 'session-002',
       title: 'Another Session',
-      kiln: 'default',
+      kilns: ['default'],
       workspace: 'workspace-001',
-      connected_kilns: [],
       state: 'paused' as SessionState,
       session_type: 'agent' as SessionType,
       started_at: '2026-03-09T14:30:00Z',

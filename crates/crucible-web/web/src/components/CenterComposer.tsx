@@ -173,7 +173,7 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
         {
           // 'none' = an explicitly kiln-less session (v0.12 kiln-less
           // creation) — distinct from '' which falls back to the default.
-          kiln: kiln() === 'none' ? undefined : kiln() || defaultKiln() || undefined,
+          kilns: kiln() === 'none' ? [] : [kiln() || defaultKiln()].filter(Boolean),
           workspace: workspace() || undefined,
           ...(isAcp() ? { agent_type: 'acp', agent_name: agentName() } : {}),
           // The workspace axis: the daemon resolves this to a path before it

@@ -8,12 +8,16 @@ use super::*;
 use crucible_core::session::{Session, SessionType};
 
 /// Persist a fabricated child session (parent-linked) directly into the
-/// kiln's session storage, the same shape `create_child_session` writes.
-fn write_child_session(kiln: &std::path::Path, parent_id: &str) -> String {
-    let child = Session::new(SessionType::Agent, kiln.to_path_buf())
+/// daemon's sessions root, the same shape `create_child_session` writes.
+fn write_child_session(
+    sessions_root: &std::path::Path,
+    kiln: &std::path::Path,
+    parent_id: &str,
+) -> String {
+    let child = Session::new(SessionType::Agent, vec![kiln.to_path_buf()])
         .with_parent(parent_id.to_string())
         .with_title("delegated task");
-    let dir = kiln.join(".crucible").join("sessions").join(&child.id);
+    let dir = sessions_root.join(&child.id);
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         dir.join("meta.json"),
@@ -28,7 +32,7 @@ async fn session_list_hides_children_unless_requested() {
     let server = TestServer::start().await;
     let mut client = server.connect().await;
     let parent_id = create_chat_session(&mut client, &server.kiln_path, 700).await;
-    let child_id = write_child_session(&server.kiln_path, &parent_id);
+    let child_id = write_child_session(&server.sessions_root(), &server.kiln_path, &parent_id);
 
     // Default listing: parent visible, child hidden.
     let response = rpc_call(
@@ -84,7 +88,7 @@ async fn session_archive_cascades_to_children() {
     let server = TestServer::start().await;
     let mut client = server.connect().await;
     let parent_id = create_chat_session(&mut client, &server.kiln_path, 710).await;
-    let child_id = write_child_session(&server.kiln_path, &parent_id);
+    let child_id = write_child_session(&server.sessions_root(), &server.kiln_path, &parent_id);
 
     let response = rpc_call(
         &mut client,
@@ -101,12 +105,7 @@ async fn session_archive_cascades_to_children() {
     .await;
     assert!(response["error"].is_null(), "archive failed: {response:?}");
 
-    let child_meta = server
-        .kiln_path
-        .join(".crucible")
-        .join("sessions")
-        .join(&child_id)
-        .join("meta.json");
+    let child_meta = server.sessions_root().join(&child_id).join("meta.json");
     let child: Session =
         serde_json::from_str(&std::fs::read_to_string(&child_meta).unwrap()).unwrap();
     assert!(
@@ -122,7 +121,7 @@ async fn session_delete_cascades_to_children() {
     let server = TestServer::start().await;
     let mut client = server.connect().await;
     let parent_id = create_chat_session(&mut client, &server.kiln_path, 720).await;
-    let child_id = write_child_session(&server.kiln_path, &parent_id);
+    let child_id = write_child_session(&server.sessions_root(), &server.kiln_path, &parent_id);
 
     let response = rpc_call(
         &mut client,

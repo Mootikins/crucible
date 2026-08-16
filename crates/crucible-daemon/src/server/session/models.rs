@@ -46,7 +46,9 @@ pub(crate) async fn handle_session_list_models(req: Request, am: &Arc<AgentManag
 
     let classification = match am.get_session_with_agent(session_id) {
         Ok((session, _)) => {
-            crate::trust_resolution::resolve_kiln_classification(&session.workspace, &session.kiln)
+            crate::trust_resolution::most_restrictive_classification(&session.kilns, |kiln| {
+                crate::trust_resolution::resolve_kiln_classification(&session.workspace, kiln)
+            })
         }
         Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
             return session_not_found(req.id, &id);
@@ -164,9 +166,8 @@ pub(crate) async fn handle_session_fork(
     let child = match sm
         .create_session(
             parent.session_type,
-            parent.kiln.clone(),
+            parent.kilns.clone(),
             Some(parent.workspace.clone()),
-            parent.connected_kilns.clone(),
             None,
         )
         .await
@@ -175,7 +176,7 @@ pub(crate) async fn handle_session_fork(
         Err(e) => return internal_error(req.id, e),
     };
 
-    let parent_dir = FileSessionStorage::sessions_base(&parent.kiln).join(parent_id);
+    let parent_dir = sm.session_dir(parent_id);
     let events = match crate::observe::load_events(&parent_dir).await {
         Ok(e) => e,
         Err(e) => {
@@ -184,7 +185,7 @@ pub(crate) async fn handle_session_fork(
         }
     };
 
-    let storage = FileSessionStorage::new();
+    let storage = FileSessionStorage::new(sm.sessions_root().to_path_buf());
     let mut count = 0u64;
     for event in &events {
         if let Some(limit) = up_to {

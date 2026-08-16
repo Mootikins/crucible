@@ -132,7 +132,7 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
   - **Gets you:** `cru session search "<query>"` prints matching session ids with the line number and surrounding context from the session JSONL.
   - **Proof:** `crates/crucible-daemon/src/server/session/list.rs`:125 (`session.search` returns `{matches:[{session_id,line,context}],total}`); `crates/crucible-cli/tests/cli_e2e_internal.rs`::session_search_uses_daemon_rpc, `::session_search_without_daemon_is_graceful_error`
 - [-] **Session Semantic Indexing** `P0` — sessions indexed for semantic search via a session indexing pipeline · `crucible-daemon` (observe)
-  - **Gets you:** nothing semantic. There is no pipeline — nothing runs on session end, pause, or a watcher event. Only a manual `cru session reindex` writes rows, and it writes them without embeddings.
+  - **Gets you:** nothing semantic. There is no pipeline — nothing runs on session end, pause, or a watcher event, and the one manual entry point (`cru session reindex`) is retired now that sessions live outside kilns.
   - **Proof:** _none — `extract_session_content` has exactly one non-test caller (`server/observe.rs:315`), and that path stores `content.to_note_record(None)` where `None` is the embedding, so reindexed sessions can never surface from `search_vectors`._
 
 ## Agent Learning & Memory

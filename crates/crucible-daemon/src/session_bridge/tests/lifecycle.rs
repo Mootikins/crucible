@@ -30,9 +30,7 @@ async fn a_plugin_creating_a_session_from_on_session_end_does_not_deadlock() {
     let plugin_loader: Arc<tokio::sync::Mutex<Option<DaemonPluginLoader>>> =
         Arc::new(tokio::sync::Mutex::new(None));
 
-    let session_manager = Arc::new(SessionManager::with_storage(Arc::new(
-        FileSessionStorage::new(),
-    )));
+    let session_manager = temp_session_manager();
     let (event_tx, _keep_open) = broadcast::channel(64);
     let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
@@ -96,9 +94,8 @@ async fn a_plugin_creating_a_session_from_on_session_end_does_not_deadlock() {
     let ending = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -122,7 +119,12 @@ async fn a_plugin_creating_a_session_from_on_session_end_does_not_deadlock() {
     let aux = session_manager
         .get_session(&aux_id)
         .expect("aux registered");
-    assert_eq!(aux.kiln, tmp.path(), "kiln-less create uses data_home");
+    assert!(
+        aux.kilns.is_empty(),
+        "a kiln-less create attaches no kiln — not the data root, which encloses \
+         every transcript the daemon has written: {:?}",
+        aux.kilns
+    );
     assert_eq!(
         aux.agent.expect("hook configured the agent").model,
         "llama3.2"

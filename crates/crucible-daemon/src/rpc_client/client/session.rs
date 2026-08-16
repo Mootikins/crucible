@@ -20,19 +20,18 @@ pub struct SessionCreateRequest {
     /// several callers do — would start failing as `INVALID_PARAMS`.
     #[serde(rename = "type", default = "default_session_type")]
     pub session_type: String,
-    /// Omitted → the daemon resolves its default (home kiln). Keeping the
+    /// The session's whole kiln set — flat, no member privileged. Omitted or
+    /// empty → the daemon resolves its default (home kiln); keeping that
     /// fallback daemon-side means clients can never drift from it.
+    ///
+    /// Replaces the pre-flatten `kiln` + `connect_kilns` pair. `kilns` is the
+    /// spelling the Lua binding always used (`cru.sessions.create{ kilns =
+    /// {...} }`), so plugins keep working; a caller still sending `kiln` or
+    /// `connect_kilns` now gets the default set, which is the intended break.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub kiln: Option<String>,
+    pub kilns: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
-    /// `kilns` is accepted as an alias because the Lua binding has always
-    /// spelled it that way (`cru.sessions.create{ kilns = {...} }`, and the
-    /// Discord plugin sets it). The binding now serializes its whole table into
-    /// this struct, so the alias is what keeps the two spellings one shape
-    /// instead of silently dropping the plugin's connected kilns.
-    #[serde(default, alias = "kilns", skip_serializing_if = "Option::is_none")]
-    pub connect_kilns: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recording_mode: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -114,10 +113,12 @@ fn default_session_type() -> String {
 #[derive(Debug, Clone)]
 pub struct SessionCreateParams {
     pub session_type: String,
-    /// None → daemon default (home kiln).
-    pub kiln: Option<PathBuf>,
+    /// The session's whole kiln set. Empty is a legitimate value, not a
+    /// request for a default: it creates a tools-only session with no corpus
+    /// (§4.1). The daemon no longer substitutes its data root, which is the
+    /// parent of the sessions root and would put every transcript in scope.
+    pub kilns: Vec<PathBuf>,
     pub workspace: Option<PathBuf>,
-    pub connect_kilns: Vec<PathBuf>,
     pub recording_mode: Option<String>,
     pub recording_path: Option<PathBuf>,
     /// "acp" | "internal"; None treated as "internal" for back-compat.
@@ -157,19 +158,18 @@ pub(super) fn build_create_request(
     let agent = agent.unwrap_or_default();
     SessionCreateRequest {
         session_type: params.session_type,
-        kiln: params.kiln.map(|p| p.to_string_lossy().to_string()),
-        workspace: params.workspace.map(|ws| ws.to_string_lossy().to_string()),
-        connect_kilns: if params.connect_kilns.is_empty() {
+        kilns: if params.kilns.is_empty() {
             None
         } else {
             Some(
                 params
-                    .connect_kilns
+                    .kilns
                     .iter()
                     .map(|p| p.to_string_lossy().to_string())
                     .collect(),
             )
         },
+        workspace: params.workspace.map(|ws| ws.to_string_lossy().to_string()),
         recording_mode: params.recording_mode,
         recording_path: params
             .recording_path
@@ -211,7 +211,8 @@ pub struct SessionListRequest {
 ///
 /// Used by: `session.get`, `session.pause`, `session.resume`, `session.end`,
 /// `session.cancel`, `session.list_models`, `session.get_thinking_budget`,
-/// `session.get_precognition`, `session.get_temperature`, `session.get_max_tokens`.
+/// `session.get_precognition`, `session.get_temperature`, `session.get_max_tokens`,
+/// `session.archive`, `session.unarchive`, `session.delete`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionIdRequest {
     pub session_id: String,
@@ -228,23 +229,10 @@ pub struct SessionReplayRequest {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionResumeFromStorageRequest {
     pub session_id: String,
-    pub kiln: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub offset: Option<usize>,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionDeleteRequest {
-    pub session_id: String,
-    pub kiln: String,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionArchiveRequest {
-    pub session_id: String,
-    pub kiln: String,
 }
 
 /// Request for `session.send_message`.
@@ -276,8 +264,10 @@ pub struct SessionSetTitleRequest {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionSearchRequest {
     pub query: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub kiln: Option<String>,
+    /// The caller's whole kiln set — results are the sessions overlapping it.
+    /// Always sent, empty included: an empty scope overlaps nothing, which is
+    /// the fail-closed answer a kiln-less session should get.
+    pub kilns: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<usize>,
 }
@@ -285,13 +275,17 @@ pub struct SessionSearchRequest {
 /// Request for `session.load_events`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionLoadEventsRequest {
-    pub session_dir: String,
+    pub session_id: String,
 }
 
 /// Request for `session.list_persisted`.
+///
+/// `kilns` is the caller's whole kiln set, not directories to scan: the daemon
+/// returns the sessions whose own set overlaps it — the same predicate
+/// `session.search` and `session.cleanup` answer to.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionListPersistedRequest {
-    pub kiln: String,
+    pub kilns: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -301,7 +295,7 @@ pub struct SessionListPersistedRequest {
 /// Request for `session.render_markdown`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionRenderMarkdownRequest {
-    pub session_dir: String,
+    pub session_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub include_timestamps: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -315,7 +309,7 @@ pub struct SessionRenderMarkdownRequest {
 /// Request for `session.export_to_file`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionExportToFileRequest {
-    pub session_dir: String,
+    pub session_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -323,18 +317,17 @@ pub struct SessionExportToFileRequest {
 }
 
 /// Request for `session.cleanup`.
+///
+/// `kilns` is the caller's whole kiln set; deletion is scoped to the sessions
+/// overlapping it. `all_kilns` widens that to every session on the machine and
+/// has to be set deliberately — sessions live in one flat root now, so an
+/// unscoped sweep is not recoverable.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionCleanupRequest {
-    pub kiln: String,
+    pub kilns: Vec<String>,
     pub older_than_days: u64,
     pub dry_run: bool,
-}
-
-/// Request for `session.reindex`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionReindexRequest {
-    pub kiln: String,
-    pub force: bool,
+    pub all_kilns: bool,
 }
 
 // --- Session RPC Response Types ---
@@ -456,42 +449,31 @@ impl DaemonClient {
         self.session_id_call("session.end", session_id).await
     }
 
-    pub async fn session_delete(&self, session_id: &str, kiln: &Path) -> Result<serde_json::Value> {
+    pub async fn session_delete(&self, session_id: &str) -> Result<serde_json::Value> {
         self.typed_call(
             "session.delete",
-            SessionDeleteRequest {
+            SessionIdRequest {
                 session_id: session_id.to_string(),
-                kiln: kiln.to_string_lossy().to_string(),
             },
         )
         .await
     }
 
-    pub async fn session_archive(
-        &self,
-        session_id: &str,
-        kiln: &Path,
-    ) -> Result<serde_json::Value> {
+    pub async fn session_archive(&self, session_id: &str) -> Result<serde_json::Value> {
         self.typed_call(
             "session.archive",
-            SessionArchiveRequest {
+            SessionIdRequest {
                 session_id: session_id.to_string(),
-                kiln: kiln.to_string_lossy().to_string(),
             },
         )
         .await
     }
 
-    pub async fn session_unarchive(
-        &self,
-        session_id: &str,
-        kiln: &Path,
-    ) -> Result<serde_json::Value> {
+    pub async fn session_unarchive(&self, session_id: &str) -> Result<serde_json::Value> {
         self.typed_call(
             "session.unarchive",
-            SessionArchiveRequest {
+            SessionIdRequest {
                 session_id: session_id.to_string(),
-                kiln: kiln.to_string_lossy().to_string(),
             },
         )
         .await
@@ -515,7 +497,6 @@ impl DaemonClient {
     pub async fn session_resume_from_storage(
         &self,
         session_id: &str,
-        kiln: &Path,
         limit: Option<usize>,
         offset: Option<usize>,
     ) -> Result<serde_json::Value> {
@@ -523,7 +504,6 @@ impl DaemonClient {
             "session.resume_from_storage",
             SessionResumeFromStorageRequest {
                 session_id: session_id.to_string(),
-                kiln: kiln.to_string_lossy().to_string(),
                 limit,
                 offset,
             },
@@ -623,17 +603,23 @@ impl DaemonClient {
         .await
     }
 
+    /// Search session transcripts within `kilns` — the caller's whole kiln set,
+    /// not one member of it. Scope is kiln-set *overlap*, so a caller that
+    /// sends a subset silently hides the sessions sharing the rest.
     pub async fn session_search(
         &self,
         query: &str,
-        kiln_path: Option<&Path>,
+        kilns: &[PathBuf],
         limit: Option<usize>,
     ) -> Result<serde_json::Value> {
         self.typed_call(
             "session.search",
             SessionSearchRequest {
                 query: query.to_string(),
-                kiln: kiln_path.map(|p| p.to_string_lossy().to_string()),
+                kilns: kilns
+                    .iter()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .collect(),
                 limit,
             },
         )
@@ -645,27 +631,32 @@ impl DaemonClient {
     // =========================================================================
 
     /// Load events from a persisted session's JSONL log.
-    pub async fn session_load_events(&self, session_dir: &Path) -> Result<serde_json::Value> {
+    pub async fn session_load_events(&self, session_id: &str) -> Result<serde_json::Value> {
         self.typed_call(
             "session.load_events",
             SessionLoadEventsRequest {
-                session_dir: session_dir.to_string_lossy().to_string(),
+                session_id: session_id.to_string(),
             },
         )
         .await
     }
 
-    /// List persisted sessions from a kiln's session directory.
+    /// List persisted sessions within `kilns` — the caller's whole kiln set,
+    /// not one member of it. Scope is kiln-set *overlap*, so a caller that
+    /// sends a subset silently hides the sessions sharing the rest.
     pub async fn session_list_persisted(
         &self,
-        kiln: &Path,
+        kilns: &[PathBuf],
         session_type: Option<&str>,
         limit: Option<usize>,
     ) -> Result<serde_json::Value> {
         self.typed_call(
             "session.list_persisted",
             SessionListPersistedRequest {
-                kiln: kiln.to_string_lossy().to_string(),
+                kilns: kilns
+                    .iter()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .collect(),
                 session_type: session_type.map(|t| t.to_string()),
                 limit,
             },
@@ -676,7 +667,7 @@ impl DaemonClient {
     /// Render a persisted session's events to markdown.
     pub async fn session_render_markdown(
         &self,
-        session_dir: &Path,
+        session_id: &str,
         include_timestamps: Option<bool>,
         include_tokens: Option<bool>,
         include_tools: Option<bool>,
@@ -686,7 +677,7 @@ impl DaemonClient {
             .typed_call(
                 "session.render_markdown",
                 SessionRenderMarkdownRequest {
-                    session_dir: session_dir.to_string_lossy().to_string(),
+                    session_id: session_id.to_string(),
                     include_timestamps,
                     include_tokens,
                     include_tools,
@@ -700,7 +691,7 @@ impl DaemonClient {
     /// Export a session to a markdown file.
     pub async fn session_export_to_file(
         &self,
-        session_dir: &Path,
+        session_id: &str,
         output_path: Option<&Path>,
         include_timestamps: Option<bool>,
     ) -> Result<String> {
@@ -708,7 +699,7 @@ impl DaemonClient {
             .typed_call(
                 "session.export_to_file",
                 SessionExportToFileRequest {
-                    session_dir: session_dir.to_string_lossy().to_string(),
+                    session_id: session_id.to_string(),
                     output_path: output_path.map(|p| p.to_string_lossy().to_string()),
                     include_timestamps,
                 },
@@ -718,30 +709,28 @@ impl DaemonClient {
     }
 
     /// Clean up old persisted sessions.
+    ///
+    /// `kilns` is the caller's whole kiln set; `all_kilns` sweeps every session
+    /// on the machine and is refused unless set. One of the two has to say
+    /// something — an empty `kilns` with `all_kilns: false` is an error, not a
+    /// silent no-op, because this verb deletes.
     pub async fn session_cleanup(
         &self,
-        kiln: &Path,
+        kilns: &[PathBuf],
         older_than_days: u64,
         dry_run: bool,
+        all_kilns: bool,
     ) -> Result<serde_json::Value> {
         self.typed_call(
             "session.cleanup",
             SessionCleanupRequest {
-                kiln: kiln.to_string_lossy().to_string(),
+                kilns: kilns
+                    .iter()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .collect(),
                 older_than_days,
                 dry_run,
-            },
-        )
-        .await
-    }
-
-    /// Reindex persisted sessions into the kiln's NoteStore.
-    pub async fn session_reindex(&self, kiln: &Path, force: bool) -> Result<serde_json::Value> {
-        self.typed_call(
-            "session.reindex",
-            SessionReindexRequest {
-                kiln: kiln.to_string_lossy().to_string(),
-                force,
+                all_kilns,
             },
         )
         .await

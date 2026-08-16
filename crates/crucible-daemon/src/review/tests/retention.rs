@@ -94,10 +94,10 @@ async fn dropping_a_sessions_keep_refs_releases_every_root_its_journal_names() {
 /// its job and must not be swept, however idle the session looks.
 #[tokio::test]
 async fn the_sweep_releases_orphaned_keep_refs_and_leaves_live_ones() {
-    let kiln = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
     let repo_dir = TempDir::new().unwrap();
     repo(repo_dir.path(), &[("a.txt", "one\n")]).await;
-    let sessions = kiln.path().join(".crucible").join("sessions");
+    let sessions = home.path().join("sessions");
 
     let ledgers = Arc::new(ReviewLedgers::default());
     for id in ["live", "orphan"] {
@@ -111,7 +111,7 @@ async fn the_sweep_releases_orphaned_keep_refs_and_leaves_live_ones() {
     assert_eq!(held, vec!["live".to_string(), "orphan".to_string()]);
 
     std::fs::remove_dir_all(sessions.join("orphan")).unwrap();
-    let dropped = crate::review::sweep_review_refs(&[kiln.path().to_path_buf()]).await;
+    let dropped = crate::review::sweep_review_refs(&sessions).await;
 
     assert_eq!(dropped, 1);
     assert_eq!(
@@ -126,10 +126,10 @@ async fn the_sweep_releases_orphaned_keep_refs_and_leaves_live_ones() {
 /// tree it had captured, in the user's own repository, forever.
 #[tokio::test]
 async fn the_sweep_releases_orphaned_snapshot_refs_too() {
-    let kiln = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
     let repo_dir = TempDir::new().unwrap();
     repo(repo_dir.path(), &[("a.txt", "one\n")]).await;
-    let sessions = kiln.path().join(".crucible").join("sessions");
+    let sessions = home.path().join("sessions");
 
     let ledgers = Arc::new(ReviewLedgers::default());
     // A surviving session keeps the repository in the sweep's view at all —
@@ -154,7 +154,7 @@ async fn the_sweep_releases_orphaned_snapshot_refs_too() {
     );
 
     std::fs::remove_dir_all(sessions.join("orphan")).unwrap();
-    let dropped = crate::review::sweep_review_refs(&[kiln.path().to_path_buf()]).await;
+    let dropped = crate::review::sweep_review_refs(&sessions).await;
 
     assert_eq!(dropped, 2, "the orphan's snapshot ref was left behind");
     let mut held = keep_ref_ids(repo_dir.path()).await.unwrap();

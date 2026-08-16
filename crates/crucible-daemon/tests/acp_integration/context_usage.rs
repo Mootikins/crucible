@@ -23,6 +23,7 @@
 //! the chain under test is the production one end to end: ACP wire frame →
 //! `acp/client/streaming.rs` → `StreamingChunk` → `acp_handle.rs` →
 //! `TurnEvent` → `agent_manager/messaging/stream.rs` → broadcast.
+use crucible_daemon::test_support::temp_session_manager;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -49,9 +50,7 @@ use crate::support::{mock_agent_path, mock_session_agent};
 /// and mutating this process's environment would race the rest of the suite.
 async fn delegated_turn_events(env: &[(&str, &str)]) -> Vec<SessionEventMessage> {
     let temp = TempDir::new().expect("temp workspace");
-    let session_manager = Arc::new(SessionManager::with_storage(Arc::new(
-        FileSessionStorage::new(),
-    )));
+    let session_manager = temp_session_manager();
     let (event_tx, mut event_rx) = broadcast::channel(256);
 
     let agent_manager = AgentManager::new(AgentManagerParams {
@@ -70,9 +69,8 @@ async fn delegated_turn_events(env: &[(&str, &str)]) -> Vec<SessionEventMessage>
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            temp.path().to_path_buf(),
+            vec![temp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await

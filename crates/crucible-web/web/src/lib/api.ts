@@ -665,9 +665,8 @@ export async function resolveWorkspaceTarget(spec: string, workspace?: string): 
 interface RawSession {
   session_id: string;
   type: Session['session_type'];
-  kiln: string;
+  kilns?: string[];
   workspace: string;
-  connected_kilns?: string[];
   state: Session['state'];
   title: string | null;
   // Two endpoint shapes: session.list sends a flattened top-level `agent_model`;
@@ -686,9 +685,8 @@ function mapSession(raw: RawSession): Session {
   return {
     id: raw.session_id,
     session_type: raw.type,
-    kiln: raw.kiln,
+    kilns: raw.kilns ?? [],
     workspace: raw.workspace,
-    connected_kilns: raw.connected_kilns ?? [],
     state: raw.state,
     title: raw.title,
     agent_model: raw.agent_model ?? raw.agent?.model ?? null,
@@ -733,10 +731,22 @@ export async function listSessions(filters?: {
   return data.sessions.map(mapSession);
 }
 
-/** Search sessions by title/content. */
-export async function searchSessions(query: string, kiln?: string, limit?: number): Promise<Session[]> {
+/**
+ * Search sessions by title/content.
+ *
+ * `kilns` is the scope, and the scope rule is kiln-set *overlap* — a result
+ * needs to share at least one kiln with it. Pass the caller's whole set, not
+ * one member: a member stands only for the sessions that share that member.
+ */
+export async function searchSessions(
+  query: string,
+  kilns?: string | string[],
+  limit?: number,
+): Promise<Session[]> {
   const params = new URLSearchParams({ q: query });
-  if (kiln) params.set('kiln', kiln);
+  for (const kiln of typeof kilns === 'string' ? [kilns] : kilns ?? []) {
+    if (kiln) params.append('kiln', kiln);
+  }
   if (limit !== undefined) params.set('limit', limit.toString());
 
   const data = await request<RawSession[]>('GET', `/api/sessions/search?${params.toString()}`, {
@@ -1001,12 +1011,11 @@ export interface SessionHistoryResponse {
 
 export async function getSessionHistory(
   sessionId: string,
-  kiln: string,
   limit?: number,
   offset?: number,
   signal?: AbortSignal,
 ): Promise<SessionHistoryResponse> {
-  const params = new URLSearchParams({ kiln });
+  const params = new URLSearchParams();
   if (limit !== undefined) params.set('limit', limit.toString());
   if (offset !== undefined) params.set('offset', offset.toString());
 
@@ -1030,12 +1039,11 @@ export async function listProviders(): Promise<ProviderInfo[]> {
 /** Session scope echoed by kiln/workspace mutations. */
 export interface SessionScope {
   session_id: string;
-  kiln: string;
+  kilns: string[];
   workspace: string;
-  connected_kilns: string[];
 }
 
-/** Attach a kiln to a session's connected set. */
+/** Attach a kiln to the session's kiln set. Idempotent. */
 export async function connectSessionKiln(sessionId: string, kiln: string): Promise<SessionScope> {
   return request<SessionScope>(
     'POST',
@@ -1044,7 +1052,7 @@ export async function connectSessionKiln(sessionId: string, kiln: string): Promi
   );
 }
 
-/** Detach a connected kiln (the primary kiln cannot be detached). */
+/** Detach a kiln from the session's kiln set. Any member may be detached. */
 export async function disconnectSessionKiln(
   sessionId: string,
   kiln: string,

@@ -7,11 +7,9 @@
 
 use crucible_core::session::{Session, SessionType};
 use crucible_daemon::background_manager::BackgroundJobManager;
+use crucible_daemon::test_support::temp_session_manager;
 use crucible_daemon::tools::workspace::WorkspaceTools;
-use crucible_daemon::{
-    AgentManager, AgentManagerParams, DaemonPluginLoader, FileSessionStorage, KilnManager,
-    SessionManager,
-};
+use crucible_daemon::{AgentManager, AgentManagerParams, DaemonPluginLoader, KilnManager};
 use crucible_lua::PluginSource;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -96,9 +94,7 @@ async fn plugin_declared_tool_is_dispatchable_by_the_agent() {
     let tmp = TempDir::new().expect("tempdir");
     let loader = loader_with_fixture(tmp.path()).await;
 
-    let session_manager = Arc::new(SessionManager::with_storage(Arc::new(
-        FileSessionStorage::new(),
-    )));
+    let session_manager = temp_session_manager();
     let (event_tx, _rx) = broadcast::channel(16);
     let manager = AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
@@ -113,7 +109,7 @@ async fn plugin_declared_tool_is_dispatchable_by_the_agent() {
         workspace_tools: Arc::new(WorkspaceTools::new(tmp.path().to_path_buf())),
     });
 
-    let session = Session::new(SessionType::Chat, tmp.path().to_path_buf());
+    let session = Session::new(SessionType::Chat, vec![tmp.path().to_path_buf()]);
     let dispatcher = manager.get_or_create_session_dispatcher(&session).await;
 
     assert!(

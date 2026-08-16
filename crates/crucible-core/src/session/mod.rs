@@ -5,10 +5,11 @@
 //!
 //! # Key Concepts
 //!
-//! - **Session**: A sequence of agent actions, stored in a kiln
+//! - **Session**: A sequence of agent actions, stored under the daemon's
+//!   sessions root (not inside a kiln)
 //! - **Workspace**: Where the agent operates (file I/O happens here)
-//! - **Kiln**: Where the session is stored (logs, artifacts, history)
-//! - **Connected Kilns**: Additional knowledge stores the session can query
+//! - **Kilns**: The knowledge stores the session can query — a flat set, with
+//!   no privileged member
 //!
 //! # Example
 //!
@@ -18,10 +19,10 @@
 //!
 //! let session = Session::new(
 //!     SessionType::Chat,
-//!     PathBuf::from("/home/user/notes"),  // kiln
+//!     vec![PathBuf::from("/home/user/notes")],
 //! )
 //! .with_workspace(PathBuf::from("/home/user/project"))
-//! .with_connected_kiln(PathBuf::from("/home/user/reference"));
+//! .with_kiln(PathBuf::from("/home/user/reference"));
 //! ```
 
 mod types;

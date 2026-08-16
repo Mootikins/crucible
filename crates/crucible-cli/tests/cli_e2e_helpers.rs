@@ -169,6 +169,17 @@ impl TestDaemon {
             .arg(&self.config_path);
         cmd
     }
+
+    /// Where this daemon writes sessions. Sessions live under the daemon's own
+    /// data root now rather than inside a kiln, so a test that reads or seeds a
+    /// transcript on disk has to ask the daemon rather than compose a kiln path.
+    ///
+    /// The hermetic env gives the child `HOME = <temp>` and no `CRUCIBLE_HOME`,
+    /// so the daemon resolves its data root to `<temp>/.crucible`.
+    #[allow(dead_code)]
+    pub fn sessions_root(&self) -> PathBuf {
+        self._temp_dir.path().join(".crucible").join("sessions")
+    }
 }
 
 impl Drop for TestDaemon {

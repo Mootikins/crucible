@@ -76,7 +76,7 @@ afterEach(() => {
 const rawSession = {
   session_id: 'ses-abc',
   type: 'chat',
-  kiln: 'default',
+  kilns: ['default'],
   workspace: 'ws-1',
   state: 'active',
   title: 'My Session',
@@ -127,12 +127,12 @@ describe('createSession', () => {
     });
     global.fetch = mockFetch;
 
-    const session = await createSession({ kiln: 'default' });
+    const session = await createSession({ kilns: ['default'] });
 
     // Verify mapSession field mapping: session_id → id, type → session_type
     expect(session.id).toBe('ses-abc');
     expect(session.session_type).toBe('chat');
-    expect(session.kiln).toBe('default');
+    expect(session.kilns).toEqual(['default']);
     expect(session.workspace).toBe('ws-1');
     expect(session.state).toBe('active');
     expect(session.title).toBe('My Session');
@@ -152,7 +152,7 @@ describe('createSession', () => {
     });
     global.fetch = mockFetch;
 
-    const session = await createSession({ kiln: 'default' });
+    const session = await createSession({ kilns: ['default'] });
 
     expect(session.agent_model).toBeNull();
     expect(session.event_count).toBe(0); // ?? 0 fallback
@@ -164,7 +164,7 @@ describe('createSession', () => {
     });
     global.fetch = mockFetch;
 
-    await expect(createSession({ kiln: 'x' })).rejects.toThrow('Failed to create session: HTTP 422');
+    await expect(createSession({ kilns: ['x'] })).rejects.toThrow('Failed to create session: HTTP 422');
   });
 
   it('forwards isolation untouched, and omits it when unset', async () => {
@@ -172,17 +172,17 @@ describe('createSession', () => {
     global.fetch = mockFetch;
 
     // A profile name rides through as-is — the client never interprets it.
-    await createSession({ kiln: 'default', isolation: 'throwaway' });
+    await createSession({ kilns: ['default'], isolation: 'throwaway' });
     expect(JSON.parse(mockFetch.mock.calls[0][1]!.body as string).isolation).toBe('throwaway');
 
     // `false` ("no sandbox even if the project has one") must survive: it is
     // an instruction, not a falsy value to drop.
-    await createSession({ kiln: 'default', isolation: false });
+    await createSession({ kilns: ['default'], isolation: false });
     expect(JSON.parse(mockFetch.mock.calls[1][1]!.body as string).isolation).toBe(false);
 
     // Unset stays absent — absent means "resolve normally", which is a
     // different instruction from false.
-    await createSession({ kiln: 'default' });
+    await createSession({ kilns: ['default'] });
     expect(JSON.parse(mockFetch.mock.calls[2][1]!.body as string)).not.toHaveProperty('isolation');
   });
 });
@@ -483,6 +483,21 @@ describe('searchSessions', () => {
     const [url] = mockFetch.mock.calls[0];
     expect(url).toContain('kiln=my-kiln');
     expect(url).toContain('limit=10');
+  });
+
+  // Scope is kiln-set overlap, so a caller cleared for several kilns states
+  // all of them — `kiln` repeats rather than one member standing in.
+  it('repeats kiln for every kiln in the scope', async () => {
+    const mockFetch = createMockFetch({
+      'GET /api/sessions/search': { body: [] },
+    });
+    global.fetch = mockFetch;
+
+    await searchSessions('foo', ['/kilns/a', '/kilns/b']);
+
+    const [url] = mockFetch.mock.calls[0];
+    expect(url).toContain(`kiln=${encodeURIComponent('/kilns/a')}`);
+    expect(url).toContain(`kiln=${encodeURIComponent('/kilns/b')}`);
   });
 });
 
@@ -793,12 +808,12 @@ describe('session title endpoints', () => {
 
 describe('getSessionHistory', () => {
   it.each([
-    { name: 'passes kiln + limit/offset and returns parsed response', kiln: '/path/to/kiln', limit: 50, offset: 100, expectPresent: ['kiln=%2Fpath%2Fto%2Fkiln', 'limit=50', 'offset=100'], expectAbsent: [] as string[] },
-    { name: 'omits limit/offset when undefined', kiln: '/k', expectPresent: [] as string[], expectAbsent: ['limit', 'offset'] },
-  ])('$name', async ({ kiln, limit, offset, expectPresent, expectAbsent }: { kiln: string; limit?: number; offset?: number; expectPresent: string[]; expectAbsent: string[] }) => {
+    { name: 'passes limit/offset and returns parsed response', limit: 50, offset: 100, expectPresent: ['limit=50', 'offset=100'], expectAbsent: ['kiln'] as string[] },
+    { name: 'omits limit/offset when undefined', expectPresent: [] as string[], expectAbsent: ['limit', 'offset'] },
+  ])('$name', async ({ limit, offset, expectPresent, expectAbsent }: { limit?: number; offset?: number; expectPresent: string[]; expectAbsent: string[] }) => {
     const mockFetch = createMockFetch({ 'GET /api/session/ses-1/history': { body: { session_id: 'ses-1', history: [], total_events: 0 } } });
     global.fetch = mockFetch;
-    await getSessionHistory('ses-1', kiln, limit, offset);
+    await getSessionHistory('ses-1', limit, offset);
     const [url] = mockFetch.mock.calls[0];
     for (const p of expectPresent) expect(url).toContain(p);
     for (const p of expectAbsent) expect(url).not.toContain(p);
@@ -812,7 +827,7 @@ describe('getSessionHistory', () => {
     });
     global.fetch = mockFetch;
     const controller = new AbortController();
-    await getSessionHistory('ses-1', '/k', undefined, undefined, controller.signal);
+    await getSessionHistory('ses-1', undefined, undefined, controller.signal);
     const [, init] = mockFetch.mock.calls[0];
     expect(init!.signal).toBe(controller.signal);
   });

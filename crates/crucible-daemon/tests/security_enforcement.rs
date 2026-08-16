@@ -14,10 +14,9 @@ use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
 use crucible_core::traits::chat::AgentHandle;
 use crucible_core::turn::{StopReason, TurnEvent};
 use crucible_daemon::delegation::{DelegationRequest, DelegationService, DelegationSpawner};
+use crucible_daemon::test_support::temp_session_manager;
 use crucible_daemon::tools::workspace::WorkspaceTools;
-use crucible_daemon::{
-    AgentManager, AgentManagerParams, FileSessionStorage, KilnManager, SessionManager,
-};
+use crucible_daemon::{AgentManager, AgentManagerParams, KilnManager};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -172,8 +171,7 @@ async fn rig(
 ) -> Rig {
     let temp = TempDir::new().unwrap();
     let workspace = temp.path().to_path_buf();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let (event_tx, _) = broadcast::channel(256);
     let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
@@ -195,7 +193,7 @@ async fn rig(
         })
     }));
     let session = session_manager
-        .create_session(SessionType::Chat, workspace.clone(), None, vec![], None)
+        .create_session(SessionType::Chat, vec![workspace.clone()], None, None)
         .await
         .unwrap();
     agent_manager
@@ -406,8 +404,7 @@ async fn delegation_trust_derives_from_child_provider() {
     )
     .unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let (event_tx, _) = broadcast::channel(64);
     let service = DelegationService::new(session_manager.clone(), event_tx.clone());
     let agent_manager = Arc::new(AgentManager::new_with_delegation(
@@ -430,7 +427,7 @@ async fn delegation_trust_derives_from_child_provider() {
     service.bind_agent_manager(&agent_manager);
 
     let session = session_manager
-        .create_session(SessionType::Chat, workspace.clone(), None, vec![], None)
+        .create_session(SessionType::Chat, vec![workspace.clone()], None, None)
         .await
         .unwrap();
     let mut agent = internal_agent();
@@ -466,7 +463,7 @@ async fn delegation_trust_derives_from_child_provider() {
     );
     assert!(
         session_manager
-            .child_session_ids(&session.id, &workspace)
+            .child_session_ids(&session.id)
             .await
             .is_empty(),
         "no child session may be created when trust fails"
@@ -514,8 +511,7 @@ async fn card_allow_does_not_override_config_deny() {
     };
     let temp = TempDir::new().unwrap();
     let workspace = temp.path().to_path_buf();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let (event_tx, _) = broadcast::channel(256);
     let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
@@ -538,7 +534,7 @@ async fn card_allow_does_not_override_config_deny() {
         })
     }));
     let session = session_manager
-        .create_session(SessionType::Chat, workspace.clone(), None, vec![], None)
+        .create_session(SessionType::Chat, vec![workspace.clone()], None, None)
         .await
         .unwrap();
     let mut agent = internal_agent();

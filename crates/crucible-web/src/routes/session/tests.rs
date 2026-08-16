@@ -361,16 +361,16 @@ async fn post_create_session(
 }
 
 #[tokio::test]
-async fn create_session_works_without_a_kiln() {
+async fn create_session_works_without_any_kilns() {
     let (status, json) = post_create_session(serde_json::json!({})).await;
     assert_eq!(status, axum::http::StatusCode::OK, "body: {json}");
     assert_eq!(json["session_id"], "test-session-001");
 }
 
 #[tokio::test]
-async fn create_session_accepts_connect_kilns() {
+async fn create_session_accepts_a_multi_kiln_set() {
     let (status, json) = post_create_session(serde_json::json!({
-        "connect_kilns": ["/tmp/extra-kiln"],
+        "kilns": ["/tmp/test-kiln", "/tmp/extra-kiln"],
     }))
     .await;
     assert_eq!(status, axum::http::StatusCode::OK, "body: {json}");
@@ -618,7 +618,7 @@ async fn connect_kiln_returns_updated_scope() {
     )
     .await;
     assert_eq!(status, axum::http::StatusCode::OK, "body: {json}");
-    assert_eq!(json["connected_kilns"][0], "/tmp/extra-kiln");
+    assert_eq!(json["kilns"][1], "/tmp/extra-kiln");
 }
 
 #[tokio::test]
@@ -630,7 +630,7 @@ async fn disconnect_kiln_returns_updated_scope() {
     )
     .await;
     assert_eq!(status, axum::http::StatusCode::OK, "body: {json}");
-    assert!(json["connected_kilns"].as_array().unwrap().is_empty());
+    assert_eq!(json["kilns"].as_array().unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -857,7 +857,7 @@ async fn test_create_session_without_provider_uses_detected_default() {
     let state = crate::test_support::build_mock_state(client);
     let app = crate::test_support::build_test_app(state);
 
-    // Only kiln is required — provider and model should resolve from detected defaults
+    // Only kilns is required — provider and model should resolve from detected defaults
     let response = app
         .oneshot(
             axum::http::Request::builder()
@@ -865,7 +865,7 @@ async fn test_create_session_without_provider_uses_detected_default() {
                 .uri("/api/session")
                 .header("content-type", "application/json")
                 .body(axum::body::Body::from(
-                    serde_json::json!({"kiln": "/tmp/test-kiln"}).to_string(),
+                    serde_json::json!({"kilns": ["/tmp/test-kiln"]}).to_string(),
                 ))
                 .unwrap(),
         )
@@ -898,7 +898,7 @@ async fn test_create_session_with_explicit_provider_still_works() {
                 .header("content-type", "application/json")
                 .body(axum::body::Body::from(
                     serde_json::json!({
-                        "kiln": "/tmp/test-kiln",
+                        "kilns": ["/tmp/test-kiln"],
                         "provider": "ollama",
                         "model": "llama3.2"
                     })

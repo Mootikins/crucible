@@ -1,4 +1,5 @@
-import { getConfig, getSession, listSessions } from '@/lib/api';
+import { getSession } from '@/lib/api';
+import { sessionDefaultKiln } from '@/lib/session-scope';
 import type { ChatMode } from '@/lib/types';
 import { statusBarActions } from '@/stores/statusBarStore';
 
@@ -8,7 +9,7 @@ interface BootstrapSessionParams {
   setSessionTitle: (title: string | null) => void;
   /** Hydrate the persisted session mode into the chat UI. */
   setChatMode?: (mode: ChatMode) => void;
-  loadHistory: (sessionId: string, kiln: string, signal?: AbortSignal) => Promise<void>;
+  loadHistory: (sessionId: string, signal?: AbortSignal) => Promise<void>;
 }
 
 /** Restore the mode the daemon persisted for this session.
@@ -49,9 +50,9 @@ export async function bootstrapSessionWithFallback({
     // a page reload silently shows "Normal" while the agent stays in plan.
     hydrateMode(session.agent_mode, setChatMode);
     syncPrimaryStatus(session.id, session.title, session.agent_model ?? null);
-    statusBarActions.setKilnPath(session.kiln || null);
+    statusBarActions.setKilnPath(sessionDefaultKiln(session));
     statusBarActions.setWorkspacePath(session.workspace || null);
-    await loadHistory(session.id, session.kiln, signal);
+    await loadHistory(session.id, signal);
     return;
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
@@ -59,15 +60,13 @@ export async function bootstrapSessionWithFallback({
     }
   }
 
+  // `session.get` failed, so the daemon has no live row — but history now
+  // loads from the daemon's own session store rather than a kiln directory,
+  // so there is nothing left to look up before asking for it.
   try {
-    const config = await getConfig();
-    const sessions = await listSessions({ kiln: config.kiln_path });
-    const persistedSession = sessions.find((session) => session.id === sessionId) ?? null;
-    const sessionKiln = persistedSession?.kiln || config.kiln_path;
-
-    setSessionTitle(persistedSession?.title ?? null);
-    syncFallbackStatus(sessionId, persistedSession?.title ?? null, persistedSession?.agent_model ?? null);
-    await loadHistory(sessionId, sessionKiln, signal);
+    setSessionTitle(null);
+    syncFallbackStatus(sessionId, null, null);
+    await loadHistory(sessionId, signal);
   } catch (fallbackErr) {
     if (fallbackErr instanceof Error && fallbackErr.name === 'AbortError') {
       return;

@@ -143,7 +143,10 @@ impl AgentManager {
         // was ungrounded. Reproduced by widening the window to 200ms, which
         // turns `oneshot_precognition_query_e2e` red every run.
         let conversation_tree = self
-            .get_or_rebuild_session_tree(session_id, &session.jsonl_path())
+            .get_or_rebuild_session_tree(
+                session_id,
+                &session.jsonl_path(self.session_manager.sessions_root()),
+            )
             .await;
 
         if !emit_event(
@@ -181,11 +184,15 @@ impl AgentManager {
         // restart, which is why this restores from `review.jsonl` rather than
         // opening blind. A journal that exists and will not read is an error
         // here, never a fresh base.
-        let mut review_roots = vec![session.workspace.clone(), session.kiln.clone()];
-        review_roots.extend(session.connected_kilns.iter().cloned());
+        let mut review_roots = vec![session.workspace.clone()];
+        review_roots.extend(session.kilns.iter().cloned());
         if let Err(e) = self
             .review
-            .open_or_restore(session_id, &session.storage_path(), &review_roots)
+            .open_or_restore(
+                session_id,
+                &session.storage_path(self.session_manager.sessions_root()),
+                &review_roots,
+            )
             .await
         {
             // Two different failures land here and they are not equally
@@ -253,7 +260,7 @@ impl AgentManager {
             if crate::agent_manager::precognition_gate::should_run_precognition(
                 agent_config.precognition_enabled,
                 &original_content,
-                &session.kiln,
+                &session.kilns,
                 is_first_user_message,
             ) {
                 self.compute_precognition_message(
@@ -341,7 +348,7 @@ impl AgentManager {
             event_tx: event_tx_clone.clone(),
             session_state: self.get_or_create_session_state(session_id),
             workspace_path: session.workspace.clone(),
-            session_dir: session.storage_path(),
+            session_dir: session.storage_path(self.session_manager.sessions_root()),
             agent_stream_config: {
                 let (lua_validators, plugin_lua) = match self.lua_validators() {
                     Some((r, l)) => (Some(r), Some(l)),
@@ -482,9 +489,9 @@ impl AgentManager {
 
     /// Return the live session for `session_id`, reviving it from storage if it
     /// is no longer resident in memory (ended or evicted). This is what makes
-    /// ended sessions transparently resumable on send: the kiln is resolved from
-    /// the session→kiln index (kept across end/eviction), falling back to
-    /// probing currently-open kilns for the persisted session.
+    /// ended sessions transparently resumable on send. Storage is one flat root,
+    /// so reviving needs nothing but the id — no session→kiln index, no probing
+    /// open kilns for the one that happens to hold it.
     async fn get_or_revive_session(
         &self,
         session_id: &str,
@@ -500,50 +507,26 @@ impl AgentManager {
             }
             let revived = self
                 .session_manager
-                .resume_session_from_storage(session_id, &session.kiln)
+                .resume_session_from_storage(session_id)
                 .await?;
             info!(session_id = %session_id, "Reactivated an ended session on send");
             return Ok(revived);
         }
 
-        // Not resident — revive from disk. Prefer the last-known kiln from the
-        // index; it survives end/eviction and does not require the kiln to be
-        // open.
-        if let Some(kiln) = self.session_manager.session_kiln(session_id) {
-            let session = self
-                .session_manager
-                .resume_session_from_storage(session_id, &kiln)
-                .await?;
-            info!(
-                session_id = %session_id,
-                kiln = %kiln.display(),
-                "Revived idle session from storage on send"
-            );
-            return Ok(session);
-        }
-
-        // Fallback (e.g. after a daemon restart, where the index is empty):
-        // probe every currently-open kiln for the persisted session.
-        for (kiln, _, _) in self.kiln_manager.list().await {
-            match self
-                .session_manager
-                .resume_session_from_storage(session_id, &kiln)
-                .await
-            {
-                Ok(session) => {
-                    info!(
-                        session_id = %session_id,
-                        kiln = %kiln.display(),
-                        "Revived idle session from open-kiln probe on send"
-                    );
-                    return Ok(session);
-                }
-                Err(SessionError::NotFound(_)) => continue,
-                Err(e) => return Err(e.into()),
+        match self
+            .session_manager
+            .resume_session_from_storage(session_id)
+            .await
+        {
+            Ok(session) => {
+                info!(session_id = %session_id, "Revived idle session from storage on send");
+                Ok(session)
             }
+            Err(SessionError::NotFound(_)) => {
+                Err(AgentError::SessionNotFound(session_id.to_string()))
+            }
+            Err(e) => Err(e.into()),
         }
-
-        Err(AgentError::SessionNotFound(session_id.to_string()))
     }
 
     /// The session's cached agent handle, building one if there is none.
@@ -727,10 +710,10 @@ impl AgentManager {
         };
 
         let session_for_factory = self.session_manager.get_session(session_id);
-        let kiln_path = session_for_factory.as_ref().map(|s| s.kiln.as_path());
-        let connected_kilns = session_for_factory
+        let kiln_path = session_for_factory.as_ref().and_then(|s| s.default_kiln());
+        let session_kilns = session_for_factory
             .as_ref()
-            .map(|s| s.connected_kilns.clone())
+            .map(|s| s.kilns.clone())
             .unwrap_or_default();
         let mut knowledge_repo = None;
         let mut embedding_provider = None;
@@ -767,7 +750,7 @@ impl AgentManager {
             lua: lua_handle.as_ref(),
             workspace,
             kiln_path,
-            connected_kilns: &connected_kilns,
+            session_kilns: &session_kilns,
             parent_session_id: Some(session_id),
             background_spawner: Some(self.background_manager.clone()),
             delegation_spawner: Some(self.delegation_service.clone()),

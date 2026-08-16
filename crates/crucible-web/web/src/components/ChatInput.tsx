@@ -8,6 +8,7 @@ import { ChipSelect } from '@/components/composer/ChipSelect';
 import { ComposerCard } from '@/components/composer/ComposerCard';
 import { executeCommand } from '@/lib/api';
 import { statusBarStore } from '@/stores/statusBarStore';
+import { sessionDefaultKiln } from '@/lib/session-scope';
 import { ArrowUp, X } from '@/lib/icons';
 export const ChatInput: Component = () => {
   const { sessionId, sendMessage, isLoading, isStreaming, cancelStream, error, chatMode, availableModes, switchMode, addSystemMessage, clearMessages } = useChatSafe();
@@ -124,7 +125,10 @@ export const ChatInput: Component = () => {
       <ComposerCard
         value={input}
         setValue={setInput}
-        kilnPath={() => currentSession()?.kiln}
+        kilnPath={() => {
+          const s = currentSession();
+          return s ? sessionDefaultKiln(s) ?? undefined : undefined;
+        }}
         placeholder={session() ? 'Type a message...' : 'Select a session first...'}
         disabled={!session() || isLoading()}
         testid="chat-input"

@@ -16,7 +16,11 @@ pub(super) async fn search(
 ) -> Result<()> {
     let client = daemon_client().await?;
     let result = client
-        .session_search(&query, Some(&config.kiln_path), Some(limit as usize))
+        .session_search(
+            &query,
+            std::slice::from_ref(&config.kiln_path),
+            Some(limit as usize),
+        )
         .await
         .context("Session search failed")?;
 

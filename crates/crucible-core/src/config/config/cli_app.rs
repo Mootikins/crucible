@@ -829,15 +829,13 @@ verbose = false
         "default".to_string()
     }
 
-    /// Returns the kiln path where sessions should be stored.
+    /// Returns the kiln a CLI-created session attaches to.
     ///
     /// Uses `session_kiln` if explicitly set, otherwise falls back to
-    /// `kiln_path` — matching the field's documented contract. Sessions are
-    /// knowledge (sessions-as-notes feed the graph), so they belong to the
-    /// configured kiln. The old fallback was `crucible_home()`, which made
-    /// the daemon open `~/.crucible` (the global CONFIG directory) as a
-    /// kiln and list it as one.
-    pub fn session_storage_path(&self) -> std::path::PathBuf {
+    /// `kiln_path` — matching the field's documented contract. Sessions no
+    /// longer *live* in a kiln (they are stored under the daemon's data root),
+    /// so this is purely the knowledge scope the session opens with.
+    pub fn session_kiln_path(&self) -> std::path::PathBuf {
         self.session_kiln
             .clone()
             .unwrap_or_else(|| self.kiln_path.clone())

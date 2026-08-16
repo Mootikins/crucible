@@ -1,17 +1,13 @@
 use super::super::io::read_session_events;
 use super::super::list::list_persisted;
-use super::setup_test_session;
-use crate::config::CliConfig;
+use super::{setup_test_session, test_config, test_sessions_dir};
 use crucible_daemon::LogEvent;
 use tempfile::TempDir;
 
 #[tokio::test]
 async fn test_list_sessions_empty() {
     let tmp = TempDir::new().unwrap();
-    let config = CliConfig {
-        kiln_path: tmp.path().to_path_buf(),
-        ..Default::default()
-    };
+    let config = test_config(tmp.path());
 
     // Should not error with empty sessions
     let result = list_persisted(config, 10, None, "table".to_string()).await;
@@ -21,15 +17,11 @@ async fn test_list_sessions_empty() {
 #[tokio::test]
 async fn test_list_sessions_with_data() {
     let tmp = TempDir::new().unwrap();
-    let sessions_path = tmp.path().join(".crucible").join("sessions");
-    std::fs::create_dir_all(&sessions_path).unwrap();
+    let sessions_path = test_sessions_dir(tmp.path());
 
     let _id = setup_test_session(&sessions_path).await;
 
-    let config = CliConfig {
-        kiln_path: tmp.path().to_path_buf(),
-        ..Default::default()
-    };
+    let config = test_config(tmp.path());
 
     let result = list_persisted(config, 10, None, "table".to_string()).await;
     assert!(result.is_ok());
@@ -42,8 +34,7 @@ async fn test_list_sessions_with_data() {
 #[tokio::test]
 async fn read_session_events_counts_the_messages_a_real_log_holds() {
     let tmp = TempDir::new().unwrap();
-    let sessions_path = tmp.path().join(".crucible").join("sessions");
-    std::fs::create_dir_all(&sessions_path).unwrap();
+    let sessions_path = test_sessions_dir(tmp.path());
 
     let id = setup_test_session(&sessions_path).await;
     let events = read_session_events(&sessions_path.join(id.as_str()))

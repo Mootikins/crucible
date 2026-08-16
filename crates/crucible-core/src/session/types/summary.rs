@@ -16,8 +16,9 @@ pub struct SessionSummary {
     pub id: String,
     /// Session type
     pub session_type: SessionType,
-    /// Owning kiln
-    pub kiln: PathBuf,
+    /// Kilns this session can query
+    #[serde(default)]
+    pub kilns: Vec<PathBuf>,
     /// Workspace
     pub workspace: PathBuf,
     /// Current state
@@ -47,7 +48,7 @@ impl From<&Session> for SessionSummary {
         Self {
             id: session.id.clone(),
             session_type: session.session_type,
-            kiln: session.kiln.clone(),
+            kilns: session.kilns.clone(),
             workspace: session.workspace.clone(),
             state: session.state,
             started_at: session.started_at,

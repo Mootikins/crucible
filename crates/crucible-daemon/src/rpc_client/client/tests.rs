@@ -132,7 +132,7 @@ fn session_create_request_without_type_defaults_to_chat() {
     // The handler used to do `optional_param!(req, "type", …).unwrap_or("chat")`.
     // Without `#[serde(default)]` this payload would now be INVALID_PARAMS.
     let req: SessionCreateRequest = serde_json::from_value(serde_json::json!({
-        "kiln": "/tmp/kiln",
+        "kilns": ["/tmp/kiln"],
     }))
     .unwrap();
     assert_eq!(req.session_type, "chat");
@@ -183,11 +183,14 @@ fn session_create_request_without_agent_type_deserializes_as_none() {
     // Old-style payload (pre-Task 1.2a) — no `agent_type`.
     let json = serde_json::json!({
         "type": "chat",
-        "kiln": "/tmp/kiln",
+        "kilns": ["/tmp/kiln"],
     });
     let req: SessionCreateRequest = serde_json::from_value(json).unwrap();
     assert_eq!(req.session_type, "chat");
-    assert_eq!(req.kiln.as_deref(), Some("/tmp/kiln"));
+    assert_eq!(
+        req.kilns.as_deref(),
+        Some(["/tmp/kiln".to_string()].as_slice())
+    );
     assert_eq!(req.agent_type, None);
 }
 
@@ -195,7 +198,7 @@ fn session_create_request_without_agent_type_deserializes_as_none() {
 fn session_create_request_with_agent_type_acp_roundtrips() {
     let json = serde_json::json!({
         "type": "chat",
-        "kiln": "/tmp/kiln",
+        "kilns": ["/tmp/kiln"],
         "agent_type": "acp",
     });
     let req: SessionCreateRequest = serde_json::from_value(json.clone()).unwrap();
@@ -209,7 +212,7 @@ fn session_create_request_with_agent_type_acp_roundtrips() {
 fn session_create_request_with_agent_type_internal_roundtrips() {
     let json = serde_json::json!({
         "type": "chat",
-        "kiln": "/tmp/kiln",
+        "kilns": ["/tmp/kiln"],
         "agent_type": "internal",
     });
     let req: SessionCreateRequest = serde_json::from_value(json).unwrap();
@@ -225,9 +228,8 @@ fn session_create_request_omits_agent_type_when_none() {
     // see an unexpected field.
     let req = SessionCreateRequest {
         session_type: "chat".to_string(),
-        kiln: Some("/tmp/kiln".to_string()),
+        kilns: Some(vec!["/tmp/kiln".to_string()]),
         workspace: None,
-        connect_kilns: None,
         recording_mode: None,
         recording_path: None,
         agent_type: None,
@@ -253,9 +255,8 @@ fn agent_spec_card_reaches_the_wire_as_agent_card() {
     let req = build_create_request(
         SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: None,
+            kilns: vec![],
             workspace: None,
-            connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
             agent_type: Some("internal".to_string()),
@@ -309,40 +310,32 @@ fn session_create_request_agent_card_roundtrips_and_is_distinct_from_agent_name(
 }
 
 /// `cru.sessions.create{ kilns = {...} }` is the spelling every plugin uses,
-/// and the Lua binding now sends its whole table through this type. Without
-/// the alias the Discord plugin's read kilns would deserialize to `None` and
-/// vanish with no error anywhere.
+/// and it is now the wire name too — the flatten collapsed `kiln` +
+/// `connect_kilns` into it, so the binding sends its table through untouched.
+/// Order is preserved because the daemon takes the first entry as the
+/// default kiln.
 #[test]
-fn session_create_request_accepts_kilns_as_an_alias_for_connect_kilns() {
-    let from_alias: SessionCreateRequest =
+fn session_create_request_takes_kilns_as_an_ordered_set() {
+    let req: SessionCreateRequest =
         serde_json::from_value(serde_json::json!({ "kilns": ["/a", "/b"] })).unwrap();
     assert_eq!(
-        from_alias.connect_kilns.as_deref(),
+        req.kilns.as_deref(),
         Some(["/a".to_string(), "/b".to_string()].as_slice())
     );
-
-    let canonical: SessionCreateRequest =
-        serde_json::from_value(serde_json::json!({ "connect_kilns": ["/a"] })).unwrap();
     assert_eq!(
-        canonical.connect_kilns.as_deref(),
-        Some(["/a".to_string()].as_slice())
+        serde_json::to_value(&req).unwrap()["kilns"],
+        serde_json::json!(["/a", "/b"])
     );
-
-    // Only ever serialized under the canonical name.
-    let json = serde_json::to_value(&from_alias).unwrap();
-    assert!(json.get("kilns").is_none());
-    assert_eq!(json["connect_kilns"], serde_json::json!(["/a", "/b"]));
 }
 
 #[test]
-fn session_create_request_omits_kiln_when_none() {
-    // A None kiln must not appear on the wire: the daemon resolves its
+fn session_create_request_omits_kilns_when_none() {
+    // An absent kiln set must not appear on the wire: the daemon resolves its
     // own default (home kiln), and clients must never pre-empt it.
     let req = SessionCreateRequest {
         session_type: "chat".to_string(),
-        kiln: None,
+        kilns: None,
         workspace: None,
-        connect_kilns: None,
         recording_mode: None,
         recording_path: None,
         agent_type: None,
@@ -350,8 +343,8 @@ fn session_create_request_omits_kiln_when_none() {
     };
     let json = serde_json::to_value(&req).unwrap();
     assert!(
-        json.get("kiln").is_none(),
-        "kiln should be omitted when None, got: {json}"
+        json.get("kilns").is_none(),
+        "kilns should be omitted when None, got: {json}"
     );
 }
 
@@ -449,9 +442,8 @@ async fn test_session_create_and_get() {
     let result = client
         .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: Some(tmp.path().to_path_buf()),
+            kilns: vec![tmp.path().to_path_buf()],
             workspace: None,
-            connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
             agent_type: None,
@@ -486,9 +478,8 @@ async fn test_session_lifecycle() {
     let result = client
         .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: Some(tmp.path().to_path_buf()),
+            kilns: vec![tmp.path().to_path_buf()],
             workspace: None,
-            connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
             agent_type: None,
@@ -517,9 +508,8 @@ async fn test_session_subscribe_unsubscribe() {
     let result = client
         .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: Some(tmp.path().to_path_buf()),
+            kilns: vec![tmp.path().to_path_buf()],
             workspace: None,
-            connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
             agent_type: None,
@@ -552,9 +542,8 @@ async fn test_session_thinking_budget() {
         .session_create_with_agent(
             SessionCreateParams {
                 session_type: "chat".to_string(),
-                kiln: Some(tmp.path().to_path_buf()),
+                kilns: vec![tmp.path().to_path_buf()],
                 workspace: None,
-                connect_kilns: vec![],
                 recording_mode: None,
                 recording_path: None,
                 agent_type: Some("internal".to_string()),

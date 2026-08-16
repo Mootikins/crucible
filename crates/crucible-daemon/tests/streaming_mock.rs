@@ -6,10 +6,9 @@
 use crucible_core::session::SessionType;
 use crucible_daemon::background_manager::BackgroundJobManager;
 use crucible_daemon::protocol::SessionEventMessage;
+use crucible_daemon::test_support::temp_session_manager;
 use crucible_daemon::tools::workspace::WorkspaceTools;
-use crucible_daemon::{
-    AgentManager, AgentManagerParams, FileSessionStorage, KilnManager, SessionManager,
-};
+use crucible_daemon::{AgentManager, AgentManagerParams, KilnManager, SessionManager};
 use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::sync::broadcast;
@@ -31,8 +30,7 @@ impl TestHarness {
     /// Create a new test harness with a fresh session
     pub async fn new() -> Self {
         let temp_dir = TempDir::new().expect("failed to create temp dir");
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session_manager = temp_session_manager();
 
         let (event_tx, event_rx) = broadcast::channel(16);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
@@ -53,9 +51,8 @@ impl TestHarness {
         let session = session_manager
             .create_session(
                 SessionType::Chat,
-                temp_dir.path().to_path_buf(),
+                vec![temp_dir.path().to_path_buf()],
                 None,
-                vec![],
                 None,
             )
             .await

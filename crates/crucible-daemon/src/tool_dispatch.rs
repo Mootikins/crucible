@@ -402,6 +402,17 @@ impl ToolExecutor for McpToolExecutor {
         params: serde_json::Value,
         _context: &ExecutionContext,
     ) -> ToolResult<serde_json::Value> {
+        // `list_tools` already hides these on a kiln-less session; this is the
+        // same rule on the dispatch path, for a model that remembers a tool
+        // name from before a `session.disconnect_kiln`. `NotFound` rather than
+        // an execution failure: with no kiln the tool genuinely does not
+        // exist, and letting it through would reach
+        // `validate_path_within_kiln` with `""`.
+        if !self.server.has_kiln() && crate::tools::mcp_server::KILN_BACKED_TOOLS.contains(&name) {
+            return Err(ToolError::NotFound(format!(
+                "{name} needs a kiln, and this session has none attached"
+            )));
+        }
         let result = match name {
             "create_note" => {
                 self.server

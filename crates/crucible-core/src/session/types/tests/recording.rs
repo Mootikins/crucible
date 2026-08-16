@@ -20,7 +20,7 @@ fn test_session_recording_mode_roundtrip() {
     // Create Session with recording_mode, serialize, deserialize, verify
     let kiln = PathBuf::from("/home/user/notes");
     let session =
-        Session::new(SessionType::Chat, kiln).with_recording_mode(RecordingMode::Granular);
+        Session::new(SessionType::Chat, vec![kiln]).with_recording_mode(RecordingMode::Granular);
 
     let json = serde_json::to_string(&session).unwrap();
     assert!(json.contains("\"recording_mode\":\"granular\""));
@@ -34,24 +34,24 @@ fn test_session_is_granular() {
     let kiln = PathBuf::from("/home/user/notes");
 
     // Granular mode returns true
-    let granular_session =
-        Session::new(SessionType::Chat, kiln.clone()).with_recording_mode(RecordingMode::Granular);
+    let granular_session = Session::new(SessionType::Chat, vec![kiln.clone()])
+        .with_recording_mode(RecordingMode::Granular);
     assert!(granular_session.is_granular());
 
     // Coarse mode returns false
-    let coarse_session =
-        Session::new(SessionType::Chat, kiln.clone()).with_recording_mode(RecordingMode::Coarse);
+    let coarse_session = Session::new(SessionType::Chat, vec![kiln.clone()])
+        .with_recording_mode(RecordingMode::Coarse);
     assert!(!coarse_session.is_granular());
 
     // None returns false
-    let no_mode_session = Session::new(SessionType::Chat, kiln);
+    let no_mode_session = Session::new(SessionType::Chat, vec![kiln]);
     assert!(!no_mode_session.is_granular());
 }
 
 #[test]
 fn test_session_recording_jsonl_path() {
     let kiln = PathBuf::from("/home/user/notes");
-    let session = Session::new(SessionType::Chat, kiln);
+    let session = Session::new(SessionType::Chat, vec![kiln]);
 
     assert_eq!(session.recording_jsonl_path(), "recording.jsonl");
 }
@@ -60,7 +60,7 @@ fn test_session_recording_jsonl_path() {
 fn test_session_recording_mode_omitted_when_none() {
     // When recording_mode is None, it should be omitted from JSON
     let kiln = PathBuf::from("/home/user/notes");
-    let session = Session::new(SessionType::Chat, kiln);
+    let session = Session::new(SessionType::Chat, vec![kiln]);
 
     let json = serde_json::to_string(&session).unwrap();
     assert!(!json.contains("recording_mode"));

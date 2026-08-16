@@ -48,7 +48,13 @@ fn card_directories(
     if let Some(kiln) = kiln {
         dirs.push(kiln.join(".crucible").join("agents"));
     }
-    if kiln != Some(workspace) {
+    // An empty workspace path is "no workspace", not the current directory:
+    // `Path::new("").join(".crucible/agents")` is a RELATIVE path, and
+    // `is_dir()` then resolves it against whatever directory the daemon
+    // happens to have been started in. A kiln-less, workspace-less session
+    // would pick up cards from there — a card names a model, a prompt and a
+    // tool set, so that is a meaningful thing to acquire by accident.
+    if !workspace.as_os_str().is_empty() && kiln != Some(workspace) {
         dirs.push(workspace.join(".crucible").join("agents"));
     }
     dirs

@@ -1,22 +1,17 @@
 use super::super::export::export;
 use super::super::io::{format_events_markdown, read_session_events};
 use super::super::show::show;
-use super::setup_test_session;
-use crate::config::CliConfig;
+use super::{setup_test_session, test_config, test_sessions_dir};
 use tempfile::TempDir;
 
 #[tokio::test]
 async fn test_show_session() {
     let tmp = TempDir::new().unwrap();
-    let sessions_path = tmp.path().join(".crucible").join("sessions");
-    std::fs::create_dir_all(&sessions_path).unwrap();
+    let sessions_path = test_sessions_dir(tmp.path());
 
     let id = setup_test_session(&sessions_path).await;
 
-    let config = CliConfig {
-        kiln_path: tmp.path().to_path_buf(),
-        ..Default::default()
-    };
+    let config = test_config(tmp.path());
 
     let result = show(config, id.to_string(), "text".to_string()).await;
     assert!(result.is_ok());
@@ -25,13 +20,9 @@ async fn test_show_session() {
 #[tokio::test]
 async fn test_show_session_not_found() {
     let tmp = TempDir::new().unwrap();
-    let sessions_path = tmp.path().join(".crucible").join("sessions");
-    std::fs::create_dir_all(&sessions_path).unwrap();
+    let _sessions_dir = test_sessions_dir(tmp.path());
 
-    let config = CliConfig {
-        kiln_path: tmp.path().to_path_buf(),
-        ..Default::default()
-    };
+    let config = test_config(tmp.path());
 
     let result = show(
         config,
@@ -45,15 +36,11 @@ async fn test_show_session_not_found() {
 #[tokio::test]
 async fn test_export_session() {
     let tmp = TempDir::new().unwrap();
-    let sessions_path = tmp.path().join(".crucible").join("sessions");
-    std::fs::create_dir_all(&sessions_path).unwrap();
+    let sessions_path = test_sessions_dir(tmp.path());
 
     let id = setup_test_session(&sessions_path).await;
 
-    let config = CliConfig {
-        kiln_path: tmp.path().to_path_buf(),
-        ..Default::default()
-    };
+    let config = test_config(tmp.path());
 
     let output_path = tmp.path().join("exported.md");
     let result = export(config, id.to_string(), Some(output_path.clone()), false).await;
@@ -82,8 +69,7 @@ async fn test_export_session() {
 #[tokio::test]
 async fn export_renders_the_fixtures_conversation() {
     let tmp = TempDir::new().unwrap();
-    let sessions_path = tmp.path().join(".crucible").join("sessions");
-    std::fs::create_dir_all(&sessions_path).unwrap();
+    let sessions_path = test_sessions_dir(tmp.path());
 
     let id = setup_test_session(&sessions_path).await;
     let events = read_session_events(&sessions_path.join(id.as_str()))

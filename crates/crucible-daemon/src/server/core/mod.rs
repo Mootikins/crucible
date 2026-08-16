@@ -473,59 +473,22 @@ pub(super) async fn persist_event(
 
 pub(super) async fn sweep_and_archive_stale_sessions(
     session_manager: &SessionManager,
-    kiln_manager: &KilnManager,
     subscription_manager: &SubscriptionManager,
     agent_manager: &AgentManager,
     auto_archive_hours: u64,
-    data_home: &std::path::Path,
 ) -> Result<usize> {
     let now = Utc::now();
     let stale_after = ChronoDuration::hours(auto_archive_hours as i64);
     let mut archived = 0;
 
-    // Storage-aware listing: the in-memory map only holds live sessions,
-    // but the stale ones are exactly the persisted, no-longer-loaded ones.
-    // Mirror handle_session_list's kiln coverage (open kilns + crucible home).
-    let mut kiln_paths: Vec<PathBuf> = kiln_manager
-        .list()
-        .await
-        .into_iter()
-        .map(|(path, _, _)| path)
-        .collect();
-    let home = data_home.to_path_buf();
-    if !kiln_paths.contains(&home) {
-        kiln_paths.push(home);
-    }
+    // Storage-aware listing: the in-memory map only holds live sessions, but
+    // the stale ones are exactly the persisted, no-longer-loaded ones — and
+    // `list_sessions_filtered_async` covers both from the one sessions root.
+    let candidates = session_manager
+        .list_sessions_filtered_async(KilnFilter::Any, None, None, None, false)
+        .await;
 
-    // In-memory sessions first (covers sessions whose kiln isn't open),
-    // then persisted sessions from each kiln's storage. Each candidate is
-    // paired with the kiln directory to archive under: legacy meta.json
-    // files can carry RELATIVE kiln paths ("./docs"), which resolve against
-    // the daemon's cwd and miss — so for storage hits, trust the directory
-    // we actually scanned, never the file's self-reported kiln.
-    let mut candidates: Vec<(_, PathBuf)> = session_manager
-        .list_sessions()
-        .into_iter()
-        .filter(|s| !s.archived)
-        .map(|s| {
-            let kiln = s.kiln.clone();
-            (s, kiln)
-        })
-        .collect();
-    let mut seen_ids: std::collections::HashSet<String> =
-        candidates.iter().map(|(s, _)| s.id.clone()).collect();
-    for kiln_path in &kiln_paths {
-        for summary in session_manager
-            .list_sessions_filtered_async(Some(kiln_path), None, None, None, false)
-            .await
-        {
-            if seen_ids.insert(summary.id.clone()) {
-                candidates.push((summary, kiln_path.clone()));
-            }
-        }
-    }
-
-    for (summary, archive_kiln) in candidates {
+    for summary in candidates {
         // Never archive out from under a connected client, regardless of idleness.
         if !subscription_manager.get_subscribers(&summary.id).is_empty() {
             continue;
@@ -546,10 +509,7 @@ pub(super) async fn sweep_and_archive_stale_sessions(
         }
 
         // One unreadable meta.json must not wedge the whole sweep.
-        match session_manager
-            .archive_session(&summary.id, &archive_kiln)
-            .await
-        {
+        match session_manager.archive_session(&summary.id).await {
             Ok(_) => {
                 // Mirror the RPC end/delete/archive handlers: free the archived
                 // session's agent state (cache, Lua, dispatchers, trees,
@@ -572,43 +532,21 @@ pub(super) async fn sweep_and_archive_stale_sessions(
 /// Release review keep refs whose sessions are gone.
 ///
 /// Rides the archive sweep rather than getting its own timer: both walk the
-/// same kiln list and both are cheap, and a second half-hourly task spawning
-/// `git` subprocesses in every tracked repository is not worth the tick.
+/// same sessions root and both are cheap, and a second half-hourly task
+/// spawning `git` subprocesses in every tracked repository is not worth the
+/// tick.
 ///
 /// Only the *orphans* go. A keep ref whose session still has a journal is
 /// still protecting trees a live review depends on, however old the session
 /// is — expiring on age would delete the base tree out from under a queue
 /// somebody is halfway through.
-pub(super) async fn sweep_review_refs(kiln_manager: &KilnManager, data_home: &Path) -> usize {
-    // Every *registered* kiln, not just the open ones. `KilnManager::list`
-    // returns live connections, so a kiln nobody has opened this run is
-    // invisible — and a repository shared between an open kiln's session and a
-    // closed kiln's session would report the closed one's ref as an orphan and
-    // delete it, taking the base tree of a queue somebody is halfway through.
-    // A kiln we cannot read is a kiln whose sessions we cannot vouch for, so
-    // being wrong in this direction only costs an unreleased ref.
-    let mut kilns: Vec<PathBuf> = crucible_core::config::CliAppConfig::load(None, None, None)
-        .map(|config| {
-            config
-                .resolved_kilns()
-                .into_values()
-                .filter_map(|entry| match entry {
-                    crucible_core::config::KilnEntry::Path(path) => Some(path),
-                    _ => None,
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    for (path, _, _) in kiln_manager.list().await {
-        if !kilns.contains(&path) {
-            kilns.push(path);
-        }
-    }
-    let home = data_home.to_path_buf();
-    if !kilns.contains(&home) {
-        kilns.push(home);
-    }
-    crate::review::sweep_review_refs(&kilns).await
+pub(super) async fn sweep_review_refs(sessions_root: &Path) -> usize {
+    // Every session in one scan. This used to have to enumerate registered
+    // kilns as well as open ones, because a kiln nobody had opened this run was
+    // invisible and its live journals would read as orphans — a shared
+    // repository would then lose the base tree of a queue somebody was halfway
+    // through. With one sessions root there is no such partial view.
+    crate::review::sweep_review_refs(sessions_root).await
 }
 
 /// Dispatch one request, converting a panic into an error response.

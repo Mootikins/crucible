@@ -9,7 +9,7 @@
 use super::*;
 use crate::session_storage::{FileSessionStorage, SessionStorage};
 use crucible_core::session::{Session, SessionSummary};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex as StdMutex;
 
 /// Session storage that parks the next `save` until the test releases it.
@@ -26,9 +26,9 @@ struct GatedStorage {
 }
 
 impl GatedStorage {
-    fn new() -> Self {
+    fn new(sessions_root: PathBuf) -> Self {
         Self {
-            inner: FileSessionStorage,
+            inner: FileSessionStorage::new(sessions_root),
             gate: StdMutex::new(None),
             entered: StdMutex::new(None),
         }
@@ -47,6 +47,10 @@ impl GatedStorage {
 
 #[async_trait]
 impl SessionStorage for GatedStorage {
+    fn sessions_root(&self) -> &Path {
+        self.inner.sessions_root()
+    }
+
     async fn save(&self, session: &Session) -> Result<(), SessionError> {
         let parked = self.gate.lock().unwrap().take();
         if let Some(release) = parked {
@@ -58,12 +62,12 @@ impl SessionStorage for GatedStorage {
         self.inner.save(session).await
     }
 
-    async fn load(&self, session_id: &str, kiln: &Path) -> Result<Session, SessionError> {
-        self.inner.load(session_id, kiln).await
+    async fn load(&self, session_id: &str) -> Result<Session, SessionError> {
+        self.inner.load(session_id).await
     }
 
-    async fn list(&self, kiln: &Path) -> Result<Vec<SessionSummary>, SessionError> {
-        self.inner.list(kiln).await
+    async fn list(&self) -> Result<Vec<SessionSummary>, SessionError> {
+        self.inner.list().await
     }
 
     async fn append_event(&self, session: &Session, event: &str) -> Result<(), SessionError> {
@@ -82,17 +86,14 @@ impl SessionStorage for GatedStorage {
     async fn load_events(
         &self,
         session_id: &str,
-        kiln: &Path,
         limit: Option<usize>,
         offset: Option<usize>,
     ) -> Result<Vec<serde_json::Value>, SessionError> {
-        self.inner
-            .load_events(session_id, kiln, limit, offset)
-            .await
+        self.inner.load_events(session_id, limit, offset).await
     }
 
-    async fn count_events(&self, session_id: &str, kiln: &Path) -> Result<usize, SessionError> {
-        self.inner.count_events(session_id, kiln).await
+    async fn count_events(&self, session_id: &str) -> Result<usize, SessionError> {
+        self.inner.count_events(session_id).await
     }
 }
 
@@ -128,14 +129,13 @@ impl SessionStorage for GatedStorage {
 #[tokio::test]
 async fn a_model_switch_during_an_agent_build_is_not_lost() {
     let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(GatedStorage::new());
+    let storage = Arc::new(GatedStorage::new(FileSessionStorage::root_for(tmp.path())));
     let session_manager = Arc::new(SessionManager::with_storage(storage.clone()));
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await

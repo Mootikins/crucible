@@ -58,7 +58,8 @@ pub struct CreateAgentFromSessionConfigParams<'a> {
     pub lua: Option<&'a Lua>,
     pub workspace: &'a Path,
     pub kiln_path: Option<&'a Path>,
-    pub connected_kilns: &'a [std::path::PathBuf],
+    /// Every kiln the session reaches. Flat: the prompt lists them all alike.
+    pub session_kilns: &'a [std::path::PathBuf],
     pub parent_session_id: Option<&'a str>,
     pub background_spawner: Option<Arc<dyn BackgroundSpawner>>,
     pub delegation_spawner: Option<Arc<dyn crate::delegation::DelegationSpawner>>,
@@ -414,7 +415,7 @@ impl EnrichedPrompt {
 fn build_enriched_prompt(
     workspace: &Path,
     kiln_path: Option<&Path>,
-    connected_kilns: &[std::path::PathBuf],
+    session_kilns: &[std::path::PathBuf],
     base_prompt: &str,
     rules: &str,
     skills_catalog: &str,
@@ -447,22 +448,13 @@ fn build_enriched_prompt(
         volatile.push_str(&format!("Kiln: {}\n", kiln.display()));
     }
 
-    // List knowledge bases by name
-    let mut kb_names: Vec<String> = Vec::new();
-    if let Some(primary) = kiln_path {
-        if let Some(cfg) = crucible_core::config::read_kiln_config(primary) {
-            kb_names.push(format!("{} (primary)", cfg.kiln.name));
-        }
-    }
-    for kiln in connected_kilns {
-        // Skip if same as primary kiln to avoid duplicate listing
-        if kiln_path.is_some_and(|p| p == kiln.as_path()) {
-            continue;
-        }
-        if let Some(cfg) = crucible_core::config::read_kiln_config(kiln) {
-            kb_names.push(cfg.kiln.name.clone());
-        }
-    }
+    // List knowledge bases by name. No member is marked out: the agent reads
+    // and searches every one of them on the same terms.
+    let kb_names: Vec<String> = session_kilns
+        .iter()
+        .filter_map(|kiln| crucible_core::config::read_kiln_config(kiln))
+        .map(|cfg| cfg.kiln.name)
+        .collect();
     if !kb_names.is_empty() {
         volatile.push_str("\nKnowledge bases:\n");
         for name in &kb_names {
@@ -643,7 +635,7 @@ pub async fn create_agent_from_session_config(
         lua,
         workspace,
         kiln_path,
-        connected_kilns,
+        session_kilns,
         parent_session_id,
         background_spawner,
         delegation_spawner,
@@ -741,7 +733,7 @@ pub async fn create_agent_from_session_config(
     let enriched_prompt = build_enriched_prompt(
         workspace,
         kiln_path,
-        connected_kilns,
+        session_kilns,
         &agent_config.system_prompt,
         &rules,
         &skills_catalog,

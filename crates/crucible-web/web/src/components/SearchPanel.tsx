@@ -31,6 +31,7 @@ import { relativeTime } from '@/lib/format-time';
 import { placePopup, type PopupPlacement } from '@/lib/popup-placement';
 import { treeSectionHeader } from '@/components/tree/tree-style';
 import { Search, FileText, FolderGit2, FlaskConical, ClipboardList, ChevronDown, Check, X } from '@/lib/icons';
+import { sessionDefaultKiln } from '@/lib/session-scope';
 
 const HIT_LIMIT = 60;
 const SEMANTIC_LIMIT = 20;
@@ -175,7 +176,8 @@ export const SearchPanel: Component = () => {
   // picks a scope themselves.
   createEffect(() => {
     if (scopeTouched()) return;
-    const k = currentSession()?.kiln;
+    const s = currentSession();
+    const k = s ? sessionDefaultKiln(s) : null;
     if (k) setScope({ kind: 'kiln', name: kilnDisplay(k), path: k });
   });
 

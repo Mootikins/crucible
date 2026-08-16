@@ -12,7 +12,6 @@ use std::sync::Arc;
 pub struct KilnSearchSource {
     pub kiln_path: PathBuf,
     pub knowledge_repo: Arc<dyn KnowledgeRepository>,
-    pub is_primary: bool,
 }
 
 pub async fn search_across_kilns(
@@ -25,20 +24,20 @@ pub async fn search_across_kilns(
     let mut best: HashMap<(PathBuf, String), SearchResult> = HashMap::new();
 
     for source in sources {
-        // Trust filtering: skip kilns whose classification exceeds provider trust
-        if !source.is_primary {
-            if let Some(trust) = provider_trust {
-                let classification = resolve_kiln_classification(workspace, &source.kiln_path)
-                    .unwrap_or(DataClassification::Public);
-                if !trust.satisfies(classification) {
-                    tracing::debug!(
-                        "Skipping kiln {}: classification {} exceeds provider trust {}",
-                        source.kiln_path.display(),
-                        classification,
-                        trust
-                    );
-                    continue;
-                }
+        // Trust filtering: skip kilns whose classification exceeds provider
+        // trust. Every source is filtered — the session's kiln set is flat, so
+        // there is no member that gets to skip the check by being first.
+        if let Some(trust) = provider_trust {
+            let classification = resolve_kiln_classification(workspace, &source.kiln_path)
+                .unwrap_or(DataClassification::Public);
+            if !trust.satisfies(classification) {
+                tracing::debug!(
+                    "Skipping kiln {}: classification {} exceeds provider trust {}",
+                    source.kiln_path.display(),
+                    classification,
+                    trust
+                );
+                continue;
             }
         }
         let results = match source
@@ -132,7 +131,6 @@ mod tests {
         kiln_path: PathBuf,
         results: Vec<SearchResult>,
         should_fail: bool,
-        is_primary: bool,
     ) -> KilnSearchSource {
         KilnSearchSource {
             kiln_path,
@@ -140,7 +138,6 @@ mod tests {
                 results,
                 should_fail,
             }),
-            is_primary,
         }
     }
 
@@ -181,7 +178,6 @@ mod tests {
             kiln.clone(),
             vec![mock_result("doc1", 0.8), mock_result("doc2", 0.4)],
             false,
-            true,
         )];
 
         let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, tmp.path())
@@ -205,12 +201,10 @@ mod tests {
                 kiln_a,
                 vec![mock_result("a-1", 0.2), mock_result("a-2", 0.9)],
                 false,
-                true,
             ),
             mock_source(
                 kiln_b,
                 vec![mock_result("b-1", 0.6), mock_result("b-2", 0.3)],
-                false,
                 false,
             ),
         ];
@@ -236,7 +230,6 @@ mod tests {
             kiln,
             vec![mock_result("doc1", 0.3), mock_result("doc1", 0.95)],
             false,
-            true,
         )];
 
         let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, tmp.path())
@@ -257,13 +250,8 @@ mod tests {
         fs::create_dir_all(&bad).unwrap();
 
         let sources = vec![
-            mock_source(bad, vec![mock_result("bad-doc", 0.9)], true, false),
-            mock_source(
-                good.clone(),
-                vec![mock_result("good-doc", 0.7)],
-                false,
-                true,
-            ),
+            mock_source(bad, vec![mock_result("bad-doc", 0.9)], true),
+            mock_source(good.clone(), vec![mock_result("good-doc", 0.7)], false),
         ];
 
         let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, tmp.path())
@@ -284,13 +272,8 @@ mod tests {
         fs::create_dir_all(&kiln_b).unwrap();
 
         let sources = vec![
-            mock_source(kiln_a.clone(), vec![mock_result("doc-a", 0.6)], false, true),
-            mock_source(
-                kiln_b.clone(),
-                vec![mock_result("doc-b", 0.5)],
-                false,
-                false,
-            ),
+            mock_source(kiln_a.clone(), vec![mock_result("doc-a", 0.6)], false),
+            mock_source(kiln_b.clone(), vec![mock_result("doc-b", 0.5)], false),
         ];
 
         let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, tmp.path())
@@ -328,12 +311,10 @@ mod tests {
                 primary.clone(),
                 vec![mock_result("primary-doc", 0.5)],
                 false,
-                true,
             ),
             mock_source(
                 confidential,
                 vec![mock_result("confidential-doc", 0.99)],
-                false,
                 false,
             ),
         ];
@@ -365,7 +346,6 @@ mod tests {
         let sources = vec![mock_source(
             public_kiln.clone(),
             vec![mock_result("public-doc", 0.77)],
-            false,
             false,
         )];
 
@@ -402,11 +382,10 @@ mod tests {
         );
 
         let sources = vec![
-            mock_source(primary, vec![mock_result("primary-doc", 0.5)], false, true),
+            mock_source(primary, vec![mock_result("primary-doc", 0.5)], false),
             mock_source(
                 confidential,
                 vec![mock_result("confidential-doc", 0.9)],
-                false,
                 false,
             ),
         ];
@@ -434,11 +413,10 @@ mod tests {
         write_workspace_config(&workspace, &[("./primary", Some("public"))]);
 
         let sources = vec![
-            mock_source(primary, vec![mock_result("primary-doc", 0.4)], false, true),
+            mock_source(primary, vec![mock_result("primary-doc", 0.4)], false),
             mock_source(
                 unclassified,
                 vec![mock_result("unclassified-doc", 0.8)],
-                false,
                 false,
             ),
         ];

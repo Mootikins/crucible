@@ -9,6 +9,7 @@
 //! ```
 //! cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent
 //! ```
+use crucible_daemon::test_support::temp_session_manager;
 
 use crucible_core::background::JobStatus;
 use crucible_core::config::{AcpConfig, AgentProfile, DelegationConfig};
@@ -23,9 +24,7 @@ use crucible_daemon::delegation::{DelegationRequest, DelegationService, Delegati
 use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::recording::RecordingWriter;
 use crucible_daemon::tools::workspace::WorkspaceTools;
-use crucible_daemon::{
-    AgentManager, AgentManagerParams, FileSessionStorage, KilnManager, SessionManager,
-};
+use crucible_daemon::{AgentManager, AgentManagerParams, KilnManager, SessionManager};
 use futures::StreamExt;
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -92,9 +91,7 @@ fn build_delegation_stack(
     Arc<SessionManager>,
     Arc<DelegationService>,
 ) {
-    let session_manager = Arc::new(SessionManager::with_storage(Arc::new(
-        FileSessionStorage::new(),
-    )));
+    let session_manager = temp_session_manager();
     let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
     let service = DelegationService::new(session_manager.clone(), event_tx.clone());
     let manager = Arc::new(AgentManager::new_with_delegation(
@@ -126,13 +123,7 @@ async fn create_delegation_parent(
     agent: SessionAgent,
 ) -> String {
     let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            workspace.to_path_buf(),
-            None,
-            vec![],
-            None,
-        )
+        .create_session(SessionType::Chat, vec![workspace.to_path_buf()], None, None)
         .await
         .expect("parent session should be created");
     manager

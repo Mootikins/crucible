@@ -34,9 +34,8 @@ const { __resetReviewStore } = await import('@/lib/review-store');
 const session = (id = 's1'): Session => ({
   id,
   session_type: 'chat',
-  kiln: '/repo',
+  kilns: ['/repo'],
   workspace: '/repo',
-  connected_kilns: [],
   state: 'active',
   title: null,
   agent_model: null,

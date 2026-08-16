@@ -217,3 +217,96 @@ pub async fn init_repo(dir: &std::path::Path, files: &[(&str, &str)]) {
         git(dir, &["commit", "-q", "-m", "init"]).await;
     }
 }
+
+/// Session storage under a temp directory the storage itself owns.
+///
+/// Sessions are no longer filed inside a kiln, so a `SessionManager` has to be
+/// told where to write; without an injected root a test falls back to the
+/// developer's real `~/.crucible` — green on CI, destructive locally. The
+/// `TempDir` is held here rather than handed back because most of the fixtures
+/// that need one build their manager inline, inside a struct literal, and have
+/// nowhere to park it.
+pub struct TempSessionStorage {
+    inner: crate::session_storage::FileSessionStorage,
+    _root: tempfile::TempDir,
+}
+
+#[async_trait]
+impl crate::session_storage::SessionStorage for TempSessionStorage {
+    fn sessions_root(&self) -> &std::path::Path {
+        self.inner.sessions_root()
+    }
+
+    async fn save(
+        &self,
+        session: &crucible_core::session::Session,
+    ) -> Result<(), crate::session_manager::SessionError> {
+        self.inner.save(session).await
+    }
+
+    async fn load(
+        &self,
+        session_id: &str,
+    ) -> Result<crucible_core::session::Session, crate::session_manager::SessionError> {
+        self.inner.load(session_id).await
+    }
+
+    async fn list(
+        &self,
+    ) -> Result<Vec<crucible_core::session::SessionSummary>, crate::session_manager::SessionError>
+    {
+        self.inner.list().await
+    }
+
+    async fn append_event(
+        &self,
+        session: &crucible_core::session::Session,
+        event: &str,
+    ) -> Result<(), crate::session_manager::SessionError> {
+        self.inner.append_event(session, event).await
+    }
+
+    async fn append_markdown(
+        &self,
+        session: &crucible_core::session::Session,
+        role: &str,
+        content: &str,
+    ) -> Result<(), crate::session_manager::SessionError> {
+        self.inner.append_markdown(session, role, content).await
+    }
+
+    async fn load_events(
+        &self,
+        session_id: &str,
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> Result<Vec<serde_json::Value>, crate::session_manager::SessionError> {
+        self.inner.load_events(session_id, limit, offset).await
+    }
+
+    async fn count_events(
+        &self,
+        session_id: &str,
+    ) -> Result<usize, crate::session_manager::SessionError> {
+        self.inner.count_events(session_id).await
+    }
+}
+
+/// Storage over a private, self-owned temp root. See [`TempSessionStorage`].
+pub fn temp_session_storage() -> std::sync::Arc<TempSessionStorage> {
+    use crate::session_storage::FileSessionStorage;
+    let root = tempfile::TempDir::new().expect("temp dir for session storage");
+    std::sync::Arc::new(TempSessionStorage {
+        inner: FileSessionStorage::new(FileSessionStorage::root_for(root.path())),
+        _root: root,
+    })
+}
+
+/// A [`SessionManager`](crate::session_manager::SessionManager) over
+/// [`temp_session_storage`], for the many tests that need a manager but never
+/// assert on where its sessions landed.
+pub fn temp_session_manager() -> std::sync::Arc<crate::session_manager::SessionManager> {
+    std::sync::Arc::new(crate::session_manager::SessionManager::with_storage(
+        temp_session_storage(),
+    ))
+}

@@ -1,33 +1,29 @@
-use super::io::{list_session_dirs, sessions_dir};
-use crate::common::daemon_client;
 use crate::config::CliConfig;
 use anyhow::Result;
 
-pub(super) async fn reindex(config: CliConfig, force: bool) -> Result<()> {
-    let sessions_path = sessions_dir(&config);
-
-    if !sessions_path.exists() {
-        println!("No sessions directory found.");
-        return Ok(());
-    }
-
-    let dirs = list_session_dirs(&sessions_path).await?;
-    if dirs.is_empty() {
-        println!("No sessions found.");
-        return Ok(());
-    }
-
-    let client = daemon_client().await?;
-
-    let result = client.session_reindex(&config.kiln_path, force).await?;
-
-    let indexed = result["indexed"].as_u64().unwrap_or(0);
-    let skipped = result["skipped"].as_u64().unwrap_or(0);
-    let errors = result["errors"].as_u64().unwrap_or(0);
-
+/// `cru session reindex` is retired.
+///
+/// The RPC it drove indexed `{kiln}/.crucible/sessions` into that kiln's
+/// NoteStore; sessions no longer live in a kiln, so there is no per-kiln
+/// session corpus to rebuild and `rpc/dispatch.rs` answers the method with
+/// METHOD_NOT_FOUND. Short-circuiting here rather than deleting the subcommand
+/// means an existing invocation gets the explanation instead of either an
+/// unknown-subcommand error or an RPC failure it cannot act on.
+///
+/// It exits successfully because the end state it was asked for — sessions not
+/// indexed as kiln notes — already holds. The one leftover it cannot fix is
+/// noted for the user.
+pub(super) async fn reindex(_config: CliConfig, _force: bool) -> Result<()> {
+    println!("`cru session reindex` is retired.");
+    println!();
     println!(
-        "\nIndexed {} sessions ({} skipped, {} errors)",
-        indexed, skipped, errors
+        "Sessions are stored in the daemon's own root now, not inside a kiln, and are no \
+         longer indexed as kiln notes. There is nothing left for this command to rebuild."
+    );
+    println!();
+    println!(
+        "If an earlier reindex wrote `sessions/*` note rows into a kiln's index, they are \
+         stale and should be purged."
     );
 
     Ok(())

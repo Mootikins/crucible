@@ -73,7 +73,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
     /// `enforce_session_start` — see that method's doc for why a plugin-side
     /// create must not reach it yet.
     ///
-    /// An omitted `kiln` stays omitted rather than being resolved to
+    /// An omitted `kilns` stays omitted rather than being resolved to
     /// `crucible_home()` here: the fallback belongs to the daemon's own data
     /// root, and a path this bridge invented would be scope-checked as if the
     /// caller had asked for it — which fails whenever the data root is `$HOME`.
@@ -89,7 +89,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
             Ok(serde_json::json!({
                 "id": session.id,
                 "session_type": session.session_type.as_prefix(),
-                "kiln": session.kiln,
+                "kilns": session.kilns,
                 "state": format!("{}", session.state),
             }))
         })
@@ -101,7 +101,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
                 serde_json::json!({
                     "id": s.id,
                     "session_type": s.session_type.as_prefix(),
-                    "kiln": s.kiln,
+                    "kilns": s.kilns,
                     "state": format!("{}", s.state),
                     "title": s.title,
                 })
@@ -118,7 +118,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
                     serde_json::json!({
                         "id": s.id,
                         "session_type": s.session_type.as_prefix(),
-                        "kiln": s.kiln,
+                        "kilns": s.kilns,
                         "state": format!("{}", s.state),
                         "title": s.title,
                     })
@@ -299,10 +299,9 @@ impl DaemonSessionApi for DaemonSessionBridge {
                 }
             }
 
-            let session = sm
-                .get_session(&session_id)
+            sm.get_session(&session_id)
                 .ok_or_else(|| format!("Session not found: {}", session_id))?;
-            let session_dir = FileSessionStorage::sessions_base(&session.kiln).join(&session_id);
+            let session_dir = sm.session_dir(&session_id);
             // NOTE: Loads entire session event log. For very long sessions, consider
             // adding a streaming/backwards-reading approach with index files.
             let events = crate::observe::load_events(&session_dir)
@@ -369,20 +368,19 @@ impl DaemonSessionApi for DaemonSessionBridge {
             let child = sm
                 .create_session(
                     parent.session_type,
-                    parent.kiln.clone(),
+                    parent.kilns.clone(),
                     Some(parent.workspace.clone()),
-                    parent.connected_kilns.clone(),
                     None,
                 )
                 .await
                 .map_err(|e| e.to_string())?;
 
-            let parent_dir = FileSessionStorage::sessions_base(&parent.kiln).join(&session_id);
+            let parent_dir = sm.session_dir(&session_id);
             let events = crate::observe::load_events(&parent_dir)
                 .await
                 .unwrap_or_default();
 
-            let storage = FileSessionStorage::new();
+            let storage = FileSessionStorage::new(sm.sessions_root().to_path_buf());
             let mut count = 0u64;
             for event in &events {
                 if let Some(limit) = up_to {

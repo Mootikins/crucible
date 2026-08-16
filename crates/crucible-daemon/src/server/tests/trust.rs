@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::temp_session_manager;
 
 #[tokio::test]
 async fn cloud_provider_confidential_kiln_returns_insufficient_error() {
@@ -14,8 +15,7 @@ async fn cloud_provider_confidential_kiln_returns_insufficient_error() {
     ));
     let request = create_session_request(&kiln, &workspace, "cloud");
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let sm = Arc::new(SessionManager::with_storage(storage));
+    let sm = temp_session_manager();
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
 
@@ -62,9 +62,7 @@ async fn bridge_create_refuses_a_cloud_provider_on_a_confidential_kiln() {
         crucible_core::config::BackendType::OpenAI,
     ));
 
-    let sm = Arc::new(SessionManager::with_storage(Arc::new(
-        FileSessionStorage::new(),
-    )));
+    let sm = temp_session_manager();
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
     let (event_tx, _event_rx) = broadcast::channel(16);
@@ -82,7 +80,7 @@ async fn bridge_create_refuses_a_cloud_provider_on_a_confidential_kiln() {
     let err = bridge
         .create_session(json!({
             "type": "chat",
-            "kiln": kiln,
+            "kilns": [kiln],
             "workspace": workspace,
             "provider_key": "cloud",
         }))
@@ -109,8 +107,7 @@ async fn local_provider_confidential_kiln_allows_session_creation() {
     ));
     let request = create_session_request(&kiln, &workspace, "local");
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let sm = Arc::new(SessionManager::with_storage(storage));
+    let sm = temp_session_manager();
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
 
@@ -146,8 +143,7 @@ async fn cloud_provider_public_or_missing_classification_allows_session_creation
     ));
     let request = create_session_request(&kiln, &workspace, "cloud");
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let sm = Arc::new(SessionManager::with_storage(storage));
+    let sm = temp_session_manager();
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
 
@@ -184,8 +180,7 @@ async fn untrusted_provider_internal_kiln_returns_error() {
     ));
     let request = create_session_request(&kiln, &workspace, "untrusted");
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let sm = Arc::new(SessionManager::with_storage(storage));
+    let sm = temp_session_manager();
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
 
@@ -215,7 +210,7 @@ async fn untrusted_provider_internal_kiln_returns_error() {
 fn provider_trust_acp_agent_always_cloud() {
     let params: crate::rpc_client::SessionCreateRequest = serde_json::from_value(json!({
         "agent_type": "acp",
-        "kiln": "/tmp/kiln"
+        "kilns": ["/tmp/kiln"]
     }))
     .unwrap();
     // Even with a Local-trust provider in config, ACP always returns Cloud
@@ -232,7 +227,7 @@ fn provider_trust_acp_agent_always_cloud() {
 fn provider_trust_bare_backend_name_cloud() {
     let params: crate::rpc_client::SessionCreateRequest = serde_json::from_value(json!({
         "provider": "ollama",
-        "kiln": "/tmp/kiln"
+        "kilns": ["/tmp/kiln"]
     }))
     .unwrap();
     let result = resolve_provider_trust_level_for_create(&params, &None);
@@ -243,7 +238,7 @@ fn provider_trust_bare_backend_name_cloud() {
 fn provider_trust_bare_backend_name_local() {
     let params: crate::rpc_client::SessionCreateRequest = serde_json::from_value(json!({
         "provider": "fastembed",
-        "kiln": "/tmp/kiln"
+        "kilns": ["/tmp/kiln"]
     }))
     .unwrap();
     let result = resolve_provider_trust_level_for_create(&params, &None);
@@ -254,7 +249,7 @@ fn provider_trust_bare_backend_name_local() {
 fn provider_trust_default_provider_fallback() {
     // No agent_type, no provider_key, no provider → falls back to default provider in llm_config
     let params: crate::rpc_client::SessionCreateRequest = serde_json::from_value(json!({
-        "kiln": "/tmp/kiln"
+        "kilns": ["/tmp/kiln"]
     }))
     .unwrap();
     // Build config where default provider is Local trust
@@ -325,8 +320,7 @@ async fn switching_to_an_untrusted_provider_is_refused_while_a_confidential_kiln
     llm_config.providers.extend(cloud.providers);
     let llm_config = Some(llm_config);
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let sm = Arc::new(SessionManager::with_storage(storage));
+    let sm = temp_session_manager();
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
     let (event_tx, _rx) = broadcast::channel(16);
@@ -431,8 +425,7 @@ async fn switching_providers_is_allowed_when_the_kiln_permits_it() {
     llm_config.providers.extend(cloud.providers);
     let llm_config = Some(llm_config);
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let sm = Arc::new(SessionManager::with_storage(storage));
+    let sm = temp_session_manager();
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
     let (event_tx, _rx) = broadcast::channel(16);
@@ -492,23 +485,24 @@ async fn switching_providers_is_allowed_when_the_kiln_permits_it() {
         .expect("a public kiln must not block a cloud provider");
 }
 
-/// A confidential kiln arriving in `connect_kilns` is refused, and refused
-/// *before* anything is written.
+/// A confidential kiln arriving anywhere in the create-time kiln set is
+/// refused, and refused *before* anything is written.
 ///
 /// Two gates could catch this and only one is early enough.
-/// `validate_trust_level` classifies the primary kiln alone, so a confidential
-/// kiln attached at create never reached it — and `tools/search.rs` then passes
-/// `provider_trust: None` on the strength of "connected kilns pass the trust
-/// gate at attach time". The gate inside `configure_agent` does see connected
-/// kilns, but create calls it *after* `create_session` has persisted the row,
-/// so catching it there would answer 422 and still leave an agent-less session
-/// listed forever, answering `NoAgentConfigured`.
+/// `validate_trust_level` used to classify the primary kiln alone, so a kiln
+/// attached alongside it never reached the check — and `tools/search.rs` then
+/// passes `provider_trust: None` on the strength of "attached kilns pass the
+/// trust gate at attach time". The gate inside `configure_agent` does see the
+/// whole set, but create calls it *after* `create_session` has persisted the
+/// row, so catching it there would answer 422 and still leave an agent-less
+/// session listed forever, answering `NoAgentConfigured`. Flattening makes the
+/// set uniform, which is exactly why the early check must loop it.
 ///
 /// The `list_sessions()` assertion is the half that regresses silently: the
 /// refusal keeps working when the check moves back too late, and only the
 /// leftover row shows it.
 #[tokio::test]
-async fn a_confidential_connected_kiln_is_refused_without_creating_a_session() {
+async fn a_confidential_kiln_anywhere_in_the_set_is_refused_without_creating_a_session() {
     let tmp = TempDir::new().unwrap();
     let workspace = tmp.path().join("workspace");
     let public = workspace.join("public");
@@ -537,9 +531,8 @@ async fn a_confidential_connected_kiln_is_refused_without_creating_a_session() {
         "method": "session.create",
         "params": {
             "type": "chat",
-            "kiln": public,
+            "kilns": [public, secret],
             "workspace": workspace,
-            "connect_kilns": [secret],
             "provider_key": "cloud",
             // The web always sets this, so this is its default create shape.
             "configure_agent": true,
@@ -547,8 +540,7 @@ async fn a_confidential_connected_kiln_is_refused_without_creating_a_session() {
     }))
     .unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let sm = Arc::new(SessionManager::with_storage(storage));
+    let sm = temp_session_manager();
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
 
@@ -567,7 +559,7 @@ async fn a_confidential_connected_kiln_is_refused_without_creating_a_session() {
     let response = handle_session_create(request, &ctx).await;
     let error = response
         .error
-        .expect("a confidential connected kiln must refuse a cloud provider");
+        .expect("a confidential kiln in the set must refuse a cloud provider");
     assert_eq!(error.code, INVALID_PARAMS);
     assert!(error.message.contains("insufficient"), "{}", error.message);
     assert_eq!(

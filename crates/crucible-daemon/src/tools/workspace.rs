@@ -21,13 +21,13 @@
 use super::helpers::{text_success, McpResultExt};
 use rmcp::model::{CallToolResult, ContentBlock, Tool};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
 /// Canonicalize a path for containment checks even when it doesn't exist
 /// yet: canonicalize the deepest existing ancestor (resolving symlinks and
 /// `..`), then re-append the non-existent remainder.
-fn canonicalize_lenient(path: &std::path::Path) -> PathBuf {
+pub(crate) fn canonicalize_lenient(path: &std::path::Path) -> PathBuf {
     let mut existing = path.to_path_buf();
     let mut remainder: Vec<std::ffi::OsString> = Vec::new();
     loop {
@@ -62,6 +62,12 @@ pub struct WorkspaceTools {
     /// configured extras). `None` = uncontained (construction sites that
     /// predate containment; agent-session dispatchers always set it).
     allowed_roots: Option<Vec<PathBuf>>,
+    /// Subtracted from [`Self::allowed_roots`]: subtrees that an allowed root
+    /// happens to contain but that this session must not reach. Longest match
+    /// wins, so a narrower allowed root punches back through a denied one —
+    /// which is how a session reaches its own storage dir while the sessions
+    /// root around it (every other session's transcript) stays closed.
+    denied_roots: Vec<PathBuf>,
     /// Project `[security.shell]` policy, resolved at construction (never
     /// re-read at call time). `None` or an empty policy = no restriction
     /// beyond the permission gate.
@@ -76,6 +82,7 @@ impl WorkspaceTools {
             default_timeout_ms: 120_000,
             env_vars: HashMap::new(),
             allowed_roots: None,
+            denied_roots: Vec::new(),
             shell_policy: None,
         }
     }
@@ -96,12 +103,62 @@ impl WorkspaceTools {
 
     /// Contain all file operations to the workspace root plus the given
     /// additional roots (kiln, connected kilns, session dir, …).
+    ///
+    /// Empty paths are dropped rather than stored. An empty kiln set is a
+    /// legitimate session shape, and a session with no workspace either
+    /// carries `workspace: ""` — so `""` reaches here as an ordinary root.
+    /// `Path::starts_with("")` is true for every path and `"".components()`
+    /// counts zero, which makes an empty root a *universal* root at the
+    /// shallowest possible depth: containment off, and every deny root
+    /// out-ranked. Absence of roots denies (see [`Self::is_permitted`]), so
+    /// dropping them is the fail-closed reading.
     #[must_use]
-    pub fn with_allowed_roots(mut self, mut extra_roots: Vec<PathBuf>) -> Self {
-        let mut roots = vec![self.workspace_root.clone()];
-        roots.append(&mut extra_roots);
+    pub fn with_allowed_roots(mut self, extra_roots: Vec<PathBuf>) -> Self {
+        let roots = std::iter::once(self.workspace_root.clone())
+            .chain(extra_roots)
+            .filter(|root| !root.as_os_str().is_empty())
+            .collect();
         self.allowed_roots = Some(roots);
         self
+    }
+
+    /// Carve subtrees back out of the allowed roots (see [`Self::denied_roots`]).
+    #[must_use]
+    pub fn with_denied_roots(mut self, denied_roots: Vec<PathBuf>) -> Self {
+        self.denied_roots = denied_roots
+            .into_iter()
+            .filter(|root| !root.as_os_str().is_empty())
+            .collect();
+        self
+    }
+
+    /// Whether a canonical path sits inside containment.
+    ///
+    /// Deepest matching root decides. Comparing only against the allowed set
+    /// would let an allowed root that *contains* a denied one (a kiln at the
+    /// data root, say) re-open the subtree the denial exists to close.
+    fn is_permitted(&self, canonical: &Path) -> bool {
+        let Some(roots) = &self.allowed_roots else {
+            return true;
+        };
+        // The empty-path filter is repeated here, not merely at construction:
+        // `""` matching every path at depth 0 is the difference between
+        // "narrow scope" and "no scope at all", and it must not depend on
+        // which builder a root arrived through.
+        let depth_of = |roots: &[PathBuf]| {
+            roots
+                .iter()
+                .filter(|root| !root.as_os_str().is_empty())
+                .map(|root| canonicalize_lenient(root))
+                .filter(|root| canonical.starts_with(root))
+                .map(|root| root.components().count())
+                .max()
+        };
+        match (depth_of(roots), depth_of(&self.denied_roots)) {
+            (Some(allowed), Some(denied)) => allowed > denied,
+            (Some(_), None) => true,
+            (None, _) => false,
+        }
     }
 
     /// Apply a project shell policy to the `bash` tool.
@@ -172,16 +229,12 @@ impl WorkspaceTools {
             self.workspace_root.join(p)
         };
 
-        let Some(roots) = &self.allowed_roots else {
+        if self.allowed_roots.is_none() {
             return Ok(resolved);
-        };
+        }
 
         let canonical = canonicalize_lenient(&resolved);
-        let permitted = roots.iter().any(|root| {
-            let root = canonicalize_lenient(root);
-            canonical.starts_with(&root)
-        });
-        if permitted {
+        if self.is_permitted(&canonical) {
             // Return the CANONICAL path so the checked path is the used
             // path (no symlink swapped in between check and use).
             Ok(canonical)
@@ -436,15 +489,7 @@ impl WorkspaceTools {
         let paths: Vec<String> = glob::glob(&pattern_str)
             .mcp_err_ctx("Glob error")?
             .filter_map(std::result::Result::ok)
-            .filter(|p| match &self.allowed_roots {
-                None => true,
-                Some(roots) => {
-                    let canonical = canonicalize_lenient(p);
-                    roots
-                        .iter()
-                        .any(|root| canonical.starts_with(canonicalize_lenient(root)))
-                }
-            })
+            .filter(|p| self.is_permitted(&canonicalize_lenient(p)))
             .take(max_results + 1)
             .map(|p| {
                 p.strip_prefix(&self.workspace_root)
@@ -471,6 +516,19 @@ impl WorkspaceTools {
         Ok(text_success(result))
     }
 
+    /// Whether one `--null`-formatted ripgrep output line (`path\0line:text`)
+    /// names a file this session may read.
+    ///
+    /// A line with no NUL carries no path — rg's own diagnostics, and the
+    /// blank separators of a heading format we do not ask for — so it is
+    /// dropped: nothing downstream can attribute it to a permitted file.
+    fn grep_line_is_permitted(&self, line: &str) -> bool {
+        match line.split_once('\0') {
+            Some((path, _)) => self.is_permitted(&canonicalize_lenient(Path::new(path))),
+            None => false,
+        }
+    }
+
     /// Search file contents with regex (uses ripgrep)
     pub async fn grep(
         &self,
@@ -493,7 +551,18 @@ impl WorkspaceTools {
         // `--glob` in particular has to move ahead of the pattern: appended
         // after it, it would become a positional argument.
         let mut cmd = Command::new("rg");
-        cmd.arg("--line-number").arg("--max-count").arg("1000");
+        // `--null` terminates the printed path with NUL, which is what makes
+        // the containment filter below exact: the ordinary `path:line:text`
+        // format is ambiguous for any path containing a colon.
+        //
+        // `--with-filename` because rg omits the path entirely when it is
+        // given exactly one FILE to search — and a line with no path is a line
+        // the filter cannot clear, so single-file greps would return nothing.
+        cmd.arg("--line-number")
+            .arg("--with-filename")
+            .arg("--null")
+            .arg("--max-count")
+            .arg("1000");
 
         if let Some(g) = glob {
             cmd.arg("--glob").arg(g);
@@ -503,11 +572,23 @@ impl WorkspaceTools {
 
         let output = cmd.output().await.mcp_err_ctx("Grep error")?;
 
+        // Containment applies to what ripgrep YIELDS, not only to where it
+        // was pointed. `resolve_path` above checks the start directory and rg
+        // then recurses — so a denied subtree under an allowed root (every
+        // other session's transcript, under the data root) came back verbatim.
+        // `glob` has post-filtered its results since it grew containment;
+        // `grep` had no equivalent, which is the wider hole of the two because
+        // it prints file *contents*.
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let lines: Vec<&str> = stdout.lines().take(max_matches + 1).collect();
+        let lines: Vec<String> = stdout
+            .lines()
+            .filter(|line| self.grep_line_is_permitted(line))
+            .map(|line| line.replacen('\0', ":", 1))
+            .take(max_matches + 1)
+            .collect();
         let truncated = lines.len() > max_matches;
 
-        let result_lines: Vec<&str> = lines.into_iter().take(max_matches).collect();
+        let result_lines: Vec<&str> = lines.iter().map(String::as_str).take(max_matches).collect();
 
         let result = if truncated {
             format!(

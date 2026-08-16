@@ -76,8 +76,9 @@ any incident.
 
 - **Its kiln, and only its kiln.** `[plugins.discord] kiln` plus anything in `kilns`. Reads and
   writes are bounded to those.
-- **Not the session directory.** `.crucible/sessions/` is excluded from a plugin session's
-  reachable roots, so one user cannot have the agent read another's transcript.
+- **Not the session directory.** Transcripts live in one flat root, `~/.crucible/sessions/`,
+  which is a *denied* root for every session; only the session's own directory under it is
+  granted back. One user cannot have the agent read another's transcript.
 - **Not a shared workspace.** Every Discord session gets a private scratch directory as its
   containment boundary, never the kiln path itself.
 - **Whatever `access` grants.** `read` is read tools only; `write` adds file and note writes;

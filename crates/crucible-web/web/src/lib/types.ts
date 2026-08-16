@@ -47,10 +47,13 @@ export type SessionType = 'chat' | 'agent' | 'workflow';
 export interface Session {
   id: string;
   session_type: SessionType;
-  kiln: string;
+  /**
+   * Every kiln this session can query — flat, order-preserving, no member
+   * privileged. `kilns[0]` is only read for the two things that still need
+   * exactly one: the "no workspace" sentinel and a display label.
+   */
+  kilns: string[];
   workspace: string;
-  /** Additional knowledge kilns attached to this session (primary excluded). */
-  connected_kilns: string[];
   state: SessionState;
   title: string | null;
   agent_model: string | null;
@@ -65,10 +68,8 @@ export interface Session {
 
 export interface CreateSessionParams {
   session_type?: SessionType;
-  /** Omitted → daemon default (home kiln). */
-  kiln?: string;
-  /** Additional knowledge kilns to attach at creation. */
-  connect_kilns?: string[];
+  /** The session's kiln set. Omitted or empty → daemon default (home kiln). */
+  kilns?: string[];
   workspace?: string;
   provider?: string;
   model?: string;

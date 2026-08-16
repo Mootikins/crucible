@@ -94,6 +94,26 @@ pub(super) async fn list_commands() -> Json<CommandsResponse> {
     })
 }
 
+/// The kiln set a `session.get` payload reports, as `session.search` wants it.
+///
+/// The **whole** set, because search scope is kiln-set overlap: a session on
+/// `[A, B]` that searched with only `A` found nothing in a session on `[B]`
+/// despite the two sharing a corpus. An empty set is passed through as empty —
+/// a kiln-less session overlaps nothing, and the daemon answers accordingly.
+fn session_scope_kilns(session: &serde_json::Value) -> Vec<PathBuf> {
+    session
+        .get("kilns")
+        .and_then(|v| v.as_array())
+        .map(|kilns| {
+            kilns
+                .iter()
+                .filter_map(|v| v.as_str())
+                .map(PathBuf::from)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 pub(super) async fn execute_command(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -126,19 +146,10 @@ pub(super) async fn execute_command(
                 }));
             }
 
-            // Get session to find kiln path
             let session = state.daemon.session_get(&id).await.daemon_err()?;
-            let kiln_str = session.get("kiln").and_then(|v| v.as_str()).unwrap_or("");
-
-            let kiln_path = if kiln_str.is_empty() {
-                None
-            } else {
-                Some(PathBuf::from(kiln_str))
-            };
-
             let results = state
                 .daemon
-                .session_search(args, kiln_path.as_deref(), Some(10))
+                .session_search(args, &session_scope_kilns(&session), Some(10))
                 .await
                 .daemon_err()?;
 
@@ -228,5 +239,32 @@ pub(super) async fn execute_command(
             ),
             response_type: "error".to_string(),
         })),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Search scope is kiln-set overlap, so `/search` has to hand the daemon
+    /// every kiln the session reaches. Sending only the first tested a
+    /// fraction of the caller's reach: a session on `[A, B]` found nothing in
+    /// a session on `[B]`.
+    #[test]
+    fn search_scope_is_the_sessions_whole_kiln_set() {
+        let session = serde_json::json!({ "kilns": ["/kilns/a", "/kilns/b"] });
+        assert_eq!(
+            session_scope_kilns(&session),
+            vec![PathBuf::from("/kilns/a"), PathBuf::from("/kilns/b")]
+        );
+    }
+
+    /// Zero kilns is a legitimate session shape (tools-only), not a missing
+    /// value to substitute for: an empty scope overlaps nothing and the daemon
+    /// answers with no matches.
+    #[test]
+    fn a_kiln_less_session_searches_with_an_empty_scope() {
+        assert!(session_scope_kilns(&serde_json::json!({ "kilns": [] })).is_empty());
+        assert!(session_scope_kilns(&serde_json::json!({})).is_empty());
     }
 }

@@ -22,7 +22,18 @@ pub(super) async fn show(config: CliConfig, id: String, format: String) -> Resul
                     );
                     println!("Type: {}", result["type"].as_str().unwrap_or("?"));
                     println!("State: {}", result["state"].as_str().unwrap_or("?"));
-                    println!("Kiln: {}", result["kiln"].as_str().unwrap_or("?"));
+                    let kilns: Vec<&str> = result["kilns"]
+                        .as_array()
+                        .map(|a| a.iter().filter_map(|k| k.as_str()).collect())
+                        .unwrap_or_default();
+                    println!(
+                        "Kilns: {}",
+                        if kilns.is_empty() {
+                            "(none)".to_string()
+                        } else {
+                            kilns.join(", ")
+                        }
+                    );
                     let started = result["started_at"]
                         .as_str()
                         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
@@ -54,7 +65,7 @@ pub(super) async fn show(config: CliConfig, id: String, format: String) -> Resul
     if let Some(client) = &client {
         let loaded = match format.as_str() {
             "json" => {
-                if let Ok(events_json) = client.session_load_events(&session_dir).await {
+                if let Ok(events_json) = client.session_load_events(session_id.as_str()).await {
                     let json = serde_json::to_string_pretty(&events_json)?;
                     println!("{json}");
                     true
@@ -64,7 +75,7 @@ pub(super) async fn show(config: CliConfig, id: String, format: String) -> Resul
             }
             "markdown" | "md" => {
                 if let Ok(md) = client
-                    .session_render_markdown(&session_dir, None, None, None, None)
+                    .session_render_markdown(session_id.as_str(), None, None, None, None)
                     .await
                 {
                     println!("{md}");
@@ -74,7 +85,7 @@ pub(super) async fn show(config: CliConfig, id: String, format: String) -> Resul
                 }
             }
             _ => {
-                if let Ok(events_json) = client.session_load_events(&session_dir).await {
+                if let Ok(events_json) = client.session_load_events(session_id.as_str()).await {
                     if let Ok(events) = serde_json::from_value::<Vec<LogEvent>>(events_json) {
                         display_events_text(&id, &events);
                         true

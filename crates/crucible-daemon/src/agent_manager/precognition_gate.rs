@@ -12,32 +12,36 @@
 /// topic the first injection already covered.
 ///
 /// Other gates: `/search` is a manual search command that shouldn't
-/// trigger auto-RAG; kiln must be configured. The handler hook seam
+/// trigger auto-RAG; the session must reach at least one kiln. The handler hook seam
 /// (`transform_context`) is a separate, per-turn surface — Lua plugins
 /// can implement richer per-turn heuristics there.
 pub(super) fn should_run_precognition(
     precognition_enabled: bool,
     original_content: &str,
-    session_kiln: &std::path::Path,
+    session_kilns: &[std::path::PathBuf],
     is_first_user_message: bool,
 ) -> bool {
     precognition_enabled
         && !original_content.starts_with("/search")
-        && !session_kiln.as_os_str().is_empty()
+        && !session_kilns.is_empty()
         && is_first_user_message
 }
 
 #[cfg(test)]
 mod should_run_precognition_tests {
     use super::*;
-    use std::path::Path;
+    use std::path::PathBuf;
+
+    fn one_kiln() -> Vec<PathBuf> {
+        vec![PathBuf::from("/some/kiln")]
+    }
 
     #[test]
     fn runs_on_first_user_message_with_precognition_enabled() {
         assert!(should_run_precognition(
             true,
             "tell me about widgets",
-            Path::new("/some/kiln"),
+            &one_kiln(),
             true,
         ));
     }
@@ -49,19 +53,14 @@ mod should_run_precognition_tests {
         assert!(!should_run_precognition(
             true,
             "follow-up question",
-            Path::new("/some/kiln"),
+            &one_kiln(),
             false,
         ));
     }
 
     #[test]
     fn skipped_when_disabled_in_agent_config() {
-        assert!(!should_run_precognition(
-            false,
-            "x",
-            Path::new("/some/kiln"),
-            true,
-        ));
+        assert!(!should_run_precognition(false, "x", &one_kiln(), true,));
     }
 
     #[test]
@@ -69,13 +68,13 @@ mod should_run_precognition_tests {
         assert!(!should_run_precognition(
             true,
             "/search widgets",
-            Path::new("/some/kiln"),
+            &one_kiln(),
             true,
         ));
     }
 
     #[test]
-    fn skipped_when_no_kiln_configured() {
-        assert!(!should_run_precognition(true, "x", Path::new(""), true,));
+    fn skipped_when_session_reaches_no_kiln() {
+        assert!(!should_run_precognition(true, "x", &[], true));
     }
 }

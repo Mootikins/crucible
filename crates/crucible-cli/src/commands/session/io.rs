@@ -1,12 +1,24 @@
 use super::helpers::truncate;
 use crate::config::CliConfig;
 use anyhow::{anyhow, Result};
-use crucible_daemon::LogEvent;
+use crucible_daemon::{FileSessionStorage, LogEvent};
 use std::path::PathBuf;
 use tokio::fs;
 
-pub(super) fn sessions_dir(config: &CliConfig) -> PathBuf {
-    config.kiln_path.join(".crucible").join("sessions")
+/// Where the daemon keeps session directories, for the CLI's
+/// daemon-unreachable fallbacks.
+///
+/// Sessions live under the daemon's data root, not inside a kiln, so this
+/// mirrors `FileSessionStorage::root_for` rather than spelling the layout a
+/// second time. `data_home` is read off the config first so a relocated daemon
+/// root is honored without an env var; `crucible_home()` is the same default
+/// the daemon resolves when the config says nothing.
+pub(crate) fn sessions_dir(config: &CliConfig) -> PathBuf {
+    let data_home = config
+        .data_home
+        .clone()
+        .unwrap_or_else(crucible_core::config::crucible_home);
+    FileSessionStorage::root_for(&data_home)
 }
 
 /// Fallback for when the daemon is unreachable; the daemon-side

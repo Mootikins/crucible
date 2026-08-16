@@ -45,7 +45,7 @@ pub(crate) async fn handle_session_create(req: Request, ctx: &RpcContext) -> Res
             serde_json::json!({
                 "session_id": session.id,
                 "type": session.session_type.as_prefix(),
-                "kiln": session.kiln,
+                "kilns": session.kilns,
                 "workspace": session.workspace,
                 "state": format!("{}", session.state),
                 // Present only when the daemon configured the agent as part
@@ -93,50 +93,56 @@ impl RpcContext {
             SessionCreateError::Invalid(format!("Invalid session type: {}", params.session_type))
         })?;
 
-        // Kiln-less create falls back to the server's resolved data root, not
-        // the process-global crucible_home() — in production they're the same
-        // path, but tests inject an isolated data_home that must win here too.
-        let requested_kiln = params.kiln.as_deref().map(PathBuf::from);
-        let kiln = requested_kiln
-            .clone()
-            .unwrap_or_else(|| self.data_home.clone());
-
-        let workspace = params.workspace.as_deref().map(PathBuf::from);
-
         // Strict where the hand-plucked version was lenient: it `filter_map`ped
         // non-string elements away, so `["/a", 7]` silently connected one kiln.
         // Deserializing `Option<Vec<String>>` makes that INVALID_PARAMS instead.
-        let connected_kilns: Vec<PathBuf> = params
-            .connect_kilns
+        // Deduped here so the set the trust gate walks is the set that gets
+        // persisted.
+        let kilns: Vec<PathBuf> = params
+            .kilns
             .clone()
             .unwrap_or_default()
             .into_iter()
             .map(PathBuf::from)
-            .collect();
+            .fold(Vec::new(), |mut acc, kiln| {
+                if !acc.contains(&kiln) {
+                    acc.push(kiln);
+                }
+                acc
+            });
+
+        let workspace = params.workspace.as_deref().map(PathBuf::from);
 
         // Before anything reads them: every caller-supplied directory that
         // becomes session scope goes through the same floor as
         // `session.connect_kiln`/`session.set_workspace` — the socket has no
-        // auth, so create must not be the cheaper door.
-        //
-        // `requested_kiln`, not `kiln`: the kiln-less FALLBACK is the daemon's
-        // own resolved data root, never anything a caller sent, so the floor
-        // has nothing to police there. Checking it broke kiln-less create
-        // outright wherever `data_home` equals `$HOME` —
-        // `refuse_forbidden_scope` reads `dirs::home_dir()`, the home rule
-        // fires when the path IS home, and `CRUCIBLE_HOME=$HOME` is exactly
-        // what a hermetic out-of-process test harness sets
-        // (`hermetic_env_pairs`). Four `workspace_targets_e2e` tests went red
-        // on 4e408f5e4 and nobody saw it for three days, because every test
-        // that spawns a daemon is `#[ignore]`d.
-        let scopes = requested_kiln
+        // auth, so create must not be the cheaper door. That floor now also
+        // refuses anything at or under the sessions root, which is the same
+        // hole through this door: an allowed root inside the denied sessions
+        // root out-ranks the denial.
+        let sessions_root = self.sessions.sessions_root().to_path_buf();
+        let scopes = kilns
             .iter()
             .map(|k| ("kiln", k))
-            .chain(workspace.iter().map(|w| ("workspace", w)))
-            .chain(connected_kilns.iter().map(|k| ("kiln", k)));
+            .chain(workspace.iter().map(|w| ("workspace", w)));
         for (kind, path) in scopes {
-            refuse_forbidden_scope(kind, path).map_err(SessionCreateError::Invalid)?;
+            refuse_forbidden_scope(kind, path, &sessions_root)
+                .map_err(SessionCreateError::Invalid)?;
         }
+
+        // Kiln-less create yields a genuinely EMPTY set. It used to fall back
+        // to the daemon's data root, which is the PARENT of the sessions root
+        // — so every kiln-less session carried an allowed root enclosing every
+        // transcript the daemon had ever written, and `grep` walked straight
+        // into it. Zero kilns is a legitimate state: a tools-only agent with
+        // no corpus. It degrades capabilities (no note/kiln tools, no
+        // precognition, no semantic search — see `CrucibleMcpServer::list_tools`)
+        // and must never degrade containment.
+        //
+        // Agent-card discovery and the ACP resolver still want exactly one
+        // kiln, and now have to cope with there being none; see
+        // `Session::default_kiln`.
+        let default_kiln = kilns.first().cloned();
 
         // Forwarded untouched: `false`, a profile name and an environment
         // object are the isolating plugin's vocabulary, not the daemon's.
@@ -150,10 +156,17 @@ impl RpcContext {
 
         let provider_trust_level =
             resolve_provider_trust_level_for_create(params, &self.llm_config);
-        let classification = resolve_kiln_classification_for_create(&kiln, workspace.as_ref());
-        if let Some(classification) = classification {
-            validate_trust_level(provider_trust_level, classification)
-                .map_err(SessionCreateError::Invalid)?;
+        // Every kiln the session will hold, not only the one it was created
+        // with. The set is flat, so no member is the one that gets classified
+        // — and a confidential kiln arriving alongside the first used to reach
+        // no create-time trust check at all.
+        for kiln in &kilns {
+            if let Some(classification) =
+                resolve_kiln_classification_for_create(kiln, workspace.as_ref())
+            {
+                validate_trust_level(provider_trust_level, classification)
+                    .map_err(SessionCreateError::Invalid)?;
+            }
         }
 
         let recording_mode = params
@@ -183,8 +196,11 @@ impl RpcContext {
                 .resolve_create_agent(
                     params,
                     &agent_type,
-                    workspace.as_deref().unwrap_or(&kiln),
-                    &kiln,
+                    workspace
+                        .as_deref()
+                        .or(default_kiln.as_deref())
+                        .unwrap_or(Path::new("")),
+                    default_kiln.as_deref(),
                 )
                 .map_err(SessionCreateError::Invalid)?;
             // Last word, over the card's own `tools:`. A card is a global file
@@ -203,19 +219,13 @@ impl RpcContext {
             // left an agent-less row on disk and in `session.list` answering
             // `NoAgentConfigured` for good.
             //
-            // Two things reach this that `validate_trust_level` above cannot.
-            // It classifies the primary kiln only, so a confidential kiln
-            // arriving in `connect_kilns` never reached a trust check at all
-            // (`tools/search.rs` then passes `provider_trust: None` on the
-            // strength of the attach-time gate). And it reads the *request's*
-            // provider, while a card's `provider:`/`specialty:` can override it
-            // — a local default resolving through a card onto a cloud provider
-            // passed the first gate on a provider it was no longer going to use.
+            // One thing reaches this that `validate_trust_level` above cannot:
+            // that gate reads the *request's* provider, while a card's
+            // `provider:`/`specialty:` can override it — a local default
+            // resolving through a card onto a cloud provider passed the first
+            // gate on a provider it was no longer going to use.
             self.agents
-                .refuse_untrusted_for_kilns(
-                    std::iter::once(&kiln).chain(connected_kilns.iter()),
-                    &agent,
-                )
+                .refuse_untrusted_for_kilns(kilns.iter(), &agent)
                 .map_err(|e| SessionCreateError::Invalid(e.to_string()))?;
             Some(agent)
         } else {
@@ -233,13 +243,7 @@ impl RpcContext {
 
         let mut session = self
             .sessions
-            .create_session(
-                session_type,
-                kiln,
-                workspace,
-                connected_kilns,
-                recording_mode,
-            )
+            .create_session(session_type, kilns, workspace, recording_mode)
             .await
             .map_err(|e| SessionCreateError::Internal(e.into()))?;
 
@@ -279,18 +283,21 @@ impl RpcContext {
             session.agent = Some(agent);
         }
 
-        // Open the kiln in KilnManager so it's discoverable by session.list()
-        if let Err(e) = self.kiln.open(&session.kiln).await {
-            tracing::warn!(kiln = %session.kiln.display(), error = %e, "Failed to open kiln in manager");
+        // Open every kiln in KilnManager so they're discoverable by
+        // session.list()
+        for kiln in &session.kilns {
+            if let Err(e) = self.kiln.open(kiln).await {
+                tracing::warn!(kiln = %kiln.display(), error = %e, "Failed to open kiln in manager");
+            }
         }
 
         if session.recording_mode == Some(RecordingMode::Granular) {
             let recording_path = match custom_recording_path {
                 Some(ref p) => p.clone(),
-                None => {
-                    let session_dir = FileSessionStorage::session_dir_for(&session);
-                    session_dir.join("recording.jsonl")
-                }
+                None => self
+                    .sessions
+                    .session_dir(&session.id)
+                    .join("recording.jsonl"),
             };
             let (writer, tx) = RecordingWriter::new(
                 recording_path,
@@ -334,7 +341,7 @@ impl RpcContext {
         params: &crate::rpc_client::SessionCreateRequest,
         agent_type: &str,
         workspace: &std::path::Path,
-        kiln: &std::path::Path,
+        kiln: Option<&std::path::Path>,
     ) -> Result<crucible_core::session::SessionAgent, String> {
         if agent_type == "acp" {
             let name = params.agent_name.as_deref().unwrap_or("");
@@ -358,7 +365,7 @@ impl RpcContext {
                         crate::agent_cards::discover_agent_cards_in(
                             self.config_home.as_deref(),
                             workspace,
-                            Some(kiln),
+                            kiln,
                         )
                         .into_keys()
                     ),
@@ -383,7 +390,7 @@ impl RpcContext {
             let cards = crate::agent_cards::discover_agent_cards_in(
                 self.config_home.as_deref(),
                 workspace,
-                Some(kiln),
+                kiln,
             );
             match cards.get(name) {
                 Some(card) => Ok(crucible_core::session::SessionAgent::from_card(

@@ -1,5 +1,5 @@
 use super::*;
-use crate::session_storage::FileSessionStorage;
+use crate::test_support::temp_session_manager;
 use crate::tools::workspace::WorkspaceTools;
 use async_trait::async_trait;
 use crucible_core::events::handler::{Handler, HandlerContext, HandlerResult};
@@ -456,14 +456,12 @@ struct ReactorTestHarness {
 impl ReactorTestHarness {
     async fn new() -> Self {
         let tmp = TempDir::new().unwrap();
-        let storage = Arc::new(FileSessionStorage::new());
-        let session_manager = Arc::new(SessionManager::with_storage(storage));
+        let session_manager = temp_session_manager();
         let session = session_manager
             .create_session(
                 SessionType::Chat,
-                tmp.path().to_path_buf(),
+                vec![tmp.path().to_path_buf()],
                 None,
-                vec![],
                 None,
             )
             .await
@@ -608,15 +606,13 @@ async fn setup_session_manager() -> (
     crucible_core::session::Session,
 ) {
     let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
 
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -875,6 +871,7 @@ mod providers_concurrency;
 mod reactor;
 mod review_capture;
 mod revive_cold;
+mod transcript_containment;
 mod trust_gate;
 mod workspace;
 

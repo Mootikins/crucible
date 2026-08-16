@@ -16,7 +16,7 @@ use crate::recording::RecordingWriter;
 use crate::replay::ReplaySession;
 use crate::rpc::{RpcContext, RpcDispatcher};
 use crate::rpc_helpers::{optional_param, require_param};
-use crate::session_manager::SessionManager;
+use crate::session_manager::{KilnFilter, SessionManager};
 use crate::session_storage::{FileSessionStorage, SessionStorage};
 use crate::skills::discovery::{default_discovery_paths, FolderDiscovery};
 use crate::tools::workspace::WorkspaceTools;
@@ -273,8 +273,11 @@ impl Server {
             dirs::home_dir().as_deref(),
             &data_home,
         );
-        let session_manager =
-            Arc::new(SessionManager::new().with_session_workspace_dir(Some(session_workspace_dir)));
+        let sessions_root = FileSessionStorage::root_for(&data_home);
+        let session_manager = Arc::new(
+            SessionManager::new(sessions_root.clone())
+                .with_session_workspace_dir(Some(session_workspace_dir)),
+        );
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
         let workspace_tools = Arc::new(WorkspaceTools::new(&data_home));
         let delegation_service =
@@ -300,6 +303,20 @@ impl Server {
         delegation_service.bind_agent_manager(&agent_manager);
         let subscription_manager = Arc::new(SubscriptionManager::new());
         let project_manager = Arc::new(ProjectManager::new(data_home.join("projects.json")));
+
+        // Sessions used to be filed inside their owning kiln. Collect any that
+        // still are before anything can read or write one — after this point
+        // every path resolves against `sessions_root` alone, so a session left
+        // behind is a session nobody can find.
+        crate::session_migration::migrate_sessions(
+            &sessions_root,
+            &crate::session_migration::known_kiln_roots(
+                params.app_config.as_ref(),
+                &project_manager.list(),
+                &data_home,
+            ),
+        )
+        .await;
         let lua_sessions = Arc::new(DashMap::new());
         let mcp_server_manager = Arc::new(McpServerManager::new());
 
@@ -412,7 +429,7 @@ impl Server {
         let _web_cancel = CancellationToken::new();
 
         // Spawn event persistence task with cancellation support
-        let storage = FileSessionStorage::new();
+        let storage = FileSessionStorage::new(self.session_manager.sessions_root().to_path_buf());
         let sm_clone = self.session_manager.clone();
         let mut persist_rx = self.event_tx.subscribe();
         let persist_cancel = CancellationToken::new();
@@ -585,13 +602,11 @@ impl Server {
         });
 
         let sweep_session_manager = self.session_manager.clone();
-        let sweep_kiln_manager = self.kiln_manager.clone();
         let sweep_subscription_manager = self.subscription_manager.clone();
         let sweep_agent_manager = self.agent_manager.clone();
         let sweep_cancel = CancellationToken::new();
         let sweep_cancel_clone = sweep_cancel.clone();
         let auto_archive_hours = self.auto_archive_hours.unwrap_or(72);
-        let sweep_data_home = self.data_home.clone();
 
         let archive_sweep_task = tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(30 * 60));
@@ -602,11 +617,9 @@ impl Server {
                     _ = interval.tick() => {
                         match sweep_and_archive_stale_sessions(
                             &sweep_session_manager,
-                            &sweep_kiln_manager,
                             &sweep_subscription_manager,
                             &sweep_agent_manager,
                             auto_archive_hours,
-                            &sweep_data_home,
                         ).await {
                             Ok(archived) if archived > 0 => {
                                 info!(archived, auto_archive_hours, "Auto-archived stale sessions");
@@ -617,12 +630,11 @@ impl Server {
                             }
                         }
 
-                        // Same tick, same kiln list: keep refs whose session
-                        // directory has been removed pin git objects that
-                        // nothing else will ever release.
+                        // Same tick, same sessions root: keep refs whose
+                        // session directory has been removed pin git objects
+                        // that nothing else will ever release.
                         let dropped = sweep_review_refs(
-                            &sweep_kiln_manager,
-                            &sweep_data_home,
+                            sweep_session_manager.sessions_root(),
                         ).await;
                         if dropped > 0 {
                             info!(dropped, "Released review keep refs for deleted sessions");
@@ -751,15 +763,6 @@ impl Server {
                 }
             }
 
-            // Title catch-up scans the open kilns PLUS ~/.crucible (legacy
-            // sessions live at ~/.crucible/sessions) but never OPENS home as a
-            // kiln — that is the leak this split fixes.
-            let mut sweep_kilns = open_kilns.clone();
-            let home = self.data_home.clone();
-            if !sweep_kilns.contains(&home) {
-                sweep_kilns.push(home);
-            }
-
             tokio::spawn(async move {
                 // Open registered project kilns (idempotent) so note-open can
                 // resolve them; a failure to open one must not block the others
@@ -777,7 +780,7 @@ impl Server {
                     info!(opened, "Opened registered kilns on startup");
                 }
 
-                let titled = sm.title_untitled_sessions(&sweep_kilns, &tx).await;
+                let titled = sm.title_untitled_sessions(&tx).await;
                 if titled > 0 {
                     info!(titled, "Startup title catch-up completed");
                 }

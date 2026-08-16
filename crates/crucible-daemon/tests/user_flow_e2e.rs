@@ -170,9 +170,8 @@ async fn test_complete_user_flow() {
     let create_result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: Some(kiln_dir.path().to_path_buf()),
+            kilns: vec![kiln_dir.path().to_path_buf()],
             workspace: None,
-            connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
             agent_type: None,
@@ -285,18 +284,13 @@ async fn test_complete_user_flow() {
     assert_state(&session, "active", "session.get after resume");
 
     // ── Step 8: Export session ────────────────────────────────────────────
-    // Try to render the session's events as markdown.
-    // The session directory follows: <kiln>/.crucible/sessions/<session_id>
-    let session_dir = kiln_dir
-        .path()
-        .join(".crucible")
-        .join("sessions")
-        .join(&session_id);
+    // Try to render the session's events as markdown. Keyed on the session
+    // id: the transcript's directory is the daemon's to know, not the client's.
 
     // render_markdown may fail if no events have been persisted to disk yet.
     // We test that the RPC call itself doesn't crash — either outcome is valid.
     let render_result = client
-        .session_render_markdown(&session_dir, Some(true), None, None, None)
+        .session_render_markdown(&session_id, Some(true), None, None, None)
         .await;
     match render_result {
         Ok(markdown) => {
@@ -314,7 +308,7 @@ async fn test_complete_user_flow() {
     // Also try export_to_file to cover the export path
     let export_path = kiln_dir.path().join("export.md");
     let export_result = client
-        .session_export_to_file(&session_dir, Some(&export_path), Some(true))
+        .session_export_to_file(&session_id, Some(&export_path), Some(true))
         .await;
     // Export may also fail for same reasons — we only assert no panic
     match export_result {
@@ -383,9 +377,8 @@ async fn test_user_flow_session_list_reflects_state() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: Some(kiln_dir.path().to_path_buf()),
+            kilns: vec![kiln_dir.path().to_path_buf()],
             workspace: None,
-            connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
             agent_type: None,

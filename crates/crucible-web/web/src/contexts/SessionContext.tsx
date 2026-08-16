@@ -61,10 +61,9 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   const [providersLoaded, setProvidersLoaded] = createSignal(false);
   const [selectedProvider, setSelectedProvider] = createSignal<ProviderInfo | null>(null);
 
-  const hydrateSession = async (sessionId: string, kiln: string | undefined): Promise<boolean> => {
-    if (!kiln) return false;
+  const hydrateSession = async (sessionId: string): Promise<boolean> => {
     try {
-      await apiGetSessionHistory(sessionId, kiln, 1, 0);
+      await apiGetSessionHistory(sessionId, 1, 0);
       return true;
     } catch {
       return false;
@@ -139,9 +138,8 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
   // so chips and headers re-render without a refetch.
   const applySessionScope = (scope: SessionScope) => {
     patchSessionById(scope.session_id, {
-      kiln: scope.kiln,
+      kilns: scope.kilns,
       workspace: scope.workspace,
-      connected_kilns: scope.connected_kilns,
     });
   };
 
@@ -265,7 +263,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
         // daemon may have deleted the session since. A failed hydrate means
         // it's really gone: prune the dead row instead of opening a chat
         // tab that can never load.
-        if (!(await hydrateSession(existing.id, existing.kiln))) {
+        if (!(await hydrateSession(existing.id))) {
           setSessions(sessions.filter((s) => s.id !== id));
           notificationActions.addNotification('error', 'Session no longer exists');
           return;
@@ -298,7 +296,7 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
     
     try {
       const session = await apiGetSession(id).catch(async () => {
-        const hydrated = await hydrateSession(id, props.initialKiln);
+        const hydrated = await hydrateSession(id);
         if (!hydrated) {
           throw new Error('Failed to load session');
         }

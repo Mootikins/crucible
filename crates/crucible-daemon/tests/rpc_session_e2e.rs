@@ -73,9 +73,8 @@ async fn create_session(client: &DaemonClient, kiln: &std::path::Path) -> String
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: Some(kiln.to_path_buf()),
+            kilns: vec![kiln.to_path_buf()],
             workspace: None,
-            connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
             agent_type: None,
@@ -107,9 +106,8 @@ async fn test_session_create_returns_id() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kiln: Some(kiln_dir.path().to_path_buf()),
+            kilns: vec![kiln_dir.path().to_path_buf()],
             workspace: None,
-            connect_kilns: vec![],
             recording_mode: None,
             recording_path: None,
             agent_type: None,
@@ -434,7 +432,7 @@ async fn test_session_delete_removes_session() {
 
     // Delete the session
     let delete_result = client
-        .session_delete(&session_id, kiln_dir.path())
+        .session_delete(&session_id)
         .await
         .expect("session_delete failed");
 
@@ -471,15 +469,12 @@ async fn test_session_delete_removes_session() {
 #[tokio::test]
 async fn test_session_delete_nonexistent_returns_error() {
     let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
     let client = DaemonClient::connect_to(&server.socket_path)
         .await
         .expect("Failed to connect");
 
-    let result = client
-        .session_delete("nonexistent-session-id", kiln_dir.path())
-        .await;
+    let result = client.session_delete("nonexistent-session-id").await;
 
     assert!(
         result.is_err(),
@@ -514,7 +509,7 @@ async fn test_session_archive_marks_archived() {
 
     // Archive the session
     let archive_result = client
-        .session_archive(&session_id, kiln_dir.path())
+        .session_archive(&session_id)
         .await
         .expect("session_archive failed");
 
@@ -541,13 +536,13 @@ async fn test_session_unarchive_restores_session() {
 
     // Archive first
     client
-        .session_archive(&session_id, kiln_dir.path())
+        .session_archive(&session_id)
         .await
         .expect("session_archive failed");
 
     // Then unarchive
     let unarchive_result = client
-        .session_unarchive(&session_id, kiln_dir.path())
+        .session_unarchive(&session_id)
         .await
         .expect("session_unarchive failed");
 
@@ -581,7 +576,7 @@ async fn test_session_list_excludes_archived_by_default() {
 
     // Archive session A
     client
-        .session_archive(&session_a, kiln_dir.path())
+        .session_archive(&session_a)
         .await
         .expect("session_archive failed");
 
@@ -621,7 +616,7 @@ async fn test_session_list_includes_archived_when_requested() {
 
     // Archive session A
     client
-        .session_archive(&session_a, kiln_dir.path())
+        .session_archive(&session_a)
         .await
         .expect("session_archive failed");
 

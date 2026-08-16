@@ -58,6 +58,34 @@ pub(crate) fn resolve_session_classification(
         .or_else(|| find_workspace_and_resolve_classification(kiln))
 }
 
+/// The most restrictive classification across a session's kiln set.
+///
+/// A session is only as shareable as its least shareable corpus, and the kiln
+/// set is flat — no member's classification stands in for the rest. `None`
+/// when nothing in the set is classified; callers keep their own handling of
+/// that, which is not the same as `Public`.
+///
+/// The per-kiln resolver is the caller's, because the two that exist differ:
+/// live sessions walk up from the kiln when the workspace has no config, and
+/// create-time lookups do not.
+pub(crate) fn most_restrictive_classification(
+    kilns: &[std::path::PathBuf],
+    resolve: impl Fn(&Path) -> Option<DataClassification>,
+) -> Option<DataClassification> {
+    fn restrictiveness(classification: DataClassification) -> u8 {
+        match classification {
+            DataClassification::Public => 0,
+            DataClassification::Internal => 1,
+            DataClassification::Confidential => 2,
+        }
+    }
+
+    kilns
+        .iter()
+        .filter_map(|kiln| resolve(kiln))
+        .max_by_key(|c| restrictiveness(*c))
+}
+
 pub fn find_workspace_and_resolve_classification(kiln: &Path) -> Option<DataClassification> {
     let mut dir = kiln.to_path_buf();
     loop {

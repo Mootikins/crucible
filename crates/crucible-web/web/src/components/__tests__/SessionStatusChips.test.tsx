@@ -26,9 +26,8 @@ vi.mock('@/lib/review-api', () => ({
 const baseSession = (id = 's1'): Session => ({
   id,
   session_type: 'chat',
-  kiln: '/kilns/main',
+  kilns: ['/kilns/main'],
   workspace: '/kilns/main',
-  connected_kilns: [],
   state: 'active',
   title: null,
   agent_model: null,

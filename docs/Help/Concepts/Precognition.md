@@ -41,7 +41,7 @@ Precognition retrieves at the **note level**. During indexing, each block of a n
 
 The search is semantic. If you ask about "staying productive while remote," Precognition can find notes about "work from home tips" or "focus strategies" even if those exact words don't appear in your message.
 
-Every kiln connected to the session is searched, not just the primary one. Results from all connected kilns are merged and ranked together, with two per-kiln guards: a kiln whose data classification exceeds the session provider's trust level is skipped entirely (see [[Trust and Classification]]), and a kiln indexed with a different embedding model than the current provider is skipped rather than compared against incompatible vectors.
+Every kiln the session is attached to is searched. The set is flat — no member is privileged by having been attached first — so results are merged and ranked together and one guard applies uniformly: a kiln whose data classification exceeds the session provider's trust level is skipped entirely (see [[Trust and Classification]]). All kilns share the single `[enrichment]` config, so there is no per-kiln embedding model to reconcile.
 
 ## Configuration
 

@@ -10,7 +10,7 @@
 use crate::agent_manager::{AgentManager, AgentManagerParams};
 use crate::background_manager::BackgroundJobManager;
 use crate::kiln_manager::KilnManager;
-use crate::session_manager::SessionManager;
+use crate::test_support::temp_session_manager;
 use crate::tools::WorkspaceTools;
 use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 use std::sync::Arc;
@@ -81,7 +81,7 @@ fn manager_with(providers: std::collections::HashMap<String, LlmProviderConfig>)
     let (event_tx, _) = broadcast::channel(16);
     AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),
-        session_manager: Arc::new(SessionManager::new()),
+        session_manager: temp_session_manager(),
         background_manager: Arc::new(BackgroundJobManager::new(event_tx)),
         mcp_gateway: None,
         llm_config: Some(LlmConfig {

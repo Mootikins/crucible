@@ -1,5 +1,6 @@
 import { Component, For, Show, createMemo, createSignal } from 'solid-js';
 import { sessionDisplayTitle } from '@/lib/session-display';
+import { sessionDefaultKiln, sessionHasWorkspace } from '@/lib/session-scope';
 import type { Project, Session } from '@/lib/types';
 import { Archive, ChevronRight, FolderGit2, GitBranch, Trash2 } from '@/lib/icons';
 import { treeChevron, treeGroupRow, treeSectionHeader } from '@/components/tree/tree-style';
@@ -54,7 +55,11 @@ export const SessionRow: Component<{
       <Show when={props.kilnLabel || props.branch}>
         <div class="flex items-center gap-1.5 mt-0.5 min-w-0 text-[11px] text-muted-dark transition-[padding] duration-150 group-hover:pr-12 group-focus-within:pr-12 [@media(hover:none)]:pr-12">
           <Show when={props.kilnLabel} keyed>
-            {(k) => <span class="truncate" title={`kiln · ${props.session.kiln}`}>{k}</span>}
+            {(k) => (
+              <span class="truncate" title={`kilns · ${props.session.kilns.join(', ')}`}>
+                {k}
+              </span>
+            )}
           </Show>
           <Show when={props.branch} keyed>
             {(b) => (
@@ -135,6 +140,15 @@ export const SessionTree: Component<{
 }> = (props) => {
   const [collapsed, setCollapsed] = createSignal<Set<string>>(loadCollapsed(), { equals: false });
 
+  // A kiln-less session is a legitimate shape, so its row says nothing about
+  // kilns. `kilnName` is never handed '' to resolve: the empty path is a real
+  // directory to every label helper (the home data dir), so resolving it would
+  // print an attachment the session does not have.
+  const kilnNameOf = (s: Session): string | null => {
+    const kiln = sessionDefaultKiln(s);
+    return kiln ? props.kilnName(kiln) : null;
+  };
+
   const toggle = (key: string) => {
     setCollapsed((prev) => {
       if (prev.has(key)) prev.delete(key);
@@ -197,8 +211,7 @@ export const SessionTree: Component<{
     };
 
     for (const s of props.sessions) {
-      // Workspace == kiln is the daemon's "no workspace" state.
-      const g = s.workspace && s.workspace !== s.kiln ? groupFor(s.workspace) : none;
+      const g = sessionHasWorkspace(s) ? groupFor(s.workspace) : none;
       g.sessions.push(s);
       const t = Date.parse(s.last_activity ?? s.started_at) || 0;
       if (t > g.lastActivity) g.lastActivity = t;
@@ -274,10 +287,8 @@ export const SessionTree: Component<{
                   <SessionRow
                     session={s}
                     selected={props.currentSessionId === s.id}
-                    branch={
-                      s.workspace && s.workspace !== s.kiln ? props.branchOf(s.workspace) : null
-                    }
-                    kilnLabel={props.kilnName(s.kiln)}
+                    branch={sessionHasWorkspace(s) ? props.branchOf(s.workspace) : null}
+                    kilnLabel={kilnNameOf(s)}
                     onSelect={() => props.onSelectSession(s.id)}
                     onArchive={() => props.onArchiveSession(s.id)}
                     onDelete={() => props.onDeleteSession(s.id)}

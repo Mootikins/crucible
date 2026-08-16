@@ -66,23 +66,26 @@ impl DaemonSessionApi for MockDaemonApi {
         *self.last_create_params.lock().unwrap() = Some(params.clone());
         let field = |key: &str| params.get(key).and_then(|v| v.as_str()).map(str::to_string);
         let session_type = field("type").unwrap_or_else(|| "chat".to_string());
-        let kiln = field("kiln").unwrap_or_else(|| "/default/crucible".to_string());
-        let ws = field("workspace").unwrap_or_else(|| kiln.clone());
-        // Echoed, not discarded: the binding's `kilns` → `connect_kilns` alias
-        // is only observable from Lua if the mock hands them back.
-        let connected = params
+        // Mirrors the daemon's own fallback: an omitted or empty `kilns`
+        // resolves to the home kiln server-side, never client-side.
+        let kilns: Vec<String> = params
             .get("kilns")
-            .or_else(|| params.get("connect_kilns"))
-            .cloned()
-            .unwrap_or_else(|| serde_json::Value::Array(Vec::new()));
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|k| k.as_str().map(str::to_string))
+                    .collect()
+            })
+            .filter(|k: &Vec<String>| !k.is_empty())
+            .unwrap_or_else(|| vec!["/default/crucible".to_string()]);
+        let ws = field("workspace").unwrap_or_else(|| kilns[0].clone());
         Box::pin(async move {
             Ok(serde_json::json!({
                 "id": format!("{}-2025-01-01T0000-abc123", session_type),
                 "session_type": session_type,
                 "state": "active",
-                "kiln": kiln,
+                "kilns": kilns,
                 "workspace": ws,
-                "connected_kilns": connected,
             }))
         })
     }

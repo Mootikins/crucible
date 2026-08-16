@@ -86,7 +86,8 @@ async fn the_committed_session_log_is_what_the_daemon_writes() {
         emit_event(&event_tx, event);
     }
 
-    let jsonl_path = FileSessionStorage::sessions_base(&kiln_path)
+    let jsonl_path = server
+        .sessions_root()
         .join(&session_id)
         .join("session.jsonl");
     let captured = wait_for_lines(&jsonl_path, 5).await;

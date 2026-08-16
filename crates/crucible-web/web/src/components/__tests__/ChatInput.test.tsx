@@ -38,10 +38,9 @@ vi.mock('@/contexts/SessionContext', () => ({
     currentSession: () => ({
       id: 'test-session',
       state: 'active',
-      kiln: '/tmp/test-kiln',
+      kilns: ['/tmp/test-kiln'],
       // workspace == kiln is the daemon's "floating" (no-workspace) state.
       workspace: '/tmp/test-kiln',
-      connected_kilns: [],
       agent_model: 'test-model',
     }),
     cancelCurrentOperation: mockCancelCurrentOperation,

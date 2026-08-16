@@ -62,12 +62,16 @@ fn oil_wide_terminal_120_cols() {
         .wait_for_text("NORMAL", Duration::from_secs(3))
         .expect("Should show mode indicator at 120 cols");
 
+    // F1 opens the command palette, whose entries are the two static commands
+    // in `autocomplete.rs` (`AutocompleteKind::Command`) — not the agent's
+    // tools. Asserting on a tool name here matched nothing the palette has ever
+    // rendered, so this waited out its timeout on every run.
     session.send_key(Key::F(1)).expect("F1 failed");
     session
         .wait_until(
             |s| {
                 let c = s.contents();
-                c.contains("semantic_search") || c.contains("tool")
+                c.contains("/mode") && c.contains("/help")
             },
             Duration::from_secs(3),
         )

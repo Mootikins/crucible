@@ -4,6 +4,7 @@ import { useProjectSafe } from '@/contexts/ProjectContext';
 import { listKilns, listWorkspaceTargets } from '@/lib/api';
 import type { KilnListEntry, Session } from '@/lib/types';
 import { kilnLabel } from '@/lib/kiln-label';
+import { sessionDefaultKiln, sessionHasWorkspace } from '@/lib/session-scope';
 import { SessionRow } from '../SessionTree';
 import { Plus, ChevronRight } from '@/lib/icons';
 
@@ -54,7 +55,10 @@ export const SessionsBody: Component = () => {
     for (const [checkout, branch] of map) if (workspace.startsWith(checkout + '/')) return branch;
     return null;
   };
-  const kilnName = (path: string): string | null =>
+  // Takes the kiln or `null`, never '': the empty path resolves to the home
+  // data dir, so a kiln-less session would be labelled with a kiln it has not
+  // attached.
+  const kilnName = (path: string | null): string | null =>
     path ? kilnLabel(path, kilns().find((k) => k.path === path)?.name) : null;
 
   const activeList = createMemo(() => sessions().filter((s) => !s.archived).sort(byRecency));
@@ -64,8 +68,8 @@ export const SessionsBody: Component = () => {
     <SessionRow
       session={s}
       selected={currentSession()?.id === s.id}
-      branch={s.workspace && s.workspace !== s.kiln ? branchOf(s.workspace) : null}
-      kilnLabel={kilnName(s.kiln)}
+      branch={sessionHasWorkspace(s) ? branchOf(s.workspace) : null}
+      kilnLabel={kilnName(sessionDefaultKiln(s))}
       onSelect={() => selectSession(s.id)}
       onArchive={() => archiveSession(s.id)}
       onDelete={() => deleteSession(s.id)}

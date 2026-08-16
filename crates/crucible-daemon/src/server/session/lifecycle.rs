@@ -38,23 +38,19 @@ pub(crate) async fn handle_session_resume_from_storage(
     sm: &Arc<SessionManager>,
 ) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
-    let kiln = PathBuf::from(require_param!(req, "kiln", as_str));
 
     // Optional pagination params
     let limit = optional_param!(req, "limit", as_u64).map(|n| n as usize);
     let offset = optional_param!(req, "offset", as_u64).map(|n| n as usize);
 
     // Resume session from storage
-    let session = match sm.resume_session_from_storage(session_id, &kiln).await {
+    let session = match sm.resume_session_from_storage(session_id).await {
         Ok(s) => s,
         Err(e) => return invalid_state_error(req.id, "resume_from_storage", e),
     };
 
     // Load event history with pagination
-    let history = match sm
-        .load_session_events(session_id, &kiln, limit, offset)
-        .await
-    {
+    let history = match sm.load_session_events(session_id, limit, offset).await {
         Ok(events) => events,
         Err(e) => {
             // Session resumed but history load failed - return session without history
@@ -66,7 +62,7 @@ pub(crate) async fn handle_session_resume_from_storage(
                     "session_id": session.id,
                     "type": session.session_type.as_prefix(),
                     "state": format!("{}", session.state),
-                    "kiln": session.kiln,
+                    "kilns": session.kilns,
                     "history": [],
                     "total_events": 0,
                 }),
@@ -75,10 +71,7 @@ pub(crate) async fn handle_session_resume_from_storage(
     };
 
     // Get total event count for pagination
-    let total = sm
-        .count_session_events(session_id, &kiln)
-        .await
-        .unwrap_or(0);
+    let total = sm.count_session_events(session_id).await.unwrap_or(0);
 
     Response::success(
         req.id,
@@ -86,7 +79,7 @@ pub(crate) async fn handle_session_resume_from_storage(
             "session_id": session.id,
             "type": session.session_type.as_prefix(),
             "state": format!("{}", session.state),
-            "kiln": session.kiln,
+            "kilns": session.kilns,
             "history": history,
             "total_events": total,
         }),
@@ -108,7 +101,7 @@ pub(crate) async fn handle_session_end(
                 serde_json::json!({
                     "session_id": session.id,
                     "state": "ended",
-                    "kiln": session.kiln,
+                    "kilns": session.kilns,
                 }),
             )
         }
@@ -122,15 +115,14 @@ pub(crate) async fn handle_session_delete(
     am: &Arc<AgentManager>,
 ) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
-    let kiln = PathBuf::from(require_param!(req, "kiln", as_str));
 
-    match sm.delete_session(session_id, &kiln).await {
+    match sm.delete_session(session_id).await {
         Ok(()) => {
             am.cleanup_session(session_id);
             // Deleting the parent deletes its delegated children too —
             // an orphaned hidden child would be unreachable otherwise.
-            for child_id in sm.child_session_ids(session_id, &kiln).await {
-                if let Err(e) = sm.delete_session(&child_id, &kiln).await {
+            for child_id in sm.child_session_ids(session_id).await {
+                if let Err(e) = sm.delete_session(&child_id).await {
                     warn!(child_id = %child_id, error = %e, "Failed to delete child session");
                 } else {
                     am.cleanup_session(&child_id);
@@ -154,15 +146,14 @@ pub(crate) async fn handle_session_archive(
     am: &Arc<AgentManager>,
 ) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
-    let kiln = PathBuf::from(require_param!(req, "kiln", as_str));
 
-    match sm.archive_session(session_id, &kiln).await {
+    match sm.archive_session(session_id).await {
         Ok(session) => {
             am.cleanup_session(session_id);
             // Children are lifecycle-subordinate: archiving the parent
             // archives its delegated children too (best-effort).
-            for child_id in sm.child_session_ids(session_id, &kiln).await {
-                if let Err(e) = sm.archive_session(&child_id, &kiln).await {
+            for child_id in sm.child_session_ids(session_id).await {
+                if let Err(e) = sm.archive_session(&child_id).await {
                     warn!(child_id = %child_id, error = %e, "Failed to archive child session");
                 } else {
                     am.cleanup_session(&child_id);
@@ -186,9 +177,8 @@ pub(crate) async fn handle_session_unarchive(
     am: &Arc<AgentManager>,
 ) -> Response {
     let session_id = require_param!(req, "session_id", as_str);
-    let kiln = PathBuf::from(require_param!(req, "kiln", as_str));
 
-    match sm.unarchive_session(session_id, &kiln).await {
+    match sm.unarchive_session(session_id).await {
         Ok(session) => {
             am.cleanup_session(session_id);
             Response::success(

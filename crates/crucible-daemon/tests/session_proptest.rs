@@ -1,5 +1,6 @@
 use crucible_core::session::{SessionState, SessionType};
 use crucible_daemon::session_manager::{SessionError, SessionManager};
+use crucible_daemon::test_support::temp_session_manager;
 use rand::{prelude::IndexedRandom, RngExt};
 use tempfile::TempDir;
 
@@ -59,13 +60,12 @@ async fn state_transitions_follow_rules_fuzz() {
 
     for _ in 0..50 {
         let tmp = TempDir::new().unwrap();
-        let manager = SessionManager::new();
+        let manager = temp_session_manager();
         let session = manager
             .create_session(
                 SessionType::Chat,
-                tmp.path().to_path_buf(),
+                vec![tmp.path().to_path_buf()],
                 None,
-                vec![],
                 None,
             )
             .await
@@ -124,13 +124,12 @@ async fn ended_sessions_reject_all_state_changes_fuzz() {
 
     for _ in 0..20 {
         let tmp = TempDir::new().unwrap();
-        let manager = SessionManager::new();
+        let manager = temp_session_manager();
         let session = manager
             .create_session(
                 SessionType::Chat,
-                tmp.path().to_path_buf(),
+                vec![tmp.path().to_path_buf()],
                 None,
-                vec![],
                 None,
             )
             .await
@@ -170,13 +169,12 @@ async fn ended_sessions_reject_all_state_changes_fuzz() {
 async fn pause_resume_cycle_is_idempotent() {
     for cycles in 1..10 {
         let tmp = TempDir::new().unwrap();
-        let manager = SessionManager::new();
+        let manager = temp_session_manager();
         let session = manager
             .create_session(
                 SessionType::Chat,
-                tmp.path().to_path_buf(),
+                vec![tmp.path().to_path_buf()],
                 None,
-                vec![],
                 None,
             )
             .await
@@ -197,13 +195,12 @@ async fn pause_resume_cycle_is_idempotent() {
 #[tokio::test]
 async fn concurrent_pause_requests_one_succeeds() {
     let tmp = TempDir::new().unwrap();
-    let manager = std::sync::Arc::new(SessionManager::new());
+    let manager = temp_session_manager();
     let session = manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -238,13 +235,12 @@ async fn concurrent_pause_requests_one_succeeds() {
 #[tokio::test]
 async fn concurrent_different_ops_maintain_consistency() {
     let tmp = TempDir::new().unwrap();
-    let manager = std::sync::Arc::new(SessionManager::new());
+    let manager = temp_session_manager();
     let session = manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await

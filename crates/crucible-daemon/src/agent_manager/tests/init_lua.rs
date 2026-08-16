@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::temp_session_manager;
 
 /// Fast syntax + API gate: the shipped defaults must load against exactly the
 /// surface the daemon session VM registers, and no more.
@@ -44,14 +45,12 @@ async fn init_lua_user_override_loads_in_session() {
     std::fs::create_dir_all(&lua_dir).unwrap();
     std::fs::write(lua_dir.join("init.lua"), "test_override_loaded = true").unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await
@@ -95,14 +94,12 @@ async fn a_session_start_hook_sees_the_sessions_isolation_param() {
     )
     .unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let mut session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             None,
-            vec![],
             None,
         )
         .await

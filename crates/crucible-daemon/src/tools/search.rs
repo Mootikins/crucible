@@ -99,7 +99,6 @@ impl SearchTools {
         let search_sources = vec![KilnSearchSource {
             kiln_path: std::path::PathBuf::from(&kiln_path),
             knowledge_repo,
-            is_primary: true,
         }];
         Self {
             kiln_path,
@@ -120,8 +119,9 @@ impl SearchTools {
         tools
     }
 
-    /// Replace the search fan-out set (primary + connected kilns), as built
-    /// by `AgentManager::collect_kiln_search_sources`.
+    /// Replace the search fan-out set with the session's kilns, as built by
+    /// `AgentManager::collect_kiln_search_sources`. An empty set keeps the
+    /// single source built from `kiln_path`.
     pub fn with_search_sources(mut self, sources: Vec<KilnSearchSource>) -> Self {
         if !sources.is_empty() {
             self.search_sources = sources;
@@ -146,10 +146,10 @@ impl SearchTools {
             .await
             .mcp_err_ctx("Failed to generate embedding")?;
 
-        // Fan out across the primary + connected kilns through the same
-        // engine precognition uses (dedup + merge-sort + kiln labeling).
-        // Trust filtering is None here: connected kilns pass the trust gate
-        // at attach time.
+        // Fan out across the session's kilns through the same engine
+        // precognition uses (dedup + merge-sort + kiln labeling). Trust
+        // filtering is None here: every kiln passes the trust gate at attach
+        // time.
         let note_results = crate::multi_kiln_search::search_across_kilns(
             &self.search_sources,
             embedding,

@@ -46,7 +46,8 @@ const QUESTION: &str = "what is a kiln?";
 /// The daemon and the workspace TempDir are returned so the caller keeps them
 /// alive; dropping the daemon kills it and takes the kiln with it.
 struct OneShotRun {
-    kiln: PathBuf,
+    /// The daemon's flat sessions root — sessions no longer live in the kiln.
+    sessions: PathBuf,
     output: Output,
     _daemon: TestDaemon,
     _workspace: tempfile::TempDir,
@@ -82,7 +83,7 @@ fn run_one_shot(extra_args: &[&str]) -> OneShotRun {
         .expect("run cru chat");
 
     OneShotRun {
-        kiln,
+        sessions: daemon.sessions_root(),
         output,
         _daemon: daemon,
         _workspace: workspace,
@@ -100,7 +101,7 @@ fn run_one_shot(extra_args: &[&str]) -> OneShotRun {
 /// in the new `just test gated` tier rather than being caught when it was
 /// written, since nothing ran it.
 fn sole_session_dir(run: &OneShotRun) -> PathBuf {
-    let sessions = run.kiln.join(".crucible/sessions");
+    let sessions = &run.sessions;
     // 60s is a deadlock detector, not synchronisation: the loop leaves as soon as
     // the directory appears, polling every 25ms, so a generous ceiling costs a
     // fast box nothing. 10s was not generous enough — it failed at 10.86s in the
@@ -109,7 +110,7 @@ fn sole_session_dir(run: &OneShotRun) -> PathBuf {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
     let mut dirs: Vec<PathBuf> = Vec::new();
     loop {
-        if let Ok(entries) = std::fs::read_dir(&sessions) {
+        if let Ok(entries) = std::fs::read_dir(sessions) {
             dirs = entries
                 .filter_map(Result::ok)
                 .map(|e| e.path())

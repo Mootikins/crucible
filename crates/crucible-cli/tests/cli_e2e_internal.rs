@@ -137,15 +137,21 @@ fn session_search_without_daemon_is_graceful_error() {
 fn session_search_uses_daemon_rpc() {
     let daemon = TestDaemon::start();
 
-    // The daemon scans `<kiln>/.crucible/sessions/*/session.jsonl`; the kiln
-    // lives next to the config written by `write_config`.
-    let kiln = daemon
-        .config_path
-        .parent()
-        .expect("config has parent dir")
-        .join("kiln");
-    let session_id = "chat-20260814-1200-test";
-    let session_dir = kiln.join(".crucible").join("sessions").join(session_id);
+    // Sessions live in the daemon's flat sessions root, so the corpus is no
+    // longer partitioned by directory: the search scopes on the caller's kiln
+    // and only reaches sessions whose kiln set overlaps it. That makes a
+    // hand-placed directory unreachable — the session has to be a real one the
+    // daemon knows about, created against the config's kiln.
+    let session_id = extract_session_id(
+        &daemon
+            .command()
+            .args(["session", "create", "-t", "chat"])
+            .assert()
+            .success()
+            .get_output()
+            .stdout,
+    );
+    let session_dir = daemon.sessions_root().join(&session_id);
     std::fs::create_dir_all(&session_dir).expect("create session dir");
     std::fs::write(
         session_dir.join("session.jsonl"),
@@ -170,7 +176,7 @@ fn session_search_uses_daemon_rpc() {
         .as_array()
         .expect("output shape is {\"matches\": [...]}");
     assert_eq!(matches.len(), 1);
-    assert_eq!(matches[0]["session_id"].as_str(), Some(session_id));
+    assert_eq!(matches[0]["session_id"].as_str(), Some(session_id.as_str()));
     assert_eq!(matches[0]["line"].as_u64(), Some(1));
 
     // A query that matches nothing keeps the same shape.

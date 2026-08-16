@@ -1,17 +1,16 @@
 use super::*;
+use crate::test_support::{temp_session_manager, temp_session_storage};
 
 #[tokio::test]
 async fn test_precognition_skipped_when_disabled() {
     let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
 
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             Some(tmp.path().to_path_buf()),
-            vec![],
             None,
         )
         .await
@@ -45,15 +44,13 @@ async fn test_precognition_skipped_when_disabled() {
 #[tokio::test]
 async fn test_precognition_skipped_for_search_command() {
     let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
 
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             Some(tmp.path().to_path_buf()),
-            vec![],
             None,
         )
         .await
@@ -92,15 +89,13 @@ async fn test_precognition_skipped_for_search_command() {
 
 #[tokio::test]
 async fn test_precognition_skipped_when_no_kiln() {
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
 
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            std::path::PathBuf::new(),
+            vec![std::path::PathBuf::new()],
             None,
-            vec![],
             None,
         )
         .await
@@ -137,14 +132,12 @@ async fn test_precognition_complete_event_emitted_when_enrichment_runs() {
 
     let tmp = TempDir::new().unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             Some(tmp.path().to_path_buf()),
-            vec![],
             None,
         )
         .await
@@ -197,14 +190,12 @@ async fn test_precognition_runs_only_on_first_user_message_of_session() {
     crate::embedding::clear_embedding_provider_cache();
 
     let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             Some(tmp.path().to_path_buf()),
-            vec![],
             None,
         )
         .await
@@ -272,14 +263,13 @@ async fn test_precognition_does_not_re_fire_when_session_has_prior_history() {
     crate::embedding::clear_embedding_provider_cache();
 
     let tmp = TempDir::new().unwrap();
-    let storage = Arc::new(FileSessionStorage::new());
+    let storage = temp_session_storage();
     let session_manager = Arc::new(SessionManager::with_storage(storage.clone()));
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            tmp.path().to_path_buf(),
+            vec![tmp.path().to_path_buf()],
             Some(tmp.path().to_path_buf()),
-            vec![],
             None,
         )
         .await
@@ -344,14 +334,12 @@ async fn test_precognition_enriched_content_reaches_agent() {
     )
     .unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            kiln_path.clone(),
+            vec![kiln_path.clone()],
             Some(kiln_path.clone()),
-            vec![],
             None,
         )
         .await
@@ -484,14 +472,12 @@ async fn test_precognition_emits_note_info_in_event() {
     )
     .unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            kiln_path.clone(),
+            vec![kiln_path.clone()],
             Some(kiln_path.clone()),
-            vec![],
             None,
         )
         .await
@@ -607,14 +593,12 @@ async fn setup_precog_session_with_handler(
     )
     .unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            kiln_path.clone(),
+            vec![kiln_path.clone()],
             Some(kiln_path.clone()),
-            vec![],
             None,
         )
         .await
@@ -843,14 +827,12 @@ async fn precognition_disabled_mid_session_stops_enriching() {
     )
     .unwrap();
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session_manager = temp_session_manager();
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            kiln_path.clone(),
+            vec![kiln_path.clone()],
             Some(kiln_path.clone()),
-            vec![],
             None,
         )
         .await

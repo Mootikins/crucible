@@ -297,3 +297,68 @@ async fn test_client_disconnect_closes_connection() {
 
     server.shutdown().await;
 }
+
+/// Zero kilns is a legitimate session shape, and it must produce a genuinely
+/// EMPTY set. It used to fall back to the daemon's data root — the PARENT of
+/// the sessions root — so every kiln-less session carried an allowed root
+/// enclosing every transcript the daemon had ever written.
+#[tokio::test]
+async fn a_kiln_less_create_attaches_no_kiln_at_all() {
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
+
+    let response = rpc_call(
+        &mut client,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "session.create",
+            "params": { "type": "chat" }
+        }),
+    )
+    .await;
+
+    assert!(
+        response["error"].is_null(),
+        "a kiln-less create must succeed: {response:?}"
+    );
+    assert_eq!(
+        response["result"]["kilns"],
+        json!([]),
+        "a kiln-less session must not inherit the data root as a kiln: {response:?}"
+    );
+
+    server.shutdown().await;
+}
+
+/// Containment is deepest-match-wins, so an allowed root INSIDE the denied
+/// sessions root beats the denial. Attaching another session's storage
+/// directory as a kiln is therefore a way to hand the agent exactly the
+/// transcript the deny root exists to close — and the catastrophic-roots floor
+/// waves it through, because it is neither `/`, home, nor a system tree.
+#[tokio::test]
+async fn create_refuses_a_kiln_inside_the_session_storage_root() {
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
+
+    let victim = server.sessions_root().join("chat-victim");
+    std::fs::create_dir_all(&victim).unwrap();
+
+    let response = rpc_call(
+        &mut client,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "session.create",
+            "params": { "type": "chat", "kilns": [victim] }
+        }),
+    )
+    .await;
+
+    assert_eq!(
+        response["error"]["code"], -32602,
+        "a kiln under the sessions root must be refused: {response:?}"
+    );
+
+    server.shutdown().await;
+}

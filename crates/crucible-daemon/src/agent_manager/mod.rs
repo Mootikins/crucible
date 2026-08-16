@@ -37,6 +37,7 @@ use crucible_lua::{
 use dashmap::DashMap;
 use mlua::Lua;
 use std::collections::HashMap;
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -921,15 +922,18 @@ impl AgentManager {
             // when available. Falls back to empty impls only when the kiln
             // cannot be opened or no enrichment is configured — in which case
             // semantic_search will honestly report its unavailable state.
+            let default_kiln = session.default_kiln().map(Path::to_path_buf);
             let (knowledge_repo, embedding_provider): (
                 Arc<dyn crucible_core::traits::KnowledgeRepository>,
                 Arc<dyn crucible_core::enrichment::EmbeddingProvider>,
             ) = {
-                let kiln_path = session.kiln.as_path();
                 let repo: Arc<dyn crucible_core::traits::KnowledgeRepository> =
-                    match self.kiln_manager.get_or_open(kiln_path).await {
-                        Ok(storage) => storage.as_knowledge_repository(),
-                        Err(_) => Arc::new(EmptyKnowledgeRepository),
+                    match default_kiln.as_deref() {
+                        Some(kiln_path) => match self.kiln_manager.get_or_open(kiln_path).await {
+                            Ok(storage) => storage.as_knowledge_repository(),
+                            Err(_) => Arc::new(EmptyKnowledgeRepository),
+                        },
+                        None => Arc::new(EmptyKnowledgeRepository),
                     };
                 let embed: Arc<dyn crucible_core::enrichment::EmbeddingProvider> =
                     if let Some(config) = self.kiln_manager.enrichment_config().cloned() {
@@ -950,20 +954,14 @@ impl AgentManager {
                 (repo, embed)
             };
 
-            // Connected kilns join semantic_search's scope through the SAME
-            // source builder precognition uses (one open loop, one
-            // model-mismatch filter policy). Falls back to primary-only when
-            // there's nothing to fan out to or no enrichment config.
+            // The session's kilns join semantic_search's scope through the SAME
+            // source builder precognition uses (one open loop, one trust
+            // policy). Left empty when a single kiln makes the fan-out
+            // redundant — `SearchTools` then keeps the source it built from
+            // `kiln_path` — or when no enrichment config exists to search with.
             let mut search_sources: Vec<crate::multi_kiln_search::KilnSearchSource> = Vec::new();
-            if !session.connected_kilns.is_empty() {
-                if let (Ok(handle), Some(config)) = (
-                    self.kiln_manager.get_or_open(session.kiln.as_path()).await,
-                    self.kiln_manager.enrichment_config().cloned(),
-                ) {
-                    search_sources = self
-                        .collect_kiln_search_sources(&session.id, session, &handle, &config)
-                        .await;
-                }
+            if session.kilns.len() > 1 && self.kiln_manager.enrichment_config().is_some() {
+                search_sources = self.collect_kiln_search_sources(&session.id, session).await;
             }
 
             // Pass the real workspace (not the kiln) so `skill_view` discovers
@@ -981,12 +979,16 @@ impl AgentManager {
                     Some(self.background_manager.clone()),
                     Some(self.delegation_service.clone()),
                     &session.workspace,
-                    Some(session.kiln.as_path()),
+                    default_kiln.as_deref(),
                 )
             });
             let mcp = Arc::new(
                 CrucibleMcpServer::new_with_workspace_and_delegation(
-                    session.kiln.to_string_lossy().to_string(),
+                    default_kiln
+                        .as_deref()
+                        .unwrap_or(Path::new(""))
+                        .to_string_lossy()
+                        .to_string(),
                     session.workspace.clone(),
                     knowledge_repo,
                     embedding_provider,
@@ -996,24 +998,39 @@ impl AgentManager {
             );
 
             // Security posture for the session's workspace tools: file
-            // operations are contained to the workspace + kilns + session
-            // dir (spill reads), and the project's `[security.shell]`
-            // policy applies to bash. Both are resolved ONCE here, never
-            // re-read at call time.
+            // operations are contained to the workspace + kilns + this
+            // session's own storage dir (spill reads), and the project's
+            // `[security.shell]` policy applies to bash. Both are resolved
+            // ONCE here, never re-read at call time.
+            //
+            // Only THIS session's storage dir is reachable, never the sessions
+            // root around it: that root holds every transcript the daemon has
+            // ever recorded, so granting the kiln roots alone handed the agent
+            // `read_file`/`glob` over every past conversation. Denying the
+            // sessions root — plus each kiln's legacy in-kiln one, which
+            // migration is not guaranteed to have emptied — and re-granting
+            // this session's own directory is the subtraction; see
+            // `session_containment_roots`. (`bash` is not scoped by
+            // `allowed_roots` at all — it answers to the shell policy instead
+            // — and closing that gap is deliberately out of scope here.)
             let shell_policy = crucible_core::config::read_project_config(&session.workspace)
                 .map(|c| c.security.shell);
-            let mut allowed_roots = vec![session.kiln.clone()];
-            allowed_roots.extend(session.connected_kilns.iter().cloned());
-            allowed_roots.push(session.storage_path());
+            let sessions_root = self.session_manager.sessions_root().to_path_buf();
+            let (allowed_roots, denied_roots) =
+                crate::agent_manager::scope::session_containment_roots(session, &sessions_root);
             let mut providers: Vec<Arc<dyn ToolExecutor>> = vec![
                 Arc::new(
                     WorkspaceTools::new(&session.workspace)
                         .with_env("CRU_SESSION", &session.id)
                         .with_env(
                             "CRU_SESSION_DIR",
-                            session.storage_path().to_string_lossy().to_string(),
+                            session
+                                .storage_path(&sessions_root)
+                                .to_string_lossy()
+                                .to_string(),
                         )
                         .with_allowed_roots(allowed_roots)
+                        .with_denied_roots(denied_roots)
                         .with_shell_policy(shell_policy),
                 ) as Arc<dyn ToolExecutor>,
                 Arc::new(McpToolExecutor::new(mcp)),

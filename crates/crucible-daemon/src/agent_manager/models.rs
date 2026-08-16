@@ -59,13 +59,12 @@ impl AgentManager {
     /// session already has attached.
     ///
     /// The trust gate is attach-time by design — `tools/search.rs` passes
-    /// `provider_trust: None` on the strength of "connected kilns pass the
-    /// trust gate at attach time" (`server/session/scope.rs`), and
-    /// `search_across_kilns` skips trust filtering for the primary kiln
-    /// outright. That holds only while attach-time state stays valid, and
-    /// changing the provider invalidates it: attach a confidential kiln on a
-    /// local model, move to a cloud one, and its notes become retrievable by a
-    /// provider that was never cleared for them.
+    /// `provider_trust: None` on the strength of "kilns pass the trust gate at
+    /// attach time" (`server/session/scope.rs`). That holds only while
+    /// attach-time state stays valid, and changing the provider invalidates it:
+    /// attach a confidential kiln on a local model, move to a cloud one, and
+    /// its notes become retrievable by a provider that was never cleared for
+    /// them.
     ///
     /// Both ways an established session's provider can change call this —
     /// `switch_model` and `configure_agent`. Gating only the first left the
@@ -80,10 +79,7 @@ impl AgentManager {
         session: &crucible_core::session::Session,
         new_agent: &SessionAgent,
     ) -> Result<(), AgentError> {
-        self.refuse_untrusted_for_kilns(
-            std::iter::once(&session.kiln).chain(session.connected_kilns.iter()),
-            new_agent,
-        )
+        self.refuse_untrusted_for_kilns(session.kilns.iter(), new_agent)
     }
 
     /// The same refusal, against a kiln set rather than a live session.
@@ -1021,7 +1017,7 @@ impl AgentManager {
         // Use the rebuilding variant so a daemon restart that resumes
         // a persisted session sees its prior turns; without it, `undo`
         // would silently no-op (empty tree, nothing to undo).
-        let jsonl_path = session.jsonl_path();
+        let jsonl_path = session.jsonl_path(self.session_manager.sessions_root());
         let (summaries, new_cursor_id) = {
             let tree = self
                 .get_or_rebuild_session_tree(session_id, &jsonl_path)
@@ -1097,7 +1093,7 @@ impl AgentManager {
     /// Check whether a session has any turns that can be undone.
     pub async fn can_undo(&self, session_id: &str) -> Result<bool, AgentError> {
         let (session, _) = self.get_session_with_agent(session_id)?;
-        let jsonl_path = session.jsonl_path();
+        let jsonl_path = session.jsonl_path(self.session_manager.sessions_root());
         let tree = self
             .get_or_rebuild_session_tree(session_id, &jsonl_path)
             .await;
@@ -1111,7 +1107,7 @@ impl AgentManager {
     /// Return the number of turns that can be undone.
     pub async fn undo_depth(&self, session_id: &str) -> Result<usize, AgentError> {
         let (session, _) = self.get_session_with_agent(session_id)?;
-        let jsonl_path = session.jsonl_path();
+        let jsonl_path = session.jsonl_path(self.session_manager.sessions_root());
         let tree = self
             .get_or_rebuild_session_tree(session_id, &jsonl_path)
             .await;
@@ -1130,7 +1126,7 @@ impl AgentManager {
         session_id: &str,
     ) -> Result<Vec<crucible_core::types::UndoSummary>, AgentError> {
         let (session, _) = self.get_session_with_agent(session_id)?;
-        let jsonl_path = session.jsonl_path();
+        let jsonl_path = session.jsonl_path(self.session_manager.sessions_root());
         let tree = self
             .get_or_rebuild_session_tree(session_id, &jsonl_path)
             .await;
@@ -1165,7 +1161,7 @@ impl AgentManager {
         } else {
             (prompt_tokens as f64 / budget as f64) * 100.0
         };
-        let jsonl_path = session.jsonl_path();
+        let jsonl_path = session.jsonl_path(self.session_manager.sessions_root());
         let tree = self
             .get_or_rebuild_session_tree(session_id, &jsonl_path)
             .await;
@@ -1191,7 +1187,7 @@ impl AgentManager {
         range: crucible_core::traits::context_ops::Range,
     ) -> Result<usize, AgentError> {
         let (session, _) = self.get_session_with_agent(session_id)?;
-        let jsonl_path = session.jsonl_path();
+        let jsonl_path = session.jsonl_path(self.session_manager.sessions_root());
         let tree = self
             .get_or_rebuild_session_tree(session_id, &jsonl_path)
             .await;

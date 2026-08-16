@@ -436,17 +436,13 @@ pub async fn drop_keep_refs(session_dir: &Path, session_id: &str) {
 /// enumerates repositories independently — the journals are the only index —
 /// and the cost is a handful of pinned trees in a repo the daemon has stopped
 /// tracking. `delete_session` covers the path a user actually takes.
-pub async fn sweep_review_refs(kilns: &[PathBuf]) -> usize {
-    // (repository → session ids that still have a journal there). Built across
-    // all kilns first: one repository is commonly a root for sessions living in
-    // several kilns, and dropping a ref because *this* kiln does not know the
-    // session would delete a live session's trees.
+pub async fn sweep_review_refs(sessions_root: &Path) -> usize {
+    // (repository → session ids that still have a journal there). One
+    // repository is commonly a root for sessions in several kilns, and with a
+    // single sessions root every one of them is in this scan — which is what
+    // makes "no journal names it" safe to read as "nothing needs it".
     let mut live: HashMap<PathBuf, Vec<String>> = HashMap::new();
-    for kiln in kilns {
-        let sessions_dir = crate::session_storage::FileSessionStorage::sessions_base(kiln);
-        let Ok(mut entries) = tokio::fs::read_dir(&sessions_dir).await else {
-            continue;
-        };
+    if let Ok(mut entries) = tokio::fs::read_dir(sessions_root).await {
         while let Ok(Some(entry)) = entries.next_entry().await {
             let session_id = entry.file_name().to_string_lossy().into_owned();
             let path = entry.path().join(journal::FILE);

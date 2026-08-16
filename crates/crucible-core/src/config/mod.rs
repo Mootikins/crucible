@@ -62,9 +62,9 @@ pub use components::{
 };
 pub use config::registry::{KilnEntry, ProjectEntry};
 pub use config::{
-    crucible_home, is_crucible_home, lua_stubs_dir, parse_duration_string, plugin_name_from_url,
-    CliAppConfig, ConfigError, ConfigValidationError, EffectiveLlmConfig, LoggingConfig,
-    PluginEntry, PluginsConfig, ScheduleEntry, ScmConfig, ServerConfig, WebConfig,
+    crucible_home, lua_stubs_dir, parse_duration_string, plugin_name_from_url, CliAppConfig,
+    ConfigError, ConfigValidationError, EffectiveLlmConfig, LoggingConfig, PluginEntry,
+    PluginsConfig, ScheduleEntry, ScmConfig, ServerConfig, WebConfig,
 };
 #[cfg(feature = "toml")]
 pub use config::{

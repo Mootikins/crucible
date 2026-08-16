@@ -13,7 +13,7 @@ mod acp;
 mod cleanup;
 mod export;
 pub(crate) mod helpers;
-mod io;
+pub(crate) mod io;
 mod list;
 mod reindex;
 mod resume;
@@ -74,7 +74,8 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
         SessionCommands::Cleanup {
             older_than,
             dry_run,
-        } => cleanup::cleanup(config, older_than, dry_run).await,
+            all_kilns,
+        } => cleanup::cleanup(config, older_than, dry_run, all_kilns).await,
         SessionCommands::Create {
             session_type,
             agent,
@@ -151,7 +152,7 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
                     }
                 }
             };
-            rpc::send(&config, &session_id, &message, raw, permission_mode).await
+            rpc::send(&session_id, &message, raw, permission_mode).await
         }
         SessionCommands::Configure {
             session_id,
@@ -179,7 +180,7 @@ pub async fn execute(config: CliConfig, cmd: SessionCommands) -> Result<()> {
         SessionCommands::Load { session_id } => {
             let session_id = resolve_session_id(session_id)?;
             let client = daemon_client().await?;
-            rpc::load(&client, &config, &session_id).await
+            rpc::load(&client, &session_id).await
         }
         SessionCommands::Replay {
             recording_path,

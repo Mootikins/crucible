@@ -38,8 +38,7 @@ mod format_precognition_context_tests {
     fn precognition_context_block_empty_results_returns_empty_string() {
         // compute_precognition_message skips injection on empty blocks;
         // this is the contract — empty → empty.
-        let result =
-            AgentManager::precognition_context_block(&[], std::path::Path::new("/home/user/notes"));
+        let result = AgentManager::precognition_context_block(&[], false);
         assert_eq!(result, "");
     }
 
@@ -52,10 +51,7 @@ mod format_precognition_context_tests {
             Some("/home/user/notes"),
         )];
 
-        let output = AgentManager::precognition_context_block(
-            &results,
-            std::path::Path::new("/home/user/notes"),
-        );
+        let output = AgentManager::precognition_context_block(&results, false);
 
         assert!(output.starts_with("<system>\n"));
         assert!(output.contains("</system>"));
@@ -82,10 +78,7 @@ mod format_precognition_context_tests {
             ),
         ];
 
-        let output = AgentManager::precognition_context_block(
-            &results,
-            std::path::Path::new("/home/user/notes"),
-        );
+        let output = AgentManager::precognition_context_block(&results, false);
 
         assert!(output.contains("Found 2 relevant notes:"));
         assert!(output.contains("## Rust"));
@@ -95,7 +88,7 @@ mod format_precognition_context_tests {
     }
 
     #[test]
-    fn precognition_context_block_kiln_label_for_non_primary() {
+    fn precognition_context_block_labels_kilns_when_the_session_has_several() {
         let results = vec![make_result(
             "notes/External.md",
             0.70,
@@ -103,16 +96,13 @@ mod format_precognition_context_tests {
             Some("/other/kiln"),
         )];
 
-        let output = AgentManager::precognition_context_block(
-            &results,
-            std::path::Path::new("/home/user/notes"),
-        );
+        let output = AgentManager::precognition_context_block(&results, true);
 
         assert!(output.contains("[from: kiln]"));
     }
 
     #[test]
-    fn precognition_context_block_no_kiln_label_for_primary() {
+    fn precognition_context_block_omits_the_label_for_a_single_kiln() {
         let results = vec![make_result(
             "notes/Local.md",
             0.90,
@@ -120,10 +110,7 @@ mod format_precognition_context_tests {
             Some("/home/user/notes"),
         )];
 
-        let output = AgentManager::precognition_context_block(
-            &results,
-            std::path::Path::new("/home/user/notes"),
-        );
+        let output = AgentManager::precognition_context_block(&results, false);
 
         assert!(!output.contains("[from:"));
     }
@@ -137,10 +124,7 @@ mod format_precognition_context_tests {
             Some("/home/user/notes"),
         )];
 
-        let output = AgentManager::precognition_context_block(
-            &results,
-            std::path::Path::new("/home/user/notes"),
-        );
+        let output = AgentManager::precognition_context_block(&results, false);
 
         assert!(output.contains("<system>"));
         assert!(output.contains("</system>"));
@@ -342,7 +326,7 @@ mod precognition_format_hook_tests {
             "session-1",
             "What is Rust?",
             &results,
-            std::path::Path::new("/home/user/notes"),
+            false,
             &state,
             None,
         )
@@ -367,7 +351,7 @@ mod precognition_format_hook_tests {
             "session-1",
             "What is Rust?",
             &results,
-            std::path::Path::new("/home/user/notes"),
+            false,
             &state,
             None,
         )
@@ -401,7 +385,7 @@ mod precognition_format_hook_tests {
             make_result("notes/Plugins.md", 0.7, Some("plugin info"), Some("/kiln")),
         ];
 
-        let info = extract_note_info(&results, std::path::Path::new("/kiln"));
+        let info = extract_note_info(&results, false);
         let titles: Vec<&str> = info.iter().map(|n| n.title.as_str()).collect();
         assert_eq!(titles, vec!["Getting Started", "Plugins"]);
     }
@@ -418,7 +402,7 @@ mod precognition_format_hook_tests {
         ];
 
         // Same filename "Guide.md" from same kiln → deduped (likely duplicate DB entries)
-        let info = extract_note_info(&results, std::path::Path::new("/kiln"));
+        let info = extract_note_info(&results, false);
         assert_eq!(info.len(), 1);
     }
 
@@ -430,9 +414,9 @@ mod precognition_format_hook_tests {
             make_result("notes/Guide.md", 0.8, Some("remote"), Some("/secondary")),
         ];
 
-        let info = extract_note_info(&results, std::path::Path::new("/primary"));
+        let info = extract_note_info(&results, true);
         assert_eq!(info.len(), 2);
-        assert!(info[0].kiln_label.is_none()); // primary kiln
+        assert_eq!(info[0].kiln_label.as_deref(), Some("primary"));
         assert_eq!(info[1].kiln_label.as_deref(), Some("secondary"));
     }
 }
@@ -442,7 +426,7 @@ mod precognition_select_hook_tests {
     use super::*;
     use crucible_core::types::database::DocumentId;
     use std::collections::HashMap;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use std::sync::{Arc, Mutex as StdMutex};
 
     const KILN: &str = "/home/user/notes";
@@ -493,7 +477,6 @@ mod precognition_select_hook_tests {
             "session-1",
             "what is alpha?",
             results,
-            Path::new(KILN),
             3000,
             state,
             None,
@@ -510,7 +493,6 @@ mod precognition_select_hook_tests {
             "session-1",
             "what is alpha?",
             results,
-            Path::new(KILN),
             char_budget,
             state,
             None,
@@ -621,7 +603,7 @@ mod precognition_select_hook_tests {
                     -- these fields is the whole point of the seam.
                     if event.char_budget ~= 3000 then return {} end
                     if event.note_count ~= 3 then return {} end
-                    if not event.results[2].is_primary_kiln then return {} end
+                    if event.results[2].kiln_path ~= "/home/user/notes" then return {} end
                     return { { index = event.results[2].index } }
                 end)
             "#,

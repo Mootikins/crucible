@@ -12,13 +12,10 @@ fn test_path(name: &str) -> PathBuf {
 }
 
 #[test]
-fn test_crucible_home_and_is_crucible_home() {
-    // Test env override
+fn test_crucible_home_env_override() {
     let tmp = std::env::temp_dir().join("crucible_test_home_combined");
     let _guard = EnvVarGuard::set("CRUCIBLE_HOME", tmp.to_string_lossy().to_string());
     assert_eq!(crucible_home(), tmp);
-    assert!(is_crucible_home(&tmp));
-    assert!(!is_crucible_home(std::path::Path::new("/some/other/path")));
 }
 
 #[test]

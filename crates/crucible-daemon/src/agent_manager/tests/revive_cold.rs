@@ -1,16 +1,16 @@
 //! Reviving a session after a daemon restart, not merely after an eviction.
 //!
 //! `send_revives_ended_session_from_storage` covers the warm path: the session
-//! left the in-memory map but `session_kilns` still knows which kiln it came
-//! from, so `get_or_revive_session` resolves it directly
-//! (`agent_manager/messaging/send.rs:400-440`).
+//! left the in-memory map but is still resident enough for
+//! `get_or_revive_session` to resolve it (`agent_manager/messaging/send.rs`).
 //!
-//! A restart is a different path and nothing covered it. `session_kilns` is a
-//! `DashMap` built fresh at startup (`session_manager.rs:51`), so after a
-//! restart it is empty and revival falls through to *probing every open kiln*.
-//! That makes revival depend on the kiln being open — and the daemon only opens
-//! kilns belonging to registered projects (`server/mod.rs:749-793`). Setting
-//! `[plugins.discord] kiln` does not register anything.
+//! A restart is a different path. Every in-memory index is built fresh at
+//! startup, so a cold daemon knows nothing about the session but its id — and
+//! that has to be enough. It is, now that storage is one flat root: revival
+//! loads `{sessions_root}/{id}` directly, with no session→kiln index to consult
+//! and no open kiln to probe. Before the relocation this test's subject was
+//! whether the *kiln* happened to be open, which made reviving a persisted id
+//! depend on project registration.
 //!
 //! This decides whether persisting a chat integration's channel→session map is
 //! worth anything: if the id cannot be revived, remembering it is pointless.
@@ -25,21 +25,32 @@ use crate::session_manager::SessionManager;
 use crate::session_storage::FileSessionStorage;
 use crucible_core::protocol::SessionEventMessage;
 use crucible_core::session::SessionType;
+use std::path::Path;
 use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::sync::{broadcast, Mutex};
 
-/// Create a session, then throw away every piece of in-memory state — the
-/// closest thing to a restart that does not spawn a process. Returns the kiln
-/// and the surviving session id.
-async fn session_surviving_a_restart() -> (TempDir, String) {
-    let tmp = TempDir::new().unwrap();
-    let kiln = tmp.path().to_path_buf();
+/// A `SessionManager` over `data_home` — the same root on both sides of the
+/// simulated restart, which is what a restarted daemon actually has.
+fn manager_over(data_home: &Path) -> Arc<SessionManager> {
+    Arc::new(SessionManager::new(FileSessionStorage::root_for(data_home)))
+}
 
-    let storage = Arc::new(FileSessionStorage::new());
-    let sm = Arc::new(SessionManager::with_storage(storage));
+/// Create a session, then throw away every piece of in-memory state — the
+/// closest thing to a restart that does not spawn a process. Returns the data
+/// home, the kiln, and the surviving session id.
+async fn session_surviving_a_restart() -> (TempDir, TempDir, String) {
+    let data_home = TempDir::new().unwrap();
+    let kiln = TempDir::new().unwrap();
+
+    let sm = manager_over(data_home.path());
     let session = sm
-        .create_session(SessionType::Chat, kiln.clone(), None, vec![], None)
+        .create_session(
+            SessionType::Chat,
+            vec![kiln.path().to_path_buf()],
+            None,
+            None,
+        )
         .await
         .unwrap();
     let am = create_test_agent_manager(sm.clone());
@@ -49,23 +60,24 @@ async fn session_surviving_a_restart() -> (TempDir, String) {
     // Everything in memory goes; only what reached disk remains.
     drop(am);
     drop(sm);
-    (tmp, id)
+    (data_home, kiln, id)
 }
 
-/// A fresh `AgentManager` whose `session_kilns` index is empty — a cold daemon.
+/// A fresh `AgentManager` over `data_home`, holding no session state — a cold
+/// daemon.
 ///
-/// Built by hand rather than via `create_test_agent_manager` because the kiln
-/// has to be open in the `KilnManager` the manager holds, and that is only
+/// Built by hand rather than via `create_test_agent_manager` because the
+/// session manager has to be rooted at a specific data home, and that is only
 /// reachable at construction.
 async fn cold_manager(
-    open_kiln: Option<&std::path::Path>,
+    data_home: &Path,
+    open_kiln: Option<&Path>,
 ) -> (
     Arc<SessionManager>,
     AgentManager,
     broadcast::Sender<SessionEventMessage>,
 ) {
-    let storage = Arc::new(FileSessionStorage::new());
-    let sm = Arc::new(SessionManager::with_storage(storage));
+    let sm = manager_over(data_home);
 
     let km = Arc::new(KilnManager::new());
     if let Some(kiln) = open_kiln {
@@ -100,12 +112,13 @@ fn inject_for(am: &AgentManager, session_id: &str) {
     );
 }
 
-/// With the kiln open, a cold daemon finds the persisted session by probing.
 #[tokio::test]
-async fn a_session_revives_after_a_restart_when_its_kiln_is_open() {
-    let (tmp, session_id) = session_surviving_a_restart().await;
+async fn a_session_revives_after_a_restart_from_its_id_alone() {
+    let (data_home, kiln, session_id) = session_surviving_a_restart().await;
 
-    let (sm, am, tx) = cold_manager(Some(tmp.path())).await;
+    // Deliberately no open kiln: the session's own kiln is not registered with
+    // this manager, and revival must not care.
+    let (sm, am, tx) = cold_manager(data_home.path(), None).await;
     assert!(
         sm.get_session(&session_id).is_none(),
         "precondition: a cold manager holds no sessions in memory"
@@ -120,27 +133,31 @@ async fn a_session_revives_after_a_restart_when_its_kiln_is_open() {
         sent.is_ok(),
         "a persisted session must be revivable after a restart: {sent:?}"
     );
-    assert!(
-        sm.get_session(&session_id).is_some(),
-        "revival should place the session back in memory"
+    let revived = sm
+        .get_session(&session_id)
+        .expect("revival should place the session back in memory");
+    assert_eq!(
+        revived.kilns,
+        vec![kiln.path().to_path_buf()],
+        "revival must restore the persisted kiln set, not invent one"
     );
 }
 
-/// The same session, with the kiln *not* open, is unreachable — which is the
-/// documented requirement, asserted rather than assumed.
+/// The other half: an id this daemon's root has never seen is a miss, not a
+/// silently-created session. Storage is flat, so "not here" is now the only
+/// failure mode — there is no second place to look.
 #[tokio::test]
-async fn a_session_cannot_be_revived_when_its_kiln_is_not_open() {
-    let (tmp, session_id) = session_surviving_a_restart().await;
+async fn an_id_absent_from_the_sessions_root_is_not_revived() {
+    let (_data_home, _kiln, session_id) = session_surviving_a_restart().await;
+    let other_home = TempDir::new().unwrap();
 
-    let (_sm, am, tx) = cold_manager(None).await;
+    let (_sm, am, tx) = cold_manager(other_home.path(), None).await;
     let sent = am
         .send_message(&session_id, "still there?".to_string(), &tx, false, None)
         .await;
 
     assert!(
         sent.is_err(),
-        "with no open kiln there is nothing to probe, so revival must fail \
-         rather than silently starting a different conversation"
+        "an unknown id must fail rather than silently starting a different conversation"
     );
-    drop(tmp);
 }

@@ -374,7 +374,7 @@ impl DelegationSpawner for DelegationService {
             Some(name) => {
                 let cards = crate::agent_cards::discover_agent_cards(
                     &parent.workspace,
-                    Some(parent.kiln.as_path()),
+                    parent.default_kiln(),
                 );
                 if let Some(card) = cards.get(name) {
                     SessionAgent::from_card(card, &parent_agent, manager.specialty_models())
@@ -417,11 +417,11 @@ impl DelegationSpawner for DelegationService {
         // cloud target cannot. Unresolved trust still fails closed to Cloud
         // inside resolve_agent_trust.
         let child_trust = manager.resolve_agent_trust(&child_agent);
-        let classification = crate::trust_resolution::resolve_session_classification(
-            &parent.workspace,
-            &parent.kiln,
-        )
-        .unwrap_or(crucible_core::config::DataClassification::Public);
+        let classification =
+            crate::trust_resolution::most_restrictive_classification(&parent.kilns, |kiln| {
+                crate::trust_resolution::resolve_session_classification(&parent.workspace, kiln)
+            })
+            .unwrap_or(crucible_core::config::DataClassification::Public);
         if !child_trust.satisfies(classification) {
             return Err(JobError::SpawnFailed(format!(
                 "Delegated agent's trust level '{child_trust}' is insufficient for kiln data                  classification '{classification}'. Requires '{}' trust.",
@@ -478,7 +478,7 @@ impl DelegationSpawner for DelegationService {
             },
         );
         info.id = child.id.clone();
-        info.session_path = Some(child.storage_path());
+        info.session_path = Some(child.storage_path(self.session_manager.sessions_root()));
 
         let full_prompt = match &req.context {
             Some(ctx) if !ctx.is_empty() => format!("{ctx}\n\n{}", req.prompt),

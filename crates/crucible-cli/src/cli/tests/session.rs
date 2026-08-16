@@ -86,6 +86,7 @@ fn test_session_cleanup_parses() {
     let Commands::Session(SessionCommands::Cleanup {
         older_than,
         dry_run,
+        all_kilns,
     }) = parse(&[
         "cru",
         "session",
@@ -99,6 +100,23 @@ fn test_session_cleanup_parses() {
     };
     assert_eq!(older_than, 60);
     assert!(dry_run);
+    assert!(
+        !all_kilns,
+        "cleanup must stay kiln-scoped unless --all-kilns is passed"
+    );
+}
+
+/// Widening past the invoking kiln is opt-in and has to be spelled out; the
+/// same request field is what the daemon requires before it will sweep the
+/// whole backlog.
+#[test]
+fn test_session_cleanup_all_kilns_parses() {
+    let Commands::Session(SessionCommands::Cleanup { all_kilns, .. }) =
+        parse(&["cru", "session", "cleanup", "--all-kilns"])
+    else {
+        panic!("Expected Session Cleanup command");
+    };
+    assert!(all_kilns);
 }
 
 #[test]

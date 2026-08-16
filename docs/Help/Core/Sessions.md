@@ -142,21 +142,20 @@ cru session export chat-20250102-1430-a1b2 -o session.md
 
 Export a session to a standalone markdown file.
 
-#### Reindex Sessions
-
-```bash
-cru session reindex
-```
-
-Rebuild the session index from JSONL files on disk. Useful after manual edits or recovery.
-
 #### Cleanup Old Sessions
 
 ```bash
-cru session cleanup
+cru session cleanup                 # only sessions sharing the invoking kiln
+cru session cleanup --all-kilns     # every session on this machine
 ```
 
-Remove old or orphaned sessions.
+Remove old sessions. Every session on the box lives in one flat root now, so the
+scope is stated rather than implied: without `--all-kilns` only sessions that
+share a kiln with the invoking one are eligible, which is also why `--all-kilns`
+is the only way a kiln-less session is ever collected.
+
+`cru session reindex` is **retired** — sessions no longer live inside a kiln, so
+there is no per-kiln session corpus to rebuild.
 
 ### Daemon Commands
 

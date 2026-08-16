@@ -7,6 +7,7 @@
 //! one `None` in a stream makes the whole stream unverifiable. These tests pin
 //! both halves: the events themselves carry a seq, and no new bypass can appear
 //! without the lint below going red.
+use crate::test_support::temp_session_manager;
 
 use super::*;
 use crate::protocol::SessionEventMessage;
@@ -51,7 +52,7 @@ async fn ui_style_broadcasts_carry_a_contiguous_seq() {
     let mut event_rx = event_tx.subscribe();
 
     let km = Arc::new(KilnManager::new());
-    let sm = Arc::new(SessionManager::new());
+    let sm = temp_session_manager();
     let agents = test_agent_manager(km, sm, event_tx.clone(), None);
 
     // A session id nothing else in this process has used, so the counter it

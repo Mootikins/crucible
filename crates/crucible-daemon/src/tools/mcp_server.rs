@@ -169,7 +169,36 @@ pub struct SkillViewParams {
     pub name: String,
 }
 
+/// The tools that read or write a kiln. Without one attached there is no
+/// corpus for them to act on, so they are not registered at all — see
+/// [`CrucibleMcpServer::list_tools`]. `skill_view`, `delegate_session` and the
+/// job tools are not here: they answer to the workspace and the daemon's own
+/// managers, and a kiln-less session keeps them.
+pub const KILN_BACKED_TOOLS: &[&str] = &[
+    "create_note",
+    "read_note",
+    "read_metadata",
+    "update_note",
+    "delete_note",
+    "list_notes",
+    "semantic_search",
+    "grep_notes",
+    "property_search",
+    "get_kiln_info",
+];
+
 impl CrucibleMcpServer {
+    /// Whether this server was built around an actual kiln.
+    ///
+    /// Every constructor takes `kiln_path` as a string and the kiln-less
+    /// session passes `""` (`Session::default_kiln` is `None`), so the empty
+    /// path is the single discriminant rather than a parallel flag that could
+    /// disagree with it.
+    #[must_use]
+    pub fn has_kiln(&self) -> bool {
+        !self.kiln_path.as_os_str().is_empty()
+    }
+
     /// Create a new MCP server for a kiln
     ///
     /// # Arguments
@@ -283,6 +312,17 @@ impl CrucibleMcpServer {
     #[must_use]
     pub fn list_tools(&self) -> Vec<rmcp::model::Tool> {
         let mut tools = self.tool_router.list_all();
+
+        // Zero kilns is a legitimate session shape — a tools-only agent — and
+        // the tools that need a corpus are REMOVED rather than left to fail at
+        // call time. Advertising `create_note` with nowhere to write it is a
+        // capability the model will try and cannot have; worse,
+        // `validate_path_within_kiln` would be reached with `""`, whose
+        // `canonicalize()` is an unconditional ENOENT reported as a
+        // path-traversal refusal.
+        if !self.has_kiln() {
+            tools.retain(|t| !KILN_BACKED_TOOLS.contains(&t.name.as_ref()));
+        }
 
         // Filter delegate_session when delegation is unavailable or disabled
         let delegation_available = self
@@ -962,6 +1002,62 @@ mod tests {
 
         // This should compile and not panic - the tool_router macro generates the router
         let _router = CrucibleMcpServer::tool_router();
+    }
+
+    /// Zero kilns is a legitimate session shape — a tools-only agent — and the
+    /// tools that need a corpus are REMOVED rather than left to fail at call
+    /// time. Advertising `create_note` with nowhere to write it hands the model
+    /// a capability it does not have, and the call would reach
+    /// `validate_path_within_kiln` with `""`, whose `canonicalize()` is an
+    /// unconditional ENOENT dressed up as a path-traversal refusal.
+    #[test]
+    fn a_kiln_less_server_advertises_no_kiln_backed_tools() {
+        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+        let server = CrucibleMcpServer::new(String::new(), knowledge_repo, embedding_provider);
+
+        let names: Vec<String> = server
+            .list_tools()
+            .into_iter()
+            .map(|t| t.name.to_string())
+            .collect();
+
+        for tool in KILN_BACKED_TOOLS {
+            assert!(
+                !names.iter().any(|n| n == tool),
+                "{tool} needs a kiln and must not be advertised without one: {names:?}"
+            );
+        }
+        assert!(
+            names.iter().any(|n| n == "skill_view"),
+            "workspace-backed tools survive a kiln-less session: {names:?}"
+        );
+    }
+
+    /// The control: with a kiln attached, nothing is filtered out.
+    #[test]
+    fn a_kiln_backed_server_advertises_every_kiln_tool() {
+        let temp = TempDir::new().unwrap();
+        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+        let server = CrucibleMcpServer::new(
+            temp.path().to_str().unwrap().to_string(),
+            knowledge_repo,
+            embedding_provider,
+        );
+
+        let names: Vec<String> = server
+            .list_tools()
+            .into_iter()
+            .map(|t| t.name.to_string())
+            .collect();
+
+        for tool in KILN_BACKED_TOOLS {
+            assert!(
+                names.iter().any(|n| n == tool),
+                "{tool} missing from a kiln-backed server: {names:?}"
+            );
+        }
     }
 
     #[tokio::test]

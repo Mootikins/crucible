@@ -27,14 +27,12 @@ pub enum SettingsPayload {
     },
     ScopeChanged {
         #[serde(default)]
-        kiln: PathBuf,
-        #[serde(default)]
         workspace: PathBuf,
         /// Always serialized, as `[]` when empty: the producer builds this with
-        /// `json!` from `Session::connected_kilns`, which bypasses that field's
-        /// own `skip_serializing_if`.
+        /// `json!` from `Session::kilns`, which bypasses that field's own
+        /// `skip_serializing_if`.
         #[serde(default)]
-        connected_kilns: Vec<PathBuf>,
+        kilns: Vec<PathBuf>,
     },
     TitleChanged {
         #[serde(default)]
