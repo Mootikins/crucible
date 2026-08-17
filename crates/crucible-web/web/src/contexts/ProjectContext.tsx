@@ -152,14 +152,6 @@ export const ProjectProvider: ParentComponent = (props) => {
   );
 };
 
-export function useProject(): ProjectContextValue {
-  const context = useContext(ProjectContext);
-  if (!context) {
-    throw new Error('useProject must be used within a ProjectProvider');
-  }
-  return context;
-}
-
 const noopAsync = async () => {};
 const noopPromise = <T,>() => Promise.resolve(undefined as unknown as T);
 
