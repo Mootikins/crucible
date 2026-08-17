@@ -1883,13 +1883,6 @@ export async function listProjects(): Promise<Project[]> {
 
 
 
-export interface ScmWorktreeAddResponse {
-  path: string;
-  project: Project;
-  warning: string | null;
-}
-
-
 export interface ScmCloneResponse {
   path: string;
   project: Project;
