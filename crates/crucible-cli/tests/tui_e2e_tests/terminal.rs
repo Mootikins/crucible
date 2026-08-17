@@ -22,7 +22,7 @@ fn oil_narrow_terminal_60_cols() {
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
     session
-        .wait_for_text("NORMAL", Duration::from_secs(3))
+        .wait_for_ready()
         .expect("Should show mode indicator at 60 cols");
 
     session.send(":quit\r").ok();
@@ -59,7 +59,7 @@ fn oil_wide_terminal_120_cols() {
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
     session
-        .wait_for_text("NORMAL", Duration::from_secs(3))
+        .wait_for_ready()
         .expect("Should show mode indicator at 120 cols");
 
     // F1 opens the command palette, whose entries are the two static commands

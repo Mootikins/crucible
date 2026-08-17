@@ -25,7 +25,7 @@ fn vt100_exemplar_screen_content_verification() {
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
     session
-        .wait_for_text("NORMAL", Duration::from_secs(5))
+        .wait_for_ready()
         .expect("TUI should render mode indicator on startup");
 
     assert_screen_contains(session.screen(), "NORMAL");
@@ -49,9 +49,7 @@ fn vt100_exemplar_popup_lifecycle() {
 
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-    session
-        .wait_for_text("NORMAL", Duration::from_secs(5))
-        .expect("TUI ready");
+    session.wait_for_ready().expect("TUI ready");
 
     // F1 opens the command palette popup
     session.send_key(Key::F(1)).expect("Failed to send F1");
@@ -91,7 +89,7 @@ fn vt100_exemplar_mode_indicator() {
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
     session
-        .wait_for_text("NORMAL", Duration::from_secs(5))
+        .wait_for_ready()
         .expect("Should start in NORMAL mode");
 
     session.send("/auto\r").expect("Failed to send /auto");
@@ -126,14 +124,12 @@ fn vt100_exemplar_terminal_size_adaptation() {
 
         let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
-        session
-            .wait_for_text("NORMAL", Duration::from_secs(5))
-            .unwrap_or_else(|e| {
-                panic!(
-                    "Mode indicator should render at {} ({cols}x{rows}): {e}",
-                    label
-                )
-            });
+        session.wait_for_ready().unwrap_or_else(|e| {
+            panic!(
+                "Mode indicator should render at {} ({cols}x{rows}): {e}",
+                label
+            )
+        });
 
         assert_screen_contains(session.screen(), "NORMAL");
 

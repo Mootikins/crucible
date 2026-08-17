@@ -331,7 +331,7 @@ fn oil_mode_cycle() {
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
     session
-        .wait_for_text("NORMAL", Duration::from_secs(3))
+        .wait_for_ready()
         .expect("Initial mode should be NORMAL");
 
     for _ in 0..3 {

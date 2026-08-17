@@ -493,7 +493,23 @@ impl TuiTestSession {
     }
 
     /// Wait for the TUI to initialize and show the NORMAL mode indicator.
-    /// Standard way to wait for TUI readiness after spawn.
+    ///
+    /// **Call this after `spawn()`, rather than waiting for `"NORMAL"` yourself.**
+    /// This is the one place the startup budget lives, and it exists because
+    /// twelve tests used to hand-roll the same wait with three different
+    /// numbers. Three of them used 3s, and `oil_mode_cycle` failed the gated CI
+    /// tier on exactly that: a blank screen after 3s, because the process had
+    /// not painted its first frame yet under runner load.
+    ///
+    /// 5s is chosen against measurement, not taste: on the CI runner the
+    /// neighbouring PTY tests complete spawn-to-assertion in 2.1-2.5s total, so
+    /// startup normally lands near 1-2s. 5s is ~2.5x that headroom; the 3s that
+    /// failed was ~1.5x. If this budget ever needs raising, raise it *here* —
+    /// a caller that names its own duration is how the outliers appeared.
+    ///
+    /// Waiting for `"NORMAL"` mid-test is a different assertion (that the TUI
+    /// *returned* to normal mode) and correctly uses `wait_for_text` with its
+    /// own, usually tighter, budget. Don't fold those into this.
     pub fn wait_for_ready(&mut self) -> Result<(), String> {
         self.wait_for_text("NORMAL", Duration::from_secs(5))
     }

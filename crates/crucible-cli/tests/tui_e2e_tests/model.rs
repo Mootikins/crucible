@@ -224,8 +224,8 @@ fn model_flow_loading_to_loaded_e2e() {
 
     // Wait for TUI to initialize
     session
-        .wait_for_text("NORMAL", Duration::from_secs(5))
-        .expect("TUI should initialize to NORMAL mode within 5s");
+        .wait_for_ready()
+        .expect("TUI should initialize to NORMAL mode");
 
     session.send(":model\r").expect("Failed to send :model");
 
@@ -277,8 +277,8 @@ fn model_flow_error_shows_within_timeout_e2e() {
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
     session
-        .wait_for_text("NORMAL", Duration::from_secs(5))
-        .expect("TUI should initialize to NORMAL mode within 5s");
+        .wait_for_ready()
+        .expect("TUI should initialize to NORMAL mode");
 
     session.send(":model\r").expect("Failed to send :model");
 
@@ -332,8 +332,8 @@ fn model_backspace_no_double_borders_e2e() {
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
     session
-        .wait_for_text("NORMAL", Duration::from_secs(5))
-        .expect("TUI should initialize to NORMAL mode within 5s");
+        .wait_for_ready()
+        .expect("TUI should initialize to NORMAL mode");
 
     // Type `:model ` — trailing space triggers model popup
     session.send(":model ").expect("Failed to send :model ");
@@ -394,8 +394,8 @@ fn model_loading_no_duplicate_messages_e2e() {
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
     session
-        .wait_for_text("NORMAL", Duration::from_secs(5))
-        .expect("TUI should initialize to NORMAL mode within 5s");
+        .wait_for_ready()
+        .expect("TUI should initialize to NORMAL mode");
 
     // Send :model 3 times in quick succession
     session.send(":model\r").expect("Failed to send :model 1");
@@ -443,8 +443,8 @@ fn model_retry_after_failure_e2e() {
     let mut session = TuiTestSession::spawn(config).expect("Failed to spawn");
 
     session
-        .wait_for_text("NORMAL", Duration::from_secs(5))
-        .expect("TUI should initialize to NORMAL mode within 5s");
+        .wait_for_ready()
+        .expect("TUI should initialize to NORMAL mode");
 
     // First :model press
     session
