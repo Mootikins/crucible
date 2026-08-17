@@ -1,13 +1,11 @@
 // src/lib/settings.ts
 
-/** Scope for settings - local (localStorage) or account (future server sync) */
-export type SettingScope = 'local' | 'account';
 
 /** Transcription provider type */
 export type TranscriptionProvider = 'local' | 'server';
 
 /** Settings for voice transcription */
-export interface TranscriptionSettings {
+interface TranscriptionSettings {
   /** Which provider to use for transcription */
   provider: TranscriptionProvider;
   /** Server URL for server-based transcription */
@@ -19,7 +17,7 @@ export interface TranscriptionSettings {
 }
 
 /** Settings for the CodeMirror note/file editor */
-export interface EditorSettings {
+interface EditorSettings {
   /** Modal vim keybindings (@replit/codemirror-vim) */
   vimMode: boolean;
   /** Autosave dirty buffers after this many idle seconds (0 = off). */
@@ -38,7 +36,7 @@ export interface EditorSettings {
 }
 
 /** Appearance / typography settings */
-export interface AppearanceSettings {
+interface AppearanceSettings {
   /** CSS font-family for UI + prose text. Empty = built-in default (IBM Plex Sans). */
   fontSans: string;
   /** CSS font-family for code / monospace. Empty = built-in default (IBM Plex Mono). */
@@ -47,7 +45,7 @@ export interface AppearanceSettings {
 
 /** Settings for the xterm terminal panel. xterm renders to canvas and can't
  * read CSS vars, so its font is a real setting rather than a stylesheet. */
-export interface TerminalSettings {
+interface TerminalSettings {
   /** CSS font-family for the terminal. Empty = follow the Appearance code font. */
   fontFamily: string;
   /** Terminal font size in px. */
