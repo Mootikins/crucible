@@ -40,7 +40,7 @@ export interface ReviewHunkMark {
   toolCallId: string | null;
 }
 
-export const setReviewHunks = StateEffect.define<ReviewHunkMark[]>();
+const setReviewHunks = StateEffect.define<ReviewHunkMark[]>();
 
 export const reviewHunksField = StateField.define<ReviewHunkMark[]>({
   create: () => [],
