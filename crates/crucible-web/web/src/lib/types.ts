@@ -170,7 +170,7 @@ export interface NoteContent {
 }
 
 /** A note that wikilinks to the focused note. */
-export interface BacklinkEntry {
+interface BacklinkEntry {
   name: string;
   path: string;
   abs_path: string;
@@ -199,14 +199,14 @@ export interface BacklinksResponse {
 // Project Types
 // =============================================================================
 
-export interface KilnInfo {
+interface KilnInfo {
   path: string;
   name: string | null;
 }
 
 /** SCM info attached to a Project when `[scm]` detection found a repo.
  * Wire shape of crucible-core's `RepositoryInfo` (snake_case contract). */
-export interface RepositoryInfo {
+interface RepositoryInfo {
   /** Repo root — for worktrees, the MAIN checkout's root. */
   root: string;
   remote_url?: string;
@@ -282,7 +282,7 @@ export type FsEvent =
 // =============================================================================
 
 /** Thinking block with streaming state */
-export interface ThinkingBlock {
+interface ThinkingBlock {
   content: string;
   isStreaming: boolean;
   tokenCount?: number;
@@ -317,7 +317,7 @@ export interface ToolCallDisplay {
 }
 
 /** What a tool call is about, for display. Mirrors `crucible_core::types::ToolDisplay`. */
-export interface ToolDisplay {
+interface ToolDisplay {
   kind: 'command' | 'path' | 'query' | 'other';
   primary?: string;
 }
@@ -375,39 +375,9 @@ export interface Notification {
   action?: { label: string; run: () => void };
 }
 
-/** Precognition result (auto-injected context) */
-export interface PrecognitionResult {
-  notesCount: number;
-  notes: { name: string; relevance: number }[];
-}
 
-/** Context management strategy */
-export type ContextStrategy = 'truncate' | 'sliding_window';
 
-/** Output validation mode */
-export type OutputValidation =
-  | { kind: 'none' }
-  | { kind: 'json' }
-  | { kind: 'regex'; pattern: string };
 
-/** Session configuration */
-export interface SessionConfig {
-  thinkingBudget?: number;
-  temperature?: number;
-  maxTokens?: number | null;
-  precognition?: boolean;
-  // Execution controls
-  maxIterations?: number;
-  executionTimeoutSecs?: number;
-  contextBudget?: number;
-  contextStrategy?: ContextStrategy;
-  contextWindow?: number;
-  outputValidation?: OutputValidation;
-  validationRetries?: number;
-}
-
-/** Panel identifier */
-export type PanelId = 'chat' | 'files' | 'editor' | 'sessions' | 'settings' | 'activity' | 'notifications';
 
 
 // =============================================================================
@@ -415,13 +385,13 @@ export type PanelId = 'chat' | 'files' | 'editor' | 'sessions' | 'settings' | 'a
 // =============================================================================
 
 /** Token/chunk of the response */
-export interface TokenEvent {
+interface TokenEvent {
   type: 'token';
   content: string;
 }
 
 /** Tool call event (from daemon tool_call event) */
-export interface ToolCallEvent {
+interface ToolCallEvent {
   type: 'tool_call';
   id: string;
   title: string;
@@ -433,27 +403,27 @@ export interface ToolCallEvent {
 }
 
 /** Tool call result streaming delta */
-export interface ToolResultDeltaEvent {
+interface ToolResultDeltaEvent {
   type: 'tool_result_delta';
   id: string;
   delta: string;
 }
 
 /** Tool call result streaming complete */
-export interface ToolResultCompleteEvent {
+interface ToolResultCompleteEvent {
   type: 'tool_result_complete';
   id: string;
 }
 
 /** Tool call result error */
-export interface ToolResultErrorEvent {
+interface ToolResultErrorEvent {
   type: 'tool_result_error';
   id: string;
   error: string;
 }
 
 /** Tool call result */
-export interface ToolResultEvent {
+interface ToolResultEvent {
   type: 'tool_result';
   id: string;
   result?: string;
@@ -466,28 +436,28 @@ export interface ToolResultEvent {
 }
 
 /** Subagent spawned event */
-export interface SubagentSpawnedEvent {
+interface SubagentSpawnedEvent {
   type: 'subagent_spawned';
   id: string;
   prompt: string;
 }
 
 /** Subagent completed event */
-export interface SubagentCompletedEvent {
+interface SubagentCompletedEvent {
   type: 'subagent_completed';
   id: string;
   summary: string;
 }
 
 /** Subagent failed event */
-export interface SubagentFailedEvent {
+interface SubagentFailedEvent {
   type: 'subagent_failed';
   id: string;
   error: string;
 }
 
 /** Delegation spawned event */
-export interface DelegationSpawnedEvent {
+interface DelegationSpawnedEvent {
   type: 'delegation_spawned';
   id: string;
   prompt: string;
@@ -495,47 +465,47 @@ export interface DelegationSpawnedEvent {
 }
 
 /** Delegation completed event */
-export interface DelegationCompletedEvent {
+interface DelegationCompletedEvent {
   type: 'delegation_completed';
   id: string;
   summary: string;
 }
 
 /** Delegation failed event */
-export interface DelegationFailedEvent {
+interface DelegationFailedEvent {
   type: 'delegation_failed';
   id: string;
   error: string;
 }
 
 /** Agent is thinking/reasoning */
-export interface ThinkingEvent {
+interface ThinkingEvent {
   type: 'thinking';
   content: string;
 }
 
 /** Context usage event */
-export interface ContextUsageEvent {
+interface ContextUsageEvent {
   type: 'context_usage';
   used: number;
   total: number;
 }
 
 /** Precognition result event */
-export interface PrecognitionResultEvent {
+interface PrecognitionResultEvent {
   type: 'precognition_result';
   notes_count: number;
   notes: { name: string; relevance: number }[];
 }
 
 /** Mode changed event */
-export interface ModeChangedEvent {
+interface ModeChangedEvent {
   type: 'mode_changed';
   mode: ChatMode;
 }
 
 /** Session title changed (daemon-side topic auto-title or manual rename) */
-export interface TitleChangedEvent {
+interface TitleChangedEvent {
   type: 'title_changed';
   title: string;
 }
@@ -545,7 +515,7 @@ export interface TitleChangedEvent {
  * turn's message_id and the segment's 0-based index so the client can build a
  * canonical bubble id that matches history reconstruction.
  */
-export interface SegmentCompleteEvent {
+interface SegmentCompleteEvent {
   type: 'segment_complete';
   message_id: string;
   index: number;
@@ -553,7 +523,7 @@ export interface SegmentCompleteEvent {
 }
 
 /** Message is complete */
-export interface MessageCompleteEvent {
+interface MessageCompleteEvent {
   type: 'message_complete';
   id: string;
   content: string;
@@ -565,7 +535,7 @@ export interface MessageCompleteEvent {
 }
 
 /** An error occurred */
-export interface ErrorEvent {
+interface ErrorEvent {
   type: 'error';
   code: string;
   message: string;
@@ -576,21 +546,21 @@ export interface ErrorEvent {
  * never from the daemon. Must NOT be routed through the daemon-error path — a
  * reconnect must not corrupt an in-flight streaming message.
  */
-export interface ConnectionEvent {
+interface ConnectionEvent {
   type: 'connection';
   status: 'reconnecting' | 'connected';
   message?: string;
 }
 
 /** An interaction is requested from the user */
-export interface InteractionRequestedEvent {
+interface InteractionRequestedEvent {
   type: 'interaction_requested';
   id: string;
   [key: string]: unknown;
 }
 
 /** A session-level event (state change, etc.) */
-export interface SessionEventData {
+interface SessionEventData {
   type: 'session_event';
   event_type: string;
   data: unknown;
@@ -622,8 +592,6 @@ export type ChatEvent =
   | ModeChangedEvent
   | TitleChangedEvent;
 
-/** SSE event type discriminator */
-export type ChatEventType = ChatEvent['type'];
 
 // =============================================================================
 // Interaction Request/Response Types (from Rust core interaction.rs)
@@ -638,7 +606,7 @@ export interface AskRequest {
   allow_other?: boolean;
 }
 
-export interface PopupEntry {
+interface PopupEntry {
   label: string;
   description?: string;
   data?: unknown;
@@ -652,7 +620,7 @@ export interface PopupRequest {
   allow_other?: boolean;
 }
 
-export type PermActionType = 'bash' | 'read' | 'write' | 'tool';
+type PermActionType = 'bash' | 'read' | 'write' | 'tool';
 
 export interface PermRequest {
   kind: 'permission';
@@ -701,11 +669,5 @@ export interface EditorFile {
 // =============================================================================
 
 
-export type {
-  ChatContextValue,
-  SessionContextValue,
-  ProjectContextValue,
-  EditorContextValue,
-} from './types/context';
 
 
