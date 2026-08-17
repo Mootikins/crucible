@@ -9,6 +9,7 @@ mod component_isolation_tests;
 mod event_loop_tests;
 mod event_tests;
 mod focus_tests;
+mod input_buffer_property_tests;
 mod layout_tests;
 mod markdown_fuzz_tests;
 mod node_tests;
