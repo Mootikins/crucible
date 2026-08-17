@@ -68,6 +68,21 @@ pub struct InputBuffer {
     draft: String,
 }
 
+/// Byte offset just past the last whitespace character in `s`, or 0 if there is
+/// none — i.e. the start of the final word.
+///
+/// `char::is_whitespace` is Unicode-aware, so the separator may be several
+/// bytes wide (U+00A0, U+2009, U+3000 all arrive via paste from browsers and
+/// PDFs). Advancing by `len_utf8` rather than by 1 keeps the result a char
+/// boundary; a bare `+ 1` slices into the separator and panics.
+fn word_start(s: &str) -> usize {
+    s.char_indices()
+        .rev()
+        .find(|(_, c)| c.is_whitespace())
+        .map(|(i, c)| i + c.len_utf8())
+        .unwrap_or(0)
+}
+
 impl InputBuffer {
     pub fn new() -> Self {
         Self::default()
@@ -110,18 +125,10 @@ impl InputBuffer {
             }
             InputAction::DeleteWord => {
                 if self.cursor > 0 {
-                    let before = &self.content[..self.cursor];
-                    let trimmed = before.trim_end();
-                    let word_start = trimmed
-                        .rfind(|c: char| c.is_whitespace())
-                        .map(|i| i + 1)
-                        .unwrap_or(0);
-                    self.content = format!(
-                        "{}{}",
-                        &self.content[..word_start],
-                        &self.content[self.cursor..]
-                    );
-                    self.cursor = word_start;
+                    let start = word_start(self.content[..self.cursor].trim_end());
+                    self.content =
+                        format!("{}{}", &self.content[..start], &self.content[self.cursor..]);
+                    self.cursor = start;
                 }
             }
             InputAction::Left => {
@@ -144,12 +151,7 @@ impl InputBuffer {
             }
             InputAction::WordLeft => {
                 if self.cursor > 0 {
-                    let before = &self.content[..self.cursor];
-                    let trimmed = before.trim_end();
-                    self.cursor = trimmed
-                        .rfind(|c: char| c.is_whitespace())
-                        .map(|i| i + 1)
-                        .unwrap_or(0);
+                    self.cursor = word_start(self.content[..self.cursor].trim_end());
                 }
             }
             InputAction::WordRight => {

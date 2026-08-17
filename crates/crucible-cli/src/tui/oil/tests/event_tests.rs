@@ -337,3 +337,80 @@ fn backspace_at_start_no_op() {
     assert_eq!(buf.content(), "hello");
     assert_eq!(buf.cursor(), 0);
 }
+
+/// `char::is_whitespace` is Unicode-aware, so the word separator can be a
+/// multi-byte character (U+3000 IDEOGRAPHIC SPACE is 3 bytes). Word motions
+/// must step past the whole separator, not past its first byte.
+#[test]
+fn delete_word_splits_on_multibyte_whitespace() {
+    let mut buf = InputBuffer::new();
+    buf.set_content("a\u{3000}b");
+
+    buf.handle(InputAction::DeleteWord);
+
+    assert_eq!(buf.content(), "a\u{3000}");
+    assert_eq!(buf.cursor(), 4);
+}
+
+#[test]
+fn delete_word_splits_on_a_non_breaking_space() {
+    let mut buf = InputBuffer::new();
+    buf.set_content("hello\u{00a0}world");
+
+    buf.handle(InputAction::DeleteWord);
+
+    assert_eq!(buf.content(), "hello\u{00a0}");
+    assert_eq!(buf.cursor(), 7);
+}
+
+/// `WordLeft` does not index the string itself, so a bad offset is stored into
+/// `cursor` and detonates in whichever action runs next. Assert the invariant
+/// directly, then prove the follow-up actions survive.
+#[test]
+fn word_left_leaves_cursor_on_a_char_boundary_after_multibyte_whitespace() {
+    let mut buf = InputBuffer::new();
+    buf.set_content("a\u{3000}b");
+
+    buf.handle(InputAction::WordLeft);
+
+    assert_eq!(buf.cursor(), 4);
+    assert!(
+        buf.content().is_char_boundary(buf.cursor()),
+        "cursor {} is not a char boundary of {:?}",
+        buf.cursor(),
+        buf.content()
+    );
+
+    buf.handle(InputAction::Backspace);
+    assert_eq!(buf.content(), "ab");
+    assert_eq!(buf.cursor(), 1);
+}
+
+#[test]
+fn word_left_then_insert_survives_multibyte_whitespace() {
+    let mut buf = InputBuffer::new();
+    buf.set_content("hello\u{2009}world");
+
+    buf.handle(InputAction::WordLeft);
+    buf.handle(InputAction::Insert('!'));
+
+    assert_eq!(buf.content(), "hello\u{2009}!world");
+}
+
+/// `WordRight` uses `find`, which reports the *start* of the separator — an
+/// offset that is already a char boundary. Pinned so a future refactor toward
+/// the `rfind` shape cannot silently reintroduce the bug.
+#[test]
+fn word_right_leaves_cursor_on_a_char_boundary_after_multibyte_whitespace() {
+    let mut buf = InputBuffer::new();
+    buf.set_content("a\u{3000}b");
+    buf.handle(InputAction::Home);
+
+    buf.handle(InputAction::WordRight);
+    assert_eq!(buf.cursor(), 1, "stops at the start of the separator");
+    assert!(buf.content().is_char_boundary(buf.cursor()));
+
+    buf.handle(InputAction::WordRight);
+    assert_eq!(buf.cursor(), 5, "skips the separator and the final word");
+    assert!(buf.content().is_char_boundary(buf.cursor()));
+}
