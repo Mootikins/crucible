@@ -8,7 +8,7 @@ import { createLayoutActions } from './layoutActions';
 import { createTabActions } from './tabActions';
 import type { WindowState } from './windowStoreTypes';
 
-export type { PaneDropPosition, WindowState } from './windowStoreTypes';
+export type { WindowState } from './windowStoreTypes';
 
 const initialState = createInitialState();
 const [store, setStore] = createStore<WindowState>(initialState);
