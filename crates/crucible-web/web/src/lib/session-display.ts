@@ -7,7 +7,7 @@ import type { Session } from './types';
 type SessionTimes = Pick<Session, 'last_activity' | 'started_at'>;
 
 /** Timestamp to sort/display sessions by — last event, falling back to start. */
-export function sessionActivityTime(session: SessionTimes): number {
+function sessionActivityTime(session: SessionTimes): number {
   const t = Date.parse(session.last_activity ?? session.started_at ?? '');
   return Number.isNaN(t) ? 0 : t;
 }
