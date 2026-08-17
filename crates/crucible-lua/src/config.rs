@@ -25,6 +25,7 @@
 
 use crate::error::LuaError;
 use crate::theme::ThemeConfig;
+use crucible_core::config::LOCATION_CONFIG_KEYS;
 use mlua::{Lua, LuaSerdeExt, Table, Value};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -121,18 +122,48 @@ pub fn get_app_config() -> Option<serde_json::Value> {
     get_config().read().ok()?.app_config.clone()
 }
 
+/// Drop every [`LOCATION_CONFIG_KEYS`] entry from a config object.
+///
+/// This store is the plugin-visible view of the config — `cru.config.get()`
+/// and the `config.get` RPC both read it, and `config.get` with no key returns
+/// the *whole* object. The keys that name a filesystem location are therefore
+/// withheld from it: a plugin is told which kilns a session reaches by *name*,
+/// and handing it the directories through a side door would make that
+/// pointless.
+///
+/// Applied at every write into the store rather than at the one call site that
+/// seeds it, so the invariant belongs to the store and a future writer
+/// inherits it instead of having to remember it. The classification itself
+/// lives in `crucible-core` beside the struct whose fields it classifies, and
+/// a test there fails if a new `CliAppConfig` field is classified by neither
+/// kind — that, not this function, is what keeps the rule from being a
+/// denylist that misses the next key.
+fn without_location_keys(mut config: serde_json::Value) -> serde_json::Value {
+    if let Some(object) = config.as_object_mut() {
+        for key in LOCATION_CONFIG_KEYS {
+            object.remove(key);
+        }
+    }
+    config
+}
+
 /// Seed app config from TOML values (called before Lua init.lua runs).
 /// Lua's `cru.config.set()` can then override individual fields.
+///
+/// The location-naming keys never make it in; see [`LOCATION_CONFIG_KEYS`].
 pub fn seed_app_config(config: serde_json::Value) {
     if let Ok(mut state) = get_config().write() {
-        state.app_config = Some(config);
+        state.app_config = Some(without_location_keys(config));
     }
 }
 
 /// Merge values into app_config from Rust (same top-level-override semantics
 /// as Lua's `cru.config.set`). Used by the daemon's `config.set` RPC so the
 /// TUI/CLI write into the SAME store `:lua` and plugins read.
+///
+/// The location-naming keys are dropped here too; see [`LOCATION_CONFIG_KEYS`].
 pub fn merge_app_config(overlay: serde_json::Value) {
+    let overlay = without_location_keys(overlay);
     if let Ok(mut state) = get_config().write() {
         match &mut state.app_config {
             Some(serde_json::Value::Object(base)) => {
@@ -159,31 +190,17 @@ pub fn merge_app_config(overlay: serde_json::Value) {
 pub fn register_app_config_api(lua: &Lua, cru_table: &Table) -> Result<(), LuaError> {
     let config_table = lua.create_table()?;
 
-    // cru.config.set(table) — merge into app_config
+    // cru.config.set(table) — merge into app_config.
+    //
+    // Delegates rather than reimplementing the merge. It used to carry its own
+    // copy of the same top-level-insert loop, which made it a second door into
+    // one store — and after the location keys started being withheld, only one
+    // of the two doors dropped them.
     let set_fn = lua.create_function(|lua, table: Table| {
         let json_val: serde_json::Value = lua
             .from_value(Value::Table(table))
             .map_err(mlua::Error::external)?;
-
-        let mut state = get_config()
-            .write()
-            .map_err(|e| mlua::Error::external(format!("config lock: {e}")))?;
-
-        match &mut state.app_config {
-            Some(existing) => {
-                // Deep merge: Lua values override TOML values
-                if let (serde_json::Value::Object(base), serde_json::Value::Object(overlay)) =
-                    (existing, &json_val)
-                {
-                    for (k, v) in overlay {
-                        base.insert(k.clone(), v.clone());
-                    }
-                }
-            }
-            None => {
-                state.app_config = Some(json_val);
-            }
-        }
+        merge_app_config(json_val);
         Ok(())
     })?;
     config_table.set("set", set_fn)?;
@@ -687,7 +704,7 @@ mod tests {
 
         // Simulate TOML seeding
         seed_app_config(serde_json::json!({
-            "kiln_path": "/home/user/vault",
+            "syntax_theme": "dracula",
             "timeout": 30,
             "llm": { "provider": "ollama" }
         }));
@@ -698,13 +715,13 @@ mod tests {
         register_app_config_api(&lua, &cru).unwrap();
         lua.globals().set("cru", cru).unwrap();
 
-        // Lua overrides timeout but keeps kiln_path
+        // Lua overrides timeout but keeps syntax_theme
         lua.load(r#"cru.config.set({ timeout = 60, new_field = "from_lua" })"#)
             .exec()
             .unwrap();
 
         let config = get_app_config().unwrap();
-        assert_eq!(config["kiln_path"], "/home/user/vault"); // TOML preserved
+        assert_eq!(config["syntax_theme"], "dracula"); // TOML preserved
         assert_eq!(config["timeout"], 60); // Lua overrode
         assert_eq!(config["new_field"], "from_lua"); // Lua added
         assert_eq!(config["llm"]["provider"], "ollama"); // Nested TOML preserved
@@ -716,7 +733,7 @@ mod tests {
         reset_config();
 
         seed_app_config(serde_json::json!({
-            "kiln_path": "/vault",
+            "syntax_theme": "dracula",
             "count": 42
         }));
 
@@ -726,10 +743,10 @@ mod tests {
         lua.globals().set("cru", cru).unwrap();
 
         let result: String = lua
-            .load(r#"return cru.config.get("kiln_path")"#)
+            .load(r#"return cru.config.get("syntax_theme")"#)
             .eval()
             .unwrap();
-        assert_eq!(result, "/vault");
+        assert_eq!(result, "dracula");
 
         let count: i64 = lua
             .load(r#"return cru.config.get("count")"#)
@@ -745,6 +762,61 @@ mod tests {
         assert!(matches!(missing, Value::Nil));
     }
 
+    /// The store is the plugin-visible view of the config, so the keys that
+    /// name directories never enter it — including through the daemon's own
+    /// seed, which is where the user's real kiln paths would otherwise arrive.
+    ///
+    /// Asserted key by key over [`LOCATION_CONFIG_KEYS`] rather than over a
+    /// hand-written list, so a key added to the shape is covered here without
+    /// anyone remembering to come back.
+    #[test]
+    fn seeding_withholds_the_keys_that_name_where_crucible_acts() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
+        reset_config();
+
+        let mut seed = serde_json::Map::new();
+        for key in LOCATION_CONFIG_KEYS {
+            seed.insert(key.to_string(), serde_json::json!("/home/user/private"));
+        }
+        seed.insert("timeout".to_string(), serde_json::json!(30));
+        seed_app_config(serde_json::Value::Object(seed));
+
+        let config = get_app_config().expect("seeded");
+        for key in LOCATION_CONFIG_KEYS {
+            assert!(
+                config.get(key).is_none(),
+                "{key} names a directory and must not reach a plugin"
+            );
+        }
+        // The seed still happened — otherwise the assertions above would hold
+        // for a store that is simply empty.
+        assert_eq!(config["timeout"], 30);
+    }
+
+    /// Same shape on the merge path, which is where the `config.set` RPC lands.
+    #[test]
+    fn merging_withholds_the_keys_that_name_where_crucible_acts() {
+        let _lock = CONFIG_TEST_LOCK.lock().unwrap();
+        reset_config();
+
+        seed_app_config(serde_json::json!({ "timeout": 30 }));
+        let mut overlay = serde_json::Map::new();
+        for key in LOCATION_CONFIG_KEYS {
+            overlay.insert(key.to_string(), serde_json::json!("/home/user/private"));
+        }
+        overlay.insert("timeout".to_string(), serde_json::json!(60));
+        merge_app_config(serde_json::Value::Object(overlay));
+
+        let config = get_app_config().expect("seeded");
+        for key in LOCATION_CONFIG_KEYS {
+            assert!(
+                config.get(key).is_none(),
+                "{key} names a directory and must not reach a plugin"
+            );
+        }
+        assert_eq!(config["timeout"], 60);
+    }
+
     #[test]
     fn test_app_config_set_without_seed() {
         let _lock = CONFIG_TEST_LOCK.lock().unwrap();
@@ -756,12 +828,17 @@ mod tests {
         register_app_config_api(&lua, &cru).unwrap();
         lua.globals().set("cru", cru).unwrap();
 
-        lua.load(r#"cru.config.set({ kiln_path = "~/notes" })"#)
+        lua.load(r#"cru.config.set({ syntax_theme = "dracula", kiln_path = "~/notes" })"#)
             .exec()
             .unwrap();
 
         let config = get_app_config().unwrap();
-        assert_eq!(config["kiln_path"], "~/notes");
+        assert_eq!(config["syntax_theme"], "dracula");
+        // `cru.config.set` merges through the same function the `config.set`
+        // RPC does, so the keys that name a place are withheld on this door
+        // too. Two doors into one store is how one of them ends up without the
+        // rule.
+        assert!(config.get("kiln_path").is_none());
     }
 
     #[test]

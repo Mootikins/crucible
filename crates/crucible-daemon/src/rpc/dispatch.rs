@@ -10,6 +10,10 @@ use crate::protocol::{
 use crate::rpc::context::RpcContext;
 use crate::server::plugins::OptionAction;
 use crate::subscription::ClientId;
+// The app-config keys that name where the daemon acts, classified once beside
+// the struct whose fields they are, so the keys `config.set` refuses and the
+// keys the plugin-visible config store withholds cannot drift apart.
+use crucible_core::config::LOCATION_CONFIG_KEYS;
 use std::sync::Arc;
 
 pub type RpcResult<T> = Result<T, RpcError>;
@@ -218,15 +222,6 @@ macro_rules! dispatch_session_getter {
         }
     };
 }
-
-/// App-config keys that name **where the daemon acts** — the kiln registry's
-/// input, the project roots, the CLI session's kiln.
-///
-/// Expressed as the shape "a key that names a location", not as a list of
-/// known-bad values, so a new location key is added here rather than
-/// discovered later. `config.set` refuses all of them; see
-/// [`RpcDispatcher::handle_config_set`].
-const LOCATION_CONFIG_KEYS: [&str; 4] = ["kilns", "kiln_path", "projects", "session_kiln"];
 
 pub struct RpcDispatcher {
     /// Shared rather than owned: `Server` keeps a clone so plugin boot can hand
@@ -1622,10 +1617,12 @@ impl RpcDispatcher {
     /// TUI must never build Lua source from user input.
     ///
     /// The location-naming keys are stripped rather than merged. The socket has
-    /// no authentication, and these four are the config's answer to *where the
-    /// daemon acts*: `kilns` and `kiln_path` are what the kiln registry is
-    /// built from, `projects` names workspace roots, `session_kiln` names where
-    /// a CLI session's knowledge scope points. A caller that can write them
+    /// no authentication, and [`LOCATION_CONFIG_KEYS`] is the config's answer
+    /// to *where the daemon acts*: `kilns` and `kiln_path` are what the kiln
+    /// registry is built from, `projects` names workspace roots,
+    /// `session_kiln` names where a CLI session's knowledge scope points, and
+    /// `data_home`/`runtimepath`/`agent_directories` name the trees the daemon
+    /// reads its own state and code from. A caller that can write them
     /// introduces or re-points an entry without ever handing a path to
     /// `KilnRegistry::register_path` — which is to say, without the floor
     /// seeing it. Changing where kilns live is a config-file edit

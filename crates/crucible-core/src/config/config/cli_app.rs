@@ -23,6 +23,63 @@ const TRACKED_FIELDS: &[(&str, &str)] = &[
     ("logging.level", "Logging"),
 ];
 
+/// Top-level [`CliAppConfig`] keys whose value names a **filesystem location**:
+/// where kilns live, where projects live, where the daemon keeps its data, and
+/// where it loads agent cards and Lua from.
+///
+/// The classification is the point; the seven names are only today's members.
+/// Two rules hang off it, and both are about locations as a *kind*:
+///
+/// - They are withheld from the plugin-visible config store
+///   (`crucible_lua::seed_app_config`). A plugin is told which kilns a session
+///   reaches by name; handing it the directories through `cru.config.get`
+///   would make that pointless.
+/// - `config.set` refuses to write them. The RPC socket has no
+///   authentication, and these are the config's answer to *where the daemon
+///   acts* — writing one introduces or re-points a location without any path
+///   passing the registration floor.
+///
+/// `default_kiln` is deliberately **not** here: it holds a kiln *name*, and the
+/// line is "names a place", not "is about kilns".
+///
+/// Kept sorted, and paired with [`SETTINGS_CONFIG_KEYS`] so that
+/// `every_config_key_is_classified` fails when a new field belongs to neither.
+/// That is what stops this from being a denylist that misses the next key.
+pub const LOCATION_CONFIG_KEYS: [&str; 7] = [
+    "agent_directories",
+    "data_home",
+    "kiln_path",
+    "kilns",
+    "projects",
+    "runtimepath",
+    "session_kiln",
+];
+
+/// Top-level [`CliAppConfig`] keys that configure *behaviour* rather than
+/// naming a place.
+///
+/// This list has no consumer of its own. It exists so that adding a field to
+/// `CliAppConfig` forces a decision about which kind it is, instead of
+/// defaulting to "not a location" by silence.
+pub const SETTINGS_CONFIG_KEYS: [&str; 16] = [
+    "acp",
+    "chat",
+    "cli",
+    "context",
+    "default_kiln",
+    "enrichment",
+    "llm",
+    "logging",
+    "mcp",
+    "permissions",
+    "plugins",
+    "schedules",
+    "scm",
+    "server",
+    "storage",
+    "web",
+];
+
 use crate::config::components::{
     AcpConfig, ChatConfig, CliConfig, ContextConfig, LlmConfig, McpConfig, PermissionConfig,
     StorageConfig,
@@ -867,6 +924,60 @@ verbose = false
 
 #[cfg(test)]
 mod tests {
+    /// Every top-level config key is classified as either a location or a
+    /// setting — no key is classified by silence.
+    ///
+    /// This is the guard that makes [`LOCATION_CONFIG_KEYS`] a *shape* rather
+    /// than a denylist. Adding a field to `CliAppConfig` fails this test, and
+    /// the only way to fix it is to decide which kind the new field is. Two
+    /// security rules read the answer: the plugin-visible config store
+    /// withholds locations, and `config.set` refuses to write them. A new
+    /// location key that nobody classified would be published to every plugin
+    /// and writable over an unauthenticated socket, and nothing else in the
+    /// tree would notice.
+    ///
+    /// Asserted in both directions. Set equality alone would let a key be put
+    /// in both lists, where the location rule applies and the "it is only a
+    /// setting" reading is also available to the next reader.
+    #[test]
+    fn every_config_key_is_classified_as_a_location_or_a_setting() {
+        use std::collections::BTreeSet;
+
+        let serialized = serde_json::to_value(CliAppConfig::default())
+            .expect("the default config serializes");
+        let actual: BTreeSet<&str> = serialized
+            .as_object()
+            .expect("a config serializes to an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+
+        let locations: BTreeSet<&str> = super::LOCATION_CONFIG_KEYS.into_iter().collect();
+        let settings: BTreeSet<&str> = super::SETTINGS_CONFIG_KEYS.into_iter().collect();
+
+        let overlap: Vec<&&str> = locations.intersection(&settings).collect();
+        assert!(
+            overlap.is_empty(),
+            "a key is either a location or a setting, never both: {overlap:?}"
+        );
+
+        let classified: BTreeSet<&str> = locations.union(&settings).copied().collect();
+        let unclassified: Vec<&&str> = actual.difference(&classified).collect();
+        assert!(
+            unclassified.is_empty(),
+            "new CliAppConfig field(s) are classified by neither \
+             LOCATION_CONFIG_KEYS nor SETTINGS_CONFIG_KEYS: {unclassified:?}. \
+             Decide whether the value names a filesystem location — if it \
+             does, plugins must not see it and `config.set` must refuse it."
+        );
+
+        let stale: Vec<&&str> = classified.difference(&actual).collect();
+        assert!(
+            stale.is_empty(),
+            "classified key(s) no longer exist on CliAppConfig: {stale:?}"
+        );
+    }
+
     /// The bundled help corpus is offered, lazily, and never becomes the
     /// default kiln.
     ///

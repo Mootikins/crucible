@@ -19,6 +19,19 @@ pub enum KilnEntry {
         /// If true, kiln is not opened until explicitly requested.
         #[serde(default)]
         lazy: bool,
+        /// True when Crucible wrote this entry itself, because a `--kiln`
+        /// flag named a directory that had no entry yet.
+        ///
+        /// Nothing in Crucible reads it: it is a marker for the human whose
+        /// config file grew a line they did not type, so they can tell their
+        /// own entries from ours and delete ours without wondering what
+        /// depends on it. Modelled rather than merely written so that the one
+        /// writer that still round-trips the config through serde
+        /// ([`register_project_in_config`]) does not silently erase it.
+        ///
+        /// [`register_project_in_config`]: crate::config::register_project_in_config
+        #[serde(default)]
+        auto: bool,
     },
 }
 
@@ -69,6 +82,7 @@ pub fn resolve_kiln_entries(
             .or_insert(KilnEntry::Config {
                 path: docs,
                 lazy: true,
+                auto: false,
             });
     }
 

@@ -162,6 +162,27 @@ crucible.json_decode -- same as cru.json.decode
 > dotted keys into `[plugins.*]` config. This is a known trap — check which
 > one you mean before reaching for either.
 
+### The keys `cru.config.get` will not return
+
+Config keys whose value names a **filesystem location** are withheld from the
+store `cru.config.get` reads, and `cru.config.set{}` will not put them back:
+
+`kilns` · `kiln_path` · `session_kiln` · `projects` · `data_home` ·
+`agent_directories` · `runtimepath`
+
+`cru.config.get` returns `nil` for each. The store is the plugin-visible view
+of the user's config, and a plugin is told which kilns a session reaches by
+*name* — through `session.kilns` and through the `kiln` field on a
+`precognition_select` / `precognition_format` result. Publishing the
+directories here would be a side door around that. Your own
+`[plugins.<name>]` keys are untouched; the rule is about top-level keys only,
+so `crucible.config.get("myplugin.kilns")` still works exactly as before.
+
+The `config.set` RPC refuses the same seven, and reports them in a `rejected`
+list. Changing where kilns live is a config-file edit (`cru kiln register`),
+not a socket call — the RPC socket has no authentication, and these keys are
+the config's answer to *where the daemon acts*.
+
 ## Statusline Configuration
 
 The screen is three ordered lists — regions `top`, `prompt`, and `bottom` — and

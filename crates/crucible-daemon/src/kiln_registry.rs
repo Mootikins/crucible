@@ -466,13 +466,53 @@ impl KilnRegistry {
         let name = self.free_name(&derived).ok_or_else(|| {
             RegistrationRefused(format!(
                 "Refusing '{}' as a kiln: '{derived}' and every disambiguation of it are taken. \
-                 Give it a name of its own under `[kilns]` in your config.",
+                 Give it a name of its own with `cru kiln register <name> <path>`.",
                 absolute.display()
             ))
         })?;
 
         self.index(name.clone(), resolved, false);
         Ok(name)
+    }
+
+    /// Register a path under a name the caller chose —
+    /// `cru kiln register <name> <path>`.
+    ///
+    /// The same floor as [`Self::register_path`], because a name the user
+    /// supplied is a spelling choice and not an authorisation: the two doors
+    /// differ only in where the *name* comes from, and expressing that as one
+    /// shared `refuse` is what stops a second door growing a second policy.
+    ///
+    /// A name already claimed by a different directory is refused rather than
+    /// re-pointed, for the reason [`insert_configured`] aborts on the same
+    /// shape: a session that persisted `notes` yesterday would silently open a
+    /// different corpus today. Re-registering the same name/path pair is a
+    /// no-op, so re-running the command is not an error.
+    ///
+    /// [`insert_configured`]: Self::insert_configured
+    pub fn register_named(
+        &mut self,
+        name: KilnName,
+        path: &Path,
+    ) -> Result<(), RegistrationRefused> {
+        let absolute = self.absolutize(path);
+        self.refuse(&absolute).map_err(RegistrationRefused)?;
+
+        let resolved = ResolvedPath::resolve(&absolute);
+        match self.entries.get(&name) {
+            Some(existing) if existing.path == *resolved.lexical() => return Ok(()),
+            Some(existing) => {
+                return Err(RegistrationRefused(format!(
+                    "The kiln name '{name}' is already registered to '{}'. Choose another name, \
+                     or remove that `[kilns]` entry from your config first.",
+                    existing.path.display()
+                )))
+            }
+            None => {}
+        }
+
+        self.index(name, resolved, false);
+        Ok(())
     }
 
     /// A configured entry: same floor, but a name the user wrote rather than

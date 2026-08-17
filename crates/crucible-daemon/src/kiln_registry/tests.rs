@@ -367,6 +367,90 @@ fn registering_a_known_path_returns_its_existing_name() {
     }
 }
 
+/// `cru kiln register <name> <path>` names the entry itself, and the floor is
+/// the same one the derived door runs. Stated as the *denial*: a user-supplied
+/// name buys no exemption from it, and a refusal leaves no entry and no name.
+#[test]
+fn a_user_named_registration_runs_the_same_floor() {
+    let tmp = TempDir::new().unwrap();
+    let mut registry = KilnRegistry::empty(context(&tmp));
+    let sessions_root = tmp.path().join("home").join(".crucible").join("sessions");
+    let victim = sessions_root.join("chat-victim");
+    std::fs::create_dir_all(&victim).unwrap();
+
+    let mut forbidden = vec![
+        PathBuf::from("/"),
+        PathBuf::new(),
+        sessions_root,
+        victim,
+        tmp.path()
+            .join("home/.crucible/not-yet/../sessions/chat-victim"),
+        tmp.path().join("home").join(".crucible"),
+        tmp.path().join("home"),
+    ];
+    if let Some(home) = dirs::home_dir() {
+        forbidden.push(home);
+    }
+
+    for path in &forbidden {
+        assert!(
+            registry.register_named(name("mine"), path).is_err(),
+            "{} was accepted as a kiln under a name the user chose",
+            path.display()
+        );
+        assert!(
+            registry.is_empty(),
+            "{} left an entry behind after being refused",
+            path.display()
+        );
+        assert_eq!(
+            registry.resolve(&name("mine")),
+            KilnResolution::Unknown,
+            "{} was refused but 'mine' still resolves",
+            path.display()
+        );
+    }
+
+    // The precondition without which every refusal above is vacuous.
+    let notes = tmp.path().join("home").join("notes");
+    registry.register_named(name("mine"), &notes).unwrap();
+    assert_eq!(ready_path(&registry, "mine"), notes);
+}
+
+/// A name already claimed by a different directory is refused, never
+/// re-pointed. Silently repointing is how a session that named `notes`
+/// yesterday opens a different corpus today.
+#[test]
+fn a_user_named_registration_never_repoints_an_existing_name() {
+    let tmp = TempDir::new().unwrap();
+    let mut registry = registry(&tmp, json!({ "kilns": { "notes": "~/first" } }));
+    let first = tmp.path().join("home").join("first");
+    let second = tmp.path().join("home").join("second");
+
+    let refused = registry
+        .register_named(name("notes"), &second)
+        .expect_err("a claimed name must not be repointed");
+    assert!(
+        refused.to_string().contains("notes"),
+        "the refusal must name the name: {refused}"
+    );
+    assert_eq!(
+        ready_path(&registry, "notes"),
+        first,
+        "the incumbent entry must be untouched"
+    );
+
+    // Re-registering the same pair is a no-op, so re-running the command is
+    // not an error.
+    registry.register_named(name("notes"), &first).unwrap();
+    assert_eq!(ready_path(&registry, "notes"), first);
+    assert_eq!(
+        registry.resolve(&name("second")),
+        KilnResolution::Unknown,
+        "the refused registration must not have leaked a derived name either"
+    );
+}
+
 // ── The relocated floor ──────────────────────────────────────────────────
 
 /// `session.connect_kiln {"kiln_path": "/"}` used to reach `km.open("/")`

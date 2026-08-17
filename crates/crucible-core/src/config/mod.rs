@@ -61,6 +61,11 @@ pub use components::{
     TypeDiscoveryConfig, UpstreamServerConfig,
 };
 pub use config::registry::{resolve_kiln_entries, KilnEntry, ProjectEntry};
+// Its own line rather than folded into the block below: this is the
+// location/settings classification of `CliAppConfig`'s top-level keys, and it
+// has two security consumers (the plugin-visible config store and
+// `config.set`) that should be able to find it without reading a 6-line list.
+pub use config::{LOCATION_CONFIG_KEYS, SETTINGS_CONFIG_KEYS};
 pub use config::{
     crucible_home, lua_stubs_dir, parse_duration_string, plugin_name_from_url, CliAppConfig,
     ConfigError, ConfigValidationError, EffectiveLlmConfig, InvalidKilnName, KilnName,
@@ -68,7 +73,8 @@ pub use config::{
 };
 #[cfg(feature = "toml")]
 pub use config::{
-    register_kiln_in_config, register_llm_provider_in_config, register_project_in_config,
+    register_kiln_entry_in_config, register_kiln_in_config, register_llm_provider_in_config,
+    register_project_in_config,
 };
 #[cfg(feature = "keyring")]
 pub use credentials::KeyringStore;
