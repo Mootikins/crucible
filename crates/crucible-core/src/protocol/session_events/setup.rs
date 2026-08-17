@@ -53,7 +53,22 @@ pub struct SessionInitializedPayload {
     pub model: String,
     pub mode: String,
     pub agent_name: Option<String>,
-    pub kiln_path: PathBuf,
+    /// The session's kilns, by registry name.
+    ///
+    /// Was `kiln_path: PathBuf` — the resolved directory of whichever kiln
+    /// happened to sort first, produced by `kiln_paths(..).next().unwrap_or_default()`.
+    /// It was broadcast to every subscriber and persisted into `session.jsonl`
+    /// whenever the session already had an agent config at create time.
+    ///
+    /// A set, not one member: kilns are flat, so there is no "the" kiln to
+    /// report. Empty means the session reaches no kiln — never "unconstrained",
+    /// and never the empty path, which every path helper reads as the daemon's
+    /// own data directory.
+    ///
+    /// `workspace_path` beside it stays a path: the agent runs commands there,
+    /// so the directory is the fact being reported.
+    #[serde(default)]
+    pub kilns: Vec<crate::config::KilnName>,
     pub workspace_path: PathBuf,
 }
 

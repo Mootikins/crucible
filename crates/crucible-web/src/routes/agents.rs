@@ -1,13 +1,7 @@
 use crate::routes::helpers::ModelsResponse;
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
-use axum::{
-    extract::{Query, State},
-    routing::get,
-    Json, Router,
-};
-use serde::Deserialize;
-use std::path::PathBuf;
+use axum::{extract::State, routing::get, Json, Router};
 
 pub fn agents_routes() -> Router<AppState> {
     Router::new()
@@ -37,22 +31,13 @@ async fn list_agents(State(state): State<AppState>) -> Result<Json<serde_json::V
     Ok(Json(serde_json::json!({ "agents": agents })))
 }
 
-#[derive(Debug, Deserialize)]
-struct ListModelsQuery {
-    /// Optional kiln path — filters providers by the kiln's data classification.
-    kiln: Option<PathBuf>,
-}
-
 /// All chat models across providers, no session required (draft-state picker).
-async fn list_all_models(
-    State(state): State<AppState>,
-    Query(query): Query<ListModelsQuery>,
-) -> Result<Json<ModelsResponse>, WebError> {
-    let models = state
-        .daemon
-        .list_all_models(query.kiln.as_deref())
-        .await
-        .daemon_err()?;
+///
+/// Takes no `kiln` parameter, for the reason `list_providers` does not: it
+/// used to accept a raw `PathBuf` that reached the daemon's classification
+/// resolver unfloored, and no caller ever sent one.
+async fn list_all_models(State(state): State<AppState>) -> Result<Json<ModelsResponse>, WebError> {
+    let models = state.daemon.list_all_models(None).await.daemon_err()?;
     Ok(Json(ModelsResponse { models }))
 }
 

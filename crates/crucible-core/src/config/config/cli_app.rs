@@ -943,8 +943,8 @@ mod tests {
     fn every_config_key_is_classified_as_a_location_or_a_setting() {
         use std::collections::BTreeSet;
 
-        let serialized = serde_json::to_value(CliAppConfig::default())
-            .expect("the default config serializes");
+        let serialized =
+            serde_json::to_value(CliAppConfig::default()).expect("the default config serializes");
         let actual: BTreeSet<&str> = serialized
             .as_object()
             .expect("a config serializes to an object")

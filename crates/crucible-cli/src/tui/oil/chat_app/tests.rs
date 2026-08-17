@@ -71,7 +71,7 @@ fn setup_events_populate_app_progressively() {
         model: "glm-5".into(),
         mode: "plan".into(),
         agent_name: Some("claude".into()),
-        kiln_path: PathBuf::from("/k"),
+        kilns: Vec::new(),
         workspace_path: PathBuf::from("/w"),
     }));
     assert_eq!(app.current_model(), "glm-5");
@@ -107,7 +107,7 @@ fn session_initialized_preserves_model_when_empty_string() {
         model: String::new(),
         mode: "normal".into(),
         agent_name: None,
-        kiln_path: PathBuf::from("/k"),
+        kilns: Vec::new(),
         workspace_path: PathBuf::from("/w"),
     }));
 

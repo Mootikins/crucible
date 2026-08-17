@@ -276,6 +276,16 @@ impl CrucibleMcpServer {
         self
     }
 
+    /// Name the kiln these tools are anchored to, so `get_kiln_info` can answer
+    /// with the registry name instead of the anchor's directory basename.
+    ///
+    /// `None` leaves the tool with no name to report, which is the honest
+    /// answer for a server built around a bare directory (`cru mcp`).
+    pub fn with_kiln_name(mut self, name: Option<crucible_core::config::KilnName>) -> Self {
+        self.kiln_tools = self.kiln_tools.with_name(name);
+        self
+    }
+
     /// Create a new MCP server with `NoteStore` for optimized operations
     ///
     /// When a `NoteStore` is provided, the following operations use indexed metadata:

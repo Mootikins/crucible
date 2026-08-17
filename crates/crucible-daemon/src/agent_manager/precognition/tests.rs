@@ -6,43 +6,10 @@
 
 use super::*;
 
-/// A registry claiming `name` for a directory, with the tempdir it lives under.
-///
-/// Both are returned because the tempdir must outlive the registry: paths
-/// resolve lexically, so a registry over a dropped tempdir still answers, and a
-/// test could pass without ever exercising the entry it meant to register.
-/// `data` is a sibling of the kiln, never its ancestor — the floor refuses a
-/// kiln at or above the daemon's data root.
-fn registry_naming(
-    name: &str,
-) -> (
-    tempfile::TempDir,
-    std::path::PathBuf,
-    std::sync::Arc<crate::kiln_registry::KilnRegistry>,
-) {
-    let root = tempfile::TempDir::new().expect("tempdir");
-    let kiln = root.path().join("corpora").join(name);
-    let registry =
-        crate::test_support::kiln_registry(&root.path().join("data"), &[(name, kiln.as_path())]);
-    (root, kiln, registry)
-}
-
-/// A registry that claims nothing — for the tests that are about something
-/// other than which kiln a note came from.
-fn registry_naming_nothing() -> (
-    tempfile::TempDir,
-    std::sync::Arc<crate::kiln_registry::KilnRegistry>,
-) {
-    let root = tempfile::TempDir::new().expect("tempdir");
-    let registry = crate::test_support::kiln_registry(&root.path().join("data"), &[]);
-    (root, registry)
-}
-
 #[cfg(test)]
 mod format_precognition_context_tests {
     use super::*;
     use crucible_core::types::database::DocumentId;
-    use std::path::PathBuf;
 
     fn make_result(
         doc_id: &str,
@@ -55,7 +22,7 @@ mod format_precognition_context_tests {
             score,
             highlights: None,
             snippet: snippet.map(|s| s.to_string()),
-            kiln_path: kiln.map(PathBuf::from),
+            kiln: kiln.map(crate::test_support::kiln_name),
         }
     }
 
@@ -80,7 +47,7 @@ mod format_precognition_context_tests {
             "notes/Rust.md",
             0.85,
             Some("Rust is a systems programming language."),
-            Some("/home/user/notes"),
+            Some("notes"),
         )];
 
         let output = AgentManager::precognition_context_block(&results, false);
@@ -96,18 +63,8 @@ mod format_precognition_context_tests {
     #[test]
     fn precognition_context_block_multiple_results() {
         let results = vec![
-            make_result(
-                "notes/Rust.md",
-                0.92,
-                Some("Rust is fast."),
-                Some("/home/user/notes"),
-            ),
-            make_result(
-                "notes/Go.md",
-                0.78,
-                Some("Go is simple."),
-                Some("/home/user/notes"),
-            ),
+            make_result("notes/Rust.md", 0.92, Some("Rust is fast."), Some("notes")),
+            make_result("notes/Go.md", 0.78, Some("Go is simple."), Some("notes")),
         ];
 
         let output = AgentManager::precognition_context_block(&results, false);
@@ -125,12 +82,12 @@ mod format_precognition_context_tests {
             "notes/External.md",
             0.70,
             Some("External content."),
-            Some("/other/kiln"),
+            Some("other-kiln"),
         )];
 
         let output = AgentManager::precognition_context_block(&results, true);
 
-        assert!(output.contains("[from: kiln]"));
+        assert!(output.contains("[from: other-kiln]"));
     }
 
     #[test]
@@ -139,7 +96,7 @@ mod format_precognition_context_tests {
             "notes/Local.md",
             0.90,
             Some("Local content."),
-            Some("/home/user/notes"),
+            Some("notes"),
         )];
 
         let output = AgentManager::precognition_context_block(&results, false);
@@ -149,12 +106,7 @@ mod format_precognition_context_tests {
 
     #[test]
     fn precognition_context_block_missing_snippet_handled() {
-        let results = vec![make_result(
-            "notes/NoSnippet.md",
-            0.60,
-            None,
-            Some("/home/user/notes"),
-        )];
+        let results = vec![make_result("notes/NoSnippet.md", 0.60, None, Some("notes"))];
 
         let output = AgentManager::precognition_context_block(&results, false);
 
@@ -166,36 +118,11 @@ mod format_precognition_context_tests {
     #[test]
     fn precognition_context_cap_truncates_when_aggregate_exceeds_limit() {
         let mut results = vec![
-            make_result(
-                "notes/One.md",
-                0.9,
-                Some(&"a".repeat(800)),
-                Some("/home/user/notes"),
-            ),
-            make_result(
-                "notes/Two.md",
-                0.8,
-                Some(&"b".repeat(800)),
-                Some("/home/user/notes"),
-            ),
-            make_result(
-                "notes/Three.md",
-                0.7,
-                Some(&"c".repeat(800)),
-                Some("/home/user/notes"),
-            ),
-            make_result(
-                "notes/Four.md",
-                0.6,
-                Some(&"d".repeat(800)),
-                Some("/home/user/notes"),
-            ),
-            make_result(
-                "notes/Five.md",
-                0.5,
-                Some(&"e".repeat(800)),
-                Some("/home/user/notes"),
-            ),
+            make_result("notes/One.md", 0.9, Some(&"a".repeat(800)), Some("notes")),
+            make_result("notes/Two.md", 0.8, Some(&"b".repeat(800)), Some("notes")),
+            make_result("notes/Three.md", 0.7, Some(&"c".repeat(800)), Some("notes")),
+            make_result("notes/Four.md", 0.6, Some(&"d".repeat(800)), Some("notes")),
+            make_result("notes/Five.md", 0.5, Some(&"e".repeat(800)), Some("notes")),
         ];
 
         apply_precognition_char_cap(&mut results, 3000);
@@ -225,36 +152,11 @@ mod format_precognition_context_tests {
     #[test]
     fn precognition_context_cap_does_not_truncate_when_under_limit() {
         let mut results = vec![
-            make_result(
-                "notes/One.md",
-                0.9,
-                Some(&"a".repeat(200)),
-                Some("/home/user/notes"),
-            ),
-            make_result(
-                "notes/Two.md",
-                0.8,
-                Some(&"b".repeat(200)),
-                Some("/home/user/notes"),
-            ),
-            make_result(
-                "notes/Three.md",
-                0.7,
-                Some(&"c".repeat(200)),
-                Some("/home/user/notes"),
-            ),
-            make_result(
-                "notes/Four.md",
-                0.6,
-                Some(&"d".repeat(200)),
-                Some("/home/user/notes"),
-            ),
-            make_result(
-                "notes/Five.md",
-                0.5,
-                Some(&"e".repeat(200)),
-                Some("/home/user/notes"),
-            ),
+            make_result("notes/One.md", 0.9, Some(&"a".repeat(200)), Some("notes")),
+            make_result("notes/Two.md", 0.8, Some(&"b".repeat(200)), Some("notes")),
+            make_result("notes/Three.md", 0.7, Some(&"c".repeat(200)), Some("notes")),
+            make_result("notes/Four.md", 0.6, Some(&"d".repeat(200)), Some("notes")),
+            make_result("notes/Five.md", 0.5, Some(&"e".repeat(200)), Some("notes")),
         ];
 
         apply_precognition_char_cap(&mut results, 3000);
@@ -289,7 +191,6 @@ mod precognition_format_hook_tests {
     use super::*;
     use crucible_core::types::database::DocumentId;
     use std::collections::HashMap;
-    use std::path::PathBuf;
     use std::sync::{Arc, Mutex as StdMutex};
 
     fn make_result(
@@ -303,7 +204,7 @@ mod precognition_format_hook_tests {
             score,
             highlights: None,
             snippet: snippet.map(|s| s.to_string()),
-            kiln_path: kiln.map(PathBuf::from),
+            kiln: kiln.map(crate::test_support::kiln_name),
         }
     }
 
@@ -347,19 +248,17 @@ mod precognition_format_hook_tests {
             "notes/Rust.md",
             0.85,
             Some("Rust is a systems programming language."),
-            Some("/home/user/notes"),
+            Some("notes"),
         )];
 
         // Custom format handler controls the block content. The block
         // is now what gets injected as a system ContextMessage; the
         // user content lives in a separate message and isn't part of
         // the block.
-        let (_root, registry) = registry_naming_nothing();
         let output = AgentManager::format_precognition_context_block(
             "session-1",
             "What is Rust?",
             &results,
-            &registry,
             false,
             &state,
             None,
@@ -378,15 +277,13 @@ mod precognition_format_hook_tests {
             "notes/Rust.md",
             0.85,
             Some("Rust is a systems programming language."),
-            Some("/home/user/notes"),
+            Some("notes"),
         )];
 
-        let (_root, registry) = registry_naming_nothing();
         let output = AgentManager::format_precognition_context_block(
             "session-1",
             "What is Rust?",
             &results,
-            &registry,
             false,
             &state,
             None,
@@ -410,7 +307,6 @@ mod precognition_format_hook_tests {
     /// which would also pass if the handler never ran.
     #[tokio::test]
     async fn precognition_format_names_the_kiln_and_withholds_its_directory() {
-        let (_root, kiln, registry) = registry_naming("notes");
         let state = make_session_event_state();
         state
             .lua
@@ -433,14 +329,13 @@ mod precognition_format_hook_tests {
             "notes/Rust.md",
             0.85,
             Some("Rust is a systems programming language."),
-            Some(kiln.to_str().expect("utf-8 tempdir path")),
+            Some("notes"),
         )];
 
         let output = AgentManager::format_precognition_context_block(
             "session-1",
             "What is Rust?",
             &results,
-            &registry,
             false,
             &state,
             None,
@@ -455,7 +350,6 @@ mod precognition_format_hook_tests {
     /// "yes" about a kiln nothing can name.
     #[tokio::test]
     async fn precognition_format_omits_the_kiln_when_no_entry_claims_it() {
-        let (_root, registry) = registry_naming_nothing();
         let state = make_session_event_state();
         state
             .lua
@@ -469,18 +363,12 @@ mod precognition_format_hook_tests {
             .exec()
             .expect("Lua handler should load");
 
-        let results = vec![make_result(
-            "notes/Rust.md",
-            0.85,
-            Some("body"),
-            Some("/somewhere/unregistered"),
-        )];
+        let results = vec![make_result("notes/Rust.md", 0.85, Some("body"), None)];
 
         let output = AgentManager::format_precognition_context_block(
             "session-1",
             "What is Rust?",
             &results,
-            &registry,
             false,
             &state,
             None,
@@ -498,15 +386,15 @@ mod precognition_format_hook_tests {
                 "./docs/Getting Started.md",
                 0.9,
                 Some("content"),
-                Some("/kiln"),
+                Some("kiln"),
             ),
             make_result(
                 "/home/user/crucible/docs/Getting Started.md",
                 0.85,
                 Some("same content"),
-                Some("/kiln"),
+                Some("kiln"),
             ),
-            make_result("notes/Plugins.md", 0.7, Some("plugin info"), Some("/kiln")),
+            make_result("notes/Plugins.md", 0.7, Some("plugin info"), Some("kiln")),
         ];
 
         let info = extract_note_info(&results, false);
@@ -521,8 +409,8 @@ mod precognition_format_hook_tests {
         // (in this case they literally are the same filename so they WILL dedup;
         // truly different notes would have different filenames)
         let results = vec![
-            make_result("Help/Guide.md", 0.9, Some("help guide"), Some("/kiln")),
-            make_result("Meta/Guide.md", 0.8, Some("meta guide"), Some("/kiln")),
+            make_result("Help/Guide.md", 0.9, Some("help guide"), Some("kiln")),
+            make_result("Meta/Guide.md", 0.8, Some("meta guide"), Some("kiln")),
         ];
 
         // Same filename "Guide.md" from same kiln → deduped (likely duplicate DB entries)
@@ -531,17 +419,23 @@ mod precognition_format_hook_tests {
     }
 
     #[test]
-    fn extract_note_info_keeps_different_kiln_labels() {
+    fn extract_note_info_keeps_different_kiln_names() {
         // Same filename from different kilns are kept as separate entries
         let results = vec![
-            make_result("notes/Guide.md", 0.9, Some("local"), Some("/primary")),
-            make_result("notes/Guide.md", 0.8, Some("remote"), Some("/secondary")),
+            make_result("notes/Guide.md", 0.9, Some("local"), Some("primary")),
+            make_result("notes/Guide.md", 0.8, Some("remote"), Some("secondary")),
         ];
 
         let info = extract_note_info(&results, true);
         assert_eq!(info.len(), 2);
-        assert_eq!(info[0].kiln_label.as_deref(), Some("primary"));
-        assert_eq!(info[1].kiln_label.as_deref(), Some("secondary"));
+        assert_eq!(
+            info[0].kiln,
+            Some(crate::test_support::kiln_name("primary"))
+        );
+        assert_eq!(
+            info[1].kiln,
+            Some(crate::test_support::kiln_name("secondary"))
+        );
     }
 }
 
@@ -550,10 +444,13 @@ mod precognition_select_hook_tests {
     use super::*;
     use crucible_core::types::database::DocumentId;
     use std::collections::HashMap;
-    use std::path::PathBuf;
     use std::sync::{Arc, Mutex as StdMutex};
 
-    const KILN: &str = "/home/user/notes";
+    /// The registry name every fixture hit is attributed to. It is a NAME, not
+    /// a directory: `SearchResult` cannot hold a directory any more, which is
+    /// what `precognition_select_names_the_kiln_and_withholds_its_directory`
+    /// exists to keep true.
+    const KILN: &str = "notes";
 
     fn make_result(doc_id: &str, score: f64, snippet: &str) -> crucible_core::SearchResult {
         crucible_core::SearchResult {
@@ -561,7 +458,7 @@ mod precognition_select_hook_tests {
             score,
             highlights: None,
             snippet: Some(snippet.to_string()),
-            kiln_path: Some(PathBuf::from(KILN)),
+            kiln: Some(crate::test_support::kiln_name(KILN)),
         }
     }
 
@@ -605,19 +502,10 @@ mod precognition_select_hook_tests {
         results: &[crucible_core::SearchResult],
         char_budget: usize,
     ) -> Option<Vec<crucible_core::SearchResult>> {
-        // A registry that claims `KILN` under the name `notes`, so the payload
-        // a handler sees here is the shape production produces: every result of
-        // `three_results()` came from a registered kiln.
-        let root = tempfile::TempDir::new().expect("tempdir");
-        let registry = crate::test_support::kiln_registry(
-            &root.path().join("data"),
-            &[("notes", std::path::Path::new(KILN))],
-        );
         AgentManager::execute_precognition_select_handlers(
             "session-1",
             "what is alpha?",
             results,
-            &registry,
             char_budget,
             state,
             None,

@@ -195,7 +195,7 @@ impl KnowledgeRepository for DaemonStorageClient {
                 score,
                 highlights: None,
                 snippet: None,
-                kiln_path: None,
+                kiln: None,
             })
             .collect())
     }

@@ -1,9 +1,8 @@
 import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { useProjectSafe } from '@/contexts/ProjectContext';
-import { listKilns, listWorkspaceTargets } from '@/lib/api';
-import type { KilnListEntry, Session } from '@/lib/types';
-import { kilnLabel } from '@/lib/kiln-label';
+import { listWorkspaceTargets } from '@/lib/api';
+import type { Session } from '@/lib/types';
 import { sessionDefaultKiln, sessionWorkspace } from '@/lib/session-scope';
 import { SessionRow } from '../SessionTree';
 import { Plus, ChevronRight } from '@/lib/icons';
@@ -20,12 +19,10 @@ export const SessionsBody: Component = () => {
   const { currentSession, sessions, selectSession, archiveSession, deleteSession, refreshSessions } = useSessionSafe();
   const { projects } = useProjectSafe();
 
-  const [kilns, setKilns] = createSignal<KilnListEntry[]>([]);
   const [checkoutBranch, setCheckoutBranch] = createSignal<Map<string, string>>(new Map());
   const [showArchived, setShowArchived] = createSignal(false);
 
   onMount(() => {
-    void listKilns().then(setKilns).catch(() => {});
     refreshSessions({ includeArchived: true });
   });
 
@@ -60,11 +57,19 @@ export const SessionsBody: Component = () => {
     for (const [checkout, branch] of map) if (workspace.startsWith(checkout + '/')) return branch;
     return null;
   };
-  // Takes the kiln or `null`, never '': the empty path resolves to the home
-  // data dir, so a kiln-less session would be labelled with a kiln it has not
-  // attached.
-  const kilnName = (path: string | null): string | null =>
-    path ? kilnLabel(path, kilns().find((k) => k.path === path)?.name) : null;
+  // Takes a session's kiln NAME or `null`, never ''.
+  //
+  // `sessionDefaultKiln` returns a registry name, so this used to join it
+  // against `k.path` — a lookup that never matched, and whose only effect was
+  // to send the name through `kilnLabel`'s basename fallback. A valid
+  // `KilnName` has no separators, so the fallback returned it unchanged and the
+  // chip looked right by coincidence; a kiln legitimately named `.crucible`
+  // rendered as "Home kiln".
+  //
+  // The name IS the label, so nothing is looked up and nothing can be borrowed
+  // from a neighbouring kiln. The `kiln.list` fetch this used to need is gone
+  // with it.
+  const kilnName = (name: string | null): string | null => name || null;
 
   const activeList = createMemo(() => sessions().filter((s) => !s.archived).sort(byRecency));
   const archivedList = createMemo(() => sessions().filter((s) => s.archived).sort(byRecency));

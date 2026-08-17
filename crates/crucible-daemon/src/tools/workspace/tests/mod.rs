@@ -66,7 +66,7 @@ fn an_unknown_env_var_is_not_expanded_and_stays_contained() {
             !p.as_path().starts_with(&home),
             "process env must not be expanded: {} reached {}",
             "$HOME/.ssh/id_rsa",
-            p.display()
+            p.as_path().display()
         );
     }
     assert!(tools.resolve_path("/etc/passwd").is_err());

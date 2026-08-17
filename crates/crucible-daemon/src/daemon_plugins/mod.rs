@@ -491,11 +491,21 @@ impl DaemonPluginLoader {
     ///
     /// Call after a kiln opens and storage is available. Replaces stub functions
     /// registered in `new()` with implementations that query the store.
-    /// Also sets `cru.kiln.active_path` to the kiln directory path.
+    /// Also sets `cru.kiln.active` to the kiln's registry NAME.
+    ///
+    /// `kiln_path` is the storage authority — it never reaches Lua. The global
+    /// was `cru.kiln.active_path`, the kiln's absolute directory, handed to
+    /// every loaded plugin for a kiln it had not named: the same disclosure
+    /// `precognition_*` payloads and `cru.config` were closed against, through
+    /// a side door. An unregistered kiln sets nothing and *clears* whatever the
+    /// previous open left behind — a stale name is worse than no name, because
+    /// a handler asking `cru.kiln.active` would be told about a kiln it is no
+    /// longer looking at.
     pub fn upgrade_with_storage(
         &self,
         store: Arc<dyn NoteStore>,
         kiln_path: &std::path::Path,
+        kiln_name: Option<&crucible_core::config::KilnName>,
     ) -> anyhow::Result<()> {
         let lua = self.executor.lua();
         let authority = crucible_core::storage::Scope::workspace_unchecked(kiln_path);
@@ -509,11 +519,21 @@ impl DaemonPluginLoader {
         crucible_lua::register_vault_module_with_store_scoped(lua, store, authority)
             .map_err(|e| anyhow::anyhow!("vault upgrade: {e}"))?;
 
-        // Set cru.kiln.active_path so plugins know which kiln is active
+        // Set cru.kiln.active so plugins know which kiln is active, by name.
         let globals = lua.globals();
         if let Ok(cru) = globals.get::<mlua::Table>("cru") {
             if let Ok(kiln) = cru.get::<mlua::Table>("kiln") {
-                let _ = kiln.set("active_path", kiln_path.to_string_lossy().to_string());
+                // `mlua::Nil` rather than `""`: an empty string is truthy in
+                // Lua, so `if cru.kiln.active then` would answer yes for a kiln
+                // nothing can name.
+                match kiln_name {
+                    Some(name) => {
+                        let _ = kiln.set("active", name.as_str());
+                    }
+                    None => {
+                        let _ = kiln.set("active", mlua::Nil);
+                    }
+                }
             }
         }
 

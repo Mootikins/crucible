@@ -521,8 +521,8 @@ describe('isLoadingHistory', () => {
           data: {
             notes_count: 2,
             notes: [
-              { title: 'Kilns', kiln_label: 'docs', score: 0.91 },
-              { title: 'Wikilinks', kiln_label: 'docs', score: 0.72 },
+              { title: 'Kilns', kiln: 'docs', score: 0.91 },
+              { title: 'Wikilinks', kiln: 'docs', score: 0.72 },
             ],
           },
         },

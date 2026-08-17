@@ -41,7 +41,11 @@ pub(crate) async fn handle_kiln_open(
         let property_store = handle.as_property_store();
         let loader_guard = plugin_loader.lock().await;
         if let Some(ref loader) = *loader_guard {
-            if let Err(e) = loader.upgrade_with_storage(store, kiln_path) {
+            // The name, resolved through the registry the manager holds. A
+            // caller that opened an unregistered directory names no kiln to
+            // the plugins, which is what `None` says.
+            let kiln_name = km.kiln_name_for(kiln_path);
+            if let Err(e) = loader.upgrade_with_storage(store, kiln_path, kiln_name.as_ref()) {
                 warn!("Failed to upgrade Lua modules with storage: {}", e);
             }
             if let Err(e) = loader.upgrade_with_property_store(property_store) {

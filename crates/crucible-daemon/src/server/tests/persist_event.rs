@@ -205,8 +205,8 @@ async fn test_persist_event_keeps_precognition_notes() {
             "notes_count": 2,
             "query_summary": "tell me about the kiln",
             "notes": [
-                {"title": "Kilns", "kiln_label": "docs", "score": 0.91},
-                {"title": "Wikilinks", "kiln_label": "docs", "score": 0.72},
+                {"title": "Kilns", "kiln": "docs", "score": 0.91},
+                {"title": "Wikilinks", "kiln": "docs", "score": 0.72},
             ],
         }),
     );
@@ -222,7 +222,10 @@ async fn test_persist_event_keeps_precognition_notes() {
     let notes = parsed["data"]["notes"].as_array().expect("notes survive");
     assert_eq!(notes.len(), 2);
     assert_eq!(notes[0]["title"], "Kilns");
-    assert_eq!(notes[0]["kiln_label"], "docs");
+    // `kiln`, and a registry NAME under it. This value is written to
+    // `session.jsonl` and outlives the turn; it used to be `kiln_label`,
+    // carrying the kiln directory's basename.
+    assert_eq!(notes[0]["kiln"], "docs");
 }
 
 #[tokio::test]

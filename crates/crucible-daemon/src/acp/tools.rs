@@ -543,14 +543,17 @@ impl ToolExecutor {
         _tool_name: &str,
         _params: serde_json::Value,
     ) -> Result<serde_json::Value> {
-        // Return basic kiln information
-        let name = self
-            .kiln_path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "unknown".to_string());
+        // Return basic kiln information.
+        //
+        // No `name`. This answers an EXTERNAL agent process (Claude Code,
+        // OpenCode, Gemini CLI), and the value used to be
+        // `kiln_path.file_name()` — the directory basename dressed as a name,
+        // the least contained of the basename disclosures because the
+        // recipient is a third-party binary. This executor is built from a
+        // bare `PathBuf` and has no registry to resolve one properly; the
+        // production ACP surface is `InProcessMcpHost` → `KilnTools`, which
+        // does (see `KilnTools::with_name`).
         Ok(serde_json::json!({
-            "name": name,
             "exists": self.kiln_path.exists(),
             "is_directory": self.kiln_path.is_dir()
         }))
@@ -825,6 +828,26 @@ mod tests {
 
         let err = registry.register(descriptor).unwrap_err();
         assert!(matches!(err, ClientError::InvalidConfig(_)));
+    }
+
+    /// The external agent is told whether the kiln is there, and nothing about
+    /// where. The reply used to carry `"name": <directory basename>`.
+    #[tokio::test]
+    async fn get_kiln_info_tells_an_external_agent_nothing_about_the_directory() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let secret = temp.path().join("Private Vault");
+        std::fs::create_dir_all(&secret).unwrap();
+        let executor = ToolExecutor::new(secret.clone());
+
+        let value = executor.execute("get_kiln_info", json!({})).await.unwrap();
+
+        assert_eq!(value["exists"], true);
+        assert!(value.get("name").is_none(), "no name key at all: {value}");
+        let rendered = value.to_string();
+        assert!(
+            !rendered.contains("Private Vault"),
+            "the kiln directory must not reach an external agent process: {rendered}"
+        );
     }
 
     #[tokio::test]

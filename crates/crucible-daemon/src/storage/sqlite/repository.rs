@@ -189,7 +189,7 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
                     score: r.score as f64,
                     highlights: None,
                     snippet: Some(snippet),
-                    kiln_path: None,
+                    kiln: None,
                 }
             })
             .collect();
@@ -438,6 +438,7 @@ mod tests {
 
         let sources = vec![KilnSearchSource {
             kiln_path: kiln_path.clone(),
+            kiln_name: None,
             knowledge_repo: create_knowledge_repository(store),
         }];
 

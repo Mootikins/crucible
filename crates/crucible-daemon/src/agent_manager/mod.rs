@@ -1028,7 +1028,10 @@ impl AgentManager {
                     delegation_context,
                     containment.clone(),
                 )
-                .with_search_sources(search_sources),
+                .with_search_sources(search_sources)
+                // `get_kiln_info` answers the model with this, or with no name
+                // at all — never with the anchor directory's basename.
+                .with_kiln_name(session.default_kiln().cloned()),
             );
 
             // The project's `[security.shell]` policy applies to bash the same

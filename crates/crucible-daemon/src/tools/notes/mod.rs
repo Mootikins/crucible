@@ -440,8 +440,11 @@ impl NoteTools {
         let search_path = self.scope.resolve_folder(folder.as_deref())?;
 
         if !search_path.exists() {
+            // The caller supplied `folder`; the kiln root it resolves against
+            // is what it did not. Reporting `search_path` turned a missing
+            // folder into an oracle for the kiln's location.
             return Err(rmcp::ErrorData::invalid_params(
-                format!("Folder not found: {}", search_path.display()),
+                format!("Folder not found: {}", folder.as_deref().unwrap_or(".")),
                 None,
             ));
         }

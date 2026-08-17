@@ -21,6 +21,14 @@ pub struct KilnTools {
     /// how many sessions the machine has recorded.
     scope: FsScope,
     note_store: Option<Arc<dyn NoteStore>>,
+    /// What `get_kiln_info` calls this kiln when it answers the model.
+    ///
+    /// The tool used to derive a `"name"` from `scope.anchor().file_name()` —
+    /// the directory basename — so a kiln registered `notes` at
+    /// `/home/u/Private Vault` reported itself as `Private Vault`. There is no
+    /// path fallback: an anchor with no registry entry has no name, and the
+    /// tool omits the key.
+    name: Option<crucible_core::config::KilnName>,
 }
 
 impl KilnTools {
@@ -30,7 +38,15 @@ impl KilnTools {
         Self {
             scope: FsScope::kiln(kiln_path, RootSet::Ambient),
             note_store: None,
+            name: None,
         }
+    }
+
+    /// Tell these tools the kiln's registry name. See [`KilnTools::name`].
+    #[must_use]
+    pub(crate) fn with_name(mut self, name: Option<crucible_core::config::KilnName>) -> Self {
+        self.name = name;
+        self
     }
 
     /// Contain these tools to the session's roots — see
@@ -54,6 +70,7 @@ impl KilnTools {
         Self {
             scope: FsScope::kiln(kiln_path, RootSet::Ambient),
             note_store: Some(note_store),
+            name: None,
         }
     }
 }
@@ -62,11 +79,16 @@ impl KilnTools {
 impl KilnTools {
     #[tool(description = "Get comprehensive kiln information")]
     pub async fn get_kiln_info(&self) -> Result<CallToolResult, rmcp::ErrorData> {
-        // Extract kiln name from path
-        let name = self.scope.anchor().file_name().map_or_else(
-            || "unknown".to_string(),
-            |n| n.to_string_lossy().into_owned(),
-        );
+        // The registry name or nothing. Not `scope.anchor().file_name()`, which
+        // reported a fragment of the user's filesystem as if it were a name,
+        // and not `"unknown"` either — a placeholder the model would repeat
+        // back is a worse answer than a missing key.
+        let named = |mut fields: serde_json::Map<String, serde_json::Value>| {
+            if let Some(name) = self.name.as_ref() {
+                fields.insert("name".to_string(), serde_json::json!(name.as_str()));
+            }
+            serde_json::Value::Object(fields)
+        };
 
         // Use indexed data from NoteStore when available — workspace
         // authority bound to this MCP server's kiln.
@@ -91,13 +113,17 @@ impl KilnTools {
                 total_links += note.links_to.len();
             }
 
-            return json_success(serde_json::json!({
-                "name": name,
-                "indexed_notes": indexed_notes,
-                "embedded_notes": embedded_notes,
-                "unique_tags": tags.len(),
-                "total_links": total_links,
-            }));
+            return json_success(named(
+                serde_json::json!({
+                    "indexed_notes": indexed_notes,
+                    "embedded_notes": embedded_notes,
+                    "unique_tags": tags.len(),
+                    "total_links": total_links,
+                })
+                .as_object()
+                .expect("object literal")
+                .clone(),
+            ));
         }
 
         // Fallback: walk filesystem when no NoteStore available
@@ -128,12 +154,16 @@ impl KilnTools {
             }
         }
 
-        json_success(serde_json::json!({
-            "name": name,
-            "total_files": total_files,
-            "markdown_files": md_files,
-            "total_size_bytes": total_size
-        }))
+        json_success(named(
+            serde_json::json!({
+                "total_files": total_files,
+                "markdown_files": md_files,
+                "total_size_bytes": total_size
+            })
+            .as_object()
+            .expect("object literal")
+            .clone(),
+        ))
     }
 }
 
@@ -166,6 +196,60 @@ mod tests {
         assert_eq!(kiln_tools.kiln_path(), temp_dir.path().to_string_lossy());
     }
 
+    /// `get_kiln_info` is a tool the agent can call directly and repeatedly.
+    /// Whatever it says about the kiln must be sayable back to us: a registry
+    /// name, or nothing. It used to answer with `anchor().file_name()`, so a
+    /// kiln registered `notes` at `/home/u/Private Vault` introduced itself as
+    /// `Private Vault`.
+    #[tokio::test]
+    async fn get_kiln_info_never_names_a_kiln_after_its_directory() {
+        let temp_dir = TempDir::new().unwrap();
+        let secret = temp_dir.path().join("Private Vault");
+        std::fs::create_dir_all(&secret).unwrap();
+
+        let parsed = kiln_info(
+            &KilnTools::new(secret.to_string_lossy().to_string())
+                .with_name(Some(crate::test_support::kiln_name("notes"))),
+        )
+        .await;
+
+        assert_eq!(parsed["name"], "notes");
+        let rendered = serde_json::to_string(&parsed).unwrap();
+        assert!(
+            !rendered.contains("Private Vault"),
+            "the anchor directory must not reach the model: {rendered}"
+        );
+    }
+
+    /// No registry entry, no name — not the basename, and not `"unknown"`,
+    /// which the model would repeat back as if it meant something.
+    #[tokio::test]
+    async fn get_kiln_info_omits_the_name_when_no_entry_claims_the_kiln() {
+        let temp_dir = TempDir::new().unwrap();
+        let secret = temp_dir.path().join("Private Vault");
+        std::fs::create_dir_all(&secret).unwrap();
+
+        let parsed = kiln_info(&KilnTools::new(secret.to_string_lossy().to_string())).await;
+
+        assert!(parsed.get("name").is_none(), "no key at all: {parsed}");
+        let rendered = serde_json::to_string(&parsed).unwrap();
+        assert!(!rendered.contains("Private Vault"), "{rendered}");
+        assert!(!rendered.contains("unknown"), "{rendered}");
+    }
+
+    async fn kiln_info(tools: &KilnTools) -> serde_json::Value {
+        let result = tools.get_kiln_info().await.expect("get_kiln_info succeeds");
+        let text = result
+            .content
+            .first()
+            .expect("content")
+            .as_text()
+            .expect("text")
+            .text
+            .clone();
+        serde_json::from_str(&text).expect("valid JSON")
+    }
+
     #[tokio::test]
     async fn test_get_kiln_info_empty() {
         let temp_dir = TempDir::new().unwrap();
@@ -181,8 +265,9 @@ mod tests {
             let raw_text = content.as_text().unwrap();
             let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
 
-            // Check flat structure
-            assert!(parsed["name"].as_str().is_some());
+            // Check flat structure. No `name`: these tools were built from a
+            // bare directory, and the basename is not a kiln name.
+            assert!(parsed.get("name").is_none());
             assert_eq!(parsed["total_files"], 0);
             assert_eq!(parsed["markdown_files"], 0);
             assert_eq!(parsed["total_size_bytes"], 0);
@@ -218,7 +303,7 @@ mod tests {
             let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
 
             // Check flat structure
-            assert!(parsed["name"].as_str().is_some());
+            assert!(parsed.get("name").is_none());
             assert_eq!(parsed["total_files"], 3);
             assert_eq!(parsed["markdown_files"], 2);
             assert!(parsed["total_size_bytes"].as_u64().unwrap() > 0);
@@ -316,14 +401,17 @@ mod tests {
         ];
 
         let store = Arc::new(MockNoteStore::new(notes));
-        let kiln_tools = KilnTools::with_note_store("/tmp/test-kiln".into(), store);
+        let kiln_tools = KilnTools::with_note_store("/tmp/test-kiln".into(), store)
+            .with_name(Some(crate::test_support::kiln_name("work-notes")));
 
         let result = kiln_tools.get_kiln_info().await.unwrap();
         let content = result.content.first().unwrap();
         let raw_text = content.as_text().unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
 
-        assert_eq!(parsed["name"], "test-kiln");
+        // The REGISTRY name, not `test-kiln` — the anchor's basename, which is
+        // what this used to report.
+        assert_eq!(parsed["name"], "work-notes");
         assert_eq!(parsed["indexed_notes"], 3);
         assert_eq!(parsed["embedded_notes"], 1);
         assert_eq!(parsed["unique_tags"], 3); // rust, dev, archive

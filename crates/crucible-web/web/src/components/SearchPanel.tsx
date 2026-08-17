@@ -42,7 +42,31 @@ const SCOPE_MENU_MAX_HEIGHT = 320;
 
 // ---- scope-aware search options --------------------------------------------
 type ScopeKind = 'everywhere' | 'kiln' | 'project' | 'sessions';
-type SScope = { kind: ScopeKind; name: string; path?: string };
+
+/**
+ * A search scope, as a discriminated union so a kiln's NAME and its DIRECTORY
+ * cannot be mistaken for each other.
+ *
+ * They were one optional `path?: string` field, and the two consumers wanted
+ * opposite things out of it: `semanticSearch`/`grepSearch` take a kiln
+ * directory, `searchSessions` takes a registry name. Whichever the field held,
+ * one of them silently searched nothing — a kiln picked from the menu stored a
+ * path and returned zero session hits, while a scope prefilled from the current
+ * session stored a name and greped a relative directory that does not exist.
+ *
+ * A kiln scope now carries both, under names that say which is which, and the
+ * other three carry neither — so a new consumer has to say which one it means.
+ */
+type SScope =
+  | { kind: 'everywhere'; name: string }
+  | { kind: 'sessions'; name: string }
+  /** `kiln` is the registry name (session search); `path` is the directory (grep, vectors). */
+  | { kind: 'kiln'; name: string; kiln: string; path: string }
+  | { kind: 'project'; name: string; path: string };
+
+/** Identity for selection highlighting, across variants with no `path`. */
+const scopeKey = (s: SScope) =>
+  s.kind === 'kiln' ? `kiln:${s.kiln}` : s.kind === 'project' ? `project:${s.path}` : s.kind;
 /** Text = ripgrep (literal); Semantic = vector similarity over embedded notes. */
 type SearchMode = 'text' | 'semantic';
 
@@ -154,12 +178,22 @@ export const SearchPanel: Component = () => {
 
   const primaryKiln = () => kilnPath();
   const mruProject = () => projects()[0]?.path ?? '';
-  const kilnDisplay = (path: string) => kilnLabel(path, kilns().find((k) => k.path === path)?.name);
+  /** The `kiln.list` entry a registry NAME belongs to, or undefined. */
+  const kilnByName = (name: string) => kilns().find((k) => k.name === name);
+  /** The scope for one `kiln.list` entry: its name for sessions, its path for notes. */
+  const kilnScope = (k: KilnListEntry): SScope => ({
+    kind: 'kiln',
+    name: kilnLabel(k.path, k.name),
+    // An entry the daemon lists without a registry name cannot scope a session
+    // search; `''` keeps it out of the query rather than sending a path.
+    kiln: k.name ?? '',
+    path: k.path,
+  });
 
   const scopeOptions = createMemo<SScope[]>(() => [
     { kind: 'everywhere', name: 'Everywhere' },
     { kind: 'sessions', name: 'Sessions' },
-    ...kilns().map((k) => ({ kind: 'kiln' as const, name: kilnDisplay(k.path), path: k.path })),
+    ...kilns().map(kilnScope),
     ...projects().map((p) => ({ kind: 'project' as const, name: p.name || pathBasename(p.path) || p.path, path: p.path })),
   ]);
 
@@ -174,11 +208,16 @@ export const SearchPanel: Component = () => {
 
   // Prefill the scope from the current session's kiln (context), until the user
   // picks a scope themselves.
+  // `sessionDefaultKiln` returns a registry NAME, so it has to be resolved back
+  // to an entry before it can scope a note search. It used to be stored
+  // straight into `.path`, which greped a relative directory named after the
+  // kiln — i.e. nothing — on every session that had one.
   createEffect(() => {
     if (scopeTouched()) return;
     const s = currentSession();
-    const k = s ? sessionDefaultKiln(s) : null;
-    if (k) setScope({ kind: 'kiln', name: kilnDisplay(k), path: k });
+    const name = s ? sessionDefaultKiln(s) : null;
+    const entry = name ? kilnByName(name) : undefined;
+    if (entry) setScope(kilnScope(entry));
   });
 
   const pickScope = (s: SScope) => { setScopeTouched(true); setScope(s); setPickerOpen(false); };
@@ -192,8 +231,8 @@ export const SearchPanel: Component = () => {
   const showNotes = () => scope().kind === 'everywhere' || scope().kind === 'kiln';
   const showFiles = () => scope().kind === 'everywhere' || scope().kind === 'project';
   // Which roots to grep for the current scope.
-  const noteRoot = () => (scope().kind === 'kiln' ? scope().path ?? '' : primaryKiln());
-  const fileRoot = () => (scope().kind === 'project' ? scope().path ?? '' : mruProject());
+  const noteRoot = () => { const s = scope(); return s.kind === 'kiln' ? s.path : primaryKiln(); };
+  const fileRoot = () => { const s = scope(); return s.kind === 'project' ? s.path : mruProject(); };
 
   // Run searches on query/scope/mode change; per-run token drops stale responses.
   let runToken = 0;
@@ -231,7 +270,11 @@ export const SearchPanel: Component = () => {
       : Promise.resolve(guard(() => setFileHits([])));
 
     // Sessions always integrate; scope to the kiln when one is selected.
-    const sessKiln = scope().kind === 'kiln' ? scope().path : undefined;
+    // The NAME. `searchSessions` takes registry names, and the route now
+    // refuses a set that names kilns and resolves none of them — a path here
+    // was a guaranteed 422 rather than the silent empty result it used to be.
+    const sessKilnScope = scope();
+    const sessKiln = sessKilnScope.kind === 'kiln' ? sessKilnScope.kiln || undefined : undefined;
     const sessions = searchSessions(q, sessKiln, 30).then((r) => guard(() => setSessionHits(r))).catch(() => guard(() => setSessionHits([])));
 
     void Promise.allSettled([notes, files, sessions]).then(() => guard(() => setBusy(false)));
@@ -427,13 +470,13 @@ const ScopeMenu: Component<{
       window.removeEventListener('scroll', place, true);
     });
   });
-  const isSel = (s: SScope) => s.kind === props.current.kind && s.path === props.current.path;
+  const isSel = (s: SScope) => scopeKey(s) === scopeKey(props.current);
   const Row: Component<{ s: SScope }> = (r) => {
     const I = scopeIcon(r.s.kind);
     return (
       <button type="button" onClick={() => props.onPick(r.s)}
         class="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-shell-body hover:bg-hover-wash"
-        data-testid={`search-scope-${r.s.kind}${r.s.path ? '-' + pathBasename(r.s.path) : ''}`}>
+        data-testid={`search-scope-${r.s.kind}${'path' in r.s && r.s.path ? '-' + pathBasename(r.s.path) : ''}`}>
         <I class="w-3.5 h-3.5 shrink-0 text-muted-dark" /><span class="truncate">{r.s.name}</span>
         <Show when={isSel(r.s)}><Check class="w-3.5 h-3.5 text-primary ml-auto" /></Show>
       </button>

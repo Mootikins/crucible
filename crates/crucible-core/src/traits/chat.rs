@@ -69,7 +69,16 @@ pub enum ChatError {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PrecognitionNoteInfo {
     pub title: String,
-    pub kiln_label: Option<String>,
+    /// Which kiln the note came from, by registry name.
+    ///
+    /// Was `kiln_label: Option<String>`, filled from the kiln directory's
+    /// basename. This payload is persisted into `session.jsonl` and broadcast
+    /// to the web and TUI, so that basename outlived the turn and reached two
+    /// UIs. The key is renamed as well as retyped: a transcript recorded before
+    /// this change holds a basename under the old key, and it must be dropped
+    /// on read rather than parsed as if it were a name.
+    #[serde(default)]
+    pub kiln: Option<crate::config::KilnName>,
     /// Search relevance score from the vector index. Defaults for payloads
     /// recorded before the field existed.
     #[serde(default)]

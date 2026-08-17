@@ -8,9 +8,20 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+/// One corpus the fan-out searches, and the only place a kiln's directory and
+/// its registry name sit side by side.
+///
+/// The path is for *reaching* the corpus — trust resolution, dedup keys, log
+/// lines the machine owner reads. The name is for *reporting* it, and it is the
+/// only half that is copied onto a [`SearchResult`]. Building a source is
+/// therefore the one point where a caller has to answer "what is this kiln
+/// called", and `None` is a legitimate answer (an unregistered kiln opened by
+/// path, e.g. `cru mcp`) that means every downstream renderer omits the field.
 #[derive(Clone)]
 pub struct KilnSearchSource {
     pub kiln_path: PathBuf,
+    /// The registry name, when this source came from a registered kiln.
+    pub kiln_name: Option<crucible_core::config::KilnName>,
     pub knowledge_repo: Arc<dyn KnowledgeRepository>,
 }
 
@@ -61,7 +72,11 @@ pub async fn search_across_kilns(
         };
 
         for mut result in results {
-            result.kiln_path = Some(source.kiln_path.clone());
+            // The name, not the path. The dedup key below still uses the path —
+            // it is the identity of the corpus, and two kilns may share a name
+            // in a malformed config — but nothing that leaves this function
+            // carries one.
+            result.kiln = source.kiln_name.clone();
             let doc_id: DocumentId = result.document_id.clone();
             let key = (source.kiln_path.clone(), doc_id.0.clone());
 
@@ -127,8 +142,18 @@ mod tests {
             score,
             highlights: None,
             snippet: None,
-            kiln_path: None,
+            kiln: None,
         }
+    }
+
+    /// The registry name a fixture kiln directory stands in for. Production
+    /// takes this from the session's own `kilns` list, never from the path;
+    /// folding the basename here just spares every test a literal.
+    fn name_of(kiln_path: &Path) -> Option<crucible_core::config::KilnName> {
+        kiln_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(crucible_core::config::KilnName::normalize)
     }
 
     fn mock_source(
@@ -137,7 +162,26 @@ mod tests {
         should_fail: bool,
     ) -> KilnSearchSource {
         KilnSearchSource {
+            kiln_name: name_of(&kiln_path),
             kiln_path,
+            knowledge_repo: Arc::new(MockKnowledgeRepository {
+                results,
+                should_fail,
+            }),
+        }
+    }
+
+    /// An unnamed source (a kiln opened by path, outside the registry) must
+    /// leave `kiln` absent. There is no fallback to the directory basename:
+    /// that is the disclosure this field was retyped to make unrepresentable.
+    fn unnamed_source(
+        kiln_path: PathBuf,
+        results: Vec<SearchResult>,
+        should_fail: bool,
+    ) -> KilnSearchSource {
+        KilnSearchSource {
+            kiln_path,
+            kiln_name: None,
             knowledge_repo: Arc::new(MockKnowledgeRepository {
                 results,
                 should_fail,
@@ -189,7 +233,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(results.len(), 2);
-        assert!(results.iter().all(|r| r.kiln_path.as_ref() == Some(&kiln)));
+        assert!(results.iter().all(|r| r.kiln == name_of(&kiln)));
     }
 
     #[tokio::test]
@@ -264,11 +308,44 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].document_id.0, "good-doc");
-        assert_eq!(results[0].kiln_path.as_ref(), Some(&good));
+        assert_eq!(results[0].kiln, name_of(&good));
+    }
+
+    /// The whole point of the retype: a source with no registry name yields
+    /// hits with no kiln at all, rather than hits labelled with the directory
+    /// the daemon happened to open. Every renderer downstream — the precognition
+    /// block, the `semantic_search` tool result, the Lua payload, the transcript
+    /// — reads this one field, so an absent name is absent everywhere.
+    #[tokio::test]
+    async fn unnamed_kiln_leaves_the_result_unattributed() {
+        let tmp = TempDir::new().unwrap();
+        let kiln = tmp.path().join("Private Vault");
+        fs::create_dir_all(&kiln).unwrap();
+
+        let sources = vec![unnamed_source(
+            kiln.clone(),
+            vec![mock_result("secret.md", 0.9)],
+            false,
+        )];
+
+        let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, Some(tmp.path()))
+            .await
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0].kiln, None,
+            "an unregistered kiln must not be named after its directory"
+        );
+        let rendered = serde_json::to_string(&results[0]).unwrap();
+        assert!(
+            !rendered.contains("Private Vault"),
+            "no serialization of a hit may carry the kiln's directory: {rendered}"
+        );
     }
 
     #[tokio::test]
-    async fn search_kiln_path_populated_on_results() {
+    async fn search_kiln_name_populated_on_results() {
         let tmp = TempDir::new().unwrap();
         let kiln_a = tmp.path().join("kiln-a");
         let kiln_b = tmp.path().join("kiln-b");
@@ -287,10 +364,10 @@ mod tests {
         assert_eq!(results.len(), 2);
         assert!(results
             .iter()
-            .any(|r| { r.document_id.0 == "doc-a" && r.kiln_path.as_ref() == Some(&kiln_a) }));
+            .any(|r| { r.document_id.0 == "doc-a" && r.kiln == name_of(&kiln_a) }));
         assert!(results
             .iter()
-            .any(|r| { r.document_id.0 == "doc-b" && r.kiln_path.as_ref() == Some(&kiln_b) }));
+            .any(|r| { r.document_id.0 == "doc-b" && r.kiln == name_of(&kiln_b) }));
     }
 
     #[tokio::test]
@@ -335,7 +412,7 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].document_id.0, "primary-doc");
-        assert_eq!(results[0].kiln_path.as_ref(), Some(&primary));
+        assert_eq!(results[0].kiln, name_of(&primary));
     }
 
     #[tokio::test]
@@ -365,7 +442,7 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].document_id.0, "public-doc");
-        assert_eq!(results[0].kiln_path.as_ref(), Some(&public_kiln));
+        assert_eq!(results[0].kiln, name_of(&public_kiln));
     }
 
     #[tokio::test]

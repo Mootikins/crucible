@@ -328,9 +328,15 @@ async fn bridge_create_emits_session_initialized() {
 
     let event = initialized.expect("the setup task must announce the session");
     assert_eq!(event.session_id, session_id);
-    assert_eq!(
-        event.data["kiln_path"].as_str(),
-        Some(&*tmp.path().to_string_lossy())
+    // The announcement names the session's kilns and locates none of them.
+    assert_eq!(event.data["kilns"], serde_json::json!(["kiln"]));
+    assert!(
+        !event
+            .data
+            .to_string()
+            .contains(&*tmp.path().to_string_lossy()),
+        "the kiln directory must not reach a subscriber: {:?}",
+        event.data
     );
     assert_eq!(
         event.data["model"].as_str(),

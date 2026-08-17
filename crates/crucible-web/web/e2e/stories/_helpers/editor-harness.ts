@@ -61,7 +61,7 @@ export async function setupEditorHarness(
   const project = {
     path: '/home/user/project',
     name: 'project',
-    kilns: [{ path: HARNESS_KILN, name: 'My Kiln' }],
+    kilns: [{ path: HARNESS_KILN, name: 'my-kiln' }],
     last_accessed: '2026-01-01T00:00:00Z',
   };
   const saves: SavedNote[] = [];

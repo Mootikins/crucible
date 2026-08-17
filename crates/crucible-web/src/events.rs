@@ -696,8 +696,8 @@ mod tests {
                 "notes_count": 2,
                 "query_summary": "tokio pinning",
                 "notes": [
-                    { "title": "Note A", "kiln_label": "docs", "score": 0.9 },
-                    { "title": "Note B", "kiln_label": "docs", "score": 0.7 },
+                    { "title": "Note A", "kiln": "docs", "score": 0.9 },
+                    { "title": "Note B", "kiln": "docs", "score": 0.7 },
                 ],
             }),
         );

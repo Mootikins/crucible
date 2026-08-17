@@ -230,8 +230,10 @@ pub enum SystemPayload {
         to: PathBuf,
     },
     ClassificationRequired {
+        /// The kiln's registry name, absent when no entry claims it. Never a
+        /// path — see the internal `SessionEvent` variant for why.
         #[serde(default)]
-        kiln_path: String,
+        kiln: Option<crate::config::KilnName>,
     },
     /// One producer: `handle_kiln_open` (`crucible-daemon/src/server/kiln.rs`),
     /// once a `kiln.open { process: true }` has finished indexing a kiln. The

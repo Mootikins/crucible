@@ -16,6 +16,12 @@ vi.mock('@/lib/local-cache', () => ({
   },
 }));
 
+const searchSessionsMock = vi.fn(
+  async (_q: string, _kiln?: string | string[], _limit?: number) => [
+    { id: 's1', title: 'Trust session', started_at: '2026-07-20T00:00:00Z' },
+  ],
+);
+
 const openFileMock = vi.fn();
 vi.mock('@/lib/file-actions', () => ({ openFileInEditor: (...a: unknown[]) => openFileMock(...a) }));
 
@@ -41,9 +47,7 @@ vi.mock('@/lib/api', () => ({
   getConfig: vi.fn(async () => ({ kiln_path: '/kilns/main' })),
   listKilns: vi.fn(async () => [{ path: '/kilns/main', name: 'main' }]),
   grepSearch: (...a: [string, string, { glob?: string }?]) => grepMock(...a),
-  searchSessions: vi.fn(async () => [
-    { id: 's1', title: 'Trust session', started_at: '2026-07-20T00:00:00Z' },
-  ]),
+  searchSessions: (...a: Parameters<typeof searchSessionsMock>) => searchSessionsMock(...a),
 }));
 
 afterEach(() => {
@@ -92,6 +96,34 @@ describe('SearchPanel', () => {
     expect(container.contains(menu)).toBe(false);
     expect(document.body.contains(menu)).toBe(true);
     expect(menu.style.position).toBe('fixed');
+  });
+
+  // The end-to-end round trip a kiln scope has to survive: the picker stores a
+  // kiln's NAME and its DIRECTORY separately, and each of the two consumers
+  // gets the one it actually takes. They used to share one `path` field, so
+  // whichever consumer was wrong searched nothing — the note grep ran against a
+  // bare name, or the session search sent a path the route drops.
+  it('scoping to a kiln greps its directory and searches sessions by its name', async () => {
+    render(() => <SearchPanel />);
+    fireEvent.click(screen.getByTestId('search-scope'));
+    await waitFor(() => expect(screen.getByTestId('search-scope-kiln-main')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('search-scope-kiln-main'));
+
+    fireEvent.input(screen.getByTestId('search-input'), { target: { value: 'trust' } });
+
+    await waitFor(() =>
+      expect(grepMock).toHaveBeenCalledWith(
+        '/kilns/main',
+        'trust',
+        expect.objectContaining({ glob: '*.md' }),
+      ),
+    );
+    await waitFor(() =>
+      expect(searchSessionsMock).toHaveBeenCalledWith('trust', 'main', 30),
+    );
+    // Neither call carries the other's spelling.
+    expect(grepMock).not.toHaveBeenCalledWith('main', expect.anything(), expect.anything());
+    expect(searchSessionsMock).not.toHaveBeenCalledWith('trust', '/kilns/main', 30);
   });
 
   it('scoping to Sessions drops the notes/files sections', async () => {

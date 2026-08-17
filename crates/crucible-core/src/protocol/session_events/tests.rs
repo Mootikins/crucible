@@ -342,7 +342,7 @@ fn a_session_initialized_is_persisted_only_once_the_model_is_known() {
         "session_initialized",
         &serde_json::json!({
             "model": "glm-5", "mode": "normal", "agent_name": null,
-            "kiln_path": "/k", "workspace_path": "/w",
+            "kilns": ["notes"], "workspace_path": "/w",
         }),
     )
     .unwrap();
@@ -352,7 +352,7 @@ fn a_session_initialized_is_persisted_only_once_the_model_is_known() {
         "session_initialized",
         &serde_json::json!({
             "model": "", "mode": "normal", "agent_name": null,
-            "kiln_path": "/k", "workspace_path": "/w",
+            "kilns": ["notes"], "workspace_path": "/w",
         }),
     )
     .unwrap();
@@ -569,15 +569,45 @@ fn session_initialized_shape() {
         model: "glm-5".into(),
         mode: "normal".into(),
         agent_name: None,
-        kiln_path: PathBuf::from("/k"),
+        kilns: vec![crate::config::KilnName::parse("notes").unwrap()],
         workspace_path: PathBuf::from("/w"),
     };
     let v = serde_json::to_value(&p).unwrap();
     assert_eq!(v["model"], "glm-5");
     assert_eq!(v["mode"], "normal");
     assert!(v["agent_name"].is_null());
-    assert_eq!(v["kiln_path"], "/k");
     assert_eq!(v["workspace_path"], "/w");
+    // Names, and only names. This payload is broadcast to every subscriber and
+    // persisted into `session.jsonl` once the model is known; it used to carry
+    // `kiln_path`, the resolved directory of whichever kiln sorted first.
+    assert_eq!(v["kilns"], serde_json::json!(["notes"]));
+    assert!(
+        v.get("kiln_path").is_none(),
+        "the kiln directory is gone from the announcement: {v}"
+    );
+}
+
+/// A session that reaches no kiln announces an EMPTY set, not a path.
+///
+/// The producer used to spell this `.next().unwrap_or_default()`, so a
+/// kiln-less session announced `""` — which every path helper downstream reads
+/// as the daemon's own data directory.
+#[test]
+fn a_kiln_less_session_announces_no_kilns_rather_than_the_empty_path() {
+    let p = SessionInitializedPayload {
+        model: "glm-5".into(),
+        mode: "normal".into(),
+        agent_name: None,
+        kilns: Vec::new(),
+        workspace_path: PathBuf::from("/w"),
+    };
+    let v = serde_json::to_value(&p).unwrap();
+    assert_eq!(v["kilns"], serde_json::json!([]));
+    let rendered = serde_json::to_string(&v).unwrap();
+    assert!(
+        !rendered.contains(r#""""#),
+        "no empty string stands in for a kiln: {rendered}"
+    );
 }
 
 #[test]
@@ -586,7 +616,7 @@ fn session_initialized_shape_with_agent() {
         model: "sonnet-4".into(),
         mode: "plan".into(),
         agent_name: Some("claude".into()),
-        kiln_path: PathBuf::from("/kiln"),
+        kilns: vec![crate::config::KilnName::parse("kiln").unwrap()],
         workspace_path: PathBuf::from("/ws"),
     };
     let v = serde_json::to_value(&p).unwrap();

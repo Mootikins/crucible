@@ -386,6 +386,15 @@ pub struct KilnManager {
     event_tx: Option<broadcast::Sender<SessionEventMessage>>,
     enrichment_config: Option<EmbeddingProviderConfig>,
     max_precognition_chars: usize,
+    /// How this manager names a kiln it only has a directory for.
+    ///
+    /// It opens kilns BY PATH — every caller reaches it with one — so anything
+    /// it broadcasts would otherwise identify a kiln by that directory. The
+    /// registry is the only thing that can turn one back into the name the user
+    /// typed; without it a broadcast carries no kiln identity at all, which is
+    /// the correct fail-closed answer and is what every test-only
+    /// `KilnManager::new()` gets.
+    kiln_registry: Option<Arc<crate::kiln_registry::KilnRegistry>>,
 }
 
 impl KilnManager {
@@ -395,6 +404,7 @@ impl KilnManager {
             event_tx: None,
             enrichment_config: None,
             max_precognition_chars: crucible_core::config::default_max_precognition_chars(),
+            kiln_registry: None,
         }
     }
 
@@ -408,7 +418,28 @@ impl KilnManager {
             event_tx: Some(event_tx),
             enrichment_config,
             max_precognition_chars,
+            kiln_registry: None,
         }
+    }
+
+    /// Let this manager name the kilns it opens. See [`Self::kiln_registry`].
+    #[must_use]
+    pub fn with_kiln_registry(mut self, registry: Arc<crate::kiln_registry::KilnRegistry>) -> Self {
+        self.kiln_registry = Some(registry);
+        self
+    }
+
+    /// The registry name of the kiln at `path`, for callers that hold a
+    /// directory and need to report a kiln without disclosing one.
+    ///
+    /// `None` when no entry claims it, and `None` is never "use the path
+    /// instead": it means this kiln has no name a caller could have said.
+    pub fn kiln_name_for(&self, path: &Path) -> Option<crucible_core::config::KilnName> {
+        let canonical = canonical_or_self(path);
+        self.kiln_registry
+            .as_ref()
+            .and_then(|r| r.name_for(&canonical))
+            .cloned()
     }
 
     pub fn enrichment_config(&self) -> Option<&EmbeddingProviderConfig> {
@@ -501,10 +532,25 @@ impl KilnManager {
             crate::trust_resolution::resolve_kiln_classification(&canonical, &canonical);
         if classification.is_none() {
             if let Some(ref tx) = self.event_tx {
+                // Named, never located. This goes out on the broadcast channel
+                // to every subscriber, and the directory it used to carry was
+                // one no subscriber had named on the startup and mid-turn
+                // routes into `open`. A kiln with no registry entry yields no
+                // `kiln` key at all — an unnamed kiln is one a client cannot
+                // ask the user about, and `""` would name the data root to
+                // every path helper that touched it.
+                let mut data = serde_json::Map::new();
+                if let Some(name) = self
+                    .kiln_registry
+                    .as_ref()
+                    .and_then(|r| r.name_for(&canonical))
+                {
+                    data.insert("kiln".to_string(), serde_json::json!(name.as_str()));
+                }
                 let event = SessionEventMessage::new(
                     "system",
                     "classification_required",
-                    serde_json::json!({ "kiln_path": canonical.to_string_lossy() }),
+                    serde_json::Value::Object(data),
                 );
                 crate::event_emitter::emit_event(tx, event);
             }

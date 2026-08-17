@@ -250,8 +250,14 @@ pub enum InternalSessionEvent {
 
     /// Kiln requires data classification before use.
     ClassificationRequired {
-        /// Path to the kiln that needs classification.
-        kiln_path: PathBuf,
+        /// The kiln that needs classification, by registry name.
+        ///
+        /// Was `kiln_path: PathBuf`. The producer opens kilns by path, and on
+        /// the startup and mid-turn routes no subscriber had named anything —
+        /// so the directory went out to every subscriber unasked. `None` is a
+        /// kiln with no registry entry, which is a kiln no client can prompt
+        /// about; it is reported as absent rather than as a path.
+        kiln: Option<crate::config::KilnName>,
     },
 
     // ─────────────────────────────────────────────────────────────────────
@@ -545,9 +551,10 @@ impl InternalSessionEvent {
             Self::PreLlmCall { model, .. } => format!("pre:llm:{}", model),
             Self::PostLlmCall { model, .. } => format!("post:llm:{}", model),
             Self::PrecognitionComplete { .. } => "precognition:complete".into(),
-            Self::ClassificationRequired { kiln_path, .. } => {
-                format!("classification:required:{}", kiln_path.display())
-            }
+            Self::ClassificationRequired { kiln } => match kiln {
+                Some(name) => format!("classification:required:{name}"),
+                None => "classification:required".to_string(),
+            },
             Self::SessionCompacted { .. } => "session:compacted".into(),
             Self::SessionStateChanged { session_id, .. } => {
                 format!("session:state_changed:{}", session_id)
@@ -812,9 +819,10 @@ impl InternalSessionEvent {
                     kilns_failed
                 )
             }
-            Self::ClassificationRequired { kiln_path } => {
-                format!("kiln_path={}", kiln_path.display())
-            }
+            Self::ClassificationRequired { kiln } => match kiln {
+                Some(name) => format!("kiln={name}"),
+                None => "kiln=<unregistered>".to_string(),
+            },
             Self::SessionCompacted { summary, new_file } => format!(
                 "summary_len={}, new_file={}",
                 summary.len(),
@@ -978,7 +986,7 @@ impl InternalSessionEvent {
                 query_summary,
                 ..
             } => Some(format!("notes={}, query={}", notes_count, query_summary)),
-            Self::ClassificationRequired { kiln_path } => Some(kiln_path.display().to_string()),
+            Self::ClassificationRequired { kiln } => kiln.as_ref().map(ToString::to_string),
             Self::SessionCompacted { summary, .. } => Some(summary.clone()),
             Self::SessionStateChanged {
                 session_id,

@@ -12,7 +12,7 @@ fn translate_session_initialized_produces_payload_msg() {
         "model": "glm-5",
         "mode": "plan",
         "agent_name": "claude",
-        "kiln_path": "/k",
+        "kilns": ["notes"],
         "workspace_path": "/w",
     });
     let msgs = session_event_to_chat_msgs("session_initialized", &data);

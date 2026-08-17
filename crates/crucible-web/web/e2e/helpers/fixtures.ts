@@ -2,7 +2,10 @@
 export const MOCK_SESSION = {
   session_id: 'test-session-001',
   type: 'chat' as const,
-  kilns: ['/home/user/notes'],
+  // A registry NAME. A session's `kilns` stopped being paths; a path here
+  // resolves to no kiln, so every surface that joins a session to its
+  // directory (wikilink resolution, skills, the composer) silently got none.
+  kilns: ['my-kiln'],
   workspace: '/home/user/project',
   state: 'active' as const,
   title: 'Test Session',
@@ -19,7 +22,10 @@ export const MOCK_SESSION = {
 export const MOCK_SESSION_DETAIL = {
   session_id: 'test-session-001',
   type: 'chat' as const,
-  kilns: ['/home/user/notes'],
+  // A registry NAME. A session's `kilns` stopped being paths; a path here
+  // resolves to no kiln, so every surface that joins a session to its
+  // directory (wikilink resolution, skills, the composer) silently got none.
+  kilns: ['my-kiln'],
   workspace: '/home/user/project',
   state: 'active' as const,
   title: 'Test Session',
@@ -30,7 +36,10 @@ export const MOCK_SESSION_DETAIL = {
 export const MOCK_SESSION_2 = {
   session_id: 'test-session-002',
   type: 'chat' as const,
-  kilns: ['/home/user/notes'],
+  // A registry NAME. A session's `kilns` stopped being paths; a path here
+  // resolves to no kiln, so every surface that joins a session to its
+  // directory (wikilink resolution, skills, the composer) silently got none.
+  kilns: ['my-kiln'],
   workspace: '/home/user/project',
   state: 'active' as const,
   title: 'Second Session',
@@ -54,7 +63,7 @@ export const MOCK_PROVIDERS = {
 
 // Real wire shape: kiln.list returns entries, not bare path strings.
 export const MOCK_KILNS = {
-  kilns: [{ path: '/home/user/notes', name: 'My Kiln' }],
+  kilns: [{ path: '/home/user/notes', name: 'my-kiln' }],
 };
 
 export const MOCK_CONFIG = {
@@ -104,6 +113,6 @@ export const MOCK_PLUGIN_TARGETS: Record<string, { targets: object[] }> = {
 export const MOCK_PROJECT = {
   path: '/home/user/project',
   name: 'project',
-  kilns: [{ path: '/home/user/notes', name: 'My Kiln' }],
+  kilns: [{ path: '/home/user/notes', name: 'my-kiln' }],
   last_accessed: '2026-01-01T00:00:00Z',
 };

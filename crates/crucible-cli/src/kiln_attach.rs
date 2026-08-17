@@ -40,9 +40,7 @@
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
-use crucible_core::config::{
-    register_kiln_entry_in_config, CliAppConfig, KilnEntry, KilnName,
-};
+use crucible_core::config::{register_kiln_entry_in_config, CliAppConfig, KilnEntry, KilnName};
 use crucible_daemon::kiln_registry::{KilnRegistry, KilnRegistryContext};
 
 /// What a `--kiln` value, or a `cru kiln register` pair, turned out to name.
@@ -155,7 +153,10 @@ impl CliKilnRegistry {
         if !known {
             register_kiln_entry_in_config(&self.config_path, name.as_str(), &path, true)
                 .with_context(|| {
-                    format!("registering kiln '{name}' in {}", self.config_path.display())
+                    format!(
+                        "registering kiln '{name}' in {}",
+                        self.config_path.display()
+                    )
                 })?;
         }
         Ok(AttachedKiln {
@@ -191,7 +192,10 @@ impl CliKilnRegistry {
 
         register_kiln_entry_in_config(&self.config_path, name.as_str(), &resolved, false)
             .with_context(|| {
-                format!("registering kiln '{name}' in {}", self.config_path.display())
+                format!(
+                    "registering kiln '{name}' in {}",
+                    self.config_path.display()
+                )
             })?;
         Ok(AttachedKiln {
             name,

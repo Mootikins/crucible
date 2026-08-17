@@ -418,9 +418,11 @@ impl EnrichedPrompt {
     }
 }
 
+/// Takes no kiln PATH, deliberately. The prompt names kilns and nothing else,
+/// so the builder is not given a directory it could name them by; re-adding the
+/// parameter is the change a reviewer has to see.
 fn build_enriched_prompt(
     workspace: &Path,
-    kiln_path: Option<&Path>,
     session_kilns: &[crucible_core::config::KilnName],
     base_prompt: &str,
     rules: &str,
@@ -448,11 +450,15 @@ fn build_enriched_prompt(
     }
 
     // Least stable last, so it never sits inside the cached prefix.
+    //
+    // `Workspace:` is the one path the prompt keeps, and it is the documented
+    // exception: the agent runs shell commands and reads files there, so the
+    // directory IS the thing it has to know. A kiln is not — every kiln
+    // operation goes through a tool anchored daemon-side — so the kiln's
+    // directory used to sit here purely as disclosure, one line above the
+    // `Knowledge bases:` list that names the same kilns properly.
     let mut volatile = String::new();
     volatile.push_str(&format!("Workspace: {}\n", workspace.display()));
-    if let Some(kiln) = kiln_path {
-        volatile.push_str(&format!("Kiln: {}\n", kiln.display()));
-    }
 
     // List knowledge bases by name. No member is marked out: the agent reads
     // and searches every one of them on the same terms.
@@ -741,7 +747,6 @@ pub async fn create_agent_from_session_config(
 
     let enriched_prompt = build_enriched_prompt(
         workspace,
-        kiln_path,
         session_kilns,
         &agent_config.system_prompt,
         &rules,

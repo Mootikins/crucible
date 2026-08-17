@@ -8,6 +8,7 @@
 //! guarantee, loading-marker attribution).
 use super::*;
 
+mod active_kiln;
 mod install;
 mod lifecycle;
 mod services;
@@ -892,7 +893,7 @@ mod kiln_graph {
     async fn upgraded_lua(store: Arc<dyn NoteStore>) -> Arc<mlua::Lua> {
         let loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
         loader
-            .upgrade_with_storage(store, Path::new(KILN))
+            .upgrade_with_storage(store, Path::new(KILN), None)
             .expect("upgrade with storage");
         loader.plugin_lua()
     }

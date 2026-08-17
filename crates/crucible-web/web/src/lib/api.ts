@@ -1085,10 +1085,15 @@ export async function listAgents(): Promise<AgentProfileEntry[]> {
   })).agents;
 }
 
-/** List all chat models across providers — no session required. */
-export async function listAllModels(kiln?: string): Promise<string[]> {
-  const url = kiln ? `/api/models?kiln=${encodeURIComponent(kiln)}` : '/api/models';
-  return (await request<{ models: string[] }>('GET', url, {
+/**
+ * List all chat models across providers — no session required.
+ *
+ * Takes no kiln. The route used to accept `?kiln=<path>` and forward the raw
+ * directory to the daemon's classification resolver, and no caller ever sent
+ * one; the parameter is gone from both sides rather than converted to a name.
+ */
+export async function listAllModels(): Promise<string[]> {
+  return (await request<{ models: string[] }>('GET', '/api/models', {
     errorMessage: 'Failed to list models',
   })).models;
 }

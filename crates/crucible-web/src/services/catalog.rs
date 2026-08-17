@@ -113,20 +113,12 @@ pub async fn agents_value(state: &AppState) -> anyhow::Result<serde_json::Value>
 }
 
 /// Providers payload (serialized `Vec<ProviderInfo>`), cached per kiln filter.
-pub async fn providers_value(
-    state: &AppState,
-    kiln: Option<&std::path::Path>,
-) -> anyhow::Result<serde_json::Value> {
-    let key = match kiln {
-        Some(p) => format!("providers:{}", p.display()),
-        None => "providers".to_string(),
-    };
+pub async fn providers_value(state: &AppState) -> anyhow::Result<serde_json::Value> {
     let daemon = state.daemon.clone();
-    let kiln = kiln.map(|p| p.to_path_buf());
     state
         .swr
-        .get_or_fetch(&key, CATALOG_TTL, move || async move {
-            let providers = daemon.list_providers(kiln.as_deref()).await?;
+        .get_or_fetch("providers", CATALOG_TTL, move || async move {
+            let providers = daemon.list_providers(None).await?;
             Ok(serde_json::to_value(providers)?)
         })
         .await
@@ -140,7 +132,7 @@ pub fn warm(state: AppState) {
         if let Err(e) = agents_value(&state).await {
             tracing::warn!(error = %e, "Agent catalog warm-up failed");
         }
-        if let Err(e) = providers_value(&state, None).await {
+        if let Err(e) = providers_value(&state).await {
             tracing::warn!(error = %e, "Provider catalog warm-up failed");
         }
     });

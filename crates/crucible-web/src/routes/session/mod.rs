@@ -543,23 +543,41 @@ async fn search_sessions(
     axum::extract::Query(params): axum::extract::Query<Vec<(String, String)>>,
 ) -> Result<Json<serde_json::Value>, WebError> {
     let mut query = None;
-    // Names, parsed rather than accepted: a `kiln` the registry never issued
-    // is not a narrower scope, it is no scope, and the daemon refuses a set
-    // that resolves to nothing. Dropping unparseable ones here keeps the
-    // browser's malformed query from reading as "search everything".
+    // Names, parsed rather than accepted. The daemon draws a deliberate
+    // distinction at `server/session/scope.rs`: "no kiln key at all" is an
+    // empty scope each handler interprets for itself, while "named kilns, none
+    // of which resolve" is an INVALID_PARAMS naming the refused values —
+    // because an all-dropped set is a request that asked to NARROW and would
+    // otherwise be answered as though it had said nothing.
+    //
+    // This route has to draw the same line or it collapses the two: dropping
+    // every name silently turns `?q=x&kiln=Bad%20Name` into "searched
+    // everything, found nothing" instead of a 422. Partial drops are safe and
+    // stay silent, for the daemon's reason — the surviving members still narrow.
     let mut kilns: Vec<crucible_core::config::KilnName> = Vec::new();
+    let mut refused: Vec<String> = Vec::new();
     let mut limit = None;
     for (key, value) in params {
         match key.as_str() {
             "q" => query = Some(value),
-            "kiln" => {
-                if let Ok(name) = crucible_core::config::KilnName::parse(&value) {
-                    kilns.push(name);
-                }
-            }
+            "kiln" => match crucible_core::config::KilnName::parse(&value) {
+                Ok(name) => kilns.push(name),
+                Err(_) => refused.push(value),
+            },
             "limit" => limit = value.parse::<usize>().ok(),
             _ => {}
         }
+    }
+    if kilns.is_empty() && !refused.is_empty() {
+        return Err(WebError::Validation(format!(
+            "None of the kilns named in this request are usable names: {}. Kilns are addressed \
+             by the name of their `[kilns]` entry, not by path.",
+            refused
+                .iter()
+                .map(|v| format!("{v:?}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )));
     }
     let query = query.ok_or_else(|| WebError::Validation("Missing 'q' parameter".into()))?;
 
@@ -928,18 +946,20 @@ async fn export_session(
     ))
 }
 
-#[derive(Debug, Deserialize)]
-struct ListProvidersQuery {
-    kiln: Option<PathBuf>,
-}
-
 /// Served through the SWR catalog cache — provider probing takes ~0.7s and
 /// must not gate every splash render. Shape: `{providers: [ProviderInfo]}`.
+///
+/// Takes no `kiln` parameter. It used to accept `kiln: Option<PathBuf>` and
+/// forward the raw directory to the daemon, which fed it to
+/// `find_workspace_and_resolve_classification` — so an arbitrary directory
+/// could influence which providers a caller was told about, an input door
+/// standing outside the registry floor every other kiln input now passes
+/// through. Nothing ever sent it (`listProviders()` takes no argument), so
+/// converting it to a name would have preserved a door for no caller.
 async fn list_providers(
     State(state): State<AppState>,
-    axum::extract::Query(query): axum::extract::Query<ListProvidersQuery>,
 ) -> Result<Json<serde_json::Value>, WebError> {
-    let providers = crate::services::catalog::providers_value(&state, query.kiln.as_deref())
+    let providers = crate::services::catalog::providers_value(&state)
         .await
         .daemon_err()?;
     Ok(Json(serde_json::json!({ "providers": providers })))
@@ -947,5 +967,7 @@ async fn list_providers(
 
 mod review;
 
+#[cfg(test)]
+mod search_scope_tests;
 #[cfg(test)]
 mod tests;

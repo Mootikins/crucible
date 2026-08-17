@@ -69,43 +69,68 @@ fn test_agent_config() -> SessionAgent {
 }
 
 #[test]
-fn enriched_prompt_carries_workspace_and_kiln_context() {
+fn enriched_prompt_carries_workspace_context() {
     let ws = Path::new("/repo");
-    let kiln = Path::new("/repo/docs");
 
-    // With kiln + base prompt: both paths present, base prompt before them.
+    // With base prompt: the workspace path is present, base prompt before it.
     // The ordering is the reverse of what it once was — see
     // `the_cacheable_half_carries_nothing_session_specific` for why.
-    let enriched = build_enriched_prompt(ws, Some(kiln), &[], "You are helpful.", "", "");
+    let enriched = build_enriched_prompt(ws, &[], "You are helpful.", "", "");
     let combined = enriched.combined();
     assert!(combined.contains("Workspace: /repo"));
-    assert!(combined.contains("Kiln: /repo/docs"));
     assert!(combined.contains("You are helpful."));
     assert!(combined.find("You are helpful.").unwrap() < combined.find("Workspace:").unwrap());
 
-    // Without kiln: no Kiln line
-    let no_kiln = build_enriched_prompt(ws, None, &[], "Base.", "", "").combined();
-    assert!(no_kiln.contains("Workspace: /repo"));
-    assert!(!no_kiln.contains("Kiln:"));
-    assert!(no_kiln.contains("Base."));
-
     // Empty base prompt: just context lines, no double blank
-    let empty_base = build_enriched_prompt(ws, None, &[], "", "", "").combined();
+    let empty_base = build_enriched_prompt(ws, &[], "", "", "").combined();
     assert!(empty_base.contains("Workspace: /repo"));
     assert!(!empty_base.ends_with("\n\n"));
 
     // Skills catalog still follows the base prompt
-    let with_skills = build_enriched_prompt(
-        ws,
-        Some(kiln),
-        &[],
-        "Base.",
-        "",
-        "# Available Skills\n\n## commit\n",
-    )
-    .combined();
+    let with_skills =
+        build_enriched_prompt(ws, &[], "Base.", "", "# Available Skills\n\n## commit\n").combined();
     assert!(with_skills.contains("# Available Skills"));
     assert!(with_skills.find("Base.").unwrap() < with_skills.find("# Available Skills").unwrap());
+}
+
+/// The kiln's DIRECTORY must not reach the model.
+///
+/// The prompt used to carry `Kiln: /repo/docs` one line above the
+/// `Knowledge bases:` list, so the same kiln was spelled twice — once as the
+/// registry name the caller can say back to us, and once as a fragment of the
+/// user's filesystem that they cannot. Only the name survives. The check is on
+/// the whole prompt, not on the absence of a `Kiln:` prefix, so a future line
+/// that reintroduces the directory under another label fails here too.
+#[test]
+fn the_prompt_names_kilns_and_never_locates_them() {
+    let prompt = build_enriched_prompt(
+        Path::new("/repo"),
+        std::slice::from_ref(&crate::test_support::kiln_name("docs")),
+        "You are helpful.",
+        "",
+        "",
+    )
+    .combined();
+
+    assert!(
+        prompt.contains("docs"),
+        "the registry name is what the prompt is for: {prompt}"
+    );
+    // `Workspace:` is the documented exception; strip it and nothing that is
+    // left may look like a directory.
+    let without_workspace: String = prompt
+        .lines()
+        .filter(|line| !line.starts_with("Workspace:"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        !without_workspace.contains('/'),
+        "no path may reach the model outside the workspace line: {without_workspace}"
+    );
+    assert!(
+        !prompt.contains("Kiln:"),
+        "the kiln directory line is gone, not renamed: {prompt}"
+    );
 }
 
 /// The cached prefix must contain nothing that varies between sessions.
@@ -118,7 +143,6 @@ fn enriched_prompt_carries_workspace_and_kiln_context() {
 fn the_cacheable_half_carries_nothing_session_specific() {
     let prompt = build_enriched_prompt(
         Path::new("/repo"),
-        Some(Path::new("/repo/docs")),
         &[],
         "You are helpful.",
         "# Project rules\n\nbe kind\n",
@@ -135,7 +159,6 @@ fn the_cacheable_half_carries_nothing_session_specific() {
     );
 
     assert!(prompt.volatile.contains("Workspace: /repo"));
-    assert!(prompt.volatile.contains("Kiln: /repo/docs"));
 }
 
 /// Least-stable last: the knowledge-base list names kilns, so it moves with
@@ -144,7 +167,6 @@ fn the_cacheable_half_carries_nothing_session_specific() {
 fn the_knowledge_base_list_is_session_context_not_cached_prefix() {
     let prompt = build_enriched_prompt(
         Path::new("/workspace"),
-        Some(Path::new("/repo/docs")),
         std::slice::from_ref(&crate::test_support::kiln_name("my-kiln")),
         "base",
         "",
@@ -161,20 +183,14 @@ fn the_knowledge_base_list_is_session_context_not_cached_prefix() {
 /// self-asserted name, and no caller can say one back to us — so a directory
 /// carrying `name = "My Kiln"` is listed under whatever the user registered it
 /// as, and never under its own idea of what it is called.
+///
+/// The builder no longer receives a kiln directory at all, so it *cannot* read
+/// a `kiln.toml`; the test survives as the statement of intent that made that
+/// parameter go away.
 #[test]
 fn build_enriched_prompt_lists_the_registry_name_not_the_kilns_self_description() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let crucible_dir = tmp.path().join(".crucible");
-    std::fs::create_dir_all(&crucible_dir).unwrap();
-    std::fs::write(
-        crucible_dir.join("kiln.toml"),
-        "[kiln]\nname = \"My Kiln\"\n",
-    )
-    .unwrap();
-
     let result = build_enriched_prompt(
         Path::new("/workspace"),
-        Some(tmp.path()),
         std::slice::from_ref(&crate::test_support::kiln_name("work-notes")),
         "base",
         "",
@@ -197,8 +213,7 @@ fn build_enriched_prompt_lists_the_registry_name_not_the_kilns_self_description(
 
 #[test]
 fn build_enriched_prompt_no_kiln_names_when_no_config() {
-    let result =
-        build_enriched_prompt(Path::new("/workspace"), None, &[], "base", "", "").combined();
+    let result = build_enriched_prompt(Path::new("/workspace"), &[], "base", "", "").combined();
     assert!(
         !result.contains("Knowledge bases:"),
         "no kb section when no kiln"

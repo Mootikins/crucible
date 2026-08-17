@@ -103,9 +103,16 @@ impl ContainedPath {
         self.0.exists()
     }
 
-    pub(crate) fn display(&self) -> std::path::Display<'_> {
-        self.0.display()
-    }
+    // Deliberately no `display()`. Its only two callers were the "folder does
+    // not exist" refusals in `grep_notes` and `list_notes`, and both of them
+    // were leaks: a contained path is the caller's folder joined onto a kiln
+    // root the caller never supplied, so rendering one into a message handed
+    // the model that root for the price of naming a folder that cannot exist.
+    //
+    // Anything that genuinely needs the text can still say
+    // `.as_path().display()`. Making that the only spelling is the point —
+    // it is an explicit act rather than the obvious one, so the next refusal
+    // message has to decide what it is disclosing.
 }
 
 /// A path that has cleared containment **and** write protection.

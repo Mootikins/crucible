@@ -255,11 +255,18 @@ impl Server {
             },
         ));
 
-        let kiln_manager = Arc::new(KilnManager::with_event_tx(
-            event_tx.clone(),
-            params.enrichment_config.clone(),
-            params.max_precognition_chars,
-        ));
+        let kiln_manager = Arc::new(
+            KilnManager::with_event_tx(
+                event_tx.clone(),
+                params.enrichment_config.clone(),
+                params.max_precognition_chars,
+            )
+            // So a kiln it opened by path can be broadcast by the name the user
+            // registered it under. The same registry the session manager and the
+            // storage layer resolve against — two would be two answers to "where
+            // is kiln X".
+            .with_kiln_registry(kiln_registry.clone()),
+        );
 
         // SCM (git) config rides in on the serialized app config; `scm.clone`
         // reads `projects_dir` from it, and `session_workspace_dir` (below) seeds

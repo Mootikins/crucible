@@ -10,7 +10,6 @@ struct ExecuteMultiKilnSearchParams<'a> {
 }
 
 use super::*;
-use crate::kiln_registry::KilnRegistry;
 
 /// One retrieved note, as a Lua handler sees it.
 ///
@@ -21,12 +20,11 @@ use crate::kiln_registry::KilnRegistry;
 /// The kiln is named, never located. `kiln_path` used to be here, which handed
 /// every installed plugin a directory the caller never supplied — the same
 /// disclosure the wire, the transcript and the prompt were closed against.
-/// A name with no registry entry yields **no key at all** rather than an empty
-/// string, because `""` is truthy in Lua and a handler asking `if note.kiln`
-/// would get "yes" for a note whose kiln it cannot name.
+/// A hit with no name yields **no key at all** rather than an empty string,
+/// because `""` is truthy in Lua and a handler asking `if note.kiln` would get
+/// "yes" for a note whose kiln it cannot name.
 fn plugin_result_payload(
     result: &crucible_core::SearchResult,
-    registry: &KilnRegistry,
     index: Option<usize>,
 ) -> serde_json::Value {
     let mut entry = serde_json::Map::new();
@@ -39,11 +37,7 @@ fn plugin_result_payload(
         "snippet".to_string(),
         serde_json::json!(result.snippet.clone().unwrap_or_default()),
     );
-    if let Some(name) = result
-        .kiln_path
-        .as_deref()
-        .and_then(|path| registry.name_for(path))
-    {
+    if let Some(name) = result.kiln.as_ref() {
         entry.insert("kiln".to_string(), serde_json::json!(name.as_str()));
     }
     serde_json::Value::Object(entry)
@@ -69,7 +63,6 @@ impl AgentManager {
         session_id: &str,
         original_content: &str,
         results: &[crucible_core::SearchResult],
-        registry: &KilnRegistry,
         label_kilns: bool,
         state: &SessionEventState,
         plugin_handlers: Option<&(
@@ -84,7 +77,6 @@ impl AgentManager {
             session_id,
             original_content,
             results,
-            registry,
             state,
             plugin_handlers,
         )
@@ -113,12 +105,14 @@ impl AgentManager {
         let mut context = format!("<system>\nFound {} relevant notes:\n", results.len());
         for result in results {
             let title = result_title(result);
+            // The registry name the user typed, or nothing. This used to be
+            // `kiln_path.file_name()` — the directory basename — which put a
+            // fragment of the user's filesystem into the model's turn under the
+            // pretence of being a name.
             let kiln_label = result
-                .kiln_path
+                .kiln
                 .as_ref()
                 .filter(|_| label_kilns)
-                .and_then(|path| path.file_name())
-                .and_then(|name| name.to_str())
                 .map(|name| format!(" [from: {name}]"))
                 .unwrap_or_default();
             context.push_str(&format!(
@@ -137,7 +131,6 @@ impl AgentManager {
         session_id: &str,
         original_content: &str,
         results: &[crucible_core::SearchResult],
-        registry: &KilnRegistry,
         state: &SessionEventState,
         plugin_handlers: Option<&(
             std::sync::Arc<crucible_lua::LuaScriptHandlerRegistry>,
@@ -146,7 +139,7 @@ impl AgentManager {
     ) -> Option<String> {
         let results_payload: Vec<serde_json::Value> = results
             .iter()
-            .map(|r| plugin_result_payload(r, registry, None))
+            .map(|r| plugin_result_payload(r, None))
             .collect();
 
         let event = SessionEvent::Custom {
@@ -228,7 +221,6 @@ impl AgentManager {
         session_id: &str,
         original_content: &str,
         results: &[crucible_core::SearchResult],
-        registry: &KilnRegistry,
         char_budget: usize,
         state: &SessionEventState,
         plugin_handlers: Option<&(
@@ -241,7 +233,7 @@ impl AgentManager {
             .enumerate()
             // 1-based: this is the handle handlers return to select a result,
             // and Lua arrays are 1-based.
-            .map(|(position, r)| plugin_result_payload(r, registry, Some(position + 1)))
+            .map(|(position, r)| plugin_result_payload(r, Some(position + 1)))
             .collect();
 
         let event = SessionEvent::Custom {
@@ -348,6 +340,10 @@ impl AgentManager {
             match self.kiln_manager.get_or_open(kiln_path).await {
                 Ok(handle) => sources.push(KilnSearchSource {
                     kiln_path: kiln_path.to_path_buf(),
+                    // The session's own name for it. This is the single point
+                    // where a hit acquires a kiln label; nothing downstream
+                    // derives one from the directory.
+                    kiln_name: Some(kiln.clone()),
                     knowledge_repo: handle.as_knowledge_repository(),
                 }),
                 Err(error) => warn!(
@@ -495,7 +491,6 @@ impl AgentManager {
                 session_id,
                 original_content,
                 &results,
-                self.session_manager.kiln_registry(),
                 char_budget,
                 &state,
                 plugin_pair.as_ref(),
@@ -517,7 +512,6 @@ impl AgentManager {
                 session_id,
                 original_content,
                 &results,
-                self.session_manager.kiln_registry(),
                 label_kilns,
                 &state,
                 plugin_pair.as_ref(),
@@ -707,7 +701,7 @@ fn apply_precognition_char_cap(results: &mut [crucible_core::SearchResult], cap:
 
 /// Extract `PrecognitionNoteInfo` metadata from search results.
 /// Titles are derived from the document ID filename (without `.md`).
-/// `kiln_label` is set only for results from non-primary kilns.
+/// `kiln` is set only when the session has more than one kiln to tell apart.
 ///
 /// Deduplicates by normalized filename — the DB may contain the same note
 /// under both relative (`./docs/Foo.md`) and absolute (`/home/.../docs/Foo.md`)
@@ -731,21 +725,18 @@ pub(super) fn extract_note_info(
                 .and_then(|f| f.to_str())
                 .unwrap_or(&r.document_id.0);
             let title = filename.trim_end_matches(".md").to_string();
-            let kiln_label = r
-                .kiln_path
-                .as_ref()
-                .filter(|_| label_kilns)
-                .and_then(|kp| kp.file_name())
-                .and_then(|name| name.to_str())
-                .map(|name| name.to_string());
-            // Deduplicate by (filename, kiln_label) — collapses duplicate DB
-            // entries for the same file (relative vs absolute paths) while
-            // keeping different files that share a display title.
-            let dedup_key = (filename.to_string(), kiln_label.clone());
+            // The registry name, not the directory basename. This value is
+            // PERSISTED — it rides `PrecognitionComplete` into `session.jsonl`
+            // — so a basename here outlived the turn that produced it.
+            let kiln = r.kiln.as_ref().filter(|_| label_kilns).cloned();
+            // Deduplicate by (filename, kiln) — collapses duplicate DB entries
+            // for the same file (relative vs absolute paths) while keeping
+            // different files that share a display title.
+            let dedup_key = (filename.to_string(), kiln.clone());
             if seen.insert(dedup_key) {
                 Some(crucible_core::traits::chat::PrecognitionNoteInfo {
                     title,
-                    kiln_label,
+                    kiln,
                     score: r.score,
                 })
             } else {

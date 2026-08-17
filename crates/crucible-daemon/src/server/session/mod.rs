@@ -120,14 +120,22 @@ fn spawn_setup_task(
     // `Option` instead, because `index_workspace_files("")` walks whatever
     // directory the daemon process happens to be running in.
     let workspace_path = workspace.clone().unwrap_or_default();
-    // The setup event and the note indexer both want one kiln; a session with
-    // none indexes nothing, which is what an empty path yields.
+    // The note indexer wants a directory; a session with no kiln indexes
+    // nothing, which is what an empty path yields (`index_kiln_notes` returns
+    // early on a path that does not exist).
     let kiln_path = am
         .session_manager()
         .kiln_paths(&session.kilns)
         .into_iter()
         .next()
         .unwrap_or_default();
+    // The EVENT gets names, never that path. It is broadcast to every
+    // subscriber and, once the session has an agent config, written into
+    // `session.jsonl`, so a directory here outlives the session that disclosed
+    // it. The names are the session's own — unresolvable ones included, since
+    // the caller named them and a subscriber asking "which kilns" is owed the
+    // answer it gave us rather than a silently shortened list.
+    let session_kilns = session.kilns.clone();
     // Agent config is populated by a later `session.configure_agent` call, so
     // at create time we almost always observe `None` here and the event
     // carries empty strings. Task 1.3 (CLI) will still render progressively;
@@ -153,7 +161,7 @@ fn spawn_setup_task(
                 model: model.clone(),
                 mode,
                 agent_name,
-                kiln_path: kiln_path.clone(),
+                kilns: session_kilns,
                 workspace_path: workspace_path.clone(),
             },
         );
