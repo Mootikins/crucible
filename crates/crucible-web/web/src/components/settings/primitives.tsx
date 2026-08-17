@@ -35,7 +35,7 @@ export const SectionHeader: Component<{ title: string; icon: IconComponent }> = 
 // =============================================================================
 
 /** Full-width status row for loading, error, empty, and informational messages. */
-export const StatusRow: Component<{ variant?: 'error'; children: JSX.Element }> = (props) => (
+const StatusRow: Component<{ variant?: 'error'; children: JSX.Element }> = (props) => (
   <tr>
     <td
       colSpan={2}
