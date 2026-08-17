@@ -10,10 +10,6 @@
 export const treeSectionHeader =
   'px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-dark';
 
-/** Base interactive row: quiet, rounded, hover-washed. */
-export const treeRow =
-  'flex items-center pr-2 py-1 rounded cursor-pointer hover:bg-hover-wash text-shell-body text-sm';
-
 /** Collapsible group header row (chevron + name), one step quieter than rows. */
 export const treeGroupRow =
   'w-full flex items-center gap-1 px-2 py-1 rounded cursor-pointer hover:bg-hover-wash text-muted text-xs font-medium';
@@ -22,6 +18,3 @@ export const treeGroupRow =
  * or an explicit rotate class toggle. */
 export const treeChevron = 'w-3.5 h-3.5 shrink-0 transition-transform duration-150';
 
-/** Small metadata chip on a row (branch, kiln, model). */
-export const treeChip =
-  'inline-flex items-center gap-1 text-[10px] text-muted px-1.5 py-0.5 rounded bg-surface-elevated border border-hairline max-w-[160px]';
