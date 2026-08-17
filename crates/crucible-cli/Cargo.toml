@@ -131,9 +131,6 @@ textwrap = "0.16.2"
 
 # Flexbox layout for ink TUI
 
-# Lua scripting (for lua_view)
-mlua = { workspace = true }
-
 # TOML serialization (for workspace.toml)
 toml = { workspace = true }
 

@@ -27,8 +27,6 @@ tracing = "0.1"
 anyhow = "1"
 async-trait = "0.1"
 tokio = { version = "1", features = ["fs", "rt", "process", "time"] }
-regex = "1"
-walkdir = "2"
 
 # Shared types with core
 crucible-core = { path = "../crucible-core" }
@@ -39,8 +37,6 @@ crucible-oil = { path = "../crucible-oil", default-features = false }
 # XDG config directories
 dirs = "6"
 
-# UUID for interaction batch IDs
-uuid = { workspace = true }
 tokio-tungstenite = { workspace = true }
 futures-util = { workspace = true }
 base64 = { workspace = true }

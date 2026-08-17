@@ -1380,7 +1380,6 @@ dependencies = [
  "futures",
  "insta",
  "markdown-it",
- "mlua",
  "mockall",
  "nix 0.31.3",
  "once_cell",
@@ -1546,7 +1545,6 @@ dependencies = [
  "mlua",
  "oq",
  "proptest",
- "regex",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -1556,8 +1554,6 @@ dependencies = [
  "tokio-tungstenite 0.30.0",
  "toml 1.1.3+spec-1.1.0",
  "tracing",
- "uuid",
- "walkdir",
 ]
 
 [[package]]
