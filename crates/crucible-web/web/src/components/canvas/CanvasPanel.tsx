@@ -1626,4 +1626,3 @@ const EdgeToolbar: Component<{
   );
 };
 
-export default CanvasPanel;
