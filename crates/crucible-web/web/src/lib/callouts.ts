@@ -74,7 +74,7 @@ export function resolveCalloutKind(raw: string): CalloutKind {
 }
 
 /** `[!type]± title` on the first line of a blockquote's first paragraph. */
-export const CALLOUT_HEAD_RE = /^\[!([a-zA-Z]+)\]([+-])?[ \t]*(.*)$/;
+const CALLOUT_HEAD_RE = /^\[!([a-zA-Z]+)\]([+-])?[ \t]*(.*)$/;
 
 const escapeHtml = (s: string): string =>
   s
