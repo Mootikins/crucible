@@ -83,24 +83,24 @@ impl SqlitePool {
     /// Execute a closure within a transaction
     ///
     /// If the closure returns `Ok`, the transaction is committed.
-    /// If the closure returns `Err`, the transaction is rolled back.
+    /// If the closure returns `Err` — or panics — the transaction is rolled
+    /// back. The RAII guard is what makes the panic case safe: raw
+    /// `BEGIN`/`COMMIT` strings would skip both arms on unwind, and
+    /// `parking_lot`'s mutex does not poison, so the one shared connection
+    /// would be left inside an abandoned transaction for the life of the
+    /// process. Same reasoning as the migration in `schema/mod.rs`.
     pub fn with_transaction<F, T>(&self, f: F) -> StorageResult<T>
     where
         F: FnOnce(&Connection) -> StorageResult<T>,
     {
         let conn = self.conn.lock();
-        conn.execute("BEGIN TRANSACTION", []).sql()?;
+        // `unchecked_transaction` rather than `transaction()` because the
+        // connection is shared behind the mutex and cannot be borrowed mutably.
+        let tx = conn.unchecked_transaction().sql()?;
 
-        match f(&conn) {
-            Ok(result) => {
-                conn.execute("COMMIT", []).sql()?;
-                Ok(result)
-            }
-            Err(e) => {
-                let _ = conn.execute("ROLLBACK", []);
-                Err(e)
-            }
-        }
+        let result = f(&tx)?;
+        tx.commit().sql()?;
+        Ok(result)
     }
 
     /// Get database statistics
@@ -228,6 +228,50 @@ mod tests {
         let stats = pool.stats().expect("Failed to get stats");
 
         assert!(stats.page_size > 0);
+    }
+
+    /// A panic inside the closure must leave the shared connection outside any
+    /// transaction. The pool is one `Connection` behind a `parking_lot::Mutex`,
+    /// which does not poison, so an abandoned `BEGIN` would brick every later
+    /// write for the life of the daemon.
+    #[test]
+    fn a_panic_inside_a_transaction_leaves_the_connection_usable() {
+        let pool = SqlitePool::memory().expect("Failed to create pool");
+
+        pool.with_connection(|conn| {
+            conn.execute("CREATE TABLE probe (id INTEGER PRIMARY KEY)", [])
+                .sql()?;
+            Ok(())
+        })
+        .expect("Failed to create probe table");
+
+        // The panic is deliberate; keep the default hook from printing its
+        // backtrace into the test output.
+        let previous_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            pool.with_transaction(|conn| -> StorageResult<()> {
+                conn.execute("INSERT INTO probe (id) VALUES (1)", [])
+                    .sql()?;
+                panic!("closure blew up mid-transaction");
+            })
+        }))
+        .is_err();
+        std::panic::set_hook(previous_hook);
+        assert!(panicked, "the closure was supposed to panic");
+
+        // The connection is usable again, and the panicking closure's write was
+        // rolled back rather than left dangling in an open transaction.
+        let rows: i64 = pool
+            .with_transaction(|conn| {
+                conn.query_row("SELECT COUNT(*) FROM probe", [], |row| row.get(0))
+                    .sql()
+            })
+            .expect("a later transaction must still start");
+        assert_eq!(
+            rows, 0,
+            "the panicking closure's insert must be rolled back"
+        );
     }
 
     /// A new kiln gets the tables it uses and none of the four `SCHEMA_V1`
