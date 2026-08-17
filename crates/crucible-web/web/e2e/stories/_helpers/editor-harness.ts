@@ -27,7 +27,7 @@ export interface HarnessFile {
   content: string;
 }
 
-export interface SavedNote {
+interface SavedNote {
   path: string;
   content: string;
 }
