@@ -537,4 +537,48 @@ mod blocking_hydration {
             "the second call must retry the listing, not reuse the failed one"
         );
     }
+
+    /// `has_tool` is called once per tool call, and a turn can dispatch many in
+    /// parallel. Each unhydrated call spawns an OS thread and a tokio runtime,
+    /// so without a shared in-flight attempt K concurrent callers pay for K
+    /// identical provider walks against a provider that is already known to be
+    /// unresponsive.
+    #[test]
+    fn concurrent_callers_share_one_hydration_attempt() {
+        let first = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let dispatcher = Arc::new(
+            DaemonToolDispatcher::new(vec![Arc::new(NeverListsTools {
+                listings_attempted: first.clone(),
+            }) as Arc<dyn ToolExecutor>])
+            .with_blocking_hydration_timeout(std::time::Duration::from_millis(100)),
+        );
+
+        // `new` polls every provider once with `now_or_never`, which counts as a
+        // listing; measure from there so this asserts about hydration only.
+        let baseline = first.load(Ordering::SeqCst);
+
+        const CALLERS: usize = 8;
+        let gate = Arc::new(std::sync::Barrier::new(CALLERS));
+        let callers: Vec<_> = (0..CALLERS)
+            .map(|_| {
+                let dispatcher = dispatcher.clone();
+                let gate = gate.clone();
+                std::thread::spawn(move || {
+                    gate.wait();
+                    dispatcher.has_tool("anything")
+                })
+            })
+            .collect();
+
+        for caller in callers {
+            assert!(!caller.join().expect("caller thread panicked"));
+        }
+
+        assert_eq!(
+            first.load(Ordering::SeqCst) - baseline,
+            1,
+            "{CALLERS} concurrent callers must share one hydration attempt, not \
+             spawn one thread and one runtime each"
+        );
+    }
 }

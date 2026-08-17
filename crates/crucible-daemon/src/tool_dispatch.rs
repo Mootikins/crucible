@@ -128,6 +128,16 @@ pub struct DaemonToolDispatcher {
     /// Budget for [`Self::hydrate_tool_names_blocking`]. A field rather than
     /// only a const so a test can prove the bound without waiting it out.
     blocking_hydration_timeout: std::time::Duration,
+    /// Serialises blocking hydration so concurrent callers share one attempt.
+    /// `parking_lot` rather than `std` because the walk writes through
+    /// `.expect("… poisoned")` locks: a panic there must not additionally
+    /// poison this one and turn every later `has_tool` into a panic.
+    hydration_turn: parking_lot::Mutex<()>,
+    /// Bumped once per blocking hydration walk, under `hydration_turn`. A
+    /// caller compares the value it read before queueing against the value it
+    /// sees once it holds the turn: if they differ, someone else ran the walk
+    /// it was waiting on and its outcome is the one to take.
+    hydration_attempts: std::sync::atomic::AtomicU64,
 }
 
 impl DaemonToolDispatcher {
@@ -155,6 +165,8 @@ impl DaemonToolDispatcher {
             tool_refs_hydrated: AtomicBool::new(false),
             tool_surfaces: RwLock::new(tool_surfaces),
             blocking_hydration_timeout: BLOCKING_HYDRATION_TIMEOUT,
+            hydration_turn: parking_lot::Mutex::new(()),
+            hydration_attempts: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -247,6 +259,34 @@ impl DaemonToolDispatcher {
         if self.tool_names_hydrated.load(Ordering::Acquire) {
             return;
         }
+
+        // `has_tool` runs once per tool call and a turn can dispatch many at
+        // once, so without this the K callers that arrive before the first one
+        // finishes each spawn their own OS thread and tokio runtime to redo the
+        // identical walk. Take a ticket before queueing: if it has moved by the
+        // time we hold the turn, another caller already ran the walk we were
+        // waiting on and its outcome is ours too. A *later* call finds the
+        // ticket unchanged and retries, which is what keeps a timed-out
+        // hydration recoverable rather than a permanent empty catalog.
+        let ticket = self.hydration_attempts.load(Ordering::Acquire);
+        let _turn = self.hydration_turn.lock();
+        if self.tool_names_hydrated.load(Ordering::Acquire)
+            || self.hydration_attempts.load(Ordering::Acquire) != ticket
+        {
+            return;
+        }
+
+        /// Counts the walk as attempted on every exit path, including the
+        /// timeout return below. Declared after `_turn` so it drops *before*
+        /// the turn is released: a waiter therefore cannot observe the bump
+        /// while it could still take the lock and redo the same walk.
+        struct CountAttempt<'a>(&'a std::sync::atomic::AtomicU64);
+        impl Drop for CountAttempt<'_> {
+            fn drop(&mut self) {
+                self.0.fetch_add(1, Ordering::Release);
+            }
+        }
+        let _attempt = CountAttempt(&self.hydration_attempts);
 
         // NOTE(crucible): spawns a throwaway current-thread runtime so a sync
         // caller (has_tool/get_tool_ref) can drive async list_tools without
