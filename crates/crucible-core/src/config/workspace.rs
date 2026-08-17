@@ -54,8 +54,7 @@ mod tests {
     #[test]
     fn kiln_attachment_parses_with_name() {
         let attachment: KilnAttachment =
-            toml::from_str("path = \"./notes\"\nname = \"Main Notes\"\n")
-                .expect("Failed to parse");
+            toml::from_str("path = \"./notes\"\nname = \"Main Notes\"\n").expect("Failed to parse");
 
         assert_eq!(attachment.path, PathBuf::from("./notes"));
         assert_eq!(attachment.name, Some("Main Notes".to_string()));
