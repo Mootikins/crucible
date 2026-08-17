@@ -6,7 +6,7 @@
  */
 
 /** PHASE-2/3 SEAM — git/diff decoration. No producer in Phase 1 (always undefined). */
-export type FileNodeStatus = 'modified' | 'added' | 'deleted' | 'untracked' | 'conflicted';
+type FileNodeStatus = 'modified' | 'added' | 'deleted' | 'untracked' | 'conflicted';
 
 export interface FileTreeNode {
   /**
@@ -43,8 +43,8 @@ export interface FileTreeNode {
 }
 
 /** `'created'` is NOT available in Phase 1 (neither list_notes nor fs.list_dir report it). */
-export type SortKey = 'name' | 'modified';
-export type SortDir = 'asc' | 'desc';
+type SortKey = 'name' | 'modified';
+type SortDir = 'asc' | 'desc';
 export interface SortSpec {
   key: SortKey;
   dir: SortDir;
