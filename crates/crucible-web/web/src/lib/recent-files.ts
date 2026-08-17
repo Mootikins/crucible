@@ -11,7 +11,7 @@
 import { createSignal } from 'solid-js';
 import { fetchRecents, recordRecent } from '@/lib/api';
 
-export interface RecentFile {
+interface RecentFile {
   absPath: string;
   name: string;
 }
