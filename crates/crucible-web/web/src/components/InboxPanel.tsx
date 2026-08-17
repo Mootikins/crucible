@@ -38,7 +38,7 @@ function sessionStatus(session: Session, attention: SessionAttention | undefined
   };
 }
 
-export const InboxPanel: Component = () => {
+const InboxPanel: Component = () => {
   const sessionCtx = useSessionSafe();
   const [resolved, setResolved] = createSignal<string | null>(null);
   const [archivedOpen, setArchivedOpen] = createSignal(false);
