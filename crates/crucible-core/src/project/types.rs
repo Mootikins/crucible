@@ -28,9 +28,9 @@ pub struct ProjectKiln {
 pub struct Project {
     /// Canonical path to the project root directory
     pub path: PathBuf,
-    /// Human-readable name (from WorkspaceConfig.workspace.name or dirname)
+    /// Human-readable name (from `ProjectConfig.project.name` or dirname)
     pub name: String,
-    /// Attached kilns (from WorkspaceConfig or auto-discovered .crucible/)
+    /// Attached kilns (from `ProjectConfig` or auto-discovered .crucible/)
     #[serde(default)]
     pub kilns: Vec<ProjectKiln>,
     /// When this project was last accessed

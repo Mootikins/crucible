@@ -95,5 +95,4 @@ pub use patterns::{
 pub use project_config::{read_project_config, write_project_config, ProjectConfig, ProjectMeta};
 pub use security::{ProjectFileAccess, ShellPolicy};
 pub use value_source::{ValueInfo, ValueSource, ValueSourceMap};
-#[allow(deprecated)]
-pub use workspace::{KilnAttachment, SecurityConfig, WorkspaceConfig, WorkspaceMeta};
+pub use workspace::{KilnAttachment, SecurityConfig};
