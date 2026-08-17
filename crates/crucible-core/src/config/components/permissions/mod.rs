@@ -14,7 +14,10 @@ mod tests;
 pub use engine::PermissionEngine;
 pub use hardcoded::is_hardcoded_denied;
 pub use matcher::{CompiledPermissions, PermissionMatcher};
-pub use normalize::{normalize_path_for_matching, split_chained_commands};
+pub use normalize::{
+    normalize_path_for_matching, split_chained_commands, split_command_line, CommandLineSplit,
+    UnmodellableConstruct,
+};
 pub use parse::parse_rule;
 pub use types::{
     ParsedRule, PermissionConfig, PermissionDecision, PermissionMode, PermissionScope,
