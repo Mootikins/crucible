@@ -4,7 +4,7 @@
  */
 
 /** Parent rel-path of a rel-path ('' for root-level entries). */
-export function parentRel(rel: string): string {
+function parentRel(rel: string): string {
   const i = rel.lastIndexOf('/');
   return i === -1 ? '' : rel.slice(0, i);
 }
