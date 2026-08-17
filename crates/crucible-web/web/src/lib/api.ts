@@ -988,7 +988,7 @@ export async function setSessionTitle(sessionId: string, title: string): Promise
 }
 
 /** Raw daemon event from session.jsonl (SessionEventMessage format). */
-export interface DaemonHistoryEvent {
+interface DaemonHistoryEvent {
   /** Always "event" for persisted events. */
   type: string;
   session_id: string;
