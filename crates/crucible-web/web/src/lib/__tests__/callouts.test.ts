@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { renderMarkdown } from '../markdown';
-import { CALLOUT_KINDS, resolveCalloutKind } from '../callouts';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+import { CALLOUT_KINDS, CALLOUT_RGB, resolveCalloutKind } from '../callouts';
 
 describe('callout rendering (through the full sanitized pipeline)', () => {
   it('renders a titled callout with icon, title, and body', () => {
@@ -88,5 +90,34 @@ describe('resolveCalloutKind', () => {
     expect(resolveCalloutKind('TLDR')).toBe('abstract');
     expect(resolveCalloutKind('error')).toBe('danger');
     expect(resolveCalloutKind('nonsense')).toBe('note');
+  });
+});
+
+describe('CALLOUT_RGB mirrors index.css', () => {
+  // index.css owns the rendered colour via `--callout-rgb`; CALLOUT_RGB is the
+  // same table in TS, for callers that need the accent as data rather than as
+  // a cascading custom property. The CSS comment says "keep in sync" and
+  // nothing enforced it — this does. Without it the duplicate silently drifts,
+  // and a drifted mirror is worse than no mirror.
+  const css = readFileSync(resolve(__dirname, '../../index.css'), 'utf-8');
+
+  /** The `--callout-rgb` a kind actually resolves to: its own override if it
+   * declares one, otherwise the base `.callout` value it inherits. */
+  const cssRgbFor = (kind: string): string => {
+    const override = new RegExp(
+      `\\.callout\\[data-callout='${kind}'\\][^{]*\\{([^}]*)\\}`,
+      's',
+    ).exec(css);
+    const own = override && /--callout-rgb:\s*([^;]+);/.exec(override[1]);
+    if (own) return own[1].trim();
+    return /\.callout \{[^}]*?--callout-rgb:\s*([^;]+);/s.exec(css)![1].trim();
+  };
+
+  it.each(CALLOUT_KINDS)('%s has the same accent in both files', (kind) => {
+    expect(CALLOUT_RGB[kind]).toBe(cssRgbFor(kind));
+  });
+
+  it('covers every kind, so a new callout cannot skip the table', () => {
+    expect(Object.keys(CALLOUT_RGB).sort()).toEqual([...CALLOUT_KINDS].sort());
   });
 });
