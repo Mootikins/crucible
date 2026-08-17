@@ -30,7 +30,7 @@ interface FileGroup {
   hunks: ComposedHunk[];
 }
 
-export function groupByFile(hunks: ComposedHunk[]): FileGroup[] {
+function groupByFile(hunks: ComposedHunk[]): FileGroup[] {
   const groups: FileGroup[] = [];
   for (const h of hunks) {
     const absPath = hunkPath(h);
@@ -42,7 +42,7 @@ export function groupByFile(hunks: ComposedHunk[]): FileGroup[] {
 }
 
 /** Roots in first-seen order, each with its files. */
-export function groupByRoot(hunks: ComposedHunk[]): { root: string; files: FileGroup[] }[] {
+function groupByRoot(hunks: ComposedHunk[]): { root: string; files: FileGroup[] }[] {
   const roots: { root: string; files: FileGroup[] }[] = [];
   for (const file of groupByFile(hunks)) {
     const existing = roots.find((r) => r.root === file.root);
@@ -444,4 +444,3 @@ export const ChangesPanel: Component = () => {
   );
 };
 
-export default ChangesPanel;
