@@ -17,7 +17,7 @@ import type { ModeDescriptor } from './types';
 export type ReviewState = 'unreviewed' | 'accepted' | 'rejected';
 
 /** 1-based, half-open — `start` is the first line, `end` is one PAST the last. */
-export interface LineRange {
+interface LineRange {
   start: number;
   end: number;
 }
