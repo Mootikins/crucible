@@ -21,7 +21,7 @@ import {
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
 import { isMarkdownPath, noteStem } from './markdown-path';
 
-export type FileDropZone = 'folder' | 'tree-root' | 'pane' | 'editor' | 'ribbon';
+type FileDropZone = 'folder' | 'tree-root' | 'pane' | 'editor' | 'ribbon';
 
 /** Payload attached to a file-tree node drag. Identity is rootKey + relPath. */
 export type FileDragData = {
