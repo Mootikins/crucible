@@ -21,8 +21,7 @@ export type ReorderState = {
   insertIndex: number;
 } | null;
 
-const [reorderState, setReorderState] = createSignal<ReorderState>(null);
-export { reorderState, setReorderState };
+const [, setReorderState] = createSignal<ReorderState>(null);
 
 // Non-reactive pending reorder state (survives reactive cleanup race)
 let pendingReorder: ReorderState = null;
