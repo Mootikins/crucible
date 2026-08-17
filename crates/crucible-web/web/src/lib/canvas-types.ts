@@ -11,7 +11,7 @@ export type CanvasColor = string;
 
 export type CanvasSide = 'top' | 'right' | 'bottom' | 'left';
 export type CanvasEnd = 'none' | 'arrow';
-export type CanvasBackgroundStyle = 'cover' | 'ratio' | 'repeat';
+type CanvasBackgroundStyle = 'cover' | 'ratio' | 'repeat';
 
 interface NodeBase {
   id: string;
@@ -24,7 +24,7 @@ interface NodeBase {
   [key: string]: unknown;
 }
 
-export interface TextNode extends NodeBase {
+interface TextNode extends NodeBase {
   type: 'text';
   text: string;
 }
@@ -36,7 +36,7 @@ export interface FileNode extends NodeBase {
   subpath?: string;
 }
 
-export interface LinkNode extends NodeBase {
+interface LinkNode extends NodeBase {
   type: 'link';
   url: string;
 }
