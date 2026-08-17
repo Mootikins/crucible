@@ -81,7 +81,7 @@ const SIDES: {
 ];
 
 /** The six spec presets, plus "no colour". */
-export const SWATCHES: (CanvasColor | undefined)[] = [undefined, '1', '2', '3', '4', '5', '6'];
+const SWATCHES: (CanvasColor | undefined)[] = [undefined, '1', '2', '3', '4', '5', '6'];
 
 /** Shared popover shell so card and edge toolbars are visually identical. */
 export const ToolbarShell: Component<{ children: unknown; testid: string }> = (props) => (
