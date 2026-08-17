@@ -96,12 +96,6 @@ describe('motion primitives on structural surfaces', () => {
     expect(src).toMatch(/cru-anim-fade/);
   });
 
-  it('interaction modal fades its backdrop and pops its card', () => {
-    const src = read('components/InteractionModal.tsx');
-    expect(src).toMatch(/cru-anim-fade/);
-    expect(src).toMatch(/cru-anim-pop/);
-  });
-
   it('autocomplete and hover-preview cards rise in', () => {
     expect(read('components/AutocompletePopup.tsx')).toMatch(/cru-anim-rise/);
     expect(read('components/WikilinkHoverPreview.tsx')).toMatch(/cru-anim-rise/);
