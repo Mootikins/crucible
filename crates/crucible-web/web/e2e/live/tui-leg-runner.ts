@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
  */
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-export const WORKSPACE_ROOT = path.resolve(HERE, '..', '..', '..', '..', '..');
+const WORKSPACE_ROOT = path.resolve(HERE, '..', '..', '..', '..', '..');
 
 /** Locate the compiled `tui_e2e_tests` libtest binary (has a hash suffix). */
 export function findTuiTestBinary(): string | null {
