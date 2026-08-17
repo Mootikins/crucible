@@ -50,6 +50,9 @@ fn normalize_path_for_matching_cases(input: &str, expected: &str) {
 #[test_case(r"echo \&\& rm -rf /tmp/x", vec![r"echo \&\& rm -rf /tmp/x"] ; "escaped_operator_is_a_literal_argument")]
 #[test_case(r"echo \; rm -rf /tmp/x", vec![r"echo \; rm -rf /tmp/x"] ; "escaped_semicolon_is_a_literal_argument")]
 #[test_case(r"echo a\", vec![r"echo a\"] ; "trailing_backslash_does_not_overrun")]
+#[test_case("git status && \\\nrm -rf /tmp/x", vec!["git status", "rm -rf /tmp/x"] ; "line_continuation_leaves_no_marker_in_the_segment")]
+#[test_case("cargo build \\\n  --release", vec!["cargo build", "--release"] ; "line_continuation_ends_the_statement")]
+#[test_case("echo \"a\\\nb\"", vec!["echo \"a\\\nb\""] ; "line_continuation_inside_double_quotes_is_one_word")]
 fn split_chained_commands_cases(input: &str, expected: Vec<&str>) {
     assert_eq!(split_chained_commands(input), expected);
 }

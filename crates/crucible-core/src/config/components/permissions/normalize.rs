@@ -263,6 +263,19 @@ pub fn split_command_line(input: &str) -> CommandLineSplit<'_> {
         // for the rest of the line. Skipping a lead byte of a multi-byte character is
         // harmless: continuation bytes are >= 0x80 and match no ASCII operator.
         if ch == b'\\' && !in_single_quote {
+            // `\` + newline is a line continuation rather than an escape: bash deletes both
+            // and joins the lines. Ending the statement here is what keeps those two bytes
+            // out of the next segment's text, where a leading `\` is enough to stop a
+            // `deny` glob matching the command that follows. Inside double quotes the
+            // continuation is part of one word, so there it is only consumed.
+            if bytes.get(i + 1) == Some(&b'\n') && !in_double_quote {
+                let segment = input[current_start..i].trim();
+                if !segment.is_empty() {
+                    segments.push(segment);
+                }
+                current_start = i + 2;
+            }
+
             i += 2;
             continue;
         }

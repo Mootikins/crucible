@@ -164,6 +164,24 @@ fn a_backslash_inside_single_quotes_is_literal() {
 }
 
 #[test]
+fn a_line_continuation_does_not_hide_the_next_command() {
+    let engine = PermissionEngine::new(Some(&documented_config()));
+
+    // `\` + newline is a line continuation, not an escape of a literal
+    // character. Carrying it into the segment text would leave `\`+newline in
+    // front of `rm`, which is enough to stop the `bash:rm *` glob matching.
+    assert_eq!(
+        split_chained_commands("git status && \\\nrm -rf /tmp/x"),
+        vec!["git status", "rm -rf /tmp/x"]
+    );
+    let decision = engine.evaluate("bash", "git status && \\\nrm -rf /tmp/x", true);
+    assert!(
+        matches!(decision, PermissionDecision::Deny { .. }),
+        "got {decision:?}"
+    );
+}
+
+#[test]
 fn an_escaped_operator_outside_quotes_is_a_literal_argument() {
     let engine = PermissionEngine::new(Some(&documented_config()));
 
