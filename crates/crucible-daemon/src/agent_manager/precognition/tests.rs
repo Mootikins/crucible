@@ -6,6 +6,38 @@
 
 use super::*;
 
+/// A registry claiming `name` for a directory, with the tempdir it lives under.
+///
+/// Both are returned because the tempdir must outlive the registry: paths
+/// resolve lexically, so a registry over a dropped tempdir still answers, and a
+/// test could pass without ever exercising the entry it meant to register.
+/// `data` is a sibling of the kiln, never its ancestor — the floor refuses a
+/// kiln at or above the daemon's data root.
+fn registry_naming(
+    name: &str,
+) -> (
+    tempfile::TempDir,
+    std::path::PathBuf,
+    std::sync::Arc<crate::kiln_registry::KilnRegistry>,
+) {
+    let root = tempfile::TempDir::new().expect("tempdir");
+    let kiln = root.path().join("corpora").join(name);
+    let registry =
+        crate::test_support::kiln_registry(&root.path().join("data"), &[(name, kiln.as_path())]);
+    (root, kiln, registry)
+}
+
+/// A registry that claims nothing — for the tests that are about something
+/// other than which kiln a note came from.
+fn registry_naming_nothing() -> (
+    tempfile::TempDir,
+    std::sync::Arc<crate::kiln_registry::KilnRegistry>,
+) {
+    let root = tempfile::TempDir::new().expect("tempdir");
+    let registry = crate::test_support::kiln_registry(&root.path().join("data"), &[]);
+    (root, registry)
+}
+
 #[cfg(test)]
 mod format_precognition_context_tests {
     use super::*;
@@ -322,10 +354,12 @@ mod precognition_format_hook_tests {
         // is now what gets injected as a system ContextMessage; the
         // user content lives in a separate message and isn't part of
         // the block.
+        let (_root, registry) = registry_naming_nothing();
         let output = AgentManager::format_precognition_context_block(
             "session-1",
             "What is Rust?",
             &results,
+            &registry,
             false,
             &state,
             None,
@@ -347,10 +381,12 @@ mod precognition_format_hook_tests {
             Some("/home/user/notes"),
         )];
 
+        let (_root, registry) = registry_naming_nothing();
         let output = AgentManager::format_precognition_context_block(
             "session-1",
             "What is Rust?",
             &results,
+            &registry,
             false,
             &state,
             None,
@@ -364,6 +400,94 @@ mod precognition_format_hook_tests {
         assert!(output.contains("Rust is a systems programming language."));
         // Original content is no longer concatenated into the block.
         assert!(!output.contains("What is Rust?"));
+    }
+
+    /// A plugin is told which kiln a note came from by *name*; the directory
+    /// never reaches it.
+    ///
+    /// Asserted on the whole formatted string rather than on "no path appears
+    /// in it": a substring check passes when the payload key is simply absent,
+    /// which would also pass if the handler never ran.
+    #[tokio::test]
+    async fn precognition_format_names_the_kiln_and_withholds_its_directory() {
+        let (_root, kiln, registry) = registry_naming("notes");
+        let state = make_session_event_state();
+        state
+            .lua
+            .load(
+                r###"
+                crucible.on("precognition_format", function(ctx, event)
+                    local note = event.results[1]
+                    return string.format(
+                        "kiln=%s kiln_path=%s",
+                        tostring(note.kiln),
+                        tostring(note.kiln_path)
+                    )
+                end)
+            "###,
+            )
+            .exec()
+            .expect("Lua handler should load");
+
+        let results = vec![make_result(
+            "notes/Rust.md",
+            0.85,
+            Some("Rust is a systems programming language."),
+            Some(kiln.to_str().expect("utf-8 tempdir path")),
+        )];
+
+        let output = AgentManager::format_precognition_context_block(
+            "session-1",
+            "What is Rust?",
+            &results,
+            &registry,
+            false,
+            &state,
+            None,
+        )
+        .await;
+
+        assert_eq!(output, "kiln=notes kiln_path=nil");
+    }
+
+    /// An unresolvable kiln yields no key at all, not an empty string: `""` is
+    /// truthy in Lua, so a handler asking `if note.kiln then` would be told
+    /// "yes" about a kiln nothing can name.
+    #[tokio::test]
+    async fn precognition_format_omits_the_kiln_when_no_entry_claims_it() {
+        let (_root, registry) = registry_naming_nothing();
+        let state = make_session_event_state();
+        state
+            .lua
+            .load(
+                r###"
+                crucible.on("precognition_format", function(ctx, event)
+                    return "kiln=" .. tostring(event.results[1].kiln)
+                end)
+            "###,
+            )
+            .exec()
+            .expect("Lua handler should load");
+
+        let results = vec![make_result(
+            "notes/Rust.md",
+            0.85,
+            Some("body"),
+            Some("/somewhere/unregistered"),
+        )];
+
+        let output = AgentManager::format_precognition_context_block(
+            "session-1",
+            "What is Rust?",
+            &results,
+            &registry,
+            false,
+            &state,
+            None,
+        )
+        .await;
+
+        assert_eq!(output, "kiln=nil");
     }
 
     #[test]
@@ -473,15 +597,7 @@ mod precognition_select_hook_tests {
         state: &SessionEventState,
         results: &[crucible_core::SearchResult],
     ) -> Option<Vec<crucible_core::SearchResult>> {
-        AgentManager::execute_precognition_select_handlers(
-            "session-1",
-            "what is alpha?",
-            results,
-            3000,
-            state,
-            None,
-        )
-        .await
+        run_select_with_budget(state, results, 3000).await
     }
 
     async fn run_select_with_budget(
@@ -489,10 +605,19 @@ mod precognition_select_hook_tests {
         results: &[crucible_core::SearchResult],
         char_budget: usize,
     ) -> Option<Vec<crucible_core::SearchResult>> {
+        // A registry that claims `KILN` under the name `notes`, so the payload
+        // a handler sees here is the shape production produces: every result of
+        // `three_results()` came from a registered kiln.
+        let root = tempfile::TempDir::new().expect("tempdir");
+        let registry = crate::test_support::kiln_registry(
+            &root.path().join("data"),
+            &[("notes", std::path::Path::new(KILN))],
+        );
         AgentManager::execute_precognition_select_handlers(
             "session-1",
             "what is alpha?",
             results,
+            &registry,
             char_budget,
             state,
             None,
@@ -603,7 +728,7 @@ mod precognition_select_hook_tests {
                     -- these fields is the whole point of the seam.
                     if event.char_budget ~= 3000 then return {} end
                     if event.note_count ~= 3 then return {} end
-                    if event.results[2].kiln_path ~= "/home/user/notes" then return {} end
+                    if event.results[2].kiln ~= "notes" then return {} end
                     return { { index = event.results[2].index } }
                 end)
             "#,
@@ -684,6 +809,42 @@ mod precognition_select_hook_tests {
     async fn no_handler_leaves_the_rust_default_in_place() {
         let state = make_session_event_state();
         assert!(run_select(&state, &three_results()).await.is_none());
+    }
+
+    /// A selecting plugin can tell one corpus from another by name, and is
+    /// never handed the directory to do it with.
+    ///
+    /// The name is smuggled out through `snippet` because that is the only
+    /// field of the payload a handler can hand back — asserting on the
+    /// returned snippet proves the handler both ran and saw the value.
+    #[tokio::test]
+    async fn precognition_select_names_the_kiln_and_withholds_its_directory() {
+        let state = make_session_event_state();
+        state
+            .lua
+            .load(
+                r###"
+                crucible.on("precognition_select", function(ctx, event)
+                    local note = event.results[1]
+                    return { {
+                        index = 1,
+                        snippet = string.format(
+                            "kiln=%s kiln_path=%s",
+                            tostring(note.kiln),
+                            tostring(note.kiln_path)
+                        ),
+                    } }
+                end)
+            "###,
+            )
+            .exec()
+            .expect("Lua handler should load");
+
+        let selected = run_select(&state, &three_results())
+            .await
+            .expect("the handler selects one note");
+
+        assert_eq!(snippets(&selected), vec!["kiln=notes kiln_path=nil"]);
     }
 
     #[test]

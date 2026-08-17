@@ -10,6 +10,44 @@ struct ExecuteMultiKilnSearchParams<'a> {
 }
 
 use super::*;
+use crate::kiln_registry::KilnRegistry;
+
+/// One retrieved note, as a Lua handler sees it.
+///
+/// `index` is `Some` only for `precognition_select`, where it is the handle a
+/// handler returns to pick this note; `precognition_format` runs over notes
+/// that were already chosen and has nothing to address them by.
+///
+/// The kiln is named, never located. `kiln_path` used to be here, which handed
+/// every installed plugin a directory the caller never supplied — the same
+/// disclosure the wire, the transcript and the prompt were closed against.
+/// A name with no registry entry yields **no key at all** rather than an empty
+/// string, because `""` is truthy in Lua and a handler asking `if note.kiln`
+/// would get "yes" for a note whose kiln it cannot name.
+fn plugin_result_payload(
+    result: &crucible_core::SearchResult,
+    registry: &KilnRegistry,
+    index: Option<usize>,
+) -> serde_json::Value {
+    let mut entry = serde_json::Map::new();
+    if let Some(index) = index {
+        entry.insert("index".to_string(), serde_json::json!(index));
+    }
+    entry.insert("title".to_string(), serde_json::json!(result_title(result)));
+    entry.insert("score".to_string(), serde_json::json!(result.score));
+    entry.insert(
+        "snippet".to_string(),
+        serde_json::json!(result.snippet.clone().unwrap_or_default()),
+    );
+    if let Some(name) = result
+        .kiln_path
+        .as_deref()
+        .and_then(|path| registry.name_for(path))
+    {
+        entry.insert("kiln".to_string(), serde_json::json!(name.as_str()));
+    }
+    serde_json::Value::Object(entry)
+}
 
 impl AgentManager {
     /// Build just the Precognition context block (no original-content
@@ -31,6 +69,7 @@ impl AgentManager {
         session_id: &str,
         original_content: &str,
         results: &[crucible_core::SearchResult],
+        registry: &KilnRegistry,
         label_kilns: bool,
         state: &SessionEventState,
         plugin_handlers: Option<&(
@@ -45,6 +84,7 @@ impl AgentManager {
             session_id,
             original_content,
             results,
+            registry,
             state,
             plugin_handlers,
         )
@@ -97,6 +137,7 @@ impl AgentManager {
         session_id: &str,
         original_content: &str,
         results: &[crucible_core::SearchResult],
+        registry: &KilnRegistry,
         state: &SessionEventState,
         plugin_handlers: Option<&(
             std::sync::Arc<crucible_lua::LuaScriptHandlerRegistry>,
@@ -105,18 +146,7 @@ impl AgentManager {
     ) -> Option<String> {
         let results_payload: Vec<serde_json::Value> = results
             .iter()
-            .map(|r| {
-                serde_json::json!({
-                    "title": result_title(r),
-                    "score": r.score,
-                    "snippet": r.snippet.clone().unwrap_or_default(),
-                    "kiln_path": r
-                        .kiln_path
-                        .as_ref()
-                        .and_then(|path| path.to_str())
-                        .unwrap_or_default(),
-                })
-            })
+            .map(|r| plugin_result_payload(r, registry, None))
             .collect();
 
         let event = SessionEvent::Custom {
@@ -198,6 +228,7 @@ impl AgentManager {
         session_id: &str,
         original_content: &str,
         results: &[crucible_core::SearchResult],
+        registry: &KilnRegistry,
         char_budget: usize,
         state: &SessionEventState,
         plugin_handlers: Option<&(
@@ -208,21 +239,9 @@ impl AgentManager {
         let results_payload: Vec<serde_json::Value> = results
             .iter()
             .enumerate()
-            .map(|(position, r)| {
-                serde_json::json!({
-                    // 1-based: this is the handle handlers return to select a
-                    // result, and Lua arrays are 1-based.
-                    "index": position + 1,
-                    "title": result_title(r),
-                    "score": r.score,
-                    "snippet": r.snippet.clone().unwrap_or_default(),
-                    "kiln_path": r
-                        .kiln_path
-                        .as_ref()
-                        .and_then(|path| path.to_str())
-                        .unwrap_or_default(),
-                })
-            })
+            // 1-based: this is the handle handlers return to select a result,
+            // and Lua arrays are 1-based.
+            .map(|(position, r)| plugin_result_payload(r, registry, Some(position + 1)))
             .collect();
 
         let event = SessionEvent::Custom {
@@ -476,6 +495,7 @@ impl AgentManager {
                 session_id,
                 original_content,
                 &results,
+                self.session_manager.kiln_registry(),
                 char_budget,
                 &state,
                 plugin_pair.as_ref(),
@@ -497,6 +517,7 @@ impl AgentManager {
                 session_id,
                 original_content,
                 &results,
+                self.session_manager.kiln_registry(),
                 label_kilns,
                 &state,
                 plugin_pair.as_ref(),

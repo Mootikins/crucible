@@ -83,6 +83,10 @@ Plugins can reshape Precognition through two event seams:
 
 Register handlers with `crucible.on("precognition_select", ...)` / `crucible.on("precognition_format", ...)`. See [[Help/Extending/Event Hooks]] for handler signatures and semantics.
 
+Both seams name the kiln a note came from as `note.kiln` — the key of its
+`[kilns]` entry, not its directory. A handler can tell one corpus from another
+without ever being handed a filesystem path.
+
 ## When It Activates
 
 Precognition runs on the **first user message of a session** — not on every

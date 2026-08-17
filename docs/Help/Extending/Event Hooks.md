@@ -160,7 +160,7 @@ and how the snippet character budget is spent across them.
 ```lua
 crucible.on("precognition_select", function(ctx, event)
   -- Keep only strong matches, best first. To restrict to one corpus, compare
-  -- `note.kiln_path` — a session's kilns are a flat set with no primary.
+  -- `note.kiln` — a session's kilns are a flat set with no primary.
   local picked = {}
   for _, note in ipairs(event.results) do
     if note.score > 0.7 then
@@ -175,7 +175,13 @@ Event fields:
 - `event.user_message` — the query text (string)
 - `event.note_count` — number of retrieved notes
 - `event.char_budget` — total snippet characters the handler may allocate
-- `event.results` — array of `{ index, title, score, snippet, kiln_path }`
+- `event.results` — array of `{ index, title, score, snippet, kiln }`
+
+`kiln` is the **name** of the `[kilns]` entry the note came from, never its
+directory — a plugin is told which corpus a note is in, not where it lives on
+disk. The key is **absent** when no entry claims the note's kiln, so
+`if note.kiln then` answers the question it looks like it is asking; it is
+never present-but-empty.
 
 Return an array of `{ index = n, snippet = "..." }`, where `index` is the
 handle from `event.results` and `snippet` optionally replaces that note's text.
@@ -223,7 +229,9 @@ Fires after selection, over the notes that survived it. Return a string to
 replace the entire system-message body that carries the kiln context.
 
 Event fields: `event.user_message`, `event.note_count`, and `event.results`
-(array of `{ title, score, snippet, kiln_path }`).
+(array of `{ title, score, snippet, kiln }`). `kiln` is a registry name and
+follows the same rules as in `precognition_select` above — no `index`, because
+these notes have already been chosen and there is nothing to address them by.
 
 Does **not** fire when the search returned nothing — the daemon short-circuits
 before invoking it. To inject something on the empty case, use
