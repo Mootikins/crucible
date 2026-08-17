@@ -44,7 +44,7 @@ export function openFileWithDiff(
  * Which panel opens a path. A `.canvas` is a spatial document, not text, so it
  * routes to the canvas editor rather than the file viewer.
  */
-export function contentTypeForPath(filePath: string): 'file' | 'canvas' {
+function contentTypeForPath(filePath: string): 'file' | 'canvas' {
   return /\.canvas$/i.test(filePath) ? 'canvas' : 'file';
 }
 
