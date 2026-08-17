@@ -21,10 +21,17 @@ vi.mock('@/contexts/ChatContext', () => ({
   }),
 }));
 
+let sessionsAccessor: () => Array<{ id: string; kilns: string[] }> = () => [];
 vi.mock('@/contexts/SessionContext', () => ({
   useSessionSafe: () => ({
-    sessions: () => [],
+    sessions: () => sessionsAccessor(),
   }),
+}));
+
+// The registry join, stubbed: `vault` is registered, `ghost` is not.
+vi.mock('@/stores/kilnStore', () => ({
+  kilnPathOf: (name: string | null | undefined) =>
+    name === 'vault' ? '/home/u/vault' : null,
 }));
 
 // Markdown is exercised in its own module; here we just check the wired-in
@@ -76,6 +83,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   messagesAccessor = () => [];
   streamingAccessor = () => false;
+  sessionsAccessor = () => [];
   Object.assign(navigator, {
     clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
   });
@@ -328,5 +336,41 @@ describe('AssistantTurn — thinking block', () => {
 
     statusBarActions.setShowThinking(true);
     expect(screen.getByText(/reasoning steps here/)).toBeInTheDocument();
+  });
+});
+
+// ── Which kiln a transcript's links resolve in ─────────────────────────
+
+describe('AssistantTurn — data-kiln', () => {
+  // `data-kiln` is read by the wikilink click handler and the hover preview,
+  // and both hand it to the note-resolution API as a DIRECTORY. The session
+  // record carries a registry NAME, so this has to be joined — publishing the
+  // name would make every wikilink in every transcript resolve against a
+  // relative directory that does not exist.
+  it('is the kiln DIRECTORY, joined from the session s registry name', async () => {
+    messagesAccessor = () => [textMsg('a1', 'body')];
+    sessionsAccessor = () => [{ id: 's1', kilns: ['vault'] }];
+    const { container } = render(() => (
+      <AssistantTurn parts={[textPart('a1')]} isLast={false} />
+    ));
+    await waitFor(() =>
+      expect(container.querySelector('[data-kiln]')?.getAttribute('data-kiln')).toBe(
+        '/home/u/vault',
+      ),
+    );
+  });
+
+  // A name the registry does not answer for is not a kiln. Emitting the name
+  // anyway would send it to the resolver as a path; emitting '' would send the
+  // daemon data dir. The attribute is absent, and resolution falls back to the
+  // caller's own default rather than to a corpus nobody chose.
+  it('is absent for a kiln the registry cannot place', async () => {
+    messagesAccessor = () => [textMsg('a1', 'body')];
+    sessionsAccessor = () => [{ id: 's1', kilns: ['ghost'] }];
+    const { container } = render(() => (
+      <AssistantTurn parts={[textPart('a1')]} isLast={false} />
+    ));
+    await waitFor(() => expect(container.querySelector('[data-md-sync],[data-md-async]')).toBeTruthy());
+    expect(container.querySelector('[data-kiln]')).toBeNull();
   });
 });

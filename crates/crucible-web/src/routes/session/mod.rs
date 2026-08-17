@@ -130,8 +130,11 @@ pub fn session_routes_with(policy: EndpointPolicy) -> Router<AppState> {
 struct CreateSessionRequest {
     #[serde(default = "default_session_type")]
     session_type: String,
-    /// The session's kiln set — flat, no member privileged. Empty or omitted →
-    /// daemon default (home kiln).
+    /// The session's kiln set by registry NAME — flat, no member privileged.
+    /// Empty or omitted is a literal empty set, NOT a request for a default:
+    /// it creates a session with no corpus attached. The daemon stopped
+    /// substituting its data root here because that root is the parent of the
+    /// sessions store, so "default" quietly put every transcript in scope.
     #[serde(default)]
     kilns: Vec<crucible_core::config::KilnName>,
     workspace: Option<PathBuf>,
@@ -446,8 +449,8 @@ async fn create_session(
     // created — see `daemon_err`) or builds config-derived internal
     // defaults, configures the session's agent as part of create, and returns
     // the resolved model in `agent_model`. The web no longer keeps its own copy
-    // of "what is the default agent". No kilns → omitted from the wire so the
-    // daemon resolves its default (home kiln).
+    // of "what is the default agent". Kilns are forwarded verbatim, empty set
+    // included — see `CreateSessionRequest::kilns`.
     let agent_spec = crucible_daemon::rpc_client::SessionAgentSpec {
         agent_name: req.agent_name.clone(),
         // The web's own request type still spells a card `agent_name` (the

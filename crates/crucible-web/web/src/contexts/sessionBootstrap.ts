@@ -1,5 +1,6 @@
 import { getSession } from '@/lib/api';
 import { sessionDefaultKiln } from '@/lib/session-scope';
+import { kilnPathOf } from '@/stores/kilnStore';
 import type { ChatMode } from '@/lib/types';
 import { statusBarActions } from '@/stores/statusBarStore';
 
@@ -50,7 +51,8 @@ export async function bootstrapSessionWithFallback({
     // a page reload silently shows "Normal" while the agent stays in plan.
     hydrateMode(session.agent_mode, setChatMode);
     syncPrimaryStatus(session.id, session.title, session.agent_model ?? null);
-    statusBarActions.setKilnPath(sessionDefaultKiln(session));
+    // The status bar shows a path, the session stores a name.
+    statusBarActions.setKilnPath(kilnPathOf(sessionDefaultKiln(session)));
     statusBarActions.setWorkspacePath(session.workspace || null);
     await loadHistory(session.id, signal);
     return;

@@ -9,6 +9,7 @@ import { ComposerCard } from '@/components/composer/ComposerCard';
 import { executeCommand } from '@/lib/api';
 import { statusBarStore } from '@/stores/statusBarStore';
 import { sessionDefaultKiln } from '@/lib/session-scope';
+import { kilnPathOf } from '@/stores/kilnStore';
 import { ArrowUp, X } from '@/lib/icons';
 export const ChatInput: Component = () => {
   const { sessionId, sendMessage, isLoading, isStreaming, cancelStream, error, chatMode, availableModes, switchMode, addSystemMessage, clearMessages } = useChatSafe();
@@ -125,9 +126,12 @@ export const ChatInput: Component = () => {
       <ComposerCard
         value={input}
         setValue={setInput}
+        // `[[note]]` completion needs the DIRECTORY; the session carries a
+        // registry name. Unresolved (kiln-less, or the registry not back yet)
+        // completes against nothing rather than against the data root.
         kilnPath={() => {
           const s = currentSession();
-          return s ? sessionDefaultKiln(s) ?? undefined : undefined;
+          return (s ? kilnPathOf(sessionDefaultKiln(s)) : null) ?? undefined;
         }}
         placeholder={session() ? 'Type a message...' : 'Select a session first...'}
         disabled={!session() || isLoading()}

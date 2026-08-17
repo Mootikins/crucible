@@ -10,6 +10,7 @@ import { PrecognitionBadge } from './PrecognitionBadge';
 import { useChatSafe } from '@/contexts/ChatContext';
 import { useSessionSafe } from '@/contexts/SessionContext';
 import { sessionDefaultKiln } from '@/lib/session-scope';
+import { kilnPathOf } from '@/stores/kilnStore';
 import type { Message as MessageType } from '@/lib/types';
 import { renderPlainWithWikilinks } from '@/lib/markdown';
 import { formatAbsoluteTime } from '@/lib/format-time';
@@ -26,11 +27,13 @@ export const Message: Component<MessageProps> = (props) => {
    * The kiln a transcript's links belong to is the SESSION's kiln — canonical
    * state from the session record, not whichever kiln the navigator is showing.
    * Switching kilns must not re-point the links in an open conversation.
+   *
+   * Resolved name → directory, because wikilink resolution takes a root.
    */
   const sessionKiln = () => {
     const sid = chat.sessionId?.();
     const s = sessionCtx.sessions().find((x) => x.id === sid);
-    return s ? sessionDefaultKiln(s) ?? undefined : undefined;
+    return (s ? kilnPathOf(sessionDefaultKiln(s)) : null) ?? undefined;
   };
   const handleMarkdownClick = makeMarkdownClickHandler();
   const isUser = () => props.message.role === 'user';

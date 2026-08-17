@@ -6,6 +6,7 @@ import { notificationActions } from '@/stores/notificationStore';
 import { PanelShell } from './PanelShell';
 import { PanelHeader } from './PanelHeader';
 import { sessionDefaultKiln } from '@/lib/session-scope';
+import { kilnPathOf } from '@/stores/kilnStore';
 
 const SEARCH_DEBOUNCE_MS = 200;
 
@@ -17,7 +18,8 @@ function useKilnPath() {
   const { currentSession } = useSessionSafe();
   return createResource<string | null>(async () => {
     const sess = currentSession();
-    const kiln = sess ? sessionDefaultKiln(sess) : null;
+    // Name → directory: the skills endpoints take a root.
+    const kiln = sess ? kilnPathOf(sessionDefaultKiln(sess)) : null;
     if (kiln) return kiln;
     try {
       const config = await getConfig();

@@ -26,7 +26,7 @@ import { WorkingDots } from '@/components/AssistantTurn';
 import { ComposerCard } from '@/components/composer/ComposerCard';
 import { pathBasename } from '@/stores/statusBarStore';
 import { syncRecentsFromServer } from '@/lib/recent-files';
-import { kilnLabel } from '@/lib/kiln-label';
+import { kilnNameForPath, kilnPathForName } from '@/lib/kiln-registry';
 import { swrLocal } from '@/lib/local-cache';
 import { ChipSelect, type ChipOption } from '@/components/composer/ChipSelect';
 import { iconForAgent } from '@/lib/agent-icons';
@@ -79,7 +79,10 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
   const [models, setModels] = createSignal<string[]>([]);
   const [kilns, setKilns] = createSignal<KilnListEntry[]>([]);
   const [projects, setProjects] = createSignal<Project[]>([]);
-  const [defaultKiln, setDefaultKiln] = createSignal('');
+  // `config.kiln_path` — a PATH, and the only path left on this axis. It is
+  // useful solely as a lookup key into the kiln list to recover the default's
+  // registry NAME; nothing sends it anywhere.
+  const [defaultKilnPath, setDefaultKilnPath] = createSignal('');
   const [defaultModel, setDefaultModel] = createSignal('');
   const [remoteShell, setRemoteShell] = createSignal(false);
 
@@ -122,7 +125,7 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
     // synchronously (swrLocal) and the fetch corrects it — a hard reload
     // shows real labels immediately instead of "Loading…"/fallback text.
     swrLocal('config', getConfig, (cfg) => {
-      if (cfg?.kiln_path) setDefaultKiln(cfg.kiln_path);
+      if (cfg?.kiln_path) setDefaultKilnPath(cfg.kiln_path);
       setRemoteShell(cfg?.remote_shell === true);
     });
     swrLocal('targets-workspace', () => getTargetProviders('workspace'), (p) => {
@@ -171,9 +174,8 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
     try {
       await createSession(
         {
-          // 'none' = an explicitly kiln-less session (v0.12 kiln-less
-          // creation) — distinct from '' which falls back to the default.
-          kilns: kiln() === 'none' ? [] : [kiln() || defaultKiln()].filter(Boolean),
+          // Registry names, never paths — see `kilnsForCreate`.
+          kilns: kilnsForCreate(),
           workspace: workspace() || undefined,
           ...(isAcp() ? { agent_type: 'acp', agent_name: agentName() } : {}),
           // The workspace axis: the daemon resolves this to a path before it
@@ -201,24 +203,77 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
     }
   };
 
-  // The default kiln's REGISTERED name (kiln.toml), not its path basename.
-  const defaultKilnName = () => {
-    const match = kilns().find((k) => k.path === defaultKiln());
-    return kilnLabel(defaultKiln(), match?.name);
-  };
+  /**
+   * The configured default kiln's REGISTRY name, or `null` when it has none.
+   *
+   * `null` is the ordinary case, not an error: `kiln.list` deliberately omits
+   * the daemon data root, so a `kiln_path` still pointing at `~/.crucible`
+   * matches no entry. There is no name to send for it and the daemon no longer
+   * substitutes its data root, so "no name" and "no kiln" are the same
+   * statement — the picker offers no default row and the session is born
+   * kiln-less rather than born pointing at the session store.
+   */
+  const defaultKilnName = () => kilnNameForPath(defaultKilnPath(), kilns());
+
+  /** Registry names only: a nameless entry cannot be attached by name. */
+  const namedKilns = () => kilns().filter((k) => !!k.name?.trim());
 
   const kilnOptions = (): ChipOption[] => [
-    { value: '', label: defaultKilnName(), hint: 'default' },
-    ...kilns()
-      .filter((k) => k.path !== defaultKiln())
+    // '' = "whatever the config says", resolved to a name at submit. Offered
+    // only when that name exists; otherwise there is nothing for it to mean.
+    ...(defaultKilnName()
+      ? [{ value: '', label: defaultKilnName() as string, hint: 'default' }]
+      : []),
+    ...namedKilns()
+      .filter((k) => k.name !== defaultKilnName())
       .map((k) => ({
-        value: k.path,
-        label: kilnLabel(k.path, k.name),
+        value: k.name as string,
+        label: k.name as string,
+        // The path is the disambiguator, not the identity.
         hint: k.path,
       })),
     // Explicitly kiln-less — a session with no knowledge base attached.
     { value: 'none', label: 'No kiln' },
   ];
+
+  /**
+   * The `kilns` array for `session.create`, as registry NAMES.
+   *
+   * Three inputs collapse to two outcomes: 'none' and an unresolvable default
+   * both mean the empty set, which the daemon now honours literally (§4.1,
+   * tools-only session). Only a name that the registry answers for is ever
+   * sent — a path here would name a directory the registration floor never
+   * saw, and comes back 422.
+   */
+  const kilnsForCreate = (): string[] => {
+    if (kiln() === 'none') return [];
+    const name = kiln() || defaultKilnName();
+    return name ? [name] : [];
+  };
+
+  /**
+   * The selected kiln's directory, for the composer's wikilink autocomplete —
+   * the one consumer on this screen that genuinely needs a path. Resolved
+   * through the registry rather than reused from `config.kiln_path`, so an
+   * unregistered directory completes against nothing instead of against a
+   * corpus no session will actually be attached to.
+   */
+  const selectedKilnPath = () => kilnPathForName(kilnsForCreate()[0], kilns());
+
+  /**
+   * What the closed chip reads.
+   *
+   * Spelled out rather than left to ChipSelect's value→option lookup, because
+   * the '' row is conditional. A `placeholder` cannot do this job: ChipSelect
+   * shows a placeholder for ANY empty value, so it would read "No kiln" even
+   * when '' does resolve to the configured default — the chip would deny a
+   * kiln the session is about to get. Every branch here is the truth about
+   * what `kilnsForCreate` will send.
+   */
+  const kilnTriggerLabel = () => {
+    if (kiln() === 'none') return 'No kiln';
+    return kiln() || defaultKilnName() || 'No kiln';
+  };
 
   /**
    * Re-enumerate every provider on one axis for the selected project.
@@ -413,6 +468,7 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
               options={kilnOptions()}
               value={kiln()}
               onSelect={setKiln}
+              triggerLabel={kilnTriggerLabel()}
               disabled={busy()}
               testid="composer-kiln"
             />
@@ -526,9 +582,9 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
           <ComposerCard
             value={message}
             setValue={setMessage}
-            // The draft's selected kiln (or the daemon default once resolved)
+            // The draft's selected kiln (or the config default once resolved)
             // backs `[[note]]` completion before the session exists.
-            kilnPath={() => kiln() || defaultKiln()}
+            kilnPath={selectedKilnPath}
             placeholder="Plan, build, ask — a session starts with your first message"
             ariaLabel="First message"
             rows={3}

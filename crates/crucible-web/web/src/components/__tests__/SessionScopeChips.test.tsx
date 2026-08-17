@@ -17,17 +17,17 @@ vi.mock('@/contexts/ChatContext', () => ({
 
 const connectMock = vi.fn().mockResolvedValue({
   session_id: 's1',
-  kilns: ['/kilns/main', '/kilns/extra'],
+  kilns: ['main', 'extra'],
   workspace: null,
 });
 const disconnectMock = vi.fn().mockResolvedValue({
   session_id: 's1',
-  kilns: ['/kilns/main'],
+  kilns: ['main'],
   workspace: null,
 });
 const setWorkspaceMock = vi.fn().mockResolvedValue({
   session_id: 's1',
-  kilns: ['/kilns/main'],
+  kilns: ['main'],
   workspace: null,
 });
 
@@ -45,7 +45,8 @@ vi.mock('@/lib/api', () => ({
 const baseSession = (): Session => ({
   id: 's1',
   session_type: 'chat',
-  kilns: ['/kilns/main'],
+  // Registry NAMES, which is what a session's kiln set is on the wire.
+  kilns: ['main'],
   // Floating: the daemon says outright that this session has no workspace.
   workspace: null,
   state: 'active',
@@ -90,7 +91,7 @@ describe('SessionScopeChips', () => {
   });
 
   it('every attached kiln toggles off, including the first', async () => {
-    mockSession = { ...baseSession(), kilns: ['/kilns/main', '/kilns/extra'] };
+    mockSession = { ...baseSession(), kilns: ['main', 'extra'] };
     render(() => <SessionScopeChips />);
     expect(screen.getByTestId('scope-kiln').textContent).toContain('main +1');
     fireEvent.click(screen.getByTestId('scope-kiln'));
@@ -99,7 +100,7 @@ describe('SessionScopeChips', () => {
     const mainOption = screen.getByText('main').closest('button') as HTMLButtonElement;
     expect(mainOption.disabled).toBe(false);
     fireEvent.click(screen.getByText('extra'));
-    await waitFor(() => expect(disconnectMock).toHaveBeenCalledWith('s1', '/kilns/extra'));
+    await waitFor(() => expect(disconnectMock).toHaveBeenCalledWith('s1', 'extra'));
   });
 
   it('detaching the only attached kiln is offered like any other detach', async () => {
@@ -110,7 +111,7 @@ describe('SessionScopeChips', () => {
     const only = within(popout).getByText('main').closest('button') as HTMLButtonElement;
     expect(only.disabled).toBe(false);
     fireEvent.click(only);
-    await waitFor(() => expect(disconnectMock).toHaveBeenCalledWith('s1', '/kilns/main'));
+    await waitFor(() => expect(disconnectMock).toHaveBeenCalledWith('s1', 'main'));
   });
 
   it('a kiln-less session reads as tools-only, and says the note tools are gone', async () => {
@@ -137,6 +138,42 @@ describe('SessionScopeChips', () => {
     fireEvent.click(screen.getByTestId('scope-kiln'));
     await waitFor(() => expect(screen.getByText('extra')).toBeTruthy());
     fireEvent.click(screen.getByText('extra'));
-    await waitFor(() => expect(connectMock).toHaveBeenCalledWith('s1', '/kilns/extra'));
+    await waitFor(() => expect(connectMock).toHaveBeenCalledWith('s1', 'extra'));
+  });
+
+  // The join is on the registry NAME. It used to be on `path`, which meant a
+  // session's kiln set and the kiln list agreed only as long as both spelled a
+  // kiln the same way — and the route now answers 422 to a path, so the chip
+  // would have posted one and shown the failure as a toast.
+  it('attaches by name, and the daemon is told the name', async () => {
+    mockSession = baseSession();
+    render(() => <SessionScopeChips />);
+    fireEvent.click(screen.getByTestId('scope-kiln'));
+    const popout = await screen.findByTestId('scope-kiln-popout');
+    fireEvent.click(within(popout).getByText('extra'));
+    await waitFor(() => expect(connectMock).toHaveBeenCalledWith('s1', 'extra'));
+    const [, sent] = connectMock.mock.calls[0] as [string, string];
+    expect(sent).not.toContain('/');
+  });
+
+  // A path in `kilns` is what a session file written before names carries. It
+  // is not the entry whose directory it happens to equal: crediting it would
+  // mark `main` attached, and clicking `main` would then DETACH a kiln the
+  // session never had while leaving the real entry in place.
+  it('a path in the kiln set is not credited to the entry it points at', async () => {
+    mockSession = { ...baseSession(), kilns: ['/kilns/main'] };
+    render(() => <SessionScopeChips />);
+    fireEvent.click(screen.getByTestId('scope-kiln'));
+    const popout = await screen.findByTestId('scope-kiln-popout');
+    const registered = within(popout).getByText('main').closest('button') as HTMLButtonElement;
+    expect(registered.getAttribute('aria-selected')).not.toBe('true');
+    // ...and it still has a row of its own, or it could never be detached.
+    // (`/kilns/main` also appears as the unattached `main` row's directory
+    // hint, so this looks for the one that is a row, not the one that is text.)
+    const orphan = within(popout)
+      .getAllByText('/kilns/main')
+      .map((el) => el.closest('button'))
+      .find((b) => b?.getAttribute('aria-selected') === 'true');
+    expect(orphan).toBeTruthy();
   });
 });

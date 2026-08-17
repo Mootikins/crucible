@@ -35,6 +35,11 @@ vi.mock('@/lib/api', () => ({
   searchSkills: (...args: unknown[]) => searchSkillsMock(...args),
   getSkill: (...args: unknown[]) => getSkillMock(...args),
   getConfig: () => getConfigMock(),
+  // The panel resolves a kiln *name* to a directory through the registry
+  // store, which fetches this. An empty registry is the case under test:
+  // nothing claims the session's name, `kilnPathOf` answers null, and the
+  // panel falls back to the configured `kiln_path` below.
+  listKilns: () => Promise.resolve([]),
 }));
 
 const addNotificationMock = vi.fn();

@@ -57,7 +57,14 @@ vi.mock('@/lib/api', () => ({
     { name: 'claude', description: 'Claude Code via ACP', command: 'npx', is_builtin: true, available: true },
   ]),
   listAllModels: vi.fn().mockResolvedValue(['ollama/llama3.2', 'openai/gpt-4o']),
-  listKilns: vi.fn().mockResolvedValue([{ path: '/home/user/kilns/other', name: 'other' }]),
+  // The registry: `name` is the key every other call answers to, `path` is
+  // where it lives (the documented exception). `helios` is the configured
+  // default, so it appears here too — a default the registry cannot name is
+  // its own case, tested below.
+  listKilns: vi.fn().mockResolvedValue([
+    { path: '/home/user/kilns/helios', name: 'helios' },
+    { path: '/home/user/kilns/other', name: 'other' },
+  ]),
   listProjects: vi.fn().mockResolvedValue([{ path: '/repos/crucible', name: 'crucible', kilns: [] }]),
   listProviders: vi.fn().mockResolvedValue([
     { name: 'ollama', available: true, default_model: 'llama3.2' },
@@ -81,7 +88,13 @@ beforeEach(async () => {
   createSessionMock.mockClear();
   openFileInEditorMock.mockClear();
 
-  const { getTargetProviders, getProviderTargets } = await import('@/lib/api');
+  const { getConfig, getTargetProviders, getProviderTargets } = await import('@/lib/api');
+  // The kiln chip reads its default from here, so a test that overrides the
+  // config must not decide what the next test sees. Re-declared per test
+  // rather than left to the module factory, which only runs once.
+  vi.mocked(getConfig).mockResolvedValue({
+    kiln_path: '/home/user/kilns/helios',
+  } as Awaited<ReturnType<typeof getConfig>>);
   vi.mocked(getTargetProviders).mockImplementation((axis) =>
     Promise.resolve(
       axis === 'runtime'
@@ -172,8 +185,47 @@ describe('CenterComposer', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(createSessionMock).toHaveBeenCalledTimes(1));
     const [scope, opts] = createSessionMock.mock.calls[0];
-    expect(scope.kilns).toEqual(['/home/user/kilns/helios']);
+    // The NAME, not the directory. `session.create` refuses a path outright,
+    // so the launchpad sending one would 422 every first message.
+    expect(scope.kilns).toEqual(['helios']);
     expect(opts.initialMessage).toBe('hello world');
+  });
+
+  it('a kiln picked by name is what create is told', async () => {
+    const { getByTestId } = render(() => <CenterComposer />);
+    await waitFor(() => expect(getByTestId('composer-kiln').textContent).toContain('helios'));
+    fireEvent.click(getByTestId('composer-kiln'));
+    await waitFor(() => expect(screen.getByTestId('composer-kiln-popout')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('other'));
+
+    const input = getByTestId('composer-input') as HTMLTextAreaElement;
+    fireEvent.input(input, { target: { value: 'hi' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(createSessionMock).toHaveBeenCalledTimes(1));
+    expect(createSessionMock.mock.calls[0][0].kilns).toEqual(['other']);
+  });
+
+  // A configured `kiln_path` the registry does not answer for has no name, and
+  // there is nothing to send. The composer must say so rather than offering a
+  // "default" row that quietly creates a kiln-less session labelled with a
+  // directory basename — the empty set has to deny, not stand in for one.
+  it('offers no default kiln when the configured one is not registered', async () => {
+    const { getConfig } = await import('@/lib/api');
+    // Safe to set permanently: beforeEach re-establishes the default config
+    // for every test, so this cannot leak into the next one.
+    vi.mocked(getConfig).mockResolvedValue({
+      kiln_path: '/home/user/kilns/unregistered',
+    } as Awaited<ReturnType<typeof getConfig>>);
+
+    const { getByTestId } = render(() => <CenterComposer />);
+    await waitFor(() => expect(getByTestId('composer-kiln').textContent).toContain('No kiln'));
+    expect(getByTestId('composer-kiln').textContent).not.toContain('unregistered');
+
+    const input = getByTestId('composer-input') as HTMLTextAreaElement;
+    fireEvent.input(input, { target: { value: 'hi' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(createSessionMock).toHaveBeenCalledTimes(1));
+    expect(createSessionMock.mock.calls[0][0].kilns).toEqual([]);
   });
 
   it('a chip popout selects a value used on submit', async () => {

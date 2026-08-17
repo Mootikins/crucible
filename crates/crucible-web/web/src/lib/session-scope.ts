@@ -1,18 +1,23 @@
 import type { Session } from '@/lib/types';
 
 /**
- * The one kiln to show when a session must be labelled by a single one.
+ * The one kiln NAME to show when a session must be labelled by a single one.
  *
  * A session's `kilns` is flat — no member is privileged for *scope*. But a
  * tree row has room for one name, so it borrows the first attached kiln, the
  * same choice the daemon's `Session::default_kiln` makes.
  *
+ * A registry name, not a directory. Callers that need the directory (grep,
+ * wikilink resolution, the status bar's kiln path) must resolve it through
+ * `kilnPathForName()`; passing this straight to a path helper searches a
+ * relative directory named after the kiln, which is nowhere.
+ *
  * `null` for a kiln-less session, which is a legitimate shape (a tools-only
  * agent), not a degenerate one. Callers must keep it `null` rather than
- * coercing to `''`: an empty path reaches `kilnLabel()` as the home data dir
- * and renders "Home kiln", inventing an attachment the session does not have.
- * `?.` because a payload that predates the field must read as no kilns, not
- * throw.
+ * coercing to `''`, which every path helper reads as the daemon data dir —
+ * inventing an attachment the session does not have, and a far wider one than
+ * any kiln. `?.` because a payload that predates the field must read as no
+ * kilns, not throw.
  */
 export function sessionDefaultKiln(session: Pick<Session, 'kilns'>): string | null {
   return session.kilns?.[0] ?? null;

@@ -11,6 +11,7 @@
  */
 import { Component, For, Show, createMemo, createSignal, createEffect, onCleanup } from 'solid-js';
 import { sessionDefaultKiln } from '@/lib/session-scope';
+import { kilnPathOf } from '@/stores/kilnStore';
 import { Copy, Check, RefreshCw } from 'lucide-solid';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ToolCard } from './ToolCard';
@@ -123,10 +124,12 @@ export const AssistantTurn: Component<{
 
   const byId = (id: string) => chat.messages().find((m) => m.id === id);
 
+  // The session's kiln as a DIRECTORY — wikilink resolution takes a root,
+  // while the session record carries a registry name.
   const sessionKiln = () => {
     const sid = chat.sessionId?.();
     const s = sessionCtx.sessions().find((x) => x.id === sid);
-    return s ? sessionDefaultKiln(s) ?? undefined : undefined;
+    return (s ? kilnPathOf(sessionDefaultKiln(s)) : null) ?? undefined;
   };
 
   // One click-delegation implementation shared with the note reading view

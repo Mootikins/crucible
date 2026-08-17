@@ -48,9 +48,16 @@ export interface Session {
   id: string;
   session_type: SessionType;
   /**
-   * Every kiln this session can query — flat, order-preserving, no member
-   * privileged. `kilns[0]` is only read for the one thing that still needs
-   * exactly one: a display label.
+   * Every kiln this session can query, by registry NAME — flat,
+   * order-preserving, no member privileged. `kilns[0]` is only read for the
+   * one thing that still needs exactly one: a display label.
+   *
+   * Names, not paths. A name is what the daemon accepts back (`session.create`,
+   * `session.connect_kiln`, the search filter) because it resolves against the
+   * `[kilns]` registry; a path names a directory the registration floor never
+   * saw. Anything here that needs a DIRECTORY — grep, wikilink resolution,
+   * note listing — joins through `kilnPathForName()` against `GET /api/kilns`,
+   * and treats an unresolved name as no directory rather than as the root.
    */
   kilns: string[];
   /**
@@ -74,7 +81,12 @@ export interface Session {
 
 export interface CreateSessionParams {
   session_type?: SessionType;
-  /** The session's kiln set. Omitted or empty → daemon default (home kiln). */
+  /**
+   * The session's kiln set, by registry NAME. Omitted or empty is a literal
+   * empty set — a session with no corpus — NOT a request for a default; the
+   * daemon stopped substituting its data root, which is the parent of the
+   * session store.
+   */
   kilns?: string[];
   workspace?: string;
   provider?: string;
