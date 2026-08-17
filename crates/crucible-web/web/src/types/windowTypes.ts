@@ -46,7 +46,7 @@ export interface PaneNode {
   tabGroupId: string | null;
 }
 
-export interface SplitNode {
+interface SplitNode {
   id: string;
   type: 'split';
   direction: SplitDirection;
@@ -135,7 +135,3 @@ export interface TabBarProps {
   onPopOut?: () => void;
 }
 
-export interface TabContentProps {
-  tab: Tab;
-  groupId: string;
-}
