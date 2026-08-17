@@ -6,7 +6,6 @@
  * backlinks panel so every surface resolves links the same way.
  */
 import { resolveNotePath } from './api';
-import { extractFrontmatterBlock } from './frontmatter';
 import { openFileInEditor } from './file-actions';
 import { notificationActions } from '@/stores/notificationStore';
 
@@ -78,23 +77,6 @@ async function resolveTarget(name: string, kiln?: string): Promise<NotePreview |
   }
 }
 
-/**
- * Display name for a note payload. GET /api/notes/{name} sends no `name`
- * field, so a tab titled from it directly reads "undefined" — fall through
- * title → name → file stem.
- */
-export function noteDisplayName(note: {
-  name?: string;
-  title?: string | null;
-  path: string;
-}): string {
-  return (
-    note.title ??
-    note.name ??
-    note.path.split('/').pop()?.replace(/\.md$/i, '') ??
-    note.path
-  );
-}
 
 /**
  * Resolve a wikilink target to its kiln file and open it in the editor.
@@ -169,13 +151,6 @@ export interface NotePreview {
   absPath: string;
 }
 
-/** Note body without its YAML frontmatter block (for rendered views). */
-export function stripFrontmatter(content: string): string {
-  // YAML (---) and TOML (+++) — the daemon parser accepts both, so the web
-  // must too, or TOML frontmatter leaks into the rendered body as text.
-  const block = extractFrontmatterBlock(content);
-  return block ? content.slice(block.bodyStart) : content;
-}
 
 /**
  * Wrap an unlinked mention in wikilink syntax inside `content`.
