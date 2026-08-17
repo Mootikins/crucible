@@ -165,18 +165,6 @@ pub fn popup_item_with_desc(
     }
 }
 
-pub fn popup_item_full(
-    label: impl Into<String>,
-    description: Option<String>,
-    kind: Option<String>,
-) -> PopupItemNode {
-    PopupItemNode {
-        label: label.into(),
-        description,
-        kind,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -273,11 +261,6 @@ mod tests {
         assert_eq!(with_desc.label, "test");
         assert_eq!(with_desc.description, Some("description".to_string()));
         assert!(with_desc.kind.is_none());
-
-        let full = popup_item_full("test", Some("desc".to_string()), Some("kind".to_string()));
-        assert_eq!(full.label, "test");
-        assert_eq!(full.description, Some("desc".to_string()));
-        assert_eq!(full.kind, Some("kind".to_string()));
     }
 
     #[test]

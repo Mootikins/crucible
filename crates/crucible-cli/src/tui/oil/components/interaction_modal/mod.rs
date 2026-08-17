@@ -6,8 +6,6 @@ use crucible_oil::node::Node;
 
 use crossterm::event::{KeyEvent, KeyModifiers};
 use crucible_core::interaction::{InteractionRequest, PanelState};
-#[allow(unused_imports)] // WIP: PopupEntry not yet used
-use crucible_core::types::PopupEntry;
 use std::collections::HashSet;
 
 mod ask;

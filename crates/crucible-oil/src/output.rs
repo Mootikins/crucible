@@ -1,6 +1,5 @@
 use crate::ansi::visual_rows;
-#[allow(unused_imports)] // WIP: OverlayAnchor not yet used
-use crate::overlay::{composite_overlays, Overlay, OverlayAnchor};
+use crate::overlay::{composite_overlays, Overlay};
 use crate::planning::RenderedOverlay;
 use crossterm::{cursor, execute, terminal};
 use std::io::{self, Stdout, Write};

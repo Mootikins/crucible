@@ -2,8 +2,6 @@ use crate::chat::bridge::AgentEventBridge;
 use crate::tui::oil::app::Action;
 use crate::tui::oil::chat_app::{ChatAppMsg, McpServerDisplay, OilChatApp, PluginStatusEntry};
 use crate::tui::oil::event::Event;
-#[allow(unused_imports)] // WIP: KeyCode, KeyModifiers not yet used
-use crossterm::event::{KeyCode, KeyModifiers};
 use crucible_core::traits::chat::AgentHandle;
 use crucible_lua::SessionCommand;
 use crucible_oil::focus::FocusContext;

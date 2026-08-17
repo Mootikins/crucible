@@ -488,17 +488,6 @@ fn br_tag_in_table_cell() {
     assert!(output.contains("Second"));
 }
 
-#[test_case("a<br>b", "a  \nb" ; "lowercase")]
-#[test_case("a<br/>b", "a  \nb" ; "self_closing")]
-#[test_case("a<br />b", "a  \nb" ; "self_closing_with_space")]
-#[test_case("a<BR>b", "a  \nb" ; "uppercase")]
-#[test_case("no tags here", "no tags here" ; "no_tags")]
-#[test_case("multi<br>line<br>text", "multi  \nline  \ntext" ; "multiple_tags")]
-fn normalize_br_tags_function(input: &str, expected: &str) {
-    use super::render::normalize_br_tags;
-    assert_eq!(normalize_br_tags(input), expected);
-}
-
 #[test]
 fn table_uses_table_width_not_text_width() {
     let table = "| A | B | C |\n|---|---|---|\n| 1 | 2 | 3 |";

@@ -50,9 +50,8 @@ pub(crate) fn is_default<T: Default + PartialEq>(value: &T) -> bool {
 
 pub use cell_grid::{CellGrid, StyledCell};
 pub use components::{
-    clamp_input_lines, popup_item, popup_item_full, popup_item_with_desc, wrap_content, Drawer,
-    DrawerKind, InputArea, InputStyle, PopupOverlay, FOCUS_POPUP, INPUT_MAX_CONTENT_LINES,
-    POPUP_MAX_VISIBLE,
+    clamp_input_lines, popup_item, popup_item_with_desc, wrap_content, Drawer, DrawerKind,
+    InputArea, InputStyle, PopupOverlay, FOCUS_POPUP, INPUT_MAX_CONTENT_LINES, POPUP_MAX_VISIBLE,
 };
 pub use focus::{FocusContext, FocusId};
 pub use layout::Rect;

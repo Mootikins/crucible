@@ -1,7 +1,6 @@
 use crate::tui::oil::component::Component;
 use crate::tui::oil::ViewContext;
-#[allow(unused_imports)] // WIP: DrawerKind not yet used
-use crucible_oil::components::{Drawer as OilDrawer, DrawerKind};
+use crucible_oil::components::Drawer as OilDrawer;
 use crucible_oil::node::Node;
 
 /// Type alias for Oil's Drawer
@@ -16,6 +15,7 @@ impl Component for Drawer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_oil::components::DrawerKind;
     use crucible_oil::render::render_to_plain_text;
 
     #[test]

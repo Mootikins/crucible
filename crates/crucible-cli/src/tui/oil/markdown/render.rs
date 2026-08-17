@@ -248,9 +248,3 @@ pub(super) fn extract_all_text(node: &markdown_it::Node) -> String {
 pub(super) fn text_node(content: &str) -> Node {
     text(content)
 }
-
-#[allow(dead_code)] // WIP: normalize_br_tags not yet used
-pub(super) fn normalize_br_tags(input: &str) -> String {
-    // Replace with "  \n" (two trailing spaces = markdown Hardbreak)
-    BR_TAG_REGEX.replace_all(input, "  \n").into_owned()
-}

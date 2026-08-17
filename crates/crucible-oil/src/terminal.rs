@@ -2,7 +2,6 @@ use crate::node::Node;
 use crate::output::OutputBuffer;
 use crate::planning::{FramePlanner, FrameSnapshot};
 use crate::render::CursorInfo;
-#[allow(unused_imports)] // WIP: self not yet used in cursor and event modules
 use crossterm::{
     cursor::{self, Hide, MoveDown, MoveTo, MoveToColumn, MoveUp, SetCursorStyle, Show},
     event::{
