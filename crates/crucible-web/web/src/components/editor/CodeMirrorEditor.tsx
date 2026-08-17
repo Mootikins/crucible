@@ -64,7 +64,7 @@ export const getLanguageExtension = (path: string): LanguageSupport | null => {
 // Marks dispatches that mirror external state (file switch, reload) into the
 // reused view, so the update listener can tell them apart from user edits —
 // otherwise switching the active file marks the incoming file dirty (bug 5).
-export const contentSync = Annotation.define<boolean>();
+const contentSync = Annotation.define<boolean>();
 
 // Vim's `:w`/`:write` (and `:wq`) route to the owning editor's save handler
 // — same path as Ctrl-S, so the dirty state (and the floating Save chip)
