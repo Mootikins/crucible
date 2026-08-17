@@ -322,15 +322,22 @@ The trait is defined in `crucible-lua` as `DaemonSessionApi` and implemented by 
 Create a new session. Returns a session table with at least `{ id, session_type, state, kilns }`.
 
 `kilns` is the session's whole knowledge scope — a flat set with no primary
-member. Omit it (or pass an empty table) for a tools-only session with no note
-tools, precognition, or semantic search. **`kiln` and `connect_kilns` are no
-longer accepted and are ignored without error**, so a caller still passing
-either silently gets the default set.
+member, and each member is the **name** of a `[kilns]` entry in the user's
+config, not a directory. A name no entry claims is refused rather than
+attached, and a `kilns` list that is non-empty but names only unknown kilns is
+an error rather than "no scope". Omit it (or pass an empty table) for a
+tools-only session with no note tools, precognition, or semantic search.
+**`kiln` and `connect_kilns` are no longer accepted and are ignored without
+error**, so a caller still passing either silently gets the default set.
+
+Position carries the only meaning left: the first member is where the session
+writes. `workspace` stays a path — workspaces have no registry to resolve a
+name against.
 
 ```lua
 local session, err = cru.sessions.create({
     type = "chat",                            -- session type (default: "chat")
-    kilns = { "/path/to/notes", "/more/docs" }, -- knowledge scope (optional; omitted = none)
+    kilns = { "notes", "reference" },         -- knowledge scope, by NAME (optional; omitted = none)
     workspace = "/path/to/workspace",         -- workspace path (optional)
     agent_card = "researcher",                -- agent card to run the session as (optional)
     tool_policy = { bash = "deny" },          -- per-tool allow/ask/deny (optional)

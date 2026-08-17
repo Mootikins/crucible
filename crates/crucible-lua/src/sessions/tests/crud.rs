@@ -12,7 +12,7 @@ async fn sessions_with_mock_api_create_returns_id() {
     let result: Table = lua
         .load(
             r#"
-            local session, err = cru.sessions.create({ type = "chat", kilns = { "/tmp/kiln" } })
+            local session, err = cru.sessions.create({ type = "chat", kilns = { "notes" } })
             assert(err == nil, "unexpected error: " .. tostring(err))
             return session
             "#,
@@ -29,7 +29,7 @@ async fn sessions_with_mock_api_create_returns_id() {
     );
     assert_eq!(result.get::<String>("state").unwrap(), "active");
     let kilns: Table = result.get("kilns").unwrap();
-    assert_eq!(kilns.get::<String>(1).unwrap(), "/tmp/kiln");
+    assert_eq!(kilns.get::<String>(1).unwrap(), "notes");
 }
 
 #[tokio::test]
@@ -53,7 +53,7 @@ async fn sessions_with_mock_api_create_no_kiln_uses_default() {
     assert!(id.starts_with("chat-"));
     // kilns should be the mock default
     let kilns: Table = result.get("kilns").unwrap();
-    assert_eq!(kilns.get::<String>(1).unwrap(), "/default/crucible");
+    assert_eq!(kilns.get::<String>(1).unwrap(), "default");
 }
 
 #[tokio::test]
@@ -66,7 +66,7 @@ async fn sessions_with_mock_api_create_with_kilns() {
             r#"
             local session, err = cru.sessions.create({
                 type = "chat",
-                kilns = { "/tmp/notes", "/tmp/docs" },
+                kilns = { "notes", "docs" },
             })
             assert(err == nil, "unexpected error: " .. tostring(err))
             return session
@@ -83,8 +83,8 @@ async fn sessions_with_mock_api_create_with_kilns() {
     // asserted nothing about it.
     let kilns: Table = result.get("kilns").unwrap();
     assert_eq!(kilns.len().unwrap(), 2);
-    assert_eq!(kilns.get::<String>(1).unwrap(), "/tmp/notes");
-    assert_eq!(kilns.get::<String>(2).unwrap(), "/tmp/docs");
+    assert_eq!(kilns.get::<String>(1).unwrap(), "notes");
+    assert_eq!(kilns.get::<String>(2).unwrap(), "docs");
 }
 
 /// `kilns` is both the plugin spelling and the wire name now, so the binding
@@ -101,13 +101,13 @@ async fn create_sends_kilns_as_an_ordered_array() {
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
     let _: Table = lua
-        .load(r#"return (cru.sessions.create({ kilns = { "/a", "/b", "/c" } }))"#)
+        .load(r#"return (cru.sessions.create({ kilns = { "a", "b", "c" } }))"#)
         .eval_async()
         .await
         .unwrap();
 
     let params = mock.last_create_params().expect("api was invoked");
-    assert_eq!(params["kilns"], serde_json::json!(["/a", "/b", "/c"]));
+    assert_eq!(params["kilns"], serde_json::json!(["a", "b", "c"]));
     // A read kiln is not an agent field, so it must not turn an agent-less
     // create into an agent-configuring one.
     assert_eq!(params.get("configure_agent"), None);
@@ -162,7 +162,7 @@ async fn create_forwards_the_whole_options_table() {
             local session, err = cru.sessions.create({
                 type = "chat",
                 workspace = "/tmp/ws",
-                kilns = { "/tmp/notes" },
+                kilns = { "notes" },
                 configure_agent = true,
                 agent_card = "researcher",
                 provider = "ollama",
@@ -188,7 +188,7 @@ async fn create_forwards_the_whole_options_table() {
         serde_json::json!({
             "type": "chat",
             "workspace": "/tmp/ws",
-            "kilns": ["/tmp/notes"],
+            "kilns": ["notes"],
             "configure_agent": true,
             "agent_card": "researcher",
             "provider": "ollama",

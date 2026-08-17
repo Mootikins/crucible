@@ -67,7 +67,9 @@ impl DaemonSessionApi for MockDaemonApi {
         let field = |key: &str| params.get(key).and_then(|v| v.as_str()).map(str::to_string);
         let session_type = field("type").unwrap_or_else(|| "chat".to_string());
         // Mirrors the daemon's own fallback: an omitted or empty `kilns`
-        // resolves to the home kiln server-side, never client-side.
+        // resolves to the home kiln server-side, never client-side. The members
+        // are registry *names*, which is what makes `"default"` a plausible
+        // value here and a path not one.
         let kilns: Vec<String> = params
             .get("kilns")
             .and_then(|v| v.as_array())
@@ -77,8 +79,12 @@ impl DaemonSessionApi for MockDaemonApi {
                     .collect()
             })
             .filter(|k: &Vec<String>| !k.is_empty())
-            .unwrap_or_else(|| vec!["/default/crucible".to_string()]);
-        let ws = field("workspace").unwrap_or_else(|| kilns[0].clone());
+            .unwrap_or_else(|| vec!["default".to_string()]);
+        // No workspace given means no workspace — `null`, not the first kiln.
+        // Deriving it from `kilns` is the sentinel the daemon dropped, and a
+        // mock that keeps it teaches plugin authors the shape that went away
+        // (and would now hand back a *name* where a path belongs).
+        let ws = field("workspace");
         Box::pin(async move {
             Ok(serde_json::json!({
                 "id": format!("{}-2025-01-01T0000-abc123", session_type),
