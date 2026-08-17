@@ -477,7 +477,7 @@ async function renderMermaidBlocks(html: string): Promise<string> {
  * wraps are whitespace, so consecutive badge lines render inline instead of
  * stacked.
  */
-export function createMarkdownRenderer(
+function createMarkdownRenderer(
   opts: { html?: boolean; breaks?: boolean } = {},
 ): MarkdownIt {
   const renderer = new MarkdownIt({
@@ -617,6 +617,3 @@ export const PROSE_CLASS = [
   'prose-strong:text-shell-ink',
 ].join(' ');
 
-export async function initializeMarkdownHighlighter(): Promise<void> {
-  await initializeHighlighter();
-}
