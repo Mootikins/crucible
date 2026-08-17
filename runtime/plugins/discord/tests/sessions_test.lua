@@ -79,18 +79,38 @@ describe("get_or_create", function()
         end)
     end)
 
-    it("passes the configured kiln through to create", function()
+    -- `kilns` is a flat set of registry NAMES with no primary member, so the
+    -- configured kiln is simply its first entry. `kiln` as a create field is
+    -- gone; passing it is ignored without error, which is why this asserts the
+    -- field is absent rather than only that `kilns` is right.
+    it("puts the configured kiln first in the session's kiln set", function()
         local calls, api = recording_api()
         with_env({
-            ["discord.kiln"] = "/tmp/kiln",
+            ["discord.kiln"] = "notes",
             ["discord.provider"] = "p",
             ["discord.model"] = "m",
         }, api, function()
             local id = sessions.get_or_create("chan-kiln", "g1")
             assert.equals("chat-1", id)
             assert.equals(1, #calls.created)
-            assert.equals("/tmp/kiln", calls.created[1].kiln)
+            assert.deep_equal({ "notes" }, calls.created[1].kilns)
+            assert.is_nil(calls.created[1].kiln)
         end)
+    end)
+
+    it("appends the configured read kilns after it, without duplicating it", function()
+        local calls, api = recording_api()
+        with_env({
+            ["discord.kiln"] = "notes",
+            ["discord.kilns"] = { "reference", "notes" },
+            ["discord.provider"] = "p",
+            ["discord.model"] = "m",
+        }, api, function()
+            sessions.get_or_create("chan-read-kilns", "g1")
+        end)
+
+        assert.equals(1, #calls.created)
+        assert.deep_equal({ "notes", "reference" }, calls.created[1].kilns)
     end)
 
     -- A session whose agent could not be configured used to be cached anyway,
@@ -99,7 +119,7 @@ describe("get_or_create", function()
     it("ends an unconfigurable session instead of caching it", function()
         local calls, api = recording_api({ configure_fails = true })
         with_env({
-            ["discord.kiln"] = "/tmp/kiln",
+            ["discord.kiln"] = "notes",
             ["discord.provider"] = "p",
             ["discord.model"] = "m",
         }, api, function()
@@ -118,7 +138,7 @@ describe("get_or_create", function()
     -- Missing provider/model is the same class: refuse, do not cache.
     it("refuses when provider and model are unset", function()
         local calls, api = recording_api()
-        with_env({ ["discord.kiln"] = "/tmp/kiln" }, api, function()
+        with_env({ ["discord.kiln"] = "notes" }, api, function()
             local id, err = sessions.get_or_create("chan-no-provider", "g1")
             assert.is_nil(id)
             assert.truthy(err)
@@ -134,7 +154,7 @@ end)
 -- lose its prompt and model to the plugin's own defaults.
 describe("agent cards", function()
     local card_cfg = {
-        ["discord.kiln"] = "/tmp/kiln",
+        ["discord.kiln"] = "notes",
         ["discord.provider"] = "p",
         ["discord.model"] = "m",
         ["discord.agent_card"] = "researcher",
@@ -205,7 +225,7 @@ describe("agent_name", function()
         local _, api = recording_api()
         api.configure_agent = function(_, cfg) seen = cfg; return true, nil end
         with_env({
-            ["discord.kiln"] = "/tmp/kiln",
+            ["discord.kiln"] = "notes",
             ["discord.provider"] = "p",
             ["discord.model"] = "m",
             ["discord.agent_type"] = "acp",
@@ -220,7 +240,7 @@ describe("agent_name", function()
     it("is refused on an internal agent", function()
         local calls, api = recording_api()
         with_env({
-            ["discord.kiln"] = "/tmp/kiln",
+            ["discord.kiln"] = "notes",
             ["discord.provider"] = "p",
             ["discord.model"] = "m",
             ["discord.agent_name"] = "researcher",
@@ -285,7 +305,7 @@ describe("access tiers", function()
             return true, nil
         end
         local cfg = {
-            ["discord.kiln"] = "/tmp/kiln",
+            ["discord.kiln"] = "notes",
             ["discord.provider"] = "p",
             ["discord.model"] = "m",
             ["discord.access"] = { ["user:writer"] = "write" },
@@ -367,7 +387,7 @@ describe("role grants", function()
         local _, api = recording_api()
         api.configure_agent = function(_, cfg) seen = cfg.tool_policy; return true, nil end
         with_env({
-            ["discord.kiln"] = "/tmp/kiln",
+            ["discord.kiln"] = "notes",
             ["discord.provider"] = "p",
             ["discord.model"] = "m",
             ["discord.access"] = { ["role:r-mod"] = "write", ["guild:g1"] = "read" },
@@ -437,7 +457,7 @@ describe("the ask tier", function()
         local _, api = recording_api()
         api.configure_agent = function(_, cfg) seen = cfg.tool_policy; return true, nil end
         with_env({
-            ["discord.kiln"] = "/tmp/kiln",
+            ["discord.kiln"] = "notes",
             ["discord.provider"] = "p",
             ["discord.model"] = "m",
             ["discord.access"] = { ["user:asker"] = "ask" },
@@ -461,7 +481,7 @@ end)
 describe("per-sender keying", function()
     local function chat_cfg(access)
         return {
-            ["discord.kiln"] = "/tmp/kiln",
+            ["discord.kiln"] = "notes",
             ["discord.provider"] = "p",
             ["discord.model"] = "m",
             ["discord.access"] = access,
@@ -519,7 +539,7 @@ end)
 describe("reply-chain continuity", function()
     local function chat_cfg(access)
         return {
-            ["discord.kiln"] = "/tmp/kiln",
+            ["discord.kiln"] = "notes",
             ["discord.provider"] = "p",
             ["discord.model"] = "m",
             ["discord.access"] = access,
@@ -703,7 +723,7 @@ describe("cleanup_stale", function()
         local real_time = os.time
         local alice, bob
         with_env({
-            ["discord.kiln"] = "/tmp/kiln",
+            ["discord.kiln"] = "notes",
             ["discord.provider"] = "p",
             ["discord.model"] = "m",
         }, api, function()
@@ -732,7 +752,7 @@ describe("cleanup_stale", function()
         local calls, api = recording_api()
         local before, after
         with_env({
-            ["discord.kiln"] = "/tmp/kiln",
+            ["discord.kiln"] = "notes",
             ["discord.provider"] = "p",
             ["discord.model"] = "m",
         }, api, function()
@@ -768,8 +788,8 @@ describe("the session workspace invariant", function()
     it("never passes a workspace on create", function()
         local calls, api = recording_api()
         with_env({
-            ["discord.kiln"] = "/tmp/kiln",
-            ["discord.kilns"] = { "/tmp/other" },
+            ["discord.kiln"] = "notes",
+            ["discord.kilns"] = { "reference" },
             ["discord.provider"] = "p",
             ["discord.model"] = "m",
         }, api, function()

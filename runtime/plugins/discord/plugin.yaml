@@ -87,12 +87,13 @@ config:
     kiln:
       type: string
       description: >-
-        Path to the kiln every Discord session writes to. Required — without it
-        a session falls back to the daemon's data root and its proposals land
-        where `cru proposals list` never looks.
+        Name of the `[kilns]` entry every Discord session writes to — a name,
+        not a path. Required: without it a session reaches no kiln at all and
+        its proposals land where `cru proposals list` never looks.
     kilns:
       type: array
-      description: Additional kiln paths the session may read from
+      description: >-
+        Names of additional `[kilns]` entries the session may read from
       default: []
     provider:
       type: string

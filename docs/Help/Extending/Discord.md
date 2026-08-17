@@ -46,7 +46,7 @@ Message History* permissions.
 [plugins.discord]
 bot_token = "..."            # or leave unset and export DISCORD_BOT_TOKEN
 auto_connect = true
-kiln = "/home/you/kiln"      # required; see below
+kiln = "discord"             # required; a [kilns] entry NAME, not a path — see below
 provider = "anthropic"
 model = "claude-sonnet-4-5-20250929"
 allowed_users = ["123456789012345678"]    # your Discord user id
@@ -218,8 +218,8 @@ All keys live under `[plugins.discord]`.
 | `respond_to` | `"mentions"` | Within an allowed guild: `mentions`, `prefix`, `both`, or `all`. |
 | `command_prefix` | `""` | Text prefix for `respond_to = "prefix"`/`"both"`, e.g. `"!"`. Empty disables prefix matching. |
 | `quota_turns_per_day` | `50` | Agent turns each user may spend per UTC day. |
-| `kiln` | — | **Required.** Path to the kiln every Discord session writes to. |
-| `kilns` | `[]` | Additional kiln paths the session may *read*. See [Citations](#citations-and-the-precognition-prerequisite). |
+| `kiln` | — | **Required.** Name of the `[kilns]` entry every Discord session writes to — a name, not a path. |
+| `kilns` | `[]` | Names of additional `[kilns]` entries the session may *read*. See [Citations](#citations-and-the-precognition-prerequisite). |
 | `provider` | — | **Required.** LLM provider for Discord sessions. |
 | `model` | — | **Required.** Model id. |
 | `agent_type` | `"internal"` | Agent implementation: `internal` or `acp`. Leave it alone unless you have a reason. |
@@ -244,16 +244,19 @@ prompt and model with the plugin's own. That is also why `agent_name` is refused
 on an internal agent: it names an ACP *profile*, resolves no card, and used to
 be set anyway.
 
-### `kiln` is required, not defaulted
+### `kiln` is a name, and it is required
 
-Without it, `cru.sessions.create` falls back to the daemon's data root and the
-session's reflection proposals land under `~/.crucible/.crucible/proposals/`,
-where `cru proposals list` never looks. The plugin refuses to create a session
-rather than write there, and logs
+`kiln` is the **key of a `[kilns]` entry**, not a directory. The plugin passes
+it straight to `cru.sessions.create`, which takes names; a path is not a name,
+resolves to nothing, and produces a session with no kiln at all.
+
+Without a kiln a session has no note tools, and its reflection proposals land
+under the daemon's data root where `cru proposals list` never looks. The plugin
+refuses to create a session rather than write there, and logs
 `no kiln configured — set [plugins.discord] kiln`.
 
-Point `kiln` at the same path as your top-level `kiln_path` if you want
-`cru proposals list` to find Discord's proposals without changing directory.
+Name the same entry you use elsewhere if you want `cru proposals list` to find
+Discord's proposals without changing directory.
 
 ### Turn quota
 
@@ -296,11 +299,9 @@ read back when the plugin loads, so a conversation in a DM continues across a
 written: they are gone in fifteen minutes anyway, and remembering them would
 mean a file write on every channel message.
 
-**The kiln must belong to a registered project for this to work.** Reviving a
-session id means finding the kiln that holds its transcript, and a restarted
-daemon can only look inside the kilns it has opened — which are the kilns of
-the projects in `[projects.*]`. Setting `[plugins.discord] kiln` opens nothing;
-it only tells the plugin where to create sessions. Register it:
+**The name must be a `[kilns]` entry.** `[plugins.discord] kiln` names a kiln;
+it does not create one. A name no entry claims resolves to nothing, so the
+session reaches no kiln and the plugin's writes go nowhere useful:
 
 ```toml
 # ~/.config/crucible/config.toml
@@ -308,12 +309,11 @@ it only tells the plugin where to create sessions. Register it:
 [kilns]
 discord = "/home/you/kiln"
 
-[projects.discord]
-path = "/home/you/kiln"
-kilns = ["discord"]
+[plugins.discord]
+kiln = "discord"
 ```
 
-Running `cru init` inside the kiln directory does the same thing.
+Running `cru init` inside the kiln directory writes the `[kilns]` entry for you.
 
 Without it the id is remembered and the revival fails, which costs one message:
 a new session is created and the conversation starts fresh.

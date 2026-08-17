@@ -258,21 +258,30 @@ function M.get_or_create(channel_id, guild_id, author_id, opts)
         persist(guild_id)
     end
 
-    -- The kiln is required, not defaulted: `create_session` falls back to the
-    -- daemon's data root when it is absent, which stages reflection proposals
-    -- under `~/.crucible/.crucible/proposals/` where `cru proposals list`
-    -- never looks. Refuse before creating anything.
+    -- The kiln is required, not defaulted: a session with no kiln has no note
+    -- tools at all, which stages reflection proposals under the daemon's data
+    -- root where `cru proposals list` never looks. Refuse before creating
+    -- anything.
+    --
+    -- It is the NAME of a `[kilns]` entry, not a directory — `cru.sessions.create`
+    -- takes names. A path is not a name and resolves to nothing, so a config
+    -- carried over from the path era produces a kiln-less session; the daemon
+    -- warns and this plugin's writes land nowhere useful.
     local kiln = config.get("kiln")
     if not kiln then
-        return nil, "Discord plugin: no kiln configured — set [plugins.discord] kiln in your Crucible config"
+        return nil, "Discord plugin: no kiln configured — set [plugins.discord] kiln (a [kilns] entry name) in your Crucible config"
     end
 
-    local create_opts = { type = "chat", kiln = kiln }
+    -- One flat set with no primary member, so `kiln` is simply the first
+    -- entry: position is what the daemon reads to pick a write target, and
+    -- there is no separate field that says "write here".
+    local create_opts = { type = "chat", kilns = { kiln } }
 
-    -- Add configured read kilns if present
-    local kilns = config.get("kilns")
-    if kilns then
-        create_opts.kilns = kilns
+    -- Additional read-only kilns, if any are configured.
+    for _, extra in ipairs(config.get("kilns") or {}) do
+        if extra ~= kiln then
+            create_opts.kilns[#create_opts.kilns + 1] = extra
+        end
     end
 
     -- An agent card is resolved by the daemon at create, against this session's
