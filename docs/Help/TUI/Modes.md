@@ -118,7 +118,16 @@ cru.modes.review = {
 
 Rules use the same engine as the global `[permissions]` config, so
 `bash:rg *` inherits its handling of chained commands — permitting `rg` does
-not thereby permit `rg foo && rm -rf /`.
+not thereby permit `rg foo && rm -rf /`, `rg foo; rm -rf /`, or the same line
+with `&`, `|`, `||` or a newline in place of the `&&`. A construct the splitter
+cannot read — `` ` ``, `$(…)`, `<(…)`, `>(…)`, an unclosed quote — drops the
+decision to the mode's `default` rather than to the leading command, so it
+prompts instead of silently allowing.
+
+Two edges the split does not reach: it does not model *where* an allowed
+command writes (`bash:echo *` permits `echo hi > file`), and it does not unwrap
+`eval`, `sh -c`, or `xargs`. [[Help/Concepts/Permission Precedence]] states the
+guarantee and its limits in full.
 
 Declare a mode in `~/.config/crucible/init.lua` for every session, or in
 `<workspace>/.crucible/lua/init.lua` for one project. That path is the

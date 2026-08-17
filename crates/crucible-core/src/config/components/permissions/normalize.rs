@@ -366,9 +366,9 @@ fn is_background_operator(bytes: &[u8], i: usize) -> bool {
 ///
 /// `>`/`>>` redirection is deliberately absent: it introduces no second command, and
 /// reporting it would make the fallback fire on `2>&1`, `> /dev/null` and every other
-/// ordinary redirect. The cost of that omission is recorded in the module docs and in
-/// `docs/Help/Config/permissions.md` — an `allow` rule does not constrain where the allowed
-/// command writes.
+/// ordinary redirect. The cost of that omission — an `allow` rule does not constrain where
+/// the allowed command writes — is recorded in `docs/Help/Concepts/Permission Precedence.md`
+/// under "What a `bash:` rule covers".
 fn substitution_at(bytes: &[u8], i: usize, in_double_quote: bool) -> Option<UnmodellableConstruct> {
     match bytes[i] {
         b'`' => Some(UnmodellableConstruct::BacktickSubstitution),

