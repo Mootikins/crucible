@@ -216,7 +216,7 @@ async fn bash_calling_rig(
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![workspace.clone()],
+            vec![crate::test_support::kiln_name("kiln")],
             Some(workspace.clone()),
             None,
         )
@@ -383,7 +383,7 @@ async fn context_usage_returns_expected_shape() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             None,
             None,
         )
@@ -425,7 +425,7 @@ async fn compact_transitions_session_to_compacting() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             None,
             None,
         )
@@ -458,7 +458,7 @@ async fn remove_messages_last_n_rewinds_tree() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             None,
             None,
         )
@@ -527,7 +527,7 @@ async fn remove_messages_indices_truncates_from_start() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             None,
             None,
         )
@@ -586,7 +586,7 @@ async fn undo_rewinds_tree_and_emits_event() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             None,
             None,
         )
@@ -673,7 +673,7 @@ async fn remove_messages_invalid_range_type_errors() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             None,
             None,
         )

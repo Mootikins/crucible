@@ -8,7 +8,7 @@ use super::server::TestServer;
 #[tokio::test]
 async fn test_tui_sessions_command_flow() {
     let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+    let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
     let workspace_dir = tempfile::tempdir().expect("Failed to create workspace dir");
 
     let client = DaemonClient::connect_to(&server.socket_path)
@@ -18,7 +18,7 @@ async fn test_tui_sessions_command_flow() {
     let session1 = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![kiln_dir.path().to_path_buf()],
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: Some(workspace_dir.path().to_path_buf()),
             recording_mode: None,
             recording_path: None,
@@ -32,7 +32,7 @@ async fn test_tui_sessions_command_flow() {
     let session2 = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![kiln_dir.path().to_path_buf()],
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: Some(workspace_dir.path().to_path_buf()),
             recording_mode: None,
             recording_path: None,
@@ -45,7 +45,7 @@ async fn test_tui_sessions_command_flow() {
 
     let list_result = client
         .session_list(
-            Some(kiln_dir.path()),
+            Some(&crucible_daemon::test_support::kiln_name("kiln")),
             Some(workspace_dir.path()),
             Some("chat"),
             None,
@@ -72,7 +72,7 @@ async fn test_tui_sessions_command_flow() {
 #[tokio::test]
 async fn test_tui_resume_command_flow() {
     let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+    let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
     let client = DaemonClient::connect_to(&server.socket_path)
         .await
@@ -81,7 +81,7 @@ async fn test_tui_resume_command_flow() {
     let create_result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![kiln_dir.path().to_path_buf()],
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
             recording_mode: None,
             recording_path: None,
@@ -119,7 +119,7 @@ async fn test_tui_daemon_agent_full_flow() {
     use crucible_core::session::{OutputValidation, SessionAgent};
 
     let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+    let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
     let (client, event_rx) = DaemonClient::connect_to_with_events(&server.socket_path)
         .await
@@ -129,7 +129,7 @@ async fn test_tui_daemon_agent_full_flow() {
     let create_result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![kiln_dir.path().to_path_buf()],
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
             recording_mode: None,
             recording_path: None,

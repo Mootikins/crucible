@@ -82,11 +82,11 @@ impl ReplaySession {
 
         let header = header.ok_or_else(|| anyhow!("recording header missing"))?;
 
-        let replay_kiln = recording_path
-            .parent()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("."));
-        let mut replay_session = Session::new(SessionType::Chat, vec![replay_kiln]);
+        // Kiln-less: a replay is a transcript being re-emitted, not an agent
+        // reaching a corpus, and the recording's own directory was never a
+        // registered kiln. Attaching it would have needed a registry entry
+        // minted from a path nobody asked to register.
+        let mut replay_session = Session::new(SessionType::Chat, Vec::new());
         replay_session.id = replay_session_id;
         replay_session.title = Some(format!("replay:{}", recording_path.display()));
 

@@ -666,7 +666,8 @@ interface RawSession {
   session_id: string;
   type: Session['session_type'];
   kilns?: string[];
-  workspace: string;
+  /** `null` when the session has no workspace; absent in older payloads. */
+  workspace?: string | null;
   state: Session['state'];
   title: string | null;
   // Two endpoint shapes: session.list sends a flattened top-level `agent_model`;
@@ -686,7 +687,7 @@ function mapSession(raw: RawSession): Session {
     id: raw.session_id,
     session_type: raw.type,
     kilns: raw.kilns ?? [],
-    workspace: raw.workspace,
+    workspace: raw.workspace ?? null,
     state: raw.state,
     title: raw.title,
     agent_model: raw.agent_model ?? raw.agent?.model ?? null,
@@ -1040,7 +1041,8 @@ export async function listProviders(): Promise<ProviderInfo[]> {
 export interface SessionScope {
   session_id: string;
   kilns: string[];
-  workspace: string;
+  /** `null` when the session has no workspace — see `sessionWorkspace()`. */
+  workspace: string | null;
 }
 
 /** Attach a kiln to the session's kiln set. Idempotent. */

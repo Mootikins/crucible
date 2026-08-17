@@ -60,11 +60,11 @@ pub use components::{
     PermissionDecision, PermissionEngine, PermissionMode, StorageConfig, TransportType, TrustLevel,
     TypeDiscoveryConfig, UpstreamServerConfig,
 };
-pub use config::registry::{KilnEntry, ProjectEntry};
+pub use config::registry::{resolve_kiln_entries, KilnEntry, ProjectEntry};
 pub use config::{
     crucible_home, lua_stubs_dir, parse_duration_string, plugin_name_from_url, CliAppConfig,
-    ConfigError, ConfigValidationError, EffectiveLlmConfig, LoggingConfig, PluginEntry,
-    PluginsConfig, ScheduleEntry, ScmConfig, ServerConfig, WebConfig,
+    ConfigError, ConfigValidationError, EffectiveLlmConfig, InvalidKilnName, KilnName,
+    LoggingConfig, PluginEntry, PluginsConfig, ScheduleEntry, ScmConfig, ServerConfig, WebConfig,
 };
 #[cfg(feature = "toml")]
 pub use config::{

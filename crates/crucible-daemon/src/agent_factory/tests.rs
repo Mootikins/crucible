@@ -142,31 +142,27 @@ fn the_cacheable_half_carries_nothing_session_specific() {
 /// the session and belongs with the paths rather than with the persona.
 #[test]
 fn the_knowledge_base_list_is_session_context_not_cached_prefix() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let crucible_dir = tmp.path().join(".crucible");
-    std::fs::create_dir_all(&crucible_dir).unwrap();
-    std::fs::write(
-        crucible_dir.join("kiln.toml"),
-        "[kiln]\nname = \"My Kiln\"\n",
-    )
-    .unwrap();
-
     let prompt = build_enriched_prompt(
         Path::new("/workspace"),
-        Some(tmp.path()),
-        std::slice::from_ref(&tmp.path().to_path_buf()),
+        Some(Path::new("/repo/docs")),
+        std::slice::from_ref(&crate::test_support::kiln_name("my-kiln")),
         "base",
         "",
         "",
     );
 
     assert!(prompt.volatile.contains("Knowledge bases:"));
-    assert!(prompt.volatile.contains("My Kiln"));
+    assert!(prompt.volatile.contains("my-kiln"));
     assert!(!prompt.stable.contains("Knowledge bases:"));
 }
 
+/// The name in the prompt is the REGISTRY key, not the name the kiln asserts
+/// about itself in its own `kiln.toml`. Two kilns can claim the same
+/// self-asserted name, and no caller can say one back to us — so a directory
+/// carrying `name = "My Kiln"` is listed under whatever the user registered it
+/// as, and never under its own idea of what it is called.
 #[test]
-fn build_enriched_prompt_includes_kiln_names() {
+fn build_enriched_prompt_lists_the_registry_name_not_the_kilns_self_description() {
     let tmp = tempfile::TempDir::new().unwrap();
     let crucible_dir = tmp.path().join(".crucible");
     std::fs::create_dir_all(&crucible_dir).unwrap();
@@ -179,7 +175,7 @@ fn build_enriched_prompt_includes_kiln_names() {
     let result = build_enriched_prompt(
         Path::new("/workspace"),
         Some(tmp.path()),
-        std::slice::from_ref(&tmp.path().to_path_buf()),
+        std::slice::from_ref(&crate::test_support::kiln_name("work-notes")),
         "base",
         "",
         "",
@@ -189,7 +185,14 @@ fn build_enriched_prompt_includes_kiln_names() {
         result.contains("Knowledge bases:"),
         "should have kb section"
     );
-    assert!(result.contains("My Kiln"), "should list the session's kiln");
+    assert!(
+        result.contains("work-notes"),
+        "should list the session's kiln under its registry name: {result}"
+    );
+    assert!(
+        !result.contains("My Kiln"),
+        "the kiln's self-asserted name must not reach the model: {result}"
+    );
 }
 
 #[test]

@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use super::agent::SessionAgent;
 use super::enums::{RecordingMode, SessionState, SessionType};
 use super::id::SessionId;
+use crate::config::KilnName;
 
 /// A session is a continuous sequence of agent actions in a workspace.
 ///
@@ -23,8 +24,8 @@ use super::id::SessionId;
 /// - `artifacts/` - Generated files, fetched content
 ///
 /// `Serialize`/`Deserialize` are hand-written wrappers around the derived impls
-/// (`#[serde(remote = "Self")]`) so that loading can merge the pre-flatten
-/// `kiln` + `connected_kilns` spelling into [`Session::kilns`].
+/// (`#[serde(remote = "Self")]`) so that loading can merge every path-shaped
+/// on-disk spelling of the kiln set into one place — see [`PersistedKilns`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(remote = "Self")]
 pub struct Session {
@@ -34,18 +35,52 @@ pub struct Session {
     /// Session type determines logging format and behavior
     pub session_type: SessionType,
 
-    /// Every kiln this session can query.
+    /// Every kiln this session can query, by registry name.
     ///
     /// Flat and appendable: no member is privileged for *scope* — search,
     /// trust classification and prompt assembly treat every entry alike.
-    /// Ordering is preserved because two things still need exactly one kiln:
-    /// the workspace sentinel (`workspace == kilns[0]`, set at construction)
-    /// and [`Session::default_kiln`]. Nothing else may read position.
-    #[serde(default)]
-    pub kilns: Vec<PathBuf>,
+    /// Ordering is preserved because one thing still needs exactly one kiln:
+    /// [`Session::default_kiln`]. Nothing else may read position.
+    ///
+    /// **Never serialized, in either direction.** The on-disk spelling is
+    /// path-shaped (see [`PersistedKilns`]) and this field is populated only by
+    /// the storage layer, which is the only layer holding a kiln registry.
+    /// Routing a validating `KilnName` deserializer through this field would
+    /// make every `meta.json` written before names existed fail to parse — and
+    /// the listing swallows a parse failure — so users' sessions would silently
+    /// vanish. It would also run on *wire* input, where turning a
+    /// caller-supplied path into a kiln is the attack the registry's floor
+    /// exists to stop.
+    #[serde(skip)]
+    pub kilns: Vec<KilnName>,
 
-    /// Working directory for file operations (may differ from the kilns)
-    pub workspace: PathBuf,
+    /// Persisted kiln paths that no registry entry claims.
+    ///
+    /// Kept, verbatim and unreachable, so that a session whose kilns could not
+    /// be resolved — a config that failed to parse, an entry the user renamed —
+    /// is not *erased* by the next save. They grant nothing: an unresolvable
+    /// kiln is not a kiln, so it contributes no root, no classification, no
+    /// search source and no prompt line. It is only the record of what the
+    /// session used to reach, so re-registering the entry restores it.
+    #[serde(skip)]
+    unresolved_kiln_paths: Vec<PathBuf>,
+
+    /// Working directory for file operations, when the session has one.
+    ///
+    /// `None` is a session with no workspace at all — a tools-only agent, a
+    /// chat that was never given a project, or one whose workspace was
+    /// detached. It used to be spelled `workspace == kilns[0]`, a sentinel set
+    /// at construction that could not tell "no project" from "the project
+    /// happens to be the kiln", that every consumer re-derived independently
+    /// (including the web UI, in its own language), and that stops being
+    /// expressible at all once kilns are names rather than paths.
+    ///
+    /// Never `Some("")`: an empty path names no directory, and every root
+    /// builder downstream reads one as a root that encloses everything. The
+    /// setters below — and [`Session::normalize_workspace`] on the
+    /// deserialization path — are where that is made unrepresentable.
+    #[serde(default)]
+    pub workspace: Option<PathBuf>,
 
     /// Current state
     pub state: SessionState,
@@ -104,24 +139,35 @@ pub struct Session {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub isolation: Option<serde_json::Value>,
 
-    /// The pre-flatten on-disk spelling, captured only so a `meta.json` written
-    /// before `kilns` existed still loads. `Deserialize` merges it into `kilns`
-    /// and clears it, so it is never written back.
+    /// The kiln set as it appears on disk: paths, in all three spellings a
+    /// `meta.json` has ever used. See [`PersistedKilns`].
     #[serde(flatten)]
-    legacy_kilns: LegacyKilns,
+    persisted_kilns: PersistedKilns,
 }
 
-/// `kiln` + `connected_kilns` as they appear in a pre-flatten `meta.json`.
+/// The path-shaped, on-disk spelling of a session's kiln set.
+///
+/// Three arms because three shapes are in the wild: `kiln` + `connected_kilns`
+/// (pre-flatten), and the flat `kilns` array. All three are paths, and all
+/// three are folded into [`Self::kilns`] on load.
+///
+/// **This stays paths.** A name is meaningless without the registry that
+/// resolves it, and the registry lives daemon-side; a `meta.json` that named
+/// kilns would be unreadable by anything else and — worse — would make every
+/// file written before this change fail to parse. The mapping to
+/// [`Session::kilns`] therefore happens in the storage layer, once, on load.
 ///
 /// Flattened into [`Session`] rather than read by a separate migration pass so
 /// that every load path gets the merge, including the ones that deserialize a
 /// `Session` straight off the wire.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-struct LegacyKilns {
+struct PersistedKilns {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     kiln: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     connected_kilns: Vec<PathBuf>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    kilns: Vec<PathBuf>,
 }
 
 impl Serialize for Session {
@@ -134,6 +180,7 @@ impl<'de> Deserialize<'de> for Session {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let mut session = Session::deserialize(deserializer)?;
         session.absorb_legacy_kilns();
+        session.normalize_workspace();
         Ok(session)
     }
 }
@@ -141,17 +188,18 @@ impl<'de> Deserialize<'de> for Session {
 impl Session {
     /// Create a new session with the given type and kiln set.
     ///
-    /// The workspace defaults to the first kiln — the daemon reads
-    /// `workspace == kilns[0]` as its "no workspace" sentinel.
-    pub fn new(session_type: SessionType, kilns: Vec<PathBuf>) -> Self {
+    /// A session starts with no workspace. Callers that have one say so with
+    /// [`Session::with_workspace`].
+    pub fn new(session_type: SessionType, kilns: Vec<KilnName>) -> Self {
         let id = SessionId::generate(session_type);
 
         Self {
             id,
             session_type,
-            workspace: kilns.first().cloned().unwrap_or_default(),
+            workspace: None,
             kilns,
-            legacy_kilns: LegacyKilns::default(),
+            unresolved_kiln_paths: Vec::new(),
+            persisted_kilns: PersistedKilns::default(),
             state: SessionState::Active,
             started_at: Utc::now(),
             continued_from: None,
@@ -166,10 +214,21 @@ impl Session {
         }
     }
 
-    /// Set the workspace (where agent operates).
-    pub fn with_workspace(mut self, workspace: PathBuf) -> Self {
-        self.workspace = workspace;
+    /// Set or clear the workspace (where the agent operates).
+    #[must_use]
+    pub fn with_workspace(mut self, workspace: Option<PathBuf>) -> Self {
+        self.set_workspace(workspace);
         self
+    }
+
+    /// Set or clear the workspace, in place.
+    ///
+    /// An empty path clears rather than being stored: it names no directory,
+    /// and a `""` root out-ranks every denial in the containment builders at
+    /// the shallowest possible depth. Normalizing here means no consumer has
+    /// to remember the distinction — see the field docs.
+    pub fn set_workspace(&mut self, workspace: Option<PathBuf>) {
+        self.workspace = workspace.filter(|w| !w.as_os_str().is_empty());
     }
 
     /// Set the per-session isolation override (see [`Session::isolation`]).
@@ -180,20 +239,20 @@ impl Session {
     }
 
     /// Add one kiln to the session's kiln set (no-op if already present).
-    pub fn with_kiln(mut self, kiln: PathBuf) -> Self {
+    pub fn with_kiln(mut self, kiln: KilnName) -> Self {
         self.add_kiln(kiln);
         self
     }
 
     /// Replace the session's kiln set.
-    pub fn with_kilns(mut self, kilns: Vec<PathBuf>) -> Self {
+    pub fn with_kilns(mut self, kilns: Vec<KilnName>) -> Self {
         self.kilns = kilns;
         self
     }
 
     /// Add a kiln to the session's kiln set. Returns `false` if it was already
     /// reachable, which callers use to skip the attach-side work.
-    pub fn add_kiln(&mut self, kiln: PathBuf) -> bool {
+    pub fn add_kiln(&mut self, kiln: KilnName) -> bool {
         if self.kilns.contains(&kiln) {
             return false;
         }
@@ -201,25 +260,86 @@ impl Session {
         true
     }
 
-    /// Fold the pre-flatten `kiln`/`connected_kilns` fields into [`Self::kilns`].
+    /// Detach a kiln. Returns `false` if it was not attached.
+    pub fn remove_kiln(&mut self, kiln: &KilnName) -> bool {
+        let before = self.kilns.len();
+        self.kilns.retain(|k| k != kiln);
+        self.kilns.len() != before
+    }
+
+    /// Fold every on-disk spelling of the kiln set into
+    /// [`PersistedKilns::kilns`].
     ///
-    /// Primary first, then connected, then anything already in `kilns`;
-    /// duplicates collapse to their first occurrence. A file written before the
-    /// flatten therefore loads with exactly the kilns it could reach.
+    /// Primary first, then connected, then the flat array; duplicates collapse
+    /// to their first occurrence. A file written before the flatten therefore
+    /// loads with exactly the kiln paths it could reach, in the order it could
+    /// reach them — which is what [`Session::default_kiln`] reads position
+    /// from.
+    ///
+    /// It deliberately does **not** touch [`Session::kilns`]: turning a path
+    /// into a kiln requires the registry, and this runs on wire input too.
     fn absorb_legacy_kilns(&mut self) {
-        let legacy = std::mem::take(&mut self.legacy_kilns);
+        let persisted = std::mem::take(&mut self.persisted_kilns);
         let mut merged: Vec<PathBuf> = Vec::new();
-        for kiln in legacy
+        for kiln in persisted
             .kiln
             .into_iter()
-            .chain(legacy.connected_kilns)
-            .chain(std::mem::take(&mut self.kilns))
+            .chain(persisted.connected_kilns)
+            .chain(persisted.kilns)
         {
             if !merged.contains(&kiln) {
                 merged.push(kiln);
             }
         }
-        self.kilns = merged;
+        self.persisted_kilns.kilns = merged;
+    }
+
+    /// Take the path-shaped kiln set read off disk, leaving none behind.
+    ///
+    /// The storage layer's half of the name↔path mapping: it is the only layer
+    /// holding a registry, so it is the only one that may turn these into
+    /// [`Session::kilns`].
+    pub fn take_persisted_kiln_paths(&mut self) -> Vec<PathBuf> {
+        std::mem::take(&mut self.persisted_kilns.kilns)
+    }
+
+    /// Stage the path-shaped kiln set to be written back out.
+    pub fn set_persisted_kiln_paths(&mut self, paths: Vec<PathBuf>) {
+        self.persisted_kilns.kilns = paths;
+    }
+
+    /// Persisted kiln paths that resolved to no registry entry — carried
+    /// forward so a save does not erase them. See the field docs.
+    pub fn unresolved_kiln_paths(&self) -> &[PathBuf] {
+        &self.unresolved_kiln_paths
+    }
+
+    /// Record the persisted kiln paths that no registry entry claims.
+    pub fn set_unresolved_kiln_paths(&mut self, paths: Vec<PathBuf>) {
+        self.unresolved_kiln_paths = paths;
+    }
+
+    /// Re-establish the "never `Some("")`" invariant on a deserialized value.
+    ///
+    /// `Deserialize` writes the field directly, so it is the one door the
+    /// setters do not guard — and the empty path is exactly what a kiln-less
+    /// session's `meta.json` carries from before the field was optional
+    /// (`Session::new` stamped `PathBuf::default()` when there was no first
+    /// kiln to copy).
+    ///
+    /// The OTHER pre-`Option` spelling — `workspace == kilns[0]`, stamped on
+    /// sessions that were never given a workspace — is deliberately **not**
+    /// collapsed here. On disk it is indistinguishable from a workspace the
+    /// user chose, and choosing it is ordinary: a repo that is also your kiln
+    /// (`cru chat --kiln .`) writes exactly that. Collapsing it would re-import
+    /// the very ambiguity this field's type exists to remove, and would discard
+    /// the user's choice on every daemon restart — a live bug, in exchange for
+    /// tidying a rare legacy file. Such a session now reads as having a
+    /// workspace equal to its kiln, which is what every consumer except the
+    /// two sentinel readers already treated it as.
+    fn normalize_workspace(&mut self) {
+        let workspace = self.workspace.take();
+        self.set_workspace(workspace);
     }
 
     /// Set the session as a continuation of another.
@@ -290,7 +410,7 @@ impl Session {
     }
 
     /// Check if this session can access a given kiln.
-    pub fn can_access_kiln(&self, kiln: &PathBuf) -> bool {
+    pub fn can_access_kiln(&self, kiln: &KilnName) -> bool {
         self.kilns.contains(kiln)
     }
 
@@ -303,8 +423,8 @@ impl Session {
     /// the old `session.kiln`, which `absorb_legacy_kilns` puts first. `None`
     /// when the session has no kilns at all, and every caller must handle it:
     /// a kiln-less session has nowhere to write.
-    pub fn default_kiln(&self) -> Option<&Path> {
-        self.kilns.first().map(PathBuf::as_path)
+    pub fn default_kiln(&self) -> Option<&KilnName> {
+        self.kilns.first()
     }
 
     /// Pause the session.

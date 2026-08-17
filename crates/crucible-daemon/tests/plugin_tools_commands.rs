@@ -7,7 +7,7 @@
 
 use crucible_core::session::{Session, SessionType};
 use crucible_daemon::background_manager::BackgroundJobManager;
-use crucible_daemon::test_support::temp_session_manager;
+use crucible_daemon::test_support::{kiln_name, temp_session_manager};
 use crucible_daemon::{AgentManager, AgentManagerParams, DaemonPluginLoader, KilnManager};
 use crucible_lua::PluginSource;
 use std::collections::HashMap;
@@ -107,7 +107,7 @@ async fn plugin_declared_tool_is_dispatchable_by_the_agent() {
         plugin_loader: Some(Arc::new(tokio::sync::Mutex::new(Some(loader)))),
     });
 
-    let session = Session::new(SessionType::Chat, vec![tmp.path().to_path_buf()]);
+    let session = Session::new(SessionType::Chat, vec![kiln_name("kiln")]);
     let dispatcher = manager.get_or_create_session_dispatcher(&session).await;
 
     assert!(

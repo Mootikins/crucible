@@ -4,7 +4,7 @@ use super::*;
 async fn test_session_pause_rpc_success_and_missing_param_error() {
     let server = TestServer::start().await;
     let mut client = server.connect().await;
-    let session_id = create_chat_session(&mut client, &server.kiln_path, 30).await;
+    let session_id = create_chat_session(&mut client, TestServer::KILN, 30).await;
 
     let ok_response = rpc_call(
         &mut client,
@@ -41,7 +41,7 @@ async fn test_session_pause_rpc_success_and_missing_param_error() {
 async fn test_session_resume_rpc_success_and_missing_param_error() {
     let server = TestServer::start().await;
     let mut client = server.connect().await;
-    let session_id = create_chat_session(&mut client, &server.kiln_path, 40).await;
+    let session_id = create_chat_session(&mut client, TestServer::KILN, 40).await;
 
     let _pause_response = rpc_call(
         &mut client,
@@ -89,7 +89,7 @@ async fn test_session_resume_rpc_success_and_missing_param_error() {
 async fn test_session_lifecycle_create_pause_resume_end() {
     let server = TestServer::start().await;
     let mut client = server.connect().await;
-    let session_id = create_chat_session(&mut client, &server.kiln_path, 44_000).await;
+    let session_id = create_chat_session(&mut client, TestServer::KILN, 44_000).await;
 
     let pause_response = rpc_call(
         &mut client,
@@ -137,7 +137,7 @@ async fn test_session_lifecycle_create_pause_resume_end() {
 async fn test_session_resume_active_session_returns_invalid_state_error() {
     let server = TestServer::start().await;
     let mut client = server.connect().await;
-    let session_id = create_chat_session(&mut client, &server.kiln_path, 45_000).await;
+    let session_id = create_chat_session(&mut client, TestServer::KILN, 45_000).await;
 
     let resume_response = rpc_call(
         &mut client,
@@ -163,7 +163,7 @@ async fn test_session_resume_active_session_returns_invalid_state_error() {
 async fn test_session_pause_after_end_returns_invalid_state_error() {
     let server = TestServer::start().await;
     let mut client = server.connect().await;
-    let session_id = create_chat_session(&mut client, &server.kiln_path, 46_000).await;
+    let session_id = create_chat_session(&mut client, TestServer::KILN, 46_000).await;
 
     let end_response = rpc_call(
         &mut client,
@@ -201,7 +201,7 @@ async fn test_session_pause_after_end_returns_invalid_state_error() {
 async fn test_session_configure_agent_rpc_success_and_missing_agent_error() {
     let server = TestServer::start().await;
     let mut client = server.connect().await;
-    let session_id = create_chat_session(&mut client, &server.kiln_path, 50).await;
+    let session_id = create_chat_session(&mut client, TestServer::KILN, 50).await;
 
     let ok_response =
         configure_internal_mock_agent(&mut client, &session_id, 51, "mock-initial").await;
@@ -232,7 +232,7 @@ async fn test_session_configure_agent_rpc_success_and_missing_agent_error() {
 async fn test_session_send_message_rpc_no_agent_configured_error_and_missing_content_error() {
     let server = TestServer::start().await;
     let mut client = server.connect().await;
-    let session_id = create_chat_session(&mut client, &server.kiln_path, 60).await;
+    let session_id = create_chat_session(&mut client, TestServer::KILN, 60).await;
 
     let no_agent_response = rpc_call(
         &mut client,
@@ -271,7 +271,7 @@ async fn test_session_send_message_rpc_no_agent_configured_error_and_missing_con
 async fn test_session_cancel_rpc_success_and_missing_param_error() {
     let server = TestServer::start().await;
     let mut client = server.connect().await;
-    let session_id = create_chat_session(&mut client, &server.kiln_path, 70).await;
+    let session_id = create_chat_session(&mut client, TestServer::KILN, 70).await;
 
     let ok_response = rpc_call(
         &mut client,

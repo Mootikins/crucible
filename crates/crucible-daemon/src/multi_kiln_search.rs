@@ -1,4 +1,4 @@
-use crate::trust_resolution::resolve_kiln_classification;
+use crate::trust_resolution::resolve_session_classification;
 use anyhow::Result;
 use crucible_core::config::{DataClassification, TrustLevel};
 use crucible_core::traits::KnowledgeRepository;
@@ -19,7 +19,7 @@ pub async fn search_across_kilns(
     query_embedding: Vec<f32>,
     top_k: usize,
     provider_trust: Option<TrustLevel>,
-    workspace: &Path,
+    workspace: Option<&Path>,
 ) -> Result<Vec<SearchResult>> {
     let mut best: HashMap<(PathBuf, String), SearchResult> = HashMap::new();
 
@@ -28,7 +28,11 @@ pub async fn search_across_kilns(
         // trust. Every source is filtered — the session's kiln set is flat, so
         // there is no member that gets to skip the check by being first.
         if let Some(trust) = provider_trust {
-            let classification = resolve_kiln_classification(workspace, &source.kiln_path)
+            // `.unwrap_or(Public)` is the permit here, so the lookup must not
+            // be able to come up empty merely because the session has no
+            // workspace to read a config from: the live-session resolver walks
+            // up from the kiln when the workspace answers nothing.
+            let classification = resolve_session_classification(workspace, &source.kiln_path)
                 .unwrap_or(DataClassification::Public);
             if !trust.satisfies(classification) {
                 tracing::debug!(
@@ -161,7 +165,7 @@ mod tests {
     async fn search_empty_sources_returns_empty() {
         let tmp = TempDir::new().unwrap();
 
-        let results = search_across_kilns(&[], vec![0.1, 0.2], 10, None, tmp.path())
+        let results = search_across_kilns(&[], vec![0.1, 0.2], 10, None, Some(tmp.path()))
             .await
             .unwrap();
 
@@ -180,7 +184,7 @@ mod tests {
             false,
         )];
 
-        let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, tmp.path())
+        let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, Some(tmp.path()))
             .await
             .unwrap();
 
@@ -209,7 +213,7 @@ mod tests {
             ),
         ];
 
-        let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, tmp.path())
+        let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, Some(tmp.path()))
             .await
             .unwrap();
 
@@ -232,7 +236,7 @@ mod tests {
             false,
         )];
 
-        let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, tmp.path())
+        let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, Some(tmp.path()))
             .await
             .unwrap();
 
@@ -254,7 +258,7 @@ mod tests {
             mock_source(good.clone(), vec![mock_result("good-doc", 0.7)], false),
         ];
 
-        let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, tmp.path())
+        let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, Some(tmp.path()))
             .await
             .unwrap();
 
@@ -276,7 +280,7 @@ mod tests {
             mock_source(kiln_b.clone(), vec![mock_result("doc-b", 0.5)], false),
         ];
 
-        let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, tmp.path())
+        let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, Some(tmp.path()))
             .await
             .unwrap();
 
@@ -324,7 +328,7 @@ mod tests {
             vec![0.1, 0.2],
             10,
             Some(TrustLevel::Cloud),
-            &workspace,
+            Some(&workspace),
         )
         .await
         .unwrap();
@@ -354,7 +358,7 @@ mod tests {
             vec![0.1, 0.2],
             10,
             Some(TrustLevel::Untrusted),
-            &workspace,
+            Some(&workspace),
         )
         .await
         .unwrap();
@@ -390,7 +394,7 @@ mod tests {
             ),
         ];
 
-        let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, &workspace)
+        let results = search_across_kilns(&sources, vec![0.1, 0.2], 10, None, Some(&workspace))
             .await
             .unwrap();
 
@@ -426,7 +430,7 @@ mod tests {
             vec![0.1, 0.2],
             10,
             Some(TrustLevel::Cloud),
-            &workspace,
+            Some(&workspace),
         )
         .await
         .unwrap();

@@ -5,6 +5,7 @@
 
 use crate::session_storage::{FileSessionStorage, SessionStorage};
 use chrono::{DateTime, Utc};
+use crucible_core::config::KilnName;
 use crucible_core::protocol::SessionEventMessage;
 use crucible_core::session::{
     RecordingMode, Session, SessionId, SessionState, SessionSummary, SessionType,
@@ -28,17 +29,17 @@ pub enum KilnFilter<'a> {
     #[default]
     Any,
     /// Sessions that have this kiln attached.
-    Attached(&'a Path),
+    Attached(&'a KilnName),
     /// Sessions with an empty kiln set.
     Kilnless,
 }
 
 impl KilnFilter<'_> {
     #[must_use]
-    pub fn matches(&self, kilns: &[PathBuf]) -> bool {
+    pub fn matches(&self, kilns: &[KilnName]) -> bool {
         match self {
             Self::Any => true,
-            Self::Attached(kiln) => kilns.iter().any(|k| k == Path::new(kiln)),
+            Self::Attached(kiln) => kilns.iter().any(|k| k == *kiln),
             Self::Kilnless => kilns.is_empty(),
         }
     }
@@ -63,12 +64,18 @@ impl KilnFilter<'_> {
 /// right one for a kiln-less tools-only session (§4.1: an empty kiln set
 /// degrades capabilities). Each handler decides for itself what an empty scope
 /// means — an empty result, or a refusal for a destructive verb.
+///
+/// Names, not paths, and typed rather than raw JSON on purpose: the untyped
+/// version parsed each element with `PathBuf::from`, which accepts every string
+/// — so `"vault"` was a perfectly good scope member that matched nothing at
+/// all, silently. A [`KilnName`] either parses or is refused at the handler's
+/// parse site.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct KilnScope(Vec<PathBuf>);
+pub struct KilnScope(Vec<KilnName>);
 
 impl KilnScope {
     #[must_use]
-    pub fn new(kilns: Vec<PathBuf>) -> Self {
+    pub fn new(kilns: Vec<KilnName>) -> Self {
         Self(kilns)
     }
 
@@ -79,12 +86,12 @@ impl KilnScope {
 
     /// Whether `kilns` shares at least one member with this scope.
     #[must_use]
-    pub fn overlaps(&self, kilns: &[PathBuf]) -> bool {
+    pub fn overlaps(&self, kilns: &[KilnName]) -> bool {
         kilns.iter().any(|k| self.0.contains(k))
     }
 
     #[must_use]
-    pub fn kilns(&self) -> &[PathBuf] {
+    pub fn kilns(&self) -> &[KilnName] {
         &self.0
     }
 }
@@ -143,7 +150,7 @@ pub struct SessionManager {
     recording_senders: DashMap<SessionId, mpsc::Sender<SessionEventMessage>>,
     /// Base directory under which per-session scratch workspaces are created
     /// for sessions started without an explicit workspace. When `None`, such
-    /// sessions fall back to `workspace == kiln` (the historical behavior).
+    /// sessions simply have no workspace.
     /// Resolved and tilde-expanded at construction (see
     /// [`crate::scm::resolve_session_workspace_dir`]).
     session_workspace_dir: Option<PathBuf>,
@@ -158,6 +165,13 @@ pub struct SessionManager {
     /// `session.list` reports as active forever. The interleaved non-atomic
     /// writes can also leave `meta.json` unparseable.
     session_locks: DashMap<String, Arc<tokio::sync::Mutex<()>>>,
+    /// Name → directory for kilns.
+    ///
+    /// Held here rather than reached for through the storage trait because
+    /// every consumer of a session's scope — containment, trust
+    /// classification, retrieval, the prompt — already has a `SessionManager`
+    /// and needs the same mapping. Empty by default, which denies every name.
+    kiln_registry: Arc<crate::kiln_registry::KilnRegistry>,
 }
 
 impl SessionManager {
@@ -165,6 +179,29 @@ impl SessionManager {
     /// `sessions_root` (see [`FileSessionStorage::root_for`]).
     pub fn new(sessions_root: PathBuf) -> Self {
         Self::with_storage(Arc::new(FileSessionStorage::new(sessions_root)))
+    }
+
+    /// Resolve kiln names — the session's, and every caller's — against
+    /// `registry`.
+    ///
+    /// Also handed to the storage layer by the composition root, which is what
+    /// maps a persisted path back onto a name.
+    #[must_use]
+    pub fn with_kiln_registry(mut self, registry: Arc<crate::kiln_registry::KilnRegistry>) -> Self {
+        self.kiln_registry = registry;
+        self
+    }
+
+    /// The name → directory mapping every scope consumer resolves through.
+    pub fn kiln_registry(&self) -> &Arc<crate::kiln_registry::KilnRegistry> {
+        &self.kiln_registry
+    }
+
+    /// The directories a session's kilns reach. See
+    /// [`KilnRegistry::paths_for`](crate::kiln_registry::KilnRegistry::paths_for)
+    /// for why an unresolvable name contributes nothing.
+    pub fn kiln_paths(&self, kilns: &[KilnName]) -> Vec<PathBuf> {
+        self.kiln_registry.paths_for(kilns)
     }
 
     /// Root directory holding every session's storage.
@@ -182,12 +219,20 @@ impl SessionManager {
 
     /// Create a session manager with a custom storage backend.
     pub fn with_storage(storage: Arc<dyn SessionStorage>) -> Self {
+        let sessions_root = storage.sessions_root().to_path_buf();
         Self {
             sessions: DashMap::new(),
             storage,
             recording_senders: DashMap::new(),
             session_workspace_dir: None,
             session_locks: DashMap::new(),
+            kiln_registry: Arc::new(crate::kiln_registry::KilnRegistry::empty(
+                crate::kiln_registry::KilnRegistryContext::new(
+                    sessions_root.clone(),
+                    None,
+                    sessions_root,
+                ),
+            )),
         }
     }
 
@@ -208,8 +253,8 @@ impl SessionManager {
     /// Set the base directory for per-session scratch workspaces.
     ///
     /// When set, sessions created without an explicit workspace get a
-    /// session-unique `<dir>/<session_id>` workspace instead of falling back to
-    /// the kiln path. The directory should already be tilde-expanded.
+    /// session-unique `<dir>/<session_id>` workspace instead of having none at
+    /// all. The directory should already be tilde-expanded.
     #[must_use]
     pub fn with_session_workspace_dir(mut self, dir: Option<PathBuf>) -> Self {
         self.session_workspace_dir = dir;
@@ -221,39 +266,42 @@ impl SessionManager {
     /// # Arguments
     /// * `session_type` - The type of session (Chat, Agent, Workflow)
     /// * `kilns` - Every kiln this session can query; flat and order-insensitive
-    /// * `workspace` - Optional workspace path (defaults to the first kiln)
+    /// * `workspace` - Optional workspace path; absent means the session has
+    ///   none, unless a session workspace base is configured (see
+    ///   [`SessionManager::with_session_workspace_dir`])
     ///
     /// # Returns
     /// The created session, or an error if persistence fails
     pub async fn create_session(
         &self,
         session_type: SessionType,
-        kilns: Vec<PathBuf>,
+        kilns: Vec<KilnName>,
         workspace: Option<PathBuf>,
         recording_mode: Option<RecordingMode>,
     ) -> Result<Session, SessionError> {
         let mut session = Session::new(session_type, kilns);
 
         if let Some(ws) = workspace {
-            session = session.with_workspace(ws);
+            session = session.with_workspace(Some(ws));
         } else if let Some(base) = &self.session_workspace_dir {
             // No explicit workspace: give the session its own scratch workspace
             // so its filesystem containment boundary is a private, session-unique
             // directory rather than the shared kiln path. Created BEFORE the
             // session is persisted/used so the path canonicalizes when trust and
-            // containment are derived. On failure, fall back to the historical
-            // `workspace == kiln` behavior — never fail session creation over a
-            // scratch directory.
+            // containment are derived. On failure the session simply has no
+            // workspace — never fail session creation over a scratch directory,
+            // and never quietly substitute the kiln, which is a corpus rather
+            // than a place to act.
             let scratch = session.id.dir_under(base);
             match std::fs::create_dir_all(&scratch) {
                 Ok(()) => {
-                    session = session.with_workspace(scratch);
+                    session = session.with_workspace(Some(scratch));
                 }
                 Err(e) => {
                     tracing::warn!(
                         path = %scratch.display(),
                         error = %e,
-                        "Failed to create session scratch workspace; falling back to kiln path"
+                        "Failed to create session scratch workspace; the session has no workspace"
                     );
                 }
             }
@@ -423,7 +471,7 @@ impl SessionManager {
             .filter(|r| {
                 let s = r.value();
                 kiln.matches(&s.kilns)
-                    && workspace.is_none_or(|w| &s.workspace == w)
+                    && workspace.is_none_or(|w| s.workspace.as_ref() == Some(w))
                     && session_type.is_none_or(|t| s.session_type == t)
                     && state.is_none_or(|st| s.state == st)
                     && (include_archived || !s.archived)
@@ -453,7 +501,7 @@ impl SessionManager {
         for entry in self.sessions.iter() {
             let s = entry.value();
             if kiln.matches(&s.kilns)
-                && workspace.is_none_or(|w| &s.workspace == w)
+                && workspace.is_none_or(|w| s.workspace.as_ref() == Some(w))
                 && session_type.is_none_or(|t| s.session_type == t)
                 && state.is_none_or(|st| s.state == st)
                 && (include_archived || !s.archived)
@@ -471,7 +519,7 @@ impl SessionManager {
                     continue;
                 }
                 if kiln.matches(&summary.kilns)
-                    && workspace.is_none_or(|w| &summary.workspace == w)
+                    && workspace.is_none_or(|w| summary.workspace.as_ref() == Some(w))
                     && session_type.is_none_or(|t| summary.session_type == t)
                     && state.is_none_or(|st| summary.state == st)
                     && (include_archived || !summary.archived)

@@ -55,7 +55,9 @@ pub struct DaemonAgentHandle {
     pub(super) cached_autocompact_threshold: Option<f32>,
     pub(super) cached_precognition: Option<bool>,
     pub(super) cached_precognition_results: Option<usize>,
-    pub(super) kiln_path: Option<PathBuf>,
+    /// The kiln NAME a `/clear` re-create should attach. Names, not paths:
+    /// the daemon resolves them against its `[kilns]` registry.
+    pub(super) kiln: Option<crucible_core::config::KilnName>,
     pub(super) workspace: Option<PathBuf>,
     pub(super) cached_agent_config: Option<SessionAgent>,
     pub(super) event_router_task: Option<JoinHandle<()>>,
@@ -96,7 +98,7 @@ impl DaemonAgentHandle {
             cached_autocompact_threshold: None,
             cached_precognition: None,
             cached_precognition_results: None,
-            kiln_path: None,
+            kiln: None,
             workspace: None,
             cached_agent_config: None,
             event_router_task: Some(event_router_task),
@@ -276,8 +278,8 @@ impl DaemonAgentHandle {
         &self.session_id
     }
 
-    pub fn with_kiln_path(mut self, path: PathBuf) -> Self {
-        self.kiln_path = Some(path);
+    pub fn with_kiln(mut self, kiln: Option<crucible_core::config::KilnName>) -> Self {
+        self.kiln = kiln;
         self
     }
 

@@ -15,11 +15,14 @@
 //! knowledge decision and shipped every conversation along with a shared kiln.
 //! [`crate::session_migration`] relocates those on daemon start.
 
+use crate::kiln_registry::{KilnRegistry, KilnRegistryContext};
 use crate::session_manager::SessionError;
 use async_trait::async_trait;
 use chrono::Utc;
+use crucible_core::config::KilnName;
 use crucible_core::session::{Session, SessionId, SessionSummary};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
@@ -88,15 +91,100 @@ pub trait SessionStorage: Send + Sync {
 #[derive(Debug, Clone)]
 pub struct FileSessionStorage {
     sessions_root: PathBuf,
+    /// The name↔path mapping for kilns.
+    ///
+    /// This layer, and only this layer, holds one — which is why it is the only
+    /// layer that may turn a persisted path into a [`KilnName`]. The empty
+    /// default is the fail-closed one: a storage built without a registry
+    /// resolves no persisted kiln, so a session loaded through it reaches
+    /// nothing it cannot justify.
+    registry: Arc<KilnRegistry>,
 }
 
 impl FileSessionStorage {
-    /// Create file-based storage rooted at `sessions_root`.
+    /// Create file-based storage rooted at `sessions_root`, resolving kilns
+    /// against an empty registry.
     ///
     /// Use [`FileSessionStorage::root_for`] to derive it from the daemon's
-    /// data root.
+    /// data root, and [`FileSessionStorage::with_registry`] to give it the
+    /// daemon's real registry.
     pub fn new(sessions_root: PathBuf) -> Self {
-        Self { sessions_root }
+        let registry = KilnRegistry::empty(KilnRegistryContext::new(
+            sessions_root.clone(),
+            None,
+            sessions_root.clone(),
+        ));
+        Self {
+            sessions_root,
+            registry: Arc::new(registry),
+        }
+    }
+
+    /// Resolve persisted kiln paths against `registry`.
+    #[must_use]
+    pub fn with_registry(mut self, registry: Arc<KilnRegistry>) -> Self {
+        self.registry = registry;
+        self
+    }
+
+    /// The registry this storage resolves persisted kilns against.
+    pub fn kiln_registry(&self) -> &Arc<KilnRegistry> {
+        &self.registry
+    }
+
+    /// Turn the path-shaped kiln set read off disk into the session's names.
+    ///
+    /// **Lookup only.** A persisted path that no registry entry claims must not
+    /// register itself: auto-registration is a live, first-party request on
+    /// this machine, and a `meta.json` is neither — it can be hand-edited, and
+    /// it is the one door through which a path the floor never saw could mint a
+    /// kiln. Such a path contributes no kiln (no root, no classification, no
+    /// search source, no prompt line) and is carried forward untouched so that
+    /// re-registering the entry restores it.
+    fn resolve_persisted_kilns(&self, session: &mut Session) {
+        let mut names: Vec<KilnName> = Vec::new();
+        let mut unresolved: Vec<PathBuf> = Vec::new();
+        for path in session.take_persisted_kiln_paths() {
+            match self.registry.name_for(&path) {
+                Some(name) if names.contains(name) => {}
+                Some(name) => names.push(name.clone()),
+                None => {
+                    tracing::warn!(
+                        session_id = %session.id,
+                        kiln = %path.display(),
+                        "Persisted kiln matches no registry entry; it is not a kiln for this session"
+                    );
+                    unresolved.push(path);
+                }
+            }
+        }
+        session.kilns = names;
+        session.set_unresolved_kiln_paths(unresolved);
+    }
+
+    /// The path-shaped kiln set to write back out: every resolvable name's
+    /// registered path, followed by the paths that resolved to nothing.
+    ///
+    /// The unresolved tail is what keeps a save from *erasing* a session's
+    /// scope when the registry is empty — a config that failed to parse would
+    /// otherwise silently delete the kilns of every session the daemon touches.
+    fn persist_view(&self, session: &Session) -> Session {
+        let mut paths: Vec<PathBuf> = Vec::new();
+        for name in &session.kilns {
+            if let Some(kiln) = self.registry.resolve(name).registered() {
+                if !paths.contains(&kiln.path().to_path_buf()) {
+                    paths.push(kiln.path().to_path_buf());
+                }
+            }
+        }
+        for path in session.unresolved_kiln_paths() {
+            if !paths.contains(path) {
+                paths.push(path.clone());
+            }
+        }
+        let mut view = session.clone();
+        view.set_persisted_kiln_paths(paths);
+        view
     }
 
     /// The sessions root for a daemon data root: `{data_home}/sessions`.
@@ -115,6 +203,47 @@ impl FileSessionStorage {
     fn session_dir(&self, session_id: &SessionId) -> PathBuf {
         session_id.dir_under(&self.sessions_root)
     }
+
+    /// Re-run the scope floor over a workspace that arrived from disk.
+    ///
+    /// `workspace` is a plain path deserialized unchecked, and it is chained
+    /// straight into the session's containment allowlist alongside its kilns
+    /// (`agent_manager::scope::session_containment`). Every *live* door that
+    /// sets one — `session.create`, `session.set_workspace` — runs
+    /// [`refuse_forbidden_scope`](crate::kiln_registry::refuse_forbidden_scope)
+    /// first, but a `meta.json` reaches that
+    /// allowlist without passing any of them: a file written before the gate
+    /// existed, a file hand-edited, or a file whose target became forbidden
+    /// afterwards (a symlink repointed at `/`, a directory that is now inside
+    /// the sessions root). Reviving is therefore the same door, and it must
+    /// ask the same question.
+    ///
+    /// A refused workspace is dropped rather than the load being failed: the
+    /// transcript is still the user's, and refusing to open it would turn a
+    /// bad path into lost history. The session is then anchored at its own
+    /// storage directory by `scope::session_tool_root` — the one directory it
+    /// certainly has, already read-only inside its own containment. Cleared
+    /// rather than *set* to that directory, because a sessions-root path in
+    /// the field itself would land in the review roots, in the Lua
+    /// `session.workspace` a plugin reads, and in the workspace chip the web
+    /// UI renders.
+    fn refuse_persisted_workspace(&self, session: &mut Session) {
+        let Some(workspace) = session.workspace.as_deref() else {
+            return;
+        };
+        if let Err(reason) = crate::kiln_registry::refuse_forbidden_scope(
+            "workspace",
+            workspace,
+            &self.sessions_root,
+        ) {
+            tracing::warn!(
+                session_id = %session.id,
+                reason = %reason,
+                "Persisted workspace refused on load; the session is anchored at its own storage directory"
+            );
+            session.set_workspace(None);
+        }
+    }
 }
 
 #[async_trait]
@@ -127,9 +256,10 @@ impl SessionStorage for FileSessionStorage {
         let dir = self.session_dir(&session.id);
         fs::create_dir_all(&dir).await?;
 
-        // Save session metadata as JSON
+        // Save session metadata as JSON. The kiln set goes out path-shaped —
+        // see `persist_view` and `PersistedKilns`.
         let meta_path = dir.join("meta.json");
-        let json = serde_json::to_string_pretty(session)?;
+        let json = serde_json::to_string_pretty(&self.persist_view(session))?;
         fs::write(&meta_path, json).await?;
 
         Ok(())
@@ -160,12 +290,27 @@ impl SessionStorage for FileSessionStorage {
             }
         })?;
 
-        let session: Session = serde_json::from_str(&json).map_err(|e| {
+        let raw: serde_json::Value = serde_json::from_str(&json).map_err(|e| {
             SessionError::IoError(format!(
                 "Failed to parse session '{}' JSON: {}",
                 session_id, e
             ))
         })?;
+        // Read before the value is consumed: these are the pre-flatten
+        // spellings, and their presence is what makes the rewrite below worth
+        // a write.
+        let pre_flatten = raw
+            .as_object()
+            .is_some_and(|o| o.contains_key("kiln") || o.contains_key("connected_kilns"));
+        let mut session: Session = serde_json::from_value(raw).map_err(|e| {
+            SessionError::IoError(format!(
+                "Failed to parse session '{}' JSON: {}",
+                session_id, e
+            ))
+        })?;
+
+        self.refuse_persisted_workspace(&mut session);
+        self.resolve_persisted_kilns(&mut session);
 
         // Same rule `list` applies, at the other door. A load is keyed on the
         // directory; every subsequent write — `save`, `append_event`,
@@ -182,6 +327,21 @@ impl SessionStorage for FileSessionStorage {
             )));
         }
 
+        // Rewritten in place, after the id check and never before it: writing
+        // first would let a `meta.json` naming another session's directory
+        // provoke a write into that directory. Only the pre-flatten spellings
+        // earn the write — everything else is already in the shape `save`
+        // produces, so an ordinary load stays read-only.
+        if pre_flatten {
+            if let Err(e) = self.save(&session).await {
+                tracing::warn!(
+                    session_id = %session.id,
+                    error = %e,
+                    "Could not rewrite a pre-flatten meta.json; it will be migrated again on the next load"
+                );
+            }
+        }
+
         Ok(session)
     }
 
@@ -192,6 +352,13 @@ impl SessionStorage for FileSessionStorage {
 
         let mut summaries = vec![];
         let mut entries = fs::read_dir(&self.sessions_root).await?;
+        // A session that does not make it into the listing is unresumable, and
+        // both of the ways that can happen used to be a bare `continue`: the
+        // whole backlog could empty out with nothing in the log to say so. The
+        // count is what distinguishes "you have no sessions" from "every
+        // session failed to load".
+        let mut unreadable = 0usize;
+        let mut not_a_session = 0usize;
 
         while let Some(entry) = entries.next_entry().await? {
             if !entry.file_type().await.map(|t| t.is_dir()).unwrap_or(false) {
@@ -205,16 +372,27 @@ impl SessionStorage for FileSessionStorage {
                 .to_str()
                 .and_then(|name| SessionId::parse(name).ok())
             else {
+                not_a_session += 1;
                 continue;
             };
-            let Ok(session) = self.load(&session_id).await else {
-                continue;
+            let session = match self.load(&session_id).await {
+                Ok(session) => session,
+                Err(e) => {
+                    unreadable += 1;
+                    tracing::warn!(
+                        session_id = %session_id,
+                        error = %e,
+                        "Session left out of the listing because it could not be loaded"
+                    );
+                    continue;
+                }
             };
             // The directory name IS the id. A `meta.json` claiming a different
             // one is either corrupt or planted, and serving it would hand every
             // caller downstream — `session.cleanup` most of all — a path that
             // points at a directory other than the one this summary describes.
             if session.id != session_id {
+                unreadable += 1;
                 tracing::warn!(
                     directory = %session_id,
                     persisted_id = %session.id,
@@ -223,6 +401,20 @@ impl SessionStorage for FileSessionStorage {
                 continue;
             }
             summaries.push(SessionSummary::from(&session));
+        }
+
+        if unreadable > 0 {
+            tracing::warn!(
+                unreadable,
+                listed = summaries.len(),
+                "Sessions were left out of the listing; see the warnings above for each"
+            );
+        }
+        if not_a_session > 0 {
+            tracing::debug!(
+                not_a_session,
+                "Directories under the sessions root that are not sessions"
+            );
         }
 
         Ok(summaries)
@@ -273,7 +465,7 @@ impl SessionStorage for FileSessionStorage {
             let kilns = session
                 .kilns
                 .iter()
-                .map(|k| k.display().to_string())
+                .map(KilnName::to_string)
                 .collect::<Vec<_>>()
                 .join(", ");
 
@@ -282,7 +474,7 @@ impl SessionStorage for FileSessionStorage {
                 session.id,
                 session.session_type.as_prefix(),
                 kilns,
-                session.workspace.display(),
+                session.workspace.as_deref().unwrap_or(Path::new("")).display(),
                 session.started_at.to_rfc3339(),
                 session_type_name,
             );
@@ -366,11 +558,25 @@ mod tests {
     /// are given. The two are deliberately unrelated: storage location no
     /// longer follows from the kiln.
     fn storage_in(tmp: &TempDir) -> FileSessionStorage {
+        // The registry is what turns a session's kiln NAMES into the paths
+        // `meta.json` records and back again. A storage without one persists no
+        // kilns at all, so a round-trip assertion over it would pass on an
+        // empty set.
+        let kilns: Vec<(&str, PathBuf)> = ["kiln", "kiln-a", "kiln-b", "other-kiln"]
+            .into_iter()
+            .map(|name| (name, tmp.path().join("kilns").join(name)))
+            .collect();
+        let borrowed: Vec<(&str, &Path)> = kilns
+            .iter()
+            .map(|(name, path)| (*name, path.as_path()))
+            .collect();
         FileSessionStorage::new(FileSessionStorage::root_for(tmp.path()))
+            .with_registry(crate::test_support::kiln_registry(tmp.path(), &borrowed))
     }
 
     fn session_in(tmp: &TempDir, session_type: SessionType) -> Session {
-        Session::new(session_type, vec![tmp.path().join("kiln")])
+        let _ = tmp;
+        Session::new(session_type, vec![crate::test_support::kiln_name("kiln")])
     }
 
     #[tokio::test]
@@ -446,14 +652,161 @@ mod tests {
         let storage = storage_in(&tmp);
 
         // Two sessions in different kilns still share one storage root.
-        let session1 = Session::new(SessionType::Chat, vec![tmp.path().join("kiln-a")]);
-        let session2 = Session::new(SessionType::Agent, vec![tmp.path().join("kiln-b")]);
+        let session1 = Session::new(
+            SessionType::Chat,
+            vec![crate::test_support::kiln_name("kiln-a")],
+        );
+        let session2 = Session::new(
+            SessionType::Agent,
+            vec![crate::test_support::kiln_name("kiln-b")],
+        );
 
         storage.save(&session1).await.unwrap();
         storage.save(&session2).await.unwrap();
 
         let summaries = storage.list().await.unwrap();
         assert_eq!(summaries.len(), 2);
+    }
+
+    /// The path↔name mapping, both directions, through the layer that owns it.
+    ///
+    /// `Session.kilns` holds names and `meta.json` holds paths, so a save that
+    /// wrote names — or a load that handed the names back untranslated — would
+    /// produce a file no other reader understands and a session whose kilns
+    /// resolve to nothing.
+    #[tokio::test]
+    async fn a_sessions_kiln_names_are_persisted_as_paths_and_resolved_back() {
+        let tmp = TempDir::new().unwrap();
+        let storage = storage_in(&tmp);
+        let session = session_in(&tmp, SessionType::Chat);
+        let expected = tmp.path().join("kilns").join("kiln");
+
+        storage.save(&session).await.unwrap();
+
+        let raw = fs::read_to_string(storage.session_dir(&session.id).join("meta.json"))
+            .await
+            .unwrap();
+        let on_disk: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(
+            on_disk["kilns"],
+            serde_json::json!([expected.to_string_lossy()]),
+            "meta.json records the PATH the name resolves to: {raw}"
+        );
+
+        let loaded = storage.load(&session.id).await.unwrap();
+        assert_eq!(
+            loaded.kilns,
+            vec![crate::test_support::kiln_name("kiln")],
+            "and the load maps it back to the name"
+        );
+    }
+
+    /// A pre-flatten `meta.json` loads, and the file is rewritten in place so
+    /// the next reader sees the flat shape.
+    ///
+    /// The rewrite is the half a "it still parses" test leaves out: the legacy
+    /// keys survive every read otherwise, and `session_migration`'s stamp
+    /// deliberately preserves unknown fields, so `kiln` would keep winning over
+    /// whatever the daemon decided.
+    #[tokio::test]
+    async fn a_pre_flatten_meta_json_loads_and_is_rewritten_in_place() {
+        let tmp = TempDir::new().unwrap();
+        let storage = storage_in(&tmp);
+        let session = session_in(&tmp, SessionType::Chat);
+        let session_id = session.id.clone();
+        storage.save(&session).await.unwrap();
+
+        // Plant the pre-flatten spelling the way a file written before the
+        // flatten carries it.
+        let meta_path = storage.session_dir(&session_id).join("meta.json");
+        let mut planted: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&meta_path).await.unwrap()).unwrap();
+        let kiln = tmp.path().join("kilns").join("kiln");
+        let other = tmp.path().join("kilns").join("other-kiln");
+        planted.as_object_mut().unwrap().remove("kilns");
+        planted["kiln"] = serde_json::json!(kiln.to_string_lossy());
+        planted["connected_kilns"] = serde_json::json!([other.to_string_lossy()]);
+        fs::write(&meta_path, serde_json::to_string_pretty(&planted).unwrap())
+            .await
+            .unwrap();
+        // Precondition: the legacy keys really are on disk, or this passes
+        // because there was never anything to migrate.
+        let before = fs::read_to_string(&meta_path).await.unwrap();
+        assert!(
+            before.contains("connected_kilns"),
+            "precondition: the planted file must carry the legacy keys: {before}"
+        );
+
+        let loaded = storage.load(&session_id).await.unwrap();
+        assert_eq!(
+            loaded.kilns,
+            vec![
+                crate::test_support::kiln_name("kiln"),
+                crate::test_support::kiln_name("other-kiln")
+            ],
+            "primary first, connected after, both resolved to names"
+        );
+
+        let after = fs::read_to_string(&meta_path).await.unwrap();
+        assert!(
+            !after.contains("connected_kilns") && !after.contains("\"kiln\":"),
+            "the legacy keys must be gone from the file after the load: {after}"
+        );
+        let rewritten: serde_json::Value = serde_json::from_str(&after).unwrap();
+        assert_eq!(
+            rewritten["kilns"],
+            serde_json::json!([kiln.to_string_lossy(), other.to_string_lossy()]),
+            "and the flat, path-shaped array is what replaced them"
+        );
+    }
+
+    /// A persisted kiln path that no registry entry claims is **not a kiln**:
+    /// it contributes nothing to the loaded session. Asserted on the absence
+    /// from `kilns`, not on the load merely not failing.
+    ///
+    /// And it must not be *erased*, which is the second half: an entry the user
+    /// renamed, or a config that failed to parse, would otherwise have the next
+    /// save silently delete the session's scope for good.
+    #[tokio::test]
+    async fn an_unregistered_persisted_kiln_grants_nothing_and_is_not_erased() {
+        let tmp = TempDir::new().unwrap();
+        let storage = storage_in(&tmp);
+        let session = session_in(&tmp, SessionType::Chat);
+        let session_id = session.id.clone();
+        storage.save(&session).await.unwrap();
+
+        let stranger = tmp.path().join("not-registered");
+        let meta_path = storage.session_dir(&session_id).join("meta.json");
+        let mut planted: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&meta_path).await.unwrap()).unwrap();
+        planted["kilns"] = serde_json::json!([stranger.to_string_lossy()]);
+        fs::write(&meta_path, serde_json::to_string_pretty(&planted).unwrap())
+            .await
+            .unwrap();
+        // Precondition: the registry really does not know it, or the assertion
+        // below holds for the wrong reason.
+        assert!(
+            storage.kiln_registry().name_for(&stranger).is_none(),
+            "precondition: {} must be unregistered",
+            stranger.display()
+        );
+
+        let loaded = storage.load(&session_id).await.unwrap();
+        assert!(
+            loaded.kilns.is_empty(),
+            "an unregistered path must not become a kiln: {:?}",
+            loaded.kilns
+        );
+
+        // Saving the session back must not drop the record of it.
+        storage.save(&loaded).await.unwrap();
+        let after: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&meta_path).await.unwrap()).unwrap();
+        assert_eq!(
+            after["kilns"],
+            serde_json::json!([stranger.to_string_lossy()]),
+            "the unresolved path is carried forward, not deleted"
+        );
     }
 
     #[tokio::test]
@@ -568,11 +921,11 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let storage = storage_in(&tmp);
 
-        let other_kiln = tmp.path().join("other-kiln");
+        let other_kiln = crate::test_support::kiln_name("other-kiln");
         let workspace = tmp.path().join("workspace");
 
         let session = session_in(&tmp, SessionType::Agent)
-            .with_workspace(workspace.clone())
+            .with_workspace(Some(workspace.clone()))
             .with_kiln(other_kiln.clone())
             .with_title("Test Session");
         let session_id = session.id.clone();
@@ -582,10 +935,92 @@ mod tests {
 
         let loaded = storage.load(&session_id).await.unwrap();
         assert_eq!(loaded.session_type, SessionType::Agent);
-        assert_eq!(loaded.workspace, workspace);
+        assert_eq!(loaded.workspace, Some(workspace));
         assert_eq!(loaded.kilns, kilns);
         assert!(loaded.kilns.contains(&other_kiln));
         assert_eq!(loaded.title, Some("Test Session".to_string()));
+    }
+
+    /// A `meta.json` is not a door the scope floor guards: `workspace` is a
+    /// plain path, deserialized unchecked, and `session_containment` chains it
+    /// into the allowlist next to the kilns. A file that names another
+    /// session's storage directory — written before the gate existed, or hand
+    /// edited — would otherwise hand the revived session exactly the
+    /// transcript the sessions-root denial exists to close, because an allowed
+    /// root INSIDE the denial out-ranks it.
+    #[tokio::test]
+    async fn a_persisted_workspace_inside_the_sessions_root_is_refused_on_load() {
+        let tmp = TempDir::new().unwrap();
+        let storage = storage_in(&tmp);
+        let victim = storage.sessions_root().join("chat-victim");
+        std::fs::create_dir_all(&victim).unwrap();
+
+        let mut session = session_in(&tmp, SessionType::Chat);
+        let session_id = session.id.clone();
+        storage.save(&session).await.unwrap();
+        // Written straight to disk: `save` goes through the same type, so the
+        // forbidden value has to be planted the way a hand-edited file would.
+        session.workspace = Some(victim.clone());
+        fs::write(
+            storage.session_dir(&session_id).join("meta.json"),
+            serde_json::to_string_pretty(&session).unwrap(),
+        )
+        .await
+        .unwrap();
+        // Precondition: the plant really is on disk and really is forbidden —
+        // otherwise this passes because nothing was ever there to refuse.
+        let raw = fs::read_to_string(storage.session_dir(&session_id).join("meta.json"))
+            .await
+            .unwrap();
+        assert!(
+            raw.contains("chat-victim"),
+            "precondition: the forbidden workspace must be in the file: {raw}"
+        );
+        assert!(
+            crate::kiln_registry::refuse_forbidden_scope(
+                "workspace",
+                &victim,
+                storage.sessions_root()
+            )
+            .is_err(),
+            "precondition: the floor must consider this path forbidden"
+        );
+
+        let loaded = storage.load(&session_id).await.unwrap();
+
+        assert_eq!(
+            loaded.workspace, None,
+            "a refused workspace must not survive the load"
+        );
+        let roots = crate::agent_manager::scope::session_containment(
+            &loaded,
+            storage.sessions_root(),
+            storage.kiln_registry(),
+        );
+        assert!(
+            crate::tools::fs_scope::FsScope::workspace(PathBuf::new(), roots)
+                .resolve(&victim.join("session.jsonl").to_string_lossy())
+                .is_err(),
+            "and the refusal has to reach the containment set, not just the field"
+        );
+    }
+
+    /// The floor is a floor, not a filter: an ordinary directory persisted as
+    /// a workspace is still the session's workspace after a restart.
+    #[tokio::test]
+    async fn an_ordinary_persisted_workspace_survives_the_load() {
+        let tmp = TempDir::new().unwrap();
+        let storage = storage_in(&tmp);
+        let workspace = tmp.path().join("project");
+        std::fs::create_dir_all(&workspace).unwrap();
+
+        let session = session_in(&tmp, SessionType::Chat).with_workspace(Some(workspace.clone()));
+        let session_id = session.id.clone();
+        storage.save(&session).await.unwrap();
+
+        let loaded = storage.load(&session_id).await.unwrap();
+
+        assert_eq!(loaded.workspace, Some(workspace));
     }
 
     #[tokio::test]

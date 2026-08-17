@@ -31,8 +31,17 @@ impl TestServer {
         let temp_dir = tempfile::tempdir()?;
         let socket_path = temp_dir.path().join("daemon.sock");
 
-        let server =
-            Server::bind_with_data_home(&socket_path, temp_dir.path().to_path_buf()).await?;
+        // One registered kiln named `kiln`: sessions address kilns by name, so
+        // a fixture that registers none has a daemon that refuses every scoped
+        // request.
+        let kiln = temp_dir.path().join("kiln");
+        std::fs::create_dir_all(&kiln)?;
+        let server = Server::bind_with_data_home_and_kilns(
+            &socket_path,
+            temp_dir.path().to_path_buf(),
+            &[("kiln", &kiln)],
+        )
+        .await?;
         let shutdown_handle = server.shutdown_handle();
 
         let server_handle = tokio::spawn(async move {
@@ -80,7 +89,7 @@ async fn setup_session_with_agent(server: &TestServer) -> (String, DaemonClient)
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![kiln_dir.path().to_path_buf()],
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
             recording_mode: None,
             recording_path: None,
@@ -305,7 +314,7 @@ async fn test_precognition_round_trip() {
 #[tokio::test]
 async fn test_configure_agent_sets_agent() {
     let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+    let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
     let client = DaemonClient::connect_to(&server.socket_path)
         .await
@@ -314,7 +323,7 @@ async fn test_configure_agent_sets_agent() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![kiln_dir.path().to_path_buf()],
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
             recording_mode: None,
             recording_path: None,

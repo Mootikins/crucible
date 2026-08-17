@@ -12,7 +12,7 @@ import type { KilnListEntry, Project } from '@/lib/types';
 import { notificationActions } from '@/stores/notificationStore';
 import { pathBasename } from '@/stores/statusBarStore';
 import { kilnLabel } from '@/lib/kiln-label';
-import { sessionDefaultKiln, sessionHasWorkspace } from '@/lib/session-scope';
+import { sessionDefaultKiln, sessionWorkspace } from '@/lib/session-scope';
 import { swrLocal } from '@/lib/local-cache';
 import { ChipSelect, type ChipOption } from '@/components/composer/ChipSelect';
 import { FlaskConical, FolderGit2 } from '@/lib/icons';
@@ -34,9 +34,9 @@ export const SessionScopeChips: Component = () => {
   const [busy, setBusy] = createSignal(false);
 
   const session = () => currentSession();
-  const hasWorkspace = () => {
+  const workspace = () => {
     const s = session();
-    return !!s && sessionHasWorkspace(s);
+    return s ? sessionWorkspace(s) : null;
   };
   const disabled = () => busy() || isStreaming();
 
@@ -80,9 +80,8 @@ export const SessionScopeChips: Component = () => {
   };
 
   const projectLabel = () => {
-    const s = session();
-    if (!s || !hasWorkspace()) return 'Session folder';
-    return pathBasename(s.workspace ?? '') || 'Session folder';
+    const ws = workspace();
+    return (ws && pathBasename(ws)) || 'Session folder';
   };
 
   // ---- kiln chip (one flat multi-select) ----------------------------------
@@ -159,7 +158,7 @@ export const SessionScopeChips: Component = () => {
           name="project"
           icon={FolderGit2}
           options={projectOptions()}
-          value={hasWorkspace() ? session()!.workspace ?? '' : ''}
+          value={workspace() ?? ''}
           triggerLabel={projectLabel()}
           onSelect={pickProject}
           disabled={disabled()}

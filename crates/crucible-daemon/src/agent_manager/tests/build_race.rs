@@ -140,7 +140,7 @@ async fn a_model_switch_during_an_agent_build_is_not_lost() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             None,
             None,
         )

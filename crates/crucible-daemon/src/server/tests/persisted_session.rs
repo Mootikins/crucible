@@ -277,15 +277,37 @@ async fn session_export_refuses_a_session_directory_that_resolves_elsewhere() {
 
 /// A session manager rooted at `tmp/sessions`.
 fn manager_for(tmp: &TempDir) -> Arc<SessionManager> {
-    Arc::new(SessionManager::new(FileSessionStorage::root_for(
-        tmp.path(),
-    )))
+    // The scope these tests exercise is stated in NAMES, so the manager needs a
+    // registry that knows them — otherwise every seeded session loads back
+    // kiln-less and every assertion about scope passes for the wrong reason.
+    // The directories sit under `tmp/kilns`, clear of the sessions root the
+    // registration floor denies.
+    let owned: Vec<(&str, PathBuf)> = ["mine", "theirs", "a", "b", "elsewhere", "somewhere"]
+        .into_iter()
+        .map(|name| (name, tmp.path().join("kilns").join(name)))
+        .collect();
+    let kilns: Vec<(&str, &std::path::Path)> = owned
+        .iter()
+        .map(|(name, path)| (*name, path.as_path()))
+        .collect();
+    let registry = crate::test_support::kiln_registry(tmp.path(), &kilns);
+    Arc::new(
+        SessionManager::with_storage(Arc::new(
+            FileSessionStorage::new(FileSessionStorage::root_for(tmp.path()))
+                .with_registry(registry.clone()),
+        ))
+        .with_kiln_registry(registry),
+    )
+}
+
+fn kiln_name(name: &str) -> crucible_core::config::KilnName {
+    crate::test_support::kiln_name(name)
 }
 
 /// Persist a session attached to `kilns` with `body` as its transcript.
 async fn seed_scoped_session(
     sm: &SessionManager,
-    kilns: Vec<PathBuf>,
+    kilns: Vec<crucible_core::config::KilnName>,
     body: &str,
 ) -> (String, PathBuf) {
     let session =
@@ -317,7 +339,7 @@ fn listed_ids(resp: &Response) -> Vec<String> {
 async fn session_list_persisted_returns_sessions() {
     let tmp = TempDir::new().unwrap();
     let sm = manager_for(&tmp);
-    let kiln = tmp.path().join("mine");
+    let kiln = kiln_name("mine");
     let (sid, _) = seed_scoped_session(
         &sm,
         vec![kiln.clone()],
@@ -325,10 +347,7 @@ async fn session_list_persisted_returns_sessions() {
     )
     .await;
 
-    let req = make_request(
-        "session.list_persisted",
-        json!({ "kiln": kiln.to_string_lossy() }),
-    );
+    let req = make_request("session.list_persisted", json!({ "kiln": kiln.as_str() }));
     let resp = handle_session_list_persisted(req, &sm).await;
 
     assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
@@ -348,7 +367,7 @@ async fn session_list_persisted_empty_root_returns_empty() {
 
     let req = make_request(
         "session.list_persisted",
-        json!({ "kiln": tmp.path().join("mine").to_string_lossy() }),
+        json!({ "kiln": kiln_name("mine").as_str() }),
     );
     let resp = handle_session_list_persisted(req, &sm).await;
 
@@ -366,8 +385,8 @@ async fn session_list_persisted_empty_root_returns_empty() {
 async fn session_list_persisted_returns_only_sessions_sharing_a_kiln_with_the_caller() {
     let tmp = TempDir::new().unwrap();
     let sm = manager_for(&tmp);
-    let mine = tmp.path().join("mine");
-    let theirs = tmp.path().join("theirs");
+    let mine = kiln_name("mine");
+    let theirs = kiln_name("theirs");
 
     let (ours, _) = seed_scoped_session(
         &sm,
@@ -382,10 +401,7 @@ async fn session_list_persisted_returns_only_sessions_sharing_a_kiln_with_the_ca
     )
     .await;
 
-    let req = make_request(
-        "session.list_persisted",
-        json!({ "kiln": mine.to_string_lossy() }),
-    );
+    let req = make_request("session.list_persisted", json!({ "kiln": mine.as_str() }));
     let resp = handle_session_list_persisted(req, &sm).await;
 
     let ids = listed_ids(&resp);
@@ -409,18 +425,18 @@ async fn session_list_persisted_returns_only_sessions_sharing_a_kiln_with_the_ca
 async fn session_list_persisted_spans_every_kiln_in_the_callers_set() {
     let tmp = TempDir::new().unwrap();
     let sm = manager_for(&tmp);
-    let a = tmp.path().join("a");
-    let b = tmp.path().join("b");
-    let elsewhere = tmp.path().join("elsewhere");
+    let a = kiln_name("a");
+    let b = kiln_name("b");
+    let elsewhere = kiln_name("elsewhere");
     let msg = "{\"type\":\"user\",\"ts\":\"2026-01-01T12:00:01Z\",\"content\":\"hello\"}";
 
     let (on_a, _) = seed_scoped_session(&sm, vec![a.clone()], msg).await;
     let (on_b, _) = seed_scoped_session(&sm, vec![b.clone()], msg).await;
-    let (foreign, _) = seed_scoped_session(&sm, vec![elsewhere], msg).await;
+    let (foreign, _) = seed_scoped_session(&sm, vec![elsewhere.clone()], msg).await;
 
     let req = make_request(
         "session.list_persisted",
-        json!({ "kilns": [a.to_string_lossy(), b.to_string_lossy()] }),
+        json!({ "kilns": [a.as_str(), b.as_str()] }),
     );
     let resp = handle_session_list_persisted(req, &sm).await;
 
@@ -443,7 +459,7 @@ async fn session_list_persisted_without_a_kiln_scope_returns_nothing() {
     let sm = manager_for(&tmp);
     seed_scoped_session(
         &sm,
-        vec![tmp.path().join("somewhere")],
+        vec![kiln_name("somewhere")],
         "{\"type\":\"user\",\"ts\":\"2026-01-01T12:00:01Z\",\"content\":\"hello\"}",
     )
     .await;
@@ -459,7 +475,7 @@ async fn session_list_persisted_without_a_kiln_scope_returns_nothing() {
 async fn session_cleanup_dry_run_does_not_delete() {
     let tmp = TempDir::new().unwrap();
     let sm = manager_for(&tmp);
-    let kiln = tmp.path().join("mine");
+    let kiln = kiln_name("mine");
     let (_, session_dir) = seed_scoped_session(
         &sm,
         vec![kiln.clone()],
@@ -469,7 +485,7 @@ async fn session_cleanup_dry_run_does_not_delete() {
 
     let req = make_request(
         "session.cleanup",
-        json!({ "older_than_days": 1, "dry_run": true, "kiln": kiln.to_string_lossy() }),
+        json!({ "older_than_days": 1, "dry_run": true, "kiln": kiln.as_str() }),
     );
     let resp = handle_session_cleanup(req, &sm).await;
 
@@ -484,7 +500,7 @@ async fn session_cleanup_dry_run_does_not_delete() {
 async fn session_cleanup_deletes_old_sessions() {
     let tmp = TempDir::new().unwrap();
     let sm = manager_for(&tmp);
-    let kiln = tmp.path().join("mine");
+    let kiln = kiln_name("mine");
     let (_, session_dir) = seed_scoped_session(
         &sm,
         vec![kiln.clone()],
@@ -494,7 +510,7 @@ async fn session_cleanup_deletes_old_sessions() {
 
     let req = make_request(
         "session.cleanup",
-        json!({ "older_than_days": 1, "dry_run": false, "kiln": kiln.to_string_lossy() }),
+        json!({ "older_than_days": 1, "dry_run": false, "kiln": kiln.as_str() }),
     );
     let resp = handle_session_cleanup(req, &sm).await;
 
@@ -513,8 +529,8 @@ async fn session_cleanup_deletes_old_sessions() {
 async fn session_cleanup_deletes_only_sessions_sharing_a_kiln_with_the_caller() {
     let tmp = TempDir::new().unwrap();
     let sm = manager_for(&tmp);
-    let mine = tmp.path().join("mine");
-    let theirs = tmp.path().join("theirs");
+    let mine = kiln_name("mine");
+    let theirs = kiln_name("theirs");
     let old = "{\"type\":\"user\",\"ts\":\"2020-01-01T12:00:00Z\",\"content\":\"Old message\"}";
 
     let (_, ours) = seed_scoped_session(&sm, vec![mine.clone()], old).await;
@@ -522,7 +538,7 @@ async fn session_cleanup_deletes_only_sessions_sharing_a_kiln_with_the_caller() 
 
     let req = make_request(
         "session.cleanup",
-        json!({ "older_than_days": 1, "dry_run": false, "kiln": mine.to_string_lossy() }),
+        json!({ "older_than_days": 1, "dry_run": false, "kiln": mine.as_str() }),
     );
     let resp = handle_session_cleanup(req, &sm).await;
 
@@ -541,20 +557,20 @@ async fn session_cleanup_deletes_only_sessions_sharing_a_kiln_with_the_caller() 
 async fn session_cleanup_spans_every_kiln_in_the_callers_set() {
     let tmp = TempDir::new().unwrap();
     let sm = manager_for(&tmp);
-    let a = tmp.path().join("a");
-    let b = tmp.path().join("b");
+    let a = kiln_name("a");
+    let b = kiln_name("b");
     let old = "{\"type\":\"user\",\"ts\":\"2020-01-01T12:00:00Z\",\"content\":\"Old message\"}";
 
     let (_, on_a) = seed_scoped_session(&sm, vec![a.clone()], old).await;
     let (_, on_b) = seed_scoped_session(&sm, vec![b.clone()], old).await;
-    let (_, foreign) = seed_scoped_session(&sm, vec![tmp.path().join("elsewhere")], old).await;
+    let (_, foreign) = seed_scoped_session(&sm, vec![kiln_name("elsewhere")], old).await;
 
     let req = make_request(
         "session.cleanup",
         json!({
             "older_than_days": 1,
             "dry_run": false,
-            "kilns": [a.to_string_lossy(), b.to_string_lossy()],
+            "kilns": [a.as_str(), b.as_str()],
         }),
     );
     let resp = handle_session_cleanup(req, &sm).await;
@@ -579,7 +595,7 @@ async fn session_cleanup_without_a_scope_deletes_nothing() {
     let sm = manager_for(&tmp);
     let (_, dir) = seed_scoped_session(
         &sm,
-        vec![tmp.path().join("mine")],
+        vec![kiln_name("mine")],
         "{\"type\":\"user\",\"ts\":\"2020-01-01T12:00:00Z\",\"content\":\"Old message\"}",
     )
     .await;
@@ -603,8 +619,8 @@ async fn session_cleanup_sweeps_every_kiln_only_when_explicitly_asked() {
     let sm = manager_for(&tmp);
     let old = "{\"type\":\"user\",\"ts\":\"2020-01-01T12:00:00Z\",\"content\":\"Old message\"}";
 
-    let (_, ours) = seed_scoped_session(&sm, vec![tmp.path().join("mine")], old).await;
-    let (_, foreign) = seed_scoped_session(&sm, vec![tmp.path().join("theirs")], old).await;
+    let (_, ours) = seed_scoped_session(&sm, vec![kiln_name("mine")], old).await;
+    let (_, foreign) = seed_scoped_session(&sm, vec![kiln_name("theirs")], old).await;
     let (_, kilnless) = seed_scoped_session(&sm, vec![], old).await;
 
     let req = make_request(
@@ -635,7 +651,7 @@ async fn session_cleanup_sweeps_every_kiln_only_when_explicitly_asked() {
 /// built with an id like this in Rust, which is the property under test.
 async fn seed_session_with_persisted_id(
     sm: &SessionManager,
-    kilns: Vec<PathBuf>,
+    kilns: Vec<crucible_core::config::KilnName>,
     dir_name: &str,
     persisted_id: &str,
 ) -> PathBuf {
@@ -658,7 +674,7 @@ async fn seed_session_with_persisted_id(
 async fn cleanup_never_removes_a_directory_named_by_a_persisted_id() {
     let tmp = TempDir::new().unwrap();
     let sm = manager_for(&tmp);
-    let kiln = tmp.path().join("mine");
+    let kiln = kiln_name("mine");
 
     // A sibling of the sessions root: `{data_home}/backups`. It holds a
     // transcript-shaped file (so cleanup's age check has something to read)
@@ -677,7 +693,7 @@ async fn cleanup_never_removes_a_directory_named_by_a_persisted_id() {
 
     let req = make_request(
         "session.cleanup",
-        json!({ "older_than_days": 1, "dry_run": false, "kiln": kiln.to_string_lossy() }),
+        json!({ "older_than_days": 1, "dry_run": false, "kiln": kiln.as_str() }),
     );
     let resp = handle_session_cleanup(req, &sm).await;
 
@@ -698,7 +714,7 @@ async fn cleanup_never_removes_a_directory_named_by_a_persisted_id() {
 async fn list_persisted_never_reads_a_transcript_named_by_a_persisted_id() {
     let tmp = TempDir::new().unwrap();
     let sm = manager_for(&tmp);
-    let kiln = tmp.path().join("mine");
+    let kiln = kiln_name("mine");
 
     let bystander = tmp.path().join("backups");
     std::fs::create_dir_all(&bystander).unwrap();
@@ -710,10 +726,7 @@ async fn list_persisted_never_reads_a_transcript_named_by_a_persisted_id() {
 
     seed_session_with_persisted_id(&sm, vec![kiln.clone()], "chat-poisoned", "../backups").await;
 
-    let req = make_request(
-        "session.list_persisted",
-        json!({ "kiln": kiln.to_string_lossy() }),
-    );
+    let req = make_request("session.list_persisted", json!({ "kiln": kiln.as_str() }));
     let resp = handle_session_list_persisted(req, &sm).await;
 
     let rendered = format!("{:?}", resp.result);
@@ -730,13 +743,10 @@ async fn list_persisted_never_reads_a_transcript_named_by_a_persisted_id() {
 async fn a_session_whose_persisted_id_is_not_a_path_component_is_not_listed() {
     let tmp = TempDir::new().unwrap();
     let sm = manager_for(&tmp);
-    let kiln = tmp.path().join("mine");
+    let kiln = kiln_name("mine");
     seed_session_with_persisted_id(&sm, vec![kiln.clone()], "chat-poisoned", "../backups").await;
 
-    let req = make_request(
-        "session.list_persisted",
-        json!({ "kiln": kiln.to_string_lossy() }),
-    );
+    let req = make_request("session.list_persisted", json!({ "kiln": kiln.as_str() }));
     let resp = handle_session_list_persisted(req, &sm).await;
 
     assert!(

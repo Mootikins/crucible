@@ -120,8 +120,8 @@ pub(crate) async fn rebase(
     // The same root set the send path opens the ledger over, re-derived rather
     // than read from the ledger: the case this exists to recover from includes
     // a ledger that lost its base records and so has no roots left to name.
-    let mut roots = vec![session.workspace.clone()];
-    roots.extend(session.kilns.iter().cloned());
+    let mut roots: Vec<PathBuf> = session.workspace.iter().cloned().collect();
+    roots.extend(sm.kiln_paths(&session.kilns));
 
     // The storage directory rather than the journal path: a session that has
     // never run a turn has no journal registered, and a rebase whose records

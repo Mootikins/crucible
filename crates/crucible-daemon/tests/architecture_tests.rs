@@ -324,12 +324,12 @@ const SCOPE_METHODS: &[ScopeMethod] = &[
     ScopeMethod {
         client_fn: "session_connect_kiln",
         server_fn: "handle_session_connect_kiln",
-        request_fields: &["kiln_path"],
+        request_fields: &["kiln"],
     },
     ScopeMethod {
         client_fn: "session_disconnect_kiln",
         server_fn: "handle_session_disconnect_kiln",
-        request_fields: &["kiln_path"],
+        request_fields: &["kiln"],
     },
     ScopeMethod {
         client_fn: "session_set_workspace",

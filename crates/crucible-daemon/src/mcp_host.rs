@@ -226,11 +226,20 @@ mod tests {
         std::fs::write(victim.join("session.jsonl"), "MY-BANK-PASSWORD").unwrap();
         std::fs::write(home.path().join("note.md"), "kiln-grounded content").unwrap();
 
-        // The kiln IS the data root, which is what a kiln-less session gets.
-        let session =
-            crucible_core::Session::new(SessionType::Chat, vec![home.path().to_path_buf()]);
+        // The kiln IS the data root. Production refuses to register that at
+        // all now — the registry denies the data root and every ancestor — so
+        // the entry is minted against a different data root, and what stays
+        // under test is that containment refuses it again on its own.
+        let registry = crate::test_support::kiln_registry(
+            std::path::Path::new("/nonexistent-data-root"),
+            &[("kiln", home.path())],
+        );
+        let session = crucible_core::Session::new(
+            SessionType::Chat,
+            vec![crate::test_support::kiln_name("kiln")],
+        );
         let containment =
-            crate::agent_manager::scope::session_containment(&session, &sessions_root);
+            crate::agent_manager::scope::session_containment(&session, &sessions_root, &registry);
 
         let server = InProcessMcpHost::build_server(
             home.path(),

@@ -223,7 +223,7 @@ async fn create_session_returns_200_with_session_id() {
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
-                        "kilns": ["/tmp/test-kiln"],
+                        "kilns": ["test-kiln"],
                         "provider": "ollama",
                         "model": "llama3.2"
                     })
@@ -261,7 +261,7 @@ async fn create_session_with_private_ip_endpoint_returns_422() {
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
-                        "kilns": ["/tmp/test-kiln"],
+                        "kilns": ["test-kiln"],
                         "provider": "openai",
                         "model": "gpt-4o",
                         "endpoint": "http://10.0.0.1/v1"
@@ -289,7 +289,7 @@ async fn create_session_with_defaults_uses_ollama() {
                 .method("POST")
                 .uri("/api/session")
                 .header("content-type", "application/json")
-                .body(Body::from(json!({"kilns": ["/tmp/test-kiln"]}).to_string()))
+                .body(Body::from(json!({"kilns": ["test-kiln"]}).to_string()))
                 .unwrap(),
         )
         .await
@@ -514,15 +514,15 @@ async fn connect_kiln_returns_scope_shape() {
     let (status, json) = send_json(
         "POST",
         "/api/session/test-session-001/kilns/connect",
-        json!({"kiln": "/tmp/extra-kiln"}),
+        json!({"kiln": "extra-kiln"}),
     )
     .await;
 
     assert_eq!(status, StatusCode::OK, "body: {json}");
     assert_eq!(json["session_id"], "test-session-001");
-    assert_eq!(json["kilns"][0], "/tmp/test-kiln");
+    assert_eq!(json["kilns"][0], "test-kiln");
     assert_eq!(json["workspace"], "/tmp/test-kiln");
-    assert_eq!(json["kilns"][1], "/tmp/extra-kiln");
+    assert_eq!(json["kilns"][1], "extra-kiln");
 }
 
 #[tokio::test]
@@ -530,7 +530,7 @@ async fn disconnect_kiln_returns_scope_shape() {
     let (status, json) = send_json(
         "POST",
         "/api/session/test-session-001/kilns/disconnect",
-        json!({"kiln": "/tmp/extra-kiln"}),
+        json!({"kiln": "extra-kiln"}),
     )
     .await;
 
@@ -658,7 +658,7 @@ async fn create_session_forwards_the_isolation_value_untouched() {
     // A profile name is the isolating plugin's vocabulary; the web neither
     // validates it nor rewrites it.
     let params = create_session_wire_params(json!({
-        "kilns": ["/tmp/test-kiln"],
+        "kilns": ["test-kiln"],
         "isolation": "throwaway"
     }))
     .await;
@@ -667,7 +667,7 @@ async fn create_session_forwards_the_isolation_value_untouched() {
     // `false` is a real instruction ("no container even if the project has
     // one"), not a falsy value to drop.
     let params = create_session_wire_params(json!({
-        "kilns": ["/tmp/test-kiln"],
+        "kilns": ["test-kiln"],
         "isolation": false
     }))
     .await;
@@ -675,7 +675,7 @@ async fn create_session_forwards_the_isolation_value_untouched() {
 
     // An object the web has no type for reaches the plugin that defined it.
     let params = create_session_wire_params(json!({
-        "kilns": ["/tmp/test-kiln"],
+        "kilns": ["test-kiln"],
         "isolation": {"image": "docker.io/library/alpine:latest"}
     }))
     .await;
@@ -689,7 +689,7 @@ async fn create_session_forwards_the_isolation_value_untouched() {
 async fn create_session_without_isolation_omits_the_field_from_the_wire() {
     // Absent ("resolve normally") and `false` ("no container") are different
     // instructions to the plugin; a `null` on the wire would collapse them.
-    let params = create_session_wire_params(json!({"kilns": ["/tmp/test-kiln"]})).await;
+    let params = create_session_wire_params(json!({"kilns": ["test-kiln"]})).await;
     assert!(
         params.get("isolation").is_none(),
         "isolation must be absent, not null: {params}"

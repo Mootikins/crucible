@@ -1,5 +1,5 @@
 use super::*;
-use crate::test_support::temp_session_manager;
+use crate::test_support::{kiln_name, temp_session_manager, temp_session_manager_with_kilns};
 use async_trait::async_trait;
 use crucible_core::events::handler::{Handler, HandlerContext, HandlerResult};
 use crucible_core::events::{InternalSessionEvent, SessionEvent};
@@ -455,12 +455,16 @@ struct ReactorTestHarness {
 impl ReactorTestHarness {
     async fn new() -> Self {
         let tmp = TempDir::new().unwrap();
-        let session_manager = temp_session_manager();
+        let session_manager = temp_session_manager_with_kilns(&[("kiln", tmp.path())]);
         let session = session_manager
             .create_session(
                 SessionType::Chat,
-                vec![tmp.path().to_path_buf()],
-                None,
+                vec![kiln_name("kiln")],
+                // Explicit: `Self::workspace()` hands this directory to tests
+                // that seed files the agent's tools must reach. It used to be
+                // the session's workspace only by the `workspace == kilns[0]`
+                // sentinel.
+                Some(tmp.path().to_path_buf()),
                 None,
             )
             .await
@@ -605,13 +609,17 @@ async fn setup_session_manager() -> (
     crucible_core::session::Session,
 ) {
     let tmp = TempDir::new().unwrap();
-    let session_manager = temp_session_manager();
+    let session_manager = temp_session_manager_with_kilns(&[("kiln", tmp.path())]);
 
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
+            vec![kiln_name("kiln")],
+            // Explicit: callers seed files in `tmp` and dispatch relative-path
+            // tools against them, which anchors at the session's WORKSPACE.
+            // That used to be `tmp` only via the `workspace == kilns[0]`
+            // sentinel.
+            Some(tmp.path().to_path_buf()),
             None,
         )
         .await

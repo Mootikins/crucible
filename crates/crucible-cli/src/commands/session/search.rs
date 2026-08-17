@@ -18,7 +18,7 @@ pub(super) async fn search(
     let result = client
         .session_search(
             &query,
-            std::slice::from_ref(&config.kiln_path),
+            config.session_kiln_name().as_slice(),
             Some(limit as usize),
         )
         .await

@@ -6,7 +6,7 @@
 use crucible_core::session::SessionType;
 use crucible_daemon::background_manager::BackgroundJobManager;
 use crucible_daemon::protocol::SessionEventMessage;
-use crucible_daemon::test_support::temp_session_manager;
+use crucible_daemon::test_support::{kiln_name, temp_session_manager};
 use crucible_daemon::{AgentManager, AgentManagerParams, KilnManager, SessionManager};
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -47,12 +47,7 @@ impl TestHarness {
         });
 
         let session = session_manager
-            .create_session(
-                SessionType::Chat,
-                vec![temp_dir.path().to_path_buf()],
-                None,
-                None,
-            )
+            .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
             .await
             .expect("failed to create session");
 

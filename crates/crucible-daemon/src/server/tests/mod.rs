@@ -51,7 +51,7 @@ pub(super) use crate::test_fixtures::{
     build_llm_config, build_llm_config_with_trust, test_agent_manager,
 };
 
-pub(super) fn create_session_request(kiln: &Path, workspace: &Path, provider_key: &str) -> Request {
+pub(super) fn create_session_request(kiln: &str, workspace: &Path, provider_key: &str) -> Request {
     serde_json::from_value(json!({
         "jsonrpc": "2.0",
         "id": 1,
@@ -112,7 +112,7 @@ pub(super) fn extract_session_id(response: &Value) -> String {
         .to_string()
 }
 
-pub(super) async fn create_chat_session(client: &mut UnixStream, kiln: &Path, id: u64) -> String {
+pub(super) async fn create_chat_session(client: &mut UnixStream, kiln: &str, id: u64) -> String {
     let response = rpc_call(
         client,
         json!({
@@ -152,6 +152,10 @@ pub(super) struct TestServer {
 }
 
 impl TestServer {
+    /// The registry name [`TestServer::kiln_path`] is registered under. Kilns
+    /// are addressed by name everywhere on the RPC surface.
+    pub(super) const KILN: &'static str = "kiln";
+
     /// Binds and spawns a server against a fresh tempdir data home (with a
     /// `kiln` subdirectory pre-created), then waits for it to start
     /// accepting connections.
@@ -161,9 +165,17 @@ impl TestServer {
         let kiln_path = tmp.path().join("kiln");
         std::fs::create_dir_all(&kiln_path).unwrap();
 
-        let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-            .await
-            .unwrap();
+        // The kiln is registered under the name `kiln`, which is how every
+        // request below addresses it. A fixture that skipped this would have a
+        // daemon with no kilns, and every scoped call would be refused for
+        // reasons unrelated to what the test is checking.
+        let server = Server::bind_with_data_home_and_kilns(
+            &sock_path,
+            tmp.path().to_path_buf(),
+            &[("kiln", &kiln_path)],
+        )
+        .await
+        .unwrap();
         let event_tx = server.event_sender();
         let kiln_manager = server.kiln_manager.clone();
         let shutdown_tx = server.shutdown_handle();

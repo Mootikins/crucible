@@ -4,7 +4,7 @@ use super::*;
 async fn test_session_switch_model_rpc_success_and_empty_model_error() {
     let server = TestServer::start().await;
     let mut client = server.connect().await;
-    let session_id = create_chat_session(&mut client, &server.kiln_path, 80).await;
+    let session_id = create_chat_session(&mut client, TestServer::KILN, 80).await;
     let configure_response =
         configure_internal_mock_agent(&mut client, &session_id, 81, "mock-initial").await;
     assert!(
@@ -54,7 +54,7 @@ async fn test_session_switch_model_rpc_success_and_empty_model_error() {
 async fn test_session_list_models_rpc_success_and_missing_param_error() {
     let server = TestServer::start().await;
     let mut client = server.connect().await;
-    let session_id = create_chat_session(&mut client, &server.kiln_path, 90).await;
+    let session_id = create_chat_session(&mut client, TestServer::KILN, 90).await;
 
     let ok_response = rpc_call(
         &mut client,
@@ -140,7 +140,7 @@ async fn test_models_list_rpc_no_session() {
 async fn test_session_set_thinking_budget_rpc_success_and_missing_session_id_error() {
     let server = TestServer::start().await;
     let mut client = server.connect().await;
-    let session_id = create_chat_session(&mut client, &server.kiln_path, 100).await;
+    let session_id = create_chat_session(&mut client, TestServer::KILN, 100).await;
     let configure_response =
         configure_internal_mock_agent(&mut client, &session_id, 101, "mock-budget").await;
     assert!(
@@ -193,7 +193,7 @@ async fn test_session_set_thinking_budget_rpc_success_and_missing_session_id_err
 async fn session_list_modes_reports_the_session_s_own_current_mode() {
     let server = TestServer::start().await;
     let mut client = server.connect().await;
-    let session_id = create_chat_session(&mut client, &server.kiln_path, 110).await;
+    let session_id = create_chat_session(&mut client, TestServer::KILN, 110).await;
     configure_internal_mock_agent(&mut client, &session_id, 111, "mock-initial").await;
 
     let before = rpc_call(

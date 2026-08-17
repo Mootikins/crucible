@@ -17,11 +17,16 @@ pub struct SessionSummary {
     pub id: SessionId,
     /// Session type
     pub session_type: SessionType,
-    /// Kilns this session can query
+    /// Kilns this session can query, by registry name. See [`Session::kilns`].
     #[serde(default)]
-    pub kilns: Vec<PathBuf>,
-    /// Workspace
-    pub workspace: PathBuf,
+    pub kilns: Vec<crate::config::KilnName>,
+    /// Workspace, when the session has one. See [`Session::workspace`].
+    ///
+    /// Serialized even when absent — every listing consumer reads this field,
+    /// and an omitted key is `undefined` on the web side where the contract
+    /// says `string | null`.
+    #[serde(default)]
+    pub workspace: Option<PathBuf>,
     /// Current state
     pub state: SessionState,
     /// When started

@@ -295,9 +295,10 @@ async fn create_daemon_agent_inner(
             (id.clone(), false)
         }
         Some(_) => {
+            let session_kiln = config.session_kiln_name();
             let sessions = client
                 .session_list(
-                    Some(&config.kiln_path),
+                    session_kiln.as_ref(),
                     Some(&workspace),
                     Some("chat"),
                     Some("active"),
@@ -371,7 +372,7 @@ async fn create_daemon_agent_inner(
     } else {
         DaemonAgentHandle::new_and_subscribe(client, session_id.clone(), event_rx).await?
     }
-    .with_kiln_path(config.kiln_path.clone())
+    .with_kiln(config.session_kiln_name())
     .with_workspace(workspace.clone());
 
     if let Some(agent) = session_agent {
@@ -398,7 +399,7 @@ async fn create_new_daemon_session(
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![config.session_kiln_path()],
+            kilns: config.session_kiln_name().into_iter().collect(),
             workspace: Some(workspace.to_path_buf()),
             recording_mode: recording_mode.map(|m| m.to_string()),
             recording_path: recording_path.map(|p| p.to_path_buf()),

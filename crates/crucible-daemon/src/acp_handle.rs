@@ -177,7 +177,10 @@ impl AcpAgentHandle {
                 timeout_secs: delegation_config.map(|c| c.timeout_secs).unwrap_or(300),
                 data_classification: kiln_path
                     .and_then(|kiln| {
-                        crate::trust_resolution::resolve_session_classification(workspace, kiln)
+                        crate::trust_resolution::resolve_session_classification(
+                            Some(workspace),
+                            kiln,
+                        )
                     })
                     .unwrap_or(DataClassification::Public),
             }),

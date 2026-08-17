@@ -26,8 +26,32 @@ impl TestServer {
         let temp_dir = tempfile::tempdir()?;
         let socket_path = temp_dir.path().join("daemon.sock");
 
-        let server =
-            Server::bind_with_data_home(&socket_path, temp_dir.path().to_path_buf()).await?;
+        // Three registered kilns: the one every session is created with, a
+        // second to attach mid-session, and one classified Confidential so the
+        // trust gate has something to refuse. All outside the data root, which
+        // the registration floor denies.
+        let kiln = temp_dir.path().join("kilns").join("kiln");
+        let extra = temp_dir.path().join("kilns").join("extra-kiln");
+        let classified = temp_dir.path().join("kilns").join("classified");
+        for dir in [&kiln, &extra, &classified] {
+            std::fs::create_dir_all(dir)?;
+        }
+        std::fs::create_dir_all(classified.join(".crucible"))?;
+        std::fs::write(
+            classified.join(".crucible").join("project.toml"),
+            "[[kilns]]\npath = \".\"\ndata_classification = \"confidential\"\n",
+        )?;
+
+        let server = Server::bind_with_data_home_and_kilns(
+            &socket_path,
+            temp_dir.path().to_path_buf(),
+            &[
+                ("kiln", &kiln),
+                ("extra-kiln", &extra),
+                ("classified", &classified),
+            ],
+        )
+        .await?;
         let shutdown_handle = server.shutdown_handle();
 
         let server_handle = tokio::spawn(async move {
@@ -63,11 +87,15 @@ impl TestServer {
     }
 }
 
-async fn create_session(client: &DaemonClient, kiln: &std::path::Path) -> String {
+fn kiln_name(name: &str) -> crucible_core::config::KilnName {
+    crucible_core::config::KilnName::parse(name).expect("a valid test kiln name")
+}
+
+async fn create_session(client: &DaemonClient) -> String {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![kiln.to_path_buf()],
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
             recording_mode: None,
             recording_path: None,
@@ -86,35 +114,30 @@ async fn create_session(client: &DaemonClient, kiln: &std::path::Path) -> String
 #[tokio::test]
 async fn connect_then_disconnect_kiln_roundtrips() {
     let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().unwrap();
-    let extra_kiln = tempfile::tempdir().unwrap();
 
     let client = DaemonClient::connect_to(&server.socket_path)
         .await
         .expect("Failed to connect");
-    let session_id = create_session(&client, kiln_dir.path()).await;
+    let session_id = create_session(&client).await;
 
-    let created_with = vec![serde_json::json!(kiln_dir.path())];
-    let with_extra = vec![
-        serde_json::json!(kiln_dir.path()),
-        serde_json::json!(extra_kiln.path()),
-    ];
+    let created_with = vec![serde_json::json!("kiln")];
+    let with_extra = vec![serde_json::json!("kiln"), serde_json::json!("extra-kiln")];
 
     let scope = client
-        .session_connect_kiln(&session_id, extra_kiln.path())
+        .session_connect_kiln(&session_id, &kiln_name("extra-kiln"))
         .await
         .expect("connect_kiln failed");
     assert_eq!(scope["kilns"].as_array(), Some(&with_extra));
 
     // Idempotent: connecting again doesn't duplicate.
     let scope = client
-        .session_connect_kiln(&session_id, extra_kiln.path())
+        .session_connect_kiln(&session_id, &kiln_name("extra-kiln"))
         .await
         .expect("second connect_kiln failed");
     assert_eq!(scope["kilns"].as_array(), Some(&with_extra));
 
     let scope = client
-        .session_disconnect_kiln(&session_id, extra_kiln.path())
+        .session_disconnect_kiln(&session_id, &kiln_name("extra-kiln"))
         .await
         .expect("disconnect_kiln failed");
     assert_eq!(scope["kilns"].as_array(), Some(&created_with));
@@ -133,15 +156,13 @@ async fn connect_then_disconnect_kiln_roundtrips() {
 #[tokio::test]
 async fn the_kiln_a_session_was_created_with_detaches_like_any_other() {
     let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().unwrap();
-
     let client = DaemonClient::connect_to(&server.socket_path)
         .await
         .expect("Failed to connect");
-    let session_id = create_session(&client, kiln_dir.path()).await;
+    let session_id = create_session(&client).await;
 
     let scope = client
-        .session_disconnect_kiln(&session_id, kiln_dir.path())
+        .session_disconnect_kiln(&session_id, &kiln_name("kiln"))
         .await
         .expect("detaching the create-time kiln is allowed");
     assert_eq!(
@@ -152,27 +173,26 @@ async fn the_kiln_a_session_was_created_with_detaches_like_any_other() {
     );
 
     let scope = client
-        .session_connect_kiln(&session_id, kiln_dir.path())
+        .session_connect_kiln(&session_id, &kiln_name("kiln"))
         .await
         .expect("re-attaching it is an ordinary connect");
     assert_eq!(
         scope["kilns"].as_array(),
-        Some(&vec![serde_json::json!(kiln_dir.path())])
+        Some(&vec![serde_json::json!("kiln")])
     );
 
     server.shutdown().await;
 }
 
 #[tokio::test]
-async fn set_workspace_attaches_and_detach_falls_back_to_kiln() {
+async fn set_workspace_attaches_and_detach_leaves_the_session_with_none() {
     let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().unwrap();
     let project_dir = tempfile::tempdir().unwrap();
 
     let client = DaemonClient::connect_to(&server.socket_path)
         .await
         .expect("Failed to connect");
-    let session_id = create_session(&client, kiln_dir.path()).await;
+    let session_id = create_session(&client).await;
 
     let scope = client
         .session_set_workspace(&session_id, Some(project_dir.path()))
@@ -183,14 +203,25 @@ async fn set_workspace_attaches_and_detach_falls_back_to_kiln() {
         project_dir.path().to_string_lossy()
     );
 
-    // Detach: workspace falls back to the kiln path (the workspace-less state).
+    // Detach: the session then has NO workspace, and says so on the wire.
+    // It used to be handed back the kiln path, which left every client
+    // re-deriving `workspace == kilns[0]` to tell "no project" from "the
+    // project is the kiln" — and the web UI had its own copy of that rule.
     let scope = client
         .session_set_workspace(&session_id, None)
         .await
         .expect("workspace detach failed");
-    assert_eq!(
-        scope["workspace"].as_str().unwrap(),
-        kiln_dir.path().to_string_lossy()
+    assert!(
+        scope["workspace"].is_null(),
+        "detach must report no workspace, got {}",
+        scope["workspace"]
+    );
+    assert!(
+        !scope["workspace"]
+            .as_str()
+            .is_some_and(|w| w.ends_with("kilns/kiln")),
+        "and specifically not the kiln path: {}",
+        scope["workspace"]
     );
 
     server.shutdown().await;
@@ -199,27 +230,17 @@ async fn set_workspace_attaches_and_detach_falls_back_to_kiln() {
 #[tokio::test]
 async fn connect_kiln_rejected_by_trust_leaves_kiln_unopened() {
     let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().unwrap();
-
-    // A kiln classified Confidential (requires Local trust). The session below
-    // has no agent, so its provider trust resolves to Cloud, which cannot
-    // satisfy Confidential — the attach must be refused.
-    let classified_kiln = tempfile::tempdir().unwrap();
-    let crucible_dir = classified_kiln.path().join(".crucible");
-    std::fs::create_dir_all(&crucible_dir).unwrap();
-    std::fs::write(
-        crucible_dir.join("project.toml"),
-        "[[kilns]]\npath = \".\"\ndata_classification = \"confidential\"\n",
-    )
-    .unwrap();
+    // A kiln classified Confidential (requires Local trust), registered by the
+    // fixture. The session below has no agent, so its provider trust resolves
+    // to Cloud, which cannot satisfy Confidential — the attach must be refused.
 
     let client = DaemonClient::connect_to(&server.socket_path)
         .await
         .expect("Failed to connect");
-    let session_id = create_session(&client, kiln_dir.path()).await;
+    let session_id = create_session(&client).await;
 
     let err = client
-        .session_connect_kiln(&session_id, classified_kiln.path())
+        .session_connect_kiln(&session_id, &kiln_name("classified"))
         .await
         .expect_err("trust-rejected attach must fail");
     assert!(
@@ -229,16 +250,10 @@ async fn connect_kiln_rejected_by_trust_leaves_kiln_unopened() {
 
     // The refusal must leave no side effect: the rejected kiln was never opened,
     // so it must not surface in kiln.list (where it would otherwise be indexed).
-    let classified_name = classified_kiln
-        .path()
-        .file_name()
-        .unwrap()
-        .to_string_lossy()
-        .into_owned();
     let listed = serde_json::to_string(&client.kiln_list().await.expect("kiln.list failed"))
         .expect("serialize kiln list");
     assert!(
-        !listed.contains(&classified_name),
+        !listed.contains("classified"),
         "rejected kiln leaked into kiln.list: {listed}"
     );
 
@@ -246,7 +261,7 @@ async fn connect_kiln_rejected_by_trust_leaves_kiln_unopened() {
     let session = client.session_get(&session_id).await.unwrap();
     assert_eq!(
         session["kilns"].as_array(),
-        Some(&vec![serde_json::json!(kiln_dir.path())])
+        Some(&vec![serde_json::json!("kiln")])
     );
 
     server.shutdown().await;
@@ -255,12 +270,10 @@ async fn connect_kiln_rejected_by_trust_leaves_kiln_unopened() {
 #[tokio::test]
 async fn set_workspace_rejects_nonexistent_directory() {
     let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().unwrap();
-
     let client = DaemonClient::connect_to(&server.socket_path)
         .await
         .expect("Failed to connect");
-    let session_id = create_session(&client, kiln_dir.path()).await;
+    let session_id = create_session(&client).await;
 
     let err = client
         .session_set_workspace(

@@ -441,7 +441,7 @@ mod tests {
             knowledge_repo: create_knowledge_repository(store),
         }];
 
-        let results = search_across_kilns(&sources, vec![0.0, 1.0, 0.0], 5, None, &kiln_path)
+        let results = search_across_kilns(&sources, vec![0.0, 1.0, 0.0], 5, None, Some(&kiln_path))
             .await
             .expect("search");
 

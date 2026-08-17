@@ -240,6 +240,14 @@ pub struct TempSessionStorage {
     _root: tempfile::TempDir,
 }
 
+impl TempSessionStorage {
+    /// The registry this storage resolves persisted kilns against, so a
+    /// `SessionManager` built over it resolves names the same way.
+    pub fn kiln_registry(&self) -> &std::sync::Arc<crate::kiln_registry::KilnRegistry> {
+        self.inner.kiln_registry()
+    }
+}
+
 #[async_trait]
 impl crate::session_storage::SessionStorage for TempSessionStorage {
     fn sessions_root(&self) -> &std::path::Path {
@@ -303,19 +311,154 @@ impl crate::session_storage::SessionStorage for TempSessionStorage {
 
 /// Storage over a private, self-owned temp root. See [`TempSessionStorage`].
 pub fn temp_session_storage() -> std::sync::Arc<TempSessionStorage> {
+    temp_session_storage_with_kilns(&[])
+}
+
+/// [`temp_session_storage`], plus `extra` kiln entries pointing at directories
+/// the test owns.
+///
+/// For the tests that need a kiln name to resolve to a *specific* directory —
+/// one holding a `kiln.toml` classification, or the notes a search is expected
+/// to find. Those directories must lie outside the storage's own data root, or
+/// the registration floor refuses them for enclosing every transcript, which is
+/// exactly what it is there for.
+pub fn temp_session_storage_with_kilns(
+    extra: &[(&str, &std::path::Path)],
+) -> std::sync::Arc<TempSessionStorage> {
     use crate::session_storage::FileSessionStorage;
     let root = tempfile::TempDir::new().expect("temp dir for session storage");
+    let owned: Vec<(&str, std::path::PathBuf)> = TEMP_KILNS
+        .iter()
+        .map(|name| (*name, root.path().join("kilns").join(name)))
+        .collect();
+    let mut kilns: Vec<(&str, &std::path::Path)> = extra.to_vec();
+    // The caller's entries first, so a name they bound wins over the stock one.
+    kilns.extend(
+        owned
+            .iter()
+            .filter(|(name, _)| !extra.iter().any(|(n, _)| n == name))
+            .map(|(name, path)| (*name, path.as_path())),
+    );
     std::sync::Arc::new(TempSessionStorage {
-        inner: FileSessionStorage::new(FileSessionStorage::root_for(root.path())),
+        inner: FileSessionStorage::new(FileSessionStorage::root_for(root.path()))
+            .with_registry(kiln_registry(root.path(), &kilns)),
         _root: root,
     })
 }
+
+/// The kiln names [`temp_session_storage`] registers.
+///
+/// A storage whose registry is empty resolves no persisted kiln, so a session
+/// saved and reloaded through one comes back kiln-less. That is the correct
+/// behaviour — an unresolvable path is not a kiln — and it is useless as a
+/// fixture, because almost every test here wants "a kiln that exists" and cares
+/// about something else entirely. These are ordinary directories under the same
+/// temp root, registered through the real builder, so `kiln_name("kiln")`
+/// survives a round trip without any test having to build a registry of its
+/// own.
+///
+/// Anything NOT in this list is unregistered on purpose: that is how a test
+/// spells "a name no entry claims".
+pub const TEMP_KILNS: &[&str] = &[
+    "kiln",
+    "kiln1",
+    "kiln2",
+    "extra-kiln",
+    "other-kiln",
+    "notes",
+    "reference",
+    "vault",
+    "mine",
+    "theirs",
+    "a",
+    "b",
+    "elsewhere",
+    "workspace",
+];
 
 /// A [`SessionManager`](crate::session_manager::SessionManager) over
 /// [`temp_session_storage`], for the many tests that need a manager but never
 /// assert on where its sessions landed.
 pub fn temp_session_manager() -> std::sync::Arc<crate::session_manager::SessionManager> {
-    std::sync::Arc::new(crate::session_manager::SessionManager::with_storage(
-        temp_session_storage(),
-    ))
+    temp_session_manager_with_kilns(&[])
+}
+
+/// [`temp_session_manager`] over [`temp_session_storage_with_kilns`].
+pub fn temp_session_manager_with_kilns(
+    extra: &[(&str, &std::path::Path)],
+) -> std::sync::Arc<crate::session_manager::SessionManager> {
+    let storage = temp_session_storage_with_kilns(extra);
+    let registry = storage.kiln_registry().clone();
+    std::sync::Arc::new(
+        crate::session_manager::SessionManager::with_storage(storage).with_kiln_registry(registry),
+    )
+}
+
+/// A kiln name, straight through the validating parser production uses.
+///
+/// Tests name kilns with fixed strings; this is how they get a
+/// [`KilnName`](crucible_core::config::KilnName) without a second, laxer
+/// constructor existing for their benefit.
+pub fn kiln_name(name: &str) -> crucible_core::config::KilnName {
+    crucible_core::config::KilnName::parse(name).expect("a valid test kiln name")
+}
+
+/// A kiln registry over `kilns`, built the way the daemon builds its own.
+///
+/// Goes through [`KilnRegistry::from_app_config`] rather than reaching into the
+/// map, so a test's registry has been through the same floor, the same `~`
+/// expansion and the same collision rules as the real one — a fixture that
+/// skipped them would prove nothing about the code under test.
+///
+/// `data_home` is both the anchor for relative paths and the data root the
+/// floor refuses, so a test that names a kiln inside its own temp data root
+/// gets the production refusal rather than a fixture-only permit.
+pub fn kiln_registry(
+    data_home: &std::path::Path,
+    kilns: &[(&str, &std::path::Path)],
+) -> std::sync::Arc<crate::kiln_registry::KilnRegistry> {
+    let entries: serde_json::Map<String, serde_json::Value> = kilns
+        .iter()
+        .map(|(name, path)| {
+            (
+                (*name).to_string(),
+                serde_json::Value::String(path.to_string_lossy().into_owned()),
+            )
+        })
+        .collect();
+    std::sync::Arc::new(
+        crate::kiln_registry::KilnRegistry::from_app_config(
+            crate::kiln_registry::KilnRegistryContext::new(
+                data_home.to_path_buf(),
+                None,
+                data_home.to_path_buf(),
+            ),
+            Some(&serde_json::Value::Object(
+                [("kilns".to_string(), serde_json::Value::Object(entries))]
+                    .into_iter()
+                    .collect(),
+            )),
+        )
+        .expect("a test kiln registry with no name collisions"),
+    )
+}
+
+/// A [`SessionManager`](crate::session_manager::SessionManager) rooted under
+/// `data_home` whose registry — and whose storage layer's registry — know
+/// `kilns`.
+///
+/// Both halves come from one registry for the reason the daemon's own
+/// composition root gives: two would be two answers to "which directory is
+/// `notes`", and the load path and the scope path would disagree.
+pub fn session_manager_with_kilns(
+    data_home: &std::path::Path,
+    kilns: &[(&str, &std::path::Path)],
+) -> crate::session_manager::SessionManager {
+    let registry = kiln_registry(data_home, kilns);
+    let storage = crate::session_storage::FileSessionStorage::new(
+        crate::session_storage::FileSessionStorage::root_for(data_home),
+    )
+    .with_registry(registry.clone());
+    crate::session_manager::SessionManager::with_storage(std::sync::Arc::new(storage))
+        .with_kiln_registry(registry)
 }

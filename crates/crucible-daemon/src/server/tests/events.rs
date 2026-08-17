@@ -112,14 +112,14 @@ async fn test_events_auto_persisted() {
     use std::time::Duration;
 
     let server = TestServer::start().await;
-    let kiln_path = server.kiln_path.clone();
+    let _kiln_path = server.kiln_path.clone();
     let event_tx = server.event_tx.clone();
     let mut client = server.connect().await;
 
     // Create a session
     let create_req = format!(
         r#"{{"jsonrpc":"2.0","id":1,"method":"session.create","params":{{"type":"chat","kilns":["{}"]}}}}"#,
-        kiln_path.display()
+        TestServer::KILN
     );
     client.write_all(create_req.as_bytes()).await.unwrap();
     client.write_all(b"\n").await.unwrap();

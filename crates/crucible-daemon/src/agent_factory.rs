@@ -58,8 +58,9 @@ pub struct CreateAgentFromSessionConfigParams<'a> {
     pub lua: Option<&'a Lua>,
     pub workspace: &'a Path,
     pub kiln_path: Option<&'a Path>,
-    /// Every kiln the session reaches. Flat: the prompt lists them all alike.
-    pub session_kilns: &'a [std::path::PathBuf],
+    /// Every kiln the session reaches, by registry name. Flat: the prompt
+    /// lists them all alike.
+    pub session_kilns: &'a [crucible_core::config::KilnName],
     pub parent_session_id: Option<&'a str>,
     pub background_spawner: Option<Arc<dyn BackgroundSpawner>>,
     pub delegation_spawner: Option<Arc<dyn crate::delegation::DelegationSpawner>>,
@@ -98,7 +99,7 @@ pub(crate) fn build_internal_delegation_context(
     parent_session_id: Option<&str>,
     background_spawner: Option<Arc<dyn BackgroundSpawner>>,
     delegation_spawner: Option<Arc<dyn crate::delegation::DelegationSpawner>>,
-    workspace: &Path,
+    workspace: Option<&Path>,
     kiln_path: Option<&Path>,
 ) -> Option<DelegationContext> {
     let session_id = parent_session_id?;
@@ -420,7 +421,7 @@ impl EnrichedPrompt {
 fn build_enriched_prompt(
     workspace: &Path,
     kiln_path: Option<&Path>,
-    session_kilns: &[std::path::PathBuf],
+    session_kilns: &[crucible_core::config::KilnName],
     base_prompt: &str,
     rules: &str,
     skills_catalog: &str,
@@ -455,14 +456,15 @@ fn build_enriched_prompt(
 
     // List knowledge bases by name. No member is marked out: the agent reads
     // and searches every one of them on the same terms.
-    let kb_names: Vec<String> = session_kilns
-        .iter()
-        .filter_map(|kiln| crucible_core::config::read_kiln_config(kiln))
-        .map(|cfg| cfg.kiln.name)
-        .collect();
-    if !kb_names.is_empty() {
+    //
+    // The name is the REGISTRY key — the one the user types and the one the
+    // rest of the API answers to. It used to be read out of each kiln's own
+    // `kiln.toml`, which is a name the kiln asserts about itself: two kilns
+    // could claim the same one, and neither had to match anything a caller
+    // could say back to us.
+    if !session_kilns.is_empty() {
         volatile.push_str("\nKnowledge bases:\n");
-        for name in &kb_names {
+        for name in session_kilns {
             volatile.push_str(&format!("- {}\n", name));
         }
     }
@@ -688,7 +690,7 @@ pub async fn create_agent_from_session_config(
         parent_session_id,
         background_spawner.clone(),
         delegation_spawner.clone(),
-        workspace,
+        Some(workspace),
         kiln_path,
     );
     let (tool_defs, deferrable_tool_names, plugin_tool_names) =

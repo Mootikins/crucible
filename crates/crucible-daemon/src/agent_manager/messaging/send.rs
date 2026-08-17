@@ -93,12 +93,19 @@ impl AgentManager {
             }
         }
 
+        // Where the agent's tools act. A session with no workspace still
+        // anchors somewhere concrete; see `scope::session_tool_root`.
+        let tool_root = crate::agent_manager::scope::session_tool_root(
+            &session,
+            self.session_manager.sessions_root(),
+        );
+
         let event_tx_clone = event_tx.clone();
         let agent = match self
             .get_or_create_agent(
                 session_id,
                 &agent_config,
-                &session.workspace,
+                &tool_root,
                 &event_tx_clone,
                 is_interactive,
                 permission_override,
@@ -161,7 +168,7 @@ impl AgentManager {
             t.current()
         };
         let snapshot = crate::workspace_snapshot::WorkspaceSnapshot::create(
-            &session.workspace,
+            &tool_root,
             session_id,
             snapshot_key_node.index(),
         )
@@ -184,8 +191,11 @@ impl AgentManager {
         // restart, which is why this restores from `review.jsonl` rather than
         // opening blind. A journal that exists and will not read is an error
         // here, never a fresh base.
-        let mut review_roots = vec![session.workspace.clone()];
-        review_roots.extend(session.kilns.iter().cloned());
+        // The workspace only when there IS one — never the tool anchor, which
+        // for a workspace-less session is its own storage directory, and the
+        // comment above says exactly why that must not be review material.
+        let mut review_roots: Vec<std::path::PathBuf> = session.workspace.iter().cloned().collect();
+        review_roots.extend(self.session_manager.kiln_paths(&session.kilns));
         if let Err(e) = self
             .review
             .open_or_restore(
@@ -280,7 +290,7 @@ impl AgentManager {
         // and regardless of Precognition: attaching a file is something the
         // user did on purpose, so it is not subject to the auto-RAG gate.
         let attachment_message = crate::agent_manager::attachments::build_attachment_message(
-            &session.workspace,
+            &tool_root,
             &original_content,
         );
         if attachment_message.is_some() {
@@ -347,7 +357,7 @@ impl AgentManager {
             message_id: message_id.clone(),
             event_tx: event_tx_clone.clone(),
             session_state: self.get_or_create_session_state(session_id),
-            workspace_path: session.workspace.clone(),
+            workspace_path: tool_root.clone(),
             session_dir: session.storage_path(self.session_manager.sessions_root()),
             agent_stream_config: {
                 let (lua_validators, plugin_lua) = match self.lua_validators() {
@@ -487,6 +497,31 @@ impl AgentManager {
         Ok(message_id)
     }
 
+    /// Re-run the attach-time trust gate over a session that just came off
+    /// disk.
+    ///
+    /// The create-time gate runs once, against the kilns the session was
+    /// created with. Names make that insufficient: a session can hold a name
+    /// that resolved to nothing when it was created — so it was never
+    /// classified, because it was not a kiln — and that resolves for the first
+    /// time now, because the user registered the entry in between. Nothing else
+    /// would ever gate it: `session.create` is long past, and the attach
+    /// handlers never ran for a name that was already in the file.
+    ///
+    /// Resolution and this gate therefore travel together, both on load. A
+    /// refusal fails the turn rather than detaching the kiln, for the reason
+    /// `refuse_untrusted_for_kilns` gives: only the user can weigh dropping a
+    /// corpus they are mid-conversation with.
+    fn refuse_untrusted_on_revive(
+        &self,
+        session: &crucible_core::session::Session,
+    ) -> Result<(), AgentError> {
+        let Some(agent) = session.agent.as_ref() else {
+            return Ok(());
+        };
+        self.refuse_untrusted_for_attached_kilns(session, agent)
+    }
+
     /// Return the live session for `session_id`, reviving it from storage if it
     /// is no longer resident in memory (ended or evicted). This is what makes
     /// ended sessions transparently resumable on send. Storage is one flat root,
@@ -514,6 +549,7 @@ impl AgentManager {
                 .session_manager
                 .resume_session_from_storage(&validated)
                 .await?;
+            self.refuse_untrusted_on_revive(&revived)?;
             info!(session_id = %session_id, "Reactivated an ended session on send");
             return Ok(revived);
         }
@@ -524,6 +560,7 @@ impl AgentManager {
             .await
         {
             Ok(session) => {
+                self.refuse_untrusted_on_revive(&session)?;
                 info!(session_id = %session_id, "Revived idle session from storage on send");
                 Ok(session)
             }
@@ -715,11 +752,25 @@ impl AgentManager {
         };
 
         let session_for_factory = self.session_manager.get_session(session_id);
-        let kiln_path = session_for_factory.as_ref().and_then(|s| s.default_kiln());
         let session_kilns = session_for_factory
             .as_ref()
             .map(|s| s.kilns.clone())
             .unwrap_or_default();
+        // The name the session carries becomes a directory here and nowhere
+        // else. A name with no registry entry resolves to nothing, and the
+        // session then builds with no knowledge repository at all rather than
+        // with one rooted somewhere it was never granted.
+        let kiln_path = session_for_factory
+            .as_ref()
+            .and_then(|s| s.default_kiln())
+            .and_then(|name| {
+                self.session_manager
+                    .kiln_registry()
+                    .resolve(name)
+                    .path()
+                    .map(std::path::Path::to_path_buf)
+            });
+        let kiln_path = kiln_path.as_deref();
         let mut knowledge_repo = None;
         let mut embedding_provider = None;
 
@@ -783,6 +834,7 @@ impl AgentManager {
                     crate::agent_manager::scope::session_containment(
                         session,
                         self.session_manager.sessions_root(),
+                        self.session_manager.kiln_registry(),
                     )
                 })
                 .unwrap_or_else(|| crate::tools::containment::RootSet::scoped(vec![], vec![])),

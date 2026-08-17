@@ -16,7 +16,9 @@
 
 use super::*;
 use crate::event_emitter::emit_event;
+use crate::kiln_registry::KilnRegistry;
 use crate::tools::containment::RootSet;
+use crucible_core::config::KilnName;
 use crucible_core::Session;
 use std::path::{Path, PathBuf};
 
@@ -62,12 +64,22 @@ use std::path::{Path, PathBuf};
 /// into a future context, so tampering with one is the attack that matters —
 /// Anthropic blocks writes to `~/.claude/projects/**.jsonl` for exactly this
 /// reason while leaving reads open.
-pub(crate) fn session_containment(session: &Session, sessions_root: &Path) -> RootSet {
-    let scope: Vec<PathBuf> = session
-        .kilns
-        .iter()
-        .cloned()
-        .chain(std::iter::once(session.workspace.clone()))
+///
+/// The kilns arrive as *names*, and are resolved here through the registry —
+/// the one place a name becomes a directory. A name with no entry resolves to
+/// nothing and therefore grants nothing: it is not a narrower root, it is no
+/// root at all. That has to be a drop rather than a fallback, because the
+/// fallback shapes available (the data root, the empty path) are both roots
+/// that enclose every transcript on the box.
+pub(crate) fn session_containment(
+    session: &Session,
+    sessions_root: &Path,
+    registry: &KilnRegistry,
+) -> RootSet {
+    let scope: Vec<PathBuf> = registry
+        .paths_for(&session.kilns)
+        .into_iter()
+        .chain(session.workspace.iter().cloned())
         .collect();
     // The legacy in-kiln transcript directory is denied by SHAPE
     // (`RootSet`'s `.crucible/sessions` rule) rather than named per scope root:
@@ -77,6 +89,27 @@ pub(crate) fn session_containment(session: &Session, sessions_root: &Path) -> Ro
     RootSet::scoped(scope, denied)
         .protect(crate::tools::protected::daemon_roots())
         .carve_out(std::iter::once(session.storage_path(sessions_root)))
+}
+
+/// The one concrete directory a session's *tools* anchor at.
+///
+/// Relative paths, `bash`, skills discovery, `@file` attachments and the
+/// prompt's "Workspace:" line all need a directory even when the session has
+/// none. Its own storage dir is the one place it certainly has, and it is
+/// already inside the allowlist (read-only), so this is an ANCHOR, not a
+/// grant — nothing here widens [`session_containment`], which is built from
+/// the real scope and drops anything under the sessions root.
+///
+/// Spelled once so the fallback cannot drift between the dispatcher, the agent
+/// build, the workspace snapshot and its restore. The previous spelling was the
+/// empty path, which anchored a workspace-less session at the *daemon's* own
+/// working directory — where `read_project_config` picked up whatever repo the
+/// daemon happened to be started in.
+pub(crate) fn session_tool_root(session: &Session, sessions_root: &Path) -> PathBuf {
+    session
+        .workspace
+        .clone()
+        .unwrap_or_else(|| session.storage_path(sessions_root))
 }
 
 impl AgentManager {
@@ -146,10 +179,10 @@ impl AgentManager {
     pub async fn connect_kiln(
         &self,
         session_id: &str,
-        kiln: &Path,
+        kiln: &KilnName,
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
     ) -> Result<Session, AgentError> {
-        let kiln = kiln.to_path_buf();
+        let kiln = kiln.clone();
         self.mutate_scope(session_id, event_tx, move |session| {
             Ok(session.add_kiln(kiln))
         })
@@ -161,21 +194,24 @@ impl AgentManager {
     pub async fn disconnect_kiln(
         &self,
         session_id: &str,
-        kiln: &Path,
+        kiln: &KilnName,
         event_tx: Option<&broadcast::Sender<SessionEventMessage>>,
     ) -> Result<Session, AgentError> {
-        self.mutate_scope(session_id, event_tx, |session| {
-            let before = session.kilns.len();
-            session.kilns.retain(|k| k != kiln);
-            Ok(session.kilns.len() != before)
-        })
+        self.mutate_scope(
+            session_id,
+            event_tx,
+            |session| Ok(session.remove_kiln(kiln)),
+        )
         .await
     }
 
-    /// Set or clear the session's workspace. `None` detaches: the workspace
-    /// falls back to the kiln path (the same state a workspace-less create
-    /// produces — see `Session::new`). Rejected for ACP sessions, whose
-    /// external agent process runs in the workspace it was spawned with.
+    /// Set or clear the session's workspace. `None` detaches, and the session
+    /// is then left with no workspace at all — the same state a workspace-less
+    /// create produces (see `Session::new`). It used to fall back to the kiln
+    /// path, which made "acting in this project" and "acting in this corpus"
+    /// the same sentence and left no way to say the session had no project.
+    /// Rejected for ACP sessions, whose external agent process runs in the
+    /// workspace it was spawned with.
     pub async fn set_workspace(
         &self,
         session_id: &str,
@@ -194,17 +230,9 @@ impl AgentManager {
                         .to_string(),
                 ));
             }
-            let new_workspace = workspace.unwrap_or_else(|| {
-                session
-                    .default_kiln()
-                    .map(Path::to_path_buf)
-                    .unwrap_or_default()
-            });
-            if session.workspace == new_workspace {
-                return Ok(false);
-            }
-            session.workspace = new_workspace;
-            Ok(true)
+            let before = session.workspace.clone();
+            session.set_workspace(workspace);
+            Ok(session.workspace != before)
         })
         .await
     }
@@ -217,11 +245,69 @@ mod tests {
     // SessionManager + storage, which the RPC test server provides. What is
     // unit-testable here is the containment set the mutations feed.
     use super::session_containment;
+    use crate::kiln_registry::KilnRegistry;
     use crate::tools::containment::RootSet;
     use crate::tools::fs_scope::FsScope;
+    use crucible_core::config::KilnName;
     use crucible_core::session::SessionType;
     use crucible_core::Session;
     use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+
+    /// The data root the fixture registry below is anchored at.
+    ///
+    /// Named rather than inlined because the tests *probe* it: a resolution
+    /// that answered an unresolvable name with "the data root" — the shape of
+    /// every fallback this design refuses — would put exactly this directory
+    /// into the allowlist, and a probe somewhere else would never see it.
+    const REGISTRY_DATA_ROOT: &str = "/nonexistent-data-root";
+
+    /// A session whose kilns are `paths`, plus the registry that maps its names
+    /// back to them.
+    ///
+    /// Every assertion in this module is about *directories*, so the names are
+    /// incidental: each path is registered under its own basename. The registry
+    /// is anchored at a data root none of these paths encloses, so the
+    /// registration floor lets them through and what is under test stays
+    /// `session_containment`'s ranking rather than the floor's.
+    fn session_over(paths: &[&Path]) -> (Session, Arc<KilnRegistry>) {
+        let names: Vec<String> = paths
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .and_then(KilnName::normalize)
+                    .map(|n| n.to_string())
+                    .unwrap_or_else(|| format!("kiln-{i}"))
+            })
+            .collect();
+        let entries: Vec<(&str, &Path)> = names
+            .iter()
+            .map(String::as_str)
+            .zip(paths.iter().copied())
+            .collect();
+        let registry = crate::test_support::kiln_registry(Path::new(REGISTRY_DATA_ROOT), &entries);
+        for (name, path) in &entries {
+            assert!(
+                registry
+                    .resolve(&KilnName::parse(name).unwrap())
+                    .path()
+                    .is_some(),
+                "precondition: {} must register as a kiln, or this test proves nothing \
+                 about containment",
+                path.display()
+            );
+        }
+        let session = Session::new(
+            SessionType::Chat,
+            names
+                .iter()
+                .map(|n| KilnName::parse(n).unwrap())
+                .collect::<Vec<_>>(),
+        );
+        (session, registry)
+    }
 
     /// Ask the containment set through the same door the tools use. Reading
     /// the root vectors directly would pass whether or not anything honors
@@ -246,10 +332,10 @@ mod tests {
     #[test]
     fn a_kilnless_session_reaches_only_its_own_storage_directory() {
         let sessions_root = Path::new("/data/sessions");
-        let session = Session::new(SessionType::Chat, vec![]);
+        let (session, registry) = session_over(&[]);
         let own = sessions_root.join(&*session.id);
 
-        let roots = session_containment(&session, sessions_root);
+        let roots = session_containment(&session, sessions_root, &registry);
 
         assert!(reaches(&roots, &own.join("session.jsonl")));
         assert!(!reaches(
@@ -258,17 +344,84 @@ mod tests {
         ));
         assert!(!reaches(&roots, Path::new("/etc/shadow")));
 
-        // And the same for a set that holds an empty path rather than no path
-        // — what a pre-flatten `meta.json` with `"kiln": ""` deserializes to.
-        let mut legacy = Session::new(SessionType::Chat, vec![]);
-        legacy.kilns.push(PathBuf::new());
-        let roots = session_containment(&legacy, sessions_root);
+        // And the same for a set that holds a name NOTHING resolves. This is
+        // where the empty path used to come in — a pre-flatten `meta.json` with
+        // `"kiln": ""` — and it is now the general shape: an unresolvable name
+        // must contribute no root at all, not a root spelled `""` that
+        // `Path::starts_with` reads as every path.
+        let mut unresolvable = Session::new(SessionType::Chat, vec![]);
+        unresolvable
+            .kilns
+            .push(KilnName::parse("no-such-kiln").unwrap());
+        assert_eq!(
+            registry.resolve(&KilnName::parse("no-such-kiln").unwrap()),
+            crate::kiln_registry::KilnResolution::Unknown,
+            "precondition: the name really must be unresolvable"
+        );
+        let roots = session_containment(&unresolvable, sessions_root, &registry);
 
         assert!(reaches(
             &roots,
-            &sessions_root.join(&*legacy.id).join("session.jsonl")
+            &sessions_root.join(&*unresolvable.id).join("session.jsonl")
         ));
-        assert!(!reaches(&roots, Path::new("/etc/shadow")));
+        // Every directory a fallback could plausibly have reached for, probed
+        // by name. Asserting only on `/etc/shadow` is not enough: a resolution
+        // that answered with the DATA ROOT would leave that probe failing and
+        // the widening invisible, which is how this test passed against a
+        // deliberately broken `paths_for`.
+        let cwd = std::env::current_dir().expect("a working directory");
+        for permitted in [
+            PathBuf::from(REGISTRY_DATA_ROOT).join("anything"),
+            PathBuf::from(REGISTRY_DATA_ROOT),
+            sessions_root.join("chat-other").join("session.jsonl"),
+            cwd.join("Cargo.toml"),
+            PathBuf::from("/etc/shadow"),
+        ] {
+            assert!(
+                !reaches(&roots, &permitted),
+                "an unresolvable name must contribute no root at all, but {} is reachable",
+                permitted.display()
+            );
+        }
+    }
+
+    /// An absent workspace contributes NO root — not the empty path.
+    ///
+    /// This is the empty-set-permits shape on the workspace axis, and the
+    /// permit it buys is specific: `ResolvedPath::resolve("")` anchors a
+    /// relative path at the process working directory, so a scope built with
+    /// `unwrap_or_default()` hands every workspace-less session read access to
+    /// whatever directory `cru daemon serve` was started in — a developer's
+    /// checkout, most of the time. `Option<PathBuf>` is what makes that
+    /// unspellable here; `RootSet`'s own empty-root filter is the second line,
+    /// not the first.
+    #[test]
+    fn a_session_without_a_workspace_does_not_reach_the_daemons_working_directory() {
+        let cwd = std::env::current_dir().expect("a working directory");
+        let probe = cwd.join("Cargo.toml");
+        // Preconditions, or this passes because the probe was unreachable for
+        // reasons that have nothing to do with the workspace.
+        assert!(probe.is_file(), "{} must exist", probe.display());
+        let sessions_root = Path::new("/data/sessions");
+        let kiln = PathBuf::from("/kilns/a");
+        assert!(
+            !cwd.starts_with(&kiln),
+            "the probe must not sit inside the session's real scope"
+        );
+
+        let (session, registry) = session_over(&[&kiln]);
+        assert_eq!(session.workspace, None, "precondition: no workspace");
+
+        let roots = session_containment(&session, sessions_root, &registry);
+
+        assert!(
+            reaches(&roots, &kiln.join("Note.md")),
+            "the kiln it does have stays in scope"
+        );
+        assert!(
+            !reaches(&roots, &probe),
+            "an absent workspace must not grant the daemon's own working directory"
+        );
     }
 
     /// Migration is best-effort — kilns that appear mid-run are never scanned
@@ -279,13 +432,10 @@ mod tests {
     #[test]
     fn every_scope_roots_legacy_transcript_directory_is_denied() {
         let sessions_root = Path::new("/data/sessions");
-        let mut session = Session::new(
-            SessionType::Chat,
-            vec![PathBuf::from("/kilns/a"), PathBuf::from("/kilns/b")],
-        );
-        session.workspace = PathBuf::from("/repo");
+        let (mut session, registry) = session_over(&[Path::new("/kilns/a"), Path::new("/kilns/b")]);
+        session.set_workspace(Some(PathBuf::from("/repo")));
 
-        let roots = session_containment(&session, sessions_root);
+        let roots = session_containment(&session, sessions_root, &registry);
 
         for root in ["/kilns/a", "/kilns/b", "/repo"] {
             let root = Path::new(root);
@@ -317,10 +467,10 @@ mod tests {
     #[test]
     fn a_nested_projects_transcript_directory_is_denied_though_it_is_not_a_scope_root() {
         let sessions_root = Path::new("/data/sessions");
-        let mut session = Session::new(SessionType::Chat, vec![PathBuf::from("/kilns/a")]);
-        session.workspace = PathBuf::from("/repo");
+        let (mut session, registry) = session_over(&[Path::new("/kilns/a")]);
+        session.set_workspace(Some(PathBuf::from("/repo")));
 
-        let roots = session_containment(&session, sessions_root);
+        let roots = session_containment(&session, sessions_root, &registry);
 
         for nested in [
             "/kilns/a/projects/inner/.crucible/sessions/chat-old/session.jsonl",
@@ -356,11 +506,11 @@ mod tests {
     #[test]
     fn no_session_can_write_anywhere_under_the_sessions_root() {
         let sessions_root = Path::new("/data/sessions");
-        let mut session = Session::new(SessionType::Chat, vec![PathBuf::from("/data")]);
-        session.workspace = PathBuf::from("/repo");
+        let (mut session, registry) = session_over(&[Path::new("/data")]);
+        session.set_workspace(Some(PathBuf::from("/repo")));
         let own = session.storage_path(sessions_root);
 
-        let roots = session_containment(&session, sessions_root);
+        let roots = session_containment(&session, sessions_root, &registry);
 
         assert!(
             reaches(&roots, &own.join("tools").join("bash-1.txt")),
@@ -397,11 +547,11 @@ mod tests {
     #[test]
     fn a_session_reads_its_own_output_under_the_sessions_root_production_uses() {
         let sessions_root = Path::new("/home/u/.crucible/sessions");
-        let mut session = Session::new(SessionType::Chat, vec![PathBuf::from("/kilns/a")]);
-        session.workspace = PathBuf::from("/repo");
+        let (mut session, registry) = session_over(&[Path::new("/kilns/a")]);
+        session.set_workspace(Some(PathBuf::from("/repo")));
         let own = session.storage_path(sessions_root);
 
-        let roots = session_containment(&session, sessions_root);
+        let roots = session_containment(&session, sessions_root, &registry);
 
         assert!(
             reaches(&roots, &own.join("tools").join("bash-1.txt")),
@@ -427,9 +577,9 @@ mod tests {
     #[test]
     fn a_legacy_in_kiln_transcript_directory_is_not_writable() {
         let sessions_root = Path::new("/data/sessions");
-        let session = Session::new(SessionType::Chat, vec![PathBuf::from("/kilns/a")]);
+        let (session, registry) = session_over(&[Path::new("/kilns/a")]);
 
-        let roots = session_containment(&session, sessions_root);
+        let roots = session_containment(&session, sessions_root, &registry);
 
         assert!(can_write(&roots, Path::new("/kilns/a/Note.md")));
         assert!(!can_write(
@@ -455,9 +605,9 @@ mod tests {
             .first()
             .expect("the daemon always names at least one runtime root")
             .clone();
-        let session = Session::new(SessionType::Chat, vec![runtime.clone()]);
+        let (session, registry) = session_over(&[&runtime]);
 
-        let roots = session_containment(&session, sessions_root);
+        let roots = session_containment(&session, sessions_root, &registry);
         let plugin = runtime.join("plugins").join("oci").join("init.lua");
 
         assert!(
@@ -499,8 +649,8 @@ mod tests {
             "precondition: the session VM runs <runtimepath>/defaults/init.lua"
         );
 
-        let session = Session::new(SessionType::Chat, vec![kiln.clone()]);
-        let roots = session_containment(&session, &sessions_root);
+        let (session, registry) = session_over(&[&kiln]);
+        let roots = session_containment(&session, &sessions_root, &registry);
 
         let plugin = kiln.join("plugins").join("evil").join("init.lua");
         let defaults = kiln.join("defaults").join("init.lua");
@@ -529,9 +679,13 @@ mod tests {
     fn a_kiln_inside_the_sessions_root_does_not_become_an_allowed_root() {
         let sessions_root = Path::new("/data/sessions");
         let victim = sessions_root.join("chat-victim");
-        let session = Session::new(SessionType::Chat, vec![victim.clone()]);
+        // Registered against a data root that is NOT `/data`, so the
+        // registration floor lets it through — production refuses this at
+        // registration, and what is under test is that containment refuses it
+        // again if anything ever reaches here by another door.
+        let (session, registry) = session_over(&[&victim]);
 
-        let roots = session_containment(&session, sessions_root);
+        let roots = session_containment(&session, sessions_root, &registry);
 
         assert!(!reaches(&roots, &victim.join("session.jsonl")));
         assert!(

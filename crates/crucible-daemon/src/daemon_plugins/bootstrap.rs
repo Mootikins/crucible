@@ -107,14 +107,19 @@ pub(crate) fn runtime_plugin_paths(roots: &[PathBuf]) -> Vec<(PathBuf, PluginSou
 }
 
 /// Expand `~` at the start of a path to the user's home directory.
+///
+/// Delegates to the one expander rather than keeping a fourth copy — this one
+/// indexed `&s[2..]` on a bare `~`, which is a panic, not an expansion.
 fn expand_tilde(path: &std::path::Path) -> PathBuf {
-    let s = path.to_string_lossy();
-    if s.starts_with("~/") || s == "~" {
-        if let Some(home) = dirs::home_dir() {
-            return home.join(&s[2..]);
+    // Only a `~` path reaches the expander; a non-UTF-8 path is returned
+    // byte-for-byte rather than lossily rewritten. See
+    // `kiln_manager::expand_tilde_path`.
+    match path.to_str() {
+        Some(s) if s.starts_with('~') => {
+            crate::project_manager::resolve_registration_root(s, dirs::home_dir().as_deref())
         }
+        _ => path.to_path_buf(),
     }
-    path.to_path_buf()
 }
 
 /// Return default plugin paths (no config runtimepath).

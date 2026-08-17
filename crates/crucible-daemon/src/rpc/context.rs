@@ -95,6 +95,10 @@ pub struct RpcContext {
     pub workflows: Arc<WorkflowRegistry>,
     /// SCM (git) config — `scm.clone` reads `projects_dir` from here.
     pub scm_config: Option<ScmConfig>,
+    /// Name → kiln, and the only door a filesystem path may become one
+    /// through. Built once at bind from the config the daemon was handed;
+    /// handlers resolve names against it rather than accepting paths.
+    pub kiln_registry: Arc<crate::kiln_registry::KilnRegistry>,
     /// Plugin session start/end enforcement, shared with `DelegationService`.
     ///
     /// Built here rather than passed in because every input it needs is
@@ -122,6 +126,7 @@ impl RpcContext {
         data_home: std::path::PathBuf,
         config_home: Option<std::path::PathBuf>,
         scm_config: Option<ScmConfig>,
+        kiln_registry: Arc<crate::kiln_registry::KilnRegistry>,
     ) -> Self {
         let session_lifecycle = SessionLifecycle::new(sessions.clone(), plugin_loader.clone());
         session_lifecycle.bind_agent_manager(&agents);
@@ -142,6 +147,7 @@ impl RpcContext {
             config_home,
             workflows: Arc::new(WorkflowRegistry::new()),
             scm_config,
+            kiln_registry,
             session_lifecycle,
         }
     }
@@ -196,6 +202,7 @@ impl RpcContext {
         plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
     ) -> Self {
         let (shutdown_tx, _) = broadcast::channel(1);
+        let registry = sessions.kiln_registry().clone();
         Self::new(
             kiln,
             sessions,
@@ -209,9 +216,16 @@ impl RpcContext {
             llm_config,
             Arc::new(McpServerManager::new()),
             None,
-            data_home,
+            data_home.clone(),
             None,
             None,
+            // The session manager's own registry, not a second empty one: the
+            // handlers resolve caller-supplied names through `ctx`, the storage
+            // layer resolves persisted paths through `sessions`, and two
+            // registries would be two answers to "which directory is `notes`".
+            // A test whose fixture disagreed with itself that way would pass or
+            // fail for reasons unrelated to the code under test.
+            registry,
         )
     }
 }

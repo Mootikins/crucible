@@ -172,7 +172,7 @@ impl SearchTools {
             embedding,
             limit,
             None,
-            self.scope.anchor(),
+            Some(self.scope.anchor()),
         )
         .await
         .mcp_err_ctx("Note search failed")?;

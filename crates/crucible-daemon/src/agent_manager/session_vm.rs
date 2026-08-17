@@ -51,8 +51,11 @@ impl AgentManager {
         let daemon_session = self.session_manager.get_session(session_id);
         let mut lua_session = crucible_lua::Session::new(session_id.to_string());
         if let Some(daemon_session) = daemon_session {
-            lua_session =
-                lua_session.with_workspace(daemon_session.workspace.to_string_lossy().into_owned());
+            // Only when there IS one: `session.workspace` reads `nil` in
+            // Lua for a workspace-less session rather than a wrong path.
+            if let Some(workspace) = &daemon_session.workspace {
+                lua_session = lua_session.with_workspace(workspace.to_string_lossy().into_owned());
+            }
             if let Some(isolation) = daemon_session.isolation {
                 lua_session = lua_session.with_isolation(isolation);
             }
@@ -181,8 +184,12 @@ impl AgentManager {
 
         let reactor = Reactor::new();
         if let Some(session) = self.session_manager.get_session(session_id) {
-            let user_init = session.workspace.join(".crucible/lua/init.lua");
-            if user_init.exists() {
+            let user_init = session
+                .workspace
+                .as_ref()
+                .map(|ws| ws.join(".crucible/lua/init.lua"))
+                .filter(|p| p.exists());
+            if let Some(user_init) = user_init {
                 match std::fs::read_to_string(&user_init) {
                     Ok(source) => {
                         if let Err(e) = lua.load(&source).set_name("user init.lua").exec() {

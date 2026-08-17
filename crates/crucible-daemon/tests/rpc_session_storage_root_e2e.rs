@@ -23,6 +23,8 @@ use tokio::task::JoinHandle;
 struct TestServer {
     _temp_dir: TempDir,
     data_home: PathBuf,
+    kiln_a: PathBuf,
+    kiln_b: PathBuf,
     socket_path: PathBuf,
     _server_handle: JoinHandle<()>,
     shutdown_handle: tokio::sync::broadcast::Sender<()>,
@@ -38,7 +40,20 @@ impl TestServer {
         let data_home = temp_dir.path().to_path_buf();
         let socket_path = temp_dir.path().join("daemon.sock");
 
-        let server = Server::bind_with_data_home(&socket_path, data_home.clone()).await?;
+        // Two registered kilns, both outside the data root: the fixture asserts
+        // that a session's files land under the data root and NOT inside its
+        // kiln, so the kilns have to be real directories the daemon knows by
+        // name.
+        let kiln_a = temp_dir.path().join("kilns").join("kiln-a");
+        let kiln_b = temp_dir.path().join("kilns").join("kiln-b");
+        std::fs::create_dir_all(&kiln_a)?;
+        std::fs::create_dir_all(&kiln_b)?;
+        let server = Server::bind_with_data_home_and_kilns(
+            &socket_path,
+            data_home.clone(),
+            &[("kiln-a", &kiln_a), ("kiln-b", &kiln_b)],
+        )
+        .await?;
         let shutdown_handle = server.shutdown_handle();
         let server_handle = tokio::spawn(async move {
             let _ = server.run().await;
@@ -57,6 +72,8 @@ impl TestServer {
         Ok(Self {
             _temp_dir: temp_dir,
             data_home,
+            kiln_a,
+            kiln_b,
             socket_path,
             _server_handle: server_handle,
             shutdown_handle,
@@ -65,6 +82,14 @@ impl TestServer {
 
     fn sessions_root(&self) -> PathBuf {
         self.data_home.join("sessions")
+    }
+
+    fn kiln_a(&self) -> &Path {
+        &self.kiln_a
+    }
+
+    fn kiln_b(&self) -> &Path {
+        &self.kiln_b
     }
 
     async fn shutdown(self) {
@@ -117,13 +142,12 @@ fn assert_kiln_holds_no_sessions(kiln: &Path, session_id: &str) {
 #[tokio::test]
 async fn a_session_is_stored_under_the_injected_data_home_and_never_in_its_kiln() -> Result<()> {
     let server = TestServer::start().await?;
-    let kiln = tempfile::tempdir()?;
     let client = DaemonClient::connect_to(&server.socket_path).await?;
 
     let created = client
         .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![kiln.path().to_path_buf()],
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln-a")],
             workspace: None,
             recording_mode: None,
             recording_path: None,
@@ -148,7 +172,7 @@ async fn a_session_is_stored_under_the_injected_data_home_and_never_in_its_kiln(
     // own knowledge index there (`.crucible/crucible-sqlite.db`) — that is kiln
     // data and belongs to the kiln. What must be gone is the transcript tree:
     // a kiln has to be shareable without shipping conversations.
-    assert_kiln_holds_no_sessions(kiln.path(), &session_id);
+    assert_kiln_holds_no_sessions(server.kiln_a(), &session_id);
 
     server.shutdown().await;
     Ok(())
@@ -159,16 +183,14 @@ async fn a_session_is_stored_under_the_injected_data_home_and_never_in_its_kiln(
 #[tokio::test]
 async fn sessions_from_different_kilns_share_one_storage_root() -> Result<()> {
     let server = TestServer::start().await?;
-    let kiln_a = tempfile::tempdir()?;
-    let kiln_b = tempfile::tempdir()?;
     let client = DaemonClient::connect_to(&server.socket_path).await?;
 
     let mut ids = Vec::new();
-    for kiln in [kiln_a.path(), kiln_b.path()] {
+    for kiln in ["kiln-a", "kiln-b"] {
         let created = client
             .session_create(SessionCreateParams {
                 session_type: "chat".to_string(),
-                kilns: vec![kiln.to_path_buf()],
+                kilns: vec![crucible_daemon::test_support::kiln_name(kiln)],
                 workspace: None,
                 recording_mode: None,
                 recording_path: None,
@@ -191,7 +213,7 @@ async fn sessions_from_different_kilns_share_one_storage_root() -> Result<()> {
             walk(&server.sessions_root())
         );
     }
-    for (kiln, id) in [(kiln_a.path(), &ids[0]), (kiln_b.path(), &ids[1])] {
+    for (kiln, id) in [(server.kiln_a(), &ids[0]), (server.kiln_b(), &ids[1])] {
         assert_kiln_holds_no_sessions(kiln, id);
     }
 

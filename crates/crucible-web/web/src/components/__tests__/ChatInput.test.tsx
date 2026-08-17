@@ -39,8 +39,9 @@ vi.mock('@/contexts/SessionContext', () => ({
       id: 'test-session',
       state: 'active',
       kilns: ['/tmp/test-kiln'],
-      // workspace == kiln is the daemon's "floating" (no-workspace) state.
-      workspace: '/tmp/test-kiln',
+      // `null` is the daemon's "floating" (no-workspace) state. It used to be
+      // spelled `workspace == kilns[0]`, which this side had to re-derive.
+      workspace: null,
       agent_model: 'test-model',
     }),
     cancelCurrentOperation: mockCancelCurrentOperation,
@@ -199,7 +200,7 @@ describe('ChatInput — session context chips', () => {
     expect(chips.textContent).toContain('test-kiln');
   });
 
-  it('floating session (workspace == kiln) reads "Session folder" for the project chip', () => {
+  it('floating session (workspace: null) reads "Session folder" for the project chip', () => {
     render(() => <ChatInput />);
     expect(screen.getByTestId('scope-project').textContent).toContain('Session folder');
   });

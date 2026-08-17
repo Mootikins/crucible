@@ -73,7 +73,7 @@ async fn delegate_session_works_through_production_server_wiring() {
     let endpoint = start_scripted_llm_server();
     let server = TestServer::start().await;
     let mut client = server.connect().await;
-    let parent_id = create_chat_session(&mut client, &server.kiln_path, 900).await;
+    let parent_id = create_chat_session(&mut client, TestServer::KILN, 900).await;
 
     // Configure a delegation-enabled internal agent against the scripted LLM.
     let configure = rpc_call(
@@ -146,7 +146,7 @@ async fn delegate_session_works_through_production_server_wiring() {
                     "id": req_id,
                     "method": "session.list",
                     "params": {
-                        "kiln": server.kiln_path.to_string_lossy(),
+                        "kiln": TestServer::KILN,
                         "include_children": true
                     }
                 }),

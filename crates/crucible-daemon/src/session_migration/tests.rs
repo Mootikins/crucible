@@ -22,7 +22,7 @@ async fn read_meta(dir: &Path) -> serde_json::Value {
 /// A real `meta.json` body: the id-rewrite tests need something
 /// `FileSessionStorage::load` will actually parse.
 fn session_meta(id: &str, title: &str) -> String {
-    let mut session = Session::new(SessionType::Chat, vec![PathBuf::from("/kiln")]);
+    let mut session = Session::new(SessionType::Chat, Vec::new());
     session.id = SessionId::parse(id).expect("a valid test session id");
     session.title = Some(title.to_string());
     serde_json::to_string_pretty(&session).unwrap()
@@ -364,7 +364,8 @@ async fn a_migrated_session_cannot_name_another_sessions_directory() {
     // Containment is derived from the loaded session: its `storage_path`
     // (the read carve-out) and its `kilns`/`workspace` (the allowlist).
     if let Ok(resumed) = &resumed {
-        let roots = crate::agent_manager::scope::session_containment(resumed, &root);
+        let roots =
+            crate::agent_manager::scope::session_containment(resumed, &root, sm.kiln_registry());
         let scope = crate::tools::fs_scope::FsScope::workspace(PathBuf::new(), roots);
         let victim_log = root.join("chat-victim").join("session.jsonl");
         assert!(
@@ -382,10 +383,10 @@ async fn a_migrated_session_cannot_name_another_sessions_directory() {
         Some("victim"),
         "loading one session's directory overwrote another session's meta.json"
     );
-    assert_ne!(
-        after.kilns,
-        vec![PathBuf::from("/")],
-        "the victim's containment allowlist was rewritten from a foreign kiln"
+    assert!(
+        after.kilns.is_empty(),
+        "the victim's containment allowlist was rewritten from a foreign kiln: {:?}",
+        after.kilns
     );
 }
 
@@ -420,7 +421,8 @@ async fn a_migrated_sessions_scope_is_not_taken_from_the_file_it_arrived_in() {
     else {
         return; // migration refused it — nothing to escape with
     };
-    let roots = crate::agent_manager::scope::session_containment(&imported, &root);
+    let roots =
+        crate::agent_manager::scope::session_containment(&imported, &root, storage.kiln_registry());
     let scope = crate::tools::fs_scope::FsScope::workspace(PathBuf::new(), roots);
 
     assert!(
@@ -464,7 +466,8 @@ async fn a_migrated_sessions_scope_is_not_taken_from_its_pre_flatten_keys() {
     else {
         return; // migration refused it — nothing to escape with
     };
-    let roots = crate::agent_manager::scope::session_containment(&imported, &root);
+    let roots =
+        crate::agent_manager::scope::session_containment(&imported, &root, storage.kiln_registry());
     let scope = crate::tools::fs_scope::FsScope::workspace(PathBuf::new(), roots);
 
     assert!(

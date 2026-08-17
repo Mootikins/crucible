@@ -23,7 +23,10 @@ pub(crate) async fn handle_session_list(
     data_home: &std::path::Path,
 ) -> Response {
     // Parse optional filters
-    let scope = caller_kiln_scope(&req);
+    let scope = match caller_kiln_scope(&req, sm.kiln_registry()) {
+        Ok(scope) => scope,
+        Err(message) => return Response::error(req.id, INVALID_PARAMS, message),
+    };
     let workspace = optional_param!(req, "workspace", as_str).map(PathBuf::from);
     let session_type =
         optional_param!(req, "type", as_str).and_then(|s| s.parse::<SessionType>().ok());
@@ -83,12 +86,38 @@ pub(crate) async fn handle_session_list(
             .await,
         );
 
-        // Then, sessions from all open kilns
-        let kilns = km.list().await;
-        for (kiln_path, _, _) in &kilns {
+        // Then, sessions from every kiln this daemon knows a name for.
+        //
+        // The registry is the complete set, and it is the one that matters: a
+        // session's kiln set holds NAMES, and a name exists only because an
+        // entry does. Fanning out over the *open* kilns alone would hide every
+        // session whose kiln happens not to be open — which is most of them on
+        // a fresh daemon, because startup opens registered PROJECT kilns and
+        // nothing says a `[kilns]` entry belongs to a project.
+        //
+        // The open set is still folded in, resolved through `name_for` rather
+        // than compared as paths: a kiln can be open under a spelling that is
+        // not the one the registry stores — a symlink, a `~`, a relative path
+        // from wherever the daemon was spawned — and `name_for` compares both
+        // forms of both sides so they land on one entry. An open directory with
+        // no entry contributes nothing, which is correct: it is not a kiln, so
+        // no session can name it.
+        let mut names: Vec<crucible_core::config::KilnName> = sm
+            .kiln_registry()
+            .iter()
+            .map(|kiln| kiln.name().clone())
+            .collect();
+        for (kiln_path, _, _) in km.list().await {
+            if let Some(name) = sm.kiln_registry().name_for(&kiln_path) {
+                if !names.contains(name) {
+                    names.push(name.clone());
+                }
+            }
+        }
+        for name in &names {
             let filtered = sm
                 .list_sessions_filtered_async(
-                    KilnFilter::Attached(kiln_path),
+                    KilnFilter::Attached(name),
                     workspace.as_ref(),
                     session_type,
                     state,
@@ -98,27 +127,13 @@ pub(crate) async fn handle_session_list(
             collect_from(filtered);
         }
 
-        // Also load from the daemon data home if not already included.
-        //
-        // Deliberately without `km.open(&home)`: `server/mod.rs` documents that
-        // home is scanned but "never OPEN[ed] as a kiln — that is the leak this
-        // split fixes" (`61f28c144`), and an open kiln is a watched kiln, so
-        // opening it here indexed every session body under the data root into
-        // the kiln index. Listing never needed it — the lookup below reads
-        // the in-memory map and `storage.list`, not `KilnManager`.
-        let home = data_home.to_path_buf();
-        if !kilns.iter().any(|(k, _, _)| k == &home) {
-            let home_sessions = sm
-                .list_sessions_filtered_async(
-                    KilnFilter::Attached(&home),
-                    workspace.as_ref(),
-                    session_type,
-                    state,
-                    include_archived,
-                )
-                .await;
-            collect_from(home_sessions);
-        }
+        // The daemon data home used to get a branch of its own here. It cannot
+        // any more, and does not need one: the registry refuses the data root
+        // and every ancestor of it, so no `[kilns]` entry can name it, so no
+        // session can hold a kiln that resolves to it. `server/mod.rs` has
+        // documented since `61f28c144` that home is scanned but never OPENED as
+        // a kiln — this makes that unrepresentable rather than remembered.
+        let _ = data_home;
 
         all_sessions
     };
@@ -181,7 +196,10 @@ pub(crate) async fn handle_session_search(req: Request, sm: &Arc<SessionManager>
     let query = require_param!(req, "query", as_str);
     let limit = optional_param!(req, "limit", as_u64).unwrap_or(20) as usize;
 
-    let scope = caller_kiln_scope(&req);
+    let scope = match caller_kiln_scope(&req, sm.kiln_registry()) {
+        Ok(scope) => scope,
+        Err(message) => return Response::error(req.id, INVALID_PARAMS, message),
+    };
     if scope.is_empty() {
         return Response::success(
             req.id,
@@ -315,7 +333,11 @@ mod tests {
     }
 
     /// Persist a session attached to `kilns` with `body` as its transcript.
-    async fn seed_session(sm: &SessionManager, kilns: Vec<PathBuf>, body: &str) -> String {
+    async fn seed_session(
+        sm: &SessionManager,
+        kilns: Vec<crucible_core::config::KilnName>,
+        body: &str,
+    ) -> String {
         let session = Session::new(SessionType::Chat, kilns);
         sm.update_session(&session).await.unwrap();
         let dir = sm.session_dir(&session.id);
@@ -324,6 +346,32 @@ mod tests {
             .await
             .unwrap();
         session.id.to_string()
+    }
+
+    /// A `SessionManager` under `tmp` whose registry knows the names these
+    /// tests scope by. Without it every seeded kiln would resolve to nothing
+    /// and every scope assertion would pass for the wrong reason.
+    fn scoped_manager(tmp: &TempDir) -> Arc<SessionManager> {
+        let owned: Vec<(&str, PathBuf)> = ["mine", "theirs", "a", "b", "elsewhere", "somewhere"]
+            .into_iter()
+            .map(|name| (name, tmp.path().join("kilns").join(name)))
+            .collect();
+        let kilns: Vec<(&str, &std::path::Path)> = owned
+            .iter()
+            .map(|(name, path)| (*name, path.as_path()))
+            .collect();
+        let registry = crate::test_support::kiln_registry(tmp.path(), &kilns);
+        Arc::new(
+            SessionManager::with_storage(Arc::new(
+                FileSessionStorage::new(FileSessionStorage::root_for(tmp.path()))
+                    .with_registry(registry.clone()),
+            ))
+            .with_kiln_registry(registry),
+        )
+    }
+
+    fn kiln(name: &str) -> crucible_core::config::KilnName {
+        crate::test_support::kiln_name(name)
     }
 
     fn matched_ids(resp: &Response) -> Vec<String> {
@@ -341,9 +389,9 @@ mod tests {
     #[tokio::test]
     async fn search_returns_only_sessions_sharing_a_kiln_with_the_caller() {
         let tmp = TempDir::new().unwrap();
-        let sm = SessionManager::new(FileSessionStorage::root_for(tmp.path()));
-        let mine = tmp.path().join("mine");
-        let theirs = tmp.path().join("theirs");
+        let sm = scoped_manager(&tmp);
+        let mine = kiln("mine");
+        let theirs = kiln("theirs");
 
         let ours = seed_session(&sm, vec![mine.clone()], "{\"content\":\"needle\"}\n").await;
         let foreign = seed_session(&sm, vec![theirs], "{\"content\":\"needle\"}\n").await;
@@ -351,9 +399,9 @@ mod tests {
         let resp = handle_session_search(
             search_request(serde_json::json!({
                 "query": "needle",
-                "kiln": mine.to_string_lossy(),
+                "kiln": mine.as_str(),
             })),
-            &Arc::new(sm),
+            &sm,
         )
         .await;
 
@@ -371,10 +419,10 @@ mod tests {
     #[tokio::test]
     async fn search_spans_every_kiln_in_the_callers_set() {
         let tmp = TempDir::new().unwrap();
-        let sm = SessionManager::new(FileSessionStorage::root_for(tmp.path()));
-        let a = tmp.path().join("a");
-        let b = tmp.path().join("b");
-        let elsewhere = tmp.path().join("elsewhere");
+        let sm = scoped_manager(&tmp);
+        let a = kiln("a");
+        let b = kiln("b");
+        let elsewhere = kiln("elsewhere");
 
         let on_a = seed_session(&sm, vec![a.clone()], "{\"content\":\"needle\"}\n").await;
         let on_b = seed_session(&sm, vec![b.clone()], "{\"content\":\"needle\"}\n").await;
@@ -383,9 +431,9 @@ mod tests {
         let resp = handle_session_search(
             search_request(serde_json::json!({
                 "query": "needle",
-                "kilns": [a.to_string_lossy(), b.to_string_lossy()],
+                "kilns": [a.as_str(), b.as_str()],
             })),
-            &Arc::new(sm),
+            &sm,
         )
         .await;
 
@@ -406,17 +454,12 @@ mod tests {
     #[tokio::test]
     async fn search_from_a_kiln_less_caller_returns_nothing() {
         let tmp = TempDir::new().unwrap();
-        let sm = SessionManager::new(FileSessionStorage::root_for(tmp.path()));
-        seed_session(
-            &sm,
-            vec![tmp.path().join("somewhere")],
-            "{\"content\":\"needle\"}\n",
-        )
-        .await;
+        let sm = scoped_manager(&tmp);
+        seed_session(&sm, vec![kiln("somewhere")], "{\"content\":\"needle\"}\n").await;
 
         let resp = handle_session_search(
             search_request(serde_json::json!({ "query": "needle", "kilns": [] })),
-            &Arc::new(sm),
+            &sm,
         )
         .await;
 
@@ -428,17 +471,12 @@ mod tests {
     #[tokio::test]
     async fn search_without_a_kiln_scope_returns_nothing() {
         let tmp = TempDir::new().unwrap();
-        let sm = SessionManager::new(FileSessionStorage::root_for(tmp.path()));
-        seed_session(
-            &sm,
-            vec![tmp.path().join("somewhere")],
-            "{\"content\":\"needle\"}\n",
-        )
-        .await;
+        let sm = scoped_manager(&tmp);
+        seed_session(&sm, vec![kiln("somewhere")], "{\"content\":\"needle\"}\n").await;
 
         let resp = handle_session_search(
             search_request(serde_json::json!({ "query": "needle" })),
-            &Arc::new(sm),
+            &sm,
         )
         .await;
 
@@ -455,15 +493,14 @@ mod tests {
         let km = Arc::new(KilnManager::new());
         let tmp = TempDir::new().unwrap();
         let data_home = tmp.path().to_path_buf();
-        let sm = Arc::new(SessionManager::new(FileSessionStorage::root_for(
-            &data_home,
-        )));
+        let sm = scoped_manager(&tmp);
 
         let kiln_less = seed_session(&sm, vec![], "").await;
-        // Attached to the data home, which is the one kiln this listing
-        // reaches without a KilnManager open — the control for "the new
-        // branch did not displace the old ones".
-        let attached = seed_session(&sm, vec![data_home.clone()], "").await;
+        // Attached to a registered kiln — the control for "the new branch did
+        // not displace the old ones". No `KilnManager` open is needed: the
+        // fan-out is over the REGISTRY, which is what a session's kiln names
+        // are drawn from.
+        let attached = seed_session(&sm, vec![kiln("mine")], "").await;
 
         let req: Request = serde_json::from_value(serde_json::json!({
             "jsonrpc": "2.0",
@@ -504,21 +541,19 @@ mod tests {
         let km = Arc::new(KilnManager::new());
         let tmp = TempDir::new().unwrap();
         let data_home = tmp.path().to_path_buf();
-        let sm = Arc::new(SessionManager::new(FileSessionStorage::root_for(
-            &data_home,
-        )));
-        let a = tmp.path().join("a");
-        let b = tmp.path().join("b");
+        let sm = scoped_manager(&tmp);
+        let a = kiln("a");
+        let b = kiln("b");
 
         let on_a = seed_session(&sm, vec![a.clone()], "").await;
         let on_b = seed_session(&sm, vec![b.clone()], "").await;
-        let foreign = seed_session(&sm, vec![tmp.path().join("elsewhere")], "").await;
+        let foreign = seed_session(&sm, vec![kiln("elsewhere")], "").await;
 
         let req: Request = serde_json::from_value(serde_json::json!({
             "jsonrpc": "2.0",
             "id": 1,
             "method": "session.list",
-            "params": { "kilns": [a.to_string_lossy(), b.to_string_lossy()] },
+            "params": { "kilns": [a.as_str(), b.as_str()] },
         }))
         .unwrap();
 
@@ -541,6 +576,144 @@ mod tests {
         );
     }
 
+    /// A request that NAMES kilns and resolves none of them is refused.
+    ///
+    /// This is the empty-set-permits-everything shape one module over: an
+    /// empty scope is *permissive* here — it means "every open kiln, the data
+    /// home, and the kiln-less sessions" — so a set that resolved to nothing
+    /// would turn a request to NARROW into a request that was widened to the
+    /// whole backlog. The assertion is therefore on the refusal AND on the
+    /// backlog staying closed, not on the absence of a panic.
+    #[tokio::test]
+    async fn a_listing_scoped_to_names_that_resolve_to_nothing_is_refused() {
+        let km = Arc::new(KilnManager::new());
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().to_path_buf();
+        let sm = scoped_manager(&tmp);
+
+        let secret = seed_session(&sm, vec![kiln("mine")], "").await;
+        let kiln_less = seed_session(&sm, vec![], "").await;
+        // Precondition: an UNSCOPED listing really does reach both, so the
+        // refusal below is the only thing keeping them out.
+        let unscoped: Request = serde_json::from_value(serde_json::json!({
+            "jsonrpc": "2.0", "id": 1, "method": "session.list", "params": {},
+        }))
+        .unwrap();
+        let wide = handle_session_list(unscoped, &sm, &km, &data_home).await;
+        let wide_ids: Vec<String> = wide.result.as_ref().unwrap()["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["session_id"].as_str().unwrap().to_string())
+            .collect();
+        assert!(
+            wide_ids.contains(&secret) && wide_ids.contains(&kiln_less),
+            "precondition: an unscoped listing is the wide one: {wide_ids:?}"
+        );
+
+        for scope in [
+            serde_json::json!({ "kilns": ["no-such-kiln"] }),
+            // A path is not a name, and must not degrade to "said nothing".
+            serde_json::json!({ "kilns": ["/home/user/notes"] }),
+            // Nor is a non-string. `filter_map(as_str)` would drop it and
+            // leave an empty array behind — the widening again, by another
+            // route.
+            serde_json::json!({ "kilns": [7] }),
+            serde_json::json!({ "kiln": "no-such-kiln" }),
+        ] {
+            let req: Request = serde_json::from_value(serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "session.list",
+                "params": scope,
+            }))
+            .unwrap();
+
+            let resp = handle_session_list(req, &sm, &km, &data_home).await;
+
+            let error = resp
+                .error
+                .as_ref()
+                .unwrap_or_else(|| panic!("{scope} must be refused, got {:?}", resp.result));
+            assert_eq!(error.code, INVALID_PARAMS, "{scope}: {error:?}");
+            assert!(
+                resp.result.is_none(),
+                "{scope} must return no sessions at all, got {:?}",
+                resp.result
+            );
+        }
+    }
+
+    /// The other half of the same rule: a set that resolves *partly* keeps the
+    /// members that resolve. Dropping is safe only because the non-empty
+    /// remainder still narrows — which is exactly why the all-dropped case
+    /// above has to be a refusal instead.
+    #[tokio::test]
+    async fn a_partly_resolvable_scope_keeps_the_kilns_that_exist() {
+        let km = Arc::new(KilnManager::new());
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().to_path_buf();
+        let sm = scoped_manager(&tmp);
+
+        let mine = seed_session(&sm, vec![kiln("mine")], "").await;
+        let theirs = seed_session(&sm, vec![kiln("theirs")], "").await;
+
+        let req: Request = serde_json::from_value(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "session.list",
+            "params": { "kilns": ["mine", "no-such-kiln"] },
+        }))
+        .unwrap();
+
+        let resp = handle_session_list(req, &sm, &km, &data_home).await;
+        let ids: Vec<String> = resp.result.as_ref().unwrap()["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["session_id"].as_str().unwrap().to_string())
+            .collect();
+
+        assert!(
+            ids.contains(&mine),
+            "the resolvable member still scopes: {ids:?}"
+        );
+        assert!(
+            !ids.contains(&theirs),
+            "and the unresolvable one must not widen it: {ids:?}"
+        );
+    }
+
+    /// `session.search` answers to the same parse site, and its empty-scope
+    /// behaviour is the *closed* one — so the risk there is the opposite:
+    /// silently returning nothing for a request the caller believes narrowed.
+    /// It is refused, distinguishing "said nothing" from "said something that
+    /// is not a kiln".
+    #[tokio::test]
+    async fn a_search_scoped_to_names_that_resolve_to_nothing_is_refused() {
+        let tmp = TempDir::new().unwrap();
+        let sm = scoped_manager(&tmp);
+        seed_session(&sm, vec![kiln("mine")], "{\"content\":\"needle\"}\n").await;
+
+        let resp = handle_session_search(
+            search_request(serde_json::json!({ "query": "needle", "kilns": ["no-such-kiln"] })),
+            &sm,
+        )
+        .await;
+
+        let error = resp
+            .error
+            .as_ref()
+            .expect("an unresolvable scope is refused");
+        assert_eq!(error.code, INVALID_PARAMS, "{error:?}");
+        assert!(
+            resp.result.is_none(),
+            "and it must not answer with an empty match list, which reads as \
+             'nothing matched': {:?}",
+            resp.result
+        );
+    }
+
     /// `server/mod.rs` documents the invariant this handler broke: the title
     /// sweep scans `~/.crucible` "but never OPENS home as a kiln — that is the
     /// leak this split fixes" (commit `61f28c144`). Listing sessions opened it
@@ -556,9 +729,7 @@ mod tests {
         let km = Arc::new(KilnManager::new());
         let tmp = TempDir::new().unwrap();
         let data_home = tmp.path().to_path_buf();
-        let sm = Arc::new(SessionManager::new(FileSessionStorage::root_for(
-            &data_home,
-        )));
+        let sm = scoped_manager(&tmp);
 
         let req: Request = serde_json::from_value(serde_json::json!({
             "jsonrpc": "2.0",

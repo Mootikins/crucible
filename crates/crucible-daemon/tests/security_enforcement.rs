@@ -14,7 +14,9 @@ use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
 use crucible_core::traits::chat::AgentHandle;
 use crucible_core::turn::{StopReason, TurnEvent};
 use crucible_daemon::delegation::{DelegationRequest, DelegationService, DelegationSpawner};
-use crucible_daemon::test_support::temp_session_manager;
+use crucible_daemon::test_support::{
+    kiln_name, temp_session_manager, temp_session_manager_with_kilns,
+};
 use crucible_daemon::{AgentManager, AgentManagerParams, KilnManager};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -191,7 +193,15 @@ async fn rig(
         })
     }));
     let session = session_manager
-        .create_session(SessionType::Chat, vec![workspace.clone()], None, None)
+        // Explicit workspace: `Rig::workspace` is where these tests seed files
+        // and write the project config the shell policy is read from. It used
+        // to arrive there via the `workspace == kilns[0]` sentinel.
+        .create_session(
+            SessionType::Chat,
+            vec![kiln_name("kiln")],
+            Some(workspace.clone()),
+            None,
+        )
         .await
         .unwrap();
     agent_manager
@@ -402,7 +412,10 @@ async fn delegation_trust_derives_from_child_provider() {
     )
     .unwrap();
 
-    let session_manager = temp_session_manager();
+    // The confidential directory has to be the kiln the NAME resolves to, or
+    // the classification walk finds nothing and this passes for the wrong
+    // reason — the child would be refused by no gate at all.
+    let session_manager = temp_session_manager_with_kilns(&[("kiln", &workspace)]);
     let (event_tx, _) = broadcast::channel(64);
     let service = DelegationService::new(session_manager.clone(), event_tx.clone());
     let agent_manager = Arc::new(AgentManager::new_with_delegation(
@@ -424,7 +437,15 @@ async fn delegation_trust_derives_from_child_provider() {
     service.bind_agent_manager(&agent_manager);
 
     let session = session_manager
-        .create_session(SessionType::Chat, vec![workspace.clone()], None, None)
+        // Explicit workspace: `Rig::workspace` is where these tests seed files
+        // and write the project config the shell policy is read from. It used
+        // to arrive there via the `workspace == kilns[0]` sentinel.
+        .create_session(
+            SessionType::Chat,
+            vec![kiln_name("kiln")],
+            Some(workspace.clone()),
+            None,
+        )
         .await
         .unwrap();
     let mut agent = internal_agent();
@@ -530,7 +551,15 @@ async fn card_allow_does_not_override_config_deny() {
         })
     }));
     let session = session_manager
-        .create_session(SessionType::Chat, vec![workspace.clone()], None, None)
+        // Explicit workspace: `Rig::workspace` is where these tests seed files
+        // and write the project config the shell policy is read from. It used
+        // to arrive there via the `workspace == kilns[0]` sentinel.
+        .create_session(
+            SessionType::Chat,
+            vec![kiln_name("kiln")],
+            Some(workspace.clone()),
+            None,
+        )
         .await
         .unwrap();
     let mut agent = internal_agent();

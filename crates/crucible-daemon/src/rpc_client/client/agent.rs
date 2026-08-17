@@ -164,7 +164,10 @@ pub struct ListProvidersRequest {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionKilnRequest {
     pub session_id: String,
-    pub kiln_path: String,
+    /// The kiln's registry NAME. It was `kiln_path` — a directory the caller
+    /// chose — and that is the door the registration floor now stands in front
+    /// of: a path here would attach a kiln nobody registered.
+    pub kiln: String,
 }
 
 /// Request for `session.set_workspace`. `workspace: None` detaches.
@@ -207,13 +210,13 @@ impl DaemonClient {
     pub async fn session_connect_kiln(
         &self,
         session_id: &str,
-        kiln_path: &Path,
+        kiln: &crucible_core::config::KilnName,
     ) -> Result<serde_json::Value> {
         self.typed_call(
             "session.connect_kiln",
             SessionKilnRequest {
                 session_id: session_id.to_string(),
-                kiln_path: kiln_path.to_string_lossy().to_string(),
+                kiln: kiln.to_string(),
             },
         )
         .await
@@ -224,13 +227,13 @@ impl DaemonClient {
     pub async fn session_disconnect_kiln(
         &self,
         session_id: &str,
-        kiln_path: &Path,
+        kiln: &crucible_core::config::KilnName,
     ) -> Result<serde_json::Value> {
         self.typed_call(
             "session.disconnect_kiln",
             SessionKilnRequest {
                 session_id: session_id.to_string(),
-                kiln_path: kiln_path.to_string_lossy().to_string(),
+                kiln: kiln.to_string(),
             },
         )
         .await

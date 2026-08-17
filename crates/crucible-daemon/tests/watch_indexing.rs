@@ -40,8 +40,17 @@ impl TestServer {
         // Isolated data home as a value, never process env: a shared
         // `~/.crucible` would let the developer's real registry decide what
         // this test watches.
-        let server =
-            Server::bind_with_data_home(&socket_path, temp_dir.path().to_path_buf()).await?;
+        // One registered kiln named `kiln`: sessions address kilns by name, so
+        // a fixture that registers none has a daemon that refuses every scoped
+        // request.
+        let kiln = temp_dir.path().join("kiln");
+        std::fs::create_dir_all(&kiln)?;
+        let server = Server::bind_with_data_home_and_kilns(
+            &socket_path,
+            temp_dir.path().to_path_buf(),
+            &[("kiln", &kiln)],
+        )
+        .await?;
         let shutdown_handle = server.shutdown_handle();
 
         let server_handle = tokio::spawn(async move {

@@ -75,9 +75,15 @@ async fn setup_test_server() -> (TempDir, std::path::PathBuf, tokio::task::JoinH
     // Inject an isolated data root (no env) so the daemon never loads the
     // developer's real ~/.crucible registry — else test_client_kiln_list_
     // initially_empty sees the real registered kilns.
-    let server = Server::bind_with_data_home(&sock_path, tmp.path().to_path_buf())
-        .await
-        .unwrap();
+    let kiln = tmp.path().join("kiln");
+    std::fs::create_dir_all(&kiln).unwrap();
+    let server = Server::bind_with_data_home_and_kilns(
+        &sock_path,
+        tmp.path().to_path_buf(),
+        &[("kiln", &kiln)],
+    )
+    .await
+    .unwrap();
     let _shutdown_handle = server.shutdown_handle();
 
     let handle = tokio::spawn(async move {
@@ -437,12 +443,12 @@ async fn test_multiple_sequential_calls_event_mode() {
 async fn test_session_create_and_get() {
     let (_srv, sock, _handle) = setup_test_server().await;
     let client = DaemonClient::connect_to(&sock).await.unwrap();
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
 
     let result = client
         .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![tmp.path().to_path_buf()],
+            kilns: vec![crate::test_support::kiln_name("kiln")],
             workspace: None,
             recording_mode: None,
             recording_path: None,
@@ -473,12 +479,12 @@ async fn test_session_list() {
 async fn test_session_lifecycle() {
     let (_srv, sock, _handle) = setup_test_server().await;
     let client = DaemonClient::connect_to(&sock).await.unwrap();
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
 
     let result = client
         .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![tmp.path().to_path_buf()],
+            kilns: vec![crate::test_support::kiln_name("kiln")],
             workspace: None,
             recording_mode: None,
             recording_path: None,
@@ -503,12 +509,12 @@ async fn test_session_lifecycle() {
 async fn test_session_subscribe_unsubscribe() {
     let (_srv, sock, _handle) = setup_test_server().await;
     let client = DaemonClient::connect_to(&sock).await.unwrap();
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
 
     let result = client
         .session_create(SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![tmp.path().to_path_buf()],
+            kilns: vec![crate::test_support::kiln_name("kiln")],
             workspace: None,
             recording_mode: None,
             recording_path: None,
@@ -536,13 +542,13 @@ async fn test_session_subscribe_unsubscribe() {
 async fn test_session_thinking_budget() {
     let (_srv, sock, _handle) = setup_test_server().await;
     let client = DaemonClient::connect_to(&sock).await.unwrap();
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
 
     let result = client
         .session_create_with_agent(
             SessionCreateParams {
                 session_type: "chat".to_string(),
-                kilns: vec![tmp.path().to_path_buf()],
+                kilns: vec![crate::test_support::kiln_name("kiln")],
                 workspace: None,
                 recording_mode: None,
                 recording_path: None,

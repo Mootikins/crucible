@@ -88,9 +88,9 @@ impl AgentHandle for DaemonAgentHandle {
         let _ = self.client.session_unsubscribe(&[&self.session_id]).await;
         let _ = self.client.session_end(&self.session_id).await;
 
-        let (Some(kiln), Some(ws)) = (&self.kiln_path, &self.workspace) else {
+        let (Some(kiln), Some(ws)) = (&self.kiln, &self.workspace) else {
             return Err(ChatError::Internal(
-                "Cannot create new session: missing kiln_path or workspace".into(),
+                "Cannot create new session: missing kiln or workspace".into(),
             ));
         };
 

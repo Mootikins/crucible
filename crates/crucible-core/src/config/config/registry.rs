@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 /// A named kiln entry in global config.
 ///
@@ -37,6 +38,41 @@ impl KilnEntry {
             KilnEntry::Config { lazy, .. } => *lazy,
         }
     }
+}
+
+/// The effective `[kilns]` map for a config's `kiln_path` + `[kilns]` pair.
+///
+/// The body of [`CliAppConfig::resolved_kilns`](crate::config::CliAppConfig::resolved_kilns),
+/// lifted out so the daemon can build the same map from the config JSON it is
+/// *handed* rather than re-reading the config file. Two answers to "which
+/// kilns exist" is how the daemon ends up with an empty registry for the
+/// shipped `kiln_path`-only config shape, and without the bundled
+/// `crucible-docs` entry at all — it is injected here, never into `self.kilns`.
+///
+/// See that method for why `crucible-docs` must stay out of the stored map and
+/// why it is `lazy`.
+pub fn resolve_kiln_entries(
+    kiln_path: &Path,
+    kilns: &HashMap<String, KilnEntry>,
+) -> HashMap<String, KilnEntry> {
+    let mut map = if kilns.is_empty() {
+        HashMap::from([(
+            "default".to_string(),
+            KilnEntry::Path(kiln_path.to_path_buf()),
+        )])
+    } else {
+        kilns.clone()
+    };
+
+    if let Some(docs) = crate::bundled_docs::bundled_docs_dir() {
+        map.entry("crucible-docs".to_string())
+            .or_insert(KilnEntry::Config {
+                path: docs,
+                lazy: true,
+            });
+    }
+
+    map
 }
 
 /// A registered project in global config.

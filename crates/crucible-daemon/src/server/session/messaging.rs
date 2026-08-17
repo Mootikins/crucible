@@ -113,7 +113,8 @@ pub(crate) async fn inject_context_impl(
     };
 
     let event_json = serde_json::to_string(&log_event).map_err(|e| e.to_string())?;
-    let storage = FileSessionStorage::new(sm.sessions_root().to_path_buf());
+    let storage = FileSessionStorage::new(sm.sessions_root().to_path_buf())
+        .with_registry(sm.kiln_registry().clone());
     storage
         .append_event(&session, &event_json)
         .await

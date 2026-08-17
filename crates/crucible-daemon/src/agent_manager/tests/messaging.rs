@@ -1346,7 +1346,7 @@ async fn at_mention_attaches_the_file_contents_to_the_turn() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             Some(tmp.path().to_path_buf()),
             None,
         )

@@ -80,7 +80,10 @@ pub(crate) async fn handle_session_list_persisted(
         .and_then(|t| t.parse::<crate::observe::SessionType>().ok());
     let limit = optional_param!(req, "limit", as_u64).unwrap_or(50) as usize;
 
-    let scope = caller_kiln_scope(&req);
+    let scope = match caller_kiln_scope(&req, sm.kiln_registry()) {
+        Ok(scope) => scope,
+        Err(message) => return Response::error(req.id, INVALID_PARAMS, message),
+    };
     if scope.is_empty() {
         return Response::success(
             req.id,
@@ -333,7 +336,10 @@ pub(crate) async fn handle_session_cleanup(req: Request, sm: &Arc<SessionManager
     let older_than_days = require_param!(req, "older_than_days", as_u64);
     let dry_run = optional_param!(req, "dry_run", as_bool).unwrap_or(false);
     let all_kilns = optional_param!(req, "all_kilns", as_bool).unwrap_or(false);
-    let requested = caller_kiln_scope(&req);
+    let requested = match caller_kiln_scope(&req, sm.kiln_registry()) {
+        Ok(scope) => scope,
+        Err(message) => return Response::error(req.id, INVALID_PARAMS, message),
+    };
 
     // `all_kilns` wins over a named scope deliberately: it is the more explicit
     // of the two, and a caller that sent both meant the wider one.
@@ -354,7 +360,7 @@ pub(crate) async fn handle_session_cleanup(req: Request, sm: &Arc<SessionManager
         Some(scope) => scope
             .kilns()
             .iter()
-            .map(|k| k.to_string_lossy())
+            .map(|k| k.to_string())
             .collect::<Vec<_>>()
             .join(", "),
         None => "all_kilns".to_string(),

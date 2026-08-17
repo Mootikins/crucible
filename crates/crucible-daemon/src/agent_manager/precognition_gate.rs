@@ -18,7 +18,7 @@
 pub(super) fn should_run_precognition(
     precognition_enabled: bool,
     original_content: &str,
-    session_kilns: &[std::path::PathBuf],
+    session_kilns: &[crucible_core::config::KilnName],
     is_first_user_message: bool,
 ) -> bool {
     precognition_enabled
@@ -30,10 +30,10 @@ pub(super) fn should_run_precognition(
 #[cfg(test)]
 mod should_run_precognition_tests {
     use super::*;
-    use std::path::PathBuf;
+    use crucible_core::config::KilnName;
 
-    fn one_kiln() -> Vec<PathBuf> {
-        vec![PathBuf::from("/some/kiln")]
+    fn one_kiln() -> Vec<KilnName> {
+        vec![KilnName::parse("some-kiln").unwrap()]
     }
 
     #[test]

@@ -1,8 +1,7 @@
 use super::*;
-use crate::test_support::temp_session_manager;
 use crucible_core::session::Session;
 use serde_json::json;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 fn create_test_agent_manager_with_workspace_root(
     session_manager: Arc<SessionManager>,
@@ -28,7 +27,8 @@ async fn session_workspace_used_for_workspace_tools() {
     let kiln_dir = TempDir::new().unwrap();
     let workspace_dir = TempDir::new().unwrap();
 
-    let session_manager = temp_session_manager();
+    let session_manager =
+        crate::test_support::temp_session_manager_with_kilns(&[("kiln", kiln_dir.path())]);
     let agent_manager = create_test_agent_manager_with_workspace_root(
         session_manager.clone(),
         workspace_dir.path(),
@@ -37,7 +37,7 @@ async fn session_workspace_used_for_workspace_tools() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![kiln_dir.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             Some(workspace_dir.path().to_path_buf()),
             None,
         )
@@ -81,7 +81,8 @@ async fn session_kiln_used_for_crucible_mcp_server() {
     )
     .unwrap();
 
-    let session_manager = temp_session_manager();
+    let session_manager =
+        crate::test_support::temp_session_manager_with_kilns(&[("kiln", kiln_dir.path())]);
     let agent_manager = create_test_agent_manager_with_workspace_root(
         session_manager.clone(),
         workspace_dir.path(),
@@ -90,7 +91,7 @@ async fn session_kiln_used_for_crucible_mcp_server() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![kiln_dir.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             Some(workspace_dir.path().to_path_buf()),
             None,
         )
@@ -135,14 +136,17 @@ async fn regression_workspace_equals_kiln_tools_still_work() {
     let shared_dir = TempDir::new().unwrap();
     std::fs::write(shared_dir.path().join("shared-note.md"), "# shared\n").unwrap();
 
-    let session_manager = temp_session_manager();
+    // The kiln and the workspace are the SAME directory — that is the shape
+    // this regression is about — so the name has to resolve to it.
+    let session_manager =
+        crate::test_support::temp_session_manager_with_kilns(&[("kiln", shared_dir.path())]);
     let agent_manager =
         create_test_agent_manager_with_workspace_root(session_manager.clone(), shared_dir.path());
 
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![shared_dir.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             Some(shared_dir.path().to_path_buf()),
             None,
         )
@@ -190,7 +194,6 @@ async fn regression_workspace_equals_kiln_tools_still_work() {
 ///
 /// It used to get the daemon-GLOBAL one instead, whose `WorkspaceTools` has no
 /// containment at all — so `session.set_workspace` with no `workspace` key
-/// (which falls back to `default_kiln()`, and to `""` when there is none)
 /// traded a contained tool set for an uncontained one. An absent workspace
 /// degrades capabilities; it must not degrade containment. The tools anchor at
 /// the session's own storage directory, which is the one place it certainly
@@ -200,14 +203,18 @@ async fn a_workspace_less_session_still_gets_a_contained_dispatcher() {
     let kiln_dir = TempDir::new().unwrap();
     let default_workspace_root = TempDir::new().unwrap();
 
-    let session_manager = temp_session_manager();
+    let session_manager =
+        crate::test_support::temp_session_manager_with_kilns(&[("kiln", kiln_dir.path())]);
     let agent_manager = create_test_agent_manager_with_workspace_root(
         session_manager.clone(),
         default_workspace_root.path(),
     );
 
-    let session = Session::new(SessionType::Chat, vec![kiln_dir.path().to_path_buf()])
-        .with_workspace(PathBuf::new());
+    let session = Session::new(
+        SessionType::Chat,
+        vec![crate::test_support::kiln_name("kiln")],
+    );
+    assert_eq!(session.workspace, None, "precondition: no workspace");
     session_manager.register_transient(session.clone());
     let session_dir = session.storage_path(session_manager.sessions_root());
     std::fs::create_dir_all(&session_dir).unwrap();

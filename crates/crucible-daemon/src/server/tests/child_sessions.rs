@@ -14,9 +14,14 @@ fn write_child_session(
     kiln: &std::path::Path,
     parent_id: &str,
 ) -> String {
-    let child = Session::new(SessionType::Agent, vec![kiln.to_path_buf()])
+    // The child's kiln goes on disk as the PATH the name resolves to — that is
+    // the on-disk representation — and the daemon maps it back on load. A
+    // fixture that wrote the name would produce a session whose kiln set is
+    // empty everywhere the daemon reads it.
+    let mut child = Session::new(SessionType::Agent, Vec::new())
         .with_parent(parent_id.to_string())
         .with_title("delegated task");
+    child.set_persisted_kiln_paths(vec![kiln.to_path_buf()]);
     let dir = sessions_root.join(&*child.id);
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
@@ -31,7 +36,7 @@ fn write_child_session(
 async fn session_list_hides_children_unless_requested() {
     let server = TestServer::start().await;
     let mut client = server.connect().await;
-    let parent_id = create_chat_session(&mut client, &server.kiln_path, 700).await;
+    let parent_id = create_chat_session(&mut client, TestServer::KILN, 700).await;
     let child_id = write_child_session(&server.sessions_root(), &server.kiln_path, &parent_id);
 
     // Default listing: parent visible, child hidden.
@@ -41,7 +46,7 @@ async fn session_list_hides_children_unless_requested() {
             "jsonrpc": "2.0",
             "id": 701,
             "method": "session.list",
-            "params": { "kiln": server.kiln_path.to_string_lossy() }
+            "params": { "kiln": TestServer::KILN }
         }),
     )
     .await;
@@ -67,7 +72,7 @@ async fn session_list_hides_children_unless_requested() {
             "id": 702,
             "method": "session.list",
             "params": {
-                "kiln": server.kiln_path.to_string_lossy(),
+                "kiln": TestServer::KILN,
                 "include_children": true
             }
         }),
@@ -87,7 +92,7 @@ async fn session_list_hides_children_unless_requested() {
 async fn session_archive_cascades_to_children() {
     let server = TestServer::start().await;
     let mut client = server.connect().await;
-    let parent_id = create_chat_session(&mut client, &server.kiln_path, 710).await;
+    let parent_id = create_chat_session(&mut client, TestServer::KILN, 710).await;
     let child_id = write_child_session(&server.sessions_root(), &server.kiln_path, &parent_id);
 
     let response = rpc_call(
@@ -98,7 +103,7 @@ async fn session_archive_cascades_to_children() {
             "method": "session.archive",
             "params": {
                 "session_id": parent_id,
-                "kiln": server.kiln_path.to_string_lossy()
+                "kiln": TestServer::KILN
             }
         }),
     )
@@ -120,7 +125,7 @@ async fn session_archive_cascades_to_children() {
 async fn session_delete_cascades_to_children() {
     let server = TestServer::start().await;
     let mut client = server.connect().await;
-    let parent_id = create_chat_session(&mut client, &server.kiln_path, 720).await;
+    let parent_id = create_chat_session(&mut client, TestServer::KILN, 720).await;
     let child_id = write_child_session(&server.sessions_root(), &server.kiln_path, &parent_id);
 
     let response = rpc_call(
@@ -131,7 +136,7 @@ async fn session_delete_cascades_to_children() {
             "method": "session.delete",
             "params": {
                 "session_id": parent_id,
-                "kiln": server.kiln_path.to_string_lossy()
+                "kiln": TestServer::KILN
             }
         }),
     )
@@ -155,7 +160,7 @@ async fn session_delete_cascades_to_children() {
 async fn session_get_reports_parent_link() {
     let server = TestServer::start().await;
     let mut client = server.connect().await;
-    let parent_id = create_chat_session(&mut client, &server.kiln_path, 730).await;
+    let parent_id = create_chat_session(&mut client, TestServer::KILN, 730).await;
 
     let response = rpc_call(
         &mut client,

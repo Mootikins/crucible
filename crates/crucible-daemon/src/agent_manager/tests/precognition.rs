@@ -1,5 +1,7 @@
 use super::*;
-use crate::test_support::{temp_session_manager, temp_session_storage};
+use crate::test_support::{
+    kiln_name, temp_session_manager, temp_session_manager_with_kilns, temp_session_storage,
+};
 
 #[tokio::test]
 async fn test_precognition_skipped_when_disabled() {
@@ -9,7 +11,7 @@ async fn test_precognition_skipped_when_disabled() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
+            vec![kiln_name("kiln")],
             Some(tmp.path().to_path_buf()),
             None,
         )
@@ -49,7 +51,7 @@ async fn test_precognition_skipped_for_search_command() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
+            vec![kiln_name("kiln")],
             Some(tmp.path().to_path_buf()),
             None,
         )
@@ -92,12 +94,7 @@ async fn test_precognition_skipped_when_no_kiln() {
     let session_manager = temp_session_manager();
 
     let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            vec![std::path::PathBuf::new()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, Vec::new(), None, None)
         .await
         .unwrap();
 
@@ -136,7 +133,7 @@ async fn test_precognition_complete_event_emitted_when_enrichment_runs() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
+            vec![kiln_name("kiln")],
             Some(tmp.path().to_path_buf()),
             None,
         )
@@ -194,7 +191,7 @@ async fn test_precognition_runs_only_on_first_user_message_of_session() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
+            vec![kiln_name("kiln")],
             Some(tmp.path().to_path_buf()),
             None,
         )
@@ -268,7 +265,7 @@ async fn test_precognition_does_not_re_fire_when_session_has_prior_history() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
+            vec![kiln_name("kiln")],
             Some(tmp.path().to_path_buf()),
             None,
         )
@@ -334,11 +331,11 @@ async fn test_precognition_enriched_content_reaches_agent() {
     )
     .unwrap();
 
-    let session_manager = temp_session_manager();
+    let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln_path)]);
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![kiln_path.clone()],
+            vec![kiln_name("kiln")],
             Some(kiln_path.clone()),
             None,
         )
@@ -472,11 +469,11 @@ async fn test_precognition_emits_note_info_in_event() {
     )
     .unwrap();
 
-    let session_manager = temp_session_manager();
+    let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln_path)]);
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![kiln_path.clone()],
+            vec![kiln_name("kiln")],
             Some(kiln_path.clone()),
             None,
         )
@@ -593,11 +590,11 @@ async fn setup_precog_session_with_handler(
     )
     .unwrap();
 
-    let session_manager = temp_session_manager();
+    let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln_path)]);
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![kiln_path.clone()],
+            vec![kiln_name("kiln")],
             Some(kiln_path.clone()),
             None,
         )
@@ -827,11 +824,11 @@ async fn precognition_disabled_mid_session_stops_enriching() {
     )
     .unwrap();
 
-    let session_manager = temp_session_manager();
+    let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln_path)]);
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![kiln_path.clone()],
+            vec![kiln_name("kiln")],
             Some(kiln_path.clone()),
             None,
         )

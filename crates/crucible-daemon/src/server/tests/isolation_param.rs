@@ -41,7 +41,7 @@ impl Fixture {
     async fn create(&self, params: Value) -> String {
         let kiln = self.tmp.path().join("kiln");
         std::fs::create_dir_all(&kiln).unwrap();
-        let mut merged = json!({ "type": "chat", "kilns": [kiln] });
+        let mut merged = json!({ "type": "chat", "kilns": ["kiln"] });
         for (k, v) in params.as_object().unwrap() {
             merged[k] = v.clone();
         }

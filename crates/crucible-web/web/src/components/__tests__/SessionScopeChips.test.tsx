@@ -18,17 +18,17 @@ vi.mock('@/contexts/ChatContext', () => ({
 const connectMock = vi.fn().mockResolvedValue({
   session_id: 's1',
   kilns: ['/kilns/main', '/kilns/extra'],
-  workspace: '/kilns/main',
+  workspace: null,
 });
 const disconnectMock = vi.fn().mockResolvedValue({
   session_id: 's1',
   kilns: ['/kilns/main'],
-  workspace: '/kilns/main',
+  workspace: null,
 });
 const setWorkspaceMock = vi.fn().mockResolvedValue({
   session_id: 's1',
   kilns: ['/kilns/main'],
-  workspace: '/kilns/main',
+  workspace: null,
 });
 
 vi.mock('@/lib/api', () => ({
@@ -46,7 +46,8 @@ const baseSession = (): Session => ({
   id: 's1',
   session_type: 'chat',
   kilns: ['/kilns/main'],
-  workspace: '/kilns/main',
+  // Floating: the daemon says outright that this session has no workspace.
+  workspace: null,
   state: 'active',
   title: null,
   agent_model: null,
@@ -113,7 +114,7 @@ describe('SessionScopeChips', () => {
   });
 
   it('a kiln-less session reads as tools-only, and says the note tools are gone', async () => {
-    mockSession = { ...baseSession(), kilns: [], workspace: '' };
+    mockSession = { ...baseSession(), kilns: [], workspace: null };
     render(() => <SessionScopeChips />);
     expect(screen.getByTestId('scope-kiln').textContent).toContain('No kiln');
     fireEvent.click(screen.getByTestId('scope-kiln'));
@@ -125,7 +126,7 @@ describe('SessionScopeChips', () => {
   });
 
   it('a kiln-less session never borrows the home kiln as its label', () => {
-    mockSession = { ...baseSession(), kilns: [], workspace: '' };
+    mockSession = { ...baseSession(), kilns: [], workspace: null };
     render(() => <SessionScopeChips />);
     expect(screen.getByTestId('scope-kiln').textContent).not.toContain('Home kiln');
   });

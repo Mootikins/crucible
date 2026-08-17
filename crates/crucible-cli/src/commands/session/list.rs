@@ -53,7 +53,7 @@ pub(super) async fn list_persisted(
     if let Ok(client) = daemon_client().await {
         if let Ok(result) = client
             .session_list_persisted(
-                std::slice::from_ref(&config.kiln_path),
+                config.session_kiln_name().as_slice(),
                 session_type.as_deref(),
                 Some(limit as usize),
             )

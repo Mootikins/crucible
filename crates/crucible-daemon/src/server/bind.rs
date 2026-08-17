@@ -95,6 +95,32 @@ impl Server {
     /// production uses.
     #[allow(dead_code)] // used by in-process integration-test fixtures
     pub async fn bind_with_data_home(path: &Path, data_home: std::path::PathBuf) -> Result<Self> {
+        Self::bind_with_data_home_and_kilns(path, data_home, &[]).await
+    }
+
+    /// [`Self::bind_with_data_home`], with `[kilns]` entries in the app config
+    /// the daemon is handed.
+    ///
+    /// Kilns are addressed by NAME across the RPC surface, and the registry is
+    /// built from `params.app_config` — so a fixture that binds without one has
+    /// no kilns at all and every scoped request it makes is refused. This is
+    /// how a test says "the daemon knows about this directory", through exactly
+    /// the config path production uses.
+    #[allow(dead_code)] // used by in-process integration-test fixtures
+    pub async fn bind_with_data_home_and_kilns(
+        path: &Path,
+        data_home: std::path::PathBuf,
+        kilns: &[(&str, &Path)],
+    ) -> Result<Self> {
+        let entries: serde_json::Map<String, serde_json::Value> = kilns
+            .iter()
+            .map(|(name, dir)| {
+                (
+                    (*name).to_string(),
+                    serde_json::Value::String(dir.to_string_lossy().into_owned()),
+                )
+            })
+            .collect();
         Self::bind_with_plugin_config(BindWithPluginConfigParams {
             path: path.to_path_buf(),
             // Under the isolated root too: agent-card discovery must not reach
@@ -103,6 +129,11 @@ impl Server {
             // is exactly the intended "no global cards".
             config_home: Some(data_home.join("config")),
             data_home: Some(data_home),
+            app_config: Some(serde_json::Value::Object(
+                [("kilns".to_string(), serde_json::Value::Object(entries))]
+                    .into_iter()
+                    .collect(),
+            )),
             ..Default::default()
         })
         .await

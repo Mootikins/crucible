@@ -7,7 +7,7 @@ use crucible_daemon::{
 };
 use futures::future::BoxFuture;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
@@ -503,13 +503,13 @@ impl ReconnectingDaemon {
 
     pub async fn session_list(
         &self,
-        kiln: Option<&Path>,
+        kiln: Option<&crucible_core::config::KilnName>,
         workspace: Option<&Path>,
         session_type: Option<&str>,
         state: Option<&str>,
         include_archived: Option<bool>,
     ) -> anyhow::Result<serde_json::Value> {
-        let kiln = kiln.map(Path::to_path_buf);
+        let kiln = kiln.cloned();
         let workspace = workspace.map(Path::to_path_buf);
         let session_type = session_type.map(str::to_string);
         let state = state.map(str::to_string);
@@ -521,7 +521,7 @@ impl ReconnectingDaemon {
             Box::pin(async move {
                 daemon
                     .session_list(
-                        kiln.as_deref(),
+                        kiln.as_ref(),
                         workspace.as_deref(),
                         session_type.as_deref(),
                         state.as_deref(),
@@ -539,7 +539,7 @@ impl ReconnectingDaemon {
     pub async fn session_search(
         &self,
         query: &str,
-        kilns: &[PathBuf],
+        kilns: &[crucible_core::config::KilnName],
         limit: Option<usize>,
     ) -> anyhow::Result<serde_json::Value> {
         let query = query.to_string();
@@ -724,14 +724,14 @@ impl ReconnectingDaemon {
     pub async fn session_connect_kiln(
         &self,
         session_id: &str,
-        kiln_path: &Path,
+        kiln: &crucible_core::config::KilnName,
     ) -> anyhow::Result<serde_json::Value> {
         let session_id = session_id.to_string();
-        let kiln_path = kiln_path.to_path_buf();
+        let kiln = kiln.clone();
         self.call_with_reconnect("session.connect_kiln", move |daemon| {
             let session_id = session_id.clone();
-            let kiln_path = kiln_path.clone();
-            Box::pin(async move { daemon.session_connect_kiln(&session_id, &kiln_path).await })
+            let kiln = kiln.clone();
+            Box::pin(async move { daemon.session_connect_kiln(&session_id, &kiln).await })
         })
         .await
     }
@@ -741,18 +741,14 @@ impl ReconnectingDaemon {
     pub async fn session_disconnect_kiln(
         &self,
         session_id: &str,
-        kiln_path: &Path,
+        kiln: &crucible_core::config::KilnName,
     ) -> anyhow::Result<serde_json::Value> {
         let session_id = session_id.to_string();
-        let kiln_path = kiln_path.to_path_buf();
+        let kiln = kiln.clone();
         self.call_with_reconnect("session.disconnect_kiln", move |daemon| {
             let session_id = session_id.clone();
-            let kiln_path = kiln_path.clone();
-            Box::pin(async move {
-                daemon
-                    .session_disconnect_kiln(&session_id, &kiln_path)
-                    .await
-            })
+            let kiln = kiln.clone();
+            Box::pin(async move { daemon.session_disconnect_kiln(&session_id, &kiln).await })
         })
         .await
     }

@@ -412,7 +412,7 @@ async fn run_start(config: CliConfig, target: &str, _session: Option<&str>) -> R
     let create_resp = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "workflow".to_string(),
-            kilns: vec![config.kiln_path.clone()],
+            kilns: config.session_kiln_name().into_iter().collect(),
             workspace: None,
             recording_mode: None,
             recording_path: None,

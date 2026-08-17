@@ -317,15 +317,23 @@ impl AgentManager {
     ) -> Vec<KilnSearchSource> {
         let mut sources = Vec::with_capacity(session.kilns.len());
 
+        // Names become directories through the registry and nowhere else. A
+        // name with no entry is not a narrower corpus, it is no corpus: it
+        // contributes no search source, so retrieval cannot reach something the
+        // registration floor never cleared. `paths_for` logs each drop.
+        let registry = self.session_manager.kiln_registry();
         for kiln in &session.kilns {
-            match self.kiln_manager.get_or_open(kiln).await {
+            let Some(kiln_path) = registry.resolve(kiln).path() else {
+                continue;
+            };
+            match self.kiln_manager.get_or_open(kiln_path).await {
                 Ok(handle) => sources.push(KilnSearchSource {
-                    kiln_path: kiln.clone(),
+                    kiln_path: kiln_path.to_path_buf(),
                     knowledge_repo: handle.as_knowledge_repository(),
                 }),
                 Err(error) => warn!(
                     session_id = %session_id,
-                    kiln = %kiln.display(),
+                    kiln = %kiln,
                     error = %error,
                     "Failed to open kiln for precognition"
                 ),
@@ -350,7 +358,7 @@ impl AgentManager {
             params.query_embedding,
             params.agent_config.precognition_results,
             Some(provider_trust),
-            &params.session.workspace,
+            params.session.workspace.as_deref(),
         )
         .await
         {

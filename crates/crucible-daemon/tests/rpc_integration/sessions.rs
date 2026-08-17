@@ -8,7 +8,7 @@ use super::server::TestServer;
 #[tokio::test]
 async fn test_session_create_and_list() {
     let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+    let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
     let client = DaemonClient::connect_to(&server.socket_path)
         .await
@@ -17,7 +17,7 @@ async fn test_session_create_and_list() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![kiln_dir.path().to_path_buf()],
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
             recording_mode: None,
             recording_path: None,
@@ -33,7 +33,13 @@ async fn test_session_create_and_list() {
     assert!(!session_id.is_empty(), "session_id should not be empty");
 
     let list = client
-        .session_list(Some(kiln_dir.path()), None, Some("chat"), None, None)
+        .session_list(
+            Some(&crucible_daemon::test_support::kiln_name("kiln")),
+            None,
+            Some("chat"),
+            None,
+            None,
+        )
         .await
         .expect("session_list failed");
 
@@ -56,7 +62,7 @@ async fn test_session_create_and_list() {
 #[tokio::test]
 async fn test_session_subscribe_and_unsubscribe() {
     let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+    let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
     let (client, mut event_rx) = DaemonClient::connect_to_with_events(&server.socket_path)
         .await
@@ -66,7 +72,7 @@ async fn test_session_subscribe_and_unsubscribe() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![kiln_dir.path().to_path_buf()],
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
             recording_mode: None,
             recording_path: None,
@@ -101,7 +107,7 @@ async fn test_daemon_agent_handle_creation() {
     use crucible_daemon::DaemonAgentHandle;
 
     let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+    let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
     let (client, event_rx) = DaemonClient::connect_to_with_events(&server.socket_path)
         .await
@@ -111,7 +117,7 @@ async fn test_daemon_agent_handle_creation() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![kiln_dir.path().to_path_buf()],
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
             recording_mode: None,
             recording_path: None,
@@ -140,7 +146,7 @@ async fn test_session_configure_agent() {
     use crucible_core::session::{OutputValidation, SessionAgent};
 
     let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+    let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
     let client = DaemonClient::connect_to(&server.socket_path)
         .await
@@ -149,7 +155,7 @@ async fn test_session_configure_agent() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![kiln_dir.path().to_path_buf()],
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
             recording_mode: None,
             recording_path: None,
@@ -209,7 +215,7 @@ async fn test_session_configure_agent() {
 #[tokio::test]
 async fn test_session_send_message_returns_message_id() {
     let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+    let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
     let client = DaemonClient::connect_to(&server.socket_path)
         .await
@@ -218,7 +224,7 @@ async fn test_session_send_message_returns_message_id() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![kiln_dir.path().to_path_buf()],
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
             recording_mode: None,
             recording_path: None,
@@ -262,7 +268,7 @@ async fn test_session_send_message_returns_message_id() {
 #[tokio::test]
 async fn test_send_message_with_is_interactive_false_accepted() {
     let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+    let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
     let client = DaemonClient::connect_to(&server.socket_path)
         .await
@@ -271,7 +277,7 @@ async fn test_send_message_with_is_interactive_false_accepted() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![kiln_dir.path().to_path_buf()],
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
             recording_mode: None,
             recording_path: None,
@@ -310,7 +316,7 @@ async fn test_send_message_with_is_interactive_false_accepted() {
 #[tokio::test]
 async fn test_send_message_with_permission_override_accepted() {
     let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+    let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
     let client = DaemonClient::connect_to(&server.socket_path)
         .await
@@ -319,7 +325,7 @@ async fn test_send_message_with_permission_override_accepted() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![kiln_dir.path().to_path_buf()],
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
             recording_mode: None,
             recording_path: None,
@@ -363,7 +369,7 @@ async fn test_send_message_with_permission_override_accepted() {
 #[tokio::test]
 async fn test_session_cancel() {
     let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+    let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
     let client = DaemonClient::connect_to(&server.socket_path)
         .await
@@ -372,7 +378,7 @@ async fn test_session_cancel() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![kiln_dir.path().to_path_buf()],
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
             recording_mode: None,
             recording_path: None,

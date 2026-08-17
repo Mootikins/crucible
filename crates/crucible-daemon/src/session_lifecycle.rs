@@ -199,8 +199,10 @@ impl SessionLifecycle {
         // reused, and a stale claim is indistinguishable from a live one.
         loader.isolation().release(session_id);
         loader.status().release(session_id);
-        let session = crucible_lua::Session::new(session_id.to_string())
-            .with_workspace(daemon_session.workspace.to_string_lossy());
+        let mut session = crucible_lua::Session::new(session_id.to_string());
+        if let Some(workspace) = &daemon_session.workspace {
+            session = session.with_workspace(workspace.to_string_lossy());
+        }
         session.bind(Box::new(crate::server::NoopSessionRpc));
         if let Err(e) = loader.fire_session_end(&session).await {
             tracing::warn!(session_id = %session_id, error = %e, "plugin session_end hooks failed");
@@ -219,7 +221,9 @@ impl SessionLifecycle {
         // of paying a second cold start.
         let mut session = crucible_lua::Session::new(session_id.to_string());
         if let Some(daemon_session) = self.sessions.get_session(session_id) {
-            session = session.with_workspace(daemon_session.workspace.to_string_lossy());
+            if let Some(workspace) = &daemon_session.workspace {
+                session = session.with_workspace(workspace.to_string_lossy());
+            }
             // The per-session opt-in, forwarded untouched. This is the whole
             // delivery mechanism: no new Lua API, just a field on the object
             // the plugin already gets.

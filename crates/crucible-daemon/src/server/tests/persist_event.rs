@@ -74,12 +74,12 @@ impl SessionStorage for FailingStorage {
 
 #[tokio::test]
 async fn test_persist_event_returns_error_on_storage_failure() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let sm = temp_session_manager();
     let session = sm
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             None,
             None,
         )
@@ -102,12 +102,12 @@ async fn test_persist_event_returns_error_on_storage_failure() {
 
 #[tokio::test]
 async fn test_persist_event_skips_non_persistent_events() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let sm = temp_session_manager();
     let session = sm
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             None,
             None,
         )
@@ -186,12 +186,12 @@ async fn test_persist_event_keeps_precognition_notes() {
         }
     }
 
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let sm = temp_session_manager();
     let session = sm
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             None,
             None,
         )
@@ -297,14 +297,14 @@ async fn a_session_initialized_is_persisted_once_the_model_is_known() {
 
 #[tokio::test]
 async fn test_sweep_and_archive_stale_sessions_archives_inactive_sessions_without_subscribers() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let session_manager = temp_session_manager();
     let subscription_manager = SubscriptionManager::new();
 
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             None,
             None,
         )
@@ -337,14 +337,14 @@ async fn test_sweep_and_archive_stale_sessions_archives_inactive_sessions_withou
 
 #[tokio::test]
 async fn test_sweep_cleans_up_agent_state_for_archived_sessions() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let session_manager = temp_session_manager();
     let subscription_manager = SubscriptionManager::new();
 
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             None,
             None,
         )
@@ -393,14 +393,14 @@ async fn test_sweep_cleans_up_agent_state_for_archived_sessions() {
 /// into "resident forever" and no test would notice.
 #[tokio::test]
 async fn the_sweep_reclaims_a_stale_ended_session_that_is_still_resident() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let session_manager = temp_session_manager();
     let subscription_manager = SubscriptionManager::new();
 
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             None,
             None,
         )
@@ -439,14 +439,14 @@ async fn the_sweep_reclaims_a_stale_ended_session_that_is_still_resident() {
 
 #[tokio::test]
 async fn test_sweep_archives_stale_persisted_sessions_not_in_memory() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let session_manager = temp_session_manager();
     let subscription_manager = SubscriptionManager::new();
 
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             None,
             None,
         )
@@ -486,14 +486,14 @@ async fn test_sweep_archives_stale_persisted_sessions_not_in_memory() {
 
 #[tokio::test]
 async fn test_sweep_and_archive_stale_sessions_skips_sessions_with_active_subscribers() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let session_manager = temp_session_manager();
     let subscription_manager = SubscriptionManager::new();
 
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             None,
             None,
         )
@@ -627,13 +627,13 @@ async fn test_granular_session_creates_recording_file() {
     use std::time::Duration;
 
     let server = TestServer::start().await;
-    let kiln_path = server.kiln_path.clone();
+    let _kiln_path = server.kiln_path.clone();
     let event_tx = server.event_tx.clone();
     let mut client = server.connect().await;
 
     let create_req = format!(
         r#"{{"jsonrpc":"2.0","id":1,"method":"session.create","params":{{"type":"chat","kilns":["{}"],"recording_mode":"granular"}}}}"#,
-        kiln_path.display()
+        TestServer::KILN
     );
     client.write_all(create_req.as_bytes()).await.unwrap();
     client.write_all(b"\n").await.unwrap();
@@ -676,13 +676,13 @@ async fn test_non_granular_session_has_no_recording_file() {
     use std::time::Duration;
 
     let server = TestServer::start().await;
-    let kiln_path = server.kiln_path.clone();
+    let _kiln_path = server.kiln_path.clone();
     let event_tx = server.event_tx.clone();
     let mut client = server.connect().await;
 
     let create_req = format!(
         r#"{{"jsonrpc":"2.0","id":1,"method":"session.create","params":{{"type":"chat","kilns":["{}"]}}}}"#,
-        kiln_path.display()
+        TestServer::KILN
     );
     client.write_all(create_req.as_bytes()).await.unwrap();
     client.write_all(b"\n").await.unwrap();
@@ -716,13 +716,13 @@ async fn test_granular_recording_stops_on_session_end() {
     use std::time::Duration;
 
     let server = TestServer::start().await;
-    let kiln_path = server.kiln_path.clone();
+    let _kiln_path = server.kiln_path.clone();
     let event_tx = server.event_tx.clone();
     let mut client = server.connect().await;
 
     let create_req = format!(
         r#"{{"jsonrpc":"2.0","id":1,"method":"session.create","params":{{"type":"chat","kilns":["{}"],"recording_mode":"granular"}}}}"#,
-        kiln_path.display()
+        TestServer::KILN
     );
     client.write_all(create_req.as_bytes()).await.unwrap();
     client.write_all(b"\n").await.unwrap();
@@ -791,12 +791,12 @@ async fn test_granular_recording_stops_on_session_end() {
 /// reproduces the *state* the race produced, deterministically.
 #[tokio::test]
 async fn an_event_that_arrives_after_the_session_ended_is_still_written() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let sm = temp_session_manager();
     let session = sm
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             None,
             None,
         )
@@ -829,12 +829,12 @@ async fn an_event_that_arrives_after_the_session_ended_is_still_written() {
 /// straggling event would resurrect a file the user asked to be gone.
 #[tokio::test]
 async fn an_event_for_a_deleted_session_is_dropped_rather_than_recreating_it() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let sm = temp_session_manager();
     let session = sm
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             None,
             None,
         )

@@ -49,8 +49,12 @@ async fn init_lua_user_override_loads_in_session() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
+            vec![crate::test_support::kiln_name("kiln")],
+            // Explicit: a user `init.lua` is discovered under the session's
+            // WORKSPACE, and this fixture writes it into `tmp`. It used to
+            // arrive there by the `workspace == kilns[0]` sentinel, which said
+            // nothing about where the user meant to be working.
+            Some(tmp.path().to_path_buf()),
             None,
         )
         .await
@@ -98,8 +102,12 @@ async fn a_session_start_hook_sees_the_sessions_isolation_param() {
     let mut session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
+            vec![crate::test_support::kiln_name("kiln")],
+            // Explicit: a user `init.lua` is discovered under the session's
+            // WORKSPACE, and this fixture writes it into `tmp`. It used to
+            // arrive there by the `workspace == kilns[0]` sentinel, which said
+            // nothing about where the user meant to be working.
+            Some(tmp.path().to_path_buf()),
             None,
         )
         .await

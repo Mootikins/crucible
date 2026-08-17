@@ -9,7 +9,7 @@
 //! ```
 //! cargo build -p crucible-daemon --features test-utils --bin mock-acp-agent
 //! ```
-use crucible_daemon::test_support::temp_session_manager;
+use crucible_daemon::test_support::{kiln_name, temp_session_manager};
 
 use crucible_core::background::JobStatus;
 use crucible_core::config::{AcpConfig, AgentProfile, DelegationConfig};
@@ -117,11 +117,11 @@ fn build_delegation_stack(
 async fn create_delegation_parent(
     manager: &AgentManager,
     session_manager: &SessionManager,
-    workspace: &Path,
+    _workspace: &Path,
     agent: SessionAgent,
 ) -> String {
     let session = session_manager
-        .create_session(SessionType::Chat, vec![workspace.to_path_buf()], None, None)
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .expect("parent session should be created");
     manager

@@ -79,7 +79,12 @@ impl AgentManager {
         session: &crucible_core::session::Session,
         new_agent: &SessionAgent,
     ) -> Result<(), AgentError> {
-        self.refuse_untrusted_for_kilns(session.kilns.iter(), new_agent)
+        // Names become directories here, once. An unresolvable name reaches
+        // this gate as nothing at all rather than as a kiln with no
+        // classification — which is the reading that would let it buy a trust
+        // upgrade it never earned.
+        let kilns = self.session_manager.kiln_paths(&session.kilns);
+        self.refuse_untrusted_for_kilns(kilns.iter(), new_agent)
     }
 
     /// The same refusal, against a kiln set rather than a live session.
@@ -1050,7 +1055,12 @@ impl AgentManager {
                     let _suppressed = self
                         .external_watch()
                         .map(|w| w.tracker().capture(session_id));
-                    let restored = snap.restore(&session.workspace).await;
+                    let restored = snap
+                        .restore(&crate::agent_manager::scope::session_tool_root(
+                            &session,
+                            self.session_manager.sessions_root(),
+                        ))
+                        .await;
                     // The snapshot has left the map, so nothing will release
                     // its keep ref later. Do it here, whether or not the
                     // restore worked — a failed restore does not make the

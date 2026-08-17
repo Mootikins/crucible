@@ -432,7 +432,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
             "session_id": "test-session-001",
             "state": "active",
             "session_type": "chat",
-            "kilns": ["/tmp/test-kiln"]
+            "kilns": ["test-kiln"]
         }),
         "session.pause" => json!({"ok": true}),
         "session.resume" => json!({"ok": true}),
@@ -515,12 +515,12 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         "project.get" => Value::Null,
         "session.connect_kiln" => json!({
             "session_id": "test-session-001",
-            "kilns": ["/tmp/test-kiln", "/tmp/extra-kiln"],
+            "kilns": ["test-kiln", "extra-kiln"],
             "workspace": "/tmp/test-kiln",
         }),
         "session.disconnect_kiln" => json!({
             "session_id": "test-session-001",
-            "kilns": ["/tmp/test-kiln"],
+            "kilns": ["test-kiln"],
             "workspace": "/tmp/test-kiln",
         }),
         "session.set_workspace" => {
@@ -531,7 +531,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
                 .unwrap_or("/tmp/test-kiln");
             json!({
                 "session_id": "test-session-001",
-                "kilns": ["/tmp/test-kiln"],
+                "kilns": ["test-kiln"],
                 "workspace": workspace,
             })
         }

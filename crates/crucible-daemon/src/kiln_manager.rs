@@ -888,33 +888,33 @@ impl KilnManager {
             .cloned()
     }
 
-    /// Open kilns by name from a registry. Returns names of successfully opened kilns.
-    /// Logs warnings for names not found in the registry or that fail to open.
-    pub async fn open_named_kilns(
+    /// Open the kilns `names` resolve to, returning the ones actually opened.
+    ///
+    /// Resolution is the registry's, not this manager's: names, `~` expansion,
+    /// relative anchoring and the `lazy` skip all live in one place, so there
+    /// is no second answer to "where is kiln X" that can drift from the first.
+    /// A [`KilnResolution::Lazy`] entry is skipped by construction — it is a
+    /// distinct variant rather than a flag a caller has to remember — and an
+    /// unresolvable name opens nothing at all.
+    pub async fn open_registered(
         &self,
-        registry: &HashMap<String, crucible_core::config::KilnEntry>,
-        names: &[String],
-    ) -> Vec<String> {
+        registry: &crate::kiln_registry::KilnRegistry,
+        names: &[crucible_core::config::KilnName],
+    ) -> Vec<crucible_core::config::KilnName> {
+        use crate::kiln_registry::KilnResolution;
+
         let mut opened = Vec::new();
         for name in names {
-            if let Some(entry) = registry.get(name) {
-                if entry.lazy() {
-                    tracing::debug!(kiln = %name, "Skipping lazy kiln");
-                    continue;
-                }
-                let raw_path = entry.path();
-                let path = expand_tilde_path(&raw_path);
-                match self.open(&path).await {
+            match registry.resolve(name) {
+                KilnResolution::Unknown => warn!(kiln = %name, "Kiln not found in the registry"),
+                KilnResolution::Lazy(_) => tracing::debug!(kiln = %name, "Skipping lazy kiln"),
+                KilnResolution::Ready(kiln) => match self.open(kiln.resolved_path()).await {
                     Ok(()) => {
-                        info!(kiln = %name, path = %path.display(), "Opened project kiln");
+                        info!(kiln = %name, path = %kiln.path().display(), "Opened project kiln");
                         opened.push(name.clone());
                     }
-                    Err(e) => {
-                        warn!(kiln = %name, error = %e, "Failed to open project kiln");
-                    }
-                }
-            } else {
-                warn!(kiln = %name, "Kiln not found in registry");
+                    Err(e) => warn!(kiln = %name, error = %e, "Failed to open project kiln"),
+                },
             }
         }
         opened
@@ -1079,18 +1079,22 @@ fn discover_indexable_files(kiln_path: &Path) -> Vec<PathBuf> {
 }
 
 /// Expand a leading `~/` to the user's home directory.
+///
+/// Delegates rather than re-implementing: three copies of this existed, they
+/// disagreed on the bare `~` case, and one of them panicked on it. One
+/// expander, one answer.
 pub(crate) fn expand_tilde_path(path: &Path) -> PathBuf {
-    let s = path.to_string_lossy();
-    if let Some(rest) = s.strip_prefix("~/") {
-        if let Some(home) = dirs::home_dir() {
-            return home.join(rest);
+    // Only a `~` path needs the expander, and only a path that is valid UTF-8
+    // can have one. Everything else is returned byte-for-byte: converting
+    // lossily first would rewrite a non-UTF-8 path into a *different* path,
+    // and the whole point of a resolver is that the path checked is the path
+    // used.
+    match path.to_str() {
+        Some(s) if s.starts_with('~') => {
+            crate::project_manager::resolve_registration_root(s, dirs::home_dir().as_deref())
         }
-    } else if s == "~" {
-        if let Some(home) = dirs::home_dir() {
-            return home;
-        }
+        _ => path.to_path_buf(),
     }
-    path.to_path_buf()
 }
 
 fn read_kiln_name(kiln_path: &Path) -> Option<String> {

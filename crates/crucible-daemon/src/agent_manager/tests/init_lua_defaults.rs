@@ -11,7 +11,7 @@
 //! effect, so a default that registers against a missing API fails loudly.
 
 use super::*;
-use crate::test_support::temp_session_manager;
+use crate::test_support::{kiln_name, temp_session_manager};
 use crucible_core::config::components::permissions::PermissionDecision;
 use crucible_lua::{execute_permission_hooks, PermissionHookResult, PermissionRequest};
 
@@ -21,8 +21,12 @@ async fn session_with_defaults() -> (TempDir, Arc<AgentManager>, String) {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
+            vec![kiln_name("kiln")],
+            // Explicit: a user `init.lua` is discovered under the session's
+            // WORKSPACE, and this fixture writes it into `tmp`. It used to
+            // arrive there by the `workspace == kilns[0]` sentinel, which said
+            // nothing about where the user meant to be working.
+            Some(tmp.path().to_path_buf()),
             None,
         )
         .await
@@ -234,8 +238,12 @@ async fn a_user_init_lua_can_replace_a_shipped_default() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
+            vec![kiln_name("kiln")],
+            // Explicit: a user `init.lua` is discovered under the session's
+            // WORKSPACE, and this fixture writes it into `tmp`. It used to
+            // arrive there by the `workspace == kilns[0]` sentinel, which said
+            // nothing about where the user meant to be working.
+            Some(tmp.path().to_path_buf()),
             None,
         )
         .await
@@ -268,8 +276,12 @@ async fn a_user_init_lua_can_append_to_a_shipped_default() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
+            vec![kiln_name("kiln")],
+            // Explicit: a user `init.lua` is discovered under the session's
+            // WORKSPACE, and this fixture writes it into `tmp`. It used to
+            // arrive there by the `workspace == kilns[0]` sentinel, which said
+            // nothing about where the user meant to be working.
+            Some(tmp.path().to_path_buf()),
             None,
         )
         .await
@@ -310,8 +322,12 @@ async fn on_session_start_fires_and_can_set_this_sessions_values() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
+            vec![kiln_name("kiln")],
+            // Explicit: a user `init.lua` is discovered under the session's
+            // WORKSPACE, and this fixture writes it into `tmp`. It used to
+            // arrive there by the `workspace == kilns[0]` sentinel, which said
+            // nothing about where the user meant to be working.
+            Some(tmp.path().to_path_buf()),
             None,
         )
         .await
@@ -345,8 +361,12 @@ async fn on_session_start_sees_the_global_default_and_can_extend_it() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
+            vec![kiln_name("kiln")],
+            // Explicit: a user `init.lua` is discovered under the session's
+            // WORKSPACE, and this fixture writes it into `tmp`. It used to
+            // arrive there by the `workspace == kilns[0]` sentinel, which said
+            // nothing about where the user meant to be working.
+            Some(tmp.path().to_path_buf()),
             None,
         )
         .await
@@ -381,8 +401,12 @@ async fn a_failing_start_hook_does_not_break_the_session() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
+            vec![kiln_name("kiln")],
+            // Explicit: a user `init.lua` is discovered under the session's
+            // WORKSPACE, and this fixture writes it into `tmp`. It used to
+            // arrive there by the `workspace == kilns[0]` sentinel, which said
+            // nothing about where the user meant to be working.
+            Some(tmp.path().to_path_buf()),
             None,
         )
         .await
@@ -419,8 +443,12 @@ async fn a_user_hook_overrides_the_shipped_auto_approve() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
+            vec![kiln_name("kiln")],
+            // Explicit: a user `init.lua` is discovered under the session's
+            // WORKSPACE, and this fixture writes it into `tmp`. It used to
+            // arrive there by the `workspace == kilns[0]` sentinel, which said
+            // nothing about where the user meant to be working.
+            Some(tmp.path().to_path_buf()),
             None,
         )
         .await
@@ -500,8 +528,12 @@ async fn a_user_defined_mode_can_be_selected() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
+            vec![kiln_name("kiln")],
+            // Explicit: a user `init.lua` is discovered under the session's
+            // WORKSPACE, and this fixture writes it into `tmp`. It used to
+            // arrive there by the `workspace == kilns[0]` sentinel, which said
+            // nothing about where the user meant to be working.
+            Some(tmp.path().to_path_buf()),
             None,
         )
         .await
@@ -554,8 +586,12 @@ async fn a_shipped_mode_can_be_removed() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
+            vec![kiln_name("kiln")],
+            // Explicit: a user `init.lua` is discovered under the session's
+            // WORKSPACE, and this fixture writes it into `tmp`. It used to
+            // arrive there by the `workspace == kilns[0]` sentinel, which said
+            // nothing about where the user meant to be working.
+            Some(tmp.path().to_path_buf()),
             None,
         )
         .await

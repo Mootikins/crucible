@@ -1,6 +1,6 @@
 use super::super::enums::{RecordingMode, SessionType};
 use super::super::session::Session;
-use std::path::PathBuf;
+use crate::config::KilnName;
 
 #[test]
 fn test_recording_mode_serialization() {
@@ -18,7 +18,7 @@ fn test_recording_mode_serialization() {
 #[test]
 fn test_session_recording_mode_roundtrip() {
     // Create Session with recording_mode, serialize, deserialize, verify
-    let kiln = PathBuf::from("/home/user/notes");
+    let kiln = KilnName::parse("notes").unwrap();
     let session =
         Session::new(SessionType::Chat, vec![kiln]).with_recording_mode(RecordingMode::Granular);
 
@@ -31,7 +31,7 @@ fn test_session_recording_mode_roundtrip() {
 
 #[test]
 fn test_session_is_granular() {
-    let kiln = PathBuf::from("/home/user/notes");
+    let kiln = KilnName::parse("notes").unwrap();
 
     // Granular mode returns true
     let granular_session = Session::new(SessionType::Chat, vec![kiln.clone()])
@@ -50,7 +50,7 @@ fn test_session_is_granular() {
 
 #[test]
 fn test_session_recording_jsonl_path() {
-    let kiln = PathBuf::from("/home/user/notes");
+    let kiln = KilnName::parse("notes").unwrap();
     let session = Session::new(SessionType::Chat, vec![kiln]);
 
     assert_eq!(session.recording_jsonl_path(), "recording.jsonl");
@@ -59,7 +59,7 @@ fn test_session_recording_jsonl_path() {
 #[test]
 fn test_session_recording_mode_omitted_when_none() {
     // When recording_mode is None, it should be omitted from JSON
-    let kiln = PathBuf::from("/home/user/notes");
+    let kiln = KilnName::parse("notes").unwrap();
     let session = Session::new(SessionType::Chat, vec![kiln]);
 
     let json = serde_json::to_string(&session).unwrap();

@@ -49,11 +49,17 @@ export interface Session {
   session_type: SessionType;
   /**
    * Every kiln this session can query — flat, order-preserving, no member
-   * privileged. `kilns[0]` is only read for the two things that still need
-   * exactly one: the "no workspace" sentinel and a display label.
+   * privileged. `kilns[0]` is only read for the one thing that still needs
+   * exactly one: a display label.
    */
   kilns: string[];
-  workspace: string;
+  /**
+   * Where the session acts, or `null` when it has no workspace at all —
+   * a tools-only agent, or one whose workspace was detached. Read it through
+   * `sessionWorkspace()`, which also folds the empty string a pre-nullable
+   * payload carries.
+   */
+  workspace: string | null;
   state: SessionState;
   title: string | null;
   agent_model: string | null;

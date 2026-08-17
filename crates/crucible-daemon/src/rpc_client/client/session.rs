@@ -3,6 +3,7 @@
 //! Methods for managing chat sessions, sending messages, and configuring agents.
 
 use anyhow::Result;
+use crucible_core::config::KilnName;
 use std::path::{Path, PathBuf};
 
 use super::DaemonClient;
@@ -113,11 +114,16 @@ fn default_session_type() -> String {
 #[derive(Debug, Clone)]
 pub struct SessionCreateParams {
     pub session_type: String,
-    /// The session's whole kiln set. Empty is a legitimate value, not a
-    /// request for a default: it creates a tools-only session with no corpus
-    /// (§4.1). The daemon no longer substitutes its data root, which is the
-    /// parent of the sessions root and would put every transcript in scope.
-    pub kilns: Vec<PathBuf>,
+    /// The session's whole kiln set, by registry NAME. Empty is a legitimate
+    /// value, not a request for a default: it creates a tools-only session with
+    /// no corpus (§4.1). The daemon no longer substitutes its data root, which
+    /// is the parent of the sessions root and would put every transcript in
+    /// scope.
+    ///
+    /// Names rather than paths because the daemon resolves them against the
+    /// `[kilns]` registry: a path here would name a directory the registration
+    /// floor never saw, which is the door names exist to close.
+    pub kilns: Vec<KilnName>,
     pub workspace: Option<PathBuf>,
     pub recording_mode: Option<String>,
     pub recording_path: Option<PathBuf>,
@@ -161,13 +167,7 @@ pub(super) fn build_create_request(
         kilns: if params.kilns.is_empty() {
             None
         } else {
-            Some(
-                params
-                    .kilns
-                    .iter()
-                    .map(|p| p.to_string_lossy().to_string())
-                    .collect(),
-            )
+            Some(params.kilns.iter().map(KilnName::to_string).collect())
         },
         workspace: params.workspace.map(|ws| ws.to_string_lossy().to_string()),
         recording_mode: params.recording_mode,
@@ -381,7 +381,7 @@ impl DaemonClient {
 
     pub async fn session_list(
         &self,
-        kiln: Option<&Path>,
+        kiln: Option<&KilnName>,
         workspace: Option<&Path>,
         session_type: Option<&str>,
         state: Option<&str>,
@@ -402,7 +402,7 @@ impl DaemonClient {
     /// (children are hidden unless `include_children` is `Some(true)`).
     pub async fn session_list_with_children(
         &self,
-        kiln: Option<&Path>,
+        kiln: Option<&KilnName>,
         workspace: Option<&Path>,
         session_type: Option<&str>,
         state: Option<&str>,
@@ -413,7 +413,7 @@ impl DaemonClient {
             "session.list",
             SessionListRequest {
                 session_type: session_type.map(|t| t.to_string()),
-                kiln: kiln.map(|k| k.to_string_lossy().to_string()),
+                kiln: kiln.map(KilnName::to_string),
                 workspace: workspace.map(|ws| ws.to_string_lossy().to_string()),
                 state: state.map(|s| s.to_string()),
                 include_archived,
@@ -609,17 +609,14 @@ impl DaemonClient {
     pub async fn session_search(
         &self,
         query: &str,
-        kilns: &[PathBuf],
+        kilns: &[KilnName],
         limit: Option<usize>,
     ) -> Result<serde_json::Value> {
         self.typed_call(
             "session.search",
             SessionSearchRequest {
                 query: query.to_string(),
-                kilns: kilns
-                    .iter()
-                    .map(|p| p.to_string_lossy().to_string())
-                    .collect(),
+                kilns: kilns.iter().map(KilnName::to_string).collect(),
                 limit,
             },
         )
@@ -646,17 +643,14 @@ impl DaemonClient {
     /// sends a subset silently hides the sessions sharing the rest.
     pub async fn session_list_persisted(
         &self,
-        kilns: &[PathBuf],
+        kilns: &[KilnName],
         session_type: Option<&str>,
         limit: Option<usize>,
     ) -> Result<serde_json::Value> {
         self.typed_call(
             "session.list_persisted",
             SessionListPersistedRequest {
-                kilns: kilns
-                    .iter()
-                    .map(|p| p.to_string_lossy().to_string())
-                    .collect(),
+                kilns: kilns.iter().map(KilnName::to_string).collect(),
                 session_type: session_type.map(|t| t.to_string()),
                 limit,
             },
@@ -716,7 +710,7 @@ impl DaemonClient {
     /// silent no-op, because this verb deletes.
     pub async fn session_cleanup(
         &self,
-        kilns: &[PathBuf],
+        kilns: &[KilnName],
         older_than_days: u64,
         dry_run: bool,
         all_kilns: bool,
@@ -724,10 +718,7 @@ impl DaemonClient {
         self.typed_call(
             "session.cleanup",
             SessionCleanupRequest {
-                kilns: kilns
-                    .iter()
-                    .map(|p| p.to_string_lossy().to_string())
-                    .collect(),
+                kilns: kilns.iter().map(KilnName::to_string).collect(),
                 older_than_days,
                 dry_run,
                 all_kilns,

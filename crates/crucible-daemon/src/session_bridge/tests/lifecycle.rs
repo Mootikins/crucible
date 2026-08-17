@@ -93,7 +93,7 @@ async fn a_plugin_creating_a_session_from_on_session_end_does_not_deadlock() {
     let ending = session_manager
         .create_session(
             SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             None,
             None,
         )

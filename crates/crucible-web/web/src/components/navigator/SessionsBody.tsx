@@ -4,7 +4,7 @@ import { useProjectSafe } from '@/contexts/ProjectContext';
 import { listKilns, listWorkspaceTargets } from '@/lib/api';
 import type { KilnListEntry, Session } from '@/lib/types';
 import { kilnLabel } from '@/lib/kiln-label';
-import { sessionDefaultKiln, sessionHasWorkspace } from '@/lib/session-scope';
+import { sessionDefaultKiln, sessionWorkspace } from '@/lib/session-scope';
 import { SessionRow } from '../SessionTree';
 import { Plus, ChevronRight } from '@/lib/icons';
 
@@ -48,6 +48,11 @@ export const SessionsBody: Component = () => {
     onCleanup(() => window.removeEventListener('focus', onFocus));
   });
 
+  /** The live branch for a session's workspace, or null when it has none. */
+  const branchOfSession = (s: Session): string | null => {
+    const workspace = sessionWorkspace(s);
+    return workspace ? branchOf(workspace) : null;
+  };
   const branchOf = (workspace: string): string | null => {
     const map = checkoutBranch();
     const direct = map.get(workspace);
@@ -68,7 +73,7 @@ export const SessionsBody: Component = () => {
     <SessionRow
       session={s}
       selected={currentSession()?.id === s.id}
-      branch={sessionHasWorkspace(s) ? branchOf(s.workspace) : null}
+      branch={branchOfSession(s)}
       kilnLabel={kilnName(sessionDefaultKiln(s))}
       onSelect={() => selectSession(s.id)}
       onArchive={() => archiveSession(s.id)}

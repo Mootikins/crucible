@@ -28,10 +28,23 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::sync::{broadcast, Mutex};
 
-/// A `SessionManager` over `data_home` — the same root on both sides of the
+/// A `SessionManager` over `data_home`, resolving `kiln` under the name
+/// `"kiln"` — the same root and the same registry on both sides of the
 /// simulated restart, which is what a restarted daemon actually has.
-fn manager_over(data_home: &Path) -> Arc<SessionManager> {
-    Arc::new(SessionManager::new(FileSessionStorage::root_for(data_home)))
+///
+/// The registry has to be rebuilt on the far side too: a session records the
+/// NAME, and the mapping back to a directory is daemon state, not session
+/// state. A restart that forgot it would revive a session whose kiln resolves
+/// to nothing, which is the thing this test would otherwise not notice.
+fn manager_over(data_home: &Path, kiln: &Path) -> Arc<SessionManager> {
+    let registry = crate::test_support::kiln_registry(data_home, &[("kiln", kiln)]);
+    Arc::new(
+        SessionManager::with_storage(Arc::new(
+            FileSessionStorage::new(FileSessionStorage::root_for(data_home))
+                .with_registry(registry.clone()),
+        ))
+        .with_kiln_registry(registry),
+    )
 }
 
 /// Create a session, then throw away every piece of in-memory state — the
@@ -41,11 +54,11 @@ async fn session_surviving_a_restart() -> (TempDir, TempDir, String) {
     let data_home = TempDir::new().unwrap();
     let kiln = TempDir::new().unwrap();
 
-    let sm = manager_over(data_home.path());
+    let sm = manager_over(data_home.path(), kiln.path());
     let session = sm
         .create_session(
             SessionType::Chat,
-            vec![kiln.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             None,
             None,
         )
@@ -69,13 +82,14 @@ async fn session_surviving_a_restart() -> (TempDir, TempDir, String) {
 /// reachable at construction.
 async fn cold_manager(
     data_home: &Path,
+    kiln: &Path,
     open_kiln: Option<&Path>,
 ) -> (
     Arc<SessionManager>,
     AgentManager,
     broadcast::Sender<SessionEventMessage>,
 ) {
-    let sm = manager_over(data_home);
+    let sm = manager_over(data_home, kiln);
 
     let km = Arc::new(KilnManager::new());
     if let Some(kiln) = open_kiln {
@@ -115,7 +129,7 @@ async fn a_session_revives_after_a_restart_from_its_id_alone() {
 
     // Deliberately no open kiln: the session's own kiln is not registered with
     // this manager, and revival must not care.
-    let (sm, am, tx) = cold_manager(data_home.path(), None).await;
+    let (sm, am, tx) = cold_manager(data_home.path(), kiln.path(), None).await;
     assert!(
         sm.get_session(&session_id).is_none(),
         "precondition: a cold manager holds no sessions in memory"
@@ -135,7 +149,7 @@ async fn a_session_revives_after_a_restart_from_its_id_alone() {
         .expect("revival should place the session back in memory");
     assert_eq!(
         revived.kilns,
-        vec![kiln.path().to_path_buf()],
+        vec![crate::test_support::kiln_name("kiln")],
         "revival must restore the persisted kiln set, not invent one"
     );
 }
@@ -148,7 +162,7 @@ async fn an_id_absent_from_the_sessions_root_is_not_revived() {
     let (_data_home, _kiln, session_id) = session_surviving_a_restart().await;
     let other_home = TempDir::new().unwrap();
 
-    let (_sm, am, tx) = cold_manager(other_home.path(), None).await;
+    let (_sm, am, tx) = cold_manager(other_home.path(), _kiln.path(), None).await;
     let sent = am
         .send_message(&session_id, "still there?".to_string(), &tx, false, None)
         .await;
@@ -156,5 +170,82 @@ async fn an_id_absent_from_the_sessions_root_is_not_revived() {
     assert!(
         sent.is_err(),
         "an unknown id must fail rather than silently starting a different conversation"
+    );
+}
+
+/// The create-time trust gate re-runs when a session comes back off disk.
+///
+/// It used to run exactly once, at `session.create`, against the kilns the
+/// session was created with. That is not enough now that a session's kilns are
+/// NAMES: what a name reaches is daemon state, so a session's scope — and
+/// therefore its classification — can change between the create and the next
+/// turn without any request having asked for it. A registry entry appearing, or
+/// a project marking a kiln confidential, both land the same way: the session
+/// is suddenly reaching a corpus its provider was never cleared for, and no
+/// gate is left between them.
+///
+/// Driven through `send_message`, which is the door a revived session actually
+/// comes back through.
+#[tokio::test]
+async fn the_trust_gate_re_runs_when_a_session_is_revived_from_storage() {
+    use crucible_core::config::{BackendType, TrustLevel};
+
+    let data_home = TempDir::new().unwrap();
+    let kiln = TempDir::new().unwrap();
+
+    let cloud = crate::test_fixtures::build_llm_config_with_trust(
+        "cloud",
+        BackendType::OpenAI,
+        Some(TrustLevel::Cloud),
+    );
+
+    // Created while the kiln carries no classification: a cloud provider is
+    // legitimate, and the create-time gate lets it through.
+    let sm = manager_over(data_home.path(), kiln.path());
+    let session = sm
+        .create_session(
+            SessionType::Chat,
+            vec![crate::test_support::kiln_name("kiln")],
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    let session_id = session.id.to_string();
+    let am = super::create_test_agent_manager_with_llm_config(sm.clone(), cloud.clone());
+    am.configure_agent(&session.id, super::test_agent())
+        .await
+        .expect("an unclassified kiln clears any provider");
+    sm.end_session(&session.id).await.unwrap();
+
+    // The corpus becomes confidential after the fact — the kiln's own project
+    // config now says so, which is what `find_workspace_and_resolve_classification`
+    // walks up to find.
+    std::fs::create_dir_all(kiln.path().join(".crucible")).unwrap();
+    std::fs::write(
+        kiln.path().join(".crucible").join("project.toml"),
+        "[[kilns]]\npath = \".\"\ndata_classification = \"confidential\"\n",
+    )
+    .unwrap();
+
+    // A cold daemon over the same root and the same registry: the session
+    // exists only on disk, and the turn below is what revives it.
+    let sm = manager_over(data_home.path(), kiln.path());
+    let am = super::create_test_agent_manager_with_llm_config(sm.clone(), cloud);
+    let (tx, _rx) = broadcast::channel(64);
+    assert!(
+        sm.get_session(&session_id).is_none(),
+        "precondition: the session is on disk only, so the send path revives it"
+    );
+    inject_for(&am, &session_id);
+
+    let sent = am
+        .send_message(&session_id, "still there?".to_string(), &tx, false, None)
+        .await;
+
+    let err = sent.expect_err("a revived session must be re-gated against its kilns");
+    assert!(
+        err.to_string().contains("insufficient"),
+        "the refusal must name the trust shortfall, got: {err}"
     );
 }

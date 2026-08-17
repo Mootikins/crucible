@@ -228,6 +228,18 @@ impl Server {
         // handlers read a value instead of the environment.
         let config_home = params.config_home.clone().or_else(dirs::config_dir);
 
+        // The kiln registry, built from the config the daemon was HANDED —
+        // never re-read from disk, or the daemon and the client that spawned
+        // it would disagree about which kilns exist. A name claimed by two
+        // different directories is a startup abort (the `?`), because picking
+        // a winner silently re-points already-persisted sessions at a
+        // different corpus.
+        let kiln_registry = Arc::new(crate::kiln_registry::KilnRegistry::from_app_config(
+            crate::kiln_registry::KilnRegistryContext::for_daemon(data_home.clone()),
+            params.app_config.as_ref(),
+        )?);
+        info!(kilns = kiln_registry.len(), "Kiln registry built");
+
         let plugin_loader = Arc::new(Mutex::new(
             match DaemonPluginLoader::new(params.plugin_config.clone()) {
                 Ok(loader) => {
@@ -274,9 +286,16 @@ impl Server {
             &data_home,
         );
         let sessions_root = FileSessionStorage::root_for(&data_home);
+        // Both halves of the name↔path mapping come from the one registry: the
+        // storage layer turns a persisted path back into a name on load, and
+        // everything downstream turns a name into a directory. Two registries
+        // here would be two answers to "which directory is `notes`".
         let session_manager = Arc::new(
-            SessionManager::new(sessions_root.clone())
-                .with_session_workspace_dir(Some(session_workspace_dir)),
+            SessionManager::with_storage(Arc::new(
+                FileSessionStorage::new(sessions_root.clone()).with_registry(kiln_registry.clone()),
+            ))
+            .with_kiln_registry(kiln_registry.clone())
+            .with_session_workspace_dir(Some(session_workspace_dir)),
         );
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
         let workspace_tools = Arc::new(WorkspaceTools::new(&data_home));
@@ -335,6 +354,7 @@ impl Server {
             data_home.clone(),
             config_home,
             scm_config,
+            kiln_registry,
         ));
         // Same instance for both paths: delegated children fire plugin start
         // hooks and get their own isolation claim, and the once-only teardown
@@ -428,7 +448,11 @@ impl Server {
         let _web_cancel = CancellationToken::new();
 
         // Spawn event persistence task with cancellation support
-        let storage = FileSessionStorage::new(self.session_manager.sessions_root().to_path_buf());
+        // The same registry the session manager resolves against. Without it
+        // this task would save sessions whose every kiln name resolves to
+        // nothing — silently emptying `kilns` in each `meta.json` it touches.
+        let storage = FileSessionStorage::new(self.session_manager.sessions_root().to_path_buf())
+            .with_registry(self.session_manager.kiln_registry().clone());
         let sm_clone = self.session_manager.clone();
         let mut persist_rx = self.event_tx.subscribe();
         let persist_cancel = CancellationToken::new();

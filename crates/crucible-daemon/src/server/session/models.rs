@@ -46,8 +46,22 @@ pub(crate) async fn handle_session_list_models(req: Request, am: &Arc<AgentManag
 
     let classification = match am.get_session_with_agent(session_id) {
         Ok((session, _)) => {
-            crate::trust_resolution::most_restrictive_classification(&session.kilns, |kiln| {
-                crate::trust_resolution::resolve_kiln_classification(&session.workspace, kiln)
+            // Names → directories, once, through the registry. A name it does
+            // not know contributes no classification, which is not the same as
+            // contributing `Public`: it is not a kiln at all, so it cannot buy
+            // the model list a widening it never earned.
+            let kiln_paths = am.session_manager().kiln_paths(&session.kilns);
+            // The LIVE-session resolver, not the workspace-only one. A session
+            // whose workspace is absent — detached, or never given one — has
+            // no config to read, and an absent lookup must not decide that a
+            // confidential kiln is Public and widen the offered model list.
+            // `handle_models_list` below already walks up from the kiln for
+            // exactly this reason; this is the same rule with a session in hand.
+            crate::trust_resolution::most_restrictive_classification(&kiln_paths, |kiln| {
+                crate::trust_resolution::resolve_session_classification(
+                    session.workspace.as_deref(),
+                    kiln,
+                )
             })
         }
         Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
@@ -167,7 +181,7 @@ pub(crate) async fn handle_session_fork(
         .create_session(
             parent.session_type,
             parent.kilns.clone(),
-            Some(parent.workspace.clone()),
+            parent.workspace.clone(),
             None,
         )
         .await
@@ -185,7 +199,8 @@ pub(crate) async fn handle_session_fork(
         }
     };
 
-    let storage = FileSessionStorage::new(sm.sessions_root().to_path_buf());
+    let storage = FileSessionStorage::new(sm.sessions_root().to_path_buf())
+        .with_registry(sm.kiln_registry().clone());
     let mut count = 0u64;
     for event in &events {
         if let Some(limit) = up_to {

@@ -1,5 +1,5 @@
 use super::*;
-use crate::test_support::temp_session_manager;
+use crate::test_support::temp_session_manager_with_kilns;
 
 #[tokio::test]
 async fn cloud_provider_confidential_kiln_returns_insufficient_error() {
@@ -13,9 +13,9 @@ async fn cloud_provider_confidential_kiln_returns_insufficient_error() {
         "cloud",
         crucible_core::config::BackendType::OpenAI,
     ));
-    let request = create_session_request(&kiln, &workspace, "cloud");
+    let request = create_session_request("notes", &workspace, "cloud");
 
-    let sm = temp_session_manager();
+    let sm = temp_session_manager_with_kilns(&[("notes", &kiln)]);
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
 
@@ -62,7 +62,7 @@ async fn bridge_create_refuses_a_cloud_provider_on_a_confidential_kiln() {
         crucible_core::config::BackendType::OpenAI,
     ));
 
-    let sm = temp_session_manager();
+    let sm = temp_session_manager_with_kilns(&[("notes", &kiln)]);
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
     let (event_tx, _event_rx) = broadcast::channel(16);
@@ -80,7 +80,7 @@ async fn bridge_create_refuses_a_cloud_provider_on_a_confidential_kiln() {
     let err = bridge
         .create_session(json!({
             "type": "chat",
-            "kilns": [kiln],
+            "kilns": ["notes"],
             "workspace": workspace,
             "provider_key": "cloud",
         }))
@@ -105,9 +105,9 @@ async fn local_provider_confidential_kiln_allows_session_creation() {
         "local",
         crucible_core::config::BackendType::Mock,
     ));
-    let request = create_session_request(&kiln, &workspace, "local");
+    let request = create_session_request("notes", &workspace, "local");
 
-    let sm = temp_session_manager();
+    let sm = temp_session_manager_with_kilns(&[("notes", &kiln)]);
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
 
@@ -141,9 +141,9 @@ async fn cloud_provider_public_or_missing_classification_allows_session_creation
         "cloud",
         crucible_core::config::BackendType::OpenAI,
     ));
-    let request = create_session_request(&kiln, &workspace, "cloud");
+    let request = create_session_request("notes", &workspace, "cloud");
 
-    let sm = temp_session_manager();
+    let sm = temp_session_manager_with_kilns(&[("notes", &kiln)]);
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
 
@@ -178,9 +178,9 @@ async fn untrusted_provider_internal_kiln_returns_error() {
         crucible_core::config::BackendType::Custom,
         Some(crucible_core::config::TrustLevel::Untrusted),
     ));
-    let request = create_session_request(&kiln, &workspace, "untrusted");
+    let request = create_session_request("notes", &workspace, "untrusted");
 
-    let sm = temp_session_manager();
+    let sm = temp_session_manager_with_kilns(&[("notes", &kiln)]);
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
 
@@ -320,7 +320,7 @@ async fn switching_to_an_untrusted_provider_is_refused_while_a_confidential_kiln
     llm_config.providers.extend(cloud.providers);
     let llm_config = Some(llm_config);
 
-    let sm = temp_session_manager();
+    let sm = temp_session_manager_with_kilns(&[("notes", &kiln)]);
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
     let (event_tx, _rx) = broadcast::channel(16);
@@ -336,7 +336,7 @@ async fn switching_to_an_untrusted_provider_is_refused_while_a_confidential_kiln
         tmp.path().to_path_buf(),
     );
     let response =
-        handle_session_create(create_session_request(&kiln, &workspace, "local"), &ctx).await;
+        handle_session_create(create_session_request("notes", &workspace, "local"), &ctx).await;
     assert!(
         response.error.is_none(),
         "a local provider must be allowed a confidential kiln: {:?}",
@@ -425,7 +425,7 @@ async fn switching_providers_is_allowed_when_the_kiln_permits_it() {
     llm_config.providers.extend(cloud.providers);
     let llm_config = Some(llm_config);
 
-    let sm = temp_session_manager();
+    let sm = temp_session_manager_with_kilns(&[("notes", &kiln)]);
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
     let (event_tx, _rx) = broadcast::channel(16);
@@ -441,7 +441,7 @@ async fn switching_providers_is_allowed_when_the_kiln_permits_it() {
         tmp.path().to_path_buf(),
     );
     let response =
-        handle_session_create(create_session_request(&kiln, &workspace, "local"), &ctx).await;
+        handle_session_create(create_session_request("notes", &workspace, "local"), &ctx).await;
     assert!(response.error.is_none(), "{:?}", response.error);
     let session_id = sm.list_sessions()[0].id.clone();
 
@@ -531,7 +531,7 @@ async fn a_confidential_kiln_anywhere_in_the_set_is_refused_without_creating_a_s
         "method": "session.create",
         "params": {
             "type": "chat",
-            "kilns": [public, secret],
+            "kilns": ["public", "secret"],
             "workspace": workspace,
             "provider_key": "cloud",
             // The web always sets this, so this is its default create shape.
@@ -540,7 +540,7 @@ async fn a_confidential_kiln_anywhere_in_the_set_is_refused_without_creating_a_s
     }))
     .unwrap();
 
-    let sm = temp_session_manager();
+    let sm = temp_session_manager_with_kilns(&[("public", &public), ("secret", &secret)]);
     let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
     let km = Arc::new(KilnManager::new());
 

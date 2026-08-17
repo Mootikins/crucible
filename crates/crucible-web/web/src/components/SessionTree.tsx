@@ -1,6 +1,6 @@
 import { Component, For, Show, createMemo, createSignal } from 'solid-js';
 import { sessionDisplayTitle } from '@/lib/session-display';
-import { sessionDefaultKiln, sessionHasWorkspace } from '@/lib/session-scope';
+import { sessionDefaultKiln, sessionWorkspace } from '@/lib/session-scope';
 import type { Project, Session } from '@/lib/types';
 import { Archive, ChevronRight, FolderGit2, GitBranch, Trash2 } from '@/lib/icons';
 import { treeChevron, treeGroupRow, treeSectionHeader } from '@/components/tree/tree-style';
@@ -149,6 +149,12 @@ export const SessionTree: Component<{
     return kiln ? props.kilnName(kiln) : null;
   };
 
+  /** Same shape for the workspace: a session with none has no branch. */
+  const branchOfSession = (s: Session): string | null => {
+    const workspace = sessionWorkspace(s);
+    return workspace ? props.branchOf(workspace) : null;
+  };
+
   const toggle = (key: string) => {
     setCollapsed((prev) => {
       if (prev.has(key)) prev.delete(key);
@@ -211,7 +217,8 @@ export const SessionTree: Component<{
     };
 
     for (const s of props.sessions) {
-      const g = sessionHasWorkspace(s) ? groupFor(s.workspace) : none;
+      const workspace = sessionWorkspace(s);
+      const g = workspace ? groupFor(workspace) : none;
       g.sessions.push(s);
       const t = Date.parse(s.last_activity ?? s.started_at) || 0;
       if (t > g.lastActivity) g.lastActivity = t;
@@ -287,7 +294,7 @@ export const SessionTree: Component<{
                   <SessionRow
                     session={s}
                     selected={props.currentSessionId === s.id}
-                    branch={sessionHasWorkspace(s) ? props.branchOf(s.workspace) : null}
+                    branch={branchOfSession(s)}
                     kilnLabel={kilnNameOf(s)}
                     onSelect={() => props.onSelectSession(s.id)}
                     onArchive={() => props.onArchiveSession(s.id)}

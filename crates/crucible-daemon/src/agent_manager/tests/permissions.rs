@@ -1,5 +1,5 @@
 use super::*;
-use crate::test_support::temp_session_manager;
+use crate::test_support::{kiln_name, temp_session_manager};
 
 mod is_safe_tests {
     use super::*;
@@ -556,16 +556,11 @@ mod permission_channel_tests {
     async fn switch_model_outcomes(scenario: SwitchScenario) {
         use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
-        let tmp = TempDir::new().unwrap();
+        let _tmp = TempDir::new().unwrap();
         let session_manager = temp_session_manager();
 
         let session = session_manager
-            .create_session(
-                SessionType::Chat,
-                vec![tmp.path().to_path_buf()],
-                None,
-                None,
-            )
+            .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
             .await
             .unwrap();
 

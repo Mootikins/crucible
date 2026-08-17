@@ -2,9 +2,9 @@ use super::super::*;
 use crate::rpc::RpcContext;
 use crate::rpc_helpers::typed_params;
 
-use super::scope::refuse_forbidden_scope;
 use super::spawn_setup_task;
-use crucible_core::config::McpConfig;
+use crate::kiln_registry::refuse_forbidden_scope;
+use crucible_core::config::{KilnName, McpConfig};
 use crucible_core::session::{Session, SessionType};
 
 /// Why a `session.create` failed, split by who can fix it.
@@ -93,42 +93,50 @@ impl RpcContext {
             SessionCreateError::Invalid(format!("Invalid session type: {}", params.session_type))
         })?;
 
+        // Names, resolved against the registry, and nothing else. A caller can
+        // no longer name a *directory* here: the floor that used to run at this
+        // site now runs once, at registration, and a name that no entry claims
+        // is refused outright rather than becoming an attached kiln that
+        // resolves to nothing. That distinction is the whole point — an absent
+        // resolution gets read as "unconstrained" by whichever consumer
+        // forgets, and this handler is where "said something unresolvable" is
+        // separated from "said nothing".
+        //
         // Strict where the hand-plucked version was lenient: it `filter_map`ped
         // non-string elements away, so `["/a", 7]` silently connected one kiln.
         // Deserializing `Option<Vec<String>>` makes that INVALID_PARAMS instead.
         // Deduped here so the set the trust gate walks is the set that gets
         // persisted.
-        let kilns: Vec<PathBuf> = params
-            .kilns
-            .clone()
-            .unwrap_or_default()
-            .into_iter()
-            .map(PathBuf::from)
-            .fold(Vec::new(), |mut acc, kiln| {
-                if !acc.contains(&kiln) {
-                    acc.push(kiln);
-                }
-                acc
-            });
+        let mut kilns: Vec<KilnName> = Vec::new();
+        for raw in params.kilns.clone().unwrap_or_default() {
+            let name = KilnName::parse(&raw)
+                .map_err(|e| SessionCreateError::Invalid(unknown_kiln_message(&raw, e.reason)))?;
+            if self.kiln_registry.resolve(&name).registered().is_none() {
+                return Err(SessionCreateError::Invalid(unknown_kiln_message(
+                    &raw,
+                    "no `[kilns]` entry is registered under it",
+                )));
+            }
+            if !kilns.contains(&name) {
+                kilns.push(name);
+            }
+        }
 
         let workspace = params.workspace.as_deref().map(PathBuf::from);
 
-        // Before anything reads them: every caller-supplied directory that
-        // becomes session scope goes through the same floor as
-        // `session.connect_kiln`/`session.set_workspace` — the socket has no
-        // auth, so create must not be the cheaper door. That floor now also
-        // refuses anything at or under the sessions root, which is the same
-        // hole through this door: an allowed root inside the denied sessions
-        // root out-ranks the denial.
+        // The workspace is still a path — workspaces have no registry and no
+        // name authority to resolve against — so it still runs the floor here,
+        // the same one `session.set_workspace` runs. The socket has no auth, so
+        // create must not be the cheaper door.
         let sessions_root = self.sessions.sessions_root().to_path_buf();
-        let scopes = kilns
-            .iter()
-            .map(|k| ("kiln", k))
-            .chain(workspace.iter().map(|w| ("workspace", w)));
-        for (kind, path) in scopes {
-            refuse_forbidden_scope(kind, path, &sessions_root)
+        if let Some(workspace) = workspace.as_deref() {
+            refuse_forbidden_scope("workspace", workspace, &sessions_root)
                 .map_err(SessionCreateError::Invalid)?;
         }
+        // The directories those names reach, for the consumers that need one:
+        // the trust gate's classification walk, and the agent-card discovery
+        // below.
+        let kiln_paths = self.kiln_registry.paths_for(&kilns);
 
         // Kiln-less create yields a genuinely EMPTY set. It used to fall back
         // to the daemon's data root, which is the PARENT of the sessions root
@@ -142,7 +150,7 @@ impl RpcContext {
         // Agent-card discovery and the ACP resolver still want exactly one
         // kiln, and now have to cope with there being none; see
         // `Session::default_kiln`.
-        let default_kiln = kilns.first().cloned();
+        let default_kiln = kiln_paths.first().cloned();
 
         // Forwarded untouched: `false`, a profile name and an environment
         // object are the isolating plugin's vocabulary, not the daemon's.
@@ -160,7 +168,7 @@ impl RpcContext {
         // with. The set is flat, so no member is the one that gets classified
         // — and a confidential kiln arriving alongside the first used to reach
         // no create-time trust check at all.
-        for kiln in &kilns {
+        for kiln in &kiln_paths {
             if let Some(classification) =
                 resolve_kiln_classification_for_create(kiln, workspace.as_ref())
             {
@@ -225,7 +233,7 @@ impl RpcContext {
             // resolving through a card onto a cloud provider passed the first
             // gate on a provider it was no longer going to use.
             self.agents
-                .refuse_untrusted_for_kilns(kilns.iter(), &agent)
+                .refuse_untrusted_for_kilns(kiln_paths.iter(), &agent)
                 .map_err(|e| SessionCreateError::Invalid(e.to_string()))?;
             Some(agent)
         } else {
@@ -284,8 +292,9 @@ impl RpcContext {
         }
 
         // Open every kiln in KilnManager so they're discoverable by
-        // session.list()
-        for kiln in &session.kilns {
+        // session.list(). A `lazy` entry is opened here too: lazy means "do not
+        // open this unasked", and a caller that named it in `kilns` has asked.
+        for kiln in &kiln_paths {
             if let Err(e) = self.kiln.open(kiln).await {
                 tracing::warn!(kiln = %kiln.display(), error = %e, "Failed to open kiln in manager");
             }
@@ -405,6 +414,20 @@ impl RpcContext {
             }
         }
     }
+}
+
+/// Why a `kilns` element is not a kiln, said the same way for both halves of
+/// the rule: a string that is not a name at all, and a name no entry claims.
+///
+/// Both name the value the caller supplied — which is safe to echo back to that
+/// caller, because they wrote it — and both name the fix, because "unknown
+/// kiln" with nothing else in it leaves the caller guessing whether they typed
+/// it wrong or never registered it.
+fn unknown_kiln_message(raw: &str, reason: &str) -> String {
+    format!(
+        "Unknown kiln {raw:?}: {reason}. Kilns are addressed by the name of their \
+         `[kilns]` entry, not by path — register one with `cru kiln register <name> <path>`."
+    )
 }
 
 /// Sorted, comma-joined names for a "did you mean" list; `(none)` when empty,

@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { sessionDefaultKiln, sessionHasWorkspace } from '@/lib/session-scope';
+import { sessionDefaultKiln, sessionWorkspace } from '@/lib/session-scope';
+import type { Session } from '@/lib/types';
+
+/** A whole session scope, so the kiln set is visible even where it no longer counts. */
+const scope = (kilns: string[], workspace: string | null): Pick<Session, 'kilns' | 'workspace'> => ({
+  kilns,
+  workspace,
+});
 
 describe('sessionDefaultKiln', () => {
   it('names the first attached kiln', () => {
@@ -19,31 +26,37 @@ describe('sessionDefaultKiln', () => {
   });
 });
 
-describe('sessionHasWorkspace', () => {
-  it('is false when the workspace is the kilns[0] sentinel', () => {
-    expect(sessionHasWorkspace({ kilns: ['/kilns/main'], workspace: '/kilns/main' })).toBe(false);
+describe('sessionWorkspace', () => {
+  it('names the workspace the daemon reported', () => {
+    expect(sessionWorkspace({ workspace: '/repos/crucible' })).toBe('/repos/crucible');
   });
 
-  it('is true when the workspace is a real project directory', () => {
-    expect(sessionHasWorkspace({ kilns: ['/kilns/main'], workspace: '/repos/crucible' })).toBe(
-      true,
-    );
+  // The daemon answers `null` for a session with no workspace. Nothing else
+  // may be read as one — an empty string reaches pathBasename() and the
+  // grouping key as a real directory.
+  it('is null when the daemon says the session has no workspace', () => {
+    expect(sessionWorkspace({ workspace: null })).toBeNull();
+    expect(sessionWorkspace({ workspace: '' })).toBeNull();
+    expect(sessionWorkspace({ workspace: undefined as unknown as string })).toBeNull();
+  });
+});
+
+describe('sessionWorkspace and the kiln set', () => {
+  // The daemon used to write `workspace = kilns[0]` as its "no workspace"
+  // sentinel, and this side kept an INDEPENDENT copy of that rule — nothing
+  // failed to compile when the two drifted. The kiln set no longer enters into
+  // it at all: a workspace that happens to EQUAL the kiln is one the user
+  // chose, and must render as one.
+  it('is the workspace even when it equals the first kiln', () => {
+    expect(sessionWorkspace(scope(['/kilns/main'], '/kilns/main'))).toBe('/kilns/main');
   });
 
-  // A kiln-less session has no kilns[0] to compare against, and the daemon
-  // writes PathBuf::default() — the empty string — as its workspace. Neither
-  // is a project, so neither may read as one.
-  it('is false for a kiln-less session with the empty-path workspace', () => {
-    expect(sessionHasWorkspace({ kilns: [], workspace: '' })).toBe(false);
+  it('is null whatever the kiln set says, when the daemon reports none', () => {
+    expect(sessionWorkspace(scope(['/kilns/main'], null))).toBeNull();
+    expect(sessionWorkspace(scope([], null))).toBeNull();
   });
 
-  it('is true for a kiln-less session that does have a project', () => {
-    expect(sessionHasWorkspace({ kilns: [], workspace: '/repos/crucible' })).toBe(true);
-  });
-
-  it('is false when the payload carries no kilns field at all', () => {
-    expect(
-      sessionHasWorkspace({ kilns: undefined as unknown as string[], workspace: '' }),
-    ).toBe(false);
+  it('is the project of a kiln-less session that has one', () => {
+    expect(sessionWorkspace(scope([], '/repos/crucible'))).toBe('/repos/crucible');
   });
 });

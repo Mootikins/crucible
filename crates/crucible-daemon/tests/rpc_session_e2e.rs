@@ -30,8 +30,17 @@ impl TestServer {
         let temp_dir = tempfile::tempdir()?;
         let socket_path = temp_dir.path().join("daemon.sock");
 
-        let server =
-            Server::bind_with_data_home(&socket_path, temp_dir.path().to_path_buf()).await?;
+        // One registered kiln named `kiln`: sessions address kilns by name, so
+        // a fixture that registers none has a daemon that refuses every scoped
+        // request.
+        let kiln = temp_dir.path().join("kiln");
+        std::fs::create_dir_all(&kiln)?;
+        let server = Server::bind_with_data_home_and_kilns(
+            &socket_path,
+            temp_dir.path().to_path_buf(),
+            &[("kiln", &kiln)],
+        )
+        .await?;
         let shutdown_handle = server.shutdown_handle();
 
         let server_handle = tokio::spawn(async move {
@@ -69,11 +78,11 @@ impl TestServer {
 }
 
 /// Helper: create a session and return its ID.
-async fn create_session(client: &DaemonClient, kiln: &std::path::Path) -> String {
+async fn create_session(client: &DaemonClient, _kiln: &std::path::Path) -> String {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![kiln.to_path_buf()],
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
             recording_mode: None,
             recording_path: None,
@@ -97,7 +106,7 @@ async fn create_session(client: &DaemonClient, kiln: &std::path::Path) -> String
 #[tokio::test]
 async fn test_session_create_returns_id() {
     let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+    let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
     let client = DaemonClient::connect_to(&server.socket_path)
         .await
@@ -106,7 +115,7 @@ async fn test_session_create_returns_id() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![kiln_dir.path().to_path_buf()],
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
             recording_mode: None,
             recording_path: None,
@@ -137,7 +146,13 @@ async fn test_session_list_includes_created() {
     let session_id = create_session(&client, kiln_dir.path()).await;
 
     let list = client
-        .session_list(Some(kiln_dir.path()), None, Some("chat"), None, None)
+        .session_list(
+            Some(&crucible_daemon::test_support::kiln_name("kiln")),
+            None,
+            Some("chat"),
+            None,
+            None,
+        )
         .await
         .expect("session_list failed");
 
@@ -322,7 +337,7 @@ async fn test_session_end_removes_from_list() {
     // Verify: session should not appear in active list
     let list = client
         .session_list(
-            Some(kiln_dir.path()),
+            Some(&crucible_daemon::test_support::kiln_name("kiln")),
             None,
             Some("chat"),
             Some("active"),
@@ -448,7 +463,13 @@ async fn test_session_delete_removes_session() {
 
     // Verify: session should not appear in list
     let list = client
-        .session_list(Some(kiln_dir.path()), None, Some("chat"), None, None)
+        .session_list(
+            Some(&crucible_daemon::test_support::kiln_name("kiln")),
+            None,
+            Some("chat"),
+            None,
+            None,
+        )
         .await
         .expect("session_list failed");
 
@@ -582,7 +603,13 @@ async fn test_session_list_excludes_archived_by_default() {
 
     // List WITHOUT include_archived (default = exclude archived)
     let list = client
-        .session_list(Some(kiln_dir.path()), None, Some("chat"), None, Some(false))
+        .session_list(
+            Some(&crucible_daemon::test_support::kiln_name("kiln")),
+            None,
+            Some("chat"),
+            None,
+            Some(false),
+        )
         .await
         .expect("session_list failed");
 
@@ -622,7 +649,13 @@ async fn test_session_list_includes_archived_when_requested() {
 
     // List WITH include_archived=true
     let list = client
-        .session_list(Some(kiln_dir.path()), None, Some("chat"), None, Some(true))
+        .session_list(
+            Some(&crucible_daemon::test_support::kiln_name("kiln")),
+            None,
+            Some("chat"),
+            None,
+            Some(true),
+        )
         .await
         .expect("session_list failed");
 

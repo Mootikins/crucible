@@ -133,7 +133,7 @@ struct CreateSessionRequest {
     /// The session's kiln set — flat, no member privileged. Empty or omitted →
     /// daemon default (home kiln).
     #[serde(default)]
-    kilns: Vec<PathBuf>,
+    kilns: Vec<crucible_core::config::KilnName>,
     workspace: Option<PathBuf>,
     /// LLM provider (e.g., "ollama", "openai", "anthropic")
     provider: Option<String>,
@@ -498,7 +498,9 @@ async fn create_session(
 
 #[derive(Debug, Deserialize)]
 struct ListSessionsQuery {
-    kiln: Option<PathBuf>,
+    /// The kiln's registry NAME. A query string carrying a path is a 422 —
+    /// which is the honest answer, because a path names no kiln.
+    kiln: Option<crucible_core::config::KilnName>,
     workspace: Option<PathBuf>,
     #[serde(rename = "type")]
     session_type: Option<String>,
@@ -514,7 +516,7 @@ async fn list_sessions(
     let result = state
         .daemon
         .session_list(
-            query.kiln.as_deref(),
+            query.kiln.as_ref(),
             query.workspace.as_deref(),
             query.session_type.as_deref(),
             query.state.as_deref(),
@@ -538,12 +540,20 @@ async fn search_sessions(
     axum::extract::Query(params): axum::extract::Query<Vec<(String, String)>>,
 ) -> Result<Json<serde_json::Value>, WebError> {
     let mut query = None;
-    let mut kilns: Vec<PathBuf> = Vec::new();
+    // Names, parsed rather than accepted: a `kiln` the registry never issued
+    // is not a narrower scope, it is no scope, and the daemon refuses a set
+    // that resolves to nothing. Dropping unparseable ones here keeps the
+    // browser's malformed query from reading as "search everything".
+    let mut kilns: Vec<crucible_core::config::KilnName> = Vec::new();
     let mut limit = None;
     for (key, value) in params {
         match key.as_str() {
             "q" => query = Some(value),
-            "kiln" => kilns.push(PathBuf::from(value)),
+            "kiln" => {
+                if let Ok(name) = crucible_core::config::KilnName::parse(&value) {
+                    kilns.push(name);
+                }
+            }
             "limit" => limit = value.parse::<usize>().ok(),
             _ => {}
         }
@@ -722,7 +732,10 @@ async fn switch_model(
 
 #[derive(Debug, Deserialize)]
 struct SessionKilnRequest {
-    kiln: PathBuf,
+    /// The kiln's registry NAME, validated on the way in — a browser that sent
+    /// a path gets a 422 rather than a session attached to a directory the
+    /// registration floor never saw.
+    kiln: crucible_core::config::KilnName,
 }
 
 /// Updated session scope, echoed by kiln/workspace mutations.
@@ -754,7 +767,7 @@ async fn disconnect_kiln(
 
 #[derive(Debug, Deserialize)]
 struct SetWorkspaceRequest {
-    /// Omitted/null → detach (workspace falls back to the kiln).
+    /// Omitted/null → detach: the session is then left with no workspace.
     workspace: Option<PathBuf>,
 }
 

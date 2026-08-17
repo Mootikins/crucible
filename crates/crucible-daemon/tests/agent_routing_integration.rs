@@ -1,7 +1,7 @@
 use crucible_core::config::BackendType;
 use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
 use crucible_daemon::background_manager::BackgroundJobManager;
-use crucible_daemon::test_support::temp_session_manager;
+use crucible_daemon::test_support::{kiln_name, temp_session_manager};
 use crucible_daemon::{AgentManager, AgentManagerParams, KilnManager, SessionManager};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -67,15 +67,10 @@ fn make_session_agent(
 
 #[tokio::test]
 async fn unknown_agent_type_stores_config_without_error() {
-    let (agent_manager, session_manager, tmp) = make_agent_manager();
+    let (agent_manager, session_manager, _tmp) = make_agent_manager();
 
     let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
 
@@ -100,15 +95,10 @@ async fn unknown_agent_type_stores_config_without_error() {
 
 #[tokio::test]
 async fn unsupported_agent_type_fails_at_send_message_time() {
-    let (agent_manager, session_manager, tmp) = make_agent_manager();
+    let (agent_manager, session_manager, _tmp) = make_agent_manager();
 
     let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
 
@@ -143,15 +133,10 @@ async fn unsupported_agent_type_fails_at_send_message_time() {
 
 #[tokio::test]
 async fn acp_agent_type_with_agent_name_stores_successfully() {
-    let (agent_manager, session_manager, tmp) = make_agent_manager();
+    let (agent_manager, session_manager, _tmp) = make_agent_manager();
 
     let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
 
@@ -175,15 +160,10 @@ async fn acp_agent_type_with_agent_name_stores_successfully() {
 
 #[tokio::test]
 async fn internal_agent_type_with_mock_provider_stores_successfully() {
-    let (agent_manager, session_manager, tmp) = make_agent_manager();
+    let (agent_manager, session_manager, _tmp) = make_agent_manager();
 
     let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
 
@@ -207,15 +187,10 @@ async fn internal_agent_type_with_mock_provider_stores_successfully() {
 
 #[tokio::test]
 async fn internal_agent_type_with_ollama_stores_config() {
-    let (agent_manager, session_manager, tmp) = make_agent_manager();
+    let (agent_manager, session_manager, _tmp) = make_agent_manager();
 
     let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
 
@@ -239,24 +214,14 @@ async fn internal_agent_type_with_ollama_stores_config() {
 
 #[tokio::test]
 async fn configure_agent_routing_decision_acp_vs_internal() {
-    let (agent_manager, session_manager, tmp) = make_agent_manager();
+    let (agent_manager, session_manager, _tmp) = make_agent_manager();
 
     let session1 = session_manager
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
     let session2 = session_manager
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
 

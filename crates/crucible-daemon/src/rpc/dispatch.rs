@@ -219,6 +219,15 @@ macro_rules! dispatch_session_getter {
     };
 }
 
+/// App-config keys that name **where the daemon acts** — the kiln registry's
+/// input, the project roots, the CLI session's kiln.
+///
+/// Expressed as the shape "a key that names a location", not as a list of
+/// known-bad values, so a new location key is added here rather than
+/// discovered later. `config.set` refuses all of them; see
+/// [`RpcDispatcher::handle_config_set`].
+const LOCATION_CONFIG_KEYS: [&str; 4] = ["kilns", "kiln_path", "projects", "session_kiln"];
+
 pub struct RpcDispatcher {
     /// Shared rather than owned: `Server` keeps a clone so plugin boot can hand
     /// the same context to the Lua session bridge, and both paths must see one
@@ -739,9 +748,13 @@ impl RpcDispatcher {
     }
 
     async fn handle_kiln_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::kiln::handle_kiln_list(req.clone(), &self.ctx.kiln, &self.ctx.data_home)
-                .await;
+        let resp = crate::server::kiln::handle_kiln_list(
+            req.clone(),
+            &self.ctx.kiln,
+            &self.ctx.kiln_registry,
+            &self.ctx.data_home,
+        )
+        .await;
         map_server_resp(resp)
     }
 
@@ -1607,6 +1620,16 @@ impl RpcDispatcher {
     /// Merge top-level values into the app-config store (same semantics as
     /// Lua's `cru.config.set`). Typed transport for `:set` forwarding — the
     /// TUI must never build Lua source from user input.
+    ///
+    /// The location-naming keys are stripped rather than merged. The socket has
+    /// no authentication, and these four are the config's answer to *where the
+    /// daemon acts*: `kilns` and `kiln_path` are what the kiln registry is
+    /// built from, `projects` names workspace roots, `session_kiln` names where
+    /// a CLI session's knowledge scope points. A caller that can write them
+    /// introduces or re-points an entry without ever handing a path to
+    /// `KilnRegistry::register_path` — which is to say, without the floor
+    /// seeing it. Changing where kilns live is a config-file edit
+    /// (`cru kiln register`), not a socket call.
     fn handle_config_set(&self, req: &Request) -> RpcResult<serde_json::Value> {
         use crate::rpc::params::parse_params;
         use serde::Deserialize;
@@ -1617,8 +1640,19 @@ impl RpcDispatcher {
         }
 
         let params: Params = parse_params(req)?;
-        crucible_lua::merge_app_config(serde_json::Value::Object(params.values));
-        Ok(serde_json::json!({ "ok": true }))
+        let mut values = params.values;
+        let rejected: Vec<&str> = LOCATION_CONFIG_KEYS
+            .into_iter()
+            .filter(|key| values.remove(*key).is_some())
+            .collect();
+        if !rejected.is_empty() {
+            tracing::warn!(
+                keys = ?rejected,
+                "config.set refused keys that name where the daemon acts; edit the config file instead"
+            );
+        }
+        crucible_lua::merge_app_config(serde_json::Value::Object(values));
+        Ok(serde_json::json!({ "ok": true, "rejected": rejected }))
     }
 
     // ── Plugin RPC wrappers ──────────────────────────────────────────────
@@ -1996,6 +2030,16 @@ mod tests {
     }
 
     fn test_context() -> Arc<RpcContext> {
+        test_context_with_kilns(&[])
+    }
+
+    /// A context whose kiln registry also resolves `extra`.
+    ///
+    /// `session.create` and the scope handlers take NAMES now, so a test that
+    /// needs a kiln with a particular `kiln.toml` — a classification, say — has
+    /// to bind the name to that directory here, or the handler refuses the
+    /// request before the behaviour under test ever runs.
+    fn test_context_with_kilns(extra: &[(&str, &std::path::Path)]) -> Arc<RpcContext> {
         use crate::agent_manager::{AgentManager, AgentManagerParams};
         use crate::background_manager::BackgroundJobManager;
 
@@ -2005,7 +2049,7 @@ mod tests {
 
         let (event_tx, _) = broadcast::channel(16);
         let kiln_manager = Arc::new(KilnManager::new());
-        let session_manager = temp_session_manager();
+        let session_manager = crate::test_support::temp_session_manager_with_kilns(extra);
         let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
         let agent_manager = Arc::new(AgentManager::new(AgentManagerParams {
             kiln_manager: kiln_manager.clone(),
@@ -2063,7 +2107,7 @@ mod tests {
             .sessions
             .create_session(
                 SessionType::Chat,
-                vec![kiln_root.clone()],
+                vec![crate::test_support::kiln_name("kiln")],
                 Some(kiln_root.clone()),
                 None,
             )
@@ -2238,12 +2282,12 @@ mod tests {
         )
         .unwrap();
 
-        let ctx = test_context();
+        let ctx = test_context_with_kilns(&[("notes", &kiln)]);
         let session = ctx
             .sessions
             .create_session(
                 crucible_core::session::SessionType::Chat,
-                vec![kiln],
+                vec![crate::test_support::kiln_name("notes")],
                 None,
                 None,
             )
@@ -2334,12 +2378,12 @@ mod tests {
         use crucible_core::session::{SessionAgent, SessionType};
 
         let ctx = test_context_with_loader();
-        let kiln = tempfile::tempdir().expect("kiln tempdir");
+        let _kiln = tempfile::tempdir().expect("kiln tempdir");
         let session = ctx
             .sessions
             .create_session(
                 SessionType::Chat,
-                vec![kiln.path().to_path_buf()],
+                vec![crate::test_support::kiln_name("kiln")],
                 None,
                 None,
             )
@@ -2444,7 +2488,12 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
 
         let parent = ctx
             .sessions
-            .create_session(SessionType::Chat, vec![kiln.clone()], None, None)
+            .create_session(
+                SessionType::Chat,
+                vec![crate::test_support::kiln_name("kiln")],
+                None,
+                None,
+            )
             .await
             .expect("create parent");
 
@@ -2684,7 +2733,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             .sessions
             .create_session(
                 SessionType::Chat,
-                vec![kiln_root.clone()],
+                vec![crate::test_support::kiln_name("kiln")],
                 Some(kiln_root.clone()),
                 None,
             )
@@ -2860,6 +2909,11 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             std::path::PathBuf::from("/tmp"),
             None,
             Some(crucible_core::config::ScmConfig::default()),
+            Arc::new(crate::kiln_registry::KilnRegistry::empty(
+                crate::kiln_registry::KilnRegistryContext::for_daemon(std::path::PathBuf::from(
+                    "/tmp",
+                )),
+            )),
         ))
     }
 
@@ -2891,5 +2945,51 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
                 "wrong error code for {bad:?}"
             );
         }
+    }
+
+    /// `config.set` is reachable from the unauthenticated socket, and the
+    /// app-config store it writes is where the kiln registry's source of truth
+    /// would otherwise live. Letting a caller merge `kilns` there is a way to
+    /// introduce or re-point an entry — the registry's floor never sees the
+    /// path, because the caller never registered one.
+    ///
+    /// Asserted on the store, not on the response: a handler that answered
+    /// `{"ok": true}` and merged anyway would pass a response-shaped check.
+    #[tokio::test]
+    async fn config_set_refuses_to_write_kiln_and_project_locations() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let ctx = scm_test_context(tmp.path().join("projects.json"));
+        let dispatcher = RpcDispatcher::new(ctx);
+
+        let resp = dispatcher
+            .dispatch(
+                ClientId::new(),
+                make_request(
+                    "config.set",
+                    serde_json::json!({ "values": {
+                        "kilns": { "evil": "/" },
+                        "kiln_path": "/",
+                        "session_kiln": "/etc",
+                        "projects": { "evil": { "path": "/" } },
+                        "chat": { "model": "test-model" },
+                    }}),
+                ),
+            )
+            .await;
+        assert!(resp.error.is_none(), "the allowed key must still merge");
+
+        let stored = crucible_lua::get_app_config().unwrap_or(serde_json::Value::Null);
+        for refused in ["kilns", "kiln_path", "session_kiln", "projects"] {
+            assert!(
+                stored.get(refused).is_none(),
+                "config.set wrote '{refused}' into the app config: {stored}"
+            );
+        }
+        assert_eq!(
+            stored.pointer("/chat/model").and_then(|v| v.as_str()),
+            Some("test-model"),
+            "precondition: an ordinary key must still be merged, or this test \
+             proves nothing about the refused ones"
+        );
     }
 }

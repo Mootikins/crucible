@@ -234,9 +234,12 @@ async fn scope_mutation_rejected_when_request_slot_occupied() {
         },
     );
 
-    let other_kiln = TempDir::new().unwrap();
     let result = agent_manager
-        .connect_kiln(&session.id, other_kiln.path(), None)
+        .connect_kiln(
+            &session.id,
+            &crate::test_support::kiln_name("other-kiln"),
+            None,
+        )
         .await;
 
     assert!(
@@ -261,9 +264,12 @@ async fn scope_mutation_releases_request_slot_on_completion() {
     let (_tmp, session_manager, session) = setup_session_manager().await;
     let agent_manager = create_test_agent_manager(session_manager.clone());
 
-    let other_kiln = TempDir::new().unwrap();
     agent_manager
-        .connect_kiln(&session.id, other_kiln.path(), None)
+        .connect_kiln(
+            &session.id,
+            &crate::test_support::kiln_name("other-kiln"),
+            None,
+        )
         .await
         .expect("connect_kiln on an idle session should succeed");
 

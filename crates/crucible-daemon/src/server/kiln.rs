@@ -108,9 +108,22 @@ pub(crate) async fn handle_kiln_close(req: Request, km: &Arc<KilnManager>) -> Re
     }
 }
 
+/// List the open kilns.
+///
+/// `name` is the **registry key** — the name every other API call answers to,
+/// and the one the web layer joins a session's kilns against. It used to be the
+/// `[kiln] name` out of the kiln's own `kiln.toml`: a name the corpus asserts
+/// about itself, which two kilns can claim at once and which no caller can say
+/// back to us. A directory with no registry entry falls back to the name that
+/// *would* be derived from its basename, so the picker still has something to
+/// show for a kiln opened by another door.
+///
+/// `path` stays, by design — this is the one listing whose job is to say where
+/// a kiln lives.
 pub(crate) async fn handle_kiln_list(
     req: Request,
     km: &Arc<KilnManager>,
+    registry: &crate::kiln_registry::KilnRegistry,
     data_home: &Path,
 ) -> Response {
     let kilns = km.list().await;
@@ -121,9 +134,20 @@ pub(crate) async fn handle_kiln_list(
         // user kiln. Listing it would surface ".crucible" in every kiln picker.
         .filter(|(path, _, _)| path != data_home)
         .map(|(path, name, last_access)| {
+            let registered = registry
+                .name_for(path)
+                .map(ToString::to_string)
+                .or_else(|| {
+                    path.file_name()
+                        .and_then(|n| n.to_str())
+                        .and_then(crucible_core::config::KilnName::normalize)
+                        .map(|n| n.to_string())
+                })
+                .or_else(|| name.clone())
+                .unwrap_or_default();
             serde_json::json!({
                 "path": path.to_string_lossy(),
-                "name": name,
+                "name": registered,
                 "last_access_secs_ago": last_access.elapsed().as_secs()
             })
         })
@@ -759,4 +783,88 @@ pub(crate) async fn handle_suggest_links(req: Request, km: &Arc<KilnManager>) ->
     let suggestions = crate::tools::autolink::suggest_links(text, &note_names);
 
     Response::success(req.id, serde_json::json!({ "suggestions": suggestions }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn list_request() -> Request {
+        serde_json::from_value(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "kiln.list",
+            "params": {},
+        }))
+        .unwrap()
+    }
+
+    /// `kiln.list`'s `name` is the registry key, not the name the kiln asserts
+    /// about itself in its own `kiln.toml`.
+    ///
+    /// The web layer joins a session's `kilns` against this listing, and a
+    /// session's kilns are registry names — so a self-asserted name matches
+    /// nothing, and two kilns are free to claim the same one. The fixture puts
+    /// a `kiln.toml` in the directory precisely so the wrong answer is
+    /// available to be returned.
+    #[tokio::test]
+    async fn kiln_list_reports_the_registry_name_not_the_kilns_self_description() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let kiln_dir = tmp.path().join("on-disk-directory");
+        std::fs::create_dir_all(kiln_dir.join(".crucible")).unwrap();
+        std::fs::write(
+            kiln_dir.join(".crucible").join("kiln.toml"),
+            "[kiln]\nname = \"Self Asserted\"\n",
+        )
+        .unwrap();
+
+        let km = Arc::new(KilnManager::new());
+        km.open(&kiln_dir).await.expect("open the kiln");
+        let registry = crate::test_support::kiln_registry(&data_home, &[("work", &kiln_dir)]);
+
+        let resp = handle_kiln_list(list_request(), &km, &registry, &data_home).await;
+
+        let listed = resp.result.expect("kiln.list returns a list");
+        let entry = &listed.as_array().expect("an array")[0];
+        assert_eq!(
+            entry["name"], "work",
+            "the registry key is the name every other call answers to: {listed}"
+        );
+        assert_ne!(
+            entry["name"], "Self Asserted",
+            "a kiln's own idea of its name must not be what the API reports"
+        );
+        assert_eq!(
+            entry["path"],
+            kiln_dir.to_string_lossy().as_ref(),
+            "the path stays — this is the one listing whose job is to say where a kiln lives"
+        );
+    }
+
+    /// A directory open under some other door — `kiln.open`, which has no
+    /// registration floor — has no registry entry at all. It still needs a
+    /// name to show in a picker, and the fallback is the one that *would* be
+    /// derived from its basename rather than the kiln's self-description.
+    #[tokio::test]
+    async fn an_unregistered_open_kiln_falls_back_to_its_derived_name() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let kiln_dir = tmp.path().join("My Vault");
+        std::fs::create_dir_all(&kiln_dir).unwrap();
+
+        let km = Arc::new(KilnManager::new());
+        km.open(&kiln_dir).await.expect("open the kiln");
+        let registry = crate::test_support::kiln_registry(&data_home, &[]);
+        assert!(
+            registry.name_for(&kiln_dir).is_none(),
+            "precondition: the directory must be unregistered"
+        );
+
+        let resp = handle_kiln_list(list_request(), &km, &registry, &data_home).await;
+
+        let listed = resp.result.expect("kiln.list returns a list");
+        assert_eq!(listed.as_array().expect("an array")[0]["name"], "my-vault");
+    }
 }

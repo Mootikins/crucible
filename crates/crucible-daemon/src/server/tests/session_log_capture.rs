@@ -74,11 +74,11 @@ fn normalize(jsonl: &str) -> Vec<Value> {
 #[tokio::test]
 async fn the_committed_session_log_is_what_the_daemon_writes() {
     let server = TestServer::start().await;
-    let kiln_path = server.kiln_path.clone();
+    let _kiln_path = server.kiln_path.clone();
     let event_tx = server.event_tx.clone();
     let mut client = server.connect().await;
 
-    let session_id = create_chat_session(&mut client, &kiln_path, 1).await;
+    let session_id = create_chat_session(&mut client, TestServer::KILN, 1).await;
 
     // `emit_event`, not a bare `send`: the stamping it applies
     // (`event_emitter.rs`'s `stamp_event`) is part of what lands on disk.

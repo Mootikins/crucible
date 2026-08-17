@@ -16,7 +16,9 @@ use crucible_daemon::daemon_plugins::DaemonPluginLoader;
 use crucible_daemon::delegation::{DelegationRequest, DelegationService, DelegationSpawner};
 use crucible_daemon::protocol::SessionEventMessage;
 use crucible_daemon::session_lifecycle::SessionLifecycle;
-use crucible_daemon::test_support::temp_session_manager;
+use crucible_daemon::test_support::{
+    kiln_name, temp_session_manager, temp_session_manager_with_kilns,
+};
 use crucible_daemon::test_support::{MockSubagentBehavior, MockSubagentHandle};
 use crucible_daemon::{
     AgentManager, AgentManagerParams, FileSessionStorage, KilnManager, SessionManager,
@@ -107,7 +109,9 @@ async fn setup_with_plugin(
     plugin_init: Option<&str>,
 ) -> Harness {
     let temp = TempDir::new().expect("temp dir");
-    let session_manager = temp_session_manager();
+    let kiln = temp.path().join("kiln");
+    std::fs::create_dir_all(&kiln).expect("kiln dir");
+    let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
     let (event_tx, event_rx) = broadcast::channel(64);
 
     let loader = match plugin_init {
@@ -143,12 +147,7 @@ async fn setup_with_plugin(
     agent_manager.set_agent_factory_override(behavior_factory(behavior));
 
     let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            vec![temp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .expect("parent session");
     agent_manager
@@ -595,7 +594,7 @@ async fn factory_failure_fails_spawn_and_emits_failed_event() {
     .await;
     // Second override call is ignored (first wins), so build a dedicated
     // harness whose override always errors.
-    let temp = TempDir::new().unwrap();
+    let _temp = TempDir::new().unwrap();
     let session_manager = temp_session_manager();
     let (event_tx, event_rx) = broadcast::channel(64);
     let service = DelegationService::new(session_manager.clone(), event_tx.clone());
@@ -620,12 +619,7 @@ async fn factory_failure_fails_spawn_and_emits_failed_event() {
         Box::pin(async { Err("factory boom".to_string()) })
     }));
     let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            vec![temp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
     agent_manager
@@ -831,8 +825,11 @@ async fn child_tool_calls_are_dispatched_by_the_scheduler() {
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![temp.path().to_path_buf()],
-            None,
+            vec![kiln_name("kiln")],
+            // The child inherits the parent's workspace, and `probe.txt` is
+            // read by a RELATIVE path — which anchors there. It used to be
+            // `temp` only via the `workspace == kilns[0]` sentinel.
+            Some(temp.path().to_path_buf()),
             None,
         )
         .await
@@ -904,8 +901,10 @@ async fn delegation_to_agent_card_builds_specialized_child() {
     let parent = h.session_manager.get_session(&h.parent_id).unwrap();
     // `.crucible/agents/`, not the kiln's visible `agents/`: the latter is no
     // longer a discovery path.
-    let agents_dir = parent
-        .default_kiln()
+    let agents_dir = h
+        .session_manager
+        .kiln_paths(&parent.kilns)
+        .first()
         .expect("parent has a kiln")
         .join(".crucible")
         .join("agents");
@@ -1023,7 +1022,9 @@ async fn card_tool_policy_deny_blocks_child_tool_call() {
     }
 
     let temp = TempDir::new().unwrap();
-    let session_manager = temp_session_manager();
+    let kiln = temp.path().join("kiln");
+    std::fs::create_dir_all(&kiln).unwrap();
+    let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
     let (event_tx, _event_rx) = broadcast::channel(256);
     let service = DelegationService::new(session_manager.clone(), event_tx.clone());
     let agent_manager = Arc::new(AgentManager::new_with_delegation(
@@ -1048,7 +1049,9 @@ async fn card_tool_policy_deny_blocks_child_tool_call() {
     }));
 
     // `.crucible/agents/`: the kiln's visible tree is not a discovery path.
-    let agents_dir = temp.path().join(".crucible").join("agents");
+    // Cards are discovered under the session's KILN, so this has to be the
+    // directory the registered name resolves to.
+    let agents_dir = kiln.join(".crucible").join("agents");
     std::fs::create_dir_all(&agents_dir).unwrap();
     std::fs::write(
         agents_dir.join("no-bash.md"),
@@ -1057,12 +1060,7 @@ async fn card_tool_policy_deny_blocks_child_tool_call() {
     .unwrap();
 
     let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            vec![temp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
     agent_manager
@@ -1233,7 +1231,9 @@ async fn card_specialty_resolves_through_llm_models_table() {
     // inherit from the spawning context. This card pins no model but declares
     // `specialty: reasoning`, which the config maps to a provider/model.
     let temp = TempDir::new().unwrap();
-    let session_manager = temp_session_manager();
+    let kiln = temp.path().join("kiln");
+    std::fs::create_dir_all(&kiln).unwrap();
+    let session_manager = temp_session_manager_with_kilns(&[("kiln", &kiln)]);
     let (event_tx, _) = broadcast::channel(64);
     let service = DelegationService::new(session_manager.clone(), event_tx.clone());
     let llm_config = crucible_core::config::LlmConfig {
@@ -1268,7 +1268,9 @@ async fn card_specialty_resolves_through_llm_models_table() {
     ));
 
     // `.crucible/agents/`: the kiln's visible tree is not a discovery path.
-    let agents_dir = temp.path().join(".crucible").join("agents");
+    // Cards are discovered under the session's KILN, so this has to be the
+    // directory the registered name resolves to.
+    let agents_dir = kiln.join(".crucible").join("agents");
     std::fs::create_dir_all(&agents_dir).unwrap();
     std::fs::write(
         agents_dir.join("thinker.md"),
@@ -1289,12 +1291,7 @@ async fn card_specialty_resolves_through_llm_models_table() {
     .unwrap();
 
     let session = session_manager
-        .create_session(
-            SessionType::Chat,
-            vec![temp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
     agent_manager

@@ -180,11 +180,12 @@ async fn a_human_edit_during_the_review_gates_hold_is_not_attributed_to_the_held
     // storage does not land inside the repo under review.
     let kiln = tempfile::tempdir().expect("kiln tempdir");
 
-    let session_manager = temp_session_manager();
+    let session_manager =
+        crate::test_support::temp_session_manager_with_kilns(&[("kiln", kiln.path())]);
     let session = session_manager
         .create_session(
             SessionType::Chat,
-            vec![kiln.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             Some(repo.path().to_path_buf()),
             None,
         )

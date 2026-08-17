@@ -30,7 +30,7 @@ use crate::config::components::{
 use crate::config::EnrichmentConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 #[cfg(feature = "toml")]
 extern crate toml;
@@ -776,28 +776,12 @@ verbose = false
     /// sorts alphabetically and `crucible-docs` would quietly become the
     /// default kiln for anyone who had not named one. A user entry of the same
     /// name wins, so this can be overridden or pointed at a checkout.
+    /// The daemon builds the same map from the config JSON it is handed, via
+    /// [`resolve_kiln_entries`](crate::config::config::registry::resolve_kiln_entries) —
+    /// which is this method's body. Keep the logic there, not here, or the two
+    /// answers drift.
     pub fn resolved_kilns(&self) -> HashMap<String, crate::config::config::registry::KilnEntry> {
-        let mut map = if self.kilns.is_empty() {
-            let mut synthesized = HashMap::new();
-            synthesized.insert(
-                "default".to_string(),
-                crate::config::config::registry::KilnEntry::Path(self.kiln_path.clone()),
-            );
-            synthesized
-        } else {
-            self.kilns.clone()
-        };
-
-        if let Some(docs) = crate::bundled_docs::bundled_docs_dir() {
-            map.entry("crucible-docs".to_string()).or_insert(
-                crate::config::config::registry::KilnEntry::Config {
-                    path: docs,
-                    lazy: true,
-                },
-            );
-        }
-
-        map
+        crate::config::config::registry::resolve_kiln_entries(&self.kiln_path, &self.kilns)
     }
 
     /// The filesystem path of the effective default kiln, if one is configured.
@@ -839,6 +823,45 @@ verbose = false
         self.session_kiln
             .clone()
             .unwrap_or_else(|| self.kiln_path.clone())
+    }
+
+    /// The registry NAME of the kiln a new session should attach, if any.
+    ///
+    /// Sessions address kilns by name, so a client creating one has to send the
+    /// key of a `[kilns]` entry rather than a directory. `session_kiln` is
+    /// still spelled as a path in config, so it is matched against the resolved
+    /// entries; `None` means "no entry claims it", and the caller must treat
+    /// that as *no kiln* rather than substituting a directory — a name the
+    /// registry never issued is exactly what the daemon refuses.
+    pub fn session_kiln_name(&self) -> Option<crate::config::KilnName> {
+        let resolved = self.resolved_kilns();
+        if let Some(session_kiln) = self.session_kiln.as_ref() {
+            // Verbatim comparison: `[kilns]` entries keep the spelling the user
+            // wrote (`~/vault` stays `~/vault`), and so does this field, so the
+            // two agree whenever they came from the same config. Expansion is
+            // the registry's job, daemon-side, and duplicating it here would be
+            // a second answer to what a path is called.
+            let matched = resolved
+                .iter()
+                .find(|(_, entry)| entry.path() == *session_kiln)
+                .and_then(|(name, _)| crate::config::KilnName::normalize(name));
+            if matched.is_none() {
+                // Loudly, because the session that results has NO kiln, and a
+                // corpus that quietly is not there reads as a corpus with
+                // nothing in it.
+                warn!(
+                    session_kiln = %session_kiln.display(),
+                    "No `[kilns]` entry names this directory; sessions started from this config \
+                     will have no kiln. Add it under `[kilns]` to attach it."
+                );
+            }
+            return matched;
+        }
+        let default = self.resolved_default_kiln();
+        resolved
+            .contains_key(&default)
+            .then(|| crate::config::KilnName::normalize(&default))
+            .flatten()
     }
 }
 

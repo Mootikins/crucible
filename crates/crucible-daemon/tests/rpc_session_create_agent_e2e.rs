@@ -47,7 +47,11 @@ impl TestServer {
         let data_home = temp_dir.path().to_path_buf();
         let socket_path = temp_dir.path().join("daemon.sock");
 
-        let server = Server::bind_with_data_home(&socket_path, data_home).await?;
+        let kiln = data_home.join("kiln");
+        std::fs::create_dir_all(&kiln)?;
+        let server =
+            Server::bind_with_data_home_and_kilns(&socket_path, data_home, &[("kiln", &kiln)])
+                .await?;
         let shutdown_handle = server.shutdown_handle();
 
         let server_handle = tokio::spawn(async move {
@@ -87,6 +91,12 @@ impl TestServer {
         self._temp_dir.path().join("kiln")
     }
 
+    /// The registry name `card_kiln` is registered under — what a request has
+    /// to say to attach it.
+    fn card_kiln_name(&self) -> crucible_core::config::KilnName {
+        crucible_core::config::KilnName::parse("kiln").expect("a valid kiln name")
+    }
+
     async fn connect(&self) -> DaemonClient {
         DaemonClient::connect_to(&self.socket_path)
             .await
@@ -115,7 +125,7 @@ fn base_params(agent_type: &str) -> SessionCreateParams {
 
 /// [`base_params`] with the card kiln attached — for the tests whose fixture
 /// card must actually be discoverable.
-fn base_params_in(agent_type: &str, kiln: PathBuf) -> SessionCreateParams {
+fn base_params_in(agent_type: &str, kiln: crucible_core::config::KilnName) -> SessionCreateParams {
     SessionCreateParams {
         kilns: vec![kiln],
         ..base_params(agent_type)
@@ -156,7 +166,7 @@ async fn agent_card_resolves_a_kiln_card_onto_the_internal_defaults() {
             "session.create",
             serde_json::json!({
                 "type": "chat",
-                "kilns": [server.card_kiln()],
+                "kilns": [server.card_kiln_name()],
                 "configure_agent": true,
                 "agent_card": "researcher",
             }),
@@ -197,7 +207,7 @@ async fn agent_name_without_agent_type_still_resolves_a_card() {
             "session.create",
             serde_json::json!({
                 "type": "chat",
-                "kilns": [server.card_kiln()],
+                "kilns": [server.card_kiln_name()],
                 "configure_agent": true,
                 "agent_name": "researcher",
             }),
@@ -225,7 +235,7 @@ async fn agent_card_and_agent_name_together_are_rejected() {
             "session.create",
             serde_json::json!({
                 "type": "chat",
-                "kilns": [server.card_kiln()],
+                "kilns": [server.card_kiln_name()],
                 "configure_agent": true,
                 "agent_card": "researcher",
                 "agent_name": "researcher",
@@ -260,7 +270,7 @@ async fn unknown_agent_card_errors_without_creating_a_session() {
             "session.create",
             serde_json::json!({
                 "type": "chat",
-                "kilns": [server.card_kiln()],
+                "kilns": [server.card_kiln_name()],
                 "configure_agent": true,
                 "agent_card": "no-such-card",
             }),
@@ -306,7 +316,7 @@ async fn acp_agent_name_selects_a_profile_not_a_card_of_the_same_name() {
         ..Default::default()
     };
     let created = client
-        .session_create_with_agent(base_params_in("acp", server.card_kiln()), spec)
+        .session_create_with_agent(base_params_in("acp", server.card_kiln_name()), spec)
         .await
         .expect("create with an ACP profile failed");
 
@@ -344,7 +354,7 @@ async fn configure_agent_keeps_an_acp_profile_name() {
     let client = server.connect().await;
 
     let created = client
-        .session_create(base_params_in("internal", server.card_kiln()))
+        .session_create(base_params_in("internal", server.card_kiln_name()))
         .await
         .expect("plain create failed");
     let session_id = created["session_id"].as_str().unwrap().to_string();
@@ -488,7 +498,7 @@ async fn create_without_spec_leaves_agent_unconfigured() {
     // exactly as before — a session is created with no agent, to be configured
     // by a later `session.configure_agent`.
     let created = client
-        .session_create(base_params_in("internal", server.card_kiln()))
+        .session_create(base_params_in("internal", server.card_kiln_name()))
         .await
         .expect("plain create failed");
     assert!(

@@ -174,7 +174,31 @@ async fn wait_until_accepting(socket_path: &Path) -> Result<()> {
     }
 }
 
+/// Write the config the spawned daemon reads, registering one kiln.
+///
+/// Sessions address kilns by NAME, and the registry is built from the app
+/// config the client hands the daemon at spawn — so a fixture with no config
+/// gets a daemon that knows no kilns, and every scoped request it makes is
+/// refused for reasons unrelated to the test. `cru daemon serve` reads
+/// `$XDG_CONFIG_HOME/crucible/config.toml`, which the hermetic environment
+/// points inside the temp dir.
+fn write_daemon_config(home: &Path) -> Result<()> {
+    let kiln = home.join(TestDaemon::KILN);
+    std::fs::create_dir_all(&kiln)?;
+    let config_dir = home.join(".config").join("crucible");
+    std::fs::create_dir_all(&config_dir)?;
+    std::fs::write(
+        config_dir.join("config.toml"),
+        format!("[kilns]\n{} = \"{}\"\n", TestDaemon::KILN, kiln.display()),
+    )?;
+    Ok(())
+}
+
 impl TestDaemon {
+    /// The registry name of the kiln every `TestDaemon` registers, and the
+    /// spelling a request has to use to attach it.
+    pub const KILN: &'static str = "kiln";
+
     /// Start a test daemon with isolated socket path
     ///
     /// This spawns a real daemon process in a temporary directory,
@@ -182,6 +206,7 @@ impl TestDaemon {
     pub async fn start() -> Result<Self> {
         let temp_dir = tempfile::tempdir()?;
         let socket_path = temp_dir.path().join("daemon.sock");
+        write_daemon_config(temp_dir.path())?;
 
         // Single binary: daemon runs via `cru daemon serve`.
         // Cannot use env!("CARGO_BIN_EXE_cru") — crucible-daemon cannot depend on crucible-cli
@@ -233,6 +258,7 @@ impl TestDaemon {
     pub async fn start_with_env(env_vars: Vec<(&str, &str)>) -> Result<Self> {
         let temp_dir = tempfile::tempdir()?;
         let socket_path = temp_dir.path().join("daemon.sock");
+        write_daemon_config(temp_dir.path())?;
 
         let cru_exe = std::env::var("CARGO_BIN_EXE_cru").unwrap_or_else(|_| {
             let test_exe = std::env::current_exe().expect("current_exe");

@@ -55,7 +55,17 @@ impl TestServer {
         let data_home = temp_dir.path().to_path_buf();
         let socket_path = temp_dir.path().join("daemon.sock");
 
-        let server = Server::bind_with_data_home(&socket_path, data_home.clone()).await?;
+        // One registered kiln, so the scope mutations below have a NAME to
+        // attach. Its directory is outside the data root the registration
+        // floor refuses.
+        let extra = temp_dir.path().join("extra-kiln");
+        std::fs::create_dir_all(&extra)?;
+        let server = Server::bind_with_data_home_and_kilns(
+            &socket_path,
+            data_home.clone(),
+            &[("extra-kiln", &extra)],
+        )
+        .await?;
         let shutdown_handle = server.shutdown_handle();
 
         let server_handle = tokio::spawn(async move {
@@ -196,7 +206,7 @@ async fn kilnless_no_workspace_gets_session_scratch_dir() {
 #[tokio::test]
 async fn kilnless_session_composes_with_scope_mutations() {
     let server = TestServer::start().await.expect("Failed to start server");
-    let extra_kiln = tempfile::tempdir().unwrap();
+    let extra_kiln = crucible_core::config::KilnName::parse("extra-kiln").unwrap();
 
     let client = DaemonClient::connect_to(&server.socket_path)
         .await
@@ -208,19 +218,19 @@ async fn kilnless_session_composes_with_scope_mutations() {
     // A kiln-less session must still accept the mid-session scope RPCs: connect
     // an extra kiln, then disconnect it, round-tripping back to empty.
     let scope = client
-        .session_connect_kiln(&session_id, extra_kiln.path())
+        .session_connect_kiln(&session_id, &extra_kiln)
         .await
         .expect("connect_kiln on a kiln-less session failed");
     let attached = scope["kilns"].as_array().unwrap();
     assert!(
         attached
             .iter()
-            .any(|k| k.as_str() == Some(extra_kiln.path().to_string_lossy().as_ref())),
+            .any(|k| k.as_str() == Some(extra_kiln.as_str())),
         "extra kiln should be attached: {attached:?}"
     );
 
     let scope = client
-        .session_disconnect_kiln(&session_id, extra_kiln.path())
+        .session_disconnect_kiln(&session_id, &extra_kiln)
         .await
         .expect("disconnect_kiln on a kiln-less session failed");
     assert!(
@@ -228,7 +238,7 @@ async fn kilnless_session_composes_with_scope_mutations() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|k| k.as_str() == Some(extra_kiln.path().to_string_lossy().as_ref())),
+            .any(|k| k.as_str() == Some(extra_kiln.as_str())),
         "the extra kiln should be gone after disconnect: {:?}",
         scope["kilns"]
     );

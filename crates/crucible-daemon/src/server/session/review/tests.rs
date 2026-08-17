@@ -462,9 +462,12 @@ async fn the_lua_bridge_restores_a_resumed_sessions_queue_like_the_handler_does(
     use crucible_lua::DaemonSessionApi;
 
     let fx = Fixture::new("one\n").await;
-    let kiln = TempDir::new().unwrap();
-    let session = Session::new(SessionType::Chat, vec![kiln.path().to_path_buf()])
-        .with_workspace(fx.dir.path().to_path_buf());
+    let _kiln = TempDir::new().unwrap();
+    let session = Session::new(
+        SessionType::Chat,
+        vec![crate::test_support::kiln_name("kiln")],
+    )
+    .with_workspace(Some(fx.dir.path().to_path_buf()));
     let id = session.id.clone();
     let storage = session.storage_path(fx.sm.sessions_root());
     fx.sm.register_transient(session);

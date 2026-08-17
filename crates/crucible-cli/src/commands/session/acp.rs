@@ -222,7 +222,7 @@ pub(super) mod rpc {
             .session_create_with_agent(
                 crucible_daemon::rpc_client::SessionCreateParams {
                     session_type: params.session_type.to_string(),
-                    kilns: vec![config.session_kiln_path()],
+                    kilns: config.session_kiln_name().into_iter().collect(),
                     workspace: params.workspace.map(|p| p.to_path_buf()),
                     recording_mode: recording_mode_parsed,
                     recording_path: None,

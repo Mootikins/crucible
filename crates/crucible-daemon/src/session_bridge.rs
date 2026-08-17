@@ -370,7 +370,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
                 .create_session(
                     parent.session_type,
                     parent.kilns.clone(),
-                    Some(parent.workspace.clone()),
+                    parent.workspace.clone(),
                     None,
                 )
                 .await
@@ -381,7 +381,8 @@ impl DaemonSessionApi for DaemonSessionBridge {
                 .await
                 .unwrap_or_default();
 
-            let storage = FileSessionStorage::new(sm.sessions_root().to_path_buf());
+            let storage = FileSessionStorage::new(sm.sessions_root().to_path_buf())
+                .with_registry(sm.kiln_registry().clone());
             let mut count = 0u64;
             for event in &events {
                 if let Some(limit) = up_to {

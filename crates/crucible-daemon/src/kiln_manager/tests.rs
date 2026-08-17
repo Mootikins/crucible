@@ -367,72 +367,85 @@ async fn test_file_deleted_removes_note_after_processing() {
     assert_eq!(gamma.unwrap().title, "Gamma");
 }
 
-#[tokio::test]
-async fn open_named_kilns_opens_matching_kilns() {
-    use crucible_core::config::KilnEntry;
+/// A registry built from a config, rooted entirely inside `tmp`.
+fn registry_for(tmp: &TempDir, kilns: serde_json::Value) -> crate::kiln_registry::KilnRegistry {
+    crate::kiln_registry::KilnRegistry::from_app_config(
+        crate::kiln_registry::KilnRegistryContext::new(
+            tmp.path().join("cwd"),
+            Some(tmp.path().join("home")),
+            tmp.path().join("home").join(".crucible"),
+        ),
+        Some(&serde_json::json!({ "kilns": kilns })),
+    )
+    .unwrap()
+}
 
-    let tmp1 = TempDir::new().unwrap();
-    let tmp2 = TempDir::new().unwrap();
-
-    // Create minimal .crucible dirs so open() succeeds
-    std::fs::create_dir_all(tmp1.path().join(".crucible")).unwrap();
-    std::fs::create_dir_all(tmp2.path().join(".crucible")).unwrap();
-
-    let mut kilns = HashMap::new();
-    kilns.insert(
-        "vault".to_string(),
-        KilnEntry::Path(tmp1.path().to_path_buf()),
-    );
-    kilns.insert(
-        "docs".to_string(),
-        KilnEntry::Path(tmp2.path().to_path_buf()),
-    );
-
-    let project_kilns = vec!["vault".to_string(), "docs".to_string()];
-
-    let manager = KilnManager::new();
-    let opened = manager.open_named_kilns(&kilns, &project_kilns).await;
-
-    assert_eq!(opened.len(), 2);
-    let listed = manager.list().await;
-    assert_eq!(listed.len(), 2);
+fn kiln_name(s: &str) -> crucible_core::config::KilnName {
+    crucible_core::config::KilnName::parse(s).unwrap()
 }
 
 #[tokio::test]
-async fn open_named_kilns_skips_lazy_kilns() {
-    use crucible_core::config::KilnEntry;
-
+async fn open_registered_opens_matching_kilns() {
     let tmp = TempDir::new().unwrap();
-    std::fs::create_dir_all(tmp.path().join(".crucible")).unwrap();
+    let vault = tmp.path().join("vault");
+    let docs = tmp.path().join("docs");
+    // Minimal `.crucible` dirs so `open()` succeeds.
+    std::fs::create_dir_all(vault.join(".crucible")).unwrap();
+    std::fs::create_dir_all(docs.join(".crucible")).unwrap();
 
-    let mut kilns = HashMap::new();
-    kilns.insert(
-        "active".to_string(),
-        KilnEntry::Path(tmp.path().to_path_buf()),
-    );
-    kilns.insert(
-        "lazy_one".to_string(),
-        KilnEntry::Config {
-            path: PathBuf::from("/should/not/be/opened"),
-            lazy: true,
-        },
+    let registry = registry_for(
+        &tmp,
+        serde_json::json!({
+            "vault": vault.to_str().unwrap(),
+            "docs": docs.to_str().unwrap(),
+        }),
     );
 
-    let names = vec!["active".to_string(), "lazy_one".to_string()];
     let manager = KilnManager::new();
-    let opened = manager.open_named_kilns(&kilns, &names).await;
+    let opened = manager
+        .open_registered(&registry, &[kiln_name("vault"), kiln_name("docs")])
+        .await;
 
-    assert_eq!(opened, vec!["active"]);
+    assert_eq!(opened.len(), 2);
+    assert_eq!(manager.list().await.len(), 2);
+}
+
+/// The `lazy` bit has to survive resolution: a lazy kiln is never opened by a
+/// name sweep, only by an explicit request for it.
+#[tokio::test]
+async fn open_registered_skips_lazy_kilns() {
+    let tmp = TempDir::new().unwrap();
+    let active = tmp.path().join("active");
+    std::fs::create_dir_all(active.join(".crucible")).unwrap();
+
+    let registry = registry_for(
+        &tmp,
+        serde_json::json!({
+            "active": active.to_str().unwrap(),
+            "lazy-one": { "path": tmp.path().join("should-not-be-opened").to_str().unwrap(), "lazy": true },
+        }),
+    );
+
+    let manager = KilnManager::new();
+    let opened = manager
+        .open_registered(&registry, &[kiln_name("active"), kiln_name("lazy-one")])
+        .await;
+
+    assert_eq!(opened, vec![kiln_name("active")]);
     assert_eq!(manager.list().await.len(), 1);
 }
 
+/// An unresolvable name is not a kiln: it opens nothing, rather than being
+/// treated as a path or falling back to some other entry.
 #[tokio::test]
-async fn open_named_kilns_warns_on_missing_name() {
-    let kilns = HashMap::new();
-    let names = vec!["nonexistent".to_string()];
+async fn open_registered_opens_nothing_for_an_unknown_name() {
+    let tmp = TempDir::new().unwrap();
+    let registry = registry_for(&tmp, serde_json::json!({}));
 
     let manager = KilnManager::new();
-    let opened = manager.open_named_kilns(&kilns, &names).await;
+    let opened = manager
+        .open_registered(&registry, &[kiln_name("nonexistent")])
+        .await;
 
     assert!(opened.is_empty());
     assert!(manager.list().await.is_empty());

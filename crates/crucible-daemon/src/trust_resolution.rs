@@ -50,11 +50,16 @@ pub(crate) fn resolve_kiln_classification(
 /// only the workspace made a confidential kiln silently resolve to `None`
 /// (→ Public at the trust gates), diverging from the create-time gate which
 /// resolves against the kiln when no workspace is given.
+/// A session with no workspace at all (`None`) is the same case one step
+/// further along: nothing to read, so the walk up from the kiln is the whole
+/// answer. It must not read as "unclassified" — a missing workspace is an
+/// absent *lookup*, never a statement that the corpus is public.
 pub(crate) fn resolve_session_classification(
-    workspace: &Path,
+    workspace: Option<&Path>,
     kiln: &Path,
 ) -> Option<DataClassification> {
-    resolve_kiln_classification(workspace, kiln)
+    workspace
+        .and_then(|workspace| resolve_kiln_classification(workspace, kiln))
         .or_else(|| find_workspace_and_resolve_classification(kiln))
 }
 
@@ -224,12 +229,12 @@ mod tests {
 
         assert_eq!(resolve_kiln_classification(&scratch, &kiln), None);
         assert_eq!(
-            resolve_session_classification(&scratch, &kiln),
+            resolve_session_classification(Some(&scratch), &kiln),
             Some(DataClassification::Confidential)
         );
         // A workspace WITH its own config still wins.
         assert_eq!(
-            resolve_session_classification(&workspace_owner, &kiln),
+            resolve_session_classification(Some(&workspace_owner), &kiln),
             Some(DataClassification::Confidential)
         );
     }

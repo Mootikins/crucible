@@ -2,6 +2,7 @@
 
 mod cli_app;
 mod errors;
+mod kiln_name;
 mod provider;
 #[cfg(feature = "toml")]
 mod registration;
@@ -14,6 +15,7 @@ mod tests;
 
 pub use cli_app::CliAppConfig;
 pub use errors::{ConfigError, ConfigValidationError};
+pub use kiln_name::{InvalidKilnName, KilnName};
 pub use provider::EffectiveLlmConfig;
 #[cfg(feature = "toml")]
 pub use registration::{

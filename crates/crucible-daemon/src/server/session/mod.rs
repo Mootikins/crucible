@@ -114,13 +114,20 @@ fn spawn_setup_task(
     mcp_config: Option<McpConfig>,
 ) {
     let sid = session.id.clone();
-    let workspace_path = session.workspace.clone();
+    let workspace = session.workspace.clone();
+    // The event's own field keeps its `PathBuf` shape; an absent workspace is
+    // reported as the empty path there. The INDEXER below is handed the
+    // `Option` instead, because `index_workspace_files("")` walks whatever
+    // directory the daemon process happens to be running in.
+    let workspace_path = workspace.clone().unwrap_or_default();
     // The setup event and the note indexer both want one kiln; a session with
     // none indexes nothing, which is what an empty path yields.
-    let kiln_path = session
-        .default_kiln()
-        .unwrap_or(Path::new(""))
-        .to_path_buf();
+    let kiln_path = am
+        .session_manager()
+        .kiln_paths(&session.kilns)
+        .into_iter()
+        .next()
+        .unwrap_or_default();
     // Agent config is populated by a later `session.configure_agent` call, so
     // at create time we almost always observe `None` here and the event
     // carries empty strings. Task 1.3 (CLI) will still render progressively;
@@ -154,8 +161,12 @@ fn spawn_setup_task(
         // 2. Concurrent: workspace + kiln indexers.
         let (files_res, notes_res) = tokio::join!(
             tokio::task::spawn_blocking({
-                let ws = workspace_path.clone();
-                move || crate::workspace::indexer::index_workspace_files(&ws)
+                let ws = workspace.clone();
+                move || {
+                    ws.as_deref()
+                        .map(crate::workspace::indexer::index_workspace_files)
+                        .unwrap_or_default()
+                }
             }),
             tokio::task::spawn_blocking({
                 let k = kiln_path.clone();

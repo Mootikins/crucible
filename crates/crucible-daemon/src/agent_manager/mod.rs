@@ -767,10 +767,9 @@ impl AgentManager {
         &self.background_manager
     }
 
-    /// Access the session manager. Used by tests that need to drive session
-    /// lifecycle (end/resume) directly against the same manager the agent
-    /// manager reads from.
-    #[cfg(test)]
+    /// Access the session manager — which is also where the kiln registry
+    /// lives, so handlers that hold only an `AgentManager` can still resolve a
+    /// session's kiln names without a second copy of the mapping.
     pub(crate) fn session_manager(&self) -> &Arc<SessionManager> {
         &self.session_manager
     }
@@ -925,7 +924,14 @@ impl AgentManager {
             // when available. Falls back to empty impls only when the kiln
             // cannot be opened or no enrichment is configured — in which case
             // semantic_search will honestly report its unavailable state.
-            let default_kiln = session.default_kiln().map(Path::to_path_buf);
+            // A name becomes a directory here, through the registry, or it
+            // becomes nothing: an unresolvable name leaves the session with the
+            // empty knowledge repository, which honestly reports itself
+            // unavailable, rather than with one rooted somewhere unaudited.
+            let default_kiln = session
+                .default_kiln()
+                .and_then(|name| self.session_manager.kiln_registry().resolve(name).path())
+                .map(Path::to_path_buf);
             let (knowledge_repo, embedding_provider): (
                 Arc<dyn crucible_core::traits::KnowledgeRepository>,
                 Arc<dyn crucible_core::enrichment::EmbeddingProvider>,
@@ -981,7 +987,11 @@ impl AgentManager {
                     Some(&session.id),
                     Some(self.background_manager.clone()),
                     Some(self.delegation_service.clone()),
-                    &session.workspace,
+                    // The real workspace, not the tool anchor below: this
+                    // feeds data-classification resolution, and resolving a
+                    // kiln's classification against the session's own storage
+                    // directory would answer "unclassified" for every kiln.
+                    session.workspace.as_deref(),
                     default_kiln.as_deref(),
                 )
             });
@@ -996,8 +1006,14 @@ impl AgentManager {
             // `read_file` refused.
             let sessions_root = self.session_manager.sessions_root().to_path_buf();
             let session_dir = session.storage_path(&sessions_root);
-            let containment =
-                crate::agent_manager::scope::session_containment(session, &sessions_root);
+            let containment = crate::agent_manager::scope::session_containment(
+                session,
+                &sessions_root,
+                self.session_manager.kiln_registry(),
+            );
+            // Where relative paths and `bash` are anchored — NOT a grant; see
+            // `session_tool_root`.
+            let tool_root = crate::agent_manager::scope::session_tool_root(session, &sessions_root);
 
             let mcp = Arc::new(
                 CrucibleMcpServer::new_with_workspace_and_delegation(
@@ -1006,7 +1022,7 @@ impl AgentManager {
                         .unwrap_or(Path::new(""))
                         .to_string_lossy()
                         .to_string(),
-                    session.workspace.clone(),
+                    tool_root.clone(),
                     knowledge_repo,
                     embedding_provider,
                     delegation_context,
@@ -1019,17 +1035,11 @@ impl AgentManager {
             // way. (`bash` is not scoped by the allowlist at all — it answers
             // to the shell policy instead — and closing that gap is
             // deliberately out of scope here.)
-            let shell_policy = crucible_core::config::read_project_config(&session.workspace)
+            let shell_policy = session
+                .workspace
+                .as_deref()
+                .and_then(crucible_core::config::read_project_config)
                 .map(|c| c.security.shell);
-            // Where relative paths and `bash` are anchored — NOT a grant. A
-            // session whose workspace was detached carries `""`, which names no
-            // directory; its own storage dir is the one place it certainly
-            // has, and it is already inside the allowlist.
-            let tool_root = if session.workspace.as_os_str().is_empty() {
-                session_dir.clone()
-            } else {
-                session.workspace.clone()
-            };
             let mut providers: Vec<Arc<dyn ToolExecutor>> = vec![
                 Arc::new(
                     WorkspaceTools::new(&tool_root)

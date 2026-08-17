@@ -29,10 +29,14 @@ pub(super) async fn cleanup(
     // The CLI's scope is the invoking kiln; `--all-kilns` replaces it rather
     // than adding to it, so the set is empty in that case and the daemon takes
     // the widening from the flag alone.
-    let scope: &[std::path::PathBuf] = if all_kilns {
+    // Scope is stated in NAMES now. A config whose kiln has no `[kilns]` entry
+    // yields an empty scope, which this handler refuses outright rather than
+    // sweeping — the fail-closed answer for a destructive verb.
+    let session_kiln = config.session_kiln_name();
+    let scope: &[crucible_core::config::KilnName] = if all_kilns {
         &[]
     } else {
-        std::slice::from_ref(&config.kiln_path)
+        session_kiln.as_slice()
     };
 
     let result = client

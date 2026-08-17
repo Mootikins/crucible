@@ -370,11 +370,22 @@ impl DelegationSpawner for DelegationService {
         // Resolve the child agent config: a named target resolves to an
         // agent CARD (specialized internal agent) first, then an ACP
         // profile; no target clones the parent.
+        // The parent's kiln names, as directories, once — for agent-card
+        // discovery and for the classification walk below. An unresolvable name
+        // yields nothing here, which is the point: it must not buy the child a
+        // trust upgrade by contributing no classification while still counting
+        // as a kiln.
+        let parent_kilns = manager.session_manager().kiln_paths(&parent.kilns);
         let mut child_agent: SessionAgent = match req.target_agent.as_deref() {
             Some(name) => {
                 let cards = crate::agent_cards::discover_agent_cards(
-                    &parent.workspace,
-                    parent.default_kiln(),
+                    // `card_directories` treats the empty path as "no
+                    // workspace directory" rather than as the daemon's cwd.
+                    parent
+                        .workspace
+                        .as_deref()
+                        .unwrap_or(std::path::Path::new("")),
+                    parent_kilns.first().map(std::path::PathBuf::as_path),
                 );
                 if let Some(card) = cards.get(name) {
                     SessionAgent::from_card(card, &parent_agent, manager.specialty_models())
@@ -418,8 +429,11 @@ impl DelegationSpawner for DelegationService {
         // inside resolve_agent_trust.
         let child_trust = manager.resolve_agent_trust(&child_agent);
         let classification =
-            crate::trust_resolution::most_restrictive_classification(&parent.kilns, |kiln| {
-                crate::trust_resolution::resolve_session_classification(&parent.workspace, kiln)
+            crate::trust_resolution::most_restrictive_classification(&parent_kilns, |kiln| {
+                crate::trust_resolution::resolve_session_classification(
+                    parent.workspace.as_deref(),
+                    kiln,
+                )
             })
             .unwrap_or(crucible_core::config::DataClassification::Public);
         if !child_trust.satisfies(classification) {

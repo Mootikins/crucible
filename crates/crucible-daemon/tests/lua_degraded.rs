@@ -100,14 +100,14 @@ async fn test_e2e_lua_degraded_daemon_starts_with_broken_plugin() {
     );
 
     // 3. Session creation should still work — Lua failure doesn't block core
-    let kiln_dir = daemon.socket_path.parent().unwrap().join("kiln");
-    std::fs::create_dir_all(&kiln_dir).expect("Failed to create kiln dir");
-    let kiln_path = kiln_dir.to_string_lossy();
-
-    let create_req = format!(
-        r#"{{"jsonrpc":"2.0","id":3,"method":"session.create","params":{{"type":"chat","kilns":["{}"]}}}}"#,
-        kiln_path
-    );
+    // Kiln-less on purpose: these fixtures override `XDG_CONFIG_HOME` to an
+    // empty directory to isolate from the host's plugins, which also means the
+    // daemon reads no `[kilns]` and knows no kiln names. Zero kilns is a
+    // legitimate session shape (§4.1), and creating one is exactly what this
+    // step asserts still works with Lua broken.
+    let create_req =
+        r#"{"jsonrpc":"2.0","id":3,"method":"session.create","params":{"type":"chat"}}"#
+            .to_string();
     let response = conn.call(&create_req).await;
     let result = response
         .get("result")
@@ -183,16 +183,12 @@ async fn test_e2e_lua_degraded_state_detectable_via_rpc() {
         response
     );
 
-    // 3. Core session lifecycle works without plugins
-    let kiln_dir = daemon.socket_path.parent().unwrap().join("kiln");
-    std::fs::create_dir_all(&kiln_dir).expect("Failed to create kiln dir");
-    let kiln_path = kiln_dir.to_string_lossy();
-
-    // Create session
-    let create_req = format!(
-        r#"{{"jsonrpc":"2.0","id":3,"method":"session.create","params":{{"type":"chat","kilns":["{}"]}}}}"#,
-        kiln_path
-    );
+    // 3. Core session lifecycle works without plugins. Kiln-less for the same
+    // reason as the fixture above: this daemon's `XDG_CONFIG_HOME` is an empty
+    // isolated directory, so it reads no `[kilns]` and knows no kiln names.
+    let create_req =
+        r#"{"jsonrpc":"2.0","id":3,"method":"session.create","params":{"type":"chat"}}"#
+            .to_string();
     let response = conn.call(&create_req).await;
     let result = response
         .get("result")
@@ -234,11 +230,11 @@ async fn test_e2e_lua_degraded_state_detectable_via_rpc() {
         state
     );
 
-    // List sessions — should show our session
-    let list_req = format!(
-        r#"{{"jsonrpc":"2.0","id":6,"method":"session.list","params":{{"kiln":"{}"}}}}"#,
-        kiln_path
-    );
+    // List sessions — should show our session. No `kiln` scope: this daemon
+    // knows no kiln names, and the session is kiln-less, so an unscoped list is
+    // the only one that can reach it (it is exactly the branch a kiln-less
+    // session is listed by).
+    let list_req = r#"{"jsonrpc":"2.0","id":6,"method":"session.list","params":{}}"#.to_string();
     let response = conn.call(&list_req).await;
     let result = response.get("result").expect("Session list should succeed");
     let total = result.get("total").and_then(|v| v.as_u64()).unwrap_or(0);

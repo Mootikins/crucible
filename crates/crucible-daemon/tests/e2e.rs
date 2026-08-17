@@ -320,11 +320,12 @@ async fn test_e2e_session_lifecycle() {
         .await
         .expect("Failed to connect");
 
-    let kiln_dir = create_kiln_dir(&daemon.socket_path);
-    let kiln_path = kiln_dir.to_string_lossy();
+    let _kiln_dir = create_kiln_dir(&daemon.socket_path);
+    // The name the `TestDaemon` fixture registers for that directory.
+    let kiln_path = common::TestDaemon::KILN;
 
     // 1. Create session
-    let response = conn.call(&session_create_request(1, &kiln_path)).await;
+    let response = conn.call(&session_create_request(1, kiln_path)).await;
     let result = get_result(&response);
     let session_id = get_str(result, "session_id");
     assert_state_contains(result, "active", "New session");
@@ -359,12 +360,13 @@ async fn test_e2e_session_list() {
         .await
         .expect("Failed to connect");
 
-    let kiln_dir = create_kiln_dir(&daemon.socket_path);
-    let kiln_path = kiln_dir.to_string_lossy();
+    let _kiln_dir = create_kiln_dir(&daemon.socket_path);
+    // The name the `TestDaemon` fixture registers for that directory.
+    let kiln_path = common::TestDaemon::KILN;
 
     // Create two sessions
     for i in 1..=2 {
-        conn.call(&session_create_request(i, &kiln_path)).await;
+        conn.call(&session_create_request(i, kiln_path)).await;
     }
 
     // List sessions
@@ -390,11 +392,12 @@ async fn test_e2e_model_switching() {
         .await
         .expect("Failed to connect");
 
-    let kiln_dir = create_kiln_dir(&daemon.socket_path);
-    let kiln_path = kiln_dir.to_string_lossy();
+    let _kiln_dir = create_kiln_dir(&daemon.socket_path);
+    // The name the `TestDaemon` fixture registers for that directory.
+    let kiln_path = common::TestDaemon::KILN;
 
     // 1. Create session
-    let response = conn.call(&session_create_request(1, &kiln_path)).await;
+    let response = conn.call(&session_create_request(1, kiln_path)).await;
     let session_id = get_str(get_result(&response), "session_id");
 
     // 2. Configure agent with initial model
@@ -464,11 +467,12 @@ async fn test_e2e_session_persistence() {
         .await
         .expect("Failed to connect");
 
-    let kiln_dir = create_kiln_dir(&daemon.socket_path);
-    let kiln_path = kiln_dir.to_string_lossy();
+    let _kiln_dir = create_kiln_dir(&daemon.socket_path);
+    // The name the `TestDaemon` fixture registers for that directory.
+    let kiln_path = common::TestDaemon::KILN;
 
     // Create a session
-    let response = conn.call(&session_create_request(1, &kiln_path)).await;
+    let response = conn.call(&session_create_request(1, kiln_path)).await;
     let session_id = get_str(get_result(&response), "session_id");
 
     // Check that meta.json was created — under the daemon's sessions root, not

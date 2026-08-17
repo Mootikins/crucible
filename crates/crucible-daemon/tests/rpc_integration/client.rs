@@ -29,7 +29,7 @@ async fn test_interaction_event_flows_to_receiver() {
     use std::time::Duration;
 
     let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+    let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
     let (client, event_rx) = DaemonClient::connect_to_with_events(&server.socket_path)
         .await
@@ -39,7 +39,7 @@ async fn test_interaction_event_flows_to_receiver() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![kiln_dir.path().to_path_buf()],
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
             recording_mode: None,
             recording_path: None,

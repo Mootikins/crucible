@@ -2,7 +2,7 @@
 //!
 //! Split out of session_manager.rs: the tests were 811 of its 1569 lines,
 //! putting the file over the 1500-line ceiling CI enforces.
-use crate::test_support::temp_session_manager;
+use crate::test_support::{kiln_name, temp_session_manager};
 
 use super::*;
 use crate::test_support::temp_session_storage;
@@ -10,8 +10,8 @@ use tempfile::TempDir;
 
 #[tokio::test]
 async fn title_sweep_titles_untitled_sessions_with_content() {
-    let tmp = TempDir::new().unwrap();
-    let kiln = tmp.path().to_path_buf();
+    let _tmp = TempDir::new().unwrap();
+    let kiln = kiln_name("kiln");
     let manager = temp_session_manager();
     let session = manager
         .create_session(SessionType::Chat, vec![kiln.clone()], None, None)
@@ -51,22 +51,20 @@ async fn title_sweep_titles_untitled_sessions_with_content() {
 
 #[tokio::test]
 async fn test_create_session() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let manager = temp_session_manager();
     let session = manager
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
 
     assert!(session.id.starts_with("chat-"));
     assert_eq!(session.session_type, SessionType::Chat);
-    assert_eq!(session.kilns, vec![tmp.path().to_path_buf()]);
-    assert_eq!(session.workspace, tmp.path());
+    assert_eq!(session.kilns, vec![kiln_name("kiln")]);
+    assert_eq!(
+        session.workspace, None,
+        "no explicit workspace and no scratch base is a session with no workspace"
+    );
     assert_eq!(session.state, SessionState::Active);
 }
 
@@ -78,7 +76,7 @@ async fn test_create_session_with_workspace() {
     let session = manager
         .create_session(
             SessionType::Agent,
-            vec![tmp.path().to_path_buf()],
+            vec![kiln_name("kiln")],
             Some(workspace.clone()),
             None,
         )
@@ -86,19 +84,19 @@ async fn test_create_session_with_workspace() {
         .unwrap();
 
     assert!(session.id.starts_with("agent-"));
-    assert_eq!(session.kilns, vec![tmp.path().to_path_buf()]);
-    assert_eq!(session.workspace, workspace);
+    assert_eq!(session.kilns, vec![kiln_name("kiln")]);
+    assert_eq!(session.workspace, Some(workspace));
 }
 
 #[tokio::test]
 async fn test_create_session_with_several_kilns() {
-    let tmp = TempDir::new().unwrap();
-    let extra_kiln = tmp.path().join("extra-kiln");
+    let _tmp = TempDir::new().unwrap();
+    let extra_kiln = kiln_name("extra-kiln");
     let manager = temp_session_manager();
     let session = manager
         .create_session(
             SessionType::Workflow,
-            vec![tmp.path().to_path_buf(), extra_kiln.clone()],
+            vec![kiln_name("kiln"), extra_kiln.clone()],
             None,
             None,
         )
@@ -106,14 +104,13 @@ async fn test_create_session_with_several_kilns() {
         .unwrap();
 
     assert!(session.id.starts_with("workflow-"));
-    assert_eq!(session.kilns, vec![tmp.path().to_path_buf(), extra_kiln]);
+    assert_eq!(session.kilns, vec![kiln_name("kiln"), extra_kiln]);
 }
 
 #[tokio::test]
 async fn test_create_session_no_workspace_gets_scratch_dir() {
     let tmp = TempDir::new().unwrap();
-    let kiln = tmp.path().join("kiln");
-    std::fs::create_dir_all(&kiln).unwrap();
+    let kiln = kiln_name("kiln");
     let scratch_base = tmp.path().join("workspaces");
 
     let storage = temp_session_storage();
@@ -125,16 +122,21 @@ async fn test_create_session_no_workspace_gets_scratch_dir() {
         .unwrap();
 
     // Workspace is a session-unique scratch dir, not the kiln.
-    assert_ne!(session.workspace, kiln);
-    assert_eq!(session.workspace, scratch_base.join(&*session.id));
-    assert!(session.workspace.ends_with(&*session.id));
-    assert!(session.workspace.is_dir(), "scratch dir should be created");
+    let workspace = session.workspace.clone().expect("scratch workspace");
+    assert_ne!(
+        workspace.file_name().and_then(|n| n.to_str()),
+        Some(kiln.as_str()),
+        "the scratch workspace is not the kiln"
+    );
+    assert_eq!(workspace, scratch_base.join(&*session.id));
+    assert!(workspace.ends_with(&*session.id));
+    assert!(workspace.is_dir(), "scratch dir should be created");
 }
 
 #[tokio::test]
 async fn test_create_session_explicit_workspace_ignores_scratch_dir() {
     let tmp = TempDir::new().unwrap();
-    let kiln = tmp.path().join("kiln");
+    let kiln = kiln_name("kiln");
     let workspace = tmp.path().join("explicit-workspace");
     let scratch_base = tmp.path().join("workspaces");
 
@@ -152,18 +154,21 @@ async fn test_create_session_explicit_workspace_ignores_scratch_dir() {
         .unwrap();
 
     // Explicit workspace wins; no scratch dir is created.
-    assert_eq!(session.workspace, workspace);
+    assert_eq!(session.workspace, Some(workspace));
     assert!(!scratch_base.exists());
 }
 
 #[tokio::test]
-async fn test_create_session_scratch_dir_failure_falls_back_to_kiln() {
+async fn test_create_session_scratch_dir_failure_leaves_the_session_without_one() {
     let tmp = TempDir::new().unwrap();
-    let kiln = tmp.path().join("kiln");
-    std::fs::create_dir_all(&kiln).unwrap();
+    let kiln = kiln_name("kiln");
 
     // Point the scratch base under a regular file so `create_dir_all`
-    // cannot succeed; creation must fall back to `workspace == kiln`.
+    // cannot succeed. Creation must still succeed — a scratch directory is
+    // never worth failing a session over — and the session simply has no
+    // workspace. It must NOT silently become the kiln: that is the sentinel,
+    // and it made "acting in this project" indistinguishable from "reading
+    // this corpus".
     let blocker = tmp.path().join("not-a-dir");
     std::fs::write(&blocker, b"x").unwrap();
     let scratch_base = blocker.join("workspaces");
@@ -176,20 +181,19 @@ async fn test_create_session_scratch_dir_failure_falls_back_to_kiln() {
         .await
         .unwrap();
 
-    assert_eq!(session.workspace, kiln);
+    assert_eq!(session.workspace, None);
+    assert!(
+        session.kilns.contains(&kiln),
+        "the kiln is untouched by the workspace failing to materialise"
+    );
 }
 
 #[tokio::test]
 async fn test_get_session() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let manager = temp_session_manager();
     let session = manager
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
     let session_id = session.id.clone();
@@ -202,24 +206,14 @@ async fn test_get_session() {
 
 #[tokio::test]
 async fn test_list_sessions() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let manager = temp_session_manager();
     manager
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
     manager
-        .create_session(
-            SessionType::Agent,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Agent, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
 
@@ -229,11 +223,9 @@ async fn test_list_sessions() {
 
 #[tokio::test]
 async fn test_list_sessions_filtered() {
-    let tmp = TempDir::new().unwrap();
-    let kiln1 = tmp.path().join("kiln1");
-    let kiln2 = tmp.path().join("kiln2");
-    std::fs::create_dir_all(&kiln1).unwrap();
-    std::fs::create_dir_all(&kiln2).unwrap();
+    let _tmp = TempDir::new().unwrap();
+    let kiln1 = kiln_name("kiln1");
+    let kiln2 = kiln_name("kiln2");
 
     let manager = temp_session_manager();
     manager
@@ -262,15 +254,10 @@ async fn test_list_sessions_filtered() {
 
 #[tokio::test]
 async fn test_pause_resume_session() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let manager = temp_session_manager();
     let session = manager
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
     let session_id = session.id.clone();
@@ -292,15 +279,10 @@ async fn test_pause_resume_session() {
 
 #[tokio::test]
 async fn test_pause_invalid_state() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let manager = temp_session_manager();
     let session = manager
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
     let session_id = session.id.clone();
@@ -315,15 +297,10 @@ async fn test_pause_invalid_state() {
 
 #[tokio::test]
 async fn test_end_session() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let manager = temp_session_manager();
     let session = manager
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
     let session_id = session.id.clone();
@@ -343,15 +320,10 @@ async fn test_end_session() {
 
 #[tokio::test]
 async fn test_remove_session() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let manager = temp_session_manager();
     let session = manager
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
     let session_id = session.id.clone();
@@ -376,28 +348,18 @@ async fn test_remove_session() {
 
 #[tokio::test]
 async fn test_counts() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let manager = temp_session_manager();
 
     assert_eq!(manager.active_count(), 0);
     assert_eq!(manager.total_count(), 0);
 
     let session1 = manager
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
     let session2 = manager
-        .create_session(
-            SessionType::Agent,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Agent, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
 
@@ -423,15 +385,10 @@ async fn test_counts() {
 
 #[tokio::test]
 async fn test_set_title() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let manager = temp_session_manager();
     let session = manager
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
 
@@ -446,15 +403,10 @@ async fn test_set_title() {
 
 #[tokio::test]
 async fn test_update_last_activity_updates_and_persists_timestamp() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let manager = temp_session_manager();
     let session = manager
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
 
@@ -473,15 +425,10 @@ async fn test_update_last_activity_updates_and_persists_timestamp() {
 
 #[tokio::test]
 async fn test_delete_session() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let manager = temp_session_manager();
     let session = manager
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
 
@@ -508,15 +455,10 @@ async fn test_delete_session_not_found() {
 
 #[tokio::test]
 async fn test_archive_session_sets_archived_and_keeps_files() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let manager = temp_session_manager();
     let session = manager
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
 
@@ -538,15 +480,10 @@ async fn test_archive_session_sets_archived_and_keeps_files() {
 
 #[tokio::test]
 async fn test_unarchive_session_sets_archived_false() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let manager = temp_session_manager();
     let session = manager
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
 
@@ -565,17 +502,12 @@ async fn test_unarchive_session_sets_archived_false() {
 
 #[tokio::test]
 async fn test_session_manager_persists_on_create() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let storage = temp_session_storage();
     let manager = SessionManager::with_storage(storage.clone());
 
     let session = manager
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
 
@@ -586,11 +518,11 @@ async fn test_session_manager_persists_on_create() {
 
 #[tokio::test]
 async fn test_session_manager_resume_from_storage() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let storage = temp_session_storage();
 
     // Create a session and save it directly to storage
-    let session = Session::new(SessionType::Chat, vec![tmp.path().to_path_buf()]);
+    let session = Session::new(SessionType::Chat, vec![kiln_name("kiln")]);
     let session_id = session.id.clone();
     storage.save(&session).await.unwrap();
 
@@ -610,17 +542,12 @@ async fn test_session_manager_resume_from_storage() {
 
 #[tokio::test]
 async fn test_session_manager_persists_state_changes() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let storage = temp_session_storage();
     let manager = SessionManager::with_storage(storage.clone());
 
     let session = manager
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
     let session_id = session.id.clone();
@@ -643,17 +570,12 @@ async fn test_session_manager_persists_state_changes() {
 
 #[tokio::test]
 async fn test_list_sessions_includes_persisted_sessions() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let storage = temp_session_storage();
 
     let manager1 = SessionManager::with_storage(storage.clone());
     let session = manager1
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
     let session_id = session.id.clone();
@@ -663,7 +585,13 @@ async fn test_list_sessions_includes_persisted_sessions() {
 
     let manager2 = SessionManager::with_storage(storage);
     let sessions = manager2
-        .list_sessions_filtered_async(KilnFilter::Attached(tmp.path()), None, None, None, true)
+        .list_sessions_filtered_async(
+            KilnFilter::Attached(&kiln_name("kiln")),
+            None,
+            None,
+            None,
+            true,
+        )
         .await;
 
     assert_eq!(
@@ -676,39 +604,24 @@ async fn test_list_sessions_includes_persisted_sessions() {
 
 #[tokio::test]
 async fn test_list_sessions_storage_includes_all_states() {
-    let tmp = TempDir::new().unwrap();
+    let _tmp = TempDir::new().unwrap();
     let storage = temp_session_storage();
 
     let manager1 = SessionManager::with_storage(storage.clone());
 
     let _active_session = manager1
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
 
     let paused_session = manager1
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
     manager1.pause_session(&paused_session.id).await.unwrap();
 
     let _ended_session = manager1
-        .create_session(
-            SessionType::Chat,
-            vec![tmp.path().to_path_buf()],
-            None,
-            None,
-        )
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
         .await
         .unwrap();
     manager1.end_session(&_ended_session.id).await.unwrap();
@@ -717,7 +630,13 @@ async fn test_list_sessions_storage_includes_all_states() {
     let manager2 = SessionManager::with_storage(storage);
 
     let sessions = manager2
-        .list_sessions_filtered_async(KilnFilter::Attached(tmp.path()), None, None, None, true)
+        .list_sessions_filtered_async(
+            KilnFilter::Attached(&kiln_name("kiln")),
+            None,
+            None,
+            None,
+            true,
+        )
         .await;
     assert_eq!(
         sessions.len(),
@@ -727,7 +646,7 @@ async fn test_list_sessions_storage_includes_all_states() {
 
     let paused = manager2
         .list_sessions_filtered_async(
-            KilnFilter::Attached(tmp.path()),
+            KilnFilter::Attached(&kiln_name("kiln")),
             None,
             None,
             Some(SessionState::Paused),
@@ -784,7 +703,7 @@ async fn test_update_session_does_not_modify_memory_on_storage_failure() {
     let storage = Arc::new(FailingSaveStorage(tmp.path().join("sessions")));
     let manager = SessionManager::with_storage(storage);
 
-    let mut session = Session::new(SessionType::Chat, vec![tmp.path().join("kiln")]);
+    let mut session = Session::new(SessionType::Chat, vec![kiln_name("kiln")]);
     session.title = Some("Original Title".to_string());
     let session_id = session.id.clone();
     manager.sessions.insert(session_id.clone(), session.clone());
@@ -869,7 +788,7 @@ impl SessionStorage for GatedSaveStorage {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ending_a_session_outlasts_a_concurrent_last_activity_persist() {
     let tmp = TempDir::new().unwrap();
-    let kiln = tmp.path().to_path_buf();
+    let kiln = kiln_name("kiln");
     let (release, gate) = tokio::sync::oneshot::channel();
     let storage = Arc::new(GatedSaveStorage {
         inner: FileSessionStorage::new(FileSessionStorage::root_for(tmp.path())),

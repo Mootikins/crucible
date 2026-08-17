@@ -19,18 +19,20 @@ export function sessionDefaultKiln(session: Pick<Session, 'kilns'>): string | nu
 }
 
 /**
- * Whether the session has a workspace distinct from its knowledge scope.
+ * The directory the session acts in, or `null` when it has none.
  *
- * The daemon writes `workspace = kilns[0]` at creation as its "no workspace"
- * sentinel (`Session::new`), so equality here means "no project", not "the
- * project happens to be the kiln". Spelled once so the sentinel rule lives in
- * one place on this side of the wire too.
+ * The daemon answers `workspace: null` outright — it used to write
+ * `workspace = kilns[0]` as a "no workspace" sentinel, which meant this side
+ * kept an INDEPENDENT copy of that rule, in another language, with nothing to
+ * fail if the two drifted. Reading the daemon's own answer is the whole point
+ * of the change: a workspace that happens to equal the kiln is now a
+ * workspace the user chose, and renders as one.
  *
- * A kiln-less session has no `kilns[0]` for the sentinel to be, and
- * `Session::new` falls back to `PathBuf::default()` — the empty string. The
- * `!!session.workspace` guard is what keeps that from reading as a project
- * directory; such a session still has a real workspace whenever one was set.
+ * The empty string and an absent field collapse to `null` too. Neither names
+ * a directory, and both reach `pathBasename()` and the session-tree grouping
+ * key as if they did — a payload written before the field became nullable
+ * carries `''`.
  */
-export function sessionHasWorkspace(session: Pick<Session, 'kilns' | 'workspace'>): boolean {
-  return !!session.workspace && session.workspace !== sessionDefaultKiln(session);
+export function sessionWorkspace(session: Pick<Session, 'workspace'>): string | null {
+  return session.workspace || null;
 }

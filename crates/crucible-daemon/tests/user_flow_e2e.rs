@@ -30,6 +30,10 @@ fn ensure_crypto_provider() {
 
 struct TestServer {
     _temp_dir: TempDir,
+    /// The directory the registry knows as `kiln` — the one a session attaches
+    /// by name, and therefore the one `kiln.open`/`kiln.close` has to act on if
+    /// the listing is to come back empty.
+    kiln_path: PathBuf,
     socket_path: PathBuf,
     _server_handle: JoinHandle<()>,
     shutdown_handle: tokio::sync::broadcast::Sender<()>,
@@ -41,8 +45,17 @@ impl TestServer {
         let temp_dir = tempfile::tempdir()?;
         let socket_path = temp_dir.path().join("daemon.sock");
 
-        let server =
-            Server::bind_with_data_home(&socket_path, temp_dir.path().to_path_buf()).await?;
+        // One registered kiln named `kiln`: sessions address kilns by name, so
+        // a fixture that registers none has a daemon that refuses every scoped
+        // request.
+        let kiln = temp_dir.path().join("kiln");
+        std::fs::create_dir_all(&kiln)?;
+        let server = Server::bind_with_data_home_and_kilns(
+            &socket_path,
+            temp_dir.path().to_path_buf(),
+            &[("kiln", &kiln)],
+        )
+        .await?;
         let shutdown_handle = server.shutdown_handle();
 
         let server_handle = tokio::spawn(async move {
@@ -67,6 +80,7 @@ impl TestServer {
 
         Ok(Self {
             _temp_dir: temp_dir,
+            kiln_path: kiln,
             socket_path,
             _server_handle: server_handle,
             shutdown_handle,
@@ -146,7 +160,7 @@ fn assert_state(result: &serde_json::Value, expected: &str, context: &str) {
 #[tokio::test]
 async fn test_complete_user_flow() {
     let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+    let kiln_dir = server.kiln_path.clone();
 
     // Connect with event support
     let (client, mut event_rx) = DaemonClient::connect_to_with_events(&server.socket_path)
@@ -155,10 +169,7 @@ async fn test_complete_user_flow() {
     let client = Arc::new(client);
 
     // ── Step 1: Open kiln ─────────────────────────────────────────────────
-    client
-        .kiln_open(kiln_dir.path())
-        .await
-        .expect("kiln.open failed");
+    client.kiln_open(&kiln_dir).await.expect("kiln.open failed");
 
     let kilns = client.kiln_list().await.expect("kiln.list failed");
     assert!(
@@ -170,7 +181,7 @@ async fn test_complete_user_flow() {
     let create_result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![kiln_dir.path().to_path_buf()],
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
             recording_mode: None,
             recording_path: None,
@@ -306,7 +317,7 @@ async fn test_complete_user_flow() {
     }
 
     // Also try export_to_file to cover the export path
-    let export_path = kiln_dir.path().join("export.md");
+    let export_path = kiln_dir.join("export.md");
     let export_result = client
         .session_export_to_file(&session_id, Some(&export_path), Some(true))
         .await;
@@ -344,7 +355,7 @@ async fn test_complete_user_flow() {
     let close_result = client
         .call(
             "kiln.close",
-            serde_json::json!({"path": kiln_dir.path().to_string_lossy()}),
+            serde_json::json!({"path": kiln_dir.to_string_lossy()}),
         )
         .await;
     assert!(
@@ -367,7 +378,7 @@ async fn test_complete_user_flow() {
 #[tokio::test]
 async fn test_user_flow_session_list_reflects_state() {
     let server = TestServer::start().await.expect("Failed to start server");
-    let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
+    let _kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
 
     let client = DaemonClient::connect_to(&server.socket_path)
         .await
@@ -377,7 +388,7 @@ async fn test_user_flow_session_list_reflects_state() {
     let result = client
         .session_create(crucible_daemon::rpc_client::SessionCreateParams {
             session_type: "chat".to_string(),
-            kilns: vec![kiln_dir.path().to_path_buf()],
+            kilns: vec![crucible_daemon::test_support::kiln_name("kiln")],
             workspace: None,
             recording_mode: None,
             recording_path: None,
@@ -393,7 +404,13 @@ async fn test_user_flow_session_list_reflects_state() {
 
     // List active sessions — should contain our session
     let list = client
-        .session_list(Some(kiln_dir.path()), None, Some("chat"), None, None)
+        .session_list(
+            Some(&crucible_daemon::test_support::kiln_name("kiln")),
+            None,
+            Some("chat"),
+            None,
+            None,
+        )
         .await
         .expect("session.list failed");
     let sessions = list["sessions"]

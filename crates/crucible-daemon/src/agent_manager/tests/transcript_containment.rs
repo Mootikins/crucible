@@ -52,19 +52,35 @@ async fn agent_reads(
         .await
 }
 
+/// A `SessionManager` over `home` whose registry resolves `"kiln"` to `kiln`.
+///
+/// The registry is anchored at `home`, which is the data root here, so a `kiln`
+/// that is a temp dir of its own registers and a `kiln` inside the sessions
+/// root does not — the production rule, not a fixture-only one.
+fn manager_over(home: &std::path::Path, kiln: &std::path::Path) -> Arc<SessionManager> {
+    let sessions_root = FileSessionStorage::root_for(home);
+    let registry = crate::test_support::kiln_registry(home, &[("kiln", kiln)]);
+    Arc::new(
+        SessionManager::with_storage(Arc::new(
+            FileSessionStorage::new(sessions_root).with_registry(registry.clone()),
+        ))
+        .with_kiln_registry(registry),
+    )
+}
+
 #[tokio::test]
 async fn agent_cannot_read_other_sessions_transcripts() {
     let home = TempDir::new().unwrap();
     let kiln = TempDir::new().unwrap();
     let sessions_root = FileSessionStorage::root_for(home.path());
-    let sm = Arc::new(SessionManager::new(sessions_root.clone()));
+    let sm = manager_over(home.path(), kiln.path());
 
     // Two sessions attached to the SAME kiln — the case the old layout made
     // mutually readable.
     let victim = sm
         .create_session(
             SessionType::Chat,
-            vec![kiln.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             Some(test_workspace_root().to_path_buf()),
             None,
         )
@@ -75,7 +91,7 @@ async fn agent_cannot_read_other_sessions_transcripts() {
     let snoop = sm
         .create_session(
             SessionType::Chat,
-            vec![kiln.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             Some(test_workspace_root().to_path_buf()),
             None,
         )
@@ -112,12 +128,12 @@ async fn an_agent_still_reads_its_own_transcript_and_its_kiln() {
     let kiln = TempDir::new().unwrap();
     std::fs::write(kiln.path().join("note.md"), "KILN-CONTENT").unwrap();
     let sessions_root = FileSessionStorage::root_for(home.path());
-    let sm = Arc::new(SessionManager::new(sessions_root.clone()));
+    let sm = manager_over(home.path(), kiln.path());
 
     let session = sm
         .create_session(
             SessionType::Chat,
-            vec![kiln.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             Some(test_workspace_root().to_path_buf()),
             None,
         )
@@ -156,12 +172,27 @@ async fn an_agent_still_reads_its_own_transcript_and_its_kiln() {
 async fn a_session_whose_kiln_is_the_data_root_still_cannot_read_other_transcripts() {
     let home = TempDir::new().unwrap();
     let sessions_root = FileSessionStorage::root_for(home.path());
-    let sm = Arc::new(SessionManager::new(sessions_root.clone()));
+    // Production refuses this at registration — the data root and every
+    // ancestor of it are not registrable as kilns
+    // (`the_data_root_cannot_be_registered_as_a_kiln`). Anchoring the registry
+    // elsewhere is what lets the entry exist so the layer UNDER the floor can
+    // be tested: a rule that only lives at the outer layer disappears the
+    // moment anything reaches the inner one by another door.
+    let registry = crate::test_support::kiln_registry(
+        std::path::Path::new("/nonexistent-data-root"),
+        &[("kiln", home.path())],
+    );
+    let sm = Arc::new(
+        SessionManager::with_storage(Arc::new(
+            FileSessionStorage::new(sessions_root.clone()).with_registry(registry.clone()),
+        ))
+        .with_kiln_registry(registry),
+    );
 
     let victim = sm
         .create_session(
             SessionType::Chat,
-            vec![home.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             Some(test_workspace_root().to_path_buf()),
             None,
         )
@@ -172,7 +203,7 @@ async fn a_session_whose_kiln_is_the_data_root_still_cannot_read_other_transcrip
     let snoop = sm
         .create_session(
             SessionType::Chat,
-            vec![home.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             Some(test_workspace_root().to_path_buf()),
             None,
         )
@@ -227,7 +258,7 @@ async fn detaching_the_workspace_of_a_kilnless_session_does_not_uncontain_it() {
     // Exactly what `session.set_workspace {"session_id": ...}` (no workspace
     // key) does.
     let snoop = manager.set_workspace(&snoop.id, None, None).await.unwrap();
-    assert_eq!(snoop.workspace, std::path::PathBuf::new());
+    assert_eq!(snoop.workspace, None);
 
     let result = agent_reads(&manager, &snoop, &victim.jsonl_path(&sessions_root)).await;
 
@@ -291,8 +322,8 @@ async fn a_workspace_that_used_to_be_a_kiln_does_not_expose_its_legacy_transcrip
 async fn read_note_cannot_reach_the_legacy_in_kiln_transcript_directory() {
     let home = TempDir::new().unwrap();
     let kiln = TempDir::new().unwrap();
-    let sessions_root = FileSessionStorage::root_for(home.path());
-    let sm = Arc::new(SessionManager::new(sessions_root.clone()));
+    let _sessions_root = FileSessionStorage::root_for(home.path());
+    let sm = manager_over(home.path(), kiln.path());
 
     let legacy = kiln
         .path()
@@ -305,7 +336,7 @@ async fn read_note_cannot_reach_the_legacy_in_kiln_transcript_directory() {
     let snoop = sm
         .create_session(
             SessionType::Chat,
-            vec![kiln.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             Some(test_workspace_root().to_path_buf()),
             None,
         )
@@ -345,8 +376,8 @@ async fn read_note_cannot_reach_the_legacy_in_kiln_transcript_directory() {
 async fn grep_notes_cannot_be_pointed_at_the_legacy_in_kiln_transcript_directory() {
     let home = TempDir::new().unwrap();
     let kiln = TempDir::new().unwrap();
-    let sessions_root = FileSessionStorage::root_for(home.path());
-    let sm = Arc::new(SessionManager::new(sessions_root.clone()));
+    let _sessions_root = FileSessionStorage::root_for(home.path());
+    let sm = manager_over(home.path(), kiln.path());
 
     let legacy = kiln
         .path()
@@ -359,7 +390,7 @@ async fn grep_notes_cannot_be_pointed_at_the_legacy_in_kiln_transcript_directory
     let snoop = sm
         .create_session(
             SessionType::Chat,
-            vec![kiln.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("kiln")],
             Some(test_workspace_root().to_path_buf()),
             None,
         )
@@ -410,7 +441,8 @@ async fn a_kiln_that_traverses_a_missing_directory_cannot_reach_the_sessions_roo
         .unwrap();
     write_transcript(&victim, &sessions_root, SECRET);
 
-    // What `session.create {"kilns": [...]}` / `session.connect_kiln` accept.
+    // The path a caller would have handed `session.create {"kilns": [...]}` or
+    // `session.connect_kiln` before kilns were named.
     let dodge = home
         .path()
         .join("not-yet")
@@ -418,15 +450,36 @@ async fn a_kiln_that_traverses_a_missing_directory_cannot_reach_the_sessions_roo
         .join("sessions")
         .join(&*victim.id);
     assert!(
-        crate::server::session::scope::refuse_forbidden_scope("kiln", &dodge, &sessions_root)
-            .is_err(),
+        crate::kiln_registry::refuse_forbidden_scope("kiln", &dodge, &sessions_root).is_err(),
         "the scope gate must refuse a kiln whose `..` lands in the sessions root"
     );
+    // And the registry — the one door a path now enters through — refuses it
+    // too, so it never becomes a name at all. Asserted on the REFUSAL: the
+    // entry must be absent, not merely unhelpful.
+    let production_registry = crate::test_support::kiln_registry(home.path(), &[("dodge", &dodge)]);
+    assert_eq!(
+        production_registry.resolve(&crate::test_support::kiln_name("dodge")),
+        crate::kiln_registry::KilnResolution::Unknown,
+        "a `..` path landing in the sessions root must not register as a kiln"
+    );
 
+    // The layer under it, reached the only way it still can be: a registry
+    // anchored at a different data root, so the entry survives registration and
+    // `session_containment` has to refuse it on its own.
+    let registry = crate::test_support::kiln_registry(
+        std::path::Path::new("/nonexistent-data-root"),
+        &[("dodge", &dodge)],
+    );
+    let sm = Arc::new(
+        SessionManager::with_storage(Arc::new(
+            FileSessionStorage::new(sessions_root.clone()).with_registry(registry.clone()),
+        ))
+        .with_kiln_registry(registry),
+    );
     let snoop = sm
         .create_session(
             SessionType::Chat,
-            vec![dodge.clone()],
+            vec![crate::test_support::kiln_name("dodge")],
             Some(test_workspace_root().to_path_buf()),
             None,
         )
@@ -479,6 +532,17 @@ async fn a_kiln_that_traverses_a_missing_directory_cannot_reach_the_sessions_roo
 
 /// Build the enclosing-kiln setup: a victim whose transcript lives under the
 /// sessions root, and a snoop whose kiln is the data root above it.
+///
+/// Registering the enclosing directory takes a deliberate detour: the
+/// registration floor refuses the daemon's own data root and every ancestor of
+/// it, so in production a kiln can no longer BE the directory that holds the
+/// transcripts — `the_data_root_cannot_be_registered_as_a_kiln` below pins
+/// that. This fixture therefore builds the registry against a different data
+/// root so the entry survives registration, and hands the resulting session to
+/// the containment builder anyway. That is the point: the floor is one layer,
+/// `session_containment`'s denial ranking is the layer under it, and a rule
+/// that only exists at the outer one is a rule that disappears the moment
+/// something reaches the inner one by another door.
 async fn enclosing_kiln_setup(
     home: &TempDir,
 ) -> (
@@ -487,12 +551,23 @@ async fn enclosing_kiln_setup(
     crucible_core::session::Session,
 ) {
     let sessions_root = FileSessionStorage::root_for(home.path());
-    let sm = Arc::new(SessionManager::new(sessions_root.clone()));
+    // A data root that is not `home`, purely so the floor lets the enclosing
+    // directory register. See the doc comment.
+    let registry = crate::test_support::kiln_registry(
+        std::path::Path::new("/nonexistent-data-root"),
+        &[("enclosing", home.path())],
+    );
+    let sm = Arc::new(
+        SessionManager::with_storage(Arc::new(
+            FileSessionStorage::new(sessions_root.clone()).with_registry(registry.clone()),
+        ))
+        .with_kiln_registry(registry),
+    );
 
     let victim = sm
         .create_session(
             SessionType::Chat,
-            vec![home.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("enclosing")],
             Some(test_workspace_root().to_path_buf()),
             None,
         )
@@ -510,7 +585,7 @@ async fn enclosing_kiln_setup(
     let snoop = sm
         .create_session(
             SessionType::Chat,
-            vec![home.path().to_path_buf()],
+            vec![crate::test_support::kiln_name("enclosing")],
             Some(test_workspace_root().to_path_buf()),
             None,
         )
@@ -518,6 +593,39 @@ async fn enclosing_kiln_setup(
         .unwrap();
 
     (sm, victim, snoop)
+}
+
+/// The outer layer, stated as a refusal rather than as the absence of a crash.
+///
+/// A kiln-less `cru chat` used to fall back to the data root, and the fixture
+/// above is what that shape reaches. Names close it one step earlier: the data
+/// root — and every ancestor of it — is refused at registration, so no
+/// `[kilns]` entry can name it and no session can hold a kiln that resolves to
+/// it. The assertion is on the refusal itself, and on the entry NOT existing,
+/// because a rule that merely fails to panic is not a rule.
+#[test]
+fn the_data_root_cannot_be_registered_as_a_kiln() {
+    let data_home = TempDir::new().unwrap();
+    let registry = crate::test_support::kiln_registry(
+        data_home.path(),
+        &[
+            ("itself", data_home.path()),
+            ("above", data_home.path().parent().unwrap()),
+        ],
+    );
+
+    for name in ["itself", "above"] {
+        let resolved = registry.resolve(&crate::test_support::kiln_name(name));
+        assert_eq!(
+            resolved,
+            crate::kiln_registry::KilnResolution::Unknown,
+            "{name:?} names the data root or an ancestor of it and must not be a kiln"
+        );
+    }
+    assert!(
+        registry.name_for(data_home.path()).is_none(),
+        "the data root must not be reachable by reverse lookup either"
+    );
 }
 
 #[tokio::test]

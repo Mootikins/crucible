@@ -5,7 +5,7 @@
 //! `tools/search.rs` passes `provider_trust: None` outright, both on the
 //! strength of "the kiln passed the trust gate when it was attached". These
 //! tests are what keeps that strength honest.
-use crate::test_support::temp_session_manager;
+use crate::test_support::{kiln_name, temp_session_manager_with_kilns};
 
 use super::*;
 use crucible_core::config::{LlmConfig, LlmProviderConfig, TrustLevel};
@@ -68,8 +68,8 @@ fn agent_on(provider_key: &str, provider: BackendType) -> SessionAgent {
 
 async fn session_on(
     session_manager: &SessionManager,
-    kiln: PathBuf,
-    connected: Vec<PathBuf>,
+    kiln: crucible_core::config::KilnName,
+    connected: Vec<crucible_core::config::KilnName>,
 ) -> crucible_core::session::Session {
     session_manager
         .create_session(
@@ -88,8 +88,8 @@ async fn session_on(
 async fn configure_agent_cannot_raise_provider_trust_past_an_attached_kiln() {
     let tmp = TempDir::new().unwrap();
     let kiln = confidential_kiln(tmp.path());
-    let session_manager = temp_session_manager();
-    let session = session_on(&session_manager, kiln, vec![]).await;
+    let session_manager = temp_session_manager_with_kilns(&[("notes", &kiln)]);
+    let session = session_on(&session_manager, kiln_name("notes"), vec![]).await;
     let am =
         create_test_agent_manager_with_llm_config(session_manager.clone(), straddling_providers());
 
@@ -131,8 +131,14 @@ async fn configure_agent_checks_connected_kilns_not_only_the_primary() {
     let public = tmp.path().join("public");
     std::fs::create_dir_all(&public).unwrap();
 
-    let session_manager = temp_session_manager();
-    let session = session_on(&session_manager, public, vec![confidential]).await;
+    let session_manager =
+        temp_session_manager_with_kilns(&[("notes", &confidential), ("public", &public)]);
+    let session = session_on(
+        &session_manager,
+        kiln_name("public"),
+        vec![kiln_name("notes")],
+    )
+    .await;
     let am =
         create_test_agent_manager_with_llm_config(session_manager.clone(), straddling_providers());
 
@@ -157,8 +163,8 @@ async fn configure_agent_checks_connected_kilns_not_only_the_primary() {
 async fn switch_model_cannot_raise_provider_trust_past_an_attached_kiln() {
     let tmp = TempDir::new().unwrap();
     let kiln = confidential_kiln(tmp.path());
-    let session_manager = temp_session_manager();
-    let session = session_on(&session_manager, kiln, vec![]).await;
+    let session_manager = temp_session_manager_with_kilns(&[("notes", &kiln)]);
+    let session = session_on(&session_manager, kiln_name("notes"), vec![]).await;
     let am =
         create_test_agent_manager_with_llm_config(session_manager.clone(), straddling_providers());
 
@@ -191,8 +197,8 @@ async fn switch_model_cannot_raise_provider_trust_past_an_attached_kiln() {
 async fn a_named_internal_agent_is_trusted_at_its_providers_level() {
     let tmp = TempDir::new().unwrap();
     let kiln = confidential_kiln(tmp.path());
-    let session_manager = temp_session_manager();
-    let session = session_on(&session_manager, kiln, vec![]).await;
+    let session_manager = temp_session_manager_with_kilns(&[("notes", &kiln)]);
+    let session = session_on(&session_manager, kiln_name("notes"), vec![]).await;
     let am =
         create_test_agent_manager_with_llm_config(session_manager.clone(), straddling_providers());
 
@@ -212,8 +218,8 @@ async fn a_named_internal_agent_is_trusted_at_its_providers_level() {
 async fn an_acp_agent_is_cloud_whatever_its_provider_key_says() {
     let tmp = TempDir::new().unwrap();
     let kiln = confidential_kiln(tmp.path());
-    let session_manager = temp_session_manager();
-    let session = session_on(&session_manager, kiln, vec![]).await;
+    let session_manager = temp_session_manager_with_kilns(&[("notes", &kiln)]);
+    let session = session_on(&session_manager, kiln_name("notes"), vec![]).await;
     let am =
         create_test_agent_manager_with_llm_config(session_manager.clone(), straddling_providers());
 
@@ -230,5 +236,76 @@ async fn an_acp_agent_is_cloud_whatever_its_provider_key_says() {
         err.to_string()
             .contains("insufficient for the attached kiln"),
         "got: {err}"
+    );
+}
+
+// ── Unresolvable names ──────────────────────────────────────────────────
+//
+// A name that no registry entry claims is not a kiln: no root, no
+// classification, no search source, no prompt line — and, the case below, no
+// trust upgrade. The dangerous reading is the *permissive* one: a gate that
+// walks a session's kilns and finds nothing to classify passes, so a name that
+// silently resolves to nothing would look exactly like "this session touches
+// nothing confidential".
+
+/// An unresolvable name must not permit a model switch the resolved name
+/// refuses.
+///
+/// Same session, same confidential kiln directory, the same switch — the only
+/// difference is whether the registry claims the name. Written as a pair
+/// because the refusal alone proves nothing: it has to be the *resolution*
+/// doing the work, not something else in the fixture.
+#[tokio::test]
+async fn an_unresolvable_kiln_name_does_not_permit_a_model_switch_the_resolved_one_refuses() {
+    let tmp = TempDir::new().unwrap();
+    let kiln = confidential_kiln(tmp.path());
+
+    // Control: the name resolves, the classification is found, the switch is
+    // refused. Without this the assertion below could pass because the fixture
+    // never had a confidential kiln at all.
+    let resolved = temp_session_manager_with_kilns(&[("secret-notes", &kiln)]);
+    let session = session_on(&resolved, kiln_name("secret-notes"), vec![]).await;
+    let am = create_test_agent_manager_with_llm_config(resolved.clone(), straddling_providers());
+    am.configure_agent(&session.id, agent_on("local", BackendType::Ollama))
+        .await
+        .unwrap();
+    let refused = am
+        .switch_model(&session.id, "cloud/gpt-4o", None)
+        .await
+        .expect_err("control: a resolved confidential kiln refuses a cloud provider");
+    assert!(
+        refused
+            .to_string()
+            .contains("insufficient for the attached kiln"),
+        "control: {refused}"
+    );
+
+    // The same name, unregistered. It grants nothing — so the session reaches
+    // no confidential corpus, and the switch is an ordinary one. What must NOT
+    // happen is the session keeping the kiln's reach while losing its gate.
+    let orphaned = temp_session_manager_with_kilns(&[]);
+    assert!(
+        orphaned
+            .kiln_registry()
+            .resolve(&kiln_name("secret-notes"))
+            .registered()
+            .is_none(),
+        "precondition: the name must be unresolvable in this fixture"
+    );
+    let session = session_on(&orphaned, kiln_name("secret-notes"), vec![]).await;
+    let am = create_test_agent_manager_with_llm_config(orphaned.clone(), straddling_providers());
+    am.configure_agent(&session.id, agent_on("local", BackendType::Ollama))
+        .await
+        .unwrap();
+    am.switch_model(&session.id, "cloud/gpt-4o", None)
+        .await
+        .expect("an unresolvable name is not a kiln, so there is nothing to gate");
+
+    // And the reach really is gone, which is what makes the permit safe: the
+    // kiln contributes no containment root.
+    let session = orphaned.get_session(&session.id).unwrap();
+    assert!(
+        orphaned.kiln_paths(&session.kilns).is_empty(),
+        "an unresolvable name must contribute no directory either"
     );
 }

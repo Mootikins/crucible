@@ -370,7 +370,7 @@ async fn create_session_works_without_any_kilns() {
 #[tokio::test]
 async fn create_session_accepts_a_multi_kiln_set() {
     let (status, json) = post_create_session(serde_json::json!({
-        "kilns": ["/tmp/test-kiln", "/tmp/extra-kiln"],
+        "kilns": ["test-kiln", "extra-kiln"],
     }))
     .await;
     assert_eq!(status, axum::http::StatusCode::OK, "body: {json}");
@@ -614,11 +614,11 @@ async fn connect_kiln_returns_updated_scope() {
     let (status, json) = send_json(
         "POST",
         "/api/session/test-session-001/kilns/connect",
-        serde_json::json!({"kiln": "/tmp/extra-kiln"}),
+        serde_json::json!({"kiln": "extra-kiln"}),
     )
     .await;
     assert_eq!(status, axum::http::StatusCode::OK, "body: {json}");
-    assert_eq!(json["kilns"][1], "/tmp/extra-kiln");
+    assert_eq!(json["kilns"][1], "extra-kiln");
 }
 
 #[tokio::test]
@@ -626,7 +626,7 @@ async fn disconnect_kiln_returns_updated_scope() {
     let (status, json) = send_json(
         "POST",
         "/api/session/test-session-001/kilns/disconnect",
-        serde_json::json!({"kiln": "/tmp/extra-kiln"}),
+        serde_json::json!({"kiln": "extra-kiln"}),
     )
     .await;
     assert_eq!(status, axum::http::StatusCode::OK, "body: {json}");
@@ -865,7 +865,7 @@ async fn test_create_session_without_provider_uses_detected_default() {
                 .uri("/api/session")
                 .header("content-type", "application/json")
                 .body(axum::body::Body::from(
-                    serde_json::json!({"kilns": ["/tmp/test-kiln"]}).to_string(),
+                    serde_json::json!({"kilns": ["test-kiln"]}).to_string(),
                 ))
                 .unwrap(),
         )
@@ -898,7 +898,7 @@ async fn test_create_session_with_explicit_provider_still_works() {
                 .header("content-type", "application/json")
                 .body(axum::body::Body::from(
                     serde_json::json!({
-                        "kilns": ["/tmp/test-kiln"],
+                        "kilns": ["test-kiln"],
                         "provider": "ollama",
                         "model": "llama3.2"
                     })

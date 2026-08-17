@@ -8,7 +8,6 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
 #[derive(Debug, Deserialize)]
 pub(super) struct ExecuteCommandRequest {
@@ -100,7 +99,7 @@ pub(super) async fn list_commands() -> Json<CommandsResponse> {
 /// `[A, B]` that searched with only `A` found nothing in a session on `[B]`
 /// despite the two sharing a corpus. An empty set is passed through as empty —
 /// a kiln-less session overlaps nothing, and the daemon answers accordingly.
-fn session_scope_kilns(session: &serde_json::Value) -> Vec<PathBuf> {
+fn session_scope_kilns(session: &serde_json::Value) -> Vec<crucible_core::config::KilnName> {
     session
         .get("kilns")
         .and_then(|v| v.as_array())
@@ -108,7 +107,7 @@ fn session_scope_kilns(session: &serde_json::Value) -> Vec<PathBuf> {
             kilns
                 .iter()
                 .filter_map(|v| v.as_str())
-                .map(PathBuf::from)
+                .filter_map(|v| crucible_core::config::KilnName::parse(v).ok())
                 .collect()
         })
         .unwrap_or_default()
@@ -252,10 +251,27 @@ mod tests {
     /// a session on `[B]`.
     #[test]
     fn search_scope_is_the_sessions_whole_kiln_set() {
-        let session = serde_json::json!({ "kilns": ["/kilns/a", "/kilns/b"] });
+        let session = serde_json::json!({ "kilns": ["kiln-a", "kiln-b"] });
         assert_eq!(
             session_scope_kilns(&session),
-            vec![PathBuf::from("/kilns/a"), PathBuf::from("/kilns/b")]
+            vec![
+                crucible_core::config::KilnName::parse("kiln-a").unwrap(),
+                crucible_core::config::KilnName::parse("kiln-b").unwrap()
+            ]
+        );
+    }
+
+    /// A `kilns` array carrying a path — a stale client, or a session file
+    /// written before names — contributes NOTHING rather than a scope member
+    /// that matches nothing. The daemon then sees an empty set and answers with
+    /// no matches, instead of a set it would refuse as unresolvable.
+    #[test]
+    fn a_path_shaped_kiln_is_not_a_scope_member() {
+        let session = serde_json::json!({ "kilns": ["/kilns/a", "kiln-b"] });
+        assert_eq!(
+            session_scope_kilns(&session),
+            vec![crucible_core::config::KilnName::parse("kiln-b").unwrap()],
+            "a path is not a kiln name"
         );
     }
 

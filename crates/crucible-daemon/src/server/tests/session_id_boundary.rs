@@ -93,7 +93,7 @@ async fn session_archive_never_rewrites_a_file_outside_the_sessions_root() {
     let dir = bystander(&server);
     let planted = crucible_core::session::Session::new(
         crucible_core::session::SessionType::Chat,
-        vec![server.kiln_path.clone()],
+        vec![crucible_core::config::KilnName::parse("kiln").unwrap()],
     );
     let original = serde_json::to_string_pretty(&planted).unwrap();
     std::fs::write(dir.join("meta.json"), &original).unwrap();
@@ -188,7 +188,7 @@ async fn a_refused_session_id_is_an_invalid_params_error_naming_the_parameter() 
 async fn a_minted_session_id_survives_the_boundary() {
     let server = TestServer::start().await;
     let mut client = server.connect().await;
-    let session_id = create_chat_session(&mut client, &server.kiln_path, 880).await;
+    let session_id = create_chat_session(&mut client, TestServer::KILN, 880).await;
 
     let response = rpc_call(
         &mut client,

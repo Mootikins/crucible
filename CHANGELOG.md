@@ -15,11 +15,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   [docs/Help/Core/Sessions.md](docs/Help/Core/Sessions.md) for what happens to
   id collisions and to sessions the move could not complete. Kilns become
   shareable without shipping your conversations with them.
-- **A session's kilns are one flat set; there is no primary kiln.** The wire
-  shape is `{session_id, kilns, workspace}`, replacing `kiln` +
-  `connected_kilns`. Any member may be detached, including the one the session
-  was created with. A session may hold zero kilns — that is a tools-only agent
-  with no note tools, precognition, or semantic search, not an error.
+- **A session's kilns are one flat set of NAMES; there is no primary kiln.**
+  The wire shape is `{session_id, kilns, workspace}`, replacing `kiln` +
+  `connected_kilns`, and each member is the name of a `[kilns]` entry in your
+  config rather than a directory. `session.create`, `session.list`,
+  `session.search`, `session.list_persisted` and `session.cleanup` take names;
+  `session.connect_kiln`/`disconnect_kiln` take `kiln` (a name) instead of
+  `kiln_path`. A name no entry claims is refused rather than attached, and a
+  request that names only unknown kilns is `INVALID_PARAMS` — it is not read as
+  "no scope", which at `session.list` would widen it to the whole backlog.
+  Your `meta.json` files still record kiln *paths*, and the daemon maps them
+  back to names on load; a path no entry claims stops granting the session
+  anything, and re-registering the entry restores it. Any member may be
+  detached, including the one the session was created with. A session may hold
+  zero kilns — that is a tools-only agent with no note tools, precognition, or
+  semantic search, not an error.
+
+  `workspace` stays a path: workspaces have no registry to resolve against.
+- **`workspace` is nullable, and `null` means the session has no workspace.**
+  It used to be set to the session's first kiln whenever no workspace was
+  given, so every client had to re-derive `workspace == kilns[0]` to tell "no
+  project" from "the project happens to be the kiln" — and could not tell them
+  apart at all once the two really were the same directory.
+  `session.set_workspace` with no `workspace` now reports `null` rather than
+  the kiln path. An existing session whose stored workspace equals its first
+  kiln keeps it — on disk that is indistinguishable from a workspace you chose
+  (a repo that is also your kiln), and discarding it would be the same
+  ambiguity in the other direction. A workspace-less session's file tools
+  anchor at its own session directory (read-only) rather than at the daemon's
+  working directory; a persisted workspace is re-checked against the
+  session-scope floor when the session is revived, and dropped if it now names
+  a forbidden directory.
+- **`config.set` refuses `kilns`, `kiln_path`, `projects` and `session_kiln`.**
+  Those four say *where the daemon acts*, and the RPC socket has no
+  authentication — writing them was a way to introduce or re-point a kiln
+  without the path ever passing the session-scope floor. The response now
+  carries a `rejected` list; change them by editing your config file. Every
+  other key merges as before.
 - **Lua: `cru.sessions.create` accepts only `kilns`.** `kiln` and
   `connect_kilns` are ignored without error, so a caller using either silently
   gets the default set. `precognition_select` payloads no longer carry
