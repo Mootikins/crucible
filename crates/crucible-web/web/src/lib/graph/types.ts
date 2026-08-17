@@ -1,13 +1,13 @@
 import type { SimulationNodeDatum } from 'd3-force';
 
 /** Wire shape of `GET /api/kiln/graph` (daemon `kiln.graph`). */
-export interface GraphNoteDto {
+interface GraphNoteDto {
   path: string;
   title: string;
   tags: string[];
 }
 
-export interface GraphLinkDto {
+interface GraphLinkDto {
   source: string;
   /** Resolved: a note path joinable against `notes[].path`. Unresolved: the
    * normalized target key of a link pointing at no existing note. */
@@ -20,7 +20,7 @@ export interface GraphDto {
   links: GraphLinkDto[];
 }
 
-export type GraphNodeKind = 'note' | 'phantom' | 'tag';
+type GraphNodeKind = 'note' | 'phantom' | 'tag';
 
 /** Simulation node — d3-force mutates x/y/vx/vy in place. */
 export interface GraphNode extends SimulationNodeDatum {
@@ -32,7 +32,7 @@ export interface GraphNode extends SimulationNodeDatum {
   degree: number;
 }
 
-export type GraphEdgeKind = 'link' | 'unresolved' | 'tag';
+type GraphEdgeKind = 'link' | 'unresolved' | 'tag';
 
 /** d3-force rewrites string endpoints to node references on init. */
 export interface GraphEdge {
@@ -56,14 +56,14 @@ export interface GraphFilters {
   showOrphans: boolean;
 }
 
-export interface GraphDisplay {
+interface GraphDisplay {
   /** Multiplier on node radius (0.4..2.5). */
   nodeSize: number;
   /** Link stroke width multiplier (0.3..3). */
   linkThickness: number;
 }
 
-export interface GraphForces {
+interface GraphForces {
   /** Pull toward viewport center (0..1). */
   centerForce: number;
   /** Node-node repulsion multiplier (0..2). */
@@ -74,7 +74,7 @@ export interface GraphForces {
   linkDistance: number;
 }
 
-export interface GraphLocal {
+interface GraphLocal {
   /** Restrict the graph to the neighborhood of the focused note. */
   enabled: boolean;
   /** BFS radius in hops from the focused note (1..3). */
