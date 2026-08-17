@@ -29,7 +29,7 @@ and are scoped to the session's kiln.
 | `semantic_search` | Embedding-based similarity search |
 | `grep_notes` | Grep-style text search (ripgrep engine; literal or regex), unranked file-order hits |
 | `property_search` | Search by frontmatter property, including tags |
-| `get_kiln_info` | Kiln root path and statistics |
+| `get_kiln_info` | Kiln statistics, plus the kiln's registry name when it has one. Never its directory. |
 
 ## Workspace tools
 

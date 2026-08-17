@@ -69,6 +69,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   primary kiln itself. A handler that keyed on `kiln_path` to tell one corpus
   from another keys on `kiln`; one that used it as a filesystem path has no
   replacement, by design.
+- **No kiln directory reaches the model, a plugin, a transcript or a
+  subscriber.** The registry name replaces it everywhere a kiln is *reported*
+  rather than *reached*:
+  - The agent's system prompt drops its `Kiln: <directory>` line; the
+    `Knowledge bases:` list of names below it is the whole answer. `Workspace:`
+    stays a path — the agent runs commands there.
+  - `semantic_search` results carry `kiln` (a name) instead of `kiln_path`, and
+    omit the key entirely for a kiln opened outside the registry.
+  - `get_kiln_info` reports `name` only when the kiln is registered. It used to
+    answer with the kiln directory's basename, so a kiln registered `notes` at
+    `/home/u/Private Vault` introduced itself as `Private Vault`.
+  - `precognition_complete` note entries carry `kiln` (a name) instead of
+    `kiln_label` (that same basename). This payload is persisted, so the old
+    value outlived the turn; a transcript written before this change drops the
+    field on read rather than parsing a basename as a name.
+  - `session_initialized` carries `kilns` (the session's full set, by name)
+    instead of `kiln_path`. A kiln-less session announces `[]`, where it
+    previously announced the empty path.
+  - `classification_required` carries `kiln` (a name), absent when no entry
+    claims the kiln, instead of `kiln_path`.
+  - **Lua: `cru.kiln.active_path` is now `cru.kiln.active`,** holding the
+    registry name. It is `nil` — not `""` — for an unregistered kiln, and
+    opening one *clears* whatever the previous open set.
+- **`GET /api/sessions/search` refuses a `kiln` that is not a usable name**
+  (422) instead of dropping it. Dropping every name made a request that asked
+  to narrow read as "searched everything, found nothing"; the daemon has always
+  drawn this distinction and the route now matches it. A partially usable set
+  still keeps the members that parse.
+- **`GET /api/providers` and `GET /api/models` no longer accept `?kiln=`.** The
+  parameter took a raw directory and fed it to data-classification resolution,
+  an input door outside the registry floor every other kiln input passes
+  through. No caller ever sent it.
 - **`session.reindex` is retired** (returns `METHOD_NOT_FOUND`) and
   `cru session reindex` with it. Sessions live outside kilns and are no longer
   indexed as kiln notes; delete any `sessions/*` note rows an earlier reindex
