@@ -1,7 +1,7 @@
 import { createSignal } from 'solid-js';
 import { listKilns } from '@/lib/api';
 import { swrLocal } from '@/lib/local-cache';
-import { kilnNameForPath, kilnPathForName } from '@/lib/kiln-registry';
+import { kilnPathForName } from '@/lib/kiln-registry';
 import type { KilnListEntry } from '@/lib/types';
 
 /**
@@ -41,8 +41,3 @@ export function kilnPathOf(name: string | null | undefined): string | null {
   return kilnPathForName(name, kilns());
 }
 
-/** The registry name of a directory, or `null` when no entry claims it. */
-export function kilnNameOf(path: string | null | undefined): string | null {
-  ensureLoaded();
-  return kilnNameForPath(path, kilns());
-}
