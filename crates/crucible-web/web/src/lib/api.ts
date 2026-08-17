@@ -2197,7 +2197,7 @@ export async function fsTrash(
  * Rust `FsEvent::event_name()` (web/fs_events.rs). Each event's `data` parses
  * to the `FsEvent` discriminated union.
  */
-export const FS_SSE_EVENT_TYPES = ['fs_changed', 'fs_deleted', 'fs_moved'] as const;
+const FS_SSE_EVENT_TYPES = ['fs_changed', 'fs_deleted', 'fs_moved'] as const;
 
 /**
  * Subscribe to live filesystem-change events (`GET /api/fs/events`). Mirrors
