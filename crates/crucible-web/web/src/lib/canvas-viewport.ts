@@ -42,7 +42,7 @@ export const MAX_ZOOM = 4;
  * cards constantly; much looser and a dense canvas mounts far more DOM than it
  * needs. This is the knob Obsidian users reach for a CSS hack to widen.
  */
-export const OVERSCAN = 0.5;
+const OVERSCAN = 0.5;
 
 /**
  * Below this zoom, node content is replaced by a lightweight placeholder.
@@ -91,7 +91,7 @@ export function visibleRect(viewport: Viewport): Rect {
 }
 
 /** The visible rectangle grown by [`OVERSCAN`] — the mount set's bounds. */
-export function overscanRect(viewport: Viewport): Rect {
+function overscanRect(viewport: Viewport): Rect {
   const visible = visibleRect(viewport);
   const padX = visible.width * OVERSCAN;
   const padY = visible.height * OVERSCAN;
@@ -253,7 +253,7 @@ export function tweenProgress(elapsedMs: number, durationMs: number): number {
 }
 
 /** Snap a canvas coordinate to the grid, unless snapping is suppressed. */
-export const GRID = 20;
+const GRID = 20;
 export function snap(value: number, enabled: boolean): number {
   return enabled ? Math.round(value / GRID) * GRID : Math.round(value);
 }

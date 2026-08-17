@@ -36,7 +36,7 @@ export function updateNode(
   return { ...doc, nodes: doc.nodes.map((n) => (n.id === id ? patchNode(n, patch) : n)) };
 }
 
-export function updateNodes(
+function updateNodes(
   doc: CanvasDoc,
   ids: Set<string>,
   patch: (node: CanvasNode) => Partial<CanvasNode>,
@@ -136,9 +136,9 @@ export function nodesInRect(doc: CanvasDoc, rect: Rect): string[] {
  * The group is *prepended* — document order is z-order, and a backdrop drawn
  * last would cover the very cards it contains.
  */
-export const GROUP_PADDING = 32;
+const GROUP_PADDING = 32;
 /** Space above the box for the group's label, which renders outside it. */
-export const GROUP_LABEL_HEADROOM = 32;
+const GROUP_LABEL_HEADROOM = 32;
 export function groupSelection(
   doc: CanvasDoc,
   selected: Set<string>,
@@ -222,7 +222,7 @@ export function initHistory(doc: CanvasDoc): History {
  * saved the unchanged document over the user's work. Serializing a few hundred
  * nodes once per gesture is cheap, and it cannot be wrong in that direction.
  */
-export function sameDocument(a: CanvasDoc, b: CanvasDoc): boolean {
+function sameDocument(a: CanvasDoc, b: CanvasDoc): boolean {
   if (a === b) return true;
   return JSON.stringify(a) === JSON.stringify(b);
 }

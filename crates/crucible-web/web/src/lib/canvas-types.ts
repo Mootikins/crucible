@@ -125,7 +125,7 @@ export function rectsIntersect(a: Rect, b: Rect): boolean {
   );
 }
 
-export function rectContains(outer: Rect, inner: Rect): boolean {
+function rectContains(outer: Rect, inner: Rect): boolean {
   return (
     inner.x >= outer.x &&
     inner.y >= outer.y &&
