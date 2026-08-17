@@ -20,7 +20,7 @@ import net from 'node:net';
  * ordered rule list; first match wins, else `fallback`.
  */
 
-export interface OllamaRule {
+interface OllamaRule {
   /** Substring matched (case-insensitively) against the last user message. */
   contains: string;
   /** The assistant reply streamed back for a match (text-only rules). */
