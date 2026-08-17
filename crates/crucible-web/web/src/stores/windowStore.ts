@@ -9,7 +9,6 @@ import { createTabActions } from './tabActions';
 import type { WindowState } from './windowStoreTypes';
 
 export type { PaneDropPosition, WindowState } from './windowStoreTypes';
-export { updateSplitRatio } from './windowStoreInternals';
 
 const initialState = createInitialState();
 const [store, setStore] = createStore<WindowState>(initialState);
