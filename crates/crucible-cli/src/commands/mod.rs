@@ -8,6 +8,7 @@ pub mod completions;
 pub mod daemon;
 pub mod doctor;
 pub mod init;
+pub mod kiln;
 pub mod lua;
 pub mod mcp;
 pub mod models;

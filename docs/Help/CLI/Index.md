@@ -20,6 +20,7 @@ Complete reference for all Crucible CLI commands.
 | `cru process` | Process markdown files through the pipeline (parse, enrich, store) |
 | `cru search` | Search kiln notes using semantic and/or text search |
 | `cru init` | Initialize a new kiln (Crucible workspace) |
+| `cru kiln` | Manage the kilns Crucible knows about (register) — [[Help/CLI/kiln]] |
 | `cru stats` | Display kiln statistics |
 | `cru status` | Display storage status and statistics for the knowledge base |
 | `cru models` | List available models from configured LLM provider |

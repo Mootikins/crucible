@@ -43,17 +43,22 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::info;
 
 use crate::config::CliConfig;
+use crate::kiln_attach::CliKilnRegistry;
 use crate::kiln_discover::discover_kiln;
 
 pub use agent::CrucibleAcpAgent;
 
 /// Run the ACP agent server until the host closes stdin.
 ///
-/// `kiln_override` comes from `cru acp --kiln <path>`; otherwise the kiln is
-/// taken from config or discovered by walking up from the current directory.
-/// This is headless: we never prompt (an editor host has no TTY).
-pub async fn execute(mut config: CliConfig, kiln_override: Option<PathBuf>) -> Result<()> {
-    resolve_kiln(&mut config, kiln_override)?;
+/// `kiln_override` comes from `cru acp --kiln <name-or-path>`; otherwise the
+/// kiln is taken from config or discovered by walking up from the current
+/// directory. This is headless: we never prompt (an editor host has no TTY).
+pub async fn execute(
+    mut config: CliConfig,
+    kiln_override: Option<String>,
+    config_path: Option<PathBuf>,
+) -> Result<()> {
+    resolve_kiln(&mut config, kiln_override, config_path)?;
     info!(kiln = %config.kiln_path.display(), "starting ACP agent (cru acp)");
 
     // The ACP `Agent` trait is `?Send`; its serving machinery uses `spawn_local`
@@ -80,19 +85,49 @@ pub async fn execute(mut config: CliConfig, kiln_override: Option<PathBuf>) -> R
         .await
 }
 
-fn resolve_kiln(config: &mut CliConfig, kiln_override: Option<PathBuf>) -> Result<()> {
-    if let Some(path) = kiln_override {
-        config.kiln_path = path;
+/// Decide which kiln this ACP session attaches, and make sure it has a *name*.
+///
+/// The flag is authoritative when given. It used to fall through to
+/// ancestor-walk discovery whenever the named directory had no `.crucible/`,
+/// which meant `--kiln ~/notes` could silently attach some entirely different
+/// directory the walk happened to find — an explicit flag that gets ignored.
+/// A value that cannot be resolved is now an error naming both readings.
+///
+/// Discovery, the no-flag path, still yields a bare directory, so it goes
+/// through the same registration door: sessions address kilns by name, and a
+/// discovered directory with no `[kilns]` entry would otherwise produce a
+/// session with no kiln at all.
+fn resolve_kiln(
+    config: &mut CliConfig,
+    kiln_override: Option<String>,
+    config_path: Option<PathBuf>,
+) -> Result<()> {
+    let config_path =
+        config_path.unwrap_or_else(crucible_core::config::CliAppConfig::default_config_path);
+
+    if let Some(value) = kiln_override {
+        let mut registry = CliKilnRegistry::for_cli(config, config_path)?;
+        let attached = registry.attach(&value)?;
+        if attached.registered {
+            info!(kiln = %attached.name, path = %attached.path.display(), "registered a new kiln");
+        }
+        attached.apply_to(config);
+        return Ok(());
     }
+
+    // A configured kiln already has a name by definition — it came out of
+    // `[kilns]` — so this branch needs no registration.
     if config.kiln_path.join(".crucible").is_dir() {
         return Ok(());
     }
     if let Some(found) = discover_kiln(None, None) {
-        config.kiln_path = found.path;
+        let mut registry = CliKilnRegistry::for_cli(config, config_path)?;
+        let attached = registry.attach(&found.path.to_string_lossy())?;
+        attached.apply_to(config);
         return Ok(());
     }
     anyhow::bail!(
-        "no valid kiln found for `cru acp`; pass --kiln <path> or run from inside a kiln \
+        "no valid kiln found for `cru acp`; pass --kiln <name|path> or run from inside a kiln \
          (a directory containing .crucible/). Initialize one with `cru init`."
     )
 }

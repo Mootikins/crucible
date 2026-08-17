@@ -10,6 +10,7 @@ Commands:
   chat         Interactive AI chat with session persistence and tool access [alias: c]
   mcp          Start MCP server exposing Crucible tools for external AI agents
   acp          Run Crucible as an ACP agent for editors (speaks ACP over stdio)
+  kiln         Manage the kilns Crucible knows about (register)
   process      Process kiln files through the pipeline (parse, enrich, store) [alias: p]
   search       Search kiln notes using semantic and/or text search
   stats        Display kiln statistics

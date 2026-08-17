@@ -22,18 +22,31 @@ no TTY to prompt on. Permission requests go to the host instead (see below).
 ## Synopsis
 
 ```
-cru acp [--kiln <path>]
+cru acp [--kiln <name|path>]
 ```
 
 | Option | Description |
 |--------|-------------|
-| `--kiln <path>` | Override the kiln path |
+| `--kiln <name|path>` | The kiln to attach: the name of a `[kilns]` entry, or a directory |
 
-That is the entire flag surface. The `--kiln` path (or, without the flag, the
-configured kiln path) is used if it contains `.crucible/`; otherwise — including when a
-`--kiln` path turns out not to be a kiln — Crucible walks up from the current directory
-looking for one. If nothing is found, the command exits with an error telling you to
-pass `--kiln` or run from inside a kiln.
+That is the entire flag surface. `--kiln` takes either reading: a bare word is looked up
+as a registry name, and anything that resolves to a directory is registered under a
+derived name if no entry claims it already.
+
+**An unusable `--kiln` is an error, not a fallback.** A value that is neither a known
+name nor a usable directory exits with a message naming both readings. It does *not*
+fall through to searching the current directory — a mistyped name silently attaching a
+different kiln is exactly the confusion this refuses to create.
+
+Without the flag, the configured kiln is used when it contains `.crucible/`. Failing
+that, Crucible walks up from the current directory looking for one, and **registers what
+it finds** — so running `cru acp` inside an unregistered kiln appends a `[kilns]` entry
+to your config file. That is deliberate: a discovered directory with no entry would
+otherwise produce a session attached to no kiln at all. If nothing is found, the command
+exits telling you to pass `--kiln <name|path>` or run from inside a kiln.
+
+Give a directory a name of your choosing with `cru kiln register` ([[Help/CLI/kiln]])
+before attaching it, if you would rather not take the derived one.
 
 ## Wire methods
 

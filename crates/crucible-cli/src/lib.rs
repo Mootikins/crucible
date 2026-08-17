@@ -11,6 +11,7 @@ pub mod config;
 
 pub mod factories;
 pub(crate) mod formatting;
+pub(crate) mod kiln_attach;
 pub(crate) mod kiln_discover;
 pub(crate) mod kiln_validate;
 pub mod output;

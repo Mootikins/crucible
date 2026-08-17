@@ -6,6 +6,7 @@ use tracing_subscriber::filter::LevelFilter;
 mod agents;
 mod auth;
 mod config;
+mod kiln;
 mod proposals;
 mod session;
 mod skills;
@@ -18,6 +19,7 @@ mod tests;
 pub use agents::AgentsCommands;
 pub use auth::AuthCommands;
 pub use config::ConfigCommands;
+pub use kiln::KilnCommands;
 pub use proposals::ProposalsCommands;
 pub use session::SessionCommands;
 pub use skills::SkillsCommands;
@@ -196,12 +198,28 @@ pub enum Commands {
 
     /// Run Crucible as an ACP agent for editors (speaks ACP over stdio)
     #[command(
-        long_about = "Run Crucible as an Agent Client Protocol (ACP) agent over stdin/stdout.\n\nACP hosts (Zed, JetBrains, Neovim, marimo) spawn this to get a knowledge-grounded agent: Precognition, kiln tools, and session persistence included. Sessions are ordinary daemon sessions — visible in `cru session list`.\n\nExamples:\n  # As configured in an editor's ACP agent settings\n  cru acp\n\n  # Override the kiln\n  cru acp --kiln ~/notes"
+        long_about = "Run Crucible as an Agent Client Protocol (ACP) agent over stdin/stdout.\n\nACP hosts (Zed, JetBrains, Neovim, marimo) spawn this to get a knowledge-grounded agent: Precognition, kiln tools, and session persistence included. Sessions are ordinary daemon sessions — visible in `cru session list`.\n\nExamples:\n  # As configured in an editor's ACP agent settings\n  cru acp\n\n  # Attach a kiln by the name of its `[kilns]` entry\n  cru acp --kiln notes\n\n  # Attach a directory, registering it under a derived name\n  cru acp --kiln ~/notes"
     )]
     Acp {
-        /// Override the kiln path (default: config or ancestor-walk discovery)
-        #[arg(long)]
-        kiln: Option<PathBuf>,
+        /// Kiln to attach: the NAME of a `[kilns]` entry, or a PATH to a
+        /// directory.
+        ///
+        /// A value that names an existing entry is that kiln. Anything else is
+        /// a directory, and attaching it registers it under a name derived
+        /// from its basename so that sessions can refer to it later — write it
+        /// as `./notes` to force the directory reading. Without the flag, the
+        /// kiln comes from config, or from walking up for a `.crucible/`.
+        #[arg(long, value_name = "NAME|PATH")]
+        kiln: Option<String>,
+    },
+
+    /// Manage the kilns Crucible knows about (register)
+    #[command(
+        long_about = "Manage the kilns Crucible knows about.\n\nA kiln is addressed everywhere else in Crucible by the NAME of its `[kilns]` entry, never by its path — that is what keeps your directory layout out of session metadata, plugin payloads and the agent's prompt. This is where a directory gets a name.\n\nExamples:\n  # Give a directory a name of your choosing\n  cru kiln register notes ~/vault/notes"
+    )]
+    Kiln {
+        #[command(subcommand)]
+        command: KilnCommands,
     },
 
     /// Process kiln files through the pipeline (parse, enrich, store)
