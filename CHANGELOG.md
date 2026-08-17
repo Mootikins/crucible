@@ -46,17 +46,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   working directory; a persisted workspace is re-checked against the
   session-scope floor when the session is revived, and dropped if it now names
   a forbidden directory.
-- **`config.set` refuses `kilns`, `kiln_path`, `projects` and `session_kiln`.**
-  Those four say *where the daemon acts*, and the RPC socket has no
-  authentication — writing them was a way to introduce or re-point a kiln
-  without the path ever passing the session-scope floor. The response now
-  carries a `rejected` list; change them by editing your config file. Every
-  other key merges as before.
-- **Lua: `cru.sessions.create` accepts only `kilns`.** `kiln` and
-  `connect_kilns` are ignored without error, so a caller using either silently
-  gets the default set. `precognition_select` payloads no longer carry
-  `is_primary_kiln` — key on `kiln_path`, which was already present and says
-  more.
+- **The config keys that name a *place* are neither writable over the socket
+  nor visible to plugins.** `agent_directories`, `data_home`, `kiln_path`,
+  `kilns`, `projects`, `runtimepath` and `session_kiln` all say *where
+  Crucible acts*. `config.set` refuses them (the response carries a `rejected`
+  list) because the RPC socket has no authentication and writing one was a way
+  to introduce or re-point a location without the path ever passing the
+  session-scope floor. They are also withheld from the plugin-visible config
+  store, so `cru.config.get("kiln_path")` and a keyless `config.get` return
+  nothing for them — a plugin is told which kilns a session reaches by *name*.
+  Change them by editing your config file. Every other key merges and reads as
+  before.
+- **Lua: `cru.sessions.create` takes kiln *names*.** `kilns` is a flat set of
+  `[kilns]` entry names, not directories; `kiln` and `connect_kilns` are
+  ignored without error, so a caller using either silently gets the default
+  set. `workspace` stays a path.
+- **Lua: `precognition_select` and `precognition_format` payloads carry `kiln`
+  instead of `kiln_path`.** Each `event.results` entry now names the registry
+  entry the note came from rather than its directory, and the key is **absent**
+  when no entry claims that kiln — never present-but-empty, because `""` is
+  truthy in Lua. `is_primary_kiln` is gone from `precognition_select` with the
+  primary kiln itself. A handler that keyed on `kiln_path` to tell one corpus
+  from another keys on `kiln`; one that used it as a filesystem path has no
+  replacement, by design.
 - **`session.reindex` is retired** (returns `METHOD_NOT_FOUND`) and
   `cru session reindex` with it. Sessions live outside kilns and are no longer
   indexed as kiln notes; delete any `sessions/*` note rows an earlier reindex
@@ -78,6 +90,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   project on the machine; Playwright's `reuseExistingServer` would attach to
   whichever one answered and fail every spec against a foreign application.
   Affects local development only — `cru web` still serves on 3000.
+- **`cru acp --kiln` takes a name or a path, and no longer falls back on a bad
+  value.** It used to be a path only; it now accepts the name of a `[kilns]`
+  entry as well, registering an unregistered directory under a name derived
+  from its basename. A value that is neither a known name nor a usable
+  directory is now an **error naming both readings**, where it previously fell
+  through to walking up from the current directory — so a mistyped name could
+  silently attach a different kiln than the one you asked for.
+
+### Added
+- **`cru kiln register <name> <path>`** gives a directory a name of your
+  choosing, rather than the basename-derived one. Everything else addresses a
+  kiln by that name, so this is what makes a directory referable without its
+  path travelling with it. Re-pointing an existing name at a different
+  directory is refused — sessions that already stored the name would silently
+  open a different corpus. Names are case-folded, so `Notes` and `notes` are
+  one kiln, not two. See [docs/Help/CLI/kiln.md](docs/Help/CLI/kiln.md).
+
+### Changed
+- **`cru acp` registers the kiln it discovers.** Run inside a kiln with no
+  `[kilns]` entry and with no `--kiln` flag, it now appends one to your config
+  file rather than attaching an unnamed directory. Without this a discovered
+  kiln would produce a session attached to nothing, since sessions address
+  kilns by name; it does mean a bare `cru acp` can write to your config.
 
 ## [0.27.0] - 2026-08-15
 
