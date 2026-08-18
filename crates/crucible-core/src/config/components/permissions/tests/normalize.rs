@@ -159,3 +159,43 @@ fn resolve_command_word_matches_whole_names_only(input: &str) {
 fn resolve_command_word_keeps_a_wrapper_with_no_command(input: &str) {
     assert!(!resolve_command_word(input).resolved.is_empty());
 }
+
+/// `--` ends a wrapper's options; it is a marker, not the command. Leaving it in place
+/// made `sudo -- rm -rf /x` resolve to `--` and slip a `deny = ["bash:rm *"]`.
+#[test_case("sudo -- rm -rf /tmp/x", "rm -rf /tmp/x" ; "sudo_end_of_options")]
+#[test_case("env -- rm -rf /tmp/x", "rm -rf /tmp/x" ; "env_end_of_options")]
+#[test_case("xargs -0 -- rm -rf", "rm -rf" ; "xargs_end_of_options")]
+fn resolve_command_word_drops_an_end_of_options_marker(input: &str, expected: &str) {
+    assert_eq!(resolve_command_word(input).resolved, expected);
+}
+
+/// A wrapper consumes its mandatory positional only when the token looks like one.
+/// `timeout rm -rf /x` is malformed, but reading `rm` as the duration would lose the
+/// command and hand back `-rf` — the one outcome worse than not resolving at all.
+#[test_case("timeout 5 rm -rf /tmp/x", "rm -rf /tmp/x" ; "timeout_eats_a_real_duration")]
+#[test_case("timeout 1.5m rm -rf /tmp/x", "rm -rf /tmp/x" ; "timeout_eats_a_suffixed_duration")]
+#[test_case("timeout rm -rf /tmp/x", "rm -rf /tmp/x" ; "timeout_does_not_eat_a_command")]
+#[test_case("flock /tmp/lock rm -rf /tmp/x", "rm -rf /tmp/x" ; "flock_eats_a_real_path")]
+#[test_case("flock rm -rf /tmp/x", "rm -rf /tmp/x" ; "flock_does_not_eat_a_command")]
+#[test_case("chroot /jail rm -rf /tmp/x", "rm -rf /tmp/x" ; "chroot_eats_a_real_path")]
+#[test_case("chroot rm -rf /tmp/x", "rm -rf /tmp/x" ; "chroot_does_not_eat_a_command")]
+#[test_case("taskset 0x3 rm -rf /tmp/x", "rm -rf /tmp/x" ; "taskset_eats_a_real_mask")]
+#[test_case("taskset rm -rf /tmp/x", "rm -rf /tmp/x" ; "taskset_does_not_eat_a_command")]
+fn a_wrapper_consumes_a_positional_only_when_it_looks_like_one(input: &str, expected: &str) {
+    assert_eq!(resolve_command_word(input).resolved, expected);
+}
+
+/// Termination and non-panic on input that is all separators or all wrappers. Resolution
+/// runs on every bash statement the engine sees, so a hang here is a hung agent turn.
+#[test_case("" ; "empty")]
+#[test_case("   " ; "only_spaces")]
+#[test_case("(((((" ; "only_open_parens")]
+#[test_case("!!!!" ; "only_bangs")]
+#[test_case("sudo" ; "only_a_wrapper")]
+#[test_case("sudo --" ; "wrapper_then_end_of_options")]
+#[test_case("sudo sudo sudo sudo" ; "nested_wrappers_with_no_command")]
+#[test_case("--" ; "only_end_of_options")]
+#[test_case("=x" ; "leading_equals")]
+fn resolve_command_word_terminates_on_degenerate_input(input: &str) {
+    let _ = resolve_command_word(input);
+}

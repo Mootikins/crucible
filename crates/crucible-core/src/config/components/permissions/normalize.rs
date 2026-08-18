@@ -411,48 +411,94 @@ fn substitution_at(bytes: &[u8], i: usize, in_double_quote: bool) -> Option<Unmo
 /// `(name, flags that consume the following token, mandatory positionals)`. The flag table
 /// keeps `sudo -u root rm` from resolving to `root`; the positional count keeps
 /// `timeout 5 rm` from resolving to `5`.
-const WRAPPERS: &[(&str, &[&str], usize)] = &[
-    ("command", &[], 0),
-    ("builtin", &[], 0),
-    ("exec", &[], 0),
-    ("env", &["-u", "-C", "--unset", "--chdir"], 0),
-    ("nohup", &[], 0),
-    ("setsid", &[], 0),
-    ("time", &["-o", "-f"], 0),
-    ("timeout", &["-s", "-k", "--signal", "--kill-after"], 1),
-    ("nice", &["-n", "--adjustment"], 0),
+/// What a wrapper's mandatory positional argument looks like. A wrapper only consumes one
+/// when the token has the right shape — `timeout rm -rf /x` must resolve to `rm`, not eat
+/// `rm` as a duration and hand back `-rf`. Guessing wrong here loses the command entirely,
+/// so the shapes are deliberately narrow and an unrecognised token is treated as the
+/// command rather than as the wrapper's argument.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Positional {
+    /// Nothing mandatory before the command.
+    None,
+    /// `timeout 5`, `timeout 1.5m` — digits with an optional unit suffix.
+    Duration,
+    /// `flock /tmp/lock`, `chroot /jail` — a path or a file descriptor number.
+    Path,
+    /// `taskset 0x3` — a CPU mask.
+    Mask,
+}
+
+impl Positional {
+    /// Whether `token` is this wrapper's argument rather than the command it runs.
+    fn matches(self, token: &str) -> bool {
+        match self {
+            Self::None => false,
+            Self::Duration => {
+                let body = token.trim_end_matches(['s', 'm', 'h', 'd']);
+                !body.is_empty() && body.chars().all(|c| c.is_ascii_digit() || c == '.')
+            }
+            Self::Path => token.contains('/') || token.chars().all(|c| c.is_ascii_digit()),
+            Self::Mask => {
+                token.starts_with("0x") || token.chars().all(|c| c.is_ascii_digit() || c == ',')
+            }
+        }
+    }
+}
+
+const WRAPPERS: &[(&str, &[&str], Positional)] = &[
+    ("command", &[], Positional::None),
+    ("builtin", &[], Positional::None),
+    ("exec", &[], Positional::None),
+    ("env", &["-u", "-C", "--unset", "--chdir"], Positional::None),
+    ("nohup", &[], Positional::None),
+    ("setsid", &[], Positional::None),
+    ("time", &["-o", "-f"], Positional::None),
+    (
+        "timeout",
+        &["-s", "-k", "--signal", "--kill-after"],
+        Positional::Duration,
+    ),
+    ("nice", &["-n", "--adjustment"], Positional::None),
     (
         "ionice",
         &["-c", "-n", "-p", "--class", "--classdata", "--pid"],
-        0,
+        Positional::None,
     ),
     (
         "stdbuf",
         &["-i", "-o", "-e", "--input", "--output", "--error"],
-        0,
+        Positional::None,
     ),
     (
         "sudo",
         &[
             "-u", "-g", "-p", "-C", "-h", "--user", "--group", "--prompt",
         ],
-        0,
+        Positional::None,
     ),
-    ("doas", &["-u", "-C"], 0),
-    ("watch", &["-n", "-d", "--interval"], 0),
-    ("parallel", &["-j", "-n", "--jobs"], 0),
-    ("strace", &["-o", "-p", "-e", "-s"], 0),
-    ("ltrace", &["-o", "-p", "-e"], 0),
-    ("unshare", &["--map-user", "--map-group"], 0),
-    ("runuser", &["-u", "-g", "--user", "--group"], 0),
-    ("systemd-run", &["-u", "-p", "--unit", "--property"], 0),
-    ("flock", &["-w", "-E", "--timeout"], 1),
-    ("chroot", &["--userspec", "--groups"], 1),
-    ("taskset", &["-p", "--pid"], 1),
+    ("doas", &["-u", "-C"], Positional::None),
+    ("watch", &["-n", "-d", "--interval"], Positional::None),
+    ("parallel", &["-j", "-n", "--jobs"], Positional::None),
+    ("strace", &["-o", "-p", "-e", "-s"], Positional::None),
+    ("ltrace", &["-o", "-p", "-e"], Positional::None),
+    ("unshare", &["--map-user", "--map-group"], Positional::None),
+    (
+        "runuser",
+        &["-u", "-g", "--user", "--group"],
+        Positional::None,
+    ),
+    (
+        "systemd-run",
+        &["-u", "-p", "--unit", "--property"],
+        Positional::None,
+    ),
+    ("flock", &["-w", "-E", "--timeout"], Positional::Path),
+    ("chroot", &["--userspec", "--groups"], Positional::Path),
+    ("taskset", &["-p", "--pid"], Positional::Mask),
     (
         "xargs",
         &["-a", "-E", "-I", "-L", "-n", "-P", "-s", "-d", "--replace"],
-        0,
+        Positional::None,
     ),
 ];
 
@@ -550,7 +596,7 @@ pub fn resolve_command_word(statement: &str) -> ResolvedStatement {
             break;
         }
 
-        let Some((_, value_flags, positionals)) =
+        let Some((_, value_flags, positional)) =
             WRAPPERS.iter().find(|(name, _, _)| *name == head_base)
         else {
             break;
@@ -560,7 +606,13 @@ pub fn resolve_command_word(statement: &str) -> ResolvedStatement {
         // Skip the wrapper's own options. A flag known to take a value consumes the next
         // token as well, so `sudo -u root rm` does not resolve to `root`.
         while let Some(&opt) = tokens.first() {
-            if !opt.starts_with('-') || opt == "-" || opt == "--" {
+            if opt == "--" {
+                // End-of-options: the marker itself is not the command, so drop it and
+                // stop. Leaving it made `sudo -- rm -rf /x` resolve to `--`.
+                tokens.remove(0);
+                break;
+            }
+            if !opt.starts_with('-') || opt == "-" {
                 break;
             }
             tokens.remove(0);
@@ -569,11 +621,10 @@ pub fn resolve_command_word(statement: &str) -> ResolvedStatement {
             }
         }
 
-        // `timeout` takes a mandatory DURATION before the command it runs.
-        for _ in 0..*positionals {
-            if tokens.len() > 1 {
-                tokens.remove(0);
-            }
+        // Consume the wrapper's own positional only when it looks like one. An
+        // unrecognised token is the command — `timeout rm -rf /x` resolves to `rm`.
+        if tokens.len() > 1 && positional.matches(tokens[0]) {
+            tokens.remove(0);
         }
     }
 
