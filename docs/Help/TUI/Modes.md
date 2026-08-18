@@ -124,9 +124,16 @@ cannot read — `` ` ``, `$(…)`, `<(…)`, `>(…)`, an unclosed quote — dro
 decision to the mode's `default` rather than to the leading command, so it
 prompts instead of silently allowing.
 
-Two edges the split does not reach: it does not model *where* an allowed
-command writes (`bash:echo *` permits `echo hi > file`), and it does not unwrap
-`eval`, `sh -c`, or `xargs`. [[Help/Concepts/Permission Precedence]] states the
+A `deny` rule follows the command through the ways a shell spells it — `sudo rm`,
+`\rm`, `"rm"`, `/bin/rm`, `env FOO=1 rm`, `xargs rm`, `timeout 5 rm`. It reports
+`eval` and `sh -c` rather than reading them, so those prompt.
+
+Two edges the split does not reach. It does not model *where* an allowed command
+writes; `bash:echo *` permits `echo hi > file`. It does not follow an *effect* to
+a different program; a rule that names `rm` never covers `find . -delete`.
+
+**Do not treat a `deny` rule as a safety barrier.** It reduces accidents. It does
+not stop a determined caller. [[Help/Concepts/Permission Precedence]] states the
 guarantee and its limits in full.
 
 Declare a mode in `~/.config/crucible/init.lua` for every session, or in

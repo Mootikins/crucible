@@ -20,6 +20,32 @@ This page states that order once. The layers themselves are documented
 separately — [[Help/Config/permissions]], [[Help/Extending/Event Hooks]],
 [[Help/TUI/Modes]], [[Help/Extending/Agent Cards]].
 
+## Read this before you rely on a `deny` rule
+
+**Command blocking is best-effort. Do not rely on it to prevent a catastrophic
+action.**
+
+A `deny` rule reads the text of a command. A shell decides what a command *does*
+at run time. The two are not the same thing, and text cannot answer the run-time
+question. Crucible closes the differences it can see and reports the ones it
+cannot, but the list of things it cannot see has no end:
+
+- An alias or a shell function can point any name at any program.
+- `$PATH` order decides which `rm` runs.
+- A program that Crucible does not know can run another program.
+- A different program can have the same effect. A rule that names `rm` does not
+  cover `find . -delete`.
+- A command name can come from a variable, and its value exists only at run time.
+
+Treat a `deny` rule as a guard against an accident, not as a barrier against
+intent. It stops an agent that makes a mistake. It does not stop an agent, or a
+person, that works around it.
+
+**To prevent a catastrophic action, use containment, not a rule.** Run the agent
+in a container ([[Help/Extending/Container Isolation]]), give it a workspace it
+may destroy, and keep backups of what matters. A permission rule is one layer of
+defence and it is the weakest one.
+
 ## The order
 
 Every tool call the agent makes walks this list top to bottom. The first layer

@@ -186,3 +186,30 @@ under Resolution Order).
 default = "allow"
 deny = ["bash:*"]  # fires before any allow rule — but not under --permissions allow
 ```
+
+## What a `deny` rule cannot do
+
+**Command blocking is best-effort. Do not rely on it to prevent a catastrophic
+action.**
+
+A rule matches the text of a command. The engine follows a command through the
+spellings it can see — `sudo rm`, `\rm`, `"rm"`, `/bin/rm`, `env FOO=1 rm`,
+`xargs rm`, `timeout 5 rm` — and it prompts instead of guessing when a line hands
+its program to `eval`, `sh -c`, `python -c`, or a name built from a variable.
+
+It still cannot see an alias, a shell function, `$PATH` order, a wrapper program
+it does not know, or a different program with the same effect. A rule that names
+`rm` does not cover `find . -delete`.
+
+A `deny` rule guards against an accident. It does not stop intent. Deny the whole
+tool when the risk is real:
+
+```toml
+[permissions]
+deny = ["bash:*"]     # no shell at all — the only rule with no spelling to evade
+```
+
+To prevent a catastrophic action, use containment. Run the agent in a container
+([[Help/Extending/Container Isolation]]), give it a workspace it may destroy, and
+keep backups. See [[Help/Concepts/Permission Precedence]] for the full list of
+limits.
