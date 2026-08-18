@@ -505,14 +505,29 @@ const WRAPPERS: &[(&str, &[&str], Positional)] = &[
 /// Interpreters that take their program as *data*. No amount of prefix-stripping reveals
 /// what `sh -c "$X"` will run, so these are reported rather than resolved.
 const INDIRECT: &[&str] = &[
+    // Shells.
     "eval",
     "sh",
     "bash",
     "zsh",
     "dash",
     "ksh",
+    "fish",
     "busybox",
     "nix-shell",
+    "su",
+    // Other interpreters that take a program on the command line. `perl -e` is not a
+    // different-program-same-effect case; it is this case with another binary name.
+    "python",
+    "python2",
+    "python3",
+    "perl",
+    "ruby",
+    "node",
+    "deno",
+    "bun",
+    "php",
+    "awk",
 ];
 
 /// A statement rewritten so a rule written about a command matches the ways a shell can
@@ -524,6 +539,37 @@ pub struct ResolvedStatement {
     pub resolved: String,
     /// Set when the statement hands its command to another interpreter.
     pub unmodellable: Option<UnmodellableConstruct>,
+}
+
+/// Remove the quoting a shell removes before it resolves a command word.
+///
+/// A shell performs quote removal as its last expansion step, so `\rm`, `"rm"`, `'rm'`
+/// and `r""m` all name the same command. Without this the wrapper table, the [`INDIRECT`]
+/// table and the basename step all compare against the still-quoted token and miss.
+/// `\rm` matters most: it is the standard way to bypass an alias.
+///
+/// Best-effort, and deliberately more aggressive than a shell inside double quotes, where
+/// `\` escapes only a few characters. Over-removal can only produce a name that matches
+/// no rule, and the resolved text is added to the restrictive lists rather than replacing
+/// the raw text, so a wrong answer here can never unmatch a `deny`.
+fn remove_quotes(token: &str) -> String {
+    let mut out = String::with_capacity(token.len());
+    let mut chars = token.chars();
+    let (mut in_single, mut in_double) = (false, false);
+    while let Some(c) = chars.next() {
+        match c {
+            '\'' if !in_double => in_single = !in_single,
+            '"' if !in_single => in_double = !in_double,
+            // Inside single quotes a backslash is literal; everywhere else it escapes.
+            '\\' if !in_single => {
+                if let Some(next) = chars.next() {
+                    out.push(next);
+                }
+            }
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 /// Whether `token` is a `VAR=value` assignment prefix rather than a command word.
@@ -588,8 +634,11 @@ pub fn resolve_command_word(statement: &str) -> ResolvedStatement {
             continue;
         }
 
-        // A wrapper is recognised by its basename, so `/usr/bin/sudo` strips too.
-        let head_base = head.rsplit('/').next().unwrap_or(head);
+        // Unquote before the lookups, so `\sh -c` is still recognised as an interpreter
+        // and `\sudo` as a wrapper. A wrapper is matched on its basename, so
+        // `/usr/bin/sudo` strips too.
+        let unquoted = remove_quotes(head);
+        let head_base = unquoted.rsplit('/').next().unwrap_or(&unquoted);
 
         if INDIRECT.contains(&head_base) {
             unmodellable = Some(UnmodellableConstruct::IndirectExecution);
@@ -635,21 +684,29 @@ pub fn resolve_command_word(statement: &str) -> ResolvedStatement {
         };
     }
 
-    // A command word containing an expansion has no name until the shell runs. Reporting
-    // it beats resolving `r$Y` to the literal string `r$Y` and matching nothing.
+    // Read the expansion marker on the RAW token. Quote removal keeps `$`, but reading the
+    // raw text is the conservative order: it can only report more, never fewer.
     if tokens[0].contains('$') {
         unmodellable = unmodellable.or(Some(UnmodellableConstruct::ExpandedCommandWord));
     }
 
-    // `/bin/rm` and `./rm` are the same invocation as `rm` to anyone writing a rule.
-    let head = tokens[0];
-    let base = head.rsplit('/').next().unwrap_or(head);
-    if !base.is_empty() {
-        tokens[0] = base;
-    }
+    // `/bin/rm`, `./rm`, `\rm` and `"rm"` are the same invocation to anyone writing a rule.
+    let unquoted_head = remove_quotes(tokens[0]);
+    let base = unquoted_head
+        .rsplit('/')
+        .next()
+        .unwrap_or(&unquoted_head)
+        .to_string();
+    let rest = tokens[1..].join(" ");
+
+    let resolved = match (base.is_empty(), rest.is_empty()) {
+        (true, _) => tokens.join(" "),
+        (false, true) => base,
+        (false, false) => format!("{base} {rest}"),
+    };
 
     ResolvedStatement {
-        resolved: tokens.join(" "),
+        resolved,
         unmodellable,
     }
 }

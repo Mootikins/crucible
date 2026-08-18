@@ -551,6 +551,14 @@ fn blocklist(default: PermissionMode) -> PermissionEngine {
 #[test_case("timeout 5 rm -rf /tmp/x" ; "timeout_with_a_duration")]
 #[test_case("nice -n 10 rm -rf /tmp/x" ; "nice_with_a_flag_value")]
 #[test_case("rm\t-rf /tmp/x" ; "tab_separated")]
+#[test_case("\\rm -rf /tmp/x" ; "backslash_escaped_command")]
+#[test_case("\"rm\" -rf /tmp/x" ; "double_quoted_command")]
+#[test_case("'rm' -rf /tmp/x" ; "single_quoted_command")]
+#[test_case("r\"\"m -rf /tmp/x" ; "quote_split_inside_the_command")]
+#[test_case("r\\m -rf /tmp/x" ; "backslash_inside_the_command")]
+#[test_case("\"/bin/rm\" -rf /tmp/x" ; "quoted_absolute_path")]
+#[test_case("command \\rm -rf /tmp/x" ; "wrapper_then_escaped_command")]
+#[test_case("PATH=/bin \\rm -rf /tmp/x" ; "assignment_then_escaped_command")]
 #[test_case("sudo -- rm -rf /tmp/x" ; "end_of_options_marker")]
 #[test_case("timeout rm -rf /tmp/x" ; "wrapper_positional_that_is_the_command")]
 #[test_case("flock rm -rf /tmp/x" ; "flock_positional_that_is_the_command")]
@@ -596,6 +604,11 @@ fn ordinary_allowed_commands_are_unaffected(input: &str) {
 /// `default = "allow"` that must still not silently bypass a configured `deny` list.
 #[test_case("eval \"rm -rf /tmp/x\"" ; "eval")]
 #[test_case("sh -c \"rm -rf /tmp/x\"" ; "sh_dash_c")]
+#[test_case("\\sh -c \"rm -rf /tmp/x\"" ; "escaped_sh_dash_c")]
+#[test_case("\"sh\" -c \"rm -rf /tmp/x\"" ; "quoted_sh_dash_c")]
+#[test_case("python3 -c \"import os; os.system('rm -rf /tmp/x')\"" ; "python_dash_c")]
+#[test_case("perl -e 'unlink \"/tmp/x\"'" ; "perl_dash_e")]
+#[test_case("node -e \"require('fs').rmSync('/tmp/x')\"" ; "node_dash_e")]
 fn an_interpreter_prompts_rather_than_inheriting_an_allow_default(input: &str) {
     for default in [PermissionMode::Ask, PermissionMode::Allow] {
         assert!(
@@ -645,7 +658,7 @@ fn an_expanded_command_word_prompts_rather_than_matching_its_literal_text(input:
 /// to delete files is a different command, and no amount of command-word resolution
 /// makes `deny = ["bash:rm *"]` cover it. Deny the tool or name the program.
 #[test_case("find . -delete" ; "find_delete")]
-#[test_case("perl -e 'unlink \"x\"'" ; "perl_unlink")]
+#[test_case("dd if=/dev/zero of=/tmp/x" ; "dd_overwrite")]
 fn a_different_program_that_deletes_is_not_covered_by_a_rule_naming_rm(input: &str) {
     assert!(matches!(
         blocklist(PermissionMode::Allow).evaluate("bash", input, true),
