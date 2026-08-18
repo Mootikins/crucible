@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-08-18
+
 ### Breaking
 - **Sessions no longer live inside kilns.** Every session now stores at
   `{data_home}/sessions/{id}/` (`~/.crucible/sessions/` by default). Existing
@@ -129,6 +131,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   directory is now an **error naming both readings**, where it previously fell
   through to walking up from the current directory — so a mistyped name could
   silently attach a different kiln than the one you asked for.
+
+- **A bash line the permission engine cannot fully read now falls to your
+  `default`, not to the leading command's `allow` rule.** Previously
+  `git log $(curl evil)` came back `Allow` on the strength of `bash:git *`.
+  Command substitution, process substitution, an unterminated quote, `eval` /
+  `sh -c`, and a command name built by expansion (`${CMD}`) now reach the
+  default instead. Under `default = "ask"` these prompt where they used to run
+  silently. A `deny` rule and a hardcoded deny still win over the fallback —
+  falling back never softens a refusal.
+
+### Security
+- **`deny` rules follow the command, not how it was spelled.** A `deny` glob was
+  literal text over the raw statement, so it only fired when the statement began
+  with the exact word the rule named. `sudo rm`, `/bin/rm`, `env FOO=1 rm`,
+  `(rm ...)`, `xargs rm`, `timeout 5 rm`, `nice -n 10 rm`, `watch rm`,
+  `strace rm`, `! rm`, `FOO=1 rm`, and even `rm<TAB>-rf` all slipped past
+  `deny = ["bash:rm *"]` — under `default = "allow"` silently, which made a
+  blocklist config not work at all. Statements are now matched against their
+  resolved command word as well as their raw text.
+
+  Resolution feeds `deny`, `ask` and the hardcoded denials only; it never
+  widens an `allow`, so `time git status` does not inherit `bash:git *`.
+
+  Best-effort by construction, and the limits are real: a rule naming `rm` is a
+  rule about `rm`, so `find . -delete` and `perl -e 'unlink ...'` are not
+  covered; wrappers outside the built-in table still hide what they run; and
+  aliases, shell functions and `$PATH` order are invisible to text inspection.
+  See "What it does not cover" in
+  [docs/Help/Concepts/Permission Precedence.md](docs/Help/Concepts/Permission%20Precedence.md).
+- **A lone `&` now separates statements.** `git status & rm -rf ~` was evaluated
+  as one statement and matched `bash:git *`.
+- **A backslash no longer disables statement splitting.** An escaped quote
+  (`echo "\""`) left the scanner inside a string for the rest of the line, so
+  every `&&`, `;` and `|` after it was invisible and the whole line was judged
+  by its first command.
+- **A `\` line continuation ends the statement it continues.** The escape fix
+  briefly let `git status && \<newline>rm -rf /tmp/x` past `deny = ["bash:rm *"]`.
+- **Under `default = "allow"` with `deny` rules configured, an unreadable
+  statement prompts** rather than being allowed. Allowing it would mean the
+  blocklist is silently unenforced on exactly the lines it cannot check. With no
+  `deny` rules the `allow` default stands.
+
+### Fixed
+- **One panic no longer bricks every write to a kiln.** `with_transaction`
+  issued raw `BEGIN`/`COMMIT`/`ROLLBACK`, so a panic inside the closure ran
+  neither arm; `parking_lot` does not poison, so the shared connection was left
+  inside an abandoned transaction permanently and every later write failed with
+  "cannot start a transaction within a transaction". It now uses an RAII
+  transaction that rolls back on unwind.
+- **The TUI no longer panics on non-ASCII whitespace.** `Ctrl-W` (delete word)
+  and `Ctrl-←` / `Alt-B` (word left) stepped one byte past a whitespace
+  character rather than its full width, so a non-breaking space or ideographic
+  space — routine in pasted text — sliced into a character and panicked.
+  `Ctrl-←` was the worse of the two: it stored a non-boundary cursor and the
+  panic surfaced later, in an unrelated keystroke.
+- **Concurrent `has_tool` callers share one tool-hydration attempt.** Each call
+  had been spawning its own OS thread and Tokio runtime, so a hung MCP provider
+  multiplied the cost by the number of callers.
+
+### Removed
+- Four unused Rust dependencies (`mlua` from `crucible-cli`; `regex`, `uuid`,
+  `walkdir` from `crucible-lua`) and four unused npm packages.
+- The deprecated `WorkspaceConfig` / `WorkspaceMeta` pair. The `workspace.toml`
+  backward-compatibility path was never routed through them — it deserializes
+  into `ProjectConfig` — so they had no consumer outside their own tests.
+- Dead frontend files and roughly 60 unused exports across the web UI; several
+  more narrowed to module-private.
+
 
 ### Added
 - **`cru kiln register <name> <path>`** gives a directory a name of your
