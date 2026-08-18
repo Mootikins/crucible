@@ -184,9 +184,26 @@ split further than it goes:
 - **The allowed command's own power is yours to judge.** `bash:git *` permits
   `git config`, aliases, and hooks; most useful binaries are a write primitive
   or an execution primitive given the right flags.
-- **Indirection is not unwrapped.** `eval`, `sh -c "…"`, `xargs`, a shell
-  function, `env VAR=… cmd`, and heredocs are matched as the text you see;
-  nothing expands them first.
+- **A rule names a command, not an effect.** `deny = ["bash:rm *"]` follows `rm`
+  through the ways a shell can spell it — `sudo rm`, `/bin/rm`, `env FOO=1 rm`,
+  `(rm …)`, `xargs rm`, `timeout 5 rm`, a tab instead of a space — because the
+  statement is also matched against its resolved command word
+  (`resolve_command_word`). It does **not** follow the *effect*:
+  `find . -delete` and `perl -e 'unlink …'` delete files and are not `rm`, so a
+  rule naming `rm` never covers them. Name the program, or deny the tool.
+- **The wrapper list is a list.** Wrappers outside it (`WRAPPERS` in
+  `normalize.rs`) still hide the command they run. Adding one is a one-line
+  change; noticing you needed to is the hard part.
+- **Aliases, shell functions and `$PATH` are invisible.** `alias rm=…`, a
+  function named `git` that calls `rm`, or a different `rm` earlier on the path
+  are all outside what statement text can show. Resolution raises the cost of
+  evading a `deny` rule; it does not make `deny` a sandbox — containment is the
+  container.
+- **`eval`, `sh -c` and expanded command names prompt instead.** Their program is
+  data, so they are reported rather than guessed at and fall to the default. Under
+  `default = "allow"` *with* `deny` rules configured they prompt rather than being
+  allowed, since allowing them would mean the blocklist is silently unenforced on
+  exactly the lines it cannot read.
 
 The splitter is `split_command_line` in
 `crates/crucible-core/src/config/components/permissions/normalize.rs`, and it is

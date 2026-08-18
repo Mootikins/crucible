@@ -95,3 +95,67 @@ fn split_command_line_still_returns_the_segments_it_could_find() {
         Some(UnmodellableConstruct::CommandSubstitution)
     );
 }
+
+// ── resolve_command_word ───────────────────────────────────────────────────
+
+#[test_case("rm -rf /tmp/x", "rm -rf /tmp/x" ; "plain_statement_is_unchanged")]
+#[test_case("rm\t-rf /tmp/x", "rm -rf /tmp/x" ; "tab_separator_becomes_a_space")]
+#[test_case("(rm -rf /tmp/x)", "rm -rf /tmp/x)" ; "leading_subshell_paren")]
+#[test_case("{ rm -rf /tmp/x; }", "rm -rf /tmp/x; }" ; "leading_brace_group")]
+#[test_case("! rm -rf /tmp/x", "rm -rf /tmp/x" ; "negation")]
+#[test_case("!rm -rf /tmp/x", "rm -rf /tmp/x" ; "negation_glued_to_the_command")]
+#[test_case("/bin/rm -rf /tmp/x", "rm -rf /tmp/x" ; "absolute_path")]
+#[test_case("./rm -rf /tmp/x", "rm -rf /tmp/x" ; "relative_path")]
+#[test_case("FOO=1 BAR=2 rm -rf /tmp/x", "rm -rf /tmp/x" ; "assignment_prefixes")]
+#[test_case("env FOO=1 rm -rf /tmp/x", "rm -rf /tmp/x" ; "env_then_assignment")]
+#[test_case("time rm -rf /tmp/x", "rm -rf /tmp/x" ; "time")]
+#[test_case("nohup rm -rf /tmp/x", "rm -rf /tmp/x" ; "nohup")]
+#[test_case("command rm -rf /tmp/x", "rm -rf /tmp/x" ; "command_builtin")]
+#[test_case("xargs rm -rf", "rm -rf" ; "xargs")]
+#[test_case("sudo -u root rm -rf /tmp/x", "rm -rf /tmp/x" ; "sudo_flag_consumes_its_value")]
+#[test_case("timeout 5 rm -rf /tmp/x", "rm -rf /tmp/x" ; "timeout_consumes_its_duration")]
+#[test_case("nice -n 10 rm -rf /tmp/x", "rm -rf /tmp/x" ; "nice_flag_consumes_its_value")]
+#[test_case("/usr/bin/sudo /bin/rm -rf /tmp/x", "rm -rf /tmp/x" ; "wrapper_and_command_both_path_qualified")]
+fn resolve_command_word_strips_wrappers(input: &str, expected: &str) {
+    assert_eq!(resolve_command_word(input).resolved, expected);
+}
+
+#[test_case("git status" ; "ordinary_command")]
+#[test_case("echo hi" ; "echo")]
+#[test_case("rm -rf /tmp/x" ; "plain_rm")]
+fn resolve_command_word_leaves_ordinary_statements_alone(input: &str) {
+    let out = resolve_command_word(input);
+    assert_eq!(out.resolved, input);
+    assert_eq!(out.unmodellable, None);
+}
+
+#[test_case("eval \"rm -rf /tmp/x\"" ; "eval")]
+#[test_case("sh -c \"rm -rf /tmp/x\"" ; "sh_dash_c")]
+#[test_case("bash -c \"rm -rf /tmp/x\"" ; "bash_dash_c")]
+#[test_case("sudo sh -c \"rm -rf /tmp/x\"" ; "interpreter_behind_a_wrapper")]
+fn resolve_command_word_reports_an_interpreter_rather_than_guessing(input: &str) {
+    // What `sh -c "$X"` runs is decided at runtime. Reporting it hands the decision to
+    // the caller's fall-to-default path instead of pretending the text can be read.
+    assert_eq!(
+        resolve_command_word(input).unmodellable,
+        Some(UnmodellableConstruct::IndirectExecution)
+    );
+}
+
+/// The wrapper table is a list of names, so a command merely *named* like one is not
+/// mistaken for it — `envsubst` is not `env`.
+#[test_case("envsubst < in > out" ; "envsubst_is_not_env")]
+#[test_case("timeouts --list" ; "timeouts_is_not_timeout")]
+#[test_case("commander deploy" ; "commander_is_not_command")]
+fn resolve_command_word_matches_whole_names_only(input: &str) {
+    assert_eq!(resolve_command_word(input).resolved, input);
+}
+
+/// A wrapper with nothing after it has no command to expose; it stays as itself rather
+/// than resolving to an empty string that would match a bare `*` rule.
+#[test_case("sudo" ; "bare_sudo")]
+#[test_case("env" ; "bare_env")]
+#[test_case("xargs -0" ; "wrapper_with_only_flags")]
+fn resolve_command_word_keeps_a_wrapper_with_no_command(input: &str) {
+    assert!(!resolve_command_word(input).resolved.is_empty());
+}

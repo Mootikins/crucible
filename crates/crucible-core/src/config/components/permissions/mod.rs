@@ -15,8 +15,8 @@ pub use engine::PermissionEngine;
 pub use hardcoded::is_hardcoded_denied;
 pub use matcher::{CompiledPermissions, PermissionMatcher};
 pub use normalize::{
-    normalize_path_for_matching, split_chained_commands, split_command_line, CommandLineSplit,
-    UnmodellableConstruct,
+    normalize_path_for_matching, resolve_command_word, split_chained_commands, split_command_line,
+    CommandLineSplit, ResolvedStatement, UnmodellableConstruct,
 };
 pub use parse::parse_rule;
 pub use types::{

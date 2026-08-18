@@ -1,6 +1,8 @@
 use super::hardcoded::is_hardcoded_denied;
 use super::matcher::{CompiledPermissions, PermissionMatcher};
-use super::normalize::{normalize_path_for_matching, split_command_line, UnmodellableConstruct};
+use super::normalize::{
+    normalize_path_for_matching, resolve_command_word, split_command_line, UnmodellableConstruct,
+};
 use super::types::{PermissionConfig, PermissionDecision, PermissionMode};
 
 #[derive(Debug, Clone)]
@@ -44,23 +46,34 @@ impl PermissionEngine {
         let mut has_ask_match = false;
         let mut all_allow_match = true;
 
+        let mut indirect = None;
+
         for command in &split.segments {
-            if let Some(reason) = is_hardcoded_denied("bash", command) {
+            // What the statement actually invokes, with `sudo`/`env`/`(`/`/bin/` and the
+            // rest stripped. Only the restrictive lists consult it — see `any_match`.
+            let resolved = resolve_command_word(command);
+            indirect = indirect.or(resolved.unmodellable);
+
+            if let Some(reason) = is_hardcoded_denied("bash", command)
+                .or_else(|| is_hardcoded_denied("bash", &resolved.resolved))
+            {
                 return PermissionDecision::Deny {
                     reason: format!("Hardcoded deny: {reason}"),
                 };
             }
 
-            if self.any_match(&self.compiled.deny, "bash", command) {
+            if self.any_match_restrictive(&self.compiled.deny, command, &resolved.resolved) {
                 return PermissionDecision::Deny {
                     reason: "Matched deny rule".to_string(),
                 };
             }
 
-            if self.any_match(&self.compiled.ask, "bash", command) {
+            if self.any_match_restrictive(&self.compiled.ask, command, &resolved.resolved) {
                 has_ask_match = true;
             }
 
+            // Deliberately literal: broadening `allow` would let `time git status` inherit
+            // `bash:git *`, which widens the gate. Resolution may only ever tighten.
             if !self.any_match(&self.compiled.allow, "bash", command) {
                 all_allow_match = false;
             }
@@ -74,7 +87,7 @@ impl PermissionEngine {
         // `deny` still denies and an explicit `ask` still names its rule. What it stops is
         // the leading command's `allow` glob deciding a line the splitter could not read —
         // `git log $(curl evil)` used to come back `Allow` on the strength of `bash:git *`.
-        if let Some(construct) = split.unmodellable {
+        if let Some(construct) = split.unmodellable.or(indirect) {
             return self.unmodellable_decision(construct);
         }
 
@@ -109,6 +122,21 @@ impl PermissionEngine {
         self.default_decision()
     }
 
+    /// `any_match` for the lists that refuse or prompt, widened to the resolved command.
+    ///
+    /// Only `deny`, `ask` and the hardcoded table get this. A rule that grants must keep
+    /// matching the text the operator wrote, or stripping a wrapper would hand a command
+    /// an `allow` its author never granted.
+    fn any_match_restrictive(
+        &self,
+        matchers: &[PermissionMatcher],
+        raw: &str,
+        resolved: &str,
+    ) -> bool {
+        self.any_match(matchers, "bash", raw)
+            || (resolved != raw && self.any_match(matchers, "bash", resolved))
+    }
+
     fn any_match(&self, matchers: &[PermissionMatcher], tool: &str, input: &str) -> bool {
         matchers.iter().any(|matcher| {
             if !is_file_tool(tool) {
@@ -122,8 +150,20 @@ impl PermissionEngine {
     }
 
     /// The configured default, with a reason naming the construct that forced it.
+    ///
+    /// One departure from the plain default: under `default = "allow"` with `deny` rules
+    /// configured, an unreadable statement prompts instead of being allowed. Allowing it
+    /// would mean the operator's `deny` list is silently not enforced on exactly the lines
+    /// where it cannot be checked — `eval "rm -rf /"` under a blocklist config. With no
+    /// `deny` rules there is nothing to fail to enforce, so the default stands.
     fn unmodellable_decision(&self, construct: UnmodellableConstruct) -> PermissionDecision {
         match self.compiled.default {
+            PermissionMode::Allow if !self.compiled.deny.is_empty() => {
+                let _ = construct;
+                PermissionDecision::Ask {
+                    rule_matched: false,
+                }
+            }
             PermissionMode::Allow => PermissionDecision::Allow,
             PermissionMode::Deny => PermissionDecision::Deny {
                 reason: format!(

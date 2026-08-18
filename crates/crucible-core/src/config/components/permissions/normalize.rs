@@ -187,6 +187,12 @@ pub enum UnmodellableConstruct {
     ProcessSubstitution,
     /// A quote that never closed, so everything the scan did past it is guesswork.
     UnterminatedQuote,
+    /// The statement hands its command to another interpreter as data — `eval "$X"`,
+    /// `sh -c "..."`. What runs is decided at runtime, so no inspection can name it.
+    IndirectExecution,
+    /// The command word is built by expansion — `r$Y -rf`, `${CMD} -rf`. Its name only
+    /// exists once the shell has expanded it.
+    ExpandedCommandWord,
 }
 
 impl UnmodellableConstruct {
@@ -197,6 +203,8 @@ impl UnmodellableConstruct {
             Self::CommandSubstitution => "`$(...)` command substitution",
             Self::ProcessSubstitution => "process substitution",
             Self::UnterminatedQuote => "an unterminated quote",
+            Self::IndirectExecution => "a command run through another interpreter",
+            Self::ExpandedCommandWord => "a command name built by expansion",
         }
     }
 }
@@ -391,5 +399,206 @@ fn substitution_at(bytes: &[u8], i: usize, in_double_quote: bool) -> Option<Unmo
             Some(UnmodellableConstruct::ProcessSubstitution)
         }
         _ => None,
+    }
+}
+
+// ── Command-word resolution ────────────────────────────────────────────────
+
+/// Wrapper commands that run another command given as their argument. Stripping one
+/// exposes the command it wraps, which is the thing a rule is written about:
+/// `sudo rm -rf /` is an `rm` invocation however the rule's author spelled it.
+///
+/// `(name, flags that consume the following token, mandatory positionals)`. The flag table
+/// keeps `sudo -u root rm` from resolving to `root`; the positional count keeps
+/// `timeout 5 rm` from resolving to `5`.
+const WRAPPERS: &[(&str, &[&str], usize)] = &[
+    ("command", &[], 0),
+    ("builtin", &[], 0),
+    ("exec", &[], 0),
+    ("env", &["-u", "-C", "--unset", "--chdir"], 0),
+    ("nohup", &[], 0),
+    ("setsid", &[], 0),
+    ("time", &["-o", "-f"], 0),
+    ("timeout", &["-s", "-k", "--signal", "--kill-after"], 1),
+    ("nice", &["-n", "--adjustment"], 0),
+    (
+        "ionice",
+        &["-c", "-n", "-p", "--class", "--classdata", "--pid"],
+        0,
+    ),
+    (
+        "stdbuf",
+        &["-i", "-o", "-e", "--input", "--output", "--error"],
+        0,
+    ),
+    (
+        "sudo",
+        &[
+            "-u", "-g", "-p", "-C", "-h", "--user", "--group", "--prompt",
+        ],
+        0,
+    ),
+    ("doas", &["-u", "-C"], 0),
+    ("watch", &["-n", "-d", "--interval"], 0),
+    ("parallel", &["-j", "-n", "--jobs"], 0),
+    ("strace", &["-o", "-p", "-e", "-s"], 0),
+    ("ltrace", &["-o", "-p", "-e"], 0),
+    ("unshare", &["--map-user", "--map-group"], 0),
+    ("runuser", &["-u", "-g", "--user", "--group"], 0),
+    ("systemd-run", &["-u", "-p", "--unit", "--property"], 0),
+    ("flock", &["-w", "-E", "--timeout"], 1),
+    ("chroot", &["--userspec", "--groups"], 1),
+    ("taskset", &["-p", "--pid"], 1),
+    (
+        "xargs",
+        &["-a", "-E", "-I", "-L", "-n", "-P", "-s", "-d", "--replace"],
+        0,
+    ),
+];
+
+/// Interpreters that take their program as *data*. No amount of prefix-stripping reveals
+/// what `sh -c "$X"` will run, so these are reported rather than resolved.
+const INDIRECT: &[&str] = &[
+    "eval",
+    "sh",
+    "bash",
+    "zsh",
+    "dash",
+    "ksh",
+    "busybox",
+    "nix-shell",
+];
+
+/// A statement rewritten so a rule written about a command matches the ways a shell can
+/// spell that same command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedStatement {
+    /// The statement with wrappers stripped, the command word reduced to its basename,
+    /// and whitespace collapsed. Equal to the trimmed input when nothing applied.
+    pub resolved: String,
+    /// Set when the statement hands its command to another interpreter.
+    pub unmodellable: Option<UnmodellableConstruct>,
+}
+
+/// Whether `token` is a `VAR=value` assignment prefix rather than a command word.
+fn is_assignment_prefix(token: &str) -> bool {
+    let Some((name, _)) = token.split_once('=') else {
+        return false;
+    };
+    !name.is_empty()
+        && !name.starts_with(|c: char| c.is_ascii_digit())
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// The command a statement actually invokes, as far as text inspection can tell.
+///
+/// **Best-effort by construction, and the residue is not small.** This closes the gap
+/// between a rule naming a command and the ways a shell can spell *that same command*.
+/// It does not, and cannot, decide what a statement will do.
+///
+/// Handled: grouping (`(`, `{`), `!`, `VAR=value` prefixes, the [`WRAPPERS`] table, a
+/// leading directory on the command word, and tabs as separators. Reported rather than
+/// guessed at: [`INDIRECT`] interpreters and a command word built by expansion.
+///
+/// Not handled, in rough order of how likely you are to meet it:
+///
+/// - **A different program with the same effect.** `find . -delete` and
+///   `perl -e 'unlink ...'` delete files and are not `rm`. A rule naming `rm` does not
+///   cover them and no resolution step can make it — deny the tool, or name the program.
+/// - **A wrapper outside [`WRAPPERS`].** The table is a list, so an unlisted wrapper
+///   hides what it runs. Adding one is a one-line change; discovering you needed to is
+///   the problem.
+/// - **Aliases and shell functions.** `alias rm=...`, or a function named `git` that
+///   calls `rm`. Neither is visible in the statement text.
+/// - **`$PATH` order.** `rm` resolving to something other than the `rm` you meant.
+///
+/// So this raises the cost of evading a `deny` rule; it does not make `deny` a sandbox.
+/// Containment is the container, not this function.
+pub fn resolve_command_word(statement: &str) -> ResolvedStatement {
+    // Tabs and newlines are separators to a shell and glob-visible characters to us;
+    // `rm\t-rf` must read as `rm -rf` or a rule about `rm ` never fires.
+    let flattened = statement.replace(['\t', '\n', '\r', '\u{b}', '\u{c}'], " ");
+    let mut tokens: Vec<&str> = flattened.split_whitespace().collect();
+    let mut unmodellable = None;
+
+    loop {
+        // Grouping and negation can be glued to the command (`(rm`, `!rm`) or stand alone.
+        while let Some(first) = tokens.first().copied() {
+            let stripped = first.trim_start_matches(['(', '{', '!', ' ']);
+            if stripped == first {
+                break;
+            }
+            if stripped.is_empty() {
+                tokens.remove(0);
+            } else {
+                tokens[0] = stripped;
+            }
+        }
+
+        let Some(&head) = tokens.first() else { break };
+
+        if is_assignment_prefix(head) {
+            tokens.remove(0);
+            continue;
+        }
+
+        // A wrapper is recognised by its basename, so `/usr/bin/sudo` strips too.
+        let head_base = head.rsplit('/').next().unwrap_or(head);
+
+        if INDIRECT.contains(&head_base) {
+            unmodellable = Some(UnmodellableConstruct::IndirectExecution);
+            break;
+        }
+
+        let Some((_, value_flags, positionals)) =
+            WRAPPERS.iter().find(|(name, _, _)| *name == head_base)
+        else {
+            break;
+        };
+        tokens.remove(0);
+
+        // Skip the wrapper's own options. A flag known to take a value consumes the next
+        // token as well, so `sudo -u root rm` does not resolve to `root`.
+        while let Some(&opt) = tokens.first() {
+            if !opt.starts_with('-') || opt == "-" || opt == "--" {
+                break;
+            }
+            tokens.remove(0);
+            if value_flags.contains(&opt) && !tokens.is_empty() {
+                tokens.remove(0);
+            }
+        }
+
+        // `timeout` takes a mandatory DURATION before the command it runs.
+        for _ in 0..*positionals {
+            if tokens.len() > 1 {
+                tokens.remove(0);
+            }
+        }
+    }
+
+    if tokens.is_empty() {
+        return ResolvedStatement {
+            resolved: statement.trim().to_string(),
+            unmodellable,
+        };
+    }
+
+    // A command word containing an expansion has no name until the shell runs. Reporting
+    // it beats resolving `r$Y` to the literal string `r$Y` and matching nothing.
+    if tokens[0].contains('$') {
+        unmodellable = unmodellable.or(Some(UnmodellableConstruct::ExpandedCommandWord));
+    }
+
+    // `/bin/rm` and `./rm` are the same invocation as `rm` to anyone writing a rule.
+    let head = tokens[0];
+    let base = head.rsplit('/').next().unwrap_or(head);
+    if !base.is_empty() {
+        tokens[0] = base;
+    }
+
+    ResolvedStatement {
+        resolved: tokens.join(" "),
+        unmodellable,
     }
 }

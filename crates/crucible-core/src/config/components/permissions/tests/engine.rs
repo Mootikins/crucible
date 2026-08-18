@@ -1,5 +1,6 @@
 use super::super::*;
 use super::config_with_rules;
+use test_case::test_case;
 
 #[test]
 fn engine_layer_0_denies_destructive_bash() {
@@ -518,4 +519,133 @@ fn interactive_ask_default_returns_ask() {
             rule_matched: false
         }
     );
+}
+
+// ── deny rules follow the command, not its spelling ────────────────────────
+//
+// A `deny` glob is literal text, so before this it only fired when the statement began
+// with the exact word the rule named. Every spelling below reaches `rm` and used to slip
+// past `deny = ["bash:rm *"]` — under `default = "allow"` silently, as an Allow.
+
+fn blocklist(default: PermissionMode) -> PermissionEngine {
+    PermissionEngine::new(Some(&config_with_rules(
+        default,
+        &["bash:git *", "bash:echo *"],
+        &["bash:rm *", "bash:curl *"],
+        &[],
+    )))
+}
+
+#[test_case("(rm -rf /tmp/x)" ; "subshell")]
+#[test_case("{ rm -rf /tmp/x; }" ; "brace_group")]
+#[test_case("! rm -rf /tmp/x" ; "negation")]
+#[test_case("time rm -rf /tmp/x" ; "time")]
+#[test_case("nohup rm -rf /tmp/x" ; "nohup")]
+#[test_case("command rm -rf /tmp/x" ; "command_builtin")]
+#[test_case("xargs rm -rf" ; "xargs")]
+#[test_case("/bin/rm -rf /tmp/x" ; "absolute_path")]
+#[test_case("./rm -rf /tmp/x" ; "relative_path")]
+#[test_case("env FOO=1 rm -rf /tmp/x" ; "env_wrapper")]
+#[test_case("FOO=1 BAR=2 rm -rf /tmp/x" ; "assignment_prefixes")]
+#[test_case("sudo -u root rm -rf /tmp/x" ; "sudo_with_a_flag_value")]
+#[test_case("timeout 5 rm -rf /tmp/x" ; "timeout_with_a_duration")]
+#[test_case("nice -n 10 rm -rf /tmp/x" ; "nice_with_a_flag_value")]
+#[test_case("rm\t-rf /tmp/x" ; "tab_separated")]
+#[test_case("watch rm -rf /tmp/x" ; "watch")]
+#[test_case("strace rm -rf /tmp/x" ; "strace")]
+#[test_case("flock /tmp/lock rm -rf /tmp/x" ; "flock_consumes_its_lockfile")]
+#[test_case("chroot / rm -rf /tmp/x" ; "chroot_consumes_its_root")]
+#[test_case("git status && sudo rm -rf /tmp/x" ; "wrapped_in_a_later_segment")]
+fn a_deny_rule_follows_the_command_through_its_wrappers(input: &str) {
+    for default in [PermissionMode::Ask, PermissionMode::Allow] {
+        assert!(
+            matches!(
+                blocklist(default).evaluate("bash", input, true),
+                PermissionDecision::Deny { .. }
+            ),
+            "{input:?} under default={default:?} must be denied",
+        );
+    }
+}
+
+/// Resolution feeds `deny` and `ask` only. Widening `allow` the same way would hand
+/// `time git status` an `allow` written for `git *` — the gate must only ever tighten.
+#[test_case("time git status" ; "wrapped_allow_match")]
+#[test_case("sudo git status" ; "sudo_wrapped_allow_match")]
+fn stripping_a_wrapper_never_grants_an_allow_it_did_not_have(input: &str) {
+    assert!(matches!(
+        blocklist(PermissionMode::Ask).evaluate("bash", input, true),
+        PermissionDecision::Ask { .. }
+    ));
+}
+
+#[test_case("git status" ; "plain_allow")]
+#[test_case("echo hi" ; "echo")]
+#[test_case("git status && echo hi" ; "chain_of_allows")]
+fn ordinary_allowed_commands_are_unaffected(input: &str) {
+    assert!(matches!(
+        blocklist(PermissionMode::Ask).evaluate("bash", input, true),
+        PermissionDecision::Allow
+    ));
+}
+
+/// An interpreter takes its program as data, so no inspection can say what runs. Under
+/// `default = "allow"` that must still not silently bypass a configured `deny` list.
+#[test_case("eval \"rm -rf /tmp/x\"" ; "eval")]
+#[test_case("sh -c \"rm -rf /tmp/x\"" ; "sh_dash_c")]
+fn an_interpreter_prompts_rather_than_inheriting_an_allow_default(input: &str) {
+    for default in [PermissionMode::Ask, PermissionMode::Allow] {
+        assert!(
+            matches!(
+                blocklist(default).evaluate("bash", input, true),
+                PermissionDecision::Ask { .. }
+            ),
+            "{input:?} under default={default:?} must prompt",
+        );
+    }
+}
+
+/// With no `deny` rules there is nothing that could fail to be enforced, so an
+/// unreadable statement keeps the operator's `allow` default.
+#[test]
+fn an_interpreter_keeps_the_allow_default_when_no_deny_rule_exists() {
+    let engine = PermissionEngine::new(Some(&config_with_rules(
+        PermissionMode::Allow,
+        &[],
+        &[],
+        &[],
+    )));
+    assert!(matches!(
+        engine.evaluate("bash", "eval \"echo hi\"", true),
+        PermissionDecision::Allow
+    ));
+}
+
+/// A command word assembled by expansion has no name to match until the shell runs, so
+/// it prompts rather than being read as the literal text `r$Y`.
+#[test_case("r$Y -rf /tmp/x" ; "partial_expansion")]
+#[test_case("${CMD} -rf /tmp/x" ; "whole_word_expansion")]
+fn an_expanded_command_word_prompts_rather_than_matching_its_literal_text(input: &str) {
+    for default in [PermissionMode::Ask, PermissionMode::Allow] {
+        assert!(
+            matches!(
+                blocklist(default).evaluate("bash", input, true),
+                PermissionDecision::Ask { .. }
+            ),
+            "{input:?} under default={default:?} must prompt",
+        );
+    }
+}
+
+/// The limit this fix does NOT reach, pinned so it is a known shape rather than a
+/// surprise: a rule naming `rm` is a rule about `rm`. A different program that happens
+/// to delete files is a different command, and no amount of command-word resolution
+/// makes `deny = ["bash:rm *"]` cover it. Deny the tool or name the program.
+#[test_case("find . -delete" ; "find_delete")]
+#[test_case("perl -e 'unlink \"x\"'" ; "perl_unlink")]
+fn a_different_program_that_deletes_is_not_covered_by_a_rule_naming_rm(input: &str) {
+    assert!(matches!(
+        blocklist(PermissionMode::Allow).evaluate("bash", input, true),
+        PermissionDecision::Allow
+    ));
 }
