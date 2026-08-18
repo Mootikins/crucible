@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-08-18
+
+### Security
+- **Any quoting of a command word defeated a `deny` rule.** The engine removed
+  wrappers and paths, but never quotes, so `\rm`, `"rm"`, `'rm'`, `r""m` and
+  `r\m` all slipped past `deny = ["bash:rm *"]`. `\rm` is the standard way to
+  bypass an alias. One backslash also disabled the interpreter check, so
+  `\sh -c "rm -rf /"` and `\eval "rm -rf /"` ran without a prompt. The engine
+  now removes quoting before it reads the command.
+- **`python -c`, `perl -e`, `node -e`, `ruby -e` and `php -r` now prompt.** They
+  take a program as data, exactly as `sh -c` does, and were not on the list.
+
+### Breaking
+- A line that runs an interpreter now falls to your `default`. Under
+  `default = "ask"` it prompts where it ran without a prompt before.
+
+### Documentation
+- **Both permission pages now state that command blocking is best-effort and
+  must not be relied on to prevent a catastrophic action.** A rule reads text; a
+  shell decides behaviour at run time. Each page names what the engine cannot
+  see — an alias, a shell function, `$PATH` order, an unknown wrapper program, a
+  different program with the same effect, a command name built from a variable —
+  and points at container isolation as the control that holds.
+- Removed a false claim in the modes page that the engine does not unwrap
+  `xargs`, `eval` or `sh -c`. It does.
+
+
 ## [0.28.0] - 2026-08-18
 
 ### Breaking
