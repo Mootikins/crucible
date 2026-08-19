@@ -10,9 +10,10 @@
 # Blocked on the daemon-owns-setup refactor.
 crates/crucible-daemon/src/provider/genai_handle.rs
 
-# dispatch.rs is the canonical RPC method registry: METHODS const +
-# match arms for every method + per-method handler wrappers. Each new
-# RPC adds 20-40 lines structurally. Slated for a registry-table
-# decomposition (one match arm per category) once the table shape
-# stabilises.
+# dispatch.rs is the canonical RPC method registry: the METHODS const, a
+# match arm for every method, and the 24 handlers that do more than
+# forward to a server module. The per-method wrapper tier is gone, so a
+# new RPC that only forwards now costs one arm. Slated for a
+# registry-table decomposition (one match arm per category) once the
+# table shape stabilises.
 crates/crucible-daemon/src/rpc/dispatch.rs
