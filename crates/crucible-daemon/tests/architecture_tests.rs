@@ -1159,6 +1159,29 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "LuaRegisterCommandsRequest",
         "crates/crucible-daemon/src/server/lua.rs",
     ),
+    (
+        "McpStartRequest",
+        "crates/crucible-daemon/src/server/platform.rs",
+    ),
+    (
+        "SkillsListRequest",
+        "crates/crucible-daemon/src/server/platform.rs",
+    ),
+    (
+        "SkillsGetRequest",
+        "crates/crucible-daemon/src/server/platform.rs",
+    ),
+    (
+        "SkillsSearchRequest",
+        "crates/crucible-daemon/src/server/platform.rs",
+    ),
+    // `NameRequest` carries a single `name` and serves two methods:
+    // `agents.resolve_profile` (platform.rs) and `plugin.reload` (plugins.rs).
+    // One row per server file, because the row IS "this file deserializes it".
+    (
+        "NameRequest",
+        "crates/crucible-daemon/src/server/platform.rs",
+    ),
 ];
 
 /// Handlers that still hand-pluck their fields. REMOVE rows; never add.

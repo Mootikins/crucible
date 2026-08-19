@@ -63,7 +63,11 @@ pub use lua::{
 // now deserializes it: the client struct IS the server's contract rather than
 // a shape the server re-derives by hand.
 pub use session::{SessionAgentSpec, SessionCreateParams, SessionCreateRequest};
-pub use types::{DaemonCapabilities, NameRequest, SessionEvent, VersionCheck};
+pub use storage::McpStartRequest;
+pub use types::{
+    DaemonCapabilities, NameRequest, SessionEvent, SkillsGetRequest, SkillsListRequest,
+    SkillsSearchRequest, VersionCheck,
+};
 
 use session::SessionIdRequest;
 use types::{extract_string_array, EmptyParams};

@@ -55,32 +55,34 @@ pub struct PathRequest {
 }
 
 /// Request for methods that take only a name.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct NameRequest {
     pub name: String,
 }
 
 /// Request for `skills.list`.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SkillsListRequest {
     pub kiln_path: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope_filter: Option<String>,
 }
 
 /// Request for `skills.get`.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SkillsGetRequest {
     pub name: String,
     pub kiln_path: String,
 }
 
 /// Request for `skills.search`.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SkillsSearchRequest {
     pub query: String,
     pub kiln_path: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Absent means the server's own default (20), not zero — so the server
+    /// keeps the `unwrap_or` rather than serde defaulting the field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<usize>,
 }
 

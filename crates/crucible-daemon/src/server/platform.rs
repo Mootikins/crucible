@@ -1,4 +1,5 @@
 use super::*;
+use crate::rpc_helpers::typed_params;
 
 pub(crate) async fn handle_mcp_start(
     req: Request,
@@ -6,17 +7,25 @@ pub(crate) async fn handle_mcp_start(
     mcp_mgr: &Arc<McpServerManager>,
     plugin_tools: Option<Arc<crate::plugin_tools::PluginRegistry>>,
 ) -> Response {
-    let kiln_path = require_param!(req, "kiln_path", as_str);
-    let transport = optional_param!(req, "transport", as_str).unwrap_or("sse");
-    let port = optional_param!(req, "port", as_u64).unwrap_or(3847) as u16;
-    let no_just = optional_param!(req, "no_just", as_bool).unwrap_or(false);
-    // `just_dir` is still accepted and ignored: it fed the annotation-scanned
-    // Lua tool discovery that `cru mcp` no longer does, and dropping the param
-    // would break callers that send it.
-    let _ = optional_param!(req, "just_dir", as_str);
+    // The client's own request type is the contract (gate A6): it derives
+    // `Deserialize`, the client serializes it, and re-deriving its five field
+    // names here is what let `LuaInitSessionRequest.config` drift.
+    let params = match typed_params::<crate::rpc_client::McpStartRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let transport = params.transport.as_deref().unwrap_or("sse");
+    let port = params.port.unwrap_or(3847);
 
     match mcp_mgr
-        .start(km, transport, port, kiln_path, no_just, plugin_tools)
+        .start(
+            km,
+            transport,
+            port,
+            &params.kiln_path,
+            params.no_just,
+            plugin_tools,
+        )
         .await
     {
         Ok(result) => Response::success(req.id, result),
@@ -37,8 +46,12 @@ pub(crate) async fn handle_mcp_status(req: Request, mcp_mgr: &Arc<McpServerManag
 }
 
 pub(crate) async fn handle_skills_list(req: Request) -> Response {
-    let kiln_path = require_param!(req, "kiln_path", as_str).to_string();
-    let scope_filter = optional_param!(req, "scope_filter", as_str).map(|s| s.to_string());
+    let params = match typed_params::<crate::rpc_client::SkillsListRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let kiln_path = params.kiln_path;
+    let scope_filter = params.scope_filter;
 
     let result = tokio::task::spawn_blocking(move || {
         let cwd = std::env::current_dir().unwrap_or_default();
@@ -83,8 +96,12 @@ pub(crate) async fn handle_skills_list(req: Request) -> Response {
 }
 
 pub(crate) async fn handle_skills_get(req: Request) -> Response {
-    let name = require_param!(req, "name", as_str).to_string();
-    let kiln_path = require_param!(req, "kiln_path", as_str).to_string();
+    let params = match typed_params::<crate::rpc_client::SkillsGetRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let name = params.name;
+    let kiln_path = params.kiln_path;
 
     let result = tokio::task::spawn_blocking(move || {
         let cwd = std::env::current_dir().unwrap_or_default();
@@ -120,9 +137,13 @@ pub(crate) async fn handle_skills_get(req: Request) -> Response {
 }
 
 pub(crate) async fn handle_skills_search(req: Request) -> Response {
-    let query = require_param!(req, "query", as_str).to_string();
-    let kiln_path = require_param!(req, "kiln_path", as_str).to_string();
-    let limit = optional_param!(req, "limit", as_u64).unwrap_or(20) as usize;
+    let params = match typed_params::<crate::rpc_client::SkillsSearchRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let query = params.query;
+    let kiln_path = params.kiln_path;
+    let limit = params.limit.unwrap_or(20);
 
     let result = tokio::task::spawn_blocking(move || {
         let cwd = std::env::current_dir().unwrap_or_default();
@@ -210,7 +231,10 @@ pub(crate) async fn handle_agents_resolve_profile(
     req: Request,
     agent_manager: &Arc<AgentManager>,
 ) -> Response {
-    let name = require_param!(req, "name", as_str).to_string();
+    let name = match typed_params::<crate::rpc_client::NameRequest>(&req) {
+        Ok(p) => p.name,
+        Err(response) => return *response,
+    };
     let profiles = agent_manager.build_available_agents();
     let builtins = crate::acp::discovery::default_agent_profiles();
 

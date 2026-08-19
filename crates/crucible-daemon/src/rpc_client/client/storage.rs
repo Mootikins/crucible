@@ -123,15 +123,24 @@ pub struct StorageRestoreRequest {
 }
 
 /// Request for `mcp.start`.
-#[derive(Debug, Clone, serde::Serialize)]
+///
+/// Every field but `kiln_path` defaults, because the server used to read them
+/// with `optional_param!` and substitute its own default. `transport` and
+/// `port` stay `Option` so the substitution keeps happening in the handler,
+/// where the default values are visible next to the call they configure.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct McpStartRequest {
     pub kiln_path: String,
+    #[serde(default)]
     pub no_just: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transport: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub port: Option<u16>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Accepted and ignored: it fed the annotation-scanned Lua tool discovery
+    /// that `cru mcp` no longer does. Dropping it would break callers that
+    /// still send it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub just_dir: Option<String>,
 }
 
