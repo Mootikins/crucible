@@ -5,6 +5,8 @@
 
 mod context;
 mod dispatch;
+#[cfg(test)]
+mod missing_session_contract;
 mod params;
 pub(crate) mod ui;
 mod workflow_handlers;
