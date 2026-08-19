@@ -232,7 +232,7 @@ fn default_replay_speed() -> f64 {
 }
 
 /// Request for `session.resume_from_storage`.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionResumeFromStorageRequest {
     pub session_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]

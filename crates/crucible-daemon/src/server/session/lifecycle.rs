@@ -1,8 +1,13 @@
 use super::super::*;
-use crate::{optional_param, require_param, require_session_id};
+use crate::rpc_client::{SessionIdRequest, SessionResumeFromStorageRequest};
+use crate::rpc_helpers::{session_id_field, typed_params};
 
 pub(crate) async fn handle_session_pause(req: Request, sm: &Arc<SessionManager>) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
+    let params = match typed_params::<SessionIdRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &params.session_id;
 
     match sm.pause_session(session_id).await {
         Ok(previous_state) => Response::success(
@@ -18,7 +23,11 @@ pub(crate) async fn handle_session_pause(req: Request, sm: &Arc<SessionManager>)
 }
 
 pub(crate) async fn handle_session_resume(req: Request, sm: &Arc<SessionManager>) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
+    let params = match typed_params::<SessionIdRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &params.session_id;
 
     match sm.resume_session(session_id).await {
         Ok(previous_state) => Response::success(
@@ -37,11 +46,15 @@ pub(crate) async fn handle_session_resume_from_storage(
     req: Request,
     sm: &Arc<SessionManager>,
 ) -> Response {
-    let session_id = &require_session_id!(req);
-
-    // Optional pagination params
-    let limit = optional_param!(req, "limit", as_u64).map(|n| n as usize);
-    let offset = optional_param!(req, "offset", as_u64).map(|n| n as usize);
+    let params = match typed_params::<SessionResumeFromStorageRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &match session_id_field(&params.session_id, &req) {
+        Ok(id) => id,
+        Err(response) => return *response,
+    };
+    let (limit, offset) = (params.limit, params.offset);
 
     // Resume session from storage
     let session = match sm.resume_session_from_storage(session_id).await {
@@ -91,7 +104,11 @@ pub(crate) async fn handle_session_end(
     sm: &Arc<SessionManager>,
     am: &Arc<AgentManager>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
+    let params = match typed_params::<SessionIdRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &params.session_id;
 
     match sm.end_session(session_id).await {
         Ok(session) => {
@@ -114,7 +131,14 @@ pub(crate) async fn handle_session_delete(
     sm: &Arc<SessionManager>,
     am: &Arc<AgentManager>,
 ) -> Response {
-    let session_id = &require_session_id!(req);
+    let params = match typed_params::<SessionIdRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &match session_id_field(&params.session_id, &req) {
+        Ok(id) => id,
+        Err(response) => return *response,
+    };
 
     match sm.delete_session(session_id).await {
         Ok(()) => {
@@ -145,7 +169,14 @@ pub(crate) async fn handle_session_archive(
     sm: &Arc<SessionManager>,
     am: &Arc<AgentManager>,
 ) -> Response {
-    let session_id = &require_session_id!(req);
+    let params = match typed_params::<SessionIdRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &match session_id_field(&params.session_id, &req) {
+        Ok(id) => id,
+        Err(response) => return *response,
+    };
 
     match sm.archive_session(session_id).await {
         Ok(session) => {
@@ -176,7 +207,14 @@ pub(crate) async fn handle_session_unarchive(
     sm: &Arc<SessionManager>,
     am: &Arc<AgentManager>,
 ) -> Response {
-    let session_id = &require_session_id!(req);
+    let params = match typed_params::<SessionIdRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &match session_id_field(&params.session_id, &req) {
+        Ok(id) => id,
+        Err(response) => return *response,
+    };
 
     match sm.unarchive_session(session_id).await {
         Ok(session) => {
@@ -198,11 +236,10 @@ pub(crate) async fn handle_session_replay(
     sm: &Arc<SessionManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let params =
-        match crate::rpc_helpers::typed_params::<crate::rpc_client::SessionReplayRequest>(&req) {
-            Ok(p) => p,
-            Err(response) => return *response,
-        };
+    let params = match typed_params::<crate::rpc_client::SessionReplayRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
     let speed = params.speed;
 
     let recording_path = PathBuf::from(params.recording_path);
@@ -236,7 +273,11 @@ pub(crate) async fn handle_session_replay(
 }
 
 pub(crate) async fn handle_session_compact(req: Request, sm: &Arc<SessionManager>) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
+    let params = match typed_params::<SessionIdRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &params.session_id;
 
     match sm.request_compaction(session_id).await {
         Ok(session) => Response::success(

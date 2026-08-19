@@ -32,7 +32,8 @@ pub use client::{
     PluginRunCommandRequest, PluginTestFailure, PluginTestLoadFailure, ProcessFileRequest,
     ScmCloneRequest, SearchVectorsRequest, SessionAgentSpec, SessionCreateParams,
     SessionCreateRequest, SessionEvent, SessionIdRequest, SessionReplayRequest,
-    SessionSetTitleRequest, SkillsGetRequest, SkillsListRequest, SkillsSearchRequest, VersionCheck,
+    SessionResumeFromStorageRequest, SessionSetTitleRequest, SkillsGetRequest, SkillsListRequest,
+    SkillsSearchRequest, VersionCheck,
 };
 pub use error_ext::ChatResultExt;
 pub use storage::{DaemonNoteStore, DaemonStorageClient};

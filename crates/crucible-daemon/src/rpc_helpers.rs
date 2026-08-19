@@ -128,6 +128,33 @@ pub fn typed_params<T: serde::de::DeserializeOwned>(
     })
 }
 
+/// Validate a `session_id` a request struct has already deserialized.
+///
+/// The typed counterpart of [`require_session_id!`]. `typed_params` reads the
+/// field *name* once; this applies the same single-path-component rule to its
+/// *value* and answers with the same `INVALID_PARAMS` text, so a handler that
+/// moves from the macro to a request struct still refuses `../../Documents`
+/// with the message its callers already see.
+///
+/// The one answer that does change is an absent or non-string `session_id`:
+/// the macro said "Missing or invalid 'session_id' parameter", and serde
+/// refuses the whole payload before this is ever reached.
+///
+/// The error is boxed for the same reason [`typed_params`] boxes its own:
+/// `Response` is 216 bytes and an unboxed `Err` makes every `Ok` that large.
+pub fn session_id_field(
+    raw: &str,
+    req: &crate::protocol::Request,
+) -> Result<crucible_core::session::SessionId, Box<crate::protocol::Response>> {
+    crucible_core::session::SessionId::parse(raw).map_err(|e| {
+        Box::new(crate::protocol::Response::error(
+            req.id.clone(),
+            crate::protocol::INVALID_PARAMS,
+            format!("Invalid 'session_id' parameter: {e}"),
+        ))
+    })
+}
+
 // Re-export macros for use in sibling modules via `use crate::rpc_helpers::*`
 // These are preemptive exports - not all are used yet but will be as handlers grow
 #[allow(unused_imports)]

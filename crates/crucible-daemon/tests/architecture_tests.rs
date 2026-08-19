@@ -1258,6 +1258,17 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "SessionReplayRequest",
         "crates/crucible-daemon/src/server/session/lifecycle.rs",
     ),
+    // `SessionIdRequest` is the one-field shape a dozen methods share, so it
+    // earns a row per server file that deserializes it — the row IS "this file
+    // reads the wire contract instead of re-spelling `session_id`".
+    (
+        "SessionIdRequest",
+        "crates/crucible-daemon/src/server/session/lifecycle.rs",
+    ),
+    (
+        "SessionResumeFromStorageRequest",
+        "crates/crucible-daemon/src/server/session/lifecycle.rs",
+    ),
     (
         "ListAllModelsRequest",
         "crates/crucible-daemon/src/server/session/models.rs",
