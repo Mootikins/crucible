@@ -27,7 +27,13 @@ DISPATCH = ROOT / "crates/crucible-daemon/src/rpc/dispatch.rs"
 
 # What a preamble step can be. Order matters only for reporting.
 STEPS = [
-    ("param", re.compile(r"require_param!|req\.params\.get\(")),
+    (
+        "param",
+        re.compile(
+            r"require_param!|optional_param!|require_session_id!"
+            r"|typed_params::<|parse_params|\.params\s*\.get\("
+        ),
+    ),
     ("kiln", re.compile(r"get_or_open\(|kiln_manager|km\.")),
     ("scope", re.compile(r"request_scope\(|Scope::|scope\b")),
     ("session", re.compile(r"session_id|get_session\(")),
@@ -77,8 +83,26 @@ def handler_bodies():
                 if depth <= 0:
                     break
                 body.append(ln)
-        found.append((path, name.group(1), body))
+        found.append((path, name.group(1), join_continuations(body)))
     return found
+
+
+def join_continuations(lines):
+    """Merge a method-chain continuation into the line it continues.
+
+    `req\n    .params\n    .get("session_id")` is one parameter read, but a
+    per-line scan sees three lines and matches none of them. Every regex in
+    STEPS is single-line, so the join must happen before the scan or the probe
+    reports a shape the code does not have.
+    """
+    joined = []
+    for ln in lines:
+        s = ln.strip()
+        if joined and (s.startswith(".") or s.startswith("?")):
+            joined[-1] = joined[-1] + " " + s
+            continue
+        joined.append(ln)
+    return joined
 
 
 def preamble_of(body):
