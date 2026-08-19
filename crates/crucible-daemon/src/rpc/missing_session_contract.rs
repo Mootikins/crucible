@@ -126,42 +126,122 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
         // ── 1. refuses, naming the session ──────────────────────────────────
         ("session.get", json!({}), not_found()),
         ("session.fork", json!({}), not_found()),
-        ("session.switch_model", json!({"model_id": "m"}), not_found()),
+        (
+            "session.switch_model",
+            json!({"model_id": "m"}),
+            not_found(),
+        ),
         ("session.list_models", json!({}), not_found()),
         ("session.list_modes", json!({}), not_found()),
         ("session.connect_kiln", json!({"kiln": "kiln"}), not_found()),
-        ("session.disconnect_kiln", json!({"kiln": "kiln"}), not_found()),
-        ("session.set_workspace", json!({"workspace": workspace}), not_found()),
-        ("session.inject_context", json!({"role": "user", "content": "c"}), not_found()),
+        (
+            "session.disconnect_kiln",
+            json!({"kiln": "kiln"}),
+            not_found(),
+        ),
+        (
+            "session.set_workspace",
+            json!({"workspace": workspace}),
+            not_found(),
+        ),
+        (
+            "session.inject_context",
+            json!({"role": "user", "content": "c"}),
+            not_found(),
+        ),
         ("session.list_notifications", json!({}), not_found()),
-        ("session.dismiss_notification", json!({"notification_id": "n"}), not_found()),
+        (
+            "session.dismiss_notification",
+            json!({"notification_id": "n"}),
+            not_found(),
+        ),
         ("session.undo", json!({}), not_found()),
         ("session.can_undo", json!({}), not_found()),
         ("session.undo_depth", json!({}), not_found()),
         // the pinned `require_param!` setters and every generated config knob
-        ("session.set_mode", json!({"mode_id": "normal"}), not_found()),
+        (
+            "session.set_mode",
+            json!({"mode_id": "normal"}),
+            not_found(),
+        ),
         ("session.get_mode", json!({}), not_found()),
-        ("session.set_thinking_budget", json!({"thinking_budget": 100}), not_found()),
+        (
+            "session.set_thinking_budget",
+            json!({"thinking_budget": 100}),
+            not_found(),
+        ),
         ("session.get_thinking_budget", json!({}), not_found()),
-        ("session.set_temperature", json!({"temperature": 0.5}), not_found()),
+        (
+            "session.set_temperature",
+            json!({"temperature": 0.5}),
+            not_found(),
+        ),
         ("session.get_temperature", json!({}), not_found()),
-        ("session.set_max_tokens", json!({"max_tokens": 10}), not_found()),
+        (
+            "session.set_max_tokens",
+            json!({"max_tokens": 10}),
+            not_found(),
+        ),
         ("session.get_max_tokens", json!({}), not_found()),
-        ("session.set_max_iterations", json!({"max_iterations": 3}), not_found()),
-        ("session.set_execution_timeout", json!({"execution_timeout": 3}), not_found()),
-        ("session.set_context_budget", json!({"context_budget": 3}), not_found()),
-        ("session.set_context_window", json!({"context_window": 3}), not_found()),
-        ("session.set_context_strategy", json!({"context_strategy": "truncate"}), not_found()),
+        (
+            "session.set_max_iterations",
+            json!({"max_iterations": 3}),
+            not_found(),
+        ),
+        (
+            "session.set_execution_timeout",
+            json!({"execution_timeout": 3}),
+            not_found(),
+        ),
+        (
+            "session.set_context_budget",
+            json!({"context_budget": 3}),
+            not_found(),
+        ),
+        (
+            "session.set_context_window",
+            json!({"context_window": 3}),
+            not_found(),
+        ),
+        (
+            "session.set_context_strategy",
+            json!({"context_strategy": "truncate"}),
+            not_found(),
+        ),
         ("session.get_context_strategy", json!({}), not_found()),
-        ("session.set_output_validation", json!({"output_validation": "off"}), not_found()),
+        (
+            "session.set_output_validation",
+            json!({"output_validation": "off"}),
+            not_found(),
+        ),
         ("session.get_output_validation", json!({}), not_found()),
-        ("session.set_validation_retries", json!({"validation_retries": 3}), not_found()),
-        ("session.set_system_prompt", json!({"system_prompt": "x"}), not_found()),
+        (
+            "session.set_validation_retries",
+            json!({"validation_retries": 3}),
+            not_found(),
+        ),
+        (
+            "session.set_system_prompt",
+            json!({"system_prompt": "x"}),
+            not_found(),
+        ),
         ("session.get_system_prompt", json!({}), not_found()),
-        ("session.set_precognition", json!({"precognition": true}), not_found()),
+        (
+            "session.set_precognition",
+            json!({"precognition": true}),
+            not_found(),
+        ),
         ("session.get_precognition", json!({}), not_found()),
-        ("session.set_precognition_results", json!({"precognition_results": 3}), not_found()),
-        ("session.set_autocompact_threshold", json!({"autocompact_threshold": 0.5}), not_found()),
+        (
+            "session.set_precognition_results",
+            json!({"precognition_results": 3}),
+            not_found(),
+        ),
+        (
+            "session.set_autocompact_threshold",
+            json!({"autocompact_threshold": 0.5}),
+            not_found(),
+        ),
         ("session.get_autocompact_threshold", json!({}), not_found()),
         // ── 2. refuses, naming the OPERATION and never the session ──────────
         // The session-manager state machine answers before anything reports a
@@ -169,7 +249,11 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
         // "wrong state" on any of these.
         ("session.pause", json!({}), bad_state!("pause")),
         ("session.resume", json!({}), bad_state!("resume")),
-        ("session.resume_from_storage", json!({}), bad_state!("resume_from_storage")),
+        (
+            "session.resume_from_storage",
+            json!({}),
+            bad_state!("resume_from_storage"),
+        ),
         ("session.end", json!({}), bad_state!("end")),
         ("session.archive", json!({}), bad_state!("archive")),
         ("session.unarchive", json!({}), bad_state!("unarchive")),
@@ -177,9 +261,21 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
         ("session.compact", json!({}), bad_state!("compact")),
         // ── 3. refuses, naming the LEDGER ───────────────────────────────────
         ("review.rebase", json!({}), no_ledger()),
-        ("review.set_state", json!({"hunk_id": "h", "state": "accepted"}), no_ledger()),
-        ("review.comment", json!({"path": "p", "body": "b", "line_start": 1}), no_ledger()),
-        ("review.resolve_comment", json!({"comment_id": "c"}), no_ledger()),
+        (
+            "review.set_state",
+            json!({"hunk_id": "h", "state": "accepted"}),
+            no_ledger(),
+        ),
+        (
+            "review.comment",
+            json!({"path": "p", "body": "b", "line_start": 1}),
+            no_ledger(),
+        ),
+        (
+            "review.resolve_comment",
+            json!({"comment_id": "c"}),
+            no_ledger(),
+        ),
         // ── 4. refuses, WRAPPING the not-found text in its own ──────────────
         (
             "session.set_title",
@@ -208,13 +304,21 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
                 "hit_rate": serde_json::Value::Null,
             })),
         ),
-        ("session.load_events", json!({}), Answer::Succeeds(json!([]))),
+        (
+            "session.load_events",
+            json!({}),
+            Answer::Succeeds(json!([])),
+        ),
         (
             "session.render_markdown",
             json!({}),
             Answer::Succeeds(json!({"markdown": ""})),
         ),
-        ("session.status", json!({}), Answer::Succeeds(json!({"status": []}))),
+        (
+            "session.status",
+            json!({}),
+            Answer::Succeeds(json!({"status": []})),
+        ),
         (
             "review.list_hunks",
             json!({}),
@@ -228,7 +332,9 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
         (
             "session.export_to_file",
             json!({"output_path": out}),
-            Answer::Succeeds(json!({"status": "ok", "output_path": ws.join("export.md").to_string_lossy()})),
+            Answer::Succeeds(
+                json!({"status": "ok", "output_path": ws.join("export.md").to_string_lossy()}),
+            ),
         ),
         // Never looks at the session at all: it mints a request id and returns.
         (
@@ -236,7 +342,9 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
             json!({"kind": "toast"}),
             Answer::SucceedsWith(|v| {
                 v["session_id"] == json!(GHOST)
-                    && v["request_id"].as_str().is_some_and(|s| s.starts_with("test-"))
+                    && v["request_id"]
+                        .as_str()
+                        .is_some_and(|s| s.starts_with("test-"))
             }),
         ),
     ]
@@ -359,7 +467,9 @@ async fn the_handlers_that_resolve_a_session_disagree_about_an_absent_one() {
             make_request("session.get", json!({"session_id": GHOST})),
         )
         .await;
-    let err = resp.error.expect("session.get must refuse an absent session");
+    let err = resp
+        .error
+        .expect("session.get must refuse an absent session");
     assert_eq!(err.code, INVALID_PARAMS);
     assert_eq!(err.message, format!("Session not found: {GHOST}"));
 }
