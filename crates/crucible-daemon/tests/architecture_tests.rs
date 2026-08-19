@@ -1182,7 +1182,10 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "NameRequest",
         "crates/crucible-daemon/src/server/platform.rs",
     ),
-    ("KilnOpenRequest", "crates/crucible-daemon/src/server/kiln.rs"),
+    (
+        "KilnOpenRequest",
+        "crates/crucible-daemon/src/server/kiln.rs",
+    ),
     (
         "KilnSetClassificationRequest",
         "crates/crucible-daemon/src/server/kiln.rs",
@@ -1207,8 +1210,14 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "FsListDirRequest",
         "crates/crucible-daemon/src/server/fs/mod.rs",
     ),
-    ("FsMoveRequest", "crates/crucible-daemon/src/server/fs/mod.rs"),
-    ("FsPathRequest", "crates/crucible-daemon/src/server/fs/mod.rs"),
+    (
+        "FsMoveRequest",
+        "crates/crucible-daemon/src/server/fs/mod.rs",
+    ),
+    (
+        "FsPathRequest",
+        "crates/crucible-daemon/src/server/fs/mod.rs",
+    ),
     (
         "NameRequest",
         "crates/crucible-daemon/src/server/plugins.rs",
@@ -1229,7 +1238,10 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "PluginRunCommandRequest",
         "crates/crucible-daemon/src/server/plugins.rs",
     ),
-    ("PathRequest", "crates/crucible-daemon/src/server/plugins.rs"),
+    (
+        "PathRequest",
+        "crates/crucible-daemon/src/server/plugins.rs",
+    ),
     (
         "ScmCloneRequest",
         "crates/crucible-daemon/src/server/plugins.rs",

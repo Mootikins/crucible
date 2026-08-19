@@ -31,11 +31,11 @@ pub(crate) async fn handle_search_grep(
     pm: &Arc<ProjectManager>,
     km: &Arc<KilnManager>,
 ) -> Response {
-    let params = match crate::rpc_helpers::typed_params::<crate::rpc_client::GrepSearchRequest>(&req)
-    {
-        Ok(p) => p,
-        Err(response) => return *response,
-    };
+    let params =
+        match crate::rpc_helpers::typed_params::<crate::rpc_client::GrepSearchRequest>(&req) {
+            Ok(p) => p,
+            Err(response) => return *response,
+        };
     let root = params.root.as_str();
     let query = params.query.as_str();
     let regex = params.regex;

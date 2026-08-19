@@ -20,20 +20,19 @@ pub use client::workflow::{
     WorkflowApproveGateRequest, WorkflowSessionRequest, WorkflowStartRequest,
 };
 pub use client::{
-    DaemonCapabilities, DaemonClient, LuaDiscoverPluginsRequest, LuaDiscoverPluginsResponse,
+    DaemonCapabilities, DaemonClient, FsListDirRequest, FsMoveRequest, FsPathRequest,
+    GrepSearchRequest, KilnOpenRequest, KilnSetClassificationRequest, ListAllModelsRequest,
+    ListProvidersRequest, LuaDiscoverPluginsRequest, LuaDiscoverPluginsResponse,
     LuaGenerateStubsRequest, LuaGenerateStubsResponse, LuaInitSessionRequest,
     LuaInitSessionResponse, LuaPluginHealthRequest, LuaPluginHealthResponse,
     LuaRegisterCommandsRequest, LuaRegisterCommandsResponse, LuaRunPluginTestsRequest,
     LuaRunPluginTestsResponse, LuaShutdownSessionRequest, LuaShutdownSessionResponse,
-    FsListDirRequest, FsMoveRequest, FsPathRequest, GrepSearchRequest, KilnOpenRequest,
-    KilnSetClassificationRequest, ListAllModelsRequest, ListProvidersRequest, McpStartRequest,
-    NameRequest, NoteRenameRequest, PathRequest,
-    PluginInstallRequest, PluginOptionCallRequest, PluginOptionsRequest,
-    PluginPublicationsRequest, PluginRemoveRequest, PluginRunCommandRequest, PluginTestFailure,
-    PluginTestLoadFailure, ProcessFileRequest, ScmCloneRequest, SearchVectorsRequest,
-    SessionAgentSpec, SessionCreateParams, SessionCreateRequest, SessionEvent, SessionIdRequest,
-    SessionReplayRequest, SessionSetTitleRequest, SkillsGetRequest, SkillsListRequest,
-    SkillsSearchRequest, VersionCheck,
+    McpStartRequest, NameRequest, NoteRenameRequest, PathRequest, PluginInstallRequest,
+    PluginOptionCallRequest, PluginOptionsRequest, PluginPublicationsRequest, PluginRemoveRequest,
+    PluginRunCommandRequest, PluginTestFailure, PluginTestLoadFailure, ProcessFileRequest,
+    ScmCloneRequest, SearchVectorsRequest, SessionAgentSpec, SessionCreateParams,
+    SessionCreateRequest, SessionEvent, SessionIdRequest, SessionReplayRequest,
+    SessionSetTitleRequest, SkillsGetRequest, SkillsListRequest, SkillsSearchRequest, VersionCheck,
 };
 pub use error_ext::ChatResultExt;
 pub use storage::{DaemonNoteStore, DaemonStorageClient};

@@ -198,12 +198,11 @@ pub(crate) async fn handle_session_replay(
     sm: &Arc<SessionManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let params = match crate::rpc_helpers::typed_params::<crate::rpc_client::SessionReplayRequest>(
-        &req,
-    ) {
-        Ok(p) => p,
-        Err(response) => return *response,
-    };
+    let params =
+        match crate::rpc_helpers::typed_params::<crate::rpc_client::SessionReplayRequest>(&req) {
+            Ok(p) => p,
+            Err(response) => return *response,
+        };
     let speed = params.speed;
 
     let recording_path = PathBuf::from(params.recording_path);

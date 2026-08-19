@@ -39,9 +39,9 @@ fn validate_socket_path(path: &Path) -> Result<()> {
 // retries) lives here in `mod.rs`.
 pub mod agent;
 pub mod lua;
+pub mod plugin_requests;
 pub mod review;
 pub mod session;
-pub mod plugin_requests;
 pub mod storage;
 pub mod storage_requests;
 pub mod subscription;
@@ -65,13 +65,13 @@ pub use lua::{
 // now deserializes it: the client struct IS the server's contract rather than
 // a shape the server re-derives by hand.
 pub use agent::{ListAllModelsRequest, ListProvidersRequest};
+pub use plugin_requests::{
+    PluginInstallRequest, PluginOptionCallRequest, PluginOptionsRequest, PluginPublicationsRequest,
+    PluginRemoveRequest, PluginRunCommandRequest,
+};
 pub use session::{
     SessionAgentSpec, SessionCreateParams, SessionCreateRequest, SessionIdRequest,
     SessionReplayRequest, SessionSetTitleRequest,
-};
-pub use plugin_requests::{
-    PluginInstallRequest, PluginOptionCallRequest, PluginOptionsRequest,
-    PluginPublicationsRequest, PluginRemoveRequest, PluginRunCommandRequest,
 };
 pub use storage_requests::{
     FsListDirRequest, FsMoveRequest, FsPathRequest, GrepSearchRequest, KilnOpenRequest,

@@ -1,9 +1,9 @@
 use super::*;
+use crate::rpc_helpers::typed_params;
 use crucible_core::config::{
     read_kiln_config, read_project_config, write_kiln_config, write_project_config,
     DataClassification, KilnConfig, KilnMeta, ProjectConfig,
 };
-use crate::rpc_helpers::typed_params;
 use crucible_core::storage::Scope;
 
 /// Derive the read authority for a kiln-scoped RPC request.

@@ -74,12 +74,11 @@ pub(crate) async fn handle_plugin_install(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
-    let params = match crate::rpc_helpers::typed_params::<crate::rpc_client::PluginInstallRequest>(
-        &req,
-    ) {
-        Ok(p) => p,
-        Err(response) => return *response,
-    };
+    let params =
+        match crate::rpc_helpers::typed_params::<crate::rpc_client::PluginInstallRequest>(&req) {
+            Ok(p) => p,
+            Err(response) => return *response,
+        };
 
     let entry = crucible_core::config::PluginEntry {
         url: params.url,
@@ -165,12 +164,11 @@ pub(crate) async fn handle_plugin_remove(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
-    let params = match crate::rpc_helpers::typed_params::<crate::rpc_client::PluginRemoveRequest>(
-        &req,
-    ) {
-        Ok(p) => p,
-        Err(response) => return *response,
-    };
+    let params =
+        match crate::rpc_helpers::typed_params::<crate::rpc_client::PluginRemoveRequest>(&req) {
+            Ok(p) => p,
+            Err(response) => return *response,
+        };
     let name = params.name;
     let purge = params.purge;
 

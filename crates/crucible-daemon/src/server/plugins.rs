@@ -1,6 +1,6 @@
 use super::*;
-use crate::rpc_helpers::typed_params;
 use crate::daemon_plugins::PluginServiceFn;
+use crate::rpc_helpers::typed_params;
 
 /// Drain extracted service functions, spawn each, and record the handle
 /// against its owning plugin so reload/disable/remove can abort it. The
