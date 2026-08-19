@@ -722,7 +722,7 @@ crucible.on_session_end(function(session)
   cru.log("info", "oci: container removed " .. active.name)
 end)
 
-return {
+local plugin = {
   name = "oci",
 
   commands = {
@@ -854,3 +854,18 @@ return {
   version = "0.2.0",
   description = "Run agent tools inside OCI containers via generic hook interception",
 }
+
+-- The daemon executes this file BY PATH, not through `require`, so nothing
+-- would otherwise fill `package.loaded`. The documented
+-- `require("oci").setup{...}` from a user's init.lua would then load a
+-- SECOND copy of this file: with its own upvalues, and re-running every
+-- body-level `crucible.on_*` call in it — so the `on_session_start` and `on_session_end` handlers at :496 and :701 would be
+-- registered twice and fire twice per event. Registering the spec here makes
+-- that `require` answer with this table instead.
+--
+-- Same guard and same reason as `auto-title` and `web-search`. Enumerated
+-- across every bundled plugin on 2026-08-19 after the auto-title fix stopped
+-- at one plugin; `plugin_require_guard` pins the whole set.
+package.loaded["oci"] = plugin
+
+return plugin

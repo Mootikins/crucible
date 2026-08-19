@@ -447,6 +447,76 @@ mod shipped_plugin_tests {
 
     /// Every shipped plugin either has its suite gated or says why it does not.
     ///
+    /// A plugin that registers a hook at body level must claim its own
+    /// `package.loaded` entry.
+    ///
+    /// The daemon executes `init.lua` BY PATH (`daemon_plugins::execute_plugin`
+    /// → `lua.load(source).eval_async()`), never through `require`. So a
+    /// documented `require("<plugin>").setup{…}` in a user's `init.lua` loads a
+    /// SECOND copy of the file: new upvalues, and every body-level
+    /// `crucible.on_*` call runs again. The handler is then registered twice
+    /// and fires twice per event — for `reflection` that is two forked
+    /// cheap-model reviews and two sets of staged proposals per session end.
+    ///
+    /// This exists because fixing it once was not enough. `auto-title` was
+    /// repaired on 2026-08-18 and the enumeration stopped there; an independent
+    /// reviewer then found `reflection` and `oci` carrying the identical shape,
+    /// with `require("reflection").setup` documented in five shipped places.
+    /// That is the third instance this repo has recorded of "fixed one call
+    /// site of many", so the fix is a sweep over every plugin rather than a
+    /// third patch.
+    ///
+    /// Textual on purpose: it must fail for a plugin whose Lua the test harness
+    /// cannot construct, and the property is a property of the source.
+    #[test]
+    fn a_plugin_registering_a_hook_at_body_level_guards_its_require() {
+        let mut unguarded = Vec::new();
+
+        for entry in std::fs::read_dir(shipped_plugins_dir()).expect("runtime/plugins must exist") {
+            let dir = entry.expect("readable dir entry").path();
+            if !dir.is_dir() {
+                continue;
+            }
+            let init = dir.join("init.lua");
+            let Ok(src) = std::fs::read_to_string(&init) else {
+                continue;
+            };
+            let name = dir
+                .file_name()
+                .and_then(|n| n.to_str())
+                .expect("plugin dir name is UTF-8")
+                .to_string();
+
+            // Body level means column zero: an `on_*` call indented inside a
+            // function runs when that function does, not on re-execution.
+            let body_level_hook = src.lines().any(|l| {
+                (l.starts_with("crucible.on") || l.starts_with("cru.on"))
+                    && !l.trim_start().starts_with("--")
+            });
+            // The ASSIGNMENT, not the substring. Checking `contains` matched
+            // the guard's own explanatory comment, so this test passed with
+            // both guards deleted — decorative in exactly the way the review
+            // has been catching all week. Found by red-proofing it.
+            let guarded = src.lines().any(|l| {
+                let l = l.trim_start();
+                !l.starts_with("--") && l.starts_with("package.loaded[") && l.contains("] =")
+            });
+            if body_level_hook && !guarded {
+                unguarded.push(name);
+            }
+        }
+
+        assert!(
+            unguarded.is_empty(),
+            "these plugins register a hook at body level but never set \
+             `package.loaded`, so the documented `require(\"<name>\").setup{{…}}` \
+             loads a second copy and registers the hook twice:\n  - {}\n\
+             Add `package.loaded[\"<name>\"] = plugin` before the final return, \
+             as `auto-title`, `web-search`, `reflection` and `oci` do.",
+            unguarded.join("\n  - ")
+        );
+    }
+
     /// The gate that was missing. `shipped_plugin_lua_suite_passes` listed four
     /// plugins while the directory held seven, so `web-search` (148 assertions)
     /// and `worktree` (42) ran only under `just test plugins` — a heavier tier
