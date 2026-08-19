@@ -834,3 +834,70 @@ mod session_permission_config_tests {
         assert_eq!(resolved.default, PermissionMode::Allow);
     }
 }
+
+/// A reply is routed by which registry holds its id, not by its own shape.
+///
+/// `server/session/messaging.rs` matched on the RESPONSE's kind: a
+/// `Permission` payload went to the permission registry and everything else to
+/// the interaction registry. That is wrong whenever the two disagree, and they
+/// disagree in production: when Crucible runs as an ACP agent and the host
+/// cancels the permission dialog — or `request_permission` errors —
+/// `commands/acp/agent.rs` sends `InteractionResponse::Cancelled` for a
+/// `perm-…` id. Routing by kind sent it to the interactions map, missed, and
+/// logged at debug. The permission waiter was never released, so the turn
+/// stalled the full 300 s and then denied.
+///
+/// The TUI dodged it only by convention (Esc maps to `PermResponse::deny()`,
+/// never `Cancelled`), so nothing in the suite noticed.
+mod reply_routing_tests {
+    use super::*;
+    use crucible_core::interaction::{InteractionResponse, PermRequest};
+
+    /// Cancelling a permission prompt must release its waiter, as a deny.
+    #[tokio::test]
+    async fn a_cancelled_reply_to_a_permission_id_denies_instead_of_stalling() {
+        let session_manager = temp_session_manager();
+        let agent_manager = create_test_agent_manager(session_manager);
+
+        let (permission_id, response_rx) = agent_manager
+            .await_permission("test-session", PermRequest::bash(["rm", "-rf", "/"]));
+
+        agent_manager
+            .deliver_client_reply(
+                "test-session",
+                &permission_id,
+                InteractionResponse::Cancelled,
+            )
+            .expect("a cancelled permission must be deliverable");
+
+        let response = response_rx
+            .await
+            .expect("the waiter must be released, not left parked for the timeout");
+        assert!(
+            !response.allowed,
+            "cancelling a permission prompt is a refusal, not an approval"
+        );
+    }
+
+    /// ...and a permission id still takes an ordinary permission answer, so
+    /// routing by ownership did not break the path that already worked.
+    #[tokio::test]
+    async fn a_permission_reply_to_a_permission_id_still_arrives() {
+        let session_manager = temp_session_manager();
+        let agent_manager = create_test_agent_manager(session_manager);
+
+        let (permission_id, response_rx) =
+            agent_manager.await_permission("test-session", PermRequest::bash(["ls"]));
+
+        agent_manager
+            .deliver_client_reply(
+                "test-session",
+                &permission_id,
+                InteractionResponse::Permission(PermResponse::allow()),
+            )
+            .expect("deliverable");
+
+        let response = response_rx.await.expect("released");
+        assert!(response.allowed);
+    }
+}

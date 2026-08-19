@@ -283,6 +283,14 @@ impl SessionSlot {
     /// Take a prompt out, to answer it or to abandon it. The caller owns the
     /// `oneshot::Sender` afterwards: sending answers the waiter, dropping makes
     /// its receiver error out immediately.
+    /// Whether the permission registry — not the interaction one — owns `id`.
+    ///
+    /// The routing predicate: a reply belongs to whichever map holds its id,
+    /// which is a fact about the registries and not about the reply.
+    pub(crate) fn holds_permission(&self, id: &str) -> bool {
+        self.lock_permissions().contains_key(id)
+    }
+
     pub(crate) fn take_permission(&self, id: &str) -> Option<PendingPermission> {
         self.lock_permissions().remove(id)
     }

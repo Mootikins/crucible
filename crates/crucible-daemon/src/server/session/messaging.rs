@@ -236,33 +236,20 @@ pub(crate) async fn handle_session_interaction_respond(
             }
         };
 
-    // Permission responses go to the permission registry; everything else —
-    // including a `Cancelled` answering a question rather than a prompt — goes
-    // to the interaction registry. A response with no waiter in either is not
-    // an error: the waiter may have timed out, and the `interaction_completed`
-    // event below is still worth emitting so clients can dismiss the modal.
-    match &response {
-        crucible_core::interaction::InteractionResponse::Permission(perm_response) => {
-            if let Err(e) = am.respond_to_permission(session_id, request_id, perm_response.clone())
-            {
-                tracing::warn!(
-                    session_id = %session_id,
-                    request_id = %request_id,
-                    error = %e,
-                    "Failed to send permission response to channel (may have timed out)"
-                );
-            }
-        }
-        other => {
-            if let Err(e) = am.respond_to_interaction(session_id, request_id, other.clone()) {
-                tracing::debug!(
-                    session_id = %session_id,
-                    request_id = %request_id,
-                    error = %e,
-                    "No waiter for interaction response (may have timed out)"
-                );
-            }
-        }
+    // Routed by WHICH REGISTRY HOLDS THE ID, not by the reply's own shape —
+    // the two registries share a key type and this one wire method, so the
+    // reply alone cannot say where it belongs. Matching on it stalled every
+    // permission prompt an ACP host cancelled. A reply with no waiter in
+    // either registry is not an error: the waiter may have timed out, and the
+    // `interaction_completed` event below is still worth emitting so clients
+    // can dismiss the modal.
+    if let Err(e) = am.deliver_client_reply(session_id, request_id, response.clone()) {
+        tracing::debug!(
+            session_id = %session_id,
+            request_id = %request_id,
+            error = %e,
+            "No waiter for this reply (may have timed out)"
+        );
     }
 
     if !emit_event(

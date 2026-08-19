@@ -1386,6 +1386,43 @@ impl AgentManager {
         (permission_id, response_rx)
     }
 
+    /// Deliver a client's answer to whichever registry is holding its id.
+    ///
+    /// Routing is by OWNERSHIP, never by the reply's own shape. The two
+    /// registries share a key type and one wire method
+    /// (`session.interaction_respond`), so the reply alone cannot say which one
+    /// it belongs to — and matching on it got this wrong in both directions: a
+    /// `Cancelled` answering a permission prompt went to the interactions map
+    /// and stalled the prompt for its full timeout, while a differently-shaped
+    /// reply to a question could reach the wrong waiter.
+    ///
+    /// A permission that is cancelled resolves to *deny*, stated here once,
+    /// because that is the answer the gate acts on and the asker never sees.
+    pub fn deliver_client_reply(
+        &self,
+        session_id: &str,
+        request_id: &str,
+        response: crucible_core::interaction::InteractionResponse,
+    ) -> Result<(), AgentError> {
+        use crucible_core::interaction::InteractionResponse;
+
+        let slot = self
+            .existing_slot(session_id)
+            .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
+
+        if slot.holds_permission(request_id) {
+            let perm = match response {
+                InteractionResponse::Permission(perm) => perm,
+                // Any other shape answering a permission prompt is a refusal.
+                // A client that dismissed the dialog did not approve anything.
+                _ => PermResponse::deny_with_reason("permission prompt was dismissed"),
+            };
+            return self.respond_to_permission(session_id, request_id, perm);
+        }
+
+        self.respond_to_interaction(session_id, request_id, response)
+    }
+
     pub fn respond_to_permission(
         &self,
         session_id: &str,
