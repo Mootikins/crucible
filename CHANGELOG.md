@@ -33,6 +33,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   worth holding a task open for the provider's own timeout.
 
 ### Added
+- **`cru.ui` — a plugin can ask the user a question.** One function per
+  `InteractionRequest` variant: `ask`, `ask_batch`, `edit`, `show`,
+  `permission`, `popup` and `panel`. Each call parks the plugin until an
+  attached client answers. This is deliberately not `cru.sessions.ask`: an
+  interaction is addressed to a *client*, and the session id only says which
+  attached client to route it to.
+
+  Two things a plugin author must handle. A call returns
+  `{ kind = "cancelled" }` when nobody answers — no client attached, the user
+  dismissed the modal, or the 300-second default timeout elapsed (`timeout`
+  overrides it) — and that is a *successful* call, not an error, so it is the
+  common case on a headless daemon. And the seven variants are a closed set:
+  the module adds no eighth shape, because a request no client knows how to
+  draw is a plugin hanging until its timeout.
+
+  The daemon keeps this registry apart from the permission registry on
+  purpose. An unanswered permission must resolve to deny, a decision the gate
+  then acts on; an unanswered question resolves to cancelled, which only the
+  asker can interpret. Collapsing the two would make one of those wrong.
+
+  Two gates close the gap this landed on top of: seven variants existed, the
+  TUI drew all seven, the browser drew three, and the four it could not draw
+  parked their caller with nothing on screen to explain why. The browser now
+  has all seven renderers, `InteractionRequest::KINDS` is the single list of
+  variant tags (kept complete by an exhaustive match that fails to compile
+  when a variant is added), and `interaction-coverage.test.ts` fails while any
+  kind has no renderer. Responses now also state their own `kind`, because a
+  panel result and an ask response both carry `selected`.
+  See `Help/Extending/Scripted UI.md`.
 - **`cru.tools.set_active(session_id, names)` and `cru.tools.get_active(session_id)`.**
   A plugin can now narrow which tools one session offers its model, with glob
   patterns in the same language a mode's `tools` selector speaks. The set only
