@@ -16,7 +16,13 @@
 //!
 //! On `Completed` the handler runs each runnable `## Validation` entry
 //! via `bash -c` and emits a `workflow.assessed` event before pruning
-//! the run from the registry. On any non-terminal state change we
+//! the run from the registry. The command text comes out of a workflow
+//! note, so it is attacker-supplied — anything that can write a
+//! `type: workflow` note into a kiln chooses it, `create_note` included.
+//! Every entry therefore goes through the same fail-closed gate as
+//! `cru.tools.call` (`tools_bridge::unattended_refusal`) before
+//! it reaches a shell; a refused entry is reported as a failed
+//! assessment rather than run. On any non-terminal state change we
 //! persist a [`WorkflowSnapshot`] next to the session metadata so a
 //! daemon restart can transparently pick the run up where it paused —
 //! the per-handler lookup goes through [`resolve_or_rehydrate`].
@@ -27,6 +33,7 @@ use crate::rpc::dispatch::RpcResult;
 use crate::rpc::params::parse_params;
 use crate::workflow_handlers::DaemonInlineHandler;
 use crate::workflow_registry::{ExecutionHandle, WorkflowStatusSnapshot};
+use crucible_core::config::components::permissions::PermissionEngine;
 use crucible_core::parser::types::{Frontmatter, FrontmatterFormat, ParsedNote, WorkflowDoc};
 use crucible_core::protocol::Request;
 use crucible_core::workflow::{
@@ -362,10 +369,15 @@ async fn run_and_emit_assessment(
     let mut failed = Vec::new();
     let mut manual = Vec::new();
 
+    // The operator's rules, read once per assessment. Built from the same
+    // config the agent dispatch path uses, so `[permissions]` means one thing
+    // no matter which door a command arrives at.
+    let permissions = PermissionEngine::new(ctx.agents.permission_config().as_ref());
+
     for entry in validations {
         match &entry.command {
             Some(cmd) => {
-                let outcome = run_validation_command(&entry.description, cmd).await;
+                let outcome = run_validation_command(&permissions, &entry.description, cmd).await;
                 if outcome.exit_code == 0 {
                     passed.push(outcome);
                 } else {
@@ -383,7 +395,21 @@ async fn run_and_emit_assessment(
 const VALIDATION_OUTPUT_CAP: usize = 4096;
 const VALIDATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
+/// Run one `## Validation` command, if the operator's rules permit it.
+///
+/// The gate is `tools_bridge::unattended_refusal`, asked the same
+/// question `cru.tools.call("bash", { command = ... })` asks: a `deny` is
+/// absolute, an `allow` runs, and an `ask` refuses because a workflow
+/// assessment has no user attached to prompt. With the shipped default
+/// (`default = ask`, and `bash` is not read-only) that means an unconfigured
+/// daemon runs nothing here until an `allow` rule covers the command — which
+/// is the point. The command text is chosen by whoever wrote the note.
+///
+/// A refusal is an `AssessmentOutcome` with a non-zero exit code, so it lands
+/// in the `failed` bucket of `workflow.assessed` and the operator sees why,
+/// rather than the entry vanishing.
 async fn run_validation_command(
+    permissions: &PermissionEngine,
     description: &str,
     command: &str,
 ) -> crucible_core::workflow::AssessmentOutcome {
@@ -393,6 +419,24 @@ async fn run_validation_command(
     use tokio::process::Command;
 
     let started = Instant::now();
+
+    if let Some(reason) = crate::tools_bridge::unattended_refusal(
+        permissions,
+        "bash",
+        &serde_json::json!({ "command": command }),
+        "a workflow validation command",
+    ) {
+        tracing::warn!(%command, %reason, "refused workflow validation command");
+        return AssessmentOutcome {
+            description: description.to_string(),
+            command: command.to_string(),
+            exit_code: -1,
+            stdout: String::new(),
+            stderr: format!("Permission denied: {reason}"),
+            duration_ms: started.elapsed().as_millis() as u64,
+        };
+    }
+
     let result = tokio::time::timeout(
         VALIDATION_TIMEOUT,
         Command::new("bash")
@@ -488,4 +532,147 @@ fn extract_yaml_frontmatter(source: &str) -> Option<Frontmatter> {
         rest[..end].to_string(),
         FrontmatterFormat::Yaml,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crucible_core::config::components::permissions::{PermissionConfig, PermissionMode};
+
+    fn engine(config: PermissionConfig) -> PermissionEngine {
+        PermissionEngine::new(Some(&config))
+    }
+
+    /// A marker path plus the command that would create it. The command is the
+    /// payload: if the marker exists afterwards, a shell ran the note's text.
+    fn payload(tmp: &tempfile::TempDir) -> (std::path::PathBuf, String) {
+        let marker = tmp.path().join("pwned");
+        let command = format!("touch {}", marker.display());
+        (marker, command)
+    }
+
+    /// A workflow note's `## Validation` command is attacker-supplied text:
+    /// anything that can write a `type: workflow` note into a kiln — an agent
+    /// with `create_note` included — decides what this runs. It went straight
+    /// to `bash -c` with no gate at all, so the next run of that workflow was
+    /// arbitrary host execution.
+    ///
+    /// The shipped default is `default = ask` and `bash` is not read-only, so
+    /// an unconfigured daemon must refuse.
+    #[tokio::test]
+    async fn an_unpermitted_validation_command_does_not_run() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (marker, command) = payload(&tmp);
+
+        let outcome = run_validation_command(
+            &engine(PermissionConfig::default()),
+            "prove the host is reachable",
+            &command,
+        )
+        .await;
+
+        assert!(
+            !marker.exists(),
+            "an ungated `## Validation` command executed on the host"
+        );
+        assert_ne!(outcome.exit_code, 0, "a refused command must not pass");
+        assert!(
+            outcome.stderr.contains("Permission denied"),
+            "the refusal must say why, got: {}",
+            outcome.stderr
+        );
+    }
+
+    /// An operator `deny` is absolute — it outranks a permissive default, the
+    /// way it does on every other path.
+    #[tokio::test]
+    async fn an_operator_deny_outranks_a_permissive_default() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (marker, command) = payload(&tmp);
+
+        let outcome = run_validation_command(
+            &engine(PermissionConfig {
+                default: PermissionMode::Allow,
+                deny: vec!["bash:touch *".to_string()],
+                ..Default::default()
+            }),
+            "denied",
+            &command,
+        )
+        .await;
+
+        assert!(!marker.exists(), "a denied command executed anyway");
+        assert_ne!(outcome.exit_code, 0);
+    }
+
+    /// An `ask` rule names this command on purpose, and a workflow assessment
+    /// has nobody to prompt. Being asked about it therefore means refuse —
+    /// the same call the Lua bridge makes, and not the read-only exemption,
+    /// which is only for commands no rule decided.
+    #[tokio::test]
+    async fn an_ask_rule_refuses_because_there_is_nobody_to_prompt() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (marker, command) = payload(&tmp);
+
+        let outcome = run_validation_command(
+            &engine(PermissionConfig {
+                default: PermissionMode::Allow,
+                ask: vec!["bash:touch *".to_string()],
+                ..Default::default()
+            }),
+            "asked about",
+            &command,
+        )
+        .await;
+
+        assert!(!marker.exists(), "an `ask` command executed unprompted");
+        assert!(
+            outcome.stderr.contains("no prompt"),
+            "got: {}",
+            outcome.stderr
+        );
+    }
+
+    /// ...and the feature still works. A command the operator allowed runs and
+    /// reports its real exit code, so gating it did not turn validation off.
+    #[tokio::test]
+    async fn an_allowed_validation_command_still_runs() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (marker, command) = payload(&tmp);
+
+        let outcome = run_validation_command(
+            &engine(PermissionConfig {
+                allow: vec!["bash:touch *".to_string()],
+                ..Default::default()
+            }),
+            "allowed",
+            &command,
+        )
+        .await;
+
+        assert_eq!(outcome.exit_code, 0, "stderr: {}", outcome.stderr);
+        assert!(marker.exists(), "an allowed command must actually run");
+    }
+
+    /// A command the rules leave undecided is still refused, because `bash`
+    /// can modify state. The read-only exemption is what makes the gate usable
+    /// elsewhere; it must not open this one.
+    #[tokio::test]
+    async fn an_allow_rule_for_another_command_does_not_cover_this_one() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (marker, command) = payload(&tmp);
+
+        let outcome = run_validation_command(
+            &engine(PermissionConfig {
+                allow: vec!["bash:cargo test *".to_string()],
+                ..Default::default()
+            }),
+            "not the allowed command",
+            &command,
+        )
+        .await;
+
+        assert!(!marker.exists(), "an unrelated allow rule opened the shell");
+        assert_ne!(outcome.exit_code, 0);
+    }
 }

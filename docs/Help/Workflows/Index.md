@@ -108,6 +108,25 @@ daemon executes each runnable entry from the workflow's
 and emits a `workflow.assessed` event summarising passes, failures,
 and manual (command-less) entries.
 
+Each command first goes through the operator's `[permissions]` rules,
+as `bash`, exactly as a plugin's `cru.tools.call` does. The command
+text comes out of a note, so whoever can write a `type: workflow`
+note into the kiln chooses it — an agent with `create_note` included.
+The gate is fail-closed and has no prompt to fall back on: a `deny`
+refuses, an `allow` runs, and an `ask` rule refuses because there is
+no user attached to a completed run. **The shipped default is
+`default = "ask"`, so an unconfigured daemon runs no validation
+command at all.** To let a command run, name it in `allow`:
+
+```toml
+[permissions]
+allow = ["bash:cargo test *", "bash:just ci"]
+```
+
+A refused entry is reported as a failure in `workflow.assessed`, with
+the reason in its `stderr`, so it is visible rather than silent. See
+[[Help/Concepts/Permission Precedence]].
+
 **Resumability:** the daemon persists a compact workflow snapshot
 next to the session metadata after each state change (new gate,
 approval, cancel). If the daemon restarts mid-run, the next RPC

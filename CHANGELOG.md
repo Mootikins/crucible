@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+- **A workflow's `## Validation` commands ran on the host with no permission
+  check.** When a run reached `Completed`, the daemon handed each runnable
+  entry straight to `bash -c`. The command text comes out of a note, so
+  anything that can write a `type: workflow` note into a kiln chose it — an
+  agent with `create_note` included. Every entry now goes through the same
+  fail-closed gate as `cru.tools.call`: a `deny` refuses, an `allow` runs, and
+  an `ask` rule refuses because a completed run has no user to prompt. A
+  refused entry reports as a failure in `workflow.assessed` with the reason in
+  its `stderr`.
+
+### Breaking
+- A runnable `## Validation` entry now needs an `allow` rule. With the shipped
+  default (`default = "ask"`) an unconfigured daemon runs none of them. To keep
+  a command running, name it: `allow = ["bash:cargo test *"]`.
+
 ## [0.28.1] - 2026-08-18
 
 ### Security

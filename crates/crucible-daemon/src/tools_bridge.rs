@@ -93,50 +93,65 @@ impl DaemonToolsBridge {
         }
     }
 
-    /// `Some(reason)` if this call must not run.
-    ///
-    /// Same shape as the agent dispatch path, minus the prompt it cannot
-    /// offer: an operator `deny` is absolute; an `allow` runs; anything the
-    /// rules leave at `ask` falls back to the read-only exemption. Read-only
-    /// tools go through, as they do for an agent, and a tool that can mutate
-    /// needs an explicit `allow` — with nobody to ask, silently proceeding
-    /// would hand a plugin exactly what a user would have been prompted about.
+    /// `Some(reason)` if this call must not run. See [`unattended_refusal`].
     fn refusal(&self, name: &str, args: &serde_json::Value) -> Option<String> {
-        // `bash` is gated on the command itself — the hardcoded denies and
-        // the rule patterns both match against it, not the JSON envelope.
-        let input = if name == "bash" {
-            args.get("command")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string()
-        } else {
-            args.to_string()
-        };
-        // `is_interactive: true` keeps `Ask` distinguishable from `Deny`;
-        // this decides what an unmatched tool means, and it is not the same
-        // answer as an operator writing `deny`.
-        match self.permissions.evaluate(name, &input, true) {
-            PermissionDecision::Deny { reason } => return Some(reason),
-            PermissionDecision::Allow => return None,
-            // An `ask` rule names this tool on purpose. There is nobody to
-            // prompt on a Lua call, so being asked about it means refuse —
-            // the read-only exemption below is for tools no rule decided.
-            PermissionDecision::Ask { rule_matched: true } => {
-                return Some(format!(
-                    "{name} is covered by an `ask` rule and a Lua tool call has no prompt to \
-                     answer it"
-                ))
-            }
-            PermissionDecision::Ask { .. } => {}
-        }
-        if crate::agent_manager::is_safe(name) {
-            return None;
-        }
-        Some(format!(
-            "{name} can modify state and no allow rule covers it; \
-             a Lua tool call has no prompt to fall back on"
-        ))
+        unattended_refusal(&self.permissions, name, args, "a Lua tool call")
     }
+}
+
+/// `Some(reason)` if a caller with nobody to prompt must not run `name`.
+///
+/// Same shape as the agent dispatch path, minus the prompt it cannot offer:
+/// an operator `deny` is absolute; an `allow` runs; anything the rules leave
+/// at `ask` falls back to the read-only exemption. Read-only tools go through,
+/// as they do for an agent, and a tool that can mutate needs an explicit
+/// `allow` — with nobody to ask, silently proceeding would hand the caller
+/// exactly what a user would have been prompted about.
+///
+/// `caller` names the path in the refusal text, because there is more than one
+/// such path: `cru.tools.call` (a plugin, through [`DaemonToolsBridge`]) and a
+/// workflow note's `## Validation` command (`rpc/workflow_handlers.rs`). Both
+/// take attacker-supplied text with no user attached, so both get one gate
+/// rather than one each.
+pub(crate) fn unattended_refusal(
+    permissions: &PermissionEngine,
+    name: &str,
+    args: &serde_json::Value,
+    caller: &str,
+) -> Option<String> {
+    // `bash` is gated on the command itself — the hardcoded denies and
+    // the rule patterns both match against it, not the JSON envelope.
+    let input = if name == "bash" {
+        args.get("command")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string()
+    } else {
+        args.to_string()
+    };
+    // `is_interactive: true` keeps `Ask` distinguishable from `Deny`;
+    // this decides what an unmatched tool means, and it is not the same
+    // answer as an operator writing `deny`.
+    match permissions.evaluate(name, &input, true) {
+        PermissionDecision::Deny { reason } => return Some(reason),
+        PermissionDecision::Allow => return None,
+        // An `ask` rule names this tool on purpose. There is nobody to
+        // prompt on this path, so being asked about it means refuse —
+        // the read-only exemption below is for tools no rule decided.
+        PermissionDecision::Ask { rule_matched: true } => {
+            return Some(format!(
+                "{name} is covered by an `ask` rule and {caller} has no prompt to answer it"
+            ))
+        }
+        PermissionDecision::Ask { .. } => {}
+    }
+    if crate::agent_manager::is_safe(name) {
+        return None;
+    }
+    Some(format!(
+        "{name} can modify state and no allow rule covers it; \
+         {caller} has no prompt to fall back on"
+    ))
 }
 
 impl DaemonToolsApi for DaemonToolsBridge {

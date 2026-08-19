@@ -124,7 +124,8 @@ Rules follow the pattern `tool:pattern`. The `tool` part must match the tool's n
 **exactly** (or be `*`); the `pattern` part is a glob. What that name is — and what the
 glob is matched against — depends on which path enforces the rule.
 
-**Internal sessions and Lua `cru.tools.call`** check the tool's own name, as `cru tools`
+**Internal sessions, Lua `cru.tools.call`, and a workflow's `## Validation`
+commands** (which are checked as `bash`) check the tool's own name, as `cru tools`
 lists it: `read_file`, `write_file`, `edit_file`, `bash`, MCP gateway tools under their
 prefixed names (`gh_search_code`), and so on.
 
