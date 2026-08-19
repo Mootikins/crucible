@@ -1992,15 +1992,12 @@ impl RpcDispatcher {
 
         let p: Params = parse_params(req)?;
 
-        let event = crate::protocol::SessionEventMessage::new(
-            "__webhook__",
-            "webhook:received",
-            serde_json::json!({
-                "name": p.name,
-                "headers": p.headers,
-                "body": p.body,
-            }),
-        );
+        // Named by `event_map`, not spelled here: `server/file_event_hooks.rs`
+        // resolves a Lua handler from that one table, so a name minted
+        // independently at this end is a delivery no plugin can ever see. That
+        // is exactly what happened — the ingress broadcast `webhook:received`
+        // to nobody from the day it shipped.
+        let event = crate::event_map::webhook_received(p.name, p.headers, p.body);
 
         // Best-effort broadcast — no subscribers is fine
         crate::event_emitter::emit_event(&self.ctx.event_tx, event);

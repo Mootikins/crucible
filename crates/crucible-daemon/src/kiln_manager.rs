@@ -564,6 +564,20 @@ impl KilnManager {
     ///
     /// Returns (discovered_count, processed_count, skipped_count, errors).
     /// If the kiln is already open, still runs processing.
+    ///
+    /// # What this announces
+    ///
+    /// Nothing for the files it indexes — [`Self::process_batch`] is silent by
+    /// design, and one `process_complete` reports the run.
+    ///
+    /// One `note:deleted` per row [`Self::reconcile_deleted`] drops, which is
+    /// bounded by the number of index rows whose file has disappeared and is
+    /// zero on the common run. That is not an exception to "a note event means
+    /// this note just changed": the note really did leave the index, in this
+    /// run, and reconciliation is the *only* place the daemon ever reports a
+    /// deletion that happened while it was not running. Suppressing it would
+    /// leave a handler that mirrors the index holding a note the index no
+    /// longer has, with nothing to tell it otherwise.
     pub async fn open_and_process(
         &self,
         kiln_path: &Path,
@@ -747,11 +761,49 @@ impl KilnManager {
 
         // Process file through pipeline
         use crate::pipeline::ProcessingResult;
-        match conn.pipeline.process(file_path).await {
-            Ok(ProcessingResult::Success { .. }) => Ok(true),
-            Ok(ProcessingResult::Skipped) => Ok(false),
-            Ok(ProcessingResult::NoChanges) => Ok(false),
-            Err(e) => Err(e),
+        let (result, events) = conn.pipeline.process_with_events(file_path).await?;
+        self.announce(&events);
+        match result {
+            ProcessingResult::Success { .. } => Ok(true),
+            ProcessingResult::Skipped | ProcessingResult::NoChanges => Ok(false),
+        }
+    }
+
+    /// Announce that `from` became `to`, both kiln-relative.
+    ///
+    /// Separate from [`Self::announce`] because a rename has no
+    /// `InternalSessionEvent` behind it: the reindex underneath is a delete
+    /// followed by an insert, and only the caller performing both knows they
+    /// were one move.
+    pub fn announce_note_renamed(&self, from: &str, to: &str) {
+        if let Some(tx) = self.event_tx.as_ref() {
+            crate::event_emitter::emit_event(tx, crate::event_map::note_renamed(from, to));
+        }
+    }
+
+    /// Put note lifecycle events on the daemon's broadcast bus.
+    ///
+    /// One place, so `note:created` and its siblings are spelled by
+    /// [`crate::event_map`] rather than here. Best-effort by design: no
+    /// subscribers is the normal case for a headless daemon, and an indexing
+    /// run must not fail because nobody was listening.
+    ///
+    /// `pub(crate)` rather than private because the RPC note handlers
+    /// (`server/kiln.rs`) write through `NoteStore` directly rather than
+    /// through the pipeline, so they hold the returned events and must
+    /// announce them themselves. Leaving it private is what let
+    /// `note.upsert` and `note.delete` silently drop every event they
+    /// produced while every other write path emitted.
+    pub(crate) fn announce(&self, events: &[crucible_core::events::SessionEvent]) {
+        let Some(tx) = self.event_tx.as_ref() else {
+            return;
+        };
+        for event in events {
+            if let crucible_core::events::SessionEvent::Internal(inner) = event {
+                if let Some(msg) = crate::event_map::message_for(inner.as_ref()) {
+                    crate::event_emitter::emit_event(tx, msg);
+                }
+            }
         }
     }
 
@@ -772,12 +824,13 @@ impl KilnManager {
 
         use crate::pipeline::ProcessingResult;
         conn.pipeline.set_force_reprocess(true);
-        let result = conn.pipeline.process(file_path).await;
+        let result = conn.pipeline.process_with_events(file_path).await;
         conn.pipeline.set_force_reprocess(false);
+        let (result, events) = result?;
+        self.announce(&events);
         match result {
-            Ok(ProcessingResult::Success { .. }) => Ok(true),
-            Ok(_) => Ok(false),
-            Err(e) => Err(e),
+            ProcessingResult::Success { .. } => Ok(true),
+            _ => Ok(false),
         }
     }
 
@@ -812,6 +865,12 @@ impl KilnManager {
             tracing::warn!(path = %relative_path, ?e, "failed to remove deleted note from text index");
         }
 
+        // A delete that found nothing still carries `existed: false`; announce
+        // it anyway. The reconciliation sweep asks about paths it is unsure of,
+        // and a handler that mirrors the index wants to know the index no longer
+        // holds the note either way.
+        self.announce(std::slice::from_ref(&event));
+
         match event {
             SessionEvent::Internal(inner) => {
                 if let InternalSessionEvent::NoteDeleted { existed, .. } = inner.as_ref() {
@@ -834,6 +893,18 @@ impl KilnManager {
     /// A future full-kiln progress producer belongs here, addressed to
     /// `WILDCARD_SESSION` so both surfaces can receive it — the manager already
     /// holds an `event_tx`, so the missing piece is a consumer, not a sender.
+    ///
+    /// **That includes the note lifecycle events.** `process_file` announces
+    /// them and this deliberately does not: it is the catch-up sweep, so the
+    /// first index of a large kiln would otherwise put one broadcast message
+    /// per note on the bus — every one of them fanned out to every subscriber
+    /// and written by the persist task — to say nothing more than the
+    /// `process_complete` this run already reports. A note event means "this
+    /// note just changed", not "this note exists".
+    ///
+    /// The silence is this loop's, not the whole run's:
+    /// [`Self::open_and_process`] reconciles before it calls here, and a
+    /// reconciled row **does** announce. See that method.
     pub async fn process_batch(
         &self,
         kiln_path: &Path,

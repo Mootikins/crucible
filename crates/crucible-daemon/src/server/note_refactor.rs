@@ -318,6 +318,13 @@ pub(crate) async fn rename_note(
         }
     }
 
+    // Last, once the index describes the new state: a handler reacting to this
+    // must not find the old path still listed. The reindex above already
+    // announced `note:deleted` for the old path and `note:created` for the new
+    // one — it really performed both — so this is the event that says the two
+    // were one move.
+    km.announce_note_renamed(from_rel, to_rel);
+
     Ok(RenameOutcome {
         from: from_rel.to_string(),
         to: to_rel.to_string(),
@@ -438,6 +445,49 @@ mod tests {
 
     fn read(root: &Path, rel: &str) -> String {
         std::fs::read_to_string(root.join(rel)).unwrap()
+    }
+
+    /// A rename says so on the bus.
+    ///
+    /// The reindex under it is a delete plus an insert, so `note:deleted` and
+    /// `note:created` fire too and a handler seeing only those cannot tell a
+    /// move from a delete-and-write. This is the event that says they were one
+    /// operation, and it comes last so a handler reacting to it finds the index
+    /// already describing the new path.
+    #[tokio::test]
+    async fn a_rename_announces_note_renamed_after_the_reindex() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().canonicalize().unwrap();
+        std::fs::write(root.join("Old.md"), "# Old\n").unwrap();
+
+        let (tx, mut rx) = tokio::sync::broadcast::channel(256);
+        let km = Arc::new(crate::kiln_manager::KilnManager::with_event_tx(
+            tx,
+            None,
+            crucible_core::config::default_max_precognition_chars(),
+        ));
+        km.open_and_process(&root, false).await.unwrap();
+
+        rename_note(&km, &root, "Old.md", "New.md").await.unwrap();
+
+        let mut note_events = Vec::new();
+        while let Ok(msg) = rx.try_recv() {
+            if msg.event.starts_with("note:") {
+                note_events.push(msg);
+            }
+        }
+
+        let renamed = note_events
+            .last()
+            .unwrap_or_else(|| panic!("no note event was broadcast at all"));
+        assert_eq!(
+            renamed.event,
+            "note:renamed",
+            "the rename must be announced last, after the delete and the insert: {:?}",
+            note_events.iter().map(|m| &m.event).collect::<Vec<_>>()
+        );
+        assert_eq!(renamed.data["from"], "Old.md");
+        assert_eq!(renamed.data["to"], "New.md");
     }
 
     /// Alias / heading / block-ref / embed / combined forms all survive a

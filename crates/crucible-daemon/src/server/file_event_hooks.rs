@@ -1,4 +1,4 @@
-//! Dispatching file-watch events to Lua handlers.
+//! Dispatching daemon broadcast events to Lua handlers.
 //!
 //! Every hookable event before this one sat on the agent turn loop —
 //! `pre_llm_call`, `tool_result`, `turn:complete` and friends. The knowledge
@@ -10,69 +10,25 @@
 //! and already broadcast its events to RPC subscribers; Lua simply could not
 //! subscribe. This connects the two.
 //!
-//! Matching and conversion already worked — `InternalSessionEvent::FileChanged`
-//! reports `type_name() == "FileChanged"`, which the handler registry matches on
-//! and `session_event_to_lua` converts. Only the dispatch was missing.
+//! The file name is historical: this dispatches **every** event with a row in
+//! [`crate::event_map`], not only the three file-watch ones it started with. It
+//! keeps the name because renaming it would drag `server/mod.rs` and every
+//! `::test_name` citation in `docs/Meta/Product.md` along for no gain.
+//!
+//! Matching, conversion and the identifier `opts.pattern` filters on all come
+//! from that one table, which the outbound bridge (`file_watch_bridge.rs`)
+//! consults too. This module owns the loop and the fail-open policy; it owns no
+//! list of event names.
 
-use crucible_core::events::session_event::InternalSessionEvent;
-use crucible_core::events::SessionEvent;
-use crucible_core::protocol::session_events::{SessionEventPayload, SystemPayload};
 use crucible_core::protocol::SessionEventMessage;
 use crucible_lua::ScriptHandlerResult;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::{debug, warn};
 
-/// The names a handler registers against, one per file event.
-///
-/// Spelled out rather than taken from `type_name()` alone so each is a
-/// declaration `crucible.on`'s `HOOK_NAMES` contract test can see —
-/// `hook_names_matches_every_dispatch_site` asserts in both directions, and a
-/// name it cannot find in a dispatch site is reported as unreachable.
-/// `the_dispatch_names_match_the_events` below pins them to the real
-/// `type_name()`.
-const FILE_CHANGED_EVENT: &str = "FileChanged";
-const FILE_DELETED_EVENT: &str = "FileDeleted";
-const FILE_MOVED_EVENT: &str = "FileMoved";
+use crate::event_map::{self, HookedEvent};
 
-/// The handler-facing name for a file event.
-fn dispatch_name(event: &InternalSessionEvent) -> Option<&'static str> {
-    match event {
-        InternalSessionEvent::FileChanged { .. } => Some(FILE_CHANGED_EVENT),
-        InternalSessionEvent::FileDeleted { .. } => Some(FILE_DELETED_EVENT),
-        InternalSessionEvent::FileMoved { .. } => Some(FILE_MOVED_EVENT),
-        _ => None,
-    }
-}
-
-/// Rebuild the typed event from its broadcast form.
-///
-/// The watcher's events reach subscribers already flattened to JSON, so the
-/// typed value has to be reconstructed for handlers that expect the same shape
-/// every other hook receives. Returns `None` for anything that is not a file
-/// event.
-///
-/// Decoding the payload rather than digging keys out of it fixes two bugs at
-/// once. It used to read `data["path"]` *before* matching the name, so
-/// `file_moved` — which carries `from`/`to` and no `path` — could never reach a
-/// handler. And `kind` used to be a two-arm string match that mapped everything
-/// that was not `created` to `Modified`; `FileChangeKind` now decodes itself.
-fn to_internal_event(msg: &SessionEventMessage) -> Option<InternalSessionEvent> {
-    match msg.payload() {
-        Ok(SessionEventPayload::System(SystemPayload::FileChanged { path, kind })) => {
-            Some(InternalSessionEvent::FileChanged { path, kind })
-        }
-        Ok(SessionEventPayload::System(SystemPayload::FileDeleted { path })) => {
-            Some(InternalSessionEvent::FileDeleted { path })
-        }
-        Ok(SessionEventPayload::System(SystemPayload::FileMoved { from, to })) => {
-            Some(InternalSessionEvent::FileMoved { from, to })
-        }
-        _ => None,
-    }
-}
-
-/// Subscribe to the event bus and run matching Lua handlers for file events.
+/// Subscribe to the event bus and run matching Lua handlers.
 ///
 /// Fail-open throughout: a handler that errors is logged and the next one still
 /// runs. Nothing here is a gate, so a broken handler must not stop the watcher
@@ -96,13 +52,14 @@ pub fn spawn_file_event_hooks(
                 Err(broadcast::error::RecvError::Closed) => break,
             };
 
-            let Some(internal) = to_internal_event(&msg) else {
+            let Some(HookedEvent {
+                hook,
+                event,
+                identifier,
+            }) = event_map::decode(&msg)
+            else {
                 continue;
             };
-            let Some(event_name) = dispatch_name(&internal) else {
-                continue;
-            };
-            let event = SessionEvent::internal(internal);
 
             // `runtime_handlers_for`, not `handlers_for`: the two are
             // different halves of the registry and only one of them is
@@ -112,10 +69,13 @@ pub fn spawn_file_event_hooks(
             // `crucible.on("FileChanged", ...)` handler had never once fired —
             // registered fine, matched nothing, silently.
             //
-            // `None` for the identifier: a file event has no tool name, and a
-            // handler that declared a `pattern` is asking to filter on one, so
-            // it correctly does not match here.
-            let matched = handlers.runtime_handlers_for(event_name, None);
+            // The identifier is what `opts.pattern` globs against: the note
+            // path for a note event, the webhook name for a delivery, and
+            // `None` for a file event, which carries no identifier — so a
+            // handler that declared a pattern on one of those is asking to
+            // filter on something that does not exist, and correctly does not
+            // match.
+            let matched = handlers.runtime_handlers_for(hook, identifier.as_deref());
             if matched.is_empty() {
                 continue;
             }
@@ -135,7 +95,7 @@ pub fn spawn_file_event_hooks(
                         debug!(
                             handler = %handler.name,
                             reason = %reason,
-                            "file event handler stopped the chain"
+                            "daemon event handler stopped the chain"
                         );
                         break;
                     }
@@ -146,7 +106,7 @@ pub fn spawn_file_event_hooks(
                     Ok(ScriptHandlerResult::Transform(_) | ScriptHandlerResult::Handled { .. }) => {
                         debug!(
                             handler = %handler.name,
-                            "file event handler returned a value; file events are \
+                            "daemon event handler returned a value; these events are \
                              notifications, so it has no effect"
                         );
                     }
@@ -154,7 +114,7 @@ pub fn spawn_file_event_hooks(
                     Err(e) => warn!(
                         handler = %handler.name,
                         error = %e,
-                        "file event handler failed (continuing)"
+                        "daemon event handler failed (continuing)"
                     ),
                 }
             }
@@ -165,7 +125,9 @@ pub fn spawn_file_event_hooks(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_core::events::session_event::FileChangeKind;
+    use crucible_core::events::session_event::{FileChangeKind, InternalSessionEvent};
+    use crucible_core::events::SessionEvent;
+    use crucible_lua::LuaScriptHandlerRegistry;
     use serde_json::json;
     use std::path::PathBuf;
 
@@ -173,86 +135,75 @@ mod tests {
         SessionEventMessage::new("system", event, data)
     }
 
-    #[test]
-    fn a_file_changed_message_rebuilds_the_typed_event() {
-        let m = msg(
-            "file_changed",
-            json!({ "path": "/w/a.md", "kind": "modified" }),
-        );
-        assert!(matches!(
-            to_internal_event(&m),
-            Some(InternalSessionEvent::FileChanged { .. })
-        ));
-    }
-
-    #[test]
-    fn the_created_kind_survives_the_round_trip() {
-        let m = msg(
-            "file_changed",
-            json!({ "path": "/w/a.md", "kind": "created" }),
-        );
-        assert!(matches!(
-            to_internal_event(&m),
-            Some(InternalSessionEvent::FileChanged {
-                kind: FileChangeKind::Created,
-                ..
-            })
-        ));
-    }
-
-    #[test]
-    fn a_deletion_rebuilds_as_a_deletion() {
-        let m = msg("file_deleted", json!({ "path": "/w/a.md" }));
-        assert!(matches!(
-            to_internal_event(&m),
-            Some(InternalSessionEvent::FileDeleted { .. })
-        ));
-    }
-
-    /// The registry matches on `type_name`, so this pins the string a handler
-    /// has to register against. Changing it silently unhooks every config.
-    #[test]
-    fn the_handler_facing_event_name_is_file_changed() {
-        let event = SessionEvent::internal(InternalSessionEvent::FileChanged {
-            path: PathBuf::from("/w/a.md"),
-            kind: FileChangeKind::Modified,
-        });
-        assert_eq!(event.type_name(), "FileChanged");
-    }
-
-    /// `to_internal_event` read `data["path"]` before matching the event name,
-    /// but a `file_moved` payload carries `from`/`to` and no `path`
-    /// (`file_watch_bridge.rs`). So `InternalSessionEvent::FileMoved` was
-    /// broadcast and could never reach a Lua handler.
-    #[test]
-    fn a_file_moved_message_rebuilds_the_typed_event() {
-        let m = msg("file_moved", json!({ "from": "/w/a.md", "to": "/w/b.md" }));
-        assert!(matches!(
-            to_internal_event(&m),
-            Some(InternalSessionEvent::FileMoved { .. })
-        ));
-    }
-
-    #[test]
-    fn unrelated_events_are_ignored() {
-        assert!(to_internal_event(&msg("message_complete", json!({}))).is_none());
-        // A file event with no path is meaningless: the payload requires `path`,
-        // so this is a malformed decode and no handler fires on an empty path.
-        assert!(to_internal_event(&msg("file_changed", json!({}))).is_none());
-    }
-
-    /// A handler registered with `crucible.on` actually fires on a file event.
+    /// Register one `crucible.on` handler, put `sent` on the bus, and return
+    /// the global the handler set — or `None` if it never ran.
     ///
-    /// Everything above this tests `to_internal_event` — the translation — and
-    /// stops there, which is exactly how the dispatch stayed broken. The
-    /// registry has two disjoint halves: `crucible.on` writes `runtime_handlers`,
-    /// while this module read `handlers`, the annotation-discovered vec that
-    /// nothing populates. Handlers registered, matched nothing, and never ran,
-    /// with no error anywhere. This drives the real spawn end to end.
-    #[tokio::test]
-    async fn a_crucible_on_handler_fires_for_a_file_event() {
-        use crucible_lua::LuaScriptHandlerRegistry;
+    /// Drives the real spawn. Everything short of this tests the translation
+    /// and stops there, which is exactly how the dispatch stayed broken: the
+    /// registry has two disjoint halves, `crucible.on` writes one and this
+    /// module used to read the other.
+    ///
+    /// A caller expecting `None` must use [`dispatch_expecting_silence`]
+    /// instead — waiting the whole timeout out is the only way this one can
+    /// return it.
+    async fn dispatch(hook: &str, body: &str, sent: SessionEventMessage) -> Option<String> {
+        let (lua, tx) = spawn_with_handler(hook, body);
+        tx.send(sent).expect("send");
 
+        // Poll rather than sleep a fixed interval: the dispatch is a spawned
+        // task and a fixed wait is either flaky or slow.
+        for _ in 0..200 {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            if let Ok(Some(fired)) = lua.globals().get::<Option<String>>("fired") {
+                return Some(fired);
+            }
+        }
+        None
+    }
+
+    /// Assert that `sent` fires nothing, without waiting a timeout out.
+    ///
+    /// A negative dispatch has no event to wait for, so [`dispatch`] can only
+    /// conclude "never fired" by exhausting its poll budget — a flat second of
+    /// wall clock on every run, for a test whose answer is known in
+    /// microseconds. This sends a second event a *different* handler does fire
+    /// on, and reads `fired` once that one lands. The dispatch loop takes one
+    /// message at a time in order, so the barrier arriving proves `sent` was
+    /// already processed and dropped.
+    async fn dispatch_expecting_silence(hook: &str, body: &str, sent: SessionEventMessage) {
+        let (lua, tx) = spawn_with_handler(hook, body);
+        lua.load("barrier = nil\ncrucible.on(\"webhook:received\", function() barrier = true end)")
+            .exec()
+            .expect("register barrier handler");
+
+        tx.send(sent).expect("send");
+        tx.send(event_map::webhook_received(
+            "barrier".into(),
+            serde_json::Map::new(),
+            "{}".into(),
+        ))
+        .expect("send barrier");
+
+        for _ in 0..200 {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            if lua.globals().get::<Option<bool>>("barrier").ok().flatten() == Some(true) {
+                assert_eq!(
+                    lua.globals().get::<Option<String>>("fired").ok().flatten(),
+                    None,
+                    "the handler ran on an event it should not have matched"
+                );
+                return;
+            }
+        }
+        panic!("the barrier event never dispatched, so the test proved nothing");
+    }
+
+    /// A Lua VM with `crucible.on` registered, one handler loaded, and the
+    /// dispatch task running against a fresh bus.
+    fn spawn_with_handler(
+        hook: &str,
+        body: &str,
+    ) -> (Arc<mlua::Lua>, broadcast::Sender<SessionEventMessage>) {
         let lua = Arc::new(mlua::Lua::new());
         let registry = Arc::new(LuaScriptHandlerRegistry::new());
         crucible_lua::register_crucible_on_api(
@@ -262,43 +213,27 @@ mod tests {
         )
         .expect("register crucible.on");
 
-        lua.load(
-            r#"
-            fired_path = nil
-            crucible.on("FileChanged", function(ctx, event)
-                fired_path = event.path
-            end)
-        "#,
-        )
-        .exec()
-        .expect("register handler");
-
-        assert_eq!(
-            registry.runtime_handlers_for("FileChanged", None).len(),
-            1,
-            "the handler should be registered before any event is sent"
-        );
+        lua.load(format!("fired = nil\ncrucible.on(\"{hook}\", {body})"))
+            .exec()
+            .expect("register handler");
 
         let (tx, rx) = broadcast::channel(8);
-        spawn_file_event_hooks(rx, Arc::clone(&registry), Arc::clone(&lua));
+        spawn_file_event_hooks(rx, registry, Arc::clone(&lua));
+        (lua, tx)
+    }
 
-        tx.send(msg(
-            "file_changed",
-            json!({ "path": "/w/a.md", "kind": "modified" }),
-        ))
-        .expect("send");
-
-        // Poll rather than sleep a fixed interval: the dispatch is a spawned
-        // task and a fixed wait is either flaky or slow.
-        let mut fired: Option<String> = None;
-        for _ in 0..200 {
-            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-            fired = lua.globals().get("fired_path").ok().flatten();
-            if fired.is_some() {
-                break;
-            }
-        }
-
+    /// A handler registered with `crucible.on` actually fires on a file event.
+    #[tokio::test]
+    async fn a_crucible_on_handler_fires_for_a_file_event() {
+        let fired = dispatch(
+            "FileChanged",
+            "function(ctx, event) fired = event.path end",
+            msg(
+                "file_changed",
+                json!({ "path": "/w/a.md", "kind": "modified" }),
+            ),
+        )
+        .await;
         assert_eq!(
             fired.as_deref(),
             Some("/w/a.md"),
@@ -306,12 +241,77 @@ mod tests {
         );
     }
 
+    /// The reason this module was generalised: the note pipeline's events now
+    /// reach Lua by the same route, with the hook name the author registered
+    /// visible on the event.
+    #[tokio::test]
+    async fn a_note_event_reaches_a_handler() {
+        let sent = event_map::message_for(&InternalSessionEvent::NoteCreated {
+            path: PathBuf::from("Daily/2026-08-18.md"),
+            title: Some("Today".into()),
+        })
+        .expect("note:created has a wire form");
+
+        let fired = dispatch(
+            "note:created",
+            "function(ctx, event) fired = event.type .. \" \" .. event.path end",
+            sent,
+        )
+        .await;
+        assert_eq!(
+            fired.as_deref(),
+            Some("note:created Daily/2026-08-18.md"),
+            "a crucible.on(\"note:created\") handler never ran"
+        );
+    }
+
+    /// `webhook:received` has been broadcast to nobody since the ingress
+    /// shipped: `POST /api/webhook/{name}` put it on this very bus and the
+    /// dispatch dropped it, so the documented GitHub/IFTTT integrations rested
+    /// on a dead half.
+    #[tokio::test]
+    async fn a_webhook_delivery_reaches_a_handler() {
+        let sent = event_map::webhook_received(
+            "ci".into(),
+            serde_json::Map::new(),
+            r#"{"event":"push"}"#.into(),
+        );
+        let fired = dispatch(
+            "webhook:received",
+            "function(ctx, event) fired = event.name .. \" \" .. event.body end",
+            sent,
+        )
+        .await;
+        assert_eq!(
+            fired.as_deref(),
+            Some(r#"ci {"event":"push"}"#),
+            "a crucible.on(\"webhook:received\") handler never ran"
+        );
+    }
+
+    /// A handler that narrowed with `opts.pattern` is filtered on the event's
+    /// identifier, end to end through the real spawn.
+    #[tokio::test]
+    async fn a_pattern_that_does_not_cover_the_note_never_fires() {
+        let sent = event_map::message_for(&InternalSessionEvent::NoteModified {
+            path: PathBuf::from("Meta/Design.md"),
+            change_type: crucible_core::events::NoteChangeType::Content,
+        })
+        .expect("note:modified has a wire form");
+
+        dispatch_expecting_silence(
+            "note:modified",
+            "{ pattern = \"Daily/*\" }, function(ctx, event) fired = event.path end",
+            sent,
+        )
+        .await;
+    }
+
     /// The dispatch constants are the real `type_name()`s.
     ///
-    /// They exist as constants so `crucible.on`'s HOOK_NAMES contract test can
-    /// see them, which means they could drift from the events they name and
-    /// nothing else would notice — handlers would register against a name that
-    /// matches no dispatch.
+    /// The file events reach Lua as their typed internal event, so their hook
+    /// name and their `type_name()` have to agree — a handler registers against
+    /// one and reads the other off the event.
     #[test]
     fn the_dispatch_names_match_the_events() {
         for (event, expected) in [
@@ -320,23 +320,22 @@ mod tests {
                     path: PathBuf::from("/w/a.md"),
                     kind: FileChangeKind::Modified,
                 },
-                FILE_CHANGED_EVENT,
+                event_map::FILE_CHANGED_EVENT,
             ),
             (
                 InternalSessionEvent::FileDeleted {
                     path: PathBuf::from("/w/a.md"),
                 },
-                FILE_DELETED_EVENT,
+                event_map::FILE_DELETED_EVENT,
             ),
             (
                 InternalSessionEvent::FileMoved {
                     from: PathBuf::from("/w/a.md"),
                     to: PathBuf::from("/w/b.md"),
                 },
-                FILE_MOVED_EVENT,
+                event_map::FILE_MOVED_EVENT,
             ),
         ] {
-            assert_eq!(dispatch_name(&event), Some(expected));
             assert_eq!(
                 SessionEvent::internal(event).type_name(),
                 expected,
@@ -345,17 +344,18 @@ mod tests {
         }
     }
 
-    /// Every name this module dispatches is one `crucible.on` accepts.
+    /// Every name this daemon dispatches is one `crucible.on` accepts.
     ///
     /// The two lists live in different crates. When they disagreed, the whole
     /// feature was dead: registration raised "unknown event `FileChanged`" and
     /// dispatch read a vec nothing wrote to.
     #[test]
     fn every_dispatched_name_is_registerable() {
-        for name in [FILE_CHANGED_EVENT, FILE_DELETED_EVENT, FILE_MOVED_EVENT] {
+        for row in event_map::ROWS {
             assert!(
-                crucible_lua::HOOK_NAMES.contains(&name),
-                "`{name}` is dispatched here but `crucible.on` would reject it"
+                crucible_lua::HOOK_NAMES.contains(&row.hook),
+                "`{}` is dispatched here but `crucible.on` would reject it",
+                row.hook
             );
         }
     }

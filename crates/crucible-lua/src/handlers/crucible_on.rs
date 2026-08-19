@@ -29,12 +29,22 @@ pub const HOOK_NAMES: &[&str] = &[
     "tool:before_execute",
     "tool:display_start",
     "tool:display_complete",
-    // File-watch events. `server/file_event_hooks.rs` dispatches these; they
-    // were missing here, so `crucible.on("FileChanged", ...)` was rejected
-    // outright — the hook could not be registered at all, let alone fire.
+    // Daemon broadcast events. `crucible-daemon/src/event_map.rs` holds the one
+    // table that names them and `server/file_event_hooks.rs` dispatches it.
+    //
+    // The three file events were missing here at first, so
+    // `crucible.on("FileChanged", ...)` was rejected outright — the hook could
+    // not be registered at all, let alone fire. They keep their `type_name()`
+    // spelling because every config that already registers one names them that
+    // way; everything added since is colon-namespaced.
     "FileChanged",
     "FileDeleted",
     "FileMoved",
+    "note:created",
+    "note:modified",
+    "note:deleted",
+    "note:renamed",
+    "webhook:received",
 ];
 
 /// Levenshtein distance, for the "did you mean" hint. Fifteen lines beats a

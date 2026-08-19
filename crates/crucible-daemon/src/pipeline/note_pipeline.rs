@@ -19,6 +19,7 @@
 
 use crate::enrichment::Enricher;
 use anyhow::{Context, Result};
+use crucible_core::events::SessionEvent;
 use crucible_core::parser::{traits::MarkdownParser, CrucibleParser};
 use crucible_core::processing::{ChangeDetectionStore, FileState, ProcessingResult};
 use crucible_core::storage::{NoteRecord, NoteStore};
@@ -159,6 +160,26 @@ impl NotePipeline {
     /// 3. **Enrich**: Generate embeddings for all blocks
     /// 4. **Store**: Persist changes to database
     pub async fn process(&self, path: &Path) -> Result<ProcessingResult> {
+        self.process_with_events(path)
+            .await
+            .map(|(result, _)| result)
+    }
+
+    /// [`Self::process`], also handing back the note lifecycle events the store
+    /// produced — `NoteCreated` for a path the index had not seen, `NoteModified`
+    /// for one it had.
+    ///
+    /// The store has always returned these and the pipeline has always dropped
+    /// them on the floor, which is why `note:created` reached nothing. They are
+    /// **returned**, not broadcast from here: whether a write deserves an
+    /// announcement is the caller's question, not the pipeline's, and the one
+    /// caller that must not announce is the bulk indexer — see
+    /// `KilnManager::process_batch`. An empty vec means nothing was written
+    /// (unchanged file, or a phase that skipped).
+    pub async fn process_with_events(
+        &self,
+        path: &Path,
+    ) -> Result<(ProcessingResult, Vec<SessionEvent>)> {
         let start = std::time::Instant::now();
 
         info!("Processing note: {}", path.display());
@@ -167,7 +188,7 @@ impl NotePipeline {
         let phase1_start = std::time::Instant::now();
         if let Some(skip_result) = self.phase1_quick_filter(path).await? {
             debug!("Phase 1: File unchanged, skipping");
-            return Ok(skip_result);
+            return Ok((skip_result, Vec::new()));
         }
         let phase1_duration = phase1_start.elapsed().as_millis() as u64;
 
@@ -251,7 +272,8 @@ impl NotePipeline {
         let note_record = self.enriched_to_record(&enriched, &path_str)?;
 
         // Store via NoteStore trait (works with any backend)
-        self.note_store
+        let events = self
+            .note_store
             .upsert(note_record)
             .await
             .map_err(|e| anyhow::anyhow!("Storage error: {}", e))
@@ -303,10 +325,13 @@ impl NotePipeline {
         // Count of blocks enriched (embeddings generated)
         let blocks_enriched = enriched.embeddings.len();
 
-        Ok(ProcessingResult::success_with_warnings(
-            blocks_enriched,
-            embeddings_generated,
-            warnings,
+        Ok((
+            ProcessingResult::success_with_warnings(
+                blocks_enriched,
+                embeddings_generated,
+                warnings,
+            ),
+            events,
         ))
     }
 
@@ -316,7 +341,11 @@ impl NotePipeline {
     /// enrich and no prose to embed, so it skips straight from parse to
     /// storage. It is indexed at all so that a note referenced by a canvas
     /// shows the canvas in its backlinks — the gap Obsidian leaves open.
-    async fn process_canvas(&self, path: &Path, phase1_duration: u64) -> Result<ProcessingResult> {
+    async fn process_canvas(
+        &self,
+        path: &Path,
+        phase1_duration: u64,
+    ) -> Result<(ProcessingResult, Vec<SessionEvent>)> {
         let storage_path = match self.kiln_root.as_ref() {
             Some(root) => crate::kiln_manager::normalize_note_path(path, root)
                 .unwrap_or_else(|| path.to_string_lossy().to_string()),
@@ -331,7 +360,8 @@ impl NotePipeline {
         )
         .await?;
 
-        self.note_store
+        let events = self
+            .note_store
             .upsert(record)
             .await
             .map_err(|e| anyhow::anyhow!("Storage error: {}", e))
@@ -347,10 +377,9 @@ impl NotePipeline {
             phase1_duration
         );
 
-        Ok(ProcessingResult::success_with_warnings(
-            0,
-            false,
-            Vec::new(),
+        Ok((
+            ProcessingResult::success_with_warnings(0, false, Vec::new()),
+            events,
         ))
     }
 
@@ -364,7 +393,7 @@ impl NotePipeline {
         &self,
         path: &Path,
         phase1_duration: u64,
-    ) -> Result<ProcessingResult> {
+    ) -> Result<(ProcessingResult, Vec<SessionEvent>)> {
         let storage_path = match self.kiln_root.as_ref() {
             Some(root) => crate::kiln_manager::normalize_note_path(path, root)
                 .unwrap_or_else(|| path.to_string_lossy().to_string()),
@@ -402,7 +431,8 @@ impl NotePipeline {
             updated_at: chrono::Utc::now(),
         };
 
-        self.note_store
+        let events = self
+            .note_store
             .upsert(record)
             .await
             .map_err(|e| anyhow::anyhow!("Storage error: {}", e))
@@ -428,10 +458,9 @@ impl NotePipeline {
             phase1_duration
         );
 
-        Ok(ProcessingResult::success_with_warnings(
-            0,
-            false,
-            Vec::new(),
+        Ok((
+            ProcessingResult::success_with_warnings(0, false, Vec::new()),
+            events,
         ))
     }
 

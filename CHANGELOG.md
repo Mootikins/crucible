@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **One table now maps a daemon event to the hook name Lua registers for**
+  (`crucible-daemon/src/event_map.rs`). The outbound bridge that broadcasts to
+  clients and the inbound dispatch that runs Lua handlers each carried their own
+  three-arm `match` over the same three file events; they could disagree with
+  nothing to catch it, and every other event the daemon emits reached Lua not at
+  all. Adding an event is now a row plus a `HOOK_NAMES` entry, and tests pin the
+  two lists against each other in both directions. No behaviour change for the
+  three file events.
+
+### Added
+- **Note lifecycle hooks.** `crucible.on("note:created", …)`, `note:modified`,
+  `note:deleted` and `note:renamed` fire when the note pipeline writes. The
+  identifier `opts.pattern` globs against is the kiln-relative note path, so
+  `{ pattern = "Daily/*" }` narrows a handler to one folder. Three deliberate
+  limits: a full kiln index announces nothing for the files it indexes (it
+  reports `process_complete` for the run, plus one `note:deleted` for each
+  stale index row its reconciliation pass drops), an unchanged file announces
+  nothing, and a `note.rename`
+  announces `note:deleted` + `note:created` + `note:renamed`, because the
+  reindex under it really performs all three — `note:renamed` fires last and is
+  the event that says they were one move.
+- **`webhook:received` reaches Lua.** A signed delivery to
+  `POST /api/webhook/{name}` now fires
+  `crucible.on("webhook:received", { pattern = "ci" }, …)` with `event.name`,
+  `event.headers` (credentials and signature stripped) and `event.body` (the
+  raw JSON string as signed). The route's auth posture is **unchanged**: it
+  still sits inside the web server's bearer-auth layer, which waves loopback
+  callers through but not remote ones, so a sender out on the internet still
+  needs a proxy or tunnel terminating on the host. See `Help/Config/web.md`.
+
 ### Security
 - **A workflow's `## Validation` commands ran on the host with no permission
   check.** When a run reached `Completed`, the daemon handed each runnable

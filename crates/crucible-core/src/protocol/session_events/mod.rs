@@ -197,10 +197,14 @@ impl Group {
             | "workflow.assessed"
             | "workflow.failed"
             | "workflow.cancelled" => Self::Workflow,
-            // System (9)
+            // System (13)
             "file_changed"
             | "file_deleted"
             | "file_moved"
+            | "note:created"
+            | "note:modified"
+            | "note:deleted"
+            | "note:renamed"
             | "classification_required"
             | "process_complete"
             | "ui_style_changed"
@@ -291,6 +295,10 @@ pub const EVENT_NAMES: &[&str] = &[
     "file_changed",
     "file_deleted",
     "file_moved",
+    "note:created",
+    "note:modified",
+    "note:deleted",
+    "note:renamed",
     "classification_required",
     "process_complete",
     "ui_style_changed",

@@ -39,7 +39,7 @@ crucible.on(event_type, { pattern = "...", priority = 50 }, handler)
 
 | Argument | Type | Description |
 |---|---|---|
-| `event_type` | string | Event name (e.g. `"pre_tool_call"`). Must be one of the fourteen below — **exact match, no globs**. |
+| `event_type` | string | Event name (e.g. `"pre_tool_call"`). Must be one of the nineteen below — **exact match, no globs**. |
 | `opts.pattern` | string, optional | Glob filter applied to the event's identifier (e.g. tool name). Default: match all. |
 | `opts.priority` | integer, optional | Lower runs first. Default: `100`. |
 | `handler` | `function(ctx, event)` | Called when the event fires and matches |
@@ -49,8 +49,11 @@ raises an error naming the closest match — because the dispatcher compares eve
 names with `==`, so a misspelt hook used to register happily and then never fire,
 with only a `debug!` line to say so.
 
-`opts.pattern` is the only glob, and it filters the event's *identifier* (the
-tool name), never the event name.
+`opts.pattern` is the only glob, and it filters the event's *identifier* —
+the tool name for a tool event, the note path for a note event, the webhook
+name for a delivery — never the event name. An event with no identifier is
+listed as such in the table below; a handler that sets `pattern` on one of
+those is filtering on something that does not exist and never matches.
 
 `cru.on` is the same function — registered on both namespaces, so
 `cru.on("pre_tool_call", fn)` and `crucible.on("pre_tool_call", fn)` are
@@ -94,11 +97,95 @@ for them.
 | `FileChanged` | a watched file was created or modified |
 | `FileDeleted` | a watched file was removed |
 | `FileMoved` | a watched file was renamed or moved |
+| `note:created` | a note reached the index for the first time |
+| `note:modified` | an already-indexed note was written again |
+| `note:deleted` | a note left the index |
+| `note:renamed` | a note moved, with its inbound links repointed |
+| `webhook:received` | a signed delivery arrived at `POST /api/webhook/{name}` |
 
-The three file events come off the daemon's watcher rather than an agent turn,
-so they fire whether or not a session is mid-conversation — that is the point
-of them. They carry no tool name, so a handler that sets `opts.pattern` filters
-on an identifier they do not have and will not match; leave it unset.
+The eight events below the line come off the daemon rather than an agent turn,
+so they fire whether or not a session is mid-conversation — that is the point of
+them. One table names them all
+(`crucible-daemon/src/event_map.rs`), and both the client-facing broadcast and
+this dispatch read it, so an event cannot be broadcast under one name and
+hooked under another.
+
+Their identifiers, for `opts.pattern`:
+
+| Event | Identifier |
+|---|---|
+| `FileChanged`, `FileDeleted`, `FileMoved` | *none* — leave `pattern` unset |
+| `note:created`, `note:modified`, `note:deleted` | the kiln-relative note path |
+| `note:renamed` | the **destination** path |
+| `webhook:received` | the webhook name |
+
+Naming: the three file events are spelled in the Rust `type_name()` style
+because they shipped that way and every config that registers one names them so.
+Everything since is colon-namespaced.
+
+### Note lifecycle
+
+```lua
+crucible.on("note:created", function(ctx, event)
+  cru.log("info", "new note: " .. event.path)
+end)
+
+-- Only the daily notes:
+crucible.on("note:modified", { pattern = "Daily/*" }, function(ctx, event)
+  rebuild_digest(event.path)
+end)
+```
+
+Event fields:
+
+- `note:created` — `event.path`, `event.title`
+- `note:modified` — `event.path`, `event.change_type`
+- `note:deleted` — `event.path`, `event.existed` (false when the delete found nothing to remove)
+- `note:renamed` — `event.from`, `event.to`
+
+Three things to know about when they fire:
+
+1. **They mean "this note just changed", not "this note exists".** A full kiln
+   index — first open, or a forced reindex — emits none of them for the files it
+   indexes. It reports one `process_complete` for the whole run instead.
+   Per-file events there would put one broadcast message per note on the bus and
+   say nothing new.
+
+   The one thing a full index *does* announce is a `note:deleted` for every
+   index entry whose file is gone — a `git rm` or a branch checkout while the
+   daemon was down. That deletion really did happen in this run, and the
+   reconciliation pass is the only place the daemon ever reports it, so a
+   handler mirroring the index needs it. It is bounded by the number of stale
+   entries, and zero on a kiln nothing was removed from.
+2. **An unchanged file emits nothing.** Change detection skips it before the
+   store is touched.
+3. **A rename emits three events.** The reindex under `note.rename` really is a
+   delete of the old path followed by an insert of the new one, so
+   `note:deleted` and `note:created` fire as well. `note:renamed` fires last,
+   once the index describes the new state, and is the event that says the two
+   were one move.
+
+### `webhook:received`
+
+```lua
+crucible.on("webhook:received", { pattern = "ci" }, function(ctx, event)
+  local payload = cru.json.decode(event.body)
+  cru.log("info", "CI said " .. tostring(payload.status))
+end)
+```
+
+Event fields: `event.name` (the webhook name from the URL), `event.headers` (a
+table; the caller's credentials and the delivery signature are stripped before
+it gets here), `event.body` (the raw JSON body as a **string**, exactly as
+signed — decode it yourself).
+
+Every delivery is HMAC-verified at the HTTP edge before it reaches this hook, so
+a handler never sees an unsigned one. See [[Help/Config/web]] for the secrets
+file and the signature schemes — **and for the reachability caveat: the route
+sits inside the web server's bearer-auth layer, which waves loopback callers
+through but not remote ones.** A sender out on the internet therefore needs a
+proxy or tunnel terminating on the host; pointing GitHub straight at the port
+gets a 401 from the auth layer before the signature is ever checked.
 
 ### `pre_tool_call`
 
@@ -413,6 +500,15 @@ The `pattern` option uses glob syntax against the event's identifier. For `pre_t
 crucible.on("pre_tool_call", { pattern = "*" },           fn)  -- all tools
 crucible.on("pre_tool_call", { pattern = "gh_*" },        fn)  -- GitHub tools
 crucible.on("pre_tool_call", { pattern = "just_test*" },  fn)  -- just test recipes
+```
+
+Each event decides what its identifier is; the table in **Event Types** above
+lists them. For the note events it is the note path, so the same glob syntax
+narrows a handler to one folder:
+
+```lua
+crucible.on("note:modified", { pattern = "Daily/*" },  fn)  -- daily notes only
+crucible.on("webhook:received", { pattern = "ci" },    fn)  -- one webhook
 ```
 
 ## Priority Guide

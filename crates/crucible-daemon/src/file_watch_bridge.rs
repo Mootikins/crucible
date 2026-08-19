@@ -1,13 +1,17 @@
 //! Bridge between daemon event bus and the EventEmitter trait.
 //!
-//! Converts `SessionEvent` variants (FileChanged, FileDeleted, FileMoved) into
-//! `SessionEventMessage` for the daemon's broadcast channel, enabling the
-//! `WatchManager` to push file change events to all subscribed clients.
+//! Converts `SessionEvent` variants into the `SessionEventMessage` the daemon
+//! broadcasts, so the `WatchManager` can push file changes to every subscribed
+//! client.
+//!
+//! The conversion itself lives in [`crate::event_map`], not here. This file
+//! used to hold its own three-arm `match`, and `server/file_event_hooks.rs`
+//! held a second one for the same three events in the other direction; the two
+//! could disagree with nothing to catch it, and neither could be extended
+//! without editing both. One table now answers both.
 
 use async_trait::async_trait;
-use crucible_core::events::{
-    EmitOutcome, EmitResult, EventEmitter, InternalSessionEvent, SessionEvent,
-};
+use crucible_core::events::{EmitOutcome, EmitResult, EventEmitter, SessionEvent};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::debug;
@@ -18,8 +22,8 @@ use crate::protocol::SessionEventMessage;
 /// Bridges `SessionEvent` emissions from the watch system into the daemon's
 /// `broadcast::Sender<SessionEventMessage>` event bus.
 ///
-/// Only file-related events (FileChanged, FileDeleted, FileMoved) are converted
-/// and broadcast. All other event variants pass through unchanged.
+/// An event with a row in [`crate::event_map`] is converted and broadcast; all
+/// other variants pass through unchanged.
 pub struct DaemonEventBridge {
     event_tx: broadcast::Sender<SessionEventMessage>,
 }
@@ -36,33 +40,11 @@ impl EventEmitter for DaemonEventBridge {
     type Event = SessionEvent;
 
     async fn emit(&self, event: Self::Event) -> EmitResult<EmitOutcome<Self::Event>> {
+        // Only events with a row in the table are broadcast. Everything else
+        // passes through untouched — the watcher emits pipeline signals this
+        // bus has no name for.
         let msg = match &event {
-            SessionEvent::Internal(inner) => match inner.as_ref() {
-                InternalSessionEvent::FileChanged { path, kind } => Some(SessionEventMessage::new(
-                    "system",
-                    "file_changed",
-                    serde_json::json!({
-                        "path": path.display().to_string(),
-                        "kind": format!("{}", kind),
-                    }),
-                )),
-                InternalSessionEvent::FileDeleted { path } => Some(SessionEventMessage::new(
-                    "system",
-                    "file_deleted",
-                    serde_json::json!({
-                        "path": path.display().to_string(),
-                    }),
-                )),
-                InternalSessionEvent::FileMoved { from, to } => Some(SessionEventMessage::new(
-                    "system",
-                    "file_moved",
-                    serde_json::json!({
-                        "from": from.display().to_string(),
-                        "to": to.display().to_string(),
-                    }),
-                )),
-                _ => None,
-            },
+            SessionEvent::Internal(inner) => crate::event_map::message_for(inner.as_ref()),
             _ => None,
         };
 
@@ -98,7 +80,7 @@ pub fn create_event_bridge(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_core::events::FileChangeKind;
+    use crucible_core::events::{FileChangeKind, InternalSessionEvent};
     use std::path::PathBuf;
 
     #[tokio::test]

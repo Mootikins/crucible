@@ -8,8 +8,32 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
 
-use crate::events::session_event::FileChangeKind;
+use crate::events::session_event::{FileChangeKind, NoteChangeType};
 use crate::workflow::AssessmentOutcome;
+
+/// Serialize a path the way `Path::display` prints it: any byte that is not
+/// valid UTF-8 becomes U+FFFD.
+///
+/// serde's own `PathBuf` impl *fails* on a non-UTF-8 path, and
+/// [`SessionEventPayload::to_wire`](super::SessionEventPayload::to_wire) treats
+/// a serialization failure as impossible and panics. The filesystem allows
+/// those bytes and the watcher reports whatever it is handed, so one oddly
+/// named file in a watched directory would take down the broadcast path. The
+/// bridge that used to build these events by hand already printed the path with
+/// `Path::display`; this keeps that exact wire output now that the typed
+/// payload owns the conversion.
+mod lossy_path {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::path::{Path, PathBuf};
+
+    pub fn serialize<S: Serializer>(path: &Path, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&path.to_string_lossy())
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<PathBuf, D::Error> {
+        String::deserialize(deserializer).map(PathBuf::from)
+    }
+}
 
 /// Delegation and background-job lifecycle.
 ///
@@ -215,18 +239,22 @@ pub enum SystemPayload {
     /// than firing a handler on an empty path. `kind` defaults to `Modified`,
     /// matching the two-arm string match it replaces.
     FileChanged {
+        #[serde(with = "lossy_path")]
         path: PathBuf,
         #[serde(default)]
         kind: FileChangeKind,
     },
     FileDeleted {
+        #[serde(with = "lossy_path")]
         path: PathBuf,
     },
     /// Carries `from`/`to` and **no** `path`. The consumer that rebuilt the
     /// typed event read `data["path"]` before matching the name, so this event
     /// was broadcast and could never reach a Lua handler.
     FileMoved {
+        #[serde(with = "lossy_path")]
         from: PathBuf,
+        #[serde(with = "lossy_path")]
         to: PathBuf,
     },
     ClassificationRequired {
@@ -279,6 +307,49 @@ pub enum SystemPayload {
         #[serde(default)]
         dropped: u64,
     },
+    /// A note reached the index for the first time.
+    ///
+    /// The note events are the *knowledge* half of the file events above: a
+    /// file event says a path changed on disk, this says the note pipeline
+    /// parsed it and wrote it to the store. `path` is kiln-relative, which is
+    /// the spelling every other note API uses and the one a handler's
+    /// `opts.pattern` glob is written against.
+    ///
+    /// Colon-namespaced rather than `note_created`, matching `webhook:received`
+    /// below: these names are also the names Lua handlers register with
+    /// (`crucible-daemon/src/event_map.rs`), and the colon marks the ones that
+    /// are a designed hook surface rather than a Rust variant name.
+    #[serde(rename = "note:created")]
+    NoteCreated {
+        path: String,
+        #[serde(default)]
+        title: Option<String>,
+    },
+    /// An already-indexed note was written again.
+    #[serde(rename = "note:modified")]
+    NoteModified {
+        path: String,
+        #[serde(default)]
+        change_type: NoteChangeType,
+    },
+    /// A note left the index.
+    ///
+    /// `existed` is false when the delete found nothing to remove — the
+    /// reconciliation sweep asks for paths it is not sure about.
+    #[serde(rename = "note:deleted")]
+    NoteDeleted {
+        path: String,
+        #[serde(default)]
+        existed: bool,
+    },
+    /// A note moved, with its inbound links repointed.
+    ///
+    /// Emitted by the `note.rename` refactor only, which is the one place that
+    /// knows the two paths are the same note. The reindex underneath it is a
+    /// delete followed by an insert, so `note:deleted` and `note:created` fire
+    /// for the same operation; this is the event that says they were a move.
+    #[serde(rename = "note:renamed")]
+    NoteRenamed { from: String, to: String },
     #[serde(rename = "webhook:received")]
     WebhookReceived {
         #[serde(default)]

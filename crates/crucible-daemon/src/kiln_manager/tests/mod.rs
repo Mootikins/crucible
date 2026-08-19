@@ -1,3 +1,10 @@
+//! Kiln manager tests.
+//!
+//! Split by subject: this file holds opening, discovery, reconciliation and
+//! text-index coverage; `note_events` holds the note lifecycle broadcast.
+
+mod note_events;
+
 use super::*;
 use crucible_core::config::EmbeddingProviderConfig;
 use tempfile::TempDir;

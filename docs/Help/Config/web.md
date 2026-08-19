@@ -368,11 +368,23 @@ Two further limits worth knowing:
 
 ## Webhooks
 
-`POST /api/webhook/{name}` turns a request into a `webhook:received` event on every plugin's
-stream. It sits inside the bearer-auth layer, but that layer waves loopback callers
-through — so on the machine running `cru web`, any page you visit could otherwise reach it
-cross-origin with no credential. Every delivery therefore carries its own signature, and a
-webhook with no configured secret is refused.
+`POST /api/webhook/{name}` turns a request into a `webhook:received` event, which reaches
+both subscribed clients and any Lua handler registered for it —
+`crucible.on("webhook:received", { pattern = "ci" }, fn)`, see
+[[Help/Extending/Event Hooks]]. It sits inside the bearer-auth layer, but that layer waves
+loopback callers through — so on the machine running `cru web`, any page you visit could
+otherwise reach it cross-origin with no credential. Every delivery therefore carries its own
+signature, and a webhook with no configured secret is refused.
+
+**Reachability, stated plainly.** Because the route is inside bearer auth, a caller that is
+not on loopback must present the web API key *as well as* a valid signature. A service out
+on the internet will send neither, so pointing GitHub or Stripe straight at the port gets a
+401 from the auth layer before the signature is ever read. Today the ingress is for senders
+that terminate on the host: a script on the same machine, a reverse proxy that adds the
+bearer header, or a tunnel whose far end lands on loopback. Whether the route should instead
+sit outside bearer auth with the HMAC as its only credential is an open decision, not an
+oversight — it would turn an authenticated route into an unauthenticated one for every
+existing install, which is not a change to make as a side effect of something else.
 
 **The ingress is closed until you write a secrets file.** Out of the box every delivery gets
 a `401 Missing or invalid webhook signature`. That one message covers every reason —

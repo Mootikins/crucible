@@ -606,13 +606,21 @@ pub(crate) async fn handle_note_upsert(req: Request, km: &Arc<KilnManager>) -> R
 
     let note_store = handle.as_note_store();
     match note_store.upsert(note).await {
-        Ok(events) => Response::success(
-            req.id,
-            serde_json::json!({
-                "status": "ok",
-                "events_count": events.len()
-            }),
-        ),
+        Ok(events) => {
+            // Announce, do not just count. This handler writes through
+            // `NoteStore` directly rather than through the pipeline, so it is
+            // the only thing holding these events — reporting `events_count`
+            // and dropping them is how an RPC-written note fired no
+            // `note:created` while a watcher-written one did.
+            km.announce(&events);
+            Response::success(
+                req.id,
+                serde_json::json!({
+                    "status": "ok",
+                    "events_count": events.len()
+                }),
+            )
+        }
         Err(e) => internal_error(req.id, e),
     }
 }
@@ -664,7 +672,12 @@ pub(crate) async fn handle_note_delete(req: Request, km: &Arc<KilnManager>) -> R
     match note_store.delete(path).await {
         // The embedding lives on the deleted `notes` row, so there is no
         // separate vector index to clean up.
-        Ok(_event) => Response::success(req.id, serde_json::json!({"status": "ok"})),
+        Ok(event) => {
+            // Same reason as `handle_note_upsert`: this path holds the only
+            // copy of the event, so binding it to `_` dropped it.
+            km.announce(std::slice::from_ref(&event));
+            Response::success(req.id, serde_json::json!({"status": "ok"}))
+        }
         Err(e) => internal_error(req.id, e),
     }
 }
