@@ -1,3 +1,4 @@
+use crucible_core::protocol::session_events::turn::ToolResultBody;
 use crucible_daemon::SessionEvent;
 use serde::{Deserialize, Serialize};
 
@@ -186,6 +187,17 @@ impl ChatEvent {
     /// `precognition_complete` → `precognition_result`. Everything the enum does
     /// not model reaches the browser as the `session_event` passthrough, which is
     /// exactly the `Err(UnknownEvent)` path.
+    /// Tool output as display text: strings verbatim, anything else as JSON,
+    /// and `null` as absent. Shared by all three arms above so the envelope
+    /// decision never changes how the payload itself is rendered.
+    fn stringify_result(value: &serde_json::Value) -> Option<String> {
+        match value {
+            serde_json::Value::Null => None,
+            serde_json::Value::String(s) => Some(s.clone()),
+            other => Some(other.to_string()),
+        }
+    }
+
     pub fn from_daemon_event(event: &SessionEvent) -> Self {
         use crucible_core::protocol::session_events::{
             JobPayload, SessionEventPayload, SettingsPayload, TurnPayload,
@@ -239,17 +251,39 @@ impl ChatEvent {
                     result,
                     terminate,
                     ..
-                } => ChatEvent::ToolResult {
-                    id: call_id,
-                    // Results are arbitrary JSON; pass strings through verbatim
-                    // and stringify anything else rather than dropping it.
-                    result: match &result {
-                        serde_json::Value::Null => None,
-                        serde_json::Value::String(s) => Some(s.clone()),
-                        other => Some(other.to_string()),
-                    },
-                    terminate,
-                },
+                } => {
+                    // The wire carries success and failure in the SAME slot,
+                    // discriminated only by which key is present:
+                    // `{"result": …}` vs `{"error": …}`. `ToolResultBody` is
+                    // the decoder for that envelope, and skipping it stringified
+                    // an error object into the success field — the browser then
+                    // rendered a failed tool as a completed one, while the TUI
+                    // (which does decode) showed the error.
+                    match ToolResultBody::of(&result) {
+                        Some(ToolResultBody::Err { error, .. }) => {
+                            ChatEvent::ToolResultError {
+                                id: call_id,
+                                error,
+                            }
+                        }
+                        // Unwrap the envelope so the UI gets the tool's own
+                        // output rather than the `{"result": …}` wrapper.
+                        Some(ToolResultBody::Ok { result, .. }) => ChatEvent::ToolResult {
+                            id: call_id,
+                            result: Self::stringify_result(&result),
+                            terminate,
+                        },
+                        // A shape neither variant covers — a bare string, or an
+                        // object with neither key. Keep the existing fallback
+                        // rather than inventing one: a body that will not decode
+                        // is still a tool result the user ran.
+                        None => ChatEvent::ToolResult {
+                            id: call_id,
+                            result: Self::stringify_result(&result),
+                            terminate,
+                        },
+                    }
+                }
 
                 TurnPayload::SegmentComplete {
                     message_id,
@@ -615,6 +649,58 @@ mod tests {
 
     /// Real tool results are arbitrary JSON (SessionEventMessage::tool_result
     /// takes a Value); non-string results must be stringified, not dropped.
+    /// A tool that FAILED must reach the browser as an error.
+    ///
+    /// The daemon writes a failure as `{"error": …}` in the same `data.result`
+    /// slot a success uses `{"result": …}` for — `ToolResultBody` is the
+    /// decoder for that envelope. Skipping it stringified the error object into
+    /// the success field, `chatEventReducer` marked the card `complete`, and
+    /// every part of `ToolCard.tsx`'s error presentation became unreachable:
+    /// failed tools rendered as successes. The TUI decoded it correctly the
+    /// whole time (`chat_runner/commands.rs`), so the two clients disagreed
+    /// about whether the tool worked.
+    #[test]
+    fn a_failed_tool_reaches_the_browser_as_an_error() {
+        let event = from_wire(SessionEventMessage::tool_result(
+            "s1",
+            "call-1",
+            "read_file",
+            serde_json::json!({ "error": "No such file (os error 2)" }),
+        ));
+
+        match ChatEvent::from_daemon_event(&event) {
+            ChatEvent::ToolResultError { id, error } => {
+                assert_eq!(id, "call-1");
+                assert_eq!(error, "No such file (os error 2)");
+            }
+            other => panic!(
+                "a failed tool must map to ToolResultError; got {other:?} — \
+                 the browser renders this as a successful result"
+            ),
+        }
+    }
+
+    /// ...and the success envelope still unwraps, rather than reaching the UI
+    /// as the raw `{"result": …}` wrapper. Pins that fixing the failure case
+    /// did not start double-wrapping the success case.
+    #[test]
+    fn a_successful_tool_result_is_unwrapped_from_its_envelope() {
+        let event = from_wire(SessionEventMessage::tool_result(
+            "s1",
+            "call-2",
+            "read_file",
+            serde_json::json!({ "result": "file contents" }),
+        ));
+
+        match ChatEvent::from_daemon_event(&event) {
+            ChatEvent::ToolResult { id, result, .. } => {
+                assert_eq!(id, "call-2");
+                assert_eq!(result.as_deref(), Some("file contents"));
+            }
+            other => panic!("expected ToolResult, got {other:?}"),
+        }
+    }
+
     #[test]
     fn real_tool_result_with_object_payload_is_stringified() {
         let event = from_wire(SessionEventMessage::tool_result(
