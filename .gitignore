@@ -119,3 +119,7 @@ graphify-out/
 
 # Personal launch notes, kept out of the repo on purpose.
 LAUNCH-CHECKLIST.md
+
+# Python bytecode from the repo scripts
+__pycache__/
+*.pyc
