@@ -261,6 +261,25 @@ pub struct SessionInteractionRespondRequest {
     pub response: serde_json::Value,
 }
 
+/// Request for `session.fork`.
+///
+/// `session_id` names the PARENT; the fork reports its own id as `id`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SessionForkRequest {
+    pub session_id: String,
+    /// Copy only the first N user/assistant/system messages. All of them when
+    /// omitted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub up_to: Option<u64>,
+}
+
+/// Request for `session.dismiss_notification`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SessionDismissNotificationRequest {
+    pub session_id: String,
+    pub notification_id: String,
+}
+
 /// Request for `session.set_title`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionSetTitleRequest {

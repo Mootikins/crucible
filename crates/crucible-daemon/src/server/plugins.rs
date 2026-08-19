@@ -107,7 +107,11 @@ pub(crate) async fn handle_session_status(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
+    let params = match typed_params::<crate::rpc_client::SessionIdRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &params.session_id;
     let loader_guard = plugin_loader.lock().await;
     let slots = loader_guard
         .as_ref()

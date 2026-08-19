@@ -1,5 +1,6 @@
 use super::super::*;
-use crate::require_param;
+use crate::rpc_client::SessionIdRequest;
+use crate::rpc_helpers::typed_params;
 
 /// The modes a session can be in, and which one it is in now.
 ///
@@ -22,7 +23,11 @@ use crate::require_param;
 /// post-turn — because promising enforcement we cannot yet vouch for is the
 /// failure that matters.
 pub(crate) async fn handle_session_list_modes(req: Request, am: &Arc<AgentManager>) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
+    let params = match typed_params::<SessionIdRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &params.session_id;
 
     let agent_type = match am.get_session_with_agent(session_id) {
         Ok((_, agent)) => agent.agent_type,

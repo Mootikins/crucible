@@ -1,14 +1,17 @@
 use super::super::*;
+use crate::rpc_client::{SessionForkRequest, SessionIdRequest, SessionSwitchModelRequest};
 use crate::rpc_helpers::typed_params;
-use crate::{optional_param, require_param};
 
 pub(crate) async fn handle_session_switch_model(
     req: Request,
     am: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let model_id = require_param!(req, "model_id", as_str);
+    let params = match typed_params::<SessionSwitchModelRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let (session_id, model_id) = (&params.session_id, &params.model_id);
 
     match am.switch_model(session_id, model_id, Some(event_tx)).await {
         Ok(()) => Response::success(
@@ -41,7 +44,11 @@ pub(crate) async fn handle_session_switch_model(
 }
 
 pub(crate) async fn handle_session_list_models(req: Request, am: &Arc<AgentManager>) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
+    let params = match typed_params::<SessionIdRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &params.session_id;
 
     let classification = match am.get_session_with_agent(session_id) {
         Ok((session, _)) => {
@@ -164,8 +171,11 @@ pub(crate) async fn handle_session_fork(
     sm: &Arc<SessionManager>,
     am: &Arc<AgentManager>,
 ) -> Response {
-    let parent_id = require_param!(req, "session_id", as_str);
-    let up_to = optional_param!(req, "up_to", as_u64);
+    let params = match typed_params::<SessionForkRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let (parent_id, up_to) = (&params.session_id, params.up_to);
 
     let parent = match sm.get_session(parent_id) {
         Some(s) => s,

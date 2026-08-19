@@ -31,9 +31,11 @@ pub use client::{
     PluginOptionCallRequest, PluginOptionsRequest, PluginPublicationsRequest, PluginRemoveRequest,
     PluginRunCommandRequest, PluginTestFailure, PluginTestLoadFailure, ProcessFileRequest,
     ScmCloneRequest, SearchVectorsRequest, SessionAgentSpec, SessionCreateParams,
-    SessionCreateRequest, SessionEvent, SessionExportToFileRequest, SessionIdRequest,
-    SessionRenderMarkdownRequest, SessionReplayRequest, SessionResumeFromStorageRequest,
-    SessionSetTitleRequest, SkillsGetRequest, SkillsListRequest, SkillsSearchRequest, VersionCheck,
+    SessionCreateRequest, SessionDismissNotificationRequest, SessionEvent,
+    SessionExportToFileRequest, SessionForkRequest, SessionIdRequest, SessionRenderMarkdownRequest,
+    SessionReplayRequest, SessionResumeFromStorageRequest, SessionSetTitleRequest,
+    SessionSwitchModelRequest, SkillsGetRequest, SkillsListRequest, SkillsSearchRequest,
+    VersionCheck,
 };
 pub use error_ext::ChatResultExt;
 pub use storage::{DaemonNoteStore, DaemonStorageClient};

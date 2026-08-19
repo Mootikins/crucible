@@ -282,7 +282,12 @@ pub(crate) async fn handle_session_search(req: Request, sm: &Arc<SessionManager>
 }
 
 pub(crate) async fn handle_session_get(req: Request, sm: &Arc<SessionManager>) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
+    let params = match crate::rpc_helpers::typed_params::<crate::rpc_client::SessionIdRequest>(&req)
+    {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &params.session_id;
 
     match sm.get_session(session_id) {
         Some(session) => {

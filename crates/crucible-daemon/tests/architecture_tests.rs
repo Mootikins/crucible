@@ -1247,6 +1247,10 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/plugins.rs",
     ),
     (
+        "SessionIdRequest",
+        "crates/crucible-daemon/src/server/plugins.rs",
+    ),
+    (
         "PluginInstallRequest",
         "crates/crucible-daemon/src/server/plugin_install.rs",
     ),
@@ -1280,6 +1284,34 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
     (
         "SessionExportToFileRequest",
         "crates/crucible-daemon/src/server/observe.rs",
+    ),
+    (
+        "SessionIdRequest",
+        "crates/crucible-daemon/src/server/session/list.rs",
+    ),
+    (
+        "SessionIdRequest",
+        "crates/crucible-daemon/src/server/session/modes.rs",
+    ),
+    (
+        "SessionIdRequest",
+        "crates/crucible-daemon/src/server/session/models.rs",
+    ),
+    (
+        "SessionForkRequest",
+        "crates/crucible-daemon/src/server/session/models.rs",
+    ),
+    (
+        "SessionSwitchModelRequest",
+        "crates/crucible-daemon/src/server/session/models.rs",
+    ),
+    (
+        "SessionIdRequest",
+        "crates/crucible-daemon/src/server/session/notifications.rs",
+    ),
+    (
+        "SessionDismissNotificationRequest",
+        "crates/crucible-daemon/src/server/session/notifications.rs",
     ),
     (
         "ListAllModelsRequest",

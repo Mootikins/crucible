@@ -1,5 +1,7 @@
 use super::super::*;
 use crate::require_param;
+use crate::rpc_client::{SessionDismissNotificationRequest, SessionIdRequest};
+use crate::rpc_helpers::typed_params;
 
 pub(crate) async fn handle_session_add_notification(
     req: Request,
@@ -38,7 +40,11 @@ pub(crate) async fn handle_session_list_notifications(
     req: Request,
     am: &Arc<AgentManager>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
+    let params = match typed_params::<SessionIdRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &params.session_id;
 
     match am.list_notifications(session_id).await {
         Ok(notifications) => Response::success(
@@ -60,8 +66,11 @@ pub(crate) async fn handle_session_dismiss_notification(
     am: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let notification_id = require_param!(req, "notification_id", as_str);
+    let params = match typed_params::<SessionDismissNotificationRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let (session_id, notification_id) = (&params.session_id, &params.notification_id);
 
     match am
         .dismiss_notification(session_id, notification_id, Some(event_tx))

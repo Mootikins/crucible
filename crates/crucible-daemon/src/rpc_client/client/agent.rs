@@ -17,7 +17,7 @@ pub struct SessionConfigureAgentRequest {
 }
 
 /// Request for `session.switch_model`.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionSwitchModelRequest {
     pub session_id: String,
     pub model_id: String,
