@@ -1258,6 +1258,18 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "LuaRunPluginTestsRequest",
         "crates/crucible-daemon/src/server/lua_plugin_suite.rs",
     ),
+    // `session.set_title` and `session.generate_title` answer on the
+    // `Result<Value, RpcError>` path, so they deserialize with
+    // `parse_params::<T>` rather than `typed_params::<T>`. The gate reads the
+    // turbofish, not the helper's name.
+    (
+        "SessionSetTitleRequest",
+        "crates/crucible-daemon/src/rpc/dispatch.rs",
+    ),
+    (
+        "SessionIdRequest",
+        "crates/crucible-daemon/src/rpc/dispatch.rs",
+    ),
 ];
 
 /// Handlers that still hand-pluck their fields. REMOVE rows; never add.

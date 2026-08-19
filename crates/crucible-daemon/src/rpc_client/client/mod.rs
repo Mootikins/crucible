@@ -65,7 +65,10 @@ pub use lua::{
 // now deserializes it: the client struct IS the server's contract rather than
 // a shape the server re-derives by hand.
 pub use agent::{ListAllModelsRequest, ListProvidersRequest};
-pub use session::{SessionAgentSpec, SessionCreateParams, SessionCreateRequest, SessionReplayRequest};
+pub use session::{
+    SessionAgentSpec, SessionCreateParams, SessionCreateRequest, SessionIdRequest,
+    SessionReplayRequest, SessionSetTitleRequest,
+};
 pub use plugin_requests::{
     PluginInstallRequest, PluginOptionCallRequest, PluginOptionsRequest,
     PluginPublicationsRequest, PluginRemoveRequest, PluginRunCommandRequest,
@@ -80,7 +83,6 @@ pub use types::{
     SkillsListRequest, SkillsSearchRequest, VersionCheck,
 };
 
-use session::SessionIdRequest;
 use types::{extract_string_array, EmptyParams};
 
 type PendingRequests = Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>;

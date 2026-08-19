@@ -213,7 +213,7 @@ pub struct SessionListRequest {
 /// `session.cancel`, `session.list_models`, `session.get_thinking_budget`,
 /// `session.get_precognition`, `session.get_temperature`, `session.get_max_tokens`,
 /// `session.archive`, `session.unarchive`, `session.delete`.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionIdRequest {
     pub session_id: String,
 }
@@ -260,7 +260,7 @@ pub struct SessionInteractionRespondRequest {
 }
 
 /// Request for `session.set_title`.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionSetTitleRequest {
     pub session_id: String,
     pub title: String,

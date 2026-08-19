@@ -1090,15 +1090,9 @@ impl RpcDispatcher {
     }
 
     async fn handle_set_title(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        use crate::rpc::params::parse_params;
-        use serde::Deserialize;
-
-        #[derive(Deserialize)]
-        struct Params {
-            session_id: String,
-            title: String,
-        }
-        let p: Params = parse_params(req)?;
+        // The client's own request type, not a second spelling of its two
+        // fields (gate A6).
+        let p = crate::rpc::params::parse_params::<crate::rpc_client::SessionSetTitleRequest>(req)?;
 
         self.ctx
             .sessions
@@ -1117,14 +1111,7 @@ impl RpcDispatcher {
     }
 
     async fn handle_generate_title(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        use crate::rpc::params::parse_params;
-        use serde::Deserialize;
-
-        #[derive(Deserialize)]
-        struct Params {
-            session_id: String,
-        }
-        let p: Params = parse_params(req)?;
+        let p = crate::rpc::params::parse_params::<crate::rpc_client::SessionIdRequest>(req)?;
 
         let title = self
             .ctx
