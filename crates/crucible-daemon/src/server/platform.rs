@@ -283,6 +283,28 @@ mod tests {
         assert!(!probe_profile_availability(&profile).await);
     }
 
+    /// `skills.get` needs both fields; the typed request rejects a caller that
+    /// sends one, naming the one it missed.
+    #[tokio::test]
+    async fn skills_get_without_a_kiln_path_is_invalid_params() {
+        let req = Request {
+            jsonrpc: "2.0".to_string(),
+            id: Some(crate::protocol::RequestId::Number(1)),
+            method: "skills.get".to_string(),
+            params: serde_json::json!({ "name": "commit" }),
+        };
+
+        let resp = handle_skills_get(req).await;
+
+        let error = resp.error.expect("a request with no `kiln_path` must fail");
+        assert_eq!(error.code, INVALID_PARAMS);
+        assert!(
+            error.message.contains("kiln_path"),
+            "the message must name the field: {}",
+            error.message
+        );
+    }
+
     #[tokio::test]
     async fn profile_with_present_command_is_available() {
         // `cargo` exists wherever the tests run and answers --version.

@@ -497,3 +497,52 @@ fn a_directory_within_the_cap_is_not_flagged_truncated() {
     assert_eq!(listing.entries.len(), 5);
     assert!(!listing.truncated);
 }
+
+/// The three fields of `FsPathRequest` reach the operation: a wrong `root`,
+/// `kind` or `rel_path` cannot produce this directory.
+#[tokio::test]
+async fn fs_mkdir_reads_root_kind_and_rel_path() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let store = tempfile::TempDir::new().unwrap();
+    let (pm, root) = registered_pm(store.path(), tmp.path());
+    let km = Arc::new(KilnManager::new());
+
+    let req = Request {
+        jsonrpc: "2.0".to_string(),
+        id: Some(crate::protocol::RequestId::Number(1)),
+        method: "fs.mkdir".to_string(),
+        params: serde_json::json!({
+            "root": root.to_string_lossy(),
+            "kind": "project",
+            "rel_path": "notes/inbox",
+        }),
+    };
+    let resp = handle_fs_mkdir(req, &pm, &km).await;
+
+    assert!(resp.error.is_none(), "mkdir failed: {:?}", resp.error);
+    assert!(root.join("notes").join("inbox").is_dir());
+}
+
+#[tokio::test]
+async fn fs_mkdir_without_a_rel_path_is_invalid_params() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let store = tempfile::TempDir::new().unwrap();
+    let (pm, root) = registered_pm(store.path(), tmp.path());
+    let km = Arc::new(KilnManager::new());
+
+    let req = Request {
+        jsonrpc: "2.0".to_string(),
+        id: Some(crate::protocol::RequestId::Number(1)),
+        method: "fs.mkdir".to_string(),
+        params: serde_json::json!({ "root": root.to_string_lossy(), "kind": "project" }),
+    };
+    let resp = handle_fs_mkdir(req, &pm, &km).await;
+
+    let error = resp.error.expect("a request with no `rel_path` must fail");
+    assert_eq!(error.code, crate::protocol::INVALID_PARAMS);
+    assert!(
+        error.message.contains("rel_path"),
+        "the message must name the field: {}",
+        error.message
+    );
+}

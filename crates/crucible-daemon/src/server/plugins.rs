@@ -621,6 +621,95 @@ mod plugin_command_rpc_tests {
     }
 }
 
+#[cfg(test)]
+mod project_rpc_param_tests {
+    use super::*;
+    use crate::protocol::{RequestId, INVALID_PARAMS};
+
+    fn request(params: serde_json::Value) -> Request {
+        Request {
+            jsonrpc: "2.0".to_string(),
+            id: Some(RequestId::Number(1)),
+            method: "test".to_string(),
+            params,
+        }
+    }
+
+    /// A hermetic `ProjectManager` — a temp `projects.json`, never the
+    /// developer's real `~/.crucible` registry.
+    fn manager(store: &std::path::Path) -> Arc<ProjectManager> {
+        Arc::new(ProjectManager::new(store.join("projects.json")))
+    }
+
+    #[tokio::test]
+    async fn project_register_reads_the_path_field() {
+        let store = tempfile::TempDir::new().unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
+        let pm = manager(store.path());
+
+        let resp = handle_project_register(
+            request(serde_json::json!({ "path": dir.path().to_string_lossy() })),
+            &pm,
+        )
+        .await;
+
+        assert!(resp.error.is_none(), "register failed: {:?}", resp.error);
+        assert!(
+            pm.get(dir.path()).is_some(),
+            "the handler registered some other path than the one it was sent"
+        );
+    }
+
+    #[tokio::test]
+    async fn project_get_answers_null_for_an_unregistered_path() {
+        let store = tempfile::TempDir::new().unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
+        let pm = manager(store.path());
+
+        let resp = handle_project_get(
+            request(serde_json::json!({ "path": dir.path().to_string_lossy() })),
+            &pm,
+        )
+        .await;
+
+        assert_eq!(resp.result, Some(serde_json::Value::Null));
+    }
+
+    #[tokio::test]
+    async fn project_register_without_a_path_is_invalid_params() {
+        let store = tempfile::TempDir::new().unwrap();
+        let pm = manager(store.path());
+
+        let resp = handle_project_register(request(serde_json::json!({})), &pm).await;
+
+        let error = resp.error.expect("a request with no `path` must fail");
+        assert_eq!(error.code, INVALID_PARAMS);
+        assert!(
+            error.message.contains("path"),
+            "the message must name the field: {}",
+            error.message
+        );
+    }
+
+    /// The absent-`path` answer is the handler's own sentence, not serde's:
+    /// `path` defaults so that this message survives the typed request.
+    #[tokio::test]
+    async fn option_call_without_a_path_still_says_path_is_required() {
+        let loader: Arc<Mutex<Option<DaemonPluginLoader>>> = Arc::new(Mutex::new(None));
+
+        let resp = handle_plugin_option_call(
+            request(serde_json::json!({ "plugin": "oci" })),
+            &loader,
+            OptionAction::Get,
+        )
+        .await;
+
+        let error = resp.error.expect("a request with no `path` must fail");
+        assert_eq!(error.code, INVALID_PARAMS);
+        assert_eq!(error.message, "`path` is required");
+    }
+}
+
 /// `plugin.list` is the only window a client has onto plugin health. Every
 /// failure mode below used to be invisible there: the plugin was either
 /// filtered out of the response entirely or reported `Active`.

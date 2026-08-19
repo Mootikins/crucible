@@ -33,6 +33,10 @@ pub struct PluginOptionsRequest {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PluginOptionCallRequest {
     pub plugin: String,
+    /// Defaulted, not required, so an absent `path` reaches the handler's own
+    /// "`path` is required" answer instead of a serde "missing field" — the
+    /// message callers have always seen for this mistake.
+    #[serde(default)]
     pub path: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ui: Option<String>,
