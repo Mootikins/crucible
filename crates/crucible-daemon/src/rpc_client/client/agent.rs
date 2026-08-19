@@ -10,7 +10,11 @@ use super::types::{extract_string_array, EmptyParams, NameRequest};
 use super::DaemonClient;
 
 /// Request for `session.configure_agent`.
-#[derive(Debug, Clone, serde::Serialize)]
+///
+/// `agent` stays a `Value` on purpose: the handler answers a distinct
+/// `Invalid agent config: {e}` for an `agent` that is not a `SessionAgent`,
+/// and typing the field here would fold that into the generic params error.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionConfigureAgentRequest {
     pub session_id: String,
     pub agent: serde_json::Value,

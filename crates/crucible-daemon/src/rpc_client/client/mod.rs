@@ -64,15 +64,20 @@ pub use lua::{
 // wire-format tests below) because the daemon's own `handle_session_create`
 // now deserializes it: the client struct IS the server's contract rather than
 // a shape the server re-derives by hand.
-pub use agent::{ListAllModelsRequest, ListProvidersRequest, SessionSwitchModelRequest};
+pub use agent::{
+    ListAllModelsRequest, ListProvidersRequest, SessionConfigureAgentRequest,
+    SessionSwitchModelRequest,
+};
 pub use plugin_requests::{
     PluginInstallRequest, PluginOptionCallRequest, PluginOptionsRequest, PluginPublicationsRequest,
     PluginRemoveRequest, PluginRunCommandRequest,
 };
+pub use review::{ReviewCommentRequest, ReviewResolveCommentRequest, ReviewSetStateRequest};
 pub use session::{
     SessionAgentSpec, SessionCreateParams, SessionCreateRequest, SessionDismissNotificationRequest,
-    SessionExportToFileRequest, SessionForkRequest, SessionIdRequest, SessionRenderMarkdownRequest,
-    SessionReplayRequest, SessionResumeFromStorageRequest, SessionSetTitleRequest,
+    SessionExportToFileRequest, SessionForkRequest, SessionIdRequest, SessionInjectContextRequest,
+    SessionInteractionRespondRequest, SessionRenderMarkdownRequest, SessionReplayRequest,
+    SessionResumeFromStorageRequest, SessionSetTitleRequest, SessionTestInteractionRequest,
 };
 pub use storage_requests::{
     FsListDirRequest, FsMoveRequest, FsPathRequest, GrepSearchRequest, KilnOpenRequest,

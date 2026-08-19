@@ -21,7 +21,48 @@
 use anyhow::Result;
 use serde_json::{json, Value};
 
+use super::session::SessionIdRequest;
 use super::DaemonClient;
+
+/// Request for `review.set_state`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ReviewSetStateRequest {
+    pub session_id: String,
+    pub hunk_id: String,
+    /// `unreviewed`, `accepted` or `rejected`.
+    pub state: String,
+}
+
+/// Request for `review.comment`.
+///
+/// The client's own `review_comment` still takes the comment as a `Value` and
+/// merges `session_id` into it — its callers (the web review route, the Lua
+/// bridge) hand it one already built. The struct is here because it is what
+/// the handler reads, so the field names have one home instead of three.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ReviewCommentRequest {
+    pub session_id: String,
+    pub path: String,
+    pub body: String,
+    pub line_start: u32,
+    /// Half-open, so a one-line comment is `line_start .. line_start + 1`.
+    /// Defaulting to that is what anchoring to a single line means.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line_end: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root: Option<String>,
+    /// `human` (the default here) or `agent`. The Lua bridge defaults the
+    /// other way — its caller is an agent, this one is a person at a panel.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+}
+
+/// Request for `review.resolve_comment`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ReviewResolveCommentRequest {
+    pub session_id: String,
+    pub comment_id: String,
+}
 
 impl DaemonClient {
     /// One attempt, no retry. See the module doc for why the four review
@@ -35,8 +76,13 @@ impl DaemonClient {
     ///
     /// The one review method that is safe to retry: it mutates nothing.
     pub async fn review_list_hunks(&self, session_id: &str) -> Result<Value> {
-        self.call_with_retry("review.list_hunks", json!({ "session_id": session_id }))
-            .await
+        self.call_with_retry(
+            "review.list_hunks",
+            serde_json::to_value(SessionIdRequest {
+                session_id: session_id.to_string(),
+            })?,
+        )
+        .await
     }
 
     /// `review.rebase` — accept the worktree as the new base and release the
@@ -52,8 +98,13 @@ impl DaemonClient {
     /// described stops being in the composed diff — so it takes the
     /// at-most-once path with the other four.
     pub async fn review_rebase(&self, session_id: &str) -> Result<Value> {
-        self.call_once("review.rebase", json!({ "session_id": session_id }))
-            .await
+        self.call_once(
+            "review.rebase",
+            serde_json::to_value(SessionIdRequest {
+                session_id: session_id.to_string(),
+            })?,
+        )
+        .await
     }
 
     /// `review.set_state` — accept, reject, or return a hunk to the queue.
@@ -69,7 +120,11 @@ impl DaemonClient {
     ) -> Result<Value> {
         self.call_once(
             "review.set_state",
-            json!({ "session_id": session_id, "hunk_id": hunk_id, "state": state }),
+            serde_json::to_value(ReviewSetStateRequest {
+                session_id: session_id.to_string(),
+                hunk_id: hunk_id.to_string(),
+                state: state.to_string(),
+            })?,
         )
         .await
     }
@@ -77,10 +132,9 @@ impl DaemonClient {
     /// `review.comment` — anchor a comment to a line range.
     ///
     /// `comment` is a params object the caller already validated and
-    /// serialized, because its optional fields (`line_end`, `root`, `author`)
-    /// must be *absent* rather than `null` for the daemon's `optional_param!`
-    /// defaults to apply — a discipline that belongs on the struct that
-    /// deserialized the request, not on a second copy of it here.
+    /// serialized. [`ReviewCommentRequest`] is what the daemon deserializes it
+    /// into, so that struct — not a second copy of the field names here — is
+    /// where the shape is stated.
     ///
     /// `session_id` is written last and therefore wins: the session under
     /// review is the one the caller named out of band, never one smuggled in
@@ -104,7 +158,10 @@ impl DaemonClient {
     ) -> Result<Value> {
         self.call_once(
             "review.resolve_comment",
-            json!({ "session_id": session_id, "comment_id": comment_id }),
+            serde_json::to_value(ReviewResolveCommentRequest {
+                session_id: session_id.to_string(),
+                comment_id: comment_id.to_string(),
+            })?,
         )
         .await
     }

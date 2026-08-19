@@ -1314,6 +1314,42 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/session/notifications.rs",
     ),
     (
+        "SessionIdRequest",
+        "crates/crucible-daemon/src/server/session/messaging.rs",
+    ),
+    (
+        "SessionConfigureAgentRequest",
+        "crates/crucible-daemon/src/server/session/messaging.rs",
+    ),
+    (
+        "SessionInjectContextRequest",
+        "crates/crucible-daemon/src/server/session/messaging.rs",
+    ),
+    (
+        "SessionInteractionRespondRequest",
+        "crates/crucible-daemon/src/server/session/messaging.rs",
+    ),
+    (
+        "SessionTestInteractionRequest",
+        "crates/crucible-daemon/src/server/session/messaging.rs",
+    ),
+    (
+        "SessionIdRequest",
+        "crates/crucible-daemon/src/server/session/review/mod.rs",
+    ),
+    (
+        "ReviewSetStateRequest",
+        "crates/crucible-daemon/src/server/session/review/mod.rs",
+    ),
+    (
+        "ReviewCommentRequest",
+        "crates/crucible-daemon/src/server/session/review/mod.rs",
+    ),
+    (
+        "ReviewResolveCommentRequest",
+        "crates/crucible-daemon/src/server/session/review/mod.rs",
+    ),
+    (
         "ListAllModelsRequest",
         "crates/crucible-daemon/src/server/session/models.rs",
     ),

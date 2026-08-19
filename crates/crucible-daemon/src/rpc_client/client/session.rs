@@ -254,11 +254,40 @@ pub struct SessionSendMessageRequest {
 }
 
 /// Request for `session.interaction_respond`.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionInteractionRespondRequest {
     pub session_id: String,
     pub request_id: String,
     pub response: serde_json::Value,
+}
+
+/// Request for `session.inject_context`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SessionInjectContextRequest {
+    pub session_id: String,
+    /// `system`, `user` or `assistant` — anything else is `INVALID_PARAMS`.
+    pub role: String,
+    pub content: String,
+}
+
+/// Request for `session.test_interaction` — the developer-facing prod that
+/// emits an `interaction_requested` event nobody is waiting on.
+///
+/// Every field but `session_id` is optional and every default is a canned
+/// example, because the method exists to check that a client renders a modal
+/// at all.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SessionTestInteractionRequest {
+    pub session_id: String,
+    /// `ask` (the default) or `permission`.
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub interaction_type: Option<String>,
+    /// The question an `ask` puts to the user.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub question: Option<String>,
+    /// The command a `permission` asks about.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
 }
 
 /// Request for `session.fork`.

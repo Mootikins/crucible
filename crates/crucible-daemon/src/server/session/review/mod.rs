@@ -23,7 +23,10 @@
 //! handler-only implementation would have to be written twice.
 
 use super::super::*;
-use crate::require_param;
+use crate::rpc_client::{
+    ReviewCommentRequest, ReviewResolveCommentRequest, ReviewSetStateRequest, SessionIdRequest,
+};
+use crate::rpc_helpers::typed_params;
 
 use std::path::{Component, Path};
 
@@ -258,7 +261,11 @@ pub(crate) async fn handle_review_list_hunks(
     am: &Arc<AgentManager>,
     sm: &Arc<SessionManager>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
+    let params = match typed_params::<SessionIdRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &params.session_id;
     ensure_loaded(am, sm, session_id).await;
 
     match list_hunks_with_status(am, session_id).await {
@@ -303,7 +310,11 @@ pub(crate) async fn handle_review_rebase(
     sm: &Arc<SessionManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
+    let params = match typed_params::<SessionIdRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &params.session_id;
     ensure_loaded(am, sm, session_id).await;
 
     match rebase(am, sm, event_tx, session_id).await {
@@ -325,9 +336,12 @@ pub(crate) async fn handle_review_set_state(
     sm: &Arc<SessionManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let hunk_id = require_param!(req, "hunk_id", as_str);
-    let state_str = require_param!(req, "state", as_str);
+    let params = match typed_params::<ReviewSetStateRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &params.session_id;
+    let state_str = &params.state;
     ensure_loaded(am, sm, session_id).await;
 
     let Some(state) = parse_state(state_str) else {
@@ -337,7 +351,7 @@ pub(crate) async fn handle_review_set_state(
             format!("Invalid 'state': {state_str} (expected unreviewed, accepted or rejected)"),
         );
     };
-    let hunk_id = HunkId::from(hunk_id.to_string());
+    let hunk_id = HunkId::from(params.hunk_id.clone());
 
     match set_state(am, sm, event_tx, session_id, &hunk_id, state).await {
         Ok(()) => Response::success(
@@ -359,18 +373,18 @@ pub(crate) async fn handle_review_comment(
     sm: &Arc<SessionManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
+    let params = match typed_params::<ReviewCommentRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &params.session_id;
     ensure_loaded(am, sm, session_id).await;
-    let path = require_param!(req, "path", as_str);
-    let body = require_param!(req, "body", as_str);
-    let line_start = require_param!(req, "line_start", as_u64) as u32;
+    let (path, body, line_start) = (&params.path, &params.body, params.line_start);
     // Half-open, so a one-line comment is `line_start .. line_start + 1`.
     // Defaulting to that is what a client anchoring to a single line means.
-    let line_end = optional_param!(req, "line_end", as_u64)
-        .map(|v| v as u32)
-        .unwrap_or(line_start + 1);
-    let root = optional_param!(req, "root", as_str).map(Path::new);
-    let author_str = optional_param!(req, "author", as_str).unwrap_or("human");
+    let line_end = params.line_end.unwrap_or(line_start + 1);
+    let root = params.root.as_deref().map(Path::new);
+    let author_str = params.author.as_deref().unwrap_or("human");
 
     let Some(author) = parse_author(author_str) else {
         return Response::error(
@@ -410,8 +424,11 @@ pub(crate) async fn handle_review_resolve_comment(
     sm: &Arc<SessionManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let comment_id = require_param!(req, "comment_id", as_str);
+    let params = match typed_params::<ReviewResolveCommentRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let (session_id, comment_id) = (&params.session_id, &params.comment_id);
     ensure_loaded(am, sm, session_id).await;
 
     match resolve_comment(am, event_tx, session_id, comment_id).await {

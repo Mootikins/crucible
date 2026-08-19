@@ -1,20 +1,22 @@
 use super::super::*;
 use crate::require_param;
+use crate::rpc_client::{
+    SessionConfigureAgentRequest, SessionIdRequest, SessionInjectContextRequest,
+    SessionInteractionRespondRequest, SessionTestInteractionRequest,
+};
+use crate::rpc_helpers::typed_params;
 
 pub(crate) async fn handle_session_configure_agent(
     req: Request,
     am: &Arc<AgentManager>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-
-    let agent_json = match req.params.get("agent") {
-        Some(v) => v.clone(),
-        None => {
-            return Response::error(req.id, INVALID_PARAMS, "Missing 'agent' parameter");
-        }
+    let params = match typed_params::<SessionConfigureAgentRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
     };
+    let session_id = &params.session_id;
 
-    let agent: crucible_core::session::SessionAgent = match serde_json::from_value(agent_json) {
+    let agent: crucible_core::session::SessionAgent = match serde_json::from_value(params.agent) {
         Ok(a) => a,
         Err(e) => {
             return Response::error(
@@ -140,11 +142,13 @@ pub(crate) async fn handle_session_inject_context(
     sm: &Arc<SessionManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let role = require_param!(req, "role", as_str);
-    let content = require_param!(req, "content", as_str);
+    let params = match typed_params::<SessionInjectContextRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &params.session_id;
 
-    match inject_context_impl(sm, event_tx, session_id, role, content).await {
+    match inject_context_impl(sm, event_tx, session_id, &params.role, &params.content).await {
         Ok(()) => Response::success(req.id, serde_json::json!({ "status": "ok" })),
         Err(msg) if msg.starts_with("Invalid role") => Response::error(req.id, INVALID_PARAMS, msg),
         Err(msg) if msg.starts_with("Session not found") => session_not_found(req.id, session_id),
@@ -153,7 +157,11 @@ pub(crate) async fn handle_session_inject_context(
 }
 
 pub(crate) async fn handle_session_cancel(req: Request, am: &Arc<AgentManager>) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
+    let params = match typed_params::<SessionIdRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &params.session_id;
 
     let cancelled = am.cancel(session_id).await;
     Response::success(
@@ -202,12 +210,14 @@ pub(crate) async fn handle_session_interaction_respond(
     am: &Arc<AgentManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
-    let request_id = require_param!(req, "request_id", as_str);
-    let response_obj = require_param!(req, "response", as_object);
+    let params = match typed_params::<SessionInteractionRespondRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let (session_id, request_id) = (&params.session_id, &params.request_id);
 
     let response: crucible_core::interaction::InteractionResponse =
-        match serde_json::from_value(serde_json::Value::Object(response_obj.clone())) {
+        match serde_json::from_value(params.response) {
             Ok(r) => r,
             Err(e) => {
                 return Response::error(
@@ -274,17 +284,21 @@ pub(crate) async fn handle_session_test_interaction(
     req: Request,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let session_id = require_param!(req, "session_id", as_str);
+    let params = match typed_params::<SessionTestInteractionRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = &params.session_id;
 
-    let get_str = |key: &str| -> Option<&str> { req.params.get(key)?.as_str() };
-
-    let interaction_type = get_str("type").unwrap_or("ask");
+    let interaction_type = params.interaction_type.as_deref().unwrap_or("ask");
     let request_id = format!("test-{}", uuid::Uuid::new_v4());
 
     let request = match interaction_type {
         "ask" => {
-            let question =
-                get_str("question").unwrap_or("Test question: Which option do you prefer?");
+            let question = params
+                .question
+                .as_deref()
+                .unwrap_or("Test question: Which option do you prefer?");
 
             // InteractionRequest uses #[serde(tag = "kind")] internally-tagged format
             serde_json::json!({
@@ -296,7 +310,7 @@ pub(crate) async fn handle_session_test_interaction(
             })
         }
         "permission" => {
-            let action = get_str("action").unwrap_or("rm -rf /tmp/test");
+            let action = params.action.as_deref().unwrap_or("rm -rf /tmp/test");
 
             // PermRequest uses externally-tagged format for its inner Bash/Read/Write/Tool
             serde_json::json!({

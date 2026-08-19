@@ -30,11 +30,13 @@ pub use client::{
     McpStartRequest, NameRequest, NoteRenameRequest, PathRequest, PluginInstallRequest,
     PluginOptionCallRequest, PluginOptionsRequest, PluginPublicationsRequest, PluginRemoveRequest,
     PluginRunCommandRequest, PluginTestFailure, PluginTestLoadFailure, ProcessFileRequest,
-    ScmCloneRequest, SearchVectorsRequest, SessionAgentSpec, SessionCreateParams,
+    ReviewCommentRequest, ReviewResolveCommentRequest, ReviewSetStateRequest, ScmCloneRequest,
+    SearchVectorsRequest, SessionAgentSpec, SessionConfigureAgentRequest, SessionCreateParams,
     SessionCreateRequest, SessionDismissNotificationRequest, SessionEvent,
-    SessionExportToFileRequest, SessionForkRequest, SessionIdRequest, SessionRenderMarkdownRequest,
-    SessionReplayRequest, SessionResumeFromStorageRequest, SessionSetTitleRequest,
-    SessionSwitchModelRequest, SkillsGetRequest, SkillsListRequest, SkillsSearchRequest,
+    SessionExportToFileRequest, SessionForkRequest, SessionIdRequest, SessionInjectContextRequest,
+    SessionInteractionRespondRequest, SessionRenderMarkdownRequest, SessionReplayRequest,
+    SessionResumeFromStorageRequest, SessionSetTitleRequest, SessionSwitchModelRequest,
+    SessionTestInteractionRequest, SkillsGetRequest, SkillsListRequest, SkillsSearchRequest,
     VersionCheck,
 };
 pub use error_ext::ChatResultExt;
