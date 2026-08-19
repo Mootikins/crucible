@@ -297,7 +297,10 @@ impl RpcDispatcher {
             | "session.get_autocompact_threshold" => {
                 to_response(id, self.dispatch_session_config_getter(&req).await)
             }
-            "session.cache_stats" => to_response(id, self.handle_session_cache_stats(&req).await),
+            "session.cache_stats" => forward!(
+                id,
+                crate::server::session::handle_session_cache_stats(req.clone(), &self.ctx.agents)
+            ),
             // Kiln CRUD handlers
             "kiln.open" => forward!(
                 id,
@@ -402,27 +405,71 @@ impl RpcDispatcher {
             ),
 
             // Models handler
-            "models.list" => to_response(id, self.handle_models_list(&req).await),
-            "providers.list" => to_response(id, self.handle_providers_list(&req).await),
+            "models.list" => forward!(
+                id,
+                crate::server::session::handle_models_list(req.clone(), &self.ctx.agents)
+            ),
+            "providers.list" => forward!(
+                id,
+                crate::server::session::handle_providers_list(req.clone(), &self.ctx.agents)
+            ),
 
             // Session lifecycle handlers
             "session.create" => to_response(id, self.handle_session_create(&req).await),
-            "session.list" => to_response(id, self.handle_session_list(&req).await),
-            "session.get" => to_response(id, self.handle_session_get(&req).await),
+            "session.list" => forward!(
+                id,
+                crate::server::session::handle_session_list(
+                    req.clone(),
+                    &self.ctx.sessions,
+                    &self.ctx.kiln,
+                    &self.ctx.data_home
+                )
+            ),
+            "session.get" => forward!(
+                id,
+                crate::server::session::handle_session_get(req.clone(), &self.ctx.sessions)
+            ),
             "session.pause" => to_response(id, self.handle_session_pause(&req).await),
             "session.resume" => to_response(id, self.handle_session_resume(&req).await),
             "session.resume_from_storage" => {
                 to_response(id, self.handle_session_resume_from_storage(&req).await)
             }
             "session.end" => to_response(id, self.handle_session_end(&req).await),
-            "session.archive" => to_response(id, self.handle_session_archive(&req).await),
-            "session.unarchive" => to_response(id, self.handle_session_unarchive(&req).await),
-            "session.delete" => to_response(id, self.handle_session_delete(&req).await),
-            "session.compact" => to_response(id, self.handle_session_compact(&req).await),
+            "session.archive" => forward!(
+                id,
+                crate::server::session::handle_session_archive(
+                    req.clone(),
+                    &self.ctx.sessions,
+                    &self.ctx.agents
+                )
+            ),
+            "session.unarchive" => forward!(
+                id,
+                crate::server::session::handle_session_unarchive(
+                    req.clone(),
+                    &self.ctx.sessions,
+                    &self.ctx.agents
+                )
+            ),
+            "session.delete" => forward!(
+                id,
+                crate::server::session::handle_session_delete(
+                    req.clone(),
+                    &self.ctx.sessions,
+                    &self.ctx.agents
+                )
+            ),
+            "session.compact" => forward!(
+                id,
+                crate::server::session::handle_session_compact(req.clone(), &self.ctx.sessions)
+            ),
             "session.fork" => to_response(id, self.handle_session_fork(&req).await),
 
             // Session utility handlers
-            "session.search" => to_response(id, self.handle_session_search(&req).await),
+            "session.search" => forward!(
+                id,
+                crate::server::session::handle_session_search(req.clone(), &self.ctx.sessions)
+            ),
             "session.load_events" => to_response(id, self.handle_session_load_events(&req).await),
             "session.list_persisted" => {
                 to_response(id, self.handle_session_list_persisted(&req).await)
@@ -451,63 +498,225 @@ impl RpcDispatcher {
             "session.configure_agent" => {
                 to_response(id, self.handle_session_configure_agent(&req).await)
             }
-            "session.send_message" => to_response(id, self.handle_session_send_message(&req).await),
+            "session.send_message" => forward!(
+                id,
+                crate::server::session::handle_session_send_message(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx
+                )
+            ),
             "session.inject_context" => {
-                to_response(id, self.handle_session_inject_context(&req).await)
+                forward!(
+                    id,
+                    crate::server::session::handle_session_inject_context(
+                        req.clone(),
+                        &self.ctx.sessions,
+                        &self.ctx.event_tx
+                    )
+                )
             }
-            "session.cancel" => to_response(id, self.handle_session_cancel(&req).await),
+            "session.cancel" => forward!(
+                id,
+                crate::server::session::handle_session_cancel(req.clone(), &self.ctx.agents)
+            ),
             "session.interaction_respond" => {
-                to_response(id, self.handle_session_interaction_respond(&req).await)
+                forward!(
+                    id,
+                    crate::server::session::handle_session_interaction_respond(
+                        req.clone(),
+                        &self.ctx.agents,
+                        &self.ctx.event_tx
+                    )
+                )
             }
             "session.pending_interactions" => {
-                to_response(id, self.handle_session_pending_interactions(&req).await)
+                forward!(
+                    id,
+                    crate::server::session::handle_session_pending_interactions(
+                        req.clone(),
+                        &self.ctx.agents
+                    )
+                )
             }
-            "session.switch_model" => to_response(id, self.handle_session_switch_model(&req).await),
-            "session.connect_kiln" => to_response(id, self.handle_session_connect_kiln(&req).await),
+            "session.switch_model" => forward!(
+                id,
+                crate::server::session::handle_session_switch_model(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx
+                )
+            ),
+            "session.connect_kiln" => forward!(
+                id,
+                crate::server::session::handle_session_connect_kiln(
+                    req.clone(),
+                    &self.ctx.sessions,
+                    &self.ctx.agents,
+                    &self.ctx.kiln,
+                    &self.ctx.llm_config,
+                    &self.ctx.event_tx
+                )
+            ),
             "session.disconnect_kiln" => {
-                to_response(id, self.handle_session_disconnect_kiln(&req).await)
+                forward!(
+                    id,
+                    crate::server::session::handle_session_disconnect_kiln(
+                        req.clone(),
+                        &self.ctx.agents,
+                        &self.ctx.event_tx
+                    )
+                )
             }
             "session.set_workspace" => {
-                to_response(id, self.handle_session_set_workspace(&req).await)
+                forward!(
+                    id,
+                    crate::server::session::handle_session_set_workspace(
+                        req.clone(),
+                        &self.ctx.sessions,
+                        &self.ctx.agents,
+                        &self.ctx.project_manager,
+                        &self.ctx.llm_config,
+                        &self.ctx.event_tx
+                    )
+                )
             }
-            "session.set_mode" => to_response(id, self.handle_session_set_mode(&req).await),
+            "session.set_mode" => forward!(
+                id,
+                crate::server::session::handle_session_set_mode(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx
+                )
+            ),
 
             // Review queue. Session-scoped like the handlers above, but
             // namespaced `review.*` rather than `session.*`: the unit they act
             // on is a composed hunk, and a delegating agent reviewing a child
             // session addresses that child's id, not its own.
-            "review.list_hunks" => to_response(id, self.handle_review_list_hunks(&req).await),
-            "review.set_state" => to_response(id, self.handle_review_set_state(&req).await),
-            "review.comment" => to_response(id, self.handle_review_comment(&req).await),
+            "review.list_hunks" => forward!(
+                id,
+                crate::server::session::handle_review_list_hunks(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.sessions
+                )
+            ),
+            "review.set_state" => forward!(
+                id,
+                crate::server::session::handle_review_set_state(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.sessions,
+                    &self.ctx.event_tx
+                )
+            ),
+            "review.comment" => forward!(
+                id,
+                crate::server::session::handle_review_comment(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.sessions,
+                    &self.ctx.event_tx
+                )
+            ),
             "review.resolve_comment" => {
-                to_response(id, self.handle_review_resolve_comment(&req).await)
+                forward!(
+                    id,
+                    crate::server::session::handle_review_resolve_comment(
+                        req.clone(),
+                        &self.ctx.agents,
+                        &self.ctx.sessions,
+                        &self.ctx.event_tx
+                    )
+                )
             }
             // The release valve for the one block reviewing cannot clear: a
             // base tree gc'd out of the object store, a root that moved, a
             // journal record that would not parse. Without it, failing closed
             // on a structural failure would be an unreleasable hang.
-            "review.rebase" => to_response(id, self.handle_review_rebase(&req).await),
+            "review.rebase" => forward!(
+                id,
+                crate::server::session::handle_review_rebase(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.sessions,
+                    &self.ctx.event_tx
+                )
+            ),
 
-            "session.list_models" => to_response(id, self.handle_session_list_models(&req).await),
-            "session.list_modes" => to_response(id, self.handle_session_list_modes(&req).await),
+            "session.list_models" => forward!(
+                id,
+                crate::server::session::handle_session_list_models(req.clone(), &self.ctx.agents)
+            ),
+            "session.list_modes" => forward!(
+                id,
+                crate::server::session::handle_session_list_modes(req.clone(), &self.ctx.agents)
+            ),
             "session.add_notification" => {
-                to_response(id, self.handle_session_add_notification(&req).await)
+                forward!(
+                    id,
+                    crate::server::session::handle_session_add_notification(
+                        req.clone(),
+                        &self.ctx.agents,
+                        &self.ctx.event_tx
+                    )
+                )
             }
             "session.list_notifications" => {
-                to_response(id, self.handle_session_list_notifications(&req).await)
+                forward!(
+                    id,
+                    crate::server::session::handle_session_list_notifications(
+                        req.clone(),
+                        &self.ctx.agents
+                    )
+                )
             }
             "session.dismiss_notification" => {
-                to_response(id, self.handle_session_dismiss_notification(&req).await)
+                forward!(
+                    id,
+                    crate::server::session::handle_session_dismiss_notification(
+                        req.clone(),
+                        &self.ctx.agents,
+                        &self.ctx.event_tx
+                    )
+                )
             }
             "session.test_interaction" => {
-                to_response(id, self.handle_session_test_interaction(&req).await)
+                forward!(
+                    id,
+                    crate::server::session::handle_session_test_interaction(
+                        req.clone(),
+                        &self.ctx.event_tx
+                    )
+                )
             }
-            "session.replay" => to_response(id, self.handle_session_replay(&req).await),
+            "session.replay" => forward!(
+                id,
+                crate::server::session::handle_session_replay(
+                    req.clone(),
+                    &self.ctx.sessions,
+                    &self.ctx.event_tx
+                )
+            ),
 
             // Undo handlers
-            "session.undo" => to_response(id, self.handle_session_undo(&req).await),
-            "session.can_undo" => to_response(id, self.handle_session_can_undo(&req).await),
-            "session.undo_depth" => to_response(id, self.handle_session_undo_depth(&req).await),
+            "session.undo" => forward!(
+                id,
+                crate::server::session::handle_session_undo(
+                    req.clone(),
+                    &self.ctx.agents,
+                    &self.ctx.event_tx
+                )
+            ),
+            "session.can_undo" => forward!(
+                id,
+                crate::server::session::handle_session_can_undo(req.clone(), &self.ctx.agents)
+            ),
+            "session.undo_depth" => forward!(
+                id,
+                crate::server::session::handle_session_undo_depth(req.clone(), &self.ctx.agents)
+            ),
 
             // Lua RPC handlers
             "lua.init_session" => to_response(id, self.handle_lua_init_session(&req).await),
@@ -810,17 +1019,6 @@ impl RpcDispatcher {
         map_server_resp(resp)
     }
 
-    async fn handle_models_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_models_list(req.clone(), &self.ctx.agents).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_providers_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::session::handle_providers_list(req.clone(), &self.ctx.agents).await;
-        map_server_resp(resp)
-    }
-
     // ── Session lifecycle wrappers ────────────────────────────────────────────
 
     async fn handle_session_create(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -945,23 +1143,6 @@ impl RpcDispatcher {
             .await
     }
 
-    async fn handle_session_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_list(
-            req.clone(),
-            &self.ctx.sessions,
-            &self.ctx.kiln,
-            &self.ctx.data_home,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_get(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::session::handle_session_get(req.clone(), &self.ctx.sessions).await;
-        map_server_resp(resp)
-    }
-
     async fn handle_session_pause(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp =
             crate::server::session::handle_session_pause(req.clone(), &self.ctx.sessions).await;
@@ -1057,48 +1238,6 @@ impl RpcDispatcher {
         map_server_resp(resp)
     }
 
-    async fn handle_session_archive(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_archive(
-            req.clone(),
-            &self.ctx.sessions,
-            &self.ctx.agents,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_unarchive(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_unarchive(
-            req.clone(),
-            &self.ctx.sessions,
-            &self.ctx.agents,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_delete(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_delete(
-            req.clone(),
-            &self.ctx.sessions,
-            &self.ctx.agents,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_compact(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::session::handle_session_compact(req.clone(), &self.ctx.sessions).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_cache_stats(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::session::handle_session_cache_stats(req.clone(), &self.ctx.agents).await;
-        map_server_resp(resp)
-    }
-
     /// A fork is a live session on the parent's workspace with the parent's
     /// agent, so it owes the same invariant create and resume do: a live
     /// session is sandboxed, or it does not exist.
@@ -1138,12 +1277,6 @@ impl RpcDispatcher {
     }
 
     // ── Session utility wrappers ─────────────────────────────────────────────
-
-    async fn handle_session_search(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::session::handle_session_search(req.clone(), &self.ctx.sessions).await;
-        map_server_resp(resp)
-    }
 
     async fn handle_session_load_events(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::observe::handle_session_load_events(
@@ -1225,256 +1358,7 @@ impl RpcDispatcher {
         map_server_resp(resp)
     }
 
-    async fn handle_session_send_message(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_send_message(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_inject_context(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_inject_context(
-            req.clone(),
-            &self.ctx.sessions,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_cancel(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::session::handle_session_cancel(req.clone(), &self.ctx.agents).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_interaction_respond(
-        &self,
-        req: &Request,
-    ) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_interaction_respond(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_pending_interactions(
-        &self,
-        req: &Request,
-    ) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_pending_interactions(
-            req.clone(),
-            &self.ctx.agents,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_switch_model(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_switch_model(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_connect_kiln(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_connect_kiln(
-            req.clone(),
-            &self.ctx.sessions,
-            &self.ctx.agents,
-            &self.ctx.kiln,
-            &self.ctx.llm_config,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_disconnect_kiln(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_disconnect_kiln(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_set_workspace(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_set_workspace(
-            req.clone(),
-            &self.ctx.sessions,
-            &self.ctx.agents,
-            &self.ctx.project_manager,
-            &self.ctx.llm_config,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_set_mode(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_set_mode(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_review_list_hunks(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_review_list_hunks(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.sessions,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_review_rebase(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_review_rebase(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.sessions,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_review_set_state(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_review_set_state(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.sessions,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_review_comment(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_review_comment(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.sessions,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_review_resolve_comment(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_review_resolve_comment(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.sessions,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_list_models(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::session::handle_session_list_models(req.clone(), &self.ctx.agents).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_list_modes(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::session::handle_session_list_modes(req.clone(), &self.ctx.agents).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_add_notification(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_add_notification(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_list_notifications(
-        &self,
-        req: &Request,
-    ) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_list_notifications(
-            req.clone(),
-            &self.ctx.agents,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_dismiss_notification(
-        &self,
-        req: &Request,
-    ) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_dismiss_notification(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_test_interaction(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_test_interaction(
-            req.clone(),
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_replay(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_replay(
-            req.clone(),
-            &self.ctx.sessions,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
     // ── Undo RPC wrappers ────────────────────────────────────────────────
-
-    async fn handle_session_undo(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::session::handle_session_undo(
-            req.clone(),
-            &self.ctx.agents,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_can_undo(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::session::handle_session_can_undo(req.clone(), &self.ctx.agents).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_undo_depth(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::session::handle_session_undo_depth(req.clone(), &self.ctx.agents).await;
-        map_server_resp(resp)
-    }
 
     // ── Lua RPC wrappers ─────────────────────────────────────────────────
 
