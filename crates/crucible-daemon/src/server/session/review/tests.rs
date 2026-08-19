@@ -361,6 +361,81 @@ async fn a_comment_anchors_to_the_root_and_comes_back_with_the_hunks() {
     assert_eq!(comments.as_array().unwrap().len(), 1);
 }
 
+/// `line_end`, `root` and `author` are the optional half of
+/// [`ReviewCommentRequest`], and a struct field that never reaches the
+/// operation is invisible to every other check.
+#[tokio::test]
+async fn the_optional_comment_fields_reach_the_operation() {
+    let fx = Fixture::new("one\n").await;
+    fx.open_ledger().await;
+
+    let resp = handle_review_comment(
+        fx.request(
+            "review.comment",
+            serde_json::json!({
+                "path": "a.txt",
+                "line_start": 2,
+                "line_end": 5,
+                "body": "this whole block",
+                "author": "agent",
+            }),
+        ),
+        &fx.am,
+        &fx.sm,
+        &fx.event_tx,
+    )
+    .await;
+
+    let comment: Comment =
+        serde_json::from_value(resp.result.expect("success")["comment"].clone()).unwrap();
+    assert_eq!(comment.line_range, LineRange::new(2, 5));
+    assert_eq!(comment.author, CommentAuthor::Agent);
+}
+
+/// A caller that omits a required field is told which one. The old
+/// `require_param!` named it; the request struct has to keep naming it.
+#[tokio::test]
+async fn a_comment_without_a_body_names_the_field_it_wants() {
+    let fx = Fixture::new("one\n").await;
+    fx.open_ledger().await;
+
+    let resp = handle_review_comment(
+        fx.request(
+            "review.comment",
+            serde_json::json!({ "path": "a.txt", "line_start": 1 }),
+        ),
+        &fx.am,
+        &fx.sm,
+        &fx.event_tx,
+    )
+    .await;
+
+    let err = resp.error.expect("a comment with no body must be refused");
+    assert_eq!(err.code, INVALID_PARAMS);
+    assert!(err.message.contains("body"), "{}", err.message);
+}
+
+/// Same, for the two fields `review.set_state` needs beyond the session.
+#[tokio::test]
+async fn setting_a_state_without_a_hunk_id_names_the_field_it_wants() {
+    let fx = Fixture::new("one\n").await;
+
+    let resp = handle_review_set_state(
+        fx.request(
+            "review.set_state",
+            serde_json::json!({ "state": "accepted" }),
+        ),
+        &fx.am,
+        &fx.sm,
+        &fx.event_tx,
+    )
+    .await;
+
+    let err = resp.error.expect("a decision with no hunk must be refused");
+    assert_eq!(err.code, INVALID_PARAMS);
+    assert!(err.message.contains("hunk_id"), "{}", err.message);
+}
+
 #[tokio::test]
 async fn commenting_without_a_ledger_is_refused() {
     let fx = Fixture::new("one\n").await;

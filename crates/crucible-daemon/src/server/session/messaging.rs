@@ -355,3 +355,86 @@ pub(crate) async fn handle_session_test_interaction(
         }),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crucible_core::protocol::RequestId;
+
+    fn request(params: serde_json::Value) -> Request {
+        Request {
+            jsonrpc: "2.0".to_string(),
+            id: Some(RequestId::Number(1)),
+            method: "session.test_interaction".to_string(),
+            params,
+        }
+    }
+
+    /// `SessionTestInteractionRequest` renames `interaction_type` to the wire
+    /// name `type`. A rename that did not take would silently fall back to the
+    /// `ask` default and this method would stop being able to emit a
+    /// permission prompt at all.
+    #[tokio::test]
+    async fn the_renamed_type_field_and_its_payload_reach_the_emitted_event() {
+        let (event_tx, mut events) = broadcast::channel(8);
+
+        let resp = handle_session_test_interaction(
+            request(serde_json::json!({
+                "session_id": "sess",
+                "type": "permission",
+                "action": "rm -rf /tmp/example",
+            })),
+            &event_tx,
+        )
+        .await;
+
+        assert!(resp.error.is_none(), "{:?}", resp.error);
+        assert_eq!(resp.result.expect("success")["type"], "permission");
+
+        let event = events.try_recv().expect("an interaction_requested event");
+        assert_eq!(event.data["request"]["kind"], "permission");
+        assert_eq!(
+            event.data["request"]["Bash"]["command"],
+            "rm -rf /tmp/example"
+        );
+    }
+
+    /// The `ask` branch's own optional field, and the default that applies
+    /// when `type` is absent.
+    #[tokio::test]
+    async fn an_omitted_type_asks_the_question_the_caller_supplied() {
+        let (event_tx, mut events) = broadcast::channel(8);
+
+        let resp = handle_session_test_interaction(
+            request(serde_json::json!({
+                "session_id": "sess",
+                "question": "Ship it?",
+            })),
+            &event_tx,
+        )
+        .await;
+
+        assert_eq!(resp.result.expect("success")["type"], "ask");
+        let event = events.try_recv().expect("an interaction_requested event");
+        assert_eq!(event.data["request"]["question"], "Ship it?");
+    }
+
+    /// A `type` outside the two the handler knows is still refused by name,
+    /// not swallowed by the request struct.
+    #[tokio::test]
+    async fn an_unknown_type_is_refused_and_named() {
+        let (event_tx, _events) = broadcast::channel(8);
+
+        let resp = handle_session_test_interaction(
+            request(serde_json::json!({ "session_id": "sess", "type": "toast" })),
+            &event_tx,
+        )
+        .await;
+
+        let err = resp
+            .error
+            .expect("an unknown interaction type must be refused");
+        assert_eq!(err.code, INVALID_PARAMS);
+        assert!(err.message.contains("toast"), "{}", err.message);
+    }
+}

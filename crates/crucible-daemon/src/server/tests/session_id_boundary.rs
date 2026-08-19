@@ -136,6 +136,9 @@ async fn the_observe_handlers_never_read_a_transcript_outside_the_sessions_root(
         "session.load_events",
         "session.render_markdown",
         "session.resume_from_storage",
+        // The write sink of the family: an accepted traversing id would put
+        // `session.md` beside the transcript it was not allowed to read.
+        "session.export_to_file",
     ]
     .iter()
     .enumerate()
