@@ -750,35 +750,89 @@ impl RpcDispatcher {
 
             // Plugin RPC handlers
             "plugin.reload" => to_response(id, self.handle_plugin_reload(&req).await),
-            "plugin.list" => to_response(id, self.handle_plugin_list(&req).await),
-            "plugin.commands" => to_response(id, self.handle_plugin_commands(&req).await),
-            "plugin.publications" => to_response(id, self.handle_plugin_publications(&req).await),
-            "plugin.options" => to_response(id, self.handle_plugin_options(&req).await),
-            "plugin.option_get" => to_response(
+            "plugin.list" => forward!(
                 id,
-                self.handle_plugin_option_call(&req, OptionAction::Get)
-                    .await,
+                crate::server::plugins::handle_plugin_list(req.clone(), &self.ctx.plugin_loader)
             ),
-            "plugin.option_set" => to_response(
+            "plugin.commands" => forward!(
                 id,
-                self.handle_plugin_option_call(&req, OptionAction::Set)
-                    .await,
+                crate::server::plugins::handle_plugin_commands(
+                    req.clone(),
+                    &self.ctx.plugin_loader
+                )
             ),
-            "plugin.option_execute" => to_response(
+            "plugin.publications" => forward!(
                 id,
-                self.handle_plugin_option_call(&req, OptionAction::Execute)
-                    .await,
+                crate::server::plugins::handle_plugin_publications(
+                    req.clone(),
+                    &self.ctx.plugin_loader
+                )
             ),
-            "session.status" => to_response(id, self.handle_session_status(&req).await),
-            "plugin.run_command" => to_response(id, self.handle_plugin_run_command(&req).await),
+            "plugin.options" => forward!(
+                id,
+                crate::server::plugins::handle_plugin_options(req.clone(), &self.ctx.plugin_loader)
+            ),
+            "plugin.option_get" => forward!(
+                id,
+                crate::server::plugins::handle_plugin_option_call(
+                    req.clone(),
+                    &self.ctx.plugin_loader,
+                    OptionAction::Get
+                )
+            ),
+            "plugin.option_set" => forward!(
+                id,
+                crate::server::plugins::handle_plugin_option_call(
+                    req.clone(),
+                    &self.ctx.plugin_loader,
+                    OptionAction::Set
+                )
+            ),
+            "plugin.option_execute" => forward!(
+                id,
+                crate::server::plugins::handle_plugin_option_call(
+                    req.clone(),
+                    &self.ctx.plugin_loader,
+                    OptionAction::Execute
+                )
+            ),
+            "session.status" => forward!(
+                id,
+                crate::server::plugins::handle_session_status(req.clone(), &self.ctx.plugin_loader)
+            ),
+            "plugin.run_command" => forward!(
+                id,
+                crate::server::plugins::handle_plugin_run_command(
+                    req.clone(),
+                    &self.ctx.plugin_loader
+                )
+            ),
             "plugin.install" => to_response(id, self.handle_plugin_install(&req).await),
             "plugin.remove" => to_response(id, self.handle_plugin_remove(&req).await),
 
             // Project RPC handlers
-            "project.register" => to_response(id, self.handle_project_register(&req).await),
-            "project.unregister" => to_response(id, self.handle_project_unregister(&req).await),
-            "project.list" => to_response(id, self.handle_project_list(&req).await),
-            "project.get" => to_response(id, self.handle_project_get(&req).await),
+            "project.register" => forward!(
+                id,
+                crate::server::plugins::handle_project_register(
+                    req.clone(),
+                    &self.ctx.project_manager
+                )
+            ),
+            "project.unregister" => forward!(
+                id,
+                crate::server::plugins::handle_project_unregister(
+                    req.clone(),
+                    &self.ctx.project_manager
+                )
+            ),
+            "project.list" => forward!(
+                id,
+                crate::server::plugins::handle_project_list(req.clone(), &self.ctx.project_manager)
+            ),
+            "project.get" => forward!(
+                id,
+                crate::server::plugins::handle_project_get(req.clone(), &self.ctx.project_manager)
+            ),
             "scm.clone" => to_response(id, self.handle_scm_clone(&req).await),
             "fs.list_dir" => to_response(id, self.handle_fs_list_dir(&req).await),
             "fs.move" => to_response(id, self.handle_fs_move(&req).await),
@@ -794,18 +848,39 @@ impl RpcDispatcher {
 
             // MCP RPC handlers
             "mcp.start" => to_response(id, self.handle_mcp_start(&req).await),
-            "mcp.stop" => to_response(id, self.handle_mcp_stop(&req).await),
-            "mcp.status" => to_response(id, self.handle_mcp_status(&req).await),
+            "mcp.stop" => forward!(
+                id,
+                crate::server::platform::handle_mcp_stop(req.clone(), &self.ctx.mcp_server_manager)
+            ),
+            "mcp.status" => forward!(
+                id,
+                crate::server::platform::handle_mcp_status(
+                    req.clone(),
+                    &self.ctx.mcp_server_manager
+                )
+            ),
 
             // Skills RPC handlers
-            "skills.list" => to_response(id, self.handle_skills_list(&req).await),
-            "skills.get" => to_response(id, self.handle_skills_get(&req).await),
-            "skills.search" => to_response(id, self.handle_skills_search(&req).await),
+            "skills.list" => forward!(id, crate::server::platform::handle_skills_list(req.clone())),
+            "skills.get" => forward!(id, crate::server::platform::handle_skills_get(req.clone())),
+            "skills.search" => forward!(
+                id,
+                crate::server::platform::handle_skills_search(req.clone())
+            ),
 
             // Agents RPC handlers
-            "agents.list_profiles" => to_response(id, self.handle_agents_list_profiles(&req).await),
+            "agents.list_profiles" => forward!(
+                id,
+                crate::server::platform::handle_agents_list_profiles(req.clone(), &self.ctx.agents)
+            ),
             "agents.resolve_profile" => {
-                to_response(id, self.handle_agents_resolve_profile(&req).await)
+                forward!(
+                    id,
+                    crate::server::platform::handle_agents_resolve_profile(
+                        req.clone(),
+                        &self.ctx.agents
+                    )
+                )
             }
 
             // Subagent RPC handlers
@@ -1526,63 +1601,6 @@ impl RpcDispatcher {
         map_server_resp(resp)
     }
 
-    async fn handle_plugin_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::plugins::handle_plugin_list(req.clone(), &self.ctx.plugin_loader).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_status(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::plugins::handle_session_status(req.clone(), &self.ctx.plugin_loader)
-                .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_plugin_publications(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::plugins::handle_plugin_publications(
-            req.clone(),
-            &self.ctx.plugin_loader,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_plugin_options(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::plugins::handle_plugin_options(req.clone(), &self.ctx.plugin_loader)
-                .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_plugin_option_call(
-        &self,
-        req: &Request,
-        action: OptionAction,
-    ) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::plugins::handle_plugin_option_call(
-            req.clone(),
-            &self.ctx.plugin_loader,
-            action,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_plugin_commands(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::plugins::handle_plugin_commands(req.clone(), &self.ctx.plugin_loader)
-                .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_plugin_run_command(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::plugins::handle_plugin_run_command(req.clone(), &self.ctx.plugin_loader)
-                .await;
-        map_server_resp(resp)
-    }
-
     async fn handle_plugin_install(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let resp = crate::server::plugin_install::handle_plugin_install(
             req.clone(),
@@ -1621,36 +1639,6 @@ impl RpcDispatcher {
     }
 
     // ── Project RPC wrappers ────────────────────────────────────────────
-
-    async fn handle_project_register(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::plugins::handle_project_register(req.clone(), &self.ctx.project_manager)
-                .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_project_unregister(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::plugins::handle_project_unregister(
-            req.clone(),
-            &self.ctx.project_manager,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_project_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::plugins::handle_project_list(req.clone(), &self.ctx.project_manager)
-                .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_project_get(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::plugins::handle_project_get(req.clone(), &self.ctx.project_manager)
-                .await;
-        map_server_resp(resp)
-    }
 
     async fn handle_scm_clone(&self, req: &Request) -> RpcResult<serde_json::Value> {
         let projects_dir = self
@@ -1750,52 +1738,9 @@ impl RpcDispatcher {
         map_server_resp(resp)
     }
 
-    async fn handle_mcp_stop(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::platform::handle_mcp_stop(req.clone(), &self.ctx.mcp_server_manager)
-                .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_mcp_status(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::platform::handle_mcp_status(req.clone(), &self.ctx.mcp_server_manager)
-                .await;
-        map_server_resp(resp)
-    }
-
     // ── Skills RPC wrappers ─────────────────────────────────────────────
 
-    async fn handle_skills_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::platform::handle_skills_list(req.clone()).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_skills_get(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::platform::handle_skills_get(req.clone()).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_skills_search(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::platform::handle_skills_search(req.clone()).await;
-        map_server_resp(resp)
-    }
-
     // ── Agents RPC wrappers ─────────────────────────────────────────────
-
-    async fn handle_agents_list_profiles(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::platform::handle_agents_list_profiles(req.clone(), &self.ctx.agents)
-                .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_agents_resolve_profile(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::platform::handle_agents_resolve_profile(req.clone(), &self.ctx.agents)
-                .await;
-        map_server_resp(resp)
-    }
 
     // ── Subagent RPC handlers ─────────────────────────────────────────────
 
