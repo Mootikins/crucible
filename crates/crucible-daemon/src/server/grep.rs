@@ -21,7 +21,7 @@ use super::*;
 use crate::tools::grep_engine::{grep_search, GrepSearchError};
 
 /// Default hit cap when the caller omits `limit`.
-const GREP_DEFAULT_LIMIT: usize = 100;
+pub(crate) const GREP_DEFAULT_LIMIT: usize = 100;
 /// Hard cap on hits regardless of the caller's `limit`.
 const GREP_MAX_LIMIT: usize = 500;
 
@@ -31,15 +31,19 @@ pub(crate) async fn handle_search_grep(
     pm: &Arc<ProjectManager>,
     km: &Arc<KilnManager>,
 ) -> Response {
-    let root = require_param!(req, "root", as_str);
-    let query = require_param!(req, "query", as_str);
-    let regex = optional_param!(req, "regex", as_bool).unwrap_or(false);
-    let glob = optional_param!(req, "glob", as_str).map(str::to_string);
-    let case_insensitive = optional_param!(req, "case_insensitive", as_bool).unwrap_or(true);
-    let limit = optional_param!(req, "limit", as_u64)
-        .map(|n| n as usize)
-        .unwrap_or(GREP_DEFAULT_LIMIT)
-        .clamp(1, GREP_MAX_LIMIT);
+    let params = match crate::rpc_helpers::typed_params::<crate::rpc_client::GrepSearchRequest>(&req)
+    {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let root = params.root.as_str();
+    let query = params.query.as_str();
+    let regex = params.regex;
+    let glob = params.glob;
+    let case_insensitive = params.case_insensitive;
+    // The caller's `limit` is a request, not an authority: the hard cap is
+    // the daemon's.
+    let limit = params.limit.clamp(1, GREP_MAX_LIMIT);
 
     let canonical_root = match validate_grep_root(pm, km, root).await {
         Ok(p) => p,

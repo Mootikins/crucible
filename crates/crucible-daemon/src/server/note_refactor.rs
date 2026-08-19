@@ -26,7 +26,6 @@
 
 use crate::kiln_manager::KilnManager;
 use crate::protocol::{Request, Response, INTERNAL_ERROR, INVALID_PARAMS};
-use crate::rpc_helpers::require_param;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -58,11 +57,15 @@ pub(crate) struct RenameOutcome {
 /// same reasoning as `fs.move`), both paths must be `.md`, and all path
 /// containment is delegated to the same validated move used by `fs.move`.
 pub(crate) async fn handle_note_rename(req: Request, km: &Arc<KilnManager>) -> Response {
-    let kiln = require_param!(req, "kiln", as_str);
-    let from_rel = require_param!(req, "from_rel", as_str);
-    let to_rel = require_param!(req, "to_rel", as_str);
+    let params =
+        match crate::rpc_helpers::typed_params::<crate::rpc_client::NoteRenameRequest>(&req) {
+            Ok(p) => p,
+            Err(response) => return *response,
+        };
+    let from_rel = params.from_rel.as_str();
+    let to_rel = params.to_rel.as_str();
 
-    let Ok(canonical) = Path::new(kiln).canonicalize() else {
+    let Ok(canonical) = Path::new(&params.kiln).canonicalize() else {
         return Response::error(req.id, INVALID_PARAMS, "kiln path does not exist");
     };
     if km.get(&canonical).await.is_none() {

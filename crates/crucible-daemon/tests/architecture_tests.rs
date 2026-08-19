@@ -1182,6 +1182,33 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "NameRequest",
         "crates/crucible-daemon/src/server/platform.rs",
     ),
+    ("KilnOpenRequest", "crates/crucible-daemon/src/server/kiln.rs"),
+    (
+        "KilnSetClassificationRequest",
+        "crates/crucible-daemon/src/server/kiln.rs",
+    ),
+    (
+        "SearchVectorsRequest",
+        "crates/crucible-daemon/src/server/kiln.rs",
+    ),
+    (
+        "ProcessFileRequest",
+        "crates/crucible-daemon/src/server/kiln.rs",
+    ),
+    (
+        "GrepSearchRequest",
+        "crates/crucible-daemon/src/server/grep.rs",
+    ),
+    (
+        "NoteRenameRequest",
+        "crates/crucible-daemon/src/server/note_refactor.rs",
+    ),
+    (
+        "FsListDirRequest",
+        "crates/crucible-daemon/src/server/fs/mod.rs",
+    ),
+    ("FsMoveRequest", "crates/crucible-daemon/src/server/fs/mod.rs"),
+    ("FsPathRequest", "crates/crucible-daemon/src/server/fs/mod.rs"),
 ];
 
 /// Handlers that still hand-pluck their fields. REMOVE rows; never add.

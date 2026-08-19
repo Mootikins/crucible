@@ -3,6 +3,7 @@ use crucible_core::config::{
     read_kiln_config, read_project_config, write_kiln_config, write_project_config,
     DataClassification, KilnConfig, KilnMeta, ProjectConfig,
 };
+use crate::rpc_helpers::typed_params;
 use crucible_core::storage::Scope;
 
 /// Derive the read authority for a kiln-scoped RPC request.
@@ -26,11 +27,13 @@ pub(crate) async fn handle_kiln_open(
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let path = require_param!(req, "path", as_str);
-    let kiln_path = Path::new(path);
-
-    let process = optional_param!(req, "process", as_bool).unwrap_or(false);
-    let force = optional_param!(req, "force", as_bool).unwrap_or(false);
+    let params = match typed_params::<crate::rpc_client::KilnOpenRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let kiln_path = Path::new(&params.path);
+    let process = params.process;
+    let force = params.force;
 
     if let Err(e) = km.open(kiln_path).await {
         return internal_error(req.id, e);
@@ -63,7 +66,7 @@ pub(crate) async fn handle_kiln_open(
                         "process",
                         "process_complete",
                         serde_json::json!({
-                            "kiln": path,
+                            "kiln": params.path,
                             "discovered": discovered,
                             "processed": processed,
                             "skipped": skipped,
@@ -163,8 +166,12 @@ pub(crate) async fn handle_kiln_set_classification(
     req: Request,
     _km: &Arc<KilnManager>,
 ) -> Response {
-    let path_str = require_param!(req, "path", as_str);
-    let classification_str = require_param!(req, "classification", as_str);
+    let params = match typed_params::<crate::rpc_client::KilnSetClassificationRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let path_str = params.path.as_str();
+    let classification_str = params.classification.as_str();
 
     let classification = match DataClassification::from_str_insensitive(classification_str) {
         Some(c) => c,
@@ -260,13 +267,16 @@ pub(crate) async fn handle_kiln_set_classification(
 }
 
 pub(crate) async fn handle_search_vectors(req: Request, km: &Arc<KilnManager>) -> Response {
-    let kiln_path = require_param!(req, "kiln", as_str);
-    let vector_arr = require_param!(req, "vector", as_array);
-    let vector: Vec<f32> = vector_arr
-        .iter()
-        .filter_map(|v: &serde_json::Value| v.as_f64().map(|f| f as f32))
-        .collect();
-    let limit = optional_param!(req, "limit", as_u64).unwrap_or(20) as usize;
+    // `params.scope` is deliberately not read: authority comes from `kiln`
+    // alone (see `request_scope`). Deserializing the field rather than
+    // dropping it keeps the client's struct honest about what it sends.
+    let params = match typed_params::<crate::rpc_client::SearchVectorsRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let kiln_path = params.kiln.as_str();
+    let vector = params.vector;
+    let limit = params.limit;
 
     let scope = request_scope(Path::new(kiln_path));
 
@@ -707,8 +717,12 @@ pub(crate) async fn handle_note_list(req: Request, km: &Arc<KilnManager>) -> Res
 // =============================================================================
 
 pub(crate) async fn handle_process_file(req: Request, km: &Arc<KilnManager>) -> Response {
-    let kiln_path = require_param!(req, "kiln", as_str);
-    let file_path = require_param!(req, "path", as_str);
+    let params = match typed_params::<crate::rpc_client::ProcessFileRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let kiln_path = params.kiln.as_str();
+    let file_path = params.path.as_str();
 
     match km
         .process_file(Path::new(kiln_path), Path::new(file_path))

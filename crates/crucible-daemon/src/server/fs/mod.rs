@@ -46,7 +46,6 @@
 use crate::kiln_manager::KilnManager;
 use crate::project_manager::ProjectManager;
 use crate::protocol::{Request, Response, INTERNAL_ERROR, INVALID_PARAMS};
-use crate::rpc_helpers::{optional_param, require_param};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
@@ -105,12 +104,19 @@ enum FsListError {
 
 /// Handle the `fs.list_dir` RPC. Read-only, metadata only.
 pub(crate) async fn handle_fs_list_dir(req: Request, pm: &Arc<ProjectManager>) -> Response {
-    let root = require_param!(req, "root", as_str);
-    let rel_path = require_param!(req, "rel_path", as_str);
-    let show_ignored = optional_param!(req, "show_ignored", as_bool).unwrap_or(false);
-    let show_hidden = optional_param!(req, "show_hidden", as_bool).unwrap_or(false);
+    let params = match crate::rpc_helpers::typed_params::<crate::rpc_client::FsListDirRequest>(&req)
+    {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
 
-    match list_dir(pm, Path::new(root), rel_path, show_ignored, show_hidden) {
+    match list_dir(
+        pm,
+        Path::new(&params.root),
+        &params.rel_path,
+        params.show_ignored,
+        params.show_hidden,
+    ) {
         Ok(listing) => match serde_json::to_value(listing) {
             Ok(v) => Response::success(req.id, v),
             Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
@@ -294,12 +300,15 @@ pub(crate) async fn handle_fs_move(
     pm: &Arc<ProjectManager>,
     km: &Arc<KilnManager>,
 ) -> Response {
-    let root = require_param!(req, "root", as_str);
-    let kind = require_param!(req, "kind", as_str);
-    let from_rel = require_param!(req, "from_rel", as_str);
-    let to_rel = require_param!(req, "to_rel", as_str);
+    let params = match crate::rpc_helpers::typed_params::<crate::rpc_client::FsMoveRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let kind = params.kind.as_str();
+    let from_rel = params.from_rel.as_str();
+    let to_rel = params.to_rel.as_str();
 
-    let base = match resolve_root(pm, km, kind, root).await {
+    let base = match resolve_root(pm, km, kind, &params.root).await {
         Ok(base) => base,
         Err(msg) => return Response::error(req.id, INVALID_PARAMS, msg),
     };
@@ -424,11 +433,14 @@ pub(crate) async fn handle_fs_mkdir(
     pm: &Arc<ProjectManager>,
     km: &Arc<KilnManager>,
 ) -> Response {
-    let root = require_param!(req, "root", as_str);
-    let kind = require_param!(req, "kind", as_str);
-    let rel_path = require_param!(req, "rel_path", as_str);
+    let params = match crate::rpc_helpers::typed_params::<crate::rpc_client::FsPathRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let kind = params.kind.as_str();
+    let rel_path = params.rel_path.as_str();
 
-    let base = match resolve_root(pm, km, kind, root).await {
+    let base = match resolve_root(pm, km, kind, &params.root).await {
         Ok(base) => base,
         Err(msg) => return Response::error(req.id, INVALID_PARAMS, msg),
     };
@@ -481,11 +493,14 @@ pub(crate) async fn handle_fs_trash(
     pm: &Arc<ProjectManager>,
     km: &Arc<KilnManager>,
 ) -> Response {
-    let root = require_param!(req, "root", as_str);
-    let kind = require_param!(req, "kind", as_str);
-    let rel_path = require_param!(req, "rel_path", as_str);
+    let params = match crate::rpc_helpers::typed_params::<crate::rpc_client::FsPathRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let kind = params.kind.as_str();
+    let rel_path = params.rel_path.as_str();
 
-    let base = match resolve_root(pm, km, kind, root).await {
+    let base = match resolve_root(pm, km, kind, &params.root).await {
         Ok(base) => base,
         Err(msg) => return Response::error(req.id, INVALID_PARAMS, msg),
     };

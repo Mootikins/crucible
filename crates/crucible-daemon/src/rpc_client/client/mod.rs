@@ -42,6 +42,7 @@ pub mod lua;
 pub mod review;
 pub mod session;
 pub mod storage;
+pub mod storage_requests;
 pub mod subscription;
 pub mod types;
 pub mod workflow;
@@ -63,7 +64,11 @@ pub use lua::{
 // now deserializes it: the client struct IS the server's contract rather than
 // a shape the server re-derives by hand.
 pub use session::{SessionAgentSpec, SessionCreateParams, SessionCreateRequest};
-pub use storage::McpStartRequest;
+pub use storage_requests::{
+    FsListDirRequest, FsMoveRequest, FsPathRequest, GrepSearchRequest, KilnOpenRequest,
+    KilnSetClassificationRequest, McpStartRequest, NoteRenameRequest, ProcessFileRequest,
+    ScmCloneRequest, SearchVectorsRequest,
+};
 pub use types::{
     DaemonCapabilities, NameRequest, SessionEvent, SkillsGetRequest, SkillsListRequest,
     SkillsSearchRequest, VersionCheck,

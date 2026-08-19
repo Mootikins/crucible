@@ -25,9 +25,11 @@ pub use client::{
     LuaInitSessionResponse, LuaPluginHealthRequest, LuaPluginHealthResponse,
     LuaRegisterCommandsRequest, LuaRegisterCommandsResponse, LuaRunPluginTestsRequest,
     LuaRunPluginTestsResponse, LuaShutdownSessionRequest, LuaShutdownSessionResponse,
-    McpStartRequest, NameRequest, PluginTestFailure, PluginTestLoadFailure, SessionAgentSpec,
-    SessionCreateParams, SessionCreateRequest, SessionEvent, SkillsGetRequest, SkillsListRequest,
-    SkillsSearchRequest, VersionCheck,
+    FsListDirRequest, FsMoveRequest, FsPathRequest, GrepSearchRequest, KilnOpenRequest,
+    KilnSetClassificationRequest, McpStartRequest, NameRequest, NoteRenameRequest,
+    PluginTestFailure, PluginTestLoadFailure, ProcessFileRequest, ScmCloneRequest,
+    SearchVectorsRequest, SessionAgentSpec, SessionCreateParams, SessionCreateRequest,
+    SessionEvent, SkillsGetRequest, SkillsListRequest, SkillsSearchRequest, VersionCheck,
 };
 pub use error_ext::ChatResultExt;
 pub use storage::{DaemonNoteStore, DaemonStorageClient};
