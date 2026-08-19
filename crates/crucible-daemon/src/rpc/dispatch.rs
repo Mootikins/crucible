@@ -196,6 +196,16 @@ fn map_server_resp(resp: Response) -> RpcResult<serde_json::Value> {
     }
 }
 
+// Forward a routed method to its server handler. The `map_server_resp` round
+// trip is load-bearing: a server `Response` with neither `result` nor `error`
+// must stay a `null` result on the wire, which returning the `Response`
+// directly would drop (`result` is `skip_serializing_if = "Option::is_none"`).
+macro_rules! forward {
+    ($id:expr, $call:expr) => {
+        to_response($id, map_server_resp($call.await))
+    };
+}
+
 // Route a filtered `session.set_*` / `session.get_*` method string to its
 // server handler. Every method literal stays paired with its handler at the
 // call site (greppable, wire-name-explicit); the shared call shape lives here.
@@ -289,33 +299,107 @@ impl RpcDispatcher {
             }
             "session.cache_stats" => to_response(id, self.handle_session_cache_stats(&req).await),
             // Kiln CRUD handlers
-            "kiln.open" => to_response(id, self.handle_kiln_open(&req).await),
-            "kiln.close" => to_response(id, self.handle_kiln_close(&req).await),
-            "kiln.list" => to_response(id, self.handle_kiln_list(&req).await),
+            "kiln.open" => forward!(
+                id,
+                crate::server::kiln::handle_kiln_open(
+                    req.clone(),
+                    &self.ctx.kiln,
+                    &self.ctx.plugin_loader,
+                    &self.ctx.event_tx
+                )
+            ),
+            "kiln.close" => forward!(
+                id,
+                crate::server::kiln::handle_kiln_close(req.clone(), &self.ctx.kiln)
+            ),
+            "kiln.list" => forward!(
+                id,
+                crate::server::kiln::handle_kiln_list(
+                    req.clone(),
+                    &self.ctx.kiln,
+                    &self.ctx.kiln_registry,
+                    &self.ctx.data_home
+                )
+            ),
             "kiln.set_classification" => {
-                to_response(id, self.handle_kiln_set_classification(&req).await)
+                forward!(
+                    id,
+                    crate::server::kiln::handle_kiln_set_classification(
+                        req.clone(),
+                        &self.ctx.kiln
+                    )
+                )
             }
 
             // Note search and retrieval handlers
-            "search_vectors" => to_response(id, self.handle_search_vectors(&req).await),
-            "search_text" => to_response(id, self.handle_search_text(&req).await),
-            "search_grep" => to_response(id, self.handle_search_grep(&req).await),
-            "embed.query" => to_response(id, self.handle_embed_query(&req).await),
-            "list_notes" => to_response(id, self.handle_list_notes(&req).await),
-            "get_note_by_name" => to_response(id, self.handle_get_note_by_name(&req).await),
-            "get_backlinks" => to_response(id, self.handle_get_backlinks(&req).await),
-            "kiln.graph" => to_response(id, self.handle_kiln_graph(&req).await),
-            "suggest_links" => to_response(id, self.handle_suggest_links(&req).await),
+            "search_vectors" => forward!(
+                id,
+                crate::server::kiln::handle_search_vectors(req.clone(), &self.ctx.kiln)
+            ),
+            "search_text" => forward!(
+                id,
+                crate::server::kiln::handle_search_text(req.clone(), &self.ctx.kiln)
+            ),
+            "search_grep" => forward!(
+                id,
+                crate::server::grep::handle_search_grep(
+                    req.clone(),
+                    &self.ctx.project_manager,
+                    &self.ctx.kiln
+                )
+            ),
+            "embed.query" => forward!(
+                id,
+                crate::server::kiln::handle_embed_query(req.clone(), &self.ctx.kiln)
+            ),
+            "list_notes" => forward!(
+                id,
+                crate::server::kiln::handle_list_notes(req.clone(), &self.ctx.kiln)
+            ),
+            "get_note_by_name" => forward!(
+                id,
+                crate::server::kiln::handle_get_note_by_name(req.clone(), &self.ctx.kiln)
+            ),
+            "get_backlinks" => forward!(
+                id,
+                crate::server::kiln::handle_get_backlinks(req.clone(), &self.ctx.kiln)
+            ),
+            "kiln.graph" => forward!(
+                id,
+                crate::server::kiln::handle_kiln_graph(req.clone(), &self.ctx.kiln)
+            ),
+            "suggest_links" => forward!(
+                id,
+                crate::server::kiln::handle_suggest_links(req.clone(), &self.ctx.kiln)
+            ),
 
             // Note CRUD handlers
-            "note.upsert" => to_response(id, self.handle_note_upsert(&req).await),
-            "note.get" => to_response(id, self.handle_note_get(&req).await),
-            "note.delete" => to_response(id, self.handle_note_delete(&req).await),
-            "note.list" => to_response(id, self.handle_note_list(&req).await),
+            "note.upsert" => forward!(
+                id,
+                crate::server::kiln::handle_note_upsert(req.clone(), &self.ctx.kiln)
+            ),
+            "note.get" => forward!(
+                id,
+                crate::server::kiln::handle_note_get(req.clone(), &self.ctx.kiln)
+            ),
+            "note.delete" => forward!(
+                id,
+                crate::server::kiln::handle_note_delete(req.clone(), &self.ctx.kiln)
+            ),
+            "note.list" => forward!(
+                id,
+                crate::server::kiln::handle_note_list(req.clone(), &self.ctx.kiln)
+            ),
 
             // Processing handlers
-            "process_file" => to_response(id, self.handle_process_file(&req).await),
-            "process_batch" => to_response(id, self.handle_process_batch(&req).await),
+            "process_file" => forward!(
+                id,
+                crate::server::kiln::handle_process_file(req.clone(), &self.ctx.kiln)
+            ),
+            "process_batch" => forward!(
+                id,
+                crate::server::kiln::handle_process_batch(req.clone(), &self.ctx.kiln)
+            ),
 
             // Models handler
             "models.list" => to_response(id, self.handle_models_list(&req).await),
@@ -723,119 +807,6 @@ impl RpcDispatcher {
             "session.get_precognition_results" => handle_session_get_precognition_results,
             "session.get_autocompact_threshold" => handle_session_get_autocompact_threshold,
         });
-        map_server_resp(resp)
-    }
-
-    async fn handle_kiln_open(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_kiln_open(
-            req.clone(),
-            &self.ctx.kiln,
-            &self.ctx.plugin_loader,
-            &self.ctx.event_tx,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_kiln_close(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_kiln_close(req.clone(), &self.ctx.kiln).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_kiln_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_kiln_list(
-            req.clone(),
-            &self.ctx.kiln,
-            &self.ctx.kiln_registry,
-            &self.ctx.data_home,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_kiln_set_classification(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::kiln::handle_kiln_set_classification(req.clone(), &self.ctx.kiln).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_search_vectors(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_search_vectors(req.clone(), &self.ctx.kiln).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_search_text(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_search_text(req.clone(), &self.ctx.kiln).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_search_grep(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::grep::handle_search_grep(
-            req.clone(),
-            &self.ctx.project_manager,
-            &self.ctx.kiln,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_embed_query(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_embed_query(req.clone(), &self.ctx.kiln).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_list_notes(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_list_notes(req.clone(), &self.ctx.kiln).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_get_note_by_name(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_get_note_by_name(req.clone(), &self.ctx.kiln).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_get_backlinks(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_get_backlinks(req.clone(), &self.ctx.kiln).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_kiln_graph(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_kiln_graph(req.clone(), &self.ctx.kiln).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_suggest_links(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_suggest_links(req.clone(), &self.ctx.kiln).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_note_upsert(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_note_upsert(req.clone(), &self.ctx.kiln).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_note_get(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_note_get(req.clone(), &self.ctx.kiln).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_note_delete(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_note_delete(req.clone(), &self.ctx.kiln).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_note_list(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_note_list(req.clone(), &self.ctx.kiln).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_process_file(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_process_file(req.clone(), &self.ctx.kiln).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_process_batch(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::kiln::handle_process_batch(req.clone(), &self.ctx.kiln).await;
         map_server_resp(resp)
     }
 
