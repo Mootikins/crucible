@@ -470,17 +470,44 @@ impl RpcDispatcher {
                 id,
                 crate::server::session::handle_session_search(req.clone(), &self.ctx.sessions)
             ),
-            "session.load_events" => to_response(id, self.handle_session_load_events(&req).await),
+            "session.load_events" => forward!(
+                id,
+                crate::server::observe::handle_session_load_events(
+                    req.clone(),
+                    self.ctx.sessions.sessions_root()
+                )
+            ),
             "session.list_persisted" => {
-                to_response(id, self.handle_session_list_persisted(&req).await)
+                forward!(
+                    id,
+                    crate::server::observe::handle_session_list_persisted(
+                        req.clone(),
+                        &self.ctx.sessions
+                    )
+                )
             }
             "session.render_markdown" => {
-                to_response(id, self.handle_session_render_markdown(&req).await)
+                forward!(
+                    id,
+                    crate::server::observe::handle_session_render_markdown(
+                        req.clone(),
+                        self.ctx.sessions.sessions_root()
+                    )
+                )
             }
             "session.export_to_file" => {
-                to_response(id, self.handle_session_export_to_file(&req).await)
+                forward!(
+                    id,
+                    crate::server::observe::handle_session_export_to_file(
+                        req.clone(),
+                        self.ctx.sessions.sessions_root()
+                    )
+                )
             }
-            "session.cleanup" => to_response(id, self.handle_session_cleanup(&req).await),
+            "session.cleanup" => forward!(
+                id,
+                crate::server::observe::handle_session_cleanup(req.clone(), &self.ctx.sessions)
+            ),
             // Retired rather than repointed: it indexed `{kiln}/.crucible/sessions`
             // into that kiln's NoteStore, and sessions no longer live in a kiln.
             // A flat backlog has no per-kiln session corpus to rebuild, and
@@ -719,14 +746,45 @@ impl RpcDispatcher {
             ),
 
             // Lua RPC handlers
-            "lua.init_session" => to_response(id, self.handle_lua_init_session(&req).await),
-            "lua.shutdown_session" => to_response(id, self.handle_lua_shutdown_session(&req).await),
-            "lua.discover_plugins" => to_response(id, self.handle_lua_discover_plugins(&req).await),
-            "lua.plugin_health" => to_response(id, self.handle_lua_plugin_health(&req).await),
-            "lua.generate_stubs" => to_response(id, self.handle_lua_generate_stubs(&req).await),
-            "lua.run_plugin_tests" => to_response(id, self.handle_lua_run_plugin_tests(&req).await),
+            "lua.init_session" => forward!(
+                id,
+                crate::server::lua::handle_lua_init_session(
+                    req.clone(),
+                    &self.ctx.lua_sessions,
+                    &self.ctx.plugin_loader
+                )
+            ),
+            "lua.shutdown_session" => forward!(
+                id,
+                crate::server::lua::handle_lua_shutdown_session(
+                    req.clone(),
+                    &self.ctx.lua_sessions
+                )
+            ),
+            "lua.discover_plugins" => forward!(
+                id,
+                crate::server::lua::handle_lua_discover_plugins(req.clone())
+            ),
+            "lua.plugin_health" => forward!(
+                id,
+                crate::server::lua::handle_lua_plugin_health(req.clone())
+            ),
+            "lua.generate_stubs" => forward!(
+                id,
+                crate::server::lua::handle_lua_generate_stubs(req.clone())
+            ),
+            "lua.run_plugin_tests" => forward!(
+                id,
+                crate::server::lua_plugin_suite::handle_lua_run_plugin_tests(req.clone())
+            ),
             "lua.register_commands" => {
-                to_response(id, self.handle_lua_register_commands(&req).await)
+                forward!(
+                    id,
+                    crate::server::lua::handle_lua_register_commands(
+                        req.clone(),
+                        &self.ctx.lua_sessions
+                    )
+                )
             }
             "lua.eval" => to_response(id, self.handle_lua_eval(&req).await),
 
@@ -834,17 +892,56 @@ impl RpcDispatcher {
                 crate::server::plugins::handle_project_get(req.clone(), &self.ctx.project_manager)
             ),
             "scm.clone" => to_response(id, self.handle_scm_clone(&req).await),
-            "fs.list_dir" => to_response(id, self.handle_fs_list_dir(&req).await),
-            "fs.move" => to_response(id, self.handle_fs_move(&req).await),
-            "fs.mkdir" => to_response(id, self.handle_fs_mkdir(&req).await),
-            "fs.trash" => to_response(id, self.handle_fs_trash(&req).await),
-            "note.rename" | "note.move" => to_response(id, self.handle_note_rename(&req).await),
+            "fs.list_dir" => forward!(
+                id,
+                crate::server::fs::handle_fs_list_dir(req.clone(), &self.ctx.project_manager)
+            ),
+            "fs.move" => forward!(
+                id,
+                crate::server::fs::handle_fs_move(
+                    req.clone(),
+                    &self.ctx.project_manager,
+                    &self.ctx.kiln
+                )
+            ),
+            "fs.mkdir" => forward!(
+                id,
+                crate::server::fs::handle_fs_mkdir(
+                    req.clone(),
+                    &self.ctx.project_manager,
+                    &self.ctx.kiln
+                )
+            ),
+            "fs.trash" => forward!(
+                id,
+                crate::server::fs::handle_fs_trash(
+                    req.clone(),
+                    &self.ctx.project_manager,
+                    &self.ctx.kiln
+                )
+            ),
+            "note.rename" | "note.move" => forward!(
+                id,
+                crate::server::note_refactor::handle_note_rename(req.clone(), &self.ctx.kiln)
+            ),
 
             // Storage RPC handlers
-            "storage.verify" => to_response(id, self.handle_storage_verify(&req).await),
-            "storage.cleanup" => to_response(id, self.handle_storage_cleanup(&req).await),
-            "storage.backup" => to_response(id, self.handle_storage_backup(&req).await),
-            "storage.restore" => to_response(id, self.handle_storage_restore(&req).await),
+            "storage.verify" => forward!(
+                id,
+                crate::server::storage::handle_storage_verify(req.clone())
+            ),
+            "storage.cleanup" => forward!(
+                id,
+                crate::server::storage::handle_storage_cleanup(req.clone())
+            ),
+            "storage.backup" => forward!(
+                id,
+                crate::server::storage::handle_storage_backup(req.clone())
+            ),
+            "storage.restore" => forward!(
+                id,
+                crate::server::storage::handle_storage_restore(req.clone())
+            ),
 
             // MCP RPC handlers
             "mcp.start" => to_response(id, self.handle_mcp_start(&req).await),
@@ -1353,46 +1450,6 @@ impl RpcDispatcher {
 
     // ── Session utility wrappers ─────────────────────────────────────────────
 
-    async fn handle_session_load_events(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::observe::handle_session_load_events(
-            req.clone(),
-            self.ctx.sessions.sessions_root(),
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_list_persisted(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::observe::handle_session_list_persisted(req.clone(), &self.ctx.sessions)
-                .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_render_markdown(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::observe::handle_session_render_markdown(
-            req.clone(),
-            self.ctx.sessions.sessions_root(),
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_export_to_file(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::observe::handle_session_export_to_file(
-            req.clone(),
-            self.ctx.sessions.sessions_root(),
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_session_cleanup(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::observe::handle_session_cleanup(req.clone(), &self.ctx.sessions).await;
-        map_server_resp(resp)
-    }
-
     // ── Agent operation wrappers ─────────────────────────────────────────────
 
     async fn handle_session_configure_agent(&self, req: &Request) -> RpcResult<serde_json::Value> {
@@ -1436,50 +1493,6 @@ impl RpcDispatcher {
     // ── Undo RPC wrappers ────────────────────────────────────────────────
 
     // ── Lua RPC wrappers ─────────────────────────────────────────────────
-
-    async fn handle_lua_init_session(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::lua::handle_lua_init_session(
-            req.clone(),
-            &self.ctx.lua_sessions,
-            &self.ctx.plugin_loader,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_lua_shutdown_session(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::lua::handle_lua_shutdown_session(req.clone(), &self.ctx.lua_sessions)
-                .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_lua_discover_plugins(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::lua::handle_lua_discover_plugins(req.clone()).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_lua_plugin_health(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::lua::handle_lua_plugin_health(req.clone()).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_lua_generate_stubs(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::lua::handle_lua_generate_stubs(req.clone()).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_lua_run_plugin_tests(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::lua_plugin_suite::handle_lua_run_plugin_tests(req.clone()).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_lua_register_commands(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::lua::handle_lua_register_commands(req.clone(), &self.ctx.lua_sessions)
-                .await;
-        map_server_resp(resp)
-    }
 
     // SAFETY: lua.eval executes arbitrary code in the daemon's Lua VM.
     // This is safe because the daemon socket is protected by filesystem permissions
@@ -1655,69 +1668,7 @@ impl RpcDispatcher {
         map_server_resp(resp)
     }
 
-    async fn handle_fs_list_dir(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::fs::handle_fs_list_dir(req.clone(), &self.ctx.project_manager).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_fs_move(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::fs::handle_fs_move(
-            req.clone(),
-            &self.ctx.project_manager,
-            &self.ctx.kiln,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_fs_mkdir(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::fs::handle_fs_mkdir(
-            req.clone(),
-            &self.ctx.project_manager,
-            &self.ctx.kiln,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_fs_trash(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::fs::handle_fs_trash(
-            req.clone(),
-            &self.ctx.project_manager,
-            &self.ctx.kiln,
-        )
-        .await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_note_rename(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp =
-            crate::server::note_refactor::handle_note_rename(req.clone(), &self.ctx.kiln).await;
-        map_server_resp(resp)
-    }
-
     // ── Storage RPC wrappers ────────────────────────────────────────────
-
-    async fn handle_storage_verify(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::storage::handle_storage_verify(req.clone()).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_storage_cleanup(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::storage::handle_storage_cleanup(req.clone()).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_storage_backup(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::storage::handle_storage_backup(req.clone()).await;
-        map_server_resp(resp)
-    }
-
-    async fn handle_storage_restore(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::storage::handle_storage_restore(req.clone()).await;
-        map_server_resp(resp)
-    }
 
     // ── MCP RPC wrappers ────────────────────────────────────────────────
 
