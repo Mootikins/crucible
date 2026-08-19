@@ -8,6 +8,8 @@
 //! 4. **Reachability**: every `docs/Help/**` note is linked from somewhere
 //! 5. **Code References**: All `crates/...` paths must exist in the repo, and a
 //!    `path.rs:26` citation must name a line that file actually has
+//! 6. **Proof tests**: every `::test_name` cited by a `Meta/Product` proof line
+//!    must exist somewhere in the source tree
 //!
 //! # Running
 //!
@@ -975,5 +977,88 @@ fn the_kiln_sweep_ignores_a_file_no_commit_would_contain() {
         !markdown_files(&["docs"]).contains(&scratch.0),
         "an untracked file must not be swept: {}",
         scratch.0.display()
+    );
+}
+
+/// A named proof test in `Meta/Product` must exist.
+///
+/// The product map earns its `[x]`s by naming the tests that demonstrate them,
+/// in the form `` `path/to/file.rs` ``::`test_name`. That citation is the whole
+/// mechanism, and it rots silently: a test gets renamed, the map still names
+/// the old one, and the entry keeps reading as proven. An audit on 2026-08-18
+/// found six such citations: four renamed, and two naming tests that never
+/// existed. One of those two was the only proof behind an `[x]` whose subject
+/// had itself been deleted — the citation outlived the code, and the entry
+/// went on reading as proven for both.
+///
+/// Only the `::name` form is checked. A name written in plain backticks is
+/// prose — the map deliberately names absent things ("`redo_turns` does not
+/// exist on `ConversationTree`", "what would settle it: `a_user_plugin_…`"),
+/// and those must not fail a test for being absent. So the convention this
+/// test enforces is narrow and worth stating: **`::name` asserts the test
+/// exists; backticks alone do not.**
+///
+/// Matching is a substring search over the source, not a `fn name` search: the
+/// map cites Rust tests, vitest strings and Playwright titles, and only the
+/// first is a function.
+#[test]
+#[ignore = "requires: dev kiln — reads the product map and greps the source tree"]
+fn product_map_proof_tests_exist() {
+    let root = workspace_root();
+    let map = root.join("docs").join("Meta").join("Product.md");
+    let content = std::fs::read_to_string(&map).expect("read Meta/Product.md");
+
+    let mut corpus = String::new();
+    for dir in ["crates", "runtime", "scripts"] {
+        for entry in WalkDir::new(root.join(dir))
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_type().is_file())
+        {
+            // Neither is evidence, and both are enormous: `target/` holds
+            // stale build artifacts that would let a deleted test still count,
+            // and `node_modules/` is vendored third-party code.
+            if entry.path().components().any(|c| {
+                let c = c.as_os_str();
+                c == "target" || c == "node_modules" || c == "dist"
+            }) {
+                continue;
+            }
+            if let Ok(text) = std::fs::read_to_string(entry.path()) {
+                corpus.push_str(&text);
+            }
+        }
+    }
+
+    let re = regex::Regex::new(r"::([a-z_][a-z0-9_]{6,})").unwrap();
+    let mut missing: Vec<(usize, String)> = Vec::new();
+    let mut checked = HashSet::new();
+
+    for (i, line) in content.lines().enumerate() {
+        if !line.contains("**Proof:**") {
+            continue;
+        }
+        for caps in re.captures_iter(line) {
+            let name = caps[1].to_string();
+            if !checked.insert(name.clone()) {
+                continue;
+            }
+            if !corpus.contains(&name) {
+                missing.push((i + 1, name));
+            }
+        }
+    }
+
+    assert!(
+        missing.is_empty(),
+        "docs/Meta/Product.md names {} proof test(s) that exist nowhere under \
+         crates/, runtime/ or scripts/. Either the test was renamed (update the \
+         citation) or the claim has no proof (demote the entry):\n{}",
+        missing.len(),
+        missing
+            .iter()
+            .map(|(line, name)| format!("  Product.md:{line}  ::{name}"))
+            .collect::<Vec<_>>()
+            .join("\n")
     );
 }

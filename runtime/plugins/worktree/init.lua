@@ -12,10 +12,11 @@
 --- raises on a name it does not recognise, so a branch name sent down that
 --- channel is a hard error in an unrelated plugin.
 ---
---- Zero Rust git knowledge — all worktree logic lives here in Lua, the way all
---- container logic lives in `oci`. What this replaces: `scm.rs`'s `add_worktree`
---- and `collect_branches`, the `scm.branches` / `scm.worktree_add` RPCs, and the
---- orchestration the web composer used to carry.
+--- The daemon knows nothing about git — every worktree decision is made here,
+--- the way every container decision is made in `oci`. What this replaces: the
+--- `scm.branches` and `scm.worktree_add` RPCs, their `add_worktree` and
+--- `collect_branches` implementations, and the orchestration the web composer
+--- used to carry.
 
 local git = require("git")
 

@@ -6,8 +6,9 @@
 -- 3. Routes intercepted tool calls through `docker exec` inside the container
 -- 4. Cleans up the container on session end
 --
--- Zero Rust docker knowledge — all container logic lives here in Lua.
--- Uses generic crucible.on() hooks with pattern matching and the Handled result convention.
+-- The daemon knows nothing about containers — every container decision is made
+-- here, through generic crucible.on() hooks with pattern matching and the
+-- Handled result convention.
 
 local container = require("container")
 local devcontainer = require("devcontainer")

@@ -116,8 +116,8 @@ end
 --- Run one provider. Returns `payload` or `nil, reason`.
 ---
 --- pcall because a provider is the only code here that touches the network:
---- `http.get`/`http.post` raise on an argument the Rust side refuses to
---- convert, and an adapter indexing a nil response raises too. Either would
+--- `http.get`/`http.post` raise on an argument the host refuses to convert,
+--- and an adapter indexing a nil response raises too. Either would
 --- take down the whole search from inside the second-choice provider, which is
 --- the one failure mode a chain exists to prevent.
 --- Seconds the whole chain may take, across every provider it tries.

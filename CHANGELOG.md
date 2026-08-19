@@ -32,7 +32,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   prompt and the clip are set by, because a title nobody is waiting for is not
   worth holding a task open for the provider's own timeout.
 
-
 ### Added
 - **`cru.tools.set_active(session_id, names)` and `cru.tools.get_active(session_id)`.**
   A plugin can now narrow which tools one session offers its model, with glob

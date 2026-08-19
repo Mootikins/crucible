@@ -131,7 +131,7 @@ return function(query, opts)
     limit = math.max(1, math.min(math.floor(limit), contract.MAX_RESULTS))
 
     -- http.request takes whole seconds; a fractional timeout would fail to
-    -- convert on the Rust side rather than rounding.
+    -- convert rather than rounding.
     local timeout = math.max(1, math.floor(tonumber(opts.timeout) or DEFAULT_TIMEOUT))
 
     local headers = {
@@ -153,7 +153,7 @@ return function(query, opts)
     })
 
     -- pcall because a raised error would escape the chain entirely: an argument
-    -- the Rust side refuses to convert must still come back as this provider
+    -- the host refuses to convert must still come back as this provider
     -- failing, not as the whole search dying.
     local ok, resp = pcall(http.post, ENDPOINT, {
         headers = headers,
