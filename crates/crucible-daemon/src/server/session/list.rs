@@ -1,5 +1,7 @@
 use super::super::*;
 use super::scope::caller_kiln_scope;
+use crate::rpc_client::SessionIdRequest;
+use crate::rpc_helpers::typed_params;
 use crate::{optional_param, require_param};
 
 use crucible_core::session::{SessionState, SessionSummary, SessionType};
@@ -282,8 +284,7 @@ pub(crate) async fn handle_session_search(req: Request, sm: &Arc<SessionManager>
 }
 
 pub(crate) async fn handle_session_get(req: Request, sm: &Arc<SessionManager>) -> Response {
-    let params = match crate::rpc_helpers::typed_params::<crate::rpc_client::SessionIdRequest>(&req)
-    {
+    let params = match typed_params::<SessionIdRequest>(&req) {
         Ok(p) => p,
         Err(response) => return *response,
     };
