@@ -70,8 +70,9 @@ pub use plugin_requests::{
     PluginRemoveRequest, PluginRunCommandRequest,
 };
 pub use session::{
-    SessionAgentSpec, SessionCreateParams, SessionCreateRequest, SessionIdRequest,
-    SessionReplayRequest, SessionResumeFromStorageRequest, SessionSetTitleRequest,
+    SessionAgentSpec, SessionCreateParams, SessionCreateRequest, SessionExportToFileRequest,
+    SessionIdRequest, SessionRenderMarkdownRequest, SessionReplayRequest,
+    SessionResumeFromStorageRequest, SessionSetTitleRequest,
 };
 pub use storage_requests::{
     FsListDirRequest, FsMoveRequest, FsPathRequest, GrepSearchRequest, KilnOpenRequest,

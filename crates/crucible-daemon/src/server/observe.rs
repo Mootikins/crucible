@@ -1,5 +1,8 @@
 use super::*;
-use crate::require_session_id;
+use crate::rpc_client::{
+    SessionExportToFileRequest, SessionIdRequest, SessionRenderMarkdownRequest,
+};
+use crate::rpc_helpers::{session_id_field, typed_params};
 use crate::server::session::scope::caller_kiln_scope;
 use crate::session_manager::{KilnFilter, KilnScope};
 use crucible_core::session::SessionSummary;
@@ -13,7 +16,14 @@ use crucible_core::session::SessionSummary;
 /// own root now, so only the daemon can spell the path, and a client that
 /// guessed one was guessing the layout.
 pub(crate) async fn handle_session_load_events(req: Request, sessions_root: &Path) -> Response {
-    let session_id = require_session_id!(req);
+    let params = match typed_params::<SessionIdRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = match session_id_field(&params.session_id, &req) {
+        Ok(id) => id,
+        Err(response) => return *response,
+    };
     let session_dir = session_id.dir_under(sessions_root);
 
     match crate::observe::load_events(&session_dir).await {
@@ -161,13 +171,19 @@ pub(crate) async fn handle_session_list_persisted(
 ///   - `max_content_length` (u64, optional): Truncation limit (default 0 = no limit)
 ///     Returns: { markdown: "..." }
 pub(crate) async fn handle_session_render_markdown(req: Request, sessions_root: &Path) -> Response {
-    let session_id = require_session_id!(req);
+    let params = match typed_params::<SessionRenderMarkdownRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = match session_id_field(&params.session_id, &req) {
+        Ok(id) => id,
+        Err(response) => return *response,
+    };
     let session_dir = session_id.dir_under(sessions_root);
-    let include_timestamps = optional_param!(req, "include_timestamps", as_bool).unwrap_or(false);
-    let include_tokens = optional_param!(req, "include_tokens", as_bool).unwrap_or(true);
-    let include_tools = optional_param!(req, "include_tools", as_bool).unwrap_or(true);
-    let max_content_length =
-        optional_param!(req, "max_content_length", as_u64).unwrap_or(0) as usize;
+    let include_timestamps = params.include_timestamps.unwrap_or(false);
+    let include_tokens = params.include_tokens.unwrap_or(true);
+    let include_tools = params.include_tools.unwrap_or(true);
+    let max_content_length = params.max_content_length.unwrap_or(0);
 
     let events = match crate::observe::load_events(&session_dir).await {
         Ok(e) => e,
@@ -201,7 +217,7 @@ pub(crate) async fn handle_session_render_markdown(req: Request, sessions_root: 
 ///
 /// * **No `output_path`** — `session.md` beside the session's own transcript.
 ///   Not a path a caller can influence beyond the id, which
-///   [`require_session_id!`] has already validated as a single component, so
+///   [`session_id_field`] has already validated as a single component, so
 ///   the assertion is **equality** rather than containment, exactly as
 ///   [`crate::session_manager::remove_session_dir`] makes it and for the same
 ///   reason: a symlink at `{sessions_root}/{id}` is beneath the root by every
@@ -277,9 +293,16 @@ async fn export_destination(
 ///   - `include_timestamps` (bool, optional): Include timestamps (default false)
 ///     Returns: { status: "ok", output_path: "..." }
 pub(crate) async fn handle_session_export_to_file(req: Request, sessions_root: &Path) -> Response {
-    let session_id = require_session_id!(req);
-    let output_path = optional_param!(req, "output_path", as_str);
-    let timestamps = optional_param!(req, "include_timestamps", as_bool).unwrap_or(false);
+    let params = match typed_params::<SessionExportToFileRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let session_id = match session_id_field(&params.session_id, &req) {
+        Ok(id) => id,
+        Err(response) => return *response,
+    };
+    let output_path = params.output_path.as_deref();
+    let timestamps = params.include_timestamps.unwrap_or(false);
 
     let session_dir = session_id.dir_under(sessions_root);
 

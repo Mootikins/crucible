@@ -209,10 +209,12 @@ pub struct SessionListRequest {
 
 /// Shared request for methods that only require a `session_id`.
 ///
-/// Used by: `session.get`, `session.pause`, `session.resume`, `session.end`,
-/// `session.cancel`, `session.list_models`, `session.get_thinking_budget`,
-/// `session.get_precognition`, `session.get_temperature`, `session.get_max_tokens`,
-/// `session.archive`, `session.unarchive`, `session.delete`.
+/// Used by: `session.get`, `session.status`, `session.pause`, `session.resume`,
+/// `session.end`, `session.cancel`, `session.list_models`, `session.list_modes`,
+/// `session.list_notifications`, `session.load_events`,
+/// `session.get_thinking_budget`, `session.get_precognition`,
+/// `session.get_temperature`, `session.get_max_tokens`, `session.archive`,
+/// `session.unarchive`, `session.delete`, `review.list_hunks`, `review.rebase`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionIdRequest {
     pub session_id: String,
@@ -278,12 +280,6 @@ pub struct SessionSearchRequest {
     pub limit: Option<usize>,
 }
 
-/// Request for `session.load_events`.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionLoadEventsRequest {
-    pub session_id: String,
-}
-
 /// Request for `session.list_persisted`.
 ///
 /// `kilns` is the caller's whole kiln set, not directories to scan: the daemon
@@ -299,7 +295,7 @@ pub struct SessionListPersistedRequest {
 }
 
 /// Request for `session.render_markdown`.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionRenderMarkdownRequest {
     pub session_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -313,7 +309,7 @@ pub struct SessionRenderMarkdownRequest {
 }
 
 /// Request for `session.export_to_file`.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionExportToFileRequest {
     pub session_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -637,7 +633,7 @@ impl DaemonClient {
     pub async fn session_load_events(&self, session_id: &str) -> Result<serde_json::Value> {
         self.typed_call(
             "session.load_events",
-            SessionLoadEventsRequest {
+            SessionIdRequest {
                 session_id: session_id.to_string(),
             },
         )
