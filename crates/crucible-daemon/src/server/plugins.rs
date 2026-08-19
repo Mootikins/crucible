@@ -1,4 +1,5 @@
 use super::*;
+use crate::rpc_helpers::typed_params;
 use crate::daemon_plugins::PluginServiceFn;
 
 /// Drain extracted service functions, spawn each, and record the handle
@@ -28,7 +29,11 @@ pub(crate) async fn handle_plugin_reload(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
-    let name = require_param!(req, "name", as_str);
+    let params = match typed_params::<crate::rpc_client::NameRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let name = params.name.as_str();
 
     let mut loader_guard = plugin_loader.lock().await;
     let loader = match loader_guard.as_mut() {
@@ -148,7 +153,11 @@ pub(crate) async fn handle_plugin_publications(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
-    let key = req.params.get("key").and_then(|v| v.as_str());
+    let params = match typed_params::<crate::rpc_client::PluginPublicationsRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let key = params.key.as_deref();
     let loader_guard = plugin_loader.lock().await;
     let Some(loader) = loader_guard.as_ref() else {
         return Response::success(req.id, serde_json::json!({ "publications": {} }));
@@ -175,11 +184,11 @@ pub(crate) async fn handle_plugin_options(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
-    let ui = req
-        .params
-        .get("ui")
-        .and_then(|v| v.as_str())
-        .unwrap_or("web");
+    let params = match typed_params::<crate::rpc_client::PluginOptionsRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let ui = params.ui.as_deref().unwrap_or("web");
     let loader_guard = plugin_loader.lock().await;
     let Some(loader) = loader_guard.as_ref() else {
         return Response::success(req.id, serde_json::json!({ "options": {} }));
@@ -187,7 +196,7 @@ pub(crate) async fn handle_plugin_options(
     let registry = loader.options();
 
     let mut out = serde_json::Map::new();
-    match req.params.get("plugin").and_then(|v| v.as_str()) {
+    match params.plugin.as_deref() {
         Some(name) => {
             if let Some(tree) = registry.describe(name, ui) {
                 out.insert(name.to_string(), tree);
@@ -202,19 +211,6 @@ pub(crate) async fn handle_plugin_options(
         }
     }
     Response::success(req.id, serde_json::json!({ "options": out }))
-}
-
-/// Option path from `["a", "b"]` params.
-fn option_path(req: &Request) -> Vec<String> {
-    req.params
-        .get("path")
-        .and_then(|v| v.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 /// Which callback an option RPC reaches.
@@ -238,13 +234,13 @@ pub(crate) async fn handle_plugin_option_call(
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
     action: OptionAction,
 ) -> Response {
-    let plugin = require_param!(req, "plugin", as_str).to_string();
-    let ui = req
-        .params
-        .get("ui")
-        .and_then(|v| v.as_str())
-        .unwrap_or("web");
-    let path = option_path(&req);
+    let params = match typed_params::<crate::rpc_client::PluginOptionCallRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let plugin = params.plugin;
+    let ui = params.ui.as_deref().unwrap_or("web");
+    let path = params.path;
     if path.is_empty() {
         return Response::error(req.id, INVALID_PARAMS, "`path` is required".to_string());
     }
@@ -260,11 +256,7 @@ pub(crate) async fn handle_plugin_option_call(
             .get(&plugin, &path, ui)
             .map(|v| serde_json::json!({ "value": v })),
         OptionAction::Set => {
-            let value = req
-                .params
-                .get("value")
-                .cloned()
-                .unwrap_or(serde_json::Value::Null);
+            let value = params.value;
             registry.set(&plugin, &path, value.clone(), ui).map(|()| {
                 // Only after the plugin accepted it. Recording first would
                 // persist a value the plugin rejected, and replay it into a
@@ -307,12 +299,12 @@ pub(crate) async fn handle_plugin_run_command(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
-    let name = require_param!(req, "name", as_str).to_string();
-    let args = req
-        .params
-        .get("args")
-        .cloned()
-        .unwrap_or(serde_json::Value::Null);
+    let params = match typed_params::<crate::rpc_client::PluginRunCommandRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let name = params.name;
+    let args = params.args;
 
     // Clone the registry Arc out of the guard: a command handler can call back
     // into daemon APIs, and holding the loader mutex across that awaits a lock
@@ -338,9 +330,12 @@ pub(crate) async fn handle_plugin_run_command(
 // --- Project handlers ---
 
 pub(crate) async fn handle_project_register(req: Request, pm: &Arc<ProjectManager>) -> Response {
-    let path = require_param!(req, "path", as_str);
+    let params = match typed_params::<crate::rpc_client::PathRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
 
-    match pm.register(Path::new(path)) {
+    match pm.register(Path::new(&params.path)) {
         Ok(project) => match serde_json::to_value(project) {
             Ok(v) => Response::success(req.id, v),
             Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
@@ -350,9 +345,12 @@ pub(crate) async fn handle_project_register(req: Request, pm: &Arc<ProjectManage
 }
 
 pub(crate) async fn handle_project_unregister(req: Request, pm: &Arc<ProjectManager>) -> Response {
-    let path = require_param!(req, "path", as_str);
+    let params = match typed_params::<crate::rpc_client::PathRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
 
-    match pm.unregister(Path::new(path)) {
+    match pm.unregister(Path::new(&params.path)) {
         Ok(()) => Response::success(req.id, serde_json::json!({"status": "ok"})),
         Err(e) => Response::error(req.id, INVALID_PARAMS, e.to_string()),
     }
@@ -367,9 +365,12 @@ pub(crate) async fn handle_project_list(req: Request, pm: &Arc<ProjectManager>) 
 }
 
 pub(crate) async fn handle_project_get(req: Request, pm: &Arc<ProjectManager>) -> Response {
-    let path = require_param!(req, "path", as_str);
+    let params = match typed_params::<crate::rpc_client::PathRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
 
-    match pm.get(Path::new(path)) {
+    match pm.get(Path::new(&params.path)) {
         Some(project) => match serde_json::to_value(project) {
             Ok(v) => Response::success(req.id, v),
             Err(e) => Response::error(req.id, INTERNAL_ERROR, e.to_string()),
@@ -389,12 +390,15 @@ pub(crate) async fn handle_scm_clone(
     pm: &Arc<ProjectManager>,
     projects_dir: Option<&str>,
 ) -> Response {
-    let raw_url = require_param!(req, "url", as_str);
-    let dest_param = optional_param!(req, "dest", as_str);
-    let name_param = optional_param!(req, "name", as_str);
+    let params = match typed_params::<crate::rpc_client::ScmCloneRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let dest_param = params.dest.as_deref();
+    let name_param = params.name.as_deref();
 
     // Validate + normalize the URL before git ever sees it.
-    let url = match crate::scm::normalize_clone_url(raw_url) {
+    let url = match crate::scm::normalize_clone_url(&params.url) {
         Ok(u) => u,
         Err(e) => return Response::error(req.id, INVALID_PARAMS, e.to_string()),
     };

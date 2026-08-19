@@ -1209,6 +1209,39 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
     ),
     ("FsMoveRequest", "crates/crucible-daemon/src/server/fs/mod.rs"),
     ("FsPathRequest", "crates/crucible-daemon/src/server/fs/mod.rs"),
+    (
+        "NameRequest",
+        "crates/crucible-daemon/src/server/plugins.rs",
+    ),
+    (
+        "PluginPublicationsRequest",
+        "crates/crucible-daemon/src/server/plugins.rs",
+    ),
+    (
+        "PluginOptionsRequest",
+        "crates/crucible-daemon/src/server/plugins.rs",
+    ),
+    (
+        "PluginOptionCallRequest",
+        "crates/crucible-daemon/src/server/plugins.rs",
+    ),
+    (
+        "PluginRunCommandRequest",
+        "crates/crucible-daemon/src/server/plugins.rs",
+    ),
+    ("PathRequest", "crates/crucible-daemon/src/server/plugins.rs"),
+    (
+        "ScmCloneRequest",
+        "crates/crucible-daemon/src/server/plugins.rs",
+    ),
+    (
+        "PluginInstallRequest",
+        "crates/crucible-daemon/src/server/plugin_install.rs",
+    ),
+    (
+        "PluginRemoveRequest",
+        "crates/crucible-daemon/src/server/plugin_install.rs",
+    ),
 ];
 
 /// Handlers that still hand-pluck their fields. REMOVE rows; never add.

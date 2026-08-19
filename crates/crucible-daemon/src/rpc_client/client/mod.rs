@@ -41,6 +41,7 @@ pub mod agent;
 pub mod lua;
 pub mod review;
 pub mod session;
+pub mod plugin_requests;
 pub mod storage;
 pub mod storage_requests;
 pub mod subscription;
@@ -64,14 +65,18 @@ pub use lua::{
 // now deserializes it: the client struct IS the server's contract rather than
 // a shape the server re-derives by hand.
 pub use session::{SessionAgentSpec, SessionCreateParams, SessionCreateRequest};
+pub use plugin_requests::{
+    PluginInstallRequest, PluginOptionCallRequest, PluginOptionsRequest,
+    PluginPublicationsRequest, PluginRemoveRequest, PluginRunCommandRequest,
+};
 pub use storage_requests::{
     FsListDirRequest, FsMoveRequest, FsPathRequest, GrepSearchRequest, KilnOpenRequest,
     KilnSetClassificationRequest, McpStartRequest, NoteRenameRequest, ProcessFileRequest,
     ScmCloneRequest, SearchVectorsRequest,
 };
 pub use types::{
-    DaemonCapabilities, NameRequest, SessionEvent, SkillsGetRequest, SkillsListRequest,
-    SkillsSearchRequest, VersionCheck,
+    DaemonCapabilities, NameRequest, PathRequest, SessionEvent, SkillsGetRequest,
+    SkillsListRequest, SkillsSearchRequest, VersionCheck,
 };
 
 use session::SessionIdRequest;
@@ -841,7 +846,13 @@ impl DaemonClient {
     /// what is true of this box now — not something to cache across a change.
     pub async fn plugin_options(&self, ui: &str) -> Result<serde_json::Value> {
         let result: serde_json::Value = self
-            .typed_call("plugin.options", serde_json::json!({ "ui": ui }))
+            .typed_call(
+                "plugin.options",
+                plugin_requests::PluginOptionsRequest {
+                    ui: Some(ui.to_string()),
+                    plugin: None,
+                },
+            )
             .await?;
         Ok(result
             .get("options")
@@ -859,7 +870,12 @@ impl DaemonClient {
         let result: serde_json::Value = self
             .typed_call(
                 "plugin.option_get",
-                serde_json::json!({ "plugin": plugin, "path": path, "ui": ui }),
+                plugin_requests::PluginOptionCallRequest {
+                    plugin: plugin.to_string(),
+                    path: path.to_vec(),
+                    ui: Some(ui.to_string()),
+                    value: serde_json::Value::Null,
+                },
             )
             .await?;
         Ok(result
@@ -879,7 +895,12 @@ impl DaemonClient {
         let _: serde_json::Value = self
             .typed_call(
                 "plugin.option_set",
-                serde_json::json!({ "plugin": plugin, "path": path, "value": value, "ui": ui }),
+                plugin_requests::PluginOptionCallRequest {
+                    plugin: plugin.to_string(),
+                    path: path.to_vec(),
+                    ui: Some(ui.to_string()),
+                    value,
+                },
             )
             .await?;
         Ok(())
@@ -895,7 +916,12 @@ impl DaemonClient {
         let _: serde_json::Value = self
             .typed_call(
                 "plugin.option_execute",
-                serde_json::json!({ "plugin": plugin, "path": path, "ui": ui }),
+                plugin_requests::PluginOptionCallRequest {
+                    plugin: plugin.to_string(),
+                    path: path.to_vec(),
+                    ui: Some(ui.to_string()),
+                    value: serde_json::Value::Null,
+                },
             )
             .await?;
         Ok(())
@@ -919,14 +945,9 @@ impl DaemonClient {
         name: &str,
         args: serde_json::Value,
     ) -> Result<serde_json::Value> {
-        #[derive(serde::Serialize)]
-        struct RunCommandParams {
-            name: String,
-            args: serde_json::Value,
-        }
         self.typed_call(
             "plugin.run_command",
-            RunCommandParams {
+            plugin_requests::PluginRunCommandRequest {
                 name: name.to_string(),
                 args,
             },
@@ -942,17 +963,9 @@ impl DaemonClient {
         branch: Option<&str>,
         pin: Option<&str>,
     ) -> Result<serde_json::Value> {
-        #[derive(serde::Serialize)]
-        struct InstallParams {
-            url: String,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            branch: Option<String>,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            pin: Option<String>,
-        }
         self.typed_call(
             "plugin.install",
-            InstallParams {
+            plugin_requests::PluginInstallRequest {
                 url: url.to_string(),
                 branch: branch.map(str::to_string),
                 pin: pin.map(str::to_string),
@@ -964,14 +977,9 @@ impl DaemonClient {
     /// Remove a plugin by name. With `purge = true`, also deletes the
     /// cloned plugin directory.
     pub async fn plugin_remove(&self, name: &str, purge: bool) -> Result<serde_json::Value> {
-        #[derive(serde::Serialize)]
-        struct RemoveParams {
-            name: String,
-            purge: bool,
-        }
         self.typed_call(
             "plugin.remove",
-            RemoveParams {
+            plugin_requests::PluginRemoveRequest {
                 name: name.to_string(),
                 purge,
             },

@@ -49,7 +49,7 @@ pub struct KilnPathRequest {
 }
 
 /// Request for methods that take only a filesystem path.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PathRequest {
     pub path: String,
 }

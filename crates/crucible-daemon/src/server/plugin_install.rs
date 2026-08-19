@@ -74,14 +74,17 @@ pub(crate) async fn handle_plugin_install(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
-    let url = require_param!(req, "url", as_str).to_string();
-    let branch = optional_param!(req, "branch", as_str).map(|s| s.to_string());
-    let pin = optional_param!(req, "pin", as_str).map(|s| s.to_string());
+    let params = match crate::rpc_helpers::typed_params::<crate::rpc_client::PluginInstallRequest>(
+        &req,
+    ) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
 
     let entry = crucible_core::config::PluginEntry {
-        url,
-        branch,
-        pin,
+        url: params.url,
+        branch: params.branch,
+        pin: params.pin,
         enabled: true,
     };
 
@@ -162,8 +165,14 @@ pub(crate) async fn handle_plugin_remove(
     req: Request,
     plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
 ) -> Response {
-    let name = require_param!(req, "name", as_str).to_string();
-    let purge = optional_param!(req, "purge", as_bool).unwrap_or(false);
+    let params = match crate::rpc_helpers::typed_params::<crate::rpc_client::PluginRemoveRequest>(
+        &req,
+    ) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let name = params.name;
+    let purge = params.purge;
 
     // Precondition FIRST: only plugins declared in plugins.toml are
     // removable, and every bundled `runtime/plugins/*` plugin is not.
