@@ -248,7 +248,14 @@ async fn test_session_send_message_rpc_no_agent_configured_error_and_missing_con
     )
     .await;
     assert!(no_agent_response["error"].is_object());
-    assert_eq!(no_agent_response["error"]["code"], INTERNAL_ERROR);
+    // A session with no agent is the caller's to fix, so it answers
+    // INVALID_PARAMS like every other method that reports it
+    // (`agent_not_configured`). This pinned INTERNAL_ERROR while seven other
+    // sites gave INVALID_PARAMS for the identical condition, because this
+    // handler passed every error through `internal_error` without classifying
+    // it. crucible-web maps anything that is not -32602 to HTTP 502, so the
+    // old answer told a caller their own mistake was a daemon fault.
+    assert_eq!(no_agent_response["error"]["code"], INVALID_PARAMS);
 
     let missing_content_response = rpc_call(
         &mut client,

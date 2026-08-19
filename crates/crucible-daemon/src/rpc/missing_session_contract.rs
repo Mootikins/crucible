@@ -125,6 +125,28 @@ fn cases(ws: &std::path::Path) -> Vec<(&'static str, serde_json::Value, Answer)>
     vec![
         // ── 1. refuses, naming the session ──────────────────────────────────
         ("session.get", json!({}), not_found()),
+        // Both of these answered -32603 until 2026-08-19: they passed every
+        // error through `internal_error` without classifying it, so a missing
+        // session read as a daemon fault and crucible-web turned it into a 502.
+        // Unpinned is how that survived while 31 sibling methods got it right.
+        (
+            "session.send_message",
+            json!({ "content": "hello" }),
+            not_found(),
+        ),
+        (
+            "session.configure_agent",
+            // A COMPLETE agent: this handler validates the config before it
+            // resolves the session, so a partial one never reaches the path
+            // under test and the row would pin the validator instead.
+            json!({ "agent": {
+                "agent_type": "internal",
+                "provider": "ollama",
+                "model": "test-model",
+                "system_prompt": "test",
+            }}),
+            not_found(),
+        ),
         ("session.fork", json!({}), not_found()),
         (
             "session.switch_model",

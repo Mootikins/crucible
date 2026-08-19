@@ -42,7 +42,11 @@ pub(crate) async fn handle_session_configure_agent(
         Err(e @ AgentError::InvalidConfig(_)) => {
             Response::error(req.id, INVALID_PARAMS, e.to_string())
         }
-        Err(e) => internal_error(req.id, e),
+        // Everything else classified too. Matching one variant and blanketing
+        // the rest left SessionNotFound, NoAgentConfigured and ConcurrentRequest
+        // answering -32603 — the same three this file's sibling handler got
+        // wrong, one function away.
+        Err(e) => agent_error_to_response(req.id, e),
     }
 }
 
@@ -84,7 +88,11 @@ pub(crate) async fn handle_session_send_message(
                 "message_id": message_id,
             }),
         ),
-        Err(e) => internal_error(req.id, e),
+        // Classified rather than blanket-internal: this handler answered every
+        // failure with -32603, so a missing session, an unconfigured agent and
+        // a malformed id all read as daemon faults. crucible-web maps anything
+        // that is not -32602 to HTTP 502.
+        Err(e) => agent_error_to_response(req.id, e),
     }
 }
 

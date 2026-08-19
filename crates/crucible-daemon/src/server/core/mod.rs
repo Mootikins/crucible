@@ -48,6 +48,11 @@ pub(super) fn concurrent_request(req_id: Option<RequestId>, session_id: &str) ->
 pub(super) fn agent_error_to_response(req_id: Option<RequestId>, err: AgentError) -> Response {
     match err {
         AgentError::SessionNotFound(id) => session_not_found(req_id, &id),
+        AgentError::InvalidSessionId(why) => Response::error(
+            req_id,
+            INVALID_PARAMS,
+            format!("Invalid session_id: {why}"),
+        ),
         AgentError::NoAgentConfigured(id) => agent_not_configured(req_id, &id),
         AgentError::ConcurrentRequest(id) => concurrent_request(req_id, &id),
         e => internal_error(req_id, e),

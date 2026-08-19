@@ -93,6 +93,17 @@ pub enum AgentError {
     #[error("Session not found: {0}")]
     SessionNotFound(String),
 
+    /// The `session_id` parameter was not a well-formed id.
+    ///
+    /// Distinct from [`Self::SessionNotFound`] because the caller must do
+    /// different things about them: a not-found id was spelled correctly and
+    /// names nothing, a malformed one never could name anything. Reporting a
+    /// parse failure as "Session not found" sent the caller hunting for a
+    /// session, and reporting it as an internal error sent them to the daemon
+    /// log — see `server::tests::session_id_boundary`.
+    #[error("Invalid session_id: {0}")]
+    InvalidSessionId(String),
+
     #[error("No agent configured for session: {0}")]
     NoAgentConfigured(String),
 

@@ -536,9 +536,11 @@ impl AgentManager {
         session_id: &str,
     ) -> Result<crucible_core::session::Session, AgentError> {
         // Reviving reads `{sessions_root}/{id}` off disk, so the id has to be
-        // one the daemon could have filed. An unusable one names no session.
+        // one the daemon could have filed. An id that will not parse is the
+        // caller's bug, not a missing session — reported as such so the answer
+        // names the parameter instead of sending them looking for a session.
         let validated = crucible_core::session::SessionId::parse(session_id)
-            .map_err(|e| AgentError::SessionNotFound(e.to_string()))?;
+            .map_err(|e| AgentError::InvalidSessionId(e.to_string()))?;
 
         if let Some(session) = self.session_manager.get_session(session_id) {
             // Resident but ended: reached because `end_session` keeps the session

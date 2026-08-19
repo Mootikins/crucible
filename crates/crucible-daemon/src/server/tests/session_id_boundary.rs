@@ -207,3 +207,42 @@ async fn a_minted_session_id_survives_the_boundary() {
     assert!(!server.sessions_root().join(&session_id).exists());
     server.shutdown().await;
 }
+
+/// `session.send_message` obeys the same rule as `session.delete`.
+///
+/// It did not. `get_or_revive_session` mapped a parse failure to
+/// `AgentError::SessionNotFound`, whose Display is "Session not found: …", and
+/// the handler passed every error through `internal_error`. So a caller bug
+/// arrived as `-32603` with a message telling them to look for a session, and
+/// crucible-web maps anything that is not `-32602` to HTTP 502 — a daemon
+/// fault. Four wrong answers to one malformed string, on the busiest method on
+/// the surface, while `session.delete` two files over got it right.
+#[tokio::test]
+async fn send_message_refuses_a_malformed_session_id_by_naming_the_parameter() {
+    let server = TestServer::start().await;
+    let mut client = server.connect().await;
+
+    let response = rpc_call(
+        &mut client,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 890,
+            "method": "session.send_message",
+            "params": { "session_id": "../Documents", "content": "hello" },
+        }),
+    )
+    .await;
+
+    assert_eq!(
+        response["error"]["code"],
+        crate::protocol::INVALID_PARAMS,
+        "a malformed id is the caller's bug, not the daemon's: {response}"
+    );
+    let message = response["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("session_id"),
+        "the error must name the parameter, not send them hunting for a \
+         session that was never named: {message}"
+    );
+    server.shutdown().await;
+}
