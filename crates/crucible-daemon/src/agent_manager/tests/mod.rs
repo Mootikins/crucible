@@ -849,6 +849,7 @@ fn create_test_agent_manager_with_both(
     })
 }
 
+mod active_tools;
 mod build_race;
 mod concurrency;
 mod dispatch;

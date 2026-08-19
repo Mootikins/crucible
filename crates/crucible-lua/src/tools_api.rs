@@ -40,7 +40,40 @@
 //! }, { session = ctx.session_id })
 //! -- results[1] = { result = "...", err = nil }
 //! -- results[2] = { result = "...", err = nil }
+//!
+//! -- Narrow what one session offers its model. Glob patterns, the same
+//! -- language a mode's `tools` selector speaks.
+//! cru.tools.set_active(ctx.session_id, { "read_*", "grep_notes" })
+//! local names = cru.tools.get_active(ctx.session_id)  -- the patterns above
+//! cru.tools.set_active(ctx.session_id, nil)           -- back to automatic
 //! ```
+//!
+//! ## What an active set does, exactly
+//!
+//! It **narrows and only narrows** the session's visible tool set, applied
+//! after the session's mode filter and before progressive tool disclosure
+//! decides what to defer. So:
+//!
+//! - it cannot re-add a tool the mode removed — `set_active` in plan mode
+//!   still gets no write tools;
+//! - narrowing shrinks the attached tool schemas, which usually takes the
+//!   session under the disclosure budget so nothing is deferred at all;
+//! - if what remains is still over that budget, deferral still happens. An
+//!   active set is not an override of the context budget, and deferral costs
+//!   no capability — deferred tools stay callable through `discover_tools` /
+//!   `invoke_tool`.
+//!
+//! The set is enforced at dispatch as well as in the advertisement, so a
+//! model that names an excluded tool anyway is refused rather than obeyed.
+//! `discover_tools` and `get_tool_schema` are the exception: they enumerate
+//! the whole catalog, so an excluded tool can still be *found* there — it
+//! just cannot be run.
+//!
+//! Two things it is not: it is not persistent (a daemon restart drops every
+//! set, and a resumed session comes back with its automatic tool list), and
+//! it is not available to a session delegated to an external ACP agent —
+//! Crucible does not assemble that agent's tool list, so `set_active` returns
+//! an error there rather than narrowing half of it.
 
 use crate::error::LuaError;
 use crate::lua_util::register_in_namespaces;
@@ -84,6 +117,28 @@ pub trait DaemonToolsApi: Send + Sync + 'static {
     fn list_tools(
         &self,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>>;
+
+    /// Put an explicit active tool set in force for `session`, or clear it.
+    ///
+    /// `Some(patterns)` narrows the session to the tools matching one of the
+    /// glob patterns; an empty vector is a real answer ("no tools"), not a
+    /// clear. `None` clears the set, restoring the automatic behaviour.
+    ///
+    /// Synchronous: this writes a registry, it does not reach a session's
+    /// agent. The next request the session makes reads it.
+    ///
+    /// Errors when `session` names no live session, and when it names a
+    /// session delegated to an external agent whose tool list the daemon does
+    /// not assemble. Both used to answer `Ok(())` and do nothing.
+    fn set_active_tools(
+        &self,
+        session: String,
+        patterns: Option<Vec<String>>,
+    ) -> Result<(), String>;
+
+    /// The patterns in force for `session`, or `None` when it has no explicit
+    /// set and is therefore offering whatever its mode and budget allow.
+    fn get_active_tools(&self, session: String) -> Result<Option<Vec<String>>, String>;
 }
 
 /// Register the tools module with stub functions.
@@ -108,6 +163,21 @@ pub fn register_tools_module(lua: &Lua) -> Result<(), LuaError> {
     stub_async!("call", lua, tools, (String, mlua::Value, mlua::Value));
     stub_async!("list", lua, tools, ());
     stub_async!("batch", lua, tools, (mlua::Value, mlua::Value));
+
+    // `set_active`/`get_active` are synchronous — they read and write a
+    // registry rather than executing anything — so their stubs are too.
+    macro_rules! stub_sync {
+        ($name:expr, $lua:expr, $tools:expr, $args:ty) => {
+            let f = $lua.create_function(|lua: &Lua, _args: $args| {
+                let err = lua.create_string("no daemon connected")?;
+                Ok((Value::Nil, Value::String(err)))
+            })?;
+            $tools.set($name, f)?;
+        };
+    }
+
+    stub_sync!("set_active", lua, tools, (String, mlua::Value));
+    stub_sync!("get_active", lua, tools, String);
 
     register_in_namespaces(lua, "tools", tools)?;
 
@@ -294,6 +364,87 @@ pub fn register_tools_module_with_api(
     })?;
     tools.set("batch", batch_fn)?;
 
+    // set_active(session_id, names_or_nil) -> (true, nil) or (nil, err)
+    //
+    // `names` is an array of glob patterns. `nil` clears the set; `{}` is a
+    // real answer meaning "no tools", so the two are NOT the same call.
+    let a = Arc::clone(&api);
+    let set_active_fn = lua.create_function(move |lua, (session, names): (String, Value)| {
+        let patterns = match &names {
+            Value::Nil => None,
+            Value::Table(t) => {
+                let mut out = Vec::new();
+                for value in t.clone().sequence_values::<String>() {
+                    match value {
+                        Ok(name) => out.push(name),
+                        Err(e) => {
+                            let err = lua.create_string(format!(
+                                "set_active() names must be an array of strings: {e}"
+                            ))?;
+                            return Ok((Value::Nil, Value::String(err)));
+                        }
+                    }
+                }
+                // Every entry has to be part of the array walk above. A
+                // map-shaped table (`{ read_file = true }`) or a sparse one
+                // (`{ [1] = "a", [3] = "b" }`) has entries the walk never
+                // reaches, and the leftover was silently the empty set — so
+                // asking for two tools by the wrong shape handed the session
+                // NO tools. `{}` is still the deliberate empty set: it has
+                // nothing outside the array either.
+                let entries = t.clone().pairs::<Value, Value>().count();
+                if entries != out.len() {
+                    let err = lua.create_string(format!(
+                        "set_active() names must be an array of tool patterns; {} of \
+                         the {entries} entries are not array elements (a map like \
+                         {{ read_file = true }}, or a gap in the indices)",
+                        entries - out.len()
+                    ))?;
+                    return Ok((Value::Nil, Value::String(err)));
+                }
+                Some(out)
+            }
+            _ => {
+                let err =
+                    lua.create_string("set_active() expects an array of tool patterns, or nil")?;
+                return Ok((Value::Nil, Value::String(err)));
+            }
+        };
+        match a.set_active_tools(session, patterns) {
+            Ok(()) => Ok((Value::Boolean(true), Value::Nil)),
+            Err(e) => {
+                let err = lua.create_string(&e)?;
+                Ok((Value::Nil, Value::String(err)))
+            }
+        }
+    })?;
+    tools.set("set_active", set_active_fn)?;
+
+    // get_active(session_id) -> (names, nil) | (nil, nil) | (nil, err)
+    //
+    // Three outcomes, not two: `(nil, nil)` is the session having no explicit
+    // set, which is a successful answer and the common one. Check the second
+    // return before concluding anything from a nil first return.
+    let a = Arc::clone(&api);
+    let get_active_fn =
+        lua.create_function(
+            move |lua, session: String| match a.get_active_tools(session) {
+                Ok(None) => Ok((Value::Nil, Value::Nil)),
+                Ok(Some(patterns)) => {
+                    let table = lua.create_table()?;
+                    for (i, name) in patterns.iter().enumerate() {
+                        table.set(i + 1, name.as_str())?;
+                    }
+                    Ok((Value::Table(table), Value::Nil))
+                }
+                Err(e) => {
+                    let err = lua.create_string(&e)?;
+                    Ok((Value::Nil, Value::String(err)))
+                }
+            },
+        )?;
+    tools.set("get_active", get_active_fn)?;
+
     Ok(())
 }
 
@@ -312,6 +463,8 @@ mod tests {
         assert!(tools.contains_key("call").unwrap());
         assert!(tools.contains_key("list").unwrap());
         assert!(tools.contains_key("batch").unwrap());
+        assert!(tools.contains_key("set_active").unwrap());
+        assert!(tools.contains_key("get_active").unwrap());
 
         // Also registered under crucible.*
         let crucible: Table = lua
@@ -328,6 +481,40 @@ mod tests {
 
         let result: (Value, Value) = lua
             .load(r#"return cru.tools.call("read_file", { path = "test.txt" })"#)
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert!(matches!(result.0, Value::Nil));
+        match result.1 {
+            Value::String(s) => assert_eq!(s.to_str().unwrap(), "no daemon connected"),
+            _ => panic!("Expected error string, got {:?}", result.1),
+        }
+    }
+
+    #[tokio::test]
+    async fn tools_stub_set_active_returns_nil() {
+        let lua = TestLuaBuilder::new().with_tools().build();
+
+        let result: (Value, Value) = lua
+            .load(r#"return cru.tools.set_active("s1", { "read_*" })"#)
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert!(matches!(result.0, Value::Nil));
+        match result.1 {
+            Value::String(s) => assert_eq!(s.to_str().unwrap(), "no daemon connected"),
+            _ => panic!("Expected error string, got {:?}", result.1),
+        }
+    }
+
+    #[tokio::test]
+    async fn tools_stub_get_active_returns_nil() {
+        let lua = TestLuaBuilder::new().with_tools().build();
+
+        let result: (Value, Value) = lua
+            .load(r#"return cru.tools.get_active("s1")"#)
             .eval_async()
             .await
             .unwrap();
@@ -381,6 +568,8 @@ mod api_tests {
         call_count: AtomicUsize,
         /// What each call stated as its session, in call order.
         sessions: std::sync::Mutex<Vec<Option<String>>>,
+        /// Stands in for the daemon's per-session active tool sets.
+        active: std::sync::Mutex<std::collections::HashMap<String, Vec<String>>>,
     }
 
     impl MockToolsApi {
@@ -388,6 +577,7 @@ mod api_tests {
             Self {
                 call_count: AtomicUsize::new(0),
                 sessions: std::sync::Mutex::new(Vec::new()),
+                active: std::sync::Mutex::new(std::collections::HashMap::new()),
             }
         }
     }
@@ -427,6 +617,23 @@ mod api_tests {
                     _ => Err(format!("Unknown tool: {name}")),
                 }
             })
+        }
+
+        fn set_active_tools(
+            &self,
+            session: String,
+            patterns: Option<Vec<String>>,
+        ) -> Result<(), String> {
+            let mut active = self.active.lock().unwrap();
+            match patterns {
+                Some(patterns) => active.insert(session, patterns),
+                None => active.remove(&session),
+            };
+            Ok(())
+        }
+
+        fn get_active_tools(&self, session: String) -> Result<Option<Vec<String>>, String> {
+            Ok(self.active.lock().unwrap().get(&session).cloned())
         }
 
         fn list_tools(
@@ -643,6 +850,151 @@ mod api_tests {
             .unwrap();
 
         assert_eq!(mock.sessions.lock().unwrap().clone(), vec![None]);
+    }
+
+    #[tokio::test]
+    async fn set_active_and_get_active_round_trip() {
+        let api: Arc<dyn DaemonToolsApi> = Arc::new(MockToolsApi::new());
+        let lua = TestLuaBuilder::new().with_tools_api(api).build();
+
+        let result: Table = lua
+            .load(
+                r#"
+                local ok, err = cru.tools.set_active("s1", { "read_*", "grep_notes" })
+                assert(ok, "unexpected error: " .. tostring(err))
+                local names, err2 = cru.tools.get_active("s1")
+                assert(err2 == nil, "unexpected error: " .. tostring(err2))
+                return names
+                "#,
+            )
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert_eq!(result.get::<String>(1).unwrap(), "read_*");
+        assert_eq!(result.get::<String>(2).unwrap(), "grep_notes");
+    }
+
+    /// A session with no set answers `(nil, nil)` — a successful "nothing in
+    /// force", not an error. A plugin has to be able to tell the two apart.
+    #[tokio::test]
+    async fn get_active_without_a_set_is_a_successful_nil() {
+        let api: Arc<dyn DaemonToolsApi> = Arc::new(MockToolsApi::new());
+        let lua = TestLuaBuilder::new().with_tools_api(api).build();
+
+        let result: (Value, Value) = lua
+            .load(r#"return cru.tools.get_active("never-set")"#)
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert!(matches!(result.0, Value::Nil));
+        assert!(
+            matches!(result.1, Value::Nil),
+            "no set in force is not an error, got {:?}",
+            result.1
+        );
+    }
+
+    /// `nil` clears; `{}` means "no tools". Collapsing them would make
+    /// "offer nothing" unsayable.
+    #[tokio::test]
+    async fn nil_clears_the_set_and_an_empty_table_does_not() {
+        let api: Arc<dyn DaemonToolsApi> = Arc::new(MockToolsApi::new());
+        let lua = TestLuaBuilder::new().with_tools_api(api).build();
+
+        let (empty_len, cleared): (usize, Value) = lua
+            .load(
+                r#"
+                cru.tools.set_active("s1", { "read_*" })
+                cru.tools.set_active("s1", {})
+                local empty = cru.tools.get_active("s1")
+                assert(empty ~= nil, "an empty table is a set, not a clear")
+                cru.tools.set_active("s1", nil)
+                return #empty, cru.tools.get_active("s1")
+                "#,
+            )
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert_eq!(empty_len, 0);
+        assert!(matches!(cleared, Value::Nil));
+    }
+
+    #[tokio::test]
+    async fn set_active_rejects_a_non_table_argument() {
+        let api: Arc<dyn DaemonToolsApi> = Arc::new(MockToolsApi::new());
+        let lua = TestLuaBuilder::new().with_tools_api(api).build();
+
+        let result: (Value, Value) = lua
+            .load(r#"return cru.tools.set_active("s1", "read_file")"#)
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert!(matches!(result.0, Value::Nil));
+        match result.1 {
+            Value::String(s) => assert!(s.to_str().unwrap().contains("array of tool patterns")),
+            _ => panic!("Expected error string, got {:?}", result.1),
+        }
+    }
+
+    /// A map-shaped table is a mistake, not "offer no tools".
+    ///
+    /// The array walk sees nothing in `{ read_file = true }`, so the caller
+    /// got the empty set — a plugin that meant to allow two tools silently
+    /// took every tool away instead. Refusing is the only reading that cannot
+    /// be mistaken for the deliberate `{}`.
+    #[tokio::test]
+    async fn set_active_rejects_a_map_shaped_table_instead_of_offering_no_tools() {
+        let api: Arc<dyn DaemonToolsApi> = Arc::new(MockToolsApi::new());
+        let lua = TestLuaBuilder::new().with_tools_api(api).build();
+
+        let (value, err, still_unset): (Value, Value, Value) = lua
+            .load(
+                r#"
+                local ok, err = cru.tools.set_active("s1", { read_file = true, bash = true })
+                return ok, err, cru.tools.get_active("s1")
+                "#,
+            )
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert!(matches!(value, Value::Nil));
+        match err {
+            Value::String(s) => {
+                assert!(s.to_str().unwrap().contains("not array elements"), "{s:?}")
+            }
+            other => panic!("expected an error string, got {other:?}"),
+        }
+        assert!(
+            matches!(still_unset, Value::Nil),
+            "a refused call must not have written a set"
+        );
+    }
+
+    /// A gap in the indices hides everything past it from the array walk, so
+    /// `{ [1] = "a", [3] = "b" }` used to mean "just a" with no complaint.
+    #[tokio::test]
+    async fn set_active_rejects_a_sparse_array() {
+        let api: Arc<dyn DaemonToolsApi> = Arc::new(MockToolsApi::new());
+        let lua = TestLuaBuilder::new().with_tools_api(api).build();
+
+        let (value, err): (Value, Value) = lua
+            .load(r#"return cru.tools.set_active("s1", { [1] = "read_*", [3] = "bash" })"#)
+            .eval_async()
+            .await
+            .unwrap();
+
+        assert!(matches!(value, Value::Nil));
+        match err {
+            Value::String(s) => {
+                assert!(s.to_str().unwrap().contains("not array elements"), "{s:?}")
+            }
+            other => panic!("expected an error string, got {other:?}"),
+        }
     }
 
     #[tokio::test]

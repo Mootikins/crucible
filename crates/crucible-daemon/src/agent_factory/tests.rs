@@ -245,6 +245,7 @@ fn test_unsupported_agent_type() {
             plugin_tools: None,
             sandbox_exec: None,
             containment: crate::tools::containment::RootSet::Ambient,
+            active_tools: None,
         })
         .await
     });
@@ -432,6 +433,7 @@ async fn rules_file_contents_reach_the_system_prompt() {
         plugin_tools: None,
         sandbox_exec: None,
         containment: crate::tools::containment::RootSet::Ambient,
+        active_tools: None,
     })
     .await
     .expect("agent creation should succeed");
@@ -501,6 +503,7 @@ async fn session_generation_and_context_settings_reach_the_agent_handle() {
         plugin_tools: None,
         sandbox_exec: None,
         containment: crate::tools::containment::RootSet::Ambient,
+        active_tools: None,
     })
     .await
     .expect("agent creation should succeed");
@@ -539,6 +542,7 @@ async fn test_create_ollama_agent() {
         plugin_tools: None,
         sandbox_exec: None,
         containment: crate::tools::containment::RootSet::Ambient,
+        active_tools: None,
     })
     .await;
     assert!(result.is_ok());
@@ -571,6 +575,7 @@ async fn internal_agent_type_dispatches_to_internal_branch() {
         plugin_tools: None,
         sandbox_exec: None,
         containment: crate::tools::containment::RootSet::Ambient,
+        active_tools: None,
     })
     .await;
 
@@ -605,6 +610,7 @@ async fn acp_agent_type_dispatches_to_acp_branch() {
         plugin_tools: None,
         sandbox_exec: None,
         containment: crate::tools::containment::RootSet::Ambient,
+        active_tools: None,
     })
     .await;
 

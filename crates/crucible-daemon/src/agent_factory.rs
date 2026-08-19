@@ -84,6 +84,12 @@ pub struct CreateAgentFromSessionConfigParams<'a> {
     /// contained where they are dispatched (`AgentManager`) rather than where
     /// their definitions are enumerated here.
     pub containment: crate::tools::containment::RootSet,
+    /// Explicit per-session tool sets (`cru.tools.set_active`), read by the
+    /// handle on every request. `None` in tests and in any context with no
+    /// manager behind the build, which means no session ever has an explicit
+    /// set. Only internal agents use it: an ACP agent advertises its own
+    /// tools, which the daemon does not assemble.
+    pub active_tools: Option<crate::tools::active_tools::ActiveToolSets>,
 }
 
 /// Build a `DelegationContext` for a session's MCP server.
@@ -661,6 +667,7 @@ pub async fn create_agent_from_session_config(
         plugin_tools,
         sandbox_exec,
         containment,
+        active_tools,
     } = params;
     if agent_config.agent_type == "acp" {
         let handle = AcpAgentHandle::new(AcpAgentHandleParams {
@@ -782,6 +789,14 @@ pub async fn create_agent_from_session_config(
     let handle = match modes.clone() {
         Some(registry) => handle.with_modes(registry),
         None => handle,
+    };
+    // Both halves or neither: the registry is keyed by session id, so binding
+    // it without one would read nobody's set. `parent_session_id` is the
+    // session this agent serves (the name is historical — it is the parent of
+    // any delegation, not a parent of this session).
+    let handle = match (active_tools, parent_session_id) {
+        (Some(sets), Some(session_id)) => handle.with_active_tools(session_id, sets),
+        _ => handle,
     };
 
     info!(

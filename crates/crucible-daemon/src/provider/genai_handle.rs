@@ -411,6 +411,11 @@ pub struct GenaiAgentHandle {
     /// per-request — the write-name blocklist cannot classify a plugin
     /// tool's side effects, so plan fails closed on all of them.
     plugin_tool_names: std::collections::HashSet<String>,
+    /// This session and the registry `cru.tools.set_active` writes, so a set
+    /// written mid-turn narrows the NEXT request rather than waiting for the
+    /// agent to be rebuilt. `None` in tests and in any context with no
+    /// session behind the handle, which means "no explicit set, ever".
+    active_tools: Option<(String, crate::tools::active_tools::ActiveToolSets)>,
 }
 
 /// The tool set attached to a single request, plus how many tools were
@@ -443,7 +448,7 @@ fn tool_schema_tokens(defs: &[LlmToolDefinition]) -> usize {
 /// deferred tools. `discover_tools`/`get_tool_schema` mirror
 /// `ExtendedMcpServer::discovery_tools()`; `invoke_tool` is a generic proxy
 /// the daemon unwraps to the real tool *before* hooks and permissions run.
-fn bridge_tool_defs() -> Vec<LlmToolDefinition> {
+pub(crate) fn bridge_tool_defs() -> Vec<LlmToolDefinition> {
     use serde_json::json;
     vec![
         LlmToolDefinition::new(
@@ -821,6 +826,7 @@ impl GenaiAgentHandle {
             autocompact_threshold: None,
             deferrable_tool_names: std::collections::HashSet::new(),
             plugin_tool_names: std::collections::HashSet::new(),
+            active_tools: None,
         }
     }
 
@@ -895,6 +901,28 @@ impl GenaiAgentHandle {
     pub fn with_plugin_tools(mut self, names: std::collections::HashSet<String>) -> Self {
         self.plugin_tool_names = names;
         self
+    }
+
+    /// Bind the session this handle serves to the registry
+    /// `cru.tools.set_active` writes.
+    ///
+    /// The registry is read per request rather than snapshotted, so a plugin
+    /// narrowing the set mid-turn is honoured by the next request. See
+    /// [`crate::tools::active_tools`] for how an explicit set composes with
+    /// the mode filter and with progressive disclosure.
+    pub fn with_active_tools(
+        mut self,
+        session_id: impl Into<String>,
+        sets: crate::tools::active_tools::ActiveToolSets,
+    ) -> Self {
+        self.active_tools = Some((session_id.into(), sets));
+        self
+    }
+
+    /// The explicit active set in force for this session, if any.
+    fn active_selector(&self) -> Option<crucible_lua::ToolSelector> {
+        let (session_id, sets) = self.active_tools.as_ref()?;
+        sets.selector(session_id)
     }
 
     /// Compute the tool set for a single request: apply the plan-mode filter,
@@ -976,6 +1004,24 @@ impl GenaiAgentHandle {
                 .collect()
         } else {
             selected
+        };
+
+        // An explicit active set (`cru.tools.set_active`) narrows what the
+        // mode left, and ONLY narrows: it is intersected with the filtered set
+        // above rather than replacing it, so a plugin cannot hand itself a
+        // write tool that plan mode removed. It is applied here — before the
+        // budget check below — so that narrowing shrinks the schema estimate
+        // and usually removes the reason to defer at all. When what remains is
+        // still over budget, deferral runs over the active set as usual: it
+        // does not remove capability, it changes how the tools are presented.
+        // The full rule, and why an active set does not override the budget,
+        // is in [`crate::tools::active_tools`].
+        let write_filtered: Vec<LlmToolDefinition> = match self.active_selector() {
+            Some(selector) => write_filtered
+                .into_iter()
+                .filter(|t| selector.matches(&t.function.name))
+                .collect(),
+            None => write_filtered,
         };
 
         if self.deferrable_tool_names.is_empty() {
@@ -2583,6 +2629,148 @@ mod tests {
         assert_eq!(visible.deferred_count, 0);
         assert!(names.iter().any(|n| n == "read_file"));
         assert!(names.iter().any(|n| n == "semantic_search"));
+    }
+
+    // ─── Explicit active tool sets: cru.tools.set_active ────────────────
+
+    fn active_sets(session: &str, patterns: &[&str]) -> crate::tools::active_tools::ActiveToolSets {
+        let sets = crate::tools::active_tools::ActiveToolSets::new();
+        sets.set(session, patterns.iter().map(|p| p.to_string()).collect());
+        sets
+    }
+
+    #[test]
+    fn an_active_set_narrows_the_advertised_tools() {
+        let tools = vec![
+            tool_def("read_file"),
+            tool_def("grep_notes"),
+            tool_def("semantic_search"),
+        ];
+        let handle = test_handle_with_tools(tools)
+            .with_active_tools("s1", active_sets("s1", &["read_file", "grep_*"]));
+
+        let names = visible_names(&handle.visible_tools());
+        assert!(names.iter().any(|n| n == "read_file"));
+        assert!(
+            names.iter().any(|n| n == "grep_notes"),
+            "the same glob language a mode selector speaks: {names:?}"
+        );
+        assert!(
+            !names.iter().any(|n| n == "semantic_search"),
+            "a tool outside the active set is not advertised: {names:?}"
+        );
+    }
+
+    /// The registry is read per request, not snapshotted at construction —
+    /// otherwise `set_active` would only take effect after the agent cache
+    /// happened to rebuild the handle, which is not an event a plugin can see.
+    #[test]
+    fn an_active_set_written_after_the_handle_was_built_still_applies() {
+        let sets = crate::tools::active_tools::ActiveToolSets::new();
+        let handle = test_handle_with_tools(vec![tool_def("read_file"), tool_def("bash")])
+            .with_active_tools("s1", sets.clone());
+
+        assert_eq!(visible_names(&handle.visible_tools()).len(), 2);
+
+        sets.set("s1", vec!["read_file".to_string()]);
+        assert_eq!(visible_names(&handle.visible_tools()), vec!["read_file"]);
+
+        sets.clear("s1");
+        assert_eq!(
+            visible_names(&handle.visible_tools()).len(),
+            2,
+            "clearing the set restores the automatic behaviour"
+        );
+    }
+
+    /// The set only ever narrows. Naming a tool plan mode removed does not
+    /// bring it back — the operator owns the floor, a plugin may only cut
+    /// below it.
+    #[test]
+    fn an_active_set_cannot_re_add_what_plan_mode_removed() {
+        let mut handle = test_handle_with_tools(vec![tool_def("read_file"), tool_def("edit_file")])
+            .with_active_tools("s1", active_sets("s1", &["read_file", "edit_file"]));
+        handle.current_mode_id = "plan".to_string();
+
+        let names = visible_names(&handle.visible_tools());
+        assert!(
+            !names.iter().any(|n| n == "edit_file"),
+            "plan mode's write filter outranks the active set: {names:?}"
+        );
+        assert!(names.iter().any(|n| n == "read_file"));
+    }
+
+    /// An empty set is a real answer ("no tools"), not an absent one.
+    #[test]
+    fn an_empty_active_set_advertises_no_tools() {
+        let sets = crate::tools::active_tools::ActiveToolSets::new();
+        sets.set("s1", vec![]);
+        let handle =
+            test_handle_with_tools(vec![tool_def("read_file")]).with_active_tools("s1", sets);
+
+        assert!(visible_names(&handle.visible_tools()).is_empty());
+    }
+
+    /// Deferral interaction, half one: the budget estimate is computed over
+    /// the NARROWED set, so a small active set removes the reason to defer.
+    #[test]
+    fn narrowing_below_the_budget_stops_the_deferral() {
+        let gateway: Vec<_> = (0..6).map(|i| tool_def(&format!("gh_tool_{i}"))).collect();
+        let mut tools = vec![tool_def("read_file")];
+        tools.extend(gateway.iter().cloned());
+        let deferrable: std::collections::HashSet<String> =
+            gateway.iter().map(|t| t.function.name.clone()).collect();
+        let sets = crate::tools::active_tools::ActiveToolSets::new();
+        let mut handle = test_handle_with_tools(tools)
+            .with_deferrable_tools(deferrable)
+            .with_active_tools("s1", sets.clone());
+        handle.context_budget = Some(1_000);
+
+        // Without a set this is the deferring case, bridge and all.
+        let before = handle.visible_tools();
+        assert_eq!(before.deferred_count, 6);
+        assert!(visible_names(&before).iter().any(|n| n == "invoke_tool"));
+
+        sets.set("s1", vec!["read_file".to_string()]);
+        let after = handle.visible_tools();
+        assert_eq!(
+            after.deferred_count, 0,
+            "the narrowed set is under the budget share, so nothing defers"
+        );
+        assert_eq!(visible_names(&after), vec!["read_file"]);
+    }
+
+    /// Deferral interaction, half two: an active set is not an override of
+    /// the budget. What it names is still deferred when it does not fit —
+    /// deferral keeps the tools callable through the bridge, so the two
+    /// controls do not contradict each other.
+    #[test]
+    fn an_active_set_that_is_still_over_budget_still_defers() {
+        let gateway: Vec<_> = (0..6).map(|i| tool_def(&format!("gh_tool_{i}"))).collect();
+        let mut tools = vec![tool_def("read_file")];
+        tools.extend(gateway.iter().cloned());
+        let deferrable: std::collections::HashSet<String> =
+            gateway.iter().map(|t| t.function.name.clone()).collect();
+        let mut handle = test_handle_with_tools(tools)
+            .with_deferrable_tools(deferrable)
+            .with_active_tools("s1", active_sets("s1", &["gh_tool_*"]));
+        handle.context_budget = Some(1_000);
+
+        let visible = handle.visible_tools();
+        assert_eq!(visible.deferred_count, 6);
+        let names = visible_names(&visible);
+        assert!(
+            !names.iter().any(|n| n.starts_with("gh_tool_")),
+            "still deferred: {names:?}"
+        );
+        assert!(
+            names.iter().any(|n| n == "invoke_tool"),
+            "and still reachable through the bridge: {names:?}"
+        );
+        assert!(
+            !names.iter().any(|n| n == "read_file"),
+            "the active set excluded it, so the bridge is all that is left: {names:?}"
+        );
     }
 
     fn has_empty_response_error(events: &[TurnEvent]) -> bool {

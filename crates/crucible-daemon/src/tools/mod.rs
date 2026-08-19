@@ -12,6 +12,7 @@
 
 #![allow(missing_docs)]
 
+pub mod active_tools;
 pub mod autolink;
 pub mod containment;
 pub mod diff_synth;

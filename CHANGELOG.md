@@ -34,6 +34,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 
 ### Added
+- **`cru.tools.set_active(session_id, names)` and `cru.tools.get_active(session_id)`.**
+  A plugin can now narrow which tools one session offers its model, with glob
+  patterns in the same language a mode's `tools` selector speaks. The set only
+  ever narrows: it is intersected with what the session's mode already allows,
+  so it cannot re-add a write tool plan mode removed. It is applied before
+  progressive tool disclosure decides what to defer — narrowing usually takes
+  the session back under the 15% schema budget so nothing defers, and a
+  narrowed set that is still over budget is deferred as usual, since a deferred
+  tool stays callable through `discover_tools`/`invoke_tool`. Enforced when the
+  model calls an excluded tool as well as in the advertised list, so it is a
+  control and not a suggestion. `nil` clears the set; `{}` is a set that names
+  nothing, a map or sparse table is an error rather than either, and
+  `get_active` answers `(nil, nil)` when none is in force. Three limits the
+  call reports rather than hides: it errors on an id no live session has, it
+  errors on a session delegated to an external ACP agent (Crucible does not
+  assemble that agent's tool list, so narrowing the MCP half beside it would
+  be a control in name only), and the sets live in memory — a daemon restart
+  drops them. `discover_tools`/`get_tool_schema` still enumerate excluded
+  tools; the set governs what runs, not what can be found.
 - **Note lifecycle hooks.** `crucible.on("note:created", …)`, `note:modified`,
   `note:deleted` and `note:renamed` fire when the note pipeline writes. The
   identifier `opts.pattern` globs against is the kiln-relative note path, so

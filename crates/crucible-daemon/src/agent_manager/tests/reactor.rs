@@ -892,3 +892,66 @@ async fn a_card_denied_tool_is_not_executable_through_a_pre_tool_call_handler() 
         tool_result.data["result"]
     );
 }
+
+/// The dispatch half of `cru.tools.set_active`.
+///
+/// Filtering only the advertised tool set is a suggestion: the dispatcher
+/// still contains every tool, so a model that names an excluded one — from
+/// earlier context, from a guess, through `invoke_tool` — would still run it.
+/// Driven through the real turn loop rather than against the pure gate,
+/// because the way this half fails is the registry never reaching the turn.
+#[tokio::test]
+async fn a_tool_outside_the_active_set_is_refused_at_dispatch() {
+    let mut h = ReactorTestHarness::new().await;
+    h.agent_manager
+        .active_tools()
+        .set(&h.session_id, vec!["read_*".to_string()]);
+
+    h.inject_streaming_agent(vec![
+        script::tool_call("call-outside", "get_kiln_info", serde_json::json!({})),
+        script::text("done"),
+        script::done(),
+    ]);
+
+    h.send("run tool").await;
+    let tool_result = h.wait_for("tool_result").await;
+    h.wait_for("message_complete").await;
+
+    let error = tool_result.data["result"]["error"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(
+        error.contains("active tool set"),
+        "a tool outside the active set must be refused, got: {:?}",
+        tool_result.data["result"]
+    );
+}
+
+/// ...and the set is a narrowing, not a switch: what it names still runs.
+#[tokio::test]
+async fn a_tool_inside_the_active_set_still_runs() {
+    let mut h = ReactorTestHarness::new().await;
+    h.agent_manager.active_tools().set(
+        &h.session_id,
+        vec!["get_kiln_info".to_string(), "read_*".to_string()],
+    );
+
+    h.inject_streaming_agent(vec![
+        script::tool_call("call-inside", "get_kiln_info", serde_json::json!({})),
+        script::text("done"),
+        script::done(),
+    ]);
+
+    h.send("run tool").await;
+    let tool_result = h.wait_for("tool_result").await;
+    h.wait_for("message_complete").await;
+
+    let error = tool_result.data["result"]["error"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(
+        !error.contains("active tool set"),
+        "a tool the set names must still run, got: {:?}",
+        tool_result.data["result"]
+    );
+}

@@ -76,7 +76,14 @@ impl Server {
                     Arc::clone(&self.workspace_tools),
                     self.agent_manager.permission_config(),
                 )
-                .with_isolation(loader.isolation()),
+                .with_isolation(loader.isolation())
+                // The registry `cru.tools.set_active` writes and the agent
+                // handle reads. Without this bind the two halves are separate
+                // registries, so a plugin's narrowing would reach no session.
+                .with_active_tools(
+                    self.agent_manager.active_tools(),
+                    Arc::clone(self.agent_manager.session_manager()),
+                ),
             );
             if let Err(e) = loader.upgrade_with_tools(tools_api) {
                 warn!("Failed to upgrade Lua tools module: {}", e);

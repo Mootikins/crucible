@@ -29,6 +29,7 @@ impl AgentManager {
             slots,
             snapshots,
             review,
+            active_tools,
 
             // Not per-session, or per-call rather than per-session. Each name
             // here is a decision, not an oversight.
@@ -70,6 +71,9 @@ impl AgentManager {
         }
         if review.has_session(session_id) {
             residue.push("review");
+        }
+        if active_tools.has_session(session_id) {
+            residue.push("active_tools");
         }
         if crate::event_emitter::has_seq_counter(session_id) {
             residue.push("seq_counters");

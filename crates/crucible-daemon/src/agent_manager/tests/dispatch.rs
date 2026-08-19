@@ -759,6 +759,10 @@ async fn cleanup_session_leaves_no_per_session_residue() {
             ),
         )
         .await;
+    // A plugin's narrowed tool set, by the route `cru.tools.set_active` takes.
+    agent_manager
+        .active_tools()
+        .set(session_id, vec!["read_file".to_string()]);
     // And one emitted event, so the session owns a sequence counter.
     let (event_tx, _event_rx) = broadcast::channel(4);
     crate::event_emitter::emit_event(

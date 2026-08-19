@@ -431,6 +431,14 @@ pub struct AgentManager {
     /// hooks, and looking up who titles a session must not queue behind
     /// another session's container build.
     publications: std::sync::OnceLock<crucible_lua::PublicationRegistry>,
+    /// Explicit per-session tool sets written by `cru.tools.set_active`.
+    ///
+    /// Owned here rather than by the tools bridge because three places read
+    /// it: the bridge (`get_active`), the agent handle each request builds
+    /// its tool list from, and the dispatcher. Not a `OnceLock` — it is
+    /// created eagerly and written at runtime, and it is per-session state,
+    /// so `cleanup_session` clears it.
+    active_tools: crate::tools::active_tools::ActiveToolSets,
     /// Sessions with a title generation currently in flight — the RPC path
     /// and the message_complete auto-trigger can race.
     titles_in_flight: Arc<DashMap<String, ()>>,
@@ -515,6 +523,7 @@ impl AgentManager {
             statusline_exprs: std::sync::Arc::new(crucible_lua::StatuslineExprRegistry::new()),
             plugin_tool_registry: std::sync::OnceLock::new(),
             publications: std::sync::OnceLock::new(),
+            active_tools: crate::tools::active_tools::ActiveToolSets::new(),
             titles_in_flight: Arc::new(DashMap::new()),
             snapshots: Arc::new(crate::workspace_snapshot::SnapshotMap::default()),
             review: Arc::new(crate::review::ReviewLedgers::default()),
@@ -627,6 +636,15 @@ impl AgentManager {
     /// Bind the plugin publication registry. Idempotent, like the others.
     pub fn set_publications(&self, registry: crucible_lua::PublicationRegistry) {
         let _ = self.publications.set(registry);
+    }
+
+    /// The explicit per-session tool sets (`cru.tools.set_active`).
+    ///
+    /// Handed out by clone: one registry, several readers. See
+    /// [`crate::tools::active_tools`] for how a set composes with the mode
+    /// filter and with progressive tool disclosure.
+    pub fn active_tools(&self) -> crate::tools::active_tools::ActiveToolSets {
+        self.active_tools.clone()
     }
 
     /// Snapshot the prompt-cache aggregate for `session_id`. Returns
@@ -1273,6 +1291,10 @@ impl AgentManager {
         // lifetime. Keyed `(session_id, node_id)`, which is why it is not in the
         // slot.
         self.snapshots.clear_session(session_id);
+        // A plugin's narrowed tool set dies with the session it narrowed.
+        // Keeping it would mean a recycled session id starts life with tools
+        // some earlier session's plugin removed.
+        self.active_tools.clear(session_id);
         // The ledger, its review decisions and its comments all die with the
         // session. Persisting them across a restart is `ReviewLedgers::restore`
         // on the resume path, not a survival property of this map.

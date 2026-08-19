@@ -379,6 +379,10 @@ impl AgentManager {
                 // Capture and the gate read the same ledgers, so the turn
                 // carries one handle to them rather than two.
                 .with_review(self.review.clone())
+                // The dispatch half of `cru.tools.set_active`: filtering only
+                // the advertised set would leave every excluded tool callable
+                // by a model that names one anyway.
+                .with_active_tools(self.active_tools())
             },
             tool_dispatcher: self.get_or_create_session_dispatcher(&session).await,
             permission_override,
@@ -817,6 +821,10 @@ impl AgentManager {
             knowledge_repo,
             embedding_provider,
             plugin_tools,
+            // The handle re-reads this on every request, so a plugin's
+            // `cru.tools.set_active` narrows the next request rather than
+            // waiting for the agent cache to rebuild the handle.
+            active_tools: Some(self.active_tools()),
             // Read at agent-construction time rather than session start: the
             // claim is made by a `required` start hook, which has already run
             // by now, and reading it here means the agent is relocated by

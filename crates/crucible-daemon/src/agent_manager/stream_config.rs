@@ -91,6 +91,13 @@ pub(crate) struct AgentStreamConfig {
     /// manager built without ledgers want — the gate is an overlay on
     /// attribution, so a session with no ledger has nothing to gate on.
     pub(crate) review: Option<Arc<crate::review::ReviewLedgers>>,
+    /// Explicit per-session tool sets (`cru.tools.set_active`).
+    ///
+    /// NOT snapshotted despite sitting in a per-turn struct: the registry is
+    /// shared, and it is read per tool call, so a plugin narrowing the set
+    /// mid-turn is honoured by the next call. `None` in tests and in any
+    /// manager built without one, which means no set is ever in force.
+    pub(crate) active_tools: Option<crate::tools::active_tools::ActiveToolSets>,
 }
 
 /// What the daemon knows at turn start that the session's own config does not:
@@ -143,6 +150,7 @@ impl AgentStreamConfig {
             agent_name: session_agent.agent_name.clone(),
             agent_type: session_agent.agent_type.clone(),
             review: None,
+            active_tools: None,
         }
     }
 
@@ -154,6 +162,19 @@ impl AgentStreamConfig {
     /// gate simply doing nothing.
     pub(crate) fn with_review(mut self, review: Arc<crate::review::ReviewLedgers>) -> Self {
         self.review = Some(review);
+        self
+    }
+
+    /// Attach the manager's active tool sets to this turn.
+    ///
+    /// Separate from `from_session_agent` for the same reason `with_review`
+    /// is: the registry is the *manager's* state, and a turn built without
+    /// one must still run — with the dispatch gate simply doing nothing.
+    pub(crate) fn with_active_tools(
+        mut self,
+        active_tools: crate::tools::active_tools::ActiveToolSets,
+    ) -> Self {
+        self.active_tools = Some(active_tools);
         self
     }
 }

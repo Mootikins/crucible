@@ -241,6 +241,21 @@ impl AgentManager {
             );
         }
 
+        // A plugin narrowed this session's tools with `cru.tools.set_active`.
+        // Enforced here as well as in the advertised set, for the reason the
+        // card policy just below is: an advertisement-only filter is a
+        // suggestion, and a model that names an excluded tool anyway would
+        // still run it. Above the hook loop with the other hard refusals, so
+        // a plugin cannot "handle" its way around another plugin's narrowing.
+        if let Some(reason) = stream_ctx
+            .agent_stream_config
+            .active_tools
+            .as_ref()
+            .and_then(|sets| sets.dispatch_refusal(&stream_ctx.session_id, &tool_call.name))
+        {
+            return deny_tool_call(stream_ctx, &call_id, &tool_call.name, reason);
+        }
+
         // Agent-card tool policy: Deny refuses outright (defense in depth —
         // denied tools are also excluded from the advertised definitions),
         // Ask forces the permission gate even for safe tools, Allow skips it.

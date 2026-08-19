@@ -576,6 +576,66 @@ pcall(cru.sessions.unsubscribe, session_id)
 local response = table.concat(parts)
 ```
 
+## Calling Tools
+
+The `cru.tools` module runs workspace tools from a plugin, and decides which tools a session offers its model. Every function returns `(result, nil)` or `(nil, error_string)`.
+
+| Function | Does |
+|---|---|
+| `cru.tools.call(name, args, opts?)` | run one tool; `opts.session` states which session the call is for |
+| `cru.tools.batch(calls, opts?)` | run several concurrently, one result entry each |
+| `cru.tools.list()` | name, description and parameters of every workspace tool |
+| `cru.tools.set_active(session_id, names)` | narrow the tools that session offers, or clear the narrowing |
+| `cru.tools.get_active(session_id)` | the patterns in force, or `nil` |
+
+`call` and `batch` are checked against the operator's `[permissions]` rules before anything runs. See [[permissions]] for what a Lua call may do without a prompt.
+
+### cru.tools.set_active(session_id, names)
+
+```lua
+cru.tools.set_active(ctx.session_id, { "read_*", "grep_notes" })  -- narrow
+cru.tools.set_active(ctx.session_id, {})                          -- offer nothing
+cru.tools.set_active(ctx.session_id, nil)                         -- back to automatic
+```
+
+`names` is an array of glob patterns — the same language a mode's `tools` selector and `crucible.on`'s `pattern` speak (`*`, `?`, `[a-z]`, `{a,b}`). `nil` clears the set. An empty table is **not** a clear: it is a set that names nothing, so the session offers no tools. It must be an *array*: a map (`{ read_file = true }`) or a table with a gap in its indices is an error, not an empty set.
+
+The set survives until it is cleared or the session ends. It is **not persisted** — it lives in the running daemon, so a daemon restart drops it and a resumed session comes back with its automatic tool list. Re-apply it from a `session:start` hook if it has to outlive the daemon.
+
+It returns an error, rather than reporting success, when `session_id` names no live session and when it names a session delegated to an external ACP agent.
+
+### The set only ever narrows
+
+An active set is intersected with what the session already offers. It is applied after the session's mode filter, so:
+
+- it **cannot re-add** a tool the mode removed. `set_active` naming `edit_file` in plan mode still gets no `edit_file` — the operator owns the floor, and a plugin may only cut below it.
+- it applies only to sessions Crucible builds the tool list for. An external ACP agent brings its own file and shell tools and Crucible serves it the kiln surface over MCP beside them, so narrowing would cover one half and leave the other whole. `set_active` refuses an ACP session rather than reporting a control it does not have.
+
+### How it interacts with progressive tool disclosure
+
+Progressive tool disclosure defers tools automatically when their schemas would eat more than 15% of the session's context budget. The active set is applied **before** that decision, which gives two rules worth knowing:
+
+1. Narrowing shrinks the attached schemas, so a small active set usually takes the session back under the budget and nothing is deferred at all.
+2. If what remains is still over budget, deferral still happens. An active set is not an override of the context budget. Nothing is lost by that: a deferred tool stays callable through `discover_tools` → `get_tool_schema` → `invoke_tool`, so the active set decides *which* tools a session has and disclosure decides *how* they are presented.
+
+`discover_tools`, `get_tool_schema` and `invoke_tool` are never hidden by an active set — they are how a deferred tool is reached, not tools of the session's own.
+
+### It is enforced at dispatch, not only advertised
+
+A tool outside the active set is refused when the model calls it anyway, with a message naming the plugin narrowing. Filtering only the advertised list would leave every excluded tool runnable by a model that names one from earlier context or through `invoke_tool`.
+
+One gap worth knowing: `discover_tools` and `get_tool_schema` search the whole catalog and are not filtered by the set, so an excluded tool can still be **found** there. It cannot be run — the dispatch refusal above still applies.
+
+### cru.tools.get_active(session_id)
+
+```lua
+local names, err = cru.tools.get_active(session_id)
+if err then return end          -- a real failure
+if not names then return end    -- no explicit set: whatever the mode allows
+```
+
+Three outcomes, not two. `(nil, nil)` is a **successful** answer meaning no set is in force, which is the common case; check the error before concluding anything from a `nil` first return. What comes back is the patterns that were set, not the tool names they expand to.
+
 ## Asking the User
 
 The `cru.ui` module asks whichever client is attached to a session, and waits for the answer. Every function takes `(session_id, opts)` and returns `(response, nil)` or `(nil, error_string)`.
