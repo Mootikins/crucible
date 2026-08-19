@@ -27,7 +27,6 @@ pub mod mcp_client;
 pub mod mcp_gateway;
 pub mod mcp_server;
 pub mod notes;
-pub mod output_filter;
 pub(crate) mod path_resolution;
 pub(crate) mod protected;
 pub mod search;

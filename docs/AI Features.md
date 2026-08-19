@@ -56,16 +56,16 @@ Small daemon-side features that shape what the model and the UI see:
 
 ### Tool output filtering
 
-The daemon has summarizers for verbose test-runner output (cargo test, pytest,
-Jest, go test, RSpec, Elixir Mix). Recognized output is reduced to the summary
-lines and failure details — pass/fail counts, compile errors, failure detail
-capped at 20 lines (cargo) or 30 (pytest, RSpec/Mix); Jest and go test keep
-their failure lines uncapped — dropping the per-test `... ok` noise;
-unrecognized output passes through unchanged.
+**Status: removed 2026-08-18.** The daemon carried summarizers for six test
+runners (cargo test, pytest, Jest, go test, RSpec, Elixir Mix) that nothing in
+the tool dispatch path ever called, so no output was ever filtered. They were
+deleted rather than wired up: which lines of a test run matter, and how many of
+them, is a product opinion, and it belongs in a plugin a user can edit rather
+than in a Rust file a user must send a patch to.
 
-**Status: partial.** The filters exist and are tested
-(`crates/crucible-daemon/src/tools/output_filter.rs`), but nothing in the tool
-dispatch path calls them yet — today the model sees tool output unfiltered.
+The place to rebuild it is the `tool_result` hook, which fires over the outcome
+**as the model will receive it**, accepts a `{ result = ... }` patch, and
+filters by tool name. See [[Help/Extending/Event Hooks]].
 
 ### Unlinked-mention detection (autolink)
 
