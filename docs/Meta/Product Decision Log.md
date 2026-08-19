@@ -3,7 +3,7 @@ title: Product Decision Log
 description: Dated product and architecture decisions, with later reversals annotated in place
 type: decision-log
 status: active
-updated: 2026-08-11
+updated: 2026-08-19
 tags:
   - meta
   - product
@@ -78,6 +78,8 @@ row that reads as current when it is not is a trap.
 | 2026-08-13 | Mobile first pass is ONLINE ONLY; offline is separate product work | The editor earns its place as groundwork for offline capture, but offline reads and writes are deferred rather than bundled. Reads need `runtimeCaching`, which the service worker deliberately lacks — caching authenticated responses in a same-origin-writable store is the threat `pwa-scope.test.ts` exists to pin, so it needs an explicit answer on what may be cached and what happens on sign-out. Writes are a second writer against a daemon that owns writes, so they need an outbox, replay and a conflict answer; the failure mode is silent data loss, so it is sequenced last |
 | 2026-08-13 | Deep links must use the hash, not a path | Forward-compatibility decided before anything ships, because published URLs are permanent. `navigateFallbackAllowlist: [/^\/$/]` serves the cached shell for `/` alone and the manifest `id` is pinned to `/`, so a path-based deep link (`/note?path=…`) would work online and fail offline — exactly when a home-screen shortcut matters — while widening the allowlist re-opens what `pwa-scope.test.ts` pins. `/#note=…` costs nothing today |
 | 2026-08-13 | Pin the PWA manifest `id` explicitly | An absent `id` defaults to `start_url`, making `start_url` load-bearing forever: any later change — a mobile shell, a different landing route — turns every existing install into a SECOND app with its own icon, storage and notification identity, with no remote migration. The app is already installable, so this was one line now versus un-fixable later |
+| 2026-08-19 | No session-resolution layer at the RPC routing step | The despaghettification plan's S3 said "forty handlers resolve a session; one place should". Measured against the tree, they do not: two places already resolve one (`SessionManager::get_session`, `AgentManager::get_session`), the ~40 handlers call through them, and most carry the id as an opaque key rather than wanting a `Session`. The blocker is not the resolution but the ANSWER — asked about a well-formed id belonging to nothing, the routed methods give **eight** different answers and **six of them succeed**: `session.cancel` reports `cancelled: false`, `session.cache_stats` a zero aggregate, `session.status` / `review.list_hunks` / `session.load_events` / `session.render_markdown` an empty collection, and `session.test_interaction` never reads the session at all. The eight lifecycle methods answer `Operation '{op}' not allowed in current state`, which never names the session. A resolver at the routing step that refuses an unknown session breaks six methods the web Inbox and the review panel poll; one that does not refuse leaves every handler its own second check. Serving all eight from one place means an eight-way per-method policy table — the match arm it was meant to delete, moved one file over. Pinned as a contract, not a to-do: `crates/crucible-daemon/src/rpc/missing_session_contract.rs` fails on any change to any of the eight |
+
 
 ## Links
 
