@@ -6,9 +6,14 @@
 use super::*;
 
 pub(crate) async fn handle_lua_run_plugin_tests(req: Request) -> Response {
-    let test_path_str = require_param!(req, "test_path", as_str).to_string();
-    let filter = optional_param!(req, "filter", as_str).map(|s| s.to_string());
-    let test_path = PathBuf::from(&test_path_str);
+    let params =
+        match crate::rpc_helpers::typed_params::<crate::rpc_client::LuaRunPluginTestsRequest>(&req)
+        {
+            Ok(p) => p,
+            Err(response) => return *response,
+        };
+    let filter = params.filter;
+    let test_path = PathBuf::from(&params.test_path);
 
     if !test_path.exists() {
         return Response::error(

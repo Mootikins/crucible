@@ -144,19 +144,20 @@ pub struct SessionSetAutocompactThresholdRequest {
 }
 
 /// Request for `models.list` (no active session required).
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ListAllModelsRequest {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kiln_path: Option<String>,
 }
 
 /// Request for `providers.list` (no active session required).
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ListProvidersRequest {
+    #[serde(default)]
     pub kiln_path: Option<String>,
     /// `false` skips per-provider model discovery (which dials endpoints).
     /// Omitted means `true` for backward compatibility.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_models: Option<bool>,
 }
 

@@ -1,4 +1,5 @@
 use super::super::*;
+use crate::rpc_helpers::typed_params;
 use crate::{optional_param, require_param};
 
 pub(crate) async fn handle_session_switch_model(
@@ -106,11 +107,11 @@ pub(crate) async fn handle_session_list_models(req: Request, am: &Arc<AgentManag
 ///
 /// Accepts an optional `kiln_path` parameter. When provided, the handler
 pub(crate) async fn handle_models_list(req: Request, am: &Arc<AgentManager>) -> Response {
-    let kiln_path = req
-        .params
-        .get("kiln_path")
-        .and_then(|v| v.as_str())
-        .map(PathBuf::from);
+    let params = match typed_params::<crate::rpc_client::ListAllModelsRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let kiln_path = params.kiln_path.map(PathBuf::from);
 
     let classification = kiln_path
         .as_ref()
@@ -132,16 +133,12 @@ pub(crate) async fn handle_models_list(req: Request, am: &Arc<AgentManager>) -> 
 /// can hang on a dead provider); the CLI's chat preflight uses it to answer
 /// "are there any providers at all?" quickly.
 pub(crate) async fn handle_providers_list(req: Request, am: &Arc<AgentManager>) -> Response {
-    let kiln_path = req
-        .params
-        .get("kiln_path")
-        .and_then(|v| v.as_str())
-        .map(PathBuf::from);
-    let include_models = req
-        .params
-        .get("include_models")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true);
+    let params = match typed_params::<crate::rpc_client::ListProvidersRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let kiln_path = params.kiln_path.map(PathBuf::from);
+    let include_models = params.include_models.unwrap_or(true);
 
     let classification = kiln_path
         .as_ref()

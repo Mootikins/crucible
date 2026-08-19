@@ -1242,6 +1242,22 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "PluginRemoveRequest",
         "crates/crucible-daemon/src/server/plugin_install.rs",
     ),
+    (
+        "SessionReplayRequest",
+        "crates/crucible-daemon/src/server/session/lifecycle.rs",
+    ),
+    (
+        "ListAllModelsRequest",
+        "crates/crucible-daemon/src/server/session/models.rs",
+    ),
+    (
+        "ListProvidersRequest",
+        "crates/crucible-daemon/src/server/session/models.rs",
+    ),
+    (
+        "LuaRunPluginTestsRequest",
+        "crates/crucible-daemon/src/server/lua_plugin_suite.rs",
+    ),
 ];
 
 /// Handlers that still hand-pluck their fields. REMOVE rows; never add.
@@ -1325,16 +1341,11 @@ fn every_lua_request_type_is_in_the_wire_table() {
         .map(|(s, _)| s.to_string())
         .collect();
 
-    // `LuaRunPluginTestsRequest`'s handler lives in `server/lua_plugin_suite.rs`,
-    // not `server/lua.rs`; it is out of this table's scope until someone adds
-    // the row with the right file.
-    let out_of_scope: BTreeSet<String> = ["LuaRunPluginTestsRequest"]
-        .into_iter()
-        .map(str::to_string)
-        .collect();
-
-    let known: BTreeSet<String> = tabled.union(&out_of_scope).cloned().collect();
-    let missing: Vec<&String> = defined.difference(&known).collect();
+    // No exceptions: every `Lua*Request` the client defines has a row naming
+    // the file that deserializes it, `LuaRunPluginTestsRequest` included (its
+    // handler lives in `server/lua_plugin_suite.rs`, which is what its row
+    // says).
+    let missing: Vec<&String> = defined.difference(&tabled).collect();
     assert!(
         missing.is_empty(),
         "Lua request types with no WIRE_REQUEST_TYPES row — add one naming the \

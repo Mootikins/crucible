@@ -219,10 +219,16 @@ pub struct SessionIdRequest {
 }
 
 /// Request for `session.replay`.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SessionReplayRequest {
     pub recording_path: String,
+    /// Real time when omitted, which is what the handler's `unwrap_or` did.
+    #[serde(default = "default_replay_speed")]
     pub speed: f64,
+}
+
+fn default_replay_speed() -> f64 {
+    1.0
 }
 
 /// Request for `session.resume_from_storage`.

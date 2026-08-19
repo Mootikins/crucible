@@ -198,14 +198,15 @@ pub(crate) async fn handle_session_replay(
     sm: &Arc<SessionManager>,
     event_tx: &broadcast::Sender<SessionEventMessage>,
 ) -> Response {
-    let recording_path = require_param!(req, "recording_path", as_str);
-    let speed = req
-        .params
-        .get("speed")
-        .and_then(|v| v.as_f64())
-        .unwrap_or(1.0);
+    let params = match crate::rpc_helpers::typed_params::<crate::rpc_client::SessionReplayRequest>(
+        &req,
+    ) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let speed = params.speed;
 
-    let recording_path = PathBuf::from(recording_path);
+    let recording_path = PathBuf::from(params.recording_path);
     // A UUID is hex and hyphens, so this is a valid id by construction; the
     // `expect` is a tripwire on the format string, not a runtime possibility.
     let replay_session_id =
