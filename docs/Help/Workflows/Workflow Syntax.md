@@ -221,7 +221,7 @@ A `## Validation` heading, parallel to Goals, captures success/failure criteria 
 
 Items containing **exactly one** inline-code span are treated as runnable commands; everything else is a manual check. At execution time, validation entries prime agent context ("success looks like X, Y, Z") and serve as the default pass-criterion for `[type:: ralph]` steps.
 
-A runnable command is subject to the operator's `[permissions]` rules before it reaches a shell, and the default (`ask`) refuses it. See [[Help/Workflows/Index]] for how to allow one.
+A runnable command is refused before it reaches a shell if the session is sandboxed by an isolation plugin, or if the session's `[permissions]` rules do not allow it — and the default (`ask`) does not. See [[Help/Workflows/Index]] for both gates and how to allow a command.
 
 Goals describe the *outcome*; validation describes the *acceptance criteria*. They are independent — a workflow can have either, both, or neither.
 

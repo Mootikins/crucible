@@ -725,3 +725,112 @@ mod resolve_agent_profile_tests {
         }
     }
 }
+
+/// The gates outside the agent dispatch path resolve the *session's* rules,
+/// not just the daemon-global ones.
+mod session_permission_config_tests {
+    use super::*;
+    use crucible_core::config::components::{
+        acp::{AcpConfig, AgentProfile},
+        permissions::{PermissionConfig, PermissionMode},
+    };
+    use crucible_core::session::SessionType;
+    use std::collections::HashMap;
+
+    /// An `AgentManager` whose global rules are `default = allow` and whose
+    /// `my-claude` profile is the stricter `default = deny`.
+    fn manager_with_strict_profile(session_manager: Arc<SessionManager>) -> AgentManager {
+        let mut agents = HashMap::new();
+        agents.insert(
+            "my-claude".to_string(),
+            AgentProfile {
+                permissions: Some(PermissionConfig {
+                    default: PermissionMode::Deny,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        );
+        let (event_tx, _) = broadcast::channel(16);
+        let background_manager = Arc::new(BackgroundJobManager::new(event_tx));
+        AgentManager::new(AgentManagerParams {
+            kiln_manager: Arc::new(KilnManager::new()),
+            session_manager,
+            background_manager,
+            mcp_gateway: None,
+            llm_config: None,
+            acp_config: Some(AcpConfig {
+                agents,
+                ..Default::default()
+            }),
+            context_config: None,
+            permission_config: Some(PermissionConfig {
+                default: PermissionMode::Allow,
+                ..Default::default()
+            }),
+            plugin_loader: None,
+        })
+    }
+
+    /// Register a session whose agent names `profile`, and return its id.
+    fn session_naming_profile(session_manager: &SessionManager, profile: Option<&str>) -> String {
+        let mut agent = test_agent();
+        agent.agent_name = profile.map(str::to_string);
+        let mut session = crucible_core::session::Session::new(SessionType::Chat, Vec::new());
+        session.agent = Some(agent);
+        let id = session.id.to_string();
+        session_manager.register_transient(session);
+        id
+    }
+
+    /// A session whose agent card carries its own `[permissions]` block is
+    /// stricter than the daemon global, and the gate must honour that. Reading
+    /// only `permission_config()` handed such a session the permissive global
+    /// rules — the opposite of what the operator wrote.
+    #[test]
+    fn a_session_profile_overrides_the_global_config() {
+        let session_manager = temp_session_manager();
+        let manager = manager_with_strict_profile(session_manager.clone());
+        let session_id = session_naming_profile(&session_manager, Some("my-claude"));
+
+        let resolved = manager
+            .session_permission_config(&session_id)
+            .expect("a config is configured");
+
+        assert_eq!(
+            resolved.default,
+            PermissionMode::Deny,
+            "the session's own profile must outrank the daemon-global default"
+        );
+    }
+
+    /// ...and a session with no profile of its own still gets the global
+    /// rules, so honouring the profile did not detach the gate from config.
+    #[test]
+    fn a_session_without_a_profile_falls_back_to_the_global_config() {
+        let session_manager = temp_session_manager();
+        let manager = manager_with_strict_profile(session_manager.clone());
+        let session_id = session_naming_profile(&session_manager, None);
+
+        let resolved = manager
+            .session_permission_config(&session_id)
+            .expect("a config is configured");
+
+        assert_eq!(resolved.default, PermissionMode::Allow);
+    }
+
+    /// A session id nothing knows about resolves to the global rules rather
+    /// than to nothing — `None` here would mean an empty engine, which is the
+    /// permissive answer, and an unknown session is not a reason to relax.
+    #[test]
+    fn an_unknown_session_falls_back_to_the_global_config() {
+        let session_manager = temp_session_manager();
+        let manager = manager_with_strict_profile(session_manager.clone());
+
+        let resolved = manager
+            .session_permission_config("no-such-session")
+            .expect("a config is configured");
+
+        assert_eq!(resolved.default, PermissionMode::Allow);
+    }
+}

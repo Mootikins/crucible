@@ -2,7 +2,7 @@ use crate::tools::workspace::WorkspaceTools;
 use crucible_core::config::components::permissions::{
     PermissionConfig, PermissionDecision, PermissionEngine,
 };
-use crucible_core::traits::tools::{ExecutionContext, ToolExecutor};
+use crucible_core::traits::tools::{ExecutionContext, ToolExecutor, ToolSurface};
 use crucible_lua::DaemonToolsApi;
 use std::future::Future;
 use std::pin::Pin;
@@ -104,7 +104,10 @@ impl DaemonToolsBridge {
     fn isolation_refusal(&self, name: &str, session: Option<&str>) -> Option<String> {
         let isolation = self.isolation.as_ref()?;
         match session {
-            Some(id) => {
+            Some(id) => isolated_session_refusal(
+                isolation,
+                name,
+                id,
                 // Asked of the executor that will actually run the call rather
                 // than asserted `Host` here. Same answer for all six workspace
                 // tools, but a name this bridge cannot place answers `Unknown`
@@ -113,19 +116,9 @@ impl DaemonToolsBridge {
                 // answers only for the tools it serves — it used to hand back
                 // the whole built-in table, so a kiln tool's `Daemon` passed
                 // this gate on the word of an executor that cannot run it.
-                let surface = self.workspace_tools.surface(name);
-                if isolation.host_execution_allowed(id, name, surface) {
-                    return None;
-                }
-                let plugin = isolation
-                    .get(id)
-                    .map(|c| c.plugin)
-                    .unwrap_or_else(|| "a plugin".into());
-                Some(format!(
-                    "session {id} is isolated by '{plugin}', so '{name}' may not run on the \
-                     host through cru.tools.call"
-                ))
-            }
+                self.workspace_tools.surface(name),
+                "cru.tools.call",
+            ),
             None if isolation.any_claim() => Some(format!(
                 "'{name}' would run on the host, and this call named no session while at \
                  least one session is isolated. Pass the session it is for — \
@@ -140,6 +133,42 @@ impl DaemonToolsBridge {
     fn refusal(&self, name: &str, args: &serde_json::Value) -> Option<String> {
         unattended_refusal(&self.permissions, name, args, "a Lua tool call")
     }
+}
+
+/// `Some(reason)` if a plugin's isolation claim over `session` forbids running
+/// `name` on the host.
+///
+/// The stated-session half of the isolation gate, shared by every unattended
+/// caller that can name the session it acts for. `surface` is what running
+/// `name` would reach: a caller that routes through an executor asks that
+/// executor, and a caller that spawns the process itself states
+/// [`ToolSurface::Host`], which is not a belief but a fact about its own code.
+///
+/// `caller` names the path in the refusal text, for the same reason
+/// [`unattended_refusal`] takes one: more than one unattended path is gated
+/// here, and "refused" with no attribution is unactionable.
+///
+/// A caller that cannot name its session handles that case itself — silence
+/// has to mean "no" while anything is sandboxed, and the remedy to suggest
+/// depends on the caller.
+pub(crate) fn isolated_session_refusal(
+    isolation: &crucible_lua::IsolationRegistry,
+    name: &str,
+    session: &str,
+    surface: ToolSurface,
+    caller: &str,
+) -> Option<String> {
+    if isolation.host_execution_allowed(session, name, surface) {
+        return None;
+    }
+    let plugin = isolation
+        .get(session)
+        .map(|c| c.plugin)
+        .unwrap_or_else(|| "a plugin".into());
+    Some(format!(
+        "session {session} is isolated by '{plugin}', so '{name}' may not run on the \
+         host through {caller}"
+    ))
 }
 
 /// `Some(reason)` if a caller with nobody to prompt must not run `name`.

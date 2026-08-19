@@ -1242,7 +1242,7 @@ impl AgentManager {
 /// returned config has the requested default and *empty* allow/deny/ask rule
 /// lists, so base-config rules cannot re-introduce prompts or blocks. For
 /// `Ask` the existing allow/deny/ask rules are preserved (interactive default).
-pub(super) fn resolve_effective_permission_config(
+pub(in crate::agent_manager) fn resolve_effective_permission_config(
     permission_override: Option<PermissionMode>,
     agent_permissions: Option<PermissionConfig>,
     global_permission_config: Option<PermissionConfig>,

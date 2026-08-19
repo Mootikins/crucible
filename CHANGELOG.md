@@ -77,17 +77,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `prompt` (or a bare string), `system` and `timeout` (seconds, default 30).
   This is the primitive `auto-title` runs on.
 
-
 ### Security
 - **A workflow's `## Validation` commands ran on the host with no permission
   check.** When a run reached `Completed`, the daemon handed each runnable
   entry straight to `bash -c`. The command text comes out of a note, so
   anything that can write a `type: workflow` note into a kiln chose it — an
-  agent with `create_note` included. Every entry now goes through the same
-  fail-closed gate as `cru.tools.call`: a `deny` refuses, an `allow` runs, and
-  an `ask` rule refuses because a completed run has no user to prompt. A
-  refused entry reports as a failure in `workflow.assessed` with the reason in
-  its `stderr`.
+  agent with `create_note` included. Every entry now goes through the same two
+  fail-closed gates as `cru.tools.call`, in the same order.
+  **Isolation:** a session a plugin sandboxed (`crucible.require_isolation`, as
+  `oci` does) refuses the command, because a validation command runs on the
+  host — the sandbox held for the agent's tool calls and then the assessment
+  ran beside it. **Permissions:** a `deny` refuses, an `allow` runs, and an
+  `ask` rule refuses because a completed run has no user to prompt. The rules
+  read are the *session's* — its agent profile's `[permissions]` where it has
+  them, the daemon-global `[permissions]` otherwise — so a session stricter
+  than the daemon stays stricter here. A refused entry reports as a failure in
+  `workflow.assessed` with the reason in its `stderr` and `exit_code: -2`,
+  distinct from the `-1` a shell that would not start, or that timed out,
+  reports.
+  Not covered: the per-message `--permissions` override. It belongs to one
+  `session.send_message` request and is never stored, so an assessment that
+  runs after the turn has nothing to read it from.
 
 ### Breaking
 - A runnable `## Validation` entry now needs an `allow` rule. With the shipped

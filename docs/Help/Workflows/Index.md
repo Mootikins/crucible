@@ -108,13 +108,23 @@ daemon executes each runnable entry from the workflow's
 and emits a `workflow.assessed` event summarising passes, failures,
 and manual (command-less) entries.
 
-Each command first goes through the operator's `[permissions]` rules,
-as `bash`, exactly as a plugin's `cru.tools.call` does. The command
+Each command passes two gates before it reaches a shell. The command
 text comes out of a note, so whoever can write a `type: workflow`
 note into the kiln chooses it — an agent with `create_note` included.
-The gate is fail-closed and has no prompt to fall back on: a `deny`
-refuses, an `allow` runs, and an `ask` rule refuses because there is
-no user attached to a completed run. **The shipped default is
+
+**Isolation.** A validation command runs `bash` on the host. If a
+plugin claimed isolation over the session (`crucible.require_isolation`,
+as the `oci` plugin does), the command is refused: the sandbox the
+session runs under holds for the assessment too, not only for the
+agent's own tool calls. Add the command's tool name to that plugin's
+`exempt` list if host execution is intended.
+
+**Permissions.** The command is then checked as `bash` against the
+`[permissions]` rules that apply to the session — the session's agent
+profile rules where it has them, the daemon-global `[permissions]`
+otherwise. The gate is fail-closed and has no prompt to fall back on:
+a `deny` refuses, an `allow` runs, and an `ask` rule refuses because
+there is no user attached to a completed run. **The shipped default is
 `default = "ask"`, so an unconfigured daemon runs no validation
 command at all.** To let a command run, name it in `allow`:
 
@@ -124,8 +134,17 @@ allow = ["bash:cargo test *", "bash:just ci"]
 ```
 
 A refused entry is reported as a failure in `workflow.assessed`, with
-the reason in its `stderr`, so it is visible rather than silent. See
-[[Help/Concepts/Permission Precedence]].
+the reason in its `stderr` and **`exit_code: -2`** — distinct from the
+`-1` a shell that would not start, or that timed out, reports. So a
+refusal is visible rather than silent, and a consumer can tell the two
+apart. See [[Help/Concepts/Permission Precedence]].
+
+**Limitation:** the per-request `--permissions` override
+(`session.send_message`'s `permission_mode`) is not visible to this
+gate. It belongs to one message, and the assessment runs after the
+run completed, so nothing carries it. An operator who wants a stricter
+stance for validation commands writes it in config, where the gate can
+read it.
 
 **Resumability:** the daemon persists a compact workflow snapshot
 next to the session metadata after each state change (new gate,

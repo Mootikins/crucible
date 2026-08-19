@@ -618,8 +618,12 @@ impl AgentManager {
         &self.session_defaults
     }
 
-    /// The operator's `[permissions]` rules, for gates outside the agent
-    /// dispatch path (`cru.tools.call`, via `DaemonToolsBridge`).
+    /// The operator's daemon-global `[permissions]` rules.
+    ///
+    /// For gates outside the agent dispatch path that have no session to
+    /// resolve against: `cru.tools.call` (via `DaemonToolsBridge`), which is
+    /// bound once at plugin boot and serves every session. A gate that *does*
+    /// know its session wants [`Self::session_permission_config`] instead.
     pub(crate) fn permission_config(&self) -> Option<PermissionConfig> {
         self.permission_config.clone()
     }
@@ -1462,6 +1466,7 @@ pub(crate) mod precognition_gate;
 pub mod providers;
 mod residue;
 pub(crate) mod scope;
+mod session_permissions;
 pub(crate) mod session_vm;
 mod slot;
 pub(crate) mod stream_config;

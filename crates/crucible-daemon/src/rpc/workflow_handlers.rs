@@ -19,10 +19,13 @@
 //! the run from the registry. The command text comes out of a workflow
 //! note, so it is attacker-supplied — anything that can write a
 //! `type: workflow` note into a kiln chooses it, `create_note` included.
-//! Every entry therefore goes through the same fail-closed gate as
-//! `cru.tools.call` (`tools_bridge::unattended_refusal`) before
+//! Every entry therefore goes through the same two fail-closed gates as
+//! `cru.tools.call`, in the same order — the session's isolation claim
+//! (`tools_bridge::isolated_session_refusal`) and then the session's
+//! `[permissions]` rules (`tools_bridge::unattended_refusal`) — before
 //! it reaches a shell; a refused entry is reported as a failed
-//! assessment rather than run. On any non-terminal state change we
+//! assessment with [`VALIDATION_REFUSED_EXIT_CODE`] rather than run.
+//! On any non-terminal state change we
 //! persist a [`WorkflowSnapshot`] next to the session metadata so a
 //! daemon restart can transparently pick the run up where it paused —
 //! the per-handler lookup goes through [`resolve_or_rehydrate`].
@@ -369,15 +372,30 @@ async fn run_and_emit_assessment(
     let mut failed = Vec::new();
     let mut manual = Vec::new();
 
-    // The operator's rules, read once per assessment. Built from the same
-    // config the agent dispatch path uses, so `[permissions]` means one thing
-    // no matter which door a command arrives at.
-    let permissions = PermissionEngine::new(ctx.agents.permission_config().as_ref());
+    // The rules that apply to *this session*, read once per assessment: the
+    // session's agent profile permissions where it has them, the daemon-global
+    // `[permissions]` otherwise. Resolved by the same helper the agent
+    // dispatch path uses, so a session stricter than global stays stricter
+    // here. See `AgentManager::session_permission_config` for the one input it
+    // cannot see (the per-turn `permission_mode` override).
+    let permissions =
+        PermissionEngine::new(ctx.agents.session_permission_config(session_id).as_ref());
+    // The plugin isolation claims, for the second half of the gate. A
+    // validation command spawns `bash` on the host, so a session a plugin
+    // sandboxed must not reach it.
+    let isolation = ctx.agents.isolation();
 
     for entry in validations {
         match &entry.command {
             Some(cmd) => {
-                let outcome = run_validation_command(&permissions, &entry.description, cmd).await;
+                let outcome = run_validation_command(
+                    &permissions,
+                    isolation.as_ref(),
+                    session_id,
+                    &entry.description,
+                    cmd,
+                )
+                .await;
                 if outcome.exit_code == 0 {
                     passed.push(outcome);
                 } else {
@@ -395,9 +413,27 @@ async fn run_and_emit_assessment(
 const VALIDATION_OUTPUT_CAP: usize = 4096;
 const VALIDATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
-/// Run one `## Validation` command, if the operator's rules permit it.
+/// `exit_code` reported for an entry a gate refused before it reached a shell.
 ///
-/// The gate is `tools_bridge::unattended_refusal`, asked the same
+/// Distinct from the `-1` the spawn-error and timeout branches use — and from
+/// the `-1` a signal-killed shell reports — so a `workflow.assessed` consumer
+/// can tell "refused by policy" from "bash was missing". A real shell never
+/// produces it: `bash -c` exits 0..=255, and `ExitStatus::code()` is `None`
+/// only on a signal, which the spawn branch already maps to `-1`.
+const VALIDATION_REFUSED_EXIT_CODE: i32 = -2;
+
+/// Run one `## Validation` command, if both gates permit it.
+///
+/// Two gates, in the order `cru.tools.call` applies them.
+///
+/// **Isolation** (`tools_bridge::isolated_session_refusal`): this spawns
+/// `bash` on the host, so a session a plugin sandboxed must not reach it —
+/// otherwise turning on the container held for the agent and not for the
+/// assessment that runs after it. The session is always stated here (the
+/// assessment is *for* a session), so the gate's not-stated fallback never
+/// applies and nothing is softened to get there.
+///
+/// **Permissions** (`tools_bridge::unattended_refusal`), asked the same
 /// question `cru.tools.call("bash", { command = ... })` asks: a `deny` is
 /// absolute, an `allow` runs, and an `ask` refuses because a workflow
 /// assessment has no user attached to prompt. With the shipped default
@@ -405,11 +441,14 @@ const VALIDATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3
 /// daemon runs nothing here until an `allow` rule covers the command — which
 /// is the point. The command text is chosen by whoever wrote the note.
 ///
-/// A refusal is an `AssessmentOutcome` with a non-zero exit code, so it lands
-/// in the `failed` bucket of `workflow.assessed` and the operator sees why,
-/// rather than the entry vanishing.
+/// A refusal is an `AssessmentOutcome` with
+/// [`VALIDATION_REFUSED_EXIT_CODE`], so it lands in the `failed` bucket of
+/// `workflow.assessed`, the operator sees why in `stderr`, and a consumer can
+/// tell it from a shell that failed to start.
 async fn run_validation_command(
     permissions: &PermissionEngine,
+    isolation: Option<&crucible_lua::IsolationRegistry>,
+    session_id: &str,
     description: &str,
     command: &str,
 ) -> crucible_core::workflow::AssessmentOutcome {
@@ -420,17 +459,33 @@ async fn run_validation_command(
 
     let started = Instant::now();
 
-    if let Some(reason) = crate::tools_bridge::unattended_refusal(
-        permissions,
-        "bash",
-        &serde_json::json!({ "command": command }),
-        "a workflow validation command",
-    ) {
+    let refusal = isolation
+        .and_then(|isolation| {
+            crate::tools_bridge::isolated_session_refusal(
+                isolation,
+                "bash",
+                session_id,
+                // Stated, not asked of an executor: this function spawns the
+                // process itself, so `Host` is a fact about the code below.
+                crucible_core::traits::tools::ToolSurface::Host,
+                "a workflow validation command",
+            )
+        })
+        .or_else(|| {
+            crate::tools_bridge::unattended_refusal(
+                permissions,
+                "bash",
+                &serde_json::json!({ "command": command }),
+                "a workflow validation command",
+            )
+        });
+
+    if let Some(reason) = refusal {
         tracing::warn!(%command, %reason, "refused workflow validation command");
         return AssessmentOutcome {
             description: description.to_string(),
             command: command.to_string(),
-            exit_code: -1,
+            exit_code: VALIDATION_REFUSED_EXIT_CODE,
             stdout: String::new(),
             stderr: format!("Permission denied: {reason}"),
             duration_ms: started.elapsed().as_millis() as u64,
@@ -551,6 +606,42 @@ mod tests {
         (marker, command)
     }
 
+    /// The permission cases, on a daemon with no sandboxing plugin loaded —
+    /// no isolation registry is bound at all, which is the ordinary case.
+    async fn run_unsandboxed(
+        permissions: &PermissionEngine,
+        description: &str,
+        command: &str,
+    ) -> crucible_core::workflow::AssessmentOutcome {
+        run_validation_command(permissions, None, "s-workflow", description, command).await
+    }
+
+    /// The `[acp.agents.*]` entry a fixture session's agent names.
+    const PROFILE_NAME: &str = "strict-agent";
+
+    /// Permissions wide open for the payload, so any refusal below is the
+    /// isolation gate and not the permission one.
+    fn permissive() -> PermissionConfig {
+        PermissionConfig {
+            default: PermissionMode::Allow,
+            allow: vec!["bash:touch *".to_string()],
+            ..Default::default()
+        }
+    }
+
+    fn isolation_claiming(session: &str) -> crucible_lua::IsolationRegistry {
+        let registry = crucible_lua::IsolationRegistry::new();
+        registry.claim(
+            session,
+            crucible_lua::IsolationClaim {
+                plugin: "oci".to_string(),
+                exempt: Default::default(),
+                exec: Default::default(),
+            },
+        );
+        registry
+    }
+
     /// A workflow note's `## Validation` command is attacker-supplied text:
     /// anything that can write a `type: workflow` note into a kiln — an agent
     /// with `create_note` included — decides what this runs. It went straight
@@ -564,7 +655,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let (marker, command) = payload(&tmp);
 
-        let outcome = run_validation_command(
+        let outcome = run_unsandboxed(
             &engine(PermissionConfig::default()),
             "prove the host is reachable",
             &command,
@@ -590,7 +681,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let (marker, command) = payload(&tmp);
 
-        let outcome = run_validation_command(
+        let outcome = run_unsandboxed(
             &engine(PermissionConfig {
                 default: PermissionMode::Allow,
                 deny: vec!["bash:touch *".to_string()],
@@ -614,7 +705,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let (marker, command) = payload(&tmp);
 
-        let outcome = run_validation_command(
+        let outcome = run_unsandboxed(
             &engine(PermissionConfig {
                 default: PermissionMode::Allow,
                 ask: vec!["bash:touch *".to_string()],
@@ -640,7 +731,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let (marker, command) = payload(&tmp);
 
-        let outcome = run_validation_command(
+        let outcome = run_unsandboxed(
             &engine(PermissionConfig {
                 allow: vec!["bash:touch *".to_string()],
                 ..Default::default()
@@ -662,7 +753,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let (marker, command) = payload(&tmp);
 
-        let outcome = run_validation_command(
+        let outcome = run_unsandboxed(
             &engine(PermissionConfig {
                 allow: vec!["bash:cargo test *".to_string()],
                 ..Default::default()
@@ -674,5 +765,268 @@ mod tests {
 
         assert!(!marker.exists(), "an unrelated allow rule opened the shell");
         assert_ne!(outcome.exit_code, 0);
+    }
+
+    /// The permission gate is only half of what `cru.tools.call` applies.
+    ///
+    /// A workflow assessment spawns `bash` on the *host*. On a session a
+    /// plugin sandboxed, that is the sandbox escape the isolation claim exists
+    /// to stop: the container held for the agent's own tool calls and then the
+    /// assessment ran beside it, on the host, with the note's text.
+    ///
+    /// Permissions are wide open here on purpose, so only the isolation gate
+    /// can be what refuses.
+    #[tokio::test]
+    async fn a_sandboxed_session_cannot_reach_the_host_through_a_validation_command() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (marker, command) = payload(&tmp);
+        let isolation = isolation_claiming("s-sandboxed");
+
+        let outcome = run_validation_command(
+            &engine(permissive()),
+            Some(&isolation),
+            "s-sandboxed",
+            "prove the container is escapable",
+            &command,
+        )
+        .await;
+
+        assert!(
+            !marker.exists(),
+            "a validation command ran on the host inside an isolated session"
+        );
+        assert!(
+            outcome.stderr.contains("isolated") && outcome.stderr.contains("oci"),
+            "the refusal must name the claiming plugin, got: {}",
+            outcome.stderr
+        );
+    }
+
+    /// ...and isolation is per session, so a session nobody claimed still
+    /// runs its validation. The gate must not become a wall the moment any
+    /// sandbox is live.
+    #[tokio::test]
+    async fn an_unclaimed_session_still_runs_its_validation_while_another_is_sandboxed() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (marker, command) = payload(&tmp);
+        let isolation = isolation_claiming("s-sandboxed");
+
+        let outcome = run_validation_command(
+            &engine(permissive()),
+            Some(&isolation),
+            "s-free",
+            "ordinary validation",
+            &command,
+        )
+        .await;
+
+        assert_eq!(outcome.exit_code, 0, "stderr: {}", outcome.stderr);
+        assert!(marker.exists(), "an unclaimed session must still validate");
+    }
+
+    /// An `RpcContext` whose global `[permissions]` are `config`, plus the id
+    /// of a session registered in it.
+    fn assessment_context(config: PermissionConfig) -> (RpcContext, String) {
+        assessment_context_with_profile(config, None)
+    }
+
+    /// As [`assessment_context`], with `profile` bound as an `[acp.agents.*]`
+    /// entry that the session's agent names — the shape an operator uses to
+    /// give one session stricter rules than the daemon.
+    fn assessment_context_with_profile(
+        config: PermissionConfig,
+        profile: Option<PermissionConfig>,
+    ) -> (RpcContext, String) {
+        use crate::agent_manager::{AgentManager, AgentManagerParams};
+        use crate::background_manager::BackgroundJobManager;
+        use crate::kiln_manager::KilnManager;
+        use crate::project_manager::ProjectManager;
+        use std::sync::Arc;
+
+        let (event_tx, _rx) = tokio::sync::broadcast::channel(16);
+        let kiln_manager = Arc::new(KilnManager::new());
+        let session_manager = crate::test_support::temp_session_manager();
+        let acp_config = profile.map(|permissions| {
+            let mut agents = std::collections::HashMap::new();
+            agents.insert(
+                PROFILE_NAME.to_string(),
+                crucible_core::config::components::acp::AgentProfile {
+                    permissions: Some(permissions),
+                    ..Default::default()
+                },
+            );
+            crucible_core::config::components::acp::AcpConfig {
+                agents,
+                ..Default::default()
+            }
+        });
+        let names_profile = acp_config.is_some();
+        let agents = Arc::new(AgentManager::new(AgentManagerParams {
+            kiln_manager: kiln_manager.clone(),
+            session_manager: session_manager.clone(),
+            background_manager: Arc::new(BackgroundJobManager::new(event_tx.clone())),
+            mcp_gateway: None,
+            llm_config: None,
+            acp_config,
+            context_config: None,
+            permission_config: Some(config),
+            plugin_loader: None,
+        }));
+
+        let mut session = crucible_core::session::Session::new(
+            crucible_core::session::SessionType::Chat,
+            Vec::new(),
+        );
+        if names_profile {
+            session.agent = Some(crucible_core::session::SessionAgent::from_profile(
+                &crucible_core::config::components::acp::AgentProfile::default(),
+                PROFILE_NAME,
+            ));
+        }
+        let session_id = session.id.to_string();
+        session_manager.register_transient(session);
+
+        let data_home = tempfile::tempdir().expect("tempdir").keep();
+        let ctx = RpcContext::for_test(
+            kiln_manager,
+            session_manager,
+            agents,
+            Arc::new(ProjectManager::new(data_home.join("projects.json"))),
+            event_tx,
+            None,
+            data_home,
+        );
+        (ctx, session_id)
+    }
+
+    /// The gate has to be handed the session the assessment is *for*.
+    ///
+    /// `run_validation_command` can be correct and the feature still broken:
+    /// `run_and_emit_assessment` is where the session id and the isolation
+    /// registry are actually bound, and a handler that binds neither runs the
+    /// note's text on the host anyway. Driven through a real `RpcContext`, so
+    /// what is under test is the wiring rather than the helper.
+    ///
+    /// Global permissions are wide open here, so only the isolation gate can
+    /// be what refuses.
+    #[tokio::test]
+    async fn the_assessment_path_hands_the_gate_its_own_session() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (marker, command) = payload(&tmp);
+
+        let (ctx, session_id) = assessment_context(permissive());
+        ctx.agents.set_isolation(isolation_claiming(&session_id));
+        let mut events = ctx.event_tx.subscribe();
+
+        run_and_emit_assessment(
+            &ctx,
+            &session_id,
+            &[crucible_core::parser::types::ValidationEntry {
+                description: "prove the container is escapable".to_string(),
+                command: Some(command),
+                offset: 0,
+            }],
+        )
+        .await;
+
+        assert!(
+            !marker.exists(),
+            "the assessment path ran a command on the host inside an isolated session"
+        );
+
+        let msg = events
+            .try_recv()
+            .expect("workflow.assessed must be emitted");
+        assert_eq!(msg.event, "workflow.assessed");
+        let failed = msg.data["runnable_failed"]
+            .as_array()
+            .expect("runnable_failed array");
+        assert_eq!(failed.len(), 1, "the refusal must be reported, not dropped");
+        assert_eq!(
+            failed[0]["exit_code"].as_i64(),
+            Some(VALIDATION_REFUSED_EXIT_CODE as i64)
+        );
+        assert!(
+            failed[0]["stderr"]
+                .as_str()
+                .is_some_and(|e| e.contains("isolated")),
+            "got: {}",
+            failed[0]["stderr"]
+        );
+    }
+
+    /// The gate reads the *session's* rules, not just the daemon's.
+    ///
+    /// An operator who gave one session a stricter agent profile expects it to
+    /// hold everywhere; reading `permission_config()` handed the assessment the
+    /// permissive global rules instead, so the session the operator locked down
+    /// was the one that ran the note's text.
+    #[tokio::test]
+    async fn the_assessment_path_honours_a_session_stricter_than_the_daemon() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (marker, command) = payload(&tmp);
+
+        let (ctx, session_id) = assessment_context_with_profile(
+            // Global: this command is explicitly allowed.
+            permissive(),
+            // The session's own profile: nothing is.
+            Some(PermissionConfig {
+                default: PermissionMode::Deny,
+                ..Default::default()
+            }),
+        );
+        let mut events = ctx.event_tx.subscribe();
+
+        run_and_emit_assessment(
+            &ctx,
+            &session_id,
+            &[crucible_core::parser::types::ValidationEntry {
+                description: "denied by the session's own profile".to_string(),
+                command: Some(command),
+                offset: 0,
+            }],
+        )
+        .await;
+
+        assert!(
+            !marker.exists(),
+            "the session's own profile denied this and it ran anyway"
+        );
+        let msg = events
+            .try_recv()
+            .expect("workflow.assessed must be emitted");
+        assert_eq!(
+            msg.data["runnable_failed"]
+                .as_array()
+                .map(|f| f.len())
+                .unwrap_or(0),
+            1,
+            "the refusal must be reported: {}",
+            msg.data
+        );
+    }
+
+    /// A `workflow.assessed` consumer has to be able to tell "refused by
+    /// policy" from "the shell would not start". Both used `-1`, which is also
+    /// what the timeout branch and a signal-killed shell report, so the three
+    /// were indistinguishable.
+    #[tokio::test]
+    async fn a_refusal_is_distinguishable_from_a_shell_that_would_not_start() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (_marker, command) = payload(&tmp);
+
+        let outcome = run_unsandboxed(
+            &engine(PermissionConfig::default()),
+            "refused by policy",
+            &command,
+        )
+        .await;
+
+        assert_eq!(outcome.exit_code, VALIDATION_REFUSED_EXIT_CODE);
+        assert_ne!(
+            outcome.exit_code, -1,
+            "the spawn-error and timeout branches both report -1, so a refusal \
+             must not"
+        );
     }
 }
