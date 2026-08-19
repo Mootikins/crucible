@@ -305,11 +305,7 @@ pub(crate) async fn handle_session_get(req: Request, sm: &Arc<SessionManager>) -
 
             Response::success(req.id, response)
         }
-        None => Response::error(
-            req.id,
-            INVALID_PARAMS,
-            format!("Session not found: {}", session_id),
-        ),
+        None => session_not_found(req.id, session_id),
     }
 }
 

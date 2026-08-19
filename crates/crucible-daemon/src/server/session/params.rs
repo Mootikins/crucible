@@ -115,13 +115,11 @@ pub(crate) async fn handle_session_set_mode(
             }),
         ),
         Err(crate::agent_manager::AgentError::SessionNotFound(id)) => {
-            Response::error(req.id, INVALID_PARAMS, format!("Session not found: {}", id))
+            session_not_found(req.id, &id)
         }
-        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => Response::error(
-            req.id,
-            INVALID_PARAMS,
-            format!("No agent configured for session: {}", id),
-        ),
+        Err(crate::agent_manager::AgentError::NoAgentConfigured(id)) => {
+            agent_not_configured(req.id, &id)
+        }
         Err(crate::agent_manager::AgentError::NotSupported(msg)) => {
             Response::error(req.id, INVALID_PARAMS, msg)
         }
