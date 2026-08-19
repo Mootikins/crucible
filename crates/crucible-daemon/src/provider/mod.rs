@@ -8,7 +8,7 @@ pub mod adapter_mapping;
 pub mod copilot;
 pub mod genai_handle;
 pub mod model_listing;
-pub(crate) mod title;
+pub(crate) mod oneshot;
 pub mod tool_bridge;
 
 pub use adapter_mapping::{backend_to_adapter, ChatClient};

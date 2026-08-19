@@ -320,6 +320,24 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
         Box::pin(async { Err("not implemented".into()) })
     }
 
+    /// Run one completion against the session's own client and answer with
+    /// its text.
+    ///
+    /// `params` is the caller's options table as JSON: `prompt` (required),
+    /// `system` and `timeout` (seconds). One exchange, no tools, no history,
+    /// nothing written back to the session — the primitive a plugin needs to
+    /// ask the model a small question ABOUT a session rather than take a turn
+    /// in it. `runtime/plugins/auto-title` is the worked example.
+    ///
+    /// Default implementation returns `Err("not implemented")`.
+    fn complete(
+        &self,
+        _session_id: String,
+        _params: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
+        Box::pin(async { Err("not implemented".into()) })
+    }
+
     /// Set the output validation mode for a session.
     ///
     /// `spec` is the stringified form parsed by

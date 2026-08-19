@@ -62,6 +62,10 @@ impl Server {
             // mutex while a session-start hook builds a container.
             self.agent_manager
                 .set_plugin_tool_registry(loader.plugin_registry());
+            // Cached for the same reason, and read on the same kind of path:
+            // titling looks up who publishes `session_title` off the turn
+            // loop, and must not queue behind another session's start.
+            self.agent_manager.set_publications(loader.publications());
 
             // Bound to the same isolation registry the tool dispatcher reads.
             // Without it `cru.tools.call` runs workspace tools with no agent

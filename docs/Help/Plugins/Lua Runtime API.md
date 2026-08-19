@@ -433,6 +433,28 @@ false is right for almost every plugin. Setting it true is an assertion about
 your own channel — see the warning under
 [Full subscribe/respond pattern](#full-subscriberespond-pattern).
 
+### cru.sessions.complete(session_id, opts)
+
+Run **one** completion against the session's own model and get the text back.
+No tools, no history, nothing written to the session — this asks the model a
+question *about* a session rather than taking a turn in it.
+
+```lua
+local text, err = cru.sessions.complete(session_id, {
+    prompt  = "User: how do I open a kiln?",  -- required
+    system  = "You name conversations.",      -- optional
+    timeout = 20,                             -- seconds; default 30
+})
+```
+
+`opts` may also be a bare string, which is the prompt. On failure it returns
+`(nil, reason)` like every other `cru.sessions` function; a session with no
+agent configured is one such failure.
+
+The bundled `auto-title` plugin is built on this: it owns the prompt, clips
+the exchange, sanitizes the answer, and the daemon persists whatever comes
+back.
+
 ### cru.sessions.subscribe(session_id)
 
 Subscribe to session events. Returns a `next_event` iterator function.
@@ -930,6 +952,19 @@ crucible.publish("isolation", {
 `value` must be JSON-encodable data (no functions or userdata). The publishing
 plugin's name is supplied by the loader, not the caller, and a plugin's
 publications are dropped when it reloads.
+
+Some keys the daemon itself reads:
+
+| Key | Who reads it | Shape |
+|-----|--------------|-------|
+| `targets` | Workspace/runtime target resolution before `session.create` | `{ axis, label, targets_command, resolve_command }` |
+| `session_title` | Session titling, on the first completed turn | `{ command = "<plugin command name>" }` |
+
+`session_title` is how `auto-title` is found — by channel, never by plugin
+name, so publishing the same key replaces it. The command is called with
+`{ session_id, user, assistant }` and answers `{ title = "…" }` (or a bare
+string). Raising, or answering with a blank title, leaves the daemon's
+truncation fallback in place.
 
 ## Options
 

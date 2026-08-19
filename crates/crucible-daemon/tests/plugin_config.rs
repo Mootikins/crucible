@@ -409,3 +409,177 @@ async fn toml_config_resolves_via_crucible_config_get() {
         "nil"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The shipped auto-title plugin, configured the documented way
+// ---------------------------------------------------------------------------
+
+/// Copy the shipped `auto-title` plugin into `root` so the loader sees a real
+/// plugin without also loading every other shipped one.
+fn copy_shipped_plugin(root: &Path, plugin: &str) {
+    fn copy_tree(from: &Path, to: &Path) {
+        std::fs::create_dir_all(to).unwrap();
+        for entry in std::fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let target = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy_tree(&entry.path(), &target);
+            } else {
+                std::fs::copy(entry.path(), &target).unwrap();
+            }
+        }
+    }
+    copy_tree(&plugins_root().join(plugin), &root.join(plugin));
+}
+
+/// Record what `auto-title` asks `cru.sessions.complete` for, and answer.
+const RECORD_COMPLETIONS: &str = r#"
+__completion_opts = nil
+cru.sessions = cru.sessions or {}
+cru.sessions.complete = function(session_id, opts)
+    __completion_opts = opts
+    return "A perfectly good title"
+end
+"#;
+
+/// Run `auto-title.generate` the way the daemon does — through the command
+/// handle the loader captured at load — and answer with the recorded options.
+async fn generate_title(
+    loader: &crucible_daemon::daemon_plugins::DaemonPluginLoader,
+    user: &str,
+) -> (String, String, String) {
+    loader.eval(RECORD_COMPLETIONS).await.unwrap();
+    let result = loader
+        .plugin_registry()
+        .run_command(
+            "auto-title.generate",
+            serde_json::json!({ "session_id": "chat-1", "user": user }),
+        )
+        .await
+        .unwrap()
+        .expect("auto-title must declare the command it publishes");
+    let title = result["title"].as_str().unwrap().to_string();
+    let system = loader.eval("=__completion_opts.system").await.unwrap();
+    let prompt = loader.eval("=__completion_opts.prompt").await.unwrap();
+    (title, system, prompt)
+}
+
+/// The documented Lua config path, end to end: the daemon loads the plugin by
+/// path, the user's init.lua reaches it by `require`, and the command the
+/// daemon calls has to see what they set.
+///
+/// This is the whole reason the plugin registers itself in `package.loaded`.
+/// Without that, `require("auto-title")` builds a second copy of the file with
+/// its own config, `setup{}` configures the copy, and the prompt the daemon
+/// gets is still the shipped default — a config surface that ignores you.
+#[tokio::test]
+async fn user_init_lua_configures_the_shipped_auto_title_plugin() {
+    let tmp = tempfile::tempdir().unwrap();
+    copy_shipped_plugin(tmp.path(), "auto-title");
+    let loader = load_from(tmp.path(), std::collections::HashMap::new()).await;
+
+    let (_, default_system, _) = generate_title(&loader, "help me fix the auth flow").await;
+    assert!(
+        default_system.contains("3 to 7 words"),
+        "the shipped prompt is the base: {default_system}"
+    );
+
+    let init_path = tmp.path().join("init.lua");
+    std::fs::write(
+        &init_path,
+        r#"require("auto-title").setup({ prompt = "Name it.", clip = 4 })"#,
+    )
+    .unwrap();
+    loader.eval_user_init(&init_path).await;
+
+    let (title, system, prompt) = generate_title(&loader, "abcdefgh").await;
+    assert_eq!(
+        system, "Name it.",
+        "the configured prompt must be the one asked with"
+    );
+    assert_eq!(
+        prompt, "User: abcd",
+        "the configured clip must bound the exchange"
+    );
+    assert_eq!(title, "A perfectly good title");
+}
+
+/// `[plugins.auto-title]` seeds the plugin at load, and the user's init.lua
+/// overrides one key without dropping the others. Lua beats TOML, per key.
+#[tokio::test]
+async fn user_init_lua_overrides_one_auto_title_key_and_keeps_the_rest() {
+    let tmp = tempfile::tempdir().unwrap();
+    copy_shipped_plugin(tmp.path(), "auto-title");
+    let config = std::collections::HashMap::from([(
+        "auto-title".to_string(),
+        serde_json::json!({ "prompt": "From TOML.", "clip": 4 }),
+    )]);
+    let loader = load_from(tmp.path(), config).await;
+
+    let (_, system, prompt) = generate_title(&loader, "abcdefgh").await;
+    assert_eq!(system, "From TOML.");
+    assert_eq!(prompt, "User: abcd");
+
+    let init_path = tmp.path().join("init.lua");
+    std::fs::write(
+        &init_path,
+        r#"require("auto-title").setup({ prompt = "From Lua." })"#,
+    )
+    .unwrap();
+    loader.eval_user_init(&init_path).await;
+
+    let (_, system, prompt) = generate_title(&loader, "abcdefgh").await;
+    assert_eq!(system, "From Lua.", "Lua wins over TOML");
+    assert_eq!(
+        prompt, "User: abcd",
+        "the TOML clip survives an unrelated override"
+    );
+}
+
+/// Configuring the plugin must not publish the channel a second time.
+///
+/// `crucible.publish` is bound to whichever plugin the loader executed last, so
+/// a `setup{}` that published would file the title provider under someone
+/// else's name — the daemon then warns about two titlers and picks by name, so
+/// editing the prompt could change who generates the title. Publishing belongs
+/// to loading the plugin, which happens once.
+#[tokio::test]
+async fn configuring_auto_title_does_not_republish_the_channel() {
+    let tmp = tempfile::tempdir().unwrap();
+    copy_shipped_plugin(tmp.path(), "auto-title");
+    let loader = load_from(tmp.path(), std::collections::HashMap::new()).await;
+
+    let titlers: Vec<String> = loader
+        .publications()
+        .get("session_title")
+        .into_iter()
+        .map(|(plugin, _)| plugin)
+        .collect();
+    assert_eq!(
+        titlers,
+        vec!["auto-title".to_string()],
+        "loading publishes once"
+    );
+
+    // Watch what the user's init.lua publishes. Asserting on the registry
+    // instead would depend on which plugin the loader happened to execute last
+    // — a republish under `auto-title`'s own name overwrites and hides itself.
+    loader
+        .eval("__published = {}; crucible.publish = function(key) __published[#__published + 1] = key end")
+        .await
+        .unwrap();
+
+    let init_path = tmp.path().join("init.lua");
+    std::fs::write(
+        &init_path,
+        r#"require("auto-title").setup({ prompt = "Name it." })"#,
+    )
+    .unwrap();
+    loader.eval_user_init(&init_path).await;
+
+    assert_eq!(
+        loader.eval("=#__published").await.unwrap(),
+        "0",
+        "setup() must publish nothing"
+    );
+}

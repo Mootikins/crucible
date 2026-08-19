@@ -56,6 +56,7 @@ pub fn register_sessions_module(lua: &Lua) -> Result<(), LuaError> {
     stub_async!("messages", lua, sessions, (String, mlua::Value));
     stub_async!("fork", lua, sessions, (String, mlua::Value));
     stub_async!("cache_stats", lua, sessions, String);
+    stub_async!("complete", lua, sessions, (String, mlua::Value));
     stub_async!(
         "set_output_validation",
         lua,
@@ -597,6 +598,46 @@ pub fn register_sessions_module_with_api(
         }
     })?;
     sessions.set("cache_stats", cache_stats_fn)?;
+
+    // complete(session_id, { prompt = ..., system = ..., timeout = ... })
+    //   -> (string, nil) or (nil, err)
+    //
+    // One exchange against the session's own model. The options table crosses
+    // as one object rather than plucked keys, for the reason `create`'s does:
+    // the daemon owns what an option means, and two sides naming fields
+    // separately is how they drift.
+    let a = Arc::clone(&api);
+    let complete_fn = lua.create_async_function(move |lua, (sid, opts): (String, Value)| {
+        let a = Arc::clone(&a);
+        async move {
+            let params = match &opts {
+                Value::Table(t) => serde_json::to_value(t)
+                    .map_err(|e| format!("complete() options are not serializable: {e}")),
+                // A bare string is the prompt — the common case, and the one
+                // where naming the key adds nothing.
+                Value::String(s) => Ok(serde_json::json!({ "prompt": s.to_str()?.to_string() })),
+                _ => Err(
+                    "complete() expects a prompt string or a table, e.g. { prompt = \"…\" }"
+                        .to_string(),
+                ),
+            };
+            let params = match params {
+                Ok(params) => params,
+                Err(e) => {
+                    let err = lua.create_string(&e)?;
+                    return Ok((Value::Nil, Value::String(err)));
+                }
+            };
+            match a.complete(sid, params).await {
+                Ok(text) => Ok((Value::String(lua.create_string(&text)?), Value::Nil)),
+                Err(e) => {
+                    let err = lua.create_string(&e)?;
+                    Ok((Value::Nil, Value::String(err)))
+                }
+            }
+        }
+    })?;
+    sessions.set("complete", complete_fn)?;
 
     // set_output_validation(session_id, spec) -> (true, nil) or (nil, err)
     //

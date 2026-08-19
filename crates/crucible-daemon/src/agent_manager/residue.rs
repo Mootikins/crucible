@@ -52,6 +52,7 @@ impl AgentManager {
             isolation: _,        // startup-bound OnceLock
             context_attach: _,   // process-wide buffer, drained per turn
             statusline_exprs: _, // process-wide expression values
+            publications: _,     // startup-bound OnceLock; describes plugins, not sessions
             plugin_tool_registry: _, // startup-bound OnceLock
             external_watch: _,   // startup-bound OnceLock; per-session watches are its own
             agent_factory_override: _, // test-support seam, set once

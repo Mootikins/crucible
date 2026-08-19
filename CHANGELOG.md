@@ -16,6 +16,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   all. Adding an event is now a row plus a `HOOK_NAMES` entry, and tests pin the
   two lists against each other in both directions. No behaviour change for the
   three file events.
+- **Session titling moved out of the daemon into the bundled `auto-title`
+  plugin.** The system prompt, the 1500-character clip and the sanitizer that
+  strips quotes and `Title:` scaffolding were compiled in
+  (`crucible-daemon/src/provider/title.rs`, now deleted); they live in
+  `runtime/plugins/auto-title/` and are editable without a rebuild —
+  `require("auto-title").setup{ prompt = "…", clip = 800, timeout = 20 }` or
+  `[plugins.auto-title]`. The daemon keeps what every client depends on being
+  uniform: when titling fires, that it fires once, that the title is persisted
+  and announced, and that a session with content falls back to a truncated
+  first message when nothing answers. A plugin publishing `session_title`
+  replaces the behaviour; `[plugins.auto-title] enabled = false` leaves the
+  truncation fallback. One thing the compiled-in path did not have: the title
+  completion is now bounded at 30 seconds, through the same `timeout` key the
+  prompt and the clip are set by, because a title nobody is waiting for is not
+  worth holding a task open for the provider's own timeout.
+
 
 ### Added
 - **Note lifecycle hooks.** `crucible.on("note:created", …)`, `note:modified`,
@@ -37,6 +53,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   still sits inside the web server's bearer-auth layer, which waves loopback
   callers through but not remote ones, so a sender out on the internet still
   needs a proxy or tunnel terminating on the host. See `Help/Config/web.md`.
+- **`cru.sessions.complete(session_id, opts)`** — one exchange against a
+  session's own model, no tools and no history, answered as text. `opts` takes
+  `prompt` (or a bare string), `system` and `timeout` (seconds, default 30).
+  This is the primitive `auto-title` runs on.
+
 
 ### Security
 - **A workflow's `## Validation` commands ran on the host with no permission

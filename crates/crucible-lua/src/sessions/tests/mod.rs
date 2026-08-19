@@ -1,6 +1,7 @@
 use super::*;
 use std::sync::Mutex as StdMutex;
 
+mod completion;
 mod crud;
 mod graph;
 mod messages;
@@ -28,6 +29,8 @@ pub(super) struct MockDaemonApi {
     can_undo_value: StdMutex<bool>,
     /// Override for `undo_depth`. Defaults to `2`.
     undo_depth_value: StdMutex<usize>,
+    /// Every `complete` call, as `(session_id, params)`.
+    completions: StdMutex<Vec<(String, serde_json::Value)>>,
     /// Every `request_interaction` call, as `(session_id, request, timeout)`.
     interaction_calls: StdMutex<Vec<(String, serde_json::Value, u64)>>,
     /// What the next `request_interaction` resolves to. Defaults to
@@ -45,9 +48,15 @@ impl MockDaemonApi {
             undo_turns_to_return: StdMutex::new(None),
             can_undo_value: StdMutex::new(true),
             undo_depth_value: StdMutex::new(2),
+            completions: StdMutex::new(Vec::new()),
             interaction_calls: StdMutex::new(Vec::new()),
             interaction_answer: StdMutex::new(None),
         }
+    }
+
+    /// Every `complete` call this mock saw.
+    pub(super) fn completions(&self) -> Vec<(String, serde_json::Value)> {
+        self.completions.lock().unwrap().clone()
     }
 
     /// Every `request_interaction` call this mock saw.
@@ -78,6 +87,25 @@ impl MockDaemonApi {
 }
 
 impl DaemonSessionApi for MockDaemonApi {
+    /// Answers with the prompt it was given, so a test can assert what
+    /// crossed the boundary without a provider behind it.
+    fn complete(
+        &self,
+        session_id: String,
+        params: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
+        self.completions
+            .lock()
+            .unwrap()
+            .push((session_id, params.clone()));
+        let echo = params
+            .get("prompt")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+        Box::pin(async move { Ok(format!("answered: {echo}")) })
+    }
+
     fn request_interaction(
         &self,
         session_id: String,

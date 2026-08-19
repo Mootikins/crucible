@@ -82,6 +82,7 @@ extracted on first run. Every one of them loads **enabled by default**:
 
 | Plugin | What it adds |
 |--------|--------------|
+| `auto-title` | Names a session after its opening exchange |
 | `daily-notes` | `daily_create`, `daily_open`, `daily_list`, `/daily` |
 | `discord` | Discord gateway + REST integration |
 | `graph-view` | `graph_links`, `graph_stats`, `/graph` (Fennel) |

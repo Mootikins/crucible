@@ -1,0 +1,38 @@
+name: auto-title
+version: "0.1.0"
+description: Name a session after what it is about
+author: Crucible Team
+license: MIT
+
+main: init.lua
+
+capabilities:
+  # The one-shot completion against the session's own model.
+  - agent
+  - config
+
+config:
+  properties:
+    prompt:
+      type: string
+      description: >-
+        System prompt the titling model is given. The default asks for a short
+        descriptive title of 3 to 7 words and nothing else.
+    clip:
+      type: number
+      description: >-
+        Max characters of each message fed to the title prompt. The opening
+        exchange is all the model sees, so this bounds the cost of titling.
+        Unset uses the plugin's own default (`M.CLIP` in lua/auto_title.lua).
+        Nothing parses this block, so a `default:` here would be a second copy
+        of that number, free to drift from it.
+    timeout:
+      type: number
+      description: >-
+        Seconds to wait for the title completion. Unset uses the daemon's 30-second
+        one-shot default.
+
+# The spec table init.lua returns declares the command; scanning lua/ would
+# additionally register every pure helper in auto_title.lua as a tool.
+exports:
+  auto_discover: false

@@ -311,6 +311,8 @@ mod tests {
             "themes/default.lua",
             "themes/opencode.lua",
             "statusline/default.lua",
+            "plugins/auto-title/init.lua",
+            "plugins/auto-title/lua/auto_title.lua",
             "plugins/reflection/plugin.yaml",
             "plugins/reflection/lua/config.lua",
             "plugins/oci/init.lua",

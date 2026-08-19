@@ -1,12 +1,22 @@
-//! Topic-based session title generation.
+//! Session titling: when a session gets a title, and what happens when
+//! nothing answers.
 //!
-//! One-shot LLM completion over the opening exchange of a session, using
-//! the session's own configured provider. No tools, no history mutation —
-//! deliberately outside the agent turn machinery. The genai-level call
-//! itself lives behind the provider seam (`provider::title`).
+//! *How* a title is asked for is not here and is not in Rust at all. A plugin
+//! publishes itself on the `session_title` channel and names a command; the
+//! bundled one is `runtime/plugins/auto-title/`, which owns the prompt, the
+//! clip and the sanitizer that used to live in `provider/title.rs`. What stays
+//! daemon-side is the part every client depends on being uniform: when titling
+//! fires, that it fires once, that the title is persisted, that `title_changed`
+//! is emitted, and that a session with content never stays untitled.
 
 use super::*;
 use crucible_core::turn::NodeContent;
+
+/// The publication channel a session-title provider declares itself on.
+///
+/// The daemon looks up the CHANNEL, never a plugin name, so a user plugin
+/// publishing the same key replaces the bundled behaviour outright.
+const TITLE_CHANNEL: &str = "session_title";
 
 /// Removes the session from the in-flight set when generation finishes,
 /// whatever the exit path.
@@ -26,9 +36,9 @@ impl AgentManager {
     ///
     /// Idempotent: returns the existing title when one is already set (the
     /// RPC path and the `message_complete` auto-trigger can both fire).
-    /// Falls back to a truncation of the first user message when no chat
-    /// client can be built or the LLM call fails, so a session never stays
-    /// untitled once it has content.
+    /// Falls back to a truncation of the first user message whenever the
+    /// titling plugin does not answer — including when there is no plugin at
+    /// all — so a session never stays untitled once it has content.
     pub async fn generate_session_title(
         &self,
         session_id: &str,
@@ -86,47 +96,11 @@ impl AgentManager {
             )));
         };
 
-        let title = match &session.agent {
-            Some(agent_config) => {
-                // Off the startup-bound `OnceLock`, not the loader mutex —
-                // see `plugin_lua`. A title generation is a background nicety
-                // and must never queue behind a session start's plugin hooks.
-                let lua_handle: Option<Lua> = self.plugin_lua().await;
-                match crate::agent_factory::build_chat_client_for_agent(
-                    agent_config,
-                    lua_handle.as_ref(),
-                ) {
-                    Ok((client, model_iden)) => {
-                        match crate::provider::title::generate_title_via_backend(
-                            &client,
-                            &model_iden,
-                            &first_user,
-                            first_agent.as_deref(),
-                        )
-                        .await
-                        {
-                            Ok(t) if !t.is_empty() => t,
-                            Ok(_) => truncate_to_title(&first_user),
-                            Err(e) => {
-                                debug!(
-                                    session_id = %session_id,
-                                    error = %e,
-                                    "LLM title generation failed; falling back to truncation"
-                                );
-                                truncate_to_title(&first_user)
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        debug!(
-                            session_id = %session_id,
-                            error = %e,
-                            "No usable chat client for title generation; falling back to truncation"
-                        );
-                        truncate_to_title(&first_user)
-                    }
-                }
-            }
+        let title = match self
+            .plugin_title(session_id, &first_user, first_agent.as_deref())
+            .await
+        {
+            Some(title) => title,
             None => truncate_to_title(&first_user),
         };
 
@@ -144,6 +118,100 @@ impl AgentManager {
         info!(session_id = %session_id, title = %title, "Session title generated");
         Ok(title)
     }
+
+    /// Ask the plugin that publishes [`TITLE_CHANNEL`] for a title.
+    ///
+    /// `None` on every failure — no plugin, no command, a raise, an empty
+    /// answer — because the caller's fallback is the honest answer to all of
+    /// them, and a session with content must never stay untitled. The reason
+    /// is logged at debug, where the rest of the titling path already logs.
+    async fn plugin_title(
+        &self,
+        session_id: &str,
+        user: &str,
+        assistant: Option<&str>,
+    ) -> Option<String> {
+        // Explicit, not `?`: a manager wired without a plugin loader (tests,
+        // the startup sweep before plugins land) is the one path here that
+        // used to fall back silently while every sibling said why.
+        let Some(publications) = self.publications().await else {
+            debug!(session_id = %session_id, "No plugin runtime; truncating instead");
+            return None;
+        };
+        let mut providers = publications.get(TITLE_CHANNEL);
+        if providers.is_empty() {
+            debug!(session_id = %session_id, "No plugin titles sessions; truncating instead");
+            return None;
+        }
+        if providers.len() > 1 {
+            // Sorted by plugin name, so the winner is at least stable across
+            // restarts. Named rather than silently resolved: two titlers is a
+            // configuration the operator should know about.
+            warn!(
+                titlers = ?providers.iter().map(|(p, _)| p.as_str()).collect::<Vec<_>>(),
+                "More than one plugin titles sessions; using the first by name"
+            );
+        }
+        let (plugin, declaration) = providers.remove(0);
+
+        let command = declaration.get("command").and_then(|v| v.as_str());
+        let Some(command) = command else {
+            warn!(plugin = %plugin, "Plugin publishes '{TITLE_CHANNEL}' but names no command");
+            return None;
+        };
+
+        // An absent assistant turn is an ABSENT key, not a null: mlua renders
+        // a JSON null as a lightuserdata, which is truthy in Lua, so
+        // `if args.assistant then` would be true for a session that has none.
+        let mut args = serde_json::json!({ "session_id": session_id, "user": user });
+        if let Some(assistant) = assistant {
+            args["assistant"] = serde_json::Value::String(assistant.to_string());
+        }
+        let Some(registry) = self.plugin_registry().await else {
+            debug!(
+                session_id = %session_id,
+                plugin = %plugin,
+                "No plugin registry to call the title command on; truncating instead"
+            );
+            return None;
+        };
+        let answer = match registry.run_command(command, args).await {
+            Ok(Some(answer)) => answer,
+            Ok(None) => {
+                warn!(
+                    plugin = %plugin,
+                    command = %command,
+                    "Plugin names a title command it does not declare"
+                );
+                return None;
+            }
+            Err(e) => {
+                debug!(
+                    session_id = %session_id,
+                    plugin = %plugin,
+                    error = %e,
+                    "Plugin title generation failed; falling back to truncation"
+                );
+                return None;
+            }
+        };
+
+        title_from_result(&answer)
+    }
+}
+
+/// The title a provider's command answered with.
+///
+/// Accepts `{ title = "…" }` or a bare string, and treats blank as absent: a
+/// model answering with whitespace is the case the sanitizer cannot rescue,
+/// and an empty title is worse than a truncated one.
+fn title_from_result(value: &serde_json::Value) -> Option<String> {
+    let raw = value
+        .get("title")
+        .and_then(|v| v.as_str())
+        .or_else(|| value.as_str())?;
+    let trimmed = raw.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
 /// Fallback: a concise title by smart truncation of the first user message.
@@ -171,6 +239,34 @@ pub(crate) fn truncate_to_title(message: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_title_is_read_from_either_shape() {
+        let object = serde_json::json!({ "title": "Fixing the auth flow" });
+        let bare = serde_json::json!("Fixing the auth flow");
+        let expected = Some("Fixing the auth flow".to_string());
+        assert_eq!(title_from_result(&object), expected);
+        assert_eq!(title_from_result(&bare), expected);
+    }
+
+    /// Blank is absent: the caller then truncates, which is a real title.
+    #[test]
+    fn a_blank_or_absent_title_is_no_title() {
+        assert_eq!(title_from_result(&serde_json::json!({})), None);
+        assert_eq!(
+            title_from_result(&serde_json::json!({ "title": "  " })),
+            None
+        );
+        assert_eq!(title_from_result(&serde_json::json!(null)), None);
+    }
+
+    #[test]
+    fn a_title_is_trimmed() {
+        assert_eq!(
+            title_from_result(&serde_json::json!({ "title": "  Session sweep\n" })),
+            Some("Session sweep".to_string())
+        );
+    }
 
     #[test]
     fn truncate_passes_short_messages_through() {

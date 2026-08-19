@@ -644,6 +644,22 @@ impl DaemonSessionApi for DaemonSessionBridge {
         })
     }
 
+    /// One exchange against the session's own client.
+    ///
+    /// The options table is deserialized here rather than in `crucible-lua`
+    /// because what an option means is the daemon's business — the timeout
+    /// default lives with the code that waits.
+    fn complete(&self, session_id: String, params: serde_json::Value) -> BoxFut<String> {
+        bridge_async!(self.agent_manager, |am| async move {
+            let params: crate::agent_manager::completion::OneShotParams =
+                serde_json::from_value(params)
+                    .map_err(|e| format!("Invalid complete() options: {e}"))?;
+            am.complete_once(&session_id, params)
+                .await
+                .map_err(|e| e.to_string())
+        })
+    }
+
     fn context_usage(&self, session_id: String) -> BoxFut<serde_json::Value> {
         bridge_async!(self.agent_manager, |am| async move {
             am.get_context_usage(&session_id)
