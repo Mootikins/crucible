@@ -81,6 +81,14 @@ impl AsyncMockDaemonApi {
 }
 
 impl DaemonSessionApi for AsyncMockDaemonApi {
+    fn request_interaction(
+        &self,
+        _: String,
+        _: serde_json::Value,
+        _: u64,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
+        unimplemented!()
+    }
     fn create_session(
         &self,
         _: serde_json::Value,

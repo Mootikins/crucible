@@ -395,6 +395,23 @@ pub enum InteractionRequest {
 }
 
 impl InteractionRequest {
+    /// Every variant's tag, in the order a client should expect none.
+    ///
+    /// Exists so the clients that render these do not each restate the list.
+    /// It is kept complete by `kinds_list_covers_every_variant`, whose
+    /// exhaustive match fails to compile when a variant is added — a new
+    /// variant must then be added here, and the renderer-coverage tests in
+    /// `crucible-lua` and the web bundle fail until both clients can draw it.
+    pub const KINDS: &'static [&'static str] = &[
+        "ask",
+        "ask_batch",
+        "edit",
+        "show",
+        "permission",
+        "popup",
+        "panel",
+    ];
+
     /// Get the request kind for pattern matching.
     pub fn kind(&self) -> &'static str {
         match self {
@@ -858,5 +875,58 @@ mod tests {
         let restored: PanelAction = serde_json::from_str(&json).unwrap();
 
         assert_eq!(action, restored);
+    }
+
+    /// The compile-time guard behind [`InteractionRequest::KINDS`].
+    ///
+    /// The match is exhaustive with no `_` arm on purpose: adding a variant
+    /// fails to compile here, which is the only moment anyone is guaranteed to
+    /// be looking. Fixing the compile error means adding the tag to `KINDS`,
+    /// and that in turn fails the client-renderer coverage tests until both
+    /// the TUI and the web can draw the new variant — which is the property
+    /// worth having. Three of seven variants rendered in the browser is the
+    /// state this chain exists to stop recurring.
+    #[test]
+    fn kinds_list_covers_every_variant() {
+        fn tag(request: &InteractionRequest) -> &'static str {
+            match request {
+                InteractionRequest::Ask(_) => "ask",
+                InteractionRequest::AskBatch(_) => "ask_batch",
+                InteractionRequest::Edit(_) => "edit",
+                InteractionRequest::Show(_) => "show",
+                InteractionRequest::Permission(_) => "permission",
+                InteractionRequest::Popup(_) => "popup",
+                InteractionRequest::Panel(_) => "panel",
+            }
+        }
+
+        let every: Vec<InteractionRequest> = vec![
+            AskRequest::new("q").into(),
+            InteractionRequest::AskBatch(AskBatch::new()),
+            EditRequest::new("body").into(),
+            ShowRequest::new("body").into(),
+            PermRequest::bash(["ls"]).into(),
+            InteractionRequest::Popup(PopupRequest::new("t")),
+            InteractionRequest::Panel(InteractivePanel::new("header")),
+        ];
+
+        assert_eq!(
+            every.len(),
+            InteractionRequest::KINDS.len(),
+            "KINDS has a different number of entries than there are variants"
+        );
+
+        for request in &every {
+            let tag = tag(request);
+            assert_eq!(
+                request.kind(),
+                tag,
+                "kind() and the exhaustive match disagree"
+            );
+            assert!(
+                InteractionRequest::KINDS.contains(&tag),
+                "variant `{tag}` is missing from InteractionRequest::KINDS"
+            );
+        }
     }
 }

@@ -171,14 +171,25 @@ pub(crate) async fn handle_session_pending_interactions(
     req: Request,
     am: &Arc<AgentManager>,
 ) -> Response {
-    let pending: Vec<serde_json::Value> = am
-        .list_all_pending_permissions()
-        .into_iter()
+    let permissions =
+        am.list_all_pending_permissions()
+            .into_iter()
+            .map(|(session_id, request_id, request)| {
+                (
+                    session_id,
+                    request_id,
+                    crucible_core::interaction::InteractionRequest::Permission(request),
+                )
+            });
+    // Both registries, one list: a client asking what it owes an answer to
+    // does not care which map the request came out of.
+    let pending: Vec<serde_json::Value> = permissions
+        .chain(am.list_all_pending_interactions())
         .map(|(session_id, request_id, request)| {
             serde_json::json!({
                 "session_id": session_id,
                 "request_id": request_id,
-                "request": crucible_core::interaction::InteractionRequest::Permission(request),
+                "request": request,
             })
         })
         .collect();
@@ -207,14 +218,32 @@ pub(crate) async fn handle_session_interaction_respond(
             }
         };
 
-    if let crucible_core::interaction::InteractionResponse::Permission(perm_response) = &response {
-        if let Err(e) = am.respond_to_permission(session_id, request_id, perm_response.clone()) {
-            tracing::warn!(
-                session_id = %session_id,
-                request_id = %request_id,
-                error = %e,
-                "Failed to send permission response to channel (may have timed out)"
-            );
+    // Permission responses go to the permission registry; everything else —
+    // including a `Cancelled` answering a question rather than a prompt — goes
+    // to the interaction registry. A response with no waiter in either is not
+    // an error: the waiter may have timed out, and the `interaction_completed`
+    // event below is still worth emitting so clients can dismiss the modal.
+    match &response {
+        crucible_core::interaction::InteractionResponse::Permission(perm_response) => {
+            if let Err(e) = am.respond_to_permission(session_id, request_id, perm_response.clone())
+            {
+                tracing::warn!(
+                    session_id = %session_id,
+                    request_id = %request_id,
+                    error = %e,
+                    "Failed to send permission response to channel (may have timed out)"
+                );
+            }
+        }
+        other => {
+            if let Err(e) = am.respond_to_interaction(session_id, request_id, other.clone()) {
+                tracing::debug!(
+                    session_id = %session_id,
+                    request_id = %request_id,
+                    error = %e,
+                    "No waiter for interaction response (may have timed out)"
+                );
+            }
         }
     }
 

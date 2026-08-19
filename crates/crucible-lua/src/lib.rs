@@ -83,6 +83,7 @@ pub mod stubs;
 mod timer;
 mod tools_api;
 mod types;
+pub mod ui;
 mod vault;
 mod ws;
 
@@ -195,6 +196,7 @@ pub use sessions::{
     register_sessions_module, register_sessions_module_with_api, DaemonSessionApi, ResponsePart,
 };
 pub use tools_api::{register_tools_module, register_tools_module_with_api, DaemonToolsApi};
+pub use ui::{register_ui_module, register_ui_module_with_api, INTERACTION_KINDS};
 
 pub use isolation::{
     register_isolation_module, IsolationClaim, IsolationRegistry, SandboxEnv, SandboxExec,

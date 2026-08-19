@@ -7,6 +7,7 @@ mod messages;
 mod messaging;
 mod namespace;
 mod subscription;
+mod ui;
 
 /// Mock implementation of DaemonSessionApi for testing.
 pub(super) struct MockDaemonApi {
@@ -27,6 +28,12 @@ pub(super) struct MockDaemonApi {
     can_undo_value: StdMutex<bool>,
     /// Override for `undo_depth`. Defaults to `2`.
     undo_depth_value: StdMutex<usize>,
+    /// Every `request_interaction` call, as `(session_id, request, timeout)`.
+    interaction_calls: StdMutex<Vec<(String, serde_json::Value, u64)>>,
+    /// What the next `request_interaction` resolves to. Defaults to
+    /// `{"kind":"cancelled"}` — the no-answer case, which is what a mock with
+    /// no client attached honestly is.
+    interaction_answer: StdMutex<Option<serde_json::Value>>,
 }
 
 impl MockDaemonApi {
@@ -38,7 +45,19 @@ impl MockDaemonApi {
             undo_turns_to_return: StdMutex::new(None),
             can_undo_value: StdMutex::new(true),
             undo_depth_value: StdMutex::new(2),
+            interaction_calls: StdMutex::new(Vec::new()),
+            interaction_answer: StdMutex::new(None),
         }
+    }
+
+    /// Every `request_interaction` call this mock saw.
+    pub(super) fn interaction_calls(&self) -> Vec<(String, serde_json::Value, u64)> {
+        self.interaction_calls.lock().unwrap().clone()
+    }
+
+    /// Set what the next `request_interaction` answers with.
+    pub(super) fn set_interaction_answer(&self, answer: serde_json::Value) {
+        *self.interaction_answer.lock().unwrap() = Some(answer);
     }
 
     /// Params object from the most recent `create_session`, or `None`.
@@ -59,6 +78,25 @@ impl MockDaemonApi {
 }
 
 impl DaemonSessionApi for MockDaemonApi {
+    fn request_interaction(
+        &self,
+        session_id: String,
+        request: serde_json::Value,
+        timeout_secs: u64,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
+        self.interaction_calls
+            .lock()
+            .unwrap()
+            .push((session_id, request, timeout_secs));
+        let answer = self
+            .interaction_answer
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| serde_json::json!({ "kind": "cancelled" }));
+        Box::pin(async move { Ok(answer) })
+    }
+
     fn create_session(
         &self,
         params: serde_json::Value,

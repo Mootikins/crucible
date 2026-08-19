@@ -1,9 +1,9 @@
 import { Component, For, Show, createSignal } from 'solid-js';
-import type { AskRequest, AskResponse } from '@/lib/types';
+import type { AskResponse, InteractionOf } from '@/lib/types';
 import { btnPrimary } from '@/lib/button-style';
 
 interface Props {
-  request: AskRequest;
+  request: InteractionOf<'ask'>;
   onRespond: (response: AskResponse) => void;
 }
 
@@ -23,6 +23,7 @@ export const AskInteraction: Component<Props> = (props) => {
 
   const handleSubmit = () => {
     const response: AskResponse = {
+      kind: 'ask',
       selected: selected(),
       other: otherText().trim() || undefined,
     };
@@ -42,7 +43,7 @@ export const AskInteraction: Component<Props> = (props) => {
               <label class="flex items-center gap-2 cursor-pointer group">
                 <input
                   type={props.request.multi_select ? 'checkbox' : 'radio'}
-                  name={`ask-${props.request.id}`}
+                  name={`ask-${props.request.id ?? props.request.question}`}
                   checked={selected().includes(index())}
                   onChange={() => toggleChoice(index())}
                   class="w-4 h-4 text-primary bg-control border-hairline focus:ring-primary"

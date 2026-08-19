@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, waitFor } from '@solidjs/testing-library';
 import InboxPanel from '../InboxPanel';
 import { attentionStore, attentionActions } from '@/stores/attentionStore';
-import type { PermRequest } from '@/lib/types';
+import type { InteractionOf } from '@/lib/types';
 
 vi.mock('@/lib/api', () => ({
   respondToInteraction: vi.fn().mockResolvedValue(undefined),
@@ -11,7 +11,7 @@ vi.mock('@/lib/api', () => ({
 
 import { respondToInteraction } from '@/lib/api';
 
-const perm: PermRequest = {
+const perm: InteractionOf<'permission'> = {
   kind: 'permission',
   id: 'req-42',
   action_type: 'bash',

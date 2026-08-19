@@ -597,13 +597,50 @@ export type ChatEvent =
 // Interaction Request/Response Types (from Rust core interaction.rs)
 // =============================================================================
 
+// The seven variants of Rust's `InteractionRequest`, which is internally
+// tagged on `kind` (crucible-core/src/interaction/types.rs). The list is kept
+// complete by `InteractionRequest::KINDS` on the Rust side and by
+// `interaction-coverage.test.ts` here, which fails when a kind has no renderer
+// — three of seven rendered in the browser is the state those guards exist to
+// stop recurring.
+
+/** Format hint carried by `edit` and `show`. */
+export type ArtifactFormat = 'markdown' | 'code' | 'json' | 'plain';
+
 export interface AskRequest {
   kind: 'ask';
-  id: string;
   question: string;
   choices?: string[];
   multi_select?: boolean;
   allow_other?: boolean;
+}
+
+export interface AskQuestion {
+  header: string;
+  question: string;
+  choices: string[];
+  multi_select?: boolean;
+  allow_other?: boolean;
+}
+
+export interface AskBatchRequest {
+  kind: 'ask_batch';
+  id: string;
+  questions: AskQuestion[];
+}
+
+export interface EditRequest {
+  kind: 'edit';
+  content: string;
+  format?: ArtifactFormat;
+  hint?: string;
+}
+
+export interface ShowRequest {
+  kind: 'show';
+  content: string;
+  format?: ArtifactFormat;
+  title?: string;
 }
 
 interface PopupEntry {
@@ -614,44 +651,143 @@ interface PopupEntry {
 
 export interface PopupRequest {
   kind: 'popup';
-  id: string;
   title: string;
   entries: PopupEntry[];
   allow_other?: boolean;
+}
+
+export interface PanelItem {
+  label: string;
+  description?: string;
+  data?: unknown;
+}
+
+export interface PanelHints {
+  filterable?: boolean;
+  multi_select?: boolean;
+  allow_other?: boolean;
+  initial_selection?: number[];
+  initial_filter?: string;
+}
+
+export interface PanelRequest {
+  kind: 'panel';
+  header: string;
+  items: PanelItem[];
+  hints?: PanelHints;
 }
 
 type PermActionType = 'bash' | 'read' | 'write' | 'tool';
 
 export interface PermRequest {
   kind: 'permission';
-  id: string;
   action_type: PermActionType;
   tokens: string[];
   tool_name?: string;
   tool_args?: unknown;
 }
 
-export type InteractionRequest = AskRequest | PopupRequest | PermRequest;
+/** The seven request bodies, exactly as the Rust enum serializes them. */
+export type InteractionBody =
+  | AskRequest
+  | AskBatchRequest
+  | EditRequest
+  | ShowRequest
+  | PermRequest
+  | PopupRequest
+  | PanelRequest;
+
+/**
+ * A request as a client receives it: the body plus the correlation `id`.
+ *
+ * `id` is NOT a field on any of the Rust structs — it is `request_id` from the
+ * `interaction_requested` envelope, which the SSE reducer flattens onto the
+ * body. Declaring it per-variant (as three of them used to) made it look like
+ * part of the payload and left the four other kinds unable to be answered at
+ * all, since responding needs exactly this value.
+ */
+export type InteractionRequest = InteractionBody & { id: string };
+
+/** One correlated request, by kind — what a renderer for that kind receives. */
+export type InteractionOf<K extends InteractionBody['kind']> = Extract<
+  InteractionRequest,
+  { kind: K }
+>;
+
+/** Every `InteractionRequest.kind`, for the coverage test to iterate. */
+export const INTERACTION_KINDS = [
+  'ask',
+  'ask_batch',
+  'edit',
+  'show',
+  'permission',
+  'popup',
+  'panel',
+] as const satisfies readonly InteractionBody['kind'][];
+
+// Responses carry `kind` explicitly. The server still infers a tag for the
+// three bare shapes older clients sent (`tag_interaction_response` in
+// routes/chat.rs), but inference cannot separate a panel result from an ask
+// response — both carry `selected` — so new kinds must say what they are.
 
 export interface AskResponse {
+  kind: 'ask';
   selected: number[];
   other?: string;
 }
 
+export interface QuestionAnswer {
+  selected: number[];
+  other?: string;
+}
+
+export interface AskBatchResponse {
+  kind: 'ask_batch';
+  id: string;
+  answers: QuestionAnswer[];
+  cancelled?: boolean;
+}
+
+export interface EditResponse {
+  kind: 'edit';
+  modified: string;
+}
+
 export interface PopupResponse {
+  kind: 'popup';
   selected_index?: number;
   other?: string;
+}
+
+export interface PanelResponse {
+  kind: 'panel';
+  cancelled?: boolean;
+  selected: number[];
+  other?: string;
+}
+
+/** `show` expects no answer; dismissing it reports cancellation. */
+export interface CancelledResponse {
+  kind: 'cancelled';
 }
 
 export type PermissionScope = 'once' | 'session' | 'project' | 'user';
 
 export interface PermResponse {
+  kind: 'permission';
   allowed: boolean;
   pattern?: string;
   scope: PermissionScope;
 }
 
-export type InteractionResponse = AskResponse | PopupResponse | PermResponse;
+export type InteractionResponse =
+  | AskResponse
+  | AskBatchResponse
+  | EditResponse
+  | PopupResponse
+  | PanelResponse
+  | PermResponse
+  | CancelledResponse;
 
 // =============================================================================
 // Editor Types

@@ -1,12 +1,12 @@
 import { Component, Show, createSignal, createResource } from 'solid-js';
-import type { PermRequest, PermResponse, PermissionScope } from '@/lib/types';
+import type { InteractionOf, PermResponse, PermissionScope } from '@/lib/types';
 import { getFileContent } from '@/lib/api';
 import { DiffViewer } from '@/components/DiffViewer';
 import { btnPrimary, btnDanger, btnNeutral } from '@/lib/button-style';
 import { deepPrettyPrintJson } from '@/lib/pretty-print';
 
 interface Props {
-  request: PermRequest;
+  request: InteractionOf<'permission'>;
   onRespond: (response: PermResponse) => void;
 }
 
@@ -22,7 +22,7 @@ const ACTION_LABELS: Record<string, { label: string; chip: string }> = {
 };
 
 /** Extract file path from a write permission request's tokens */
-function extractFilePath(request: PermRequest): string | null {
+function extractFilePath(request: InteractionOf<'permission'>): string | null {
   if (request.action_type !== 'write') return null;
   // tokens[0] is typically the file path for write operations
   return request.tokens[0] ?? null;
@@ -34,7 +34,7 @@ function extractFilePath(request: PermRequest): string | null {
  * previously invisible unless mirrored into `tokens` (TUI parity:
  * `perm.full_commands`). No truncation; long values wrap.
  */
-function toolArgPairs(request: PermRequest): [string, string][] {
+function toolArgPairs(request: InteractionOf<'permission'>): [string, string][] {
   if (request.action_type !== 'tool') return [];
   if (!request.tool_args || typeof request.tool_args !== 'object') return [];
   return Object.entries(request.tool_args as Record<string, unknown>).map(([k, v]) => [
@@ -56,7 +56,7 @@ function prettyPrintMaybeJson(raw: unknown): string {
 }
 
 /** Extract new content from tool_args if available */
-function extractNewContent(request: PermRequest): string | null {
+function extractNewContent(request: InteractionOf<'permission'>): string | null {
   if (!request.tool_args || typeof request.tool_args !== 'object') return null;
   const args = request.tool_args as Record<string, unknown>;
   // Common field names for file content in tool args
@@ -120,6 +120,7 @@ export const PermissionInteraction: Component<Props> = (props) => {
 
   const handleAllow = () => {
     props.onRespond({
+      kind: 'permission',
       allowed: true,
       pattern: commandPattern(),
       scope: scope(),
@@ -128,6 +129,7 @@ export const PermissionInteraction: Component<Props> = (props) => {
 
   const handleDeny = () => {
     props.onRespond({
+      kind: 'permission',
       allowed: false,
       scope: 'once',
     });

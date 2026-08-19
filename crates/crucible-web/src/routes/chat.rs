@@ -142,9 +142,16 @@ struct InteractionResponseRequest {
     response: serde_json::Value,
 }
 
-/// `InteractionResponse` is a `kind`-tagged enum, but the frontend's
-/// response objects are bare (`{allowed, scope}`, `{selected}`, …) — infer
-/// the tag from the discriminating field so live responds don't 400.
+/// Infer the `kind` tag for a bare response object.
+///
+/// `InteractionResponse` is a `kind`-tagged enum. The frontend now always
+/// states its kind (`lib/types.ts`), so this is the compatibility path for
+/// clients that do not — and it must stay one, because inference cannot cover
+/// the full set: a panel result and an ask response both carry `selected`, and
+/// an edit response's `{modified}` and a bare `cancelled` have no
+/// discriminating field at all. Anything it cannot name is passed through
+/// unchanged so the deserializer reports the real error rather than this
+/// function guessing wrong.
 fn tag_interaction_response(mut value: serde_json::Value) -> serde_json::Value {
     if value.get("kind").is_some() {
         return value;
@@ -189,6 +196,45 @@ mod tests {
     /// The exact objects the frontend POSTs (PermResponse/AskResponse/
     /// PopupResponse in web/src/lib/types.ts) must deserialize into the
     /// kind-tagged InteractionResponse after tagging.
+    /// The four kinds inference cannot reach arrive tagged, and must survive
+    /// the tagging pass untouched. `panel` is the one that would be actively
+    /// mis-tagged as `ask` without its own `kind`, because both carry
+    /// `selected` — which is why the frontend states it.
+    #[test]
+    fn explicitly_tagged_responses_pass_through() {
+        let cases = [
+            serde_json::json!({ "kind": "panel", "selected": [1], "cancelled": false }),
+            serde_json::json!({ "kind": "edit", "modified": "new text" }),
+            serde_json::json!({
+                "kind": "ask_batch",
+                "id": "8a2f5c1e-0000-4000-8000-000000000000",
+                "answers": [],
+                "cancelled": false
+            }),
+            serde_json::json!({ "kind": "cancelled" }),
+        ];
+        for case in cases {
+            let kind = case["kind"].as_str().unwrap().to_string();
+            let tagged = tag_interaction_response(case);
+            assert_eq!(tagged["kind"], kind, "tagging changed an explicit kind");
+            serde_json::from_value::<InteractionResponse>(tagged)
+                .unwrap_or_else(|e| panic!("{kind} did not deserialize: {e}"));
+        }
+    }
+
+    /// A panel result reaching the inference path would be read as an ask
+    /// response. Pinned so nobody "helpfully" drops `kind` from the frontend.
+    #[test]
+    fn an_untagged_panel_result_is_indistinguishable_from_an_ask() {
+        let bare = serde_json::json!({ "selected": [1], "cancelled": true });
+        let tagged = tag_interaction_response(bare);
+        assert_eq!(
+            tagged["kind"], "ask",
+            "inference guesses ask for a bare selected-carrying object; \
+             panel responses must therefore carry their own kind"
+        );
+    }
+
     #[test]
     fn bare_frontend_responses_deserialize_after_tagging() {
         let perm = serde_json::json!({ "allowed": true, "scope": "once" });

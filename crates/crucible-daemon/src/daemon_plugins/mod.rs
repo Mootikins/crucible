@@ -28,10 +28,11 @@ use crucible_lua::{
     register_paths_module, register_publish_module, register_schedule_module,
     register_sessions_module, register_sessions_module_with_api, register_shell_module,
     register_status_module, register_storage_module, register_storage_module_with_store,
-    register_tools_module, register_tools_module_with_api, register_vault_module,
-    register_ws_module, ContextAttachRegistry, DaemonSessionApi, DaemonToolsApi, IsolationRegistry,
-    LuaExecutor, LuaScriptHandlerRegistry, LuaValidatorRegistry, OptionsRegistry, PathsContext,
-    PluginManager, PluginSource, PluginSpec, PublicationRegistry, ShellPolicy, StatusRegistry,
+    register_tools_module, register_tools_module_with_api, register_ui_module,
+    register_ui_module_with_api, register_vault_module, register_ws_module, ContextAttachRegistry,
+    DaemonSessionApi, DaemonToolsApi, IsolationRegistry, LuaExecutor, LuaScriptHandlerRegistry,
+    LuaValidatorRegistry, OptionsRegistry, PathsContext, PluginManager, PluginSource, PluginSpec,
+    PublicationRegistry, ShellPolicy, StatusRegistry,
 };
 use mlua::LuaSerdeExt;
 use std::collections::HashMap;
@@ -203,6 +204,7 @@ impl DaemonPluginLoader {
         reg("vault", register_vault_module(lua))?;
         reg("storage", register_storage_module(lua))?;
         reg("sessions", register_sessions_module(lua))?;
+        reg("ui", register_ui_module(lua))?;
         reg("tools", register_tools_module(lua))?;
         reg("schedule", register_schedule_module(lua))?;
         reg(
@@ -566,8 +568,10 @@ impl DaemonPluginLoader {
         let lua = self.executor.lua();
         register_sessions_module_with_api(lua, Arc::clone(&api))
             .map_err(|e| anyhow::anyhow!("sessions upgrade: {e}"))?;
+        register_ui_module_with_api(lua, Arc::clone(&api))
+            .map_err(|e| anyhow::anyhow!("ui upgrade: {e}"))?;
         register_context_module(lua, api).map_err(|e| anyhow::anyhow!("context module: {e}"))?;
-        info!("Lua sessions + context modules upgraded with daemon API");
+        info!("Lua sessions + ui + context modules upgraded with daemon API");
         Ok(())
     }
 

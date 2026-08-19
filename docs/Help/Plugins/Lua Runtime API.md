@@ -554,6 +554,48 @@ pcall(cru.sessions.unsubscribe, session_id)
 local response = table.concat(parts)
 ```
 
+## Asking the User
+
+The `cru.ui` module asks whichever client is attached to a session, and waits for the answer. Every function takes `(session_id, opts)` and returns `(response, nil)` or `(nil, error_string)`.
+
+There is one function per `InteractionRequest` variant, and the set is closed:
+
+| Function | Shows | Answers with |
+|---|---|---|
+| `cru.ui.ask` | one question, optional choices | `{ selected = {…}, other = "…" }` |
+| `cru.ui.ask_batch` | one to four questions together | `{ answers = { … }, cancelled = bool }` |
+| `cru.ui.edit` | an editable text box | `{ modified = "…" }` |
+| `cru.ui.show` | content, no question | `{ kind = "cancelled" }` on dismiss |
+| `cru.ui.permission` | a permission prompt | `{ allowed = bool, scope = "…" }` |
+| `cru.ui.popup` | a list with labels and descriptions | `{ selected_index = n }` or `{ other = "…" }` |
+| `cru.ui.panel` | a filterable, multi-select list | `{ selected = {…}, cancelled = bool }` |
+
+```lua
+local answer = cru.ui.ask(session_id, {
+  question = "Which branch should I use?",
+  choices = { "main", "develop" },
+  allow_other = true,
+})
+
+if answer.kind == "cancelled" then
+  return  -- nobody answered
+end
+```
+
+The options table is the variant's own fields, passed through unchanged. A `kind` key in it is ignored — the function name already chose the variant.
+
+### Always handle `cancelled`
+
+A response of `{ kind = "cancelled" }` is a **successful** call that nobody answered. It happens when no client is attached, when the user dismisses the modal, and when the timeout elapses. On a headless daemon it is the common case, not the exception. It is a value to inspect, never an error to `pcall` around.
+
+### Timeout
+
+`opts.timeout` is seconds to wait, default `300` — the same wait the permission prompt uses. A `timeout` of `0` falls back to the default rather than giving up before asking. The key is consumed by the binding and never reaches the request.
+
+### Which client answers
+
+The request goes to every client attached to the session, and the first answer wins. Two clients are not serialized against each other, and `cru.ui` deliberately does **not** queue behind permission prompts: two plugins asking unrelated questions must not block each other, and a plugin that asks from inside a permission handler would otherwise deadlock.
+
 ## Conversation Context
 
 The `cru.context` module manipulates a session's conversation context. All daemon-backed functions take an explicit `session_id` and return `(result, nil)` or `(nil, error_string)`; until the daemon wires the session API they are stubs returning `(nil, "no daemon connected")`. `estimate_tokens` is pure and always works. `cru.context.attach` is also registered on the per-session VMs, so `crucible.on` handlers can call it regardless of which VM they run in.

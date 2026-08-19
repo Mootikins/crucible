@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createRoot } from 'solid-js';
-import type { PermRequest } from '@/lib/types';
+import type { InteractionOf } from '@/lib/types';
 
 vi.mock('@/lib/api', () => ({
   listPendingInteractions: vi.fn().mockResolvedValue([]),
@@ -11,7 +11,7 @@ import { listPendingInteractions } from '@/lib/api';
 
 const mockedList = vi.mocked(listPendingInteractions);
 
-const perm: PermRequest = {
+const perm: InteractionOf<'permission'> = {
   kind: 'permission',
   id: 'req-1',
   action_type: 'bash',

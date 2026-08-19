@@ -1,9 +1,9 @@
 import { Component, For, Show, createSignal, createMemo } from 'solid-js';
-import type { PopupRequest, PopupResponse } from '@/lib/types';
+import type { InteractionOf, PopupResponse } from '@/lib/types';
 import { btnPrimary } from '@/lib/button-style';
 
 interface Props {
-  request: PopupRequest;
+  request: InteractionOf<'popup'>;
   onRespond: (response: PopupResponse) => void;
 }
 
@@ -25,12 +25,12 @@ export const PopupInteraction: Component<Props> = (props) => {
     const originalIndex = props.request.entries.findIndex(
       (e) => e === filteredEntries()[index]
     );
-    props.onRespond({ selected_index: originalIndex });
+    props.onRespond({ kind: 'popup', selected_index: originalIndex });
   };
 
   const handleOther = () => {
     if (otherText().trim()) {
-      props.onRespond({ other: otherText().trim() });
+      props.onRespond({ kind: 'popup', other: otherText().trim() });
     }
   };
 

@@ -175,6 +175,25 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
         session_id: String,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
 
+    /// Ask the attached client something, and wait for the answer.
+    ///
+    /// `request` is a serialized `InteractionRequest` — internally tagged on
+    /// `kind`, the same wire shape `interaction_respond` accepts back. It is a
+    /// `Value` rather than a typed struct for the reason `create_session`'s
+    /// params are: the enum lives in `crucible-core`, and re-declaring seven
+    /// variants here to pass them straight through would be a second
+    /// definition to keep in step.
+    ///
+    /// Resolves to a serialized `InteractionResponse`. `{"kind":"cancelled"}`
+    /// means nobody answered — no client attached, the user dismissed it, or
+    /// `timeout_secs` elapsed.
+    fn request_interaction(
+        &self,
+        session_id: String,
+        request: serde_json::Value,
+        timeout_secs: u64,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>>;
+
     /// Respond to a permission/interaction request.
     fn respond_to_permission(
         &self,

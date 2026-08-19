@@ -9,9 +9,10 @@
 //! store a compile error rather than a leak.
 
 use super::cache_stats::CacheStats;
+use super::interaction::PendingInteraction;
 use super::{BoxedAgentHandle, PendingPermission, PermissionId};
 use crate::tool_dispatch::ToolDispatcher;
-use crucible_core::interaction::PermRequest;
+use crucible_core::interaction::{InteractionRequest, PermRequest};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -61,6 +62,16 @@ pub(crate) struct SessionSlot {
     /// one outer lock, inserting a prompt here would block a dispatcher read on
     /// an unrelated session.
     permissions: Mutex<HashMap<PermissionId, PendingPermission>>,
+    /// Non-permission interactions this session is waiting on answers to.
+    ///
+    /// Kept apart from `permissions` rather than folded into it because the
+    /// two have different lifetimes and different failure answers: an
+    /// unanswered permission must resolve to *deny*, which is a real decision
+    /// the gate acts on, while an unanswered question resolves to *cancelled*,
+    /// which the asker decides what to do with. One map would have to carry
+    /// both, and the type that expresses "deny" and "cancelled" as the same
+    /// value does not exist.
+    interactions: Mutex<HashMap<PermissionId, PendingInteraction>>,
     /// Per-session prompt-cache aggregate, updated on every
     /// `message_complete` that carries usage data.
     cache_stats: Mutex<CacheStats>,
@@ -308,6 +319,46 @@ impl SessionSlot {
         &self,
     ) -> std::sync::MutexGuard<'_, HashMap<PermissionId, PendingPermission>> {
         self.permissions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Register a non-permission interaction this session is waiting on.
+    pub(crate) fn insert_interaction(&self, id: PermissionId, pending: PendingInteraction) {
+        self.lock_interactions().insert(id, pending);
+    }
+
+    /// Take an interaction out, to answer it or to abandon it. Same ownership
+    /// rule as [`Self::take_permission`]: dropping the returned sender makes
+    /// the waiter's receiver error out at once.
+    pub(crate) fn take_interaction(&self, id: &str) -> Option<PendingInteraction> {
+        self.lock_interactions().remove(id)
+    }
+
+    /// Every non-permission interaction this session is waiting on.
+    pub(crate) fn list_interactions(&self) -> Vec<(PermissionId, InteractionRequest)> {
+        self.lock_interactions()
+            .iter()
+            .map(|(id, pending)| (id.clone(), pending.request.clone()))
+            .collect()
+    }
+
+    /// Drop every pending interaction's sender, returning how many there were.
+    ///
+    /// Called from the same teardown as [`Self::drop_permissions`] and for the
+    /// same reason: a dropped sender releases its waiter immediately instead of
+    /// parking it for the full timeout.
+    pub(crate) fn drop_interactions(&self) -> usize {
+        let mut interactions = self.lock_interactions();
+        let count = interactions.len();
+        interactions.clear();
+        count
+    }
+
+    fn lock_interactions(
+        &self,
+    ) -> std::sync::MutexGuard<'_, HashMap<PermissionId, PendingInteraction>> {
+        self.interactions
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }

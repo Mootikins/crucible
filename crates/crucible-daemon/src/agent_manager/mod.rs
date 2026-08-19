@@ -1402,6 +1402,7 @@ pub(crate) mod attachments;
 pub mod autocompact;
 pub mod cache_stats;
 pub mod context_length;
+mod interaction;
 mod iter;
 mod messaging;
 mod models;

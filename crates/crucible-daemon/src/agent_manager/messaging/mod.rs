@@ -56,6 +56,21 @@ impl AgentManager {
             );
         }
 
+        // Same reasoning for non-permission interactions: a plugin parked on
+        // `request_interaction` when the user cancels must be released now,
+        // not at its timeout.
+        let dropped_interactions = self
+            .existing_slot(session_id)
+            .map(|slot| slot.drop_interactions())
+            .unwrap_or(0);
+        if dropped_interactions > 0 {
+            debug!(
+                session_id = %session_id,
+                count = dropped_interactions,
+                "Dropped pending interaction senders on cancel"
+            );
+        }
+
         if let Some((_, mut state)) = self.request_state.remove(session_id) {
             if let Some(cancel_tx) = state.cancel_tx.take() {
                 let _ = cancel_tx.send(());

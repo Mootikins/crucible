@@ -13,9 +13,9 @@ use crate::{
     register_graph_module, register_hooks_module, register_lua_stdlib, register_oil_module,
     register_oq_module, register_session_module, register_sessions_module,
     register_sessions_module_with_api, register_storage_module, register_storage_module_with_store,
-    register_tools_module, register_tools_module_with_api, register_vault_module,
-    register_vault_module_with_store, register_vault_module_with_store_scoped, DaemonSessionApi,
-    DaemonToolsApi, SessionManager,
+    register_tools_module, register_tools_module_with_api, register_ui_module,
+    register_ui_module_with_api, register_vault_module, register_vault_module_with_store,
+    register_vault_module_with_store_scoped, DaemonSessionApi, DaemonToolsApi, SessionManager,
 };
 
 /// Builder for constructing Lua test environments with specific module registrations.
@@ -138,6 +138,24 @@ impl TestLuaBuilder {
         self.ensure_crucible_table();
         register_sessions_module_with_api(&self.lua, api)
             .expect("Should register sessions with API");
+        self
+    }
+
+    /// Register the ui module (cru.ui) with stubs.
+    /// Sets up: cru + crucible global tables.
+    pub fn with_ui(self) -> Self {
+        self.ensure_cru_table();
+        self.ensure_crucible_table();
+        register_ui_module(&self.lua).expect("Should register ui module");
+        self
+    }
+
+    /// Register the ui module with a DaemonSessionApi backend.
+    /// Sets up: cru + crucible global tables.
+    pub fn with_ui_api(self, api: Arc<dyn DaemonSessionApi>) -> Self {
+        self.ensure_cru_table();
+        self.ensure_crucible_table();
+        register_ui_module_with_api(&self.lua, api).expect("Should register ui with API");
         self
     }
 

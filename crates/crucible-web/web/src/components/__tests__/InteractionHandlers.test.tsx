@@ -4,12 +4,7 @@ import { AskInteraction } from '../interactions/AskInteraction';
 import { PopupInteraction } from '../interactions/PopupInteraction';
 import { PermissionInteraction } from '../interactions/PermissionInteraction';
 import { InteractionHandler } from '../interactions/InteractionHandler';
-import type {
-  AskRequest,
-  PopupRequest,
-  PermRequest,
-  InteractionRequest,
-} from '@/lib/types';
+import type { InteractionOf, InteractionRequest } from '@/lib/types';
 
 // Mock the API module to prevent real network calls
 vi.mock('@/lib/api', () => ({
@@ -34,7 +29,7 @@ describe('AskInteraction', () => {
   });
 
   it('renders the question text', () => {
-    const request: AskRequest = {
+    const request: InteractionOf<'ask'> = {
       kind: 'ask',
       id: 'ask-1',
       question: 'Which framework do you prefer?',
@@ -47,7 +42,7 @@ describe('AskInteraction', () => {
   });
 
   it('renders choices as selectable options', () => {
-    const request: AskRequest = {
+    const request: InteractionOf<'ask'> = {
       kind: 'ask',
       id: 'ask-2',
       question: 'Pick one',
@@ -62,7 +57,7 @@ describe('AskInteraction', () => {
   });
 
   it('calls onRespond with selected index on submit', async () => {
-    const request: AskRequest = {
+    const request: InteractionOf<'ask'> = {
       kind: 'ask',
       id: 'ask-3',
       question: 'Pick a color',
@@ -80,6 +75,7 @@ describe('AskInteraction', () => {
     await fireEvent.click(submitButton);
 
     expect(mockOnRespond).toHaveBeenCalledWith({
+      kind: 'ask',
       selected: [1],
       other: undefined,
     });
@@ -98,7 +94,7 @@ describe('PopupInteraction', () => {
   });
 
   it('renders the title and entry labels', () => {
-    const request: PopupRequest = {
+    const request: InteractionOf<'popup'> = {
       kind: 'popup',
       id: 'popup-1',
       title: 'Select a file',
@@ -116,7 +112,7 @@ describe('PopupInteraction', () => {
   });
 
   it('renders entry descriptions when present', () => {
-    const request: PopupRequest = {
+    const request: InteractionOf<'popup'> = {
       kind: 'popup',
       id: 'popup-2',
       title: 'Choose',
@@ -132,7 +128,7 @@ describe('PopupInteraction', () => {
   });
 
   it('calls onRespond with selected_index when entry clicked', async () => {
-    const request: PopupRequest = {
+    const request: InteractionOf<'popup'> = {
       kind: 'popup',
       id: 'popup-3',
       title: 'Pick one',
@@ -148,10 +144,14 @@ describe('PopupInteraction', () => {
     // Click the second entry
     await fireEvent.click(screen.getByText('Second'));
 
-    expect(mockOnRespond).toHaveBeenCalledWith({ selected_index: 1 });
+    expect(mockOnRespond).toHaveBeenCalledWith({ kind: 'popup', selected_index: 1 });
   });
 });
 
+// Responses carry an explicit `kind`. The server can infer a tag for the three
+// bare shapes older clients sent (`tag_interaction_response`), but inference
+// cannot separate a panel result from an ask response — both carry `selected` —
+// so every component states its kind rather than relying on the guess.
 // ---------------------------------------------------------------------------
 // PermissionInteraction
 // ---------------------------------------------------------------------------
@@ -164,7 +164,7 @@ describe('PermissionInteraction', () => {
   });
 
   it('renders Allow and Deny buttons', () => {
-    const request: PermRequest = {
+    const request: InteractionOf<'permission'> = {
       kind: 'permission',
       id: 'perm-1',
       action_type: 'bash',
@@ -180,7 +180,7 @@ describe('PermissionInteraction', () => {
   it('names a tool exactly once, in the action chip', () => {
     // The card used to carry a generic "Tool" chip plus a "Tool: <name>"
     // line: the word twice, two lines for one fact.
-    const request: PermRequest = {
+    const request: InteractionOf<'permission'> = {
       kind: 'permission',
       id: 'perm-tool-dup',
       action_type: 'tool',
@@ -197,7 +197,7 @@ describe('PermissionInteraction', () => {
   });
 
   it('keeps the verb chip for non-tool permissions', () => {
-    const request: PermRequest = {
+    const request: InteractionOf<'permission'> = {
       kind: 'permission',
       id: 'perm-bash-chip',
       action_type: 'bash',
@@ -212,7 +212,7 @@ describe('PermissionInteraction', () => {
 
   it('shows every tool argument in full for tool permissions', () => {
     const longQuery = 'find all callers of parse_provider_model across the workspace ' + 'x'.repeat(80);
-    const request: PermRequest = {
+    const request: InteractionOf<'permission'> = {
       kind: 'permission',
       id: 'perm-tool-1',
       action_type: 'tool',
@@ -241,7 +241,7 @@ describe('PermissionInteraction', () => {
   });
 
   it('keeps the (no arguments) fallback for tool permissions without args', () => {
-    const request: PermRequest = {
+    const request: InteractionOf<'permission'> = {
       kind: 'permission',
       id: 'perm-tool-2',
       action_type: 'tool',
@@ -254,7 +254,7 @@ describe('PermissionInteraction', () => {
   });
 
   it('renders the action type label', () => {
-    const request: PermRequest = {
+    const request: InteractionOf<'permission'> = {
       kind: 'permission',
       id: 'perm-2',
       action_type: 'bash',
@@ -268,7 +268,7 @@ describe('PermissionInteraction', () => {
   });
 
   it('calls onRespond with allowed=true when Allow clicked', async () => {
-    const request: PermRequest = {
+    const request: InteractionOf<'permission'> = {
       kind: 'permission',
       id: 'perm-3',
       action_type: 'bash',
@@ -280,6 +280,7 @@ describe('PermissionInteraction', () => {
     await fireEvent.click(screen.getByText('Allow'));
 
     expect(mockOnRespond).toHaveBeenCalledWith({
+      kind: 'permission',
       allowed: true,
       pattern: 'rm -rf /tmp/test',
       scope: 'once',
@@ -287,7 +288,7 @@ describe('PermissionInteraction', () => {
   });
 
   it('calls onRespond with allowed=false when Deny clicked', async () => {
-    const request: PermRequest = {
+    const request: InteractionOf<'permission'> = {
       kind: 'permission',
       id: 'perm-4',
       action_type: 'tool',
@@ -300,6 +301,7 @@ describe('PermissionInteraction', () => {
     await fireEvent.click(screen.getByText('Deny'));
 
     expect(mockOnRespond).toHaveBeenCalledWith({
+      kind: 'permission',
       allowed: false,
       scope: 'once',
     });
