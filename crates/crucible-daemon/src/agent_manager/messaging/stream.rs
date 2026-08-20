@@ -28,6 +28,7 @@ use crucible_core::traits::chat::{ChatToolCall, ChatToolResult};
 use crucible_core::traits::llm::TokenUsage;
 use crucible_core::turn::{Agent as TurnAgent, StopReason, TurnContext, TurnEvent};
 use crucible_core::types::ToolSource;
+use crucible_lua::StageId;
 use futures::StreamExt;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc;
@@ -1166,7 +1167,7 @@ impl AgentManager {
         }
 
         let state = stream_ctx.session_state.lock().await;
-        
+
         // Observational event; session VM first, then plugin VM with the
         // state lock released (plugin Lua may run for seconds).
         let post_llm_event = SessionEvent::Custom {
@@ -1207,7 +1208,7 @@ impl AgentManager {
         lua: &mlua::Lua,
         event: &SessionEvent,
     ) {
-        for handler in registry.runtime_handlers_for("post_llm_call", None) {
+        for handler in registry.runtime_handlers_for(StageId::PostLlmCall.as_str(), None) {
             if let Err(error) = registry
                 .execute_runtime_handler(lua, &handler.name, event, Some(session_id))
                 .await
@@ -1287,7 +1288,7 @@ impl AgentManager {
     ) -> Option<(String, String)> {
         use crucible_lua::ScriptHandlerResult;
 
-        let handlers = registry.runtime_handlers_for("turn:complete", None);
+        let handlers = registry.runtime_handlers_for(StageId::TurnComplete.as_str(), None);
         if handlers.is_empty() {
             return None;
         }

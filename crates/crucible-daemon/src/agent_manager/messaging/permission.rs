@@ -2,6 +2,7 @@ use super::super::*;
 use crucible_core::config::components::permissions::{
     PermissionConfig, PermissionDecision, PermissionEngine, PermissionMode,
 };
+use crucible_lua::StageId;
 use std::future::Future;
 
 /// The name the permission engine matches an ACP tool call against.
@@ -284,7 +285,7 @@ impl AgentManager {
         model: &str,
         mut current_content: String,
     ) -> (String, bool) {
-        for handler in registry.runtime_handlers_for("pre_llm_call", None) {
+        for handler in registry.runtime_handlers_for(StageId::PreLlmCall.as_str(), None) {
             let event = SessionEvent::Custom {
                 name: "pre_llm_call".to_string(),
                 payload: serde_json::json!({
@@ -393,7 +394,7 @@ impl AgentManager {
         model: &str,
         mut current: Vec<crucible_core::traits::ContextMessage>,
     ) -> Result<Vec<crucible_core::traits::ContextMessage>, ()> {
-        for handler in registry.runtime_handlers_for("transform_context", None) {
+        for handler in registry.runtime_handlers_for(StageId::TransformContext.as_str(), None) {
             let event = SessionEvent::Custom {
                 name: "transform_context".to_string(),
                 payload: serde_json::json!({

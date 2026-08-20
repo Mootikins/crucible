@@ -4,48 +4,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tracing::debug;
 
+use super::hook_name::{hook_names, HookName};
 use super::registry::RuntimeHandler;
-
-/// Every name `crucible.on()` can usefully register for.
-///
-/// **Exact match, no globs.** The registry compares `event_type` with `==`
-/// (`handlers/registry.rs`), so a misspelling never fires.
-/// `matches_event_pattern`'s glob forms apply to the *file*-declared handler
-/// path, a different registry field, and `opts.pattern` filters the event's
-/// *identifier* (the tool name), not its name. So the set is closed and can be
-/// validated.
-///
-/// Each entry is a live `runtime_handlers_for` dispatch site;
-/// `tests::hook_names_matches_every_dispatch_site` proves the two agree.
-pub const HOOK_NAMES: &[&str] = &[
-    "pre_tool_call",
-    "tool_result",
-    "pre_llm_call",
-    "post_llm_call",
-    "transform_context",
-    "precognition_select",
-    "precognition_format",
-    "turn:complete",
-    "tool:before_execute",
-    "tool:display_start",
-    "tool:display_complete",
-    // Daemon broadcast events. `crucible-daemon/src/event_map.rs` holds the one
-    // table that names them and `server/file_event_hooks.rs` dispatches it.
-    //
-    // The three file events were missing here at first, so
-    // `crucible.on("FileChanged", ...)` was rejected outright — the hook could
-    // not be registered at all, let alone fire. They keep their `type_name()`
-    // spelling because every config that already registers one names them that
-    // way; everything added since is colon-namespaced.
-    "FileChanged",
-    "FileDeleted",
-    "FileMoved",
-    "note:created",
-    "note:modified",
-    "note:deleted",
-    "note:renamed",
-    "webhook:received",
-];
 
 /// Levenshtein distance, for the "did you mean" hint. Fifteen lines beats a
 /// dependency.
@@ -72,18 +32,17 @@ fn levenshtein(a: &str, b: &str) -> usize {
 /// simply never ran. This is a breaking change for a plugin with a typo, which is
 /// the point.
 fn validate_hook_name(event_type: &str) -> Result<(), mlua::Error> {
-    if HOOK_NAMES.contains(&event_type) {
+    if HookName::parse(event_type).is_some() {
         return Ok(());
     }
-    let suggestion = HOOK_NAMES
-        .iter()
+    let suggestion = hook_names()
         .min_by_key(|n| levenshtein(n, event_type))
         .filter(|n| levenshtein(n, event_type) <= 3);
     Err(mlua::Error::RuntimeError(match suggestion {
         Some(s) => format!("crucible.on: unknown event `{event_type}` — did you mean `{s}`?"),
         None => format!(
             "crucible.on: unknown event `{event_type}`. Valid: {}",
-            HOOK_NAMES.join(", ")
+            hook_names().collect::<Vec<_>>().join(", ")
         ),
     }))
 }
@@ -266,98 +225,16 @@ pub fn register_crucible_on_api(
 mod tests {
     use super::*;
 
-    /// The dispatch sites are the source of truth; `HOOK_NAMES` is
-    /// hand-maintained. A hook point added without a `HOOK_NAMES` entry makes
-    /// `crucible.on` reject a name that would have worked — the opposite failure
-    /// from the old silent-typo one, and just as invisible from the plugin
-    /// author's side.
+    /// Every name the enums declare registers.
     ///
-    /// Constants (`TOOL_BEFORE_EXECUTE_EVENT` and friends) are resolved by
-    /// including their `const` declarations in the scan, so a renamed constant
-    /// still surfaces its literal.
-    #[test]
-    fn hook_names_matches_every_dispatch_site() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .expect("crates/ dir")
-            .to_path_buf();
-
-        let mut dispatched: std::collections::BTreeSet<String> = Default::default();
-        let mut scanned = 0usize;
-        let mut stack = vec![root];
-        while let Some(dir) = stack.pop() {
-            for entry in std::fs::read_dir(&dir).expect("readable crate dir") {
-                let path = entry.expect("dir entry").path();
-                if path.is_dir() {
-                    // Test trees deliberately dispatch names that do not exist
-                    // (`"nonexistent"`), so they are not evidence of a hook point.
-                    let name = path.file_name().unwrap_or_default().to_string_lossy();
-                    if name != "tests" && name != "target" && name != "node_modules" {
-                        stack.push(path);
-                    }
-                    continue;
-                }
-                if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-                    continue;
-                }
-                let file = path.file_name().unwrap_or_default().to_string_lossy();
-                // `tests.rs` and this very file both contain the markers inside
-                // string literals; neither is a dispatch site.
-                if file == "tests.rs" || file == "crucible_on.rs" {
-                    continue;
-                }
-                let src = std::fs::read_to_string(&path).expect("readable rust file");
-                // Inline test modules dispatch names that do not exist
-                // (`"nonexistent"`), so they are not evidence either.
-                let src = match src.find("\n#[cfg(test)]\n") {
-                    Some(at) => &src[..at],
-                    None => src.as_str(),
-                };
-                scanned += 1;
-                for needle in ["runtime_handlers_for(", "_EVENT: &str = "] {
-                    let mut rest = src;
-                    while let Some(at) = rest.find(needle) {
-                        rest = &rest[at + needle.len()..];
-                        let Some(open) = rest.find('"') else { break };
-                        // Only a literal directly at the call site counts; a
-                        // constant argument shows up via its own declaration.
-                        if rest[..open].contains(')') || rest[..open].contains(';') {
-                            continue;
-                        }
-                        let after = &rest[open + 1..];
-                        let Some(close) = after.find('"') else { break };
-                        dispatched.insert(after[..close].to_string());
-                    }
-                }
-            }
-        }
-
-        assert!(
-            scanned > 100,
-            "scanned only {scanned} rust files — the walk is wrong, fix this test"
-        );
-        assert!(
-            !dispatched.is_empty(),
-            "found no dispatch sites — the scan markers moved, fix this test"
-        );
-
-        let listed: std::collections::BTreeSet<String> =
-            HOOK_NAMES.iter().copied().map(String::from).collect();
-        let undeclared: Vec<_> = dispatched.difference(&listed).collect();
-        let unreachable: Vec<_> = listed.difference(&dispatched).collect();
-        assert!(
-            undeclared.is_empty(),
-            "dispatched but absent from HOOK_NAMES, so `crucible.on` rejects them: {undeclared:?}"
-        );
-        assert!(
-            unreachable.is_empty(),
-            "in HOOK_NAMES but nothing dispatches them: {unreachable:?}"
-        );
-    }
-
+    /// The old form of this test walked every `.rs` file under `crates/` and
+    /// compared the literals it found against a hand-written `&[&str]`. It was
+    /// satisfiable without adding the entry, because its needle accepted a bare
+    /// constant declaration. Names are variants now, so the compiler holds the
+    /// two directions together and this is the whole of what is left.
     #[test]
     fn a_valid_hook_name_is_accepted() {
-        for name in HOOK_NAMES {
+        for name in hook_names() {
             validate_hook_name(name).expect("every listed name must validate");
         }
     }

@@ -1,6 +1,7 @@
 use super::super::*;
 use crucible_core::types::acp::FileDiff;
 use crucible_core::types::ToolSource;
+use crucible_lua::StageId;
 use crucible_lua::{ToolBeforeExecuteEvent, ToolDisplayCompleteEvent, ToolDisplayStartEvent};
 
 /// Deny a tool call: emit the `tool_result` so views show the outcome, and
@@ -75,7 +76,7 @@ async fn run_pre_tool_call_handlers(
     args: &mut serde_json::Value,
     call_id: &str,
 ) -> Option<crucible_core::traits::chat::ChatToolResult> {
-    for handler in registry.runtime_handlers_for("pre_tool_call", Some(tool_name)) {
+    for handler in registry.runtime_handlers_for(StageId::PreToolCall.as_str(), Some(tool_name)) {
         let event = SessionEvent::Custom {
             name: "pre_tool_call".to_string(),
             payload: serde_json::json!({

@@ -8,13 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- **`crucible.on` hook names are two closed enums, not one list of strings.**
+  `EventName` holds the eight daemon broadcast events, `StageId` the eleven
+  synchronous turn-loop stages
+  (`crucible-lua/src/handlers/hook_name.rs`); `HOOK_NAMES` is gone. The single
+  list conflated two contracts — a handler's return value changes what happens
+  next at a stage and can change nothing at an event, so `Cancel` meant
+  "stop the remaining handlers" on one side and "block the operation" on the
+  other, decided only by which name the author had written. Its completeness
+  was also checked by a test that scanned every `.rs` file in the workspace for
+  string literals, a gate satisfiable without adding the entry. `as_str` now has
+  no wildcard arm, the dispatch sites name the variant, and the documented table
+  in `docs/Help/Extending/Event Hooks.md` is checked against the enums. No hook
+  name changed, so no plugin or config needs an edit.
 - **One table now maps a daemon event to the hook name Lua registers for**
   (`crucible-daemon/src/event_map.rs`). The outbound bridge that broadcasts to
   clients and the inbound dispatch that runs Lua handlers each carried their own
   three-arm `match` over the same three file events; they could disagree with
   nothing to catch it, and every other event the daemon emits reached Lua not at
-  all. Adding an event is now a row plus a `HOOK_NAMES` entry, and tests pin the
-  two lists against each other in both directions. No behaviour change for the
+  all. Adding an event is now a row plus an `EventName` variant, and tests pin the
+  two against each other in both directions. No behaviour change for the
   three file events.
 - **Session titling moved out of the daemon into the bundled `auto-title`
   plugin.** The system prompt, the 1500-character clip and the sanitizer that
@@ -107,6 +120,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Removed
 
+- **`crucible_lua::HOOK_NAMES`**, the `&[&str]` of every `crucible.on` name.
+  Replaced by `EventName`, `StageId` and `HookName::parse`, which answer the
+  same question with the compiler behind them. Callers testing membership move
+  to `HookName::parse(name).is_some()`; callers iterating move to
+  `crucible_lua::hook_names()`.
 - **The `Reactor` event system** (`crucible_core::events::{Reactor, Handler,
   HandlerContext, DependencyGraph}` and the four built-in handlers) — 3,076
   lines. It was wired into the turn loop at four points and dispatched on every

@@ -9,6 +9,7 @@
 //! that shape the finished result as the model receives it, so every handler
 //! sees the previous ones' edits rather than the first answer winning.
 
+use crucible_lua::StageId;
 use crucible_lua::{
     execute_tool_before_execute_hooks, execute_tool_display_complete_hooks,
     execute_tool_display_start_hooks, ToolBeforeExecuteEvent, ToolDisplayCompleteEvent,
@@ -147,7 +148,8 @@ pub(super) async fn apply_tool_result_handlers(
         result: &mut String,
         error: &mut Option<String>,
     ) {
-        for handler in registry.runtime_handlers_for("tool_result", Some(tool_name)) {
+        for handler in registry.runtime_handlers_for(StageId::ToolResult.as_str(), Some(tool_name))
+        {
             let event = crucible_core::events::SessionEvent::Custom {
                 name: "tool_result".to_string(),
                 payload: serde_json::json!({

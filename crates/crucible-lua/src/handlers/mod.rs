@@ -16,7 +16,7 @@
 //! end)
 //! ```
 //!
-//! `event` must be one of [`HOOK_NAMES`] — an unknown name is an error at
+//! `event` must be an [`EventName`] or a [`StageId`] — an unknown name is an error at
 //! registration, not a handler that never fires.
 //!
 //! ## Return conventions
@@ -40,6 +40,7 @@ mod before_execute;
 mod conversion;
 mod crucible_on;
 mod display_hooks;
+mod hook_name;
 mod permission;
 mod registry;
 mod script_handler;
@@ -51,12 +52,13 @@ pub use before_execute::{
     execute_tool_before_execute_hooks, ToolBeforeExecuteEvent, ToolBeforeExecuteResult,
     TOOL_BEFORE_EXECUTE_EVENT,
 };
-pub use crucible_on::{register_crucible_on_api, HOOK_NAMES};
+pub use crucible_on::register_crucible_on_api;
 pub use display_hooks::{
     execute_tool_display_complete_hooks, execute_tool_display_start_hooks,
     ToolDisplayCompleteEvent, ToolDisplayCompleteHints, ToolDisplayStartEvent,
     ToolDisplayStartHints, TOOL_DISPLAY_COMPLETE_EVENT, TOOL_DISPLAY_START_EVENT,
 };
+pub use hook_name::{hook_names, EventName, HookName, StageId};
 pub use permission::{
     execute_permission_hooks, register_permission_hook_api, PermissionHook, PermissionHookResult,
     PermissionRequest, SHIPPED_DEFAULT_PRIORITY,

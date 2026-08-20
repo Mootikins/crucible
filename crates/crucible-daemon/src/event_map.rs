@@ -45,6 +45,7 @@ use crucible_core::events::session_event::InternalSessionEvent;
 use crucible_core::events::SessionEvent;
 use crucible_core::protocol::session_events::{SessionEventPayload, SystemPayload};
 use crucible_core::protocol::SessionEventMessage;
+use crucible_lua::EventName;
 
 /// The session id every daemon-wide event is addressed to.
 ///
@@ -58,40 +59,40 @@ pub const WEBHOOK_SESSION: &str = "__webhook__";
 
 // ── Hook names ──────────────────────────────────────────────────────────────
 //
-// Declared as constants, not written inline, because
-// `crucible_lua::handlers::crucible_on::tests::hook_names_matches_every_dispatch_site`
-// scans the workspace for constant declarations whose name ends in `_EVENT` and
-// asserts that the set it finds is exactly `HOOK_NAMES`. A name added here
-// without a `HOOK_NAMES` entry is one `crucible.on` would reject; a `HOOK_NAMES`
-// entry with no row here is a name nothing can ever fire.
-//
-// (The scan matches on the literal text of a declaration, so do not write that
-// pattern out in prose anywhere — a comment quoting it is picked up as if it
-// were a hook name.)
+// Aliases for the [`EventName`] variants, kept because the wire name and the
+// hook name coincide for everything except the three file events and reading
+// `NOTE_CREATED_EVENT` twice in one row is clearer than reading
+// `EventName::NoteCreated.as_str()` twice. The enum is the source: a name added
+// here without a variant does not compile, and a variant with no row is caught
+// by `every_hook_name_has_a_row` below.
 
 /// A watched file was created or modified.
-pub const FILE_CHANGED_EVENT: &str = "FileChanged";
+pub const FILE_CHANGED_EVENT: &str = EventName::FileChanged.as_str();
 /// A watched file was removed.
-pub const FILE_DELETED_EVENT: &str = "FileDeleted";
+pub const FILE_DELETED_EVENT: &str = EventName::FileDeleted.as_str();
 /// A watched file was renamed or moved.
-pub const FILE_MOVED_EVENT: &str = "FileMoved";
+pub const FILE_MOVED_EVENT: &str = EventName::FileMoved.as_str();
 /// A note reached the index for the first time.
-pub const NOTE_CREATED_EVENT: &str = "note:created";
+pub const NOTE_CREATED_EVENT: &str = EventName::NoteCreated.as_str();
 /// An already-indexed note was written again.
-pub const NOTE_MODIFIED_EVENT: &str = "note:modified";
+pub const NOTE_MODIFIED_EVENT: &str = EventName::NoteModified.as_str();
 /// A note left the index.
-pub const NOTE_DELETED_EVENT: &str = "note:deleted";
+pub const NOTE_DELETED_EVENT: &str = EventName::NoteDeleted.as_str();
 /// A note moved, with its inbound links repointed.
-pub const NOTE_RENAMED_EVENT: &str = "note:renamed";
+pub const NOTE_RENAMED_EVENT: &str = EventName::NoteRenamed.as_str();
 /// A signed webhook delivery arrived at `POST /api/webhook/{name}`.
-pub const WEBHOOK_RECEIVED_EVENT: &str = "webhook:received";
+pub const WEBHOOK_RECEIVED_EVENT: &str = EventName::WebhookReceived.as_str();
 
 /// One daemon event a Lua handler can see.
 pub struct EventRow {
     /// `SessionEventMessage.event`.
     pub wire: &'static str,
     /// The name `crucible.on` registers against.
-    pub hook: &'static str,
+    ///
+    /// Typed, not a `&str`: these are broadcast events, and giving them the
+    /// same type as an interception stage is how `Cancel` came to mean two
+    /// different things depending on which name the plugin author had written.
+    pub hook: EventName,
     /// The `data` key whose value `opts.pattern` filters on, or `None` when the
     /// event carries no identifier — a handler that sets `pattern` on one of
     /// those correctly matches nothing.
@@ -102,44 +103,44 @@ pub struct EventRow {
 pub const ROWS: &[EventRow] = &[
     EventRow {
         wire: "file_changed",
-        hook: FILE_CHANGED_EVENT,
+        hook: EventName::FileChanged,
         identifier: None,
     },
     EventRow {
         wire: "file_deleted",
-        hook: FILE_DELETED_EVENT,
+        hook: EventName::FileDeleted,
         identifier: None,
     },
     EventRow {
         wire: "file_moved",
-        hook: FILE_MOVED_EVENT,
+        hook: EventName::FileMoved,
         identifier: None,
     },
     EventRow {
         wire: NOTE_CREATED_EVENT,
-        hook: NOTE_CREATED_EVENT,
+        hook: EventName::NoteCreated,
         identifier: Some("path"),
     },
     EventRow {
         wire: NOTE_MODIFIED_EVENT,
-        hook: NOTE_MODIFIED_EVENT,
+        hook: EventName::NoteModified,
         identifier: Some("path"),
     },
     EventRow {
         wire: NOTE_DELETED_EVENT,
-        hook: NOTE_DELETED_EVENT,
+        hook: EventName::NoteDeleted,
         identifier: Some("path"),
     },
     // The destination, not the source: a handler filtering on a rename is
     // asking about the note as it is now.
     EventRow {
         wire: NOTE_RENAMED_EVENT,
-        hook: NOTE_RENAMED_EVENT,
+        hook: EventName::NoteRenamed,
         identifier: Some("to"),
     },
     EventRow {
         wire: WEBHOOK_RECEIVED_EVENT,
-        hook: WEBHOOK_RECEIVED_EVENT,
+        hook: EventName::WebhookReceived,
         identifier: Some("name"),
     },
 ];
@@ -228,7 +229,7 @@ pub fn webhook_received(
 /// A broadcast message resolved to everything a dispatch site needs.
 pub struct HookedEvent {
     /// The name to look handlers up under.
-    pub hook: &'static str,
+    pub hook: EventName,
     /// The event handlers receive.
     pub event: SessionEvent,
     /// What `opts.pattern` filters on, when the event has an identifier.
@@ -264,7 +265,7 @@ pub fn decode(msg: &SessionEventMessage) -> Option<HookedEvent> {
             SessionEvent::internal(InternalSessionEvent::FileMoved { from, to })
         }
         _ => SessionEvent::Custom {
-            name: row.hook.to_string(),
+            name: row.hook.as_str().to_string(),
             payload: msg.data.clone(),
         },
     };
@@ -319,8 +320,14 @@ mod tests {
         .exec()
         .expect("register handler");
 
-        let handlers = registry.runtime_handlers_for(hooked.hook, hooked.identifier.as_deref());
-        assert_eq!(handlers.len(), 1, "`{}` matched no handler", hooked.hook);
+        let handlers =
+            registry.runtime_handlers_for(hooked.hook.as_str(), hooked.identifier.as_deref());
+        assert_eq!(
+            handlers.len(),
+            1,
+            "`{}` matched no handler",
+            hooked.hook.as_str()
+        );
         registry
             .execute_runtime_handler(&lua, &handlers[0].name, &hooked.event, None)
             .await
@@ -418,26 +425,29 @@ mod tests {
             let (_lua, seen) = as_the_handler_sees_it(&hooked).await;
             let reported: String = seen.get("type").expect("every event carries `type`");
             assert_eq!(
-                reported, hooked.hook,
+                reported,
+                hooked.hook.as_str(),
                 "`{}` presents the wrong `type` to its handler",
                 msg.event
             );
         }
     }
 
-    /// Every name the table dispatches is one `crucible.on` accepts.
+    /// Every event `crucible.on` accepts has a row here.
     ///
-    /// The two lists live in different crates. When they disagreed the whole
-    /// feature was dead in both directions: registration raised "unknown event
-    /// `FileChanged`", and a name only `HOOK_NAMES` knew registered fine and
-    /// never fired.
+    /// The other direction is now the compiler's: `EventRow.hook` is an
+    /// [`EventName`], so a row naming something unregisterable does not exist.
+    /// This is the half that is still hand-maintained — a variant added to
+    /// `EventName` with no row is a name a plugin may register for and which
+    /// nothing will ever broadcast, which is exactly how `webhook:received`
+    /// reached nobody for months.
     #[test]
-    fn every_hook_name_is_registerable() {
-        for row in ROWS {
+    fn every_registerable_event_has_a_row() {
+        for event in EventName::ALL {
             assert!(
-                crucible_lua::HOOK_NAMES.contains(&row.hook),
-                "`{}` is dispatched but `crucible.on` would reject it",
-                row.hook
+                ROWS.iter().any(|row| row.hook == *event),
+                "`{}` is registerable but no row broadcasts it",
+                event.as_str()
             );
         }
     }
@@ -525,7 +535,8 @@ mod tests {
         .exec()
         .expect("register handlers");
 
-        let matched = registry.runtime_handlers_for(hooked.hook, hooked.identifier.as_deref());
+        let matched =
+            registry.runtime_handlers_for(hooked.hook.as_str(), hooked.identifier.as_deref());
         assert_eq!(
             matched.len(),
             1,

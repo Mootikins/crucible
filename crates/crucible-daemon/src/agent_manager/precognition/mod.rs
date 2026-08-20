@@ -10,6 +10,7 @@ struct ExecuteMultiKilnSearchParams<'a> {
 }
 
 use super::*;
+use crucible_lua::StageId;
 
 /// One retrieved note, as a Lua handler sees it.
 ///
@@ -182,7 +183,7 @@ impl AgentManager {
     ) -> Option<String> {
         use crucible_lua::ScriptHandlerResult;
 
-        for handler in registry.runtime_handlers_for("precognition_format", None) {
+        for handler in registry.runtime_handlers_for(StageId::PrecognitionFormat.as_str(), None) {
             match registry
                 .execute_runtime_handler(lua, &handler.name, event, Some(session_id))
                 .await
@@ -283,7 +284,7 @@ impl AgentManager {
     ) -> Option<Vec<crucible_core::SearchResult>> {
         use crucible_lua::ScriptHandlerResult;
 
-        for handler in registry.runtime_handlers_for("precognition_select", None) {
+        for handler in registry.runtime_handlers_for(StageId::PrecognitionSelect.as_str(), None) {
             match registry
                 .execute_runtime_handler(lua, &handler.name, event, Some(session_id))
                 .await

@@ -170,7 +170,10 @@ pub use handlers::{
     LuaScriptHandlerRegistry, PermissionHook, PermissionHookResult, PermissionRequest,
     RuntimeHandler, ScriptHandlerResult, ToolBeforeExecuteEvent, ToolBeforeExecuteResult,
     ToolDisplayCompleteEvent, ToolDisplayCompleteHints, ToolDisplayStartEvent,
-    ToolDisplayStartHints, HOOK_NAMES, SHIPPED_DEFAULT_PRIORITY, TOOL_BEFORE_EXECUTE_EVENT,
+    ToolDisplayStartHints,
+};
+pub use handlers::{
+    hook_names, EventName, HookName, StageId, SHIPPED_DEFAULT_PRIORITY, TOOL_BEFORE_EXECUTE_EVENT,
     TOOL_DISPLAY_COMPLETE_EVENT, TOOL_DISPLAY_START_EVENT,
 };
 pub use lifecycle::{

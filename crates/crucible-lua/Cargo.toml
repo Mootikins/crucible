@@ -46,5 +46,9 @@ oq = { workspace = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+# `EnumIter` over `handlers::hook_name`, so the tests asserting that `ALL`
+# covers every variant walk what the compiler knows rather than a second
+# hand-written list. Dev-only: the derive is `#[cfg_attr(test, ...)]`.
+strum = { version = "0.28", features = ["derive"] }
 tempfile = "3"
 proptest = "1"

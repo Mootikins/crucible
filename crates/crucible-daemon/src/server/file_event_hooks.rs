@@ -75,7 +75,7 @@ pub fn spawn_file_event_hooks(
             // handler that declared a pattern on one of those is asking to
             // filter on something that does not exist, and correctly does not
             // match.
-            let matched = handlers.runtime_handlers_for(hook, identifier.as_deref());
+            let matched = handlers.runtime_handlers_for(hook.as_str(), identifier.as_deref());
             if matched.is_empty() {
                 continue;
             }
@@ -340,22 +340,6 @@ mod tests {
                 SessionEvent::internal(event).type_name(),
                 expected,
                 "the constant must be the name the registry matches on"
-            );
-        }
-    }
-
-    /// Every name this daemon dispatches is one `crucible.on` accepts.
-    ///
-    /// The two lists live in different crates. When they disagreed, the whole
-    /// feature was dead: registration raised "unknown event `FileChanged`" and
-    /// dispatch read a vec nothing wrote to.
-    #[test]
-    fn every_dispatched_name_is_registerable() {
-        for row in event_map::ROWS {
-            assert!(
-                crucible_lua::HOOK_NAMES.contains(&row.hook),
-                "`{}` is dispatched here but `crucible.on` would reject it",
-                row.hook
             );
         }
     }

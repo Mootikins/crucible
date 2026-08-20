@@ -6,7 +6,7 @@ use super::script_handler::{interpret_handler_result, ScriptHandlerResult};
 
 // --- tool:before_execute hook ---
 
-pub const TOOL_BEFORE_EXECUTE_EVENT: &str = "tool:before_execute";
+pub const TOOL_BEFORE_EXECUTE_EVENT: &str = super::StageId::ToolBeforeExecute.as_str();
 
 #[derive(Debug, Clone)]
 pub struct ToolBeforeExecuteEvent {

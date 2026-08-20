@@ -77,9 +77,12 @@ decision, not a patch.
 
 ## Event Types
 
-The complete set. Every entry is a live dispatch site, kept in step with
-`HOOK_NAMES` (`crucible-lua/src/handlers/crucible_on.rs`) by a test that scans
-for them.
+The complete set, and it is closed: `crucible.on` raises on a name that is not
+here. Two Rust enums hold it — `StageId` for the eleven turn-loop stages,
+`EventName` for the eight daemon events
+(`crucible-lua/src/handlers/hook_name.rs`) — and
+`the_documented_table_lists_every_hook` fails if this table and those enums
+disagree.
 
 | Event | Fires |
 |---|---|

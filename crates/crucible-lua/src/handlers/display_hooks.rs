@@ -5,8 +5,8 @@ use super::before_execute::execute_runtime_json_handler;
 use super::registry::LuaScriptHandlerRegistry;
 use super::script_handler::ScriptHandlerResult;
 
-pub const TOOL_DISPLAY_START_EVENT: &str = "tool:display_start";
-pub const TOOL_DISPLAY_COMPLETE_EVENT: &str = "tool:display_complete";
+pub const TOOL_DISPLAY_START_EVENT: &str = super::StageId::ToolDisplayStart.as_str();
+pub const TOOL_DISPLAY_COMPLETE_EVENT: &str = super::StageId::ToolDisplayComplete.as_str();
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolDisplayStartEvent {
