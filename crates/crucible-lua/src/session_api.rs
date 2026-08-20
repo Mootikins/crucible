@@ -474,16 +474,23 @@ impl UserData for Session {
     }
 }
 
+/// The one session a Lua VM is currently executing for.
+///
+/// It was called `SessionManager`, which it is not: it holds an
+/// `Option<Session>` and has `set`, `get` and `clear`. It manages nothing, and
+/// it shared a name with the daemon's real `SessionManager` — 20 files, session
+/// creation, resume, child sessions, storage — and with an ACP trait in
+/// `crucible-core`. The three had no method in common.
 /// Session manager - holds current session
 ///
 /// TODO: Add config hierarchy (TOML < global Lua < session Lua) once
 /// kiln/workspace/session/project nomenclature is clarified.
 #[derive(Clone)]
-pub struct SessionManager {
+pub struct CurrentSession {
     current: Arc<Mutex<Option<Session>>>,
 }
 
-impl SessionManager {
+impl CurrentSession {
     pub fn new() -> Self {
         Self {
             current: Arc::new(Mutex::new(None)),
@@ -509,14 +516,14 @@ impl SessionManager {
     }
 }
 
-impl Default for SessionManager {
+impl Default for CurrentSession {
     fn default() -> Self {
         Self::new()
     }
 }
 
-pub fn register_session_module(lua: &Lua) -> Result<SessionManager, LuaError> {
-    let manager = SessionManager::new();
+pub fn register_session_module(lua: &Lua) -> Result<CurrentSession, LuaError> {
+    let manager = CurrentSession::new();
     let globals = lua.globals();
 
     for name in ["crucible", "cru"] {
@@ -620,7 +627,7 @@ pub mod tests {
 
     #[test]
     fn test_get_session_returns_current() {
-        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+        let (lua, mgr) = TestLuaBuilder::new().build_with_current_session();
 
         let session = Session::new("test-123".to_string());
         session.bind(Box::new(MockRpc::new()));
@@ -632,7 +639,7 @@ pub mod tests {
 
     #[test]
     fn test_session_property_access() {
-        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+        let (lua, mgr) = TestLuaBuilder::new().build_with_current_session();
 
         let session = Session::new("s1".to_string());
         session.bind(Box::new(MockRpc::new()));
@@ -647,7 +654,7 @@ pub mod tests {
 
     #[test]
     fn test_session_property_write() {
-        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+        let (lua, mgr) = TestLuaBuilder::new().build_with_current_session();
 
         let session = Session::new("s1".to_string());
         session.bind(Box::new(MockRpc::new()));
@@ -666,7 +673,7 @@ pub mod tests {
 
     #[test]
     fn test_model_is_read_only() {
-        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+        let (lua, mgr) = TestLuaBuilder::new().build_with_current_session();
 
         let session = Session::new("s1".to_string());
         session.bind(Box::new(MockRpc::new()));
@@ -681,7 +688,7 @@ pub mod tests {
 
     #[test]
     fn test_no_session_error() {
-        let (lua, _mgr) = TestLuaBuilder::new().build_with_session_manager();
+        let (lua, _mgr) = TestLuaBuilder::new().build_with_current_session();
 
         let result: mlua::Result<String> = lua.load("return crucible.get_session().id").eval();
         assert!(result.is_err());
@@ -693,7 +700,7 @@ pub mod tests {
 
     #[test]
     fn test_temperature_validation() {
-        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+        let (lua, mgr) = TestLuaBuilder::new().build_with_current_session();
 
         let session = Session::new("s1".to_string());
         session.bind(Box::new(MockRpc::new()));
@@ -706,7 +713,7 @@ pub mod tests {
 
     #[test]
     fn test_session_variable_string() {
-        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+        let (lua, mgr) = TestLuaBuilder::new().build_with_current_session();
 
         let session = Session::new("s1".to_string());
         session.bind(Box::new(MockRpc::new()));
@@ -725,7 +732,7 @@ pub mod tests {
 
     #[test]
     fn test_session_variable_table() {
-        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+        let (lua, mgr) = TestLuaBuilder::new().build_with_current_session();
 
         let session = Session::new("s1".to_string());
         session.bind(Box::new(MockRpc::new()));
@@ -747,7 +754,7 @@ pub mod tests {
 
     #[test]
     fn test_session_variable_nil_for_missing() {
-        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+        let (lua, mgr) = TestLuaBuilder::new().build_with_current_session();
 
         let session = Session::new("s1".to_string());
         session.bind(Box::new(MockRpc::new()));
@@ -762,7 +769,7 @@ pub mod tests {
 
     #[test]
     fn test_session_variable_reject_function() {
-        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+        let (lua, mgr) = TestLuaBuilder::new().build_with_current_session();
 
         let session = Session::new("s1".to_string());
         session.bind(Box::new(MockRpc::new()));
@@ -778,7 +785,7 @@ pub mod tests {
 
     #[test]
     fn test_session_system_prompt_read() {
-        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+        let (lua, mgr) = TestLuaBuilder::new().build_with_current_session();
 
         let session = Session::new("test-123".to_string());
         session.bind(Box::new(MockRpc::new()));
@@ -793,7 +800,7 @@ pub mod tests {
 
     #[test]
     fn test_session_system_prompt_write() {
-        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+        let (lua, mgr) = TestLuaBuilder::new().build_with_current_session();
 
         let session = Session::new("s1".to_string());
         session.bind(Box::new(MockRpc::new()));
@@ -812,7 +819,7 @@ pub mod tests {
 
     #[test]
     fn test_session_system_prompt_locked_after_send() {
-        let (lua, mgr) = TestLuaBuilder::new().build_with_session_manager();
+        let (lua, mgr) = TestLuaBuilder::new().build_with_current_session();
 
         let session = Session::new("s1".to_string());
         session.bind(Box::new(MockRpc::new()));

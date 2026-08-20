@@ -1454,7 +1454,7 @@ impl RpcDispatcher {
                     if let Err(e) = state.executor.sync_session_end_hooks() {
                         tracing::warn!(session_id = %session_id, error = %e, "Failed to sync session_end hooks");
                     }
-                    if let Some(session) = state.executor.session_manager().get_current() {
+                    if let Some(session) = state.executor.current_session().get_current() {
                         if let Err(e) = state.executor.fire_session_end_hooks(&session).await {
                             tracing::warn!(session_id = %session_id, error = %e, "Failed to fire session_end hooks");
                         }
@@ -2554,7 +2554,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
         // Bind a LuaSession into the executor's session manager so the
         // hook dispatcher has a target.
         let lua_session = LuaSession::new("chat".to_string());
-        executor.session_manager().set_current(lua_session);
+        executor.current_session().set_current(lua_session);
 
         let lua = executor.lua().clone();
         let state = LuaSessionState {

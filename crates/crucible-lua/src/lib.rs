@@ -139,7 +139,7 @@ pub use schema::{
     discovered_params_to_json_schema, generate_input_schema, type_to_string, FunctionSignature,
     LuauType, TypedParam,
 };
-pub use shell::{register_shell_module, ExecResult, ShellPolicy};
+pub use shell::{register_shell_module, ExecResult, PluginShellPolicy};
 pub use statusline_exprs::{
     register_statusline_exprs, ExprRejection, StatuslineExprRegistry, MAX_KEYS_PER_SESSION,
 };
@@ -189,8 +189,8 @@ pub use modes::{
     register_modes, ModeDefinition, ModePermissions, ModeRegistry, ModeStance, ToolSelector,
 };
 pub use session_api::{
-    register_session_module, ChannelSessionRpc, Session, SessionCommand, SessionConfigRpc,
-    SessionManager,
+    register_session_module, ChannelSessionRpc, CurrentSession, Session, SessionCommand,
+    SessionConfigRpc,
 };
 pub use session_defaults::{
     register_session_defaults, SessionDefaultValues, SessionDefaults, SessionDefaultsRpc,

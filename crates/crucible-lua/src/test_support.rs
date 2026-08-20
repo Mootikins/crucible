@@ -15,7 +15,7 @@ use crate::{
     register_sessions_module_with_api, register_storage_module, register_storage_module_with_store,
     register_tools_module, register_tools_module_with_api, register_ui_module,
     register_ui_module_with_api, register_vault_module, register_vault_module_with_store,
-    register_vault_module_with_store_scoped, DaemonSessionApi, DaemonToolsApi, SessionManager,
+    register_vault_module_with_store_scoped, CurrentSession, DaemonSessionApi, DaemonToolsApi,
 };
 
 /// Builder for constructing Lua test environments with specific module registrations.
@@ -233,9 +233,9 @@ impl TestLuaBuilder {
         (self.lua, crucible)
     }
 
-    /// Build with the session manager, returning (Lua, SessionManager).
+    /// Build with the current-session holder, returning (Lua, CurrentSession).
     /// Sets up: crucible + cru global tables.
-    pub fn build_with_session_manager(self) -> (Lua, SessionManager) {
+    pub fn build_with_current_session(self) -> (Lua, CurrentSession) {
         self.ensure_crucible_table();
         self.ensure_cru_table();
         let mgr = register_session_module(&self.lua).unwrap();

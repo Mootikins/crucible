@@ -26,9 +26,22 @@ use std::sync::Arc;
 use tokio::process::Command;
 use tracing::debug;
 
+/// What `cru.shell` may run from inside a plugin.
+///
+/// **Not** [`crucible_core::config::ShellPolicy`], and the two must not be
+/// merged: their defaults are opposite. This one is **fail-open** — an empty
+/// `allowed_commands` allows everything not explicitly blocked, because a
+/// plugin runs builds and tools nobody can enumerate ahead of time. The core
+/// one is **fail-closed** — an empty whitelist denies everything, because it
+/// governs the agent's `bash` tool. Adopting either default on the other side
+/// is a behaviour change, not a refactor.
+///
+/// The matching rules differ too: this one compares a whole command name, or a
+/// path ending in `/<name>`; the core one prefix-matches `cmd` joined with its
+/// arguments, so `rm -rf` blocks `rm -rf /` but not `rm`.
 /// Shell execution policy
 #[derive(Debug, Clone)]
-pub struct ShellPolicy {
+pub struct PluginShellPolicy {
     /// Allowed commands (empty = allow all)
     pub allowed_commands: Vec<String>,
     /// Blocked commands (checked first)
@@ -43,7 +56,7 @@ pub struct ShellPolicy {
     pub capture_stderr: bool,
 }
 
-impl Default for ShellPolicy {
+impl Default for PluginShellPolicy {
     fn default() -> Self {
         Self {
             allowed_commands: Vec::new(),
@@ -60,7 +73,7 @@ impl Default for ShellPolicy {
     }
 }
 
-impl ShellPolicy {
+impl PluginShellPolicy {
     /// Create a permissive policy (for trusted scripts)
     pub fn permissive() -> Self {
         Self {
@@ -138,7 +151,7 @@ pub async fn spawn_command(
     args: &[String],
     cwd: Option<&str>,
     env: Option<&HashMap<String, String>>,
-    policy: &ShellPolicy,
+    policy: &PluginShellPolicy,
     on_line: LineSink<'_>,
 ) -> Result<ExecResult, LuaError> {
     use tokio::io::{AsyncBufReadExt, BufReader};
@@ -270,7 +283,7 @@ pub async fn exec_command(
     cwd: Option<&str>,
     env: Option<&HashMap<String, String>>,
     stdin_data: Option<&str>,
-    policy: &ShellPolicy,
+    policy: &PluginShellPolicy,
 ) -> Result<ExecResult, LuaError> {
     if !policy.is_allowed(cmd) {
         return Err(LuaError::Runtime(format!(
@@ -359,7 +372,7 @@ pub async fn exec_command(
 }
 
 /// Register the shell module with a Lua state
-pub fn register_shell_module(lua: &Lua, policy: ShellPolicy) -> Result<(), LuaError> {
+pub fn register_shell_module(lua: &Lua, policy: PluginShellPolicy) -> Result<(), LuaError> {
     let shell = lua.create_table()?;
 
     // Wrap policy in Arc for sharing with async closures
@@ -535,8 +548,8 @@ mod tests {
     /// killed them. A policy can still opt into a deadline with `Some(_)`.
     #[test]
     fn default_policy_has_no_timeout() {
-        assert_eq!(ShellPolicy::default().timeout_secs, None);
-        assert_eq!(ShellPolicy::permissive().timeout_secs, None);
+        assert_eq!(PluginShellPolicy::default().timeout_secs, None);
+        assert_eq!(PluginShellPolicy::permissive().timeout_secs, None);
     }
 
     /// With no timeout configured, a command outliving the old 30s-default
@@ -544,7 +557,7 @@ mod tests {
     /// normally instead of being killed at a deadline.
     #[tokio::test]
     async fn exec_without_timeout_lets_slow_commands_finish() {
-        let policy = ShellPolicy {
+        let policy = PluginShellPolicy {
             blocked_commands: vec![],
             timeout_secs: None,
             ..Default::default()
@@ -566,7 +579,7 @@ mod tests {
     /// An explicit deadline still enforces.
     #[tokio::test]
     async fn exec_with_explicit_timeout_still_kills() {
-        let policy = ShellPolicy {
+        let policy = PluginShellPolicy {
             blocked_commands: vec![],
             timeout_secs: Some(1),
             ..Default::default()
@@ -591,7 +604,7 @@ mod tests {
     /// reporting rather than a nicety.
     #[tokio::test]
     async fn spawn_streams_lines_as_they_arrive_and_still_returns_the_whole_output() {
-        let policy = ShellPolicy {
+        let policy = PluginShellPolicy {
             blocked_commands: vec![],
             timeout_secs: Some(30),
             ..Default::default()
@@ -643,7 +656,7 @@ mod tests {
 
     #[tokio::test]
     async fn spawn_reports_a_failing_command_without_losing_its_output() {
-        let policy = ShellPolicy {
+        let policy = PluginShellPolicy {
             blocked_commands: vec![],
             timeout_secs: Some(30),
             ..Default::default()
@@ -675,7 +688,7 @@ mod tests {
         let lua = Lua::new();
         register_shell_module(
             &lua,
-            ShellPolicy {
+            PluginShellPolicy {
                 blocked_commands: vec![],
                 timeout_secs: Some(30),
                 ..Default::default()
@@ -718,7 +731,7 @@ mod tests {
 
     #[tokio::test]
     async fn spawn_refuses_a_command_the_policy_blocks() {
-        let policy = ShellPolicy::default();
+        let policy = PluginShellPolicy::default();
         let err = spawn_command("rm", &[], None, None, &policy, &mut |_, _| {})
             .await
             .expect_err("the policy must gate streaming exactly as it gates exec");
@@ -727,7 +740,7 @@ mod tests {
 
     #[test]
     fn test_policy_default_blocked() {
-        let policy = ShellPolicy::default();
+        let policy = PluginShellPolicy::default();
         assert!(!policy.is_allowed("rm"));
         assert!(!policy.is_allowed("sudo"));
         assert!(policy.is_allowed("echo"));
@@ -736,7 +749,7 @@ mod tests {
 
     #[test]
     fn test_policy_permissive() {
-        let policy = ShellPolicy::permissive();
+        let policy = PluginShellPolicy::permissive();
         assert!(policy.is_allowed("rm"));
         assert!(policy.is_allowed("sudo"));
         assert!(policy.is_allowed("anything"));
@@ -744,7 +757,7 @@ mod tests {
 
     #[test]
     fn test_policy_allowed_list() {
-        let policy = ShellPolicy {
+        let policy = PluginShellPolicy {
             allowed_commands: vec!["echo".to_string(), "cat".to_string()],
             blocked_commands: Vec::new(),
             ..Default::default()
@@ -757,7 +770,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_exec_echo() {
-        let policy = ShellPolicy::permissive();
+        let policy = PluginShellPolicy::permissive();
         let result = exec_command("echo", &["hello".to_string()], None, None, None, &policy)
             .await
             .unwrap();
@@ -769,7 +782,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_exec_blocked_command() {
-        let policy = ShellPolicy::default();
+        let policy = PluginShellPolicy::default();
         let result = exec_command(
             "rm",
             &["-rf".to_string(), "/".to_string()],
@@ -786,7 +799,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_exec_with_env() {
-        let policy = ShellPolicy::permissive();
+        let policy = PluginShellPolicy::permissive();
         let mut env = HashMap::new();
         env.insert("MY_VAR".to_string(), "test_value".to_string());
 
@@ -807,7 +820,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_exec_with_stdin() {
-        let policy = ShellPolicy::permissive();
+        let policy = PluginShellPolicy::permissive();
         let result = exec_command("cat", &[], None, None, Some("hello world"), &policy)
             .await
             .unwrap();
@@ -818,7 +831,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_exec_with_stdin_multiline() {
-        let policy = ShellPolicy::permissive();
+        let policy = PluginShellPolicy::permissive();
         let content = "line1\nline2\nline3";
         let result = exec_command("cat", &[], None, None, Some(content), &policy)
             .await
@@ -830,7 +843,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_exec_without_stdin_does_not_hang() {
-        let policy = ShellPolicy::permissive();
+        let policy = PluginShellPolicy::permissive();
         let result = exec_command("echo", &["no-stdin".to_string()], None, None, None, &policy)
             .await
             .unwrap();
@@ -872,7 +885,7 @@ mod tests {
                 ],
                 None,
                 None,
-                &ShellPolicy {
+                &PluginShellPolicy {
                     blocked_commands: vec![],
                     timeout_secs: Some(1),
                     ..Default::default()

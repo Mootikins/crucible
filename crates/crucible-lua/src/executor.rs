@@ -10,7 +10,7 @@ use crate::fs::register_fs_module;
 use crate::hooks::register_hooks_module;
 use crate::http::register_http_module;
 use crate::oil::register_oil_module;
-use crate::session_api::{register_session_module, Session, SessionManager};
+use crate::session_api::{register_session_module, CurrentSession, Session};
 use crate::types::{LuaExecutionResult, LuaTool, ToolResult};
 use mlua::{Function, Lua, LuaOptions, LuaSerdeExt, RegistryKey, StdLib, Value};
 use serde_json::Value as JsonValue;
@@ -26,7 +26,7 @@ pub struct LuaExecutor {
     lua: Lua,
     #[cfg(feature = "fennel")]
     fennel: Option<FennelCompiler>,
-    session_manager: SessionManager,
+    current_session: CurrentSession,
     on_session_start_hooks: Vec<RegistryKey>,
     /// Parallel to `on_session_start_hooks`: whether each opted into refusing
     /// the session on failure via `{ required = true }`.
@@ -61,13 +61,13 @@ impl LuaExecutor {
             }
         };
 
-        let session_manager = register_session_module(&lua)?;
+        let current_session = register_session_module(&lua)?;
 
         Ok(Self {
             lua,
             #[cfg(feature = "fennel")]
             fennel,
-            session_manager,
+            current_session,
             on_session_start_hooks: Vec::new(),
             on_session_start_required: Vec::new(),
             on_session_end_hooks: Vec::new(),
@@ -86,8 +86,8 @@ impl LuaExecutor {
         }
     }
 
-    pub fn session_manager(&self) -> &SessionManager {
-        &self.session_manager
+    pub fn current_session(&self) -> &CurrentSession {
+        &self.current_session
     }
 
     /// Add a session start hook

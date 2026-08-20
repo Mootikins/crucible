@@ -19,10 +19,22 @@ use serde_json::Value;
 /// between crates.
 pub use crucible_core::traits::llm::TokenUsage;
 
+/// What the gate did about one permission request, as recorded in the session
+/// log.
+///
+/// The **outcome**, not the verdict.
+/// [`crucible_core::config::components::permissions::PermissionDecision`] is
+/// what the rule engine returns *before* anything happens, and it carries an
+/// `Ask` that this type deliberately does not: by the time a line reaches the
+/// log the prompt has resolved, so `Ask` is not a thing that can have happened.
+///
+/// `AutoAllow` runs the other way — it is a distinction only the log needs. The
+/// gate allowed the call without prompting, and an auditor reading the
+/// transcript wants to see which allows a human actually saw.
 /// Permission decision for a tool call
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum PermissionDecision {
+pub enum PermissionOutcome {
     /// User allowed the operation
     Allow,
     /// User denied the operation
@@ -85,7 +97,7 @@ pub enum LogEvent {
         /// Tool name
         tool: String,
         /// The decision made
-        decision: PermissionDecision,
+        decision: PermissionOutcome,
         /// Optional reason for the decision
         #[serde(skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
@@ -321,7 +333,7 @@ impl LogEvent {
     pub fn permission(
         id: impl Into<String>,
         tool: impl Into<String>,
-        decision: PermissionDecision,
+        decision: PermissionOutcome,
     ) -> Self {
         LogEvent::Permission {
             ts: Utc::now(),
@@ -336,7 +348,7 @@ impl LogEvent {
     pub fn permission_with_reason(
         id: impl Into<String>,
         tool: impl Into<String>,
-        decision: PermissionDecision,
+        decision: PermissionOutcome,
         reason: impl Into<String>,
     ) -> Self {
         LogEvent::Permission {

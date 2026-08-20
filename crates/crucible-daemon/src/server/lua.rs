@@ -36,7 +36,7 @@ pub(crate) async fn handle_lua_init_session(
 
     let session = LuaSession::new("chat".to_string());
     session.bind(Box::new(NoopSessionRpc));
-    executor.session_manager().set_current(session.clone());
+    executor.current_session().set_current(session.clone());
 
     if let Err(e) = executor.sync_session_start_hooks() {
         warn!(session_id = %session_id, error = %e, "Failed to sync session_start hooks");
@@ -117,7 +117,7 @@ pub(crate) async fn handle_lua_shutdown_session(
             if let Err(e) = state.executor.sync_session_end_hooks() {
                 warn!(session_id = %session_id, error = %e, "Failed to sync session_end hooks");
             }
-            if let Some(session) = state.executor.session_manager().get_current() {
+            if let Some(session) = state.executor.current_session().get_current() {
                 if let Err(e) = state.executor.fire_session_end_hooks(&session).await {
                     warn!(session_id = %session_id, error = %e, "Failed to fire session_end hooks");
                 }

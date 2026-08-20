@@ -110,7 +110,7 @@ pub use mcp_server::McpServerManager;
 pub use observe::{events, id, indexer, markdown, serde_md, session};
 pub use observe::{
     extract_session_content, list_sessions, load_events, parse_session_log, render_to_markdown,
-    wire_to_log_event, LogEvent, PermissionDecision, RenderOptions, SessionContent, SessionId,
+    wire_to_log_event, LogEvent, PermissionOutcome, RenderOptions, SessionContent, SessionId,
     SessionIdError, SessionLogLine, SessionType, TokenUsage,
 };
 pub use permission_bridge::DaemonPermissionGate;

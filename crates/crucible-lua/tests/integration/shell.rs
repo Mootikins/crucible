@@ -1,6 +1,6 @@
 //! Lua shell module integration tests.
 
-use crucible_lua::{register_shell_module, LuaExecutor, ShellPolicy};
+use crucible_lua::{register_shell_module, LuaExecutor, PluginShellPolicy};
 use serde_json::json;
 
 // NOTE: Shell module uses async functions which can't be called from synchronous
@@ -11,7 +11,7 @@ async fn test_lua_shell_module_registration() {
     let executor = LuaExecutor::new().unwrap();
 
     // Verify shell module can be registered
-    register_shell_module(executor.lua(), ShellPolicy::permissive()).unwrap();
+    register_shell_module(executor.lua(), PluginShellPolicy::permissive()).unwrap();
 
     // Verify shell.which works (synchronous function)
     let source = r#"
@@ -40,7 +40,7 @@ async fn test_lua_shell_policy_blocks_dangerous_commands() {
     let executor = LuaExecutor::new().unwrap();
 
     // Use default policy which blocks rm, sudo, etc.
-    register_shell_module(executor.lua(), ShellPolicy::default()).unwrap();
+    register_shell_module(executor.lua(), PluginShellPolicy::default()).unwrap();
 
     let source = r#"
 function handler(args)

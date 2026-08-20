@@ -1,6 +1,6 @@
 //! JSONL to Markdown rendering for session export
 
-use crate::observe::events::{LogEvent, PermissionDecision};
+use crate::observe::events::{LogEvent, PermissionOutcome};
 use std::fmt::Write;
 
 /// Options for markdown rendering
@@ -171,9 +171,9 @@ fn render_event(output: &mut String, event: &LogEvent, options: &RenderOptions) 
             }
 
             let decision_str = match decision {
-                PermissionDecision::Allow => "✓ Allowed",
-                PermissionDecision::Deny => "✗ Denied",
-                PermissionDecision::AutoAllow => "⚡ Auto-allowed",
+                PermissionOutcome::Allow => "✓ Allowed",
+                PermissionOutcome::Deny => "✗ Denied",
+                PermissionOutcome::AutoAllow => "⚡ Auto-allowed",
             };
 
             if let Some(reason) = reason {

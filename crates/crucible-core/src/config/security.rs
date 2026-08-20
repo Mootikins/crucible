@@ -39,6 +39,12 @@ impl ProjectFileAccess {
     }
 }
 
+/// What the agent's `bash` tool may run in a workspace.
+///
+/// **Fail-closed**: an empty `whitelist` denies everything. See
+/// [`Self::is_allowed`]. `crucible-lua` has a `PluginShellPolicy` for
+/// `cru.shell`, which is fail-open for a different and deliberate reason; the
+/// two are not interchangeable.
 /// Policy for shell command execution security
 ///
 /// Implements prefix-based matching with blacklist-first evaluation.

@@ -751,8 +751,14 @@ async fn switch_model(
     Ok(OkResponse::success())
 }
 
+/// The body of `POST /connect_kiln` and `POST /disconnect_kiln`.
+///
+/// Named without the `Session` prefix its siblings drop, because the daemon's
+/// RPC client declares a `SessionKilnRequest` that is a different shape going
+/// the other way: that one is `Serialize` and carries `session_id`, this one is
+/// `Deserialize` and takes the id from the URL path.
 #[derive(Debug, Deserialize)]
-struct SessionKilnRequest {
+struct KilnRequest {
     /// The kiln's registry NAME, validated on the way in — a browser that sent
     /// a path gets a 422 rather than a session attached to a directory the
     /// registration floor never saw.
@@ -763,7 +769,7 @@ struct SessionKilnRequest {
 async fn connect_kiln(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    Json(req): Json<SessionKilnRequest>,
+    Json(req): Json<KilnRequest>,
 ) -> Result<Json<serde_json::Value>, WebError> {
     let scope = state
         .daemon
@@ -776,7 +782,7 @@ async fn connect_kiln(
 async fn disconnect_kiln(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    Json(req): Json<SessionKilnRequest>,
+    Json(req): Json<KilnRequest>,
 ) -> Result<Json<serde_json::Value>, WebError> {
     let scope = state
         .daemon

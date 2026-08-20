@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- **Four colliding type names separated.** Each pair was read before it was
+  touched, and none of the four turned out to be mergeable.
+  `crucible_lua::ShellPolicy` is now `PluginShellPolicy`: it is **fail-open**
+  (an empty allow-list allows everything) while
+  `crucible_core::config::ShellPolicy` is **fail-closed**, so adopting either
+  default on the other side would have been a security change, not a refactor —
+  both types now say so. `crucible_daemon::observe::PermissionDecision` is now
+  `PermissionOutcome`: it records what the gate did and cannot represent `Ask`,
+  while the config enum is the rule engine's verdict and cannot represent
+  `AutoAllow`. `crucible_lua::SessionManager` is now `CurrentSession` — it holds
+  one `Option<Session>` with get/set/clear and manages nothing, while the
+  daemon's `SessionManager` reaches 20 files. The web route body
+  `SessionKilnRequest` is now `KilnRequest`, since the daemon's same-named type
+  is `Serialize` and carries `session_id` for the opposite direction.
 - **Four duplicate type declarations collapsed.** `crucible-web` declared its
   own `GrepSearchRequest` and `OptionAction` beside the daemon's; both now use
   the daemon's. The web copy of `GrepSearchRequest` hardcoded its default limit

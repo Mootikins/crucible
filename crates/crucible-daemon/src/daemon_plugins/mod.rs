@@ -31,8 +31,8 @@ use crucible_lua::{
     register_tools_module, register_tools_module_with_api, register_ui_module,
     register_ui_module_with_api, register_vault_module, register_ws_module, ContextAttachRegistry,
     DaemonSessionApi, DaemonToolsApi, IsolationRegistry, LuaExecutor, LuaScriptHandlerRegistry,
-    LuaValidatorRegistry, OptionsRegistry, PathsContext, PluginManager, PluginSource, PluginSpec,
-    PublicationRegistry, ShellPolicy, StatusRegistry,
+    LuaValidatorRegistry, OptionsRegistry, PathsContext, PluginManager, PluginShellPolicy,
+    PluginSource, PluginSpec, PublicationRegistry, StatusRegistry,
 };
 use mlua::LuaSerdeExt;
 use std::collections::HashMap;
@@ -197,7 +197,10 @@ impl DaemonPluginLoader {
         }
 
         reg("ws", register_ws_module(lua))?;
-        reg("shell", register_shell_module(lua, ShellPolicy::default()))?;
+        reg(
+            "shell",
+            register_shell_module(lua, PluginShellPolicy::default()),
+        )?;
         reg("oq", register_oq_module(lua))?;
         reg("paths", register_paths_module(lua, PathsContext::new()))?;
         reg("graph", register_graph_module(lua))?;
