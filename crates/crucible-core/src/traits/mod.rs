@@ -8,7 +8,6 @@ pub mod acp;
 pub mod auth;
 pub mod chat;
 pub mod context_ops;
-pub mod input;
 pub mod knowledge;
 pub mod llm;
 pub mod mcp;
@@ -35,7 +34,6 @@ pub use tools::{
     ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult, ToolSurface,
 };
 // Input abstractions for cross-platform UI
-pub use input::{ChatEvent, InputMode, KeyAction, KeyCode, KeyPattern, Modifiers, SessionAction};
 // MCP abstractions
 pub use mcp::{
     ContentBlock, McpError, McpServerInfo, McpToolInfo, McpTransportConfig, ToolCallResult,

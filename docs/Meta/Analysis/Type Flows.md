@@ -179,10 +179,8 @@ wrong. The hazard is that `use ...::Event` reads as unambiguous and is not.
 | Name | Declared in |
 |---|---|
 | `Event` | `crates/crucible-cli/src/tui/oil/event.rs` <br> `crates/crucible-core/src/events/emitter.rs` <br> `crates/crucible-daemon/src/file_watch_bridge.rs` |
-| `ChatEvent` | `crates/crucible-core/src/traits/input.rs` <br> `crates/crucible-web/src/events.rs` |
 | `Direction` | `crates/crucible-daemon/src/acp/client/recording.rs` <br> `crates/crucible-oil/src/node.rs` |
 | `Drawer` | `crates/crucible-cli/src/tui/oil/components/drawer.rs` <br> `crates/crucible-oil/src/components/drawer.rs` |
-| `InputMode` | `crates/crucible-cli/src/tui/oil/components/input_area.rs` <br> `crates/crucible-core/src/traits/input.rs` |
 | `MapSerializer` | `crates/crucible-core/src/serde_md/serializer.rs` <br> `crates/crucible-daemon/src/observe/serde_md.rs` |
 | `Op` | `crates/crucible-core/src/storage/note_store.rs` <br> `crates/crucible-oil/src/proptest_strategies.rs` |
 | `ParseError` | `crates/crucible-cli/src/tui/oil/commands/set.rs` <br> `crates/crucible-core/src/parser/error.rs` |
@@ -192,10 +190,16 @@ wrong. The hazard is that `use ...::Event` reads as unambiguous and is not.
 | `ToolOutput` | `crates/crucible-cli/src/commands/tools.rs` <br> `crates/crucible-core/src/types/acp.rs` |
 | `Verdict` | `crates/crucible-core/src/session/types/review.rs` <br> `crates/crucible-daemon/src/tools/fs_scope.rs` |
 
-`ChatEvent` is the sharpest case: one is a TUI input event
-(`SendMessage(String)`), the other is a browser SSE frame. `Session` in
-`crucible-web/src/middleware/auth/session.rs` is an HTTP auth token holder, and
-it takes the name of the most central domain type in the codebase.
+`Session` in `crucible-web/src/middleware/auth/session.rs` is an HTTP auth
+token holder, and it takes the name of the most central domain type here.
+
+`ChatEvent` used to be on this list and turned out not to be a naming problem.
+A deleted module in `crucible-core` (`traits::input`) declared `ChatEvent`,
+`InputMode`, `KeyCode`, `KeyPattern`, `Modifiers`, `KeyAction` and
+`SessionAction`, and **nothing outside that module used any of them** — the TUI takes `KeyCode` from
+`crossterm` and `InputMode` from its own components. The module was deleted
+rather than renamed. Check for a consumer before you rename: a collision with
+dead code is a deletion.
 
 ### Not a duplicate
 
@@ -209,8 +213,9 @@ convention and are also correct.
 
 1. **Give `SessionManager` one owner.** 23 handlers take one, and there are
    three declarations.
-2. **Rename the colliding names**, starting with `ChatEvent` and the web auth
-   `Session`. A rename is cheap; a reader who trusts the wrong one is not.
+2. **Rename the colliding names**, starting with the web auth `Session`. A
+   rename is cheap; a reader who trusts the wrong one is not. Check for a
+   consumer first — `ChatEvent` looked like a rename and was a deletion.
 3. **Collapse the wire request pairs.** `GrepSearchRequest` and `OptionAction`
    are done: `crucible-web` now uses the daemon's declaration of each. The web
    copy of `GrepSearchRequest` hardcoded its default limit at 100 and the

@@ -174,6 +174,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Removed
 
+- **`crucible_core::traits::input` is deleted** — 391 lines, and nothing outside
+  the module used any of it. It declared `ChatEvent`, `InputMode`, `KeyCode`,
+  `KeyPattern`, `Modifiers`, `KeyAction` and `SessionAction` as a
+  "platform-agnostic" input layer; the TUI takes `KeyCode` from `crossterm` and
+  `InputMode` from its own components, and `ChatEvent` is the browser SSE type
+  in `crucible-web`, which matches a TypeScript type of the same name. Three of
+  the seven names collided with live types elsewhere. `bitflags` drops out of
+  `crucible-core` with it.
+
 - **`crucible_lua::HOOK_NAMES`**, the `&[&str]` of every `crucible.on` name.
   Replaced by `EventName`, `StageId` and `HookName::parse`, which answer the
   same question with the compiler behind them. Callers testing membership move

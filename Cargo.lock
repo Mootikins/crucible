@@ -1419,7 +1419,6 @@ dependencies = [
  "agent-client-protocol-schema 1.6.0",
  "anyhow",
  "async-trait",
- "bitflags 2.13.1",
  "blake3",
  "chrono",
  "dirs",

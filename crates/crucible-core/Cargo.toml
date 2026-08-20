@@ -23,7 +23,6 @@ async-trait = { workspace = true }
 blake3 = "1.8"
 hex = "0.4"
 sha2 = "0.11"
-bitflags = "2.10"
 tempfile = { workspace = true }
 
 # Enhanced async runtime
