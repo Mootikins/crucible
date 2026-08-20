@@ -859,8 +859,8 @@ mod reply_routing_tests {
         let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
 
-        let (permission_id, response_rx) = agent_manager
-            .await_permission("test-session", PermRequest::bash(["rm", "-rf", "/"]));
+        let (permission_id, response_rx) =
+            agent_manager.await_permission("test-session", PermRequest::bash(["rm", "-rf", "/"]));
 
         agent_manager
             .deliver_client_reply(
@@ -935,13 +935,8 @@ mod plugin_permission_tests {
             let am = Arc::clone(&am);
             let sid = session_id.clone();
             async move {
-                am.request_interaction(
-                    &sid,
-                    request,
-                    &event_tx,
-                    std::time::Duration::from_secs(5),
-                )
-                .await
+                am.request_interaction(&sid, request, &event_tx, std::time::Duration::from_secs(5))
+                    .await
             }
         });
 
@@ -949,7 +944,10 @@ mod plugin_permission_tests {
         let request_id = loop {
             let msg = event_rx.recv().await.expect("interaction_requested");
             if msg.event == "interaction_requested" {
-                break msg.data["request_id"].as_str().expect("request_id").to_string();
+                break msg.data["request_id"]
+                    .as_str()
+                    .expect("request_id")
+                    .to_string();
             }
         };
         assert!(
@@ -957,13 +955,12 @@ mod plugin_permission_tests {
             "a plugin request lives in the interaction registry: {request_id}"
         );
 
-        am
-            .deliver_client_reply(
-                &session_id,
-                &request_id,
-                InteractionResponse::Permission(PermResponse::allow()),
-            )
-            .expect("a permission answer must reach the plugin that asked");
+        am.deliver_client_reply(
+            &session_id,
+            &request_id,
+            InteractionResponse::Permission(PermResponse::allow()),
+        )
+        .expect("a permission answer must reach the plugin that asked");
 
         let answer = asked.await.expect("join").expect("interaction resolved");
         match answer {

@@ -51,9 +51,8 @@ pub use emitter::{
 
 // Legacy subscriber exports
 pub use subscriber::{
-    HandlerResult,
-    box_handler, BoxedHandlerFn, EventFilter, HandlerFuture, SubscriptionError, SubscriptionId,
-    SubscriptionIdGenerator, SubscriptionInfo, SubscriptionResult,
+    box_handler, BoxedHandlerFn, EventFilter, HandlerFuture, HandlerResult, SubscriptionError,
+    SubscriptionId, SubscriptionIdGenerator, SubscriptionInfo, SubscriptionResult,
 };
 
 // Session event types

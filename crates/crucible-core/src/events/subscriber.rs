@@ -36,8 +36,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 // Glob matching from utils module
-use crate::utils::glob_match;
 use super::EventError;
+use crate::utils::glob_match;
 
 // `HandlerResult` lives here, with its only consumer. It arrived from a
 // `handler` module that also held the `Reactor`'s `Handler` trait; that
@@ -99,7 +99,6 @@ pub enum HandlerResult<E> {
     /// Use sparingly - most errors should be soft errors to maintain fail-open semantics.
     FatalError(EventError),
 }
-
 
 impl<E> HandlerResult<E> {
     /// Create a continue result with the given event.

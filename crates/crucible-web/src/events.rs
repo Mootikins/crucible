@@ -261,10 +261,7 @@ impl ChatEvent {
                     // (which does decode) showed the error.
                     match ToolResultBody::of(&result) {
                         Some(ToolResultBody::Err { error, .. }) => {
-                            ChatEvent::ToolResultError {
-                                id: call_id,
-                                error,
-                            }
+                            ChatEvent::ToolResultError { id: call_id, error }
                         }
                         // Unwrap the envelope so the UI gets the tool's own
                         // output rather than the `{"result": …}` wrapper.

@@ -274,7 +274,9 @@ impl PluginManager {
         // not of the call it later intercepts.
         if let Err(error) = self
             .lua
-            .load(format!("cru._current_plugin_may_intercept = {may_intercept}"))
+            .load(format!(
+                "cru._current_plugin_may_intercept = {may_intercept}"
+            ))
             .exec()
         {
             warn!("Failed to set intercept capability for {}: {}", name, error);
@@ -340,7 +342,11 @@ impl PluginManager {
             Ok(())
         })();
 
-        if let Err(error) = self.lua.load("cru._current_plugin = nil; cru._current_plugin_may_intercept = nil").exec() {
+        if let Err(error) = self
+            .lua
+            .load("cru._current_plugin = nil; cru._current_plugin_may_intercept = nil")
+            .exec()
+        {
             warn!("Failed to clear cru._current_plugin: {}", error);
         }
 

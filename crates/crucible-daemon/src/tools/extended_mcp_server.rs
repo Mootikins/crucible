@@ -121,9 +121,8 @@ impl ExtendedMcpServer {
         &self.kiln_server
     }
 
-    #[must_use]
-
     /// Attach an MCP gateway for upstream server tools.
+    #[must_use]
     pub fn with_gateway(mut self, gateway: McpGatewayManager) -> Self {
         self.gateway = Some(Arc::new(RwLock::new(gateway)));
         self
@@ -677,5 +676,4 @@ mod tests {
         assert!(!server.has_plugin_tool("greet").await);
         assert!(!server.has_plugin_tool("lua_greet").await);
     }
-
 }

@@ -979,8 +979,7 @@ mod plugin_call_shape_tests {
     fn every_advertised_kind_accepts_its_documented_minimal_options() {
         for kind in InteractionRequest::KINDS {
             let opts = documented_minimal(kind);
-            let parsed: Result<InteractionRequest, _> =
-                serde_json::from_value(opts.clone());
+            let parsed: Result<InteractionRequest, _> = serde_json::from_value(opts.clone());
             let request = parsed.unwrap_or_else(|e| {
                 panic!(
                     "cru.ui.{kind} cannot be called with its documented options: {e}\n  \

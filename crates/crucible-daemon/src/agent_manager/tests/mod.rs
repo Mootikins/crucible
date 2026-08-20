@@ -149,7 +149,6 @@ impl crucible_core::turn::Agent for StreamingMockAgent {
     }
 }
 
-
 /// Mock agent that delivers a different scripted event sequence per
 /// turn. Used by tests that need to send multiple messages and observe
 /// per-turn behavior (e.g. the precognition first-message gate).
@@ -425,7 +424,6 @@ impl ReactorTestHarness {
             _tmp: tmp,
         }
     }
-
 
     /// Inject a capturing agent and return both capture handles. Most
     /// tests only need the prompt; transform_context tests want the

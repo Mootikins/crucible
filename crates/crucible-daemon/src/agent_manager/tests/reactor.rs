@@ -189,7 +189,6 @@ async fn runtime_dispatch_post_llm_call_fires_handler() {
 async fn reactor_lua_handler_discovery_empty_dir() {
     let mut h = ReactorTestHarness::new().await;
 
-
     let (received_prompt, _) = h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
 
     h.send("hello").await;
