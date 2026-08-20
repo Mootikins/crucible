@@ -4,7 +4,9 @@
 //! budget enforced by `no_new_oversized_modules`.
 
 use super::*;
-use crate::events::session_event::FileChangeKind;
+use crate::events::session_event::{FileChangeKind, InternalSessionEvent, ScriptingEvent};
+use crate::events::SessionEvent;
+use crate::interaction::{InteractionRequest, InteractionResponse, PermRequest};
 use crate::protocol::SessionEventMessage;
 use crate::types::mcp_status::McpServerInfo;
 use crate::types::{PluginStatusEntry, ProviderInfo};
@@ -335,120 +337,99 @@ fn a_session_initialized_is_persisted_only_once_the_model_is_known() {
     assert!(!without.is_persisted());
 }
 
-/// Text between two markers, or a panic naming the marker that moved.
-fn between<'a>(src: &'a str, start: &str, end: &str) -> &'a str {
-    let from = src
-        .find(start)
-        .unwrap_or_else(|| panic!("scan marker `{start}` not found — fix this test"))
-        + start.len();
-    let rest = &src[from..];
-    let to = rest
-        .find(end)
-        .unwrap_or_else(|| panic!("scan marker `{end}` not found — fix this test"));
-    &rest[..to]
-}
-
-/// Every double-quoted lowercase-ish literal in `src`.
-fn quoted_wire_literals(src: &str) -> BTreeSet<String> {
-    let mut out = BTreeSet::new();
-    let mut rest = src;
-    while let Some(open) = rest.find('"') {
-        rest = &rest[open + 1..];
-        let Some(close) = rest.find('"') else { break };
-        let lit = &rest[..close];
-        rest = &rest[close + 1..];
-        if !lit.is_empty()
-            && lit
-                .chars()
-                .all(|c| c.is_ascii_lowercase() || c == '_' || c == '.' || c == ':')
-        {
-            out.insert(lit.to_string());
-        }
-    }
-    out
-}
-
-/// `as_scripting_event` must return names the scripting vocabulary actually has.
-///
-/// Compared against the two `event_type()` matches themselves — source-scanned,
-/// because constructing one value per variant is 40 lines that break whenever an
-/// unrelated field is added, and a third hand-written name list would just be
-/// another place to drift.
+/// `ALL` is hand-written; the compiler does not check it. `EnumIter` walks what
+/// the compiler *does* know.
 #[test]
-fn every_scripting_name_exists_in_the_scripting_vocabulary() {
-    let mut vocabulary = quoted_wire_literals(between(
-        include_str!("../../events/session_event/mod.rs"),
-        "pub fn event_type(&self) -> &'static str {",
-        "\n    }\n",
-    ));
-    vocabulary.extend(quoted_wire_literals(between(
-        include_str!("../../events/session_event/internal.rs"),
-        "pub fn event_type(&self) -> &'static str {",
-        "\n    }\n",
-    )));
-    assert!(
-        vocabulary.len() > 20,
-        "scanned only {} scripting names — the markers moved",
-        vocabulary.len()
-    );
+fn every_scripting_event_variant_is_listed() {
+    use strum::IntoEnumIterator;
+    let listed: Vec<ScriptingEvent> = ScriptingEvent::ALL.to_vec();
+    let known: Vec<ScriptingEvent> = ScriptingEvent::iter().collect();
+    assert_eq!(listed, known, "ScriptingEvent::ALL is missing a variant");
+}
 
-    let mapped = [
-        TurnPayload::UserMessage {
-            message_id: String::new(),
+/// Every shared name is the one its own event reports.
+///
+/// The correspondence this file used to test — `as_scripting_event` against
+/// `event_type` — is now a type identity: both read the name off
+/// [`ScriptingEvent`], so they cannot disagree and nothing needs to check it.
+/// That test `include_str!`d two files, sliced each between literal markers,
+/// and collected every quoted lowercase-ish literal it found, with a
+/// `len() > 20` canary admitting the extraction was fragile.
+///
+/// What is left to check is the arms themselves: an `event_type` arm written
+/// back as a bare literal silently reopens the drift. Red-proofed by doing
+/// exactly that — `Self::ToolCalled { .. } => "tool_call"` fails here.
+#[test]
+fn every_scripting_name_is_one_an_event_reports() {
+    for scripting in ScriptingEvent::ALL {
+        let event = event_reporting(*scripting);
+        assert_eq!(
+            event.event_type(),
+            scripting.as_str(),
+            "`{scripting}` is not the name its own event reports"
+        );
+    }
+}
+
+/// One `SessionEvent` per [`ScriptingEvent`], for the round trip above.
+///
+/// Exhaustive on purpose: a variant added to the shared set must be given an
+/// event that reports it, or this does not compile.
+fn event_reporting(scripting: ScriptingEvent) -> SessionEvent {
+    match scripting {
+        ScriptingEvent::MessageReceived => SessionEvent::MessageReceived {
             content: String::new(),
+            participant_id: String::new(),
         },
-        TurnPayload::TextDelta {
+        ScriptingEvent::TextDelta => SessionEvent::TextDelta {
+            delta: String::new(),
+            seq: 0,
+        },
+        ScriptingEvent::AgentThinking => SessionEvent::AgentThinking {
+            thought: String::new(),
+        },
+        ScriptingEvent::AgentResponded => SessionEvent::AgentResponded {
             content: String::new(),
+            tool_calls: Vec::new(),
         },
-        TurnPayload::Thinking {
-            content: String::new(),
-        },
-        TurnPayload::MessageComplete {
-            message_id: String::new(),
-            full_response: String::new(),
-            prompt_tokens: None,
-            completion_tokens: None,
-            total_tokens: None,
-            cache_read_tokens: None,
-            cache_creation_tokens: None,
-        },
-        TurnPayload::ToolCall {
-            call_id: String::new(),
-            tool: String::new(),
+        ScriptingEvent::ToolCalled => SessionEvent::ToolCalled {
+            name: String::new(),
             args: serde_json::Value::Null,
             description: None,
             source: None,
-            lua_primary_arg: None,
-            display: None,
-            auto_approved: None,
-            diffs: Vec::new(),
         },
-        TurnPayload::ToolResult {
-            call_id: String::new(),
-            tool: String::new(),
-            result: serde_json::Value::Null,
+        ScriptingEvent::ToolCompleted => SessionEvent::ToolCompleted {
+            name: String::new(),
+            result: String::new(),
+            error: None,
             terminate: false,
         },
-        TurnPayload::Ended {
+        ScriptingEvent::SessionEnded => SessionEvent::SessionEnded {
             reason: String::new(),
         },
-        TurnPayload::PrecognitionComplete {
-            notes_count: 0,
-            query_summary: String::new(),
-            notes: Vec::new(),
+        ScriptingEvent::InteractionRequested => SessionEvent::InteractionRequested {
+            request_id: String::new(),
+            request: InteractionRequest::Permission(PermRequest::bash(["true"])),
         },
-    ];
-    for payload in mapped {
-        let scripting = payload
-            .as_scripting_event()
-            .expect("this variant has a scripting counterpart");
-        assert!(
-            vocabulary.contains(scripting),
-            "`{scripting}` is not a name the scripting vocabulary emits; it has {vocabulary:?}",
-        );
+        ScriptingEvent::InteractionCompleted => SessionEvent::InteractionCompleted {
+            request_id: String::new(),
+            response: InteractionResponse::Cancelled,
+        },
+        ScriptingEvent::PrecognitionComplete => {
+            SessionEvent::internal(InternalSessionEvent::PrecognitionComplete {
+                notes_count: 0,
+                query_summary: String::new(),
+                kilns_searched: 0,
+                kilns_filtered: 0,
+                kilns_failed: 0,
+            })
+        }
     }
+}
 
-    // And the transport-only ones say so rather than inventing a name.
+/// The transport-only events say so rather than inventing a name.
+#[test]
+fn a_transport_only_event_has_no_scripting_name() {
     assert!(TurnPayload::PostLlmCall {
         response_summary: String::new(),
         model: String::new(),

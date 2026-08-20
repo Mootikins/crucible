@@ -35,6 +35,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::events::session_event::ScriptingEvent;
 use crate::interaction::{InteractionRequest, InteractionResponse};
 use crate::traits::chat::PrecognitionNoteInfo;
 use crate::types::acp::FileDiff;
@@ -256,26 +257,30 @@ where
 }
 
 impl TurnPayload {
-    /// The [`SessionEvent::event_type()`](crate::events::SessionEvent) name a
-    /// Lua handler sees for this transport event, where one exists.
+    /// The [`ScriptingEvent`] a Lua handler sees for this transport event,
+    /// where one exists.
     ///
     /// The transport and scripting vocabularies are disjoint by design (see the
     /// parent module), and they spell ten of the same events differently.
     /// `crucible.on("tool_called")` and the web's `tool_call` SSE frame are the
     /// same event; nothing said so before, so a plugin author reading the SSE
     /// stream learned the wrong name.
-    pub fn as_scripting_event(&self) -> Option<&'static str> {
+    ///
+    /// Returning the shared type rather than a `&'static str` is what makes
+    /// this agree with [`SessionEvent::event_type`](crate::events::SessionEvent)
+    /// by construction: both read the name off the same constant.
+    pub fn as_scripting_event(&self) -> Option<ScriptingEvent> {
         Some(match self {
-            Self::UserMessage { .. } => "message_received",
-            Self::TextDelta { .. } => "text_delta",
-            Self::Thinking { .. } => "agent_thinking",
-            Self::MessageComplete { .. } => "agent_responded",
-            Self::ToolCall { .. } => "tool_called",
-            Self::ToolResult { .. } => "tool_completed",
-            Self::Ended { .. } => "session_ended",
-            Self::InteractionRequested { .. } => "interaction_requested",
-            Self::InteractionCompleted { .. } => "interaction_completed",
-            Self::PrecognitionComplete { .. } => "precognition_complete",
+            Self::UserMessage { .. } => ScriptingEvent::MessageReceived,
+            Self::TextDelta { .. } => ScriptingEvent::TextDelta,
+            Self::Thinking { .. } => ScriptingEvent::AgentThinking,
+            Self::MessageComplete { .. } => ScriptingEvent::AgentResponded,
+            Self::ToolCall { .. } => ScriptingEvent::ToolCalled,
+            Self::ToolResult { .. } => ScriptingEvent::ToolCompleted,
+            Self::Ended { .. } => ScriptingEvent::SessionEnded,
+            Self::InteractionRequested { .. } => ScriptingEvent::InteractionRequested,
+            Self::InteractionCompleted { .. } => ScriptingEvent::InteractionCompleted,
+            Self::PrecognitionComplete { .. } => ScriptingEvent::PrecognitionComplete,
             Self::SegmentComplete { .. }
             | Self::ToolCallArgsUpdate { .. }
             | Self::ToolCallDiffUpdate { .. }

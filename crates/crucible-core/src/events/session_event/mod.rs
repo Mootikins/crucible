@@ -53,6 +53,90 @@ pub use types::{
     ToolProvider,
 };
 
+/// The ten scripting names the transport vocabulary also has a payload for.
+///
+/// Both vocabularies name these events, and they spell them differently:
+/// `crucible.on("tool_called")` and the web's `tool_call` SSE frame are the
+/// same event. Nothing said so before, so a plugin author reading the SSE
+/// stream learned the wrong name.
+///
+/// A closed set rather than a `&'static str` on either side, because the two
+/// sides used to be two independent lists of string literals and the only thing
+/// holding them together was a test that `include_str!`d two files and sliced
+/// between literal markers. Now [`SessionEvent::event_type`] and
+/// [`TurnPayload::as_scripting_event`](crate::protocol::session_events::TurnPayload::as_scripting_event)
+/// return the same constant, so they cannot disagree and the scan is gone.
+///
+/// This is the **overlap**, not the whole scripting vocabulary: an event with
+/// no transport payload — `session_started`, `custom`, every
+/// [`InternalSessionEvent`] but one — keeps its literal in `event_type`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(test, derive(strum::EnumIter))]
+pub enum ScriptingEvent {
+    /// A participant sent a message. Transport: `user_message`.
+    MessageReceived,
+    /// A token arrived. Transport: `text_delta`.
+    TextDelta,
+    /// Reasoning text arrived. Transport: `thinking`.
+    AgentThinking,
+    /// The agent finished a message. Transport: `message_complete`.
+    AgentResponded,
+    /// A tool was called. Transport: `tool_call`.
+    ToolCalled,
+    /// A tool returned. Transport: `tool_result`.
+    ToolCompleted,
+    /// The session ended. Transport: `ended`.
+    SessionEnded,
+    /// A prompt is waiting on the client. Transport: `interaction_requested`.
+    InteractionRequested,
+    /// A prompt was answered. Transport: `interaction_completed`.
+    InteractionCompleted,
+    /// Precognition finished retrieving. Transport: `precognition_complete`.
+    PrecognitionComplete,
+}
+
+impl ScriptingEvent {
+    /// Every variant. `every_scripting_event_variant_is_listed` proves it.
+    pub const ALL: &'static [Self] = &[
+        Self::MessageReceived,
+        Self::TextDelta,
+        Self::AgentThinking,
+        Self::AgentResponded,
+        Self::ToolCalled,
+        Self::ToolCompleted,
+        Self::SessionEnded,
+        Self::InteractionRequested,
+        Self::InteractionCompleted,
+        Self::PrecognitionComplete,
+    ];
+
+    /// The name a Lua handler registers for and reads off the event.
+    ///
+    /// **No wildcard arm, ever.** A new variant must fail to compile until
+    /// someone names it.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::MessageReceived => "message_received",
+            Self::TextDelta => "text_delta",
+            Self::AgentThinking => "agent_thinking",
+            Self::AgentResponded => "agent_responded",
+            Self::ToolCalled => "tool_called",
+            Self::ToolCompleted => "tool_completed",
+            Self::SessionEnded => "session_ended",
+            Self::InteractionRequested => "interaction_requested",
+            Self::InteractionCompleted => "interaction_completed",
+            Self::PrecognitionComplete => "precognition_complete",
+        }
+    }
+}
+
+impl std::fmt::Display for ScriptingEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// Events that flow through a session — the **scripting** vocabulary.
 ///
 /// This type is **not** wire-facing, despite what this comment used to say.
@@ -258,16 +342,16 @@ impl SessionEvent {
     /// - Logging and debugging
     pub fn event_type(&self) -> &'static str {
         match self {
-            Self::MessageReceived { .. } => "message_received",
-            Self::AgentResponded { .. } => "agent_responded",
-            Self::AgentThinking { .. } => "agent_thinking",
-            Self::ToolCalled { .. } => "tool_called",
-            Self::ToolCompleted { .. } => "tool_completed",
+            Self::MessageReceived { .. } => ScriptingEvent::MessageReceived.as_str(),
+            Self::AgentResponded { .. } => ScriptingEvent::AgentResponded.as_str(),
+            Self::AgentThinking { .. } => ScriptingEvent::AgentThinking.as_str(),
+            Self::ToolCalled { .. } => ScriptingEvent::ToolCalled.as_str(),
+            Self::ToolCompleted { .. } => ScriptingEvent::ToolCompleted.as_str(),
             Self::SessionStarted { .. } => "session_started",
-            Self::SessionEnded { .. } => "session_ended",
-            Self::TextDelta { .. } => "text_delta",
-            Self::InteractionRequested { .. } => "interaction_requested",
-            Self::InteractionCompleted { .. } => "interaction_completed",
+            Self::SessionEnded { .. } => ScriptingEvent::SessionEnded.as_str(),
+            Self::TextDelta { .. } => ScriptingEvent::TextDelta.as_str(),
+            Self::InteractionRequested { .. } => ScriptingEvent::InteractionRequested.as_str(),
+            Self::InteractionCompleted { .. } => ScriptingEvent::InteractionCompleted.as_str(),
             Self::DelegationSpawned { .. } => "delegation_spawned",
             Self::DelegationCompleted { .. } => "delegation_completed",
             Self::DelegationFailed { .. } => "delegation_failed",

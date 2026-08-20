@@ -432,7 +432,9 @@ impl InternalSessionEvent {
             Self::PreParse { .. } => "pre_parse",
             Self::PreLlmCall { .. } => "pre_llm_call",
             Self::PostLlmCall { .. } => "post_llm_call",
-            Self::PrecognitionComplete { .. } => "precognition_complete",
+            Self::PrecognitionComplete { .. } => {
+                super::ScriptingEvent::PrecognitionComplete.as_str()
+            }
             Self::ClassificationRequired { .. } => "classification_required",
             Self::SessionCompacted { .. } => "session_compacted",
             Self::SessionStateChanged { .. } => "session_state_changed",

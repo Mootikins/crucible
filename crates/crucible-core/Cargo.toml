@@ -90,6 +90,10 @@ toml = []
 keyring = ["dep:keyring"]
 
 [dev-dependencies]
+# `EnumIter` over `ScriptingEvent`, so the test asserting `ALL` covers every
+# variant walks what the compiler knows rather than a second hand-written list.
+# Dev-only: the derive is `#[cfg_attr(test, ...)]`.
+strum = { version = "0.28", features = ["derive"] }
 tokio = { workspace = true, features = ["test-util", "full"] }
 tracing-subscriber = { workspace = true }
 tempfile = "3.27"

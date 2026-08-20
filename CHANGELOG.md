@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- **JSON-RPC method names are one closed enum** (`RpcMethod`,
+  `crucible-daemon/src/rpc/dispatch.rs`). `METHODS` — what
+  `daemon.capabilities` advertises — and the 750-line dispatch match were two
+  hand-maintained lists, and drift between them hides a method from every
+  capability-detecting client; it happened once already with `plugin.install`
+  and `plugin.remove`. The gate meant to catch it scanned this file's own
+  source text and mistook any quoted dotted-lowercase literal in an arm body
+  for a method name. One `rpc_methods!` table now generates both, and the
+  dispatch match is exhaustive over the enum with no wildcard arm. No method
+  name and no wire behaviour changed.
+- **The scripting/transport name overlap is one shared type** (`ScriptingEvent`,
+  `crucible-core/src/events/session_event/`). `TurnPayload::as_scripting_event`
+  and `SessionEvent::event_type` spelled the same ten events in two independent
+  lists of string literals, held together only by a test that `include_str!`d
+  two files and sliced between literal markers. Both now read the name off the
+  same constant. `as_scripting_event` returns `Option<ScriptingEvent>` rather
+  than `Option<&'static str>`; call `.as_str()` for the name.
 - **`crucible.on` hook names are two closed enums, not one list of strings.**
   `EventName` holds the eight daemon broadcast events, `StageId` the eleven
   synchronous turn-loop stages
@@ -44,6 +61,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   completion is now bounded at 30 seconds, through the same `timeout` key the
   prompt and the clip are set by, because a title nobody is waiting for is not
   worth holding a task open for the provider's own timeout.
+
+### Fixed
+- **Discord handled every message twice after a `require`.**
+  `runtime/plugins/discord/init.lua` registers two gateway handlers at body
+  level and never claimed `package.loaded["discord"]`. The daemon executes the
+  file by path, so `require("discord")` — which the plugin's own
+  `tests/service_test.lua` does — loaded a second copy and ran those
+  registrations again; `Emitter:on` appends rather than replaces, so both
+  copies stayed live and one Discord message drove two agent turns, two replies
+  and two quota charges. The gate that should have caught it matched only
+  `crucible.on`/`cru.on` at column zero and now accepts any receiver.
 
 ### Added
 - **`cru.ui` — a plugin can ask the user a question.** One function per
