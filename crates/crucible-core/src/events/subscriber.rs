@@ -37,9 +37,194 @@ use std::sync::Arc;
 
 // Glob matching from utils module
 use crate::utils::glob_match;
+use super::EventError;
 
-// Import HandlerResult from handler module (consolidated type)
-pub use super::handler::HandlerResult;
+// `HandlerResult` lives here, with its only consumer. It arrived from a
+// `handler` module that also held the `Reactor`'s `Handler` trait; that
+// trait had no production implementation and was deleted, and moving this
+// type out was what let the rest go.
+/// Result returned by event handlers to control event flow.
+///
+/// Handlers return this enum to indicate how event processing should continue.
+/// The event system uses this to determine whether to:
+/// - Pass the event to the next handler
+/// - Stop processing (cancellation or fatal error)
+/// - Log errors but continue (soft error)
+///
+/// # Variants Summary
+///
+/// | Variant | Continues? | Preserves Event? | Use Case |
+/// |---------|------------|------------------|----------|
+/// | `Continue` | Yes | Yes | Normal processing |
+/// | `Cancel` | No | No | Stop without event access |
+/// | `Cancelled` | No | Yes | Stop but preserve event |
+/// | `SoftError` | Yes | Yes | Non-fatal error |
+/// | `FatalError` | No | No | Fatal error |
+#[derive(Debug, Clone)]
+pub enum HandlerResult<E> {
+    /// Handler processed successfully, continue with the (possibly modified) event.
+    ///
+    /// The event may be modified by the handler before being passed to the next
+    /// handler in the chain.
+    Continue(E),
+
+    /// Handler cancelled the event, stop processing (event discarded).
+    ///
+    /// Use this for events like `ToolCalled` where a handler wants to prevent
+    /// the tool from executing. The event will not be passed to subsequent handlers.
+    /// Use `Cancelled(E)` if you need to preserve the event for inspection.
+    Cancel,
+
+    /// Handler cancelled the event, stop processing (event preserved).
+    ///
+    /// Similar to `Cancel` but preserves the event for inspection by the caller.
+    /// Useful when the cancellation reason depends on event content that the
+    /// caller may want to log or inspect.
+    Cancelled(E),
+
+    /// Handler encountered a recoverable error.
+    ///
+    /// The event continues to the next handler, but the error is logged.
+    /// Use this for non-critical failures that shouldn't stop the pipeline.
+    SoftError {
+        /// The event to continue processing
+        event: E,
+        /// Error message describing what went wrong
+        error: String,
+    },
+
+    /// Handler encountered a fatal error, stop processing immediately.
+    ///
+    /// The event pipeline stops and the error is propagated to the caller.
+    /// Use sparingly - most errors should be soft errors to maintain fail-open semantics.
+    FatalError(EventError),
+}
+
+
+impl<E> HandlerResult<E> {
+    /// Create a continue result with the given event.
+    pub fn ok(event: E) -> Self {
+        Self::Continue(event)
+    }
+
+    /// Create a cancel result (event discarded).
+    pub fn cancel() -> Self {
+        Self::Cancel
+    }
+
+    /// Create a cancelled result (event preserved).
+    ///
+    /// Use this when you need to cancel processing but preserve the event
+    /// for inspection by the caller.
+    pub fn cancelled(event: E) -> Self {
+        Self::Cancelled(event)
+    }
+
+    /// Create a soft error result.
+    pub fn soft_error(event: E, error: impl Into<String>) -> Self {
+        Self::SoftError {
+            event,
+            error: error.into(),
+        }
+    }
+
+    /// Create a fatal error result.
+    pub fn fatal(error: EventError) -> Self {
+        Self::FatalError(error)
+    }
+
+    /// Create a fatal error with a message.
+    pub fn fatal_msg(message: impl Into<String>) -> Self {
+        Self::FatalError(EventError::other(message))
+    }
+
+    /// Check if this result indicates successful continuation.
+    pub fn is_continue(&self) -> bool {
+        matches!(self, Self::Continue(_))
+    }
+
+    /// Check if this result is a cancellation (Cancel or Cancelled).
+    pub fn is_cancel(&self) -> bool {
+        matches!(self, Self::Cancel | Self::Cancelled(_))
+    }
+
+    /// Check if this result is a cancellation with preserved event.
+    pub fn is_cancelled(&self) -> bool {
+        matches!(self, Self::Cancelled(_))
+    }
+
+    /// Check if this result is a soft error.
+    pub fn is_soft_error(&self) -> bool {
+        matches!(self, Self::SoftError { .. })
+    }
+
+    /// Check if this result is a fatal error.
+    pub fn is_fatal(&self) -> bool {
+        matches!(self, Self::FatalError(_))
+    }
+
+    /// Check if processing should continue (Continue or SoftError).
+    pub fn should_continue(&self) -> bool {
+        matches!(self, Self::Continue(_) | Self::SoftError { .. })
+    }
+
+    /// Check if processing should stop (Cancel, Cancelled, or FatalError).
+    pub fn should_stop(&self) -> bool {
+        matches!(
+            self,
+            Self::Cancel | Self::Cancelled(_) | Self::FatalError(_)
+        )
+    }
+
+    /// Get the event if available (Continue, Cancelled, or SoftError).
+    pub fn event(self) -> Option<E> {
+        match self {
+            Self::Continue(e) | Self::Cancelled(e) | Self::SoftError { event: e, .. } => Some(e),
+            Self::Cancel | Self::FatalError(_) => None,
+        }
+    }
+
+    /// Get the event reference if available.
+    pub fn event_ref(&self) -> Option<&E> {
+        match self {
+            Self::Continue(e) | Self::Cancelled(e) | Self::SoftError { event: e, .. } => Some(e),
+            Self::Cancel | Self::FatalError(_) => None,
+        }
+    }
+
+    /// Get the error message if this is a soft error.
+    pub fn soft_error_msg(&self) -> Option<&str> {
+        match self {
+            Self::SoftError { error, .. } => Some(error),
+            _ => None,
+        }
+    }
+
+    /// Get the fatal error if this is a fatal error.
+    pub fn fatal_error(self) -> Option<EventError> {
+        match self {
+            Self::FatalError(e) => Some(e),
+            _ => None,
+        }
+    }
+
+    /// Map the event type using a function.
+    pub fn map<F, U>(self, f: F) -> HandlerResult<U>
+    where
+        F: FnOnce(E) -> U,
+    {
+        match self {
+            Self::Continue(e) => HandlerResult::Continue(f(e)),
+            Self::Cancel => HandlerResult::Cancel,
+            Self::Cancelled(e) => HandlerResult::Cancelled(f(e)),
+            Self::SoftError { event, error } => HandlerResult::SoftError {
+                event: f(event),
+                error,
+            },
+            Self::FatalError(e) => HandlerResult::FatalError(e),
+        }
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Subscription ID

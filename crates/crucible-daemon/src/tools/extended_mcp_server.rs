@@ -29,7 +29,7 @@ use super::mcp_gateway::McpGatewayManager;
 use super::toon_response::toon_success_smart;
 use super::CrucibleMcpServer;
 use crucible_core::enrichment::EmbeddingProvider;
-use crucible_core::events::{Reactor, ReactorEmitResult, SessionEvent};
+use crucible_core::events::SessionEvent;
 use crucible_core::traits::KnowledgeRepository;
 use rmcp::model::{CallToolResult, ContentBlock, Tool};
 use rmcp::service::RequestContext;
@@ -39,7 +39,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
-use tracing::{debug, warn};
+use tracing::debug;
 
 /// Extended MCP server exposing Crucible kiln tools plus Lua plugins.
 ///
@@ -50,13 +50,11 @@ use tracing::{debug, warn};
 ///
 /// ## Event Handling
 ///
-/// Events are processed through the unified `Reactor` from crucible-core.
 pub struct ExtendedMcpServer {
     kiln_server: CrucibleMcpServer,
     /// Tools contributed by loaded plugins — the same registry the agent
     /// dispatches through, so `cru mcp` and an internal agent see one set.
     plugin_tools: Option<Arc<crate::plugin_tools::PluginRegistry>>,
-    reactor: Arc<RwLock<Reactor>>,
     /// Optional gateway for upstream MCP servers
     gateway: Option<Arc<RwLock<McpGatewayManager>>>,
 }
@@ -96,7 +94,6 @@ impl ExtendedMcpServer {
             // Empty. Handlers used to be scanned out of the kiln here via
             // `-- @handler` doc comments; a plugin's `crucible.on` is the one
             // registration route now.
-            reactor: Arc::new(RwLock::new(Reactor::new())),
             gateway: None,
         })
     }
@@ -115,7 +112,6 @@ impl ExtendedMcpServer {
         Self {
             kiln_server,
             plugin_tools: None,
-            reactor: Arc::new(RwLock::new(Reactor::new())),
             gateway: None,
         }
     }
@@ -126,12 +122,8 @@ impl ExtendedMcpServer {
     }
 
     #[must_use]
-    pub fn reactor(&self) -> Arc<RwLock<Reactor>> {
-        Arc::clone(&self.reactor)
-    }
 
     /// Attach an MCP gateway for upstream server tools.
-    #[must_use]
     pub fn with_gateway(mut self, gateway: McpGatewayManager) -> Self {
         self.gateway = Some(Arc::new(RwLock::new(gateway)));
         self
@@ -252,19 +244,16 @@ impl ExtendedMcpServer {
         )
     }
 
+    /// The tool-event seam: returns the event and whether it was cancelled.
+    ///
+    /// Currently identity. It dispatched through a `Reactor` whose `Handler`
+    /// trait had no production implementation and could not acquire one —
+    /// nothing outside its own tests ever called `register` — so every call
+    /// returned the event unmodified with `cancelled = false`. The Reactor is
+    /// gone; this keeps the shape its six callers read, and inlining it is a
+    /// separate, mechanical change.
     async fn emit_event(&self, event: SessionEvent) -> (SessionEvent, bool) {
-        let mut reactor = self.reactor.write().await;
-        match reactor.emit(event.clone()).await {
-            Ok(ReactorEmitResult::Completed {
-                event: modified, ..
-            }) => (modified, false),
-            Ok(ReactorEmitResult::Cancelled { .. }) => (event, true),
-            Ok(ReactorEmitResult::Failed { .. }) => (event, false),
-            Err(e) => {
-                warn!("Reactor error: {}", e);
-                (event, false)
-            }
-        }
+        (event, false)
     }
 
     pub async fn tool_count(&self) -> usize {
@@ -689,19 +678,4 @@ mod tests {
         assert!(!server.has_plugin_tool("lua_greet").await);
     }
 
-    #[test]
-    fn test_reactor_accessible() {
-        let temp = TempDir::new().unwrap();
-        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
-
-        let server = ExtendedMcpServer::kiln_only(
-            temp.path().to_str().unwrap().to_string(),
-            knowledge_repo,
-            embedding_provider,
-        );
-
-        let reactor = server.reactor();
-        assert!(Arc::strong_count(&reactor) >= 2);
-    }
 }

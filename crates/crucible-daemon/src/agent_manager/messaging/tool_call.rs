@@ -1,5 +1,4 @@
 use super::super::*;
-use crucible_core::events::InternalSessionEvent;
 use crucible_core::types::acp::FileDiff;
 use crucible_core::types::ToolSource;
 use crucible_lua::{ToolBeforeExecuteEvent, ToolDisplayCompleteEvent, ToolDisplayStartEvent};
@@ -330,78 +329,7 @@ impl AgentManager {
         *bracket = stream_ctx.open_review_bracket(&tool_call.name).await;
 
         let mut intercepted = {
-            let mut state = stream_ctx.session_state.lock().await;
-            let pre_tool_event = SessionEvent::internal(InternalSessionEvent::PreToolCall {
-                name: tool_call.name.clone(),
-                args: args.clone(),
-            });
-            match state.reactor.emit(pre_tool_event).await {
-                Ok(EmitResult::Cancelled { by_handler, .. }) => {
-                    warn!(
-                        session_id = %stream_ctx.session_id,
-                        tool = %tool_call.name,
-                        handler = %by_handler,
-                        "PreToolCall cancelled by handler"
-                    );
-                    let error_msg = format!("Tool call denied by handler: {}", by_handler);
-                    if !emit_event(
-                        &stream_ctx.event_tx,
-                        SessionEventMessage::tool_result(
-                            &stream_ctx.session_id,
-                            &call_id,
-                            &tool_call.name,
-                            serde_json::json!({ "error": error_msg }),
-                        ),
-                    ) {
-                        warn!(
-                            session_id = %stream_ctx.session_id,
-                            tool = %tool_call.name,
-                            "No subscribers for handler denied tool_result event"
-                        );
-                    }
-                    return Some(crucible_core::traits::chat::ChatToolResult {
-                        name: tool_call.name.clone(),
-                        result: String::new(),
-                        error: Some(error_msg),
-                        call_id: Some(call_id.clone()),
-                        terminate: false,
-                    });
-                }
-                // Fail closed. A gate that raises has not approved the call,
-                // and admitting it would silently downgrade sandboxed
-                // execution to host execution.
-                Ok(EmitResult::Failed { handler, error, .. }) => {
-                    warn!(
-                        session_id = %stream_ctx.session_id,
-                        tool = %tool_call.name,
-                        handler = %handler,
-                        error = %error,
-                        "PreToolCall handler failed, denying tool (fail-closed)"
-                    );
-                    return deny_tool_call(
-                        stream_ctx,
-                        &call_id,
-                        &tool_call.name,
-                        format!("Tool denied: pre_tool_call handler error in '{handler}': {error}"),
-                    );
-                }
-                Ok(EmitResult::Completed { .. }) => {}
-                Err(error) => {
-                    warn!(
-                        session_id = %stream_ctx.session_id,
-                        tool = %tool_call.name,
-                        error = %error,
-                        "PreToolCall emit failed, denying tool (fail-closed)"
-                    );
-                    return deny_tool_call(
-                        stream_ctx,
-                        &call_id,
-                        &tool_call.name,
-                        format!("Tool denied: pre_tool_call handler error: {error}"),
-                    );
-                }
-            }
-
+            let state = stream_ctx.session_state.lock().await;
             // Session-scoped handlers, then plugin-registered ones. Plugins
             // live in the loader's VM with their own registry; a RegistryKey
             // is only valid against the state that made it, so the two can't

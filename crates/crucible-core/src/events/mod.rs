@@ -1,104 +1,34 @@
 //! Event system for Crucible.
 //!
-//! This module provides the core event types and traits for the event-driven
-//! architecture following the [Reactor pattern](https://en.wikipedia.org/wiki/Reactor_pattern).
+//! # What is here
 //!
-//! # Architecture
+//! - [`SessionEvent`] — the canonical event type, shared by the daemon bus,
+//!   the Lua bridge (`crucible-lua/src/handlers/conversion.rs`) and markdown
+//!   rendering.
+//! - `emitter` / `subscriber` — the EventBus the **file-watch pipeline** runs
+//!   on (`crucible-daemon/src/watch/`, `file_watch_bridge.rs`). Documented for
+//!   years as "legacy, new code should use `Reactor` directly"; the Reactor is
+//!   now gone and this is the one that has production callers.
+//! - [`ring`] — the bounded event ring.
 //!
-//! ```text
-//! Reactor (core owns)
-//!    │
-//!    ├── Rust handlers (built-in)
-//!    ├── Lua handlers (script)
-//!    └── Lua handlers (script)
+//! # What used to be here
 //!
-//! All handlers implement the same Handler trait and interleave
-//! in dependency + priority order.
-//! ```
+//! A `Reactor` with a `Handler` trait, a `DependencyGraph` for topological
+//! ordering, and four built-in handlers — 3,076 lines. It was wired into the
+//! turn loop at four points and dispatched on every tool call and LLM call.
 //!
-//! # Key Components
+//! It never ran anything. Outside its own tests nothing implemented `Handler`
+//! and nothing called `register`, so every `emit` returned
+//! `Completed { handler_count: 0 }` and its cancel and fail-closed arms were
+//! unreachable. Session-scoped extension is `crucible.on` in the Lua registry;
+//! that is the path with production handlers, and the tests that looked like
+//! Reactor coverage were Lua tests standing beside it.
 //!
-//! - [`Handler`]: Async trait for event handlers (Rust, Lua)
-//! - [`HandlerContext`]: Context passed through handler chain
-//! - [`Reactor`]: Central event loop + dispatcher
-//! - [`DependencyGraph`]: Handler ordering via topological sort
-//! - [`SessionEvent`]: Canonical event type
-//! - [`ReactorEventEmitter`]: Adapter for `EventEmitter` trait
-//!
-//! # Built-in Handlers
-//!
-//! # Handler Results
-//!
-//! The [`handler`] module provides `HandlerResult<E>` for controlling event flow:
-//!
-//! - `Continue(event)` - Processing succeeded, pass to next handler
-//! - `Cancel` - Stop processing, event is discarded
-//! - `Cancelled(event)` - Stop processing, event is preserved for inspection
-//! - `SoftError { event, error }` - Non-fatal error, continue with event
-//! - `FatalError(error)` - Fatal error, stop processing immediately
-//!
-//! # Example
-//!
-//! ```rust,ignore
-//! use crucible_core::events::{Handler, HandlerContext, HandlerResult, Reactor, SessionEvent};
-//! use async_trait::async_trait;
-//!
-//! struct LoggingHandler;
-//!
-//! #[async_trait]
-//! impl Handler for LoggingHandler {
-//!     fn name(&self) -> &str { "logging" }
-//!     fn priority(&self) -> i32 { 10 } // Run early
-//!
-//!     async fn handle(
-//!         &self,
-//!         ctx: &mut HandlerContext,
-//!         event: SessionEvent,
-//!     ) -> HandlerResult<SessionEvent> {
-//!         tracing::info!("Event: {:?}", event.event_type());
-//!         HandlerResult::ok(event)
-//!     }
-//! }
-//!
-//! // Register with Reactor
-//! let mut reactor = Reactor::new();
-//! reactor.register(Box::new(LoggingHandler))?;
-//!
-//! // Emit event
-//! let result = reactor.emit(event).await?;
-//! ```
-//!
-//! # Using with EventEmitter Trait
-//!
-//! If you have code that expects an `EventEmitter`, use `ReactorEventEmitter`:
-//!
-//! ```rust,ignore
-//! use crucible_core::events::{Reactor, ReactorEventEmitter, EventEmitter};
-//! use std::sync::Arc;
-//! use tokio::sync::RwLock;
-//!
-//! let reactor = Arc::new(RwLock::new(Reactor::new()));
-//! let emitter = ReactorEventEmitter::new(reactor);
-//!
-//! // Now use via EventEmitter trait
-//! let outcome = emitter.emit(event).await?;
-//! ```
-//!
-//! # Script Handlers
-//!
-//! For Lua scripts, use `crucible_lua::LuaHandler`.
-//! It implements the `Handler` trait and uses `spawn_blocking` for async execution.
-//!
-//! # Legacy EventBus
-//!
-//! The `emitter` and `subscriber` modules provide the older EventBus pattern.
-//! New code should use `Reactor` directly.
+//! Removed 2026-08-20. `HandlerResult` survived the deletion and moved to
+//! `subscriber`, where its only consumer lives.
 
-pub mod dependency;
 pub mod emitter;
-pub mod handler;
 pub mod markdown;
-pub mod reactor;
 pub mod ring;
 pub mod session_event;
 pub mod subscriber;
@@ -106,18 +36,10 @@ pub mod subscriber;
 // Re-exports for convenient access
 
 // New unified Handler system
-pub use handler::{
-    matches_event_pattern, BoxedHandler, Handler, HandlerContext, HandlerResult, HandlerTimer,
-    HandlerTraceEntry, SharedHandler,
-};
 
 // Dependency graph for handler ordering
-pub use dependency::{DependencyError, DependencyGraph, DependencyResult, GraphNode};
 
 // Reactor (central event loop)
-pub use reactor::{
-    EmitResult as ReactorEmitResult, Reactor, ReactorError, ReactorEventEmitter, ReactorResult,
-};
 
 // Built-in handlers
 
@@ -129,6 +51,7 @@ pub use emitter::{
 
 // Legacy subscriber exports
 pub use subscriber::{
+    HandlerResult,
     box_handler, BoxedHandlerFn, EventFilter, HandlerFuture, SubscriptionError, SubscriptionId,
     SubscriptionIdGenerator, SubscriptionInfo, SubscriptionResult,
 };

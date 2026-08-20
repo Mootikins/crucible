@@ -2,7 +2,6 @@ use super::super::*;
 use crucible_core::config::components::permissions::{
     PermissionConfig, PermissionDecision, PermissionEngine, PermissionMode,
 };
-use crucible_core::events::InternalSessionEvent;
 use std::future::Future;
 
 /// The name the permission engine matches an ACP tool call against.
@@ -328,70 +327,8 @@ impl AgentManager {
         stream_ctx: &StreamContext,
         stream_config: &AgentStreamConfig,
     ) -> Option<String> {
-        let mut state = stream_ctx.session_state.lock().await;
+        let state = stream_ctx.session_state.lock().await;
         let mut current_content = content;
-        let pre_event = SessionEvent::internal(InternalSessionEvent::PreLlmCall {
-            prompt: current_content.clone(),
-            model: stream_config.model.clone(),
-        });
-
-        current_content = match state.reactor.emit(pre_event).await {
-            Ok(EmitResult::Completed { event, .. }) => match &event {
-                SessionEvent::Internal(inner)
-                    if matches!(inner.as_ref(), InternalSessionEvent::PreLlmCall { .. }) =>
-                {
-                    let InternalSessionEvent::PreLlmCall { prompt, .. } = inner.as_ref() else {
-                        unreachable!()
-                    };
-                    prompt.clone()
-                }
-                _ => {
-                    warn!(
-                        session_id = %stream_ctx.session_id,
-                        "PreLlmCall handler returned unexpected event type, using original prompt"
-                    );
-                    current_content
-                }
-            },
-            Ok(EmitResult::Cancelled { by_handler, .. }) => {
-                warn!(
-                    session_id = %stream_ctx.session_id,
-                    handler = %by_handler,
-                    "PreLlmCall cancelled by handler"
-                );
-                if !emit_event(
-                    &stream_ctx.event_tx,
-                    SessionEventMessage::ended(
-                        &stream_ctx.session_id,
-                        format!("cancelled by handler: {}", by_handler),
-                    ),
-                ) {
-                    warn!(
-                        session_id = %stream_ctx.session_id,
-                        "No subscribers for cancelled event"
-                    );
-                }
-                return None;
-            }
-            Ok(EmitResult::Failed { handler, error, .. }) => {
-                warn!(
-                    session_id = %stream_ctx.session_id,
-                    handler = %handler,
-                    error = %error,
-                    "PreLlmCall handler failed, using original prompt (fail-open)"
-                );
-                current_content
-            }
-            Err(error) => {
-                warn!(
-                    session_id = %stream_ctx.session_id,
-                    error = %error,
-                    "PreLlmCall emit failed, using original prompt (fail-open)"
-                );
-                current_content
-            }
-        };
-
         // Session-scoped handlers first (more specific), under the state
         // lock; then plugin handlers with the lock RELEASED — plugin Lua can
         // call `cru.shell`/`cru.http` for seconds, and holding the session's

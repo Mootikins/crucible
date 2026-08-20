@@ -1,7 +1,6 @@
 use super::*;
 use crate::test_support::{kiln_name, temp_session_manager, temp_session_manager_with_kilns};
 use async_trait::async_trait;
-use crucible_core::events::handler::{Handler, HandlerContext, HandlerResult};
 use crucible_core::events::{InternalSessionEvent, SessionEvent};
 use crucible_core::parser::ParsedNote;
 use crucible_core::session::SessionType;
@@ -150,63 +149,6 @@ impl crucible_core::turn::Agent for StreamingMockAgent {
     }
 }
 
-struct MockHandler {
-    name: String,
-    event_pattern: String,
-    call_count: Arc<std::sync::atomic::AtomicUsize>,
-    behavior: MockHandlerBehavior,
-}
-
-enum MockHandlerBehavior {
-    Passthrough,
-    ModifyPrompt(String),
-    Cancel,
-    FatalError(String),
-}
-
-#[async_trait::async_trait]
-impl Handler for MockHandler {
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn event_pattern(&self) -> &str {
-        &self.event_pattern
-    }
-
-    async fn handle(
-        &self,
-        _ctx: &mut HandlerContext,
-        event: SessionEvent,
-    ) -> HandlerResult<SessionEvent> {
-        self.call_count
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
-        match &self.behavior {
-            MockHandlerBehavior::Passthrough => HandlerResult::Continue(event),
-            MockHandlerBehavior::ModifyPrompt(new_prompt) => {
-                if let SessionEvent::Internal(inner) = &event {
-                    if let InternalSessionEvent::PreLlmCall { model, .. } = inner.as_ref() {
-                        HandlerResult::Continue(SessionEvent::internal(
-                            InternalSessionEvent::PreLlmCall {
-                                prompt: new_prompt.clone(),
-                                model: model.clone(),
-                            },
-                        ))
-                    } else {
-                        HandlerResult::Continue(event)
-                    }
-                } else {
-                    HandlerResult::Continue(event)
-                }
-            }
-            MockHandlerBehavior::Cancel => HandlerResult::Cancel,
-            MockHandlerBehavior::FatalError(msg) => {
-                HandlerResult::FatalError(crucible_core::events::EventError::other(msg.clone()))
-            }
-        }
-    }
-}
 
 /// Mock agent that delivers a different scripted event sequence per
 /// turn. Used by tests that need to send multiple messages and observe
@@ -484,17 +426,6 @@ impl ReactorTestHarness {
         }
     }
 
-    async fn register_handler(&self, handler: MockHandler) {
-        let session_state = self
-            .agent_manager
-            .get_or_create_session_state(&self.session_id);
-        session_state
-            .lock()
-            .await
-            .reactor
-            .register(Box::new(handler))
-            .unwrap();
-    }
 
     /// Inject a capturing agent and return both capture handles. Most
     /// tests only need the prompt; transform_context tests want the

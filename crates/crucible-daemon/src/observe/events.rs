@@ -1,7 +1,7 @@
 //! Session log events for JSONL persistence
 //!
 //! These events are for session persistence/resume, separate from
-//! `crucible_core::events::SessionEvent` which is for Reactor dispatch.
+//! `crucible_core::events::SessionEvent`, the canonical event type.
 
 use chrono::{DateTime, Utc};
 use crucible_core::protocol::SessionEventMessage;

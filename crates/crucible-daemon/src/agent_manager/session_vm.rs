@@ -182,7 +182,6 @@ impl AgentManager {
             );
         }
 
-        let reactor = Reactor::new();
         if let Some(session) = self.session_manager.get_session(session_id) {
             let user_init = session
                 .workspace
@@ -233,7 +232,6 @@ impl AgentManager {
             registry,
             permission_hooks,
             permission_functions,
-            reactor,
             spill_counter: std::sync::atomic::AtomicU32::new(1),
         }))
     }

@@ -22,7 +22,6 @@
 
 use super::super::*;
 use crate::agent_manager::tool_tracking::ToolCallTracker;
-use crucible_core::events::InternalSessionEvent;
 use crucible_core::protocol::session_events::ContextLimitSource;
 use crucible_core::session::{validate_output, OutputValidation};
 use crucible_core::traits::chat::{ChatToolCall, ChatToolResult};
@@ -1166,21 +1165,8 @@ impl AgentManager {
             );
         }
 
-        let mut state = stream_ctx.session_state.lock().await;
-        let post_event = SessionEvent::internal(InternalSessionEvent::PostLlmCall {
-            response_summary: response_summary.clone(),
-            model: stream_config.model.clone(),
-            duration_ms,
-            token_count: None,
-        });
-        if let Err(e) = state.reactor.emit(post_event).await {
-            warn!(
-                session_id = %stream_ctx.session_id,
-                error = %e,
-                "PostLlmCall Reactor emit failed (fail-open)"
-            );
-        }
-
+        let state = stream_ctx.session_state.lock().await;
+        
         // Observational event; session VM first, then plugin VM with the
         // state lock released (plugin Lua may run for seconds).
         let post_llm_event = SessionEvent::Custom {

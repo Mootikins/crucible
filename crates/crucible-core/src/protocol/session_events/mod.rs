@@ -49,7 +49,7 @@
 //! # Two vocabularies, not one
 //!
 //! This is the **transport** vocabulary. [`SessionEvent`](crate::events::SessionEvent)
-//! is the **scripting** vocabulary — Reactor dispatch, Lua tables, and markdown
+//! is the **scripting** vocabulary — Lua tables and markdown
 //! session logs. They are disjoint by design and neither is a subset of the
 //! other:
 //!

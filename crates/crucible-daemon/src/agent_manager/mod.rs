@@ -22,7 +22,7 @@ use crucible_core::config::{
     AcpConfig, AgentProfile, BackendType, DataClassification, LlmProviderConfig, PatternStore,
 };
 use crucible_core::events::{
-    InternalSessionEvent, Reactor, ReactorEmitResult as EmitResult, SessionEvent,
+    InternalSessionEvent, SessionEvent,
 };
 use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, PermissionScope};
 use crucible_core::session::{ContextStrategy, OutputValidation, SessionAgent};
@@ -248,7 +248,6 @@ pub(crate) struct SessionEventState {
     registry: LuaScriptHandlerRegistry,
     permission_hooks: Arc<StdMutex<Vec<PermissionHook>>>,
     permission_functions: Arc<StdMutex<HashMap<String, RegistryKey>>>,
-    pub(crate) reactor: Reactor,
     /// Counter for spill file naming, persists across messages in a session
     pub(crate) spill_counter: std::sync::atomic::AtomicU32,
 }
