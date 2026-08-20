@@ -97,21 +97,6 @@ fn payloadless_workflow_events_keep_an_empty_object_not_null() {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// Drift guards
-// ─────────────────────────────────────────────────────────────────────────
-
-#[test]
-fn event_names_are_unique() {
-    let mut seen = BTreeSet::new();
-    let dupes: Vec<_> = EVENT_NAMES
-        .iter()
-        .filter(|n| !seen.insert(**n))
-        .copied()
-        .collect();
-    assert!(dupes.is_empty(), "EVENT_NAMES has duplicates: {dupes:?}");
-}
-
 /// The eight group enums, source-scanned. Order matters only for the error
 /// message.
 const GROUP_ENUMS: &[(&str, &str)] = &[
@@ -181,14 +166,17 @@ fn snake_case(ident: &str) -> String {
     out
 }
 
-/// `EVENT_NAMES` and `Group::of` are hand-maintained while the enum variants are
-/// the source of truth. `payload()` returns `UnknownEvent` for a name missing
-/// from `Group::of`, so drift makes a real event look like a foreign one — the
-/// consumer takes its passthrough arm and the feature silently disappears.
-/// Source-scanning is ugly but proven: `rpc/dispatch.rs` does the same for RPC
-/// methods.
+/// `Group::of` decides which enum a name decodes into, so a declared variant
+/// it does not know is an event nothing can decode — `payload()` returns
+/// `UnknownEvent` and the consumer takes its passthrough arm, so the feature
+/// silently disappears.
+///
+/// Derived from the enums rather than from a hand-maintained name list. The
+/// list this used to read (`EVENT_NAMES`) had no non-test consumer: it existed
+/// so this test could diff it against the variants that were already the source
+/// of truth.
 #[test]
-fn event_names_match_the_payload_enums() {
+fn group_of_knows_every_declared_event() {
     let mut declared = BTreeSet::new();
     for (name, src) in GROUP_ENUMS {
         let group = variant_wire_names(src, name);
@@ -198,26 +186,14 @@ fn event_names_match_the_payload_enums() {
         );
         declared.extend(group);
     }
-    let listed: BTreeSet<String> = EVENT_NAMES.iter().copied().map(String::from).collect();
-    assert_eq!(
-        declared, listed,
-        "EVENT_NAMES has drifted from the enum variants"
-    );
-}
-
-/// Same source of truth, second consumer: `Group::of` decides which enum a name
-/// decodes into, so a name in `EVENT_NAMES` that `Group::of` does not know is an
-/// event nothing can decode.
-#[test]
-fn group_of_knows_every_event_name() {
-    let unknown: Vec<_> = EVENT_NAMES
+    let unknown: Vec<_> = declared
         .iter()
         .filter(|n| Group::of(n).is_none())
-        .copied()
+        .cloned()
         .collect();
     assert!(
         unknown.is_empty(),
-        "listed in EVENT_NAMES but absent from Group::of: {unknown:?}"
+        "declared by a payload enum but absent from Group::of: {unknown:?}"
     );
 }
 

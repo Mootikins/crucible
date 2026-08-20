@@ -27,13 +27,6 @@
 //!
 //! # Built-in Handlers
 //!
-//! The [`builtin_handlers`] module provides ready-to-use handlers:
-//!
-//! - [`LoggingHandler`]: Logs all events (priority 10)
-//! - [`MetricsHandler`]: Collects event metrics (priority 5)
-//! - [`FilterHandler`]: Conditionally cancels events
-//! - [`AsyncCallbackHandler`]: Executes async callbacks
-//!
 //! # Handler Results
 //!
 //! The [`handler`] module provides `HandlerResult<E>` for controlling event flow:
@@ -101,7 +94,6 @@
 //! The `emitter` and `subscriber` modules provide the older EventBus pattern.
 //! New code should use `Reactor` directly.
 
-pub mod builtin_handlers;
 pub mod dependency;
 pub mod emitter;
 pub mod handler;
@@ -128,7 +120,6 @@ pub use reactor::{
 };
 
 // Built-in handlers
-pub use builtin_handlers::{AsyncCallbackHandler, FilterHandler, LoggingHandler, MetricsHandler};
 
 // Legacy emitter exports
 pub use emitter::{

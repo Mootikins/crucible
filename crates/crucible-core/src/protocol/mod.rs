@@ -12,5 +12,5 @@ pub use session_events::{
     KilnNotesIndexedPayload, McpServersReadyPayload, NotificationPayload, PluginsDiscoveredPayload,
     ProvidersListedPayload, ReviewPayload, SessionEventPayload, SessionInitializedPayload,
     SettingsPayload, SetupPayload, SystemPayload, ToolResultBody, TurnPayload, WorkflowPayload,
-    WorkspaceIndexedPayload, EVENT_NAMES,
+    WorkspaceIndexedPayload,
 };
