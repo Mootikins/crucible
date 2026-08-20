@@ -901,3 +901,74 @@ mod reply_routing_tests {
         assert!(response.allowed);
     }
 }
+
+/// `cru.ui.permission` — a plugin asking for a decision, not the agent gate.
+///
+/// It registers in the INTERACTION registry (`ix-…`), because a plugin's
+/// question resolves to `cancelled` on silence while the agent's gate must
+/// resolve to `deny`. But the answer comes back shaped as
+/// `InteractionResponse::Permission`, and routing by the reply's kind sent it
+/// to the permission registry, which has no such id. The user clicked Allow,
+/// `interaction_completed` fired so the modal closed, and the plugin waited
+/// out its full timeout and was told `cancelled`.
+mod plugin_permission_tests {
+    use super::*;
+    use crucible_core::interaction::{InteractionRequest, InteractionResponse, PermRequest};
+
+    #[tokio::test]
+    async fn a_plugin_permission_request_can_actually_be_answered() {
+        let session_manager = temp_session_manager();
+        // A real session: `request_interaction` checks existence before minting
+        // an id, so a request nothing could ever answer is an error instead.
+        let session = crucible_core::session::Session::new(
+            crucible_core::session::SessionType::Chat,
+            Vec::new(),
+        );
+        let session_id = session.id.to_string();
+        session_manager.register_transient(session);
+        let agent_manager = create_test_agent_manager(session_manager);
+        let (event_tx, mut event_rx) = broadcast::channel(16);
+
+        let request = InteractionRequest::Permission(PermRequest::bash(["ls"]));
+        let am = Arc::new(agent_manager);
+        let asked = tokio::spawn({
+            let am = Arc::clone(&am);
+            let sid = session_id.clone();
+            async move {
+                am.request_interaction(
+                    &sid,
+                    request,
+                    &event_tx,
+                    std::time::Duration::from_secs(5),
+                )
+                .await
+            }
+        });
+
+        // Take the id off the wire exactly as a client would.
+        let request_id = loop {
+            let msg = event_rx.recv().await.expect("interaction_requested");
+            if msg.event == "interaction_requested" {
+                break msg.data["request_id"].as_str().expect("request_id").to_string();
+            }
+        };
+        assert!(
+            request_id.starts_with("ix-"),
+            "a plugin request lives in the interaction registry: {request_id}"
+        );
+
+        am
+            .deliver_client_reply(
+                &session_id,
+                &request_id,
+                InteractionResponse::Permission(PermResponse::allow()),
+            )
+            .expect("a permission answer must reach the plugin that asked");
+
+        let answer = asked.await.expect("join").expect("interaction resolved");
+        match answer {
+            InteractionResponse::Permission(p) => assert!(p.allowed),
+            other => panic!("the plugin was told {other:?}, not its answer"),
+        }
+    }
+}

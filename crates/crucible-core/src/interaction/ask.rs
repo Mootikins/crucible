@@ -108,7 +108,15 @@ impl AskResponse {
 /// and an "Other" free-text option is always implicitly available.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AskBatch {
-    /// Unique ID for correlating request with response.
+    /// Correlation id.
+    ///
+    /// Defaulted because a plugin cannot supply one: `cru.ui.ask_batch` passes
+    /// the caller's options table through, `crucible-lua` exposes no UUID
+    /// helper, and the daemon mints the id it actually routes on
+    /// (`ix-<uuid>`, in `agent_manager/interaction.rs`) separately. Required,
+    /// this field made the function uncallable — "missing field `id`" before
+    /// any client saw the request.
+    #[serde(default = "uuid::Uuid::new_v4")]
     pub id: uuid::Uuid,
     /// Questions to ask (1-4).
     pub questions: Vec<AskQuestion>,
@@ -199,8 +207,15 @@ impl AskQuestion {
 /// Response to an [`AskBatch`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AskBatchResponse {
-    /// The request ID this responds to.
-    pub id: uuid::Uuid,
+    /// The request id this answers, as the client received it.
+    ///
+    /// A `String`, not a `Uuid`: the id a client is given is the daemon's
+    /// correlation token (`ix-<uuid>`), which is not a bare UUID, so a
+    /// `Uuid` here rejected every reply the browser could send. Nothing
+    /// routes on it — `deliver_client_reply` uses the envelope's
+    /// `request_id` — so it is carried for the caller's benefit only.
+    #[serde(default)]
+    pub id: String,
     /// One answer per question, in order.
     pub answers: Vec<QuestionAnswer>,
     /// True if user cancelled the whole interaction.
@@ -209,10 +224,10 @@ pub struct AskBatchResponse {
 }
 
 impl AskBatchResponse {
-    /// Create a new response for a request ID.
-    pub fn new(id: uuid::Uuid) -> Self {
+    /// Create a new response for a request id, as the client received it.
+    pub fn new(id: impl Into<String>) -> Self {
         Self {
-            id,
+            id: id.into(),
             answers: Vec::new(),
             cancelled: false,
         }
@@ -225,9 +240,9 @@ impl AskBatchResponse {
     }
 
     /// Mark as cancelled.
-    pub fn cancelled(id: uuid::Uuid) -> Self {
+    pub fn cancelled(id: impl Into<String>) -> Self {
         Self {
-            id,
+            id: id.into(),
             answers: Vec::new(),
             cancelled: true,
         }
@@ -383,7 +398,8 @@ mod tests {
 
     #[test]
     fn ask_batch_cancelled() {
-        let id = uuid::Uuid::new_v4();
+        // The daemon's correlation token, which is what a client is handed.
+        let id = "ix-8a2f5c1e-0000-4000-8000-000000000000";
         let response = AskBatchResponse::cancelled(id);
 
         assert!(response.cancelled);

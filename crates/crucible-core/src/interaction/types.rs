@@ -930,3 +930,68 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod plugin_call_shape_tests {
+    use super::*;
+
+    /// The minimal options table a plugin writes for each kind, as documented
+    /// in `Help/Plugins/Lua Runtime API.md`.
+    ///
+    /// `cru.ui.<kind>(session, opts)` passes the table through and stamps
+    /// `kind`; the daemon then does `from_value::<InteractionRequest>` before
+    /// anything is emitted (`session_bridge.rs`). So a required field a plugin
+    /// has no way to know about is not a documentation gap — it is a function
+    /// that cannot be called.
+    fn documented_minimal(kind: &str) -> serde_json::Value {
+        match kind {
+            "ask" => serde_json::json!({ "kind": "ask", "question": "Which branch?" }),
+            "ask_batch" => serde_json::json!({
+                "kind": "ask_batch",
+                "questions": [{
+                    "header": "Branch",
+                    "question": "Which branch?",
+                    "choices": ["main"],
+                }],
+            }),
+            "edit" => serde_json::json!({ "kind": "edit", "content": "text" }),
+            "show" => serde_json::json!({ "kind": "show", "content": "text" }),
+            "permission" => serde_json::json!({
+                "kind": "permission",
+                "action": { "type": "bash", "tokens": ["ls"] },
+            }),
+            "popup" => serde_json::json!({ "kind": "popup", "title": "Pick one" }),
+            "panel" => serde_json::json!({ "kind": "panel", "header": "Files" }),
+            other => panic!("no documented minimal shape for kind '{other}'"),
+        }
+    }
+
+    /// Every advertised `cru.ui` function must be callable with the options a
+    /// plugin author can actually write.
+    ///
+    /// `ask_batch` was not: `AskBatch.id` was a required `uuid::Uuid` with no
+    /// default, so `cru.ui.ask_batch(session, { questions = … })` failed
+    /// deserialization with "missing field `id`" before any client saw it, and
+    /// `crucible-lua` exposes no UUID helper. The Lua tests could not catch it
+    /// — they pass a mock daemon `{ title = "t" }` for all seven kinds and
+    /// never reach this decode.
+    #[test]
+    fn every_advertised_kind_accepts_its_documented_minimal_options() {
+        for kind in InteractionRequest::KINDS {
+            let opts = documented_minimal(kind);
+            let parsed: Result<InteractionRequest, _> =
+                serde_json::from_value(opts.clone());
+            let request = parsed.unwrap_or_else(|e| {
+                panic!(
+                    "cru.ui.{kind} cannot be called with its documented options: {e}\n  \
+                     sent: {opts}"
+                )
+            });
+            assert_eq!(
+                request.kind(),
+                *kind,
+                "decoded to the wrong variant — an untagged sibling absorbed it"
+            );
+        }
+    }
+}

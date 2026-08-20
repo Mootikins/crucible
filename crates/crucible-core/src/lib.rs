@@ -15,8 +15,6 @@ pub mod fuzzy;
 pub mod hashing;
 pub mod http;
 pub mod interaction;
-pub mod interaction_context;
-pub mod interaction_registry;
 pub mod kiln;
 pub mod note;
 pub mod parser;
@@ -46,7 +44,6 @@ pub use agent::{
 pub use content_category::{ContentCategory, ContentCategoryError};
 pub use discovery::{DiscoveryConfig, DiscoveryPaths};
 pub use error_utils::strip_tool_error_prefix;
-pub use interaction_context::{EventPushCallback, InteractionContext};
 pub use kiln::{
     is_canvas_file, is_indexable_file, is_note_file, is_plain_text_file, KilnFileKind,
     EXCLUDED_DIRS,
@@ -136,7 +133,6 @@ pub use interaction::{
     PanelHints, PanelItem, PanelResult, PanelState, PermAction, PermRequest, PermResponse,
     PermissionScope, PopupRequest, PopupResponse, QuestionAnswer, ShowRequest,
 };
-pub use interaction_registry::InteractionRegistry;
 
 // Re-export session types (daemon session management)
 pub use session::{Session, SessionState, SessionSummary, SessionType};
