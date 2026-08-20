@@ -71,7 +71,7 @@ pub struct FastEmbedProvider {
     /// FastEmbed model instance (lazy loaded)
     model: Arc<Mutex<Option<TextEmbedding>>>,
     /// Provider configuration
-    config: FastEmbedConfig,
+    config: FastEmbedInitOptions,
     /// Model metadata
     model_info: ModelInfo,
 }
@@ -95,7 +95,7 @@ impl std::fmt::Debug for FastEmbedProvider {
 
 /// Configuration for FastEmbed provider
 #[derive(Debug, Clone)]
-pub struct FastEmbedConfig {
+pub struct FastEmbedInitOptions {
     /// Model to use (enum from fastembed crate)
     pub model: EmbeddingModel,
     /// Cache directory for downloaded models
@@ -106,7 +106,7 @@ pub struct FastEmbedConfig {
     pub batch_size: Option<usize>,
 }
 
-impl Default for FastEmbedConfig {
+impl Default for FastEmbedInitOptions {
     fn default() -> Self {
         Self {
             model: EmbeddingModel::BGESmallENV15,
@@ -146,7 +146,7 @@ impl FastEmbedProvider {
         // Get model metadata
         let model_info = Self::get_model_info(&model);
 
-        let fastembed_config = FastEmbedConfig {
+        let fastembed_config = FastEmbedInitOptions {
             model,
             cache_dir: None, // Use fastembed's default cache
             show_download_progress: true,

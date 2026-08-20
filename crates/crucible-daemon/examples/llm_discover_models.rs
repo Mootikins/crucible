@@ -10,7 +10,7 @@
 //! cargo run --example discover_models
 //! ```
 
-use crucible_daemon::llm::model_discovery::{DiscoveryConfig, ModelDiscovery};
+use crucible_daemon::llm::model_discovery::{ModelDiscovery, ModelDiscoveryConfig};
 use std::path::PathBuf;
 
 #[tokio::main]
@@ -23,7 +23,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 GGUF Model Discovery Example\n");
 
     // Configure discovery settings
-    let config = DiscoveryConfig {
+    let config = ModelDiscoveryConfig {
         // Custom paths to search (in addition to common locations)
         custom_paths: vec![
             PathBuf::from("~/models"),

@@ -10,15 +10,47 @@ SERDE_LOCAL = {'Error','Ok','SerializeSeq','SerializeMap','SerializeStruct',
                'SerializeTuple','SerializeTupleStruct','SerializeTupleVariant',
                'SerializeStructVariant','Value','Item'}
 
-pat = re.compile(r'^\s*(?:pub(?:\([^)]*\))?\s+)?(struct|enum|trait|type)\s+([A-Z][A-Za-z0-9_]*)', re.M)
+pat = re.compile(r'^(\s*)(?:pub(?:\([^)]*\))?\s+)?(struct|enum|trait|type)\s+([A-Z][A-Za-z0-9_]*)')
+FN = re.compile(r'(pub(\([^)]*\))?\s+)?(async\s+)?fn\s')
+
+
+def is_function_local(lines, idx, indent):
+    """True when the nearest enclosing open block is a `fn`, not a `mod`.
+
+    A type declared inside a function body has NO module scope: nothing can
+    import it, nothing can collide with it, it cannot shadow anything. The first
+    version of this scan matched `^\\s*struct`, which counted them, and so
+    reported `ShowRequest` and `ModelsResponse` in
+    `agent_manager/context_length.rs` as cross-crate collisions. Both are
+    four-space-indented locals, one inside each of two functions.
+    """
+    if indent == 0:
+        return False
+    for j in range(idx - 1, -1, -1):
+        line = lines[j]
+        stripped = line.lstrip()
+        if not stripped or stripped.startswith(('//', '#[')):
+            continue
+        here = len(line) - len(stripped)
+        if here < indent and line.rstrip().endswith('{'):
+            return bool(FN.match(stripped))
+    return False
+
+
 decl = defaultdict(list)
 for p in (ROOT/'crates').rglob('*.rs'):
     rel = str(p.relative_to(ROOT))
     if 'target' in rel or '/tests/' in rel or rel.endswith('tests.rs') or '/test' in rel:
         continue
     body = re.sub(r'#\[cfg\(test\)\][\s\S]*$', '', p.read_text(errors='ignore'))
-    for m in pat.finditer(body):
-        decl[m.group(2)].append((rel, m.group(1)))
+    lines = body.split('\n')
+    for i, line in enumerate(lines):
+        m = pat.match(line)
+        if not m:
+            continue
+        if is_function_local(lines, i, len(m.group(1))):
+            continue
+        decl[m.group(3)].append((rel, m.group(2)))
 
 def crate(f): return f.split('/')[1]
 rows = []

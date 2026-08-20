@@ -56,7 +56,7 @@ pub use components::mcp;
 pub use components::{
     AcpConfig, AgentPreference, AgentProfile, BackendType, ChatConfig, CliConfig,
     CompiledPermissions, ContextConfig, DataClassification, DelegationConfig, DiscoveryPathsConfig,
-    HandlersConfig, HighlightingConfig, LlmConfig, LlmProviderConfig, McpConfig, PermissionConfig,
+    HighlightingConfig, LlmConfig, LlmProviderConfig, McpConfig, PermissionConfig,
     PermissionDecision, PermissionEngine, PermissionMode, StorageConfig, TransportType, TrustLevel,
     TypeDiscoveryConfig, UpstreamServerConfig,
 };

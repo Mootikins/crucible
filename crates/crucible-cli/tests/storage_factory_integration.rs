@@ -136,7 +136,7 @@ async fn test_get_storage_connects_to_daemon() {
     server.shutdown().await;
 }
 
-/// Test that StorageHandle works in daemon mode with multiple requests
+/// Test that CliStorageHandle works in daemon mode with multiple requests
 #[tokio::test]
 #[serial]
 async fn test_storage_handle_query_through_daemon() {
@@ -160,7 +160,7 @@ async fn test_storage_handle_query_through_daemon() {
     server.shutdown().await;
 }
 
-/// Test that StorageHandle provides access to daemon client
+/// Test that CliStorageHandle provides access to daemon client
 #[tokio::test]
 #[serial]
 async fn test_storage_handle_mode_detection() {

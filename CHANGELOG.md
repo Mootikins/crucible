@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- **Four more colliding names separated, one orphan deleted.** Verified pairwise
+  before touching: `crucible_daemon::webhook::SecretsFile` ->
+  `WebhookSecretsFile` (core's is a `CredentialStore` over `secrets.toml`; this
+  one is a private DTO for `webhooks.toml`),
+  `crucible_daemon::llm::model_discovery::DiscoveryConfig` ->
+  `ModelDiscoveryConfig` (core's holds plugin search paths; this one holds GGUF
+  scan depth and a cache TTL), `crucible_cli::factories::StorageHandle` ->
+  `CliStorageHandle` (the daemon's owns SQLite plus the FTS index and takes an
+  explicit `Scope` authority on every method, which the CLI newtype has no
+  concept of), and the runtime
+  `crucible_daemon::llm::embeddings::fastembed::FastEmbedConfig` ->
+  `FastEmbedInitOptions` (core's is the serde form; this one holds the external
+  crate's `EmbeddingModel` enum and cannot derive `Deserialize`).
+  `crucible_core::config::components::handlers` is deleted — 309 lines whose
+  `HandlersConfig` was a field of no struct, with no `[handlers]` section in any
+  config or doc and no implementation behind any handler it named.
 - **Four colliding type names separated.** Each pair was read before it was
   touched, and none of the four turned out to be mergeable.
   `crucible_lua::ShellPolicy` is now `PluginShellPolicy`: it is **fail-open**

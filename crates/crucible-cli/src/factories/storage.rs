@@ -15,9 +15,9 @@ use tracing::info;
 ///
 /// Wraps a `DaemonStorageClient` — the daemon is the only storage backend.
 #[derive(Clone)]
-pub struct StorageHandle(Arc<DaemonStorageClient>);
+pub struct CliStorageHandle(Arc<DaemonStorageClient>);
 
-impl StorageHandle {
+impl CliStorageHandle {
     /// Execute a raw query and return JSON
     pub async fn query_raw(&self, sql: &str) -> Result<serde_json::Value> {
         self.0.query_raw(sql).await
@@ -54,8 +54,8 @@ impl StorageHandle {
 /// Get daemon-backed storage.
 ///
 /// Connects to the daemon (auto-starting if needed), opens the kiln,
-/// and returns a `StorageHandle` for queries.
-pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
+/// and returns a `CliStorageHandle` for queries.
+pub async fn get_storage(config: &CliConfig) -> Result<CliStorageHandle> {
     info!("Using daemon storage mode");
     let client = daemon_client().await?;
     let kiln_path = config.kiln_path.clone();
@@ -68,7 +68,7 @@ pub async fn get_storage(config: &CliConfig) -> Result<StorageHandle> {
         .await?;
 
     let client = Arc::new(client);
-    Ok(StorageHandle(Arc::new(DaemonStorageClient::new(
+    Ok(CliStorageHandle(Arc::new(DaemonStorageClient::new(
         client, kiln_path,
     ))))
 }

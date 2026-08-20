@@ -15,12 +15,12 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use crucible_daemon::llm::model_discovery::{ModelDiscovery, DiscoveryConfig};
+//! use crucible_daemon::llm::model_discovery::{ModelDiscovery, ModelDiscoveryConfig};
 //! use std::path::PathBuf;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let config = DiscoveryConfig {
+//!     let config = ModelDiscoveryConfig {
 //!         custom_paths: vec![PathBuf::from("~/models")],
 //!         search_common_locations: true,
 //!         max_depth: 5,
@@ -87,7 +87,7 @@ pub struct DiscoveredModel {
 
 /// Configuration for model discovery
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DiscoveryConfig {
+pub struct ModelDiscoveryConfig {
     /// Custom paths to search for models
     pub custom_paths: Vec<PathBuf>,
     /// Whether to search common locations (~/models, ~/.ollama/models, etc.)
@@ -98,7 +98,7 @@ pub struct DiscoveryConfig {
     pub cache_ttl_seconds: u64,
 }
 
-impl Default for DiscoveryConfig {
+impl Default for ModelDiscoveryConfig {
     fn default() -> Self {
         Self {
             custom_paths: Vec::new(),
@@ -129,13 +129,13 @@ impl CachedDiscovery {
 
 /// Model discovery system for local GGUF files
 pub struct ModelDiscovery {
-    config: DiscoveryConfig,
+    config: ModelDiscoveryConfig,
     cache: Arc<RwLock<Option<CachedDiscovery>>>,
 }
 
 impl ModelDiscovery {
     /// Create a new model discovery instance with the given configuration
-    pub fn new(config: DiscoveryConfig) -> Self {
+    pub fn new(config: ModelDiscoveryConfig) -> Self {
         Self {
             config,
             cache: Arc::new(RwLock::new(None)),
@@ -470,7 +470,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_discovery_config_defaults() {
-        let config = DiscoveryConfig::default();
+        let config = ModelDiscoveryConfig::default();
         assert!(config.search_common_locations);
         assert_eq!(config.max_depth, 5);
         assert_eq!(config.cache_ttl_seconds, 300);
@@ -478,7 +478,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_model_type_classification() {
-        let discovery = ModelDiscovery::new(DiscoveryConfig::default());
+        let discovery = ModelDiscovery::new(ModelDiscoveryConfig::default());
 
         assert_eq!(
             discovery.classify_model_type(&Some("bert".to_string())),
@@ -503,7 +503,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_file_type_to_quantization() {
-        let discovery = ModelDiscovery::new(DiscoveryConfig::default());
+        let discovery = ModelDiscovery::new(ModelDiscoveryConfig::default());
 
         assert_eq!(discovery.file_type_to_quantization(0), "F32");
         assert_eq!(discovery.file_type_to_quantization(1), "F16");
@@ -513,7 +513,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_is_gguf_file() {
-        let discovery = ModelDiscovery::new(DiscoveryConfig::default());
+        let discovery = ModelDiscovery::new(ModelDiscoveryConfig::default());
 
         assert!(discovery.is_gguf_file(Path::new("model.gguf")));
         assert!(discovery.is_gguf_file(Path::new("model.GGUF")));
@@ -523,7 +523,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_invalidation() {
-        let config = DiscoveryConfig {
+        let config = ModelDiscoveryConfig {
             custom_paths: vec![],
             search_common_locations: false,
             max_depth: 1,
@@ -561,7 +561,7 @@ mod tests {
     async fn test_empty_directory_scan() {
         let temp_dir = TempDir::new().unwrap();
 
-        let config = DiscoveryConfig {
+        let config = ModelDiscoveryConfig {
             custom_paths: vec![temp_dir.path().to_path_buf()],
             search_common_locations: false,
             max_depth: 3,

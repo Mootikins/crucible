@@ -156,7 +156,7 @@ pub struct WebhookSecrets {
 }
 
 #[derive(Debug, Default, Deserialize)]
-struct SecretsFile {
+struct WebhookSecretsFile {
     #[serde(default)]
     webhooks: HashMap<String, SecretEntry>,
 }
@@ -236,7 +236,7 @@ impl WebhookSecrets {
                 return Self::default();
             }
         };
-        match toml::from_str::<SecretsFile>(&raw) {
+        match toml::from_str::<WebhookSecretsFile>(&raw) {
             Ok(file) => Self::new(
                 file.webhooks
                     .into_iter()

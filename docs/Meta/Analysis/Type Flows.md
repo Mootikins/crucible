@@ -155,7 +155,6 @@ cannot tell which is canonical and a change has to be made twice.
 | `FastEmbedConfig` | `crates/crucible-core/src/config/enrichment.rs` <br> `crates/crucible-daemon/src/llm/embeddings/fastembed.rs` |
 | `FileState` | `crates/crucible-core/src/processing/change_detection.rs` <br> `crates/crucible-daemon/src/watch/backends/polling_backend.rs` |
 | `GrepSearchRequest` | `crates/crucible-daemon/src/rpc_client/client/storage_requests.rs` <br> `crates/crucible-web/src/routes/search.rs` |
-| `HandlerConfig` | `crates/crucible-core/src/config/components/handlers.rs` <br> `crates/crucible-daemon/src/watch/traits.rs` |
 | `LlmConfig` | `crates/crucible-cli/src/config.rs` <br> `crates/crucible-core/src/config/components/llm.rs` |
 | `OptionAction` | `crates/crucible-daemon/src/server/plugins.rs` <br> `crates/crucible-web/src/routes/plugin.rs` |
 | `PermissionDecision` | `crates/crucible-core/src/config/components/permissions/types.rs` <br> `crates/crucible-daemon/src/observe/events.rs` |

@@ -79,7 +79,7 @@ fn show_path_status(path: &std::path::Path, detailed: bool) -> Result<()> {
 /// Show global storage status
 async fn show_global_status(
     config: &CliConfig,
-    storage: &crate::factories::StorageHandle,
+    storage: &crate::factories::CliStorageHandle,
     format: TextFormat,
     detailed: bool,
 ) -> Result<()> {
