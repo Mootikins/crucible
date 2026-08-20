@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Remind — never block — when a commit invalidates something AGENTS.md says.
+#
+# AGENTS.md is the guide every agent reads before it edits, and it goes wrong
+# the same two ways: a path it names gets renamed or deleted, and a number it
+# quotes moves. Both are invisible at the moment they happen and expensive to
+# find later, which is how it accumulated three false claims between two audits.
+#
+# This is a reminder, not a gate. It always exits 0. A stale doc is not a reason
+# to refuse a commit — that only teaches people to weaken the doc — but it is a
+# good reason to say something at the one moment the change is still in hand.
+#
+# Install with `just hooks`.
+
+set -uo pipefail
+cd "$(git rev-parse --show-toplevel)" || exit 0
+DOC=AGENTS.md
+[ -f "$DOC" ] || exit 0
+
+notes=()
+
+# --- paths AGENTS.md names that this commit removes or moves -----------------
+while IFS=$'\t' read -r status old _new; do
+    [ -n "${old:-}" ] || continue
+    # Match the path as written, and the crate-relative tail the doc prefers
+    # (`agent_manager/scope.rs` rather than the full path from the root).
+    tail=${old#crates/*/src/}
+    for needle in "$old" "$tail"; do
+        [ -n "$needle" ] || continue
+        if grep -qF -- "$needle" "$DOC"; then
+            case $status in
+                D*) notes+=("deleted  $old — AGENTS.md still names it") ;;
+                R*) notes+=("renamed  $old — AGENTS.md still names the old path") ;;
+            esac
+            break
+        fi
+    done
+done < <(git diff --cached --name-status --diff-filter=DR)
+
+# --- files whose contents AGENTS.md quotes a number about --------------------
+# Each row: <path glob> <tab> <what AGENTS.md claims about it>.
+while IFS=$'\t' read -r watched claim; do
+    [ -n "${watched:-}" ] || continue
+    if git diff --cached --name-only | grep -qF -- "$watched"; then
+        notes+=("changed  $watched — recheck: $claim")
+    fi
+done <<'WATCH'
+crucible-core/src/traits/chat.rs	AGENTS.md quotes AgentHandle's method count
+crucible-daemon/src/tools/surface.rs	AGENTS.md quotes the number of clippy denies here
+runtime/defaults/init.lua	AGENTS.md calls this the only definition of the permission modes
+justfile	AGENTS.md quotes `just test quick` and `just ci` timings
+WATCH
+
+[ ${#notes[@]} -eq 0 ] && exit 0
+
+printf '\n\033[33mAGENTS.md reminder\033[0m — committing anyway, nothing is blocked.\n'
+printf '  %s\n' "${notes[@]}"
+printf 'Fix it now while the change is in hand, or ignore it.\n\n'
+exit 0

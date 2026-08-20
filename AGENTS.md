@@ -45,8 +45,9 @@ own identity. Embeddings serve retrieval as much as indexing. `NotePipeline` is 
 between them — a seam, not a subsystem. A change in one does not reach the others.
 
 **Wire bindings share one type and nothing else** — `SessionEventMessage`. No shared codec,
-framing, correlation or error classification. ACP re-exports `agent_client_protocol` and MCP
-re-exports `rmcp`: two of four surfaces are vendored.
+framing, correlation or error classification. Two of the four do not own their wire types at
+all: ACP's come from `agent_client_protocol`, MCP's from `rmcp`. (Neither is *vendored* —
+`vendor/` holds one crate, `markdown-it`.)
 
 **Lua is not only a shim.** Projection modules (theme, statusline, geometry, oil, json, fs,
 notify, paths) are safe in isolation. Interception is not: `runtime/defaults/init.lua` is
@@ -58,7 +59,15 @@ the plan-mode deny hook, the default system prompt and the precognition formatte
 is the exemplar: exhaustive match, two module-level clippy denies (both needed — with one, a
 variant with `_ => Daemon` passed review), no `Default` on the return type, and a test
 deriving its expectation from the running system rather than from source text. Prefer this to
-a hand-maintained list checked by a source-text grep.
+a hand-maintained list checked by a source-text grep — four such greps have now been replaced,
+each of which was satisfiable without adding the entry it was meant to require.
+
+The live tables: `BuiltinTool`/`ToolSurface` (`tools/surface.rs`) · `EventName` + `StageId`
+(`crucible-lua/src/handlers/hook_name.rs`) · `RpcMethod` + `METHODS`, both generated from one
+`rpc_methods!` table (`rpc/dispatch.rs`) · `ScriptingEvent`
+(`crucible-core/src/events/session_event/`), the ten names the scripting and transport
+vocabularies share. Completeness of each `ALL` array is proved by walking `strum::EnumIter`,
+which is what the compiler knows.
 
 ### Terminology — never interchangeable
 
@@ -80,11 +89,12 @@ and syncs via RPC; pure display state (theme, show_thinking) stays in `OilChatAp
 Session-scoped needs the full chain: `AgentHandle` → `DaemonAgentHandle` → `ChatAppMsg` →
 `chat_runner` handler → TUI command. TUI-only breaks multi-client, and mismatched JSON field
 names fail silently — verify `session.get_*` returns what `session.set_*` stored and survives
-resume. (`AgentHandle` is 44 methods, 37 defaulted: a new knob compiles everywhere without
-being implemented anywhere.)
+resume. (`AgentHandle` is 44 methods and only **3** are required: a new knob compiles
+everywhere without being implemented anywhere.)
 
 ### Hooks and ACP
 
+- `crucible.on(name, opts, handler)` takes a **`StageId`** (11 synchronous turn-loop stages) or an **`EventName`** (8 daemon broadcast events); the two are different contracts and now different types. At a stage the return value decides what happens next; at an event nothing downstream reads it, and only `cancel` (stop the remaining handlers) means anything.
 - `crucible.on("pre_tool_call", opts, handler)` → `{ cancel = true }` blocks, `{ handled = true, result = … }` replaces execution, `nil` observes. **`cancel` is safe; `handled` and transform are capability-grade** — `handled` returns *before* the permission gate, and only gate ordering in `messaging/tool_call.rs` prevents escalation. Its one legitimate use is `runtime/plugins/oci/`, where taking the call over *is* the sandbox. Preserve that ordering.
 - ACP delegation: `cru chat --acp claude`, `cru session create --acp claude`, or `delegate_session`. (`--agent` names an agent *card*, not an ACP profile.) Limits in `[acp.agents.*]`. Code: `acp/`, `agent_manager/`, `tools/mcp_server.rs`.
 
@@ -94,9 +104,15 @@ being implemented anywhere.)
 constraints. Recipes take a sub-target (`just test ci`, `just lint clippy`); an unknown one
 prints the valid set. No recipe and you need it twice → add one.
 
-**`just ci` before committing**; `just test quick` (~17s) to iterate. **Don't build release
+**`just ci` before committing** (~250s, and it is the only tier that lints);
+`just test quick` (40-80s) to iterate. **Don't build release
 unless installing** (LTO is 5–10 min). Web frontend uses **bun** — see
 `crates/crucible-web/web/AGENTS.md`.
+
+**`just hooks` once per clone.** Installs a non-blocking pre-commit reminder that speaks up
+when a commit renames a path this file names or changes a file whose numbers it quotes. It
+never blocks; it exists so this document is corrected in the same commit that invalidates it
+rather than in an audit months later.
 
 **Keep the root clean.** Docs in `docs/Help|Meta|Guides/`, scripts in `scripts/`, examples in
 `examples/`. Never put docs, temp files or logs in the root. `docs/` is a reference kiln

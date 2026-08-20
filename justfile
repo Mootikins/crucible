@@ -196,6 +196,13 @@ lint what="all":
             ;;
     esac
 
+# Install the repo's git hooks (a non-blocking AGENTS.md reminder; see
+# scripts/hooks/pre-commit). Opt-in and local: hooks are not versioned by git
+# itself, so nothing runs until you ask for it.
+hooks:
+    git config core.hooksPath scripts/hooks
+    @echo "hooks installed: $(git config core.hooksPath)"
+
 # === Test ===
 
 # Slow/external tests are gated with #[ignore], not cargo features; each ignore
