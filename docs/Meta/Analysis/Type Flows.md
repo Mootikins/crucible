@@ -82,7 +82,7 @@ measurement agrees: it is the most connected type in the graph, at degree 235.
     10x KilnManager                  crates/crucible-daemon/src/kiln_manager.rs
      9x ProjectManager               crates/crucible-daemon/src/project_manager.rs
      7x AgentManager                 crates/crucible-daemon/src/agent_manager/mod.rs
-     5x SessionManager               3 DECLARATIONS: crates/crucible-core/src/traits/acp.rs · crates/crucible-daemon/src/session_manager.rs · crates/crucible-lua/src/session_api.rs
+     5x SessionManager               crates/crucible-daemon/src/session_manager.rs
      4x SessionEventMessage          crates/crucible-core/src/protocol/rpc/mod.rs
      3x DashMap                      (external)
      3x LuaSessionState              (external)
@@ -106,7 +106,7 @@ measurement agrees: it is the most connected type in the graph, at degree 235.
     43x Request                      crates/crucible-core/src/protocol/rpc/mod.rs
     43x Response                     crates/crucible-core/src/protocol/rpc/mod.rs
     26x AgentManager                 crates/crucible-daemon/src/agent_manager/mod.rs
-    18x SessionManager               3 DECLARATIONS: crates/crucible-core/src/traits/acp.rs · crates/crucible-daemon/src/session_manager.rs · crates/crucible-lua/src/session_api.rs
+    18x SessionManager               crates/crucible-daemon/src/session_manager.rs
     15x SessionEventMessage          crates/crucible-core/src/protocol/rpc/mod.rs
      2x KilnManager                  crates/crucible-daemon/src/kiln_manager.rs
      2x LlmConfig                    crates/crucible-core/src/config/components/llm.rs
@@ -203,9 +203,11 @@ dead code is a deletion.
 
 ### Not a duplicate
 
-`Session` and `Config` in `crates/crucible-core/src/traits/acp.rs` are
-**associated types** on a trait, with `crates/crucible-daemon/src/acp/client/session_manager.rs`
-supplying the impl. That is one declaration and one binding, which is correct.
+`Session` and `Config` used to be **associated types** on an ACP trait in
+`crucible-core`, with one impl in the daemon. Both are gone: the trait had three
+methods that only set a field, and every caller was a test. An ACP session is an
+ordinary `Session` held by the daemon's `SessionManager` struct, so there was
+never a second kind of session for a trait to abstract over.
 Per-crate `Result` and `Error` aliases follow the documented `<Domain>Result<T>`
 convention and are also correct.
 

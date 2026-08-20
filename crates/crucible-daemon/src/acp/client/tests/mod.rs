@@ -9,7 +9,6 @@ mod diff;
 mod io;
 mod process_streaming;
 mod protocol;
-mod session;
 mod streaming;
 
 /// Cross-platform test path helper

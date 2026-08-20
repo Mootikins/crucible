@@ -1,6 +1,5 @@
 use crate::support::ThreadedMockAgent;
 use agent_client_protocol::{InitializeRequest, PromptRequest};
-use crucible_core::traits::acp::SessionManager;
 use crucible_core::types::acp::{SessionConfig, SessionId};
 use crucible_daemon::acp::client::{ClientConfig, CrucibleAcpClient};
 use crucible_daemon::acp::ClientError;
@@ -265,33 +264,3 @@ async fn test_error_stream_abort_from_threaded_mock_agent_is_recoverable() {
         "aborted agent should return an error, not panic"
     );
 }
-
-#[tokio::test]
-async fn test_error_session_double_close_is_graceful() {
-    let mut client = CrucibleAcpClient::new(test_config(None));
-    let session_id = client
-        .create_session(SessionConfig::new(std::env::temp_dir()))
-        .await
-        .expect("session creation should succeed");
-
-    let first = client.end_session(session_id.clone()).await;
-    let second = client.end_session(session_id).await;
-
-    assert!(first.is_ok(), "first close should succeed");
-    assert!(second.is_ok(), "second close should be idempotent");
-}
-
-#[tokio::test]
-async fn test_error_session_already_ended_is_graceful() {
-    let mut client = CrucibleAcpClient::new(test_config(None));
-    let ended_session = SessionId::new();
-    let result = client.end_session(ended_session).await;
-
-    assert!(result.is_ok(), "ending non-active session should be safe");
-}
-
-// A `test_error_protocol_version_mismatch_is_reported` test lived here until the
-// dead `acp/protocol.rs` module was removed (D2). It compared two
-// `ProtocolVersion`s through a `protocol_guard` helper defined in this file, so
-// it only ever exercised test-local logic — production negotiates the wire
-// version through `agent_client_protocol` in `acp/client/connection.rs`.

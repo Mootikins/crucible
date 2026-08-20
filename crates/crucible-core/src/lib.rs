@@ -63,7 +63,7 @@ pub use processing::{
 };
 
 // Re-export core traits (abstractions for Dependency Inversion)
-pub use traits::{ContextMessage, MarkdownParser, SessionManager, ToolExecutor};
+pub use traits::{ContextMessage, MarkdownParser, ToolExecutor};
 
 // Re-export key types used across module boundaries
 pub use types::{

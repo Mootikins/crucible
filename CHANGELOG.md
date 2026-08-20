@@ -188,6 +188,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Removed
 
+- **The ACP trait layer in `crucible-core` is deleted** —
+  `traits::acp::{SessionManager, ToolBridge}` and the daemon's
+  `acp::client::session_manager` impl. It was a dependency-inversion layer
+  between core and the daemon's ACP module. `ToolBridge` never had an
+  implementor. `SessionManager` had one, whose three methods set and cleared a
+  single `active_session` field — which nothing in production read — and whose
+  every caller was a test. Two of those tests had empty bodies.
+  **An ACP session is an ordinary `Session` held by the daemon's
+  `SessionManager` struct**; there was never a second kind of session for a
+  trait to abstract over. `AcpError` stays. The module drops from 246 lines to
+  90, and `crucible_core::SessionManager` is no longer exported.
+
 - **`crucible_core::traits::input` is deleted** — 391 lines, and nothing outside
   the module used any of it. It declared `ChatEvent`, `InputMode`, `KeyCode`,
   `KeyPattern`, `Modifiers`, `KeyAction` and `SessionAction` as a

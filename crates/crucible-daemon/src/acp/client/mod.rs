@@ -36,7 +36,6 @@ mod permission;
 mod protocol;
 mod recording;
 pub mod replay;
-mod session_manager;
 mod streaming;
 mod tools;
 mod types;

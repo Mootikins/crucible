@@ -19,7 +19,6 @@ pub mod tools;
 pub mod undoable;
 
 // Re-export key traits
-pub use acp::SessionManager;
 
 pub use chat::{AgentHandle, ChatError, ChatResult, ChatToolCall};
 pub use context_ops::{ContextMessage, MessageMetadata, Position, Range};
