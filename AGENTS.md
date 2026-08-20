@@ -109,11 +109,6 @@ prints the valid set. No recipe and you need it twice → add one.
 unless installing** (LTO is 5–10 min). Web frontend uses **bun** — see
 `crates/crucible-web/web/AGENTS.md`.
 
-**`just hooks` once per clone.** Installs a non-blocking pre-commit reminder that speaks up
-when a commit renames a path this file names or changes a file whose numbers it quotes. It
-never blocks; it exists so this document is corrected in the same commit that invalidates it
-rather than in an audit months later.
-
 **Keep the root clean.** Docs in `docs/Help|Meta|Guides/`, scripts in `scripts/`, examples in
 `examples/`. Never put docs, temp files or logs in the root. `docs/` is a reference kiln
 integration tests parse — use wikilinks and frontmatter tags. Patched crates in `vendor/`:
