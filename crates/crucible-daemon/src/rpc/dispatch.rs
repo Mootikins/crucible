@@ -4,6 +4,16 @@
 //! The actual handler implementations remain in server.rs for now,
 //! but this module provides the infrastructure for testable dispatch.
 
+// The dispatch match over `RpcMethod` is the completeness gate: a new method
+// does not compile until it has an arm. Both denies are needed to keep it that
+// way — clippy reports a wildcard covering one remaining variant as
+// `match_wildcard_for_single_variants` and only a wildcard covering two or more
+// as `wildcard_enum_match_arm`, and methods are added one at a time. See
+// `tools/surface.rs`, where denying only the first let a variant slip through
+// with `_ =>` and the whole suite went green.
+#![deny(clippy::wildcard_enum_match_arm)]
+#![deny(clippy::match_wildcard_for_single_variants)]
+
 use crate::protocol::{
     Request, RequestId, Response, RpcError, INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND,
 };
@@ -18,165 +28,216 @@ use std::sync::Arc;
 
 pub type RpcResult<T> = Result<T, RpcError>;
 
-pub const METHODS: &[&str] = &[
-    "ping",
-    "daemon.capabilities",
-    "shutdown",
-    "kiln.open",
-    "kiln.close",
-    "kiln.list",
-    "kiln.set_classification",
-    "search_vectors",
-    "search_text",
-    "search_grep",
-    "embed.query",
-    "list_notes",
-    "get_note_by_name",
-    "get_backlinks",
-    "kiln.graph",
-    "note.upsert",
-    "note.get",
-    "note.delete",
-    "note.list",
-    "process_file",
-    "process_batch",
-    "session.create",
-    "session.list",
-    "session.get",
-    "session.pause",
-    "session.resume",
-    "session.resume_from_storage",
-    "session.end",
-    "session.archive",
-    "session.unarchive",
-    "session.delete",
-    "session.compact",
-    "session.subscribe",
-    "session.unsubscribe",
-    "session.configure_agent",
-    "session.send_message",
-    "session.cancel",
-    "session.switch_model",
-    "session.connect_kiln",
-    "session.disconnect_kiln",
-    "session.set_workspace",
-    "session.set_mode",
-    "session.get_mode",
-    "session.list_models",
-    "session.list_modes",
-    "session.set_thinking_budget",
-    "session.get_thinking_budget",
-    "session.cache_stats",
-    "session.set_autocompact_threshold",
-    "session.get_autocompact_threshold",
-    "session.add_notification",
-    "session.list_notifications",
-    "session.dismiss_notification",
-    "session.interaction_respond",
-    "session.pending_interactions",
-    "session.set_temperature",
-    "session.get_temperature",
-    "session.set_max_tokens",
-    "session.get_max_tokens",
-    "session.set_max_iterations",
-    "session.get_max_iterations",
-    "session.set_execution_timeout",
-    "session.get_execution_timeout",
-    "session.set_context_budget",
-    "session.get_context_budget",
-    "session.set_context_strategy",
-    "session.get_context_strategy",
-    "session.set_context_window",
-    "session.get_context_window",
-    "session.set_output_validation",
-    "session.get_output_validation",
-    "session.set_validation_retries",
-    "session.get_validation_retries",
-    "session.set_system_prompt",
-    "session.get_system_prompt",
-    "session.set_precognition",
-    "session.get_precognition",
-    "session.set_precognition_results",
-    "session.get_precognition_results",
-    "session.inject_context",
-    "session.test_interaction",
-    "session.fork",
-    "session.set_title",
-    "session.generate_title",
-    "session.search",
-    "session.load_events",
-    "session.list_persisted",
-    "session.render_markdown",
-    "session.export_to_file",
-    "session.replay",
-    "session.cleanup",
-    "session.reindex",
-    "session.undo",
-    "session.can_undo",
-    "session.undo_depth",
-    "review.list_hunks",
-    "review.set_state",
-    "review.comment",
-    "review.resolve_comment",
-    "review.rebase",
-    "plugin.reload",
-    "plugin.list",
-    "plugin.commands",
-    "plugin.publications",
-    "plugin.options",
-    "plugin.option_get",
-    "plugin.option_set",
-    "plugin.option_execute",
-    "session.status",
-    "plugin.run_command",
-    "plugin.install",
-    "plugin.remove",
-    "lua.init_session",
-    "lua.shutdown_session",
-    "lua.discover_plugins",
-    "lua.plugin_health",
-    "lua.generate_stubs",
-    "lua.run_plugin_tests",
-    "lua.register_commands",
-    "lua.eval",
-    "config.get",
-    "config.set",
-    "ui.config",
-    "ui.set_theme",
-    "project.register",
-    "project.unregister",
-    "project.list",
-    "project.get",
-    "scm.clone",
-    "fs.list_dir",
-    "fs.move",
-    "fs.mkdir",
-    "fs.trash",
-    "note.rename",
-    "note.move",
-    "storage.verify",
-    "storage.cleanup",
-    "storage.backup",
-    "storage.restore",
-    "mcp.start",
-    "mcp.stop",
-    "mcp.status",
-    "skills.list",
-    "skills.get",
-    "skills.search",
-    "agents.list_profiles",
-    "agents.resolve_profile",
-    "models.list",
-    "providers.list",
-    "subagent.collect",
-    "webhook.receive",
-    "suggest_links",
-    "workflow.start",
-    "workflow.approve_gate",
-    "workflow.status",
-    "workflow.cancel",
-];
+/// Declare the closed set of JSON-RPC method names once.
+///
+/// Generates [`RpcMethod`] and [`METHODS`] from one table, so the name a client
+/// sees in `daemon.capabilities` and the name the dispatcher answers to are the
+/// same token. `RpcDispatcher::dispatch` then matches on the enum with no
+/// wildcard arm, which is what makes rustc the completeness gate.
+///
+/// The gate this replaces read its own source text: it `include_str!`d this
+/// file, sliced the 750-line match region between two literal markers, and
+/// treated every quoted dotted-lowercase string inside it as a method name. Any
+/// such literal in an arm *body* was a false positive, and a name reached
+/// through anything but a bare literal was invisible. `METHODS` is what
+/// `daemon.capabilities` returns, so drift there hides methods from
+/// capability-detecting clients — which happened once already, with
+/// `plugin.install` and `plugin.remove`.
+macro_rules! rpc_methods {
+    ($( $(#[$attr:meta])* $variant:ident = $name:literal ),* $(,)?) => {
+        /// Every JSON-RPC method the daemon answers.
+        ///
+        /// Adding one is a row in [`rpc_methods!`]; the dispatch match then
+        /// fails to compile until it has an arm.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+        #[cfg_attr(test, derive(strum::EnumIter))]
+        pub enum RpcMethod {
+            $( $(#[$attr])* $variant, )*
+        }
 
+        impl RpcMethod {
+            /// Every variant, in wire order.
+            /// `every_rpc_method_variant_is_listed` proves it is complete.
+            pub const ALL: &'static [Self] = &[ $( Self::$variant, )* ];
+
+            /// The wire name.
+            #[must_use]
+            pub const fn as_str(self) -> &'static str {
+                match self { $( Self::$variant => $name, )* }
+            }
+
+            /// The variant for a wire name, or `None` when the daemon has no
+            /// such method. Derived from [`Self::ALL`], so the two directions
+            /// cannot disagree.
+            #[must_use]
+            pub fn parse(name: &str) -> Option<Self> {
+                Self::ALL.iter().copied().find(|m| m.as_str() == name)
+            }
+        }
+
+        /// The names `daemon.capabilities` advertises.
+        pub const METHODS: &[&str] = &[ $( $name, )* ];
+    };
+}
+
+rpc_methods! {
+    Ping = "ping",
+    DaemonCapabilities = "daemon.capabilities",
+    Shutdown = "shutdown",
+    KilnOpen = "kiln.open",
+    KilnClose = "kiln.close",
+    KilnList = "kiln.list",
+    KilnSetClassification = "kiln.set_classification",
+    SearchVectors = "search_vectors",
+    SearchText = "search_text",
+    SearchGrep = "search_grep",
+    EmbedQuery = "embed.query",
+    ListNotes = "list_notes",
+    GetNoteByName = "get_note_by_name",
+    GetBacklinks = "get_backlinks",
+    KilnGraph = "kiln.graph",
+    NoteUpsert = "note.upsert",
+    NoteGet = "note.get",
+    NoteDelete = "note.delete",
+    NoteList = "note.list",
+    ProcessFile = "process_file",
+    ProcessBatch = "process_batch",
+    SessionCreate = "session.create",
+    SessionList = "session.list",
+    SessionGet = "session.get",
+    SessionPause = "session.pause",
+    SessionResume = "session.resume",
+    SessionResumeFromStorage = "session.resume_from_storage",
+    SessionEnd = "session.end",
+    SessionArchive = "session.archive",
+    SessionUnarchive = "session.unarchive",
+    SessionDelete = "session.delete",
+    SessionCompact = "session.compact",
+    SessionSubscribe = "session.subscribe",
+    SessionUnsubscribe = "session.unsubscribe",
+    SessionConfigureAgent = "session.configure_agent",
+    SessionSendMessage = "session.send_message",
+    SessionCancel = "session.cancel",
+    SessionSwitchModel = "session.switch_model",
+    SessionConnectKiln = "session.connect_kiln",
+    SessionDisconnectKiln = "session.disconnect_kiln",
+    SessionSetWorkspace = "session.set_workspace",
+    SessionSetMode = "session.set_mode",
+    SessionGetMode = "session.get_mode",
+    SessionListModels = "session.list_models",
+    SessionListModes = "session.list_modes",
+    SessionSetThinkingBudget = "session.set_thinking_budget",
+    SessionGetThinkingBudget = "session.get_thinking_budget",
+    SessionCacheStats = "session.cache_stats",
+    SessionSetAutocompactThreshold = "session.set_autocompact_threshold",
+    SessionGetAutocompactThreshold = "session.get_autocompact_threshold",
+    SessionAddNotification = "session.add_notification",
+    SessionListNotifications = "session.list_notifications",
+    SessionDismissNotification = "session.dismiss_notification",
+    SessionInteractionRespond = "session.interaction_respond",
+    SessionPendingInteractions = "session.pending_interactions",
+    SessionSetTemperature = "session.set_temperature",
+    SessionGetTemperature = "session.get_temperature",
+    SessionSetMaxTokens = "session.set_max_tokens",
+    SessionGetMaxTokens = "session.get_max_tokens",
+    SessionSetMaxIterations = "session.set_max_iterations",
+    SessionGetMaxIterations = "session.get_max_iterations",
+    SessionSetExecutionTimeout = "session.set_execution_timeout",
+    SessionGetExecutionTimeout = "session.get_execution_timeout",
+    SessionSetContextBudget = "session.set_context_budget",
+    SessionGetContextBudget = "session.get_context_budget",
+    SessionSetContextStrategy = "session.set_context_strategy",
+    SessionGetContextStrategy = "session.get_context_strategy",
+    SessionSetContextWindow = "session.set_context_window",
+    SessionGetContextWindow = "session.get_context_window",
+    SessionSetOutputValidation = "session.set_output_validation",
+    SessionGetOutputValidation = "session.get_output_validation",
+    SessionSetValidationRetries = "session.set_validation_retries",
+    SessionGetValidationRetries = "session.get_validation_retries",
+    SessionSetSystemPrompt = "session.set_system_prompt",
+    SessionGetSystemPrompt = "session.get_system_prompt",
+    SessionSetPrecognition = "session.set_precognition",
+    SessionGetPrecognition = "session.get_precognition",
+    SessionSetPrecognitionResults = "session.set_precognition_results",
+    SessionGetPrecognitionResults = "session.get_precognition_results",
+    SessionInjectContext = "session.inject_context",
+    SessionTestInteraction = "session.test_interaction",
+    SessionFork = "session.fork",
+    SessionSetTitle = "session.set_title",
+    SessionGenerateTitle = "session.generate_title",
+    SessionSearch = "session.search",
+    SessionLoadEvents = "session.load_events",
+    SessionListPersisted = "session.list_persisted",
+    SessionRenderMarkdown = "session.render_markdown",
+    SessionExportToFile = "session.export_to_file",
+    SessionReplay = "session.replay",
+    SessionCleanup = "session.cleanup",
+    SessionReindex = "session.reindex",
+    SessionUndo = "session.undo",
+    SessionCanUndo = "session.can_undo",
+    SessionUndoDepth = "session.undo_depth",
+    ReviewListHunks = "review.list_hunks",
+    ReviewSetState = "review.set_state",
+    ReviewComment = "review.comment",
+    ReviewResolveComment = "review.resolve_comment",
+    ReviewRebase = "review.rebase",
+    PluginReload = "plugin.reload",
+    PluginList = "plugin.list",
+    PluginCommands = "plugin.commands",
+    PluginPublications = "plugin.publications",
+    PluginOptions = "plugin.options",
+    PluginOptionGet = "plugin.option_get",
+    PluginOptionSet = "plugin.option_set",
+    PluginOptionExecute = "plugin.option_execute",
+    SessionStatus = "session.status",
+    PluginRunCommand = "plugin.run_command",
+    PluginInstall = "plugin.install",
+    PluginRemove = "plugin.remove",
+    LuaInitSession = "lua.init_session",
+    LuaShutdownSession = "lua.shutdown_session",
+    LuaDiscoverPlugins = "lua.discover_plugins",
+    LuaPluginHealth = "lua.plugin_health",
+    LuaGenerateStubs = "lua.generate_stubs",
+    LuaRunPluginTests = "lua.run_plugin_tests",
+    LuaRegisterCommands = "lua.register_commands",
+    LuaEval = "lua.eval",
+    ConfigGet = "config.get",
+    ConfigSet = "config.set",
+    UiConfig = "ui.config",
+    UiSetTheme = "ui.set_theme",
+    ProjectRegister = "project.register",
+    ProjectUnregister = "project.unregister",
+    ProjectList = "project.list",
+    ProjectGet = "project.get",
+    ScmClone = "scm.clone",
+    FsListDir = "fs.list_dir",
+    FsMove = "fs.move",
+    FsMkdir = "fs.mkdir",
+    FsTrash = "fs.trash",
+    NoteRename = "note.rename",
+    NoteMove = "note.move",
+    StorageVerify = "storage.verify",
+    StorageCleanup = "storage.cleanup",
+    StorageBackup = "storage.backup",
+    StorageRestore = "storage.restore",
+    McpStart = "mcp.start",
+    McpStop = "mcp.stop",
+    McpStatus = "mcp.status",
+    SkillsList = "skills.list",
+    SkillsGet = "skills.get",
+    SkillsSearch = "skills.search",
+    AgentsListProfiles = "agents.list_profiles",
+    AgentsResolveProfile = "agents.resolve_profile",
+    ModelsList = "models.list",
+    ProvidersList = "providers.list",
+    SubagentCollect = "subagent.collect",
+    WebhookReceive = "webhook.receive",
+    SuggestLinks = "suggest_links",
+    WorkflowStart = "workflow.start",
+    WorkflowApproveGate = "workflow.approve_gate",
+    WorkflowStatus = "workflow.status",
+    WorkflowCancel = "workflow.cancel",
+}
 fn to_response(id: Option<RequestId>, result: RpcResult<serde_json::Value>) -> Response {
     match result {
         Ok(v) => Response::success(id, v),
@@ -249,60 +310,75 @@ impl RpcDispatcher {
         let id = req.id.clone();
         tracing::debug!("RPC dispatch: method={:?}, id={:?}", req.method, id);
 
-        match req.method.as_str() {
-            "ping" => to_response(id, self.handle_ping()),
-            "daemon.capabilities" => to_response(id, self.handle_capabilities()),
-            "shutdown" => to_response(id, self.handle_shutdown()),
+        // Parse first, so the match below is exhaustive over a closed set and
+        // rustc — not a source-text scan — is what proves every advertised
+        // method has an arm.
+        let Some(method) = RpcMethod::parse(req.method.as_str()) else {
+            return Response::error(
+                id,
+                METHOD_NOT_FOUND,
+                format!("Method not found: '{}'", req.method),
+            );
+        };
+
+        match method {
+            RpcMethod::Ping => to_response(id, self.handle_ping()),
+            RpcMethod::DaemonCapabilities => to_response(id, self.handle_capabilities()),
+            RpcMethod::Shutdown => to_response(id, self.handle_shutdown()),
 
             // Subscription handlers (need client_id)
-            "session.subscribe" => to_response(id, self.handle_subscribe(client_id, &req)),
-            "session.unsubscribe" => to_response(id, self.handle_unsubscribe(client_id, &req)),
+            RpcMethod::SessionSubscribe => to_response(id, self.handle_subscribe(client_id, &req)),
+            RpcMethod::SessionUnsubscribe => {
+                to_response(id, self.handle_unsubscribe(client_id, &req))
+            }
 
             // Session title handler
-            "session.set_title" => to_response(id, self.handle_set_title(&req).await),
-            "session.generate_title" => to_response(id, self.handle_generate_title(&req).await),
+            RpcMethod::SessionSetTitle => to_response(id, self.handle_set_title(&req).await),
+            RpcMethod::SessionGenerateTitle => {
+                to_response(id, self.handle_generate_title(&req).await)
+            }
 
             // Session config get/set handlers — each pair delegates to
             // server::session::handle_session_{set,get}_<name> with uniform signatures.
-            "session.set_thinking_budget"
-            | "session.set_temperature"
-            | "session.set_max_tokens"
-            | "session.set_max_iterations"
-            | "session.set_execution_timeout"
-            | "session.set_context_budget"
-            | "session.set_context_strategy"
-            | "session.set_context_window"
-            | "session.set_output_validation"
-            | "session.set_validation_retries"
-            | "session.set_system_prompt"
-            | "session.set_precognition"
-            | "session.set_precognition_results"
-            | "session.set_autocompact_threshold" => {
+            RpcMethod::SessionSetThinkingBudget
+            | RpcMethod::SessionSetTemperature
+            | RpcMethod::SessionSetMaxTokens
+            | RpcMethod::SessionSetMaxIterations
+            | RpcMethod::SessionSetExecutionTimeout
+            | RpcMethod::SessionSetContextBudget
+            | RpcMethod::SessionSetContextStrategy
+            | RpcMethod::SessionSetContextWindow
+            | RpcMethod::SessionSetOutputValidation
+            | RpcMethod::SessionSetValidationRetries
+            | RpcMethod::SessionSetSystemPrompt
+            | RpcMethod::SessionSetPrecognition
+            | RpcMethod::SessionSetPrecognitionResults
+            | RpcMethod::SessionSetAutocompactThreshold => {
                 to_response(id, self.dispatch_session_config_setter(&req).await)
             }
-            "session.get_thinking_budget"
-            | "session.get_temperature"
-            | "session.get_mode"
-            | "session.get_max_tokens"
-            | "session.get_max_iterations"
-            | "session.get_execution_timeout"
-            | "session.get_context_budget"
-            | "session.get_context_strategy"
-            | "session.get_context_window"
-            | "session.get_output_validation"
-            | "session.get_validation_retries"
-            | "session.get_system_prompt"
-            | "session.get_precognition"
-            | "session.get_precognition_results"
-            | "session.get_autocompact_threshold" => {
+            RpcMethod::SessionGetThinkingBudget
+            | RpcMethod::SessionGetTemperature
+            | RpcMethod::SessionGetMode
+            | RpcMethod::SessionGetMaxTokens
+            | RpcMethod::SessionGetMaxIterations
+            | RpcMethod::SessionGetExecutionTimeout
+            | RpcMethod::SessionGetContextBudget
+            | RpcMethod::SessionGetContextStrategy
+            | RpcMethod::SessionGetContextWindow
+            | RpcMethod::SessionGetOutputValidation
+            | RpcMethod::SessionGetValidationRetries
+            | RpcMethod::SessionGetSystemPrompt
+            | RpcMethod::SessionGetPrecognition
+            | RpcMethod::SessionGetPrecognitionResults
+            | RpcMethod::SessionGetAutocompactThreshold => {
                 to_response(id, self.dispatch_session_config_getter(&req).await)
             }
-            "session.cache_stats" => forward!(
+            RpcMethod::SessionCacheStats => forward!(
                 id,
                 crate::server::session::handle_session_cache_stats(req.clone(), &self.ctx.agents)
             ),
             // Kiln CRUD handlers
-            "kiln.open" => forward!(
+            RpcMethod::KilnOpen => forward!(
                 id,
                 crate::server::kiln::handle_kiln_open(
                     req.clone(),
@@ -311,11 +387,11 @@ impl RpcDispatcher {
                     &self.ctx.event_tx
                 )
             ),
-            "kiln.close" => forward!(
+            RpcMethod::KilnClose => forward!(
                 id,
                 crate::server::kiln::handle_kiln_close(req.clone(), &self.ctx.kiln)
             ),
-            "kiln.list" => forward!(
+            RpcMethod::KilnList => forward!(
                 id,
                 crate::server::kiln::handle_kiln_list(
                     req.clone(),
@@ -324,7 +400,7 @@ impl RpcDispatcher {
                     &self.ctx.data_home
                 )
             ),
-            "kiln.set_classification" => {
+            RpcMethod::KilnSetClassification => {
                 forward!(
                     id,
                     crate::server::kiln::handle_kiln_set_classification(
@@ -335,15 +411,15 @@ impl RpcDispatcher {
             }
 
             // Note search and retrieval handlers
-            "search_vectors" => forward!(
+            RpcMethod::SearchVectors => forward!(
                 id,
                 crate::server::kiln::handle_search_vectors(req.clone(), &self.ctx.kiln)
             ),
-            "search_text" => forward!(
+            RpcMethod::SearchText => forward!(
                 id,
                 crate::server::kiln::handle_search_text(req.clone(), &self.ctx.kiln)
             ),
-            "search_grep" => forward!(
+            RpcMethod::SearchGrep => forward!(
                 id,
                 crate::server::grep::handle_search_grep(
                     req.clone(),
@@ -351,72 +427,72 @@ impl RpcDispatcher {
                     &self.ctx.kiln
                 )
             ),
-            "embed.query" => forward!(
+            RpcMethod::EmbedQuery => forward!(
                 id,
                 crate::server::kiln::handle_embed_query(req.clone(), &self.ctx.kiln)
             ),
-            "list_notes" => forward!(
+            RpcMethod::ListNotes => forward!(
                 id,
                 crate::server::kiln::handle_list_notes(req.clone(), &self.ctx.kiln)
             ),
-            "get_note_by_name" => forward!(
+            RpcMethod::GetNoteByName => forward!(
                 id,
                 crate::server::kiln::handle_get_note_by_name(req.clone(), &self.ctx.kiln)
             ),
-            "get_backlinks" => forward!(
+            RpcMethod::GetBacklinks => forward!(
                 id,
                 crate::server::kiln::handle_get_backlinks(req.clone(), &self.ctx.kiln)
             ),
-            "kiln.graph" => forward!(
+            RpcMethod::KilnGraph => forward!(
                 id,
                 crate::server::kiln::handle_kiln_graph(req.clone(), &self.ctx.kiln)
             ),
-            "suggest_links" => forward!(
+            RpcMethod::SuggestLinks => forward!(
                 id,
                 crate::server::kiln::handle_suggest_links(req.clone(), &self.ctx.kiln)
             ),
 
             // Note CRUD handlers
-            "note.upsert" => forward!(
+            RpcMethod::NoteUpsert => forward!(
                 id,
                 crate::server::kiln::handle_note_upsert(req.clone(), &self.ctx.kiln)
             ),
-            "note.get" => forward!(
+            RpcMethod::NoteGet => forward!(
                 id,
                 crate::server::kiln::handle_note_get(req.clone(), &self.ctx.kiln)
             ),
-            "note.delete" => forward!(
+            RpcMethod::NoteDelete => forward!(
                 id,
                 crate::server::kiln::handle_note_delete(req.clone(), &self.ctx.kiln)
             ),
-            "note.list" => forward!(
+            RpcMethod::NoteList => forward!(
                 id,
                 crate::server::kiln::handle_note_list(req.clone(), &self.ctx.kiln)
             ),
 
             // Processing handlers
-            "process_file" => forward!(
+            RpcMethod::ProcessFile => forward!(
                 id,
                 crate::server::kiln::handle_process_file(req.clone(), &self.ctx.kiln)
             ),
-            "process_batch" => forward!(
+            RpcMethod::ProcessBatch => forward!(
                 id,
                 crate::server::kiln::handle_process_batch(req.clone(), &self.ctx.kiln)
             ),
 
             // Models handler
-            "models.list" => forward!(
+            RpcMethod::ModelsList => forward!(
                 id,
                 crate::server::session::handle_models_list(req.clone(), &self.ctx.agents)
             ),
-            "providers.list" => forward!(
+            RpcMethod::ProvidersList => forward!(
                 id,
                 crate::server::session::handle_providers_list(req.clone(), &self.ctx.agents)
             ),
 
             // Session lifecycle handlers
-            "session.create" => to_response(id, self.handle_session_create(&req).await),
-            "session.list" => forward!(
+            RpcMethod::SessionCreate => to_response(id, self.handle_session_create(&req).await),
+            RpcMethod::SessionList => forward!(
                 id,
                 crate::server::session::handle_session_list(
                     req.clone(),
@@ -425,17 +501,17 @@ impl RpcDispatcher {
                     &self.ctx.data_home
                 )
             ),
-            "session.get" => forward!(
+            RpcMethod::SessionGet => forward!(
                 id,
                 crate::server::session::handle_session_get(req.clone(), &self.ctx.sessions)
             ),
-            "session.pause" => to_response(id, self.handle_session_pause(&req).await),
-            "session.resume" => to_response(id, self.handle_session_resume(&req).await),
-            "session.resume_from_storage" => {
+            RpcMethod::SessionPause => to_response(id, self.handle_session_pause(&req).await),
+            RpcMethod::SessionResume => to_response(id, self.handle_session_resume(&req).await),
+            RpcMethod::SessionResumeFromStorage => {
                 to_response(id, self.handle_session_resume_from_storage(&req).await)
             }
-            "session.end" => to_response(id, self.handle_session_end(&req).await),
-            "session.archive" => forward!(
+            RpcMethod::SessionEnd => to_response(id, self.handle_session_end(&req).await),
+            RpcMethod::SessionArchive => forward!(
                 id,
                 crate::server::session::handle_session_archive(
                     req.clone(),
@@ -443,7 +519,7 @@ impl RpcDispatcher {
                     &self.ctx.agents
                 )
             ),
-            "session.unarchive" => forward!(
+            RpcMethod::SessionUnarchive => forward!(
                 id,
                 crate::server::session::handle_session_unarchive(
                     req.clone(),
@@ -451,7 +527,7 @@ impl RpcDispatcher {
                     &self.ctx.agents
                 )
             ),
-            "session.delete" => forward!(
+            RpcMethod::SessionDelete => forward!(
                 id,
                 crate::server::session::handle_session_delete(
                     req.clone(),
@@ -459,25 +535,25 @@ impl RpcDispatcher {
                     &self.ctx.agents
                 )
             ),
-            "session.compact" => forward!(
+            RpcMethod::SessionCompact => forward!(
                 id,
                 crate::server::session::handle_session_compact(req.clone(), &self.ctx.sessions)
             ),
-            "session.fork" => to_response(id, self.handle_session_fork(&req).await),
+            RpcMethod::SessionFork => to_response(id, self.handle_session_fork(&req).await),
 
             // Session utility handlers
-            "session.search" => forward!(
+            RpcMethod::SessionSearch => forward!(
                 id,
                 crate::server::session::handle_session_search(req.clone(), &self.ctx.sessions)
             ),
-            "session.load_events" => forward!(
+            RpcMethod::SessionLoadEvents => forward!(
                 id,
                 crate::server::observe::handle_session_load_events(
                     req.clone(),
                     self.ctx.sessions.sessions_root()
                 )
             ),
-            "session.list_persisted" => {
+            RpcMethod::SessionListPersisted => {
                 forward!(
                     id,
                     crate::server::observe::handle_session_list_persisted(
@@ -486,7 +562,7 @@ impl RpcDispatcher {
                     )
                 )
             }
-            "session.render_markdown" => {
+            RpcMethod::SessionRenderMarkdown => {
                 forward!(
                     id,
                     crate::server::observe::handle_session_render_markdown(
@@ -495,7 +571,7 @@ impl RpcDispatcher {
                     )
                 )
             }
-            "session.export_to_file" => {
+            RpcMethod::SessionExportToFile => {
                 forward!(
                     id,
                     crate::server::observe::handle_session_export_to_file(
@@ -504,7 +580,7 @@ impl RpcDispatcher {
                     )
                 )
             }
-            "session.cleanup" => forward!(
+            RpcMethod::SessionCleanup => forward!(
                 id,
                 crate::server::observe::handle_session_cleanup(req.clone(), &self.ctx.sessions)
             ),
@@ -512,7 +588,7 @@ impl RpcDispatcher {
             // into that kiln's NoteStore, and sessions no longer live in a kiln.
             // A flat backlog has no per-kiln session corpus to rebuild, and
             // rebuilding one would re-create the cross-session read it removed.
-            "session.reindex" => Response::error(
+            RpcMethod::SessionReindex => Response::error(
                 id,
                 METHOD_NOT_FOUND,
                 "session.reindex is retired: sessions are stored outside kilns and are no \
@@ -522,10 +598,10 @@ impl RpcDispatcher {
             ),
 
             // Agent operation handlers
-            "session.configure_agent" => {
+            RpcMethod::SessionConfigureAgent => {
                 to_response(id, self.handle_session_configure_agent(&req).await)
             }
-            "session.send_message" => forward!(
+            RpcMethod::SessionSendMessage => forward!(
                 id,
                 crate::server::session::handle_session_send_message(
                     req.clone(),
@@ -533,7 +609,7 @@ impl RpcDispatcher {
                     &self.ctx.event_tx
                 )
             ),
-            "session.inject_context" => {
+            RpcMethod::SessionInjectContext => {
                 forward!(
                     id,
                     crate::server::session::handle_session_inject_context(
@@ -543,11 +619,11 @@ impl RpcDispatcher {
                     )
                 )
             }
-            "session.cancel" => forward!(
+            RpcMethod::SessionCancel => forward!(
                 id,
                 crate::server::session::handle_session_cancel(req.clone(), &self.ctx.agents)
             ),
-            "session.interaction_respond" => {
+            RpcMethod::SessionInteractionRespond => {
                 forward!(
                     id,
                     crate::server::session::handle_session_interaction_respond(
@@ -557,7 +633,7 @@ impl RpcDispatcher {
                     )
                 )
             }
-            "session.pending_interactions" => {
+            RpcMethod::SessionPendingInteractions => {
                 forward!(
                     id,
                     crate::server::session::handle_session_pending_interactions(
@@ -566,7 +642,7 @@ impl RpcDispatcher {
                     )
                 )
             }
-            "session.switch_model" => forward!(
+            RpcMethod::SessionSwitchModel => forward!(
                 id,
                 crate::server::session::handle_session_switch_model(
                     req.clone(),
@@ -574,7 +650,7 @@ impl RpcDispatcher {
                     &self.ctx.event_tx
                 )
             ),
-            "session.connect_kiln" => forward!(
+            RpcMethod::SessionConnectKiln => forward!(
                 id,
                 crate::server::session::handle_session_connect_kiln(
                     req.clone(),
@@ -585,7 +661,7 @@ impl RpcDispatcher {
                     &self.ctx.event_tx
                 )
             ),
-            "session.disconnect_kiln" => {
+            RpcMethod::SessionDisconnectKiln => {
                 forward!(
                     id,
                     crate::server::session::handle_session_disconnect_kiln(
@@ -595,7 +671,7 @@ impl RpcDispatcher {
                     )
                 )
             }
-            "session.set_workspace" => {
+            RpcMethod::SessionSetWorkspace => {
                 forward!(
                     id,
                     crate::server::session::handle_session_set_workspace(
@@ -608,7 +684,7 @@ impl RpcDispatcher {
                     )
                 )
             }
-            "session.set_mode" => forward!(
+            RpcMethod::SessionSetMode => forward!(
                 id,
                 crate::server::session::handle_session_set_mode(
                     req.clone(),
@@ -621,7 +697,7 @@ impl RpcDispatcher {
             // namespaced `review.*` rather than `session.*`: the unit they act
             // on is a composed hunk, and a delegating agent reviewing a child
             // session addresses that child's id, not its own.
-            "review.list_hunks" => forward!(
+            RpcMethod::ReviewListHunks => forward!(
                 id,
                 crate::server::session::handle_review_list_hunks(
                     req.clone(),
@@ -629,7 +705,7 @@ impl RpcDispatcher {
                     &self.ctx.sessions
                 )
             ),
-            "review.set_state" => forward!(
+            RpcMethod::ReviewSetState => forward!(
                 id,
                 crate::server::session::handle_review_set_state(
                     req.clone(),
@@ -638,7 +714,7 @@ impl RpcDispatcher {
                     &self.ctx.event_tx
                 )
             ),
-            "review.comment" => forward!(
+            RpcMethod::ReviewComment => forward!(
                 id,
                 crate::server::session::handle_review_comment(
                     req.clone(),
@@ -647,7 +723,7 @@ impl RpcDispatcher {
                     &self.ctx.event_tx
                 )
             ),
-            "review.resolve_comment" => {
+            RpcMethod::ReviewResolveComment => {
                 forward!(
                     id,
                     crate::server::session::handle_review_resolve_comment(
@@ -662,7 +738,7 @@ impl RpcDispatcher {
             // base tree gc'd out of the object store, a root that moved, a
             // journal record that would not parse. Without it, failing closed
             // on a structural failure would be an unreleasable hang.
-            "review.rebase" => forward!(
+            RpcMethod::ReviewRebase => forward!(
                 id,
                 crate::server::session::handle_review_rebase(
                     req.clone(),
@@ -672,15 +748,15 @@ impl RpcDispatcher {
                 )
             ),
 
-            "session.list_models" => forward!(
+            RpcMethod::SessionListModels => forward!(
                 id,
                 crate::server::session::handle_session_list_models(req.clone(), &self.ctx.agents)
             ),
-            "session.list_modes" => forward!(
+            RpcMethod::SessionListModes => forward!(
                 id,
                 crate::server::session::handle_session_list_modes(req.clone(), &self.ctx.agents)
             ),
-            "session.add_notification" => {
+            RpcMethod::SessionAddNotification => {
                 forward!(
                     id,
                     crate::server::session::handle_session_add_notification(
@@ -690,7 +766,7 @@ impl RpcDispatcher {
                     )
                 )
             }
-            "session.list_notifications" => {
+            RpcMethod::SessionListNotifications => {
                 forward!(
                     id,
                     crate::server::session::handle_session_list_notifications(
@@ -699,7 +775,7 @@ impl RpcDispatcher {
                     )
                 )
             }
-            "session.dismiss_notification" => {
+            RpcMethod::SessionDismissNotification => {
                 forward!(
                     id,
                     crate::server::session::handle_session_dismiss_notification(
@@ -709,7 +785,7 @@ impl RpcDispatcher {
                     )
                 )
             }
-            "session.test_interaction" => {
+            RpcMethod::SessionTestInteraction => {
                 forward!(
                     id,
                     crate::server::session::handle_session_test_interaction(
@@ -718,7 +794,7 @@ impl RpcDispatcher {
                     )
                 )
             }
-            "session.replay" => forward!(
+            RpcMethod::SessionReplay => forward!(
                 id,
                 crate::server::session::handle_session_replay(
                     req.clone(),
@@ -728,7 +804,7 @@ impl RpcDispatcher {
             ),
 
             // Undo handlers
-            "session.undo" => forward!(
+            RpcMethod::SessionUndo => forward!(
                 id,
                 crate::server::session::handle_session_undo(
                     req.clone(),
@@ -736,17 +812,17 @@ impl RpcDispatcher {
                     &self.ctx.event_tx
                 )
             ),
-            "session.can_undo" => forward!(
+            RpcMethod::SessionCanUndo => forward!(
                 id,
                 crate::server::session::handle_session_can_undo(req.clone(), &self.ctx.agents)
             ),
-            "session.undo_depth" => forward!(
+            RpcMethod::SessionUndoDepth => forward!(
                 id,
                 crate::server::session::handle_session_undo_depth(req.clone(), &self.ctx.agents)
             ),
 
             // Lua RPC handlers
-            "lua.init_session" => forward!(
+            RpcMethod::LuaInitSession => forward!(
                 id,
                 crate::server::lua::handle_lua_init_session(
                     req.clone(),
@@ -754,30 +830,30 @@ impl RpcDispatcher {
                     &self.ctx.plugin_loader
                 )
             ),
-            "lua.shutdown_session" => forward!(
+            RpcMethod::LuaShutdownSession => forward!(
                 id,
                 crate::server::lua::handle_lua_shutdown_session(
                     req.clone(),
                     &self.ctx.lua_sessions
                 )
             ),
-            "lua.discover_plugins" => forward!(
+            RpcMethod::LuaDiscoverPlugins => forward!(
                 id,
                 crate::server::lua::handle_lua_discover_plugins(req.clone())
             ),
-            "lua.plugin_health" => forward!(
+            RpcMethod::LuaPluginHealth => forward!(
                 id,
                 crate::server::lua::handle_lua_plugin_health(req.clone())
             ),
-            "lua.generate_stubs" => forward!(
+            RpcMethod::LuaGenerateStubs => forward!(
                 id,
                 crate::server::lua::handle_lua_generate_stubs(req.clone())
             ),
-            "lua.run_plugin_tests" => forward!(
+            RpcMethod::LuaRunPluginTests => forward!(
                 id,
                 crate::server::lua_plugin_suite::handle_lua_run_plugin_tests(req.clone())
             ),
-            "lua.register_commands" => {
+            RpcMethod::LuaRegisterCommands => {
                 forward!(
                     id,
                     crate::server::lua::handle_lua_register_commands(
@@ -786,16 +862,18 @@ impl RpcDispatcher {
                     )
                 )
             }
-            "lua.eval" => to_response(id, self.handle_lua_eval(&req).await),
+            RpcMethod::LuaEval => to_response(id, self.handle_lua_eval(&req).await),
 
             // App-config store (the same store `cru.config.*` reads in Lua)
-            "config.get" => to_response(id, self.handle_config_get(&req)),
-            "config.set" => to_response(id, self.handle_config_set(&req)),
+            RpcMethod::ConfigGet => to_response(id, self.handle_config_get(&req)),
+            RpcMethod::ConfigSet => to_response(id, self.handle_config_set(&req)),
 
             // Lua-defined UI config (theme now; surfaces and bars follow).
             // Snapshot half of the handshake — see `rpc::ui`.
-            "ui.config" => to_response(id, Ok(crate::rpc::ui::handle_ui_config(&self.ctx, &req))),
-            "ui.set_theme" => to_response(
+            RpcMethod::UiConfig => {
+                to_response(id, Ok(crate::rpc::ui::handle_ui_config(&self.ctx, &req)))
+            }
+            RpcMethod::UiSetTheme => to_response(
                 id,
                 crate::rpc::ui::handle_ui_set_theme(&self.ctx, &req).map_err(|message| {
                     crate::protocol::RpcError {
@@ -807,30 +885,30 @@ impl RpcDispatcher {
             ),
 
             // Plugin RPC handlers
-            "plugin.reload" => to_response(id, self.handle_plugin_reload(&req).await),
-            "plugin.list" => forward!(
+            RpcMethod::PluginReload => to_response(id, self.handle_plugin_reload(&req).await),
+            RpcMethod::PluginList => forward!(
                 id,
                 crate::server::plugins::handle_plugin_list(req.clone(), &self.ctx.plugin_loader)
             ),
-            "plugin.commands" => forward!(
+            RpcMethod::PluginCommands => forward!(
                 id,
                 crate::server::plugins::handle_plugin_commands(
                     req.clone(),
                     &self.ctx.plugin_loader
                 )
             ),
-            "plugin.publications" => forward!(
+            RpcMethod::PluginPublications => forward!(
                 id,
                 crate::server::plugins::handle_plugin_publications(
                     req.clone(),
                     &self.ctx.plugin_loader
                 )
             ),
-            "plugin.options" => forward!(
+            RpcMethod::PluginOptions => forward!(
                 id,
                 crate::server::plugins::handle_plugin_options(req.clone(), &self.ctx.plugin_loader)
             ),
-            "plugin.option_get" => forward!(
+            RpcMethod::PluginOptionGet => forward!(
                 id,
                 crate::server::plugins::handle_plugin_option_call(
                     req.clone(),
@@ -838,7 +916,7 @@ impl RpcDispatcher {
                     OptionAction::Get
                 )
             ),
-            "plugin.option_set" => forward!(
+            RpcMethod::PluginOptionSet => forward!(
                 id,
                 crate::server::plugins::handle_plugin_option_call(
                     req.clone(),
@@ -846,7 +924,7 @@ impl RpcDispatcher {
                     OptionAction::Set
                 )
             ),
-            "plugin.option_execute" => forward!(
+            RpcMethod::PluginOptionExecute => forward!(
                 id,
                 crate::server::plugins::handle_plugin_option_call(
                     req.clone(),
@@ -854,49 +932,49 @@ impl RpcDispatcher {
                     OptionAction::Execute
                 )
             ),
-            "session.status" => forward!(
+            RpcMethod::SessionStatus => forward!(
                 id,
                 crate::server::plugins::handle_session_status(req.clone(), &self.ctx.plugin_loader)
             ),
-            "plugin.run_command" => forward!(
+            RpcMethod::PluginRunCommand => forward!(
                 id,
                 crate::server::plugins::handle_plugin_run_command(
                     req.clone(),
                     &self.ctx.plugin_loader
                 )
             ),
-            "plugin.install" => to_response(id, self.handle_plugin_install(&req).await),
-            "plugin.remove" => to_response(id, self.handle_plugin_remove(&req).await),
+            RpcMethod::PluginInstall => to_response(id, self.handle_plugin_install(&req).await),
+            RpcMethod::PluginRemove => to_response(id, self.handle_plugin_remove(&req).await),
 
             // Project RPC handlers
-            "project.register" => forward!(
+            RpcMethod::ProjectRegister => forward!(
                 id,
                 crate::server::plugins::handle_project_register(
                     req.clone(),
                     &self.ctx.project_manager
                 )
             ),
-            "project.unregister" => forward!(
+            RpcMethod::ProjectUnregister => forward!(
                 id,
                 crate::server::plugins::handle_project_unregister(
                     req.clone(),
                     &self.ctx.project_manager
                 )
             ),
-            "project.list" => forward!(
+            RpcMethod::ProjectList => forward!(
                 id,
                 crate::server::plugins::handle_project_list(req.clone(), &self.ctx.project_manager)
             ),
-            "project.get" => forward!(
+            RpcMethod::ProjectGet => forward!(
                 id,
                 crate::server::plugins::handle_project_get(req.clone(), &self.ctx.project_manager)
             ),
-            "scm.clone" => to_response(id, self.handle_scm_clone(&req).await),
-            "fs.list_dir" => forward!(
+            RpcMethod::ScmClone => to_response(id, self.handle_scm_clone(&req).await),
+            RpcMethod::FsListDir => forward!(
                 id,
                 crate::server::fs::handle_fs_list_dir(req.clone(), &self.ctx.project_manager)
             ),
-            "fs.move" => forward!(
+            RpcMethod::FsMove => forward!(
                 id,
                 crate::server::fs::handle_fs_move(
                     req.clone(),
@@ -904,7 +982,7 @@ impl RpcDispatcher {
                     &self.ctx.kiln
                 )
             ),
-            "fs.mkdir" => forward!(
+            RpcMethod::FsMkdir => forward!(
                 id,
                 crate::server::fs::handle_fs_mkdir(
                     req.clone(),
@@ -912,7 +990,7 @@ impl RpcDispatcher {
                     &self.ctx.kiln
                 )
             ),
-            "fs.trash" => forward!(
+            RpcMethod::FsTrash => forward!(
                 id,
                 crate::server::fs::handle_fs_trash(
                     req.clone(),
@@ -920,36 +998,36 @@ impl RpcDispatcher {
                     &self.ctx.kiln
                 )
             ),
-            "note.rename" | "note.move" => forward!(
+            RpcMethod::NoteRename | RpcMethod::NoteMove => forward!(
                 id,
                 crate::server::note_refactor::handle_note_rename(req.clone(), &self.ctx.kiln)
             ),
 
             // Storage RPC handlers
-            "storage.verify" => forward!(
+            RpcMethod::StorageVerify => forward!(
                 id,
                 crate::server::storage::handle_storage_verify(req.clone())
             ),
-            "storage.cleanup" => forward!(
+            RpcMethod::StorageCleanup => forward!(
                 id,
                 crate::server::storage::handle_storage_cleanup(req.clone())
             ),
-            "storage.backup" => forward!(
+            RpcMethod::StorageBackup => forward!(
                 id,
                 crate::server::storage::handle_storage_backup(req.clone())
             ),
-            "storage.restore" => forward!(
+            RpcMethod::StorageRestore => forward!(
                 id,
                 crate::server::storage::handle_storage_restore(req.clone())
             ),
 
             // MCP RPC handlers
-            "mcp.start" => to_response(id, self.handle_mcp_start(&req).await),
-            "mcp.stop" => forward!(
+            RpcMethod::McpStart => to_response(id, self.handle_mcp_start(&req).await),
+            RpcMethod::McpStop => forward!(
                 id,
                 crate::server::platform::handle_mcp_stop(req.clone(), &self.ctx.mcp_server_manager)
             ),
-            "mcp.status" => forward!(
+            RpcMethod::McpStatus => forward!(
                 id,
                 crate::server::platform::handle_mcp_status(
                     req.clone(),
@@ -958,19 +1036,23 @@ impl RpcDispatcher {
             ),
 
             // Skills RPC handlers
-            "skills.list" => forward!(id, crate::server::platform::handle_skills_list(req.clone())),
-            "skills.get" => forward!(id, crate::server::platform::handle_skills_get(req.clone())),
-            "skills.search" => forward!(
+            RpcMethod::SkillsList => {
+                forward!(id, crate::server::platform::handle_skills_list(req.clone()))
+            }
+            RpcMethod::SkillsGet => {
+                forward!(id, crate::server::platform::handle_skills_get(req.clone()))
+            }
+            RpcMethod::SkillsSearch => forward!(
                 id,
                 crate::server::platform::handle_skills_search(req.clone())
             ),
 
             // Agents RPC handlers
-            "agents.list_profiles" => forward!(
+            RpcMethod::AgentsListProfiles => forward!(
                 id,
                 crate::server::platform::handle_agents_list_profiles(req.clone(), &self.ctx.agents)
             ),
-            "agents.resolve_profile" => {
+            RpcMethod::AgentsResolveProfile => {
                 forward!(
                     id,
                     crate::server::platform::handle_agents_resolve_profile(
@@ -981,33 +1063,27 @@ impl RpcDispatcher {
             }
 
             // Subagent RPC handlers
-            "subagent.collect" => to_response(id, self.handle_subagent_collect(&req).await),
+            RpcMethod::SubagentCollect => to_response(id, self.handle_subagent_collect(&req).await),
 
             // Webhook RPC handler
-            "webhook.receive" => to_response(id, self.handle_webhook_receive(&req)),
+            RpcMethod::WebhookReceive => to_response(id, self.handle_webhook_receive(&req)),
 
             // Workflow execution (Phase 3a)
-            "workflow.start" => to_response(
+            RpcMethod::WorkflowStart => to_response(
                 id,
                 crate::rpc::workflow_handlers::handle_workflow_start(&self.ctx, &req).await,
             ),
-            "workflow.approve_gate" => to_response(
+            RpcMethod::WorkflowApproveGate => to_response(
                 id,
                 crate::rpc::workflow_handlers::handle_workflow_approve_gate(&self.ctx, &req).await,
             ),
-            "workflow.status" => to_response(
+            RpcMethod::WorkflowStatus => to_response(
                 id,
                 crate::rpc::workflow_handlers::handle_workflow_status(&self.ctx, &req).await,
             ),
-            "workflow.cancel" => to_response(
+            RpcMethod::WorkflowCancel => to_response(
                 id,
                 crate::rpc::workflow_handlers::handle_workflow_cancel(&self.ctx, &req).await,
-            ),
-
-            _ => Response::error(
-                id,
-                METHOD_NOT_FOUND,
-                format!("Method not found: '{}'", req.method),
             ),
         }
     }
@@ -2295,48 +2371,34 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
         assert_eq!(unique.len(), METHODS.len(), "duplicate entry in METHODS");
     }
 
-    // METHODS is hand-maintained while the dispatch arms are the source of truth;
-    // daemon.capabilities returns METHODS, so any drift silently hides methods
-    // from capability-detecting clients (this happened with plugin.install/remove).
+    /// `ALL` is hand-written; the compiler does not check it. `EnumIter` walks
+    /// what the compiler *does* know, so a variant added without an `ALL` entry
+    /// fails here rather than quietly dropping out of `daemon.capabilities`.
     #[test]
-    fn methods_matches_dispatch_arms() {
-        let src = include_str!("dispatch.rs");
-        let start = src
-            .find("match req.method.as_str()")
-            .expect("dispatch match not found");
-        let end = src[start..]
-            .find("_ => Response::error")
-            .expect("dispatch default arm not found")
-            + start;
-        let region = &src[start..end];
+    fn every_rpc_method_variant_is_listed() {
+        use strum::IntoEnumIterator;
+        let listed: Vec<RpcMethod> = RpcMethod::ALL.to_vec();
+        let known: Vec<RpcMethod> = RpcMethod::iter().collect();
+        assert_eq!(listed, known, "RpcMethod::ALL is missing a variant");
+    }
 
-        let mut dispatched = std::collections::BTreeSet::new();
-        let mut rest = region;
-        while let Some(open) = rest.find('"') {
-            let after = &rest[open + 1..];
-            let Some(close) = after.find('"') else { break };
-            let lit = &after[..close];
-            if !lit.is_empty()
-                && lit
-                    .chars()
-                    .all(|c| c.is_ascii_lowercase() || c == '_' || c == '.')
-            {
-                dispatched.insert(lit);
-            }
-            rest = &after[close + 1..];
+    /// `METHODS` is what `daemon.capabilities` advertises and
+    /// [`RpcMethod::parse`] is what the dispatcher resolves; both come from the
+    /// one `rpc_methods!` table, and this pins that they still agree.
+    #[test]
+    fn every_advertised_method_resolves() {
+        assert_eq!(METHODS.len(), RpcMethod::ALL.len());
+        for name in METHODS {
+            let parsed = RpcMethod::parse(name)
+                .unwrap_or_else(|| panic!("`{name}` is advertised but does not resolve"));
+            assert_eq!(parsed.as_str(), *name);
         }
+    }
 
-        let advertised: std::collections::BTreeSet<_> = METHODS.iter().copied().collect();
-        let unadvertised: Vec<_> = dispatched.difference(&advertised).collect();
-        let unreachable: Vec<_> = advertised.difference(&dispatched).collect();
-        assert!(
-            unadvertised.is_empty(),
-            "dispatched but missing from METHODS: {unadvertised:?}"
-        );
-        assert!(
-            unreachable.is_empty(),
-            "in METHODS but no dispatch arm: {unreachable:?}"
-        );
+    #[test]
+    fn an_unknown_method_does_not_resolve() {
+        assert_eq!(RpcMethod::parse("session.no_such_method"), None);
+        assert_eq!(RpcMethod::parse(""), None);
     }
 
     /// `config.set` merges into the same store `cru.config.get` reads (the
