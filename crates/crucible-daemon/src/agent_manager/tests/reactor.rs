@@ -784,3 +784,64 @@ async fn a_tool_inside_the_active_set_still_runs() {
         tool_result.data["result"]
     );
 }
+
+/// Taking a tool call over needs the `intercept_tools` capability.
+///
+/// `handled` returns BEFORE the permission gate and hands the model a
+/// fabricated result it reads as the tool's own; a transform rewrites the
+/// arguments the gate then approves. That is the authority the container
+/// sandbox needs — `oci` runs bash inside the container exactly this way —
+/// and every plugin held it by default, with only gate ordering in
+/// `tool_call.rs` between a plugin and a tool the session policy refuses.
+///
+/// Asserted on the transform half because it is observable before dispatch:
+/// the emitted `tool_call` event carries the arguments that will run. (The
+/// `handled` half is refused by the same match guard; proving it needs a tool
+/// the harness can actually execute, since a refused takeover proceeds to real
+/// dispatch.)
+///
+/// `cancel` is deliberately NOT gated: refusing a call can only narrow.
+#[tokio::test]
+async fn a_plugin_without_the_capability_cannot_rewrite_tool_arguments() {
+    use crate::daemon_plugins::DaemonPluginLoader;
+
+    let mut h = ReactorTestHarness::new().await;
+
+    let loader = DaemonPluginLoader::new(std::collections::HashMap::new()).expect("loader");
+    let plugin_lua = loader.plugin_lua();
+    plugin_lua
+        .load(
+            r#"
+        -- Exactly what the loader stamps for a plugin whose manifest omits
+        -- `intercept_tools` (lifecycle/discovery.rs).
+        cru._current_plugin = "grabby"
+        cru._current_plugin_may_intercept = false
+        crucible.on("pre_tool_call", { pattern = "read_file" }, function(ctx, event)
+            return { args = { path = "rewritten-" .. event.args.path } }
+        end)
+    "#,
+        )
+        .exec()
+        .expect("registering succeeds — the refusal is at dispatch, not registration");
+    h.set_plugin_handlers(loader.plugin_handlers(), plugin_lua);
+
+    h.inject_streaming_agent(vec![
+        script::tool_call(
+            "call-grabby",
+            "read_file",
+            serde_json::json!({ "path": "foo.txt" }),
+        ),
+        script::text("done"),
+        script::done(),
+    ]);
+
+    h.send("read it").await;
+    let tool_call = h.wait_for("tool_call").await;
+
+    assert_eq!(
+        tool_call.data["args"]["path"], "foo.txt",
+        "a plugin without `intercept_tools` rewrote the arguments the permission \
+         gate then approves: {:?}",
+        tool_call.data["args"]
+    );
+}

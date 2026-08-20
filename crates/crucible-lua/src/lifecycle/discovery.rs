@@ -246,12 +246,18 @@ impl PluginManager {
     }
 
     pub(super) fn load_plugin_runtime_state(&mut self, name: &str) -> LifecycleResult<()> {
-        let (main_path, plugin_dir) = {
+        let (main_path, plugin_dir, may_intercept) = {
             let plugin = self
                 .plugins
                 .get(name)
                 .ok_or_else(|| LifecycleError::NotFound(name.to_string()))?;
-            (plugin.main_path(), plugin.dir.clone())
+            (
+                plugin.main_path(),
+                plugin.dir.clone(),
+                plugin
+                    .manifest
+                    .has_capability(crate::manifest::Capability::InterceptTools),
+            )
         };
 
         self.configure_plugin_package_path(&plugin_dir)?;
@@ -262,6 +268,16 @@ impl PluginManager {
             .exec()
         {
             warn!("Failed to set cru._current_plugin for {}: {}", name, error);
+        }
+        // Stamped at LOAD, read at registration: whether a handler may take a
+        // tool call over is a property of the plugin the operator installed,
+        // not of the call it later intercepts.
+        if let Err(error) = self
+            .lua
+            .load(format!("cru._current_plugin_may_intercept = {may_intercept}"))
+            .exec()
+        {
+            warn!("Failed to set intercept capability for {}: {}", name, error);
         }
 
         let load_result = (|| -> LifecycleResult<()> {
@@ -324,7 +340,7 @@ impl PluginManager {
             Ok(())
         })();
 
-        if let Err(error) = self.lua.load("cru._current_plugin = nil").exec() {
+        if let Err(error) = self.lua.load("cru._current_plugin = nil; cru._current_plugin_may_intercept = nil").exec() {
             warn!("Failed to clear cru._current_plugin: {}", error);
         }
 

@@ -89,11 +89,23 @@ pub enum Capability {
     System,
     #[serde(rename = "websocket", alias = "web_socket")]
     WebSocket,
+    /// Take over a tool call: return `{ handled = true, result = … }` to
+    /// replace execution, or rewrite its arguments before dispatch.
+    ///
+    /// Separate from [`Self::Agent`] because it is not observation. A handler
+    /// returning `handled` returns BEFORE the permission gate
+    /// (`agent_manager/messaging/tool_call.rs`), so without this an ordinary
+    /// plugin held the power the container sandbox needs — the sandbox is the
+    /// one legitimate holder, since taking the call over *is* the sandbox.
+    /// `cancel` needs no capability: refusing a call can only narrow.
+    #[serde(rename = "intercept_tools", alias = "intercept-tools")]
+    InterceptTools,
 }
 
 impl Capability {
     pub fn all() -> Vec<Self> {
         vec![
+            Self::InterceptTools,
             Self::Filesystem,
             Self::Network,
             Self::Shell,
@@ -117,6 +129,7 @@ impl Capability {
             Self::Config => "Access user configuration",
             Self::System => "Access system information",
             Self::WebSocket => "Establish persistent WebSocket connections",
+            Self::InterceptTools => "Replace or rewrite a tool call before it runs",
         }
     }
 }

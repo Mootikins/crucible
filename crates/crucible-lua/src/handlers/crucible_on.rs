@@ -236,6 +236,15 @@ pub fn register_crucible_on_api(
             priority,
             pattern: pattern.clone(),
             plugin: plugin.clone(),
+            // Absent means "not loading a plugin" — a user's own init.lua,
+            // which carries the operator's own authority.
+            may_intercept: lua
+                .globals()
+                .get::<mlua::Table>("cru")
+                .and_then(|c| c.get::<Option<bool>>("_current_plugin_may_intercept"))
+                .ok()
+                .flatten()
+                .unwrap_or(true),
         });
         func_guard.insert(name.clone(), key);
 

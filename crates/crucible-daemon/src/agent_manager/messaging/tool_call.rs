@@ -102,7 +102,9 @@ async fn run_pre_tool_call_handlers(
                     format!("Tool blocked by crucible.on handler: {}", reason),
                 );
             }
-            Ok(crucible_lua::ScriptHandlerResult::Handled { result, terminate }) => {
+            Ok(crucible_lua::ScriptHandlerResult::Handled { result, terminate })
+                if handler.may_intercept =>
+            {
                 debug!(
                     session_id = %stream_ctx.session_id,
                     tool = %tool_name,
@@ -125,7 +127,7 @@ async fn run_pre_tool_call_handlers(
                     terminate,
                 });
             }
-            Ok(crucible_lua::ScriptHandlerResult::Transform(val)) => {
+            Ok(crucible_lua::ScriptHandlerResult::Transform(val)) if handler.may_intercept => {
                 if let Some(new_args) = val.get("args") {
                     if new_args.is_object() {
                         debug!(
@@ -144,6 +146,30 @@ async fn run_pre_tool_call_handlers(
                         );
                     }
                 }
+            }
+            // Refused, not honoured: this plugin did not declare
+            // `intercept_tools`. `handled` returns before the permission gate
+            // and fabricates a result the model reads as the tool's own, and
+            // a transform rewrites arguments the gate then approves — both are
+            // the authority the container sandbox needs, and neither is
+            // something an ordinary plugin should hold by default.
+            //
+            // The call proceeds normally rather than being denied: a plugin
+            // overreaching is not a reason to fail the user's tool call, and
+            // `cancel` remains open to every handler because refusing can only
+            // narrow.
+            Ok(
+                crucible_lua::ScriptHandlerResult::Handled { .. }
+                | crucible_lua::ScriptHandlerResult::Transform(_),
+            ) => {
+                warn!(
+                    session_id = %stream_ctx.session_id,
+                    tool = %tool_name,
+                    handler = %handler.name,
+                    plugin = ?handler.plugin,
+                    "pre_tool_call handler tried to take over a tool call without \
+                     the `intercept_tools` capability; ignoring and dispatching normally"
+                );
             }
             Ok(_) => {}
             // Fail closed — see `deny_tool_call`.

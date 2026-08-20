@@ -127,6 +127,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   constructor between them.
 
 ### Security
+
+- **Taking a tool call over now requires the `intercept_tools` capability.** A
+  `pre_tool_call` handler returning `{ handled = true, result = … }` returns
+  *before* the permission gate and hands the model a fabricated result it reads
+  as the tool's own; returning `{ args = … }` rewrites the arguments the gate
+  then approves. Every plugin held that power by default, and the only thing
+  standing between a plugin and a tool the session policy refuses was the order
+  of two checks in `messaging/tool_call.rs`, argued in a comment there.
+
+  The capability is declared in `plugin.yaml`, resolved from the manifest when
+  the plugin loads, and stamped onto each handler at registration — authority is
+  a property of the plugin the operator installed, not of the call it later
+  intercepts. A handler without it may still observe and may still `cancel`,
+  because refusing a call can only narrow; its takeover and rewrite results are
+  ignored with a warning and the call dispatches normally.
+
+  `runtime/plugins/oci` declares it — there, intercepting **is** the sandbox.
+  It is the only bundled plugin that intercepts. Handlers registered outside a
+  plugin load (a user's own `init.lua`) are trusted, having the same authority
+  as the config.
+
 - **A workflow's `## Validation` commands ran on the host with no permission
   check.** When a run reached `Completed`, the daemon handed each runnable
   entry straight to `bash -c`. The command text comes out of a note, so

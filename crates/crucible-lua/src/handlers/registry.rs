@@ -59,6 +59,15 @@ pub struct RuntimeHandler {
     /// without it, every reload appends another copy of every handler and the
     /// stale ones keep firing against dead state.
     pub plugin: Option<String>,
+    /// Whether this handler's plugin declared `intercept_tools`.
+    ///
+    /// Decided at registration from the plugin's manifest, not at the call
+    /// site: authorization is a property of the plugin the operator installed.
+    /// A handler without it may observe and may `cancel`; its `handled` and
+    /// transform results are refused, because `handled` returns before the
+    /// permission gate. Handlers registered outside a plugin load — a user's
+    /// own `init.lua` — are trusted, having the same authority as the config.
+    pub may_intercept: bool,
 }
 
 impl LuaScriptHandlerRegistry {

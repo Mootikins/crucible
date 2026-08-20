@@ -9,5 +9,10 @@ main: init.lua
 capabilities:
   - shell
   - config
+  # Takes tool calls over: `handled = true` runs bash inside the container
+  # instead of on the host. Here, intercepting IS the sandbox — without this
+  # the daemon ignores the takeover and dispatches on the host, which is the
+  # escape the sandbox exists to prevent.
+  - intercept_tools
   # Reads .devcontainer/devcontainer.json out of the session's workspace.
   - filesystem
