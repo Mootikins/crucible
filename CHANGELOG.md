@@ -105,6 +105,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `prompt` (or a bare string), `system` and `timeout` (seconds, default 30).
   This is the primitive `auto-title` runs on.
 
+### Removed
+
+- **The `Reactor` event system** (`crucible_core::events::{Reactor, Handler,
+  HandlerContext, DependencyGraph}` and the four built-in handlers) — 3,076
+  lines. It was wired into the turn loop at four points and dispatched on every
+  tool call and every LLM call, and it never ran anything: outside its own tests
+  nothing implemented `Handler` and nothing called `register`, so every `emit`
+  returned `handler_count: 0` and its cancel and fail-closed arms were
+  unreachable. Session-scoped extension is `crucible.on` in the Lua registry,
+  which runs in the same functions immediately below each removed dispatch and
+  has the production handlers. `HandlerResult` is kept and moved to
+  `events::subscriber`, beside the EventBus that the file-watch pipeline
+  actually runs on.
+- **`crucible_core::protocol::EVENT_NAMES`** — a 74-entry list of wire names
+  whose only non-test reference was its own re-export. It existed so a test
+  could diff it against the payload enums its own doc called the source of
+  truth. The test that checked a real property (`Group::of` must know every
+  declared event) is kept and now derives from the enums directly.
+- **`crucible_core::{InteractionRegistry, InteractionContext}`** — no production
+  constructor between them.
+
 ### Security
 - **A workflow's `## Validation` commands ran on the host with no permission
   check.** When a run reached `Completed`, the daemon handed each runnable
