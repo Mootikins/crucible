@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- **The 1500-line per-file ceiling is gone**, with
+  `scripts/check-file-sizes.sh` and `.file-size-whitelist`. It had no empirical
+  support: measured across thirteen codebases, Crucible kept 0.2% of its Rust
+  files over the limit and 2.2% of its lines in them, while every reference —
+  codex, zed, helix, rust-analyzer, ripgrep, postgres, git, go, neovim, redis,
+  sqlite, cpython — ran 2.7% to 21.3% of files and **24.6% to 76.2% of lines**.
+  All thirteen would fail the gate, most of them hundreds of times. Worse, the
+  largest files in the best of them are enumerated tables — ripgrep's
+  8,161-line `flags/defs.rs`, helix's 7,228-line `commands.rs` — which is the
+  exact pattern this codebase names as its exemplar, so the ceiling argued
+  against the shape it was trying to adopt. `just lint size` is removed;
+  `just lint` no longer runs it.
 - **JSON-RPC method names are one closed enum** (`RpcMethod`,
   `crucible-daemon/src/rpc/dispatch.rs`). `METHODS` — what
   `daemon.capabilities` advertises — and the 750-line dispatch match were two

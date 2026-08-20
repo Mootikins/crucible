@@ -164,7 +164,7 @@ fmt:
 #   until its existing findings are triaged — wiring it in with a backlog would
 #   just teach everyone to ignore it.
 #
-# Lint: all (default) | fmt | clippy | docs | license | size | types | dead
+# Lint: all (default) | fmt | clippy | docs | license | types | dead
 lint what="all":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -176,7 +176,6 @@ lint what="all":
     }
     lint_docs()    { cargo test -p crucible-core --test dev_kiln --test docs_config -- --ignored; }
     lint_license() { cargo deny --all-features check licenses; }
-    lint_size()    { scripts/check-file-sizes.sh; }
     lint_types()   { (cd crates/crucible-web/web && bunx tsc --noEmit -p tsconfig.json); }
     # Import-dead frontend code: unused files, exports and dependencies. Run it
     # WITHOUT `--production`: that mode drops test files from the graph and then
@@ -188,11 +187,11 @@ lint what="all":
     lint_dead()    { (cd crates/crucible-web/web && bunx knip --no-progress); }
 
     case "$1" in
-        all) lint_fmt; lint_clippy; lint_docs; lint_license; lint_size; lint_types ;;
-        fmt|clippy|docs|license|size|types|dead) "lint_$1" ;;
+        all) lint_fmt; lint_clippy; lint_docs; lint_license; lint_types ;;
+        fmt|clippy|docs|license|types|dead) "lint_$1" ;;
         *)
             echo "Unknown lint target: $1"
-            echo "Valid targets: all fmt clippy docs license size types dead"
+            echo "Valid targets: all fmt clippy docs license types dead"
             exit 1
             ;;
     esac
