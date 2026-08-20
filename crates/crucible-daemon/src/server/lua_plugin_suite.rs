@@ -494,9 +494,25 @@ mod shipped_plugin_tests {
 
             // Body level means column zero: an `on_*` call indented inside a
             // function runs when that function does, not on re-execution.
+            //
+            // ANY receiver, not just `crucible`/`cru`. Narrowing it to those
+            // two let `discord` through: it registers with `gateway.on(...)` on
+            // a `require`d module whose `Emitter:on` appends, so a second
+            // execution handled every Discord message twice — two agent turns,
+            // two replies, two quota charges — and `tests/service_test.lua`
+            // already does `require("discord")`. The property is "a handler is
+            // attached when this file runs", and the receiver's name has
+            // nothing to do with it.
             let body_level_hook = src.lines().any(|l| {
-                (l.starts_with("crucible.on") || l.starts_with("cru.on"))
-                    && !l.trim_start().starts_with("--")
+                let Some((receiver, rest)) = l.split_once(['.', ':']) else {
+                    return false;
+                };
+                !receiver.is_empty()
+                    && receiver
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+                    && !receiver.starts_with(|c: char| c.is_ascii_digit())
+                    && (rest.starts_with("on(") || rest.starts_with("on_"))
             });
             // The ASSIGNMENT, not the substring. Checking `contains` matched
             // the guard's own explanatory comment, so this test passed with

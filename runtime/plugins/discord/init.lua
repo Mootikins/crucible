@@ -190,7 +190,7 @@ end
 -- Plugin Spec
 -- ============================================================================
 
-return {
+local plugin = {
     name = "discord",
     version = "0.2.0",
     description = "Discord integration via Gateway WebSocket and REST API",
@@ -236,3 +236,14 @@ return {
         cru.log("info", "Discord plugin loaded")
     end,
 }
+
+-- The daemon executes this file by path, not through `require`, so nothing
+-- would otherwise fill `package.loaded`. `tests/service_test.lua` does
+-- `require("discord")`, which without this loads a SECOND copy: the two
+-- `gateway.on` calls at body level run again, and `Emitter:on` appends rather
+-- than replaces, so every Discord message would be handled twice — two agent
+-- turns, two replies, two quota charges. Claiming the entry makes that
+-- `require` answer with this table.
+package.loaded["discord"] = plugin
+
+return plugin
