@@ -172,7 +172,13 @@ pub struct SessionKilnRequest {
     /// The kiln's registry NAME. It was `kiln_path` — a directory the caller
     /// chose — and that is the door the registration floor now stands in front
     /// of: a path here would attach a kiln nobody registered.
-    pub kiln: String,
+    ///
+    /// Typed, not a `String`: both callers already hold a validated
+    /// [`KilnName`] and were widening it back with `to_string()` for one hop.
+    /// `KilnName` serializes as its inner string, so the wire is unchanged.
+    ///
+    /// [`KilnName`]: crucible_core::config::KilnName
+    pub kiln: crucible_core::config::KilnName,
 }
 
 /// Request for `session.set_workspace`. `workspace: None` detaches.
@@ -221,7 +227,7 @@ impl DaemonClient {
             "session.connect_kiln",
             SessionKilnRequest {
                 session_id: session_id.to_string(),
-                kiln: kiln.to_string(),
+                kiln: kiln.clone(),
             },
         )
         .await
@@ -238,7 +244,7 @@ impl DaemonClient {
             "session.disconnect_kiln",
             SessionKilnRequest {
                 session_id: session_id.to_string(),
-                kiln: kiln.to_string(),
+                kiln: kiln.clone(),
             },
         )
         .await
