@@ -1,6 +1,10 @@
 use super::helpers::{
     note_to_metadata_json, validate_note_name, validate_write_target_within_kiln, MAX_CONTENT_SIZE,
 };
+// The daemon owns the grep request shape. The copy that used to live in
+// this file had the same six fields and its own `default_grep_limit`
+// hardcoded at 100, while the daemon's reads `GREP_DEFAULT_LIMIT` — so a
+// change to that constant moved the RPC default and left the HTTP one behind.
 use crate::services::daemon::AppState;
 use crate::{error::WebResultExt, WebError};
 use axum::{
@@ -9,6 +13,7 @@ use axum::{
     Json, Router,
 };
 use chrono::Utc;
+use crucible_daemon::rpc_client::GrepSearchRequest;
 use serde::Deserialize;
 use std::path::PathBuf;
 use tokio::fs;
@@ -528,29 +533,6 @@ async fn search_semantic(
 /// INVALID_PARAMS, surfaced here as 400). `glob` filters by file name
 /// (e.g. `*.md`); `null` searches all files. `.gitignore` is respected and
 /// binary files are skipped.
-#[derive(Debug, Deserialize)]
-struct GrepSearchRequest {
-    root: String,
-    query: String,
-    /// Treat `query` as a regex (Rust regex syntax) instead of a literal.
-    #[serde(default)]
-    regex: bool,
-    #[serde(default)]
-    glob: Option<String>,
-    #[serde(default = "default_grep_limit")]
-    limit: usize,
-    #[serde(default = "default_true")]
-    case_insensitive: bool,
-}
-
-fn default_grep_limit() -> usize {
-    100
-}
-
-fn default_true() -> bool {
-    true
-}
-
 async fn search_grep(
     State(state): State<AppState>,
     Json(req): Json<GrepSearchRequest>,

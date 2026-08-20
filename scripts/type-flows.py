@@ -75,7 +75,12 @@ for fam in sorted(fams):
     print(f"=== {fam}  ({len(rows)} handlers) ===")
     for t, n in sorted(seen.items(), key=lambda kv: -kv[1])[:12]:
         loc = owner(t)
-        where = loc[0] if loc and len(loc)==1 else (f"{len(loc)} DECLARATIONS: {loc}" if loc else "(external)")
+        if not loc:
+            where = "(external)"
+        elif len(loc) == 1:
+            where = loc[0]
+        else:
+            where = f"{len(loc)} DECLARATIONS: " + " · ".join(loc)
         print(f"   {n:3d}x {t:28s} {where}")
     print()
 Path('/tmp/fsize/g/typeflow.json').write_text(json.dumps(

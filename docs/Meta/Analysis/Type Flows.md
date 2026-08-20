@@ -82,7 +82,7 @@ measurement agrees: it is the most connected type in the graph, at degree 235.
     10x KilnManager                  crates/crucible-daemon/src/kiln_manager.rs
      9x ProjectManager               crates/crucible-daemon/src/project_manager.rs
      7x AgentManager                 crates/crucible-daemon/src/agent_manager/mod.rs
-     5x SessionManager               3 DECLARATIONS: ['crates/crucible-core/src/traits/acp.rs', 'crates/crucible-daemon/src/session_manager.rs', 'crates/crucible-lua/src/session_api.rs']
+     5x SessionManager               3 DECLARATIONS: crates/crucible-core/src/traits/acp.rs · crates/crucible-daemon/src/session_manager.rs · crates/crucible-lua/src/session_api.rs
      4x SessionEventMessage          crates/crucible-core/src/protocol/rpc/mod.rs
      3x DashMap                      (external)
      3x LuaSessionState              (external)
@@ -94,7 +94,7 @@ measurement agrees: it is the most connected type in the graph, at degree 235.
      9x Request                      crates/crucible-core/src/protocol/rpc/mod.rs
      9x DaemonPluginLoader           (external)
      9x Response                     crates/crucible-core/src/protocol/rpc/mod.rs
-     1x OptionAction                 2 DECLARATIONS: ['crates/crucible-daemon/src/server/plugins.rs', 'crates/crucible-web/src/routes/plugin.rs']
+     1x OptionAction                 crates/crucible-daemon/src/server/plugins.rs
 
 === search  (3 handlers) ===
      3x Request                      crates/crucible-core/src/protocol/rpc/mod.rs
@@ -106,10 +106,10 @@ measurement agrees: it is the most connected type in the graph, at degree 235.
     43x Request                      crates/crucible-core/src/protocol/rpc/mod.rs
     43x Response                     crates/crucible-core/src/protocol/rpc/mod.rs
     26x AgentManager                 crates/crucible-daemon/src/agent_manager/mod.rs
-    18x SessionManager               3 DECLARATIONS: ['crates/crucible-core/src/traits/acp.rs', 'crates/crucible-daemon/src/session_manager.rs', 'crates/crucible-lua/src/session_api.rs']
+    18x SessionManager               3 DECLARATIONS: crates/crucible-core/src/traits/acp.rs · crates/crucible-daemon/src/session_manager.rs · crates/crucible-lua/src/session_api.rs
     15x SessionEventMessage          crates/crucible-core/src/protocol/rpc/mod.rs
      2x KilnManager                  crates/crucible-daemon/src/kiln_manager.rs
-     2x LlmConfig                    2 DECLARATIONS: ['crates/crucible-cli/src/config.rs', 'crates/crucible-core/src/config/components/llm.rs']
+     2x LlmConfig                    crates/crucible-core/src/config/components/llm.rs
      1x RpcContext                   crates/crucible-daemon/src/rpc/context.rs
      1x ProjectManager               crates/crucible-daemon/src/project_manager.rs
      1x DaemonPluginLoader           (external)
@@ -211,8 +211,8 @@ convention and are also correct.
    three declarations.
 2. **Rename the colliding names**, starting with `ChatEvent` and the web auth
    `Session`. A rename is cheap; a reader who trusts the wrong one is not.
-3. **Collapse the wire request pairs.** `GrepSearchRequest`,
-   `SessionKilnRequest`, `ModelsResponse` and `OptionAction` are each declared
-   once in the JSON-RPC client and once in the web routes. Two wire bindings
-   describing the same request twice is the concrete form of "wire bindings
-   share one type and nothing else".
+3. **Collapse the wire request pairs.** `GrepSearchRequest` and `OptionAction`
+   are done: `crucible-web` now uses the daemon's declaration of each. The web
+   copy of `GrepSearchRequest` hardcoded its default limit at 100 and the
+   daemon's reads `GREP_DEFAULT_LIMIT`, which is also 100 — the two agreed by
+   coincidence, and one edit to that constant would have separated them. `SessionKilnRequest` and `ModelsResponse` remain.

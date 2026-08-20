@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- **Four duplicate type declarations collapsed.** `crucible-web` declared its
+  own `GrepSearchRequest` and `OptionAction` beside the daemon's; both now use
+  the daemon's. The web copy of `GrepSearchRequest` hardcoded its default limit
+  at 100; the daemon's reads `GREP_DEFAULT_LIMIT`, which is also 100. The two
+  surfaces agreed, so nothing changes for a caller — but they agreed by
+  coincidence, and the next edit to that constant would have moved the JSON-RPC
+  default and left the HTTP one behind.
+  `crucible_daemon::server::plugins::OptionAction` is now `pub` and
+  `Deserialize` to carry both. `acp::tools::ToolExecutor` is renamed
+  `AcpToolExecutor` — it never implemented
+  `crucible_core::traits::tools::ToolExecutor`, and that file's own tests had to
+  alias the real trait around the collision. The dead
+  `crucible_cli::config::LlmConfig` alias is deleted; nothing used it and it
+  named `AcpConfig`.
 - **The 1500-line per-file ceiling is gone**, with
   `scripts/check-file-sizes.sh` and `.file-size-whitelist`. It had no empirical
   support: measured across thirteen codebases, Crucible kept 0.2% of its Rust

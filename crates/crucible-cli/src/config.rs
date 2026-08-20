@@ -19,7 +19,6 @@ pub use crucible_core::config::{
 
 // Legacy type aliases for backward compatibility
 pub type EmbeddingConfigSection = crucible_core::config::EmbeddingProviderConfig;
-pub type LlmConfig = crucible_core::config::AcpConfig;
 
 /// Builder for programmatically constructing CliConfig (top-level CLI configuration)
 pub struct CliConfigBuilder {

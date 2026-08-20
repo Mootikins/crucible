@@ -312,9 +312,16 @@ pub fn discover_tools(registry: &mut ToolRegistry, _kiln_path: &str) -> Result<u
     Ok(count)
 }
 
-/// Executes tool calls by routing to the appropriate crucible-tools implementation
+/// Executes tool calls for an ACP session by routing to the crucible-tools
+/// implementation.
+///
+/// Named `AcpToolExecutor`, not `ToolExecutor`, because it does **not**
+/// implement [`crucible_core::traits::tools::ToolExecutor`] — it is a
+/// stand-alone struct that happened to take the trait's name. This file's own
+/// tests had to import the real trait as `CoreToolExecutor` to work around the
+/// collision, which is how the confusion showed up.
 #[derive(Debug)]
-pub struct ToolExecutor {
+pub struct AcpToolExecutor {
     kiln_path: PathBuf,
     /// The kiln as a capability, for the same reason `NoteTools` holds one: the
     /// note operations here build paths from caller strings, and
@@ -324,7 +331,7 @@ pub struct ToolExecutor {
     scope: FsScope,
 }
 
-impl ToolExecutor {
+impl AcpToolExecutor {
     /// Create a new tool executor
     ///
     /// # Arguments
@@ -570,9 +577,7 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use crucible_core::traits::acp::AcpError;
-    use crucible_core::traits::tools::{
-        ExecutionContext, ToolDefinition, ToolError, ToolExecutor as CoreToolExecutor,
-    };
+    use crucible_core::traits::tools::{ExecutionContext, ToolDefinition, ToolError, ToolExecutor};
     use crucible_core::types::acp::{ToolInvocation, ToolOutput};
     use serde_json::json;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -607,7 +612,7 @@ mod tests {
     }
 
     #[async_trait]
-    impl CoreToolExecutor for MockCoreExecutor {
+    impl ToolExecutor for MockCoreExecutor {
         async fn execute_tool(
             &self,
             name: &str,
@@ -743,7 +748,7 @@ mod tests {
     #[tokio::test]
     async fn execute_tool_happy_path() {
         let temp = TempDir::new().unwrap();
-        let executor = ToolExecutor::new(temp.path().to_path_buf());
+        let executor = AcpToolExecutor::new(temp.path().to_path_buf());
 
         let output = executor.execute("get_kiln_info", json!({})).await.unwrap();
         assert_eq!(output["exists"], json!(true));
@@ -764,7 +769,7 @@ mod tests {
         let outside = TempDir::new().unwrap();
         let secret = outside.path().join("secret.txt");
         std::fs::write(&secret, "SENTINEL").unwrap();
-        let executor = ToolExecutor::new(temp.path().to_path_buf());
+        let executor = AcpToolExecutor::new(temp.path().to_path_buf());
 
         for path in [
             secret.to_string_lossy().into_owned(),
@@ -799,7 +804,7 @@ mod tests {
     async fn the_acp_executor_creates_only_notes() {
         let temp = TempDir::new().unwrap();
         std::fs::create_dir_all(temp.path().join("plugins")).unwrap();
-        let executor = ToolExecutor::new(temp.path().to_path_buf());
+        let executor = AcpToolExecutor::new(temp.path().to_path_buf());
 
         assert!(executor
             .execute(
@@ -837,7 +842,7 @@ mod tests {
         let temp = tempfile::TempDir::new().unwrap();
         let secret = temp.path().join("Private Vault");
         std::fs::create_dir_all(&secret).unwrap();
-        let executor = ToolExecutor::new(secret.clone());
+        let executor = AcpToolExecutor::new(secret.clone());
 
         let value = executor.execute("get_kiln_info", json!({})).await.unwrap();
 
@@ -852,7 +857,7 @@ mod tests {
 
     #[tokio::test]
     async fn execute_unknown_tool_name_fails() {
-        let executor = ToolExecutor::new(PathBuf::from("/tmp"));
+        let executor = AcpToolExecutor::new(PathBuf::from("/tmp"));
         let err = executor
             .execute("does_not_exist", json!({}))
             .await
@@ -863,7 +868,7 @@ mod tests {
 
     #[tokio::test]
     async fn execute_tool_with_invalid_input_schema_fails() {
-        let executor = ToolExecutor::new(PathBuf::from("/tmp"));
+        let executor = AcpToolExecutor::new(PathBuf::from("/tmp"));
 
         let err = executor
             .execute("read_note", json!({ "path": 123 }))

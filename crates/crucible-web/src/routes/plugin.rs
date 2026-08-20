@@ -5,6 +5,7 @@ use axum::{
     routing::{delete, get, post},
     Json, Router,
 };
+use crucible_daemon::server::plugins::OptionAction;
 use serde::Deserialize;
 
 pub fn plugin_routes() -> Router<AppState> {
@@ -37,14 +38,6 @@ struct OptionRequest {
     path: Vec<String>,
     #[serde(default)]
     value: serde_json::Value,
-}
-
-#[derive(Debug, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-enum OptionAction {
-    Get,
-    Set,
-    Execute,
 }
 
 #[derive(Debug, Deserialize)]

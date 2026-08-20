@@ -219,11 +219,16 @@ pub(crate) async fn handle_plugin_options(
 
 /// Which callback an option RPC reaches.
 ///
-/// An enum rather than a `&str` because the dispatcher's METHODS-drift test
-/// reads string literals out of the dispatch arms, and bare `"get"`/`"set"`
-/// there read as method names that do not exist.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum OptionAction {
+/// An enum rather than a `&str` so a dispatch arm names a variant instead of a
+/// bare `"get"`, which a reader scanning `rpc/dispatch.rs` would take for a
+/// method name.
+///
+/// `pub` and `Deserialize` because `crucible-web` deserializes the same three
+/// values out of an HTTP body. It declared its own identical copy until this
+/// became reachable; one wire shape, one type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OptionAction {
     Get,
     Set,
     Execute,
