@@ -1,9 +1,24 @@
 use anyhow::Result;
 use colored::Colorize;
-use crucible_daemon::LuaRunPluginTestsRequest;
+use crucible_daemon::{LuaRunPluginTestsRequest, LuaRunPluginTestsResponse};
 
 use super::TestArgs;
 use crate::config::CliConfig;
+
+/// The process exit code for a finished run.
+///
+/// A run that found no test files is NOT a pass. The daemon reports it as
+/// `0 passed, 0 failed`, which is character-for-character what a green suite
+/// reports, and it sends a `message` on that path alone.
+fn exit_code(response: &LuaRunPluginTestsResponse) -> i32 {
+    if response.message.is_some() || response.load_failures > 0 {
+        2
+    } else if response.failed > 0 {
+        1
+    } else {
+        0
+    }
+}
 
 pub async fn execute(_config: CliConfig, args: TestArgs) -> Result<()> {
     // Resolved HERE, before it crosses the RPC boundary. The daemon re-checks
@@ -40,6 +55,13 @@ pub async fn execute(_config: CliConfig, args: TestArgs) -> Result<()> {
     let passed = response.passed;
     let failed = response.failed;
     let load_failures = response.load_failures;
+
+    // The daemon says here that it found nothing to run. Without this the user
+    // reads `0 passed, 0 failed` and a zero exit, and a plugin whose suite the
+    // discovery missed looks exactly like a plugin whose suite is green.
+    if let Some(message) = &response.message {
+        eprintln!("{} {}", "✗".red(), message);
+    }
 
     // The runner's own per-test output goes to the *daemon's* stdout, so
     // without printing these the user sees a bare count and nothing to act on.
@@ -81,12 +103,53 @@ pub async fn execute(_config: CliConfig, args: TestArgs) -> Result<()> {
             "✗".red(),
             load_failures
         );
-        std::process::exit(2);
     }
 
-    if failed > 0 {
-        std::process::exit(1);
+    match exit_code(&response) {
+        0 => Ok(()),
+        code => std::process::exit(code),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn response(
+        passed: usize,
+        failed: usize,
+        load_failures: usize,
+        message: Option<&str>,
+    ) -> LuaRunPluginTestsResponse {
+        LuaRunPluginTestsResponse {
+            passed,
+            failed,
+            load_failures,
+            failures: Vec::new(),
+            load_failure_details: Vec::new(),
+            message: message.map(str::to_string),
+        }
     }
 
-    Ok(())
+    #[test]
+    fn a_run_that_found_no_test_files_does_not_exit_green() {
+        let response = response(0, 0, 0, Some("No test files found"));
+
+        assert_eq!(exit_code(&response), 2);
+    }
+
+    #[test]
+    fn a_green_suite_exits_zero() {
+        assert_eq!(exit_code(&response(7, 0, 0, None)), 0);
+    }
+
+    #[test]
+    fn a_failed_test_exits_one() {
+        assert_eq!(exit_code(&response(7, 1, 0, None)), 1);
+    }
+
+    #[test]
+    fn a_file_that_could_not_load_exits_two() {
+        assert_eq!(exit_code(&response(7, 0, 1, None)), 2);
+    }
 }

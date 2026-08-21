@@ -1,9 +1,25 @@
 use anyhow::Result;
-use crucible_daemon::LuaPluginHealthRequest;
+use crucible_daemon::{LuaPluginHealthRequest, LuaPluginHealthResponse};
 use serde_json::json;
 
 use super::HealthArgs;
 use crate::config::CliConfig;
+
+/// The verdict line for a health response.
+///
+/// The daemon answers `healthy: true` for a plugin that has no `health.lua`,
+/// because nothing failed. It also sends a `message` that says so, and it sends
+/// one on no other path. Printing the verdict without that message claims a
+/// check passed that never ran.
+fn verdict(response: &LuaPluginHealthResponse) -> &'static str {
+    if response.message.is_some() {
+        "not checked"
+    } else if response.healthy {
+        "yes"
+    } else {
+        "no"
+    }
+}
 
 pub async fn execute(_config: CliConfig, args: HealthArgs) -> Result<()> {
     // Validate path exists
@@ -30,6 +46,7 @@ pub async fn execute(_config: CliConfig, args: HealthArgs) -> Result<()> {
             "name": name,
             "healthy": healthy,
             "checks": response.checks,
+            "message": response.message,
         });
 
         println!("{}", serde_json::to_string_pretty(&output)?);
@@ -42,6 +59,10 @@ pub async fn execute(_config: CliConfig, args: HealthArgs) -> Result<()> {
 
         println!("== Health: {} ==", plugin_name);
         println!();
+
+        if let Some(message) = &response.message {
+            println!("ℹ️  {}", message);
+        }
 
         for check in &response.checks {
             let level = check.get("level").and_then(|v| v.as_str()).unwrap_or("?");
@@ -72,7 +93,7 @@ pub async fn execute(_config: CliConfig, args: HealthArgs) -> Result<()> {
         }
 
         println!();
-        println!("Healthy: {}", if healthy { "yes" } else { "no" });
+        println!("Healthy: {}", verdict(&response));
     }
 
     // Exit with appropriate code
@@ -80,5 +101,36 @@ pub async fn execute(_config: CliConfig, args: HealthArgs) -> Result<()> {
         Ok(())
     } else {
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn response(healthy: bool, message: Option<&str>) -> LuaPluginHealthResponse {
+        LuaPluginHealthResponse {
+            name: "plugin".to_string(),
+            healthy,
+            checks: Vec::new(),
+            message: message.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn a_plugin_without_a_health_file_is_reported_as_unchecked() {
+        let response = response(true, Some("No health.lua found"));
+
+        assert_eq!(verdict(&response), "not checked");
+    }
+
+    #[test]
+    fn a_plugin_that_passed_its_checks_is_reported_as_healthy() {
+        assert_eq!(verdict(&response(true, None)), "yes");
+    }
+
+    #[test]
+    fn a_plugin_that_failed_its_checks_is_reported_as_unhealthy() {
+        assert_eq!(verdict(&response(false, None)), "no");
     }
 }
