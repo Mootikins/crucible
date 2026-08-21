@@ -1,8 +1,10 @@
 import { Component, Show, createSignal, createEffect, createMemo, on, onMount, onCleanup } from 'solid-js';
 import { useProjectSafe } from '@/contexts/ProjectContext';
+import { useSessionSafe } from '@/contexts/SessionContext';
 import { openFileInEditor, closeTabsUnder } from '@/lib/file-actions';
 import { PanelShell } from './PanelShell';
 import {
+  connectSessionKiln,
   listNotes,
   listDir,
   listKilns,
@@ -16,8 +18,9 @@ import { renamedRel, isValidName } from '@/lib/file-tree/mutations';
 import { swrLocal } from '@/lib/local-cache';
 import { moveTargetRel, type FileDragData } from '@/lib/file-dnd';
 import type { KilnListEntry, FsEntry } from '@/lib/types';
-import { buildRoster, rosterIndex, rootKey, type TreeRoot } from '@/lib/tree-root';
-import { selectedRootKey, treeRootActions } from '@/stores/treeRootStore';
+import { buildRoster, rootKey, type TreeRoot } from '@/lib/tree-root';
+import { resolveSessionRoot, sessionRoots, type SessionRoot } from '@/lib/session-roots';
+import { pinnedRootKey, treeRootActions } from '@/stores/treeRootStore';
 import type { FileTreeNode as Node } from '@/lib/file-tree/types';
 import type { SortSpec } from '@/lib/file-tree/types';
 import { makeFileCollection, sortTree } from '@/lib/file-tree/collection';
@@ -28,7 +31,7 @@ import {
   type RootMount,
 } from '@/lib/file-tree/reconcile';
 import { FileTreeView, cssId } from './files/FileTreeView';
-import { RootDropdown } from './files/RootDropdown';
+import { RootStrip } from './files/RootStrip';
 import type { ContextAction } from './files/FileTreeContextMenu';
 import { currentOpenFilePath, revealLoadedPath, revealLazyPath } from './files/file-tree-a11y';
 import type { UseTreeViewReturn } from '@ark-ui/solid';
@@ -82,8 +85,9 @@ function fsEntryToNode(e: FsEntry, rootPath: string): Node {
   };
 }
 
-export const FilesPanel: Component<{ embedded?: boolean }> = (props) => {
+export const FilesPanel: Component = () => {
   const { projects } = useProjectSafe();
+  const { applySessionScope, currentSession } = useSessionSafe();
 
   const [kilns, setKilns] = createSignal<KilnListEntry[]>([]);
   const [rawRoot, setRawRoot] = createSignal<Node | null>(null);
@@ -134,19 +138,67 @@ export const FilesPanel: Component<{ embedded?: boolean }> = (props) => {
     swrLocal('kilns', listKilns, setKilns);
   });
 
+  // The full roster still backs the overflow chevron (every project, every
+  // kiln, plus branches and clone). The STRIP is narrower on purpose.
   const roster = createMemo(() => buildRoster(projects(), kilns()));
 
-  const activeRoot = createMemo<TreeRoot | null>(() => {
-    const groups = roster();
-    const idx = rosterIndex(groups);
-    const persisted = selectedRootKey();
-    if (persisted && idx.has(persisted)) return idx.get(persisted)!;
-    // First non-empty group of each kind (Projects may be empty while
-    // Worktrees has roots — both are kind 'project').
-    const firstProject = groups.find((g) => g.kind === 'project' && g.roots.length > 0)?.roots[0];
-    const firstKiln = groups.find((g) => g.kind === 'kiln' && g.roots.length > 0)?.roots[0];
-    return firstProject ?? firstKiln ?? null; // deterministic fallback
+  // What this session can browse: its workspace and attached kilns first,
+  // then every other registered kiln.
+  const roots = createMemo(() => sessionRoots(currentSession(), kilns(), projects()));
+
+  /**
+   * The root on screen. Follows the active session unless that session has a
+   * pin, so switching sessions re-roots the tree — the whole point of pulling
+   * the session list out of this panel.
+   */
+  const activeRoot = createMemo<SessionRoot | null>(() =>
+    resolveSessionRoot(roots(), pinnedRootKey(currentSession()?.id)),
+  );
+
+  /**
+   * Strip contents: the session's own roots, plus the unattached kiln being
+   * browsed. Without that second part, picking a kiln from the overflow would
+   * re-root the tree to something the strip does not show — the selection
+   * would have nowhere to live.
+   */
+  const stripRoots = createMemo<SessionRoot[]>(() => {
+    const { own } = roots();
+    const active = activeRoot();
+    return active && active.origin === 'other-kiln' ? [...own, active] : own;
   });
+
+  /**
+   * Picking a root PINS it for this session. There is no separate "follow"
+   * control: a session with no pin follows, and pinning the root it would
+   * have followed to anyway is a no-op in effect. A pin that stops resolving
+   * (a renamed kiln, a detached workspace) falls back in
+   * `resolveSessionRoot` rather than stranding the tree.
+   */
+  const selectRoot = (r: TreeRoot) => {
+    const id = currentSession()?.id;
+    if (id) treeRootActions.pin(id, r);
+  };
+
+  /**
+   * Attach the browsed kiln, so the agent can query what you are reading.
+   *
+   * Deliberately NOT wired to selection: picking a kiln is navigation, and a
+   * navigation gesture must never widen the agent's corpus. The echoed scope
+   * folds straight into the session store, so the tab un-dims without a
+   * refetch.
+   */
+  const attachRoot = (r: SessionRoot) => {
+    const id = currentSession()?.id;
+    if (!id || r.kind !== 'kiln') return;
+    void (async () => {
+      try {
+        applySessionScope(await connectSessionKiln(id, r.name));
+        setError(null);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : `Failed to attach ${r.name}`);
+      }
+    })();
+  };
 
   // ---- data-source discriminant --------------------------------------------
   async function loadKilnTree(kilnPath: string) {
@@ -511,22 +563,16 @@ export const FilesPanel: Component<{ embedded?: boolean }> = (props) => {
     <PanelShell class="overflow-hidden">
       {/* No "Files" heading — the panel tab already names it. The dropdown
           leads so the browsed root reads as the panel's title. */}
-      <div
-        class="shrink-0 flex items-center justify-between gap-2"
-        classList={{ 'p-3 border-b border-hairline': !props.embedded, 'px-2 py-1 border-b border-hairline/50': props.embedded }}
-      >
-        {/* Embedded in the Navigator: the swapper (above) drives the root, so
-            the panel shows just its tree toolbar. */}
-        <Show when={!props.embedded} fallback={<div class="flex-1 min-w-0" />}>
-          <RootDropdown
-            groups={roster()}
-            selectedKey={activeRoot() ? rootKey(activeRoot()!) : null}
-            onSelect={(r) => treeRootActions.selectRoot(r)}
-            activeRoot={activeRoot()}
-            onNotice={setError}
-          />
-        </Show>
-        <div class="flex items-center gap-1">
+      <div class="shrink-0 flex items-center justify-between gap-2 p-3 border-b border-hairline">
+        <RootStrip
+          roots={stripRoots()}
+          active={activeRoot()}
+          onSelect={selectRoot}
+          onAttach={attachRoot}
+          groups={roster()}
+          onNotice={setError}
+        />
+        <div class="flex items-center gap-1 shrink-0">
           <button
             type="button"
             aria-label="Sort"

@@ -14,7 +14,7 @@ import { Unicode11Addon } from '@xterm/addon-unicode11';
 import '@xterm/xterm/css/xterm.css';
 import { terminalAllowed, terminalDenied } from '@/lib/terminal-availability';
 import { nextReconnectDelay } from '@/lib/terminal-backoff';
-import { selectedRootKey } from '@/stores/treeRootStore';
+import { statusBarStore } from '@/stores/statusBarStore';
 import { useSettingsSafe } from '@/contexts/SettingsContext';
 
 /**
@@ -69,14 +69,16 @@ function buildEmberTheme() {
  * from a project landed in the home directory. Only the client knows which root
  * is focused, so only the client can say.
  *
- * `selectedRootKey` is `"<kind>:<path>"` (`lib/tree-root.ts`), and a path may
- * itself contain a colon, so split on the FIRST separator only.
+ * The WORKSPACE, not the browsed root. This used to follow the file tree,
+ * which was one app-wide root; the tree now follows the session and can be
+ * pointed at any attached kiln, and a shell has no business moving into a
+ * notes corpus because you opened it to read. A terminal runs commands where
+ * the session acts.
  */
 function wsUrl(): string {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const base = `${proto}://${window.location.host}/api/terminal/ws`;
-  const key = selectedRootKey();
-  const path = key?.slice(key.indexOf(':') + 1);
+  const path = statusBarStore.workspacePath();
   return path ? `${base}?cwd=${encodeURIComponent(path)}` : base;
 }
 

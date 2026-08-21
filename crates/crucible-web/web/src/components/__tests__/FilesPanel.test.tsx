@@ -38,6 +38,20 @@ vi.mock('@/contexts/ProjectContext', () => ({
   useProjectSafe: () => ({
     currentProject: () => null,
     projects: () => projectRoots,
+    refreshProjects: async () => {},
+  }),
+}));
+
+// The tree follows the ACTIVE SESSION: its root is the session's workspace or
+// one of its attached kilns, so these specs must say which session is open.
+// Without one there is nothing to browse, which is the correct empty state
+// and not a fixture worth writing.
+let currentSessionValue: unknown = null;
+
+vi.mock('@/contexts/SessionContext', () => ({
+  useSessionSafe: () => ({
+    currentSession: () => currentSessionValue,
+    applySessionScope: () => {},
   }),
 }));
 
@@ -80,6 +94,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   setStore('tabGroups', {});
   projectRoots = [];
+  // A kiln-attached session with no workspace, so the tree roots at the kiln
+  // and loads notes through listNotes (the migrated Notes view).
+  currentSessionValue = { id: 's-1', kilns: ['kiln'], workspace: null };
   localStorage.clear();
   // These assertions match full filenames; keep extensions visible (the tree
   // hides `.md` by default now).
@@ -107,6 +124,8 @@ describe('FilesPanel — a project root loads once', () => {
 
   beforeEach(() => {
     projectRoots = [{ path: '/proj', name: 'proj', kilns: [], repository: null }];
+    // This describe browses a PROJECT root, so the session acts in it.
+    currentSessionValue = { id: 's-1', kilns: [], workspace: '/proj' };
     // A cached kilns value makes swrLocal apply synchronously AND again from
     // the response — the double-apply this guards against.
     localStorage.setItem('crucible:cache:kilns', JSON.stringify([{ path: '/vault', name: 'vault' }]));

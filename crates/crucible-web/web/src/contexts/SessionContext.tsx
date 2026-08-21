@@ -9,6 +9,7 @@ import {
 import { createStore, produce, reconcile } from 'solid-js/store';
 import type { Session, CreateSessionParams, ProviderInfo } from '@/lib/types';
 import type { SessionContextValue } from '@/lib/types/context';
+import { treeRootActions } from '@/stores/treeRootStore';
 import {
   createSession as apiCreateSession,
   listSessions as apiListSessions,
@@ -92,6 +93,11 @@ export const SessionProvider: ParentComponent<SessionProviderProps> = (props) =>
         includeArchived,
       });
       setSessions(reconcile(list));
+      // The file tree's per-session root pin outlives the session that owns
+      // it; the map is written on every root pick, so without this it only
+      // ever grows. An archived-excluding fetch must not prune, or looking at
+      // the unarchived list would forget every archived session's pin.
+      if (includeArchived) treeRootActions.prune(list.map((s) => s.id));
       try {
         localStorage.setItem('crucible:cache:sessions', JSON.stringify(list));
       } catch {
