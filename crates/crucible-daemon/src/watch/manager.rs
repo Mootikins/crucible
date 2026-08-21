@@ -2,7 +2,6 @@
 
 use crate::watch::{
     backends::{ExtendedBackendRegistry, WatcherRequirements},
-    config::WatchManagerConfig,
     error::{Error, Result},
     events::FileEvent,
     handlers::{create_default_handlers, HandlerRegistry},
@@ -13,9 +12,72 @@ use crucible_core::events::{EventEmitter, NoOpEmitter, SessionEvent};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
+
+/// How the watch manager is built: queue depth, debounce, handler limits.
+///
+/// This is all that survived `watch/config.rs`. That file held 23 types
+/// describing a `[watch]` configuration section — backpressure strategies,
+/// CPU and memory budgets, metric export, time-window filters — that no user
+/// could ever set: `CliAppConfig` has no `watch` field, nothing constructed
+/// `config::WatchConfig`, and no `[watch]` section appeared in any doc or TOML.
+/// It also declared its own `WatchConfig` and `DebounceConfig`, colliding with
+/// the live ones in `traits.rs`, which is why `watch/mod.rs` used to alias them
+/// apart as `ConfigWatchConfig` and `TraitWatchConfig`.
+#[derive(Debug, Clone)]
+pub struct WatchManagerConfig {
+    /// Queue capacity
+    pub queue_capacity: usize,
+    /// Debounce delay
+    pub debounce_delay: Duration,
+    /// Enable default handlers
+    pub enable_default_handlers: bool,
+    /// Maximum concurrent handlers
+    pub max_concurrent_handlers: usize,
+    /// Performance monitoring enabled
+    pub enable_monitoring: bool,
+}
+
+impl Default for WatchManagerConfig {
+    fn default() -> Self {
+        Self {
+            queue_capacity: 10000,
+            debounce_delay: Duration::from_millis(100),
+            enable_default_handlers: true,
+            max_concurrent_handlers: 50,
+            enable_monitoring: true,
+        }
+    }
+}
+
+impl WatchManagerConfig {
+    /// Create a new config with custom queue capacity.
+    pub fn with_queue_capacity(mut self, capacity: usize) -> Self {
+        self.queue_capacity = capacity;
+        self
+    }
+
+    /// Create a new config with custom debounce delay.
+    pub fn with_debounce_delay(mut self, delay: Duration) -> Self {
+        self.debounce_delay = delay;
+        self
+    }
+
+    /// Create a new config with monitoring enabled/disabled.
+    pub fn with_monitoring(mut self, enabled: bool) -> Self {
+        self.enable_monitoring = enabled;
+        self
+    }
+
+    /// Create a new config with default handlers enabled/disabled.
+    pub fn with_default_handlers(mut self, enabled: bool) -> Self {
+        self.enable_default_handlers = enabled;
+        self
+    }
+}
 
 /// Main manager for file watching operations.
 pub struct WatchManager {

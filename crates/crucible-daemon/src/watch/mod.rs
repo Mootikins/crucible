@@ -46,7 +46,6 @@
 )]
 
 pub mod backends;
-pub mod config;
 pub mod error;
 mod events;
 pub mod external_changes;
@@ -60,24 +59,17 @@ pub use backends::{
     BackendRegistry, EditorConfig, EditorFactory, EditorWatcher, NotifyFactory, NotifyWatcher,
     PollingFactory, PollingWatcher, WatcherFactory,
 };
-pub use config::{
-    AdvancedFilterConfig, BackpressureStrategy, ConfigValidator, CpuConfig, DebounceConfig,
-    EventProcessingConfig, ExportConfig, ExportFormat, FileWatchingConfig, FilterConfig,
-    FrequencyLimitConfig, GlobalWatchConfig, MemoryConfig, MonitoringConfig, TimeWindowConfig,
-    ValidationError, WatchLoggingConfig, WatchManagerConfig, WatchModeConfig, WatchPath,
-    WatchPerformanceConfig, WatchProfile,
-};
 pub use error::{Error, Result};
 pub use events::{EventFilter, EventMetadata, FileEvent, FileEventKind};
 pub use external_changes::{
     CaptureWindow, ExternalChange, ExternalChangeTracker, ExternalChangeWatch, Ownership,
 };
 pub use handlers::{CompositeHandler, ExternalChangeHandler, HandlerRegistry, IndexingHandler};
-pub use manager::WatchManager;
+pub use manager::{WatchManager, WatchManagerConfig};
 
 pub use traits::{
-    BackendCapabilities, DebounceConfig as TraitDebounceConfig, EventHandler, FileWatcher,
-    WatchConfig as TraitWatchConfig, WatchHandle, WatchMode,
+    BackendCapabilities, DebounceConfig, EventHandler, FileWatcher, WatchConfig, WatchHandle,
+    WatchMode,
 };
 
 /// Available file watching backends.
@@ -92,10 +84,7 @@ pub enum WatchBackend {
 }
 
 pub mod prelude {
-    pub use crate::watch::config::DebounceConfig as ConfigDebounceConfig;
-    pub use crate::watch::config::WatchConfig as ConfigWatchConfig;
-    pub use crate::watch::traits::DebounceConfig as TraitDebounceConfig;
-    pub use crate::watch::traits::WatchConfig as TraitWatchConfig;
+    pub use crate::watch::traits::{DebounceConfig, WatchConfig};
     pub use crate::watch::{
         Error, EventHandler, FileEvent, FileEventKind, FileWatcher, Result, WatchBackend,
         WatchManager,
