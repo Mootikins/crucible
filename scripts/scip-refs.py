@@ -237,6 +237,45 @@ def normalise_range(rng: list[int]) -> tuple[int, int, int, int] | None:
     return None
 
 
+
+# `match`, `if let` and `while let` introduce pattern position.
+_PATTERN_INTRO = re.compile(rb"\b(match|if\s+let|while\s+let)\b")
+
+
+def in_pattern_position(lines: list[bytes], line_no: int, start_col: int) -> bool:
+    """True when this occurrence sits inside a pattern rather than an expression.
+
+    `Type { field: x }` is a WRITE in an expression and a READ in a pattern, and
+    the punctuation is identical. Getting it backwards reported
+    `PermissionDecision::Ask { rule_matched: false }` — the fail-closed guard
+    that stops an explicit `ask` rule being auto-approved — as never read. That
+    is the one mistake this tool must not make.
+
+    The rule: find the `{` that opens this struct pattern or literal, then look
+    back from it. A `=>` first means an arm body, so an expression. A `match`,
+    `if let` or `while let` first means a pattern.
+
+    Textual and deliberately conservative: ambiguity answers False, which keeps
+    the cautious `init` and at worst hides a dead field.
+    """
+    text = b"\n".join(lines[max(0, line_no - 60) : line_no] + [lines[line_no][:start_col]])
+    brace = text.rfind(b"{")
+    if brace == -1:
+        return False
+    head = text[:brace]
+    if not _PATTERN_INTRO.search(head):
+        return False
+    # Inside a match, every arm before this one has already contributed a `=>`,
+    # so "is there an arrow above me" is useless. The arm BOUNDARY is what
+    # matters: an arm ends at `,` and the next arm's pattern starts there. So a
+    # comma closer to us than the last arrow means we are in a fresh pattern; an
+    # arrow closer means we are in the previous arm's body.
+    arrow = head.rfind(b"=>")
+    comma = head.rfind(b",")
+    brace_open = head.rfind(b"{")
+    return max(comma, brace_open) > arrow
+
+
 def classify(lines: list[bytes], rng: list[int], name: bytes, local_roles: int | None) -> str:
     """Return one of CLASSES for a non-definition occurrence.
 
@@ -274,7 +313,12 @@ def classify(lines: list[bytes], rng: list[int], name: bytes, local_roles: int |
 
     after = line[end_col:].lstrip()
     if after.startswith(b":") and not after.startswith(b"::"):
-        return "init"
+        # `field:` means a write in an expression and a READ in a pattern —
+        # `PermissionDecision::Ask { rule_matched: false }` in a match arm
+        # inspects the field, it does not set it. Getting this backwards
+        # reported the fail-closed permission guard as never read, which is the
+        # one mistake this tool must not make.
+        return "init" if not in_pattern_position(lines, line_no, start_col) else "read"
 
     if local_roles is not None:
         return "read" if local_roles & ROLE_DEFINITION else "init"
@@ -581,6 +625,16 @@ SELF_TEST = [
     ("config/enrichment/FastEmbedConfig#cache_dir.", True),
     ("config/enrichment/FastEmbedConfig#num_threads.", False),
     ("config/config/server/ServerConfig#https.", False),
+    # A field matched against a LITERAL inside a match arm — `Ask { rule_matched:
+    # false }`. The punctuation is identical to a struct-literal write, so the
+    # first classifier called this a write and reported the field never read.
+    # It is the fail-closed guard that stops an explicit `ask` rule being
+    # auto-approved, and calling a live security guard dead is the one failure
+    # this tool must never have. Pinned so a change to `in_pattern_position`
+    # cannot quietly bring it back.
+    ("permissions/types/PermissionDecision#Ask#rule_matched.", True),
+    # A field bound to a DIFFERENT name in a pattern — `output: cmd_output`.
+    ("observe/events/LogEvent#BashCompleted#output.", True),
 ]
 
 

@@ -119,6 +119,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   worth holding a task open for the provider's own timeout.
 
 ### Fixed
+- **A batch of questions asked from a plugin lost every answer.** The TUI built
+  its reply with `AskBatchResponse::new(id)`, which sets `answers: Vec::new(),
+  cancelled: false`, and cleared the selection on the way to each next question.
+  So `cru.ui.ask_batch` came back with zero answers and `cancelled: false` —
+  indistinguishable, to the plugin that asked, from a user who deliberately
+  answered nothing. Answers are now recorded per question as the user moves
+  through the batch, including backwards with BackTab, and the reply carries one
+  `QuestionAnswer` per question.
 - **`[embedding.fastembed]` settings were deserialized and then thrown away.**
   `FastEmbedProvider::new` hardcoded `cache_dir: None` and `batch_size:
   Some(32)`, so a user who pointed the model cache at a large disk kept

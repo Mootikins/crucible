@@ -1,8 +1,11 @@
 use super::{InteractionModal, InteractionModalOutput, InteractionMode};
 use crossterm::event::{KeyCode, KeyEvent};
-use crucible_core::interaction::{AskBatch, AskRequest, AskResponse, InteractionResponse};
+use crucible_core::interaction::{
+    AskBatch, AskBatchResponse, AskRequest, AskResponse, InteractionResponse, QuestionAnswer,
+};
 use crucible_oil::node::{col, row, styled, text, Node};
 use crucible_oil::style::Style;
+use std::collections::HashSet;
 
 impl InteractionModal {
     pub(super) fn handle_ask_key(
@@ -120,18 +123,27 @@ impl InteractionModal {
                 }
                 KeyCode::BackTab => {
                     if self.current_question > 0 {
+                        self.record_batch_answer(&batch);
                         self.current_question -= 1;
                         self.selected = 0;
-                        self.checked.clear();
+                        self.checked = self
+                            .batch_answers
+                            .get(self.current_question)
+                            .cloned()
+                            .unwrap_or_default();
+                        self.other_text = self
+                            .batch_other_texts
+                            .get(self.current_question)
+                            .cloned()
+                            .unwrap_or_default();
                     }
                     InteractionModalOutput::None
                 }
                 KeyCode::Enter => {
                     let is_last = self.current_question == batch.questions.len() - 1;
                     if is_last {
-                        let response = InteractionResponse::AskBatch(
-                            crucible_core::interaction::AskBatchResponse::new(batch.id),
-                        );
+                        self.record_batch_answer(&batch);
+                        let response = InteractionResponse::AskBatch(self.batch_response(&batch));
                         InteractionModalOutput::AskResponse {
                             request_id: self.request_id.clone(),
                             response,
@@ -155,12 +167,94 @@ impl InteractionModal {
         }
     }
 
+    /// Store the answer to the question on screen, then move to the next.
+    ///
+    /// Recording BEFORE moving is the whole point. This used to just reset
+    /// `selected` and clear `checked`, so every answer but the last was thrown
+    /// away — and the last one too, because the submit arm built an empty
+    /// response. A plugin calling `cru.ui.ask_batch` got zero answers back with
+    /// `cancelled: false`, which reads as "the user deliberately answered
+    /// nothing".
     fn advance_batch_question(&mut self, batch: &AskBatch) {
+        self.record_batch_answer(batch);
         if self.current_question < batch.questions.len() - 1 {
             self.current_question += 1;
             self.selected = 0;
             self.checked.clear();
+            self.other_text = self
+                .batch_other_texts
+                .get(self.current_question)
+                .cloned()
+                .unwrap_or_default();
+            self.checked = self
+                .batch_answers
+                .get(self.current_question)
+                .cloned()
+                .unwrap_or_default();
         }
+    }
+
+    /// Write the on-screen selection into `batch_answers` for this question.
+    ///
+    /// Both vectors are grown to fit, so a question reached out of order (Tab
+    /// forward then BackTab) lands in its own slot rather than appending.
+    fn record_batch_answer(&mut self, batch: &AskBatch) {
+        let Some(question) = batch.questions.get(self.current_question) else {
+            return;
+        };
+        let needed = batch.questions.len();
+        if self.batch_answers.len() < needed {
+            self.batch_answers.resize(needed, HashSet::new());
+        }
+        if self.batch_other_texts.len() < needed {
+            self.batch_other_texts.resize(needed, String::new());
+        }
+
+        let other_index = question.choices.len();
+        let chose_other = question.allow_other && self.selected == other_index;
+        if chose_other {
+            self.batch_answers[self.current_question] = HashSet::new();
+            self.batch_other_texts[self.current_question] = self.other_text.clone();
+            return;
+        }
+
+        let picked: HashSet<usize> = if question.multi_select {
+            self.checked.clone()
+        } else {
+            std::iter::once(self.selected).collect()
+        };
+        self.batch_answers[self.current_question] = picked;
+        self.batch_other_texts[self.current_question] = String::new();
+    }
+
+    /// The batch response, one [`QuestionAnswer`] per question in order.
+    fn batch_response(&self, batch: &AskBatch) -> AskBatchResponse {
+        let mut response = AskBatchResponse::new(batch.id.to_string());
+        for index in 0..batch.questions.len() {
+            let other = self.batch_other_texts.get(index).filter(|t| !t.is_empty());
+            let answer = match other {
+                Some(text) => QuestionAnswer {
+                    selected: Vec::new(),
+                    other: Some(text.clone()),
+                },
+                None => {
+                    let mut selected: Vec<usize> = self
+                        .batch_answers
+                        .get(index)
+                        .map(|s| s.iter().copied().collect())
+                        .unwrap_or_default();
+                    // Deterministic order: a HashSet iterates arbitrarily, and
+                    // the requester reads these as choice indices.
+                    selected.sort_unstable();
+                    QuestionAnswer {
+                        selected,
+                        other: None,
+                    }
+                }
+            };
+            response = response.answer(answer);
+        }
+        response
     }
 
     pub(super) fn render_ask_interaction_single(
