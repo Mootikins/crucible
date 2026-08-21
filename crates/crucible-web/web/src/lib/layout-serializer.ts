@@ -107,7 +107,7 @@ export function serializeLayout(state: {
   }
 
   return {
-    version: 5,
+    version: 6,
     layout: JSON.parse(JSON.stringify(state.layout)) as LayoutNode,
     tabGroups: serializedGroups,
     edgePanels: serializedEdgePanels,
@@ -205,6 +205,65 @@ function migrateV4toV5(v4: SerializedLayout): SerializedLayout {
   return { ...v4, version: 5, edgePanels };
 }
 
+// The Navigator was ONE left panel whose 'files' and 'sessions' scopes were
+// mutually exclusive, so reading a file hid the session list. It splits into
+// a Sessions rail on the left and a Files rail on the right.
+//
+// A persisted Navigator tab becomes the Sessions tab IN PLACE — wherever the
+// user docked it is where the session list lands. Files is then added only
+// when the layout holds none. The version bump is what makes that safe: this
+// runs exactly once per stored layout, so a tab the user closes afterwards is
+// not resurrected on the next load.
+//
+// Search is NOT seeded. It searches files, notes and sessions alike, so no
+// rail can host it without claiming a scope it does not have; Ctrl+Shift+F
+// and the palette open it on demand.
+const V6_FILES_TAB_ID = 'files-tab';
+
+function migrateV5toV6(v5: SerializedLayout): SerializedLayout {
+  const tabGroups: Record<string, SerializedTabGroup> = {};
+  const present = new Set<string>();
+
+  for (const [id, group] of Object.entries(v5.tabGroups)) {
+    const tabs: SerializedTab[] = [];
+    let seenSessions = false;
+    for (const tab of group.tabs) {
+      const next =
+        (tab.contentType as string) === 'navigator'
+          ? { ...tab, contentType: 'sessions' as TabContentType, title: 'Sessions' }
+          : tab;
+      // A layout predating the Navigator can hold a `sessions` tab AND the
+      // `navigator` tab that replaced it. Rewriting both puts two session
+      // lists in one strip, so the second is dropped.
+      if (next.contentType === 'sessions') {
+        if (seenSessions) continue;
+        seenSessions = true;
+      }
+      present.add(next.contentType);
+      tabs.push(next);
+    }
+    const activeTabId =
+      group.activeTabId && tabs.some((t) => t.id === group.activeTabId)
+        ? group.activeTabId
+        : (tabs[0]?.id ?? null);
+    tabGroups[id] = { id: group.id, tabs, activeTabId };
+  }
+
+  if (!present.has('files')) {
+    const right = v5.edgePanels?.right;
+    const rightGroupId = right ? edgePanelGroupIds(right)[0] : undefined;
+    const group = rightGroupId ? tabGroups[rightGroupId] : undefined;
+    // APPENDED, never prepended, and it never claims `activeTabId`. As
+    // `tabs[0]` it becomes what the downstream prune falls back to when the
+    // stored active tab is dropped; claiming an empty group's active slot
+    // starves the session-docking pass below, which shows a docked session
+    // only while the right panel has no active tab of its own.
+    group?.tabs.push({ id: V6_FILES_TAB_ID, title: 'Files', contentType: 'files' });
+  }
+
+  return { ...v5, version: 6, tabGroups };
+}
+
 function migrateV1toV2(v1: any): SerializedLayout {
   const newTabGroups = { ...v1.tabGroups };
 
@@ -254,7 +313,8 @@ export function deserializeLayout(json: SerializedLayout): {
 } {
   // Auto-migrate forward: v1 → v2 (edge-panel tab groups) → v3 (prune tabs
   // whose content type is no longer registered) → v4 (chat-worthy right
-  // panel width) → v5 (edge panels carry layout trees).
+  // panel width) → v5 (edge panels carry layout trees) → v6 (the Navigator
+  // splits into Sessions / Search / Files).
   let layout = json;
   if (layout.version === 1) {
     layout = migrateV1toV2(layout as any);
@@ -268,8 +328,11 @@ export function deserializeLayout(json: SerializedLayout): {
   if (layout.version === 4) {
     layout = migrateV4toV5(layout);
   }
+  if (layout.version === 5) {
+    layout = migrateV5toV6(layout);
+  }
 
-  if (layout.version !== 5) {
+  if (layout.version !== 6) {
     throw new Error(`Unsupported layout version: ${layout.version}`);
   }
 

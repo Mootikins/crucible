@@ -74,7 +74,7 @@ function goSession(): void {
  * the notes tree so there is something to open. */
 function goEdit(): void {
   if (focusMostRecentTabOfType('file')) return;
-  openPanelTab('navigator');
+  openPanelTab('files');
   openPanelTab('file');
 }
 

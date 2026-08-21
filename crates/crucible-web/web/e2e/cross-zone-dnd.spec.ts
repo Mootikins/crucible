@@ -167,7 +167,7 @@ test.describe('Cross-zone tab drag and drop', () => {
     const leftTabBar = page.locator('[data-testid="edge-tabbar-left"]');
     await expect(leftTabBar).toBeVisible({ timeout: 2000 });
 
-    await pointerDrag(page, await getCenter(page, '[data-testid="edge-tab-left-navigator-tab"]'), centerTarget, 50);
+    await pointerDrag(page, await getCenter(page, '[data-testid="edge-tab-left-sessions-tab"]'), centerTarget, 50);
 
     // Then: left panel auto-collapses
     await expect(leftTabBar).not.toBeVisible({ timeout: 2000 });

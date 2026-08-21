@@ -11,7 +11,6 @@ export type TabContentType =
   | 'chat-draft'
   | 'inbox'
   | 'sessions'
-  | 'navigator'
   | 'files'
   | 'search'
   | 'skills'

@@ -4,18 +4,25 @@ import { useProjectSafe } from '@/contexts/ProjectContext';
 import { listWorkspaceTargets } from '@/lib/api';
 import type { Session } from '@/lib/types';
 import { sessionDefaultKiln, sessionWorkspace } from '@/lib/session-scope';
-import { SessionRow } from '../SessionTree';
+import { PanelShell } from './PanelShell';
+import { SessionRow } from './SessionTree';
 import { Plus, ChevronRight } from '@/lib/icons';
 
 const byRecency = (a: Session, b: Session) =>
   (Date.parse(b.last_activity ?? b.started_at) || 0) - (Date.parse(a.last_activity ?? a.started_at) || 0);
 
 /**
- * Flat sessions list for the Navigator's "Sessions" scope: recency-ordered,
- * with an Archived collapsible. No project grouping / facet chips (that was the
- * old standalone panel) — a session carries its kiln + branch on its own row.
+ * The sessions rail — recency-ordered, with an Archived collapsible.
+ *
+ * Its own panel, NOT a scope of the file tree. The Navigator made the two
+ * mutually exclusive, so reading a file hid the session list and switching
+ * session context cost a scope change; they now sit on opposite rails and are
+ * both visible at once.
+ *
+ * A session carries its kiln and branch on its own row, so the list needs no
+ * project grouping to stay legible. (Grouping is a separate, toggled view.)
  */
-export const SessionsBody: Component = () => {
+export const SessionsPanel: Component = () => {
   const { currentSession, sessions, selectSession, archiveSession, deleteSession, refreshSessions } = useSessionSafe();
   const { projects } = useProjectSafe();
 
@@ -87,7 +94,7 @@ export const SessionsBody: Component = () => {
   );
 
   return (
-    <div class="flex flex-col h-full">
+    <PanelShell>
       <div class="p-2.5 shrink-0">
         <button
           onClick={() => window.dispatchEvent(new CustomEvent('crucible:new-session'))}
@@ -118,6 +125,6 @@ export const SessionsBody: Component = () => {
           </Show>
         </Show>
       </div>
-    </div>
+    </PanelShell>
   );
 };

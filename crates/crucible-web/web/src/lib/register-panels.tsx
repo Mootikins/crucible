@@ -4,7 +4,9 @@ import { ChatPanel } from '@/components/ChatPanel';
 import { CenterComposer } from '@/components/CenterComposer';
 import { ActivityPanel } from '@/components/ActivityPanel';
 import { TerminalPanel } from '@/components/TerminalPanel';
-import { NavigatorPanel } from '@/components/NavigatorPanel';
+import { SessionsPanel } from '@/components/SessionsPanel';
+import { FilesPanel } from '@/components/FilesPanel';
+import { SearchPanel } from '@/components/SearchPanel';
 import { SkillsPanel } from '@/components/SkillsPanel';
 import { PluginPanel } from '@/components/PluginPanel';
 import FileViewerPanel from '@/components/FileViewerPanel';
@@ -18,9 +20,19 @@ import { CanvasPanel } from '@/components/canvas/CanvasPanel';
 // through lib/tab-icons.ts (SVG components, consistent monochrome chrome).
 export function registerPanels(): void {
   const registry = getGlobalRegistry();
-  // The Navigator replaces the separate Files / Sessions / Search left tabs:
-  // one panel with a scope swapper (sessions / kilns / projects) + search.
-  registry.register('navigator', 'Navigator', NavigatorPanel, 'left');
+  // Identity on the left, working context on the right. Sessions and the file
+  // tree are separate surfaces so that neither hides the other: the Navigator
+  // made them two scopes of one panel, which meant reading a file cost you
+  // sight of the session list.
+  registry.register('sessions', 'Sessions', SessionsPanel, 'left');
+  registry.register('files', 'Files', FilesPanel, 'right');
+  // Search belongs to NEITHER rail: it searches files, notes AND sessions,
+  // and carries its own scope menu. Docking it beside the session list would
+  // claim a scope it does not have, and a ~250px rail is too narrow for
+  // path:line hits anyway. It is registered but never seeded — `openPanelTab`
+  // focuses an existing tab wherever the user docked it, and opens a new one
+  // in the center, where results have room.
+  registry.register('search', 'Search', SearchPanel, 'center');
   registry.register('settings', 'Settings', SettingsPanel, 'center');
   registry.register('chat', 'Chat', ChatPanel, 'center');
   registry.register('chat-draft', 'New Session', CenterComposer, 'center');

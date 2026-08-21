@@ -18,18 +18,31 @@ describe('createInitialState default seed', () => {
     }
   });
 
-  it('the right edge panel opens to Backlinks', () => {
+  it('the right edge panel opens to Files', () => {
     const state = createInitialState();
     const rightGroupId = primaryEdgeGroupId(state, 'right')!;
-    expect(state.tabGroups[rightGroupId].activeTabId).toBe('backlinks-tab');
+    expect(state.tabGroups[rightGroupId].activeTabId).toBe('files-tab');
   });
 
-  it('the left edge panel opens to the Navigator', () => {
+  // The two must be on OPPOSITE rails, both visible at once. A seed that put
+  // them in one panel would restore the Navigator's defect under new names.
+  it('seeds Sessions on the left and Files on the right', () => {
     const state = createInitialState();
-    const leftGroupId = primaryEdgeGroupId(state, 'left')!;
-    const group = state.tabGroups[leftGroupId];
-    expect(group.tabs.map((t) => t.contentType)).toEqual(['navigator']);
-    expect(group.activeTabId).toBe(group.tabs[0].id);
+    const left = state.tabGroups[primaryEdgeGroupId(state, 'left')!];
+    const right = state.tabGroups[primaryEdgeGroupId(state, 'right')!];
+    expect(left.tabs.map((t) => t.contentType)).toEqual(['sessions']);
+    expect(left.activeTabId).toBe(left.tabs[0].id);
+    expect(right.tabs.map((t) => t.contentType)).toContain('files');
+    expect(left.tabs.map((t) => t.contentType)).not.toContain('files');
+  });
+
+  // Search searches files, notes AND sessions. Seeding it into a rail would
+  // claim a scope it does not have; Ctrl+Shift+F opens it on demand.
+  it('seeds Search into no rail at all', () => {
+    const state = createInitialState();
+    for (const group of Object.values(state.tabGroups)) {
+      expect(group.tabs.map((t) => t.contentType)).not.toContain('search');
+    }
   });
 
   // The bug this catches: the Navigator refactor unregistered the 'files' and

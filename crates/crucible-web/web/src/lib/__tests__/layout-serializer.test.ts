@@ -90,7 +90,7 @@ describe('layout-serializer', () => {
     const serialized = serializeLayout(state);
     const deserialized = deserializeLayout(serialized);
 
-    expect(serialized.version).toBe(5);
+    expect(serialized.version).toBe(6);
 
     expect(panelGroupId(deserialized.edgePanels.left)!).toBeDefined();
     expect(panelGroupId(deserialized.edgePanels.right)!).toBeDefined();
@@ -260,7 +260,7 @@ describe('layout-serializer', () => {
     const deserialized1 = deserializeLayout(serialized1);
     const serialized2 = serializeLayout(deserialized1);
 
-    expect(serialized2.version).toBe(5);
+    expect(serialized2.version).toBe(6);
     expect(panelGroupId(serialized2.edgePanels.left)).toBe(panelGroupId(serialized1.edgePanels.left));
     expect((serialized2.edgePanels.left as any).tabs).toBeUndefined();
     expect((serialized2.edgePanels.left as any).position).toBeUndefined();
@@ -545,7 +545,11 @@ describe('center chat tabs migrate to the right edge panel on restore', () => {
   it('moves the chat tab right and collapses the emptied center pane', () => {
     const restored = deserializeLayout(v3Split() as never);
     // Chat tab landed in the right panel group and became its active tab.
-    expect(restored.tabGroups['g-right'].tabs.map((t) => t.id)).toEqual(['tab-chat-s1']);
+    // `files-tab` trails it: v5→v6 seeds the file tree into the right panel.
+    expect(restored.tabGroups['g-right'].tabs.map((t) => t.id)).toEqual([
+      'files-tab',
+      'tab-chat-s1',
+    ]);
     expect(restored.tabGroups['g-right'].activeTabId).toBe('tab-chat-s1');
     // The emptied chat pane collapsed: the layout is the editor pane alone.
     expect(restored.layout.type).toBe('pane');
@@ -565,7 +569,10 @@ describe('center chat tabs migrate to the right edge panel on restore', () => {
     expect(restored.layout.type).toBe('split');
     expect(restored.tabGroups['g-chat'].tabs.map((t) => t.id)).toEqual(['tab-file-b']);
     expect(restored.tabGroups['g-chat'].activeTabId).toBe('tab-file-b');
-    expect(restored.tabGroups['g-right'].tabs.map((t) => t.id)).toEqual(['tab-chat-s1']);
+    expect(restored.tabGroups['g-right'].tabs.map((t) => t.id)).toEqual([
+      'files-tab',
+      'tab-chat-s1',
+    ]);
   });
 
   it('chat tabs already in the right panel group stay put', () => {
@@ -575,8 +582,11 @@ describe('center chat tabs migrate to the right edge panel on restore', () => {
     ] as never;
     (json.tabGroups['g-right'] as { activeTabId: string | null }).activeTabId = 'tab-chat-s9';
     const restored = deserializeLayout(json as never);
+    // v5→v6 seeds `files-tab` before the chat docking runs, so the newly
+    // docked session lands after it.
     expect(restored.tabGroups['g-right'].tabs.map((t) => t.id)).toEqual([
       'tab-chat-s9',
+      'files-tab',
       'tab-chat-s1',
     ]);
     expect(restored.tabGroups['g-right'].activeTabId).toBe('tab-chat-s9');
@@ -655,5 +665,165 @@ describe('v5 edge panels with split layout trees', () => {
       expect(restored.edgePanels[pos].isCollapsed).toBe(true);
       expect(restored.edgePanels[pos].layout).toMatchObject({ type: 'pane', tabGroupId: null });
     }
+  });
+});
+
+// The Navigator was one left panel whose 'files' and 'sessions' scopes were
+// mutually exclusive. v6 splits it into Sessions + Search (left) and Files
+// (right) so both surfaces are on screen at once.
+describe('v5→v6 splits the Navigator into Sessions / Search / Files', () => {
+  interface SeedTab {
+    id: string;
+    title: string;
+    contentType: string;
+  }
+  interface V5Opts {
+    leftTabs: SeedTab[];
+    leftActive?: string | null;
+    rightTabs?: SeedTab[];
+    rightActive?: string | null;
+    version?: number;
+  }
+
+  const DEFAULT_RIGHT: SeedTab[] = [
+    { id: 'backlinks-tab', title: 'Backlinks', contentType: 'backlinks' },
+  ];
+
+  const v5Layout = (opts: V5Opts) => {
+    const rightTabs = opts.rightTabs ?? DEFAULT_RIGHT;
+    return {
+      version: opts.version ?? 5,
+      layout: paneLayout('pane-1', 'group-1'),
+      tabGroups: {
+        'group-1': { id: 'group-1', tabs: [], activeTabId: null },
+        'edge-left-group': {
+          id: 'edge-left-group',
+          tabs: opts.leftTabs,
+          activeTabId:
+            opts.leftActive === undefined ? (opts.leftTabs[0]?.id ?? null) : opts.leftActive,
+        },
+        'edge-right-group': {
+          id: 'edge-right-group',
+          tabs: rightTabs,
+          activeTabId:
+            opts.rightActive === undefined ? (rightTabs[0]?.id ?? null) : opts.rightActive,
+        },
+      },
+      edgePanels: {
+        left: {
+          id: 'left-panel',
+          layout: paneLayout('left-pane', 'edge-left-group'),
+          isCollapsed: false,
+        },
+        right: {
+          id: 'right-panel',
+          layout: paneLayout('right-pane', 'edge-right-group'),
+          isCollapsed: false,
+        },
+        bottom: {
+          id: 'bottom-panel',
+          layout: paneLayout('bottom-pane', 'edge-bottom-group'),
+          isCollapsed: false,
+        },
+      },
+      floatingWindows: [],
+    } as never;
+  };
+
+  const navigatorTab: SeedTab = {
+    id: 'navigator-tab',
+    title: 'Navigator',
+    contentType: 'navigator',
+  };
+  const types = (group: { tabs: { contentType: string }[] }) =>
+    group.tabs.map((t) => t.contentType);
+
+  it('rewrites a Navigator tab to Sessions IN PLACE, keeping the user’s docking', () => {
+    // Docked in the RIGHT panel, not the left: the migration follows where the
+    // user put it instead of moving the session list to a default corner.
+    const restored = deserializeLayout(
+      v5Layout({
+        leftTabs: [{ id: 'skills-tab', title: 'Skills', contentType: 'skills' }],
+        rightTabs: [navigatorTab],
+      }),
+    );
+    expect(
+      restored.tabGroups['edge-right-group'].tabs.find((t) => t.id === 'navigator-tab'),
+    ).toMatchObject({ contentType: 'sessions', title: 'Sessions' });
+    expect(types(restored.tabGroups['edge-left-group'])).toEqual(['skills']);
+  });
+
+  it('adds Files to the right panel, and seeds Search nowhere', () => {
+    const restored = deserializeLayout(v5Layout({ leftTabs: [navigatorTab] }));
+    expect(types(restored.tabGroups['edge-left-group'])).toEqual(['sessions']);
+    expect(types(restored.tabGroups['edge-right-group'])).toEqual(['backlinks', 'files']);
+    for (const group of Object.values(restored.tabGroups)) {
+      expect(group.tabs.map((t) => t.contentType)).not.toContain('search');
+    }
+  });
+
+  it('never claims the active tab, so a session can still dock into an empty right panel', () => {
+    const restored = deserializeLayout(
+      v5Layout({ leftTabs: [navigatorTab], rightTabs: [], rightActive: null }),
+    );
+    expect(types(restored.tabGroups['edge-right-group'])).toEqual(['files']);
+    expect(restored.tabGroups['edge-right-group'].activeTabId).toBeNull();
+  });
+
+  it('appends Files rather than prepending it, so a pruned active tab cannot promote it', () => {
+    // A session-less `chat` tab is pruned on every restore. As tabs[0], Files
+    // would inherit the fallback and the panel would open on the file tree.
+    const restored = deserializeLayout(
+      v5Layout({
+        leftTabs: [navigatorTab],
+        rightTabs: [
+          { id: 'tab-chat-legacy', title: 'Chat', contentType: 'chat' },
+          { id: 'backlinks-tab', title: 'Backlinks', contentType: 'backlinks' },
+        ],
+        rightActive: 'tab-chat-legacy',
+      }),
+    );
+    expect(restored.tabGroups['edge-right-group'].activeTabId).toBe('backlinks-tab');
+  });
+
+  it('leaves the active tab alone — a migration must not change what you look at', () => {
+    const restored = deserializeLayout(
+      v5Layout({
+        leftTabs: [navigatorTab, { id: 'plugins-tab', title: 'Plugins', contentType: 'plugins' }],
+        leftActive: 'plugins-tab',
+        rightActive: 'backlinks-tab',
+      }),
+    );
+    expect(restored.tabGroups['edge-left-group'].activeTabId).toBe('plugins-tab');
+    expect(restored.tabGroups['edge-right-group'].activeTabId).toBe('backlinks-tab');
+  });
+
+  it('keeps ONE session list when a layout holds both a sessions and a navigator tab', () => {
+    // A layout written before the Navigator absorbed the separate tabs can
+    // hold both; rewriting each would put two identical lists in one strip.
+    const restored = deserializeLayout(
+      v5Layout({
+        leftTabs: [
+          { id: 'sessions-tab', title: 'Sessions', contentType: 'sessions' },
+          navigatorTab,
+        ],
+      }),
+    );
+    expect(types(restored.tabGroups['edge-left-group'])).toEqual(['sessions']);
+  });
+
+  it('does not re-add a tab the user closed after migrating', () => {
+    // Why the split rides the VERSION chain: run it on every load and closing
+    // Files is undone at the next startup.
+    const migrated = deserializeLayout(v5Layout({ leftTabs: [navigatorTab] }));
+    expect(types(migrated.tabGroups['edge-right-group'])).toContain('files');
+
+    const afterClose = deserializeLayout(
+      v5Layout({
+        version: 6,
+        leftTabs: [{ id: 'sessions-tab', title: 'Sessions', contentType: 'sessions' }],
+      }),
+    );
+    expect(types(afterClose.tabGroups['edge-right-group'])).not.toContain('files');
   });
 });

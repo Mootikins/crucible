@@ -6,9 +6,9 @@ import { expect, type Page } from '@playwright/test';
  * Two shell changes broke the old inline selectors across the suite, so the
  * knowledge lives here instead of in 20 specs:
  *
- *  - The unified Navigator replaced the separate Files / Sessions left tabs.
- *    It opens in FILES scope, so the sessions list (and every
- *    `session-item-*`) only exists after switching scope.
+ *  - Sessions and the file tree are separate panels on opposite rails. The
+ *    left panel opens on Sessions, so `session-item-*` rows exist from the
+ *    start — no scope to switch, unlike the Navigator this replaced.
  *  - An empty pane is void. The session composer is no longer an empty-center
  *    splash; it is the content of a New Session tab, opened from the ribbon.
  */
@@ -22,20 +22,25 @@ export async function appReady(page: Page): Promise<void> {
   });
 }
 
-/** Put the Navigator in Sessions scope so `session-item-*` rows exist. */
+/**
+ * Wait for the sessions rail so `session-item-*` rows exist.
+ *
+ * The left panel opens on Sessions, so this only waits. It stays a helper
+ * because a spec that reorders or closes tabs can leave another one active,
+ * and because the callers read better for saying what they need.
+ */
 export async function openSessionsList(page: Page): Promise<void> {
-  const swapper = page.getByTestId('navigator-swapper');
-  await expect(swapper).toBeVisible({ timeout: READY_TIMEOUT });
-  // The swapper's label IS the current scope — skip if we're already there.
-  if ((await swapper.textContent())?.includes('Sessions')) return;
-  await swapper.click();
-  await page.getByTestId('navigator-scope-sessions').click();
+  const tab = page.getByTestId('edge-tab-left-sessions-tab');
+  await expect(tab).toBeVisible({ timeout: READY_TIMEOUT });
+  if (!(await page.getByTestId('new-session-button').isVisible())) {
+    await tab.click();
+  }
   await expect(page.getByTestId('new-session-button')).toBeVisible({
     timeout: READY_TIMEOUT,
   });
 }
 
-/** Click a session row in the Navigator, switching scope first if needed. */
+/** Click a session row in the sessions rail. */
 export async function openSession(page: Page, sessionId: string): Promise<void> {
   await openSessionsList(page);
   const row = page.getByTestId(`session-item-${sessionId}`);
@@ -46,9 +51,9 @@ export async function openSession(page: Page, sessionId: string): Promise<void> 
 /**
  * Add scratch tabs to the left edge panel for tab-strip DnD tests.
  *
- * The default left roster is a single Navigator tab, so reorder/cross-zone
- * specs seed their own instead of leaning on whatever the shell happens to
- * ship — the roster changing is exactly what broke them before.
+ * The default left roster is Sessions + Search, so reorder/cross-zone specs
+ * seed their own instead of leaning on whatever the shell happens to ship —
+ * the roster changing is exactly what broke them before.
  */
 export async function seedLeftTabs(
   page: Page,

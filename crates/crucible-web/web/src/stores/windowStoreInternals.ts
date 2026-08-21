@@ -8,6 +8,7 @@ import type {
 } from '@/types/windowTypes';
 import {
   Activity,
+  ClipboardList,
   FolderTree,
   Link2,
   MessageCircle,
@@ -215,20 +216,28 @@ export function primaryEdgeGroupId(
 const createSampleTabs = (): Tab[] => [];
 
 // Only IMPLEMENTED panels ship in the default layout — no placeholder tabs.
-// The Navigator absorbed the old separate Files/Sessions tabs; persisted
-// layouts get remapped by migrateRetiredPanels, and this default must match
-// it or a FRESH profile opens two tabs with no registered panel ("Unknown
-// content type").
+// Identity on the left, working context on the right. A persisted layout
+// reaches the same shape through migrateV5toV6, and this default must match
+// it or a FRESH profile opens tabs with no registered panel ("Unknown content
+// type").
+// Search is deliberately absent: it spans files, notes and sessions, so it
+// belongs to neither rail and is opened on demand (Ctrl+Shift+F / palette).
 const createLeftPanelTabs = (): Tab[] => [
   {
-    id: 'navigator-tab',
-    title: 'Navigator',
-    contentType: 'navigator',
-    icon: FolderTree,
+    id: 'sessions-tab',
+    title: 'Sessions',
+    contentType: 'sessions',
+    icon: ClipboardList,
   },
 ];
 
 const createRightPanelTabs = (): Tab[] => [
+  {
+    id: 'files-tab',
+    title: 'Files',
+    contentType: 'files',
+    icon: FolderTree,
+  },
   {
     id: 'backlinks-tab',
     title: 'Backlinks',

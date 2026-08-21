@@ -68,12 +68,12 @@ test.describe('Tab reorder within same bar', () => {
   });
 
   test('reorder edge tab: drag first tab past third tab', async ({ page }) => {
-    const firstTab = page.locator('[data-testid="edge-tab-left-navigator-tab"]');
+    const firstTab = page.locator('[data-testid="edge-tab-left-sessions-tab"]');
     const thirdTab = page.locator('[data-testid="edge-tab-left-beta-tab"]');
 
     const initialOrder = await getEdgeTabOrder(page, 'left');
-    expect(initialOrder.indexOf('navigator-tab')).toBeLessThan(initialOrder.indexOf('beta-tab'));
-    const initialSessionsIndex = initialOrder.indexOf('navigator-tab');
+    expect(initialOrder.indexOf('sessions-tab')).toBeLessThan(initialOrder.indexOf('beta-tab'));
+    const initialSessionsIndex = initialOrder.indexOf('sessions-tab');
 
     const from = await getCenterOf(page, firstTab);
     const thirdBox = await thirdTab.boundingBox();
@@ -93,16 +93,16 @@ test.describe('Tab reorder within same bar', () => {
 
     // Poll the live tab order until the reorder lands.
     await expect
-      .poll(async () => (await getEdgeTabOrder(page, 'left')).indexOf('navigator-tab'), { timeout: 3000 })
+      .poll(async () => (await getEdgeTabOrder(page, 'left')).indexOf('sessions-tab'), { timeout: 3000 })
       .toBeGreaterThan(initialSessionsIndex);
   });
 
   test('reorder edge tab: drag last tab to first position', async ({ page }) => {
     const lastTab = page.locator('[data-testid="edge-tab-left-beta-tab"]');
-    const firstTab = page.locator('[data-testid="edge-tab-left-navigator-tab"]');
+    const firstTab = page.locator('[data-testid="edge-tab-left-sessions-tab"]');
 
     const initialOrder = await getEdgeTabOrder(page, 'left');
-    expect(initialOrder.indexOf('beta-tab')).toBeGreaterThan(initialOrder.indexOf('navigator-tab'));
+    expect(initialOrder.indexOf('beta-tab')).toBeGreaterThan(initialOrder.indexOf('sessions-tab'));
 
     await lastTab.scrollIntoViewIfNeeded();
 
@@ -125,12 +125,12 @@ test.describe('Tab reorder within same bar', () => {
 
     await pointerDrag(page, from, to, 25);
 
-    // Poll until beta-tab has moved ahead of navigator-tab.
+    // Poll until beta-tab has moved ahead of sessions-tab.
     await expect
       .poll(
         async () => {
           const order = await getEdgeTabOrder(page, 'left');
-          return order.indexOf('beta-tab') < order.indexOf('navigator-tab');
+          return order.indexOf('beta-tab') < order.indexOf('sessions-tab');
         },
         { timeout: 3000 },
       )
