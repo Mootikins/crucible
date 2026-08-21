@@ -129,6 +129,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   worth holding a task open for the provider's own timeout.
 
 ### Fixed
+- **The product-map proof gate counted gitignored files as evidence.**
+  `product_map_proof_tests_exist` greps the tree for each test a `**Proof:**`
+  line cites, and skipped `target`, `node_modules` and `dist` by directory
+  NAME. A denylist of names cannot be complete: a stale `crates/graphify-out/`
+  cache held the old name of a renamed test, so a dead citation passed locally
+  and failed in CI. It now uses `is_committable`, the same `git ls-files` line
+  the kiln sweep already draws.
+- **Four clippy lints new in rustc 1.98.0.** `iter_next_slice` in
+  `server/kiln.rs`, two `chunks_exact_to_as_chunks` in `note_store.rs` — which
+  also removes two `expect` panic paths, with iteration order and so cosine
+  scores unchanged — and `result_large_err` in `routes/webhook.rs`, where
+  boxing the error is what the rest of the codebase does and is impossible:
+  axum resolves a handler through `IntoResponse` on the error type, and
+  `Box<Response>` does not implement it.
 - **`cru plugin health` and `cru plugin test` reported a green run that ran
   nothing.** The daemon sends a `message` when it finds no `health.lua` and
   when it finds no test files, and both response types carry the field.
