@@ -1015,13 +1015,14 @@ fn product_map_proof_tests_exist() {
             .filter_map(Result::ok)
             .filter(|e| e.file_type().is_file())
         {
-            // Neither is evidence, and both are enormous: `target/` holds
-            // stale build artifacts that would let a deleted test still count,
-            // and `node_modules/` is vendored third-party code.
-            if entry.path().components().any(|c| {
-                let c = c.as_os_str();
-                c == "target" || c == "node_modules" || c == "dist"
-            }) {
+            // Only what a commit contains is evidence. This was a denylist of
+            // `target`, `node_modules` and `dist`, and a denylist of directory
+            // NAMES cannot be complete: a stale `crates/graphify-out/` cache
+            // held the old name of a renamed test, so the citation to it
+            // passed on the developer's machine and failed in CI, which has no
+            // such directory. `is_committable` is the same line the kiln sweep
+            // draws, and it needs no maintenance.
+            if !is_committable(entry.path()) {
                 continue;
             }
             if let Ok(text) = std::fs::read_to_string(entry.path()) {
