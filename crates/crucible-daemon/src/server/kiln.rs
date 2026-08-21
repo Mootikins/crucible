@@ -217,7 +217,7 @@ pub(crate) async fn handle_kiln_set_classification(
 
     // Update classification on the first kiln entry (or the matching one)
     let mut updated = false;
-    if let Some(kiln) = config.kilns.iter_mut().next() {
+    if let Some(kiln) = config.kilns.first_mut() {
         kiln.data_classification = Some(classification);
         updated = true;
     }

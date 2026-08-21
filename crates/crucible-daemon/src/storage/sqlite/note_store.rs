@@ -59,13 +59,11 @@ fn serialize_embedding(embedding: &[f32]) -> Vec<u8> {
 
 /// Deserialize raw bytes to an embedding vector
 fn deserialize_embedding(bytes: &[u8]) -> Vec<f32> {
-    bytes
-        .chunks_exact(4)
-        .map(|chunk| {
-            let arr: [u8; 4] = chunk.try_into().expect("chunk should be 4 bytes");
-            f32::from_le_bytes(arr)
-        })
-        .collect()
+    // `as_chunks` yields `[u8; 4]` directly, so there is no fallible
+    // `try_into` and no `expect` on a length the slicing already guarantees.
+    // A trailing partial chunk is not an embedding and is dropped.
+    let (chunks, _partial) = bytes.as_chunks::<4>();
+    chunks.iter().copied().map(f32::from_le_bytes).collect()
 }
 
 // ============================================================================
@@ -88,9 +86,8 @@ fn cosine_similarity_blob(query: &[f32], blob: &[u8]) -> f32 {
 
     let mut dot = 0.0f32;
     let mut norm_b_sq = 0.0f32;
-    for (chunk, q) in blob.chunks_exact(4).zip(query) {
-        let arr: [u8; 4] = chunk.try_into().expect("chunk should be 4 bytes");
-        let v = f32::from_le_bytes(arr);
+    for (chunk, q) in blob.as_chunks::<4>().0.iter().zip(query) {
+        let v = f32::from_le_bytes(*chunk);
         dot += q * v;
         norm_b_sq += v * v;
     }

@@ -60,6 +60,12 @@ fn is_redacted(name: &str) -> bool {
     REDACTED_HEADERS.contains(&name) || SIGNATURE_HEADERS.contains(&name)
 }
 
+// `Response` is 128 bytes, so an unboxed `Err` makes every `Ok` that large
+// too. `rpc_helpers::typed_params` boxes for exactly this reason and this
+// cannot: axum resolves a handler through `IntoResponse` on the error type,
+// which `Response` implements and `Box<Response>` does not, so boxing here
+// stops the route compiling at all.
+#[allow(clippy::result_large_err)]
 async fn handle_webhook(
     State(state): State<AppState>,
     Extension(secrets): Extension<Arc<WebhookSecrets>>,
