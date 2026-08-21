@@ -268,16 +268,16 @@ impl Server {
             .with_kiln_registry(kiln_registry.clone()),
         );
 
-        // SCM (git) config rides in on the serialized app config; `scm.clone`
-        // reads `projects_dir` from it, and `session_workspace_dir` (below) seeds
-        // the session manager's scratch-workspace base. Absent/unparseable → daemon
-        // defaults.
-        let scm_config = params
+        // Workspace directories ride in on the serialized app config;
+        // `scm.clone` and the startup repo scan read `root_dir` from it, and
+        // `session_scratch_dir` (below) seeds the session manager's scratch-workspace
+        // base. Absent/unparseable → daemon defaults.
+        let workspace_config = params
             .app_config
             .as_ref()
-            .and_then(|v| v.get("scm"))
-            .and_then(|s| {
-                serde_json::from_value::<crucible_core::config::ScmConfig>(s.clone()).ok()
+            .and_then(|v| v.get("workspace"))
+            .and_then(|w| {
+                serde_json::from_value::<crucible_core::config::WorkspaceConfig>(w.clone()).ok()
             });
 
         // Base directory for per-session scratch workspaces (sessions created
@@ -285,10 +285,10 @@ impl Server {
         // manager can materialize `<base>/<session_id>` on create. The default is
         // `<data_home>/workspaces` — `~/.crucible/workspaces` in production, an
         // injected temp dir under test — so tests never touch the real home.
-        let session_workspace_dir = crate::scm::resolve_session_workspace_dir(
-            scm_config
+        let session_workspace_dir = crate::scm::resolve_session_scratch_dir(
+            workspace_config
                 .as_ref()
-                .and_then(|c| c.session_workspace_dir.as_deref()),
+                .and_then(|c| c.session_scratch_dir.as_deref()),
             dirs::home_dir().as_deref(),
             &data_home,
         );
@@ -329,6 +329,31 @@ impl Server {
         let subscription_manager = Arc::new(SubscriptionManager::new());
         let project_manager = Arc::new(ProjectManager::new(data_home.join("projects.json")));
 
+        // Register every checkout that sits directly under the workspace root
+        // dir, so a user who keeps all their repositories in one place does not
+        // register each by hand before the web root picker shows it.
+        //
+        // Off unless `[workspace] discover` says otherwise. `register` applies
+        // only the daemon floor, while a registered root is a web read/write
+        // scope — see `WorkspaceConfig::discover`. Off by default also keeps
+        // the scan out of every test that binds a daemon: those pass no
+        // `[workspace]` table, and a scan would read the developer's real
+        // `~/Projects` rather than an injected root.
+        if workspace_config.as_ref().is_some_and(|c| c.discover) {
+            let workspace_root_dir = crate::scm::resolve_workspace_root_dir(
+                workspace_config
+                    .as_ref()
+                    .and_then(|c| c.root_dir.as_deref()),
+                dirs::home_dir().as_deref(),
+            );
+            let discovered = project_manager.discover_repos_in(&workspace_root_dir);
+            info!(
+                root = %workspace_root_dir.display(),
+                discovered,
+                "Scanned the workspace root dir for repositories"
+            );
+        }
+
         // Sessions used to be filed inside their owning kiln. Collect any that
         // still are before anything can read or write one — after this point
         // every path resolves against `sessions_root` alone, so a session left
@@ -360,7 +385,7 @@ impl Server {
             params.mcp_config.clone(),
             data_home.clone(),
             config_home,
-            scm_config,
+            workspace_config,
             kiln_registry,
         ));
         // Same instance for both paths: delegated children fire plugin start

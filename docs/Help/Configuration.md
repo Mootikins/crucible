@@ -284,7 +284,7 @@ levels.
 | `[permissions]` | Tool allow/deny/ask rules | [[Help/Config/permissions|Permission Configuration]] |
 | `[storage]` | Daemon storage settings | [[Help/Config/storage|Storage Configuration]] |
 | `[web]` | Browser UI served by `cru web` | [[Help/Config/web|Web UI Configuration]] |
-| `[scm]` | Git integration — worktree detection, `scm.clone` destination | `docs/Config.toml` |
+| `[workspace]` | The default workspace directory the daemon scans, and the `scm.clone` destination | `docs/Config.toml` |
 | `[server]` | `auto_archive_hours`, and nothing else. `host`/`port` and the TLS keys were removed — the daemon binds a Unix socket and the web address is `[web]` | `docs/Config.toml` |
 | `[[schedules]]` | Recurring Lua snippets run on an interval | `docs/Config.toml` |
 | `[plugins.*]` | Free-form per-plugin tables, read by the plugin of that name | `docs/Config.toml` |

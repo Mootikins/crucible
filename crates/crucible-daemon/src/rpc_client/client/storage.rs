@@ -720,7 +720,7 @@ impl DaemonClient {
     /// Clone a remote git repo and register it as a project.
     ///
     /// `dest` (absolute, must not exist) overrides the configured
-    /// `projects_dir/<repo-name>` default; `name` overrides the repo-name
+    /// `[workspace] root_dir/<repo-name>` default; `name` overrides the repo-name
     /// derived from the URL. Uses a generous 10-minute timeout — cloning a
     /// large repository can far exceed the default request timeout.
     pub async fn scm_clone(

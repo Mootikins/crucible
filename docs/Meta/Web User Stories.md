@@ -343,7 +343,7 @@ These features shipped without a WS entry. Each gets a stub here; flesh out acce
 
 ### WS-230: Clone a repo and start working in it
 **As a user**, pasting a repo URL (https, git@, or `owner/repo` shorthand) in the new-session launchpad or the explorer's root dropdown clones it and registers it as a project.
-**Acceptance (stub):** `POST /api/scm/clone` proxies the daemon's `scm.clone` (long timeout) into `[scm] projects_dir`; callers are `CenterComposer` and `RootDropdown`.
+**Acceptance (stub):** `POST /api/scm/clone` proxies the daemon's `scm.clone` (long timeout) into `[workspace] root_dir`; callers are `CenterComposer` and `RootDropdown`.
 **Tests:** W1 (`CenterComposer.test.tsx`, `RootDropdown.test.tsx` clone paths). GAP: no live-tier clone.
 
 ### WS-315: Sign in when the server demands it

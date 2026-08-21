@@ -412,7 +412,7 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
     return [
       ...recents,
       // No project selected → the daemon gives the session its own scratch
-      // folder ([scm] session_workspace_dir, default ~/.crucible/workspaces).
+      // folder ([workspace] session_scratch_dir, default ~/.crucible/workspaces).
       { value: '', label: 'Session folder', hint: 'unique per session', group: 'Projects' },
       ...main.map((p) => ({
         value: p.path,

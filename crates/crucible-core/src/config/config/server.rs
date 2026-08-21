@@ -121,21 +121,43 @@ impl Default for WebConfig {
     }
 }
 
-/// SCM (git) integration configuration.
+/// Workspace directories — where checkouts live.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ScmConfig {
-    /// Where `scm.clone` puts cloned repositories. A leading `~/` expands to
-    /// the home directory. Default: "~/Projects".
+pub struct WorkspaceConfig {
+    /// The default workspace directory: where `scm.clone` puts a cloned
+    /// repository, and the directory `discover` scans. A leading `~/` expands
+    /// to the home directory. Default: "~/Projects".
     #[serde(default)]
-    pub projects_dir: Option<String>,
-    /// Where session-unique scratch workspaces are created for sessions
+    pub root_dir: Option<String>,
+    /// Register every git repository that is a DIRECT child of `root_dir` when
+    /// the daemon starts, so the web root picker lists them without a manual
+    /// `project.register` for each.
+    ///
+    /// OPT-IN, and it must stay that way. `ProjectManager::register` applies
+    /// only the daemon floor (`forbidden_root_reason`), which is deliberately
+    /// permissive because a local `cru` invocation inside a dotfiles repo is
+    /// the user registering their own work. A registered root is also a web
+    /// scope: `ProjectFileAccess` defaults to `ReadWrite`, so `/api/file/raw`
+    /// serves everything under it and the save route writes to it. Turning
+    /// this on therefore grants the web API that reach over every checkout in
+    /// `root_dir` — including one that `POST /api/project/register` would
+    /// refuse, such as a symlink to `~/.config/nvim` or a dotfiles repo
+    /// holding `.ssh`. Turn it on only when every child of `root_dir` is
+    /// ordinary work.
+    #[serde(default)]
+    pub discover: bool,
+    /// Where session-unique SCRATCH workspaces are created for sessions
     /// started WITHOUT a project/workspace. Each such session gets its own
-    /// `<session_workspace_dir>/<session_id>` directory as its workspace
+    /// `<session_scratch_dir>/<session_id>` directory as its workspace
     /// (filesystem containment boundary) instead of falling back to the kiln
-    /// path. A leading `~/` expands to the home directory. When unset, defaults
-    /// to `<data root>/workspaces` — i.e. "~/.crucible/workspaces".
+    /// path. The directory lives and dies with the session. A leading `~/`
+    /// expands to the home directory. When unset, defaults to
+    /// `<data root>/workspaces` — i.e. "~/.crucible/workspaces".
+    ///
+    /// NOT the session transcript directory. That one is `SessionManager`'s
+    /// `session_dir` under the daemon data root, and no config key names it.
     #[serde(default)]
-    pub session_workspace_dir: Option<String>,
+    pub session_scratch_dir: Option<String>,
 }
 
 /// Logging configuration.

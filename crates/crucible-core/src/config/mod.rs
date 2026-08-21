@@ -68,7 +68,8 @@ pub use config::registry::{resolve_kiln_entries, KilnEntry, ProjectEntry};
 pub use config::{
     crucible_home, lua_stubs_dir, parse_duration_string, plugin_name_from_url, CliAppConfig,
     ConfigError, ConfigValidationError, EffectiveLlmConfig, InvalidKilnName, KilnName,
-    LoggingConfig, PluginEntry, PluginsConfig, ScheduleEntry, ScmConfig, ServerConfig, WebConfig,
+    LoggingConfig, PluginEntry, PluginsConfig, ScheduleEntry, ServerConfig, WebConfig,
+    WorkspaceConfig,
 };
 #[cfg(feature = "toml")]
 pub use config::{

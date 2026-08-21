@@ -152,7 +152,7 @@ pub struct SessionManager {
     /// for sessions started without an explicit workspace. When `None`, such
     /// sessions simply have no workspace.
     /// Resolved and tilde-expanded at construction (see
-    /// [`crate::scm::resolve_session_workspace_dir`]).
+    /// [`crate::scm::resolve_session_scratch_dir`]).
     session_workspace_dir: Option<PathBuf>,
     /// Serializes each session's read-modify-write cycle against `meta.json`.
     ///

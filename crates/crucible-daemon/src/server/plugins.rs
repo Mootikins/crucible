@@ -393,11 +393,11 @@ pub(crate) async fn handle_project_get(req: Request, pm: &Arc<ProjectManager>) -
 /// `scm.clone`: clone a remote git repo to a destination and register it as a
 /// project. URL is validated/normalized before git runs; `dest` (if given)
 /// must be absolute and must not exist, otherwise the clone lands in
-/// `<projects_dir>/<repo-name>`.
+/// `<[workspace] root_dir>/<repo-name>`.
 pub(crate) async fn handle_scm_clone(
     req: Request,
     pm: &Arc<ProjectManager>,
-    projects_dir: Option<&str>,
+    root_dir: Option<&str>,
 ) -> Response {
     let params = match typed_params::<crate::rpc_client::ScmCloneRequest>(&req) {
         Ok(p) => p,
@@ -412,13 +412,13 @@ pub(crate) async fn handle_scm_clone(
         Err(e) => return Response::error(req.id, INVALID_PARAMS, e.to_string()),
     };
 
-    // Resolve the destination path. BOTH forms are contained to the
-    // projects dir — an explicit dest is validated against it (canonicalized,
+    // Resolve the destination path. BOTH forms are contained to the workspace
+    // root dir — an explicit dest is validated against it (canonicalized,
     // no '..', symlink-hop safe), matching the containment every other write
     // endpoint enforces.
-    let base = crate::scm::resolve_projects_dir(projects_dir, dirs::home_dir().as_deref());
+    let base = crate::scm::resolve_workspace_root_dir(root_dir, dirs::home_dir().as_deref());
     if let Err(e) = tokio::fs::create_dir_all(&base).await {
-        return internal_error(req.id, format!("failed to create projects dir: {e}"));
+        return internal_error(req.id, format!("failed to create workspace root dir: {e}"));
     }
     let dest = if let Some(dest) = dest_param {
         let dest = Path::new(dest);

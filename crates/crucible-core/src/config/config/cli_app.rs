@@ -74,10 +74,10 @@ pub const SETTINGS_CONFIG_KEYS: [&str; 16] = [
     "permissions",
     "plugins",
     "schedules",
-    "scm",
     "server",
     "storage",
     "web",
+    "workspace",
 ];
 
 use crate::config::components::{
@@ -94,7 +94,7 @@ extern crate toml;
 
 use super::errors::ConfigError;
 use super::provider::EffectiveLlmConfig;
-use super::server::{LoggingConfig, ScmConfig, WebConfig};
+use super::server::{LoggingConfig, WebConfig, WorkspaceConfig};
 
 /// CLI application composite configuration structure.
 ///
@@ -220,10 +220,10 @@ pub struct CliAppConfig {
     #[serde(default)]
     pub server: Option<super::server::ServerConfig>,
 
-    /// SCM (git) configuration — worktree detection and `scm.clone`
-    /// destination template.
+    /// Workspace directories — the default workspace directory the daemon
+    /// scans and `scm.clone` writes into, plus the scratch-workspace base.
     #[serde(default)]
-    pub scm: Option<ScmConfig>,
+    pub workspace: Option<WorkspaceConfig>,
 
     /// Value source tracking for configuration provenance
     ///
@@ -279,7 +279,7 @@ impl Default for CliAppConfig {
             plugins: HashMap::new(),
             web: None,
             server: None,
-            scm: None,
+            workspace: None,
             source_map: None,
         }
     }

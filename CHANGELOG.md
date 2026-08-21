@@ -7,7 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **`[workspace] discover` registers the checkouts under `root_dir`.** With
+  `discover = true` the daemon registers every git repository that is a DIRECT
+  child of `root_dir` when it starts, so the web root picker lists them with no
+  manual registration for each. Depth is exactly one, an absent `root_dir` is a
+  no-op and is not created, and a child that fails registration is logged and
+  skipped. **Off by default, and it should stay off unless every child of
+  `root_dir` is ordinary work**: a registered root is a web read/write scope
+  (`ProjectFileAccess` defaults to `ReadWrite`), and the scan applies only the
+  daemon floor, so it admits a checkout that `POST /api/project/register`
+  refuses — a symlink into `~/.config`, or a dotfiles repo holding `.ssh`.
+
 ### Changed
+- **`[scm]` is now `[workspace]`, and its two keys are renamed.**
+  `projects_dir` -> `root_dir`, `session_workspace_dir` -> `session_scratch_dir`.
+  The section named a git integration but held two directories, and
+  `session_workspace_dir` collided with `SessionManager::session_dir` and the
+  `CRU_SESSION_DIR` tool env var, which both mean the session TRANSCRIPT
+  directory. **Rename the section and the two keys by hand.** The config
+  loader accepts unknown top-level tables, so a config that still says `[scm]`
+  loads without complaint and both directories silently fall back to their
+  defaults, `~/Projects` and `~/.crucible/workspaces`. `enabled` and
+  `detect_worktrees` are already gone (see 0.28.1); they are not renamed.
 - **An event handler's return value is narrowed at the boundary.**
   `ScriptHandlerResult` carries five variants for both dispatch paths, but an
   event has already happened and already been broadcast before any handler runs,

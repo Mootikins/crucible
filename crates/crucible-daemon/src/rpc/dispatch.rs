@@ -1717,15 +1717,15 @@ impl RpcDispatcher {
     // ── Project RPC wrappers ────────────────────────────────────────────
 
     async fn handle_scm_clone(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let projects_dir = self
+        let root_dir = self
             .ctx
-            .scm_config
+            .workspace_config
             .as_ref()
-            .and_then(|s| s.projects_dir.as_deref());
+            .and_then(|w| w.root_dir.as_deref());
         let resp = crate::server::plugins::handle_scm_clone(
             req.clone(),
             &self.ctx.project_manager,
-            projects_dir,
+            root_dir,
         )
         .await;
         map_server_resp(resp)
@@ -2702,7 +2702,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             None,
             std::path::PathBuf::from("/tmp"),
             None,
-            Some(crucible_core::config::ScmConfig::default()),
+            Some(crucible_core::config::WorkspaceConfig::default()),
             Arc::new(crate::kiln_registry::KilnRegistry::empty(
                 crate::kiln_registry::KilnRegistryContext::for_daemon(std::path::PathBuf::from(
                     "/tmp",

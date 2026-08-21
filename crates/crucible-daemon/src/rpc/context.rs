@@ -9,7 +9,7 @@ use crate::session_lifecycle::SessionLifecycle;
 use crate::session_manager::SessionManager;
 use crate::subscription::SubscriptionManager;
 use crate::workflow_registry::WorkflowRegistry;
-use crucible_core::config::{LlmConfig, McpConfig, ScmConfig};
+use crucible_core::config::{LlmConfig, McpConfig, WorkspaceConfig};
 use dashmap::DashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -93,8 +93,8 @@ pub struct RpcContext {
     pub config_home: Option<std::path::PathBuf>,
     /// Active workflow executions keyed by session id (Phase 3a).
     pub workflows: Arc<WorkflowRegistry>,
-    /// SCM (git) config — `scm.clone` reads `projects_dir` from here.
-    pub scm_config: Option<ScmConfig>,
+    /// Workspace directories — `scm.clone` reads `root_dir` from here.
+    pub workspace_config: Option<WorkspaceConfig>,
     /// Name → kiln, and the only door a filesystem path may become one
     /// through. Built once at bind from the config the daemon was handed;
     /// handlers resolve names against it rather than accepting paths.
@@ -125,7 +125,7 @@ impl RpcContext {
         mcp_config: Option<McpConfig>,
         data_home: std::path::PathBuf,
         config_home: Option<std::path::PathBuf>,
-        scm_config: Option<ScmConfig>,
+        workspace_config: Option<WorkspaceConfig>,
         kiln_registry: Arc<crate::kiln_registry::KilnRegistry>,
     ) -> Self {
         let session_lifecycle = SessionLifecycle::new(sessions.clone(), plugin_loader.clone());
@@ -146,7 +146,7 @@ impl RpcContext {
             data_home,
             config_home,
             workflows: Arc::new(WorkflowRegistry::new()),
-            scm_config,
+            workspace_config,
             kiln_registry,
             session_lifecycle,
         }

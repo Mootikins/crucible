@@ -186,6 +186,48 @@ impl ProjectManager {
         self.register(path)
     }
 
+    /// Register every git repository that is a DIRECT child of `root` — the
+    /// configured `[workspace] root_dir`. Returns how many NEW projects the
+    /// scan added.
+    ///
+    /// The daemon runs this once at startup so a user who keeps every checkout
+    /// under one directory sees them all in the web root picker without
+    /// registering each by hand. Depth is exactly one: a repository nested
+    /// deeper is a build artifact or a vendored tree far more often than it is
+    /// work, and walking further would register hundreds of them.
+    ///
+    /// A missing `root` is the state before the first clone, so it is a no-op,
+    /// not an error, and the directory is NOT created. A child that
+    /// [`Self::register`] refuses (a forbidden root, an unresolvable symlink)
+    /// is logged and skipped — one bad entry must not stop the scan.
+    pub fn discover_repos_in(&self, root: &Path) -> usize {
+        let Ok(entries) = fs::read_dir(root) else {
+            debug!(root = %root.display(), "Workspace root dir is absent; nothing to discover");
+            return 0;
+        };
+
+        let mut added = 0;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            // `.git` is a directory in a normal checkout and a FILE in a linked
+            // worktree or a submodule, so test for existence, not for a dir.
+            if !path.is_dir() || !path.join(".git").exists() {
+                continue;
+            }
+            if self.get(&path).is_some() {
+                continue;
+            }
+            match self.register(&path) {
+                Ok(project) => {
+                    added += 1;
+                    info!(path = %project.path.display(), "Discovered repository registered");
+                }
+                Err(e) => warn!(path = %path.display(), "Skipped discovered repository: {e}"),
+            }
+        }
+        added
+    }
+
     pub fn unregister(&self, path: &Path) -> Result<(), ProjectError> {
         let canonical = path
             .canonicalize()
@@ -760,5 +802,51 @@ path = "./notes"
         let list = manager.list();
         assert_eq!(list.len(), 1);
         assert!(!list[0].path.ends_with(".crucible"));
+    }
+
+    /// The startup scan registers every git repo that is a DIRECT child of the
+    /// workspace root dir, and nothing else: a plain directory is not a repo, a
+    /// repo one level deeper is not a direct child, and the root itself is never
+    /// registered.
+    #[test]
+    fn discovery_registers_only_direct_child_repos() {
+        let (tmp, manager) = test_manager();
+        let root = tmp.path().join("Projects");
+
+        let repo = root.join("a-repo");
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        fs::create_dir_all(root.join("plain-dir")).unwrap();
+        fs::create_dir_all(root.join("outer").join("nested-repo").join(".git")).unwrap();
+        fs::write(root.join("a-file"), "x").unwrap();
+
+        assert_eq!(manager.discover_repos_in(&root), 1);
+
+        let paths: Vec<_> = manager.list().into_iter().map(|p| p.path).collect();
+        assert_eq!(paths, vec![repo.canonicalize().unwrap()]);
+    }
+
+    /// The scan is idempotent and never resets `last_accessed` ordering: a
+    /// second pass over the same root registers nothing new.
+    #[test]
+    fn discovery_is_idempotent() {
+        let (tmp, manager) = test_manager();
+        let root = tmp.path().join("Projects");
+        fs::create_dir_all(root.join("a-repo").join(".git")).unwrap();
+
+        assert_eq!(manager.discover_repos_in(&root), 1);
+        assert_eq!(manager.discover_repos_in(&root), 0);
+        assert_eq!(manager.list().len(), 1);
+    }
+
+    /// A missing root dir is the common case before the first clone. It must
+    /// not be created, and must not be an error.
+    #[test]
+    fn discovery_tolerates_a_missing_root() {
+        let (tmp, manager) = test_manager();
+        let root = tmp.path().join("does-not-exist");
+
+        assert_eq!(manager.discover_repos_in(&root), 0);
+        assert!(!root.exists());
+        assert_eq!(manager.list().len(), 0);
     }
 }

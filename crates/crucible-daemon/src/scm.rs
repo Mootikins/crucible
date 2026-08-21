@@ -150,10 +150,10 @@ pub fn derive_repo_name(url: &str) -> Result<String, ScmError> {
     sanitize_repo_name(last)
 }
 
-/// Resolve the configured `projects_dir` (default `~/Projects`), expanding a
-/// leading `~/` using `home`. `home = None` leaves a `~/` prefix unexpanded
-/// (only reachable when the OS reports no home dir).
-pub fn resolve_projects_dir(configured: Option<&str>, home: Option<&Path>) -> PathBuf {
+/// Resolve the configured `[workspace] root_dir` (default `~/Projects`),
+/// expanding a leading `~/` using `home`. `home = None` leaves a `~/` prefix
+/// unexpanded (only reachable when the OS reports no home dir).
+pub fn resolve_workspace_root_dir(configured: Option<&str>, home: Option<&Path>) -> PathBuf {
     let raw = configured.unwrap_or("~/Projects");
     if let Some(rest) = raw.strip_prefix("~/") {
         if let Some(home) = home {
@@ -168,7 +168,7 @@ pub fn resolve_projects_dir(configured: Option<&str>, home: Option<&Path>) -> Pa
 }
 
 /// Contain an EXPLICIT clone destination inside `base` (the resolved
-/// projects dir). Every other daemon write endpoint enforces allowlist
+/// workspace root dir). Every other daemon write endpoint enforces allowlist
 /// containment; without this, an authenticated web client could point
 /// `scm.clone` at any writable absolute path (`~/.config/autostart`,
 /// systemd user units, …) and materialize an attacker-controlled tree
@@ -184,7 +184,7 @@ pub fn validate_clone_dest(dest: &Path, base: &Path) -> Result<(), ScmError> {
     }
     let canon_base = base
         .canonicalize()
-        .map_err(|e| ScmError::InvalidDest(format!("projects dir unavailable: {e}")))?;
+        .map_err(|e| ScmError::InvalidDest(format!("workspace root dir unavailable: {e}")))?;
 
     let mut ancestor = dest.parent();
     while let Some(a) = ancestor {
@@ -197,7 +197,7 @@ pub fn validate_clone_dest(dest: &Path, base: &Path) -> Result<(), ScmError> {
                 return Ok(());
             }
             return Err(ScmError::InvalidDest(format!(
-                "dest must be inside the projects dir {}",
+                "dest must be inside the workspace root dir {}",
                 canon_base.display()
             )));
         }
@@ -208,9 +208,9 @@ pub fn validate_clone_dest(dest: &Path, base: &Path) -> Result<(), ScmError> {
     ))
 }
 
-/// Resolve the base directory under which per-session scratch workspaces
+/// Resolve the base directory under which per-session SCRATCH workspaces
 /// (`<base>/<session_id>`) are created for sessions started without an explicit
-/// workspace.
+/// workspace. Reads `[workspace] session_scratch_dir`.
 ///
 /// A `configured` value wins and has a leading `~/` expanded using `home`
 /// (`home = None` leaves a `~/` prefix unexpanded, only reachable when the OS
@@ -218,7 +218,7 @@ pub fn validate_clone_dest(dest: &Path, base: &Path) -> Result<(), ScmError> {
 /// — seeded from the daemon's data root, which is `~/.crucible` in production
 /// (so the default path is `~/.crucible/workspaces`) but an injected temp dir
 /// under test.
-pub fn resolve_session_workspace_dir(
+pub fn resolve_session_scratch_dir(
     configured: Option<&str>,
     home: Option<&Path>,
     default_base: &Path,
@@ -345,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    fn clone_dest_contained_to_projects_dir() {
+    fn clone_dest_contained_to_workspace_root_dir() {
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().join("Projects");
         std::fs::create_dir_all(&base).unwrap();
@@ -389,50 +389,50 @@ mod tests {
     }
 
     #[test]
-    fn resolves_projects_dir_tilde_and_default() {
+    fn resolves_workspace_root_dir_tilde_and_default() {
         let home = Path::new("/home/u");
         assert_eq!(
-            resolve_projects_dir(None, Some(home)),
+            resolve_workspace_root_dir(None, Some(home)),
             PathBuf::from("/home/u/Projects")
         );
         assert_eq!(
-            resolve_projects_dir(Some("~/code"), Some(home)),
+            resolve_workspace_root_dir(Some("~/code"), Some(home)),
             PathBuf::from("/home/u/code")
         );
         assert_eq!(
-            resolve_projects_dir(Some("/srv/repos"), Some(home)),
+            resolve_workspace_root_dir(Some("/srv/repos"), Some(home)),
             PathBuf::from("/srv/repos")
         );
         assert_eq!(
-            resolve_projects_dir(Some("~"), Some(home)),
+            resolve_workspace_root_dir(Some("~"), Some(home)),
             PathBuf::from("/home/u")
         );
     }
 
     #[test]
-    fn resolves_session_workspace_dir_tilde_and_default() {
+    fn resolves_session_scratch_dir_tilde_and_default() {
         let home = Path::new("/home/u");
         let data_home = Path::new("/home/u/.crucible");
         // Unset → <data_home>/workspaces (== ~/.crucible/workspaces in prod).
         assert_eq!(
-            resolve_session_workspace_dir(None, Some(home), data_home),
+            resolve_session_scratch_dir(None, Some(home), data_home),
             PathBuf::from("/home/u/.crucible/workspaces")
         );
         // An injected data root (tests) keeps the default inside it.
         assert_eq!(
-            resolve_session_workspace_dir(None, Some(home), Path::new("/tmp/xyz")),
+            resolve_session_scratch_dir(None, Some(home), Path::new("/tmp/xyz")),
             PathBuf::from("/tmp/xyz/workspaces")
         );
         assert_eq!(
-            resolve_session_workspace_dir(Some("~/scratch"), Some(home), data_home),
+            resolve_session_scratch_dir(Some("~/scratch"), Some(home), data_home),
             PathBuf::from("/home/u/scratch")
         );
         assert_eq!(
-            resolve_session_workspace_dir(Some("/var/scratch"), Some(home), data_home),
+            resolve_session_scratch_dir(Some("/var/scratch"), Some(home), data_home),
             PathBuf::from("/var/scratch")
         );
         assert_eq!(
-            resolve_session_workspace_dir(Some("~"), Some(home), data_home),
+            resolve_session_scratch_dir(Some("~"), Some(home), data_home),
             PathBuf::from("/home/u")
         );
     }

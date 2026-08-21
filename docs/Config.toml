@@ -305,12 +305,27 @@ theme = "base16-ocean.dark"
 # allowed_hosts = []                  # e.g. ["node7.local", ".crucible.example.com"]
 
 # =============================================================================
-# [scm] - Git integration
+# [workspace] - Where checkouts live
 # =============================================================================
+# `root_dir` is the default workspace directory, where `scm.clone` writes.
+#
+# Set `discover = true` to make the daemon register every git repository that
+# is a DIRECT child of `root_dir` when it starts, so the web root picker lists
+# them without a manual registration for each. It is off by default because a
+# registered root is also a web read/write scope: `/api/file/raw` serves
+# everything under it and the save route writes to it. The scan applies only
+# the daemon floor, so it admits a checkout that `POST /api/project/register`
+# refuses — a symlink into `~/.config`, or a dotfiles repo holding `.ssh`.
+# Turn it on only when every child of `root_dir` is ordinary work.
+#
+# `session_scratch_dir` is unrelated: a session started with no project gets a
+# private `<session_scratch_dir>/<session_id>` directory that lives and dies
+# with it.
 
-# [scm]
-# projects_dir = "~/Projects"
-# session_workspace_dir = "~/.crucible/workspaces"
+# [workspace]
+# root_dir = "~/Projects"
+# discover = false
+# session_scratch_dir = "~/.crucible/workspaces"
 
 # =============================================================================
 # [server] - Daemon server settings

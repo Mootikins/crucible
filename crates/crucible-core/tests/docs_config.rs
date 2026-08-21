@@ -264,7 +264,7 @@ fn docs_toml_blocks_load_as_config() {
 }
 
 /// `docs/Config.toml` is the annotated reference config the docs point readers
-/// at (`docs/Help/Configuration.md` cites it as the home of `[scm]`,
+/// at (`docs/Help/Configuration.md` cites it as the home of `[workspace]`,
 /// `[server]`, `[[schedules]]`, `[plugins.*]` and `runtimepath`). It is a whole
 /// file rather than a fenced block, so the sweep above never sees it — and it
 /// is the single largest piece of config prose in the repo.

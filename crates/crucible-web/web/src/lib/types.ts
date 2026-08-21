@@ -204,7 +204,7 @@ interface KilnInfo {
   name: string | null;
 }
 
-/** SCM info attached to a Project when `[scm]` detection found a repo.
+/** SCM info attached to a Project when git detection found a repo.
  * Wire shape of crucible-core's `RepositoryInfo` (snake_case contract). */
 interface RepositoryInfo {
   /** Repo root — for worktrees, the MAIN checkout's root. */

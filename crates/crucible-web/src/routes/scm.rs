@@ -22,7 +22,7 @@ struct CloneRequest {
     name: Option<String>,
 }
 
-/// Clone a remote repo into `[scm] projects_dir` and register it as a
+/// Clone a remote repo into `[workspace] root_dir` and register it as a
 /// project. Slow by nature — the daemon call carries a long timeout.
 async fn clone_repo(
     State(state): State<AppState>,

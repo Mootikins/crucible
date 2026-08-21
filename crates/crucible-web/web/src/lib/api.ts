@@ -1897,7 +1897,7 @@ export function isGitRepoUrl(input: string): boolean {
 }
 
 
-/** Clone a remote repo into `[scm] projects_dir` and register it as a
+/** Clone a remote repo into `[workspace] root_dir` and register it as a
  * project. Slow (network clone) — no client-side timeout beyond fetch's. */
 export async function scmClone(url: string): Promise<ScmCloneResponse> {
   return request<ScmCloneResponse>('POST', '/api/scm/clone', {

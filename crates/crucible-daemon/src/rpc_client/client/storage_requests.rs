@@ -266,7 +266,7 @@ pub struct NoteRenameRequest {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ScmCloneRequest {
     pub url: String,
-    /// Absolute, must not exist; overrides `projects_dir/<repo-name>`.
+    /// Absolute, must not exist; overrides `[workspace] root_dir/<repo-name>`.
     #[serde(default)]
     pub dest: Option<String>,
     /// Overrides the repo name derived from the URL.
