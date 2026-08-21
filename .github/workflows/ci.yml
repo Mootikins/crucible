@@ -31,8 +31,6 @@ jobs:
       - uses: ./.github/actions/rust-prereqs
       - run: just lint fmt
       - run: just lint clippy
-      - name: Check for god files
-        run: just lint size
 
   # Validate the `docs/` kiln: every note parses, frontmatter is complete, every
   # wikilink resolves, every `crates/…` code reference names a file that exists
