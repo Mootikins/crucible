@@ -196,6 +196,29 @@ lint what="all":
             ;;
     esac
 
+# Report symbols nothing reads, from a rust-analyzer SCIP index.
+#
+# A REPORT, never a gate. "Never read" is not "dead": the index cannot see
+# serde wire names, Lua, the SolidJS frontend, JSON-RPC payloads or macros.
+# It found `[embedding.fastembed] cache_dir` being deserialized and then
+# overwritten with a hardcoded `None`.
+#
+# `refs` needs an index; build one with `just refs index` (~160s, 69MB).
+refs what="unread" *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "{{what}}" in
+        index)  rust-analyzer scip . --output /tmp/scip/index.scip ;;
+        unread) python3 scripts/scip-refs.py --unread-fields {{args}} ;;
+        symbol) python3 scripts/scip-refs.py --symbol {{args}} ;;
+        check)  python3 scripts/scip-refs.py --self-test ;;
+        *)
+            echo "Unknown refs target: {{what}}"
+            echo "Valid targets: index unread symbol check"
+            exit 1
+            ;;
+    esac
+
 # === Test ===
 
 # Slow/external tests are gated with #[ignore], not cargo features; each ignore

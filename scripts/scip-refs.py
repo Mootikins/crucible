@@ -476,6 +476,25 @@ def cmd_symbol(buf: bytes, sources: SourceCache, needle: str, as_json: bool, max
     return 0
 
 
+
+# Fields that are never read ON PURPOSE. Each class was confirmed by reading the
+# code before it was filtered; `--all` still shows them.
+_NOISE = re.compile(
+    r"""
+      \#_[a-z]                 # `_guard`, `_temp_dir`: an RAII handle held only
+                               # to keep something alive. The leading underscore
+                               # is the author saying so.
+    | \ (Test|Mock)[A-Za-z]*\#  # test scaffolding, not shipped behaviour
+    | \ markdown-it\           # vendored; not ours to triage
+    """,
+    re.X,
+)
+
+
+def _is_deliberate_noise(name: str) -> bool:
+    return bool(_NOISE.search(name))
+
+
 def cmd_unread_fields(
     buf: bytes, sources: SourceCache, crate: str | None, as_json: bool, show_all: bool
 ) -> int:
@@ -493,6 +512,8 @@ def cmd_unread_fields(
         if have_kinds and kind is not None and kind not in MEMBER_KINDS:
             continue
         if crate and f" {crate} " not in name:
+            continue
+        if not show_all and _is_deliberate_noise(name):
             continue
         rows.append((name, t))
 
