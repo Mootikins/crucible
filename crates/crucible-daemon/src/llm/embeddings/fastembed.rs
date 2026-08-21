@@ -146,11 +146,16 @@ impl FastEmbedProvider {
         // Get model metadata
         let model_info = Self::get_model_info(&model);
 
+        // Read these off the config rather than hardcoding them. They were
+        // `None` and `Some(32)` here, so `[embedding.fastembed] cache_dir` and
+        // `batch_size` deserialized, validated and were then thrown away — a
+        // user setting a 4 GB model cache onto a large disk still got it in the
+        // default location.
         let fastembed_config = FastEmbedInitOptions {
             model,
-            cache_dir: None, // Use fastembed's default cache
+            cache_dir: config.cache_dir(),
             show_download_progress: true,
-            batch_size: Some(32),
+            batch_size: Some(config.batch_size()),
         };
 
         Ok(Self {
@@ -591,6 +596,37 @@ mod tests {
 
         // Test invalid model
         assert!(FastEmbedProvider::parse_model_name("invalid-model").is_err());
+    }
+
+    /// What the user configured is what the provider is built with.
+    ///
+    /// `FastEmbedProvider::new` hardcoded `cache_dir: None` and
+    /// `batch_size: Some(32)`, so `[embedding.fastembed]` keys deserialized,
+    /// validated, and were dropped. A user who pointed the model cache at a
+    /// large disk silently kept downloading to the default location.
+    #[test]
+    fn configured_cache_dir_and_batch_size_reach_the_provider() {
+        use crucible_core::config::{EmbeddingProviderConfig, FastEmbedConfig};
+
+        let config = EmbeddingProviderConfig::FastEmbed(FastEmbedConfig {
+            model: "bge-small-en-v1.5".to_string(),
+            cache_dir: Some("/models/cache".to_string()),
+            batch_size: 7,
+            dimensions: 384,
+            num_threads: None,
+        });
+
+        let provider = FastEmbedProvider::new(config).expect("a known model builds");
+        assert_eq!(
+            provider.config.cache_dir.as_deref(),
+            Some(std::path::Path::new("/models/cache")),
+            "the configured model cache directory was discarded"
+        );
+        assert_eq!(
+            provider.config.batch_size,
+            Some(7),
+            "the configured batch size was discarded"
+        );
     }
 
     // =========================================================================

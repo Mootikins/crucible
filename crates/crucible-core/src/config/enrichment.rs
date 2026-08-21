@@ -250,7 +250,14 @@ pub struct FastEmbedConfig {
     #[serde(default = "FastEmbedConfig::default_dimensions")]
     pub dimensions: u32,
 
-    /// Number of threads to use (None = auto)
+    /// Number of threads to use (None = auto).
+    ///
+    /// **Currently inert.** `fastembed` 5.13's `InitOptions` exposes
+    /// `max_length`, `cache_dir`, `execution_providers` and
+    /// `show_download_progress` and no thread count, so there is nothing to
+    /// pass this to. Kept because the key is already in user config files and
+    /// because ONNX Runtime does have the knob upstream; wire it here when
+    /// `fastembed` surfaces it.
     #[serde(default)]
     pub num_threads: Option<usize>,
 }
@@ -951,6 +958,24 @@ impl EmbeddingProviderConfig {
             Self::Mock(_) => 100,   // Mock can handle any batch size
             Self::Burn(_) => 32,    // GPU batch processing
             Self::VertexAI(_) => 5, // VertexAI has lower limits
+        }
+    }
+
+    /// Where a local provider caches downloaded model files, if it caches any.
+    ///
+    /// `None` means "let the provider choose", which is what every remote
+    /// provider answers — they download nothing.
+    #[must_use]
+    pub fn cache_dir(&self) -> Option<std::path::PathBuf> {
+        match self {
+            Self::FastEmbed(c) => c.cache_dir.as_ref().map(std::path::PathBuf::from),
+            Self::Ollama(_)
+            | Self::OpenAI(_)
+            | Self::Cohere(_)
+            | Self::Custom(_)
+            | Self::Mock(_)
+            | Self::Burn(_)
+            | Self::VertexAI(_) => None,
         }
     }
 

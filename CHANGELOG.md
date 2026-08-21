@@ -119,6 +119,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   worth holding a task open for the provider's own timeout.
 
 ### Fixed
+- **`[embedding.fastembed]` settings were deserialized and then thrown away.**
+  `FastEmbedProvider::new` hardcoded `cache_dir: None` and `batch_size:
+  Some(32)`, so a user who pointed the model cache at a large disk kept
+  downloading to the default location, and a configured batch size never
+  reached the encoder. Both are read from the config now, with a regression
+  test that fails if either is hardcoded again. `num_threads` stays inert and
+  now says so on the field: `fastembed` 5.13's `InitOptions` exposes
+  `max_length`, `cache_dir`, `execution_providers` and
+  `show_download_progress`, and no thread count.
 - **Discord handled every message twice after a `require`.**
   `runtime/plugins/discord/init.lua` registers two gateway handlers at body
   level and never claimed `package.loaded["discord"]`. The daemon executes the
