@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- **An event handler's return value is narrowed at the boundary.**
+  `ScriptHandlerResult` carries five variants for both dispatch paths, but an
+  event has already happened and already been broadcast before any handler runs,
+  so `Transform`, `Inject` and `Handled` cannot apply to one.
+  `ScriptHandlerResult::into_event_outcome` maps to a two-variant `EventOutcome`
+  (`Observed`, `StopChain`), and `server/file_event_hooks.rs` is now exhaustive
+  over that instead of carrying an arm that logged and dropped the other three.
+  A handler that returns one still lets the chain continue, and now says which
+  value it could not act on — an author writing `return { handled = true }` in a
+  `note:created` handler previously got silence.
 - **Four more colliding names separated, one orphan deleted.** Verified pairwise
   before touching: `crucible_daemon::webhook::SecretsFile` ->
   `WebhookSecretsFile` (core's is a `CredentialStore` over `secrets.toml`; this

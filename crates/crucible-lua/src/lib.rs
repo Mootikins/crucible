@@ -166,7 +166,7 @@ pub const BUILTIN_INIT_LUA: &str = include_str!("../../../runtime/defaults/init.
 pub use handlers::{
     execute_permission_hooks, execute_tool_before_execute_hooks,
     execute_tool_display_complete_hooks, execute_tool_display_start_hooks,
-    interpret_handler_result, register_crucible_on_api, register_permission_hook_api,
+    interpret_handler_result, register_crucible_on_api, register_permission_hook_api, EventOutcome,
     LuaScriptHandlerRegistry, PermissionHook, PermissionHookResult, PermissionRequest,
     RuntimeHandler, ScriptHandlerResult, ToolBeforeExecuteEvent, ToolBeforeExecuteResult,
     ToolDisplayCompleteEvent, ToolDisplayCompleteHints, ToolDisplayStartEvent,

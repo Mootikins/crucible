@@ -93,3 +93,124 @@ pub fn interpret_handler_result(result: &Value) -> LuaResult<ScriptHandlerResult
         }
     }
 }
+
+/// What a handler for a broadcast [`EventName`](super::EventName) may ask for.
+///
+/// Two variants, because an event has already happened and already been sent
+/// before any handler runs. There is nothing downstream to rewrite and nothing
+/// left to take over, so [`ScriptHandlerResult`]'s `Transform`, `Inject` and
+/// `Handled` have no meaning here.
+///
+/// They used to be *representable* here anyway, and `file_event_hooks.rs`
+/// carried a match arm that logged and dropped them at runtime. That is the
+/// gap this closes: `EventName` and `StageId` split the two contracts by name,
+/// and this splits them by type, so the event dispatch loop can be exhaustive
+/// over what an event can actually do.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EventOutcome {
+    /// The handler observed the event. The next one runs.
+    Observed,
+    /// Stop running the remaining handlers.
+    ///
+    /// Not "cancel the event" — it already happened and was already broadcast.
+    /// `Event Hooks.md` gives every chain a way to stop, and this event class
+    /// has handlers to stop even though it has no pipeline to abort.
+    StopChain {
+        /// Why the handler stopped the chain, for the log.
+        reason: String,
+    },
+}
+
+impl ScriptHandlerResult {
+    /// Narrow a handler's return value to what an event can act on.
+    ///
+    /// `dropped` is called with a short description of any return value that
+    /// cannot apply, so the caller decides how loudly to say so rather than
+    /// this deciding for it. An author who writes `return { handled = true }`
+    /// in a `note:created` handler has misunderstood the contract and should
+    /// hear about it.
+    #[must_use]
+    pub fn into_event_outcome(self, dropped: &mut dyn FnMut(&str)) -> EventOutcome {
+        match self {
+            Self::PassThrough => EventOutcome::Observed,
+            Self::Cancel { reason } => EventOutcome::StopChain { reason },
+            Self::Transform(_) => {
+                dropped("a transformed event; nothing downstream reads it");
+                EventOutcome::Observed
+            }
+            Self::Inject { .. } => {
+                dropped("an injection; an event has no turn to inject into");
+                EventOutcome::Observed
+            }
+            Self::Handled { .. } => {
+                dropped("a replacement result; an event has no execution to replace");
+                EventOutcome::Observed
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod event_outcome_tests {
+    use super::*;
+
+    fn narrow(result: ScriptHandlerResult) -> (EventOutcome, Vec<String>) {
+        let mut dropped = Vec::new();
+        let outcome = result.into_event_outcome(&mut |d| dropped.push(d.to_string()));
+        (outcome, dropped)
+    }
+
+    #[test]
+    fn nil_observes_and_drops_nothing() {
+        let (outcome, dropped) = narrow(ScriptHandlerResult::PassThrough);
+        assert_eq!(outcome, EventOutcome::Observed);
+        assert!(dropped.is_empty());
+    }
+
+    #[test]
+    fn cancel_stops_the_chain_and_keeps_its_reason() {
+        let (outcome, dropped) = narrow(ScriptHandlerResult::Cancel {
+            reason: "enough".into(),
+        });
+        assert_eq!(
+            outcome,
+            EventOutcome::StopChain {
+                reason: "enough".into()
+            }
+        );
+        assert!(dropped.is_empty());
+    }
+
+    /// The three that have no meaning for an event still let the chain run, and
+    /// each one says what it dropped.
+    ///
+    /// Silence was the old behaviour's real defect: an author who wrote
+    /// `return { handled = true }` in a `note:created` handler got no signal
+    /// that the contract does not work that way.
+    #[test]
+    fn a_return_value_an_event_cannot_act_on_is_reported() {
+        for result in [
+            ScriptHandlerResult::Transform(serde_json::json!({"a": 1})),
+            ScriptHandlerResult::Inject {
+                content: "hi".into(),
+                position: "user_prefix".into(),
+            },
+            ScriptHandlerResult::Handled {
+                result: serde_json::json!("done"),
+                terminate: false,
+            },
+        ] {
+            let (outcome, dropped) = narrow(result);
+            assert_eq!(
+                outcome,
+                EventOutcome::Observed,
+                "an event a handler cannot change still runs the next handler"
+            );
+            assert_eq!(dropped.len(), 1, "exactly one report per dropped value");
+            assert!(
+                !dropped[0].is_empty(),
+                "the report must say what was dropped"
+            );
+        }
+    }
+}

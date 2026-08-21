@@ -64,4 +64,4 @@ pub use permission::{
     PermissionRequest, SHIPPED_DEFAULT_PRIORITY,
 };
 pub use registry::{LuaScriptHandlerRegistry, RuntimeHandler};
-pub use script_handler::{interpret_handler_result, ScriptHandlerResult};
+pub use script_handler::{interpret_handler_result, EventOutcome, ScriptHandlerResult};

@@ -21,7 +21,7 @@
 //! list of event names.
 
 use crucible_core::protocol::SessionEventMessage;
-use crucible_lua::ScriptHandlerResult;
+use crucible_lua::EventOutcome;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::{debug, warn};
@@ -85,32 +85,33 @@ pub fn spawn_file_event_hooks(
                     .execute_runtime_handler(&lua, &handler.name, &event, None)
                     .await
                 {
-                    // `Event Hooks.md`: a handler that cancels stops the chain.
-                    // There is nothing to cancel here — the event already
-                    // happened and was already broadcast — but the *chain* half
-                    // of the contract still holds, and a handler asking to stop
-                    // it should not be silently ignored just because this event
-                    // class has no pipeline to abort.
-                    Ok(ScriptHandlerResult::Cancel { reason }) => {
-                        debug!(
-                            handler = %handler.name,
-                            reason = %reason,
-                            "daemon event handler stopped the chain"
-                        );
-                        break;
+                    Ok(result) => {
+                        // Narrowed at the boundary: an event has already
+                        // happened and already been broadcast, so `Transform`,
+                        // `Inject` and `Handled` cannot apply. This loop used to
+                        // carry an arm that logged and dropped them; now the
+                        // type says they are not outcomes here, and the closure
+                        // reports anything a handler asked for that cannot.
+                        let outcome = result.into_event_outcome(&mut |dropped| {
+                            debug!(
+                                handler = %handler.name,
+                                hook = %hook,
+                                dropped = dropped,
+                                "daemon event handler returned something an event cannot act on"
+                            );
+                        });
+                        match outcome {
+                            EventOutcome::Observed => {}
+                            EventOutcome::StopChain { reason } => {
+                                debug!(
+                                    handler = %handler.name,
+                                    reason = %reason,
+                                    "daemon event handler stopped the chain"
+                                );
+                                break;
+                            }
+                        }
                     }
-                    // Transform and Handled have no meaning for an event that
-                    // has already been broadcast: nothing downstream reads a
-                    // rewritten value. Logged rather than dropped in silence,
-                    // so an author who returns one finds out.
-                    Ok(ScriptHandlerResult::Transform(_) | ScriptHandlerResult::Handled { .. }) => {
-                        debug!(
-                            handler = %handler.name,
-                            "daemon event handler returned a value; these events are \
-                             notifications, so it has no effect"
-                        );
-                    }
-                    Ok(_) => {}
                     Err(e) => warn!(
                         handler = %handler.name,
                         error = %e,
