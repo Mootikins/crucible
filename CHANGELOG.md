@@ -129,6 +129,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   worth holding a task open for the provider's own timeout.
 
 ### Fixed
+- **`cru plugin health` and `cru plugin test` reported a green run that ran
+  nothing.** The daemon sends a `message` when it finds no `health.lua` and
+  when it finds no test files, and both response types carry the field.
+  Neither client read it. So a plugin with no health file printed
+  `Healthy: yes`, and a directory with no test files printed
+  `0 passed, 0 failed` and exited 0 — character-for-character what a green
+  suite prints. Health now reports `not checked`; test prints the message and
+  exits 2.
 - **A batch of questions asked from a plugin lost every answer.** The TUI built
   its reply with `AskBatchResponse::new(id)`, which sets `answers: Vec::new(),
   cancelled: false`, and cleared the selection on the way to each next question.
@@ -157,6 +165,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `crucible.on`/`cru.on` at column zero and now accepts any receiver.
 
 ### Added
+- **`just refs orphans`** — public types that no Rust code names outside their
+  own declaration. `scip-refs.py` answers "is this field ever read"; this
+  answers "is this type ever named". The loose test — no reference outside the
+  declaring file — calls every RPC request type dead, because each is built by
+  a method in its own file; `scripts/orphan-types.py` counts total occurrences
+  instead, and flags a name that also appears in `runtime/`, the frontend or
+  `docs/` rather than reporting it.
 - **`cru.ui` — a plugin can ask the user a question.** One function per
   `InteractionRequest` variant: `ask`, `ask_batch`, `edit`, `show`,
   `permission`, `popup` and `panel`. Each call parks the plugin until an
@@ -231,6 +246,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Removed
 
+- **Ten public types that no code names.** `events::subscriber` (719 lines:
+  `HandlerResult`, `EventFilter`, `SubscriptionId` and six more, re-exported
+  twice, named by nobody, with a header describing an `EventSubscriber` trait
+  the file did not define); the six `*ToolParams` shells left in
+  `mcp_server.rs` when the workspace tools were removed from that server;
+  `DefaultMarkdownParser`, a struct with no `impl` sitting above
+  `CrucibleParser`; and the clap wrappers `TasksCommand` and `WorkflowCommand`,
+  which `cli/mod.rs` bypasses. `crucible_core` no longer re-exports the
+  subscriber names. The daemon's `watch::EventFilter` is now the only one.
 - **Config keys that did nothing are deleted, not documented as inert.** 22 keys
   across five sections deserialized, validated, and reached no code:
   `[server]` `host`, `port`, `https`, `cert_file`, `key_file`, `max_body_size`,
