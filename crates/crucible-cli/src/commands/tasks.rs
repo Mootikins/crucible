@@ -3,7 +3,7 @@
 //! Provides CLI commands for managing tasks defined in TaskFile frontmatter.
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::Subcommand;
 use regex::Regex;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -29,12 +29,6 @@ pub enum TaskError {
     /// Task already done
     #[error("Task {0} is already done")]
     AlreadyDone(String),
-}
-
-#[derive(Parser)]
-pub struct TasksCommand {
-    #[command(subcommand)]
-    pub command: TasksSubcommand,
 }
 
 #[derive(Subcommand)]

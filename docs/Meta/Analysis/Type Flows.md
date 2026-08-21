@@ -139,6 +139,10 @@ measurement agrees: it is the most connected type in the graph, at degree 235.
 `AGENTS.md` says never to duplicate a type between crates. **35 names
 are declared in more than one crate.** They are not all the same problem.
 
+Rows leave this table as the duplication goes. `EventFilter` left on
+2026-08-21: the `crucible-core` half lived in an `events::subscriber` module
+that no caller named, so the daemon's is now the only one.
+
 ### Same concept, two definitions — fix these
 
 These are the real violations. Each is one idea with two owners, so a reader
@@ -151,7 +155,6 @@ cannot tell which is canonical and a change has to be made twice.
 | `AgentError` | `crates/crucible-core/src/turn/mod.rs` <br> `crates/crucible-daemon/src/agent_manager/mod.rs` |
 | `DiscoveryConfig` | `crates/crucible-core/src/discovery.rs` <br> `crates/crucible-daemon/src/llm/model_discovery.rs` |
 | `EmbeddingResponse` | `crates/crucible-core/src/traits/provider.rs` <br> `crates/crucible-daemon/src/llm/embeddings/provider.rs` |
-| `EventFilter` | `crates/crucible-core/src/events/subscriber.rs` <br> `crates/crucible-daemon/src/watch/events.rs` |
 | `FastEmbedConfig` | `crates/crucible-core/src/config/enrichment.rs` <br> `crates/crucible-daemon/src/llm/embeddings/fastembed.rs` |
 | `FileState` | `crates/crucible-core/src/processing/change_detection.rs` <br> `crates/crucible-daemon/src/watch/backends/polling_backend.rs` |
 | `GrepSearchRequest` | `crates/crucible-daemon/src/rpc_client/client/storage_requests.rs` <br> `crates/crucible-web/src/routes/search.rs` |

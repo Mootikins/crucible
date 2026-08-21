@@ -5,8 +5,8 @@
 //! - [`SessionEvent`] — the canonical event type, shared by the daemon bus,
 //!   the Lua bridge (`crucible-lua/src/handlers/conversion.rs`) and markdown
 //!   rendering.
-//! - `emitter` / `subscriber` — the EventBus the **file-watch pipeline** runs
-//!   on (`crucible-daemon/src/watch/`, `file_watch_bridge.rs`). Documented for
+//! - `emitter` — the EventBus the **file-watch pipeline** runs on
+//!   (`crucible-daemon/src/watch/`, `file_watch_bridge.rs`). Documented for
 //!   years as "legacy, new code should use `Reactor` directly"; the Reactor is
 //!   now gone and this is the one that has production callers.
 //! - [`ring`] — the bounded event ring.
@@ -24,14 +24,15 @@
 //! that is the path with production handlers, and the tests that looked like
 //! Reactor coverage were Lua tests standing beside it.
 //!
-//! Removed 2026-08-20. `HandlerResult` survived the deletion and moved to
-//! `subscriber`, where its only consumer lives.
+//! Removed 2026-08-20. A `subscriber` module went with it a day later: it
+//! carried `HandlerResult`, `EventFilter`, `SubscriptionId` and six more
+//! types, none of which any caller named. Its header described an
+//! `EventSubscriber` trait that the file did not define.
 
 pub mod emitter;
 pub mod markdown;
 pub mod ring;
 pub mod session_event;
-pub mod subscriber;
 
 // Re-exports for convenient access
 
@@ -47,12 +48,6 @@ pub mod subscriber;
 pub use emitter::{
     EmitOutcome, EmitResult, EventEmitter, EventError, HandlerErrorInfo, NoOpEmitter,
     SharedEventBus,
-};
-
-// Legacy subscriber exports
-pub use subscriber::{
-    box_handler, BoxedHandlerFn, EventFilter, HandlerFuture, HandlerResult, SubscriptionError,
-    SubscriptionId, SubscriptionIdGenerator, SubscriptionInfo, SubscriptionResult,
 };
 
 // Session event types

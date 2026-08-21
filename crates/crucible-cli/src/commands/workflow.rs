@@ -8,7 +8,7 @@
 //! for the user-facing surface.
 
 use anyhow::{anyhow, Context, Result};
-use clap::{Parser, Subcommand};
+use clap::Subcommand;
 use crucible_core::parser::types::{
     CheckboxStatus, Frontmatter, FrontmatterFormat, ParsedNote, WorkflowDoc, WorkflowStep,
 };
@@ -20,12 +20,6 @@ use std::path::{Path, PathBuf};
 use crate::common::daemon_client;
 use crate::config::CliConfig;
 use crate::formatting::{OutputFormat, TextFormat};
-
-#[derive(Parser)]
-pub struct WorkflowCommand {
-    #[command(subcommand)]
-    pub command: WorkflowSubcommand,
-}
 
 #[derive(Subcommand)]
 pub enum WorkflowSubcommand {

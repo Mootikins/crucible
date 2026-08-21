@@ -144,9 +144,6 @@ pub use background::{generate_job_id, JobError, JobId, JobInfo, JobKind, JobResu
 
 // Re-export event system types
 pub use events::{
-    // Subscriber types
-    box_handler,
-    BoxedHandlerFn,
     // Emitter types
     EmitOutcome,
     EmitResult,
@@ -154,11 +151,8 @@ pub use events::{
     EntityType,
     EventEmitter,
     EventError,
-    EventFilter,
     FileChangeKind,
     HandlerErrorInfo,
-    HandlerFuture,
-    HandlerResult,
     NoOpEmitter,
     NoteChangeType,
     NotePayload,
@@ -166,11 +160,6 @@ pub use events::{
     SessionEvent,
     SessionEventConfig,
     SharedEventBus,
-    SubscriptionError,
-    SubscriptionId,
-    SubscriptionIdGenerator,
-    SubscriptionInfo,
-    SubscriptionResult,
     ToolCall,
     ToolProvider,
 };

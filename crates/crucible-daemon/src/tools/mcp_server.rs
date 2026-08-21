@@ -65,57 +65,6 @@ pub struct CrucibleMcpServer {
     tool_router: ToolRouter<Self>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct ReadFileToolParams {
-    pub path: String,
-    #[serde(default)]
-    pub offset: Option<usize>,
-    #[serde(default)]
-    pub limit: Option<usize>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct EditFileToolParams {
-    pub path: String,
-    pub old_string: String,
-    pub new_string: String,
-    #[serde(default)]
-    pub replace_all: Option<bool>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct WriteFileToolParams {
-    pub path: String,
-    pub content: String,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct BashToolParams {
-    pub command: String,
-    #[serde(default)]
-    pub timeout_ms: Option<u64>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct GlobToolParams {
-    pub pattern: String,
-    #[serde(default)]
-    pub path: Option<String>,
-    #[serde(default)]
-    pub limit: Option<usize>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct GrepToolParams {
-    pub pattern: String,
-    #[serde(default)]
-    pub path: Option<String>,
-    #[serde(default)]
-    pub glob: Option<String>,
-    #[serde(default)]
-    pub limit: Option<usize>,
-}
-
 #[derive(Clone)]
 pub struct DelegationContext {
     /// Bash background jobs (list/get/cancel job tools cover these too).

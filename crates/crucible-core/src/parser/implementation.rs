@@ -15,22 +15,6 @@ use super::types::{
     Callout, FootnoteMap, LatexExpression, NoteContent, ParseError, ParsedNote, ParsedNoteMetadata,
 };
 
-/// Default implementation of the MarkdownParser trait
-///
-/// This parser supports:
-/// - Obsidian-compatible wikilinks and transclusions
-/// - Frontmatter parsing (YAML/TOML)
-/// - LaTeX mathematical expressions
-/// - Callout blocks
-/// - Extensible plugin architecture
-pub struct DefaultMarkdownParser {
-    /// Extensions registry for this parser
-    #[allow(dead_code)]
-    extensions: ExtensionRegistry,
-    /// Block processing configuration
-    pub block_config: BlockProcessingConfig,
-}
-
 /// Configuration for block-level processing
 #[derive(Debug, Clone, Default)]
 pub struct BlockProcessingConfig {
