@@ -212,9 +212,10 @@ refs what="unread" *args:
         unread) python3 scripts/scip-refs.py --unread-fields {{args}} ;;
         symbol) python3 scripts/scip-refs.py --symbol {{args}} ;;
         check)  python3 scripts/scip-refs.py --self-test ;;
+        orphans) python3 scripts/orphan-types.py {{args}} ;;
         *)
             echo "Unknown refs target: {{what}}"
-            echo "Valid targets: index unread symbol check"
+            echo "Valid targets: index unread symbol check orphans"
             exit 1
             ;;
     esac
