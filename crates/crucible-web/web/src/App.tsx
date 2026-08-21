@@ -205,6 +205,15 @@ const App: Component = () => {
       action: () => windowActions.toggleEdgePanel('right'),
     },
     {
+      id: 'nav-swap-sides',
+      label: 'Swap Side Panels',
+      description: 'Mirror the left and right panels — put the file tree on your dominant side.',
+      shortcut: 'Ctrl+Shift+\\',
+      category: 'Navigation',
+      keywords: ['swap', 'mirror', 'flip', 'sides', 'panel'],
+      action: () => windowActions.swapSidePanels(),
+    },
+    {
       id: 'nav-toggle-bottom',
       label: 'Toggle Bottom Panel',
       description: 'Collapse or expand the bottom edge panel.',

@@ -3,6 +3,7 @@ export {
   Activity,
   ArrowRight,
   ArrowLeft,
+  ArrowLeftRight,
   ExternalLink,
   Shield,
   ShieldAlert,

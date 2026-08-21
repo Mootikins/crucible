@@ -9,6 +9,9 @@ export const DEFAULT_SHORTCUTS: ShortcutAction[] = [
   { key: 'w', modifiers: ['ctrl'], action: 'closeActiveTab', description: 'Close active tab' },
   { key: 'Tab', modifiers: ['ctrl'], action: 'nextTab', description: 'Next tab' },
   { key: '\\', modifiers: ['ctrl'], action: 'splitVertical', description: 'Split pane vertically' },
+  // Adjacent to the split chord, which keeps Ctrl+\ where the muscle memory
+  // already is. Both are "rearrange the panes", so they read as a pair.
+  { key: '\\', modifiers: ['ctrl', 'shift'], action: 'swapSidePanels', description: 'Swap side panels' },
   { key: 'b', modifiers: ['ctrl'], action: 'toggleLeftPanel', description: 'Toggle left panel' },
   { key: 'Tab', modifiers: ['shift'], action: 'cycleMode', description: 'Cycle chat mode (Normal → Plan → Auto)' },
   // Command palette — Ctrl+P / Cmd+P (browser print intercepted with preventDefault)

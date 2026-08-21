@@ -165,6 +165,8 @@ function InnerManager() {
       }
     } else if (action === 'toggleLeftPanel') {
       windowActions.toggleEdgePanel('left');
+    } else if (action === 'swapSidePanels') {
+      windowActions.swapSidePanels();
     } else if (action === 'openCommandPalette') {
       // Handled by App.tsx in capture phase
     } else if (action === 'focusChatInput') {

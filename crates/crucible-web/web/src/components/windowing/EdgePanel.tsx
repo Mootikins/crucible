@@ -21,7 +21,7 @@ import {
   IconSettings,
   IconBell,
 } from './icons';
-import { Plus } from '@/lib/icons';
+import { ArrowLeftRight, Plus } from '@/lib/icons';
 import { notificationStore } from '@/stores/notificationStore';
 import { NotificationCenter } from '@/components/NotificationCenter';
 
@@ -342,6 +342,15 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
           onClick={() => window.dispatchEvent(new CustomEvent('crucible:new-session'))}
         >
           <Plus class="w-4 h-4" />
+        </RibbonCommand>
+        {/* Same action as Ctrl+Shift+\ and the palette entry — one command,
+            three doorways, never three behaviours. */}
+        <RibbonCommand
+          title="Swap side panels (Ctrl+Shift+\)"
+          testId="ribbon-cmd-swap-sides"
+          onClick={() => windowActions.swapSidePanels()}
+        >
+          <ArrowLeftRight class="w-4 h-4" />
         </RibbonCommand>
         <div class="mx-2 my-1 h-px flex-none bg-hairline" />
       </Show>

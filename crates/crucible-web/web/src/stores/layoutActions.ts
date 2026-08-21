@@ -26,6 +26,7 @@ import { syncShellSurface } from './shellStore';
 export interface LayoutActions {
   setActivePane(paneId: string | null): void;
   toggleEdgePanel(position: EdgePanelPosition): void;
+  swapSidePanels(): void;
   setEdgePanelCollapsed(position: EdgePanelPosition, collapsed: boolean): void;
   setEdgePanelActiveTab(position: EdgePanelPosition, tabId: string | null): void;
   setEdgePanelSize(position: EdgePanelPosition, size: number): void;
@@ -64,6 +65,43 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
     setStore(
       produce((s) => {
         s.edgePanels[position].isCollapsed = !s.edgePanels[position].isCollapsed;
+      })
+    );
+  };
+
+  /**
+   * Mirror the two side panels: what was on the left is now on the right.
+   *
+   * The CONTENTS move, the positions do not. Panels are keyed by position
+   * here, and the panel toggles are positional too (`toggleEdgePanel('left')`
+   * means "the left side", not "the session list"), so after a swap every
+   * toggle, ribbon and drop target still says what it does — nothing has to
+   * be remapped.
+   *
+   * `layout` and `width` travel with the contents: a file tree dragged out to
+   * 320px stays 320px on its new side rather than being re-cramped every
+   * swap. `isCollapsed` stays with the SIDE, because it describes the side
+   * you are looking at. That is what makes the common gesture work — with the
+   * right rail collapsed, one swap brings the tree onto the visible left and
+   * stows the session list. Carrying collapse across would instead hide both
+   * rails at once, which reads as the feature being broken.
+   *
+   * The cost is that it is not a strict involution when the two sides differ
+   * in collapsed state; two presses can land somewhere other than the start.
+   * Deliberate: predictable-and-useful beats symmetric-and-surprising.
+   */
+  const swapSidePanels = () => {
+    setStore(
+      produce((s) => {
+        const { left, right } = s.edgePanels;
+        // `id` stays with the side alongside `isCollapsed` — it names the
+        // panel, and findEdgePanelForGroup answers in positions.
+        const leftLayout = left.layout;
+        const leftWidth = left.width;
+        left.layout = right.layout;
+        left.width = right.width;
+        right.layout = leftLayout;
+        right.width = leftWidth;
       })
     );
   };
@@ -179,6 +217,7 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
   return {
     setActivePane,
     toggleEdgePanel,
+    swapSidePanels,
     setEdgePanelCollapsed,
     setEdgePanelActiveTab,
     setEdgePanelSize,
