@@ -26,7 +26,6 @@ Add it to `~/.config/crucible/config.toml`.
 | `remote_shell` | bool | `false` | Let authenticated non-localhost clients use the terminal routes |
 | `registration_roots` | array of strings | `[]` | Optional confinement for the web UI's "add project" button. Empty allows any ordinary directory (the floor is the only gate); a non-empty list confines registration to it — see [Project registration from the web UI](#project-registration-from-the-web-ui) |
 | `allowed_hosts` | array of strings | `[]` | Extra `Host` authorities the server answers to. Empty derives them from the bind address and this machine's own hostname — see [Host validation](#host-validation) |
-| `enabled` | bool | `false` | **Currently unread.** `cru web` starts the server unconditionally; nothing consults this field |
 
 ```toml
 [web]

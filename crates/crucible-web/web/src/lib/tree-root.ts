@@ -54,7 +54,7 @@ function basename(p: string): string {
  * returned (callers filter for display).
  */
 export function buildRoster(projects: Project[], kilns: KilnListEntry[]): RosterGroup[] {
-  // Registered git worktrees ([scm] detect_worktrees) get their own group,
+  // Registered git worktrees get their own group,
   // labeled `mainrepo › rel/path` so parallel checkouts of one repo read as
   // siblings instead of identically-named projects.
   const projectRoots: TreeRoot[] = [];

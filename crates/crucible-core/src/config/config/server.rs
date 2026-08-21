@@ -1,9 +1,7 @@
 //! Server, web, SCM, and logging configuration types.
 
-use crate::config::serde_helpers::default_true;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Server configuration.
 ///
@@ -14,56 +12,25 @@ use std::collections::HashMap;
 /// default is to ignore an unknown key, so each of them produced a config that
 /// parsed cleanly and did nothing. Failing loudly is the only version of this a
 /// reader can debug.
+/// The `[server]` section.
+///
+/// It once carried `host`, `port`, `https`, `cert_file`, `key_file`,
+/// `max_body_size` and `timeout_seconds`. None of them were read by anything:
+/// the daemon binds a Unix socket rather than a TCP address, and the web
+/// server takes its address from `[web]`. `deny_unknown_fields` is kept
+/// deliberately, so a config that still sets one fails to load and names the
+/// key, rather than accepting it and doing nothing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ServerConfig {
-    /// Server host address.
-    #[serde(default = "default_host")]
-    pub host: String,
-
-    /// Server port.
-    #[serde(default = "default_port")]
-    pub port: u16,
-
-    /// Enable HTTPS. Reserved for future use — not yet wired to server behavior.
-    #[serde(default)]
-    pub https: bool,
-
-    /// Path to TLS certificate file. Reserved for future use — not yet wired to server behavior.
-    pub cert_file: Option<String>,
-
-    /// Path to TLS private key file. Reserved for future use — not yet wired to server behavior.
-    pub key_file: Option<String>,
-
-    /// Maximum request body size in bytes. Reserved for future use — not yet wired to server behavior.
-    pub max_body_size: Option<usize>,
-
-    /// Request timeout in seconds. Reserved for future use — not yet wired to server behavior.
-    pub timeout_seconds: Option<u64>,
-
     /// Auto-archive threshold in hours for inactive sessions.
     #[serde(default)]
     pub auto_archive_hours: Option<u64>,
 }
 
-fn default_host() -> String {
-    "127.0.0.1".to_string()
-}
-
-fn default_port() -> u16 {
-    8080
-}
-
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            host: default_host(),
-            port: default_port(),
-            https: false,
-            cert_file: None,
-            key_file: None,
-            max_body_size: Some(10 * 1024 * 1024), // 10MB
-            timeout_seconds: Some(30),
             auto_archive_hours: Some(72),
         }
     }
@@ -72,10 +39,6 @@ impl Default for ServerConfig {
 /// Web UI server configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WebConfig {
-    /// Enable the web UI server.
-    #[serde(default)]
-    pub enabled: bool,
-
     /// Web server port.
     #[serde(default = "default_web_port")]
     pub port: u16,
@@ -147,7 +110,6 @@ fn default_web_host() -> String {
 impl Default for WebConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
             port: default_web_port(),
             host: default_web_host(),
             static_dir: None,
@@ -162,12 +124,6 @@ impl Default for WebConfig {
 /// SCM (git) integration configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ScmConfig {
-    /// Enable SCM detection for projects.
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    /// Detect and group git worktrees under their main repository.
-    #[serde(default)]
-    pub detect_worktrees: bool,
     /// Where `scm.clone` puts cloned repositories. A leading `~/` expands to
     /// the home directory. Default: "~/Projects".
     #[serde(default)]
@@ -188,74 +144,24 @@ pub struct ScmConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct LoggingConfig {
     /// Global log level (trace, debug, info, warn, error).
+    ///
+    /// The only field here that does anything. `format`, `console`, `file`,
+    /// `file_path`, `rotation`, `max_file_size`, `max_files`,
+    /// `component_levels`, `timestamps`, `target` and `ansi` were all
+    /// deserialized, validated, and read by nothing —
+    /// `CliAppConfig::logging_level` takes `level` and no other accessor exists.
     #[serde(default = "default_level")]
     pub level: String,
-
-    /// Log format (json, text, compact).
-    #[serde(default = "default_format")]
-    pub format: String,
-
-    /// Enable console/stdout logging.
-    #[serde(default = "default_true")]
-    pub console: bool,
-
-    /// Enable file logging.
-    #[serde(default)]
-    pub file: bool,
-
-    /// Log file path.
-    pub file_path: Option<String>,
-
-    /// Enable log rotation.
-    #[serde(default = "default_true")]
-    pub rotation: bool,
-
-    /// Maximum log file size in bytes.
-    pub max_file_size: Option<u64>,
-
-    /// Number of log files to retain.
-    pub max_files: Option<u32>,
-
-    /// Component/module-specific log levels (e.g., "crucible_core" => "debug").
-    #[serde(default)]
-    pub component_levels: HashMap<String, String>,
-
-    /// Include timestamps in log output.
-    #[serde(default = "default_true")]
-    pub timestamps: bool,
-
-    /// Include module/target path in log output.
-    #[serde(default = "default_true")]
-    pub target: bool,
-
-    /// Use ANSI colors in console output.
-    #[serde(default = "default_true")]
-    pub ansi: bool,
 }
 
 fn default_level() -> String {
     "info".to_string()
 }
 
-fn default_format() -> String {
-    "text".to_string()
-}
-
 impl Default for LoggingConfig {
     fn default() -> Self {
         Self {
             level: default_level(),
-            format: default_format(),
-            console: true,
-            file: false,
-            file_path: None,
-            rotation: true,
-            max_file_size: Some(10 * 1024 * 1024), // 10MB
-            max_files: Some(5),
-            component_levels: HashMap::new(),
-            timestamps: true,
-            target: true,
-            ansi: true,
         }
     }
 }

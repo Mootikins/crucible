@@ -71,13 +71,9 @@ pub async fn handle(
     // `..default()` on both, so a new security-relevant `WebConfig` field
     // (registration_roots, allowed_hosts, …) is carried through instead of
     // failing the build or, worse, being silently dropped here.
-    let web_config = config.web.clone().unwrap_or(WebConfig {
-        enabled: true,
-        ..WebConfig::default()
-    });
+    let web_config = config.web.clone().unwrap_or_default();
 
     let final_config = WebConfig {
-        enabled: true,
         port: cmd.port.unwrap_or(web_config.port),
         host: cmd.host.unwrap_or_else(|| web_config.host.clone()),
         static_dir: cmd.static_dir.or_else(|| web_config.static_dir.clone()),
@@ -360,7 +356,6 @@ mod tests {
 
     fn config_bound_to(host: &str, port: u16) -> WebConfig {
         WebConfig {
-            enabled: true,
             host: host.to_string(),
             port,
             ..WebConfig::default()

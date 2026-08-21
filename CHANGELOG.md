@@ -221,6 +221,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Removed
 
+- **Config keys that did nothing are deleted, not documented as inert.** 22 keys
+  across five sections deserialized, validated, and reached no code:
+  `[server]` `host`, `port`, `https`, `cert_file`, `key_file`, `max_body_size`,
+  `timeout_seconds`; `[logging]` everything except `level` — `format`,
+  `console`, `file`, `file_path`, `rotation`, `max_file_size`, `max_files`,
+  `component_levels`, `timestamps`, `target`, `ansi`; `[scm]` `enabled` and
+  `detect_worktrees`; `[web]` `enabled`; `[enrichment.pipeline]`
+  `max_queue_size`, `retry_attempts`, `retry_delay_ms`,
+  `circuit_breaker_threshold`, `circuit_breaker_timeout_ms`;
+  `[enrichment.provider]` `num_threads` and the mock's `simulated_latency_ms`.
+  Docs that taught them are corrected, including `docs/Config.toml`, the
+  `[logging]` and `[server]` rows in `Configuration.md`, `Config/embedding.md`,
+  the `enabled` row in `Config/web.md`, and a frontend comment in `tree-root.ts`
+  that described `detect_worktrees` as if it worked.
+
+  **`[server]` sets `deny_unknown_fields`, so a config that still names one of
+  its retired keys will fail to load and say which.** That is deliberate: an
+  error naming `port` is a one-line fix, where silent acceptance is what let
+  these accumulate. `a_retired_server_key_is_rejected_by_name` pins it. The
+  other four sections ignore unknown keys, so an old config keeps working.
+
 - **The ACP trait layer in `crucible-core` is deleted** —
   `traits::acp::{SessionManager, ToolBridge}` and the daemon's
   `acp::client::session_manager` impl. It was a dependency-inversion layer

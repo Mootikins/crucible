@@ -366,7 +366,6 @@ mod tests {
     /// value invented for them.
     fn web_config_bound_to(host: &str, port: u16) -> WebConfig {
         WebConfig {
-            enabled: true,
             host: host.to_string(),
             port,
             ..WebConfig::default()

@@ -131,23 +131,17 @@ type = "fastembed"                    # working: fastembed | ollama | openai | m
                                       # cohere/vertexai/custom parse but have no
                                       # runtime backend; burn is removed (hard-errors).
 model = "BAAI/bge-small-en-v1.5"
-# For fastembed, `model` is the only field that is read: batch_size, cache_dir,
-# and num_threads parse but are IGNORED (batch size is hardcoded to 32, and the
-# vector dimension comes from the model). The ollama type does read batch_size.
+# For fastembed, `model`, `cache_dir` and `batch_size` are all read. The vector
+# dimension comes from the model, so `dimensions` is accepted and not checked
+# against it. `num_threads` was removed: fastembed exposes no thread knob.
 
-# Pipeline tuning. Parses, but ONLY max_precognition_chars is currently read —
-# the other eight keys have no effect today.
+# Pipeline tuning.
 [enrichment.pipeline]
 max_precognition_chars = 3000         # char budget for precognition snippets
-# Parsed but currently unread:
+# Validated but not acted on — they bound `validate()` and nothing else:
 # worker_count = 8                    # default: num_cpus
 # batch_size = 16
-# max_queue_size = 1000
 # timeout_ms = 30000
-# retry_attempts = 3
-# retry_delay_ms = 1000
-# circuit_breaker_threshold = 5
-# circuit_breaker_timeout_ms = 60000
 
 # =============================================================================
 # [chat] - Chat defaults
@@ -315,17 +309,17 @@ theme = "base16-ocean.dark"
 # =============================================================================
 
 # [scm]
-# enabled = true
-# detect_worktrees = false
 # projects_dir = "~/Projects"
 # session_workspace_dir = "~/.crucible/workspaces"
 
 # =============================================================================
 # [server] - Daemon server settings
 # =============================================================================
-# `auto_archive_hours` is live. The TLS and request-limit fields (https,
-# cert_file, key_file, max_body_size, timeout_seconds) are reserved and are
-# not yet wired to behaviour.
+# `auto_archive_hours` is the whole section. `host` and `port` were removed —
+# the daemon binds a Unix socket, and the web server's address is `[web]`. So
+# were the TLS and request-limit keys, which were never wired to anything. This
+# section sets `deny_unknown_fields`, so a config that still names one fails to
+# load and says which key.
 
 # [server]
 # auto_archive_hours = 72
@@ -334,15 +328,13 @@ theme = "base16-ocean.dark"
 # [logging]
 # =============================================================================
 
+# `level` is the whole section. `format`, `console`, `file`, `file_path`,
+# `rotation`, `max_file_size`, `max_files`, `component_levels`, `timestamps`,
+# `target` and `ansi` were removed: they parsed, validated, and reached nothing.
+# Use `RUST_LOG` for per-module levels.
+
 # [logging]
 # level = "info"                      # off | error | warn | info | debug | trace
-# format = "text"                     # text | json | compact
-# console = true
-# file = false
-# file_path = "~/.local/share/crucible/crucible.log"
-#
-# [logging.component_levels]
-# crucible_core = "debug"
 
 # =============================================================================
 # [[schedules]] - Recurring Lua snippets

@@ -77,14 +77,28 @@ fn test_server_config_default_sets_auto_archive_hours() {
 fn test_server_config_deserializes_auto_archive_hours() {
     let parsed: ServerConfig = toml::from_str(
         r#"
-host = "127.0.0.1"
-port = 8080
 auto_archive_hours = 24
 "#,
     )
     .unwrap();
 
     assert_eq!(parsed.auto_archive_hours, Some(24));
+}
+
+/// A retired `[server]` key fails loudly and names itself.
+///
+/// `host`, `port`, `https`, `cert_file`, `key_file`, `max_body_size` and
+/// `timeout_seconds` were removed because nothing read them — the daemon binds
+/// a Unix socket and the web server's address comes from `[web]`.
+/// `deny_unknown_fields` stays on this struct on purpose: a config that still
+/// sets one gets an error naming the key, which is a one-line fix, rather than
+/// silent acceptance of a setting that does nothing.
+#[test]
+fn a_retired_server_key_is_rejected_by_name() {
+    let err = toml::from_str::<ServerConfig>("port = 8080\n")
+        .expect_err("a removed key must not deserialize");
+    let msg = err.to_string();
+    assert!(msg.contains("port"), "the error must name the key: {msg}");
 }
 
 #[test]

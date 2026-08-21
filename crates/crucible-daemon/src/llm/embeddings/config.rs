@@ -31,7 +31,7 @@ mod tests {
         let config = EmbeddingConfig::openai("test-key".to_string(), None);
         assert!(config.validate().is_ok());
 
-        let config = EmbeddingConfig::fastembed(None, None, None);
+        let config = EmbeddingConfig::fastembed(None, None);
         assert!(config.validate().is_ok());
     }
 

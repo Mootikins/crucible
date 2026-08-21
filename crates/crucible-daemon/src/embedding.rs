@@ -120,7 +120,7 @@ mod tests {
     #[test]
     fn test_config_cache_key_varies_by_provider_type() {
         let ollama = EmbeddingProviderConfig::ollama(None, None);
-        let fastembed = EmbeddingProviderConfig::fastembed(None, None, None);
+        let fastembed = EmbeddingProviderConfig::fastembed(None, None);
         assert_ne!(config_cache_key(&ollama), config_cache_key(&fastembed));
     }
 

@@ -42,7 +42,7 @@
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     // Create FastEmbed provider with default model (BGE-small)
-//!     let config = EmbeddingConfig::fastembed(None, None, None);
+//!     let config = EmbeddingConfig::fastembed(None, None);
 //!     let provider = create_provider(config).await?;
 //!
 //!     // Generate embedding
@@ -135,7 +135,7 @@ impl FastEmbedProvider {
     /// ```rust
     /// use crucible_daemon::llm::embeddings::{EmbeddingConfig, FastEmbedProvider};
     ///
-    /// let config = EmbeddingConfig::fastembed(None, None, None);
+    /// let config = EmbeddingConfig::fastembed(None, None);
     /// let provider = FastEmbedProvider::new(config)?;
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
@@ -497,7 +497,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fastembed_provider_creation() {
-        let config = super::super::config::EmbeddingConfig::fastembed(None, None, None);
+        let config = super::super::config::EmbeddingConfig::fastembed(None, None);
         let provider = FastEmbedProvider::new(config);
         assert!(provider.is_ok());
 
@@ -511,7 +511,6 @@ mod tests {
         let config = super::super::config::EmbeddingConfig::fastembed(
             Some("all-MiniLM-L6-v2".to_string()),
             Some(test_cache_path()),
-            None,
         );
         let provider = FastEmbedProvider::new(config).unwrap();
 
@@ -532,7 +531,7 @@ mod tests {
     #[tokio::test]
     async fn test_fastembed_batch_embedding() {
         let config =
-            super::super::config::EmbeddingConfig::fastembed(None, Some(test_cache_path()), None);
+            super::super::config::EmbeddingConfig::fastembed(None, Some(test_cache_path()));
         let provider = FastEmbedProvider::new(config).unwrap();
 
         let texts: Vec<&str> = vec!["First text", "Second text", "Third text"];
@@ -554,7 +553,7 @@ mod tests {
     #[tokio::test]
     async fn test_fastembed_error_handling() {
         let config =
-            super::super::config::EmbeddingConfig::fastembed(None, Some(test_cache_path()), None);
+            super::super::config::EmbeddingConfig::fastembed(None, Some(test_cache_path()));
         let provider = FastEmbedProvider::new(config).unwrap();
 
         // Test empty text
@@ -572,7 +571,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fastembed_list_models() {
-        let config = super::super::config::EmbeddingConfig::fastembed(None, None, None);
+        let config = super::super::config::EmbeddingConfig::fastembed(None, None);
         let provider = FastEmbedProvider::new(config).unwrap();
 
         let models = provider.list_models().await;
@@ -613,7 +612,6 @@ mod tests {
             cache_dir: Some("/models/cache".to_string()),
             batch_size: 7,
             dimensions: 384,
-            num_threads: None,
         });
 
         let provider = FastEmbedProvider::new(config).expect("a known model builds");

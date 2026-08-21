@@ -266,13 +266,15 @@ all, the default is `warn` for server and stdio commands (`daemon serve`, foregr
 `cru mcp` without `--stdio` serves SSE and defaults to `off`. An unrecognized value falls back
 to that same default.
 
-The section parses eleven more fields — `format`, `console`, `file`, `file_path`,
-`component_levels`, `rotation`, `max_file_size`, `max_files`, `timestamps`, `target`,
-`ansi` — but they are **parsed and never read**: nothing in the tracing setup consults
-them, so setting them changes nothing. Log destination is decided by the command, not
-config: stdio commands (`chat`, `mcp --stdio`, `acp`) write to `~/.crucible/<command>.log`
-(override the path with `CRUCIBLE_LOG_FILE`); everything else logs to stderr.
-Per-component levels work today only via `RUST_LOG`, not `[logging.component_levels]`.
+`level` is the only key in this section. It once carried eleven more — `format`,
+`console`, `file`, `file_path`, `component_levels`, `rotation`, `max_file_size`,
+`max_files`, `timestamps`, `target`, `ansi` — which parsed, validated, and reached
+nothing. They are removed rather than left as settings that do nothing.
+
+Log destination is decided by the command, not by config: stdio commands (`chat`,
+`mcp --stdio`, `acp`) write to `~/.crucible/<command>.log` (override the path with
+`CRUCIBLE_LOG_FILE`); everything else logs to stderr. Use `RUST_LOG` for per-module
+levels.
 
 ### Other sections
 
@@ -283,7 +285,7 @@ Per-component levels work today only via `RUST_LOG`, not `[logging.component_lev
 | `[storage]` | Daemon storage settings | [[Help/Config/storage|Storage Configuration]] |
 | `[web]` | Browser UI served by `cru web` | [[Help/Config/web|Web UI Configuration]] |
 | `[scm]` | Git integration — worktree detection, `scm.clone` destination | `docs/Config.toml` |
-| `[server]` | Daemon settings; `auto_archive_hours` is live, the TLS/limit fields are reserved | `docs/Config.toml` |
+| `[server]` | `auto_archive_hours`, and nothing else. `host`/`port` and the TLS keys were removed — the daemon binds a Unix socket and the web address is `[web]` | `docs/Config.toml` |
 | `[[schedules]]` | Recurring Lua snippets run on an interval | `docs/Config.toml` |
 | `[plugins.*]` | Free-form per-plugin tables, read by the plugin of that name | `docs/Config.toml` |
 

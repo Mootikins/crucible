@@ -249,17 +249,6 @@ pub struct FastEmbedConfig {
     /// Expected embedding dimensions
     #[serde(default = "FastEmbedConfig::default_dimensions")]
     pub dimensions: u32,
-
-    /// Number of threads to use (None = auto).
-    ///
-    /// **Currently inert.** `fastembed` 5.13's `InitOptions` exposes
-    /// `max_length`, `cache_dir`, `execution_providers` and
-    /// `show_download_progress` and no thread count, so there is nothing to
-    /// pass this to. Kept because the key is already in user config files and
-    /// because ONNX Runtime does have the knob upstream; wire it here when
-    /// `fastembed` surfaces it.
-    #[serde(default)]
-    pub num_threads: Option<usize>,
 }
 
 impl FastEmbedConfig {
@@ -283,7 +272,6 @@ impl Default for FastEmbedConfig {
             cache_dir: None,
             batch_size: Self::default_batch_size(),
             dimensions: Self::default_dimensions(),
-            num_threads: None,
         }
     }
 }
@@ -487,10 +475,6 @@ pub struct MockConfig {
     /// Dimensions to return
     #[serde(default = "MockConfig::default_dimensions")]
     pub dimensions: u32,
-
-    /// Simulate latency (milliseconds)
-    #[serde(default)]
-    pub simulated_latency_ms: u64,
 }
 
 impl MockConfig {
@@ -508,7 +492,6 @@ impl Default for MockConfig {
         Self {
             model: Self::default_model(),
             dimensions: Self::default_dimensions(),
-            simulated_latency_ms: 0,
         }
     }
 }
@@ -641,29 +624,9 @@ pub struct PipelineConfig {
     #[serde(default = "PipelineConfig::default_batch_size")]
     pub batch_size: usize,
 
-    /// Maximum queue size
-    #[serde(default = "PipelineConfig::default_max_queue_size")]
-    pub max_queue_size: usize,
-
     /// Operation timeout in milliseconds
     #[serde(default = "PipelineConfig::default_timeout_ms")]
     pub timeout_ms: u64,
-
-    /// Retry attempts for failed operations
-    #[serde(default = "PipelineConfig::default_retry_attempts")]
-    pub retry_attempts: u32,
-
-    /// Delay between retries in milliseconds
-    #[serde(default = "PipelineConfig::default_retry_delay_ms")]
-    pub retry_delay_ms: u64,
-
-    /// Circuit breaker failure threshold
-    #[serde(default = "PipelineConfig::default_circuit_breaker_threshold")]
-    pub circuit_breaker_threshold: u32,
-
-    /// Circuit breaker timeout in milliseconds
-    #[serde(default = "PipelineConfig::default_circuit_breaker_timeout_ms")]
-    pub circuit_breaker_timeout_ms: u64,
 
     /// Maximum aggregate character count for precognition context snippets (default: 3000).
     #[serde(default = "default_max_precognition_chars")]
@@ -679,28 +642,8 @@ impl PipelineConfig {
         16
     }
 
-    fn default_max_queue_size() -> usize {
-        1000
-    }
-
     fn default_timeout_ms() -> u64 {
         30000
-    }
-
-    fn default_retry_attempts() -> u32 {
-        3
-    }
-
-    fn default_retry_delay_ms() -> u64 {
-        1000
-    }
-
-    fn default_circuit_breaker_threshold() -> u32 {
-        5
-    }
-
-    fn default_circuit_breaker_timeout_ms() -> u64 {
-        60000
     }
 
     /// Create configuration optimized for throughput
@@ -708,7 +651,6 @@ impl PipelineConfig {
         Self {
             worker_count: num_cpus::get() * 2,
             batch_size: 64,
-            max_queue_size: 5000,
             ..Default::default()
         }
     }
@@ -718,7 +660,6 @@ impl PipelineConfig {
         Self {
             worker_count: num_cpus::get(),
             batch_size: 4,
-            max_queue_size: 100,
             timeout_ms: 5000,
             ..Default::default()
         }
@@ -729,7 +670,6 @@ impl PipelineConfig {
         Self {
             worker_count: 1,
             batch_size: 8,
-            max_queue_size: 100,
             ..Default::default()
         }
     }
@@ -740,12 +680,7 @@ impl Default for PipelineConfig {
         Self {
             worker_count: Self::default_worker_count(),
             batch_size: Self::default_batch_size(),
-            max_queue_size: Self::default_max_queue_size(),
             timeout_ms: Self::default_timeout_ms(),
-            retry_attempts: Self::default_retry_attempts(),
-            retry_delay_ms: Self::default_retry_delay_ms(),
-            circuit_breaker_threshold: Self::default_circuit_breaker_threshold(),
-            circuit_breaker_timeout_ms: Self::default_circuit_breaker_timeout_ms(),
             max_precognition_chars: default_max_precognition_chars(),
         }
     }
@@ -791,18 +726,12 @@ impl EmbeddingProviderConfig {
     /// # Arguments
     /// * `model` - Optional model name (defaults to "BAAI/bge-small-en-v1.5")
     /// * `cache_dir` - Optional cache directory for model files
-    /// * `num_threads` - Optional number of threads (defaults to auto)
-    pub fn fastembed(
-        model: Option<String>,
-        cache_dir: Option<String>,
-        num_threads: Option<usize>,
-    ) -> Self {
+    pub fn fastembed(model: Option<String>, cache_dir: Option<String>) -> Self {
         Self::FastEmbed(FastEmbedConfig {
             model: model.unwrap_or_else(FastEmbedConfig::default_model),
             cache_dir,
             batch_size: FastEmbedConfig::default_batch_size(),
             dimensions: FastEmbedConfig::default_dimensions(),
-            num_threads,
         })
     }
 
@@ -814,7 +743,6 @@ impl EmbeddingProviderConfig {
         Self::Mock(MockConfig {
             model: MockConfig::default_model(),
             dimensions: dimensions.unwrap_or_else(MockConfig::default_dimensions),
-            simulated_latency_ms: 0,
         })
     }
 

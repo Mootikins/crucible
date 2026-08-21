@@ -50,13 +50,12 @@ model = "BAAI/bge-small-en-v1.5"   # default
 batch_size = 32
 dimensions = 384
 # cache_dir = "/path/to/cache"     # optional
-# num_threads = 4                  # optional (auto-detected)
 ```
 
-`model` is the only field the FastEmbed backend actually reads. `batch_size`,
-`cache_dir`, and `num_threads` parse but are currently ignored — the daemon hardcodes a
-batch size of 32 and FastEmbed's default cache directory, and the vector dimension comes
-from the model itself.
+`model`, `batch_size` and `cache_dir` are all read. `dimensions` is accepted and not
+checked — the real vector dimension comes from the model itself, so a mismatched value
+here is ignored rather than rejected. `num_threads` was removed: `fastembed` exposes no
+thread-count option to pass it to.
 
 **Advantages:** no API key, offline, free, fast for batch processing.
 
@@ -144,13 +143,14 @@ Returns deterministic stub vectors. Used by tests and local dev.
 
 ## `[enrichment.pipeline]`
 
-The pipeline table parses these fields: `worker_count`, `batch_size`, `max_queue_size`,
-`timeout_ms`, `retry_attempts`, `retry_delay_ms`, `circuit_breaker_threshold`,
-`circuit_breaker_timeout_ms`, and `max_precognition_chars`.
+The pipeline table has `max_precognition_chars`, `worker_count`, `batch_size` and
+`timeout_ms`.
 
-**Only `max_precognition_chars` is currently read** (default 3000 — the aggregate
-character budget for precognition context snippets). The other eight fields are accepted
-but have no effect on the enrichment pipeline today; setting them changes nothing.
+**Only `max_precognition_chars` changes behaviour** (default 3000 — the aggregate
+character budget for precognition context snippets). The other three are range-checked
+by `validate()` and then unused. `max_queue_size`, `retry_attempts`, `retry_delay_ms`,
+`circuit_breaker_threshold` and `circuit_breaker_timeout_ms` were removed: nothing read
+them at all.
 
 ```toml
 [enrichment.pipeline]

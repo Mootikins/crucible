@@ -52,7 +52,7 @@ mod fastembed_tests {
     #[tokio::test]
     #[ignore = "requires: model download — ONNX models, ~100 MB"]
     async fn test_fastembed_basic() {
-        let config = EmbeddingConfig::fastembed(None, None, None);
+        let config = EmbeddingConfig::fastembed(None, None);
         let provider = create_provider(config).await.unwrap();
 
         let embedding = provider.embed("Hello, world!").await.unwrap();
@@ -67,7 +67,7 @@ mod fastembed_tests {
     #[tokio::test]
     #[ignore = "requires: model download — ONNX models, ~100 MB"]
     async fn test_fastembed_semantic_similarity() {
-        let config = EmbeddingConfig::fastembed(None, None, None);
+        let config = EmbeddingConfig::fastembed(None, None);
         let provider = create_provider(config).await.unwrap();
 
         // Get embeddings for all test texts
@@ -118,7 +118,7 @@ mod fastembed_tests {
     #[tokio::test]
     #[ignore = "requires: model download — ONNX models, ~100 MB"]
     async fn test_fastembed_batch() {
-        let config = EmbeddingConfig::fastembed(None, None, None);
+        let config = EmbeddingConfig::fastembed(None, None);
         let provider = create_provider(config).await.unwrap();
 
         let start = std::time::Instant::now();
