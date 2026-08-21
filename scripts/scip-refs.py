@@ -615,16 +615,20 @@ def cmd_unread_fields(
     return 0
 
 
-# Five symbols whose read/init split is known from independent inspection of
-# the source. `num_threads` and `https` have references but no reads: every
+# Symbols whose read/init split is known from independent inspection of the
+# source. `spinner_frame` and `loaded_at` have references but no reads: every
 # occurrence is a `field: value` initializer. If a change to `classify` counts
 # an initializer as a read, these two flip and the test fails.
+#
+# A pin that reports `matched 0 symbols` means somebody DELETED the field, not
+# that the classifier broke. Rebuild the index, then pick a replacement with
+# `--unread-fields` (for an inert pin) that has `init > 0`.
 SELF_TEST = [
     ("session/types/session/Session#kilns.", True),
     ("config/enrichment/FastEmbedConfig#batch_size.", True),
     ("config/enrichment/FastEmbedConfig#cache_dir.", True),
-    ("config/enrichment/FastEmbedConfig#num_threads.", False),
-    ("config/config/server/ServerConfig#https.", False),
+    ("tui/oil/render_state/RenderState#spinner_frame.", False),
+    ("agent/types/AgentCard#loaded_at.", False),
     # A field matched against a LITERAL inside a match arm — `Ask { rule_matched:
     # false }`. The punctuation is identical to a struct-literal write, so the
     # first classifier called this a write and reported the field never read.
@@ -658,7 +662,7 @@ def cmd_self_test(buf: bytes, sources: SourceCache) -> int:
             f"   -> {'read' if c['read'] else 'INERT (never read)'}"
         )
     print(
-        "\nexpected: kilns/batch_size/cache_dir read, num_threads/https inert",
+        "\nexpected: kilns/batch_size/cache_dir read, spinner_frame/loaded_at inert",
         file=sys.stderr,
     )
     return 1 if failures else 0
