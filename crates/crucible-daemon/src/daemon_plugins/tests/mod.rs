@@ -70,12 +70,7 @@ fn plugin_runtime_exposes_the_documented_api_surface() {
 /// loader's.
 #[tokio::test]
 async fn plugin_session_lifecycle_hooks_fire() {
-    use crucible_lua::{Session, SessionConfigRpc};
-
-    // `SessionConfigRpc`'s methods all have defaults; the hooks under test
-    // never call them.
-    struct TestRpc;
-    impl SessionConfigRpc for TestRpc {}
+    use crucible_lua::{Session, UnsupportedSessionRpc};
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
@@ -92,7 +87,7 @@ async fn plugin_session_lifecycle_hooks_fire() {
         .expect("register lifecycle hooks");
 
     let session = Session::new("test-session".to_string());
-    session.bind(Box::new(TestRpc));
+    session.bind(Box::new(UnsupportedSessionRpc));
 
     loader
         .fire_session_start(&session)
@@ -122,10 +117,7 @@ async fn plugin_session_lifecycle_hooks_fire() {
 /// start a container from `on_session_start` — the entire point of `oci`.
 #[tokio::test]
 async fn a_lifecycle_hook_can_call_async_apis() {
-    use crucible_lua::{Session, SessionConfigRpc};
-
-    struct TestRpc;
-    impl SessionConfigRpc for TestRpc {}
+    use crucible_lua::{Session, UnsupportedSessionRpc};
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
@@ -145,7 +137,7 @@ async fn a_lifecycle_hook_can_call_async_apis() {
         .expect("register hook");
 
     let session = Session::new("async-hook".to_string());
-    session.bind(Box::new(TestRpc));
+    session.bind(Box::new(UnsupportedSessionRpc));
     loader
         .fire_session_start(&session)
         .await
@@ -167,10 +159,7 @@ async fn a_lifecycle_hook_can_call_async_apis() {
 /// for the same reason.
 #[tokio::test]
 async fn a_lifecycle_hook_sees_the_session_workspace() {
-    use crucible_lua::{Session, SessionConfigRpc};
-
-    struct TestRpc;
-    impl SessionConfigRpc for TestRpc {}
+    use crucible_lua::{Session, UnsupportedSessionRpc};
 
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
@@ -189,7 +178,7 @@ async fn a_lifecycle_hook_sees_the_session_workspace() {
         .expect("register hook");
 
     let session = Session::new("ws-test".to_string()).with_workspace("/tmp/crucible-ws-fixture");
-    session.bind(Box::new(TestRpc));
+    session.bind(Box::new(UnsupportedSessionRpc));
     loader
         .fire_session_start(&session)
         .await
@@ -224,10 +213,7 @@ async fn a_lifecycle_hook_sees_the_session_workspace() {
 /// creation.
 #[tokio::test]
 async fn only_required_start_hooks_can_refuse_a_session() {
-    use crucible_lua::{Session, SessionConfigRpc};
-
-    struct TestRpc;
-    impl SessionConfigRpc for TestRpc {}
+    use crucible_lua::{Session, UnsupportedSessionRpc};
 
     // An ordinary plugin that raises — logged, session proceeds.
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
@@ -237,7 +223,7 @@ async fn only_required_start_hooks_can_refuse_a_session() {
         .exec()
         .unwrap();
     let session = Session::new("s1".to_string());
-    session.bind(Box::new(TestRpc));
+    session.bind(Box::new(UnsupportedSessionRpc));
     assert!(
         loader.fire_session_start(&session).await.is_ok(),
         "an ordinary plugin's failure must not refuse the session"
@@ -253,7 +239,7 @@ async fn only_required_start_hooks_can_refuse_a_session() {
         .exec()
         .unwrap();
     let session = Session::new("s2".to_string());
-    session.bind(Box::new(TestRpc));
+    session.bind(Box::new(UnsupportedSessionRpc));
     let err = loader
         .fire_session_start(&session)
         .await

@@ -12,13 +12,9 @@
 
 use crucible_core::events::SessionEvent;
 use crucible_daemon::daemon_plugins::DaemonPluginLoader;
-use crucible_lua::{PluginSource, ScriptHandlerResult, Session, SessionConfigRpc};
+use crucible_lua::{PluginSource, ScriptHandlerResult, Session, UnsupportedSessionRpc};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-
-/// `SessionConfigRpc`'s methods all have defaults; nothing under test calls them.
-struct StubRpc;
-impl SessionConfigRpc for StubRpc {}
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -90,7 +86,7 @@ async fn try_start_isolated_session(
     if let Some(isolation) = isolation {
         session = session.with_isolation(isolation);
     }
-    session.bind(Box::new(StubRpc));
+    session.bind(Box::new(UnsupportedSessionRpc));
     loader.fire_session_start(&session).await
 }
 
@@ -102,7 +98,7 @@ async fn start_session(loader: &mut DaemonPluginLoader, id: &str, workspace: &Pa
 
 async fn end_session(loader: &mut DaemonPluginLoader, id: &str) {
     let session = Session::new(id.to_string());
-    session.bind(Box::new(StubRpc));
+    session.bind(Box::new(UnsupportedSessionRpc));
     loader.fire_session_end(&session).await.expect("end");
 }
 

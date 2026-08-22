@@ -27,7 +27,7 @@ use crucible_core::session::RecordingMode;
 use crucible_lua::stubs::StubGenerator;
 use crucible_lua::{
     register_crucible_on_api, LuaExecutor, LuaScriptHandlerRegistry, PluginManager,
-    Session as LuaSession, SessionConfigRpc,
+    Session as LuaSession,
 };
 use dashmap::DashMap;
 
@@ -129,10 +129,8 @@ pub struct Server {
 }
 
 /// Session handle backing for contexts that only need identity, not the full
-/// config RPC surface (plugin lifecycle hooks, `lua.init_session`). Every
-/// `SessionConfigRpc` method has a default.
-pub(crate) struct NoopSessionRpc;
-impl SessionConfigRpc for NoopSessionRpc {}
+/// config RPC surface (plugin lifecycle hooks, `lua.init_session`).
+pub(crate) use crucible_lua::UnsupportedSessionRpc as NoopSessionRpc;
 
 pub struct LuaSessionState {
     pub(crate) executor: LuaExecutor,

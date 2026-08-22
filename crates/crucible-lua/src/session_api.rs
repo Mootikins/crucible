@@ -52,19 +52,51 @@ fn unsupported(field: &str) -> String {
 /// Thin RPC interface for session configuration.
 /// Does NOT expose message sending or other sensitive operations.
 ///
-/// Every method has a default so a stub implementation (daemon-side
-/// `NoopSessionRpc`, test mocks) needs no boilerplate.
+/// Every method is required. The trait used to default every method, so a
+/// backing that forgot one still compiled, and a Lua knob could be half
+/// wired: `NoopSessionRpc` was `impl SessionConfigRpc for NoopSessionRpc {}`
+/// and was bound at every daemon site, so a plugin that wrote
+/// `session.thinking_budget = 4096` was told it worked and nothing
+/// happened. A backing that supports nothing now says so by name:
+/// [`UnsupportedSessionRpc`]. A backing that supports some knobs delegates
+/// the rest to it, so the compiler lists each knob it does not answer.
 ///
-/// **Setters default to an error, not to `Ok(())`.** They used to default to
-/// success, which made this trait a machine for producing the repeat bug of
-/// this codebase: `NoopSessionRpc` is `impl SessionConfigRpc for
-/// NoopSessionRpc {}` and is bound at every daemon site, so a plugin writing
-/// `session.thinking_budget = 4096` was told it worked and nothing happened.
-/// A default that costs an implementor nothing is good; one that reports
-/// success for work not done is not. Getters still default to `None` — an
-/// absent value is honestly `nil` in Lua, and erroring on a read would break
-/// `session.x or fallback`.
+/// **Setters report an error, not `Ok(())`, when a knob is unsupported.**
+/// Getters return `None`, because an absent value is honestly `nil` in Lua,
+/// and an error on a read would break `session.x or fallback`.
 pub trait SessionConfigRpc: Send + Sync {
+    fn get_temperature(&self) -> Option<f64>;
+    fn set_temperature(&self, temp: f64) -> Result<(), String>;
+    fn get_max_tokens(&self) -> Option<u32>;
+    fn set_max_tokens(&self, tokens: Option<u32>) -> Result<(), String>;
+    fn get_thinking_budget(&self) -> Option<i64>;
+    fn set_thinking_budget(&self, budget: i64) -> Result<(), String>;
+    fn get_model(&self) -> Option<String>;
+    fn switch_model(&self, model: &str) -> Result<(), String>;
+    fn list_models(&self) -> Vec<String>;
+    fn get_mode(&self) -> String;
+    fn set_mode(&self, mode: &str) -> Result<(), String>;
+    fn get_system_prompt(&self) -> Option<String>;
+    fn set_system_prompt(&self, prompt: &str) -> Result<(), String>;
+    fn mark_first_message_sent(&self);
+    fn set_variable(&self, key: &str, value: serde_json::Value);
+    fn get_variable(&self, key: &str) -> Option<serde_json::Value>;
+    fn notify(&self, notification: crucible_core::types::Notification);
+    fn toggle_messages(&self);
+    fn show_messages(&self);
+    fn hide_messages(&self);
+    fn clear_messages(&self);
+}
+
+/// A [`SessionConfigRpc`] that supports no knob.
+///
+/// The daemon binds it where a session only needs identity (plugin
+/// lifecycle hooks, `lua.init_session`). Every setter reports that the knob
+/// is unsupported; every getter returns the absent value. A partial backing
+/// delegates the knobs it does not answer to this type.
+pub struct UnsupportedSessionRpc;
+
+impl SessionConfigRpc for UnsupportedSessionRpc {
     fn get_temperature(&self) -> Option<f64> {
         None
     }
@@ -609,6 +641,26 @@ pub mod tests {
         fn get_variable(&self, key: &str) -> Option<serde_json::Value> {
             self.variables.read().unwrap().get(key).cloned()
         }
+        fn get_max_tokens(&self) -> Option<u32> {
+            UnsupportedSessionRpc.get_max_tokens()
+        }
+        fn set_max_tokens(&self, tokens: Option<u32>) -> Result<(), String> {
+            UnsupportedSessionRpc.set_max_tokens(tokens)
+        }
+        fn get_thinking_budget(&self) -> Option<i64> {
+            UnsupportedSessionRpc.get_thinking_budget()
+        }
+        fn set_thinking_budget(&self, budget: i64) -> Result<(), String> {
+            UnsupportedSessionRpc.set_thinking_budget(budget)
+        }
+        fn set_mode(&self, mode: &str) -> Result<(), String> {
+            UnsupportedSessionRpc.set_mode(mode)
+        }
+        fn notify(&self, _notification: crucible_core::types::Notification) {}
+        fn toggle_messages(&self) {}
+        fn show_messages(&self) {}
+        fn hide_messages(&self) {}
+        fn clear_messages(&self) {}
     }
 
     #[test]
@@ -825,26 +877,19 @@ pub mod tests {
 }
 
 #[cfg(test)]
-mod default_impl_tests {
+mod unsupported_rpc_tests {
     use super::*;
 
-    /// A backing that implements nothing — the shape every stub takes.
-    struct BareRpc;
-    impl SessionConfigRpc for BareRpc {}
-
-    /// An unimplemented setter must fail, not succeed silently.
+    /// An unsupported setter must fail, not succeed silently.
     ///
-    /// This trait's defaults used to be `Ok(())`, and its own doc explained
-    /// that as sparing stubs "16 boilerplate methods". The convenience is
-    /// real; the return value was not. `NoopSessionRpc` — bound at every
-    /// daemon site — inherited all of them, so a plugin writing
+    /// The trait once defaulted every setter to `Ok(())`, and the daemon
+    /// bound that empty impl at every site, so a plugin that wrote
     /// `session.thinking_budget = 4096` was told it worked and nothing
-    /// happened, which is the single most expensive bug shape in this
-    /// codebase. Defaults still cost an implementor nothing; they just no
-    /// longer lie.
+    /// happened. The methods are required now; the one backing that
+    /// supports nothing must still say so.
     #[test]
-    fn an_unimplemented_setter_reports_that_it_is_unsupported() {
-        let rpc = BareRpc;
+    fn an_unsupported_setter_reports_that_it_is_unsupported() {
+        let rpc = UnsupportedSessionRpc;
 
         for (name, result) in [
             ("temperature", rpc.set_temperature(0.5)),
@@ -862,11 +907,11 @@ mod default_impl_tests {
         }
     }
 
-    /// Getters keep returning defaults — absence of a value is honestly `nil`
-    /// in Lua, and erroring on a read would break `session.x or fallback`.
+    /// Getters stay silent. The absence of a value is honestly `nil` in
+    /// Lua, and an error on a read would break `session.x or fallback`.
     #[test]
-    fn unimplemented_getters_stay_silent() {
-        let rpc = BareRpc;
+    fn unsupported_getters_stay_silent() {
+        let rpc = UnsupportedSessionRpc;
         assert_eq!(rpc.get_temperature(), None);
         assert_eq!(rpc.get_max_tokens(), None);
         assert_eq!(rpc.get_model(), None);

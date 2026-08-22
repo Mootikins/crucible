@@ -208,10 +208,7 @@ async fn a_top_level_raise_does_not_swallow_later_registrations() {
 /// `required = true`; running it twice per session is not cosmetic.
 #[tokio::test]
 async fn re_executing_a_plugin_fires_its_session_hooks_exactly_once() {
-    use crucible_lua::{Session, SessionConfigRpc};
-
-    struct TestRpc;
-    impl SessionConfigRpc for TestRpc {}
+    use crucible_lua::{Session, UnsupportedSessionRpc};
 
     let tmp = tempfile::TempDir::new().unwrap();
     let dir = tmp.path().join("hooker");
@@ -235,7 +232,7 @@ async fn re_executing_a_plugin_fires_its_session_hooks_exactly_once() {
     loader.reload_plugin("hooker").await.expect("reload");
 
     let session = Session::new("hook-once".to_string());
-    session.bind(Box::new(TestRpc));
+    session.bind(Box::new(UnsupportedSessionRpc));
     loader
         .fire_session_start(&session)
         .await

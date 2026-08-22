@@ -45,6 +45,8 @@
 use mlua::{Lua, MetaMethod, Result as LuaResult, UserData, UserDataMethods, Value};
 use std::sync::{Arc, RwLock};
 
+use crate::session_api::{SessionConfigRpc, UnsupportedSessionRpc};
+
 /// Session settings that carry a global default. Every field is `Option`
 /// because "unset" is meaningful: a `None` default leaves whatever the agent
 /// card or session already specified untouched.
@@ -206,7 +208,7 @@ impl SessionDefaultsRpc {
     }
 }
 
-impl crate::session_api::SessionConfigRpc for SessionDefaultsRpc {
+impl SessionConfigRpc for SessionDefaultsRpc {
     fn get_system_prompt(&self) -> Option<String> {
         self.store.get().system_prompt
     }
@@ -252,6 +254,38 @@ impl crate::session_api::SessionConfigRpc for SessionDefaultsRpc {
         self.store.update(|v| v.thinking_budget = Some(budget));
         Ok(())
     }
+
+    // A session default has no agent yet, so the knobs below have no store
+    // to land in. They answer like the unsupported backing does.
+    fn get_model(&self) -> Option<String> {
+        UnsupportedSessionRpc.get_model()
+    }
+
+    fn switch_model(&self, model: &str) -> Result<(), String> {
+        UnsupportedSessionRpc.switch_model(model)
+    }
+
+    fn list_models(&self) -> Vec<String> {
+        UnsupportedSessionRpc.list_models()
+    }
+
+    fn mark_first_message_sent(&self) {}
+
+    fn set_variable(&self, _key: &str, _value: serde_json::Value) {}
+
+    fn get_variable(&self, _key: &str) -> Option<serde_json::Value> {
+        None
+    }
+
+    fn notify(&self, _notification: crucible_core::types::Notification) {}
+
+    fn toggle_messages(&self) {}
+
+    fn show_messages(&self) {}
+
+    fn hide_messages(&self) {}
+
+    fn clear_messages(&self) {}
 }
 
 /// Register `cru.defaults` (and the `crucible.defaults` alias) on `lua`.
@@ -429,8 +463,6 @@ mod tests {
 #[cfg(test)]
 mod session_start_hook_tests {
     use super::*;
-    use crate::session_api::SessionConfigRpc;
-
     /// Setting the mode in an `on_session_start` hook must work, and must not
     /// take the rest of the hook down with it.
     ///

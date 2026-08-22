@@ -190,7 +190,7 @@ pub use modes::{
 };
 pub use session_api::{
     register_session_module, ChannelSessionRpc, CurrentSession, Session, SessionCommand,
-    SessionConfigRpc,
+    SessionConfigRpc, UnsupportedSessionRpc,
 };
 pub use session_defaults::{
     register_session_defaults, SessionDefaultValues, SessionDefaults, SessionDefaultsRpc,
