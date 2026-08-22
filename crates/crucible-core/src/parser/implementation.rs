@@ -360,6 +360,20 @@ impl MarkdownParser for CrucibleParser {
         // is the length delta — recorded as `body_offset` so consumers can
         // convert body-relative extension offsets to file positions.
         let original_len = content.len();
+
+        // Hash the WHOLE input, before the frontmatter is split off. This is
+        // the note's identity for change detection: `NoteRecord::content_hash`
+        // is documented as "BLAKE3 content hash (32 bytes) for change
+        // detection", and the plain-text and canvas paths already fill it.
+        // Markdown did not, so `BlockHash::from_hex("")` failed and every
+        // markdown note stored `BlockHash::zero()` — which is why the daemon
+        // needed a separate in-memory map to know what it had already indexed,
+        // and why every restart reindexed the whole kiln.
+        //
+        // Hashing before the split is what makes it comparable to the bytes on
+        // disk: a change confined to the frontmatter still changes the file.
+        let content_hash = blake3::hash(content.as_bytes()).to_hex().to_string();
+
         let (frontmatter_raw, content, frontmatter_format) = self.parse_frontmatter(content);
         let body_offset = original_len - content.len();
 
@@ -460,6 +474,7 @@ impl MarkdownParser for CrucibleParser {
             .with_footnotes(footnotes)
             .with_metadata(metadata)
             .with_body_offset(body_offset)
+            .with_content_hash(content_hash)
             .build();
 
         // Apply block-level processing if enabled (Phase 2 optimize-data-flow)
@@ -537,6 +552,44 @@ impl CrucibleParser {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    /// `content_hash` is BLAKE3 over the WHOLE input. It is what the daemon
+    /// stores on the note row and compares the file against, so a note whose
+    /// hash is empty or constant makes every pass look like the first.
+    #[tokio::test]
+    async fn content_hash_is_blake3_of_the_whole_input() {
+        let parser = CrucibleParser::new();
+        let content = "---\ntitle: T\n---\nbody\n";
+
+        let parsed = parser
+            .parse_content(content, &PathBuf::from("n.md"))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            parsed.content_hash,
+            blake3::hash(content.as_bytes()).to_hex().to_string()
+        );
+    }
+
+    /// Hashing after the frontmatter split would make a frontmatter-only edit
+    /// invisible, and the file would never be reindexed.
+    #[tokio::test]
+    async fn a_frontmatter_only_edit_changes_the_content_hash() {
+        let parser = CrucibleParser::new();
+        let path = PathBuf::from("n.md");
+
+        let before = parser
+            .parse_content("---\ntitle: A\n---\nbody\n", &path)
+            .await
+            .unwrap();
+        let after = parser
+            .parse_content("---\ntitle: B\n---\nbody\n", &path)
+            .await
+            .unwrap();
+
+        assert_ne!(before.content_hash, after.content_hash);
+    }
 
     /// `body_offset` converts body-relative wikilink spans to file-absolute
     /// bytes — the invariant the rename rewrite engine splices by.
