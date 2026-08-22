@@ -1,6 +1,6 @@
 use super::PluginManager;
 use crate::discovered::{DiscoveredCommand, DiscoveredTool};
-use crate::manifest::{Capability, LoadedPlugin, PluginState};
+use crate::manifest::{LoadedPlugin, PluginState};
 
 impl PluginManager {
     pub fn get(&self, name: &str) -> Option<&LoadedPlugin> {
@@ -23,19 +23,5 @@ impl PluginManager {
 
     pub fn commands(&self) -> Vec<&DiscoveredCommand> {
         self.commands.iter().map(|c| &c.item).collect()
-    }
-
-    pub fn plugin_has_capability(&self, name: &str, cap: Capability) -> bool {
-        self.plugins
-            .get(name)
-            .is_some_and(|p| p.manifest.has_capability(cap))
-    }
-
-    pub fn load_errors(&self) -> Vec<(&str, &str)> {
-        self.plugins
-            .iter()
-            .filter(|(_, p)| p.state == PluginState::Error)
-            .filter_map(|(name, p)| p.last_error.as_deref().map(|e| (name.as_str(), e)))
-            .collect()
     }
 }

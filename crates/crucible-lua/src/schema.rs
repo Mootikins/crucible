@@ -183,11 +183,6 @@ impl LuauType {
             }
         }
     }
-
-    /// Check if this type is optional
-    pub fn is_optional(&self) -> bool {
-        matches!(self, LuauType::Optional { .. })
-    }
 }
 
 /// Convert LuauType to simple string representation

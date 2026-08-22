@@ -14,7 +14,7 @@
 
 use crate::error::LuaError;
 use crate::statusline_items::{Element, Layout, Region, StatusCond, StatusItem};
-use mlua::{AnyUserData, Lua, MetaMethod, Table, UserData, UserDataMethods, Value};
+use mlua::{Lua, MetaMethod, Table, UserData, UserDataMethods, Value};
 
 /// The shipped default layout, authored in Lua.
 const DEFAULT_STATUSLINE_LUA: &str = include_str!("../../../runtime/statusline/default.lua");
@@ -236,11 +236,6 @@ pub fn default_layout_from_lua() -> Result<Layout, LuaError> {
 
     let table: Table = lua.load(DEFAULT_STATUSLINE_LUA).eval()?;
     Ok(layout_from_setup_table(&table))
-}
-
-/// Helper for tests: is this userdata a statusline item?
-pub fn is_status_item(ud: &AnyUserData) -> bool {
-    ud.borrow::<LuaItem>().is_ok()
 }
 
 #[cfg(test)]

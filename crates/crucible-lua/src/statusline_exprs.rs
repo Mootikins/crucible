@@ -77,17 +77,6 @@ impl std::fmt::Debug for StatuslineExprRegistry {
     }
 }
 
-/// Whether a character may not appear in a statusline value.
-///
-/// A statusline value can originate in a branch name, a shell command's
-/// output, or model-derived text, so it gets the same treatment as any other
-/// untrusted display string — see [`crucible_core::text::is_display_hostile`]
-/// for what that covers and why. A bar occupies exactly one line, so newlines
-/// and tabs are hostile here too and the single-line form applies.
-pub fn is_forbidden(c: char) -> bool {
-    crucible_core::text::is_display_hostile(c)
-}
-
 /// Strip forbidden characters and cap the length.
 pub fn sanitize(value: &str) -> String {
     sanitize_uncapped(value)

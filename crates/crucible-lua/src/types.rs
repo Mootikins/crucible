@@ -96,16 +96,6 @@ impl ToolResult {
         }
     }
 
-    /// Create a successful result with metadata
-    pub fn ok_with_metadata(content: impl Into<JsonValue>, metadata: impl Into<JsonValue>) -> Self {
-        Self {
-            content: content.into(),
-            metadata: Some(metadata.into()),
-            success: true,
-            error: None,
-        }
-    }
-
     /// Create an error result
     pub fn err(message: impl Into<String>) -> Self {
         Self {

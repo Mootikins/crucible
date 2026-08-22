@@ -347,13 +347,6 @@ impl Session {
             .expect("session_config_rpc: poisoned while binding RPC client") = Some(rpc);
     }
 
-    pub fn unbind(&self) {
-        *self
-            .rpc
-            .lock()
-            .expect("session_config_rpc: poisoned while unbinding RPC client") = None;
-    }
-
     fn with_rpc<F, T>(&self, f: F) -> mlua::Result<T>
     where
         F: FnOnce(&dyn SessionConfigRpc) -> Result<T, String>,
@@ -506,13 +499,6 @@ impl CurrentSession {
 
     pub fn get_current(&self) -> Option<Session> {
         self.current.lock().ok()?.clone()
-    }
-
-    pub fn clear_current(&self) {
-        *self
-            .current
-            .lock()
-            .expect("current_session: poisoned while clearing current session") = None;
     }
 }
 

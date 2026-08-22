@@ -90,11 +90,6 @@ impl LuaExecutor {
         &self.current_session
     }
 
-    /// Add a session start hook
-    pub fn add_session_start_hook(&mut self, key: RegistryKey) {
-        self.on_session_start_hooks.push(key);
-    }
-
     /// Get all session start hooks
     pub fn session_start_hooks(&self) -> &[RegistryKey] {
         &self.on_session_start_hooks
