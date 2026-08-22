@@ -213,8 +213,9 @@ impl ExternalChangeTracker {
         }
     }
 
-    /// Roots currently watched.
-    pub fn tracked_roots(&self) -> Vec<PathBuf> {
+    /// Roots currently watched. Only the tests observe the set.
+    #[cfg(test)]
+    pub(crate) fn tracked_roots(&self) -> Vec<PathBuf> {
         self.roots.iter().map(|e| e.key().clone()).collect()
     }
 
