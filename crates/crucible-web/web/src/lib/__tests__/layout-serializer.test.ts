@@ -812,6 +812,33 @@ describe('v5→v6 splits the Navigator into Sessions / Search / Files', () => {
     expect(types(restored.tabGroups['edge-left-group'])).toEqual(['sessions']);
   });
 
+  it('seeds Files into the first RESOLVABLE right leaf when leaf[0] is missing', () => {
+    // Same shape the WS-220 chat docking already handles: a split right panel
+    // whose first leaf names a group that is gone. Taking leaf[0] blindly
+    // yields `undefined`, and the optional-chained push then drops the Files
+    // tab with no error at all.
+    const base = v5Layout({ leftTabs: [navigatorTab] }) as never as {
+      tabGroups: Record<string, { id: string; tabs: SeedTab[]; activeTabId: string | null }>;
+      edgePanels: { right: { layout: unknown } };
+    };
+    base.tabGroups['edge-right-b'] = {
+      id: 'edge-right-b',
+      tabs: [{ id: 'tab-right-b', title: 'B', contentType: 'tool' }],
+      activeTabId: 'tab-right-b',
+    };
+    base.edgePanels.right.layout = {
+      id: 'right-split',
+      type: 'split',
+      direction: 'vertical',
+      splitRatio: 0.3,
+      first: paneLayout('right-pane-a', 'gone-group'),
+      second: paneLayout('right-pane-b', 'edge-right-b'),
+    };
+
+    const restored = deserializeLayout(base as never);
+    expect(types(restored.tabGroups['edge-right-b'])).toEqual(['tool', 'files']);
+  });
+
   it('does not re-add a tab the user closed after migrating', () => {
     // Why the split rides the VERSION chain: run it on every load and closing
     // Files is undone at the next startup.

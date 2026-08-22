@@ -251,7 +251,13 @@ function migrateV5toV6(v5: SerializedLayout): SerializedLayout {
 
   if (!present.has('files')) {
     const right = v5.edgePanels?.right;
-    const rightGroupId = right ? edgePanelGroupIds(right)[0] : undefined;
+    // First RESOLVABLE leaf, not leaf[0]. With a split right panel, leaf[0]
+    // may name a group that is gone -- the same case the WS-220 chat docking
+    // below already handles. Taking it blindly yields `undefined`, and the
+    // optional-chained push then drops Files with no error at all.
+    const rightGroupId = right
+      ? edgePanelGroupIds(right).find((id) => tabGroups[id])
+      : undefined;
     const group = rightGroupId ? tabGroups[rightGroupId] : undefined;
     // APPENDED, never prepended, and it never claims `activeTabId`. As
     // `tabs[0]` it becomes what the downstream prune falls back to when the
