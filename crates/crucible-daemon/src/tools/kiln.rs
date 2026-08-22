@@ -4,13 +4,9 @@
 
 #![allow(missing_docs)]
 
-use std::collections::HashSet;
-use std::sync::Arc;
-
 use super::containment::RootSet;
 use super::fs_scope::FsScope;
 use super::helpers::json_success;
-use crucible_core::storage::NoteStore;
 use rmcp::{model::CallToolResult, tool, tool_router};
 
 #[derive(Clone)]
@@ -20,7 +16,6 @@ pub struct KilnTools {
     /// `get_kiln_info` walks, and a count is an oracle: unfiltered it reports
     /// how many sessions the machine has recorded.
     scope: FsScope,
-    note_store: Option<Arc<dyn NoteStore>>,
     /// What `get_kiln_info` calls this kiln when it answers the model.
     ///
     /// The tool used to derive a `"name"` from `scope.anchor().file_name()` —
@@ -37,7 +32,6 @@ impl KilnTools {
     pub fn new(kiln_path: String) -> Self {
         Self {
             scope: FsScope::kiln(kiln_path, RootSet::Ambient),
-            note_store: None,
             name: None,
         }
     }
@@ -56,23 +50,6 @@ impl KilnTools {
         self.scope = self.scope.with_containment(containment);
         self
     }
-
-    fn kiln_path(&self) -> String {
-        self.scope.anchor().to_string_lossy().into_owned()
-    }
-
-    /// Create `KilnTools` with a `NoteStore` for accurate indexed statistics
-    ///
-    /// When a `NoteStore` is provided, `get_kiln_info` returns statistics from
-    /// the indexed database instead of walking the filesystem.
-    #[must_use]
-    pub fn with_note_store(kiln_path: String, note_store: Arc<dyn NoteStore>) -> Self {
-        Self {
-            scope: FsScope::kiln(kiln_path, RootSet::Ambient),
-            note_store: Some(note_store),
-            name: None,
-        }
-    }
 }
 
 #[tool_router]
@@ -90,43 +67,6 @@ impl KilnTools {
             serde_json::Value::Object(fields)
         };
 
-        // Use indexed data from NoteStore when available — workspace
-        // authority bound to this MCP server's kiln.
-        if let Some(store) = &self.note_store {
-            let kiln = self.kiln_path();
-            let authority = crucible_core::storage::Scope::workspace(&kiln)
-                .unwrap_or_else(|_| crucible_core::storage::Scope::workspace_unchecked(&kiln));
-            let notes = store.list(&authority).await.map_err(|e| rmcp::ErrorData {
-                code: rmcp::model::ErrorCode(-32603), // INTERNAL_ERROR
-                message: format!("Failed to list notes: {e}").into(),
-                data: None,
-            })?;
-
-            let indexed_notes = notes.len();
-            let embedded_notes = notes.iter().filter(|n| n.has_embedding()).count();
-            let mut tags = HashSet::new();
-            let mut total_links = 0;
-            for note in &notes {
-                for tag in &note.tags {
-                    tags.insert(tag.clone());
-                }
-                total_links += note.links_to.len();
-            }
-
-            return json_success(named(
-                serde_json::json!({
-                    "indexed_notes": indexed_notes,
-                    "embedded_notes": embedded_notes,
-                    "unique_tags": tags.len(),
-                    "total_links": total_links,
-                })
-                .as_object()
-                .expect("object literal")
-                .clone(),
-            ));
-        }
-
-        // Fallback: walk filesystem when no NoteStore available
         let mut total_files = 0;
         let mut total_size = 0;
         let mut md_files = 0;
@@ -193,7 +133,7 @@ mod tests {
         let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
         let kiln_tools = KilnTools::new(kiln_path);
-        assert_eq!(kiln_tools.kiln_path(), temp_dir.path().to_string_lossy());
+        assert_eq!(kiln_tools.scope.anchor(), temp_dir.path());
     }
 
     /// `get_kiln_info` is a tool the agent can call directly and repeatedly.
@@ -323,134 +263,6 @@ mod tests {
 
         // This should compile and not panic - the tool_router macro generates the router
         let _router = KilnTools::tool_router();
-    }
-
-    #[tokio::test]
-    async fn test_get_kiln_info_uses_note_store() {
-        use async_trait::async_trait;
-        use crucible_core::events::{InternalSessionEvent, SessionEvent};
-        use crucible_core::parser::BlockHash;
-        use crucible_core::storage::{Filter, NoteRecord, NoteStore, StorageResult};
-        use std::sync::{Arc, Mutex};
-
-        struct MockNoteStore {
-            notes: Mutex<Vec<NoteRecord>>,
-        }
-
-        impl MockNoteStore {
-            fn new(notes: Vec<NoteRecord>) -> Self {
-                Self {
-                    notes: Mutex::new(notes),
-                }
-            }
-        }
-
-        #[async_trait]
-        impl NoteStore for MockNoteStore {
-            async fn backlinks(&self, _target_path: &str) -> StorageResult<Vec<String>> {
-                unimplemented!("test double: no link index")
-            }
-
-            async fn inbound_links(
-                &self,
-                _target_path: &str,
-            ) -> StorageResult<Vec<crucible_core::storage::InboundLink>> {
-                unimplemented!("test double: no link index")
-            }
-
-            async fn graph_links(&self) -> StorageResult<Vec<crucible_core::storage::GraphLink>> {
-                unimplemented!("test double: no link index")
-            }
-
-            fn needs_link_reindex(&self) -> bool {
-                false
-            }
-
-            async fn reindex_links(
-                &self,
-                _path: &str,
-                _links: &[crucible_core::storage::LinkOccurrence],
-            ) -> StorageResult<()> {
-                unimplemented!("test double: no link index")
-            }
-
-            /// Change detection is not what this mock is for.
-            async fn content_hash(
-                &self,
-                _path: &str,
-            ) -> StorageResult<Option<crucible_core::parser::BlockHash>> {
-                Ok(None)
-            }
-
-            async fn upsert(&self, _note: NoteRecord) -> StorageResult<Vec<SessionEvent>> {
-                Ok(vec![])
-            }
-            async fn get(
-                &self,
-                _path: &str,
-                _authority: &crucible_core::storage::Scope,
-            ) -> StorageResult<Option<NoteRecord>> {
-                Ok(None)
-            }
-            async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
-                Ok(SessionEvent::internal(InternalSessionEvent::NoteDeleted {
-                    path: path.into(),
-                    existed: false,
-                }))
-            }
-            async fn list(
-                &self,
-                _authority: &crucible_core::storage::Scope,
-            ) -> StorageResult<Vec<NoteRecord>> {
-                Ok(self.notes.lock().unwrap().clone())
-            }
-            async fn get_by_hash(
-                &self,
-                _hash: &BlockHash,
-                _authority: &crucible_core::storage::Scope,
-            ) -> StorageResult<Option<NoteRecord>> {
-                Ok(None)
-            }
-            async fn search(
-                &self,
-                _embedding: &[f32],
-                _k: usize,
-                _filter: Option<Filter>,
-            ) -> StorageResult<Vec<crucible_core::storage::note_store::SearchResult>> {
-                Ok(vec![])
-            }
-        }
-
-        let notes = vec![
-            NoteRecord::new("notes/alpha.md", BlockHash::zero())
-                .with_title("Alpha")
-                .with_tags(vec!["rust".into(), "dev".into()])
-                .with_links(vec!["notes/beta.md".into()]),
-            NoteRecord::new("notes/beta.md", BlockHash::zero())
-                .with_title("Beta")
-                .with_tags(vec!["rust".into()])
-                .with_embedding(vec![0.1; 768]),
-            NoteRecord::new("archive/old.md", BlockHash::zero())
-                .with_title("Old Note")
-                .with_tags(vec!["archive".into()]),
-        ];
-
-        let store = Arc::new(MockNoteStore::new(notes));
-        let kiln_tools = KilnTools::with_note_store("/tmp/test-kiln".into(), store)
-            .with_name(Some(crate::test_support::kiln_name("work-notes")));
-
-        let result = kiln_tools.get_kiln_info().await.unwrap();
-        let content = result.content.first().unwrap();
-        let raw_text = content.as_text().unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
-
-        // The REGISTRY name, not `test-kiln` — the anchor's basename, which is
-        // what this used to report.
-        assert_eq!(parsed["name"], "work-notes");
-        assert_eq!(parsed["indexed_notes"], 3);
-        assert_eq!(parsed["embedded_notes"], 1);
-        assert_eq!(parsed["unique_tags"], 3); // rust, dev, archive
-        assert_eq!(parsed["total_links"], 1);
     }
 
     #[tokio::test]

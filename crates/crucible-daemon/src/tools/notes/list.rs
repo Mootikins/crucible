@@ -4,100 +4,13 @@ use super::super::fs_scope::ContainedPath;
 use super::super::helpers::McpResultExt;
 use super::super::utils::parse_yaml_frontmatter;
 use super::NoteTools;
-use crucible_core::storage::NoteStore;
 use rmcp::model::CallToolResult;
-use std::sync::Arc;
 
 impl NoteTools {
-    /// List notes using `NoteStore` index
-    pub(super) async fn list_notes_via_store(
-        &self,
-        note_store: &Arc<dyn NoteStore>,
-        folder: Option<&str>,
-        include_frontmatter: bool,
-        recursive: bool,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        // MCP tools are scoped to the kiln they're serving. A plugin/agent
-        // hosting MCP against this kiln gets workspace authority; cross-kiln
-        // notes are not visible through this surface.
-        let kiln = self.kiln_path();
-        let authority = crucible_core::storage::Scope::workspace(&kiln)
-            .unwrap_or_else(|_| crucible_core::storage::Scope::workspace_unchecked(&kiln));
-        let all_notes = note_store
-            .list(&authority)
-            .await
-            .mcp_err_ctx("Failed to list notes from store")?;
-
-        let folder_prefix = folder.unwrap_or("");
-        let mut notes = Vec::new();
-
-        for note in all_notes {
-            // Filter by folder
-            if !folder_prefix.is_empty() {
-                if !note.path.starts_with(folder_prefix) {
-                    continue;
-                }
-
-                // Non-recursive: check if note is in the immediate folder
-                if !recursive {
-                    let relative_to_folder =
-                        note.path.strip_prefix(folder_prefix).unwrap_or(&note.path);
-                    let relative_to_folder = relative_to_folder.trim_start_matches('/');
-                    // If there's a / in the relative path, it's in a subfolder
-                    if relative_to_folder.contains('/') {
-                        continue;
-                    }
-                }
-            } else if !recursive {
-                // Non-recursive at root: only top-level files
-                if note.path.contains('/') {
-                    continue;
-                }
-            }
-
-            let modified: Option<u64> = note.updated_at.timestamp().try_into().ok();
-
-            let mut note_json = serde_json::json!({
-                "path": note.path,
-                "title": note.title,
-                "modified": modified,
-                "source": "index"
-            });
-
-            if include_frontmatter {
-                // Build frontmatter from NoteRecord
-                let mut frontmatter = serde_json::json!({
-                    "title": note.title,
-                    "tags": note.tags,
-                });
-
-                if let Some(obj) = frontmatter.as_object_mut() {
-                    for (k, v) in &note.properties {
-                        obj.insert(k.clone(), v.clone());
-                    }
-                }
-
-                note_json["frontmatter"] = frontmatter;
-                note_json["tags_count"] = serde_json::json!(note.tags.len());
-                note_json["links_count"] = serde_json::json!(note.links_to.len());
-            }
-
-            notes.push(note_json);
-        }
-
-        super::super::helpers::json_success(serde_json::json!({
-            "notes": notes,
-            "folder": folder,
-            "count": notes.len(),
-            "recursive": recursive,
-            "source": "index"
-        }))
-    }
-
-    /// List notes using filesystem scanning (fallback)
+    /// List notes from the filesystem.
     ///
-    /// This function is async for API consistency with the `NoteStore` path,
-    /// even though filesystem operations are synchronous.
+    /// The function is async because the tool router calls it as a future,
+    /// although the filesystem operations are synchronous.
     #[allow(clippy::unused_async)]
     pub(super) async fn list_notes_via_filesystem(
         &self,

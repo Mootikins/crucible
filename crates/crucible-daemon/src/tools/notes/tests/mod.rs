@@ -2,7 +2,6 @@
 
 mod crud;
 mod list;
-mod note_store;
 mod path_safety;
 
 use std::fs;

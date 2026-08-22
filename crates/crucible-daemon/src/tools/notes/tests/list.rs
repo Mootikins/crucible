@@ -185,3 +185,36 @@ async fn test_list_notes_non_recursive() {
         }
     }
 }
+
+#[tokio::test]
+async fn test_list_notes_filters_by_folder() {
+    let temp_dir = TempDir::new().unwrap();
+    let kiln_path = temp_dir.path().to_string_lossy().to_string();
+    let note_tools = NoteTools::new(kiln_path);
+
+    std::fs::create_dir(temp_dir.path().join("projects")).unwrap();
+    for path in ["root.md", "projects/rust.md", "projects/python.md"] {
+        note_tools
+            .create_note(Parameters(CreateNoteParams {
+                path: path.to_string(),
+                content: "Content".to_string(),
+                frontmatter: None,
+            }))
+            .await
+            .unwrap();
+    }
+
+    let result = note_tools
+        .list_notes(Parameters(ListNotesParams {
+            folder: Some("projects".to_string()),
+            include_frontmatter: false,
+            recursive: true,
+        }))
+        .await
+        .unwrap();
+
+    let raw_text = result.content.first().unwrap().as_text().unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
+    assert_eq!(parsed["count"], 2);
+    assert_eq!(parsed["folder"], "projects");
+}

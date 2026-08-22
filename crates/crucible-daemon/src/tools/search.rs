@@ -1,18 +1,7 @@
 //! Search operations tools
 //!
 //! This module provides semantic, text, and property search tools.
-//!
-//! # NoteStore Integration
-//!
-//! `SearchTools` can optionally use a `NoteStore` for property searches. When a
-//! `NoteStore` is provided, `property_search` uses the indexed metadata instead of
-//! walking the filesystem. This provides:
-//!
-//! - Faster queries on large kilns
-//! - Consistent data from the indexed store
-//! - Support for complex filters via `NoteStore::search`
-//!
-//! If no `NoteStore` is provided, property search falls back to filesystem scanning.
+//! `property_search` walks the kiln and parses the frontmatter of each note.
 
 #![allow(clippy::doc_markdown, clippy::manual_let_else, missing_docs)]
 
@@ -22,7 +11,6 @@ use super::grep_engine::{grep_search, GrepSearchError, WalkScope};
 use super::helpers::{json_success, McpResultExt};
 use crate::multi_kiln_search::KilnSearchSource;
 use crucible_core::serde_helpers::default_true;
-use crucible_core::storage::NoteStore;
 use crucible_core::{enrichment::EmbeddingProvider, traits::KnowledgeRepository};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{model::CallToolResult, tool, tool_router};
@@ -51,8 +39,6 @@ pub struct SearchTools {
     /// has to apply to what they yield, not only to the folder a caller names.
     scope: FsScope,
     embedding_provider: Arc<dyn EmbeddingProvider>,
-    /// Optional NoteStore for indexed property searches
-    note_store: Option<Arc<dyn NoteStore>>,
     /// Kilns `semantic_search` fans out across: the primary plus any
     /// session-connected kilns (same sources precognition uses — one
     /// builder, one filter policy). Trust gating happens at attach time.
@@ -114,7 +100,6 @@ impl SearchTools {
         Self {
             scope: FsScope::kiln(kiln_path, RootSet::Ambient),
             embedding_provider,
-            note_store: None,
             search_sources,
         }
     }
@@ -125,22 +110,6 @@ impl SearchTools {
     pub(crate) fn with_containment(mut self, containment: RootSet) -> Self {
         self.scope = self.scope.with_containment(containment);
         self
-    }
-
-    /// The kiln root, for storage-authority derivation and relative reporting.
-    fn kiln_path(&self) -> String {
-        self.scope.anchor().to_string_lossy().into_owned()
-    }
-
-    pub fn with_note_store(
-        kiln_path: String,
-        knowledge_repo: Arc<dyn KnowledgeRepository>,
-        embedding_provider: Arc<dyn EmbeddingProvider>,
-        note_store: Arc<dyn NoteStore>,
-    ) -> Self {
-        let mut tools = Self::new(kiln_path, knowledge_repo, embedding_provider);
-        tools.note_store = Some(note_store);
-        tools
     }
 
     /// Replace the search fan-out set with the session's kilns, as built by
@@ -302,90 +271,14 @@ impl SearchTools {
             .ok_or_else(|| rmcp::ErrorData::invalid_params("properties must be an object", None))?;
         let limit = params.limit;
 
-        // Use NoteStore if available for faster indexed access
-        if let Some(ref note_store) = self.note_store {
-            return self
-                .property_search_via_store(note_store, search_props, limit, &params.properties)
-                .await;
-        }
-
-        // Fall back to filesystem-based search
         self.property_search_via_filesystem(search_props, limit, &params.properties)
             .await
     }
 
-    /// Property search using NoteStore index
-    async fn property_search_via_store(
-        &self,
-        note_store: &Arc<dyn NoteStore>,
-        search_props: &serde_json::Map<String, serde_json::Value>,
-        limit: usize,
-        original_properties: &serde_json::Value,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
-        // Get all notes from the store — workspace authority derived from
-        // the kiln this MCP server is bound to.
-        let kiln = self.kiln_path();
-        let authority = crucible_core::storage::Scope::workspace(&kiln)
-            .unwrap_or_else(|_| crucible_core::storage::Scope::workspace_unchecked(&kiln));
-        let all_notes = note_store
-            .list(&authority)
-            .await
-            .mcp_err_ctx("Failed to list notes from store")?;
-
-        let mut matches = Vec::new();
-
-        for note in all_notes {
-            // Check if all search properties match against the note's properties
-            let matches_all = search_props.iter().all(|(key, search_value)| {
-                // Special handling for tags - check the tags field directly
-                if key == "tags" {
-                    return match_tags_property(&note.tags, search_value);
-                }
-
-                // Check in properties map
-                note.properties
-                    .get(key)
-                    .is_some_and(|prop_value| property_matches(prop_value, search_value))
-            });
-
-            if matches_all {
-                // Convert NoteRecord properties to JSON for consistent response format
-                let frontmatter: serde_json::Value = serde_json::json!({
-                    "title": note.title,
-                    "tags": note.tags,
-                });
-
-                // Merge with other properties
-                let mut frontmatter_obj = frontmatter.as_object().cloned().unwrap_or_default();
-                for (k, v) in &note.properties {
-                    frontmatter_obj.insert(k.clone(), v.clone());
-                }
-
-                matches.push(serde_json::json!({
-                    "path": note.path,
-                    "frontmatter": frontmatter_obj,
-                    "source": "index",
-                }));
-
-                if matches.len() >= limit {
-                    break;
-                }
-            }
-        }
-
-        let count = matches.len();
-
-        json_success(serde_json::json!({
-            "properties": original_properties,
-            "matches": matches,
-            "count": count,
-        }))
-    }
-
-    /// Property search using filesystem scanning (fallback)
+    /// Property search over the filesystem.
     ///
-    /// This function is async for API consistency with the `NoteStore` path,
-    /// even though filesystem operations are synchronous.
+    /// The function is async because the tool router calls it as a future,
+    /// although the filesystem operations are synchronous.
     #[allow(clippy::unused_async)]
     async fn property_search_via_filesystem(
         &self,
@@ -469,25 +362,6 @@ fn property_matches(prop_value: &serde_json::Value, search_value: &serde_json::V
     } else {
         // Exact match
         prop_value == search_value
-    }
-}
-
-/// Check if tags match a search value (special handling for NoteRecord.tags)
-fn match_tags_property(tags: &[String], search_value: &serde_json::Value) -> bool {
-    if let Some(search_array) = search_value.as_array() {
-        // OR logic: any search tag matches any note tag
-        search_array.iter().any(|sv| {
-            if let Some(s) = sv.as_str() {
-                tags.contains(&s.to_string())
-            } else {
-                false
-            }
-        })
-    } else if let Some(search_str) = search_value.as_str() {
-        // Single tag match
-        tags.contains(&search_str.to_string())
-    } else {
-        false
     }
 }
 

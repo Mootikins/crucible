@@ -1,17 +1,7 @@
 //! Note CRUD operations tools
 //!
-//! This module provides simple filesystem-based note CRUD tools.
-//!
-//! # `NoteStore` Integration
-//!
-//! `NoteTools` can optionally use a `NoteStore` for faster metadata reads. When a
-//! `NoteStore` is provided:
-//!
-//! - `read_metadata` uses the indexed metadata instead of parsing from filesystem
-//! - `list_notes` uses the indexed note list for faster directory listing
-//!
-//! CRUD operations (create, read, update, delete) always use the filesystem directly
-//! since the filesystem is the source of truth.
+//! This module provides simple filesystem-based note CRUD tools. The
+//! filesystem is the source of truth; every tool reads it directly.
 
 #![allow(missing_docs)]
 
@@ -26,7 +16,6 @@ use super::containment::RootSet;
 use super::fs_scope::FsScope;
 use super::helpers::{json_success, McpResultExt};
 use super::utils::parse_yaml_frontmatter;
-use crucible_core::storage::NoteStore;
 use helpers::{
     extract_content_without_frontmatter, resolve_note_write, serialize_frontmatter_to_yaml,
 };
@@ -38,7 +27,6 @@ use helpers::{
 pub(crate) use helpers::{ensure_md_suffix, reject_non_note};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{model::CallToolResult, tool, tool_router};
-use std::sync::Arc;
 
 pub use params::{
     CreateNoteParams, DeleteNoteParams, ListNotesParams, ReadMetadataParams, ReadNoteParams,
@@ -54,8 +42,6 @@ pub struct NoteTools {
     /// to the session's root set. Holding a `String` here is what let
     /// `read_note` hand over a transcript `read_file` refused.
     scope: FsScope,
-    /// Optional `NoteStore` for faster metadata reads
-    note_store: Option<Arc<dyn NoteStore>>,
 }
 
 impl NoteTools {
@@ -64,19 +50,6 @@ impl NoteTools {
     pub fn new(kiln_path: String) -> Self {
         Self {
             scope: FsScope::kiln(kiln_path, RootSet::Ambient),
-            note_store: None,
-        }
-    }
-
-    /// Create `NoteTools` with a `NoteStore` for faster metadata operations
-    ///
-    /// When a `NoteStore` is provided, `read_metadata` and `list_notes` use the
-    /// indexed metadata instead of parsing from the filesystem.
-    #[must_use]
-    pub fn with_note_store(kiln_path: String, note_store: Arc<dyn NoteStore>) -> Self {
-        Self {
-            scope: FsScope::kiln(kiln_path, RootSet::Ambient),
-            note_store: Some(note_store),
         }
     }
 
@@ -87,12 +60,6 @@ impl NoteTools {
     pub(crate) fn with_containment(mut self, containment: RootSet) -> Self {
         self.scope = self.scope.with_containment(containment);
         self
-    }
-
-    /// The kiln root, for the callers that need a base rather than a path:
-    /// storage-authority derivation and relative reporting.
-    pub(super) fn kiln_path(&self) -> String {
-        self.scope.anchor().to_string_lossy().into_owned()
     }
 
     pub(super) fn scope(&self) -> &FsScope {
@@ -230,48 +197,6 @@ impl NoteTools {
 
         // Security: Validate path to prevent traversal attacks
         let full_path = self.scope.resolve(&path)?;
-
-        // Try NoteStore first for faster indexed access
-        if let Some(ref note_store) = self.note_store {
-            // Workspace authority derived from this MCP server's bound kiln.
-            let kiln = self.kiln_path();
-            let authority = crucible_core::storage::Scope::workspace(&kiln)
-                .unwrap_or_else(|_| crucible_core::storage::Scope::workspace_unchecked(&kiln));
-            if let Ok(Some(note_record)) = note_store.get(&path, &authority).await {
-                // Build frontmatter from NoteRecord
-                let mut frontmatter = serde_json::json!({
-                    "title": note_record.title,
-                    "tags": note_record.tags,
-                });
-
-                // Merge additional properties
-                if let Some(obj) = frontmatter.as_object_mut() {
-                    for (k, v) in &note_record.properties {
-                        obj.insert(k.clone(), v.clone());
-                    }
-                }
-
-                let modified = note_record
-                    .updated_at
-                    .timestamp()
-                    .try_into()
-                    .ok()
-                    .map(|ts: u64| ts);
-
-                return json_success(serde_json::json!({
-                    "path": path,
-                    "frontmatter": frontmatter,
-                    "stats": {
-                        "links_count": note_record.links_to.len(),
-                        "tags_count": note_record.tags.len(),
-                        "has_embedding": note_record.has_embedding(),
-                    },
-                    "modified": modified,
-                    "source": "index"
-                }));
-            }
-            // Note not found in store, fall through to filesystem
-        }
 
         // Fallback: read from filesystem
         if !full_path.exists() {
@@ -449,19 +374,6 @@ impl NoteTools {
             ));
         }
 
-        // Try NoteStore first for faster indexed access
-        if let Some(ref note_store) = self.note_store {
-            return self
-                .list_notes_via_store(
-                    note_store,
-                    folder.as_deref(),
-                    include_frontmatter,
-                    recursive,
-                )
-                .await;
-        }
-
-        // Fallback: list from filesystem
         self.list_notes_via_filesystem(
             &search_path,
             folder.as_deref(),

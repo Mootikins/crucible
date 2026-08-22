@@ -15,14 +15,6 @@
 //! - Organized business logic in separate modules
 //! - Easy testing of individual tool categories
 //! - Future composition of additional tool routers
-//!
-//! ## `NoteStore` Integration
-//!
-//! When a `NoteStore` is provided via `with_note_store()`, the tools use indexed
-//! metadata for faster operations:
-//! - `read_metadata` uses the index instead of parsing from filesystem
-//! - `list_notes` uses the index for directory listing
-//! - `property_search` uses the index for property filtering
 
 #![allow(missing_docs)]
 
@@ -30,7 +22,6 @@ use super::helpers::{make_server_info, McpResultExt};
 use super::{KilnTools, NoteTools, SearchTools};
 use crucible_core::background::{BackgroundSpawner, JobStatus};
 use crucible_core::enrichment::EmbeddingProvider;
-use crucible_core::storage::NoteStore;
 use crucible_core::traits::KnowledgeRepository;
 use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -230,42 +221,6 @@ impl CrucibleMcpServer {
     pub fn with_kiln_name(mut self, name: Option<crucible_core::config::KilnName>) -> Self {
         self.kiln_tools = self.kiln_tools.with_name(name);
         self
-    }
-
-    /// Create a new MCP server with `NoteStore` for optimized operations
-    ///
-    /// When a `NoteStore` is provided, the following operations use indexed metadata:
-    /// - `read_metadata` - Uses index instead of parsing from filesystem
-    /// - `list_notes` - Uses index for directory listing
-    /// - `property_search` - Uses index for property filtering
-    ///
-    /// # Arguments
-    ///
-    /// * `kiln_path` - Path to the kiln directory
-    /// * `knowledge_repo` - Repository for semantic search
-    /// * `embedding_provider` - Provider for generating embeddings
-    /// * `note_store` - `NoteStore` for indexed metadata access
-    pub fn with_note_store(
-        kiln_path: String,
-        knowledge_repo: Arc<dyn KnowledgeRepository>,
-        embedding_provider: Arc<dyn EmbeddingProvider>,
-        note_store: Arc<dyn NoteStore>,
-    ) -> Self {
-        let kiln_path_buf = PathBuf::from(kiln_path.as_str());
-        Self {
-            workspace_path: kiln_path_buf.clone(),
-            note_tools: NoteTools::with_note_store(kiln_path.clone(), note_store.clone()),
-            search_tools: SearchTools::with_note_store(
-                kiln_path.clone(),
-                knowledge_repo,
-                embedding_provider,
-                note_store.clone(),
-            ),
-            kiln_tools: KilnTools::with_note_store(kiln_path, note_store),
-            kiln_path: kiln_path_buf,
-            delegation_context: None,
-            tool_router: Self::tool_router(),
-        }
     }
 
     /// Every tool name this server owns, before any per-session filtering.
