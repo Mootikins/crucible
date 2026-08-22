@@ -442,9 +442,9 @@ fn name_list(names: impl Iterator<Item = String>) -> String {
     }
 }
 
-/// Config-derived internal-agent defaults — the daemon-side equivalent of
-/// `SessionAgent::internal_from_config` — with any caller-supplied
-/// provider/provider_key/model/endpoint overrides applied on top.
+/// Config-derived internal-agent defaults — `SessionAgent::internal_defaults`
+/// — with any caller-supplied provider/provider_key/model/endpoint overrides
+/// applied on top.
 ///
 /// Base temperature/max_tokens/MCP servers/precognition always come from the
 /// daemon's own config so web sessions match CLI sessions. Only when the
@@ -458,87 +458,37 @@ fn build_default_internal_agent(
 ) -> Result<crucible_core::session::SessionAgent, String> {
     use crucible_core::config::BackendType;
 
-    let default = llm_config.as_ref().and_then(|c| c.default_provider());
-    let (def_provider, def_model, def_key, def_endpoint, def_temperature, def_max_tokens) =
-        match default {
-            Some((key, p)) => (
-                p.provider_type,
-                p.model(),
-                key.clone(),
-                Some(p.endpoint()),
-                Some(p.temperature() as f64),
-                Some(p.max_tokens()),
-            ),
-            None => (
-                BackendType::Ollama,
-                crucible_core::config::DEFAULT_CHAT_MODEL.to_string(),
-                BackendType::Ollama.as_str().to_string(),
-                None,
-                None,
-                None,
-            ),
-        };
+    let mut agent =
+        crucible_core::session::SessionAgent::internal_defaults(llm_config.as_ref(), mcp_config);
 
     let req_provider = params.provider.as_deref();
     let req_provider_key = params.provider_key.clone();
     let req_model = params.model.clone();
     let req_endpoint = params.endpoint.clone();
 
-    let provider_defaulted = req_provider.is_none();
-    let provider = match req_provider {
-        Some(p) => p
-            .parse::<BackendType>()
-            .map_err(|e| format!("Invalid provider: {e}"))?,
-        None => def_provider,
-    };
-    let model = req_model.unwrap_or(def_model);
-    let (endpoint, provider_key) = if provider_defaulted {
-        (
-            req_endpoint.or(def_endpoint),
-            req_provider_key.unwrap_or(def_key),
-        )
-    } else {
-        (
-            req_endpoint,
-            req_provider_key.unwrap_or_else(|| provider.as_str().to_string()),
-        )
-    };
+    if let Some(model) = req_model {
+        agent.model = model;
+    }
+    match req_provider {
+        None => {
+            if req_endpoint.is_some() {
+                agent.endpoint = req_endpoint;
+            }
+            if req_provider_key.is_some() {
+                agent.provider_key = req_provider_key;
+            }
+        }
+        Some(p) => {
+            agent.provider = p
+                .parse::<BackendType>()
+                .map_err(|e| format!("Invalid provider: {e}"))?;
+            agent.endpoint = req_endpoint;
+            agent.provider_key =
+                Some(req_provider_key.unwrap_or_else(|| agent.provider.as_str().to_string()));
+        }
+    }
 
-    let mcp_servers = mcp_config
-        .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
-        .unwrap_or_default();
-
-    Ok(crucible_core::session::SessionAgent {
-        agent_type: "internal".to_string(),
-        agent_name: None,
-        provider_key: Some(provider_key),
-        provider,
-        model,
-        system_prompt: String::new(),
-        temperature: def_temperature,
-        max_tokens: def_max_tokens,
-        max_context_tokens: None,
-        thinking_budget: None,
-        endpoint,
-        env_overrides: std::collections::HashMap::new(),
-        mcp_servers,
-        agent_card_name: None,
-        capabilities: None,
-        agent_description: None,
-        delegation_config: None,
-        precognition_enabled: true,
-        precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
-        context_budget: None,
-        context_strategy: Default::default(),
-        context_window: None,
-        output_validation: Default::default(),
-        validation_retries: 3,
-        autocompact_threshold: None,
-        tool_policy: None,
-        mode: None,
-    })
+    Ok(agent)
 }
 
 pub(crate) fn validate_trust_level(

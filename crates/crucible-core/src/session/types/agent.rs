@@ -251,10 +251,8 @@ impl SessionAgent {
         // configured defaults it may freely override? Only a session whose
         // agent carries a delegation config can delegate (the spawner reads it
         // before resolving a target: `crucible-daemon/src/delegation.rs:333`),
-        // and every default builder hardcodes `delegation_config: None`:
-        //   - crucible-daemon/src/server/session/create.rs:367
-        //     (`build_default_internal_agent`, the base at create.rs:260)
-        //   - `SessionAgent::internal_from_config` below
+        // and the one default builder, `SessionAgent::internal_defaults`
+        // below, hardcodes `delegation_config: None`.
         // A disabled config counts as a parent too: narrowing where it wasn't
         // needed is not the unsafe direction.
         let under_parent = base.delegation_config.is_some();
@@ -331,49 +329,65 @@ impl SessionAgent {
     ///
     /// Every surface that configures a session agent from config (CLI chat,
     /// ACP bridge, web session create) goes through this one builder so they
-    /// all get identical provider/model/temperature/MCP defaults.
+    /// all get identical provider/model/temperature/MCP defaults. The
+    /// `[chat]` values fill the gaps only when no default provider exists.
     pub fn internal_from_config(config: &crate::config::CliAppConfig) -> Self {
-        let effective_llm = config.effective_llm_provider().ok();
-        let model = effective_llm
-            .as_ref()
-            .map(|p| p.model.clone())
-            .or_else(|| config.chat.model.clone())
-            .unwrap_or_else(|| crate::config::DEFAULT_CHAT_MODEL.to_string());
-        let mcp_servers = config
-            .mcp
-            .as_ref()
+        let mut agent = Self::internal_defaults(Some(&config.llm), config.mcp.as_ref());
+        if config.llm.default_provider().is_none() {
+            if let Some(model) = config.chat.model.clone() {
+                agent.model = model;
+            }
+            agent.temperature = config.chat.temperature.map(|t| t as f64);
+            agent.max_tokens = config.chat.max_tokens;
+            agent.endpoint = config.chat.endpoint.clone();
+        }
+        agent
+    }
+
+    /// Internal-agent defaults from the `[llm]` default provider and the MCP
+    /// server list alone. The daemon holds these two sections without a full
+    /// `CliAppConfig`, so it starts here and applies request overrides on top.
+    /// Without a default provider the agent points at Ollama with
+    /// `DEFAULT_CHAT_MODEL`, no endpoint, no temperature and no token cap.
+    pub fn internal_defaults(
+        llm: Option<&crate::config::LlmConfig>,
+        mcp: Option<&crate::config::McpConfig>,
+    ) -> Self {
+        let default = llm.and_then(|c| c.default_provider());
+        let (provider, model, provider_key, endpoint, temperature, max_tokens) = match default {
+            Some((key, p)) => (
+                p.provider_type,
+                p.model(),
+                key.clone(),
+                Some(p.endpoint()),
+                Some(p.temperature() as f64),
+                Some(p.max_tokens()),
+            ),
+            None => (
+                BackendType::Ollama,
+                crate::config::DEFAULT_CHAT_MODEL.to_string(),
+                BackendType::Ollama.as_str().to_string(),
+                None,
+                None,
+                None,
+            ),
+        };
+        let mcp_servers = mcp
             .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
             .unwrap_or_default();
-        let backend_type = effective_llm
-            .as_ref()
-            .map(|p| p.provider_type)
-            .unwrap_or(BackendType::Ollama);
-        let provider_key = effective_llm
-            .as_ref()
-            .map(|p| p.key.clone())
-            .unwrap_or_else(|| backend_type.as_str().to_string());
 
         Self {
             agent_type: "internal".to_string(),
             agent_name: None,
             provider_key: Some(provider_key),
-            provider: backend_type,
+            provider,
             model,
             system_prompt: String::new(),
-            temperature: effective_llm
-                .as_ref()
-                .map(|p| p.temperature as f64)
-                .or_else(|| config.chat.temperature.map(|t| t as f64)),
-            max_tokens: effective_llm
-                .as_ref()
-                .map(|p| p.max_tokens)
-                .or(config.chat.max_tokens),
+            temperature,
+            max_tokens,
             max_context_tokens: None,
             thinking_budget: None,
-            endpoint: effective_llm
-                .as_ref()
-                .map(|p| p.endpoint.clone())
-                .or_else(|| config.chat.endpoint.clone()),
+            endpoint,
             env_overrides: HashMap::new(),
             mcp_servers,
             agent_card_name: None,
@@ -684,5 +698,69 @@ mod narrowing_tests {
         let child = SessionAgent::from_card(&card, &base, None);
 
         assert_eq!(child.mcp_servers, vec!["shell".to_string()]);
+    }
+}
+
+#[cfg(test)]
+mod internal_defaults_tests {
+    use super::*;
+    use crate::config::{CliAppConfig, LlmConfig, LlmProviderConfig, DEFAULT_CHAT_MODEL};
+
+    #[test]
+    fn without_a_default_provider_the_agent_points_at_ollama() {
+        let agent = SessionAgent::internal_defaults(None, None);
+
+        assert_eq!(agent.agent_type, "internal");
+        assert_eq!(agent.provider, BackendType::Ollama);
+        assert_eq!(agent.provider_key.as_deref(), Some("ollama"));
+        assert_eq!(agent.model, DEFAULT_CHAT_MODEL);
+        assert_eq!(agent.endpoint, None);
+        assert_eq!(agent.temperature, None);
+        assert_eq!(agent.max_tokens, None);
+        assert!(agent.mcp_servers.is_empty());
+        assert_eq!(agent.delegation_config, None);
+    }
+
+    #[test]
+    fn the_default_provider_supplies_model_key_endpoint_and_knobs() {
+        let llm = LlmConfig {
+            default: Some("anthropic".to_string()),
+            providers: HashMap::from([(
+                "anthropic".to_string(),
+                LlmProviderConfig::builder(BackendType::Anthropic)
+                    .model("claude-x")
+                    .build(),
+            )]),
+            ..LlmConfig::default()
+        };
+
+        let agent = SessionAgent::internal_defaults(Some(&llm), None);
+
+        assert_eq!(agent.provider, BackendType::Anthropic);
+        assert_eq!(agent.provider_key.as_deref(), Some("anthropic"));
+        assert_eq!(agent.model, "claude-x");
+        assert!(agent.endpoint.is_some());
+        assert!(agent.temperature.is_some());
+        assert!(agent.max_tokens.is_some());
+    }
+
+    #[test]
+    fn chat_section_fills_the_gaps_only_without_a_default_provider() {
+        let config = CliAppConfig {
+            chat: crate::config::ChatConfig {
+                model: Some("chat-model".to_string()),
+                temperature: Some(0.25),
+                endpoint: Some("http://chat".to_string()),
+                ..Default::default()
+            },
+            ..CliAppConfig::default()
+        };
+
+        let agent = SessionAgent::internal_from_config(&config);
+
+        assert_eq!(agent.model, "chat-model");
+        assert_eq!(agent.temperature, Some(0.25));
+        assert_eq!(agent.endpoint.as_deref(), Some("http://chat"));
+        assert_eq!(agent.provider, BackendType::Ollama);
     }
 }

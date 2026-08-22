@@ -1,7 +1,6 @@
 use crate::config::CliConfig;
 use anyhow::{anyhow, Result};
 use crucible_core::config::BackendType;
-use crucible_core::session::OutputValidation;
 use crucible_daemon::DaemonClient;
 
 /// Whether `session create` should print only the session id.
@@ -515,43 +514,13 @@ pub(super) mod rpc {
         endpoint: Option<String>,
         format: &str,
     ) -> Result<()> {
-        let mcp_servers = config
-            .mcp
-            .as_ref()
-            .map(|mcp| mcp.servers.iter().map(|s| s.name.clone()).collect())
-            .unwrap_or_default();
-
-        let agent = crucible_core::session::SessionAgent {
-            agent_type: "internal".to_string(),
-            agent_name: None,
-            provider_key: Some(provider.to_string()),
-            provider,
-            model: model.to_string(),
-            system_prompt: String::new(),
-            temperature: None,
-            max_tokens: None,
-            max_context_tokens: None,
-            thinking_budget: None,
-            endpoint: endpoint.clone(),
-            env_overrides: std::collections::HashMap::new(),
-            mcp_servers,
-            agent_card_name: None,
-            capabilities: None,
-            agent_description: None,
-            delegation_config: None,
-            precognition_enabled: true,
-            precognition_results: 5,
-            max_iterations: None,
-            execution_timeout_secs: None,
-            context_budget: None,
-            context_strategy: Default::default(),
-            context_window: None,
-            output_validation: OutputValidation::default(),
-            validation_retries: 3,
-            autocompact_threshold: None,
-            tool_policy: None,
-            mode: None,
-        };
+        // The provider is explicit here, so the agent must not borrow the
+        // config default's endpoint or key (same rule as `session.create`).
+        let mut agent = crucible_core::session::SessionAgent::internal_from_config(config);
+        agent.provider_key = Some(provider.to_string());
+        agent.provider = provider;
+        agent.model = model.to_string();
+        agent.endpoint = endpoint.clone();
 
         client.session_configure_agent(session_id, &agent).await?;
 
