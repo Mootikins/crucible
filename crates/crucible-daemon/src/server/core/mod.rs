@@ -362,15 +362,21 @@ where
     outcome
 }
 
+/// `authorized_uid` is the daemon's own uid; the loop refuses any peer whose
+/// `SO_PEERCRED` uid differs. The subscription manager and the shutdown latch
+/// come from the dispatcher's context, so the connection fires exactly the
+/// shutdown its own reply confirmed. See [`crate::rpc::DeferredShutdown`].
 pub(super) async fn handle_client(
     stream: UnixStream,
-    ctx: Arc<ServerContext>,
+    dispatcher: Arc<RpcDispatcher>,
+    authorized_uid: u32,
     event_rx: broadcast::Receiver<SessionEventMessage>,
 ) -> Result<()> {
     #[cfg(unix)]
-    if !peer_accepted(&stream, ctx.authorized_uid) {
+    if !peer_accepted(&stream, authorized_uid) {
         return Ok(());
     }
+    let ctx = dispatcher.context().clone();
 
     let client_id = ClientId::new();
     let (reader, writer) = stream.into_split();
@@ -380,12 +386,12 @@ pub(super) async fn handle_client(
     let event_task = tokio::spawn(forward_events(
         event_rx,
         writer.clone(),
-        ctx.subscription_manager.clone(),
+        ctx.subscriptions.clone(),
         client_id,
         event_cancel.clone(),
     ));
 
-    let dispatch_ctx = ctx.clone();
+    let dispatch = dispatcher.clone();
     let result = serve_requests(
         reader,
         writer,
@@ -393,10 +399,10 @@ pub(super) async fn handle_client(
         MAX_INFLIGHT_PER_CONNECTION,
         ctx.shutdown.clone(),
         move |line: String| {
-            let ctx = dispatch_ctx.clone();
+            let dispatch = dispatch.clone();
             async move {
                 match serde_json::from_str::<Request>(&line) {
-                    Ok(req) => handle_request(req, client_id, &ctx).await,
+                    Ok(req) => handle_request(req, client_id, &dispatch).await,
                     Err(e) => {
                         warn!("Parse error: {}", e);
                         Response::error(None, PARSE_ERROR, e.to_string())
@@ -410,7 +416,7 @@ pub(super) async fn handle_client(
     // Graceful shutdown of event forwarding
     event_cancel.cancel();
     let _ = tokio::time::timeout(std::time::Duration::from_millis(100), event_task).await;
-    ctx.subscription_manager.remove_client(client_id);
+    ctx.subscriptions.remove_client(client_id);
 
     result
 }
@@ -563,14 +569,14 @@ pub(super) async fn sweep_and_archive_stale_sessions(
 pub(super) async fn handle_request(
     req: Request,
     client_id: ClientId,
-    ctx: &ServerContext,
+    dispatcher: &RpcDispatcher,
 ) -> Response {
     use futures::FutureExt;
 
     let id = req.id.clone();
     let method = req.method.clone();
 
-    match std::panic::AssertUnwindSafe(ctx.dispatcher.dispatch(client_id, req))
+    match std::panic::AssertUnwindSafe(dispatcher.dispatch(client_id, req))
         .catch_unwind()
         .await
     {

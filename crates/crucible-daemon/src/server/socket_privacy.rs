@@ -236,7 +236,7 @@ mod tests {
     /// process does not have, so our own connection is the unauthorized one and
     /// must be dropped before it can reach dispatch.
     ///
-    /// Measured RED: with `authorized_uid` fully plumbed into `ServerContext`
+    /// Measured RED: with `authorized_uid` fully plumbed into `handle_client`
     /// and `peer_accepted` defined but not called, this test received
     /// `{"jsonrpc":"2.0","id":1,"result":"pong"}`.
     #[tokio::test]

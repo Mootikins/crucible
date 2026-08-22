@@ -15,7 +15,7 @@ mod panic_boundary_tests {
     ///
     /// This exercises the same `AssertUnwindSafe` + `catch_unwind` composition
     /// the real path uses. Driving `handle_request` itself would need a whole
-    /// live `ServerContext`; what can actually regress here is the catch
+    /// live `RpcDispatcher`; what can actually regress here is the catch
     /// composition, since the panic escapes the moment it is removed.
     #[tokio::test]
     async fn a_panicking_future_is_caught_rather_than_unwinding() {

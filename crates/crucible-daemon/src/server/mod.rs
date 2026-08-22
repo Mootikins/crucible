@@ -840,16 +840,13 @@ impl Server {
                 accept_result = self.listener.accept() => {
                     match accept_result {
                         Ok((stream, _)) => {
-                            let ctx = Arc::new(ServerContext {
-                                dispatcher: self.dispatcher.clone(),
-                                subscription_manager: self.subscription_manager.clone(),
-                                event_tx: self.event_tx.clone(),
-                                shutdown: self.rpc_context.shutdown.clone(),
-                                authorized_uid: self.authorized_uid,
-                            });
-                            let event_rx = ctx.event_tx.subscribe();
+                            let dispatcher = self.dispatcher.clone();
+                            let authorized_uid = self.authorized_uid;
+                            let event_rx = self.event_tx.subscribe();
                             tokio::spawn(async move {
-                                if let Err(e) = handle_client(stream, ctx, event_rx).await {
+                                if let Err(e) =
+                                    handle_client(stream, dispatcher, authorized_uid, event_rx).await
+                                {
                                     error!("Client error: {}", e);
                                 }
                             });
@@ -934,20 +931,6 @@ impl Server {
 
         Ok(())
     }
-}
-
-#[derive(Clone)]
-struct ServerContext {
-    dispatcher: Arc<RpcDispatcher>,
-    subscription_manager: Arc<SubscriptionManager>,
-    event_tx: broadcast::Sender<SessionEventMessage>,
-    /// The same latch the `shutdown` handler arms — cloned from the dispatcher's
-    /// context so the connection fires exactly the shutdown its own reply
-    /// confirmed. See [`crate::rpc::DeferredShutdown`].
-    shutdown: Arc<DeferredShutdown>,
-    /// Copied from `Server::authorized_uid`; `handle_client` refuses any peer
-    /// whose `SO_PEERCRED` uid is not this.
-    authorized_uid: u32,
 }
 
 #[cfg(test)]

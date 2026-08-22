@@ -306,6 +306,13 @@ impl RpcDispatcher {
         Self { ctx }
     }
 
+    /// The connection loop reads the subscription manager and the shutdown
+    /// latch from here, so a client sees the one context its requests dispatch
+    /// against.
+    pub fn context(&self) -> &Arc<RpcContext> {
+        &self.ctx
+    }
+
     pub async fn dispatch(&self, client_id: ClientId, req: Request) -> Response {
         let id = req.id.clone();
         tracing::debug!("RPC dispatch: method={:?}, id={:?}", req.method, id);
