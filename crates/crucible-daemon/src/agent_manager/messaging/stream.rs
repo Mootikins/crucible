@@ -1093,6 +1093,10 @@ impl AgentManager {
             drop(guard);
 
             accumulated_response.clear();
+            // This literal names every field on purpose, although
+            // `StreamContext` derives `Clone`. A new field then fails to
+            // compile here, so its author must decide whether the retry
+            // carries it or resets it. Do not replace it with `.clone()`.
             let continuation_ctx = StreamContext {
                 session_id: stream_ctx.session_id.clone(),
                 message_id: format!("msg-{}", uuid::Uuid::new_v4()),
