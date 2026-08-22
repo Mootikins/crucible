@@ -1,4 +1,6 @@
 ---
+title: Actual Architecture
+description: As-built architecture at 7053bcfe7: seams, types, traits, duplicates and dead code with file:line cites.
 tags: [meta, architecture]
 status: as-built
 as_of: 7053bcfe7

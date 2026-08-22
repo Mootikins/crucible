@@ -1,4 +1,6 @@
 ---
+title: Expected Architecture
+description: Clean-room architecture derived from the product docs alone, with the two drafts' disagreements recorded.
 tags: [meta, architecture]
 status: clean-room
 ---

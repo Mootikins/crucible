@@ -1,6 +1,6 @@
 ---
 title: Workspace and Runtime Targets
-description: Two orthogonal axes — where a session's files live, and where its process runs — both contributed by plugins
+description: Two orthogonal axes. One axis says where the files of a session live. The other says where its process runs. Plugins contribute both.
 status: design
 tags:
   - architecture
@@ -14,78 +14,55 @@ aliases:
 
 # Workspace and Runtime Targets
 
-The `oci` plugin containerises a session. Nothing else can. Worktrees are hardcoded
-Rust plus a hundred lines of orchestration in the web composer, and running a session
-on another machine is not expressible at all. This is the design that turns all three
-into the same kind of thing: a *target* a plugin contributes.
+As-built detail: [[Actual]]
 
-See [[Container Isolation]] for the plugin this generalises from, and
-[[Plugin Conventions]] for the contribution channels it builds on.
+This note records the design and its rationale. [[Actual]] lists the types and the
+files. Steps 1, 2 and 4 of the sequence are done. The ssh plugin (step 3) does not
+exist.
+
+See [[Container Isolation]] for the plugin this design generalises. See
+[[Plugin Conventions]] for the contribution channels it uses.
 
 ## The two axes
 
-The mistake to avoid is treating "worktree", "container" and "remote machine" as three
-values of one setting. They are values of **two** settings, and the interesting
-combinations are the ones that cross:
+Do not treat "worktree", "container" and "remote machine" as three values of one
+setting. They are values of **two** settings. The combinations that cross the two
+settings are the interesting ones.
 
 | Axis | Question | Providers | Mechanism |
 |------|----------|-----------|-----------|
-| **Workspace** | where do the files live? | `worktree` (later: clone, remote folder) | rewrites the session's workspace path before creation |
-| **Runtime** | where does the process run? | `oci`, `ssh` | `crucible.require_isolation` + `SandboxExec` |
+| **Workspace** | Where do the files live? | `worktree` (later: clone, remote folder) | The provider rewrites the workspace path before the daemon creates the session |
+| **Runtime** | Where does the process run? | `oci` (later: `ssh`) | `crucible.require_isolation` + `SandboxExec` |
 
 ```
-crucible ⌄   ⎇ feat/x · new worktree ⌄   ▣ Container · rust ⌄
-             └─ WORKSPACE axis           └─ RUNTIME axis
-
   main    × host             ordinary session
-  main    × container:rust   today's oci
-  feat/x  × host             today's parallel-agents flow
-  feat/x  × container:rust   ← already assumed to work, nothing declares it
-  remote  × ssh:build-box    collapses both (files and process are remote)
+  main    × container:rust   oci
+  feat/x  × host             the parallel-agents flow
+  feat/x  × container:rust   worktree × oci
+  remote  × ssh:build-box    both axes collapse (files and process are remote)
 ```
 
-That fourth row is not speculative. `runtime/plugins/oci/init.lua` already reasons about
-it:
+The oci plugin runs one container per distinct workspace, not per session. A session
+with its own worktree has a distinct workspace. It therefore gets its own container,
+with no branch added anywhere.
 
-> One container per distinct WORKSPACE, not per session. […] When a child gets its own
-> worktree it has a distinct workspace and therefore its own container, by the same rule
-> and with no branch added anywhere.
+The split also removes a collision. `session.isolation` is one opaque value that each
+isolating plugin reads. A `worktree` value sent down that channel would reach `oci`.
+Under the two-axis model the worktree plugin never touches `session.isolation`. For the
+runtime axis, where two plugins share one channel, a target names its provider (below).
 
-The oci plugin was written expecting worktrees to exist as a separate axis. They just
-never did.
+`ssh` sits across both axes, because remote files and a remote process are the same
+fact. It is a runtime provider that names a remote directory. The workspace axis then
+resolves in that context. See [What an ssh target means](#what-an-ssh-target-means).
 
-The split also dissolves a collision that would otherwise appear the moment a second
-isolating plugin ships. `session.isolation` is one opaque value that every isolating
-plugin reads and interprets independently, and `oci`'s resolver **raises** on a name it
-does not recognise:
-
-```lua
-local profile = config.profiles and config.profiles[requested]
-if not profile then
-  error("oci: unknown isolation profile '" .. requested .. "'")
-end
-```
-
-A `worktree` target sent down that channel is a hard error in an unrelated plugin. Under
-the two-axis model the worktree plugin never touches `session.isolation` at all, so the
-question does not arise. For the runtime axis — where `oci` and `ssh` genuinely do share
-a channel — targets are addressed to their provider (below).
-
-`ssh` sits across both axes, because files being remote and the process being remote are
-the same fact. It is a runtime provider naming a remote directory, and the workspace axis
-then resolves *in that context* — see [What an ssh target means](#what-an-ssh-target-means).
-Cursor collapses them the same way: its folder picker groups repositories under
-`On This PC` / `Cloud` / `<machine>`.
-
-**Container-on-remote (`ssh host podman exec …`) is out of scope** — one runtime provider
-wins. The shape would express it as a list of prefixes rather than one; that is scope, not
-a wall, and the sketch is at the end.
+**Container-on-remote (`ssh host podman exec …`) is out of scope.** One runtime
+provider wins. A list of prefixes could express it later; see the end of this note.
 
 ## How a plugin contributes a target
 
-Two things are needed, and both already exist as channels.
+A plugin needs two things. Both channels already exist.
 
-**Declaring the provider** — `crucible.publish`, the generic contribution channel:
+**Declare the provider** with `crucible.publish`:
 
 ```lua
 crucible.publish("targets", {
@@ -96,110 +73,87 @@ crucible.publish("targets", {
 })
 ```
 
-**Enumerating targets** — an ordinary plugin command, invoked through the existing
-`plugin.run_command { name, args } → { result }` RPC:
+The worktree plugin does this at `runtime/plugins/worktree/init.lua:190`. The oci
+plugin does it at `runtime/plugins/oci/init.lua:848`.
 
-```lua
-crucible.command("worktree.targets", function(args)
-  -- args.workspace is the currently selected project
-  return { { value = "feat/x", label = "feat/x", hint = "new worktree" }, … }
-end)
-```
+**Enumerate targets** with an ordinary plugin command. The web calls it through the
+`plugin.run_command { name, args } → { result }` RPC (`web/src/lib/api.ts:547`).
 
-Enumeration has to be a command rather than more published data because the workspace
-axis is **dynamic and context-dependent**: the branch list depends on which project is
-selected, and changes when someone creates a branch outside the app. `oci`'s profile list
-is static and could have been published directly, but one uniform shape beats two.
-
-This replaces `getIsolationOffer`'s bespoke `{ available, profiles: string[] }` merge with
-something a plugin shipped tomorrow can use unchanged.
+Enumeration is a command, not published data, because the workspace axis is dynamic.
+The branch list depends on the selected project. It changes when a user creates a
+branch outside the app. The `oci` profile list is static, but one uniform shape is
+better than two.
 
 ### Addressing a runtime target
 
-`oci` and `ssh` share the `session.isolation` channel, so a target names its provider:
+`oci` and a future `ssh` share the `session.isolation` channel. A target therefore
+names its provider:
 
 ```
 session.create { isolation = { plugin = "ssh", target = "build-box" } }
 ```
 
-A runtime plugin ignores any table addressed to a different plugin, rather than raising.
-Bare `true` / `false` / `"profile-name"` keep working exactly as they do now — `oci` is
-the only runtime provider today and every existing config sends those.
+A runtime plugin ignores a table that names a different plugin. It returns `nil`
+(`oci/init.lua:399`). It does not raise. A bare unknown profile name is still an
+error (`oci/init.lua:386`). Bare `true` / `false` / `"profile-name"` continue to work
+(`oci/init.lua:381-389`), because every existing config sends those.
 
-## Where a worktree actually gets created
+## Where the daemon creates a worktree
 
-The workspace axis needs the session's workspace path to *change* before the session
-exists. Today the only plugin entry point is `on_session_start`, which fires far too late:
+The workspace axis must change the workspace path before the session exists. The
+`on_session_start` hook fires too late:
 
 ```
 session.create
-  ├─ resolve_create_agent(workspace)     create.rs:96   ← agent's cwd fixed here
-  ├─ pm.register_if_missing(workspace)   create.rs:109  ← project registered here
-  ├─ sm.create_session(workspace)        create.rs:115  ← workspace persisted here
-  └─ returns
-       └─ enforce_session_start          dispatch.rs:838 ← on_session_start fires HERE
+  ├─ resolve_workspace_target          dispatch.rs:1265  ← NEW, before all three
+  ├─ resolve_create_agent(workspace)   create.rs:204     ← the agent cwd is fixed here
+  ├─ pm.register_if_missing(workspace) create.rs:247     ← the project is registered here
+  ├─ sm.create_session(workspace)      create.rs:254     ← the workspace is persisted here
+  └─ enforce_session_start             session_lifecycle.rs:87 ← on_session_start fires here
 ```
 
 A plugin that rewrote the workspace in `on_session_start` would leave the project
-registered at the old path and an ACP agent already pointed at it.
+registered at the old path. An ACP agent would already point at the old path.
 
-So resolution happens **before** all three, in the dispatch wrapper that already owns the
-create call:
+So resolution runs first, in `DaemonDispatch::resolve_workspace_target`
+(`rpc/dispatch.rs:1293`). It is a resolution step, not a new hook list. The provider
+names a `resolve_command` beside its `targets_command`. The daemon calls it through
+`plugin.run_command`. A second hook registry would gain nothing: `crucible.on(...)`
+broadcasts to every listener, but exactly one provider must answer a target that names
+it.
 
-```
-session.create { workspace = '/repo', workspace_target = 'worktree:feat/x' }
-  ├─ NEW: resolve_workspace_target        → '/repo/tree/feat/x'
-  │        └─ provider's resolve_command, via plugin.run_command
-  ├─ resolve_create_agent(workspace)     ← sees the new path
-  ├─ pm.register_if_missing(workspace)   ← registers the new path
-  └─ sm.create_session(workspace)
-```
+Resolution is fail-closed at every step: unknown provider, wrong axis, missing command,
+command error, relative or empty path. An unresolved target returns `INVALID_PARAMS`
+(`dispatch.rs:1318`). `path_from_result` rejects an empty or relative path
+(`workspace_targets.rs:54`). A session that asked for `feat/x` never falls back to
+`main`, because an agent that works on `main` commits there.
 
-It is a resolution *step*, not a new hook list. The provider names a `resolve_command`
-beside its `targets_command`, and the daemon invokes it through the `plugin.run_command`
-machinery that already exists — the same channel enumeration uses. A second hook registry
-would have bought nothing: `crucible.on(...)` broadcasts to every listener, whereas
-exactly one provider must answer a target addressed to it by name.
-
-Doing it daemon-side rather than having the client resolve-then-create is what makes
-**server-side delegation work for free**: `delegation.rs` creates child sessions with no
-client involved, so a subagent can be given its own worktree by passing a
-`workspace_target`, with nothing added to the delegation path.
-
-Resolution is fail-closed at every step — unknown provider, wrong axis, missing command,
-command error, relative or empty path. A workspace target that was asked for and not
-delivered refuses the session, never silently falls back to the main checkout. Same rule
-[[Container Isolation]] applies to isolation, and for a sharper reason: an agent that
-quietly works on `main` when it was told `feat/x` commits there.
+**Delegation does not go through this step.** `delegation.rs` calls
+`SessionManager::create_child_session` (`delegation.rs:471`). The child inherits the
+workspace of its parent (`delegation.rs:385`, `:434`). `workspace_target` does not
+appear in `delegation.rs`. A subagent cannot get its own worktree today. To add it,
+route the child create through the same resolution step.
 
 ## The worktree plugin
 
-Shells out to `git` directly, mirroring how `oci` shells out to `podman` — "zero Rust
-docker knowledge" becomes "zero Rust git knowledge".
+`runtime/plugins/worktree/` shells out to `git` (`init.lua:38`, `:85`), as `oci` shells
+out to `podman`. Rust holds no git knowledge for worktrees.
 
 ```lua
 cru.shell.exec("git", { "-C", repo, "worktree", "add", dest, branch })
 ```
 
-What this eventually deletes:
+The plugin replaced `scm.branches`, `scm.worktree_add`, `/api/scm/branches`,
+`/api/scm/worktree`, `collect_branches` and `add_worktree`. The branch-name validation,
+the destination template, the porcelain parser and the branch sort moved to Lua with
+their tests. `scm.clone` stays in Rust (`dispatch.rs:212`), because a clone is a
+separate concern with no plugin behind it.
 
-- `scm.rs` — `add_worktree`, `collect_branches`
-- RPCs `scm.branches`, `scm.worktree_add`
-- routes `/api/scm/branches`, `/api/scm/worktree`
-- `CenterComposer.tsx:182-252` — the branch chip's orchestration, both `window.confirm`
-  dialogs, `switchToCheckout`, `createBranchWorktree`
+## The ssh plugin (not implemented)
 
-What has to be reimplemented in Lua: branch-name validation
-(`validate_branch_name_extra`), the worktree destination template
-(`resolve_worktree_dest`), porcelain parsing (`parse_worktree_porcelain`), branch sorting
-(`sort_branches`). These are pure functions with tests; the tests port with them.
+No `runtime/plugins/ssh/` exists. This section is the proposal.
 
-`scm.clone` is *not* in scope — cloning is a separate concern from worktrees and keeps
-its Rust path.
-
-## The ssh plugin
-
-`SandboxExec` already nearly fits:
+`SandboxExec` nearly fits:
 
 ```lua
 crucible.require_isolation{
@@ -210,158 +164,105 @@ crucible.require_isolation{
 }
 ```
 
-One gap, now closed. `exec_env_flag` assumed a launcher that repeats a flag per variable
-(`-e K=V`), which is how `podman exec` works. `ssh` has no such flag; the idiom is a
-positional `env K=V … cmd`. Reading "no flag" as "cannot pass environment" refused every
-ACP launch over ssh, since an agent essentially always carries a key. `SandboxExec.env` is
-now a three-state `SandboxEnv` — `Unsupported` (the safe default), `Flag(String)`,
-`Inline` — declared from Lua as `exec_env_flag = "-e"` or `exec_env_inline = true`. Both
-forms put the variables in the same place in the argv, so only the flag differs.
+One gap is closed. `exec_env_flag` assumed a launcher that repeats a flag per variable
+(`-e K=V`), which is how `podman exec` works. `ssh` has no such flag. Its idiom is a
+positional `env K=V … cmd`. `SandboxExec.env` is now the three-state `SandboxEnv`:
+`Unsupported` (the default), `Flag(String)`, `Inline`
+(`crucible-lua/src/isolation.rs:94`). Lua declares it as `exec_env_flag = "-e"` or
+`exec_env_inline = true` (`isolation.rs:230-240`).
 
 ### What an ssh target means
 
-**A remote directory.** That is the whole model, and keeping it that small is what makes the
-rest fall out. `ssh:build-box` names a machine; the workspace it runs against is a path *on
-that machine*. There is no syncing, no mounting, no mirroring — the files are over there,
-the process is over there, and the daemon is the only thing that is not.
+**A remote directory.** `ssh:build-box` names a machine. The workspace is a path on
+that machine. There is no sync, no mount and no mirror. Only the daemon is local.
 
-Two consequences follow directly:
+Two consequences follow:
 
-`build_client_config` sets `working_dir` on the **launcher** process. Irrelevant for
-`podman exec`, whose prefix carries `-w`, but for ssh it would set the *local* client's
-directory and leave the remote agent in its login shell's home. The prefix has to carry the
-remote directory itself: `ssh -T build-box cd <dir> && env … agent`.
+`build_client_config` sets `working_dir` on the **launcher** process
+(`acp_launch.rs:69`). For `podman exec` this does not matter, because the prefix
+carries `-w`. For ssh it would set the directory of the local client. The remote agent
+would start in its login home. The prefix must carry the remote directory:
+`ssh -T build-box cd <dir> && env … agent`.
 
-And a locally-resolved workspace path is meaningless remotely. `worktree.resolve` runs
-daemon-side and answers with a path on *this* machine; the same string on `build-box` may
-not exist, or may exist and be something else. This is not hypothetical — Cursor ships the
-same shape and has the same bug, where `.cursor/worktrees.json` is not found under Remote
-SSH because discovery is path-based rather than target-aware.
+A locally resolved workspace path has no meaning on the remote host.
+`worktree.resolve` runs daemon-side and answers with a local path. The same string on
+`build-box` may not exist.
 
 ### ssh × worktree: provision remotely
 
-The composition is not refused, it is *performed on the far side*. Asked for
-`worktree:feat/x` on `ssh:build-box`, the ssh provider:
+The daemon performs the combination on the far side. For `worktree:feat/x` on
+`ssh:build-box`, the ssh provider:
 
-1. clones the repo on the remote host if it is not already there, under a configured base
-   directory (`~/crucible-workspaces/<repo>`, say);
-2. creates the worktree there, by the same rules the local worktree provider uses;
-3. answers with the **remote** path, which the runtime prefix then `cd`s into.
+1. clones the repo on the remote host under a configured base directory, if it is not
+   there;
+2. creates the worktree there, by the rules the local worktree provider uses;
+3. answers with the **remote** path. The runtime prefix then enters that path.
 
-Which means the workspace axis has to know that the runtime is remote — the axes stay
-orthogonal in *what they mean*, but resolution is ordered: runtime first, then workspace
-resolved in its context. That ordering is the one real coupling, and it is worth naming
-because everything else about the two axes is independent.
+So the workspace axis must know that the runtime is remote. The axes stay orthogonal
+in meaning, but resolution is ordered: runtime first, then workspace in its context.
+That order is the one real coupling.
 
-Nothing implements this yet. The daemon does not guard the combination either, deliberately:
-it is unreachable until an ssh provider exists, and a guard written now would be guessing at
-the shape of the thing it guards.
+The daemon does not guard this combination. It is unreachable until an ssh provider
+exists. A guard written now would guess the shape of the thing it guards.
 
-### And containers on top, theoretically
+### Containers on top, in theory
 
-Stacking `oci` over `ssh` is not planned and not designed. It is worth checking the shape
-*could* express it, because a design that structurally forbids it is a worse design:
+A container is a post-resolution step on the host where the workspace ended up. In
+prefix terms that is composition: `ssh -T build-box`, then
+`podman exec -i -w <remote dir>`. Each provider contributes its own segment.
+`SandboxExec` already concatenates prefix, env and suffix.
 
-A container is a **post-resolution step on whichever host the workspace ended up on** —
-check the registry, pull or build, then wrap the command. In prefix terms that is
-composition: `ssh -T build-box` followed by `podman exec -i -w <remote dir>`, with each
-provider contributing its own segment rather than one provider knowing about the other. The
-`SandboxExec` shape already concatenates prefix, env, suffix; nesting is the same operation
-applied twice.
-
-What would have to change: the runtime axis currently takes exactly one provider, and
-`session.isolation` carries exactly one addressed target. Making it a list is the whole
-structural difference. **Not doing it** — one runtime provider wins — but the reason is
-scope, not a wall.
+What must change: the runtime axis takes exactly one provider, and `session.isolation`
+carries one target. A list is the whole structural difference. We do not do it. The
+reason is scope, not a wall.
 
 ## Prior art
 
-A survey of Claude Code, Cursor 3.x, Zed/ACP, VS Code agent plugins, OpenCode, Continue.dev,
-Aider and Pi (`earendil-works/pi`) turned up **no system that models workspace-location and
-process-location as separate composable axes**, and none where a plugin enumerates run
-targets on demand:
+A survey of Claude Code, Cursor 3.x, Zed/ACP, VS Code agent plugins, OpenCode,
+Continue.dev, Aider and Pi found **no system that models workspace location and
+process location as separate axes**. None lets a plugin enumerate run targets.
 
 | Tool | Workspace axis | Runtime axis | Who supplies the targets |
 |------|---------------|--------------|--------------------------|
-| Claude Code | worktrees (`--worktree`) | none — always local | CLI flag, static `.worktreeinclude` |
+| Claude Code | worktrees (`--worktree`) | none, always local | CLI flag, static `.worktreeinclude` |
 | Cursor 3.x | worktrees | cloud / SSH / local | built-in UI; static `.cursor/worktrees.json` |
 | Zed (ACP) | none | none | — |
-| VS Code, Continue, Aider, OpenCode | none | implicit local | static manifests / config files |
+| VS Code, Continue, Aider, OpenCode | none | implicit local | static manifests or config files |
 
-Cursor is closest, but treats the two as **correlated pairs** — "run this agent in the
-cloud", "run it on that SSH host" — chosen per session from a built-in picker, not
-contributed by anything.
+Cursor is closest. It treats the two as correlated pairs, chosen per session from a
+built-in picker.
 
-Two consequences worth holding onto. First, there is nobody to copy: the sharp edges will be
-found here rather than read about, and the ssh hazard above is the first one. Second, the
-survey is a reason to keep the axes *cheap to collapse* if the composition turns out not to
-earn its keep — the evidence that anyone wants `worktree × ssh` is currently zero, and
-`worktree × container` is the only crossing with a real user behind it.
+Two consequences: First, there is nobody to copy. Second, keep the axes cheap to
+collapse. No one has asked for `worktree × ssh` yet. `worktree × container` is the
+only crossing with a real user.
 
 ## Web
 
-`ChipSelect` gains `children?: ChipOption[]` and a drill-down, so `Remote Machines ▸`
-opens a submenu instead of flattening into a group header. `group` and `icon` already
-exist on `ChipOption`.
+`ChipSelect` has `children?: ChipOption[]` (`components/composer/ChipSelect.tsx:31`)
+and a drill-down. The chip row is: project · workspace target · runtime target · agent
+· model. Both target chips come from `getTargetProviders` (`web/src/lib/api.ts:555`).
+The `run on` chip has a built-in `This PC` row (`components/CenterComposer.tsx:352`).
 
-The chip row becomes: project · **workspace target** · **runtime target** · agent · model.
-The workspace chip replaces today's branch chip; the runtime chip replaces today's
-isolation toggle. Both are built from published providers rather than from TSX literals,
-which is the whole point — the branch chip is currently the last place in the composer
-where the daemon's features are hardcoded into the frontend.
-
-`api.ts` gains a `runPluginCommand` wrapper. `plugin.run_command` has existed on the
-daemon since plugins did; the web has simply never called it.
+The old `run on` chip and the isolation chip asked one question twice. They are now
+one chip. One provider on an axis flattens its targets into the menu. Two or more get a
+`▸` drill-down.
 
 ## Sequencing
 
-1. **Groundwork** — *done*. `workspace_targets` resolution before create, the `targets`
-   publication channel, `plugin.run_command` reachable from the web, `ChipSelect`
-   submenus, the `SandboxEnv` extension.
-2. **Worktree plugin and the composer** — *done*. `runtime/plugins/worktree/`, `oci`
-   republished on the runtime axis, and both chips rebuilt on `getTargetProviders`.
-3. **SSH plugin**.
-4. **Retire the `scm.*` worktree RPCs** — *done*, in the same pass. `scm.branches`,
-   `scm.worktree_add`, `/api/scm/branches`, `/api/scm/worktree`, `collect_branches`,
-   `add_worktree` and their pure helpers are gone; `scm.clone` stays, since cloning is a
-   separate concern with no plugin behind it yet. One source of truth for what a branch is,
-   and it is the plugin.
-
-### What the composer looks like now
-
-The chip row lost one control and gained a real one. Three chips became two:
-
-| Before | After |
-|--------|-------|
-| `branch ⌄` — called `scm.worktree_add` directly, confirmed with `window.confirm` | `workspace ⌄` — whatever workspace providers enumerated |
-| `run on ⌄` — hardcoded, only `This machine` enabled, the other rows `disabled: true` | *(merged below)* |
-| `isolation ⌄` — a toggle plus published profile names | `run on ⌄` — `This PC` plus whatever runtime providers enumerated |
-
-The old "run on" chip and the isolation chip were always the same question asked twice, so
-they are now one. A single provider on an axis flattens its targets into the menu; two or
-more get a `▸` drill-down, because a submenu holding the entire menu is an extra click
-rather than a drill-down.
-
-### Addressing, and why `oci` had to change
-
-The runtime chip sends `{ plugin, target }` rather than a bare profile name. `oci`'s
-resolver previously raised on any name it did not recognise, which was correct when it was
-the only plugin on the channel and fatal the moment a second one existed — an `ssh` target
-would have failed the session inside `oci`. It now ignores a table addressed elsewhere and
-returns `nil`, which is what makes more than one runtime provider possible at all.
-
-Bare `true` / `false` / `"profile-name"` still work unchanged; every existing config sends
-those.
+1. **Groundwork** — done. `workspace_targets` resolution before create, the `targets`
+   channel, `plugin.run_command` from the web, `ChipSelect` submenus, `SandboxEnv`.
+2. **Worktree plugin and the composer** — done.
+3. **SSH plugin** — not done.
+4. **Retire the `scm.*` worktree RPCs** — done, in the same pass as step 2.
 
 ## Known limits
 
-- One runtime provider per session, so container-on-remote is not expressible today. The
-  shape would take it as a list of prefixes; see above. Scope, not a wall.
-- **Resolution is ordered for a remote runtime**: the workspace axis has to resolve in the
-  runtime's context, or a local path is handed to a machine it means nothing on. The one
-  real coupling between two otherwise independent axes. Unreachable until an ssh provider
-  exists.
-- The workspace axis rewrites a path; it does not sync, copy, or clean up. A worktree
-  created for a session outlives it, exactly as one created by hand does.
-- `session.isolation` keeps its untyped shape for backward compatibility, so a
-  malformed target is a plugin-side error rather than a schema rejection.
+- One runtime provider per session. Container-on-remote is not expressible.
+- For a remote runtime, the workspace axis must resolve in the context of the runtime.
+  Unreachable until an ssh provider exists.
+- The workspace axis rewrites a path. It does not sync, copy or clean up. A worktree
+  outlives its session.
+- `session.isolation` keeps its untyped shape. A malformed target is a plugin-side
+  error, not a schema rejection.
+- Delegation does not resolve `workspace_target`. A child session inherits the
+  workspace of its parent.

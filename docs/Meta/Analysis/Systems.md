@@ -9,92 +9,85 @@ tags:
 
 # Crucible Systems
 
-This document defines the orthogonal systems that make up Crucible. Each system has clear boundaries and responsibilities.
+This document defines the orthogonal systems that make up Crucible. Each system has clear boundaries and responsibilities. Checked against the code at commit 7053bcfe7 (2026-08-22).
 
 ## System Boundaries
 
-| System | Scope | Crates |
-|--------|-------|--------|
-| **parser** | Markdown → structured data (extensions, frontmatter, blocks) | `crucible-core/parser` |
-| **storage** | Persistence: SQLite (metadata, FTS, vector embeddings) | `crucible-daemon/storage/sqlite` |
-| **sync** | Merkle-CRDT sync across devices, collaborators, and federated agents | `crucible-sync` (future) |
-| **agents** | Agent cards, handles, LLM providers, tool registry | `crucible-core/agents`, `crucible-daemon/llm`, `crucible-daemon/tools`, `crucible-daemon/acp` |
-| **workflows** | Definitions (markup) + sessions (logging, resumption) | `crucible-core/workflow` |
-| **plugins** | Extension points, hooks, scripting (Lua) | `crucible-lua` |
-| **apis** | HTTP REST, WebSocket, events | `crucible-web/src` |
-| **cli** | Commands, REPL, TUI, configuration | `crucible-cli`, `crucible-oil`, `crucible-core/config` |
+| System | Scope | Code |
+|--------|-------|------|
+| **parser** | Markdown to structured data (extensions, frontmatter, blocks) | `crucible-core/src/parser` |
+| **storage** | Persistence: SQLite (metadata, FTS, links, embeddings) | `crucible-daemon/src/storage/sqlite` |
+| **agents** | Agent cards, handles, LLM providers, tool registry | `crucible-core/src/agent`, `crucible-daemon/src/llm`, `crucible-daemon/src/provider`, `crucible-daemon/src/tools`, `crucible-daemon/src/acp` |
+| **workflows** | Definitions (markup), engine, gates, RPC | `crucible-core/src/workflow`, `crucible-daemon/src/rpc/workflow_handlers.rs` |
+| **plugins** | Extension points, hooks, scripts (Lua, Fennel) | `crucible-lua`, `crucible-daemon/src/daemon_plugins` |
+| **apis** | HTTP REST, SSE, WebSocket | `crucible-web/src` |
+| **cli** | Commands, REPL, TUI, configuration | `crucible-cli`, `crucible-oil`, `crucible-core/src/config` |
 | **daemon** | Multi-session server, RPC, agent management | `crucible-daemon` |
-| **observe** | Session logging, JSONL event streams, markdown export | `crucible-daemon/observe` |
+| **observe** | Session logs, JSONL event streams, markdown export | `crucible-daemon/src/observe` |
 
+No sync system exists. No crate holds Merkle, CRDT or Loro code. The only Merkle
+helper is a pair-hash function in `crucible-core/src/hashing/algorithm.rs`. Sync
+is an idea, not a system.
 
 ## System Descriptions
 
 ### parser
 
-Input processing layer. Transforms markdown notes into structured data.
+The input layer. It transforms markdown notes into structured data.
 
 - Frontmatter extraction (YAML properties)
-- Block extraction (headings, paragraphs, code, etc.)
+- Block extraction (headings, paragraphs, code, and so on)
 - Syntax extensions (wikilinks, tags, callouts)
-- Content hashing for deduplication
+- Block hashes for change detection
 
 See: [[Help/Concepts/The Knowledge Graph]]
 
 ### storage
 
-Persistence layer. Stores and retrieves structured data.
+The persistence layer. It stores and retrieves structured data.
 
-- SQLite (default) — fast, lightweight, recommended for most users
-- Content-addressed block storage
-- Merkle tree integrity verification
+- SQLite note store, keyed by path, with one content hash per note (`storage/sqlite/note_store.rs`)
+- Full-text search (`storage/sqlite/fts.rs`)
+- Wikilink resolution and backlinks (`storage/sqlite/link_index.rs`)
+- Properties (`storage/sqlite/property_store.rs`)
 - Kiln management
+
+There is no block store, and no Merkle verification.
 
 See: [[Help/Concepts/Kilns]], and [[Storage Schema]] for the kiln database's
 migration ladder, which of its tables are rebuildable, and how to add a column.
 
-### sync
-
-Synchronization across boundaries. Enables conflict-free collaboration.
-
-- Merkle-CRDT protocol (compare roots, sync divergent blocks)
-- Three localities: local (multi-device), coordinated (collaboration), federated
-- CRDT types: Loro for text, LWW for metadata, OR-Set for tags
-
-*Status: Planned (Phase 4)*
-
 ### agents
 
-AI agent infrastructure. Manages agent definitions and execution.
+The AI agent infrastructure. It manages agent definitions and execution.
 
 - Agent cards (system prompts, metadata)
-- Agent handles (interface for communication)
-- LLM providers (Ollama, OpenAI-compatible)
+- Agent handles (the interface for communication)
+- LLM providers: Ollama, OpenAI-compatible, Copilot (`crucible-daemon/src/provider/`)
 - Context management (sliding window, compaction)
 - Tool registry and MCP integration
-- Delegation: agents delegate tasks via the `delegate_session` tool; children run as real (hidden, parent-linked) sessions through the main scheduler loop (`DelegationService`). Targets resolve to agent cards (model chain: card-explicit > specialty via `[llm.models]` > inherit-from-parent) or ACP profiles; policy via `DelegationConfig` (enabled, max_depth incl. real nesting, allowed_targets, timeout_secs)
+- Delegation: agents delegate tasks with the `delegate_session` tool. Children run as hidden, parent-linked sessions through the main scheduler loop (`DelegationService`, `delegation.rs:93`). A target resolves to an agent card or an ACP profile. The model chain is: card-explicit, then specialty via `[llm.models]`, then inherit-from-parent (`crucible-core/src/session/types/agent.rs:195`). Policy comes from `DelegationConfig` (`config/components/acp.rs:38`): enabled, max_depth, allowed_targets, timeout_secs.
 
 See: [[Help/Concepts/Agents & Protocols]], [[Help/Extending/Internal Agent]]
 
 ### workflows
 
-Workflow definitions and execution logging.
+Workflow definitions and execution. Implemented.
 
-- Workflow markup (DAG in markdown prose)
-- Session logging (readable markdown format)
-- Session resumption (continue from checkpoint)
+- Workflow markup (a DAG in markdown prose)
+- Engine (`crucible-core/src/workflow/engine.rs`) and registry
+- Four RPC methods: `workflow.start`, `workflow.status`, `workflow.approve_gate`, `workflow.cancel`
 
 See: [[Help/Workflows/Workflow Syntax]]
 
-*Status: Planned (Phase 2)*
-
 ### plugins
 
-Extension and customization layer.
+The extension layer.
 
-- Hook points (pre/post processing)
-- Scripting runtime (Lua with Fennel support)
-- Runtime modules under unified `cru.*` namespace (`cru.timer`, `cru.ratelimit`, `cru.retry`, `cru.emitter`, `cru.check`, `cru.fs`, `cru.http`, `cru.session`, etc.)
-- Daemon-side plugins (e.g., Discord integration as a Lua plugin)
+- Hook points (stages and events)
+- Scripting runtime (Lua, with Fennel support)
+- Runtime modules under the `cru.*` namespace: `cru.timer`, `cru.ratelimit`, `cru.retry`, `cru.emitter`, `cru.check`, `cru.fs`, `cru.http`, `cru.sessions` (`daemon_plugins/mod.rs:173`)
+- Daemon-side plugins, for example the Discord integration (`runtime/plugins/discord`)
 
 See: [[Help/Extending/Event Hooks]], [[Help/Extending/Custom Handlers]]
 
@@ -103,70 +96,56 @@ See: [[Help/Extending/Event Hooks]], [[Help/Extending/Custom Handlers]]
 External interfaces for programmatic access.
 
 - HTTP REST (query data, trigger actions)
-- Server-Sent Events (streaming responses)
+- Server-Sent Events (streamed responses)
 - MCP server for external tools
 
 **Client-local state.** A view may persist its own presentation state
-(`web-layout.json`, `web-layout.recents.json`) and its own transport credentials
-(`sessions.json`, written 0600). The test is whether *another client or an agent*
-would need to read it: model, temperature and mode would, so they are
-daemon-side; pane geometry and browser tokens would not. Recents are the
-borderline case — client-local until a second surface wants them, and then they
-move to the daemon rather than being copied.
+(`web-layout.json`, `web-layout.recents.json`, `crucible-web/src/routes/layout.rs:69`) and its own transport credentials
+(`sessions.json`, written 0600, `middleware/auth/session.rs:51`). The test is whether *another client or an agent*
+would need to read it. Model, temperature and mode would, so they are
+daemon-side. Pane geometry and browser tokens would not. Recents are the
+borderline case: client-local until a second surface wants them. Then they
+move to the daemon. Nobody copies them.
 
 This is not an exception to "the daemon owns all business logic". The daemon has
-no concept of a browser login and must not acquire one, and pane geometry is a
-blob the server stores without interpreting. Recents live server-side rather
+no concept of a browser login and must not acquire one. Pane geometry is a
+blob the server stores without interpretation. Recents live server-side rather
 than in `localStorage` because per-origin storage vanished across ports and
-browsers — that reason is about *where the bytes go*, not about who owns the
+browsers. That reason is about *where the bytes go*, not about who owns the
 rule.
 
 See: [[Help/Extending/MCP Gateway]]
 
 ### cli
 
-Command-line user interface.
+The command-line user interface.
 
-- Subcommands (search, process, chat, agents, etc.)
-- TUI chat interface with Oil renderer
+- Subcommands (search, process, chat, agents, and so on)
+- TUI chat interface with the Oil renderer
 - Configuration management
-- Output formatting (table, JSON)
+- Output formats (table, JSON)
 
 See: [[Help/CLI/Index]], [[Help/TUI/Index]]
 
 ### daemon
 
-Multi-session server for concurrent agent access. Owns all business logic that views (CLI, TUI, Web) consume over RPC.
+A multi-session server for concurrent agent access. It owns all business logic that the views (CLI, TUI, Web) consume over RPC.
 
-- Unix socket RPC (`cru daemon serve`) with 82+ registered methods
-- Session lifecycle: create, pause, resume, resume_from_storage, end, archive, unarchive, delete, compact, replay
-- Agent management: configure, send_message, cancel, switch_model, list_models, interaction_respond
-- Session config: thinking_budget, temperature, max_tokens, precognition (get/set pairs)
-- Kiln CRUD: open, close, list, set_classification, search_vectors, list_notes, get_note_by_name
-- Note CRUD: upsert, get, delete, list
-- Processing: process_file, process_batch
-- Notifications: add, list, dismiss per session
+- Unix socket RPC (`cru daemon serve`). The `rpc_methods!` table in `crucible-daemon/src/rpc/dispatch.rs:83` is the one list of methods. It has 156 rows. The largest groups are `session.*` (75), `plugin.*` (11), `lua.*` (8), `note.*` (6), `review.*` (5), `kiln.*` (5), and 11 top-level methods such as `search_vectors`, `search_text`, `search_grep`, `list_notes`, `get_note_by_name`, `get_backlinks`. Do not copy the list here. Read the table.
 - Event streaming via subscriptions (subscribe/unsubscribe with wildcard support)
-- Lua runtime: init_session, register_hooks, execute_hook, shutdown_session, discover_plugins, plugin_health, generate_stubs, run_plugin_tests, register_commands
-- Plugin management: reload, list
-- Project management: register, unregister, list, get
-- Storage operations: verify, cleanup, backup, restore
-- MCP server control: start, stop, status
-- Skills discovery: list, get, search
-- Agent profiles: list_profiles, resolve_profile
-- Tool dispatch via `DaemonToolDispatcher`: routes tool calls to the correct executor (built-in Rust tools, Lua plugin tools, or external MCP server tools) using a provider chain with lazy name hydration
-- Tool dispatch enforces a 30-second timeout per tool call; timed-out calls return an error to the LLM so it can retry or adjust
-- Auto-archive sweep runs every 30 minutes, archiving sessions idle beyond a configurable threshold (default 72 hours)
+- Tool dispatch via `DaemonToolDispatcher` (`tool_dispatch.rs:117`). It routes tool calls to the correct executor (built-in Rust tools, Lua plugin tools, or external MCP server tools) through a provider chain with lazy name hydration.
+- Tool dispatch enforces a 30 second timeout per tool call. `delegate_session` gets the delegation timeout plus 30 seconds (`messaging/tool_call.rs:647-660`). A timed-out call returns an error to the LLM, so it can retry or adjust.
+- The auto-archive sweep runs every 30 minutes. It archives sessions idle beyond a configurable threshold, default 72 hours (`server/mod.rs:664-667`).
 
 See: [[Help/Core/Sessions]], AGENTS.md Daemon Architecture section
 
 ### observe
 
-Session logging and observability. Captures session events as append-only streams.
+Session logs and observability. It captures session events as append-only streams.
 
 - Append-only JSONL event logs per session
 - Human-readable markdown export on demand
-- Optional SQLite indexing for fast session queries
+- `observe/indexer.rs` builds a `NoteRecord` from the JSONL log, so the kiln note store can index a session. It does not open SQLite itself.
 - Event types: user messages, assistant responses, tool calls, thinking blocks, errors
 
 See: [[Help/Core/Sessions]]
@@ -195,8 +174,7 @@ Crucible follows a "scriptable surfaces, not a scripted runtime" model. Lua owns
 | Surface geometry | `crucible.ui.setup()` — borders, padding, prompt glyphs, layout |
 | Statusline layout | `crucible.statusline.setup()` — item trees, multiple bars, anchors |
 | Code highlighting | `crucible.syntax.setup()` — derived from the colorscheme by default |
-| Theme tokens | *(planned)* — color palette, style overrides |
-| Keybinding remaps | *(planned)* — user-defined key → action mapping |
+| Keybinding remaps | *(not implemented)* — user-defined key to action mapping |
 | Event handlers | Hooks on session events (turn complete, tool call, etc.) |
 
 ### Decision Filter
@@ -208,7 +186,7 @@ Crucible follows a "scriptable surfaces, not a scripted runtime" model. Lua owns
 
 ### Embedded Defaults
 
-Lua surfaces ship with embedded Rust defaults (`statusline_items::builtin_default()`, `ThemeConfig::default_dark()`) so a client renders correctly before — or without — any daemon config. This ensures:
+Lua surfaces ship with embedded Rust defaults in `crucible-lua` (`statusline_items::builtin_default()` at `statusline_items.rs:386`, `ThemeConfig::default_dark()` at `theme.rs:430`), so a client renders correctly before, or without, any daemon config. This ensures:
 
 1. The TUI works without any Lua initialization (tests, emergency fallback)
 2. User's `init.lua` overrides the default — not required for basic functionality
@@ -284,7 +262,7 @@ Some changes span multiple systems:
 Systems are conceptual groupings. Crates are implementation units.
 
 - One system may span multiple crates (e.g., `agents` → `crucible-daemon/llm`, `crucible-daemon/tools`, `crucible-daemon/acp`)
-- One crate may implement parts of multiple systems (e.g., `crucible-core` has parser types and agent traits)
+- One crate may implement parts of multiple systems (e.g., `crucible-core` has parser types, agent types and the workflow engine)
 
 The system boundary is about **what** (requirements), crates are about **how** (implementation).
 
