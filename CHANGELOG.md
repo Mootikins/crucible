@@ -151,6 +151,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   worth holding a task open for the provider's own timeout.
 
 ### Fixed
+- **A message send froze the TUI while inotify walked `target/`.** The review
+  watch registered ONE RECURSIVE watch on the repository top level, and the
+  recursive mode of `notify` adds a watch for each directory it walks — so it
+  descended the build output. `messaging/send.rs` awaits that call for each
+  turn, before precognition, and nothing reaches the client while it runs: no
+  message, no spinner, no error. On a 408 GB `target/` the turn stalled 13
+  seconds, and on a cold cache it never finished. The `BUILD_DIRS` list meant
+  to prevent this filtered EVENTS, after delivery, so it never stopped the
+  walk; it also matched at depth one only, which let `crates/*/target` and
+  `docs-site/node_modules` through. The watch now prunes with
+  `git ls-files --directory --others --ignored --exclude-standard`, which
+  answers in milliseconds because git does not descend a fully ignored tree.
+  This is exact rather than a guess: each tree the ledger records comes from
+  `git add -A`, so an ignored path can never reach a hunk. A subtree with
+  nothing ignored in it still gets one RECURSIVE watch, which is what keeps
+  directories created later covered. Measured on this repository: 13,205 ms
+  becomes 42 ms, and about 18,000 watches become 64. An ignored FILE inside a
+  watched directory (`.env.local`) is no longer reported as an external change.
 - **The Discord default intents asked for reactions, not guild messages.**
   `37889` set bit 10 where bit 9 was meant, so the gateway delivered no guild
   message at all: DMs worked, a server bot did not, and the whole
