@@ -360,3 +360,56 @@ describe("self approval", function()
         assert.equals(false, answers[1].reply.allowed)
     end)
 end)
+
+describe("responder error disclosure", function()
+    -- The fallback pasted `tostring(err)` into the channel. A daemon error
+    -- carries absolute paths, session ids and provider text, and a Discord
+    -- channel is read by everyone in the room -- including, on a shared server,
+    -- people the session's own tier would never have let near it.
+    local SECRET = "/home/moot/.crucible/sessions/abc-123/transcript.jsonl"
+
+    local function failing_session(message)
+        return {
+            send_and_collect = function() return nil, message end,
+            interaction_respond = function() return true, nil end,
+        }
+    end
+
+    it("does not paste the daemon's error into the channel", function()
+        local sent, record = recorder()
+        with_env({}, {
+            sessions = failing_session("stream failed reading " .. SECRET),
+            send_message = record,
+        }, function()
+            responder.respond("chat-1", "room-9", "hi", "msg-1", "user-1", false)
+        end)
+
+        assert.equals(1, #sent)
+        assert.equals(nil, sent[1].text:find(SECRET, 1, true))
+        assert.equals(nil, sent[1].text:find("transcript", 1, true))
+    end)
+
+    it("still tells the user something went wrong", function()
+        local sent, record = recorder()
+        with_env({}, {
+            sessions = failing_session("stream failed reading " .. SECRET),
+            send_message = record,
+        }, function()
+            responder.respond("chat-1", "room-9", "hi", "msg-1", "user-1", false)
+        end)
+
+        assert.equals(true, #sent[1].text > 0)
+    end)
+
+    it("keeps the concurrent-request message, which is normal operation", function()
+        local sent, record = recorder()
+        with_env({}, {
+            sessions = failing_session("Concurrent request in progress"),
+            send_message = record,
+        }, function()
+            responder.respond("chat-1", "room-9", "hi", "msg-1", "user-1", false)
+        end)
+
+        assert.equals(true, sent[1].text:find("previous message", 1, true) ~= nil)
+    end)
+end)

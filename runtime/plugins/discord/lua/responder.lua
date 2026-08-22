@@ -412,9 +412,15 @@ function M.respond(session_id, channel_id, user_message, reply_to_msg_id, user_i
         -- rather than pasting the daemon's error and the session id into a
         -- public channel. No queue — a FIFO would add unbounded state and a new
         -- failure mode for a cosmetic problem.
+        -- The detail goes to the log, never to the channel. A daemon error
+        -- carries absolute paths, session ids and provider text, and
+        -- everyone in the room reads what is posted here -- including, on a
+        -- shared server, people the session's own access tier would never
+        -- have let near it. The WARN line just above carries the whole
+        -- error for the operator.
         local text = tostring(err):find("Concurrent request in progress", 1, true)
             and "I'm still working on your previous message."
-            or "Sorry, I couldn't process that: " .. tostring(err)
+            or "Sorry, I couldn't process that. The details are in the daemon log."
         api.send_message(channel_id, text, { reply_to = reply_to_msg_id })
         return
     end
