@@ -17,7 +17,6 @@ pub mod discovery;
 pub mod session;
 pub mod streaming;
 pub mod tools;
-pub mod tracing_utils;
 
 // Mock agent for testing (only included in test builds)
 #[cfg(any(test, feature = "test-utils"))]
@@ -25,22 +24,16 @@ pub mod mock_agent;
 
 // Public exports
 pub use client::CrucibleAcpClient;
-pub use discovery::{
-    discover_agent, get_agent_help, is_agent_available, reset_agent_cache, AgentInfo,
-};
+pub use discovery::{discover_agent, is_agent_available, reset_agent_cache, AgentInfo};
 pub use session::{AcpSession, TransportConfig};
 pub use streaming::{
     channel_callback, humanize_tool_title, StreamConfig, StreamHandler, StreamingCallback,
     StreamingChunk, ToolCallInfo,
 };
 
-pub use tracing_utils::{LogCapture, TraceContext};
-
 // Re-export test utilities when feature is enabled
 #[cfg(feature = "test-utils")]
 pub use mock_agent::MockAgent;
-#[cfg(any(test, feature = "test-utils"))]
-pub use tracing_utils::{create_test_subscriber, init_test_subscriber, CapturedLog};
 
 // Error types
 mod error;

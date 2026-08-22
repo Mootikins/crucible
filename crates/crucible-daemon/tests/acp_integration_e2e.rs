@@ -37,9 +37,18 @@ fn test_discover_tools_returns_tool_list() {
 
     // Verify tool categories are present
     let tools = registry.list();
-    let note_tools: Vec<_> = tools.iter().filter(|t| t.category == "notes").collect();
-    let search_tools: Vec<_> = tools.iter().filter(|t| t.category == "search").collect();
-    let kiln_tools: Vec<_> = tools.iter().filter(|t| t.category == "kiln").collect();
+    let note_tools: Vec<_> = tools
+        .iter()
+        .filter(|t| t.category.as_deref() == Some("notes"))
+        .collect();
+    let search_tools: Vec<_> = tools
+        .iter()
+        .filter(|t| t.category.as_deref() == Some("search"))
+        .collect();
+    let kiln_tools: Vec<_> = tools
+        .iter()
+        .filter(|t| t.category.as_deref() == Some("kiln"))
+        .collect();
 
     assert_eq!(note_tools.len(), 6, "Expected 6 note tools");
     assert_eq!(search_tools.len(), 3, "Expected 3 search tools");
@@ -66,7 +75,10 @@ fn test_discover_tools_returns_tool_list() {
             tool.name
         );
         assert_eq!(
-            tool.input_schema.get("type").and_then(|v| v.as_str()),
+            tool.parameters
+                .as_ref()
+                .and_then(|p| p.get("type"))
+                .and_then(|v| v.as_str()),
             Some("object"),
             "Tool '{}' schema should be type=object",
             tool.name

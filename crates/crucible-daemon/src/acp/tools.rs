@@ -15,36 +15,21 @@
 //! - **Dependency Inversion**: Uses traits for extensibility
 //! - **Open/Closed**: New tool types can be added without modification
 
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+
+use crucible_core::traits::tools::ToolDefinition;
 
 use crate::acp::{ClientError, Result};
 use crate::tools::containment::RootSet;
 use crate::tools::fs_scope::FsScope;
 use crate::tools::notes::{ensure_md_suffix, reject_non_note};
 
-/// Descriptor for a registered tool
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ToolDescriptor {
-    /// Unique identifier for the tool
-    pub name: String,
-
-    /// Human-readable description of what the tool does
-    pub description: String,
-
-    /// Category of the tool (e.g., "notes", "search", "kiln")
-    pub category: String,
-
-    /// JSON schema for the tool's input parameters
-    pub input_schema: serde_json::Value,
-}
-
 /// Registry for managing available tools
 #[derive(Debug, Clone)]
 pub struct ToolRegistry {
     /// Map of tool name to descriptor
-    tools: HashMap<String, ToolDescriptor>,
+    tools: HashMap<String, ToolDefinition>,
 }
 
 impl ToolRegistry {
@@ -64,7 +49,7 @@ impl ToolRegistry {
     /// # Errors
     ///
     /// Returns an error if a tool with the same name is already registered
-    pub fn register(&mut self, descriptor: ToolDescriptor) -> Result<()> {
+    pub fn register(&mut self, descriptor: ToolDefinition) -> Result<()> {
         if self.tools.contains_key(&descriptor.name) {
             return Err(ClientError::InvalidConfig(format!(
                 "Tool already registered: {}",
@@ -84,7 +69,7 @@ impl ToolRegistry {
     /// # Returns
     ///
     /// The tool descriptor if found, None otherwise
-    pub fn get(&self, name: &str) -> Option<&ToolDescriptor> {
+    pub fn get(&self, name: &str) -> Option<&ToolDefinition> {
         self.tools.get(name)
     }
 
@@ -93,7 +78,7 @@ impl ToolRegistry {
     /// # Returns
     ///
     /// A vector of all tool descriptors
-    pub fn list(&self) -> Vec<&ToolDescriptor> {
+    pub fn list(&self) -> Vec<&ToolDefinition> {
         self.tools.values().collect()
     }
 
@@ -127,13 +112,10 @@ fn create_tool(
     description: impl Into<String>,
     category: impl Into<String>,
     schema: serde_json::Value,
-) -> ToolDescriptor {
-    ToolDescriptor {
-        name: name.into(),
-        description: description.into(),
-        category: category.into(),
-        input_schema: schema,
-    }
+) -> ToolDefinition {
+    ToolDefinition::new(name, description)
+        .with_category(category)
+        .with_parameters(schema)
 }
 
 /// Discover and register all Crucible tools
@@ -584,13 +566,13 @@ mod tests {
     use std::sync::Arc;
     use tempfile::TempDir;
 
-    fn test_tool(name: &str, category: &str, input_schema: serde_json::Value) -> ToolDescriptor {
-        ToolDescriptor {
-            name: name.to_string(),
-            description: format!("{} description", name),
-            category: category.to_string(),
+    fn test_tool(name: &str, category: &str, input_schema: serde_json::Value) -> ToolDefinition {
+        create_tool(
+            name,
+            format!("{} description", name),
+            category,
             input_schema,
-        }
+        )
     }
 
     fn object_schema(required: &[&str]) -> serde_json::Value {
@@ -693,7 +675,7 @@ mod tests {
         }
 
         /// List all available tools
-        pub async fn list_tools(&self) -> std::result::Result<Vec<ToolDescriptor>, AcpError> {
+        pub async fn list_tools(&self) -> std::result::Result<Vec<ToolDefinition>, AcpError> {
             Ok(self
                 .registry
                 .list()
@@ -709,7 +691,7 @@ mod tests {
         ) -> std::result::Result<serde_json::Value, AcpError> {
             self.registry
                 .get(tool_name)
-                .map(|tool| tool.input_schema.clone())
+                .and_then(|tool| tool.parameters.clone())
                 .ok_or_else(|| AcpError::NotFound(tool_name.to_string()))
         }
     }
@@ -722,7 +704,10 @@ mod tests {
         registry.register(descriptor.clone()).unwrap();
 
         assert_eq!(registry.count(), 1);
-        assert_eq!(registry.get("test_tool"), Some(&descriptor));
+        let stored = registry.get("test_tool").expect("tool is registered");
+        assert_eq!(stored.name, descriptor.name);
+        assert_eq!(stored.category, descriptor.category);
+        assert_eq!(stored.parameters, descriptor.parameters);
     }
 
     #[test]
@@ -881,17 +866,7 @@ mod tests {
     #[test]
     fn invalid_input_schema_is_detectable() {
         let invalid = test_tool("bad_schema", "test", json!("not-an-object"));
-        assert!(!is_valid_input_schema(&invalid.input_schema));
-    }
-
-    #[test]
-    fn tool_descriptor_serialization_round_trip() {
-        let descriptor = test_tool("round_trip", "test", object_schema(&["path"]));
-
-        let serialized = serde_json::to_string(&descriptor).unwrap();
-        let deserialized: ToolDescriptor = serde_json::from_str(&serialized).unwrap();
-
-        assert_eq!(descriptor, deserialized);
+        assert!(!is_valid_input_schema(invalid.parameters.as_ref().unwrap()));
     }
 
     #[tokio::test]

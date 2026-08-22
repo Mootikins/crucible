@@ -36,7 +36,7 @@ pub struct AgentInfo {
 ///
 /// Single source of truth for the default profiles, the discovery priority
 /// order (array order), and the install instructions rendered by the "no agent
-/// found" error and [`get_agent_help`]. It used to be three parallel tables,
+/// found" error. It used to be three parallel tables,
 /// which is how `opencode` spent several releases pointing at an unrelated
 /// project and how two different descriptions of the same agent drifted apart.
 struct BuiltinAgent {
@@ -94,6 +94,14 @@ const BUILTIN_AGENTS: &[BuiltinAgent] = &[
 
 fn is_builtin(name: &str) -> bool {
     BUILTIN_AGENTS.iter().any(|agent| agent.name == name)
+}
+
+/// Look up the command and arguments of a built-in agent by name.
+pub(crate) fn builtin_command(name: &str) -> Option<(&'static str, &'static [&'static str])> {
+    BUILTIN_AGENTS
+        .iter()
+        .find(|agent| agent.name == name)
+        .map(|agent| (agent.command, agent.args))
 }
 
 pub fn default_agent_profiles() -> HashMap<String, AgentProfile> {
@@ -291,40 +299,6 @@ pub fn reset_agent_cache() {
     *AGENT_CACHE
         .lock()
         .expect("AGENT_CACHE: poisoned while clearing agent cache") = None;
-}
-
-/// Get help text about available ACP agents and installation instructions
-pub fn get_agent_help() -> String {
-    let agents: String = BUILTIN_AGENTS
-        .iter()
-        .map(|agent| {
-            let requires = agent
-                .requires
-                .map(|cli| format!("  Requires: {cli} installed\n"))
-                .unwrap_or_default();
-            format!(
-                "• {}\n{requires}  Install:  {}\n  {}\n\n",
-                agent.name, agent.install, agent.description
-            )
-        })
-        .collect();
-
-    format!(
-        "Available ACP Agents:\n\
-         ====================\n\
-         \n\
-         {agents}\
-         Usage:\n  \
-         cru chat                    # Auto-detect first available agent\n  \
-         cru chat --agent <name>     # Use specific agent\n  \
-         cru chat --agent <cmd>      # Use custom command\n\
-         \n\
-         Examples:\n  \
-         cru chat --agent claude \"Refactor this function\"\n  \
-         cru chat --agent cursor \"Add error handling\"\n\
-         \n\
-         Note: Some agents require both the base CLI and a bridge package.\n"
-    )
 }
 
 /// Commands that should trust PATH lookup without --version verification.

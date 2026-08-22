@@ -163,13 +163,6 @@ impl CrucibleAcpClient {
         self.last_usage.take()
     }
 
-    /// Attach a recorder explicitly. Used by tests and tools that want to
-    /// record without going through the env-var path.
-    pub fn with_recorder(mut self, recorder: recording::Recorder) -> Self {
-        self.recorder = Some(recorder);
-        self
-    }
-
     pub fn with_permission_handler(mut self, handler: PermissionRequestHandler) -> Self {
         self.permission_handler = Some(handler);
         self

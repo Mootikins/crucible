@@ -9,6 +9,7 @@
 //! agent rather than per known agent name.
 
 use crate::acp::client::ClientConfig;
+use crate::acp::discovery::builtin_command;
 use crate::acp_handle::AcpHandleError;
 use crucible_core::config::components::acp::AcpConfig;
 use crucible_core::session::SessionAgent;
@@ -123,18 +124,8 @@ fn resolve_agent_command(
     agent_config: &SessionAgent,
     acp_config: Option<&AcpConfig>,
 ) -> Result<ResolvedCommand, AcpHandleError> {
-    let known: &[(&str, &str, &[&str])] = &[
-        ("opencode", "opencode", &["acp"]),
-        ("claude", "npx", &["@zed-industries/claude-agent-acp"]),
-        ("gemini", "gemini", &[]),
-        ("codex", "npx", &["@zed-industries/codex-acp"]),
-        ("cursor", "cursor-acp", &[]),
-    ];
-
-    let (mut command, mut args) = known
-        .iter()
-        .find(|(name, _, _)| *name == agent_name)
-        .map(|(_, cmd, ag)| (cmd.to_string(), ag.iter().map(|s| s.to_string()).collect()))
+    let (mut command, mut args) = builtin_command(agent_name)
+        .map(|(cmd, ag)| (cmd.to_string(), ag.iter().map(|s| s.to_string()).collect()))
         .unwrap_or_else(|| (agent_name.to_string(), Vec::new()));
 
     if let Some(config) = acp_config {

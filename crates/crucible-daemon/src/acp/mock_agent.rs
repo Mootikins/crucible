@@ -61,16 +61,6 @@ impl MockAgent {
         }
     }
 
-    /// Add a response for a specific method
-    ///
-    /// # Arguments
-    ///
-    /// * `method` - The method name
-    /// * `response` - The response to return
-    pub fn add_response(&mut self, method: String, response: Value) {
-        self.config.responses.insert(method, response);
-    }
-
     /// Handle a request from a client
     ///
     /// # Arguments
