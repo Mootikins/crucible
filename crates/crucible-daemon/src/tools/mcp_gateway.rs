@@ -8,7 +8,8 @@ use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
@@ -409,6 +410,15 @@ impl McpGatewayManager {
         self.tool_index.len()
     }
 
+    /// Count the upstreams whose config asks for `auto_reconnect`.
+    #[must_use]
+    pub fn upstream_count_with_auto_reconnect(&self) -> usize {
+        self.upstreams
+            .values()
+            .filter(|c| c.config.auto_reconnect)
+            .count()
+    }
+
     /// Get names of upstreams that are disconnected/errored and have `auto_reconnect` enabled.
     #[must_use]
     pub fn upstreams_needing_reconnect(&self) -> Vec<String> {
@@ -466,20 +476,21 @@ impl McpGatewayManager {
         Ok(())
     }
 
-    /// Start a background reconnect loop that periodically checks for disconnected upstreams.
+    /// Start the background reconnect loop.
     ///
-    /// Uses exponential backoff per-upstream: 30s → 60s → 120s → max 300s.
-    /// Only reconnects upstreams with `auto_reconnect: true` in their config.
-    ///
-    /// Returns a `JoinHandle` for the background task.
+    /// Every `schedule.poll` the loop asks for the upstreams that need a
+    /// reconnect. An upstream whose attempt failed waits for its backoff
+    /// before the next attempt: `poll`, then double each time, up to
+    /// `schedule.max_backoff`. A success clears the backoff. The loop stops
+    /// when `ct` cancels.
     pub fn start_reconnect_loop(
-        gateway: Arc<Mutex<Self>>,
+        gateway: Arc<RwLock<Self>>,
         ct: CancellationToken,
+        schedule: ReconnectSchedule,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
-            let mut backoff: HashMap<String, u64> = HashMap::new();
-            let base_interval = Duration::from_secs(30);
-            let max_backoff = 300u64;
+            // name -> (next attempt, wait after that attempt fails)
+            let mut backoff: HashMap<String, (Instant, Duration)> = HashMap::new();
 
             loop {
                 tokio::select! {
@@ -487,30 +498,34 @@ impl McpGatewayManager {
                         info!("MCP reconnect loop shutting down");
                         break;
                     }
-                    () = tokio::time::sleep(base_interval) => {
-                        let needs_reconnect = {
-                            let gw = gateway.lock().await;
-                            gw.upstreams_needing_reconnect()
-                        };
+                    () = tokio::time::sleep(schedule.poll) => {
+                        let now = Instant::now();
+                        let needs_reconnect = gateway.read().await.upstreams_needing_reconnect();
 
                         for name in needs_reconnect {
-                            let current_backoff = backoff.get(&name).copied().unwrap_or(30);
+                            let (next_attempt, wait) = backoff
+                                .get(&name)
+                                .copied()
+                                .unwrap_or((now, schedule.poll));
+                            if next_attempt > now {
+                                continue;
+                            }
 
                             info!("Attempting reconnect for upstream '{}'", name);
 
-                            let mut gw = gateway.lock().await;
+                            let mut gw = gateway.write().await;
                             match gw.reconnect(&name).await {
                                 Ok(()) => {
                                     info!("Reconnected to upstream '{}'", name);
                                     backoff.remove(&name);
                                 }
                                 Err(e) => {
-                                    let next = (current_backoff * 2).min(max_backoff);
+                                    let next_wait = (wait * 2).min(schedule.max_backoff);
                                     warn!(
                                         "Reconnect failed for '{}': {}. Next attempt in {}s",
-                                        name, e, next
+                                        name, e, wait.as_secs()
                                     );
-                                    backoff.insert(name, next);
+                                    backoff.insert(name, (now + wait, next_wait));
                                 }
                             }
                         }
@@ -518,6 +533,24 @@ impl McpGatewayManager {
                 }
             }
         })
+    }
+}
+
+/// Timing for [`McpGatewayManager::start_reconnect_loop`].
+#[derive(Debug, Clone, Copy)]
+pub struct ReconnectSchedule {
+    /// Time between two checks of the upstream states.
+    pub poll: Duration,
+    /// Longest wait between two attempts on one upstream.
+    pub max_backoff: Duration,
+}
+
+impl Default for ReconnectSchedule {
+    fn default() -> Self {
+        Self {
+            poll: Duration::from_secs(30),
+            max_backoff: Duration::from_secs(300),
+        }
     }
 }
 
@@ -743,6 +776,88 @@ mod tests {
 
         assert!(!client.is_tool_allowed("dangerous_action"));
         assert!(client.is_tool_allowed("safe_action"));
+    }
+
+    fn broken_upstream(name: &str, prefix: &str) -> UpstreamClient {
+        let mut config = test_config(name, prefix);
+        config.transport = TransportType::Stdio {
+            command: "/nonexistent/crucible-no-such-mcp-server".to_string(),
+            args: vec![],
+            env: HashMap::new(),
+        };
+        UpstreamClient::new(config)
+    }
+
+    /// The loop tries a disconnected `auto_reconnect` upstream after one
+    /// poll, then waits for the backoff before it tries again.
+    #[tokio::test(start_paused = true)]
+    async fn reconnect_loop_retries_with_backoff() {
+        let mut manager = McpGatewayManager::new();
+        manager
+            .upstreams
+            .insert("broken".to_string(), broken_upstream("broken", "b_"));
+        let gateway = Arc::new(RwLock::new(manager));
+        let ct = CancellationToken::new();
+        let schedule = ReconnectSchedule {
+            poll: Duration::from_secs(1),
+            max_backoff: Duration::from_secs(8),
+        };
+        let task = McpGatewayManager::start_reconnect_loop(gateway.clone(), ct.clone(), schedule);
+
+        let state = |gw: &McpGatewayManager| gw.upstreams["broken"].state();
+        let reset = |gw: &mut McpGatewayManager| {
+            gw.upstreams.get_mut("broken").unwrap().state = ConnectionState::Disconnected;
+        };
+
+        // First poll: one attempt, which fails. The wait is now one poll.
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+        assert_eq!(state(&*gateway.read().await), ConnectionState::Error);
+
+        // Second poll: the wait passed, so the loop tries again. The wait
+        // doubles to two polls.
+        reset(&mut *gateway.write().await);
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert_eq!(state(&*gateway.read().await), ConnectionState::Error);
+
+        // Third poll: inside the wait, so the loop skips the upstream.
+        reset(&mut *gateway.write().await);
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert_eq!(state(&*gateway.read().await), ConnectionState::Disconnected);
+
+        // Fourth poll: the wait passed, so the loop tries again.
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert_eq!(state(&*gateway.read().await), ConnectionState::Error);
+
+        ct.cancel();
+        tokio::time::timeout(Duration::from_secs(1), task)
+            .await
+            .expect("loop stops on cancel")
+            .expect("loop did not panic");
+    }
+
+    /// An upstream with `auto_reconnect = false` is never retried.
+    #[tokio::test(start_paused = true)]
+    async fn reconnect_loop_leaves_manual_upstreams_alone() {
+        let mut manager = McpGatewayManager::new();
+        let mut client = broken_upstream("manual", "m_");
+        client.config.auto_reconnect = false;
+        manager.upstreams.insert("manual".to_string(), client);
+        let gateway = Arc::new(RwLock::new(manager));
+        let ct = CancellationToken::new();
+        let schedule = ReconnectSchedule {
+            poll: Duration::from_secs(1),
+            max_backoff: Duration::from_secs(8),
+        };
+        let task = McpGatewayManager::start_reconnect_loop(gateway.clone(), ct.clone(), schedule);
+
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        assert_eq!(
+            gateway.read().await.upstreams["manual"].state(),
+            ConnectionState::Disconnected
+        );
+
+        ct.cancel();
+        task.await.expect("loop did not panic");
     }
 
     #[test]

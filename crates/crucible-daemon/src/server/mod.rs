@@ -19,6 +19,7 @@ use crate::rpc_helpers::{optional_param, require_param};
 use crate::session_manager::{KilnFilter, SessionManager};
 use crate::session_storage::{FileSessionStorage, SessionStorage};
 use crate::skills::discovery::{default_discovery_paths, FolderDiscovery};
+use crate::tools::mcp_gateway::{McpGatewayManager, ReconnectSchedule};
 use crate::tools::workspace::WorkspaceTools;
 use anyhow::Result;
 use chrono::Utc;
@@ -126,6 +127,9 @@ pub struct Server {
     /// daemon's own uid in production; a test overrides it to prove the accept
     /// path really consults it.
     authorized_uid: u32,
+    /// The same gateway the agent manager dispatches through. `run()` starts
+    /// the reconnect loop on it when an upstream asks for `auto_reconnect`.
+    mcp_gateway: Option<Arc<tokio::sync::RwLock<McpGatewayManager>>>,
 }
 
 /// Session handle backing for contexts that only need identity, not the full
@@ -176,7 +180,6 @@ impl Server {
         let (shutdown_tx, _) = broadcast::channel(1);
         let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
 
-        use crate::tools::mcp_gateway::McpGatewayManager;
         use tokio::sync::RwLock;
 
         let mcp_gateway = if let Some(mcp_cfg) = params.mcp_config.as_ref() {
@@ -303,7 +306,7 @@ impl Server {
                     kiln_manager: kiln_manager.clone(),
                     session_manager: session_manager.clone(),
                     background_manager: Arc::new(BackgroundJobManager::new(event_tx.clone())),
-                    mcp_gateway,
+                    mcp_gateway: mcp_gateway.clone(),
                     llm_config: params.llm_config.clone(),
                     acp_config: params.acp_config.clone(),
                     context_config: params.context_config.clone(),
@@ -398,6 +401,7 @@ impl Server {
             event_tx,
             dispatcher,
             rpc_context: ctx,
+            mcp_gateway,
             plugin_loader,
             runtimepath: params.runtimepath,
             plugin_watch: params.plugin_watch,
@@ -699,6 +703,24 @@ impl Server {
             }
         };
 
+        // Reconnect loop: an upstream with `auto_reconnect = true` comes back
+        // without a daemon restart. Skipped when no upstream asks for it, so a
+        // gateway-free daemon spawns nothing.
+        let reconnect_cancel = CancellationToken::new();
+        let reconnect_task = self.mcp_gateway.as_ref().and_then(|gateway| {
+            let wanted = gateway
+                .try_read()
+                .map(|gw| gw.upstream_count_with_auto_reconnect())
+                .unwrap_or(0);
+            (wanted > 0).then(|| {
+                McpGatewayManager::start_reconnect_loop(
+                    Arc::clone(gateway),
+                    reconnect_cancel.clone(),
+                    ReconnectSchedule::default(),
+                )
+            })
+        });
+
         // Auto-title task: when a turn completes in a still-untitled session,
         // generate a topic-based title daemon-side so every client (TUI, web,
         // ACP) gets titled sessions without asking for it.
@@ -871,6 +893,7 @@ impl Server {
         // it (`AgentManager` holds the watch), so `Closed` never arrives on its
         // own — without this the join below always burns its full timeout.
         review_watch_cancel.cancel();
+        reconnect_cancel.cancel();
         match tokio::time::timeout(std::time::Duration::from_secs(5), persist_task).await {
             Ok(Ok(())) => debug!("Persist task completed gracefully"),
             Ok(Err(e)) => warn!("Persist task panicked: {}", e),
@@ -890,6 +913,13 @@ impl Server {
             Ok(Ok(())) => debug!("Auto-title task completed gracefully"),
             Ok(Err(e)) => warn!("Auto-title task panicked: {}", e),
             Err(_) => warn!("Auto-title task did not complete within timeout, aborting"),
+        }
+        if let Some(task) = reconnect_task {
+            match tokio::time::timeout(std::time::Duration::from_secs(5), task).await {
+                Ok(Ok(())) => debug!("MCP reconnect task completed gracefully"),
+                Ok(Err(e)) => warn!("MCP reconnect task panicked: {}", e),
+                Err(_) => warn!("MCP reconnect task did not complete within timeout, aborting"),
+            }
         }
         if let Some((watch, task)) = review_watch_task {
             if let Err(e) = watch.shutdown().await {

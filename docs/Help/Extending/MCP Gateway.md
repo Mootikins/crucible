@@ -141,7 +141,7 @@ Use `:mcp` in the TUI to view live server status at any time.
 
 ### Auto-Reconnect
 
-If a server disconnects (network issues, server restart, etc.), Crucible automatically attempts to reconnect when `auto_reconnect = true` (the default). The reconnect loop runs in the background — no user action needed.
+If a server disconnects (network issues, server restart, etc.), the daemon reconnects it when `auto_reconnect = true` (the default). The daemon checks every 30 seconds. After a failed attempt it waits 30 s, then 60 s, then 120 s, up to 300 s, before the next attempt. No user action is needed.
 
 ### Tool Injection
 
