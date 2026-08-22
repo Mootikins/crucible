@@ -139,6 +139,10 @@ toml = { workspace = true }
 
 [dev-dependencies]
 crucible-cli = { path = ".", features = ["test-utils"] }
+# `EnumIter` over `chat_app::repl_command::ReplCommand`, so the table test
+# walks every variant the compiler knows. Dev-only: the derive is
+# `#[cfg_attr(test, ...)]`.
+strum = { version = "0.28", features = ["derive"] }
 crucible-core = { path = "../crucible-core", features = ["test-utils"] }
 # MCP client for testing examples
 rmcp = { version = "2.2", features = ["client", "transport-child-process"] }

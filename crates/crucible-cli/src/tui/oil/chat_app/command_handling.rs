@@ -13,32 +13,9 @@ use crate::tui::oil::config::{ConfigValue, ModSource};
 
 use super::messages::ChatAppMsg;
 use super::model_state::ModelListState;
+use super::repl_command::ReplCommand;
 use super::state::{next_mode, DEFAULT_MODE};
 use super::OilChatApp;
-
-/// Known REPL command names for suggestion matching.
-const KNOWN_REPL_COMMANDS: &[&str] = &[
-    "quit",
-    "q",
-    "help",
-    "h",
-    "clear",
-    "undo",
-    "model",
-    "set",
-    "export",
-    "messages",
-    "msgs",
-    "notifications",
-    "palette",
-    "commands",
-    "mcp",
-    "plugins",
-    "reload",
-    "config",
-    "pick",
-    "lua",
-];
 
 /// Suggest the closest known command for a typo.
 fn suggest_command<'a>(input: &str, known: &[&'a str]) -> Option<&'a str> {
@@ -79,21 +56,7 @@ fn help_text(category: Option<&str>) -> String {
              \n\
              Type :quit to exit, /command for slash commands"
             .to_string(),
-        Some("commands") | Some("cmds") => ":quit, :q      — Exit\n\
-             :clear          — Clear conversation\n\
-             :undo [N]       — Undo last N agent turns (default 1)\n\
-             :model <name>   — Switch model (or list available)\n\
-             :set <opt>      — Set option (e.g., :set thinkingbudget=high)\n\
-             :export <path>  — Export session to markdown\n\
-             :messages       — Toggle notification drawer\n\
-             :mcp            — Show MCP server status\n\
-             :plugins        — Show loaded plugins\n\
-             :reload <name>  — Reload a plugin\n\
-             :lua <expr>     — Evaluate Lua (daemon-side; := shorthand)\n\
-             :palette        — Open command palette (F1)\n\
-             :config         — Show current configuration\n\
-             :help [topic]   — Show help"
-            .to_string(),
+        Some("commands") | Some("cmds") => ReplCommand::help_lines(),
         Some("keys") | Some("keybindings") | Some("shortcuts") => "Enter          — Send message\n\
              Ctrl+C         — Cancel / clear input\n\
              Ctrl+T         — Toggle thinking display\n\
@@ -313,7 +276,7 @@ impl OilChatApp {
                 // Extract the base command word for suggestion matching
                 let base_cmd = command.split_whitespace().next().unwrap_or(command);
                 let mut msg = format!("Unknown REPL command: {}", cmd);
-                if let Some(suggestion) = suggest_command(base_cmd, KNOWN_REPL_COMMANDS) {
+                if let Some(suggestion) = suggest_command(base_cmd, &ReplCommand::known_words()) {
                     msg.push_str(&format!(" Did you mean :{} ?", suggestion));
                 }
                 self.notification_area

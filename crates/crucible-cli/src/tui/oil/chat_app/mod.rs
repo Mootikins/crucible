@@ -29,6 +29,7 @@ mod message_handlers;
 pub mod messages;
 pub mod model_state;
 pub mod popup_state;
+mod repl_command;
 mod shell;
 pub mod state;
 

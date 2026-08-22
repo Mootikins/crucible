@@ -11,6 +11,7 @@ use crucible_oil::node::PopupItemNode;
 
 use super::messages::ChatAppMsg;
 use super::model_state::ModelListState;
+use super::repl_command::ReplCommand;
 use super::state::AutocompleteKind;
 use super::OilChatApp;
 
@@ -201,26 +202,9 @@ impl OilChatApp {
                     .collect();
                 Self::filter_commands(&refs, &filter)
             }
-            AutocompleteKind::ReplCommand => Self::filter_commands(
-                &[
-                    (":quit", "Exit chat", "core"),
-                    (":help", "Show help", "core"),
-                    (":clear", "Clear conversation history", "core"),
-                    (":undo", "Undo last exchange(s)", "core"),
-                    (":palette", "Open command palette", "core"),
-                    (":model", "Switch model", "core"),
-                    (":pick", "Fuzzy picker (notes, files, commands)", "core"),
-                    (":mcp", "List MCP servers", "mcp"),
-                    (":plugins", "Show plugin status", "core"),
-                    (":config", "Show session configuration", "core"),
-                    (":export", "Export session to file", "core"),
-                    (":messages", "Toggle notification drawer", "core"),
-                    (":reload", "Reload plugin(s)", "core"),
-                    (":lua", "Evaluate Lua expression", "core"),
-                    (":set", "View/modify runtime options", "core"),
-                ],
-                &filter,
-            ),
+            AutocompleteKind::ReplCommand => {
+                Self::filter_commands(&ReplCommand::popup_entries(), &filter)
+            }
             AutocompleteKind::Model => {
                 if matches!(self.model_list_state, ModelListState::Loading)
                     && self.available_models.is_empty()
@@ -471,17 +455,7 @@ impl OilChatApp {
                     .map(|(n, d, k)| (n.as_str(), d.as_str(), k.as_str()))
                     .collect();
                 let mut items = Self::filter_commands(&refs, filter);
-                items.extend(Self::filter_commands(
-                    &[
-                        (":quit", "Exit chat", "core"),
-                        (":help", "Show help", "core"),
-                        (":clear", "Clear conversation history", "core"),
-                        (":model", "Switch model", "core"),
-                        (":set", "View/modify runtime options", "core"),
-                        (":pick", "Open picker", "core"),
-                    ],
-                    filter,
-                ));
+                items.extend(Self::filter_commands(&ReplCommand::popup_entries(), filter));
                 items
             }
             PickSource::All => {
