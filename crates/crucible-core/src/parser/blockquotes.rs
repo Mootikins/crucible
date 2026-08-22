@@ -158,13 +158,6 @@ impl SyntaxExtension for BlockquoteExtension {
     }
 }
 
-impl BlockquoteExtension {
-    /// Check if this extension supports blockquotes (convenience method for tests)
-    pub fn supports_blockquotes(&self) -> bool {
-        true
-    }
-}
-
 /// Create a blockquote extension instance
 pub fn create_blockquote_extension() -> std::sync::Arc<dyn SyntaxExtension> {
     std::sync::Arc::new(BlockquoteExtension::new())

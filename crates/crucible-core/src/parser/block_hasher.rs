@@ -131,7 +131,7 @@ impl SerializableBlock {
     /// Create a serializable block from an AST block
     fn from_ast_block(block: &ASTBlock) -> Self {
         Self {
-            block_type: block.type_name().to_string(),
+            block_type: block.block_type.as_str().to_string(),
             content: block.content.clone(),
             metadata: SerializableMetadata::from_ast_metadata(&block.metadata),
             start_offset: block.start_offset,

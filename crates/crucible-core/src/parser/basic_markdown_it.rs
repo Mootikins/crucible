@@ -35,19 +35,6 @@ impl BasicMarkdownItExtension {
             md: Arc::new(md),
         }
     }
-
-    /// Create a disabled instance
-    pub fn disabled() -> Self {
-        let mut md = markdown_it::MarkdownIt::new();
-        markdown_it::plugins::cmark::add(&mut md);
-        // Add GFM tables support
-        markdown_it::plugins::extra::tables::add(&mut md);
-
-        Self {
-            enabled: false,
-            md: Arc::new(md),
-        }
-    }
 }
 
 impl Default for BasicMarkdownItExtension {

@@ -200,22 +200,6 @@ impl ASTBlock {
         self.content.trim().is_empty()
     }
 
-    /// Get a string representation of this block type
-    pub fn type_name(&self) -> &'static str {
-        match self.block_type {
-            ASTBlockType::Heading => "heading",
-            ASTBlockType::Paragraph => "paragraph",
-            ASTBlockType::Code => "code",
-            ASTBlockType::List => "list",
-            ASTBlockType::Callout => "callout",
-            ASTBlockType::Latex => "latex",
-            ASTBlockType::Blockquote => "blockquote",
-            ASTBlockType::Table => "table",
-            ASTBlockType::HorizontalRule => "horizontal_rule",
-            ASTBlockType::ThematicBreak => "thematic_break",
-        }
-    }
-
     /// Check if this block is a heading level
     pub fn is_heading_level(&self, level: u8) -> bool {
         matches!(self.block_type, ASTBlockType::Heading)
@@ -242,32 +226,12 @@ impl ASTBlock {
         self
     }
 
-    /// Builder method: Set the depth in the heading hierarchy
-    #[must_use = "builder methods consume self and return a new value"]
-    pub fn with_depth(mut self, depth: u32) -> Self {
-        self.depth = Some(depth);
-        self
-    }
-
-    /// Builder method: Set both parent and depth for hierarchy
-    #[must_use = "builder methods consume self and return a new value"]
-    pub fn with_hierarchy(mut self, parent_block_id: impl Into<String>, depth: u32) -> Self {
-        self.parent_block_id = Some(parent_block_id.into());
-        self.depth = Some(depth);
-        self
-    }
-
     /// Get the heading level if this is a heading block
     pub fn heading_level(&self) -> Option<u8> {
         match &self.metadata {
             ASTBlockMetadata::Heading { level, .. } => Some(*level),
             _ => None,
         }
-    }
-
-    /// Check if this block is a heading
-    pub fn is_heading(&self) -> bool {
-        matches!(self.block_type, ASTBlockType::Heading)
     }
 }
 

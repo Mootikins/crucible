@@ -222,11 +222,6 @@ impl ParsedNote {
         all_tags
     }
 
-    /// Get the first heading as a fallback title
-    pub fn first_heading(&self) -> Option<&str> {
-        self.content.headings.first().map(|h| h.text.as_str())
-    }
-
     /// Check if this note has block hashes (Phase 2 support)
     pub fn has_block_hashes(&self) -> bool {
         !self.block_hashes.is_empty()

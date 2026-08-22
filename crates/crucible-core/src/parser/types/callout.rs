@@ -166,25 +166,6 @@ impl Callout {
         }
     }
 
-    /// Returns true if this is a standard (non-custom) callout type
-    pub fn is_standard_type(&self) -> bool {
-        self.callout_type.is_standard()
-    }
-
-    /// Get the display type with fallback for custom types
-    pub fn display_type(&self) -> &str {
-        if self.callout_type.is_standard() {
-            self.callout_type.as_str()
-        } else {
-            "note" // fallback to generic note type for rendering
-        }
-    }
-
-    /// Get the start offset (backward compatibility)
-    pub fn start_offset(&self) -> usize {
-        self.offset
-    }
-
     /// Get the total length of the callout
     pub fn length(&self) -> usize {
         let header_len = if let Some(title) = &self.title {
@@ -221,19 +202,5 @@ impl LatexExpression {
             offset,
             length,
         }
-    }
-
-    /// Get the expression type as a string
-    pub fn expression_type(&self) -> &'static str {
-        if self.is_block {
-            "block"
-        } else {
-            "inline"
-        }
-    }
-
-    /// Get the start offset (backward compatibility)
-    pub fn start_offset(&self) -> usize {
-        self.offset
     }
 }

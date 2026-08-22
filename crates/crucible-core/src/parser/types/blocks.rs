@@ -90,19 +90,6 @@ impl HorizontalRule {
         }
     }
 
-    /// Detect style from raw content
-    pub fn detect_style(content: &str) -> String {
-        if content.contains('-') {
-            "dash".to_string()
-        } else if content.contains('*') {
-            "asterisk".to_string()
-        } else if content.contains('_') {
-            "underscore".to_string()
-        } else {
-            "unknown".to_string()
-        }
-    }
-
     /// Get the length of the horizontal rule
     pub fn length(&self) -> usize {
         self.raw_content.len()

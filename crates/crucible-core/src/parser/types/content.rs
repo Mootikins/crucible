@@ -186,11 +186,6 @@ impl CodeBlock {
             line_count,
         }
     }
-
-    /// Check if this is a specific language
-    pub fn is_language(&self, lang: &str) -> bool {
-        self.language.as_deref() == Some(lang)
-    }
 }
 
 /// Paragraph block

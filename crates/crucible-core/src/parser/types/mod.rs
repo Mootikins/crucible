@@ -146,7 +146,7 @@ mod tests {
         assert_eq!(block.length(), 12);
         assert_eq!(block.content_length(), 12);
         assert!(!block.is_empty());
-        assert_eq!(block.type_name(), "heading");
+        assert_eq!(block.block_type.as_str(), "heading");
         assert!(block.is_heading_level(1));
         assert!(!block.is_heading_level(2));
     }
@@ -166,7 +166,7 @@ mod tests {
         assert_eq!(block.content, "let x = 42;");
         assert!(block.is_code_language("rust"));
         assert!(!block.is_code_language("python"));
-        assert_eq!(block.type_name(), "code");
+        assert_eq!(block.block_type.as_str(), "code");
     }
 
     #[test]
@@ -183,7 +183,7 @@ mod tests {
         assert_eq!(block.block_type, ASTBlockType::Callout);
         assert!(block.is_callout_type("note"));
         assert!(!block.is_callout_type("warning"));
-        assert_eq!(block.type_name(), "callout");
+        assert_eq!(block.block_type.as_str(), "callout");
     }
 
     #[test]
@@ -240,7 +240,7 @@ mod tests {
             4,
             metadata.clone(),
         );
-        assert_eq!(paragraph.type_name(), "paragraph");
+        assert_eq!(paragraph.block_type.as_str(), "paragraph");
 
         let heading = ASTBlock::new(
             ASTBlockType::Heading,
@@ -249,10 +249,10 @@ mod tests {
             4,
             metadata.clone(),
         );
-        assert_eq!(heading.type_name(), "heading");
+        assert_eq!(heading.block_type.as_str(), "heading");
 
         let code = ASTBlock::new(ASTBlockType::Code, "Test".to_string(), 0, 4, metadata);
-        assert_eq!(code.type_name(), "code");
+        assert_eq!(code.block_type.as_str(), "code");
     }
 
     #[test]
