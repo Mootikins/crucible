@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Configuration for editor integration.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -163,38 +163,13 @@ impl EditorWatcher {
 
     /// Stop the watch behind `handle`.
     pub async fn unwatch(&mut self, handle: WatchHandle) -> Result<()> {
-        debug!("Removing editor watch for: {}", handle.path.display());
-
-        // Find and remove watch by handle ID
-        let mut removed = false;
-
-        self.watches.retain(|id, _state| {
-            if *id == handle.id {
-                removed = true;
-                false
-            } else {
-                true
-            }
-        });
-
-        if removed {
-            info!("Removed editor watch: {}", handle.path.display());
-        } else {
-            warn!("Editor watch not found: {}", handle.path.display());
-        }
-
+        super::remove_watch(&mut self.watches, &handle, "editor");
         Ok(())
     }
 
     /// Every watch the backend holds.
     pub fn active_watches(&self) -> Vec<WatchHandle> {
-        self.watches
-            .iter()
-            .map(|(id, state)| WatchHandle {
-                id: id.clone(),
-                path: state.watched_path.clone(),
-            })
-            .collect()
+        super::watch_handles(&self.watches, |state| &state.watched_path)
     }
 }
 

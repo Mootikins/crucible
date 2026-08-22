@@ -239,38 +239,13 @@ impl PollingWatcher {
 
     /// Stop the watch behind `handle`.
     pub async fn unwatch(&mut self, handle: WatchHandle) -> Result<()> {
-        debug!("Removing polling watch for: {}", handle.path.display());
-
-        // Find and remove watch by handle ID
-        let mut removed = false;
-
-        self.watches.retain(|id, _state| {
-            if *id == handle.id {
-                removed = true;
-                false
-            } else {
-                true
-            }
-        });
-
-        if removed {
-            info!("Removed polling watch: {}", handle.path.display());
-        } else {
-            warn!("Polling watch not found: {}", handle.path.display());
-        }
-
+        super::remove_watch(&mut self.watches, &handle, "polling");
         Ok(())
     }
 
     /// Every watch the backend holds.
     pub fn active_watches(&self) -> Vec<WatchHandle> {
-        self.watches
-            .iter()
-            .map(|(id, state)| WatchHandle {
-                id: id.clone(),
-                path: state.watched_path.clone(),
-            })
-            .collect()
+        super::watch_handles(&self.watches, |state| &state.watched_path)
     }
 }
 

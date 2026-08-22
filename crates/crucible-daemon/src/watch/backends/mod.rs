@@ -22,8 +22,39 @@ pub use select::{select_optimal_backend, WatcherRequirements, WatcherUseCase};
 use crate::watch::error::Result;
 use crate::watch::events::FileEvent;
 use crate::watch::traits::{BackendCapabilities, WatchConfig, WatchHandle};
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use tokio::sync::mpsc;
+use tracing::{debug, info, warn};
+
+/// Remove the watch behind `handle` from a backend's table, keyed by handle id.
+///
+/// The polling and editor backends share this body. `backend` names the
+/// backend in the log lines.
+fn remove_watch<S>(watches: &mut HashMap<String, S>, handle: &WatchHandle, backend: &str) {
+    debug!("Removing {} watch for: {}", backend, handle.path.display());
+    if watches.remove(&handle.id).is_some() {
+        info!("Removed {} watch: {}", backend, handle.path.display());
+    } else {
+        warn!("{} watch not found: {}", backend, handle.path.display());
+    }
+}
+
+/// Rebuild one `WatchHandle` per entry of a backend's table.
+///
+/// `path_of` reads the watched path out of the backend's state type.
+fn watch_handles<S>(
+    watches: &HashMap<String, S>,
+    path_of: impl Fn(&S) -> &Path,
+) -> Vec<WatchHandle> {
+    watches
+        .iter()
+        .map(|(id, state)| WatchHandle {
+            id: id.clone(),
+            path: path_of(state).to_path_buf(),
+        })
+        .collect()
+}
 
 /// The name of a file watch backend.
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
@@ -183,6 +214,23 @@ impl Backend {
 mod tests {
     use super::*;
     use strum::IntoEnumIterator;
+
+    #[test]
+    fn remove_watch_drops_only_the_handle_id() {
+        let mut watches: HashMap<String, PathBuf> = HashMap::new();
+        watches.insert("a".into(), PathBuf::from("/a"));
+        watches.insert("b".into(), PathBuf::from("/b"));
+        let handle = WatchHandle {
+            id: "a".into(),
+            path: PathBuf::from("/a"),
+        };
+        remove_watch(&mut watches, &handle, "test");
+        remove_watch(&mut watches, &handle, "test");
+        let handles = watch_handles(&watches, |p| p.as_path());
+        assert_eq!(handles.len(), 1);
+        assert_eq!(handles[0].id, "b");
+        assert_eq!(handles[0].path, PathBuf::from("/b"));
+    }
 
     #[test]
     fn all_lists_every_backend() {
