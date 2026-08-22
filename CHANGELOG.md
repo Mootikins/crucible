@@ -151,6 +151,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   worth holding a task open for the provider's own timeout.
 
 ### Fixed
+- **The Discord default intents asked for reactions, not guild messages.**
+  `37889` set bit 10 where bit 9 was meant, so the gateway delivered no guild
+  message at all: DMs worked, a server bot did not, and the whole
+  `respond_to`/mention/prefix path was unreachable. It shipped that way and
+  nothing asserted it. The default is now written as four commented shifts, and
+  the test reads the value out of the IDENTIFY payload rather than off the
+  constant.
+- **Discord posted the daemon's raw error into the channel.** Only the
+  concurrent-request case was special-cased; everything else was concatenated
+  into a public message, carrying absolute paths and session ids. The channel
+  now gets a fixed sentence and the detail stays in the log line that was
+  already there.
 - **The product-map proof gate counted gitignored files as evidence.**
   `product_map_proof_tests_exist` greps the tree for each test a `**Proof:**`
   line cites, and skipped `target`, `node_modules` and `dist` by directory
@@ -201,6 +213,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `crucible.on`/`cru.on` at column zero and now accepts any receiver.
 
 ### Added
+- **The Discord plugin declares its deployment shape.** `mode` is `"personal"`
+  (default) or `"server"`. Reply-chain continuity, self-approval and the `read`
+  tier are each safe in one and wrong in the other, and previously the only
+  thing separating them was whether `allowed_guilds` happened to be empty.
+  `"personal"` now refuses to start when `allowed_guilds` is set, rather than
+  answering DMs and silently dropping every guild message. `"server"` requires a
+  reply to come from the sender who owns the session (`share_reply_chains`
+  restores the old behaviour) and requires an `approvers` list before honouring
+  `ask` from any grant. The `read` tier is deliberately unchanged.
 - **`just refs orphans`** — public types that no Rust code names outside their
   own declaration. `scip-refs.py` answers "is this field ever read"; this
   answers "is this type ever named". The loose test — no reference outside the
