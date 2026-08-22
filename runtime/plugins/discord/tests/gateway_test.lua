@@ -52,6 +52,65 @@ local READY = frame({
     d = { session_id = "gateway-test", user = { username = "test-bot" } },
 })
 
+describe("gateway intents", function()
+    -- The bitmask reaches Discord in the IDENTIFY, and a missing bit is silent:
+    -- the gateway simply never delivers those events. The default shipped as
+    -- 37889, which is bit 10 (GUILD_MESSAGE_REACTIONS) where bit 9
+    -- (GUILD_MESSAGES) was meant, so the bot received no guild message at all
+    -- and worked only in DMs. Asserted through the payload rather than against
+    -- the constant, so the number and its meaning cannot drift apart again.
+    local BIT = {
+        GUILDS = 0,
+        GUILD_MESSAGES = 9,
+        GUILD_MESSAGE_REACTIONS = 10,
+        DIRECT_MESSAGES = 12,
+        MESSAGE_CONTENT = 15,
+    }
+
+    local function identify_intents()
+        local sent = nil
+        with_gateway_env({
+            clock = function() return 1000.0 end,
+            connect = function()
+                return {
+                    send = function(_, raw)
+                        local payload = cru.json.decode(raw)
+                        if payload.op == 2 then sent = payload.d.intents end
+                        return true
+                    end,
+                    close = function() end,
+                    receive = function()
+                        -- HELLO, then stop: IDENTIFY is sent before this returns again.
+                        if sent == nil then return HELLO end
+                        gateway.disconnect()
+                        error("gateway_test: stopping the run")
+                    end,
+                }
+            end,
+        }, function()
+            pcall(gateway.connect)
+        end)
+        return sent
+    end
+
+    local function has_bit(mask, bit)
+        return math.floor(mask / (2 ^ bit)) % 2 == 1
+    end
+
+    it("asks for GUILD_MESSAGES, or the bot is deaf in every server", function()
+        local intents = identify_intents()
+        assert.equals(true, intents ~= nil)
+        assert.equals(true, has_bit(intents, BIT.GUILD_MESSAGES))
+    end)
+
+    it("asks for the other three the plugin documents", function()
+        local intents = identify_intents()
+        assert.equals(true, has_bit(intents, BIT.GUILDS))
+        assert.equals(true, has_bit(intents, BIT.DIRECT_MESSAGES))
+        assert.equals(true, has_bit(intents, BIT.MESSAGE_CONTENT))
+    end)
+end)
+
 describe("gateway reconnection", function()
     it("keeps dialling after a connect failure raises a string", function()
         local dials = 0
