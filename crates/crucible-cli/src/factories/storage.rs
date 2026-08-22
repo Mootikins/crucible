@@ -51,11 +51,67 @@ impl CliStorageHandle {
     }
 }
 
+/// What opening the kiln had to do, as the daemon reports it.
+///
+/// `kiln.open` already returned these counts and every caller threw them away,
+/// so a command that spent minutes indexing looked identical to one that spent
+/// milliseconds. They are the only thing that can explain the wait to the user.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct KilnOpenSummary {
+    pub discovered: u64,
+    pub processed: u64,
+    pub skipped: u64,
+    pub errors: u64,
+}
+
+impl KilnOpenSummary {
+    fn from_response(value: &serde_json::Value) -> Self {
+        let field = |name: &str| value.get(name).and_then(serde_json::Value::as_u64);
+        Self {
+            discovered: field("discovered").unwrap_or(0),
+            processed: field("processed").unwrap_or(0),
+            skipped: field("skipped").unwrap_or(0),
+            errors: value
+                .get("errors")
+                .and_then(serde_json::Value::as_array)
+                .map(|e| e.len() as u64)
+                .unwrap_or(0),
+        }
+    }
+
+    /// One line for the user, or `None` when there is nothing worth saying —
+    /// an open that reindexed nothing should stay quiet.
+    pub fn describe(&self) -> Option<String> {
+        if self.processed == 0 && self.errors == 0 {
+            return None;
+        }
+        let mut parts = vec![format!("indexed {}", self.processed)];
+        if self.skipped > 0 {
+            parts.push(format!("{} unchanged", self.skipped));
+        }
+        if self.errors > 0 {
+            parts.push(format!("{} failed", self.errors));
+        }
+        Some(format!("Kiln: {}", parts.join(", ")))
+    }
+}
+
 /// Get daemon-backed storage.
 ///
 /// Connects to the daemon (auto-starting if needed), opens the kiln,
 /// and returns a `CliStorageHandle` for queries.
 pub async fn get_storage(config: &CliConfig) -> Result<CliStorageHandle> {
+    Ok(get_storage_with_summary(config).await?.0)
+}
+
+/// As [`get_storage`], and also what the open had to index.
+///
+/// Opening processes pending files, which is unbounded work: a kiln the daemon
+/// has never seen is parsed and embedded note by note before this returns. A
+/// caller that makes the user wait for it should be able to say why.
+pub async fn get_storage_with_summary(
+    config: &CliConfig,
+) -> Result<(CliStorageHandle, KilnOpenSummary)> {
     info!("Using daemon storage mode");
     let client = daemon_client().await?;
     let kiln_path = config.kiln_path.clone();
@@ -63,12 +119,21 @@ pub async fn get_storage(config: &CliConfig) -> Result<CliStorageHandle> {
     // Open the kiln in the daemon (required before any queries).
     // process=true ensures files are processed on open, replacing the old
     // separate process_files_with_change_detection call.
-    client
+    let response = client
         .kiln_open_with_options(&kiln_path, true, false)
         .await?;
+    let summary = KilnOpenSummary::from_response(&response);
+    info!(
+        discovered = summary.discovered,
+        processed = summary.processed,
+        skipped = summary.skipped,
+        errors = summary.errors,
+        "Kiln opened"
+    );
 
     let client = Arc::new(client);
-    Ok(CliStorageHandle(Arc::new(DaemonStorageClient::new(
-        client, kiln_path,
-    ))))
+    Ok((
+        CliStorageHandle(Arc::new(DaemonStorageClient::new(client, kiln_path))),
+        summary,
+    ))
 }

@@ -657,6 +657,36 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
     run_result
 }
 
+/// Await `work`, re-drawing `status` each second with the elapsed time.
+///
+/// The status line only ever repainted between steps, so a step that took
+/// minutes was indistinguishable from a hang: no spinner, no counter, and —
+/// when stdout is not a terminal — no output at all. `StatusLine::update`
+/// still suppresses itself when piped; this only fixes the interactive case,
+/// which is the one a person is watching.
+async fn await_with_elapsed<T, F>(status: &mut StatusLine, label: &str, work: F) -> Result<T>
+where
+    F: std::future::Future<Output = Result<T>>,
+{
+    use std::time::{Duration, Instant};
+
+    let started = Instant::now();
+    status.update(&format!("{label}..."));
+
+    let mut work = std::pin::pin!(work);
+    let mut ticker = tokio::time::interval(Duration::from_secs(1));
+    ticker.tick().await; // fires immediately; the label is already drawn
+
+    loop {
+        tokio::select! {
+            result = &mut work => return result,
+            _ = ticker.tick() => {
+                status.update(&format!("{label}... {}s", started.elapsed().as_secs()));
+            }
+        }
+    }
+}
+
 async fn run_oneshot_chat(params: RunOneshotChatParams) -> Result<()> {
     let RunOneshotChatParams {
         read_only,
@@ -695,8 +725,20 @@ async fn run_oneshot_chat(params: RunOneshotChatParams) -> Result<()> {
     // Kept for its side effect, not its value: `get_storage` opens the kiln
     // with `process = true`, which indexes pending files. Without it the
     // daemon's Precognition would search a possibly-unindexed kiln.
-    status.update("Opening kiln...");
-    let _storage_handle = factories::get_storage(&config).await?;
+    //
+    // The work is unbounded — a kiln the daemon has never seen is parsed and
+    // embedded note by note first — so the wait is timed on screen rather than
+    // spent behind a status line that never moves. A frozen line is how this
+    // read as a crash.
+    let (_storage_handle, kiln) = await_with_elapsed(
+        &mut status,
+        "Opening kiln",
+        factories::get_storage_with_summary(&config),
+    )
+    .await?;
+    if let Some(line) = kiln.describe() {
+        status.update(&line);
+    }
 
     status.update("Discovering agent...");
     let mut handle = factories::create_agent(&config, agent_params).await?;
