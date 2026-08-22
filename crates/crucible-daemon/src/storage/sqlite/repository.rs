@@ -8,10 +8,22 @@ use crucible_core::parser::{Frontmatter, FrontmatterFormat, ParsedNote, Wikilink
 use crucible_core::traits::{KnowledgeRepository, NoteInfo};
 use crucible_core::types::{DocumentId, SearchResult};
 use crucible_core::{CrucibleError, Result as CrucibleResult};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::storage::sqlite::note_store::SqliteNoteStore;
+
+/// The read authority for a repository bound to `kiln_path`.
+///
+/// A repository built with `new()` has no kiln. It gets an empty workspace
+/// scope, which is the test and admin path.
+fn scope_for(kiln_path: Option<&Path>) -> crucible_core::storage::Scope {
+    use crucible_core::storage::Scope;
+    match kiln_path {
+        Some(p) => Scope::workspace(p).unwrap_or_else(|_| Scope::workspace_unchecked(p)),
+        None => Scope::workspace_unchecked(PathBuf::new()),
+    }
+}
 
 /// SQLite-backed implementation of KnowledgeRepository.
 ///
@@ -65,14 +77,7 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
     async fn get_note_by_name(&self, name: &str) -> CrucibleResult<Option<ParsedNote>> {
         use crucible_core::storage::NoteStore;
 
-        // Workspace authority derived from this repo's bound kiln (when
-        // present). Repos constructed via `new()` without a kiln path fall
-        // back to `Global` — they're test/admin paths.
-        let authority = match &self.kiln_path {
-            Some(p) => crucible_core::storage::Scope::workspace(p)
-                .unwrap_or_else(|_| crucible_core::storage::Scope::workspace_unchecked(p)),
-            None => crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new()),
-        };
+        let authority = scope_for(self.kiln_path.as_deref());
 
         // Get all notes and find one matching by path or title
         let notes =
@@ -120,11 +125,7 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
     async fn list_notes(&self, path: Option<&str>) -> CrucibleResult<Vec<NoteInfo>> {
         use crucible_core::storage::NoteStore;
 
-        let authority = match &self.kiln_path {
-            Some(p) => crucible_core::storage::Scope::workspace(p)
-                .unwrap_or_else(|_| crucible_core::storage::Scope::workspace_unchecked(p)),
-            None => crucible_core::storage::Scope::workspace_unchecked(std::path::PathBuf::new()),
-        };
+        let authority = scope_for(self.kiln_path.as_deref());
 
         let notes =
             self.store.list(&authority).await.map_err(|e| {
@@ -166,11 +167,10 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
     ) -> CrucibleResult<Vec<SearchResult>> {
         use crucible_core::storage::{Filter, NoteStore};
 
-        let scope_filter = self.kiln_path.as_ref().map(|p| {
-            let scope = crucible_core::storage::Scope::workspace(p)
-                .unwrap_or_else(|_| crucible_core::storage::Scope::workspace_unchecked(p));
-            Filter::Scope(scope)
-        });
+        let scope_filter = self
+            .kiln_path
+            .as_deref()
+            .map(|p| Filter::Scope(scope_for(Some(p))));
 
         let results = self
             .store
@@ -196,17 +196,6 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
 
         Ok(converted)
     }
-}
-
-pub fn create_knowledge_repository(store: Arc<SqliteNoteStore>) -> Arc<dyn KnowledgeRepository> {
-    Arc::new(SqliteKnowledgeRepository::new(store))
-}
-
-pub fn create_knowledge_repository_with_kiln(
-    store: Arc<SqliteNoteStore>,
-    kiln_path: PathBuf,
-) -> Arc<dyn KnowledgeRepository> {
-    Arc::new(SqliteKnowledgeRepository::with_kiln_path(store, kiln_path))
 }
 
 #[cfg(test)]
@@ -439,7 +428,7 @@ mod tests {
         let sources = vec![KilnSearchSource {
             kiln_path: kiln_path.clone(),
             kiln_name: None,
-            knowledge_repo: create_knowledge_repository(store),
+            knowledge_repo: Arc::new(SqliteKnowledgeRepository::new(store)),
         }];
 
         let results = search_across_kilns(&sources, vec![0.0, 1.0, 0.0], 5, None, Some(&kiln_path))

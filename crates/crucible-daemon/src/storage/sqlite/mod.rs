@@ -48,10 +48,6 @@ pub mod schema;
 pub use adapters::{create_sqlite_client, SqliteClientHandle};
 pub use config::SqliteConfig;
 pub use connection::SqlitePool;
-pub use crucible_core::storage::StorageResult as SqliteResult;
 pub use fts::{FtsIndex, FtsResult};
 pub use note_store::SqliteNoteStore;
-pub use property_store::SqlitePropertyStore;
-pub use repository::{
-    create_knowledge_repository, create_knowledge_repository_with_kiln, SqliteKnowledgeRepository,
-};
+pub use repository::SqliteKnowledgeRepository;

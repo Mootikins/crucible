@@ -247,25 +247,6 @@ impl FtsIndex {
         .map_err(|e: tokio::task::JoinError| StorageError::Backend(e.to_string()))?
     }
 
-    /// Whether the index holds no rows.
-    ///
-    /// Used to decide whether a kiln needs the one-time backfill: a kiln
-    /// processed before this index existed has notes in SQLite and nothing
-    /// here, and would search as though it were empty.
-    pub async fn is_empty(&self) -> StorageResult<bool> {
-        let pool = self.pool.clone();
-        tokio::task::spawn_blocking(move || {
-            pool.with_connection(|conn| {
-                let count: i64 = conn
-                    .query_row("SELECT count(*) FROM notes_fts", [], |row| row.get(0))
-                    .sql()?;
-                Ok(count == 0)
-            })
-        })
-        .await
-        .map_err(|e: tokio::task::JoinError| StorageError::Backend(e.to_string()))?
-    }
-
     /// Search for notes matching a query
     ///
     /// Uses FTS5's default ranking (BM25). The query supports FTS5 syntax:
@@ -322,69 +303,6 @@ impl FtsIndex {
                             rank: row.get(3)?,
                         })
                     })
-                    .sql()?
-                    .collect::<Result<Vec<_>, _>>()
-                    .sql()?;
-
-                Ok(results)
-            })
-        })
-        .await
-        .map_err(|e: tokio::task::JoinError| StorageError::Backend(e.to_string()))?
-    }
-
-    /// Search with a custom column boost
-    ///
-    /// Allows boosting title matches over content matches.
-    pub async fn search_boosted(
-        &self,
-        query: &str,
-        title_boost: f64,
-        content_boost: f64,
-        limit: usize,
-    ) -> StorageResult<Vec<FtsResult>> {
-        let pool = self.pool.clone();
-        let query = query.to_string();
-
-        tokio::task::spawn_blocking(move || {
-            pool.with_connection(|conn| {
-                // FTS5 bm25 takes column weights as arguments
-                // Column order: path (0), title (1), content (2)
-                // Same rank-then-snippet split as `search` — see the comment
-                // there.
-                let mut stmt = conn
-                    .prepare(
-                        r#"
-                    SELECT
-                        f.path,
-                        f.title,
-                        snippet(f.notes_fts, 2, '<mark>', '</mark>', '...', 32) as snippet,
-                        r.rank
-                    FROM (
-                        SELECT rowid AS id, bm25(notes_fts, 0.0, ?2, ?3) AS rank
-                        FROM notes_fts
-                        WHERE notes_fts MATCH ?1
-                        ORDER BY rank
-                        LIMIT ?4
-                    ) r
-                    JOIN notes_fts f ON f.rowid = r.id AND f.notes_fts MATCH ?1
-                    ORDER BY r.rank
-                    "#,
-                    )
-                    .sql()?;
-
-                let results = stmt
-                    .query_map(
-                        rusqlite::params![query, title_boost, content_boost, limit as i64],
-                        |row| {
-                            Ok(FtsResult {
-                                path: row.get(0)?,
-                                title: row.get(1)?,
-                                snippet: row.get(2)?,
-                                rank: row.get(3)?,
-                            })
-                        },
-                    )
                     .sql()?
                     .collect::<Result<Vec<_>, _>>()
                     .sql()?;
@@ -492,30 +410,6 @@ mod tests {
         fts.remove("a.md").await.unwrap();
         let results = fts.search("test", 10).await.unwrap();
         assert!(results.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_fts_boosted_search() {
-        let fts = setup_test_fts().await.unwrap();
-
-        // Title has "rust", content doesn't
-        fts.index("title_match.md", "Rust Guide", "A guide to programming")
-            .await
-            .unwrap();
-        // Content has "rust", title doesn't
-        fts.index(
-            "content_match.md",
-            "Programming Guide",
-            "Learn about rust and go",
-        )
-        .await
-        .unwrap();
-
-        // With high title boost, title match should rank better
-        let results = fts.search_boosted("rust", 10.0, 1.0, 10).await.unwrap();
-        assert_eq!(results.len(), 2);
-        // Note: BM25 returns negative scores where lower (more negative) is better
-        // The title match should have a more negative (better) score
     }
 
     #[tokio::test]

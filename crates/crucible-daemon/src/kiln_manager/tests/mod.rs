@@ -912,7 +912,7 @@ async fn a_partially_filled_text_index_is_completed_on_the_next_open() {
         .index("first.md", "First", "alpha body.")
         .await
         .unwrap();
-    assert!(!handle.text.is_empty().await.unwrap());
+    assert_ne!(handle.text.count().await.unwrap(), 0);
 
     assert!(
         backfill_needed(&handle, &root).await.unwrap(),
@@ -959,7 +959,7 @@ async fn opening_a_kiln_backfills_a_text_index_that_was_never_written() {
         .await
         .unwrap();
     assert!(
-        handle.text.is_empty().await.unwrap(),
+        handle.text.count().await.unwrap() == 0,
         "precondition: the text index starts empty"
     );
 

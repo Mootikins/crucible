@@ -77,24 +77,6 @@ impl SqliteConfig {
             mmap_size: 0,
         }
     }
-
-    /// Set the connection pool size
-    pub fn with_pool_size(mut self, size: u32) -> Self {
-        self.pool_size = size;
-        self
-    }
-
-    /// Disable WAL mode (not recommended)
-    pub fn without_wal(mut self) -> Self {
-        self.wal_mode = false;
-        self
-    }
-
-    /// Set the cache size in pages
-    pub fn with_cache_size(mut self, pages: i32) -> Self {
-        self.cache_size = pages;
-        self
-    }
 }
 
 impl Default for SqliteConfig {
@@ -114,18 +96,6 @@ mod tests {
         assert!(config.wal_mode);
         assert!(config.foreign_keys);
         assert_eq!(config.busy_timeout_ms, 5000);
-    }
-
-    #[test]
-    fn test_config_builder() {
-        let config = SqliteConfig::new("/tmp/test.db")
-            .with_pool_size(5)
-            .with_cache_size(1000)
-            .without_wal();
-
-        assert_eq!(config.pool_size, 5);
-        assert_eq!(config.cache_size, 1000);
-        assert!(!config.wal_mode);
     }
 
     #[test]

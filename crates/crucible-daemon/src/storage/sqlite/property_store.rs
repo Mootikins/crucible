@@ -216,68 +216,6 @@ impl PropertyStore for SqliteNoteStore {
     }
 }
 
-/// Standalone property store wrapping a pool directly.
-///
-/// Used when PropertyStore access is needed without an `SqliteNoteStore`.
-#[derive(Clone)]
-pub struct SqlitePropertyStore {
-    pool: SqlitePool,
-}
-
-impl SqlitePropertyStore {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
-    }
-}
-
-#[async_trait]
-impl PropertyStore for SqlitePropertyStore {
-    async fn property_set(
-        &self,
-        entity_id: &str,
-        namespace: &str,
-        key: &str,
-        value: &str,
-    ) -> StorageResult<()> {
-        do_property_set(self.pool.clone(), entity_id, namespace, key, value).await
-    }
-
-    async fn property_get(
-        &self,
-        entity_id: &str,
-        namespace: &str,
-        key: &str,
-    ) -> StorageResult<Option<String>> {
-        do_property_get(self.pool.clone(), entity_id, namespace, key).await
-    }
-
-    async fn property_list(
-        &self,
-        entity_id: &str,
-        namespace: &str,
-    ) -> StorageResult<Vec<(String, String)>> {
-        do_property_list(self.pool.clone(), entity_id, namespace).await
-    }
-
-    async fn property_find(
-        &self,
-        namespace: &str,
-        key: &str,
-        value: &str,
-    ) -> StorageResult<Vec<String>> {
-        do_property_find(self.pool.clone(), namespace, key, value).await
-    }
-
-    async fn property_delete(
-        &self,
-        entity_id: &str,
-        namespace: &str,
-        key: &str,
-    ) -> StorageResult<bool> {
-        do_property_delete(self.pool.clone(), entity_id, namespace, key).await
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,8 +226,8 @@ mod tests {
     /// nothing in production does. This fixture used to pre-insert catalog rows
     /// to satisfy a foreign key, which is what hid the fact that every real
     /// `cru.storage.set` call failed.
-    async fn test_store() -> SqlitePropertyStore {
-        SqlitePropertyStore::new(SqlitePool::new(SqliteConfig::memory()).unwrap())
+    async fn test_store() -> SqliteNoteStore {
+        SqliteNoteStore::new(SqlitePool::new(SqliteConfig::memory()).unwrap())
     }
 
     /// Production has no writer for `entities`: plugins call `cru.storage.set`
@@ -299,7 +237,7 @@ mod tests {
     #[tokio::test]
     async fn plugin_property_set_succeeds_without_a_catalog_row() {
         let pool = SqlitePool::new(SqliteConfig::memory()).unwrap();
-        let store = SqlitePropertyStore::new(pool);
+        let store = SqliteNoteStore::new(pool);
 
         store
             .property_set("note:foo", "plugin:x", "k", "v")

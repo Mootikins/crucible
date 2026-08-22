@@ -147,7 +147,7 @@ fn seed_legacy_v2_db(conn: &Connection) {
 
 #[tokio::test]
 async fn a_kiln_from_an_older_binary_migrates_and_accepts_a_property_write() {
-    use crate::storage::sqlite::{SqliteConfig, SqlitePool, SqlitePropertyStore};
+    use crate::storage::sqlite::{SqliteConfig, SqliteNoteStore, SqlitePool};
     use crucible_core::storage::PropertyStore;
 
     let dir = tempfile::TempDir::new().unwrap();
@@ -162,7 +162,7 @@ async fn a_kiln_from_an_older_binary_migrates_and_accepts_a_property_write() {
 
     // The new binary opens it: pragmas, then migrations.
     let pool = SqlitePool::new(SqliteConfig::new(&db_path)).unwrap();
-    let store = SqlitePropertyStore::new(pool);
+    let store = SqliteNoteStore::new(pool);
 
     store
         .property_set("note:foo", "plugin:x", "k", "v")

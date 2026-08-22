@@ -13,7 +13,7 @@ use crucible_core::storage::{NoteStore, PropertyStore};
 use crucible_core::{QueryResult, Record, RecordId};
 #[cfg(test)]
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Opaque handle to a SQLite client.
@@ -49,11 +49,6 @@ impl SqliteClientHandle {
     pub fn with_kiln_path(mut self, kiln_path: impl Into<PathBuf>) -> Self {
         self.kiln_path = Some(kiln_path.into());
         self
-    }
-
-    /// The kiln this handle is bound to, if any.
-    pub fn kiln_path(&self) -> Option<&Path> {
-        self.kiln_path.as_deref()
     }
 
     /// Get the pool for direct access

@@ -71,15 +71,6 @@ impl SqlitePool {
         f(&conn)
     }
 
-    /// Execute a closure with mutable access to the connection
-    pub fn with_connection_mut<F, T>(&self, f: F) -> StorageResult<T>
-    where
-        F: FnOnce(&mut Connection) -> StorageResult<T>,
-    {
-        let mut conn = self.conn.lock();
-        f(&mut conn)
-    }
-
     /// Execute a closure within a transaction
     ///
     /// If the closure returns `Ok`, the transaction is committed.
@@ -101,30 +92,6 @@ impl SqlitePool {
         let result = f(&tx)?;
         tx.commit().sql()?;
         Ok(result)
-    }
-
-    /// Get database statistics
-    pub fn stats(&self) -> StorageResult<DbStats> {
-        self.with_connection(|conn| {
-            let page_count: i64 = conn
-                .query_row("PRAGMA page_count;", [], |row| row.get(0))
-                .sql()?;
-
-            let page_size: i64 = conn
-                .query_row("PRAGMA page_size;", [], |row| row.get(0))
-                .sql()?;
-
-            let freelist_count: i64 = conn
-                .query_row("PRAGMA freelist_count;", [], |row| row.get(0))
-                .sql()?;
-
-            Ok(DbStats {
-                page_count: page_count as u64,
-                page_size: page_size as u64,
-                freelist_count: freelist_count as u64,
-                total_size_bytes: (page_count * page_size) as u64,
-            })
-        })
     }
 }
 
@@ -177,15 +144,6 @@ fn configure_pragmas(conn: &Connection, config: &SqliteConfig) -> StorageResult<
     Ok(())
 }
 
-/// Database statistics
-#[derive(Debug, Clone)]
-pub struct DbStats {
-    pub page_count: u64,
-    pub page_size: u64,
-    pub freelist_count: u64,
-    pub total_size_bytes: u64,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -220,14 +178,6 @@ mod tests {
             Ok(())
         })
         .expect("Query failed");
-    }
-
-    #[test]
-    fn test_pool_stats() {
-        let pool = SqlitePool::memory().expect("Failed to create pool");
-        let stats = pool.stats().expect("Failed to get stats");
-
-        assert!(stats.page_size > 0);
     }
 
     /// A panic inside the closure must leave the shared connection outside any
