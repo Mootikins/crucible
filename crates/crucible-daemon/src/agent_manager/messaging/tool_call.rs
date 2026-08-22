@@ -41,13 +41,9 @@ fn deny_tool_call(
             "No subscribers for handler denied tool_result event"
         );
     }
-    Some(crucible_core::traits::chat::ChatToolResult {
-        name: tool_name.to_string(),
-        result: String::new(),
-        error: Some(error_msg),
-        call_id: Some(call_id.to_string()),
-        terminate: false,
-    })
+    Some(crucible_core::traits::chat::ChatToolResult::error(
+        tool_name, call_id, error_msg,
+    ))
 }
 
 /// Run every `crucible.on("pre_tool_call", …)` handler in one registry.
@@ -487,22 +483,7 @@ impl AgentManager {
                 "Tool '{}' denied by permissions config: {reason}",
                 tool_call.name
             );
-            emit_event(
-                &stream_ctx.event_tx,
-                SessionEventMessage::tool_result(
-                    &stream_ctx.session_id,
-                    &call_id,
-                    &tool_call.name,
-                    serde_json::json!({ "error": &error_msg }),
-                ),
-            );
-            return Some(crucible_core::traits::chat::ChatToolResult {
-                name: tool_call.name.clone(),
-                result: String::new(),
-                error: Some(error_msg),
-                call_id: Some(call_id.clone()),
-                terminate: false,
-            });
+            return deny_tool_call(stream_ctx, &call_id, &tool_call.name, error_msg);
         }
 
         // `Some(reason)` = approved without asking. Captured here, before the
@@ -514,13 +495,11 @@ impl AgentManager {
                 Err(deny_reason) => {
                     // Feed the SPECIFIC denial reason back to the model so it
                     // can adapt (config rule vs shell policy vs non-interactive).
-                    return Some(crucible_core::traits::chat::ChatToolResult {
-                        name: tool_call.name.clone(),
-                        result: String::new(),
-                        error: Some(deny_reason),
-                        call_id: Some(call_id.clone()),
-                        terminate: false,
-                    });
+                    return Some(crucible_core::traits::chat::ChatToolResult::error(
+                        tool_call.name.clone(),
+                        call_id.clone(),
+                        deny_reason,
+                    ));
                 }
             }
         } else {
@@ -565,9 +544,7 @@ impl AgentManager {
             name: tool_call.name.clone(),
             args: args_str.clone(),
         };
-        if let Some(hints) =
-            super::tool_hooks::resolve_display_start_hints(stream_ctx, &hook_event).await
-        {
+        if let Some(hints) = super::tool_hooks::resolve_hints(stream_ctx, &hook_event).await {
             if let Some(label) = hints.label {
                 description = Some(label);
             }
@@ -762,9 +739,7 @@ impl AgentManager {
             args: args_str,
             result: error_str.clone().unwrap_or_else(|| result_str.clone()),
         };
-        if let Some(hints) =
-            super::tool_hooks::resolve_display_complete_hints(stream_ctx, &complete_event).await
-        {
+        if let Some(hints) = super::tool_hooks::resolve_hints(stream_ctx, &complete_event).await {
             if let Some(summary) = hints.summary {
                 event_result["summary"] = serde_json::json!(summary);
             }
@@ -812,12 +787,8 @@ impl AgentManager {
             .arguments
             .clone()
             .unwrap_or(serde_json::Value::Null);
-        let invoke_err = |msg: String| crucible_core::traits::chat::ChatToolResult {
-            name: "invoke_tool".to_string(),
-            result: String::new(),
-            error: Some(msg),
-            call_id: Some(call_id.to_string()),
-            terminate: false,
+        let invoke_err = |msg: String| {
+            crucible_core::traits::chat::ChatToolResult::error("invoke_tool", call_id, msg)
         };
 
         let inner_name = match args.get("name").and_then(|v| v.as_str()) {
@@ -872,15 +843,11 @@ impl AgentManager {
         if !was_unwrapped {
             return None;
         }
-        Some(crucible_core::traits::chat::ChatToolResult {
-            name: name.to_string(),
-            result: String::new(),
-            error: Some(format!(
-                "Tool not found: {name}. Use discover_tools to list available tools."
-            )),
-            call_id: Some(call_id.to_string()),
-            terminate: false,
-        })
+        Some(crucible_core::traits::chat::ChatToolResult::error(
+            name,
+            call_id,
+            format!("Tool not found: {name}. Use discover_tools to list available tools."),
+        ))
     }
 
     /// Spill large tool output to disk. Returns (absolute_path, filename).

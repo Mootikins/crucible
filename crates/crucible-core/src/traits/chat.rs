@@ -131,6 +131,24 @@ pub struct ChatToolResult {
     pub terminate: bool,
 }
 
+impl ChatToolResult {
+    /// A failed call: no result text, the error message, and the call id
+    /// the model assigned, so the model can match the failure to its request.
+    pub fn error(
+        name: impl Into<String>,
+        call_id: impl Into<String>,
+        msg: impl Into<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            result: String::new(),
+            error: Some(msg.into()),
+            call_id: Some(call_id.into()),
+            terminate: false,
+        }
+    }
+}
+
 /// Runtime handle to an active agent.
 ///
 /// `AgentHandle` is a supertrait of [`Agent`](crate::turn::Agent): every

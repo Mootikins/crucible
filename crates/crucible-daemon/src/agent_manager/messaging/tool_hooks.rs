@@ -19,78 +19,79 @@ use tracing::warn;
 
 use super::StreamContext;
 
-pub(super) async fn resolve_display_start_hints(
-    stream_ctx: &StreamContext,
-    event: &ToolDisplayStartEvent,
-) -> Option<ToolDisplayStartHints> {
-    let session_hints = {
-        let state = stream_ctx.session_state.lock().await;
-        match execute_tool_display_start_hooks(
-            &state.lua,
-            &state.registry,
-            Some(&stream_ctx.session_id),
-            event,
-        )
-        .await
-        {
-            Ok(hints) => hints,
-            Err(error) => {
-                warn!(
-                    session_id = %stream_ctx.session_id,
-                    tool = %event.name,
-                    error = %error,
-                    "Lua tool:display_start hook error, falling back to default metadata"
-                );
-                None
-            }
-        }
-    };
-    if session_hints.is_some() {
-        return session_hints;
+/// A display stage a tool call passes through, with the Lua hook that
+/// resolves its hints. The two stages differ only in their event, their
+/// hints, and the hook they call.
+pub(super) trait DisplayStage {
+    type Hints;
+    const STAGE: &'static str;
+
+    fn tool_name(&self) -> &str;
+
+    fn run(
+        &self,
+        lua: &mlua::Lua,
+        registry: &crucible_lua::LuaScriptHandlerRegistry,
+        session_id: &str,
+    ) -> impl std::future::Future<Output = mlua::Result<Option<Self::Hints>>>;
+}
+
+impl DisplayStage for ToolDisplayStartEvent {
+    type Hints = ToolDisplayStartHints;
+    const STAGE: &'static str = "tool:display_start";
+
+    fn tool_name(&self) -> &str {
+        &self.name
     }
-    let (plugin_registry, plugin_lua) = stream_ctx.agent_stream_config.plugin_handlers.as_ref()?;
-    match execute_tool_display_start_hooks(
-        plugin_lua,
-        plugin_registry,
-        Some(&stream_ctx.session_id),
-        event,
-    )
-    .await
-    {
-        Ok(hints) => hints,
-        Err(error) => {
-            warn!(
-                session_id = %stream_ctx.session_id,
-                tool = %event.name,
-                error = %error,
-                "plugin tool:display_start hook error, falling back to default metadata"
-            );
-            None
-        }
+
+    async fn run(
+        &self,
+        lua: &mlua::Lua,
+        registry: &crucible_lua::LuaScriptHandlerRegistry,
+        session_id: &str,
+    ) -> mlua::Result<Option<Self::Hints>> {
+        execute_tool_display_start_hooks(lua, registry, Some(session_id), self).await
     }
 }
 
-pub(super) async fn resolve_display_complete_hints(
+impl DisplayStage for ToolDisplayCompleteEvent {
+    type Hints = ToolDisplayCompleteHints;
+    const STAGE: &'static str = "tool:display_complete";
+
+    fn tool_name(&self) -> &str {
+        &self.name
+    }
+
+    async fn run(
+        &self,
+        lua: &mlua::Lua,
+        registry: &crucible_lua::LuaScriptHandlerRegistry,
+        session_id: &str,
+    ) -> mlua::Result<Option<Self::Hints>> {
+        execute_tool_display_complete_hooks(lua, registry, Some(session_id), self).await
+    }
+}
+
+/// Resolve the display hints for one stage: the session VM's handlers first,
+/// then the plugin VM's. A hook error falls back to the default metadata.
+pub(super) async fn resolve_hints<E: DisplayStage>(
     stream_ctx: &StreamContext,
-    event: &ToolDisplayCompleteEvent,
-) -> Option<ToolDisplayCompleteHints> {
+    event: &E,
+) -> Option<E::Hints> {
     let session_hints = {
         let state = stream_ctx.session_state.lock().await;
-        match execute_tool_display_complete_hooks(
-            &state.lua,
-            &state.registry,
-            Some(&stream_ctx.session_id),
-            event,
-        )
-        .await
+        match event
+            .run(&state.lua, &state.registry, &stream_ctx.session_id)
+            .await
         {
             Ok(hints) => hints,
             Err(error) => {
                 warn!(
                     session_id = %stream_ctx.session_id,
-                    tool = %event.name,
+                    tool = %event.tool_name(),
                     error = %error,
-                    "Lua tool:display_complete hook error, falling back to default metadata"
+                    "Lua {} hook error, falling back to default metadata",
+                    E::STAGE
                 );
                 None
             }
@@ -100,21 +101,18 @@ pub(super) async fn resolve_display_complete_hints(
         return session_hints;
     }
     let (plugin_registry, plugin_lua) = stream_ctx.agent_stream_config.plugin_handlers.as_ref()?;
-    match execute_tool_display_complete_hooks(
-        plugin_lua,
-        plugin_registry,
-        Some(&stream_ctx.session_id),
-        event,
-    )
-    .await
+    match event
+        .run(plugin_lua, plugin_registry, &stream_ctx.session_id)
+        .await
     {
         Ok(hints) => hints,
         Err(error) => {
             warn!(
                 session_id = %stream_ctx.session_id,
-                tool = %event.name,
+                tool = %event.tool_name(),
                 error = %error,
-                "plugin tool:display_complete hook error, falling back to default metadata"
+                "plugin {} hook error, falling back to default metadata",
+                E::STAGE
             );
             None
         }

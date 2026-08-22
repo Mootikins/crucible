@@ -616,13 +616,11 @@ impl AgentManager {
                             );
                         }
 
-                        Some(ChatToolResult {
-                            name: name.clone(),
-                            result: String::new(),
-                            error: Some(blocked_error),
-                            call_id: Some(id.clone()),
-                            terminate: false,
-                        })
+                        Some(ChatToolResult::error(
+                            name.clone(),
+                            id.clone(),
+                            blocked_error,
+                        ))
                     } else {
                         attempt = Some(tracker.record_call(&name, &args));
                         // The review bracket is CLOSED here and OPENED inside
@@ -694,12 +692,12 @@ impl AgentManager {
                         }
                     }
 
-                    let tool_result = result.unwrap_or_else(|| ChatToolResult {
-                        name: name.clone(),
-                        result: String::new(),
-                        error: Some("tool dispatcher returned no result".to_string()),
-                        call_id: Some(id.clone()),
-                        terminate: false,
+                    let tool_result = result.unwrap_or_else(|| {
+                        ChatToolResult::error(
+                            name.clone(),
+                            id.clone(),
+                            "tool dispatcher returned no result",
+                        )
                     });
 
                     // A delegation is attributed by the child's own ledger,

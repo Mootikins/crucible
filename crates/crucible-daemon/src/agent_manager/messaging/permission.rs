@@ -91,6 +91,28 @@ impl PermissionSerializer {
     }
 }
 
+/// The tools whose permission patterns match on a path, not on the tool name.
+const FILE_TOOLS: &[&str] = &[
+    "write_file",
+    "edit_file",
+    "create_note",
+    "update_note",
+    "delete_note",
+];
+
+/// The text the permission engine matches its rules against: the shell
+/// command for `bash`, the full JSON arguments for every other tool.
+fn engine_input(tool_name: &str, args: &serde_json::Value) -> String {
+    if tool_name == "bash" {
+        args.get("command")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string()
+    } else {
+        args.to_string()
+    }
+}
+
 /// Which ACP option a gate decision corresponds to.
 ///
 /// `AllowAlways` only when the decision is one the user asked to be
@@ -580,14 +602,7 @@ impl AgentManager {
     ) -> Option<String> {
         use crucible_core::config::components::permissions::PermissionDecision;
         let engine = stream_ctx.permission_engine.as_ref()?;
-        let input = if tool_name == "bash" {
-            args.get("command")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string()
-        } else {
-            args.to_string()
-        };
+        let input = engine_input(tool_name, args);
         match engine.evaluate(tool_name, &input, true) {
             PermissionDecision::Deny { reason } => Some(reason),
             PermissionDecision::Allow | PermissionDecision::Ask { .. } => None,
@@ -623,14 +638,7 @@ impl AgentManager {
             ask: permissions.ask.clone(),
         };
         let engine = PermissionEngine::new(Some(&config));
-        let input = if tool_name == "bash" {
-            args.get("command")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string()
-        } else {
-            args.to_string()
-        };
+        let input = engine_input(tool_name, args);
         // `is_interactive: true` deliberately: the non-interactive ask→deny
         // conversion is the caller's job below, and doing it here would skip
         // the prompt path entirely.
@@ -685,15 +693,8 @@ impl AgentManager {
         // branch below already handles non-interactive turns.
         if let Some(engine) = &stream_ctx.permission_engine {
             use crucible_core::config::components::permissions::PermissionDecision;
-            let engine_input = if tool_call.name == "bash" {
-                args.get("command")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default()
-                    .to_string()
-            } else {
-                args.to_string()
-            };
-            match engine.evaluate(&tool_call.name, &engine_input, true) {
+            let rule_input = engine_input(&tool_call.name, args);
+            match engine.evaluate(&tool_call.name, &rule_input, true) {
                 PermissionDecision::Allow => {
                     debug!(
                         session_id = %stream_ctx.session_id,
@@ -1070,7 +1071,7 @@ impl AgentManager {
                     false
                 }
             }
-            "write_file" | "edit_file" | "create_note" | "update_note" | "delete_note" => {
+            name if FILE_TOOLS.contains(&name) => {
                 let path = args
                     .get("path")
                     .or_else(|| args.get("file"))
@@ -1095,9 +1096,7 @@ impl AgentManager {
 
         match tool_name {
             "bash" => store.add_bash_pattern(pattern)?,
-            "write_file" | "edit_file" | "create_note" | "update_note" | "delete_note" => {
-                store.add_file_pattern(pattern)?
-            }
+            name if FILE_TOOLS.contains(&name) => store.add_file_pattern(pattern)?,
             _ => store.add_tool_pattern(pattern)?,
         }
 
