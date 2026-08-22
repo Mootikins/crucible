@@ -34,17 +34,26 @@ use tracing::{debug, info, warn};
 
 use crate::watch::{
     error::Result,
-    events::EventFilter,
     handlers::ExternalChangeHandler,
-    traits::{DebounceConfig, WatchConfig, WatchHandle},
+    traits::{DebounceConfig, WatchConfig},
     WatchManager, WatchManagerConfig,
 };
 
-/// Build output directories, on top of [`EXCLUDED_DIRS`]. A `cargo build`
-/// touches tens of thousands of files under `target/`; none of them are a
-/// review signal, and letting them through would drown the queue and the
-/// notification channel both.
-const BUILD_DIRS: &[&str] = &["target", "dist", "build", ".venv", "__pycache__"];
+/// Directories never handed to the watch backend, whatever git says.
+///
+/// `.git` is the one that matters: git does not report its own directory as
+/// ignored, and every command the ledger runs writes inside it, so watching it
+/// is a feedback loop. The rest are shared with the kiln subsystem and cost
+/// nothing to keep.
+///
+/// Everything else comes from [`crate::review::git::ignored_dirs`]. A
+/// hand-written list of build directories was here before, and it was wrong in
+/// both directions: it named `target` and `dist` (Rust and Node, nothing else)
+/// and it matched only at depth one, so `crates/*/target` and
+/// `docs-site/node_modules` went into the recursive watch anyway.
+fn always_excluded(root: &Path) -> impl Iterator<Item = PathBuf> + '_ {
+    EXCLUDED_DIRS.iter().map(|dir| root.join(dir))
+}
 
 /// Coalescing window for worktree events.
 ///
@@ -104,6 +113,14 @@ struct RootState {
     suppressed_until: Option<Instant>,
     /// Paths seen changing with no bracket open.
     external: HashSet<PathBuf>,
+    /// Directories git ignores under this root, as of the last registration.
+    ///
+    /// The plan already keeps these out of the backend, so this catches the
+    /// case the plan cannot: an ignored *file* inside a directory that must
+    /// stay watched. Reporting one costs a redundant recompute rather than a
+    /// wrong diff — the record is a notification, and the ledger decides
+    /// attribution — so a snapshot taken at registration is enough.
+    ignored: HashSet<PathBuf>,
 }
 
 impl RootState {
@@ -182,6 +199,20 @@ impl ExternalChangeTracker {
         released
     }
 
+    /// Record the directories git ignores under `root`.
+    pub fn set_ignored(&self, root: &Path, ignored: HashSet<PathBuf>) {
+        if let Some(mut state) = self.roots.get_mut(root) {
+            state.ignored = ignored;
+        }
+    }
+
+    /// Forget `root`'s ignore set, once nothing watches it.
+    pub fn clear_ignored(&self, root: &Path) {
+        if let Some(mut state) = self.roots.get_mut(root) {
+            state.ignored.clear();
+        }
+    }
+
     /// Roots currently watched.
     pub fn tracked_roots(&self) -> Vec<PathBuf> {
         self.roots.iter().map(|e| e.key().clone()).collect()
@@ -234,6 +265,9 @@ impl ExternalChangeTracker {
             let Some(mut state) = self.roots.get_mut(&root) else {
                 return Ownership::Untracked;
             };
+            if state.ignored.iter().any(|dir| path.starts_with(dir)) {
+                return Ownership::Untracked;
+            }
             if state.is_suppressed() {
                 return Ownership::Bracketed;
             }
@@ -332,7 +366,7 @@ fn is_noise(root: &Path, path: &Path) -> bool {
                 return false;
             };
             name.to_str()
-                .is_some_and(|name| EXCLUDED_DIRS.contains(&name) || BUILD_DIRS.contains(&name))
+                .is_some_and(|name| EXCLUDED_DIRS.contains(&name))
         });
     in_excluded_dir || is_editor_scratch(path)
 }
@@ -363,7 +397,10 @@ fn is_editor_scratch(path: &Path) -> bool {
 pub struct ExternalChangeWatch {
     manager: Mutex<WatchManager>,
     tracker: Arc<ExternalChangeTracker>,
-    watches: Mutex<Vec<(PathBuf, WatchHandle)>>,
+    /// Backend group id per watched root. A root's watches are added and
+    /// dropped as one group, because a plan is hundreds of paths sharing a
+    /// single inotify instance.
+    watches: Mutex<Vec<(PathBuf, String)>>,
 }
 
 impl ExternalChangeWatch {
@@ -411,19 +448,60 @@ impl ExternalChangeWatch {
         let mut manager = self.manager.lock().await;
         let mut watches = self.watches.lock().await;
         for root in fresh {
-            let config = WatchConfig::new(format!("review-{}", root.display()))
-                .with_recursive(true)
-                .with_debounce(DebounceConfig::new(DEBOUNCE.as_millis() as u64))
-                // A cheap early cut only. `is_noise` in the handler is the
-                // correctness boundary: this filter matches a directory by
-                // prefix, so it misses a `node_modules` nested three levels
-                // down, and it never sees the members of a batched event.
-                .with_filter(exclusion_filter(&root));
+            // Ask git which directories it ignores. `--directory` collapses a
+            // wholly ignored tree to one entry, so this stays in milliseconds
+            // however large that tree is.
+            //
+            // A root git cannot answer for is watched whole rather than not at
+            // all: a slow watch still reports external edits, and this module
+            // exists to prevent silence.
+            let mut ignored: HashSet<PathBuf> = always_excluded(&root).collect();
+            match crate::review::git::ignored_dirs(&root).await {
+                Ok(dirs) => ignored.extend(dirs),
+                Err(e) => {
+                    warn!(
+                        root = %root.display(),
+                        error = %e,
+                        "git could not list ignored directories; watching the root whole"
+                    );
+                }
+            }
 
-            match manager.add_watch(root.clone(), config).await {
-                Ok(handle) => {
-                    info!(root = %root.display(), "watching workspace root for unowned changes");
-                    watches.push((root, handle));
+            // Off the runtime: the plan reads every directory it will watch,
+            // and it runs inside the turn carrying the user's message. The
+            // recursive watch it replaces cost 13 seconds of dead screen on a
+            // repository with a 400 GB `target/`, and on a cold one it never
+            // returned at all.
+            let plan = {
+                let planning_root = root.clone();
+                let planning_ignored = ignored.clone();
+                match tokio::task::spawn_blocking(move || {
+                    plan_watches(&planning_root, &planning_ignored)
+                })
+                .await
+                {
+                    Ok(plan) => plan,
+                    Err(e) => {
+                        warn!(root = %root.display(), error = %e, "watch plan failed; root unwatched");
+                        self.tracker.untrack_root(&root, session_id);
+                        continue;
+                    }
+                }
+            };
+            self.tracker.set_ignored(&root, ignored);
+
+            let template = WatchConfig::new(String::new())
+                .with_debounce(DebounceConfig::new(DEBOUNCE.as_millis() as u64));
+            let group = watch_group_id(&root);
+
+            match manager.add_watch_group(&group, &plan, &template).await {
+                Ok(count) => {
+                    info!(
+                        root = %root.display(),
+                        watches = count,
+                        "watching workspace root for unowned changes"
+                    );
+                    watches.push((root, group));
                 }
                 Err(e) => {
                     // A root we cannot watch is a root whose external changes
@@ -452,13 +530,14 @@ impl ExternalChangeWatch {
         let mut manager = self.manager.lock().await;
         let mut watches = self.watches.lock().await;
         let mut remaining = Vec::with_capacity(watches.len());
-        for (root, handle) in watches.drain(..) {
+        for (root, group) in watches.drain(..) {
             if released.contains(&root) {
-                if let Err(e) = manager.remove_watch(handle).await {
+                if let Err(e) = manager.remove_watch_group(&group).await {
                     warn!(root = %root.display(), error = %e, "failed to remove review watch");
                 }
+                self.tracker.clear_ignored(&root);
             } else {
-                remaining.push((root, handle));
+                remaining.push((root, group));
             }
         }
         *watches = remaining;
@@ -472,16 +551,192 @@ impl ExternalChangeWatch {
     }
 }
 
-fn exclusion_filter(root: &Path) -> EventFilter {
-    EXCLUDED_DIRS
-        .iter()
-        .chain(BUILD_DIRS.iter())
-        .fold(EventFilter::new(), |f, dir| f.exclude_dir(root.join(dir)))
+/// The backend group holding every watch for `root`.
+fn watch_group_id(root: &Path) -> String {
+    format!("review-{}", root.display())
+}
+
+/// Watches covering every directory under `root` that git does not ignore,
+/// and none that it does.
+///
+/// A subtree holding no ignored directory gets a single recursive watch. That
+/// is not only fewer watches: recursive mode is also what keeps directories
+/// created *later* covered, so the cover stays as close to the old behaviour
+/// as pruning allows. A subtree that does hold one gets a non-recursive watch
+/// and a descent, so the ignored directory is never named to the backend at
+/// all — which is the whole point, because the backend would walk it.
+///
+/// Returns `(path, recursive)` pairs, parents before children.
+fn plan_watches(root: &Path, ignored: &HashSet<PathBuf>) -> Vec<(PathBuf, bool)> {
+    fn walk(dir: &Path, ignored: &HashSet<PathBuf>, plan: &mut Vec<(PathBuf, bool)>) {
+        if !ignored.iter().any(|path| path.starts_with(dir)) {
+            plan.push((dir.to_path_buf(), true));
+            return;
+        }
+        plan.push((dir.to_path_buf(), false));
+
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            // `file_type` reports the link itself, so a symlinked directory is
+            // not descended. notify does not follow them either, and a link
+            // out of the worktree is not this root's to report.
+            if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                continue;
+            }
+            let child = entry.path();
+            if ignored.contains(&child) {
+                continue;
+            }
+            walk(&child, ignored, plan);
+        }
+    }
+
+    let mut plan = Vec::new();
+    walk(root, ignored, &mut plan);
+    plan
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Whether the plan hands `dir` to the backend, directly or inside a
+    /// recursive watch. This is the question the bug got wrong: the old code
+    /// named only the root, recursively, so every ignored directory under it
+    /// was walked and watched.
+    fn plan_reaches(plan: &[(PathBuf, bool)], dir: &Path) -> bool {
+        plan.iter()
+            .any(|(path, recursive)| path == dir || (*recursive && dir.starts_with(path)))
+    }
+
+    fn dirs(root: &Path, relatives: &[&str]) {
+        for rel in relatives {
+            std::fs::create_dir_all(root.join(rel)).unwrap();
+        }
+    }
+
+    #[test]
+    fn plan_never_reaches_an_ignored_directory() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        dirs(root, &["src", "target/debug/build/deps", "target/release"]);
+
+        let ignored = HashSet::from([root.join("target")]);
+        let plan = plan_watches(root, &ignored);
+
+        assert!(!plan_reaches(&plan, &root.join("target")));
+        assert!(!plan_reaches(&plan, &root.join("target/debug/build/deps")));
+        assert!(plan_reaches(&plan, &root.join("src")));
+    }
+
+    #[test]
+    fn plan_reaches_an_ignored_directory_nested_deep() {
+        // The list this replaced joined each name onto the root, so it matched
+        // at depth one only: `crates/cli/target` went into the recursive watch.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        dirs(root, &["crates/cli/src", "crates/cli/target/debug"]);
+
+        let ignored = HashSet::from([root.join("crates/cli/target")]);
+        let plan = plan_watches(root, &ignored);
+
+        assert!(!plan_reaches(&plan, &root.join("crates/cli/target")));
+        assert!(!plan_reaches(&plan, &root.join("crates/cli/target/debug")));
+        assert!(plan_reaches(&plan, &root.join("crates/cli/src")));
+    }
+
+    #[test]
+    fn a_clean_tree_is_one_recursive_watch() {
+        // Fewer watches is the lesser point. One recursive watch is also what
+        // covers directories created after registration, which a cover of
+        // non-recursive watches would miss.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        dirs(root, &["a/b/c", "d"]);
+
+        let plan = plan_watches(root, &HashSet::new());
+
+        assert_eq!(plan, vec![(root.to_path_buf(), true)]);
+    }
+
+    #[test]
+    fn only_the_branches_holding_an_ignored_directory_are_descended() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        dirs(
+            root,
+            &["clean/deep/deeper", "dirty/src", "dirty/node_modules"],
+        );
+
+        let ignored = HashSet::from([root.join("dirty/node_modules")]);
+        let plan = plan_watches(root, &ignored);
+
+        // `clean` is untouched by the ignore set, so it costs one watch, not
+        // one per directory under it.
+        assert!(plan.contains(&(root.join("clean"), true)));
+        assert!(!plan
+            .iter()
+            .any(|(path, _)| path == &root.join("clean/deep")));
+
+        assert!(plan.contains(&(root.join("dirty"), false)));
+        assert!(plan.contains(&(root.join("dirty/src"), true)));
+        assert!(!plan_reaches(&plan, &root.join("dirty/node_modules")));
+    }
+
+    #[test]
+    fn a_symlinked_directory_is_not_descended() {
+        // The symlink has to sit in a branch the walk actually descends, so
+        // it needs an ignored sibling. In a clean branch the walk stops at one
+        // recursive watch and never reads the directory at all.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        dirs(root, &["outside/inner", "dirty/node_modules", "dirty/src"]);
+        std::os::unix::fs::symlink(root.join("outside"), root.join("dirty/link")).unwrap();
+
+        let ignored = HashSet::from([root.join("dirty/node_modules")]);
+        let plan = plan_watches(root, &ignored);
+
+        assert!(plan.contains(&(root.join("dirty"), false)));
+        assert!(plan.contains(&(root.join("dirty/src"), true)));
+        assert!(!plan
+            .iter()
+            .any(|(path, _)| path == &root.join("dirty/link")));
+    }
+
+    #[tokio::test]
+    async fn git_reports_an_ignored_directory_as_one_entry() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        crate::test_support::init_repo(root, &[(".gitignore", "target/\n"), ("src/a.rs", "")])
+            .await;
+        dirs(root, &["target/debug/build/deps"]);
+        std::fs::write(root.join("target/debug/x.o"), "").unwrap();
+
+        let ignored = crate::review::git::ignored_dirs(root).await.unwrap();
+
+        // One entry, not one per directory: git does not descend a wholly
+        // ignored tree, which is what keeps this call cheap on a large one.
+        assert_eq!(ignored, vec![root.join("target")]);
+    }
+
+    #[tokio::test]
+    async fn an_ignored_file_is_untracked_at_event_time() {
+        // The plan cannot prune this one: `.env.local` sits in a directory
+        // that has to stay watched. `git add -A` skips it, so no hunk can
+        // exist for it, so recording it as external would be a lie.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().to_path_buf();
+        let tracker = tracker_over(&root);
+        tracker.set_ignored(&root, HashSet::from([root.join(".env.local")]));
+
+        assert_eq!(
+            tracker.observe(&root.join(".env.local")),
+            Ownership::Untracked
+        );
+        assert_eq!(tracker.observe(&root.join("src/a.rs")), Ownership::External);
+    }
 
     fn tracker_over(root: &Path) -> Arc<ExternalChangeTracker> {
         let tracker = Arc::new(ExternalChangeTracker::default());
@@ -657,14 +912,44 @@ mod tests {
     }
 
     #[test]
-    fn excluded_and_build_directories_are_noise_at_any_depth() {
+    fn shared_excluded_directories_are_noise_at_any_depth() {
+        // These come from `EXCLUDED_DIRS`, which the kiln subsystem owns too.
+        // `.git` is the one that must stay: git never reports its own
+        // directory as ignored, and every command the ledger runs writes there.
         let tracker = tracker_over(Path::new("/repo"));
         for path in [
             "/repo/.git/index",
-            "/repo/target/debug/foo",
             "/repo/node_modules/x/index.js",
             "/repo/web/node_modules/x/index.js",
             "/repo/.crucible/state.json",
+        ] {
+            assert_eq!(
+                tracker.observe(Path::new(path)),
+                Ownership::Untracked,
+                "{path} should be noise"
+            );
+        }
+    }
+
+    #[test]
+    fn build_directories_are_noise_because_git_ignores_them() {
+        // This replaces a hardcoded `["target", "dist", "build", ".venv",
+        // "__pycache__"]`. That list named two ecosystems and matched only at
+        // depth one, so `crates/cli/target` was neither pruned nor noise.
+        let root = PathBuf::from("/repo");
+        let tracker = tracker_over(&root);
+        tracker.set_ignored(
+            &root,
+            HashSet::from([
+                root.join("target"),
+                root.join("crates/cli/target"),
+                root.join("sub/__pycache__"),
+            ]),
+        );
+
+        for path in [
+            "/repo/target/debug/foo",
+            "/repo/crates/cli/target/debug/foo",
             "/repo/sub/__pycache__/m.pyc",
         ] {
             assert_eq!(
@@ -677,8 +962,11 @@ mod tests {
 
     #[test]
     fn a_source_file_named_like_a_build_dir_is_still_reviewable() {
+        // Git decides by path, not by name, so a file called `build` next to
+        // an ignored `build/` directory stays reviewable.
         let root = PathBuf::from("/repo");
         let tracker = tracker_over(&root);
+        tracker.set_ignored(&root, HashSet::from([root.join("build")]));
         assert_eq!(
             tracker.observe(Path::new("/repo/scripts/build")),
             Ownership::External

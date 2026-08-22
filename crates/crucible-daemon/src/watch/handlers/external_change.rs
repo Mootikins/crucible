@@ -140,6 +140,12 @@ mod tests {
     #[tokio::test]
     async fn batched_events_are_recorded_member_by_member() {
         let (tracker, handler, root) = fixture();
+        // The noise member is noise because git ignores it, which the tracker
+        // learns when the watch is planned — not because it is called `target`.
+        tracker.set_ignored(
+            &root,
+            std::collections::HashSet::from([root.join("target")]),
+        );
         let batch = FileEvent::new(
             FileEventKind::Batch(vec![
                 FileEvent::new(FileEventKind::Modified, PathBuf::from("/repo/a.rs")),

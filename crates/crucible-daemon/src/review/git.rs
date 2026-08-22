@@ -53,6 +53,39 @@ pub(super) async fn top_level(path: &Path) -> ReviewResult<PhysicalRoot> {
     }
 }
 
+/// Directories under `root` that git ignores.
+///
+/// `--directory` collapses a wholly ignored directory to one entry, so git
+/// never descends into `target/` to answer. The call costs milliseconds on a
+/// tree whose ignored half is hundreds of gigabytes.
+///
+/// Every tree the ledger records comes from `git add -A`, which honours these
+/// same rules. An ignored path can therefore never reach a hunk, which is what
+/// makes pruning these from the review watch a statement about the ledger
+/// rather than a guess about which directories are build output.
+///
+/// Only directories are returned. An ignored *file* still needs an event-time
+/// check, because it sits inside a directory that must stay watched.
+pub(crate) async fn ignored_dirs(root: &Path) -> ReviewResult<Vec<std::path::PathBuf>> {
+    let out = git(
+        root,
+        &[
+            "ls-files",
+            "-z",
+            "--directory",
+            "--others",
+            "--ignored",
+            "--exclude-standard",
+        ],
+    )
+    .await?;
+    Ok(out
+        .split('\0')
+        .filter(|entry| entry.ends_with('/'))
+        .map(|dir| root.join(dir.trim_end_matches('/')))
+        .collect())
+}
+
 /// Paths differing between two trees, with the kind of change.
 ///
 /// Renames are deliberately not detected: a rename becomes a delete plus an

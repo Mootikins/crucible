@@ -23,7 +23,7 @@
 mod attribute;
 mod compose;
 mod error;
-mod git;
+pub(crate) mod git;
 mod journal;
 pub(crate) mod paths;
 mod persist;
