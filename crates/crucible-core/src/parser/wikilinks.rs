@@ -9,11 +9,9 @@
 //! - Complex: `[[note#heading|alias]]`
 
 use super::error::ParseError;
-use super::extensions::SyntaxExtension;
 use super::types::{NoteContent, Wikilink};
-use async_trait::async_trait;
 use regex::Regex;
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 
 static WIKILINK_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(!?)\[\[([^\]]+)\]\]").expect("wikilink regex"));
@@ -23,6 +21,7 @@ static CODE_BLOCK_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// Wikilink syntax extension
+#[derive(Debug, Clone, Copy, Default)]
 pub struct WikilinkExtension;
 
 impl WikilinkExtension {
@@ -42,32 +41,13 @@ impl WikilinkExtension {
     }
 }
 
-impl Default for WikilinkExtension {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl SyntaxExtension for WikilinkExtension {
-    fn name(&self) -> &'static str {
-        "obsidian-wikilinks"
-    }
-
-    fn version(&self) -> &'static str {
-        "1.0.0"
-    }
-
-    fn description(&self) -> &'static str {
-        "Supports Obsidian-style wikilinks [[note]], [[note|alias]], [[note#heading]], and ![[embed]]"
-    }
-
-    fn can_handle(&self, content: &str) -> bool {
+impl WikilinkExtension {
+    pub(super) fn can_handle(&self, content: &str) -> bool {
         // Quick check for wikilink pattern before expensive regex
         content.contains("[[")
     }
 
-    async fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
+    pub(super) fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
         let errors = Vec::new();
 
         // Extract all wikilinks
@@ -90,23 +70,14 @@ impl SyntaxExtension for WikilinkExtension {
 
         errors
     }
-
-    fn priority(&self) -> u8 {
-        80 // High priority, run early before other extensions
-    }
-}
-
-/// Factory function to create the wikilink extension
-pub fn create_wikilink_extension() -> Arc<dyn SyntaxExtension> {
-    Arc::new(WikilinkExtension::new())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_wikilink_detection() {
+    #[test]
+    fn test_wikilink_detection() {
         let extension = WikilinkExtension::new();
 
         assert!(extension.can_handle("This has a [[wikilink]] reference"));
@@ -115,13 +86,13 @@ mod tests {
         assert!(!extension.can_handle("Markdown link [text](url)"));
     }
 
-    #[tokio::test]
-    async fn test_basic_wikilink_parsing() {
+    #[test]
+    fn test_basic_wikilink_parsing() {
         let extension = WikilinkExtension::new();
         let content = "See [[Other Note]] for details.";
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
         assert_eq!(errors.len(), 0);
         assert_eq!(doc_content.wikilinks.len(), 1);
         assert_eq!(doc_content.wikilinks[0].target, "Other Note");
@@ -129,38 +100,38 @@ mod tests {
         assert!(!doc_content.wikilinks[0].is_embed);
     }
 
-    #[tokio::test]
-    async fn test_wikilink_with_alias() {
+    #[test]
+    fn test_wikilink_with_alias() {
         let extension = WikilinkExtension::new();
         let content = "Link: [[Note|Display Text]]";
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
         assert_eq!(errors.len(), 0);
     }
 
-    #[tokio::test]
-    async fn test_wikilink_with_heading() {
+    #[test]
+    fn test_wikilink_with_heading() {
         let extension = WikilinkExtension::new();
         let content = "Reference: [[Note#Section]]";
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
         assert_eq!(errors.len(), 0);
     }
 
-    #[tokio::test]
-    async fn test_embed_wikilink() {
+    #[test]
+    fn test_embed_wikilink() {
         let extension = WikilinkExtension::new();
         let content = "Embed: ![[embedded-note]]";
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
         assert_eq!(errors.len(), 0);
     }
 
-    #[tokio::test]
-    async fn test_wikilink_in_code_block_skipped() {
+    #[test]
+    fn test_wikilink_in_code_block_skipped() {
         let extension = WikilinkExtension::new();
         let content = r#"Regular link: [[normal]]
 
@@ -171,7 +142,7 @@ Code block link: [[should-not-parse]]
 After code: [[after]]"#;
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
         assert_eq!(errors.len(), 0);
 
         // The wikilinks should only include 'normal' and 'after', not 'should-not-parse'
@@ -181,12 +152,12 @@ After code: [[after]]"#;
     /// The target token's byte span must address exactly the text a rename
     /// splice replaces — for every syntax form, and at correct BYTE offsets
     /// even after multi-byte UTF-8.
-    #[tokio::test]
-    async fn test_target_spans_address_exact_target_bytes() {
+    #[test]
+    fn test_target_spans_address_exact_target_bytes() {
         let extension = WikilinkExtension::new();
         let content = "a [[plain]] b [[tgt|Alias]] c [[tgt#Head]] d [[tgt#^blk]] e ![[emb]] f 🎉 [[after-emoji]]";
         let mut doc_content = NoteContent::new();
-        extension.parse(content, &mut doc_content).await;
+        extension.parse(content, &mut doc_content);
 
         assert_eq!(doc_content.wikilinks.len(), 6);
         for link in &doc_content.wikilinks {
@@ -204,13 +175,13 @@ After code: [[after]]"#;
         assert!(last.offset > content[..last.offset].chars().count());
     }
 
-    #[tokio::test]
-    async fn test_multiple_wikilinks() {
+    #[test]
+    fn test_multiple_wikilinks() {
         let extension = WikilinkExtension::new();
         let content = "Links: [[first]] and [[second]] and [[third]]";
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
         assert_eq!(errors.len(), 0);
     }
 }

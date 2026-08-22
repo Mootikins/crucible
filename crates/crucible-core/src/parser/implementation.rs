@@ -85,32 +85,9 @@ impl CrucibleParser {
         }
     }
 
-    /// Create a parser with default extensions (LaTeX, callouts, enhanced tags, and footnotes)
+    /// Create a parser with every extension that the crate compiles.
     pub fn with_default_extensions() -> Self {
-        let mut builder = super::ExtensionRegistryBuilder::new();
-
-        // Add basic markdown extension based on parser feature
-        #[cfg(feature = "markdown-it-parser")]
-        {
-            builder = builder.with_extension(super::create_basic_markdown_it_extension());
-        }
-
-        let builder = builder
-            .with_extension(super::create_wikilink_extension()) // Wikilinks [[note]]
-            .with_extension(super::create_inline_link_extension()) // Inline links [text](url)
-            .with_extension(super::create_latex_extension())
-            .with_extension(super::create_callout_extension())
-            .with_extension(super::create_blockquote_extension())
-            .with_extension(super::create_enhanced_tags_extension())
-            .with_extension(super::create_footnote_extension());
-
-        let extensions = builder.build();
-
-        Self {
-            extensions,
-            max_file_size: Some(10 * 1024 * 1024),
-            block_config: BlockProcessingConfig::default(),
-        }
+        Self::with_extensions(ExtensionRegistry::with_defaults())
     }
 
     /// Create a parser with block processing enabled (Phase 2 optimize-data-flow)
@@ -446,13 +423,7 @@ impl CrucibleParser {
             horizontal_rules: Vec::new(),
         };
 
-        // Apply syntax extensions
-        for extension in self.extensions.enabled_extensions() {
-            if extension.can_handle(content) {
-                let errors = extension.parse(content, &mut document_content).await;
-                parse_errors.extend(errors);
-            }
-        }
+        parse_errors.extend(self.extensions.apply(content, &mut document_content));
 
         // Extract top-level fields from document_content before building
         let callouts = document_content.callouts.clone();
@@ -860,8 +831,7 @@ let x = 42;
         // Test that existing code still works without modifications
         let parser = CrucibleParser::new();
         let parser_with_extensions = CrucibleParser::with_default_extensions();
-        let parser_with_custom =
-            CrucibleParser::with_extensions(crate::parser::ExtensionRegistryBuilder::new().build());
+        let parser_with_custom = CrucibleParser::with_extensions(ExtensionRegistry::new());
 
         // All should have block processing disabled by default
         assert!(!parser.is_block_processing_enabled());

@@ -44,9 +44,7 @@ pub mod markdown_it;
 
 // Re-export error types
 pub use error::{ErrorSeverity, ParseError, ParseErrorType, ParserError, ParserResult};
-pub use extensions::{
-    ExtensionRegistry, ExtensionRegistryBuilder, ExtensionRegistryStats, SyntaxExtension,
-};
+pub use extensions::{Extension, ExtensionRegistry};
 pub use traits::{ParserCapabilities, ParserRequirements};
 
 // Re-export implementation types
@@ -57,19 +55,6 @@ pub use frontmatter_extractor::{
     LineEndingStyle,
 };
 pub use implementation::{BlockProcessingConfig, CrucibleParser};
-
-// Re-export markdown-it parser when feature is enabled (default)
-#[cfg(feature = "markdown-it-parser")]
-pub use basic_markdown_it::create_basic_markdown_it_extension;
-
-// Convenience factory functions
-pub use blockquotes::create_blockquote_extension;
-pub use callouts::create_callout_extension;
-pub use enhanced_tags::create_enhanced_tags_extension;
-pub use footnotes::create_footnote_extension;
-pub use inline_links::create_inline_link_extension;
-pub use latex::create_latex_extension;
-pub use wikilinks::create_wikilink_extension;
 
 // Re-export parser types from canonical source (this module)
 pub use types::{

@@ -7,18 +7,17 @@
 //! - Relative links: `[text](./relative/path.md)`
 
 use super::error::ParseError;
-use super::extensions::SyntaxExtension;
 use super::types::{InlineLink, NoteContent};
-use async_trait::async_trait;
 
 use regex::Regex;
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 
 static LINK_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"\[([^\]]+)\]\(([^\s)]+)(?:\s+"([^"]+)")?\)"#).expect("inline link regex")
 });
 
 /// Inline link syntax extension
+#[derive(Debug, Clone, Copy, Default)]
 pub struct InlineLinkExtension;
 
 impl InlineLinkExtension {
@@ -28,32 +27,13 @@ impl InlineLinkExtension {
     }
 }
 
-impl Default for InlineLinkExtension {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl SyntaxExtension for InlineLinkExtension {
-    fn name(&self) -> &'static str {
-        "markdown-inline-links"
-    }
-
-    fn version(&self) -> &'static str {
-        "1.0.0"
-    }
-
-    fn description(&self) -> &'static str {
-        "Supports standard markdown inline links [text](url) with optional titles"
-    }
-
-    fn can_handle(&self, content: &str) -> bool {
+impl InlineLinkExtension {
+    pub(super) fn can_handle(&self, content: &str) -> bool {
         // Quick check for link pattern before expensive regex
         content.contains("](")
     }
 
-    async fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
+    pub(super) fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
         let errors = Vec::new();
 
         // Extract all inline links
@@ -81,23 +61,14 @@ impl SyntaxExtension for InlineLinkExtension {
 
         errors
     }
-
-    fn priority(&self) -> u8 {
-        75 // High priority, run after basic markdown but before footnotes
-    }
-}
-
-/// Factory function to create the inline link extension
-pub fn create_inline_link_extension() -> Arc<dyn SyntaxExtension> {
-    Arc::new(InlineLinkExtension::new())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_inline_link_detection() {
+    #[test]
+    fn test_inline_link_detection() {
         let extension = InlineLinkExtension::new();
 
         assert!(extension.can_handle("This has a [link](url) reference"));
@@ -106,13 +77,13 @@ mod tests {
         assert!(!extension.can_handle("Wikilink [[note]] is not handled"));
     }
 
-    #[tokio::test]
-    async fn test_basic_inline_link_parsing() {
+    #[test]
+    fn test_basic_inline_link_parsing() {
         let extension = InlineLinkExtension::new();
         let content = "Check out [Rust](https://rust-lang.org) for more info.";
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 0);
         assert_eq!(doc_content.inline_links.len(), 1);
@@ -124,14 +95,14 @@ mod tests {
         assert!(link.is_external());
     }
 
-    #[tokio::test]
-    async fn test_inline_link_with_title() {
+    #[test]
+    fn test_inline_link_with_title() {
         let extension = InlineLinkExtension::new();
         let content =
             r#"Visit [Rust](https://rust-lang.org "The Rust Programming Language") today!"#;
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 0);
         assert_eq!(doc_content.inline_links.len(), 1);
@@ -146,14 +117,14 @@ mod tests {
         assert!(link.is_external());
     }
 
-    #[tokio::test]
-    async fn test_multiple_inline_links() {
+    #[test]
+    fn test_multiple_inline_links() {
         let extension = InlineLinkExtension::new();
         let content =
             r#"Check [Rust](https://rust-lang.org) and [GitHub](https://github.com) for more."#;
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 0);
         assert_eq!(doc_content.inline_links.len(), 2);
@@ -167,13 +138,13 @@ mod tests {
         assert_eq!(link2.url, "https://github.com");
     }
 
-    #[tokio::test]
-    async fn test_relative_links() {
+    #[test]
+    fn test_relative_links() {
         let extension = InlineLinkExtension::new();
         let content = "See [other note](./notes/other.md) for details.";
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 0);
         assert_eq!(doc_content.inline_links.len(), 1);
@@ -185,8 +156,8 @@ mod tests {
         assert!(!link.is_external());
     }
 
-    #[tokio::test]
-    async fn test_mixed_link_types() {
+    #[test]
+    fn test_mixed_link_types() {
         let extension = InlineLinkExtension::new();
         let content = r#"
 # Documentation
@@ -197,7 +168,7 @@ Another: [API](https://docs.rs)
 "#;
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 0);
         assert_eq!(doc_content.inline_links.len(), 3);
@@ -219,13 +190,13 @@ Another: [API](https://docs.rs)
         assert_eq!(relative_links.len(), 1);
     }
 
-    #[tokio::test]
-    async fn test_link_offset_tracking() {
+    #[test]
+    fn test_link_offset_tracking() {
         let extension = InlineLinkExtension::new();
         let content = "Start [first](url1) middle [second](url2) end";
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 0);
         assert_eq!(doc_content.inline_links.len(), 2);
@@ -234,36 +205,25 @@ Another: [API](https://docs.rs)
         assert!(doc_content.inline_links[0].offset < doc_content.inline_links[1].offset);
     }
 
-    #[tokio::test]
-    async fn test_extension_metadata() {
-        let extension = InlineLinkExtension::new();
-
-        assert_eq!(extension.name(), "markdown-inline-links");
-        assert_eq!(extension.version(), "1.0.0");
-        assert!(extension.description().contains("inline links"));
-        assert_eq!(extension.priority(), 75);
-        assert!(extension.is_enabled());
-    }
-
-    #[tokio::test]
-    async fn test_empty_content() {
+    #[test]
+    fn test_empty_content() {
         let extension = InlineLinkExtension::new();
         let content = "";
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 0);
         assert_eq!(doc_content.inline_links.len(), 0);
     }
 
-    #[tokio::test]
-    async fn test_no_links() {
+    #[test]
+    fn test_no_links() {
         let extension = InlineLinkExtension::new();
         let content = "This is plain text with [[wikilinks]] but no inline links.";
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 0);
         assert_eq!(doc_content.inline_links.len(), 0);

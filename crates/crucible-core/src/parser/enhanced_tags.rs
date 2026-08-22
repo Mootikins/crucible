@@ -5,12 +5,10 @@
 //! - Task list parsing with - [ ] and - [x] checkbox syntax
 
 use super::error::ParseError;
-use super::extensions::SyntaxExtension;
 use super::types::{ListBlock, ListItem, ListType, NoteContent, Tag, TaskStatus};
-use async_trait::async_trait;
 
 use regex::Regex;
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 
 static NUMBERED_TASK_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\d+\.\s*\[").expect("numbered task regex"));
@@ -25,6 +23,7 @@ static REGULAR_LIST_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// Enhanced tags and task lists syntax extension
+#[derive(Debug, Clone, Copy, Default)]
 pub struct EnhancedTagsExtension;
 
 impl EnhancedTagsExtension {
@@ -34,27 +33,8 @@ impl EnhancedTagsExtension {
     }
 }
 
-impl Default for EnhancedTagsExtension {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl SyntaxExtension for EnhancedTagsExtension {
-    fn name(&self) -> &'static str {
-        "enhanced-tags"
-    }
-
-    fn version(&self) -> &'static str {
-        "1.0.0"
-    }
-
-    fn description(&self) -> &'static str {
-        "Supports #hashtag syntax and task list parsing with - [ ] and - [x] checkboxes"
-    }
-
-    fn can_handle(&self, content: &str) -> bool {
+impl EnhancedTagsExtension {
+    pub(super) fn can_handle(&self, content: &str) -> bool {
         // Check for hashtags
         let has_hashtags = content.contains('#');
 
@@ -67,7 +47,7 @@ impl SyntaxExtension for EnhancedTagsExtension {
         has_hashtags || has_task_lists
     }
 
-    async fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
+    pub(super) fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
         let mut errors = Vec::new();
 
         // Extract #hashtags
@@ -81,10 +61,6 @@ impl SyntaxExtension for EnhancedTagsExtension {
         }
 
         errors
-    }
-
-    fn priority(&self) -> u8 {
-        70 // Medium priority - after LaTeX/callouts but before other extensions
     }
 }
 
@@ -293,11 +269,6 @@ impl EnhancedTagsExtension {
     }
 }
 
-/// Factory function to create an enhanced tags extension
-pub fn create_enhanced_tags_extension() -> Arc<dyn SyntaxExtension> {
-    Arc::new(EnhancedTagsExtension::new())
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::types::{ListType, NoteContent, TaskStatus};
@@ -376,8 +347,8 @@ mod tests {
 
     // New comprehensive tests for enhanced task list parsing
 
-    #[tokio::test]
-    async fn test_basic_task_list_parsing() {
+    #[test]
+    fn test_basic_task_list_parsing() {
         let extension = EnhancedTagsExtension::new();
         let mut doc_content = NoteContent::new();
         let content = r"
@@ -386,7 +357,7 @@ mod tests {
 - [X] Also completed
 ";
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
         assert!(errors.is_empty());
 
         assert_eq!(doc_content.lists.len(), 1);
@@ -405,8 +376,8 @@ mod tests {
         assert_eq!(list.items[2].task_status, Some(TaskStatus::Completed));
     }
 
-    #[tokio::test]
-    async fn test_nested_task_lists() {
+    #[test]
+    fn test_nested_task_lists() {
         let extension = EnhancedTagsExtension::new();
         let mut doc_content = NoteContent::new();
         let content = r"
@@ -418,7 +389,7 @@ mod tests {
   - [ ] Subtask 2.1
 ";
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
         assert!(errors.is_empty());
 
         assert_eq!(doc_content.lists.len(), 1);
@@ -434,8 +405,8 @@ mod tests {
         assert_eq!(list.items[5].level, 1); // Subtask 2.1 (2 spaces)
     }
 
-    #[tokio::test]
-    async fn test_different_list_markers() {
+    #[test]
+    fn test_different_list_markers() {
         let extension = EnhancedTagsExtension::new();
         let mut doc_content = NoteContent::new();
         let content = r"
@@ -448,7 +419,7 @@ a. [ ] Letter style
 b. [x] Another letter
 ";
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
         assert!(errors.is_empty());
 
         // Should create multiple lists due to type changes
@@ -471,8 +442,8 @@ b. [x] Another letter
         }
     }
 
-    #[tokio::test]
-    async fn test_mixed_list_content() {
+    #[test]
+    fn test_mixed_list_content() {
         let extension = EnhancedTagsExtension::new();
         let mut doc_content = NoteContent::new();
         let content = r"
@@ -487,7 +458,7 @@ Regular paragraph text.
 - [ ] New task list after paragraph
 ";
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
         assert!(errors.is_empty());
 
         // Should have multiple separate lists due to interruptions
@@ -526,8 +497,8 @@ Regular paragraph text.
             .any(|&item| item.contains("Regular list item")));
     }
 
-    #[tokio::test]
-    async fn test_alternative_checkbox_syntax() {
+    #[test]
+    fn test_alternative_checkbox_syntax() {
         let extension = EnhancedTagsExtension::new();
         let mut doc_content = NoteContent::new();
         let content = r"
@@ -538,7 +509,7 @@ Regular paragraph text.
 - [ ] Mixed content #with-tag
 ";
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
         assert!(errors.is_empty());
 
         assert_eq!(doc_content.lists.len(), 1);
@@ -556,8 +527,8 @@ Regular paragraph text.
         assert!(list.items[4].content.contains("#with-tag"));
     }
 
-    #[tokio::test]
-    async fn test_malformed_checkbox_handling() {
+    #[test]
+    fn test_malformed_checkbox_handling() {
         let extension = EnhancedTagsExtension::new();
         let mut doc_content = NoteContent::new();
         let content = r"
@@ -569,7 +540,7 @@ Regular paragraph text.
 ";
 
         // This should not fail parsing, but may handle malformed checkboxes gracefully
-        let _errors = extension.parse(content, &mut doc_content).await;
+        let _errors = extension.parse(content, &mut doc_content);
 
         // Should parse successfully without throwing errors
         // Malformed checkboxes might be skipped or handled gracefully
@@ -580,8 +551,8 @@ Regular paragraph text.
         assert!(total_items >= 2); // At least the valid tasks
     }
 
-    #[tokio::test]
-    async fn test_edge_cases() {
+    #[test]
+    fn test_edge_cases() {
         let extension = EnhancedTagsExtension::new();
         let mut doc_content = NoteContent::new();
 
@@ -592,15 +563,15 @@ Regular paragraph text.
 - [ ] Task with content
 ";
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
         assert!(errors.is_empty());
 
         // Should handle empty/whitespace content gracefully
         assert!(!doc_content.lists.is_empty());
     }
 
-    #[tokio::test]
-    async fn test_deep_nesting() {
+    #[test]
+    fn test_deep_nesting() {
         let extension = EnhancedTagsExtension::new();
         let mut doc_content = NoteContent::new();
         let content = r"
@@ -612,7 +583,7 @@ Regular paragraph text.
           - [ ] Level 10 spaces
 ";
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
         assert!(errors.is_empty());
 
         assert_eq!(doc_content.lists.len(), 1);

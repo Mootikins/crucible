@@ -1,371 +1,237 @@
-//! Syntax extension system for pluggable markdown parsing
+//! The closed set of syntax extensions, and the registry that runs them.
 //!
-//! This module provides the trait-based extension system that allows
-//! modular addition of new syntax features to the markdown parser.
+//! A new syntax is one `Extension` variant. The compiler then lists every
+//! `match` that the variant must join.
 
+use super::blockquotes::BlockquoteExtension;
+use super::callouts::CalloutExtension;
+use super::enhanced_tags::EnhancedTagsExtension;
 use super::error::ParseError;
+use super::footnotes::FootnoteExtension;
+use super::inline_links::InlineLinkExtension;
+use super::latex::LatexExtension;
 use super::types::NoteContent;
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::sync::Arc;
+use super::wikilinks::WikilinkExtension;
 
-/// Trait for syntax extensions that can parse specific markdown patterns
-///
-/// Extensions are the primary way to add new syntax features to the parser
-/// without modifying the core parsing logic.
-#[async_trait]
-pub trait SyntaxExtension: Send + Sync {
-    /// Get the unique name of this extension
-    fn name(&self) -> &'static str;
+/// One syntax extension of the markdown parser.
+#[derive(Debug, Clone)]
+pub enum Extension {
+    /// Headings, paragraphs, code blocks and tables from markdown-it.
+    #[cfg(feature = "markdown-it-parser")]
+    BasicMarkdownIt(super::basic_markdown_it::BasicMarkdownItExtension),
+    /// `[[note]]`, `[[note|alias]]`, `![[embed]]`.
+    Wikilink(WikilinkExtension),
+    /// `[text](url "title")`.
+    InlineLink(InlineLinkExtension),
+    /// `$inline$` and `$$block$$` math.
+    Latex(LatexExtension),
+    /// `> [!type] title` callouts.
+    Callout(CalloutExtension),
+    /// Plain `> text` blockquotes.
+    Blockquote(BlockquoteExtension),
+    /// `#tags` and `- [ ]` task lists.
+    EnhancedTags(EnhancedTagsExtension),
+    /// `[^id]` references and definitions.
+    Footnote(FootnoteExtension),
+}
 
-    /// Get the version of this extension
-    fn version(&self) -> &'static str;
-
-    /// Get a description of what this extension does
-    fn description(&self) -> &'static str;
-
-    /// Check if this extension can handle the given content
-    ///
-    /// This is a quick check to determine if the extension should be applied
-    /// to the given content. It should be very fast (O(1) preferred).
-    fn can_handle(&self, content: &str) -> bool;
-
-    /// Parse the content and extract structured data
-    ///
-    /// This method should parse the content and extract any structured data
-    /// that the extension recognizes. The parsed data should be added to the
-    /// NoteContent.
-    ///
-    /// # Arguments
-    /// * `content` - The markdown content to parse
-    /// * `doc_content` - The note content to modify with parsed results
-    ///
-    /// # Returns
-    /// A list of parse errors encountered (non-fatal)
-    async fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError>;
-
-    /// Get the priority of this extension (higher = applied first)
-    fn priority(&self) -> u8 {
-        50 // Default priority
+impl Extension {
+    /// The unique name of the extension.
+    pub fn name(&self) -> &'static str {
+        match self {
+            #[cfg(feature = "markdown-it-parser")]
+            Self::BasicMarkdownIt(_) => "basic-markdown-it",
+            Self::Wikilink(_) => "obsidian-wikilinks",
+            Self::InlineLink(_) => "markdown-inline-links",
+            Self::Latex(_) => "latex-math",
+            Self::Callout(_) => "obsidian-callouts",
+            Self::Blockquote(_) => "markdown-blockquotes",
+            Self::EnhancedTags(_) => "enhanced-tags",
+            Self::Footnote(_) => "markdown-footnotes",
+        }
     }
 
-    /// Check if this extension is enabled
-    fn is_enabled(&self) -> bool {
-        true // Default to enabled
+    /// The run order. The registry runs a higher priority first.
+    ///
+    /// The basic markdown pass runs first, so that the later passes see the
+    /// note structure it produced.
+    pub fn priority(&self) -> u8 {
+        match self {
+            #[cfg(feature = "markdown-it-parser")]
+            Self::BasicMarkdownIt(_) => 100,
+            Self::Wikilink(_) => 80,
+            Self::Latex(_) => 80,
+            Self::Footnote(_) => 80,
+            Self::InlineLink(_) => 75,
+            Self::Callout(_) => 70,
+            Self::EnhancedTags(_) => 70,
+            Self::Blockquote(_) => 50,
+        }
+    }
+
+    /// A fast check that tells whether `parse` can find anything in `content`.
+    pub fn can_handle(&self, content: &str) -> bool {
+        match self {
+            #[cfg(feature = "markdown-it-parser")]
+            Self::BasicMarkdownIt(ext) => ext.can_handle(content),
+            Self::Wikilink(ext) => ext.can_handle(content),
+            Self::InlineLink(ext) => ext.can_handle(content),
+            Self::Latex(ext) => ext.can_handle(content),
+            Self::Callout(ext) => ext.can_handle(content),
+            Self::Blockquote(ext) => ext.can_handle(content),
+            Self::EnhancedTags(ext) => ext.can_handle(content),
+            Self::Footnote(ext) => ext.can_handle(content),
+        }
+    }
+
+    /// Parse `content` and add what the extension recognizes to `doc_content`.
+    ///
+    /// Returns the parse errors. The errors are not fatal.
+    pub fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
+        match self {
+            #[cfg(feature = "markdown-it-parser")]
+            Self::BasicMarkdownIt(ext) => ext.parse(content, doc_content),
+            Self::Wikilink(ext) => ext.parse(content, doc_content),
+            Self::InlineLink(ext) => ext.parse(content, doc_content),
+            Self::Latex(ext) => ext.parse(content, doc_content),
+            Self::Callout(ext) => ext.parse(content, doc_content),
+            Self::Blockquote(ext) => ext.parse(content, doc_content),
+            Self::EnhancedTags(ext) => ext.parse(content, doc_content),
+            Self::Footnote(ext) => ext.parse(content, doc_content),
+        }
     }
 }
 
-/// Registry for managing syntax extensions
-///
-/// The registry handles extension discovery, registration, and execution order.
-#[derive(Clone)]
+/// The ordered set of extensions that a parser runs.
+#[derive(Debug, Clone, Default)]
 pub struct ExtensionRegistry {
-    /// Registered extensions
-    extensions: Vec<Arc<dyn SyntaxExtension>>,
-
-    /// Extension index for fast lookup by name
-    extension_index: HashMap<&'static str, Arc<dyn SyntaxExtension>>,
-
-    /// Cached sorted extensions (by priority)
-    sorted_extensions: Vec<Arc<dyn SyntaxExtension>>,
-}
-
-impl std::fmt::Debug for ExtensionRegistry {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ExtensionRegistry")
-            .field("extension_count", &self.extensions.len())
-            .field(
-                "extension_names",
-                &self.extensions.iter().map(|e| e.name()).collect::<Vec<_>>(),
-            )
-            .finish()
-    }
+    /// Sorted by priority, highest first.
+    extensions: Vec<Extension>,
 }
 
 impl ExtensionRegistry {
-    /// Create a new extension registry
+    /// Create an empty registry.
     pub fn new() -> Self {
-        Self {
-            extensions: Vec::new(),
-            extension_index: HashMap::new(),
-            sorted_extensions: Vec::new(),
-        }
+        Self::default()
     }
 
-    /// Register a syntax extension
-    ///
-    /// # Arguments
-    /// * `extension` - The extension to register
-    ///
-    /// # Returns
-    /// * `Ok(())` - Extension registered successfully
-    /// * `Err(String)` - Extension with same name already registered
-    pub fn register(&mut self, extension: Arc<dyn SyntaxExtension>) -> Result<(), String> {
-        let name = extension.name();
+    /// Create a registry with every extension that the crate compiles.
+    pub fn with_defaults() -> Self {
+        let mut registry = Self::new();
+        let defaults = [
+            #[cfg(feature = "markdown-it-parser")]
+            Extension::BasicMarkdownIt(super::basic_markdown_it::BasicMarkdownItExtension::new()),
+            Extension::Wikilink(WikilinkExtension::new()),
+            Extension::InlineLink(InlineLinkExtension::new()),
+            Extension::Latex(LatexExtension::new()),
+            Extension::Callout(CalloutExtension::new()),
+            Extension::Blockquote(BlockquoteExtension::new()),
+            Extension::EnhancedTags(EnhancedTagsExtension::new()),
+            Extension::Footnote(FootnoteExtension::new()),
+        ];
+        for extension in defaults {
+            registry
+                .register(extension)
+                .expect("the default set has no duplicate name");
+        }
+        registry
+    }
 
-        if self.extension_index.contains_key(name) {
+    /// Register an extension.
+    ///
+    /// Returns an error when an extension with the same name is registered.
+    pub fn register(&mut self, extension: Extension) -> Result<(), String> {
+        let name = extension.name();
+        if self.extensions.iter().any(|e| e.name() == name) {
             return Err(format!("Extension '{}' already registered", name));
         }
-
-        self.extension_index.insert(name, extension.clone());
         self.extensions.push(extension);
-        self.resort_extensions();
-
+        self.extensions
+            .sort_by_key(|e| std::cmp::Reverse(e.priority()));
         Ok(())
     }
 
-    /// Unregister a syntax extension by name
-    ///
-    /// # Arguments
-    /// * `name` - The name of the extension to unregister
-    ///
-    /// # Returns
-    /// * `Ok(())` - Extension unregistered successfully
-    /// * `Err(String)` - Extension not found
-    pub fn unregister(&mut self, name: &'static str) -> Result<(), String> {
-        if !self.extension_index.contains_key(name) {
-            return Err(format!("Extension '{}' not found", name));
-        }
-
-        self.extension_index.remove(name);
-        self.extensions.retain(|ext| ext.name() != name);
-        self.resort_extensions();
-
-        Ok(())
+    /// The registered extensions, highest priority first.
+    pub fn extensions(&self) -> &[Extension] {
+        &self.extensions
     }
 
-    /// Get an extension by name
-    pub fn get(&self, name: &str) -> Option<&Arc<dyn SyntaxExtension>> {
-        self.extension_index.get(name)
-    }
-
-    /// Get all enabled extensions sorted by priority
-    pub fn enabled_extensions(&self) -> Vec<&Arc<dyn SyntaxExtension>> {
-        self.sorted_extensions
+    /// Run every extension that can handle `content`, in priority order.
+    ///
+    /// Returns the parse errors of all the extensions.
+    pub fn apply(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
+        self.extensions
             .iter()
-            .filter(|ext| ext.is_enabled())
+            .filter(|ext| ext.can_handle(content))
+            .flat_map(|ext| ext.parse(content, doc_content))
             .collect()
-    }
-
-    /// Get all registered extensions
-    pub fn all_extensions(&self) -> Vec<&Arc<dyn SyntaxExtension>> {
-        self.extensions.iter().collect()
-    }
-
-    /// Apply all enabled extensions to content
-    ///
-    /// # Arguments
-    /// * `content` - The markdown content to parse
-    /// * `doc_content` - The note content to modify
-    ///
-    /// # Returns
-    /// A list of all parse errors from all extensions
-    pub async fn apply_extensions(
-        &self,
-        content: &str,
-        doc_content: &mut NoteContent,
-    ) -> Vec<ParseError> {
-        let mut all_errors = Vec::new();
-
-        for extension in self.enabled_extensions() {
-            if extension.can_handle(content) {
-                let errors = extension.parse(content, doc_content).await;
-                all_errors.extend(errors);
-            }
-        }
-
-        all_errors
-    }
-
-    /// Get registry statistics
-    pub fn stats(&self) -> ExtensionRegistryStats {
-        let enabled_count = self.enabled_extensions().len();
-
-        ExtensionRegistryStats {
-            total_extensions: self.extensions.len(),
-            enabled_extensions: enabled_count,
-            disabled_extensions: self.extensions.len() - enabled_count,
-        }
-    }
-
-    /// Resort extensions by priority (internal)
-    fn resort_extensions(&mut self) {
-        let mut extensions = self.extensions.clone();
-        extensions.sort_by_key(|e| std::cmp::Reverse(e.priority()));
-        self.sorted_extensions = extensions;
-    }
-}
-
-impl Default for ExtensionRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Registry statistics
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExtensionRegistryStats {
-    /// Total number of registered extensions
-    pub total_extensions: usize,
-
-    /// Number of enabled extensions
-    pub enabled_extensions: usize,
-
-    /// Number of disabled extensions
-    pub disabled_extensions: usize,
-}
-
-/// Builder for creating and configuring extension registries
-pub struct ExtensionRegistryBuilder {
-    registry: ExtensionRegistry,
-}
-
-impl ExtensionRegistryBuilder {
-    /// Create a new builder
-    pub fn new() -> Self {
-        Self {
-            registry: ExtensionRegistry::new(),
-        }
-    }
-
-    /// Add an extension to the registry
-    pub fn with_extension(mut self, extension: Arc<dyn SyntaxExtension>) -> Self {
-        // Ignore registration errors for builder - let user handle them
-        let _ = self.registry.register(extension);
-        self
-    }
-
-    /// Add multiple extensions
-    pub fn with_extensions<I>(mut self, extensions: I) -> Self
-    where
-        I: IntoIterator<Item = Arc<dyn SyntaxExtension>>,
-    {
-        for ext in extensions {
-            let _ = self.registry.register(ext);
-        }
-        self
-    }
-
-    /// Build the registry
-    pub fn build(self) -> ExtensionRegistry {
-        self.registry
-    }
-}
-
-impl Default for ExtensionRegistryBuilder {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::error::ParseErrorType;
 
-    // Mock extension for testing
-    struct TestExtension {
-        name: &'static str,
-        version: &'static str,
-        priority: u8,
-    }
-
-    #[async_trait]
-    impl SyntaxExtension for TestExtension {
-        fn name(&self) -> &'static str {
-            self.name
-        }
-
-        fn version(&self) -> &'static str {
-            self.version
-        }
-
-        fn description(&self) -> &'static str {
-            "Test extension for unit testing"
-        }
-
-        fn can_handle(&self, content: &str) -> bool {
-            content.contains("test")
-        }
-
-        async fn parse(&self, content: &str, _doc_content: &mut NoteContent) -> Vec<ParseError> {
-            if content.contains("error") {
-                vec![ParseError::error(
-                    "Test error".to_string(),
-                    ParseErrorType::SyntaxError,
-                    0,
-                    0,
-                    0,
-                )]
-            } else {
-                Vec::new()
-            }
-        }
-
-        fn priority(&self) -> u8 {
-            self.priority
-        }
-    }
-
-    #[tokio::test]
-    async fn test_extension_registration() {
+    #[test]
+    fn register_rejects_a_duplicate_name() {
         let mut registry = ExtensionRegistry::new();
-        let ext = Arc::new(TestExtension {
-            name: "test",
-            version: "1.0.0",
-            priority: 50,
-        });
-
-        assert!(registry.register(ext.clone()).is_ok());
-        assert!(registry.get("test").is_some());
-        assert!(registry.register(ext).is_err()); // Duplicate
-    }
-
-    #[tokio::test]
-    async fn test_extension_application() {
-        let mut registry = ExtensionRegistry::new();
-        let ext = Arc::new(TestExtension {
-            name: "test",
-            version: "1.0.0",
-            priority: 50,
-        });
-
-        registry.register(ext).unwrap();
-
-        let mut doc_content = NoteContent::new();
-        let errors = registry
-            .apply_extensions("test content", &mut doc_content)
-            .await;
-        assert_eq!(errors.len(), 0);
-
-        let errors = registry
-            .apply_extensions("test error content", &mut doc_content)
-            .await;
-        assert_eq!(errors.len(), 1);
-        assert_eq!(errors[0].error_type, ParseErrorType::SyntaxError);
+        assert!(registry
+            .register(Extension::Latex(LatexExtension::new()))
+            .is_ok());
+        assert!(registry
+            .register(Extension::Latex(LatexExtension::new()))
+            .is_err());
     }
 
     #[test]
-    fn test_builder_pattern() {
-        let ext1 = Arc::new(TestExtension {
-            name: "ext1",
-            version: "1.0.0",
-            priority: 100,
-        });
+    fn register_keeps_the_highest_priority_first() {
+        let mut registry = ExtensionRegistry::new();
+        registry
+            .register(Extension::Blockquote(BlockquoteExtension::new()))
+            .unwrap();
+        registry
+            .register(Extension::Wikilink(WikilinkExtension::new()))
+            .unwrap();
+        registry
+            .register(Extension::Callout(CalloutExtension::new()))
+            .unwrap();
 
-        let ext2 = Arc::new(TestExtension {
-            name: "ext2",
-            version: "1.0.0",
-            priority: 50,
-        });
+        let names: Vec<_> = registry.extensions().iter().map(|e| e.name()).collect();
+        assert_eq!(
+            names,
+            [
+                "obsidian-wikilinks",
+                "obsidian-callouts",
+                "markdown-blockquotes"
+            ]
+        );
+    }
 
-        let registry = ExtensionRegistryBuilder::new()
-            .with_extension(ext1)
-            .with_extension(ext2)
-            .build();
+    #[test]
+    fn apply_runs_only_the_extensions_that_can_handle_the_content() {
+        let mut registry = ExtensionRegistry::new();
+        registry
+            .register(Extension::Wikilink(WikilinkExtension::new()))
+            .unwrap();
+        registry
+            .register(Extension::Callout(CalloutExtension::new()))
+            .unwrap();
 
-        assert_eq!(registry.all_extensions().len(), 2);
-        assert_eq!(registry.stats().total_extensions, 2);
+        let mut doc_content = NoteContent::new();
+        let errors = registry.apply("See [[Other]].", &mut doc_content);
+        assert!(errors.is_empty());
+        assert_eq!(doc_content.wikilinks.len(), 1);
+        assert!(doc_content.callouts.is_empty());
+    }
+
+    #[test]
+    fn with_defaults_registers_every_variant() {
+        let registry = ExtensionRegistry::with_defaults();
+        let expected = if cfg!(feature = "markdown-it-parser") {
+            8
+        } else {
+            7
+        };
+        assert_eq!(registry.extensions().len(), expected);
     }
 }

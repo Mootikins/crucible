@@ -5,18 +5,17 @@
 //! - `> [!warning] Warning with title\nContent continues here`
 
 use super::error::{ParseError, ParseErrorType};
-use super::extensions::SyntaxExtension;
 use super::types::{Callout, CalloutType, NoteContent};
-use async_trait::async_trait;
 
 use regex::Regex;
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 
 static CALLOUT_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?m)^>[ \t]*\[!(\w+)\](?:[ \t]+([^\n]*))?").expect("callout regex")
 });
 
 /// Obsidian callout syntax extension
+#[derive(Debug, Clone, Copy, Default)]
 pub struct CalloutExtension;
 
 impl CalloutExtension {
@@ -26,31 +25,12 @@ impl CalloutExtension {
     }
 }
 
-impl Default for CalloutExtension {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl SyntaxExtension for CalloutExtension {
-    fn name(&self) -> &'static str {
-        "obsidian-callouts"
-    }
-
-    fn version(&self) -> &'static str {
-        "1.0.0"
-    }
-
-    fn description(&self) -> &'static str {
-        "Supports Obsidian-style callouts using > [!type] syntax with titles and nested content"
-    }
-
-    fn can_handle(&self, content: &str) -> bool {
+impl CalloutExtension {
+    pub(super) fn can_handle(&self, content: &str) -> bool {
         content.contains("[!") && content.contains("]")
     }
 
-    async fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
+    pub(super) fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
         let mut errors = Vec::new();
 
         for cap in CALLOUT_REGEX.captures_iter(content) {
@@ -86,10 +66,6 @@ impl SyntaxExtension for CalloutExtension {
         }
 
         errors
-    }
-
-    fn priority(&self) -> u8 {
-        70 // Medium-high priority, but lower than LaTeX
     }
 }
 
@@ -144,18 +120,13 @@ impl CalloutExtension {
     }
 }
 
-/// Factory function to create the callout extension
-pub fn create_callout_extension() -> Arc<dyn SyntaxExtension> {
-    Arc::new(CalloutExtension::new())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::parser::error::ErrorSeverity;
 
-    #[tokio::test]
-    async fn test_callout_detection() {
+    #[test]
+    fn test_callout_detection() {
         let extension = CalloutExtension::new();
 
         assert!(extension.can_handle("> [!note] This is a note"));
@@ -164,32 +135,32 @@ mod tests {
         assert!(extension.can_handle("> [!tip] Tip content here"));
     }
 
-    #[tokio::test]
-    async fn test_basic_callout_parsing() {
+    #[test]
+    fn test_basic_callout_parsing() {
         let extension = CalloutExtension::new();
         let content = "> [!note] This is a simple note";
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 0);
         // Note: We need to modify NoteContent to have callouts field
     }
 
-    #[tokio::test]
-    async fn test_callout_with_title() {
+    #[test]
+    fn test_callout_with_title() {
         let extension = CalloutExtension::new();
         let content = "> [!warning] Important Warning\nThis is the warning content.";
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 0);
         // Verify callout with title is parsed correctly
     }
 
-    #[tokio::test]
-    async fn test_nested_callout_content() {
+    #[test]
+    fn test_nested_callout_content() {
         let extension = CalloutExtension::new();
         let content = r#"> [!info] Information Block
 First line of info
@@ -198,19 +169,19 @@ Second line of info
         "#;
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 0);
         // Should extract nested content correctly
     }
 
-    #[tokio::test]
-    async fn test_unknown_callout_type() {
+    #[test]
+    fn test_unknown_callout_type() {
         let extension = CalloutExtension::new();
         let content = "> [!unknowntype] Custom callout\nSome content";
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].error_type, ParseErrorType::InvalidCallout);
@@ -218,8 +189,8 @@ Second line of info
         assert_eq!(errors[0].severity, ErrorSeverity::Warning);
     }
 
-    #[tokio::test]
-    async fn test_multiple_callouts() {
+    #[test]
+    fn test_multiple_callouts() {
         let extension = CalloutExtension::new();
         let content = r#"> [!note] First note
 Note content
@@ -229,25 +200,14 @@ Warning details
         "#;
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 0);
         // Should parse both callouts
     }
 
-    #[tokio::test]
-    async fn test_extension_metadata() {
-        let extension = CalloutExtension::new();
-
-        assert_eq!(extension.name(), "obsidian-callouts");
-        assert_eq!(extension.version(), "1.0.0");
-        assert!(extension.description().contains("callouts"));
-        assert_eq!(extension.priority(), 70);
-        assert!(extension.is_enabled());
-    }
-
-    #[tokio::test]
-    async fn test_valid_callout_types() {
+    #[test]
+    fn test_valid_callout_types() {
         // Test that standard types are recognized
         assert!(CalloutType::from("note").is_standard());
         assert!(CalloutType::from("warning").is_standard());

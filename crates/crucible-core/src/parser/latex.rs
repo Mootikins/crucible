@@ -5,11 +5,9 @@
 //! - Block math: `$$\int_0^1 f(x)dx$$`
 
 use super::error::{ParseError, ParseErrorType};
-use super::extensions::SyntaxExtension;
 use super::types::NoteContent;
-use async_trait::async_trait;
 use regex::Regex;
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 
 static BLOCK_LATEX_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\$\$([\s\S]*?)\$\$").expect("block latex regex"));
@@ -19,6 +17,7 @@ static INLINE_LATEX_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\$([^\$\n]+?)\$").expect("inline latex regex"));
 
 /// LaTeX mathematical expression syntax extension
+#[derive(Debug, Clone, Copy, Default)]
 pub struct LatexExtension;
 
 impl LatexExtension {
@@ -28,32 +27,13 @@ impl LatexExtension {
     }
 }
 
-impl Default for LatexExtension {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl SyntaxExtension for LatexExtension {
-    fn name(&self) -> &'static str {
-        "latex-math"
-    }
-
-    fn version(&self) -> &'static str {
-        "1.0.0"
-    }
-
-    fn description(&self) -> &'static str {
-        "Supports LaTeX mathematical expressions using $...$ (inline) and $$...$$ (block) syntax"
-    }
-
-    fn can_handle(&self, content: &str) -> bool {
+impl LatexExtension {
+    pub(super) fn can_handle(&self, content: &str) -> bool {
         content.contains('$')
             && (content.contains("$$") || content.chars().filter(|&c| c == '$').count() >= 2)
     }
 
-    async fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
+    pub(super) fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
         let mut errors = Vec::new();
 
         // Extract block math expressions first ($$...$$)
@@ -73,10 +53,6 @@ impl SyntaxExtension for LatexExtension {
             .sort_by_key(|expr| expr.offset);
 
         errors
-    }
-
-    fn priority(&self) -> u8 {
-        80 // High priority to process before other extensions
     }
 }
 
@@ -238,18 +214,13 @@ impl LatexExtension {
     }
 }
 
-/// Factory function to create the LaTeX extension
-pub fn create_latex_extension() -> Arc<dyn SyntaxExtension> {
-    Arc::new(LatexExtension::new())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::parser::error::ErrorSeverity;
 
-    #[tokio::test]
-    async fn test_inline_latex_detection() {
+    #[test]
+    fn test_inline_latex_detection() {
         let extension = LatexExtension::new();
 
         assert!(extension.can_handle("$\\frac{3}{2}$"));
@@ -258,20 +229,20 @@ mod tests {
         assert!(extension.can_handle("Mixed $$block$$ and $inline$ math"));
     }
 
-    #[tokio::test]
-    async fn test_inline_latex_parsing() {
+    #[test]
+    fn test_inline_latex_parsing() {
         let extension = LatexExtension::new();
         let content = "The formula $E=mc^2$ describes mass-energy equivalence.";
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 0);
         // Note: We need to modify NoteContent to have latex_expressions field
     }
 
-    #[tokio::test]
-    async fn test_block_latex_parsing() {
+    #[test]
+    fn test_block_latex_parsing() {
         let extension = LatexExtension::new();
         let content = r#"
 The integral is:
@@ -280,14 +251,14 @@ This is the result.
         "#;
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 0);
         // Check that block LaTeX is extracted
     }
 
-    #[tokio::test]
-    async fn test_latex_validation() {
+    #[test]
+    fn test_latex_validation() {
         let extension = LatexExtension::new();
 
         // Test balanced braces
@@ -303,25 +274,14 @@ This is the result.
         }
     }
 
-    #[tokio::test]
-    async fn test_mixed_inline_and_block() {
+    #[test]
+    fn test_mixed_inline_and_block() {
         let extension = LatexExtension::new();
         let content = "Inline $x+y$ and block $$\\frac{a}{b}$$ math.";
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 0);
-    }
-
-    #[tokio::test]
-    async fn test_extension_metadata() {
-        let extension = LatexExtension::new();
-
-        assert_eq!(extension.name(), "latex-math");
-        assert_eq!(extension.version(), "1.0.0");
-        assert!(extension.description().contains("LaTeX"));
-        assert_eq!(extension.priority(), 80);
-        assert!(extension.is_enabled());
     }
 }

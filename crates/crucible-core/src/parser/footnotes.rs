@@ -9,13 +9,11 @@
 //! - Sequential numbering for ordered footnote display
 
 use super::error::{ParseError, ParseErrorType};
-use super::extensions::SyntaxExtension;
 use super::types::{FootnoteDefinition, FootnoteReference, NoteContent};
-use async_trait::async_trait;
 
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 
 static REFERENCE_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\[\^([\w\-\s]+)\]").expect("footnote reference regex"));
@@ -25,6 +23,7 @@ static DEFINITION_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// Footnote syntax extension
+#[derive(Debug, Clone, Copy, Default)]
 pub struct FootnoteExtension;
 
 impl FootnoteExtension {
@@ -34,31 +33,12 @@ impl FootnoteExtension {
     }
 }
 
-impl Default for FootnoteExtension {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl SyntaxExtension for FootnoteExtension {
-    fn name(&self) -> &'static str {
-        "markdown-footnotes"
-    }
-
-    fn version(&self) -> &'static str {
-        "1.0.0"
-    }
-
-    fn description(&self) -> &'static str {
-        "Supports standard markdown footnotes including references, definitions, and inline footnotes with validation"
-    }
-
-    fn can_handle(&self, content: &str) -> bool {
+impl FootnoteExtension {
+    pub(super) fn can_handle(&self, content: &str) -> bool {
         content.contains("[^") || content.contains('^')
     }
 
-    async fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
+    pub(super) fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
         let mut errors = Vec::new();
         let footnotes = &mut doc_content.footnotes;
 
@@ -218,10 +198,6 @@ impl SyntaxExtension for FootnoteExtension {
 
         errors
     }
-
-    fn priority(&self) -> u8 {
-        80 // High priority, but lower than core parsing
-    }
 }
 
 impl FootnoteExtension {
@@ -317,11 +293,6 @@ impl FootnoteExtension {
     }
 }
 
-/// Factory function to create the footnote extension
-pub fn create_footnote_extension() -> Arc<dyn SyntaxExtension> {
-    Arc::new(FootnoteExtension::new())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -334,13 +305,13 @@ mod tests {
     ///
     /// This crashed the daemon on real notes — `cru status` against a kiln
     /// containing an em dash returned "Connection closed by daemon".
-    #[tokio::test]
-    async fn inline_footnotes_survive_multibyte_text() {
+    #[test]
+    fn inline_footnotes_survive_multibyte_text() {
         let extension = FootnoteExtension::new();
         let content = format!("{} ^an inline note^ trailing", "em — dash ".repeat(60));
         let mut doc_content = NoteContent::new();
 
-        extension.parse(&content, &mut doc_content).await;
+        extension.parse(&content, &mut doc_content);
 
         let inline = doc_content
             .footnotes
@@ -353,13 +324,13 @@ mod tests {
 
     /// Offsets must be real byte indices, or every consumer that slices with
     /// one inherits the same panic.
-    #[tokio::test]
-    async fn an_inline_footnote_offset_is_a_valid_byte_boundary() {
+    #[test]
+    fn an_inline_footnote_offset_is_a_valid_byte_boundary() {
         let extension = FootnoteExtension::new();
         let content = format!("{}^note text^", "— ".repeat(40));
         let mut doc_content = NoteContent::new();
 
-        extension.parse(&content, &mut doc_content).await;
+        extension.parse(&content, &mut doc_content);
 
         for def in doc_content.footnotes.definitions.values() {
             assert!(
@@ -372,15 +343,15 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn test_basic_footnote_parsing() {
+    #[test]
+    fn test_basic_footnote_parsing() {
         let extension = FootnoteExtension::new();
         let content = r#"This is text with a footnote[^1].
 
 [^1]: This is the footnote content."#;
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 0);
         assert_eq!(doc_content.footnotes.references.len(), 1);
@@ -395,8 +366,8 @@ mod tests {
         assert_eq!(definition.content, "This is the footnote content.");
     }
 
-    #[tokio::test]
-    async fn test_multiline_footnote_definition() {
+    #[test]
+    fn test_multiline_footnote_definition() {
         let extension = FootnoteExtension::new();
         let content = r#"Text with footnote[^multiline].
 
@@ -406,7 +377,7 @@ mod tests {
     Final paragraph of footnote"#;
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 0);
         assert_eq!(doc_content.footnotes.definitions.len(), 1);
@@ -418,13 +389,13 @@ mod tests {
         assert!(definition.content.contains("Final paragraph"));
     }
 
-    #[tokio::test]
-    async fn test_inline_footnotes() {
+    #[test]
+    fn test_inline_footnotes() {
         let extension = FootnoteExtension::new();
         let content = "This text has an^inline footnote^ right in the middle.";
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 0);
         assert_eq!(doc_content.footnotes.references.len(), 1);
@@ -437,8 +408,8 @@ mod tests {
         assert_eq!(definition.content, "inline footnote");
     }
 
-    #[tokio::test]
-    async fn test_multiple_footnotes() {
+    #[test]
+    fn test_multiple_footnotes() {
         let extension = FootnoteExtension::new();
         let content = r#"First footnote[^1] and second footnote[^2].
 
@@ -446,7 +417,7 @@ mod tests {
 [^2]: Second footnote content."#;
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 0);
         assert_eq!(doc_content.footnotes.references.len(), 2);
@@ -469,8 +440,8 @@ mod tests {
         assert_eq!(ref2.order_number, Some(2));
     }
 
-    #[tokio::test]
-    async fn test_duplicate_footnote_definitions() {
+    #[test]
+    fn test_duplicate_footnote_definitions() {
         let extension = FootnoteExtension::new();
         let content = r#"Reference[^dup].
 
@@ -478,7 +449,7 @@ mod tests {
 [^dup]: Second definition"#;
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
@@ -490,13 +461,13 @@ mod tests {
         assert_eq!(doc_content.footnotes.definitions.len(), 1);
     }
 
-    #[tokio::test]
-    async fn test_orphaned_footnote_reference() {
+    #[test]
+    fn test_orphaned_footnote_reference() {
         let extension = FootnoteExtension::new();
         let content = "This has an orphaned footnote[^missing].";
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
@@ -508,15 +479,15 @@ mod tests {
         assert_eq!(doc_content.footnotes.definitions.len(), 0);
     }
 
-    #[tokio::test]
-    async fn test_unused_footnote_definition() {
+    #[test]
+    fn test_unused_footnote_definition() {
         let extension = FootnoteExtension::new();
         let content = r#"This text has no references.
 
 [^unused]: This definition is never referenced."#;
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 1);
         assert_eq!(
@@ -528,8 +499,8 @@ mod tests {
         assert_eq!(doc_content.footnotes.definitions.len(), 1);
     }
 
-    #[tokio::test]
-    async fn test_complex_footnote_identifiers() {
+    #[test]
+    fn test_complex_footnote_identifiers() {
         let extension = FootnoteExtension::new();
         let content = r#"Complex identifiers[^custom-note] and numbers[^123].
 
@@ -537,7 +508,7 @@ mod tests {
 [^123]: Numeric identifier"#;
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 0);
         assert_eq!(doc_content.footnotes.references.len(), 2);
@@ -549,15 +520,15 @@ mod tests {
         assert!(doc_content.footnotes.get_definition("123").is_some());
     }
 
-    #[tokio::test]
-    async fn test_repeated_footnote_references() {
+    #[test]
+    fn test_repeated_footnote_references() {
         let extension = FootnoteExtension::new();
         let content = r#"First reference[^1] and second reference[^1].
 
 [^1]: Shared footnote content"#;
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 0);
         assert_eq!(doc_content.footnotes.references.len(), 2);
@@ -573,19 +544,8 @@ mod tests {
         assert_eq!(ordered_refs.len(), 1);
     }
 
-    #[tokio::test]
-    async fn test_extension_metadata() {
-        let extension = FootnoteExtension::new();
-
-        assert_eq!(extension.name(), "markdown-footnotes");
-        assert_eq!(extension.version(), "1.0.0");
-        assert!(extension.description().contains("footnotes"));
-        assert_eq!(extension.priority(), 80);
-        assert!(extension.is_enabled());
-    }
-
-    #[tokio::test]
-    async fn test_definition_continuation_detection() {
+    #[test]
+    fn test_definition_continuation_detection() {
         let extension = FootnoteExtension::new();
 
         assert!(extension.is_definition_continuation("    Indented line"));
@@ -594,8 +554,8 @@ mod tests {
         assert!(!extension.is_definition_continuation("  Two spaces only"));
     }
 
-    #[tokio::test]
-    async fn test_mixed_content_with_footnotes() {
+    #[test]
+    fn test_mixed_content_with_footnotes() {
         let extension = FootnoteExtension::new();
         let content = r#"# Title
 
@@ -611,7 +571,7 @@ This note has various content:
 More text here."#;
         let mut doc_content = NoteContent::new();
 
-        let errors = extension.parse(content, &mut doc_content).await;
+        let errors = extension.parse(content, &mut doc_content);
 
         assert_eq!(errors.len(), 0);
         assert_eq!(doc_content.footnotes.references.len(), 2);

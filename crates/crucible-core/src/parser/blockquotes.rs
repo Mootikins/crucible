@@ -4,9 +4,7 @@
 //! that are NOT Obsidian callouts (i.e., `> text` but not `> [!type]`).
 
 use super::error::ParseError;
-use super::extensions::SyntaxExtension;
 use super::types::{Blockquote, NoteContent};
-use async_trait::async_trait;
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -14,6 +12,7 @@ static BLOCKQUOTE_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?m)^(>+)\s*(.*)$").expect("blockquote regex"));
 
 /// Regular blockquote syntax extension
+#[derive(Debug, Clone, Copy, Default)]
 pub struct BlockquoteExtension;
 
 impl BlockquoteExtension {
@@ -23,31 +22,12 @@ impl BlockquoteExtension {
     }
 }
 
-impl Default for BlockquoteExtension {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl SyntaxExtension for BlockquoteExtension {
-    fn name(&self) -> &'static str {
-        "markdown-blockquotes"
-    }
-
-    fn version(&self) -> &'static str {
-        "1.0.0"
-    }
-
-    fn description(&self) -> &'static str {
-        "Supports regular markdown blockquotes (> text) excluding Obsidian callouts"
-    }
-
-    fn can_handle(&self, content: &str) -> bool {
+impl BlockquoteExtension {
+    pub(super) fn can_handle(&self, content: &str) -> bool {
         content.contains('>')
     }
 
-    async fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
+    pub(super) fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
         let errors = Vec::new();
         let lines: Vec<&str> = content.lines().collect();
         let newline_len = if content.contains("\r\n") { 2 } else { 1 };
@@ -152,13 +132,4 @@ impl SyntaxExtension for BlockquoteExtension {
 
         errors
     }
-
-    fn priority(&self) -> u8 {
-        60 // Lower than callouts to allow callouts to be processed first
-    }
-}
-
-/// Create a blockquote extension instance
-pub fn create_blockquote_extension() -> std::sync::Arc<dyn SyntaxExtension> {
-    std::sync::Arc::new(BlockquoteExtension::new())
 }
