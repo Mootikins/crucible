@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::sync::mpsc;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, trace};
 
 /// Notify-based file watcher with debouncing support.
 pub struct NotifyWatcher {
@@ -152,17 +152,6 @@ impl NotifyWatcher {
         let metadata = EventMetadata::new("notify".to_string(), "default".to_string());
 
         Ok(FileEvent::with_metadata(kind, path, metadata))
-    }
-
-    /// Update debounce configuration.
-    pub fn update_debounce_config(
-        &mut self,
-        _debounce_config: &crate::watch::traits::DebounceConfig,
-    ) -> Result<()> {
-        // Note: notify-debouncer-full doesn't support runtime reconfiguration
-        // This would require recreating the debouncer
-        warn!("Runtime debounce reconfiguration not supported by notify backend");
-        Ok(())
     }
 }
 

@@ -193,18 +193,6 @@ impl PollingWatcher {
             Ok(())
         })
     }
-
-    /// Update the polling interval.
-    pub fn update_interval(&mut self, interval: Duration) -> Result<()> {
-        self.poll_interval = interval;
-        info!("Updated polling interval to {:?}", interval);
-
-        // Note: Changing interval would require restarting the polling task
-        // This is a simplified implementation
-        warn!("Runtime interval update requires task restart");
-
-        Ok(())
-    }
 }
 
 #[async_trait]

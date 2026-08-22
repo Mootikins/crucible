@@ -13,48 +13,19 @@ use crate::watch::{
     traits::EventHandler,
 };
 use async_trait::async_trait;
-use crucible_core::events::{EventEmitter, InternalSessionEvent, NoOpEmitter, SessionEvent};
+use crucible_core::events::{EventEmitter, InternalSessionEvent, SessionEvent};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
 pub struct IndexingHandler {
-    index_debounce: std::time::Duration,
     emitter: Arc<dyn EventEmitter<Event = SessionEvent>>,
 }
 
 impl IndexingHandler {
-    pub fn new() -> Result<Self> {
-        Self::with_emitter(Arc::new(NoOpEmitter::new()))
-    }
-
     pub fn with_emitter(emitter: Arc<dyn EventEmitter<Event = SessionEvent>>) -> Result<Self> {
         info!("IndexingHandler created");
-        Ok(Self {
-            index_debounce: std::time::Duration::from_millis(500),
-            emitter,
-        })
-    }
-
-    pub fn set_emitter(&mut self, emitter: Arc<dyn EventEmitter<Event = SessionEvent>>) {
-        self.emitter = emitter;
-    }
-
-    pub fn emitter(&self) -> &Arc<dyn EventEmitter<Event = SessionEvent>> {
-        &self.emitter
-    }
-
-    /// Set the debounce delay for indexing operations.
-    pub fn with_debounce(mut self, debounce: std::time::Duration) -> Self {
-        self.index_debounce = debounce;
-        self
-    }
-
-    /// Initialize the database connection (Phase 4 placeholder).
-    pub async fn initialize_database(&self, _db_path: &str) -> Result<()> {
-        info!("Database initialization will be implemented in Phase 4");
-        // Phase 4: Initialize storage connection here
-        Ok(())
+        Ok(Self { emitter })
     }
 
     /// Whether this file participates in the note index.

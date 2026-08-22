@@ -56,8 +56,6 @@ mod duration_serde {
 struct EditorWatchState {
     /// Path being watched
     watched_path: PathBuf,
-    /// Editor configuration
-    editor_config: EditorConfig,
 }
 
 /// Editor integration backend for low-frequency file watching.
@@ -76,18 +74,13 @@ pub struct EditorWatcher {
 
 impl Default for EditorWatcher {
     fn default() -> Self {
-        Self::with_default_config()
+        Self::new()
     }
 }
 
 impl EditorWatcher {
     /// Create a new editor watcher.
     pub fn new() -> Self {
-        Self::with_default_config()
-    }
-
-    /// Create an editor watcher with default configuration.
-    pub fn with_default_config() -> Self {
         Self {
             event_sender: None,
             watches: HashMap::new(),
@@ -147,17 +140,6 @@ impl EditorWatcher {
 
         Ok(())
     }
-
-    /// Update editor configuration.
-    pub fn update_editor_config(&mut self, watch_id: &str, config: EditorConfig) -> Result<()> {
-        if let Some(watch_state) = self.watches.get_mut(watch_id) {
-            watch_state.editor_config = config;
-            info!("Updated editor configuration for watch: {}", watch_id);
-            Ok(())
-        } else {
-            Err(Error::WatchNotFound(watch_id.to_string()))
-        }
-    }
 }
 
 #[async_trait]
@@ -187,23 +169,8 @@ impl FileWatcher for EditorWatcher {
             path: path.clone(),
         };
 
-        // Extract editor configuration from backend options
-        let editor_config = config
-            .backend_options
-            .get("editor_config")
-            .and_then(|v| serde_json::from_value::<EditorConfig>(v.clone()).ok())
-            .unwrap_or_else(|| EditorConfig {
-                editor_type: "generic".to_string(),
-                editor_config: HashMap::new(),
-                poll_interval: Duration::from_secs(5),
-                detect_inode_changes: true,
-                use_editor_api: false,
-            });
-
-        // Create editor watch state
         let watch_state = EditorWatchState {
             watched_path: path.clone(),
-            editor_config,
         };
 
         self.watches.insert(watch_id.clone(), watch_state);
@@ -396,24 +363,5 @@ mod tests {
                 "windows".to_string()
             ]
         );
-    }
-
-    #[test]
-    fn update_config_nonexistent_returns_error() {
-        let mut watcher = EditorWatcher::new();
-        let config = EditorConfig {
-            editor_type: "emacs".to_string(),
-            editor_config: HashMap::new(),
-            poll_interval: Duration::from_secs(1),
-            detect_inode_changes: false,
-            use_editor_api: false,
-        };
-
-        let result = watcher.update_editor_config("nonexistent_watch_id", config);
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            Error::WatchNotFound(id) => assert_eq!(id, "nonexistent_watch_id"),
-            other => panic!("Expected WatchNotFound, got: {:?}", other),
-        }
     }
 }

@@ -1,10 +1,8 @@
 //! Event handlers for integrating with existing Crucible systems.
 
-pub mod composite;
 mod external_change;
 mod indexing;
 
-pub use composite::{CompositeHandler, CoordinationStrategy, HandlerState};
 pub use external_change::ExternalChangeHandler;
 pub use indexing::IndexingHandler;
 
