@@ -106,16 +106,11 @@ impl OilChatApp {
                 response,
             } => {
                 if let Some(ref pattern) = response.pattern {
-                    let config_scope = match response.scope {
-                        PermissionScope::Project => {
-                            Some(crucible_core::config::components::permissions::PermissionScope::Project)
-                        }
-                        PermissionScope::User => {
-                            Some(crucible_core::config::components::permissions::PermissionScope::User)
-                        }
-                        _ => None,
-                    };
-                    if let Some(scope) = config_scope {
+                    let config_scope =
+                        crucible_core::config::components::permissions::PermissionScope::try_from(
+                            response.scope,
+                        );
+                    if let Ok(scope) = config_scope {
                         match crucible_core::config::components::permissions::write_permission_rule(
                             scope, pattern, None,
                         ) {

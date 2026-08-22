@@ -21,5 +21,6 @@ pub use normalize::{
 pub use parse::parse_rule;
 pub use types::{
     ParsedRule, PermissionConfig, PermissionDecision, PermissionMode, PermissionScope,
+    TransientScope,
 };
 pub use write::write_permission_rule;

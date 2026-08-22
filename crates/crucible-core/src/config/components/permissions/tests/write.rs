@@ -126,3 +126,25 @@ fn write_permission_rule_user_scope_uses_config_toml() {
     let allow = table["permissions"]["allow"].as_array().unwrap();
     assert_eq!(allow[0].as_str().unwrap(), "bash:*");
 }
+
+#[test]
+fn grant_scope_converts_only_when_a_config_file_exists() {
+    use crate::interaction::PermissionScope as Grant;
+
+    assert_eq!(
+        PermissionScope::try_from(Grant::Project),
+        Ok(PermissionScope::Project)
+    );
+    assert_eq!(
+        PermissionScope::try_from(Grant::User),
+        Ok(PermissionScope::User)
+    );
+    assert_eq!(
+        PermissionScope::try_from(Grant::Once),
+        Err(TransientScope(Grant::Once))
+    );
+    assert_eq!(
+        PermissionScope::try_from(Grant::Session),
+        Err(TransientScope(Grant::Session))
+    );
+}
