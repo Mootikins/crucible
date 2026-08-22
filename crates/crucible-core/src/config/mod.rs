@@ -88,7 +88,7 @@ pub use enrichment::{
     EmbeddingProviderConfig, EnrichmentConfig, FastEmbedConfig, MockConfig, OllamaConfig,
     OpenAIConfig, PipelineConfig, VertexAIConfig,
 };
-pub use includes::{process_file_references, IncludeError, ResolveMode};
+pub use includes::{process_file_references, IncludeError};
 pub use kiln_config::{read_kiln_config, write_kiln_config, KilnConfig, KilnMeta};
 pub use patterns::{
     BashPatterns, FilePatterns, PatternError, PatternResult, PatternStore, ToolPatterns,

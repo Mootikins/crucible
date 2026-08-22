@@ -1,4 +1,4 @@
-use super::super::{process_file_references, IncludeError, ResolveMode};
+use super::super::{process_file_references, IncludeError};
 use crate::test_support::EnvVarGuard;
 use std::fs;
 use tempfile::TempDir;
@@ -17,7 +17,7 @@ api_key = "{file:api.key}"
 "#;
     let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-    let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
+    let result = process_file_references(&mut config, temp.path());
     assert!(result.is_ok());
 
     // The api_key should now be the file content (trimmed)
@@ -52,7 +52,7 @@ gateway = "{file:gateway.toml}"
 "#;
     let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-    let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
+    let result = process_file_references(&mut config, temp.path());
     assert!(result.is_ok());
 
     // The gateway should now be the parsed TOML content
@@ -82,7 +82,7 @@ extra_paths = ["{file:path1.txt}", "{file:path2.txt}", "/static/path"]
 "#;
     let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-    let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
+    let result = process_file_references(&mut config, temp.path());
     assert!(result.is_ok());
 
     let paths = config
@@ -110,7 +110,7 @@ secret = "{file:secret.txt}"
 "#;
     let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-    let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
+    let result = process_file_references(&mut config, temp.path());
     assert!(result.is_ok());
 
     let secret = config
@@ -133,7 +133,7 @@ api_key = "{file:nonexistent.key}"
 "#;
     let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-    let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
+    let result = process_file_references(&mut config, temp.path());
     assert!(result.is_err());
 
     let errors = result.unwrap_err();
@@ -156,7 +156,7 @@ api_key = "{file:~/.secrets/test.key}"
 "#;
     let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-    let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
+    let result = process_file_references(&mut config, temp.path());
     // Should fail with FileNotFound (not a parse error)
     assert!(result.is_err());
 

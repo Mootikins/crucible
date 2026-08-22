@@ -9,7 +9,9 @@ use serde::{Deserialize, Serialize};
 /// compatibility but have no effect — the daemon is always used.
 #[derive(Debug, Clone, Serialize)]
 pub struct StorageConfig {
-    /// Idle timeout in seconds before daemon auto-shuts down
+    /// Reserved. `cru status` prints this value, but the daemon does not
+    /// implement an idle shutdown. Keep the field until someone decides the
+    /// feature.
     pub idle_timeout_secs: u64,
 }
 

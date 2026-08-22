@@ -1435,7 +1435,8 @@ Production items that only tests use:
 - Two readers of `config.toml`: `CliAppConfig::load` and the daemon's own parse
   in `execution_roots.rs:90-114`; the kiln registry reads a JSON view.
 - Config fields parsed and read by nothing: `acp.lazy_agent_selection`,
-  `storage.idle_timeout_secs`, `[discovery]`, `ResolveMode::Strict`,
+  `storage.idle_timeout_secs` (both documented as reserved; plan T3-B18 deleted
+  `DiscoveryConfig` and `ResolveMode`),
   `ValueSource::File { path: Option }` always `Some` (`cli_app.rs:420`).
 - `crucible-cli/src/main.rs:53,142` call `std::env::set_var` in production
   before the runtime starts.

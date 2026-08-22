@@ -1,4 +1,4 @@
-use super::super::{process_file_references, IncludeError, ResolveMode};
+use super::super::{process_file_references, IncludeError};
 use crate::test_support::EnvVarGuard;
 use std::fs;
 use tempfile::TempDir;
@@ -37,7 +37,7 @@ providers = "{dir:providers.d}"
 "#;
     let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-    let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
+    let result = process_file_references(&mut config, temp.path());
     assert!(result.is_ok(), "Should succeed: {:?}", result);
 
     // Should have merged both files
@@ -81,7 +81,7 @@ settings = "{dir:conf.d}"
 "#;
     let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-    let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
+    let result = process_file_references(&mut config, temp.path());
     assert!(result.is_ok());
 
     let settings = config.get("settings").unwrap();
@@ -116,7 +116,7 @@ settings = "{dir:conf.d}"
 "#;
     let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-    let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
+    let result = process_file_references(&mut config, temp.path());
     assert!(result.is_ok());
 
     let settings = config.get("settings").unwrap();
@@ -137,7 +137,7 @@ settings = "{dir:empty.d}"
 "#;
     let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-    let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
+    let result = process_file_references(&mut config, temp.path());
     assert!(result.is_ok());
 
     // Should be an empty table
@@ -155,7 +155,7 @@ settings = "{dir:nonexistent.d}"
 "#;
     let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-    let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
+    let result = process_file_references(&mut config, temp.path());
     assert!(result.is_err());
 
     let errors = result.unwrap_err();
@@ -186,7 +186,7 @@ settings = "{dir:conf.d}"
 "#;
     let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-    let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
+    let result = process_file_references(&mut config, temp.path());
     assert!(result.is_ok());
 
     let settings = config.get("settings").unwrap();
@@ -210,7 +210,7 @@ settings = "{dir:~/.config/crucible/nonexistent.d/}"
 "#;
     let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-    let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
+    let result = process_file_references(&mut config, temp.path());
     assert!(result.is_err());
 
     let errors = result.unwrap_err();
@@ -255,7 +255,7 @@ settings = "{dir:conf.d}"
 "#;
     let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-    let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
+    let result = process_file_references(&mut config, temp.path());
     assert!(result.is_ok());
 
     let settings = config.get("settings").unwrap();
@@ -300,7 +300,7 @@ settings = "{dir:conf.d}"
 "#;
     let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-    let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
+    let result = process_file_references(&mut config, temp.path());
     // Should have errors from the invalid file
     assert!(result.is_err());
 
@@ -346,7 +346,7 @@ settings = "{dir:conf.d}"
 "#;
     let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-    let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
+    let result = process_file_references(&mut config, temp.path());
     assert!(result.is_ok(), "Should succeed: {:?}", result);
 
     let settings = config.get("settings").unwrap();
@@ -397,7 +397,7 @@ gateway = "{dir:mcps.d}"
 "#;
     let mut config: toml::Value = toml::from_str(config_content).unwrap();
 
-    let result = process_file_references(&mut config, temp.path(), ResolveMode::BestEffort);
+    let result = process_file_references(&mut config, temp.path());
     assert!(result.is_ok(), "Should succeed: {:?}", result);
 
     let gateway = config.get("gateway").unwrap();

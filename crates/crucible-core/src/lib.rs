@@ -39,7 +39,7 @@ pub use agent::{
     AgentCard, AgentCardFrontmatter, AgentCardLoader, AgentCardMatch, AgentCardMatcher,
     AgentCardQuery, AgentCardRegistry,
 };
-pub use discovery::{DiscoveryConfig, DiscoveryPaths};
+pub use discovery::DiscoveryPaths;
 pub use error_utils::strip_tool_error_prefix;
 pub use kiln::{
     is_canvas_file, is_indexable_file, is_note_file, is_plain_text_file, KilnFileKind,

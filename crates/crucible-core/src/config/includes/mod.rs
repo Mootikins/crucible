@@ -69,4 +69,3 @@ mod tests;
 pub use error::IncludeError;
 #[cfg(feature = "toml")]
 pub use process::process_file_references;
-pub use reference::ResolveMode;

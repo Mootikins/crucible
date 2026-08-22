@@ -372,11 +372,9 @@ impl CliAppConfig {
                 let file_fields = Self::detect_present_fields(&raw_table);
                 let mut value = toml::Value::Table(raw_table);
                 let base_dir = config_path.parent().unwrap_or(std::path::Path::new("."));
-                if let Err(errors) = crate::config::includes::process_file_references(
-                    &mut value,
-                    base_dir,
-                    crate::config::includes::ResolveMode::BestEffort,
-                ) {
+                if let Err(errors) =
+                    crate::config::includes::process_file_references(&mut value, base_dir)
+                {
                     for error in errors {
                         tracing::warn!("Config reference error: {}", error);
                     }

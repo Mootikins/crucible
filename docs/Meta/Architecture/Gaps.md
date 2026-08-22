@@ -191,7 +191,7 @@ with `docs/`.
 | G160 | config | `project.toml` `kilns` seeds the session kiln set (3.2) | Parsed and ignored (open 7) | not-built | - |
 | G161 | config | Sessions never live in a kiln (3.8) | `init.rs:402` creates `<kiln>/.crucible/sessions/`; kiln-local `config.toml` never loads | code-wrong | S |
 | G162 | config | `TRACKED_FIELDS` covers every leaf (4.25) | 18 of about 60; the coverage test checks the list against itself (`cli_app.rs:5`) | code-wrong | S |
-| G163 | config | Inert config fields do not exist (4.25) | `acp.lazy_agent_selection`, `storage.idle_timeout_secs`, `[discovery]`, `ResolveMode::Strict`, eight of nine `[enrichment.pipeline]` fields are read by nothing | code-wrong | S |
+| G163 | config | Inert config fields do not exist (4.25) | `acp.lazy_agent_selection`, `storage.idle_timeout_secs` (both reserved, documented), eight of nine `[enrichment.pipeline]` fields are read by nothing; T3-B18 deleted `DiscoveryConfig` and `ResolveMode` | code-wrong | S |
 | G164 | config | Storage maintenance works (F223) | `storage.verify`, `cleanup`, `backup`, `restore` return `not_implemented` | not-built | - |
 | G165 | tests | Test doubles sit behind `test-utils` (7) | `crucible-core/src/lib.rs:32 pub mod test_support` is unconditional; `EnvVarGuard` ships in `cru`; `crucible-daemon/src/test_support.rs` always compiles | code-wrong | S |
 | G166 | tests | No `std::env::set_var` in production (hermeticity) | `crucible-cli/src/main.rs:53,142` call it before the runtime starts | code-wrong | S |

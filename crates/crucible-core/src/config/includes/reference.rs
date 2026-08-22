@@ -32,19 +32,6 @@ pub(super) enum RefKind {
     Dir(PathBuf),
 }
 
-/// Controls how template resolution handles missing references (e.g., env vars).
-///
-/// - `BestEffort` (default): logs warnings and continues, collecting errors.
-/// - `Strict`: treats missing references as hard errors (logs at error level).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ResolveMode {
-    /// Treat missing references as hard errors.
-    Strict,
-    /// Log warnings and continue (default). Current callers use this.
-    #[default]
-    BestEffort,
-}
-
 /// Parse a reference string into RefKind if it matches any pattern
 pub(super) fn parse_ref_kind(s: &str) -> Option<RefKind> {
     if s.starts_with(FILE_REF_PREFIX) && s.ends_with(FILE_REF_SUFFIX) {
@@ -102,7 +89,6 @@ pub(super) fn read_dir_as_value(
     dir_path: &Path,
     base_dir: &Path,
     errors: &mut Vec<IncludeError>,
-    mode: ResolveMode,
 ) -> Result<toml::Value, IncludeError> {
     if !dir_path.exists() {
         return Err(IncludeError::DirNotFound(dir_path.to_path_buf()));
@@ -148,7 +134,7 @@ pub(super) fn read_dir_as_value(
         match read_file_as_value(&file_path) {
             Ok(mut file_value) => {
                 // Recursively process any refs in this file
-                process_refs_recursive(&mut file_value, base_dir, errors, mode);
+                process_refs_recursive(&mut file_value, base_dir, errors);
 
                 // Merge into result
                 merge_toml_values(&mut result, &file_value);

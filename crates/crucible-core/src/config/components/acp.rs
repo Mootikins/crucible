@@ -27,8 +27,9 @@ pub struct AcpConfig {
     /// Custom agent profiles with environment variable overrides
     #[serde(default)]
     pub agents: HashMap<String, AgentProfile>,
-    /// Enable lazy agent selection (show splash to pick agent before creating)
-    /// When false, agent is created immediately on startup
+    /// Reserved. The config parses this field, but no code reads it.
+    /// The intended meaning: show a splash to pick the agent before the
+    /// session creates it. Keep the field until someone decides the feature.
     #[serde(default = "default_true")]
     pub lazy_agent_selection: bool,
 }

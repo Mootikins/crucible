@@ -33,8 +33,6 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use crate::serde_helpers::default_true;
-
 /// Unified path discovery configuration for Crucible plugins
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscoveryPaths {
@@ -240,87 +238,6 @@ impl DiscoveryPaths {
     }
 }
 
-/// Configuration section for discovery paths in TOML
-///
-/// ```toml
-/// [discovery.tools]
-/// additional_paths = ["/custom/tools"]
-/// use_defaults = true
-///
-/// [discovery.hooks]
-/// additional_paths = []
-/// use_defaults = true
-/// ```
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct DiscoveryConfig {
-    /// Additional paths to search (beyond defaults)
-    #[serde(default)]
-    pub additional_paths: Vec<PathBuf>,
-
-    /// Whether to include default paths (default: true)
-    #[serde(default = "default_true")]
-    pub use_defaults: bool,
-}
-
-impl DiscoveryPaths {
-    /// Apply configuration from TOML
-    pub fn with_config(mut self, config: &DiscoveryConfig) -> Self {
-        self.additional.extend(config.additional_paths.clone());
-        self.use_defaults = config.use_defaults;
-        self
-    }
-
-    /// Create discovery paths from configuration
-    ///
-    /// This method creates a `DiscoveryPaths` instance based on configuration,
-    /// expanding tilde paths and respecting the `use_defaults` setting.
-    ///
-    /// # Arguments
-    /// * `type_name` - The resource type (e.g., "tools", "hooks", "events")
-    /// * `kiln_path` - Optional path to the kiln directory
-    /// * `config` - Configuration for this discovery type
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// use crucible_core::discovery::{DiscoveryPaths, DiscoveryConfig};
-    ///
-    /// let config = DiscoveryConfig {
-    ///     additional_paths: vec!["~/.config/crucible/hooks".into()],
-    ///     use_defaults: true,
-    /// };
-    ///
-    /// let paths = DiscoveryPaths::from_config("hooks", Some(kiln_path), &config);
-    /// ```
-    pub fn from_config(
-        type_name: &str,
-        kiln_path: Option<&Path>,
-        config: &DiscoveryConfig,
-    ) -> Self {
-        // Expand tilde paths
-        let expanded_paths: Vec<PathBuf> = config
-            .additional_paths
-            .iter()
-            .map(|p| {
-                let path_str = p.to_string_lossy();
-                shellexpand::tilde(&path_str).into_owned().into()
-            })
-            .collect();
-
-        // Create base paths
-        let mut paths = if config.use_defaults {
-            Self::new(type_name, kiln_path)
-        } else {
-            Self::empty(type_name)
-        };
-
-        // Add expanded additional paths
-        paths.additional = expanded_paths;
-
-        paths
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -479,21 +396,6 @@ mod tests {
     }
 
     #[test]
-    fn test_with_config() {
-        let config = DiscoveryConfig {
-            additional_paths: vec!["/extra/path".into()],
-            use_defaults: false,
-        };
-
-        let paths = DiscoveryPaths::new("tools", None).with_config(&config);
-
-        assert!(!paths.uses_defaults());
-        assert!(paths
-            .additional_paths()
-            .contains(&PathBuf::from("/extra/path")));
-    }
-
-    #[test]
     fn test_priority_order() {
         let kiln = PathBuf::from("/kiln");
         let paths = DiscoveryPaths::new("tools", Some(&kiln)).with_path("/priority/first".into());
@@ -501,80 +403,5 @@ mod tests {
         let all = paths.all_paths();
         // Additional paths should come first
         assert_eq!(all[0], PathBuf::from("/priority/first"));
-    }
-
-    #[test]
-    fn test_from_config_with_defaults() {
-        let kiln = test_path("test-kiln");
-        let config = DiscoveryConfig {
-            additional_paths: vec!["/custom/path".into()],
-            use_defaults: true,
-        };
-
-        let paths = DiscoveryPaths::from_config("tools", Some(&kiln), &config);
-
-        assert_eq!(paths.type_name(), "tools");
-        assert!(paths.uses_defaults());
-        assert!(paths
-            .additional_paths()
-            .contains(&PathBuf::from("/custom/path")));
-        // Should also have default paths
-        assert!(!paths.default_paths().is_empty());
-    }
-
-    #[test]
-    fn test_from_config_without_defaults() {
-        let kiln = test_path("test-kiln");
-        let config = DiscoveryConfig {
-            additional_paths: vec!["/custom/path".into()],
-            use_defaults: false,
-        };
-
-        let paths = DiscoveryPaths::from_config("hooks", Some(&kiln), &config);
-
-        assert_eq!(paths.type_name(), "hooks");
-        assert!(!paths.uses_defaults());
-        assert_eq!(paths.additional_paths().len(), 1);
-        assert_eq!(paths.additional_paths()[0], PathBuf::from("/custom/path"));
-        // Should not include defaults in all_paths
-        assert_eq!(paths.all_paths().len(), 1);
-    }
-
-    #[test]
-    fn test_from_config_tilde_expansion() {
-        let config = DiscoveryConfig {
-            additional_paths: vec!["~/.config/crucible/tools".into()],
-            use_defaults: false,
-        };
-
-        let paths = DiscoveryPaths::from_config("tools", None, &config);
-
-        let expanded = paths.additional_paths();
-        assert_eq!(expanded.len(), 1);
-        // Should expand tilde to home directory
-        if let Some(home) = dirs::home_dir() {
-            let expected = home.join(".config/crucible/tools");
-            assert_eq!(expanded[0], expected);
-        }
-    }
-
-    #[test]
-    fn test_from_config_multiple_paths() {
-        let config = DiscoveryConfig {
-            additional_paths: vec!["/path1".into(), "~/.config/path2".into(), "/path3".into()],
-            use_defaults: true,
-        };
-
-        let paths = DiscoveryPaths::from_config("events", None, &config);
-
-        assert_eq!(paths.additional_paths().len(), 3);
-        assert!(paths
-            .additional_paths()
-            .iter()
-            .any(|p| p.ends_with("path1")));
-        assert!(paths
-            .additional_paths()
-            .iter()
-            .any(|p| p.ends_with("path3")));
     }
 }
