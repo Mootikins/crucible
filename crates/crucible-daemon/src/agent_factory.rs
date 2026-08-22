@@ -528,7 +528,7 @@ pub(crate) fn build_chat_client_for_agent(
         // `with_api_key_env_var_name` yields None for Custom, Ollama,
         // FastEmbed, Burn and Mock, so gating on it would reproduce the same
         // bug for anyone running `cru auth login --provider custom`.
-        let store = crucible_core::config::credentials::AutoStore::new();
+        let store = crucible_core::config::credentials::SecretsFile::new();
         match crucible_core::config::credentials::resolve_api_key(&provider_name, &store, None) {
             Some((key, source)) => {
                 debug!("Resolved API key for {provider_name} from {source:?}");

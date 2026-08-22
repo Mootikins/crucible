@@ -44,7 +44,6 @@ markdown-it = { workspace = true }
 schemars = { workspace = true }
 globset = { workspace = true }
 num_cpus = "1.17"
-keyring = { version = "4.1", optional = true }
 
 # File watching (used by processing module)
 
@@ -83,10 +82,9 @@ core = []
 test-utils = []
 markdown-it-parser = []
 
-# Absorbed from crucible-config: format toggles and optional keyring backend
+# Absorbed from crucible-config: format toggles
 yaml = []
 toml = []
-keyring = ["dep:keyring"]
 
 [dev-dependencies]
 # Integration tests under `tests/` compile the library without `cfg(test)`,

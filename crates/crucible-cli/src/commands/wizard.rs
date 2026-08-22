@@ -9,7 +9,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use colored::Colorize;
-use crucible_core::config::credentials::{CredentialStore, SecretsFile};
+use crucible_core::config::credentials::SecretsFile;
 
 /// Returns `true` when the global config file does not yet exist.
 pub fn is_first_run(config_path: &Path) -> bool {

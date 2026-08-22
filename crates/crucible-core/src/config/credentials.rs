@@ -31,7 +31,7 @@
 //!
 //! [`resolve_api_key`] checks sources in this order:
 //! 1. Environment variable (e.g., `OPENAI_API_KEY`)
-//! 2. Credential store (secrets file or keyring)
+//! 2. Credential store (the secrets file)
 //! 3. Config file value (already resolved from `{env:VAR}` / `{file:path}`)
 
 use crate::config::components::backend::BackendType;
@@ -80,23 +80,6 @@ pub enum CredentialError {
 
 /// Result type for credential operations
 pub type CredentialResult<T> = Result<T, CredentialError>;
-
-/// Trait for credential storage backends
-///
-/// Abstracts over file-based and keyring-based storage.
-pub trait CredentialStore {
-    /// Get the API key for a provider
-    fn get(&self, provider: &str) -> CredentialResult<Option<String>>;
-
-    /// Store an API key for a provider
-    fn set(&mut self, provider: &str, api_key: &str) -> CredentialResult<()>;
-
-    /// Remove credentials for a provider. Returns true if the provider existed.
-    fn remove(&mut self, provider: &str) -> CredentialResult<bool>;
-
-    /// List all stored provider → API key pairs
-    fn list(&self) -> CredentialResult<HashMap<String, String>>;
-}
 
 /// TOML-based credential store
 ///
@@ -229,8 +212,9 @@ impl Default for SecretsFile {
     }
 }
 
-impl CredentialStore for SecretsFile {
-    fn get(&self, provider: &str) -> CredentialResult<Option<String>> {
+impl SecretsFile {
+    /// Get the API key for a provider
+    pub fn get(&self, provider: &str) -> CredentialResult<Option<String>> {
         let content = self.read()?;
         Ok(content
             .providers
@@ -238,7 +222,8 @@ impl CredentialStore for SecretsFile {
             .and_then(|s| s.api_key.clone()))
     }
 
-    fn set(&mut self, provider: &str, api_key: &str) -> CredentialResult<()> {
+    /// Store an API key for a provider
+    pub fn set(&mut self, provider: &str, api_key: &str) -> CredentialResult<()> {
         let mut content = self.read()?;
         content.providers.insert(
             provider.to_string(),
@@ -250,7 +235,8 @@ impl CredentialStore for SecretsFile {
         self.write(&content)
     }
 
-    fn remove(&mut self, provider: &str) -> CredentialResult<bool> {
+    /// Remove credentials for a provider. Returns true if the provider existed.
+    pub fn remove(&mut self, provider: &str) -> CredentialResult<bool> {
         let mut content = self.read()?;
         let existed = content.providers.remove(provider).is_some();
         if existed {
@@ -259,201 +245,14 @@ impl CredentialStore for SecretsFile {
         Ok(existed)
     }
 
-    fn list(&self) -> CredentialResult<HashMap<String, String>> {
+    /// List all stored provider -> API key pairs
+    pub fn list(&self) -> CredentialResult<HashMap<String, String>> {
         let content = self.read()?;
         Ok(content
             .providers
             .into_iter()
             .filter_map(|(name, secrets)| secrets.api_key.map(|key| (name, key)))
             .collect())
-    }
-}
-
-/// Keyring-backed credential store (OS-native secret storage)
-///
-/// Uses the system keyring (macOS Keychain, Windows Credential Vault,
-/// Linux Secret Service / libsecret) via the `keyring` crate.
-///
-/// Each provider is stored as a separate entry with service name `crucible`.
-#[cfg(feature = "keyring")]
-pub struct KeyringStore {
-    service: String,
-}
-
-#[cfg(feature = "keyring")]
-impl KeyringStore {
-    pub fn new() -> Self {
-        Self {
-            service: "crucible".to_string(),
-        }
-    }
-
-    fn entry(&self, provider: &str) -> Result<keyring::Entry, CredentialError> {
-        keyring::Entry::new(&self.service, provider)
-            .map_err(|e| CredentialError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))
-    }
-}
-
-#[cfg(feature = "keyring")]
-impl Default for KeyringStore {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[cfg(feature = "keyring")]
-impl CredentialStore for KeyringStore {
-    fn get(&self, provider: &str) -> CredentialResult<Option<String>> {
-        let entry = self.entry(provider)?;
-        match entry.get_password() {
-            Ok(password) => Ok(Some(password)),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => {
-                warn!("Keyring error reading {}: {}", provider, e);
-                Ok(None)
-            }
-        }
-    }
-
-    fn set(&mut self, provider: &str, api_key: &str) -> CredentialResult<()> {
-        let entry = self.entry(provider)?;
-        entry
-            .set_password(api_key)
-            .map_err(|e| CredentialError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))
-    }
-
-    fn remove(&mut self, provider: &str) -> CredentialResult<bool> {
-        let entry = self.entry(provider)?;
-        match entry.delete_credential() {
-            Ok(()) => Ok(true),
-            Err(keyring::Error::NoEntry) => Ok(false),
-            Err(e) => Err(CredentialError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                e,
-            ))),
-        }
-    }
-
-    fn list(&self) -> CredentialResult<HashMap<String, String>> {
-        let mut result = HashMap::new();
-        let known = [
-            "openai",
-            "anthropic",
-            "ollama",
-            "google",
-            "cohere",
-            "mistral",
-            "groq",
-            "github-copilot",
-            "deepseek",
-        ];
-        for provider in &known {
-            if let Ok(Some(key)) = self.get(provider) {
-                result.insert(provider.to_string(), key);
-            }
-        }
-        Ok(result)
-    }
-}
-
-/// Auto-selecting credential store that tries keyring first, falls back to file
-///
-/// When the `keyring` feature is enabled, attempts to use the OS keyring.
-/// If keyring operations fail, transparently falls back to the TOML file store.
-/// Without the `keyring` feature, this is equivalent to `SecretsFile`.
-pub struct AutoStore {
-    file: SecretsFile,
-    #[cfg(feature = "keyring")]
-    keyring: KeyringStore,
-}
-
-impl AutoStore {
-    /// Create a new `AutoStore` with default file path.
-    pub fn new() -> Self {
-        Self {
-            file: SecretsFile::new(),
-            #[cfg(feature = "keyring")]
-            keyring: KeyringStore::new(),
-        }
-    }
-}
-
-impl Default for AutoStore {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl CredentialStore for AutoStore {
-    fn get(&self, provider: &str) -> CredentialResult<Option<String>> {
-        #[cfg(feature = "keyring")]
-        {
-            match self.keyring.get(provider) {
-                Ok(Some(key)) => return Ok(Some(key)),
-                Ok(None) => {}
-                Err(e) => {
-                    debug!(
-                        "Keyring get failed for {}, falling back to file: {}",
-                        provider, e
-                    );
-                }
-            }
-        }
-        self.file.get(provider)
-    }
-
-    fn set(&mut self, provider: &str, api_key: &str) -> CredentialResult<()> {
-        #[cfg(feature = "keyring")]
-        {
-            match self.keyring.set(provider, api_key) {
-                Ok(()) => return Ok(()),
-                Err(e) => {
-                    debug!(
-                        "Keyring set failed for {}, falling back to file: {}",
-                        provider, e
-                    );
-                }
-            }
-        }
-        self.file.set(provider, api_key)
-    }
-
-    fn remove(&mut self, provider: &str) -> CredentialResult<bool> {
-        #[cfg(feature = "keyring")]
-        {
-            match self.keyring.remove(provider) {
-                Ok(true) => return Ok(true),
-                Ok(false) => {}
-                Err(e) => {
-                    debug!(
-                        "Keyring remove failed for {}, falling back to file: {}",
-                        provider, e
-                    );
-                }
-            }
-        }
-        self.file.remove(provider)
-    }
-
-    fn list(&self) -> CredentialResult<HashMap<String, String>> {
-        #[cfg(feature = "keyring")]
-        {
-            let mut combined = match self.keyring.list() {
-                Ok(entries) => entries,
-                Err(e) => {
-                    debug!("Keyring list failed, using file only: {}", e);
-                    HashMap::new()
-                }
-            };
-            if let Ok(file_entries) = self.file.list() {
-                for (k, v) in file_entries {
-                    combined.entry(k).or_insert(v);
-                }
-            }
-            return Ok(combined);
-        }
-        #[cfg(not(feature = "keyring"))]
-        self.file.list()
     }
 }
 
@@ -476,7 +275,7 @@ pub fn env_var_for_provider(provider: &str) -> Option<&'static str> {
 pub enum CredentialSource {
     /// From an environment variable
     EnvVar,
-    /// From the credential store (secrets file or keyring)
+    /// From the credential store (the secrets file)
     Store,
     /// From the config file (inline or `{env:VAR}` / `{file:path}`)
     Config,
@@ -525,13 +324,13 @@ pub fn resolve_copilot_oauth_token(config_api_key: Option<&str>) -> Option<Strin
 /// Resolve an API key for a provider using the priority chain:
 ///
 /// 1. Environment variable (e.g., `OPENAI_API_KEY`)
-/// 2. Credential store (secrets file or keyring)
+/// 2. Credential store (the secrets file)
 /// 3. Config value (passed through from `LlmProviderConfig::api_key`)
 ///
 /// Returns `(key, source)` tuple, or `None` if no key is found.
 pub fn resolve_api_key(
     provider: &str,
-    store: &dyn CredentialStore,
+    store: &SecretsFile,
     config_key: Option<&str>,
 ) -> Option<(String, CredentialSource)> {
     // 1. Environment variable

@@ -77,11 +77,9 @@ pub use config::{
     register_project_in_config,
 };
 pub use config::{LOCATION_CONFIG_KEYS, SETTINGS_CONFIG_KEYS};
-#[cfg(feature = "keyring")]
-pub use credentials::KeyringStore;
 pub use credentials::{
-    resolve_api_key, AutoStore, CredentialError, CredentialResult, CredentialSource,
-    CredentialStore, ProviderSecrets, SecretsFile, SecretsFileContent,
+    resolve_api_key, CredentialError, CredentialResult, CredentialSource, ProviderSecrets,
+    SecretsFile, SecretsFileContent,
 };
 pub use enrichment::{
     default_max_precognition_chars, BurnBackendConfig, BurnEmbedConfig, CohereConfig, CustomConfig,

@@ -10,9 +10,7 @@
 //! also run daemon-side — see
 //! `crucible_daemon::agent_manager::context_length::fetch_model_context_length`.
 
-use crucible_core::config::credentials::{
-    env_var_for_provider, CredentialSource, CredentialStore, SecretsFile,
-};
+use crucible_core::config::credentials::{env_var_for_provider, CredentialSource, SecretsFile};
 use crucible_core::config::{BackendType, ChatConfig, DEFAULT_OLLAMA_ENDPOINT};
 
 /// A detected provider with availability info
