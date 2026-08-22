@@ -66,12 +66,6 @@ pub struct WatchConfig {
     /// Debouncing configuration.
     pub debounce: DebounceConfig,
 
-    /// Event handler configuration.
-    pub handler_config: HandlerConfig,
-
-    /// Watch mode.
-    pub mode: WatchMode,
-
     /// Additional backend-specific options.
     pub backend_options: std::collections::HashMap<String, serde_json::Value>,
 }
@@ -84,8 +78,6 @@ impl WatchConfig {
             recursive: true,
             filter: None,
             debounce: DebounceConfig::default(),
-            handler_config: HandlerConfig::default(),
-            mode: WatchMode::Standard,
             backend_options: std::collections::HashMap::new(),
         }
     }
@@ -114,24 +106,6 @@ impl WatchConfig {
     /// Set debouncing configuration.
     pub fn with_debounce(mut self, debounce: DebounceConfig) -> Self {
         self.debounce = debounce;
-        self
-    }
-
-    /// Set handler configuration.
-    pub fn with_handler_config(mut self, config: HandlerConfig) -> Self {
-        self.handler_config = config;
-        self
-    }
-
-    /// Set watch mode.
-    pub fn with_mode(mut self, mode: WatchMode) -> Self {
-        self.mode = mode;
-        self
-    }
-
-    /// Add a backend-specific option.
-    pub fn with_backend_option(mut self, key: String, value: serde_json::Value) -> Self {
-        self.backend_options.insert(key, value);
         self
     }
 }
@@ -170,101 +144,11 @@ impl DebounceConfig {
         self.max_batch_size = size;
         self
     }
-
-    /// Enable or disable deduplication.
-    pub fn with_deduplication(mut self, enabled: bool) -> Self {
-        self.deduplicate = enabled;
-        self
-    }
 }
 
 impl Default for DebounceConfig {
     fn default() -> Self {
         Self::new(100) // 100ms default debounce
-    }
-}
-
-/// Event handler configuration.
-#[derive(Debug, Clone)]
-pub struct HandlerConfig {
-    /// Channel buffer size for events.
-    pub buffer_size: usize,
-
-    /// Maximum number of concurrent handlers.
-    pub max_concurrent: usize,
-
-    /// Whether to preserve event order.
-    pub preserve_order: bool,
-
-    /// Handler timeout in milliseconds.
-    pub timeout_ms: Option<u64>,
-}
-
-impl HandlerConfig {
-    /// Create a new handler configuration.
-    pub fn new() -> Self {
-        Self {
-            buffer_size: 1000,
-            max_concurrent: 10,
-            preserve_order: false,
-            timeout_ms: Some(5000), // 5 second default timeout
-        }
-    }
-
-    /// Set buffer size.
-    pub fn with_buffer_size(mut self, size: usize) -> Self {
-        self.buffer_size = size;
-        self
-    }
-
-    /// Set maximum concurrent handlers.
-    pub fn with_max_concurrent(mut self, max: usize) -> Self {
-        self.max_concurrent = max;
-        self
-    }
-
-    /// Enable or disable order preservation.
-    pub fn with_order_preservation(mut self, preserve: bool) -> Self {
-        self.preserve_order = preserve;
-        self
-    }
-
-    /// Set handler timeout.
-    pub fn with_timeout(mut self, timeout_ms: u64) -> Self {
-        self.timeout_ms = Some(timeout_ms);
-        self
-    }
-}
-
-impl Default for HandlerConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Watch mode determines how events are processed.
-#[derive(Debug, Clone, PartialEq)]
-pub enum WatchMode {
-    /// Standard watching with immediate event processing.
-    Standard,
-
-    /// Batched watching for better performance.
-    Batched,
-
-    /// Low-frequency watching for editor integrations.
-    LowFrequency {
-        /// Polling interval in milliseconds.
-        interval_ms: u64,
-    },
-
-    /// Custom mode with backend-specific configuration.
-    Custom(String),
-}
-
-impl WatchMode {
-    /// Get the default polling interval for low-frequency mode.
-    pub fn default_low_frequency_interval() -> u64 {
-        5000 // 5 seconds
     }
 }
 

@@ -279,16 +279,4 @@ impl WatcherRequirements {
             resource_priority: ResourcePriority::Balanced,
         }
     }
-
-    /// Set maximum latency requirement.
-    pub fn with_max_latency(mut self, latency_ms: u64) -> Self {
-        self.max_latency_ms = Some(latency_ms);
-        self
-    }
-
-    /// Set resource priority.
-    pub fn with_resource_priority(mut self, priority: ResourcePriority) -> Self {
-        self.resource_priority = priority;
-        self
-    }
 }

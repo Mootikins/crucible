@@ -5,7 +5,7 @@
 //! limit is nearly exhausted (common in CI or heavily-instrumented dev envs).
 
 use crucible_daemon::watch::{
-    traits::{DebounceConfig, HandlerConfig, WatchConfig, WatchMode},
+    traits::{DebounceConfig, WatchConfig},
     EventFilter, FileEvent, FileWatcher, NotifyWatcher,
 };
 use std::fs;
@@ -67,8 +67,6 @@ async fn setup_watcher_with_filter(
         recursive: true,
         filter: Some(filter),
         debounce: DebounceConfig::default(),
-        handler_config: HandlerConfig::default(),
-        mode: WatchMode::Standard,
         backend_options: Default::default(),
     };
 

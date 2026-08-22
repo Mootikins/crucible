@@ -69,7 +69,6 @@ pub use manager::{WatchManager, WatchManagerConfig};
 
 pub use traits::{
     BackendCapabilities, DebounceConfig, EventHandler, FileWatcher, WatchConfig, WatchHandle,
-    WatchMode,
 };
 
 /// Available file watching backends.

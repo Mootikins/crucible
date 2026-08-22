@@ -53,32 +53,6 @@ impl Default for WatchManagerConfig {
     }
 }
 
-impl WatchManagerConfig {
-    /// Create a new config with custom queue capacity.
-    pub fn with_queue_capacity(mut self, capacity: usize) -> Self {
-        self.queue_capacity = capacity;
-        self
-    }
-
-    /// Create a new config with custom debounce delay.
-    pub fn with_debounce_delay(mut self, delay: Duration) -> Self {
-        self.debounce_delay = delay;
-        self
-    }
-
-    /// Create a new config with monitoring enabled/disabled.
-    pub fn with_monitoring(mut self, enabled: bool) -> Self {
-        self.enable_monitoring = enabled;
-        self
-    }
-
-    /// Create a new config with default handlers enabled/disabled.
-    pub fn with_default_handlers(mut self, enabled: bool) -> Self {
-        self.enable_default_handlers = enabled;
-        self
-    }
-}
-
 /// Main manager for file watching operations.
 pub struct WatchManager {
     /// Backend registry
