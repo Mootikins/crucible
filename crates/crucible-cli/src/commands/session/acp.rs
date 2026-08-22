@@ -105,6 +105,48 @@ async fn is_known_acp_profile(client: &DaemonClient, name: &str) -> bool {
         .is_ok_and(|v| !v.is_null())
 }
 
+/// Print one session event the way `send` and `replay` show it: raw JSON on
+/// stdout, or a short human line. Returns `false` when the event type has no
+/// shared rendering, so the caller prints its own `ended` and fallback lines.
+fn print_event(event: &crucible_daemon::rpc_client::SessionEvent, raw: bool) -> bool {
+    use std::io::Write;
+
+    if raw {
+        println!(
+            "{}",
+            serde_json::json!({
+                "session_id": event.session_id,
+                "event_type": event.event_type,
+                "data": event.data,
+            })
+        );
+        return true;
+    }
+
+    let field = |key: &str| event.data.get(key).and_then(|v| v.as_str());
+    match event.event_type.as_str() {
+        "text_delta" => {
+            if let Some(content) = field("content") {
+                print!("{}", content);
+                std::io::stdout().flush().ok();
+            }
+        }
+        "thinking" => {
+            if let Some(content) = field("content") {
+                eprintln!("[thinking] {}", content);
+            }
+        }
+        "tool_call" => eprintln!("[tool_call] {}", field("tool").unwrap_or("?")),
+        "tool_result" => eprintln!("[tool_result] {}", field("tool").unwrap_or("?")),
+        "message_complete" => {
+            println!();
+            eprintln!("[complete]");
+        }
+        _ => return false,
+    }
+    true
+}
+
 pub(super) mod rpc {
     use super::*;
 
@@ -391,7 +433,6 @@ pub(super) mod rpc {
         permission_mode: Option<String>,
     ) -> Result<()> {
         use crucible_daemon::DaemonClient;
-        use std::io::Write;
 
         let (client, mut event_rx) = DaemonClient::connect_or_start_with_events().await?;
 
@@ -435,52 +476,8 @@ pub(super) mod rpc {
                         continue;
                     }
 
-                    if raw {
-                        println!(
-                            "{}",
-                            serde_json::json!({
-                                "session_id": event.session_id,
-                                "event_type": event.event_type,
-                                "data": event.data,
-                            })
-                        );
-                    } else {
+                    if !print_event(&event, raw) {
                         match event.event_type.as_str() {
-                            "text_delta" => {
-                                if let Some(content) =
-                                    event.data.get("content").and_then(|v| v.as_str())
-                                {
-                                    print!("{}", content);
-                                    std::io::stdout().flush().ok();
-                                }
-                            }
-                            "thinking" => {
-                                if let Some(content) =
-                                    event.data.get("content").and_then(|v| v.as_str())
-                                {
-                                    eprintln!("[thinking] {}", content);
-                                }
-                            }
-                            "tool_call" => {
-                                let tool = event
-                                    .data
-                                    .get("tool")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("?");
-                                eprintln!("[tool_call] {}", tool);
-                            }
-                            "tool_result" => {
-                                let tool = event
-                                    .data
-                                    .get("tool")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("?");
-                                eprintln!("[tool_result] {}", tool);
-                            }
-                            "message_complete" => {
-                                println!();
-                                eprintln!("[complete]");
-                            }
                             "ended" => {
                                 let reason = event
                                     .data
@@ -613,7 +610,6 @@ pub(super) mod rpc {
         raw: bool,
     ) -> Result<()> {
         use crucible_daemon::DaemonClient;
-        use std::io::Write;
         use std::path::Path;
 
         let (client, mut event_rx) = DaemonClient::connect_or_start_with_events().await?;
@@ -649,52 +645,8 @@ pub(super) mod rpc {
                         break;
                     }
 
-                    if raw {
-                        println!(
-                            "{}",
-                            serde_json::json!({
-                                "session_id": event.session_id,
-                                "event_type": event.event_type,
-                                "data": event.data,
-                            })
-                        );
-                    } else {
+                    if !print_event(&event, raw) {
                         match event.event_type.as_str() {
-                            "text_delta" => {
-                                if let Some(content) =
-                                    event.data.get("content").and_then(|v| v.as_str())
-                                {
-                                    print!("{}", content);
-                                    std::io::stdout().flush().ok();
-                                }
-                            }
-                            "thinking" => {
-                                if let Some(content) =
-                                    event.data.get("content").and_then(|v| v.as_str())
-                                {
-                                    eprintln!("[thinking] {}", content);
-                                }
-                            }
-                            "tool_call" => {
-                                let tool = event
-                                    .data
-                                    .get("tool")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("?");
-                                eprintln!("[tool_call] {}", tool);
-                            }
-                            "tool_result" => {
-                                let tool = event
-                                    .data
-                                    .get("tool")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("?");
-                                eprintln!("[tool_result] {}", tool);
-                            }
-                            "message_complete" => {
-                                println!();
-                                eprintln!("[complete]");
-                            }
                             "ended" => {
                                 eprintln!("[ended]");
                                 break;

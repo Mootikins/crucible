@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use crucible_core::agent::{AgentCard, AgentCardLoader, AgentCardRegistry};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::cli::AgentsCommands;
 use crate::config::CliConfig;
@@ -67,8 +67,7 @@ pub fn collect_agent_directories(config: &CliConfig) -> Vec<PathBuf> {
 
     // 2. Global config agent_directories
     for dir in &config.agent_directories {
-        let resolved = resolve_path(dir, None);
-        dirs.push(resolved);
+        dirs.push(crate::kiln_validate::expand_tilde(&dir.to_string_lossy()));
     }
 
     // 3. Kiln config: KILN_DIR/.crucible/agents/
@@ -81,23 +80,6 @@ pub fn collect_agent_directories(config: &CliConfig) -> Vec<PathBuf> {
     dirs.push(config.kiln_path.join(".crucible").join("agents"));
 
     dirs
-}
-
-/// Resolve a path, handling home directory expansion.
-///
-/// - Absolute paths are used as-is
-/// - Paths starting with ~ are expanded to home directory
-/// - Relative paths are returned as-is (caller should resolve relative to config file)
-fn resolve_path(path: &Path, _config_dir: Option<&PathBuf>) -> PathBuf {
-    let path_str = path.to_string_lossy();
-
-    if let Some(rest) = path_str.strip_prefix("~/") {
-        if let Some(home) = dirs::home_dir() {
-            return home.join(rest);
-        }
-    }
-
-    path.to_path_buf()
 }
 
 /// List all registered agent cards
@@ -606,32 +588,6 @@ You are a test agent.
         // Later shadows earlier, so the kiln's own cards win over a
         // globally-configured directory.
         assert!(custom_idx < kiln_idx, "{dirs:?}");
-    }
-
-    #[test]
-    fn test_resolve_path_absolute() {
-        let path = PathBuf::from("/absolute/path");
-        let resolved = resolve_path(&path, None);
-        assert_eq!(resolved, PathBuf::from("/absolute/path"));
-    }
-
-    #[test]
-    fn test_resolve_path_home_expansion() {
-        let path = PathBuf::from("~/some/path");
-        let resolved = resolve_path(&path, None);
-
-        // Should have expanded ~ to home dir
-        if let Some(home) = dirs::home_dir() {
-            assert_eq!(resolved, home.join("some/path"));
-        }
-    }
-
-    #[test]
-    fn test_resolve_path_relative() {
-        let path = PathBuf::from("./relative/path");
-        let resolved = resolve_path(&path, None);
-        // Relative paths are returned as-is for now
-        assert_eq!(resolved, PathBuf::from("./relative/path"));
     }
 
     #[test]

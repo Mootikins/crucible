@@ -10,10 +10,7 @@ pub struct UpdateArgs {
 }
 
 pub async fn execute(args: UpdateArgs) -> Result<()> {
-    let plugins_toml = dirs::config_dir()
-        .ok_or_else(|| anyhow::anyhow!("could not determine config directory"))?
-        .join("crucible")
-        .join("plugins.toml");
+    let plugins_toml = crucible_daemon::plugin_ops::plugins_toml_path()?;
 
     if !plugins_toml.exists() {
         anyhow::bail!("No plugins.toml found at {}", plugins_toml.display());
@@ -22,10 +19,7 @@ pub async fn execute(args: UpdateArgs) -> Result<()> {
     let content = std::fs::read_to_string(&plugins_toml)?;
     let config: crucible_core::config::PluginsConfig = toml::from_str(&content)?;
 
-    let plugins_dir = dirs::config_dir()
-        .expect("already resolved config dir")
-        .join("crucible")
-        .join("plugins");
+    let plugins_dir = crucible_daemon::plugin_ops::plugins_dir()?;
 
     let mut updated = 0;
     for entry in &config.plugin {

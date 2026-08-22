@@ -234,7 +234,7 @@ fn is_cloud_sync_folder(path: &Path) -> bool {
 /// Returns true if the path is a well-known temp root directory (/tmp, /var/tmp, TMPDIR).
 /// A `.crucible` dir at these roots is always a daemon artifact, never an intentional kiln.
 /// Subdirectories are NOT excluded — tests and users may create kilns there.
-fn is_temp_root(path: &Path) -> bool {
+pub(crate) fn is_temp_root(path: &Path) -> bool {
     let path_str = path.to_string_lossy();
     path_str == "/tmp"
         || path_str == "/var/tmp"

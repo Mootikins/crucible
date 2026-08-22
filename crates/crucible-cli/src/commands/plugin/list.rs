@@ -25,10 +25,7 @@ async fn runtime_plugins() -> Option<Vec<serde_json::Value>> {
 }
 
 pub async fn execute(args: ListArgs) -> Result<()> {
-    let plugins_toml = dirs::config_dir()
-        .ok_or_else(|| anyhow::anyhow!("could not determine config directory"))?
-        .join("crucible")
-        .join("plugins.toml");
+    let plugins_toml = crucible_daemon::plugin_ops::plugins_toml_path()?;
 
     let config: crucible_core::config::PluginsConfig = if plugins_toml.exists() {
         let content = std::fs::read_to_string(&plugins_toml)?;
@@ -37,10 +34,7 @@ pub async fn execute(args: ListArgs) -> Result<()> {
         crucible_core::config::PluginsConfig::default()
     };
 
-    let plugins_dir = dirs::config_dir()
-        .expect("already resolved config dir")
-        .join("crucible")
-        .join("plugins");
+    let plugins_dir = crucible_daemon::plugin_ops::plugins_dir()?;
 
     let runtime = runtime_plugins().await;
 

@@ -850,10 +850,7 @@ verbose = false
     pub fn resolved_kiln_path(&self) -> Option<std::path::PathBuf> {
         let name = self.resolved_default_kiln();
         if let Some(entry) = self.kilns.get(&name) {
-            return Some(match entry {
-                crate::config::config::registry::KilnEntry::Path(p) => p.clone(),
-                crate::config::config::registry::KilnEntry::Config { path, .. } => path.clone(),
-            });
+            return Some(entry.path());
         }
         (!self.kiln_path.as_os_str().is_empty()).then(|| self.kiln_path.clone())
     }

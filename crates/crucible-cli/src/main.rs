@@ -7,21 +7,16 @@ use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::prelude::*; // For SubscriberExt trait
 
 use crucible_cli::{
-    cli::{Cli, Commands},
+    cli::{Cli, Commands, LogLevel},
     commands, config,
 };
 
-/// Parse log level string to LevelFilter
+/// Parse a config-file log level. The `--log-level` flag and the config
+/// file share one name table: `LogLevel`.
 fn parse_log_level(level: &str) -> Option<LevelFilter> {
-    match level.to_lowercase().as_str() {
-        "off" => Some(LevelFilter::OFF),
-        "error" => Some(LevelFilter::ERROR),
-        "warn" => Some(LevelFilter::WARN),
-        "info" => Some(LevelFilter::INFO),
-        "debug" => Some(LevelFilter::DEBUG),
-        "trace" => Some(LevelFilter::TRACE),
-        _ => None,
-    }
+    <LogLevel as clap::ValueEnum>::from_str(level, true)
+        .ok()
+        .map(LevelFilter::from)
 }
 
 /// Cleans up the standalone daemon socket on drop.
