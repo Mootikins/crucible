@@ -50,14 +50,12 @@ pub(crate) fn is_default<T: Default + PartialEq>(value: &T) -> bool {
 
 pub use cell_grid::{CellGrid, StyledCell};
 pub use components::{
-    clamp_input_lines, popup_item, popup_item_with_desc, wrap_content, Drawer, DrawerKind,
-    InputArea, InputStyle, PopupOverlay, FOCUS_POPUP, INPUT_MAX_CONTENT_LINES, POPUP_MAX_VISIBLE,
+    popup_item_with_desc, Drawer, DrawerKind, InputStyle, PopupOverlay, FOCUS_POPUP,
+    INPUT_MAX_CONTENT_LINES, POPUP_MAX_VISIBLE,
 };
 pub use focus::{FocusContext, FocusId};
 pub use layout::Rect;
-pub use layout::{
-    build_layout_tree, render_layout_tree, LayoutBox, LayoutContent, LayoutTree, PopupItem,
-};
+pub use layout::{build_layout_tree, render_layout_tree, LayoutBox, LayoutContent, LayoutTree};
 pub use node::{
     badge, bullet_list, col, divider, fixed, flex, fragment, horizontal_rule, if_else, key_value,
     maybe, numbered_list, overlay_from_bottom, overlay_from_bottom_right, popup, progress_bar, raw,
@@ -68,6 +66,7 @@ pub use node::{
 pub use output::OutputBuffer;
 pub use overlay::{composite_overlays, Overlay, OverlayAnchor};
 pub use planning::{FramePlan, FramePlanner, FrameSnapshot, Graduation, RenderedOverlay};
+pub use popup_node::popup_item;
 pub use render::{
     render_to_plain_text, render_to_string, render_tree, render_with_cursor, CursorInfo,
     RenderResult, NATURAL_HEIGHT,

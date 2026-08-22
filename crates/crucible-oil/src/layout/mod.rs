@@ -5,7 +5,7 @@ mod types;
 
 pub use crate::taffy_layout::{build_layout_tree, build_layout_tree_with_engine, LayoutEngine};
 pub use tree_render::render_layout_tree;
-pub use types::{LayoutBox, LayoutContent, LayoutTree, PopupItem};
+pub use types::{LayoutBox, LayoutContent, LayoutTree};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rect {

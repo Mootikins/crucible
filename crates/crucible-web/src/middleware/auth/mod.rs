@@ -27,11 +27,11 @@ use axum::body::Body;
 use axum::extract::ConnectInfo;
 use axum::http::{header, HeaderMap, Request, StatusCode};
 use axum::middleware::Next;
-use axum::response::{IntoResponse, Response};
-use axum::Json;
-use serde_json::json;
+use axum::response::Response;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+
+use crate::error::error_response;
 
 /// Session cookie carrying a derived session token for browser clients (set by
 /// `POST /api/auth/login`). HttpOnly, so page JS never touches it, and it
@@ -392,29 +392,17 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 }
 
 fn forbidden_host_response() -> Response {
-    (
+    error_response(
         StatusCode::FORBIDDEN,
-        Json(json!({
-            "error": {
-                "code": StatusCode::FORBIDDEN.as_u16(),
-                "message": "Request Host is not an address this server answers to",
-            }
-        })),
+        "Request Host is not an address this server answers to",
     )
-        .into_response()
 }
 
 fn unauthorized_response() -> Response {
-    (
+    error_response(
         StatusCode::UNAUTHORIZED,
-        Json(json!({
-            "error": {
-                "code": StatusCode::UNAUTHORIZED.as_u16(),
-                "message": "Missing or invalid Authorization: Bearer <key>",
-            }
-        })),
+        "Missing or invalid Authorization: Bearer <key>",
     )
-        .into_response()
 }
 
 #[cfg(test)]

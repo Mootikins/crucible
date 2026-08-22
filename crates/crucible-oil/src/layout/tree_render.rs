@@ -20,7 +20,8 @@ use crate::render_helpers::{
 };
 use crate::style::{Border, Style};
 
-use super::types::{LayoutBox, LayoutContent, LayoutTree, PopupItem};
+use super::types::{LayoutBox, LayoutContent, LayoutTree};
+use crate::popup_node::PopupItemNode;
 
 /// Render a LayoutTree to an ANSI-formatted string.
 ///
@@ -243,7 +244,7 @@ fn render_spinner(
 /// Render a popup menu at the given position.
 #[allow(clippy::too_many_arguments)]
 fn render_popup(
-    items: &[PopupItem],
+    items: &[PopupItemNode],
     selected: usize,
     viewport_offset: usize,
     max_visible: usize,
@@ -423,6 +424,7 @@ mod tests {
     use super::*;
     use crate::ansi::{strip_ansi, visible_width};
     use crate::layout::Rect;
+    use crate::popup_node::popup_item;
     use crate::utils::truncate_to_width;
 
     #[test]
@@ -647,9 +649,9 @@ mod tests {
     #[test]
     fn render_popup_items() {
         let items = vec![
-            PopupItem::new("Item 1"),
-            PopupItem::new("Item 2"),
-            PopupItem::new("Item 3"),
+            popup_item("Item 1"),
+            popup_item("Item 2"),
+            popup_item("Item 3"),
         ];
 
         let tree = LayoutTree::new(LayoutBox::new(
@@ -679,7 +681,7 @@ mod tests {
         // bottom-align the items and must stay transparent. A painted bg
         // reads as a colored bar of empty space over the chat viewport,
         // since overlay compositing treats styled cells as opaque.
-        let items = vec![PopupItem::new("Item 1"), PopupItem::new("Item 2")];
+        let items = vec![popup_item("Item 1"), popup_item("Item 2")];
 
         let tree = LayoutTree::new(LayoutBox::new(
             Rect::new(0, 0, 30, 5),
@@ -712,9 +714,9 @@ mod tests {
     #[test]
     fn render_popup_items_with_descriptions() {
         let items = vec![
-            PopupItem::new("Open").with_description("Open file"),
-            PopupItem::new("Save").with_description("Save current buffer to disk"),
-            PopupItem::new("Quit"),
+            popup_item("Open").desc("Open file"),
+            popup_item("Save").desc("Save current buffer to disk"),
+            popup_item("Quit"),
         ];
 
         let tree = LayoutTree::new(LayoutBox::new(

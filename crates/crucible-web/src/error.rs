@@ -57,15 +57,19 @@ impl IntoResponse for WebError {
             WebError::Internal(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.clone()),
         };
 
-        let body = Json(json!({
-            "error": {
-                "code": status.as_u16(),
-                "message": message,
-            }
-        }));
-
-        (status, body).into_response()
+        error_response(status, &message)
     }
+}
+
+/// Build the one JSON error body every web reply uses: `{"error": {"code", "message"}}`.
+pub fn error_response(status: StatusCode, message: &str) -> Response {
+    let body = Json(json!({
+        "error": {
+            "code": status.as_u16(),
+            "message": message,
+        }
+    }));
+    (status, body).into_response()
 }
 
 /// Extension trait to convert `Result<T, E: Display>` into `WebResult<T>`.

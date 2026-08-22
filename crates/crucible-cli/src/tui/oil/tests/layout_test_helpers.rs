@@ -25,7 +25,8 @@
 //! ```
 
 use crucible_oil::layout::Rect;
-use crucible_oil::layout::{LayoutBox, LayoutContent, LayoutTree, PopupItem};
+use crucible_oil::layout::{LayoutBox, LayoutContent, LayoutTree};
+use crucible_oil::node::popup_item;
 
 /// Assert that a node with the given key exists in the tree.
 ///
@@ -758,7 +759,7 @@ mod tests {
         let popup_node = LayoutBox::new(
             Rect::new(10, 5, 30, 10),
             LayoutContent::Popup {
-                items: vec![PopupItem::new("Item 1")],
+                items: vec![popup_item("Item 1")],
                 selected: 0,
                 viewport_offset: 0,
                 max_visible: 5,

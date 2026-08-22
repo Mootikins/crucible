@@ -7,9 +7,9 @@ use axum::extract::State;
 use axum::http::{header, HeaderValue, Request, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
-use serde_json::json;
 use std::sync::Arc;
+
+use crate::error::error_response;
 
 /// Rejects WebSocket upgrades whose `Origin` isn't in the allow-list.
 ///
@@ -170,30 +170,18 @@ fn shell_caller_is_authenticated(state: &ShellGateState, request: &Request<Body>
 }
 
 fn unauthenticated_shell_response() -> Response {
-    (
+    error_response(
         StatusCode::UNAUTHORIZED,
-        Json(json!({
-            "error": {
-                "code": StatusCode::UNAUTHORIZED.as_u16(),
-                "message": "Shell access requires the API key, including from localhost, \
-                            because `[web] remote_shell` is enabled",
-            }
-        })),
+        "Shell access requires the API key, including from localhost, \
+         because `[web] remote_shell` is enabled",
     )
-        .into_response()
 }
 
 fn forbidden_response() -> Response {
-    (
+    error_response(
         StatusCode::FORBIDDEN,
-        Json(json!({
-            "error": {
-                "code": StatusCode::FORBIDDEN.as_u16(),
-                "message": "Shell routes are restricted to localhost",
-            }
-        })),
+        "Shell routes are restricted to localhost",
     )
-        .into_response()
 }
 
 #[cfg(test)]

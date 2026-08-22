@@ -17,6 +17,7 @@ use crate::{DaemonClient, SessionEvent};
 
 mod agent_handle;
 mod convert;
+pub use convert::strip_chat_error_prefix;
 mod native_agent;
 
 /// Agent handle that routes messages through the daemon

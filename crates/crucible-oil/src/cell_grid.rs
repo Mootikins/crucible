@@ -19,6 +19,11 @@ impl StyledCell {
     pub fn new(ch: char, style: String) -> Self {
         Self { ch, style }
     }
+
+    /// A transparent cell lets the base layer show through when an overlay composites.
+    pub fn is_transparent(&self) -> bool {
+        self.ch == ' ' && self.style.is_empty()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -236,7 +241,7 @@ fn cells_to_string_compact(cells: &[StyledCell]) -> String {
     cells_to_string(&cells[..last_content])
 }
 
-fn cells_to_string(cells: &[StyledCell]) -> String {
+pub(crate) fn cells_to_string(cells: &[StyledCell]) -> String {
     let mut result = String::new();
     let mut current_style = String::new();
 

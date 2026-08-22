@@ -15,7 +15,7 @@ mod error_ext;
 pub mod lifecycle;
 mod storage;
 
-pub use agent::DaemonAgentHandle;
+pub use agent::{strip_chat_error_prefix, DaemonAgentHandle};
 pub use client::workflow::{WorkflowApproveGateRequest, WorkflowStartRequest};
 pub use client::{
     DaemonCapabilities, DaemonClient, FsListDirRequest, FsMoveRequest, FsPathRequest,

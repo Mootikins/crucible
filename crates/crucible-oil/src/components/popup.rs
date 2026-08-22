@@ -146,14 +146,6 @@ impl PopupOverlay {
     }
 }
 
-pub fn popup_item(label: impl Into<String>) -> PopupItemNode {
-    PopupItemNode {
-        label: label.into(),
-        description: None,
-        kind: None,
-    }
-}
-
 pub fn popup_item_with_desc(
     label: impl Into<String>,
     description: impl Into<String>,
@@ -168,6 +160,7 @@ pub fn popup_item_with_desc(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::node::popup_item;
     use crate::render::render_to_plain_text;
 
     fn sample_items() -> Vec<PopupItemNode> {

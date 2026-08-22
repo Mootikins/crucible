@@ -1,4 +1,4 @@
-use crate::layout::{LayoutBox, LayoutContent, LayoutTree, PopupItem, Rect as OilRect};
+use crate::layout::{LayoutBox, LayoutContent, LayoutTree, Rect as OilRect};
 use crate::node::{BoxNode, Direction, Node, Size as OilSize};
 use crate::style::{
     AlignItems as OilAlignItems, JustifyContent as OilJustifyContent, Style as OilStyle,
@@ -491,15 +491,7 @@ impl LayoutEngine {
             Node::Popup(popup) => LayoutBox::new(
                 rect,
                 LayoutContent::Popup {
-                    items: popup
-                        .items
-                        .iter()
-                        .map(|item| PopupItem {
-                            label: item.label.clone(),
-                            description: item.description.clone(),
-                            kind: item.kind.clone(),
-                        })
-                        .collect(),
+                    items: popup.items.clone(),
                     selected: popup.selected,
                     viewport_offset: popup.viewport_offset,
                     max_visible: popup.max_visible,

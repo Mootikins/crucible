@@ -15,6 +15,7 @@
 //! - [`Rect`] - Re-exported from crucible-oil for position/size
 
 use crate::layout::Rect;
+use crate::popup_node::PopupItemNode;
 use crate::style::{Border, Style};
 
 /// Root container for a computed layout tree.
@@ -163,7 +164,7 @@ pub enum LayoutContent {
     /// Popup/dropdown menu.
     Popup {
         /// Menu items.
-        items: Vec<PopupItem>,
+        items: Vec<PopupItemNode>,
         /// Currently selected index.
         selected: usize,
         /// Scroll offset for long lists.
@@ -197,40 +198,6 @@ pub enum LayoutContent {
         display_width: u16,
         display_height: u16,
     },
-}
-
-/// A single item in a popup menu.
-#[derive(Debug, Clone, PartialEq)]
-pub struct PopupItem {
-    /// Display label.
-    pub label: String,
-    /// Optional description/help text.
-    pub description: Option<String>,
-    /// Optional kind indicator (file, command, etc.).
-    pub kind: Option<String>,
-}
-
-impl PopupItem {
-    /// Create a new popup item with just a label.
-    pub fn new(label: impl Into<String>) -> Self {
-        Self {
-            label: label.into(),
-            description: None,
-            kind: None,
-        }
-    }
-
-    /// Set the description.
-    pub fn with_description(mut self, desc: impl Into<String>) -> Self {
-        self.description = Some(desc.into());
-        self
-    }
-
-    /// Set the kind.
-    pub fn with_kind(mut self, kind: impl Into<String>) -> Self {
-        self.kind = Some(kind.into());
-        self
-    }
 }
 
 #[cfg(test)]
@@ -282,17 +249,6 @@ mod tests {
         ]);
 
         assert_eq!(parent.children.len(), 2);
-    }
-
-    #[test]
-    fn popup_item_builder() {
-        let item = PopupItem::new("Label")
-            .with_description("Description")
-            .with_kind("file");
-
-        assert_eq!(item.label, "Label");
-        assert_eq!(item.description, Some("Description".to_string()));
-        assert_eq!(item.kind, Some("file".to_string()));
     }
 
     #[test]

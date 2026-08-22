@@ -114,7 +114,7 @@ fn token_usage(
 
 /// Strip the `ChatError` `Display` prefix an `ended` reason may carry, so the
 /// event surfaces one clean message.
-fn strip_chat_error_prefix(inner: &str) -> &str {
+pub fn strip_chat_error_prefix(inner: &str) -> &str {
     const PREFIXES: &[&str] = &[
         "Connection error: ",
         "Communication error: ",

@@ -1,4 +1,5 @@
 use crate::ansi::visible_width;
+use crate::cell_grid::{cells_to_string, StyledCell};
 use crate::node::{Node, OverlayNode};
 use unicode_width::UnicodeWidthChar;
 
@@ -11,25 +12,6 @@ use unicode_width::UnicodeWidthChar;
 pub enum OverlayAnchor {
     FromBottom(usize),
     FromBottomRight(usize),
-}
-
-#[derive(Debug, Clone, Default)]
-struct StyledCell {
-    ch: char,
-    style: String,
-}
-
-impl StyledCell {
-    fn space() -> Self {
-        Self {
-            ch: ' ',
-            style: String::new(),
-        }
-    }
-
-    fn is_transparent(&self) -> bool {
-        self.ch == ' ' && self.style.is_empty()
-    }
 }
 
 fn parse_line_to_cells(line: &str, width: usize) -> Vec<StyledCell> {
@@ -82,35 +64,6 @@ fn parse_line_to_cells(line: &str, width: usize) -> Vec<StyledCell> {
     }
 
     cells
-}
-
-fn cells_to_string(cells: &[StyledCell]) -> String {
-    let mut result = String::new();
-    let mut current_style = String::new();
-
-    for cell in cells {
-        if cell.ch == '\0' {
-            continue;
-        }
-
-        if cell.style != current_style {
-            if !current_style.is_empty() {
-                result.push_str("\x1b[0m");
-            }
-            if !cell.style.is_empty() {
-                result.push_str(&cell.style);
-            }
-            current_style = cell.style.clone();
-        }
-
-        result.push(cell.ch);
-    }
-
-    if !current_style.is_empty() {
-        result.push_str("\x1b[0m");
-    }
-
-    result
 }
 
 fn composite_line(base: &str, overlay: &str, start_col: usize, width: usize) -> String {

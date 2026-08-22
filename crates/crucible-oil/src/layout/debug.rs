@@ -296,9 +296,9 @@ mod tests {
             Rect::new(10, 5, 30, 10),
             LayoutContent::Popup {
                 items: vec![
-                    super::super::PopupItem::new("Item 1"),
-                    super::super::PopupItem::new("Item 2"),
-                    super::super::PopupItem::new("Item 3"),
+                    crate::popup_node::popup_item("Item 1"),
+                    crate::popup_node::popup_item("Item 2"),
+                    crate::popup_node::popup_item("Item 3"),
                 ],
                 selected: 1,
                 viewport_offset: 0,

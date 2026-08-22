@@ -1,6 +1,7 @@
 pub use crucible_oil::components::{
-    popup_item, popup_item_with_desc, PopupOverlay, FOCUS_POPUP, POPUP_MAX_VISIBLE,
+    popup_item_with_desc, PopupOverlay, FOCUS_POPUP, POPUP_MAX_VISIBLE,
 };
+pub use crucible_oil::popup_item;
 
 use crate::tui::oil::component::Component;
 use crate::tui::oil::ViewContext;

@@ -397,24 +397,9 @@ impl ChatEvent {
 /// The message inside an `"error: "`-prefixed `ended` reason, with the
 /// `ChatError` `Display` prefix stripped.
 fn chat_error_from_ended_reason(reason: &str) -> Option<&str> {
-    let inner = reason.strip_prefix("error: ")?;
-    const PREFIXES: &[&str] = &[
-        "Connection error: ",
-        "Communication error: ",
-        "Mode change error: ",
-        "Command execution failed: ",
-        "Invalid input: ",
-        "Agent not available: ",
-        "Internal error: ",
-        "Invalid mode: ",
-        "Operation not supported: ",
-    ];
-    Some(
-        PREFIXES
-            .iter()
-            .find_map(|p| inner.strip_prefix(p))
-            .unwrap_or(inner),
-    )
+    reason
+        .strip_prefix("error: ")
+        .map(crucible_daemon::rpc_client::strip_chat_error_prefix)
 }
 
 /// Flatten a daemon `interaction_requested` payload into the shape the
