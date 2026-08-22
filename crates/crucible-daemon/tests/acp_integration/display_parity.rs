@@ -857,7 +857,7 @@ async fn stream_without_usage_data_completes_gracefully() {
 
     let request = make_prompt_request("ses-no-usage", "say hello");
     let (content, tool_calls, response) = client
-        .send_prompt_with_streaming(request)
+        .send_prompt_with_callback(request, Box::new(|_| true))
         .await
         .expect("stream should complete without crash when no usage data");
 
@@ -889,7 +889,7 @@ async fn empty_stream_no_usage_no_chunks_completes() {
 
     let request = make_prompt_request("ses-empty", "nothing");
     let (content, tool_calls, _response) = client
-        .send_prompt_with_streaming(request)
+        .send_prompt_with_callback(request, Box::new(|_| true))
         .await
         .expect("empty stream should complete without crash");
 

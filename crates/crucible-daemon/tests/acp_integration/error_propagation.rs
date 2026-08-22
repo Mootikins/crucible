@@ -188,7 +188,7 @@ async fn test_error_streaming_timeout_when_agent_stalls_after_first_chunk() {
 
     let stream_task = tokio::spawn(async move {
         client
-            .send_prompt_with_streaming(make_prompt_request("ses-timeout"))
+            .send_prompt_with_callback(make_prompt_request("ses-timeout"), Box::new(|_| true))
             .await
     });
 
@@ -232,7 +232,7 @@ async fn test_error_agent_crash_mid_stream_returns_connection_error() {
     });
 
     let result = client
-        .send_prompt_with_streaming(make_prompt_request("ses-crash"))
+        .send_prompt_with_callback(make_prompt_request("ses-crash"), Box::new(|_| true))
         .await;
 
     assert!(
@@ -255,7 +255,7 @@ async fn test_error_stream_abort_from_threaded_mock_agent_is_recoverable() {
     handle.abort();
 
     let result = client
-        .send_prompt_with_streaming(make_prompt_request("ses-abort"))
+        .send_prompt_with_callback(make_prompt_request("ses-abort"), Box::new(|_| true))
         .await;
 
     assert!(

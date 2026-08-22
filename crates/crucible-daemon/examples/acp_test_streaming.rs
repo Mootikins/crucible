@@ -50,7 +50,9 @@ async fn main() {
     }))
     .expect("Failed to create PromptRequest");
 
-    let result = client.send_prompt_with_streaming(prompt_request).await;
+    let result = client
+        .send_prompt_with_callback(prompt_request, Box::new(|_| true))
+        .await;
 
     match result {
         Ok((content, tool_calls, response)) => {

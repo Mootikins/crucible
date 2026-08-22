@@ -276,7 +276,7 @@ async fn acp_permission_handler_receives_correct_request_details() {
 
     let request = make_prompt_request("ses-details", "exec something");
     client
-        .send_prompt_with_streaming(request)
+        .send_prompt_with_callback(request, Box::new(|_| true))
         .await
         .expect("streaming should complete");
 
@@ -341,7 +341,7 @@ async fn acp_permission_no_handler_does_not_crash() {
 
     let request = make_prompt_request("ses-no-handler", "delete everything");
     let (content, _tool_calls, _response) = client
-        .send_prompt_with_streaming(request)
+        .send_prompt_with_callback(request, Box::new(|_| true))
         .await
         .expect("streaming should complete without crashing even with no handler");
 
@@ -491,7 +491,7 @@ async fn acp_permission_deny_handler_invoked() {
 
     let request = make_prompt_request("ses-deny", "write a file");
     let (content, _tool_calls, _response) = client
-        .send_prompt_with_streaming(request)
+        .send_prompt_with_callback(request, Box::new(|_| true))
         .await
         .expect("streaming should complete");
 
@@ -643,7 +643,7 @@ async fn acp_permission_denied_sends_cancelled_response_to_agent() {
 
     let request = make_prompt_request("ses-perm-deny", "write a file");
     let (content, _tool_calls, _response) = client
-        .send_prompt_with_streaming(request)
+        .send_prompt_with_callback(request, Box::new(|_| true))
         .await
         .expect("streaming should complete after permission denial");
 
@@ -694,7 +694,7 @@ async fn acp_permission_handler_not_set_defaults_to_cancelled() {
 
     let request = make_prompt_request("ses-no-handler", "delete everything");
     let (content, _tool_calls, _response) = client
-        .send_prompt_with_streaming(request)
+        .send_prompt_with_callback(request, Box::new(|_| true))
         .await
         .expect("streaming should complete with auto-cancelled permission");
 

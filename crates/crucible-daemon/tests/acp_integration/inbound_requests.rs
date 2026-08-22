@@ -167,7 +167,10 @@ async fn an_unhandled_inbound_request_gets_a_method_not_found_reply() {
     let agent = tokio::spawn(turn_emitting(reader, writer, unhandled_request(json!(901))));
 
     client
-        .send_prompt_with_streaming(make_prompt_request("ses-inbound", "read a file"))
+        .send_prompt_with_callback(
+            make_prompt_request("ses-inbound", "read a file"),
+            Box::new(|_| true),
+        )
         .await
         .expect("turn should complete");
 
@@ -206,7 +209,10 @@ async fn an_unhandled_request_with_a_string_id_is_answered_with_that_string_id()
     ));
 
     client
-        .send_prompt_with_streaming(make_prompt_request("ses-inbound", "read a file"))
+        .send_prompt_with_callback(
+            make_prompt_request("ses-inbound", "read a file"),
+            Box::new(|_| true),
+        )
         .await
         .expect("turn should complete");
 
@@ -221,7 +227,10 @@ async fn an_unhandled_request_with_a_negative_id_is_answered_with_that_id() {
     let agent = tokio::spawn(turn_emitting(reader, writer, unhandled_request(json!(-3))));
 
     client
-        .send_prompt_with_streaming(make_prompt_request("ses-inbound", "read a file"))
+        .send_prompt_with_callback(
+            make_prompt_request("ses-inbound", "read a file"),
+            Box::new(|_| true),
+        )
         .await
         .expect("turn should complete");
 
@@ -243,7 +252,10 @@ async fn an_unhandled_inbound_notification_gets_no_reply() {
     let agent = tokio::spawn(turn_emitting(reader, writer, notification));
 
     client
-        .send_prompt_with_streaming(make_prompt_request("ses-inbound", "read a file"))
+        .send_prompt_with_callback(
+            make_prompt_request("ses-inbound", "read a file"),
+            Box::new(|_| true),
+        )
         .await
         .expect("turn should complete");
 

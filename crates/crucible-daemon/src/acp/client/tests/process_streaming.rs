@@ -3,6 +3,12 @@ use agent_client_protocol::StopReason;
 use super::test_path;
 use crate::acp::client::types::{ClientConfig, StreamingState};
 use crate::acp::client::CrucibleAcpClient;
+use crate::acp::streaming::StreamingCallback;
+
+/// A callback that accepts every chunk and never cancels.
+fn keep_going() -> StreamingCallback {
+    Box::new(|_| true)
+}
 
 #[tokio::test]
 async fn process_streaming_message_prioritizes_methods() {
@@ -25,7 +31,7 @@ async fn process_streaming_message_prioritizes_methods() {
     });
 
     let result = client
-        .process_streaming_message(&request_payload, 1, &mut state)
+        .process_streaming_message_with_callback(&request_payload, 1, &mut state, &mut keep_going())
         .await;
     assert!(result.is_ok());
     assert!(result.unwrap().is_none());
@@ -54,7 +60,12 @@ async fn process_streaming_message_returns_prompt_response() {
     });
 
     let result = client
-        .process_streaming_message(&response_payload, 5, &mut state)
+        .process_streaming_message_with_callback(
+            &response_payload,
+            5,
+            &mut state,
+            &mut keep_going(),
+        )
         .await
         .expect("Should parse prompt response");
     assert!(result.is_some());
@@ -96,7 +107,7 @@ async fn process_streaming_message_tracks_available_commands() {
     });
 
     let result = client
-        .process_streaming_message(&payload, 1, &mut state)
+        .process_streaming_message_with_callback(&payload, 1, &mut state, &mut keep_going())
         .await
         .expect("Should parse notification");
 

@@ -121,10 +121,6 @@ impl StreamingState {
         output
     }
 
-    pub(super) fn formatted_length(&self) -> usize {
-        self.formatted_output().len()
-    }
-
     pub(super) fn title_for_tool(&self, id: &str) -> Option<String> {
         self.tool_calls
             .iter()

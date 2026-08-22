@@ -103,7 +103,7 @@ impl CrucibleAcpClient {
         // Read with a generous per-read timeout.
         // Agents may pause for extended periods during tool execution or deep reasoning.
         // Use 5 minutes per-read minimum, or match the overall streaming timeout if configured.
-        // The overall streaming timeout (in send_prompt_with_streaming) provides the actual limit.
+        // The overall streaming timeout (in send_prompt_with_callback) provides the actual limit.
         let per_read_timeout_ms = self
             .config
             .timeout_ms

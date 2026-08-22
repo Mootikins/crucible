@@ -24,7 +24,7 @@ use tokio::io::{AsyncBufRead, AsyncWrite, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout};
 
 /// Global request ID counter for JSON-RPC requests.
-/// Shared between send_request and send_prompt_with_streaming to ensure unique IDs.
+/// Shared between send_request and send_prompt_with_callback to ensure unique IDs.
 static REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 
 use agent_client_protocol::{AvailableCommand, RequestPermissionOutcome, RequestPermissionRequest};

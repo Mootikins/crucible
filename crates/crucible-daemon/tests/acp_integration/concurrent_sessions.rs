@@ -502,7 +502,7 @@ async fn stream_edge_large_response_near_max_output_is_accumulated() {
 
     let request = make_prompt_request("large-session", "big stream");
     let (content, tool_calls, _response) = client
-        .send_prompt_with_streaming(request)
+        .send_prompt_with_callback(request, Box::new(|_| true))
         .await
         .expect("large streaming response should succeed");
 
@@ -529,7 +529,7 @@ async fn stream_edge_empty_response_returns_empty_content() {
 
     let request = make_prompt_request("empty-session", "respond with nothing");
     let (content, tool_calls, _response) = client
-        .send_prompt_with_streaming(request)
+        .send_prompt_with_callback(request, Box::new(|_| true))
         .await
         .expect("empty response should still complete");
 

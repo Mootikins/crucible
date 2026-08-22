@@ -62,7 +62,7 @@ async fn test_prompt_with_streaming_response() {
         .expect("Should complete handshake");
 
     let (content, tool_calls, response) = client
-        .send_prompt_with_streaming(prompt_request(session.id()))
+        .send_prompt_with_callback(prompt_request(session.id()), Box::new(|_| true))
         .await
         .expect("Should successfully receive streaming response");
 
@@ -92,7 +92,7 @@ async fn test_prompt_with_streamed_tool_call() {
         .expect("Should complete handshake");
 
     let (content, tool_calls, response) = client
-        .send_prompt_with_streaming(prompt_request(session.id()))
+        .send_prompt_with_callback(prompt_request(session.id()), Box::new(|_| true))
         .await
         .expect("Should successfully receive streaming response");
 

@@ -708,7 +708,7 @@ async fn test_acp_tool_roundtrip_content_after_tool() {
 
     let request = make_prompt_request(session_id, "find main function");
     let (content, tool_calls, _response) = client
-        .send_prompt_with_streaming(request)
+        .send_prompt_with_callback(request, Box::new(|_| true))
         .await
         .expect("content-after-tool roundtrip should complete");
 
