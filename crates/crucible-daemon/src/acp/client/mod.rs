@@ -28,7 +28,6 @@ use tokio::process::{Child, ChildStdin, ChildStdout};
 static REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 
 use agent_client_protocol::{AvailableCommand, RequestPermissionOutcome, RequestPermissionRequest};
-use crucible_core::types::acp::SessionId;
 
 mod connection;
 mod io;
@@ -65,8 +64,8 @@ pub struct CrucibleAcpClient {
     pub(super) config: ClientConfig,
     /// Agent name (e.g., "opencode", "claude") for display
     pub(super) agent_name: String,
-    /// Current active session ID, if any
-    pub(super) active_session: Option<SessionId>,
+    /// True while the client holds a connection to an agent.
+    pub(super) connected: bool,
     /// Agent process handle, if spawned (None for in-process transports)
     pub(super) agent_process: Option<Child>,
     /// Agent stdin for writing requests (concrete type from process)
@@ -98,7 +97,7 @@ impl std::fmt::Debug for CrucibleAcpClient {
         f.debug_struct("CrucibleAcpClient")
             .field("config", &self.config)
             .field("agent_name", &self.agent_name)
-            .field("active_session", &self.active_session)
+            .field("connected", &self.connected)
             .field("agent_process", &self.agent_process.is_some())
             .field("agent_stdin", &self.agent_stdin.is_some())
             .field("agent_stdout", &self.agent_stdout.is_some())
@@ -142,7 +141,7 @@ impl CrucibleAcpClient {
         Self {
             config,
             agent_name,
-            active_session: None,
+            connected: false,
             agent_process: None,
             agent_stdin: None,
             agent_stdout: None,
@@ -201,10 +200,5 @@ impl CrucibleAcpClient {
     /// Get the client configuration
     pub fn config(&self) -> &ClientConfig {
         &self.config
-    }
-
-    /// Get the current active session, if any
-    pub fn active_session(&self) -> Option<&SessionId> {
-        self.active_session.as_ref()
     }
 }

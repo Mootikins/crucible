@@ -7,7 +7,6 @@ use super::types::ClientConfig;
 use super::{BoxedReader, BoxedWriter, CrucibleAcpClient};
 use crate::acp::session::AcpSession;
 use crate::acp::{ClientError, Result};
-use crucible_core::types::acp::SessionId;
 
 impl CrucibleAcpClient {
     /// Create a client with a pre-connected in-process transport
@@ -38,7 +37,7 @@ impl CrucibleAcpClient {
         Self {
             config,
             agent_name: "mock".to_string(),
-            active_session: None,
+            connected: false,
             agent_process: None,
             agent_stdin: None,
             agent_stdout: None,
@@ -229,7 +228,7 @@ impl CrucibleAcpClient {
     ///
     /// `true` if there is an active connection, `false` otherwise
     pub fn is_connected(&self) -> bool {
-        self.active_session.is_some()
+        self.connected
     }
 
     /// Connect to agent with capability-aware MCP transport negotiation.
@@ -326,19 +325,13 @@ impl CrucibleAcpClient {
         .with_models(session_response.models))
     }
 
-    /// Mark the client as connected
-    ///
-    /// This sets an active session to indicate a connection is established
+    /// Mark the client as connected.
     pub fn mark_connected(&mut self) {
-        // Generate a temporary session ID
-        let session_id = SessionId::new();
-        self.active_session = Some(session_id);
+        self.connected = true;
     }
 
-    /// Mark the client as disconnected
-    ///
-    /// This clears the active session
+    /// Mark the client as disconnected.
     pub fn mark_disconnected(&mut self) {
-        self.active_session = None;
+        self.connected = false;
     }
 }

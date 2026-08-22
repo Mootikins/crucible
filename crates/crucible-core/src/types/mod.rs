@@ -6,7 +6,7 @@
 //! ## Organization
 //!
 //! Domain types are currently defined in their respective modules:
-//! - ACP types: `acp` (SessionConfig, SessionId, ToolInvocation, etc.)
+//! - ACP types: `acp` (ToolCallInfo, FileDiff)
 //! - Parser types: `parser::types` (ParsedNote, Wikilink, Tag, etc.)
 //! - Database types: `types::database` (SearchResult, DocumentId, Record, etc.)
 //! - Hashing types: `types::hashing` (FileHash, BlockHash, HashAlgorithm, etc.)
@@ -41,10 +41,7 @@ pub use crate::types::hashing::{
 
 // Re-export ACP types
 // NOTE: ToolDescriptor and ToolExample removed - use ToolDefinition from traits::tools
-pub use crate::types::acp::{
-    ChunkType, FileDiff, FileMetadata, SessionConfig, SessionId, StreamChunk, StreamMetadata,
-    ToolCallInfo, ToolInvocation, ToolOutput,
-};
+pub use crate::types::acp::{FileDiff, ToolCallInfo};
 
 // Re-export ACP schema types from agent-client-protocol-schema
 pub use crate::types::acp::schema::{

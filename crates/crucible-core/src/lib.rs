@@ -64,29 +64,20 @@ pub use types::{
     // Hashing types
     BlockHash,
     BlockHashInfo,
-    // ACP types
-    ChunkType,
     // Storage trait types (from traits/storage.rs)
     // Note: Parser types (ParsedNote, Wikilink, Tag, etc.) are exported from parser:: module below
     ExecutionContext,
     FileHash,
     FileHashInfo,
-    FileMetadata,
     HashAlgorithm,
     HashError,
     // Mode descriptor types
     ModeDescriptor,
-    SessionConfig,
-    SessionId,
     SessionMode,
     SessionModeId,
     SessionModeState,
-    StreamChunk,
-    StreamMetadata,
     ToolDefinition,
     ToolExample,
-    ToolInvocation,
-    ToolOutput,
 };
 
 pub use parser::{

@@ -560,7 +560,6 @@ mod tests {
     use async_trait::async_trait;
     use crucible_core::traits::acp::AcpError;
     use crucible_core::traits::tools::{ExecutionContext, ToolDefinition, ToolError, ToolExecutor};
-    use crucible_core::types::acp::{ToolInvocation, ToolOutput};
     use serde_json::json;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
@@ -649,29 +648,30 @@ mod tests {
     }
 
     impl PermissionedToolBridge {
-        /// Execute a tool with the given invocation
+        /// Execute a tool by name; the gate runs before the call.
         pub async fn execute_tool(
             &self,
-            call: ToolInvocation,
-        ) -> std::result::Result<ToolOutput, AcpError> {
-            if !self.registry.contains(&call.tool_name) {
-                return Err(AcpError::NotFound(call.tool_name));
+            tool_name: &str,
+            parameters: serde_json::Value,
+        ) -> std::result::Result<serde_json::Value, AcpError> {
+            if !self.registry.contains(tool_name) {
+                return Err(AcpError::NotFound(tool_name.to_string()));
             }
 
-            if Self::requires_permission_check(&call.tool_name) {
+            if Self::requires_permission_check(tool_name) {
                 self.permission_checks.fetch_add(1, Ordering::SeqCst);
                 if !self.allow_unsafe {
                     return Err(AcpError::PermissionDenied(format!(
                         "Tool '{}' denied by permission gate",
-                        call.tool_name
+                        tool_name
                     )));
                 }
             }
 
-            Ok(ToolOutput::success(json!({
-                "tool": call.tool_name,
-                "parameters": call.parameters,
-            })))
+            Ok(json!({
+                "tool": tool_name,
+                "parameters": parameters,
+            }))
         }
 
         /// List all available tools
@@ -892,14 +892,11 @@ mod tests {
         let bridge = PermissionedToolBridge::new(true);
 
         let output = bridge
-            .execute_tool(ToolInvocation::new(
-                "create_note",
-                json!({"path": "x.md", "content": "ok"}),
-            ))
+            .execute_tool("create_note", json!({"path": "x.md", "content": "ok"}))
             .await
             .unwrap();
 
-        assert!(output.success);
+        assert_eq!(output["tool"], json!("create_note"));
         assert_eq!(bridge.permission_checks.load(Ordering::SeqCst), 1);
     }
 
@@ -932,10 +929,7 @@ mod tests {
         let bridge = PermissionedToolBridge::new(false);
 
         let err = bridge
-            .execute_tool(ToolInvocation::new(
-                "create_note",
-                json!({"path": "x.md", "content": "blocked"}),
-            ))
+            .execute_tool("create_note", json!({"path": "x.md", "content": "blocked"}))
             .await
             .unwrap_err();
 
@@ -947,11 +941,11 @@ mod tests {
         let bridge = PermissionedToolBridge::new(false);
 
         let output = bridge
-            .execute_tool(ToolInvocation::new("read_note", json!({"path": "x.md"})))
+            .execute_tool("read_note", json!({"path": "x.md"}))
             .await
             .unwrap();
 
-        assert!(output.success);
+        assert_eq!(output["tool"], json!("read_note"));
         assert_eq!(bridge.permission_checks.load(Ordering::SeqCst), 0);
     }
 
@@ -960,10 +954,7 @@ mod tests {
         let bridge = PermissionedToolBridge::new(true);
 
         bridge
-            .execute_tool(ToolInvocation::new(
-                "create_note",
-                json!({"path": "x.md", "content": "ok"}),
-            ))
+            .execute_tool("create_note", json!({"path": "x.md", "content": "ok"}))
             .await
             .unwrap();
 
