@@ -48,75 +48,27 @@ pub fn register_http_module(lua: &Lua) -> Result<()> {
     let http = lua.create_table()?;
     let executor = Arc::new(HttpExecutor::new());
 
-    // http.get(url, opts?)
-    let exec = executor.clone();
-    http.set(
-        "get",
-        lua.create_async_function(move |lua, args: (String, Option<Table>)| {
-            let exec = exec.clone();
-            async move {
-                let (url, opts) = args;
-                let req = build_request(HttpMethod::Get, url, opts)?;
-                execute_request(&lua, exec, req).await
-            }
-        })?,
-    )?;
-
-    // http.post(url, opts?)
-    let exec = executor.clone();
-    http.set(
-        "post",
-        lua.create_async_function(move |lua, args: (String, Option<Table>)| {
-            let exec = exec.clone();
-            async move {
-                let (url, opts) = args;
-                let req = build_request(HttpMethod::Post, url, opts)?;
-                execute_request(&lua, exec, req).await
-            }
-        })?,
-    )?;
-
-    // http.put(url, opts?)
-    let exec = executor.clone();
-    http.set(
-        "put",
-        lua.create_async_function(move |lua, args: (String, Option<Table>)| {
-            let exec = exec.clone();
-            async move {
-                let (url, opts) = args;
-                let req = build_request(HttpMethod::Put, url, opts)?;
-                execute_request(&lua, exec, req).await
-            }
-        })?,
-    )?;
-
-    // http.delete(url, opts?)
-    let exec = executor.clone();
-    http.set(
-        "delete",
-        lua.create_async_function(move |lua, args: (String, Option<Table>)| {
-            let exec = exec.clone();
-            async move {
-                let (url, opts) = args;
-                let req = build_request(HttpMethod::Delete, url, opts)?;
-                execute_request(&lua, exec, req).await
-            }
-        })?,
-    )?;
-
-    // http.patch(url, opts?)
-    let exec = executor.clone();
-    http.set(
-        "patch",
-        lua.create_async_function(move |lua, args: (String, Option<Table>)| {
-            let exec = exec.clone();
-            async move {
-                let (url, opts) = args;
-                let req = build_request(HttpMethod::Patch, url, opts)?;
-                execute_request(&lua, exec, req).await
-            }
-        })?,
-    )?;
+    // http.get / post / put / delete / patch (url, opts?)
+    for (name, method) in [
+        ("get", HttpMethod::Get),
+        ("post", HttpMethod::Post),
+        ("put", HttpMethod::Put),
+        ("delete", HttpMethod::Delete),
+        ("patch", HttpMethod::Patch),
+    ] {
+        let exec = executor.clone();
+        http.set(
+            name,
+            lua.create_async_function(move |lua, args: (String, Option<Table>)| {
+                let exec = exec.clone();
+                async move {
+                    let (url, opts) = args;
+                    let req = build_request(method, url, opts)?;
+                    execute_request(&lua, exec, req).await
+                }
+            })?,
+        )?;
+    }
 
     // http.request(opts) - full control
     let exec = executor.clone();

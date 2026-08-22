@@ -131,6 +131,37 @@ pub type LineSink<'a> = &'a mut (dyn FnMut(&str, &str) + Send);
 #[cfg(not(feature = "send"))]
 pub type LineSink<'a> = &'a mut dyn FnMut(&str, &str);
 
+/// Check `cmd` against `policy`, then build the command with `args`, `cwd`
+/// and `env` applied. The caller sets the stdio pipes.
+fn prepare_command(
+    policy: &PluginShellPolicy,
+    cmd: &str,
+    args: &[String],
+    cwd: Option<&str>,
+    env: Option<&HashMap<String, String>>,
+) -> Result<Command, LuaError> {
+    if !policy.is_allowed(cmd) {
+        return Err(LuaError::Runtime(format!(
+            "Command '{}' is not allowed by shell policy",
+            cmd
+        )));
+    }
+
+    let mut command = Command::new(cmd);
+    command.args(args);
+    if let Some(dir) = cwd {
+        command.current_dir(dir);
+    } else if let Some(default) = &policy.default_cwd {
+        command.current_dir(default);
+    }
+    if let Some(env_vars) = env {
+        for (key, value) in env_vars {
+            command.env(key, value);
+        }
+    }
+    Ok(command)
+}
+
 /// Run a command, delivering each output line as it arrives.
 ///
 /// `exec_command` buffers everything and returns at completion, so a long
@@ -156,27 +187,8 @@ pub async fn spawn_command(
 ) -> Result<ExecResult, LuaError> {
     use tokio::io::{AsyncBufReadExt, BufReader};
 
-    if !policy.is_allowed(cmd) {
-        return Err(LuaError::Runtime(format!(
-            "Command '{}' is not allowed by shell policy",
-            cmd
-        )));
-    }
-
+    let mut command = prepare_command(policy, cmd, args, cwd, env)?;
     debug!("Streaming: {} {:?}", cmd, args);
-
-    let mut command = Command::new(cmd);
-    command.args(args);
-    if let Some(dir) = cwd {
-        command.current_dir(dir);
-    } else if let Some(default) = &policy.default_cwd {
-        command.current_dir(default);
-    }
-    if let Some(env_vars) = env {
-        for (key, value) in env_vars {
-            command.env(key, value);
-        }
-    }
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
     // The timeout below drops the pump future while the child is still running.
@@ -285,29 +297,8 @@ pub async fn exec_command(
     stdin_data: Option<&str>,
     policy: &PluginShellPolicy,
 ) -> Result<ExecResult, LuaError> {
-    if !policy.is_allowed(cmd) {
-        return Err(LuaError::Runtime(format!(
-            "Command '{}' is not allowed by shell policy",
-            cmd
-        )));
-    }
-
+    let mut command = prepare_command(policy, cmd, args, cwd, env)?;
     debug!("Executing: {} {:?}", cmd, args);
-
-    let mut command = Command::new(cmd);
-    command.args(args);
-
-    if let Some(dir) = cwd {
-        command.current_dir(dir);
-    } else if let Some(default) = &policy.default_cwd {
-        command.current_dir(default);
-    }
-
-    if let Some(env_vars) = env {
-        for (key, value) in env_vars {
-            command.env(key, value);
-        }
-    }
 
     command.stdout(Stdio::piped());
     if policy.capture_stderr {

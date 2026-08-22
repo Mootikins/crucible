@@ -10,6 +10,8 @@
 
 use crate::error::LuaError;
 use crate::hl::{HlColor, HlGroup, HlRegistry};
+use crate::theme::parse_any_color;
+use crate::theme_wire::color_to_name;
 use crucible_oil::style::{AdaptiveColor, Color};
 use mlua::{Lua, Table, Value};
 use serde_json::{json, Map, Value as Json};
@@ -28,20 +30,10 @@ fn color_from_lua(table: &Table, key: &str) -> Option<HlColor> {
                     Color::Indexed(idx),
                 )));
             }
-            let dark = side(&t.get::<Value>("dark").ok()?)?;
-            let light = side(&t.get::<Value>("light").ok()?)?;
+            let dark = parse_any_color(&t.get::<Value>("dark").ok()?)?;
+            let light = parse_any_color(&t.get::<Value>("light").ok()?)?;
             Some(HlColor::Adaptive(AdaptiveColor { dark, light }))
         }
-        _ => None,
-    }
-}
-
-/// One side of an adaptive pair: a name, a hex literal, or an index.
-fn side(v: &Value) -> Option<Color> {
-    match v {
-        Value::String(s) => crate::theme::parse_color_string(&s.to_str().ok()?),
-        Value::Integer(n) => u8::try_from(*n).ok().map(Color::Indexed),
-        Value::Table(t) => t.get::<u8>("idx").ok().map(Color::Indexed),
         _ => None,
     }
 }
@@ -95,37 +87,10 @@ fn color_to_wire(c: &HlColor) -> Json {
         // Palette references cross the wire as names, unresolved — the client
         // resolves them against the theme it received in the same payload.
         HlColor::Palette(name) => Json::String(name.clone()),
-        HlColor::Adaptive(a) if a.dark == a.light => Json::String(color_name(a.dark)),
+        HlColor::Adaptive(a) if a.dark == a.light => Json::String(color_to_name(a.dark)),
         HlColor::Adaptive(a) => {
-            json!({ "dark": color_name(a.dark), "light": color_name(a.light) })
+            json!({ "dark": color_to_name(a.dark), "light": color_to_name(a.light) })
         }
-    }
-}
-
-fn color_name(c: Color) -> String {
-    match c {
-        Color::Black => "black".into(),
-        Color::Red => "red".into(),
-        Color::Green => "green".into(),
-        Color::Yellow => "yellow".into(),
-        Color::Blue => "blue".into(),
-        Color::Magenta => "magenta".into(),
-        Color::Cyan => "cyan".into(),
-        Color::White => "white".into(),
-        Color::Gray => "gray".into(),
-        Color::DarkGray => "dark_gray".into(),
-        Color::BrightRed => "bright_red".into(),
-        Color::BrightGreen => "bright_green".into(),
-        Color::BrightYellow => "bright_yellow".into(),
-        Color::BrightBlue => "bright_blue".into(),
-        Color::BrightMagenta => "bright_magenta".into(),
-        Color::BrightCyan => "bright_cyan".into(),
-        Color::BrightWhite => "bright_white".into(),
-        // Indices cross the wire as numbers-in-strings, which `parse_color_string`
-        // reads back as an index — so the round trip is lossless.
-        Color::Indexed(i) => i.to_string(),
-        Color::Reset => "reset".into(),
-        Color::Rgb(r, g, b) => format!("#{r:02x}{g:02x}{b:02x}"),
     }
 }
 

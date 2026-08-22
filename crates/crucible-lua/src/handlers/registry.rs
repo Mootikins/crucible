@@ -196,6 +196,21 @@ impl LuaScriptHandlerRegistry {
         event: &SessionEvent,
         session_id: Option<&str>,
     ) -> LuaResult<ScriptHandlerResult> {
+        let event_table = session_event_to_lua(lua, event)?;
+        self.execute_handler_with_payload(lua, name, Value::Table(event_table), session_id)
+            .await
+    }
+
+    /// Run the handler `name` with `payload` as its event argument. This is the
+    /// one body behind [`Self::execute_runtime_handler`] and the JSON-payload
+    /// stages in `before_execute.rs`.
+    pub(super) async fn execute_handler_with_payload(
+        &self,
+        lua: &Lua,
+        name: &str,
+        payload: Value,
+        session_id: Option<&str>,
+    ) -> LuaResult<ScriptHandlerResult> {
         // Get the handler Function while holding the lock, then drop it before await
         let handler: Function = {
             let handler_functions = self
@@ -218,9 +233,8 @@ impl LuaScriptHandlerRegistry {
         if let Some(id) = session_id {
             ctx_table.set("session_id", id)?;
         }
-        let event_table = session_event_to_lua(lua, event)?;
 
-        let result: Value = handler.call_async((ctx_table, event_table)).await?;
+        let result: Value = handler.call_async((ctx_table, payload)).await?;
 
         interpret_handler_result(&result)
     }

@@ -736,7 +736,7 @@ fn parse_adaptive_color(value: &Value) -> Option<AdaptiveColor> {
 }
 
 /// One side of an adaptive pair: a name, a hex literal, or an index.
-fn parse_any_color(value: &Value) -> Option<Color> {
+pub(crate) fn parse_any_color(value: &Value) -> Option<Color> {
     match value {
         Value::String(s) => parse_color_string(&s.to_str().ok()?),
         Value::Integer(n) => u8::try_from(*n).ok().map(Color::Indexed),

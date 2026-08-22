@@ -48,6 +48,21 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 
+/// Create the parent directory of `path` when it does not exist.
+fn ensure_parent(path: &str) -> Result<(), LuaError> {
+    if let Some(parent) = Path::new(path).parent() {
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            fs::create_dir_all(parent).map_err(|e| {
+                LuaError::Runtime(format!(
+                    "Failed to create parent directory for '{}': {}",
+                    path, e
+                ))
+            })?;
+        }
+    }
+    Ok(())
+}
+
 /// Read file contents to string
 fn read_file(path: &str) -> Result<String, LuaError> {
     fs::read_to_string(path).lua_runtime()
@@ -55,34 +70,14 @@ fn read_file(path: &str) -> Result<String, LuaError> {
 
 /// Write content to file (creates or overwrites)
 fn write_file(path: &str, content: &str) -> Result<(), LuaError> {
-    // Ensure parent directory exists
-    if let Some(parent) = Path::new(path).parent() {
-        if !parent.as_os_str().is_empty() && !parent.exists() {
-            fs::create_dir_all(parent).map_err(|e| {
-                LuaError::Runtime(format!(
-                    "Failed to create parent directory for '{}': {}",
-                    path, e
-                ))
-            })?;
-        }
-    }
+    ensure_parent(path)?;
 
     fs::write(path, content).lua_runtime()
 }
 
 /// Append content to file (creates if doesn't exist)
 fn append_file(path: &str, content: &str) -> Result<(), LuaError> {
-    // Ensure parent directory exists
-    if let Some(parent) = Path::new(path).parent() {
-        if !parent.as_os_str().is_empty() && !parent.exists() {
-            fs::create_dir_all(parent).map_err(|e| {
-                LuaError::Runtime(format!(
-                    "Failed to create parent directory for '{}': {}",
-                    path, e
-                ))
-            })?;
-        }
-    }
+    ensure_parent(path)?;
 
     let mut file = fs::OpenOptions::new()
         .create(true)
@@ -124,17 +119,7 @@ fn list_dir(path: &str) -> Result<Vec<String>, LuaError> {
 
 /// Copy a file
 fn copy_file(src: &str, dest: &str) -> Result<(), LuaError> {
-    // Ensure parent directory of dest exists
-    if let Some(parent) = Path::new(dest).parent() {
-        if !parent.as_os_str().is_empty() && !parent.exists() {
-            fs::create_dir_all(parent).map_err(|e| {
-                LuaError::Runtime(format!(
-                    "Failed to create parent directory for '{}': {}",
-                    dest, e
-                ))
-            })?;
-        }
-    }
+    ensure_parent(dest)?;
 
     fs::copy(src, dest).lua_runtime()?;
     Ok(())
@@ -142,17 +127,7 @@ fn copy_file(src: &str, dest: &str) -> Result<(), LuaError> {
 
 /// Rename/move a file or directory
 fn rename_file(src: &str, dest: &str) -> Result<(), LuaError> {
-    // Ensure parent directory of dest exists
-    if let Some(parent) = Path::new(dest).parent() {
-        if !parent.as_os_str().is_empty() && !parent.exists() {
-            fs::create_dir_all(parent).map_err(|e| {
-                LuaError::Runtime(format!(
-                    "Failed to create parent directory for '{}': {}",
-                    dest, e
-                ))
-            })?;
-        }
-    }
+    ensure_parent(dest)?;
 
     fs::rename(src, dest).lua_runtime()
 }

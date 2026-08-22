@@ -37,7 +37,7 @@ pub const UI_CONFIG_VERSION: u32 = 1;
 
 /// Render a [`Color`] in the authoring vocabulary that `parse_color_string`
 /// accepts, so every value round-trips.
-fn color_to_name(color: Color) -> String {
+pub(crate) fn color_to_name(color: Color) -> String {
     match color {
         Color::Black => "black".to_string(),
         Color::Red => "red".to_string(),

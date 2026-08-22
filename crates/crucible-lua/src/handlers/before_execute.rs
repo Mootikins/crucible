@@ -1,8 +1,8 @@
-use mlua::{Function, Lua, LuaSerdeExt, Result as LuaResult, Value};
+use mlua::{Lua, LuaSerdeExt, Result as LuaResult};
 use serde_json::Value as JsonValue;
 
 use super::registry::LuaScriptHandlerRegistry;
-use super::script_handler::{interpret_handler_result, ScriptHandlerResult};
+use super::script_handler::ScriptHandlerResult;
 
 // --- tool:before_execute hook ---
 
@@ -86,29 +86,8 @@ pub(super) async fn execute_runtime_json_handler(
     payload: JsonValue,
     session_id: Option<&str>,
 ) -> LuaResult<ScriptHandlerResult> {
-    let handler: Function = {
-        let handler_functions = registry
-            .handler_functions
-            .lock()
-            .expect("handler_functions: poisoned while executing Lua display handler");
-        let Some(key) = handler_functions.get(name) else {
-            // Same contract as `execute_runtime_handler`: a handler
-            // unregistered mid-dispatch (plugin reload in flight) has no
-            // opinion, and must not surface as a fail-closed error.
-            tracing::debug!(handler = %name, "handler unregistered mid-dispatch; passing through");
-            return Ok(ScriptHandlerResult::PassThrough);
-        };
-        lua.registry_value(key)?
-    };
-
-    let ctx_table = lua.create_table()?;
-    // Same contract as execute_runtime_handler: a handler registered once at
-    // plugin load serves every session and keys per-session state by this.
-    if let Some(id) = session_id {
-        ctx_table.set("session_id", id)?;
-    }
     let payload_val = lua.to_value(&payload)?;
-    let result: Value = handler.call_async((ctx_table, payload_val)).await?;
-
-    interpret_handler_result(&result)
+    registry
+        .execute_handler_with_payload(lua, name, payload_val, session_id)
+        .await
 }
