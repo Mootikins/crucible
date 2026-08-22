@@ -1,6 +1,8 @@
 use crate::tui::oil::app::ViewContext;
+#[cfg(any(test, feature = "test-utils"))]
 use crucible_oil::focus::FocusContext;
 use crucible_oil::node::Node;
+#[cfg(any(test, feature = "test-utils"))]
 use crucible_oil::planning::{FramePlanner, FrameSnapshot};
 
 pub trait Component {
@@ -16,12 +18,14 @@ where
     }
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 pub struct ComponentHarness {
     focus: FocusContext,
     planner: FramePlanner,
     last_snapshot: Option<FrameSnapshot>,
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 impl ComponentHarness {
     pub fn new(width: u16, height: u16) -> Self {
         Self {

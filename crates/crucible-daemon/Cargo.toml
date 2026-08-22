@@ -26,7 +26,7 @@ dashmap = { workspace = true }
 uuid = { workspace = true }
 futures = { workspace = true }
 tokio-util = { version = "0.7", features = ["rt"] }
-crucible-core = { path = "../crucible-core", features = ["test-utils"] }
+crucible-core = { path = "../crucible-core" }
 
 crucible-lua = { path = "../crucible-lua", features = ["send"] }
 genai = "0.6"
@@ -87,12 +87,15 @@ default = ["fastembed"]
 
 web = []
 
-test-utils = []
+test-utils = ["crucible-core/test-utils"]
 
 # Absorbed from crucible-llm: FastEmbed local ONNX embeddings (pulls ort)
 fastembed = ["dep:fastembed", "dep:ort"]
 
 [dev-dependencies]
+# Tests under `tests/` need the test helpers of this crate and of core.
+crucible-daemon = { path = ".", features = ["test-utils"] }
+crucible-core = { path = "../crucible-core", features = ["test-utils"] }
 futures = { workspace = true }
 mockito = { workspace = true }
 tokio-test = "0.4"

@@ -176,10 +176,7 @@ pub use handlers::{
     hook_names, EventName, HookName, StageId, SHIPPED_DEFAULT_PRIORITY, TOOL_BEFORE_EXECUTE_EVENT,
     TOOL_DISPLAY_COMPLETE_EVENT, TOOL_DISPLAY_START_EVENT,
 };
-pub use lifecycle::{
-    load_plugin_spec, load_plugin_spec_from_source, LifecycleError, LifecycleResult, PluginManager,
-    PluginSpec,
-};
+pub use lifecycle::{load_plugin_spec, LifecycleError, LifecycleResult, PluginManager, PluginSpec};
 pub use manifest::{
     Capability, LoadedPlugin, ManifestError, ManifestResult, PluginDependency, PluginManifest,
     PluginSource, PluginState,

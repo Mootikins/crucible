@@ -50,6 +50,7 @@ end
             })
     }
 
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn eval_runtime<T>(&self, source: &str) -> LifecycleResult<T>
     where
         T: mlua::FromLua,

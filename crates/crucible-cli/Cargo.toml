@@ -37,6 +37,9 @@ web = ["dep:crucible-web"]
 # binary.
 fastembed = ["crucible-daemon/fastembed"]
 
+# Test harnesses (`AppHarness`, `ComponentHarness`). Never in the `cru` binary.
+test-utils = []
+
 [dependencies]
 crucible-core = { path = "../crucible-core" }
 
@@ -135,6 +138,8 @@ textwrap = "0.16.2"
 toml = { workspace = true }
 
 [dev-dependencies]
+crucible-cli = { path = ".", features = ["test-utils"] }
+crucible-core = { path = "../crucible-core", features = ["test-utils"] }
 # MCP client for testing examples
 rmcp = { version = "2.2", features = ["client", "transport-child-process"] }
 tempfile = { workspace = true }

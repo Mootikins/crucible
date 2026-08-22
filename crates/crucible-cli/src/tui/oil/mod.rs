@@ -27,6 +27,7 @@ pub mod local_replay;
 pub mod markdown;
 pub mod noop_agent;
 mod render_state;
+#[cfg(any(test, feature = "test-utils"))]
 mod test_harness;
 pub mod theme;
 pub mod utils;
@@ -36,11 +37,14 @@ pub use agent_selection::AgentSelection;
 pub use app::{Action, App, ViewContext};
 pub use chat_app::{ChatAppMsg, McpServerDisplay, OilChatApp, PluginStatusEntry, DEFAULT_MODE};
 pub use chat_runner::OilChatRunner;
-pub use component::{Component, ComponentHarness};
+pub use component::Component;
+#[cfg(any(test, feature = "test-utils"))]
+pub use component::ComponentHarness;
 pub use components::{InputMode, StatusBar, INPUT_MAX_CONTENT_LINES};
 pub use containers::{ChatNode, ContainerList};
 pub use event::{Event, InputAction, InputBuffer};
 pub use render_state::RenderState;
+#[cfg(any(test, feature = "test-utils"))]
 pub use test_harness::AppHarness;
 
 // Re-export commonly used crucible-oil types

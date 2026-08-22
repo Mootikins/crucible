@@ -195,10 +195,6 @@ impl PluginManager {
         self.on_unload_hooks.remove(name);
     }
 
-    pub fn reload(&mut self, name: &str) -> LifecycleResult<()> {
-        self.reload_plugin(name)
-    }
-
     pub fn reload_plugin(&mut self, name: &str) -> LifecycleResult<()> {
         self.unload(name)?;
         self.clear_plugin_modules(name)?;
@@ -216,6 +212,7 @@ impl PluginManager {
         }
     }
 
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn enable(&mut self, name: &str) -> LifecycleResult<()> {
         let plugin = self
             .plugins

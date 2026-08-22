@@ -1,5 +1,6 @@
 use super::PluginManager;
 use std::collections::VecDeque;
+#[cfg(any(test, feature = "test-utils"))]
 use std::sync::MutexGuard;
 use tracing::warn;
 
@@ -64,6 +65,7 @@ impl PluginErrorLog {
 
 impl PluginManager {
     /// Access the error log for this plugin manager.
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn error_log(&self) -> MutexGuard<'_, PluginErrorLog> {
         self.error_log.lock().expect("error_log: poisoned")
     }

@@ -34,6 +34,7 @@ pub mod frontmatter_extractor;
 pub mod implementation;
 pub mod inline_links;
 pub mod latex;
+#[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 pub mod wikilinks;
 

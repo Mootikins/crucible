@@ -25,6 +25,8 @@ pub mod serde_helpers;
 pub mod serde_md;
 pub mod session;
 pub mod storage;
+// Test helpers only. The `cru` binary never compiles them.
+#[cfg(any(test, feature = "test-utils"))]
 pub mod test_support;
 pub mod text;
 pub mod traits;

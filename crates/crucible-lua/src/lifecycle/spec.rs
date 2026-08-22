@@ -132,8 +132,8 @@ fn extract_params_from_table(def: &mlua::Table) -> Vec<DiscoveredParam> {
     params
 }
 
-/// Extract a PluginSpec from Lua source code. Exposed for testing.
-pub fn load_plugin_spec_from_source(
+/// Extract a PluginSpec from Lua source code.
+pub(crate) fn load_plugin_spec_from_source(
     source: &str,
     source_path: &Path,
 ) -> LifecycleResult<Option<PluginSpec>> {

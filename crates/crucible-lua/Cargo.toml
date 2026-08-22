@@ -11,6 +11,8 @@ default = ["fennel"]
 # Fennel compiles Lisp to Lua - macros, pattern matching, clean syntax
 fennel = ["mlua/lua54"]
 send = ["mlua/send"]  # Enable Send+Sync for multi-threaded use
+# Test-only `PluginManager` API. The daemon never compiles it.
+test-utils = []
 
 [dependencies]
 # Runtime: Lua 5.4 with optional Fennel compiler
@@ -45,6 +47,8 @@ base64 = { workspace = true }
 oq = { workspace = true }
 
 [dev-dependencies]
+# Tests under `tests/` drive the `PluginManager` test-only API.
+crucible-lua = { path = ".", features = ["test-utils"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 # `EnumIter` over `handlers::hook_name`, so the tests asserting that `ALL`
 # covers every variant walk what the compiler knows rather than a second

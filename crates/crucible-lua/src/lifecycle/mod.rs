@@ -26,7 +26,9 @@ use tracing::warn;
 pub use discovery::PluginDiscoveryError;
 pub use error::{LifecycleError, LifecycleResult};
 pub use error_log::{PluginErrorEntry, PluginErrorLog};
-pub use spec::{load_plugin_spec, load_plugin_spec_from_source, PluginSpec};
+#[cfg(test)]
+pub(crate) use spec::load_plugin_spec_from_source;
+pub use spec::{load_plugin_spec, PluginSpec};
 
 pub struct PluginManager {
     plugins: HashMap<String, LoadedPlugin>,
@@ -127,17 +129,6 @@ impl PluginManager {
         }
 
         Self::new().with_search_paths(paths)
-    }
-
-    /// Discover **and execute** every plugin on the standard paths.
-    ///
-    /// The execution is the point for callers that want a live VM, and a trap
-    /// for callers that only want a listing — see [`Self::discover_only`].
-    pub fn initialize() -> LifecycleResult<Self> {
-        let mut manager = Self::with_standard_paths();
-        manager.discover()?;
-        manager.load_all()?;
-        Ok(manager)
     }
 
     /// Discover without executing anything.

@@ -107,7 +107,7 @@ fn test_reload_plugin() {
     manager.discover().unwrap();
     manager.load("reload-test").unwrap();
 
-    manager.reload("reload-test").unwrap();
+    manager.reload_plugin("reload-test").unwrap();
     let plugin = manager.get("reload-test").unwrap();
     assert_eq!(plugin.state, PluginState::Active);
 }
@@ -368,7 +368,7 @@ fn test_reload_full_cycle() {
         .unwrap();
     assert_eq!(count, 1);
 
-    manager.reload("reload-plugin").unwrap();
+    manager.reload_plugin("reload-plugin").unwrap();
 
     let unload_count = manager
         .eval_runtime::<i64>("return _G.unload_count")

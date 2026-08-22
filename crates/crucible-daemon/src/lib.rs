@@ -80,6 +80,7 @@ pub mod storage;
 pub mod subscription;
 #[cfg(test)]
 pub(crate) mod test_fixtures;
+#[cfg(any(test, feature = "test-utils"))]
 pub mod test_support;
 pub mod tool_dispatch;
 pub mod tools;

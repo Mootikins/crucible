@@ -103,7 +103,7 @@ return {
     manager.discover().unwrap();
     manager.load("reload-hook-test").unwrap();
 
-    manager.reload("reload-hook-test").unwrap();
+    manager.reload_plugin("reload-hook-test").unwrap();
 
     let count = manager
         .eval_runtime::<i32>("return _G._unload_count or 0")
@@ -172,7 +172,7 @@ return {
     let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
     manager.discover().unwrap();
     manager.load("order-test").unwrap();
-    manager.reload("order-test").unwrap();
+    manager.reload_plugin("order-test").unwrap();
 
     let events_str = manager
         .eval_runtime::<String>(
