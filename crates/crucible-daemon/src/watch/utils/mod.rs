@@ -5,8 +5,8 @@ mod monitor;
 mod queue;
 
 pub use debouncer::Debouncer;
-pub use monitor::{PerformanceMonitor, PerformanceStats};
-pub use queue::{EventQueue, QueueStats};
+pub use monitor::PerformanceMonitor;
+pub use queue::EventQueue;
 
 use crate::watch::FileEvent;
 

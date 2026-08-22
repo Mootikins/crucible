@@ -6,7 +6,7 @@ use crate::watch::{
     events::FileEvent,
     handlers::{create_default_handlers, HandlerRegistry},
     traits::{EventHandler, FileWatcher, WatchConfig, WatchHandle},
-    utils::{Debouncer, EventQueue, PerformanceMonitor, PerformanceStats, QueueStats},
+    utils::{Debouncer, EventQueue, PerformanceMonitor},
 };
 use crucible_core::events::{EventEmitter, NoOpEmitter, SessionEvent};
 use std::collections::HashMap;
@@ -17,7 +17,7 @@ use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
 
-/// How the watch manager is built: queue depth, debounce, handler limits.
+/// How the watch manager is built: queue depth, debounce, default handlers.
 ///
 /// This is all that survived `watch/config.rs`. That file held 23 types
 /// describing a `[watch]` configuration section — backpressure strategies,
@@ -35,10 +35,6 @@ pub struct WatchManagerConfig {
     pub debounce_delay: Duration,
     /// Enable default handlers
     pub enable_default_handlers: bool,
-    /// Maximum concurrent handlers
-    pub max_concurrent_handlers: usize,
-    /// Performance monitoring enabled
-    pub enable_monitoring: bool,
 }
 
 impl Default for WatchManagerConfig {
@@ -47,8 +43,6 @@ impl Default for WatchManagerConfig {
             queue_capacity: 10000,
             debounce_delay: Duration::from_millis(100),
             enable_default_handlers: true,
-            max_concurrent_handlers: 50,
-            enable_monitoring: true,
         }
     }
 }
@@ -123,11 +117,6 @@ impl WatchManager {
         }
 
         Ok(manager)
-    }
-
-    /// Get a reference to the event emitter.
-    pub fn emitter(&self) -> &Arc<dyn EventEmitter<Event = SessionEvent>> {
-        &self.emitter
     }
 
     /// Start the watch manager.
@@ -331,71 +320,12 @@ impl WatchManager {
         Ok(removed)
     }
 
-    /// Remove a watch.
-    pub async fn remove_watch(&mut self, handle: WatchHandle) -> Result<()> {
-        debug!("Removing watch for: {}", handle.path.display());
-
-        let mut watchers = self.watchers.write().await;
-        let mut removed = false;
-
-        watchers.retain(|_id, watcher| {
-            // Check if this watcher handles the path
-            // This is a simplified check - in practice, you'd track handles better
-            let handles = watcher.active_watches();
-            if handles.contains(&handle) {
-                removed = true;
-                false
-            } else {
-                true
-            }
-        });
-
-        if removed {
-            info!("Removed watch: {}", handle.path.display());
-        } else {
-            warn!("Watch not found: {}", handle.path.display());
-        }
-
-        Ok(())
-    }
-
     /// Register an event handler.
     pub async fn register_handler(&self, handler: Arc<dyn EventHandler>) -> Result<()> {
         let mut handlers = self.handlers.write().await;
         handlers.register(handler.clone());
         info!("Registered event handler: {}", handler.name());
         Ok(())
-    }
-
-    /// Unregister an event handler.
-    pub async fn unregister_handler(&self, name: &str) -> bool {
-        let mut handlers = self.handlers.write().await;
-        let removed = handlers.unregister(name);
-        if removed {
-            info!("Unregistered event handler: {}", name);
-        }
-        removed
-    }
-
-    /// Get performance statistics.
-    pub async fn get_performance_stats(&self) -> PerformanceStats {
-        let monitor = self.performance_monitor.lock().await;
-        monitor.get_stats()
-    }
-
-    /// Get manager status.
-    pub async fn get_status(&self) -> ManagerStatus {
-        let is_running = *self.is_running.read().await;
-        let watchers_count = self.watchers.read().await.len();
-        let handlers_count = self.handlers.read().await.len();
-        let queue_stats = self.event_queue.lock().await.get_stats();
-
-        ManagerStatus {
-            is_running,
-            active_watches: watchers_count,
-            registered_handlers: handlers_count,
-            queue_stats,
-        }
     }
 
     /// Start the event processing task.
@@ -569,17 +499,4 @@ impl WatchManager {
 
         Ok(())
     }
-}
-
-/// Status information for the watch manager.
-#[derive(Debug, Clone)]
-pub struct ManagerStatus {
-    /// Whether the manager is running
-    pub is_running: bool,
-    /// Number of active watches
-    pub active_watches: usize,
-    /// Number of registered handlers
-    pub registered_handlers: usize,
-    /// Queue statistics
-    pub queue_stats: QueueStats,
 }

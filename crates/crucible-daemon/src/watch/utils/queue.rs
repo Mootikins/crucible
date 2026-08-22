@@ -78,39 +78,4 @@ impl EventQueue {
     pub fn len(&self) -> usize {
         self.size.load(Ordering::Relaxed)
     }
-
-    /// Get the fill ratio (0.0 to 1.0).
-    pub fn fill_ratio(&self) -> f64 {
-        if self.capacity == 0 {
-            1.0
-        } else {
-            self.len() as f64 / self.capacity as f64
-        }
-    }
-
-    /// Get queue statistics.
-    pub fn get_stats(&self) -> QueueStats {
-        QueueStats {
-            current_size: self.len(),
-            capacity: self.capacity,
-            processed: self.processed_events.load(Ordering::Relaxed),
-            dropped: self.dropped_events.load(Ordering::Relaxed),
-            fill_ratio: self.fill_ratio(),
-        }
-    }
-}
-
-/// Statistics for the event queue.
-#[derive(Debug, Clone)]
-pub struct QueueStats {
-    /// Current queue size
-    pub current_size: usize,
-    /// Maximum capacity
-    pub capacity: usize,
-    /// Number of events processed
-    pub processed: u64,
-    /// Number of events dropped
-    pub dropped: u64,
-    /// Fill ratio (0.0 to 1.0)
-    pub fill_ratio: f64,
 }

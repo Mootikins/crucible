@@ -20,11 +20,6 @@ impl ExtendedBackendRegistry {
         }
     }
 
-    /// Get the underlying registry.
-    pub fn inner(&self) -> &BackendRegistry {
-        &self.inner
-    }
-
     /// Create a watcher with automatic backend selection.
     pub async fn create_optimal_watcher(
         &self,
@@ -183,8 +178,6 @@ pub struct WatcherRequirements {
     pub max_latency_ms: Option<u64>,
     /// Use case for the watcher.
     pub use_case: WatcherUseCase,
-    /// Priority for resource usage.
-    pub resource_priority: ResourcePriority,
 }
 
 /// Use cases for file watching.
@@ -200,19 +193,6 @@ pub enum WatcherUseCase {
     EditorIntegration,
 }
 
-/// Priority for resource usage.
-#[derive(Debug, Clone, PartialEq)]
-pub enum ResourcePriority {
-    /// Minimize CPU usage.
-    LowCpu,
-    /// Minimize memory usage.
-    LowMemory,
-    /// Balance CPU and memory usage.
-    Balanced,
-    /// Prioritize performance over resource usage.
-    Performance,
-}
-
 impl Default for WatcherRequirements {
     fn default() -> Self {
         Self {
@@ -222,7 +202,6 @@ impl Default for WatcherRequirements {
             hot_reconfig: false,
             max_latency_ms: Some(100),
             use_case: WatcherUseCase::HighPerformance,
-            resource_priority: ResourcePriority::Balanced,
         }
     }
 }
@@ -237,46 +216,6 @@ impl WatcherRequirements {
             hot_reconfig: false,
             max_latency_ms: Some(50),
             use_case: WatcherUseCase::HighPerformance,
-            resource_priority: ResourcePriority::Performance,
-        }
-    }
-
-    /// Create requirements for low-frequency use case.
-    pub fn low_frequency() -> Self {
-        Self {
-            recursive: false,
-            fine_grained_events: false,
-            multiple_paths: true,
-            hot_reconfig: true,
-            max_latency_ms: Some(5000),
-            use_case: WatcherUseCase::LowFrequency,
-            resource_priority: ResourcePriority::LowCpu,
-        }
-    }
-
-    /// Create requirements for editor integration use case.
-    pub fn editor_integration() -> Self {
-        Self {
-            recursive: false,
-            fine_grained_events: true,
-            multiple_paths: true,
-            hot_reconfig: true,
-            max_latency_ms: Some(1000),
-            use_case: WatcherUseCase::EditorIntegration,
-            resource_priority: ResourcePriority::LowMemory,
-        }
-    }
-
-    /// Create requirements for maximum compatibility.
-    pub fn compatibility() -> Self {
-        Self {
-            recursive: true,
-            fine_grained_events: false,
-            multiple_paths: true,
-            hot_reconfig: false,
-            max_latency_ms: Some(1000),
-            use_case: WatcherUseCase::Compatibility,
-            resource_priority: ResourcePriority::Balanced,
         }
     }
 }

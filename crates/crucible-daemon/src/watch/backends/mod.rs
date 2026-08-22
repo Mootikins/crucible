@@ -6,7 +6,7 @@ mod notify_backend;
 mod polling_backend;
 
 pub use editor_backend::{EditorConfig, EditorFactory, EditorWatcher};
-pub use factory::{ExtendedBackendRegistry, ResourcePriority, WatcherRequirements, WatcherUseCase};
+pub use factory::{ExtendedBackendRegistry, WatcherRequirements, WatcherUseCase};
 pub use notify_backend::{NotifyFactory, NotifyWatcher};
 pub use polling_backend::{PollingFactory, PollingWatcher};
 
@@ -105,20 +105,6 @@ impl BackendRegistry {
             .get(&backend_type)
             .map(|f| f.is_available())
             .unwrap_or(false)
-    }
-
-    /// Get the default backend for this platform.
-    pub fn default_backend(&self) -> Option<WatchBackend> {
-        // Priority order: Notify -> Polling -> Editor
-        let priorities = [
-            WatchBackend::Notify,
-            WatchBackend::Polling,
-            WatchBackend::Editor,
-        ];
-
-        priorities
-            .into_iter()
-            .find(|&backend| self.is_available(backend))
     }
 }
 

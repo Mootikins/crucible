@@ -81,11 +81,3 @@ pub enum WatchBackend {
     /// Low-frequency backend for editor integrations
     Editor,
 }
-
-pub mod prelude {
-    pub use crate::watch::traits::{DebounceConfig, WatchConfig};
-    pub use crate::watch::{
-        Error, EventHandler, FileEvent, FileEventKind, FileWatcher, Result, WatchBackend,
-        WatchManager,
-    };
-}
