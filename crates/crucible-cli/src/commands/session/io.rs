@@ -50,7 +50,7 @@ pub(super) async fn list_session_dirs(sessions_path: &std::path::Path) -> Result
     Ok(dirs)
 }
 
-pub(super) fn format_events_markdown(events: &[LogEvent], _include_timestamps: bool) -> String {
+pub(super) fn format_events_markdown(events: &[LogEvent]) -> String {
     use std::fmt::Write;
     let mut md = String::new();
     for event in events {

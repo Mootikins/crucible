@@ -32,7 +32,7 @@ pub(super) async fn export(
     }
 
     let events = read_session_events(&session_dir).await?;
-    let md = format_events_markdown(&events, timestamps);
+    let md = format_events_markdown(&events);
     let output_path = output.unwrap_or_else(|| session_dir.join("session.md"));
     fs::write(&output_path, &md).await?;
     println!("Exported session to: {}", output_path.display());

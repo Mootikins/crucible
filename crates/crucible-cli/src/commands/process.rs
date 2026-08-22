@@ -136,7 +136,7 @@ pub async fn execute(
 
             // Enter watch mode if requested (watching only this file's parent)
             if watch {
-                run_watch_mode(&config, target_path, verbose).await?;
+                run_watch_mode(&config, target_path).await?;
             }
 
             return Ok(());
@@ -233,7 +233,7 @@ pub async fn execute(
 
     // Watch mode
     if watch {
-        run_watch_mode(&config, target_path, verbose).await?;
+        run_watch_mode(&config, target_path).await?;
     }
 
     Ok(())
@@ -247,7 +247,6 @@ pub async fn execute(
 async fn run_watch_mode(
     config: &CliConfig,
     target: &std::path::Path,
-    _verbose: bool,
 ) -> Result<()> {
     println!("\nWatching for changes (Press Ctrl+C to stop)...");
     info!("Starting watch mode");

@@ -17,9 +17,6 @@ pub use crucible_core::config::{
     HighlightingConfig,
 };
 
-// Legacy type aliases for backward compatibility
-pub type EmbeddingConfigSection = crucible_core::config::EmbeddingProviderConfig;
-
 /// Builder for programmatically constructing CliConfig (top-level CLI configuration)
 pub struct CliConfigBuilder {
     kiln_path: Option<std::path::PathBuf>,

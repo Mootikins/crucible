@@ -110,7 +110,7 @@ pub(super) async fn show(config: CliConfig, id: String, format: String) -> Resul
             println!("{json}");
         }
         "markdown" | "md" => {
-            let md = format_events_markdown(&events, false);
+            let md = format_events_markdown(&events);
             println!("{md}");
         }
         _ => {

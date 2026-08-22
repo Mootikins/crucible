@@ -75,7 +75,7 @@ async fn export_renders_the_fixtures_conversation() {
     let events = read_session_events(&sessions_path.join(id.as_str()))
         .await
         .unwrap();
-    let md = format_events_markdown(&events, false);
+    let md = format_events_markdown(&events);
 
     assert!(md.contains("## User"), "{md}");
     assert!(md.contains("how do I read a file"), "{md}");
