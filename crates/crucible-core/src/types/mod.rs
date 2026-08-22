@@ -9,9 +9,7 @@
 //! - ACP types: `acp` (SessionConfig, SessionId, ToolInvocation, etc.)
 //! - Parser types: `parser::types` (ParsedNote, Wikilink, Tag, etc.)
 //! - Database types: `types::database` (SearchResult, DocumentId, Record, etc.)
-//! - Note types: `note` (NoteNode, ViewportState)
-//! - Property types: `properties` (PropertyMap, AttributeValue)
-//! - Hashing types: `hashing` (FileHash, BlockHash, HashAlgorithm, etc.)
+//! - Hashing types: `types::hashing` (FileHash, BlockHash, HashAlgorithm, etc.)
 //!
 //! This module serves as a central re-export point for types that cross module boundaries.
 
@@ -35,12 +33,6 @@ pub use crate::parser::types::{
 
 // Re-export database domain types (canonical definitions in types::database)
 pub use self::database::{DocumentId, QueryResult, Record, RecordId, SearchResult};
-
-// Re-export note types
-pub use crate::note::{NoteNode, ViewportState};
-
-// Re-export property types
-pub use crate::properties::{AttributeValue, PropertyMap};
 
 // Re-export hashing types
 pub use crate::types::hashing::{

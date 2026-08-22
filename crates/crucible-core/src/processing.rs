@@ -1,8 +1,7 @@
-//! Pipeline Orchestrator Trait
+//! Note processing result
 //!
-//! Defines the abstraction for note processing pipelines following the Dependency
-//! Inversion Principle. This allows frontends to depend on the trait rather than
-//! concrete implementations, enabling testability and flexibility.
+//! `ProcessingResult` is the outcome the daemon pipeline reports for one note.
+
 /// Result of processing a note through the pipeline
 #[derive(Debug, Clone)]
 pub enum ProcessingResult {
@@ -88,46 +87,6 @@ impl ProcessingResult {
     }
 }
 
-/// Metrics collected during pipeline execution
-#[derive(Debug, Clone, Default)]
-pub struct PipelineMetrics {
-    /// Time spent in Phase 1 (quick filter)
-    pub phase1_duration_ms: u64,
-    /// Time spent in Phase 2 (parse)
-    pub phase2_duration_ms: u64,
-    /// Time spent in Phase 3 (Merkle diff)
-    pub phase3_duration_ms: u64,
-    /// Time spent in Phase 4 (enrichment)
-    pub phase4_duration_ms: u64,
-    /// Time spent in Phase 5 (storage)
-    pub phase5_duration_ms: u64,
-    /// Total pipeline execution time
-    pub total_duration_ms: u64,
-}
-
-impl PipelineMetrics {
-    /// Create a new metrics instance
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Get total processing time
-    pub fn total_duration(&self) -> u64 {
-        self.total_duration_ms
-    }
-
-    /// Get breakdown of time per phase
-    pub fn phase_breakdown(&self) -> Vec<(&'static str, u64)> {
-        vec![
-            ("Phase 1 (Quick Filter)", self.phase1_duration_ms),
-            ("Phase 2 (Parse)", self.phase2_duration_ms),
-            ("Phase 3 (Merkle Diff)", self.phase3_duration_ms),
-            ("Phase 4 (Enrichment)", self.phase4_duration_ms),
-            ("Phase 5 (Storage)", self.phase5_duration_ms),
-        ]
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -169,23 +128,5 @@ mod tests {
         assert!(!result.is_success());
         assert!(!result.is_skipped());
         assert_eq!(result.changed_blocks(), None);
-    }
-
-    #[test]
-    fn test_pipeline_metrics() {
-        let mut metrics = PipelineMetrics::new();
-        metrics.phase1_duration_ms = 10;
-        metrics.phase2_duration_ms = 50;
-        metrics.phase3_duration_ms = 30;
-        metrics.phase4_duration_ms = 200;
-        metrics.phase5_duration_ms = 100;
-        metrics.total_duration_ms = 390;
-
-        assert_eq!(metrics.total_duration(), 390);
-
-        let breakdown = metrics.phase_breakdown();
-        assert_eq!(breakdown.len(), 5);
-        assert_eq!(breakdown[0], ("Phase 1 (Quick Filter)", 10));
-        assert_eq!(breakdown[4], ("Phase 5 (Storage)", 100));
     }
 }

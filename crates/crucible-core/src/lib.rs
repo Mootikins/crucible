@@ -6,22 +6,18 @@ pub mod background;
 pub mod bundled_docs;
 pub mod canvas;
 pub mod config;
-pub mod content_category;
 pub mod discovery;
 pub mod enrichment;
 pub mod error_utils;
 pub mod events;
 pub mod fuzzy;
-pub mod hashing;
 pub mod http;
 pub mod interaction;
 pub mod kiln;
-pub mod note;
 pub mod parser;
 pub mod processing;
 pub mod project;
 pub mod prompts;
-pub mod properties;
 pub mod protocol;
 pub mod recording;
 pub mod runtime_roots;
@@ -41,7 +37,6 @@ pub use agent::{
     AgentCard, AgentCardFrontmatter, AgentCardLoader, AgentCardMatch, AgentCardMatcher,
     AgentCardQuery, AgentCardRegistry,
 };
-pub use content_category::{ContentCategory, ContentCategoryError};
 pub use discovery::{DiscoveryConfig, DiscoveryPaths};
 pub use error_utils::strip_tool_error_prefix;
 pub use kiln::{
@@ -54,13 +49,8 @@ pub use enrichment::{
     BlockEmbedding, CachedEmbedding, EmbeddingProvider, EnrichedNote, EnrichmentMetadata,
 };
 
-// Re-export processing handoff types, change detection, and pipeline trait
-pub use processing::{
-    ChangeDetectionError, ChangeDetectionResult, ChangeDetectionStore, FileState,
-    InMemoryChangeDetectionStore, JobConfiguration, JobStats, NoteProcessingJob,
-    NoteProcessingResult, PipelineMetrics, ProcessedNote, ProcessingContext, ProcessingMetadata,
-    ProcessingPriority, ProcessingResult, ProcessingSource,
-};
+// Re-export the pipeline result type
+pub use processing::ProcessingResult;
 
 // Re-export core traits (abstractions for Dependency Inversion)
 pub use traits::{ContextMessage, MarkdownParser, ToolExecutor};
@@ -99,8 +89,6 @@ pub use types::{
     ToolOutput,
 };
 
-// Re-export consumed database types from their canonical location in types::database
-pub use note::{NoteNode, ViewportState};
 pub use parser::{
     // Parser types (canonical definitions in crucible-core::parser::types)
     CodeBlock,
@@ -121,7 +109,6 @@ pub use parser::{
     Wikilink,
     // Note: MarkdownParser trait is exported from traits:: module above
 };
-pub use properties::{AttributeValue, PropertyMap};
 pub use types::database::{DocumentId, QueryResult, Record, RecordId, SearchResult};
 
 // Re-export interaction protocol types

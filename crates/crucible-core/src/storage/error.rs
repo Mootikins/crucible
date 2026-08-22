@@ -93,11 +93,6 @@ impl StorageError {
         Self::Deserialization(msg.into())
     }
 
-    /// Create a hash computation error
-    pub fn hash_computation<S: Into<String>>(msg: S) -> Self {
-        Self::HashComputation(msg.into())
-    }
-
     /// Check if the error is retryable
     pub fn is_retryable(&self) -> bool {
         matches!(

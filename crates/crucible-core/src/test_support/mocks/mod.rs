@@ -16,25 +16,7 @@
 //! - **Observability**: Call tracking for verifying test expectations
 //! - **Error Testing**: Support for simulating various error conditions
 //!
-//! # Examples
-//!
-//! ## Mock Storage
-//!
-//! ```rust
-//! use crucible_core::test_support::mocks::MockStorage;
-//!
-//! let storage = MockStorage::new();
-//!
-//! // Access statistics
-//! let stats = storage.stats();
-//! assert_eq!(stats.store_count, 0);
-//!
-//! // Configure error simulation
-//! storage.set_simulate_errors(true, "Storage full");
-//! ```
 
 mod event_emitter;
-mod storage;
 
 pub use event_emitter::{MockEmitterBehavior, MockEventEmitter, MockEventEmitterStats};
-pub use storage::{MockStorage, MockStorageStats};
