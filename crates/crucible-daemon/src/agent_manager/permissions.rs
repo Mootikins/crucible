@@ -13,38 +13,11 @@
 //! ownership, never by the reply's shape" readable rather than a comment.
 
 use crucible_core::interaction::{PermRequest, PermResponse};
-use tokio::sync::oneshot;
 use tracing::debug;
 
-use super::{AgentError, AgentManager, PendingPermission, PermissionId};
+use super::{AgentError, AgentManager, PermissionId};
 
 impl AgentManager {
-    #[allow(dead_code)] // permission system API, exercised by tests
-    pub fn await_permission(
-        &self,
-        session_id: &str,
-        request: PermRequest,
-    ) -> (PermissionId, oneshot::Receiver<PermResponse>) {
-        let permission_id = format!("perm-{}", uuid::Uuid::new_v4());
-        let (response_tx, response_rx) = oneshot::channel();
-
-        let pending = PendingPermission {
-            request,
-            response_tx,
-        };
-
-        self.slot(session_id)
-            .insert_permission(permission_id.clone(), pending);
-
-        debug!(
-            session_id = %session_id,
-            permission_id = %permission_id,
-            "Created pending permission request"
-        );
-
-        (permission_id, response_rx)
-    }
-
     /// Deliver a client's answer to whichever registry is holding its id.
     ///
     /// Routing is by OWNERSHIP, never by the reply's own shape. The two
@@ -103,23 +76,6 @@ impl AgentManager {
         );
 
         Ok(())
-    }
-
-    #[allow(dead_code)] // permission system API, exercised by tests
-    pub fn get_pending_permission(
-        &self,
-        session_id: &str,
-        permission_id: &str,
-    ) -> Option<PermRequest> {
-        self.existing_slot(session_id)
-            .and_then(|slot| slot.permission_request(permission_id))
-    }
-
-    #[allow(dead_code)] // permission system API, exercised by tests
-    pub fn list_pending_permissions(&self, session_id: &str) -> Vec<(PermissionId, PermRequest)> {
-        self.existing_slot(session_id)
-            .map(|slot| slot.list_permissions())
-            .unwrap_or_default()
     }
 
     /// All pending permission prompts across every session. The web Inbox

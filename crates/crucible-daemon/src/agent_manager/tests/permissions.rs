@@ -257,6 +257,26 @@ mod permission_channel_tests {
     use super::*;
     use crucible_core::interaction::{PermRequest, PermResponse};
     use test_case::test_case;
+    use tokio::sync::oneshot;
+
+    /// Park a prompt in the session's registry the way the tool gate does,
+    /// so the tests exercise the one production path.
+    pub(super) fn register_permission(
+        agent_manager: &AgentManager,
+        session_id: &str,
+        request: PermRequest,
+    ) -> (PermissionId, oneshot::Receiver<PermResponse>) {
+        let permission_id = format!("perm-{}", uuid::Uuid::new_v4());
+        let (response_tx, response_rx) = oneshot::channel();
+        agent_manager.slot(session_id).insert_permission(
+            permission_id.clone(),
+            PendingPermission {
+                request,
+                response_tx,
+            },
+        );
+        (permission_id, response_rx)
+    }
 
     #[derive(Clone, Copy)]
     enum RespondScenario {
@@ -278,14 +298,18 @@ mod permission_channel_tests {
         // NonexistentSession has no awaited permission; the other three await one.
         let awaited = match scenario {
             RespondScenario::NonexistentSession => None,
-            RespondScenario::Allow | RespondScenario::WrongPermissionId => Some(
-                agent_manager
-                    .await_permission("test-session", PermRequest::bash(["npm", "install"])),
-            ),
-            RespondScenario::Deny => Some(
-                agent_manager
-                    .await_permission("test-session", PermRequest::bash(["rm", "-rf", "/"])),
-            ),
+            RespondScenario::Allow | RespondScenario::WrongPermissionId => {
+                Some(register_permission(
+                    &agent_manager,
+                    "test-session",
+                    PermRequest::bash(["npm", "install"]),
+                ))
+            }
+            RespondScenario::Deny => Some(register_permission(
+                &agent_manager,
+                "test-session",
+                PermRequest::bash(["rm", "-rf", "/"]),
+            )),
         };
 
         let (session_id, id_to_use, response) = match scenario {
@@ -337,27 +361,6 @@ mod permission_channel_tests {
         }
     }
 
-    #[tokio::test]
-    async fn await_permission_creates_pending_request() {
-        let session_manager = temp_session_manager();
-        let agent_manager = create_test_agent_manager(session_manager);
-
-        let session_id = "test-session";
-        let request = PermRequest::bash(["npm", "install"]);
-
-        let (permission_id, _rx) = agent_manager.await_permission(session_id, request);
-        assert!(
-            permission_id.starts_with("perm-"),
-            "Permission ID should have perm- prefix"
-        );
-        assert!(
-            agent_manager
-                .get_pending_permission(session_id, &permission_id)
-                .is_some(),
-            "Pending permission should exist"
-        );
-    }
-
     /// Ending a session must unblock whoever is waiting on its prompts, not
     /// merely forget them.
     ///
@@ -373,8 +376,11 @@ mod permission_channel_tests {
         let agent_manager = create_test_agent_manager(session_manager);
 
         let session_id = "cleanup-unblocks-prompt";
-        let (_permission_id, rx) =
-            agent_manager.await_permission(session_id, PermRequest::bash(["npm", "install"]));
+        let (_permission_id, rx) = register_permission(
+            &agent_manager,
+            session_id,
+            PermRequest::bash(["npm", "install"]),
+        );
 
         agent_manager.cleanup_session(session_id);
 
@@ -392,14 +398,18 @@ mod permission_channel_tests {
         let session_id = "test-session";
         let request = PermRequest::bash(["npm", "install"]);
 
-        let (permission_id, rx) = agent_manager.await_permission(session_id, request);
+        let (permission_id, rx) = register_permission(&agent_manager, session_id, request);
 
         // Remove the pending permission without responding (simulates cleanup/drop)
         agent_manager.slot(session_id).drop_permissions();
 
         // Verify the permission was removed
-        let pending = agent_manager.get_pending_permission(session_id, &permission_id);
-        assert!(pending.is_none(), "Pending permission should be removed");
+        assert!(
+            !agent_manager
+                .slot(session_id)
+                .holds_permission(&permission_id),
+            "Pending permission should be removed"
+        );
 
         // The receiver should get an error when sender is dropped
         let result = rx.await;
@@ -420,12 +430,12 @@ mod permission_channel_tests {
         let request1 = PermRequest::bash(["npm", "install"]);
         let request2 = PermRequest::bash(["cargo", "build"]);
 
-        let (id1, _rx1) = agent_manager.await_permission(session1, request1);
-        let (id2, _rx2) = agent_manager.await_permission(session2, request2);
+        let (id1, _rx1) = register_permission(&agent_manager, session1, request1);
+        let (id2, _rx2) = register_permission(&agent_manager, session2, request2);
 
         // Each session should only see its own permissions
-        let pending1 = agent_manager.list_pending_permissions(session1);
-        let pending2 = agent_manager.list_pending_permissions(session2);
+        let pending1 = agent_manager.slot(session1).list_permissions();
+        let pending2 = agent_manager.slot(session2).list_permissions();
 
         assert_eq!(pending1.len(), 1, "Session 1 should have 1 permission");
         assert_eq!(pending2.len(), 1, "Session 2 should have 1 permission");
@@ -442,8 +452,8 @@ mod permission_channel_tests {
         // Cleanup session 1 should not affect session 2
         agent_manager.cleanup_session(session1);
 
-        let pending1_after = agent_manager.list_pending_permissions(session1);
-        let pending2_after = agent_manager.list_pending_permissions(session2);
+        let pending1_after = agent_manager.slot(session1).list_permissions();
+        let pending2_after = agent_manager.slot(session2).list_permissions();
 
         assert!(
             pending1_after.is_empty(),
@@ -456,59 +466,27 @@ mod permission_channel_tests {
         );
     }
 
-    #[derive(Clone, Copy)]
-    enum ListPendingScenario {
-        PopulatedSession,
-        UnknownSession,
-    }
-
-    #[test_case(ListPendingScenario::PopulatedSession; "list_pending_permissions_returns_all")]
-    #[test_case(ListPendingScenario::UnknownSession; "list_pending_permissions_empty_for_unknown_session")]
     #[tokio::test]
-    async fn list_pending_permissions_outcomes(scenario: ListPendingScenario) {
+    async fn a_slot_lists_every_prompt_it_holds() {
         let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
 
         let session_id = "test-session";
+        let request1 = PermRequest::bash(["npm", "install"]);
+        let request2 = PermRequest::write(["src", "main.rs"]);
+        let request3 = PermRequest::tool("delete", serde_json::json!({"path": "/tmp/file"}));
 
-        let expected_ids: Vec<String> = match scenario {
-            ListPendingScenario::PopulatedSession => {
-                let request1 = PermRequest::bash(["npm", "install"]);
-                let request2 = PermRequest::write(["src", "main.rs"]);
-                let request3 =
-                    PermRequest::tool("delete", serde_json::json!({"path": "/tmp/file"}));
+        let (id1, _rx1) = register_permission(&agent_manager, session_id, request1);
+        let (id2, _rx2) = register_permission(&agent_manager, session_id, request2);
+        let (id3, _rx3) = register_permission(&agent_manager, session_id, request3);
 
-                let (id1, _rx1) = agent_manager.await_permission(session_id, request1);
-                let (id2, _rx2) = agent_manager.await_permission(session_id, request2);
-                let (id3, _rx3) = agent_manager.await_permission(session_id, request3);
-
-                vec![id1, id2, id3]
-            }
-            ListPendingScenario::UnknownSession => vec![],
-        };
-
-        let pending = if matches!(scenario, ListPendingScenario::UnknownSession) {
-            agent_manager.list_pending_permissions("unknown-session")
-        } else {
-            agent_manager.list_pending_permissions(session_id)
-        };
-
-        assert_eq!(
-            pending.len(),
-            expected_ids.len(),
-            "pending count should match"
-        );
-        for expected in &expected_ids {
-            let ids: Vec<_> = pending.iter().map(|(id, _)| id.clone()).collect();
+        let pending = agent_manager.slot(session_id).list_permissions();
+        assert_eq!(pending.len(), 3, "pending count should match");
+        let ids: Vec<_> = pending.iter().map(|(id, _)| id.clone()).collect();
+        for expected in [id1, id2, id3] {
             assert!(
-                ids.contains(expected),
+                ids.contains(&expected),
                 "Should contain permission {expected}"
-            );
-        }
-        if matches!(scenario, ListPendingScenario::UnknownSession) {
-            assert!(
-                pending.is_empty(),
-                "Should return empty list for unknown session"
             );
         }
     }
@@ -518,9 +496,13 @@ mod permission_channel_tests {
         let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
 
-        let (id1, _rx1) =
-            agent_manager.await_permission("session-a", PermRequest::bash(["cargo", "test"]));
-        let (id2, _rx2) = agent_manager.await_permission("session-b", PermRequest::bash(["ls"]));
+        let (id1, _rx1) = register_permission(
+            &agent_manager,
+            "session-a",
+            PermRequest::bash(["cargo", "test"]),
+        );
+        let (id2, _rx2) =
+            register_permission(&agent_manager, "session-b", PermRequest::bash(["ls"]));
 
         let all = agent_manager.list_all_pending_permissions();
         assert_eq!(all.len(), 2, "Should aggregate both sessions");
@@ -850,6 +832,7 @@ mod session_permission_config_tests {
 /// The TUI dodged it only by convention (Esc maps to `PermResponse::deny()`,
 /// never `Cancelled`), so nothing in the suite noticed.
 mod reply_routing_tests {
+    use super::permission_channel_tests::register_permission;
     use super::*;
     use crucible_core::interaction::{InteractionResponse, PermRequest};
 
@@ -859,8 +842,11 @@ mod reply_routing_tests {
         let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
 
-        let (permission_id, response_rx) =
-            agent_manager.await_permission("test-session", PermRequest::bash(["rm", "-rf", "/"]));
+        let (permission_id, response_rx) = register_permission(
+            &agent_manager,
+            "test-session",
+            PermRequest::bash(["rm", "-rf", "/"]),
+        );
 
         agent_manager
             .deliver_client_reply(
@@ -887,7 +873,7 @@ mod reply_routing_tests {
         let agent_manager = create_test_agent_manager(session_manager);
 
         let (permission_id, response_rx) =
-            agent_manager.await_permission("test-session", PermRequest::bash(["ls"]));
+            register_permission(&agent_manager, "test-session", PermRequest::bash(["ls"]));
 
         agent_manager
             .deliver_client_reply(

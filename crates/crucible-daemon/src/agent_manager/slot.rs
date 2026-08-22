@@ -295,13 +295,6 @@ impl SessionSlot {
         self.lock_permissions().remove(id)
     }
 
-    /// What a pending prompt is asking, without consuming it.
-    pub(crate) fn permission_request(&self, id: &str) -> Option<PermRequest> {
-        self.lock_permissions()
-            .get(id)
-            .map(|pending| pending.request.clone())
-    }
-
     /// Every prompt this session is waiting on.
     pub(crate) fn list_permissions(&self) -> Vec<(PermissionId, PermRequest)> {
         self.lock_permissions()
