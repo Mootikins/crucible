@@ -51,9 +51,10 @@ export async function openSession(page: Page, sessionId: string): Promise<void> 
 /**
  * Add scratch tabs to the left edge panel for tab-strip DnD tests.
  *
- * The default left roster is Sessions + Search, so reorder/cross-zone specs
- * seed their own instead of leaning on whatever the shell happens to ship —
- * the roster changing is exactly what broke them before.
+ * The default left roster is Sessions alone — Search is seeded nowhere, and
+ * `defaultState.test.ts` pins that. Reorder/cross-zone specs seed their own
+ * tabs rather than lean on whatever the shell happens to ship: the roster
+ * changing is exactly what broke them before.
  */
 export async function seedLeftTabs(
   page: Page,
