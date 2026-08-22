@@ -28,6 +28,24 @@ describe('swapSidePanels', () => {
     expect(rightGroup()).toBe(before.right);
   });
 
+  // The focus ring is drawn where `focusedRegion` says, and the panes it
+  // named are on the other side now. Every other action that moves a pane
+  // between regions recomputes this; the swap must too, or no rail shows a
+  // ring at all after one.
+  it('carries the focused region across with its panes', () => {
+    setStore('focusedRegion', 'left');
+    windowActions.swapSidePanels();
+    expect(windowStore.focusedRegion).toBe('right');
+    windowActions.swapSidePanels();
+    expect(windowStore.focusedRegion).toBe('left');
+  });
+
+  it('leaves a focus that is not on either rail alone', () => {
+    setStore('focusedRegion', 'center');
+    windowActions.swapSidePanels();
+    expect(windowStore.focusedRegion).toBe('center');
+  });
+
   // Width travels with the CONTENTS: a file tree dragged out to 320px should
   // not be re-cramped into the other rail's width on every swap.
   it('carries each side’s width across with its panes', () => {

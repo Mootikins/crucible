@@ -102,6 +102,12 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
         left.width = right.width;
         right.layout = leftLayout;
         right.width = leftWidth;
+        // The focus ring is drawn where this says, and the panes it named
+        // just moved. Every other mover recomputes it from the tree
+        // (findEdgePanelForPane / ForGroup); here the answer is known, so
+        // flip it. A focus on the center or the bottom is untouched.
+        if (s.focusedRegion === 'left') s.focusedRegion = 'right';
+        else if (s.focusedRegion === 'right') s.focusedRegion = 'left';
       })
     );
   };
