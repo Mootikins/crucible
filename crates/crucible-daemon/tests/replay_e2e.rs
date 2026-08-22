@@ -73,7 +73,7 @@ async fn collect_replay_events(
             let event = SessionEventMessage {
                 msg_type: "replay_event".to_string(),
                 session_id: raw.session_id,
-                event: raw.event_type,
+                event: raw.event,
                 data: raw.data,
                 timestamp: None,
                 seq,

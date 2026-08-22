@@ -328,7 +328,7 @@ impl DaemonClient {
     ///
     /// // Events arrive via the channel
     /// while let Some(event) = event_rx.recv().await {
-    ///     println!("Event: {} - {}", event.session_id, event.event_type);
+    ///     println!("Event: {} - {}", event.session_id, event.event);
     /// }
     /// ```
     pub async fn connect_with_events() -> Result<(Self, mpsc::UnboundedReceiver<SessionEvent>)> {
@@ -415,24 +415,21 @@ impl DaemonClient {
     }
 
     fn dispatch_event(msg: &serde_json::Value, event_tx: &mpsc::UnboundedSender<SessionEvent>) {
-        let session_id = msg.get("session_id").and_then(|v| v.as_str()).unwrap_or("");
-        let event_type = msg.get("event").and_then(|v| v.as_str()).unwrap_or("");
+        // The daemon serializes the wire type itself, so a message that
+        // does not decode is not an event this client can use.
+        let event = match serde_json::from_value::<SessionEvent>(msg.clone()) {
+            Ok(event) => event,
+            Err(e) => {
+                warn!(error = %e, "Daemon event did not decode: {:?}", msg);
+                return;
+            }
+        };
 
         debug!(
-            session_id = %session_id,
-            event_type = %event_type,
+            session_id = %event.session_id,
+            event = %event.event,
             "Dispatching daemon event to channel"
         );
-
-        if session_id.is_empty() {
-            warn!("Daemon event missing session_id: {:?}", msg);
-        }
-
-        let event = SessionEvent {
-            session_id: session_id.to_string(),
-            event_type: event_type.to_string(),
-            data: msg.get("data").cloned().unwrap_or(serde_json::Value::Null),
-        };
 
         if event_tx.send(event).is_err() {
             debug!("Event receiver dropped, stopping event dispatch");

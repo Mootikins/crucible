@@ -41,7 +41,7 @@ impl FsEvent {
     /// event type that is not a filesystem change.
     pub fn from_daemon_event(ev: &SessionEvent) -> Option<Self> {
         let d = &ev.data;
-        match ev.event_type.as_str() {
+        match ev.event.as_str() {
             "file_changed" => Some(FsEvent::Changed {
                 path: d["path"].as_str()?.to_string(),
                 kind: d["kind"].as_str().unwrap_or("modified").to_string(),
@@ -63,11 +63,7 @@ mod tests {
     use super::*;
 
     fn event(event_type: &str, data: serde_json::Value) -> SessionEvent {
-        SessionEvent {
-            session_id: "system".to_string(),
-            event_type: event_type.to_string(),
-            data,
-        }
+        SessionEvent::new("system".to_string(), event_type.to_string(), data)
     }
 
     #[test]

@@ -340,11 +340,11 @@ async fn consumer_promotes_ended_error_in_both_modes() {
         });
 
         event_tx
-            .send(crucible_daemon::SessionEvent {
-                session_id: session_id.clone(),
-                event_type: "ended".to_string(),
-                data: json!({ "reason": "error: LLM timeout" }),
-            })
+            .send(crucible_daemon::SessionEvent::new(
+                session_id.clone(),
+                "ended".to_string(),
+                json!({ "reason": "error: LLM timeout" }),
+            ))
             .unwrap();
         drop(event_tx);
 

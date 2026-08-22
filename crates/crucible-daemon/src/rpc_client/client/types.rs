@@ -5,13 +5,11 @@
 //! than one of the split submodules (`agent`, `lua`, `session`,
 //! `storage`, `subscription`).
 
-/// Session event received from daemon
-#[derive(Debug, Clone)]
-pub struct SessionEvent {
-    pub session_id: String,
-    pub event_type: String,
-    pub data: serde_json::Value,
-}
+/// A session event that the daemon sent to this client.
+///
+/// This is the wire type itself. A client reads the wire type once; it
+/// does not keep a second copy with other field names.
+pub type SessionEvent = crucible_core::protocol::SessionEventMessage;
 
 /// Daemon capabilities returned by `daemon.capabilities` RPC
 #[derive(Debug, Clone, serde::Deserialize)]

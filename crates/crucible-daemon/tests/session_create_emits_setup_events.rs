@@ -131,9 +131,8 @@ async fn collect_setup_events(
         }
         match tokio::time::timeout(deadline - now, event_rx.recv()).await {
             Ok(Some(ev)) => {
-                if ev.session_id == session_id && setup_event_names.contains(ev.event_type.as_str())
-                {
-                    seen.insert(ev.event_type.clone());
+                if ev.session_id == session_id && setup_event_names.contains(ev.event.as_str()) {
+                    seen.insert(ev.event.clone());
                     events.push(ev);
                     if expected.iter().all(|name| seen.contains(*name)) {
                         break;
@@ -209,7 +208,7 @@ async fn session_create_emits_setup_events_for_internal_agent() {
     )
     .await;
 
-    let event_types: Vec<String> = events.iter().map(|e| e.event_type.clone()).collect();
+    let event_types: Vec<String> = events.iter().map(|e| e.event.clone()).collect();
     let event_set: HashSet<&str> = event_types.iter().map(|s| s.as_str()).collect();
 
     assert!(
@@ -325,7 +324,7 @@ async fn session_create_omits_llm_events_for_acp_agent() {
         )
         .await,
     );
-    let event_types: Vec<String> = events.iter().map(|e| e.event_type.clone()).collect();
+    let event_types: Vec<String> = events.iter().map(|e| e.event.clone()).collect();
     let event_set: HashSet<&str> = event_types.iter().map(|s| s.as_str()).collect();
 
     // Common events: still emitted.

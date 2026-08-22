@@ -5,25 +5,12 @@
 //! channel for the TUI event loop.
 
 use crucible_core::interaction::InteractionEvent;
-use crucible_core::protocol::session_events::{
-    EventDecodeError, SessionEventPayload, ToolResultBody, TurnPayload,
-};
+use crucible_core::protocol::session_events::{SessionEventPayload, ToolResultBody, TurnPayload};
 use crucible_core::traits::llm::TokenUsage;
 use crucible_core::turn::{StopReason, TurnEvent};
 use tokio::sync::mpsc;
 
 use crate::SessionEvent;
-
-/// Decode the wire pair this client-side `SessionEvent` carries.
-///
-/// `rpc_client`'s `SessionEvent` is a lossy three-field projection of
-/// `SessionEventMessage` (it drops `timestamp`, `seq` and the
-/// `event`/`replay_event` distinction), so `SessionEventMessage::payload` is not
-/// available here. Deleting that duplicate is a separate change; the decode is
-/// the same one either way.
-fn payload_of(event: &SessionEvent) -> Result<SessionEventPayload, EventDecodeError> {
-    SessionEventPayload::from_wire(&event.event_type, &event.data)
-}
 
 /// Background task that routes events from daemon to appropriate channels
 ///
@@ -56,8 +43,8 @@ pub(super) async fn event_router(
         // `interaction_requested` whose payload will not decode belongs on this
         // side channel with a warning, not forwarded to a consumer that cannot
         // use it.
-        if event.event_type == "interaction_requested" {
-            match payload_of(&event) {
+        if event.event == "interaction_requested" {
+            match event.payload() {
                 Ok(SessionEventPayload::Turn(TurnPayload::InteractionRequested {
                     request_id,
                     request,
@@ -144,7 +131,7 @@ pub fn strip_chat_error_prefix(inner: &str) -> &str {
 pub(super) fn session_event_to_turn_events(event: &SessionEvent) -> Vec<TurnEvent> {
     use crucible_core::turn::TurnError;
 
-    let turn = match payload_of(event) {
+    let turn = match event.payload() {
         Ok(SessionEventPayload::Turn(turn)) => turn,
         // Every other group is session state, not turn content.
         Ok(_) => return Vec::new(),
@@ -269,11 +256,7 @@ mod tests {
     use serde_json::json;
 
     fn event(event_type: &str, data: serde_json::Value) -> SessionEvent {
-        SessionEvent {
-            session_id: "test".to_string(),
-            event_type: event_type.to_string(),
-            data,
-        }
+        SessionEvent::new("test".to_string(), event_type.to_string(), data)
     }
 
     #[test]

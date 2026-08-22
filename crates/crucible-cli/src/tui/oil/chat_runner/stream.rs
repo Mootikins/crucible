@@ -218,7 +218,7 @@ async fn consume_session_events<F, E>(
         if !on_event(&event, &msg_tx) {
             return;
         }
-        for msg in stream.translate(&event.event_type, &event.data) {
+        for msg in stream.translate(&event.event, &event.data) {
             if msg_tx.send(msg).is_err() {
                 return;
             }
@@ -234,7 +234,7 @@ fn promote_ended_error(
     event: &crucible_daemon::SessionEvent,
     tx: &tokio::sync::mpsc::UnboundedSender<ChatAppMsg>,
 ) {
-    if event.event_type == "ended" {
+    if event.event == "ended" {
         if let Some(reason) = event.data.get("reason").and_then(|v| v.as_str()) {
             if let Some(err) = reason.strip_prefix("error: ") {
                 let _ = tx.send(ChatAppMsg::Error(err.to_string()));
@@ -267,7 +267,7 @@ pub(crate) async fn session_event_consumer(
         move |event| event.session_id == filter_id || event.session_id == WILDCARD_SESSION,
         |event, tx| {
             promote_ended_error(event, tx);
-            if event.event_type == "replay_complete" {
+            if event.event == "replay_complete" {
                 let _ = tx.send(ChatAppMsg::Status("Replay complete".to_string()));
                 return false;
             }

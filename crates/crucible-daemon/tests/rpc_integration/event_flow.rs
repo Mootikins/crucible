@@ -76,7 +76,7 @@ async fn test_event_streaming_with_background_reader() {
     let offending = tokio::time::timeout(Duration::from_millis(500), async {
         loop {
             match event_rx.recv().await {
-                Some(evt) if is_setup_event(&evt.event_type) => continue,
+                Some(evt) if is_setup_event(&evt.event) => continue,
                 other => return other,
             }
         }

@@ -70,11 +70,11 @@ async fn a_wildcard_addressed_event_is_not_filtered_out_of_a_session() {
     ));
 
     event_tx
-        .send(crucible_daemon::SessionEvent {
-            session_id: "*".to_string(),
-            event_type: "stream_gap".to_string(),
-            data: serde_json::json!({ "dropped": 7 }),
-        })
+        .send(crucible_daemon::SessionEvent::new(
+            "*".to_string(),
+            "stream_gap".to_string(),
+            serde_json::json!({ "dropped": 7 }),
+        ))
         .unwrap();
 
     // Awaited, not slept on: the consumer sends as soon as it translates. The
@@ -105,11 +105,11 @@ async fn another_sessions_events_are_still_filtered_out() {
 
     for session_id in ["someone-elses-session", "*"] {
         event_tx
-            .send(crucible_daemon::SessionEvent {
-                session_id: session_id.to_string(),
-                event_type: "stream_gap".to_string(),
-                data: serde_json::json!({ "dropped": 1 }),
-            })
+            .send(crucible_daemon::SessionEvent::new(
+                session_id.to_string(),
+                "stream_gap".to_string(),
+                serde_json::json!({ "dropped": 1 }),
+            ))
             .unwrap();
     }
 

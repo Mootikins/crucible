@@ -1325,11 +1325,11 @@ mod tests {
 
     /// Helper to create a test SessionEvent
     fn test_event(session_id: &str, event_type: &str) -> SessionEvent {
-        SessionEvent {
-            session_id: session_id.to_string(),
-            event_type: event_type.to_string(),
-            data: serde_json::json!({}),
-        }
+        SessionEvent::new(
+            session_id.to_string(),
+            event_type.to_string(),
+            serde_json::json!({}),
+        )
     }
 
     #[tokio::test]
@@ -1379,7 +1379,7 @@ mod tests {
         assert!(received.is_ok(), "Should receive event");
         let received_event = received.unwrap();
         assert_eq!(received_event.session_id, "session-1");
-        assert_eq!(received_event.event_type, "test_event");
+        assert_eq!(received_event.event, "test_event");
     }
 
     /// A wildcard-addressed event reaches every open stream, because it belongs
@@ -1395,16 +1395,16 @@ mod tests {
         let mut rx2 = broker.subscribe("session-2").await;
 
         broker
-            .dispatch(SessionEvent {
-                session_id: crucible_daemon::subscription::WILDCARD_SESSION.to_string(),
-                event_type: "stream_gap".to_string(),
-                data: serde_json::json!({ "dropped": 5 }),
-            })
+            .dispatch(SessionEvent::new(
+                crucible_daemon::subscription::WILDCARD_SESSION.to_string(),
+                "stream_gap".to_string(),
+                serde_json::json!({ "dropped": 5 }),
+            ))
             .await;
 
         for rx in [&mut rx1, &mut rx2] {
             let got = rx.recv().await.expect("every stream must see the marker");
-            assert_eq!(got.event_type, "stream_gap");
+            assert_eq!(got.event, "stream_gap");
             assert_eq!(got.data["dropped"], 5);
         }
     }
@@ -1450,8 +1450,8 @@ mod tests {
         assert!(received1.is_ok(), "Subscriber 1 should receive event");
         assert!(received2.is_ok(), "Subscriber 2 should receive event");
 
-        assert_eq!(received1.unwrap().event_type, "broadcast_test");
-        assert_eq!(received2.unwrap().event_type, "broadcast_test");
+        assert_eq!(received1.unwrap().event, "broadcast_test");
+        assert_eq!(received2.unwrap().event, "broadcast_test");
     }
 
     #[tokio::test]
@@ -1469,7 +1469,7 @@ mod tests {
         let received1 = rx1.recv().await.unwrap();
         let received2 = rx2.recv().await.unwrap();
 
-        assert_eq!(received1.event_type, "event_for_1");
-        assert_eq!(received2.event_type, "event_for_2");
+        assert_eq!(received1.event, "event_for_1");
+        assert_eq!(received2.event, "event_for_2");
     }
 }

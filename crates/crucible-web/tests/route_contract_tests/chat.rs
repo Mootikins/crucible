@@ -115,11 +115,11 @@ fn chat_event_message_complete_has_no_tool_calls_field() {
 
 #[test]
 fn chat_event_from_daemon_text_delta() {
-    let daemon_event = crucible_daemon::SessionEvent {
-        session_id: "s1".to_string(),
-        event_type: "text_delta".to_string(),
-        data: json!({"content": "chunk"}),
-    };
+    let daemon_event = crucible_daemon::SessionEvent::new(
+        "s1".to_string(),
+        "text_delta".to_string(),
+        json!({"content": "chunk"}),
+    );
     let event = ChatEvent::from_daemon_event(&daemon_event);
     assert_eq!(event.event_name(), "token");
 
@@ -131,11 +131,11 @@ fn chat_event_from_daemon_text_delta() {
 /// ever emitted and is gone.
 #[test]
 fn chat_event_from_daemon_thinking() {
-    let daemon_event = crucible_daemon::SessionEvent {
-        session_id: "s1".to_string(),
-        event_type: "thinking".to_string(),
-        data: json!({"content": "reasoning..."}),
-    };
+    let daemon_event = crucible_daemon::SessionEvent::new(
+        "s1".to_string(),
+        "thinking".to_string(),
+        json!({"content": "reasoning..."}),
+    );
     let event = ChatEvent::from_daemon_event(&daemon_event);
     assert_eq!(event.event_name(), "thinking");
 }
@@ -146,11 +146,11 @@ fn chat_event_from_daemon_thinking() {
 /// an SSE name the server could not send.
 #[test]
 fn chat_event_from_daemon_tool_call() {
-    let daemon_event = crucible_daemon::SessionEvent {
-        session_id: "s1".to_string(),
-        event_type: "tool_call".to_string(),
-        data: json!({"call_id": "tc-1", "tool": "search", "args": {"query": "test"}}),
-    };
+    let daemon_event = crucible_daemon::SessionEvent::new(
+        "s1".to_string(),
+        "tool_call".to_string(),
+        json!({"call_id": "tc-1", "tool": "search", "args": {"query": "test"}}),
+    );
     let event = ChatEvent::from_daemon_event(&daemon_event);
     assert_eq!(event.event_name(), "tool_call");
 
@@ -164,11 +164,11 @@ fn chat_event_from_daemon_tool_call() {
 /// — before, that variant was unreachable and the browser showed a stalled turn.
 #[test]
 fn chat_event_from_daemon_failed_turn_is_an_error() {
-    let daemon_event = crucible_daemon::SessionEvent {
-        session_id: "s1".to_string(),
-        event_type: "ended".to_string(),
-        data: json!({"reason": "error: Connection error: API down"}),
-    };
+    let daemon_event = crucible_daemon::SessionEvent::new(
+        "s1".to_string(),
+        "ended".to_string(),
+        json!({"reason": "error: Connection error: API down"}),
+    );
     let event = ChatEvent::from_daemon_event(&daemon_event);
     assert_eq!(event.event_name(), "error");
 
@@ -181,11 +181,11 @@ fn chat_event_from_daemon_failed_turn_is_an_error() {
 /// nothing ever emitted and is gone.
 #[test]
 fn chat_event_from_daemon_message_complete() {
-    let daemon_event = crucible_daemon::SessionEvent {
-        session_id: "s1".to_string(),
-        event_type: "message_complete".to_string(),
-        data: json!({"message_id": "msg-99", "full_response": "Final answer"}),
-    };
+    let daemon_event = crucible_daemon::SessionEvent::new(
+        "s1".to_string(),
+        "message_complete".to_string(),
+        json!({"message_id": "msg-99", "full_response": "Final answer"}),
+    );
     let event = ChatEvent::from_daemon_event(&daemon_event);
     assert_eq!(event.event_name(), "message_complete");
 
@@ -196,11 +196,11 @@ fn chat_event_from_daemon_message_complete() {
 
 #[test]
 fn chat_event_from_daemon_unknown_maps_to_session_event() {
-    let daemon_event = crucible_daemon::SessionEvent {
-        session_id: "s1".to_string(),
-        event_type: "custom_plugin_event".to_string(),
-        data: json!({"key": "value"}),
-    };
+    let daemon_event = crucible_daemon::SessionEvent::new(
+        "s1".to_string(),
+        "custom_plugin_event".to_string(),
+        json!({"key": "value"}),
+    );
     let event = ChatEvent::from_daemon_event(&daemon_event);
     assert_eq!(event.event_name(), "session_event");
 }

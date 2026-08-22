@@ -204,7 +204,7 @@ impl ChatEvent {
         };
 
         let passthrough = || ChatEvent::SessionEvent {
-            event_type: event.event_type.clone(),
+            event_type: event.event.clone(),
             data: event.data.clone(),
         };
 
@@ -213,7 +213,7 @@ impl ChatEvent {
         // as `TurnPayload::InteractionRequested`. `normalize_interaction` already
         // passes them through unchanged; keep accepting them, because dropping
         // one means no permission prompt renders at all.
-        if event.event_type == "interaction_requested" && event.data.get("kind").is_some() {
+        if event.event == "interaction_requested" && event.data.get("kind").is_some() {
             return ChatEvent::InteractionRequested {
                 id: event.data["id"]
                     .as_str()
@@ -224,7 +224,7 @@ impl ChatEvent {
             };
         }
 
-        let payload = match SessionEventPayload::from_wire(&event.event_type, &event.data) {
+        let payload = match SessionEventPayload::from_wire(&event.event, &event.data) {
             Ok(p) => p,
             Err(_) => return passthrough(),
         };
@@ -486,37 +486,21 @@ mod tests {
     use crucible_daemon::SessionEvent;
 
     fn make_event(event_type: &str, data: serde_json::Value) -> SessionEvent {
-        SessionEvent {
-            event_type: event_type.to_string(),
-            session_id: "test-session".to_string(),
-            data,
-        }
-    }
-
-    /// Convert a canonical daemon broadcast message into the client-side
-    /// `SessionEvent` exactly as the subscription path does (event →
-    /// event_type, data verbatim) — so these tests consume the REAL wire
-    /// shapes, not hand-invented ones.
-    fn from_wire(msg: SessionEventMessage) -> SessionEvent {
-        SessionEvent {
-            event_type: msg.event,
-            session_id: msg.session_id,
-            data: msg.data,
-        }
+        SessionEvent::new("test-session".to_string(), event_type.to_string(), data)
     }
 
     /// The daemon announces tool calls as `tool_call` with
-    /// `{call_id, tool, args}` (SessionEventMessage::tool_call). The web
+    /// `{call_id, tool, args}` SessionEventMessage::tool_call. The web
     /// mapping must read THOSE fields — reading `id`/`name`/`arguments`
     /// renders every live tool card blank.
     #[test]
     fn real_tool_call_event_maps_id_title_and_arguments() {
-        let event = from_wire(SessionEventMessage::tool_call(
+        let event = SessionEventMessage::tool_call(
             "s1",
             "call-1",
             "read_file",
             serde_json::json!({ "path": "foo.rs" }),
-        ));
+        );
 
         let chat_event = ChatEvent::from_daemon_event(&event);
         assert_eq!(chat_event.event_name(), "tool_call");
@@ -535,12 +519,12 @@ mod tests {
     }
 
     /// The daemon's thinking stream event is named `thinking`
-    /// (SessionEventMessage::thinking) — not `thinking_delta`. Falling
+    /// SessionEventMessage::thinking — not `thinking_delta`. Falling
     /// through to the generic passthrough silently drops thinking from
     /// the web UI.
     #[test]
     fn real_thinking_event_maps_to_thinking() {
-        let event = from_wire(SessionEventMessage::thinking("s1", "pondering…"));
+        let event = SessionEventMessage::thinking("s1", "pondering…");
 
         let chat_event = ChatEvent::from_daemon_event(&event);
         assert_eq!(chat_event.event_name(), "thinking");
@@ -552,7 +536,7 @@ mod tests {
 
     #[test]
     fn real_text_delta_event_maps_to_token() {
-        let event = from_wire(SessionEventMessage::text_delta("s1", "hel"));
+        let event = SessionEventMessage::text_delta("s1", "hel");
 
         let chat_event = ChatEvent::from_daemon_event(&event);
         assert_eq!(chat_event.event_name(), "token");
@@ -571,12 +555,8 @@ mod tests {
             cache_read_tokens: None,
             cache_creation_tokens: None,
         };
-        let event = from_wire(SessionEventMessage::message_complete(
-            "s1",
-            "msg-1",
-            "final answer",
-            Some(&usage),
-        ));
+        let event =
+            SessionEventMessage::message_complete("s1", "msg-1", "final answer", Some(&usage));
 
         let chat_event = ChatEvent::from_daemon_event(&event);
         assert_eq!(chat_event.event_name(), "message_complete");
@@ -600,18 +580,13 @@ mod tests {
     }
 
     /// The daemon emits `segment_complete` at each text→tool boundary
-    /// (SessionEventMessage::segment_complete). The web mapping must carry
+    /// SessionEventMessage::segment_complete. The web mapping must carry
     /// message_id/index/content through under a dedicated SSE event name so
     /// the frontend can build a canonical segment bubble — falling through to
     /// the generic `session_event` passthrough would strand it.
     #[test]
     fn real_segment_complete_event_maps_fields_and_name() {
-        let event = from_wire(SessionEventMessage::segment_complete(
-            "s1",
-            "msg-7",
-            0,
-            "Let me look that up.",
-        ));
+        let event = SessionEventMessage::segment_complete("s1", "msg-7", 0, "Let me look that up.");
 
         let chat_event = ChatEvent::from_daemon_event(&event);
         assert_eq!(chat_event.event_name(), "segment_complete");
@@ -629,8 +604,8 @@ mod tests {
         }
     }
 
-    /// Real tool results are arbitrary JSON (SessionEventMessage::tool_result
-    /// takes a Value); non-string results must be stringified, not dropped.
+    /// Real tool results are arbitrary JSON SessionEventMessage::tool_result
+    /// takes a Value; non-string results must be stringified, not dropped.
     /// A tool that FAILED must reach the browser as an error.
     ///
     /// The daemon writes a failure as `{"error": …}` in the same `data.result`
@@ -643,12 +618,12 @@ mod tests {
     /// about whether the tool worked.
     #[test]
     fn a_failed_tool_reaches_the_browser_as_an_error() {
-        let event = from_wire(SessionEventMessage::tool_result(
+        let event = SessionEventMessage::tool_result(
             "s1",
             "call-1",
             "read_file",
             serde_json::json!({ "error": "No such file (os error 2)" }),
-        ));
+        );
 
         match ChatEvent::from_daemon_event(&event) {
             ChatEvent::ToolResultError { id, error } => {
@@ -667,12 +642,12 @@ mod tests {
     /// did not start double-wrapping the success case.
     #[test]
     fn a_successful_tool_result_is_unwrapped_from_its_envelope() {
-        let event = from_wire(SessionEventMessage::tool_result(
+        let event = SessionEventMessage::tool_result(
             "s1",
             "call-2",
             "read_file",
             serde_json::json!({ "result": "file contents" }),
-        ));
+        );
 
         match ChatEvent::from_daemon_event(&event) {
             ChatEvent::ToolResult { id, result, .. } => {
@@ -685,12 +660,12 @@ mod tests {
 
     #[test]
     fn real_tool_result_with_object_payload_is_stringified() {
-        let event = from_wire(SessionEventMessage::tool_result(
+        let event = SessionEventMessage::tool_result(
             "s1",
             "call-1",
             "search",
             serde_json::json!({ "matches": 3 }),
-        ));
+        );
 
         match ChatEvent::from_daemon_event(&event) {
             ChatEvent::ToolResult { id, result, .. } => {
@@ -783,8 +758,8 @@ mod tests {
     }
 
     /// The daemon wraps interactions as `{request_id, request: {kind,
-    /// action: {type, tokens}}}` (SessionEventMessage::interaction_requested
-    /// plus tagged PermAction). The frontend renders the FLAT shape `{kind, id,
+    /// action: {type, tokens}}}` SessionEventMessage::interaction_requested
+    /// plus tagged PermAction. The frontend renders the FLAT shape `{kind, id,
     /// action_type, tokens}` — forwarding the nested wire shape means no
     /// permission prompt ever renders in the browser.
     #[test]
@@ -792,9 +767,7 @@ mod tests {
         use crucible_core::interaction::{InteractionRequest, PermRequest};
 
         let request = InteractionRequest::Permission(PermRequest::bash(["cargo", "test"]));
-        let event = from_wire(SessionEventMessage::interaction_requested(
-            "s1", "perm-1", &request,
-        ));
+        let event = SessionEventMessage::interaction_requested("s1", "perm-1", &request);
 
         let chat_event = ChatEvent::from_daemon_event(&event);
         match chat_event {
@@ -817,9 +790,7 @@ mod tests {
             "web_search",
             serde_json::json!({ "query": "weighted aging" }),
         ));
-        let event = from_wire(SessionEventMessage::interaction_requested(
-            "s1", "perm-2", &request,
-        ));
+        let event = SessionEventMessage::interaction_requested("s1", "perm-2", &request);
 
         match ChatEvent::from_daemon_event(&event) {
             ChatEvent::InteractionRequested { request, .. } => {
@@ -836,9 +807,7 @@ mod tests {
         use crucible_core::interaction::{InteractionRequest, PermRequest};
 
         let request = InteractionRequest::Permission(PermRequest::write(["src", "main.rs"]));
-        let event = from_wire(SessionEventMessage::interaction_requested(
-            "s1", "perm-3", &request,
-        ));
+        let event = SessionEventMessage::interaction_requested("s1", "perm-3", &request);
 
         match ChatEvent::from_daemon_event(&event) {
             ChatEvent::InteractionRequested { request, .. } => {
@@ -857,9 +826,7 @@ mod tests {
 
         let ask = AskRequest::new("Pin tokio at 1.43?");
         let request = InteractionRequest::Ask(ask);
-        let event = from_wire(SessionEventMessage::interaction_requested(
-            "s1", "ask-1", &request,
-        ));
+        let event = SessionEventMessage::interaction_requested("s1", "ask-1", &request);
 
         match ChatEvent::from_daemon_event(&event) {
             ChatEvent::InteractionRequested { id, request } => {
@@ -983,10 +950,7 @@ mod tests {
     /// so a browser user saw a stalled turn where the TUI showed a message.
     #[test]
     fn an_ended_turn_that_failed_becomes_an_error_event() {
-        let event = from_wire(SessionEventMessage::ended(
-            "s1",
-            "error: Communication error: LLM timeout",
-        ));
+        let event = SessionEventMessage::ended("s1", "error: Communication error: LLM timeout");
         match ChatEvent::from_daemon_event(&event) {
             ChatEvent::Error { code, message } => {
                 assert_eq!(code, "turn_failed");
@@ -1001,7 +965,7 @@ mod tests {
     /// envelope through the passthrough.
     #[test]
     fn a_clean_ended_turn_stays_a_passthrough() {
-        let event = from_wire(SessionEventMessage::ended("s1", "complete"));
+        let event = SessionEventMessage::ended("s1", "complete");
         match ChatEvent::from_daemon_event(&event) {
             ChatEvent::SessionEvent { event_type, .. } => assert_eq!(event_type, "ended"),
             other => panic!("expected passthrough, got {other:?}"),

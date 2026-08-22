@@ -43,7 +43,7 @@ pub enum TurnStep {
 /// `crucible_daemon::rpc_client::agent::convert` but targets ACP wire types
 /// instead of `TurnEvent`.
 pub fn classify_event(event: &SessionEvent) -> TurnStep {
-    match event.event_type.as_str() {
+    match event.event.as_str() {
         "text_delta" => text(event)
             .map(|c| update(SessionUpdate::AgentMessageChunk(chunk(c))))
             .unwrap_or(TurnStep::Ignore),
@@ -291,11 +291,7 @@ mod tests {
     use serde_json::json;
 
     fn event(event_type: &str, data: serde_json::Value) -> SessionEvent {
-        SessionEvent {
-            session_id: "s1".into(),
-            event_type: event_type.into(),
-            data,
-        }
+        SessionEvent::new("s1", event_type, data)
     }
 
     #[test]

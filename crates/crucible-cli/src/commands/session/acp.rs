@@ -116,7 +116,7 @@ fn print_event(event: &crucible_daemon::rpc_client::SessionEvent, raw: bool) -> 
             "{}",
             serde_json::json!({
                 "session_id": event.session_id,
-                "event_type": event.event_type,
+                "event_type": event.event,
                 "data": event.data,
             })
         );
@@ -124,7 +124,7 @@ fn print_event(event: &crucible_daemon::rpc_client::SessionEvent, raw: bool) -> 
     }
 
     let field = |key: &str| event.data.get(key).and_then(|v| v.as_str());
-    match event.event_type.as_str() {
+    match event.event.as_str() {
         "text_delta" => {
             if let Some(content) = field("content") {
                 print!("{}", content);
@@ -477,7 +477,7 @@ pub(super) mod rpc {
                     }
 
                     if !print_event(&event, raw) {
-                        match event.event_type.as_str() {
+                        match event.event.as_str() {
                             "ended" => {
                                 let reason = event
                                     .data
@@ -492,7 +492,7 @@ pub(super) mod rpc {
                         }
                     }
 
-                    if event.event_type == "message_complete" || event.event_type == "ended" {
+                    if event.event == "message_complete" || event.event == "ended" {
                         break;
                     }
                 }
@@ -589,7 +589,7 @@ pub(super) mod rpc {
                     println!(
                         "[{}] {} {}",
                         event.session_id,
-                        event.event_type,
+                        event.event,
                         serde_json::to_string(&event.data)?
                     );
                 }
@@ -638,7 +638,7 @@ pub(super) mod rpc {
                         continue;
                     }
 
-                    if event.event_type == "replay_complete" {
+                    if event.event == "replay_complete" {
                         if !raw {
                             eprintln!("[replay complete]");
                         }
@@ -646,7 +646,7 @@ pub(super) mod rpc {
                     }
 
                     if !print_event(&event, raw) {
-                        match event.event_type.as_str() {
+                        match event.event.as_str() {
                             "ended" => {
                                 eprintln!("[ended]");
                                 break;

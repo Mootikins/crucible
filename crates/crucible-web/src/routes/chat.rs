@@ -79,11 +79,7 @@ async fn event_stream(
                         },
                     )
                     .to_wire();
-                crucible_daemon::SessionEvent {
-                    session_id: session_id.clone(),
-                    event_type,
-                    data,
-                }
+                crucible_daemon::SessionEvent::new(session_id.clone(), event_type, data)
             }
         })
         .map(|event| {

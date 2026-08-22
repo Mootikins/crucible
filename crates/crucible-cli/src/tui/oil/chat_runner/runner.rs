@@ -137,13 +137,9 @@ impl OilChatRunner {
                 chrono::Utc::now().format("%Y%m%d-%H%M%S-%f")
             );
 
-            // Local driver pumps RecordedEvents out as SessionEventMessages.
-            // An adapter converts them into daemon SessionEvents so we can
-            // feed the unified session_event_consumer (Task 2.5).
-            let (msg_tx_driver, mut msg_rx_driver) = tokio::sync::mpsc::unbounded_channel::<
-                crucible_core::protocol::SessionEventMessage,
-            >();
-            let (event_tx_adapter, event_rx_adapter) =
+            // The local driver sends the wire type. The consumer reads the
+            // same type, so no adapter sits between them.
+            let (event_tx_driver, event_rx_driver) =
                 tokio::sync::mpsc::unbounded_channel::<crucible_daemon::SessionEvent>();
 
             let driver_session_id = replay_session_id.clone();
@@ -153,25 +149,9 @@ impl OilChatRunner {
                     events,
                     driver_speed,
                     driver_session_id,
-                    msg_tx_driver,
+                    event_tx_driver,
                 )
                 .await;
-            }));
-
-            // Adapter: SessionEventMessage → SessionEvent. The consumer only
-            // reads session_id/event_type/data, so a straight projection is
-            // enough; timestamp/seq are informational.
-            background_tasks.push(tokio::spawn(async move {
-                while let Some(msg) = msg_rx_driver.recv().await {
-                    let event = crucible_daemon::SessionEvent {
-                        session_id: msg.session_id,
-                        event_type: msg.event,
-                        data: msg.data,
-                    };
-                    if event_tx_adapter.send(event).is_err() {
-                        return;
-                    }
-                }
             }));
 
             self.is_replay = true;
@@ -182,7 +162,7 @@ impl OilChatRunner {
             let msg_tx_clone = msg_tx.clone();
             background_tasks.push(tokio::spawn(session_event_consumer(
                 replay_session_id.clone(),
-                event_rx_adapter,
+                event_rx_driver,
                 msg_tx_clone,
                 None,
             )));

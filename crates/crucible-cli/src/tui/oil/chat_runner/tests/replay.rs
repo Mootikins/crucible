@@ -17,15 +17,15 @@ async fn replay_consumer_handles_delegation_spawned() {
     });
 
     event_tx
-        .send(crucible_daemon::SessionEvent {
-            session_id: replay_session_id.clone(),
-            event_type: "delegation_spawned".to_string(),
-            data: json!({
+        .send(crucible_daemon::SessionEvent::new(
+            replay_session_id.clone(),
+            "delegation_spawned".to_string(),
+            json!({
                 "delegation_id": "d1",
                 "prompt": "test prompt",
                 "target_agent": "opencode"
             }),
-        })
+        ))
         .unwrap();
 
     let msg = timeout(Duration::from_secs(1), msg_rx.recv())
@@ -47,11 +47,11 @@ async fn replay_consumer_handles_delegation_spawned() {
     }
 
     event_tx
-        .send(crucible_daemon::SessionEvent {
-            session_id: replay_session_id,
-            event_type: "replay_complete".to_string(),
-            data: json!({}),
-        })
+        .send(crucible_daemon::SessionEvent::new(
+            replay_session_id,
+            "replay_complete".to_string(),
+            json!({}),
+        ))
         .unwrap();
     drop(event_tx);
 
@@ -77,14 +77,14 @@ async fn replay_consumer_handles_delegation_completed() {
     });
 
     event_tx
-        .send(crucible_daemon::SessionEvent {
-            session_id: replay_session_id.clone(),
-            event_type: "delegation_completed".to_string(),
-            data: json!({
+        .send(crucible_daemon::SessionEvent::new(
+            replay_session_id.clone(),
+            "delegation_completed".to_string(),
+            json!({
                 "delegation_id": "d1",
                 "result_summary": "test summary"
             }),
-        })
+        ))
         .unwrap();
 
     let msg = timeout(Duration::from_secs(1), msg_rx.recv())
@@ -101,11 +101,11 @@ async fn replay_consumer_handles_delegation_completed() {
     }
 
     event_tx
-        .send(crucible_daemon::SessionEvent {
-            session_id: replay_session_id,
-            event_type: "replay_complete".to_string(),
-            data: json!({}),
-        })
+        .send(crucible_daemon::SessionEvent::new(
+            replay_session_id,
+            "replay_complete".to_string(),
+            json!({}),
+        ))
         .unwrap();
     drop(event_tx);
 
@@ -131,14 +131,14 @@ async fn replay_consumer_handles_delegation_failed() {
     });
 
     event_tx
-        .send(crucible_daemon::SessionEvent {
-            session_id: replay_session_id.clone(),
-            event_type: "delegation_failed".to_string(),
-            data: json!({
+        .send(crucible_daemon::SessionEvent::new(
+            replay_session_id.clone(),
+            "delegation_failed".to_string(),
+            json!({
                 "delegation_id": "d1",
                 "error": "test failure"
             }),
-        })
+        ))
         .unwrap();
 
     let msg = timeout(Duration::from_secs(1), msg_rx.recv())
@@ -155,11 +155,11 @@ async fn replay_consumer_handles_delegation_failed() {
     }
 
     event_tx
-        .send(crucible_daemon::SessionEvent {
-            session_id: replay_session_id,
-            event_type: "replay_complete".to_string(),
-            data: json!({}),
-        })
+        .send(crucible_daemon::SessionEvent::new(
+            replay_session_id,
+            "replay_complete".to_string(),
+            json!({}),
+        ))
         .unwrap();
     drop(event_tx);
 
