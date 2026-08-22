@@ -6,11 +6,13 @@
 use crate::agent_manager::AgentManager;
 use crate::protocol::SessionEventMessage;
 use crate::rpc::RpcContext;
+use crate::rpc_client::ReviewCommentRequest;
 use crate::session_manager::SessionManager;
 use crucible_core::session::{CommentAuthor, HunkId, LineRange, ReviewState};
+use crucible_core::traits::context_ops::Range;
 use crucible_lua::{DaemonSessionApi, ResponsePart};
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -679,7 +681,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
 
     fn remove_messages(&self, session_id: String, range: serde_json::Value) -> BoxFut<usize> {
         bridge_async!(self.agent_manager, |am| async move {
-            let parsed = parse_range(&range)?;
+            let parsed: Range = serde_json::from_value(range).map_err(|e| e.to_string())?;
             am.remove_messages(&session_id, parsed)
                 .await
                 .map_err(|e| e.to_string())
@@ -808,7 +810,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
         let session_manager = Arc::clone(&self.session_manager);
         let event_tx = self.event_tx.clone();
         Box::pin(async move {
-            let spec = CommentSpec::parse(&spec)?;
+            let (spec, author) = parse_comment_spec(session_id.clone(), spec)?;
             crate::server::session::review::ensure_loaded(
                 &agent_manager,
                 &session_manager,
@@ -819,11 +821,14 @@ impl DaemonSessionApi for DaemonSessionBridge {
                 &agent_manager,
                 &event_tx,
                 &session_id,
-                spec.root.as_deref(),
-                &spec.path,
-                spec.line_range,
+                spec.root.as_deref().map(Path::new),
+                Path::new(&spec.path),
+                LineRange::new(
+                    spec.line_start,
+                    spec.line_end.unwrap_or(spec.line_start + 1),
+                ),
                 &spec.body,
-                spec.author,
+                author,
             )
             .await
             .map_err(|e| e.to_string())?;
@@ -854,108 +859,26 @@ impl DaemonSessionApi for DaemonSessionBridge {
     }
 }
 
-/// A `cru.sessions.review_comment` spec, validated once so the Lua binding and
-/// the RPC handler reject the same inputs for the same reasons.
-struct CommentSpec {
-    root: Option<PathBuf>,
-    path: PathBuf,
-    line_range: LineRange,
-    body: String,
-    author: CommentAuthor,
-}
-
-impl CommentSpec {
-    fn parse(spec: &serde_json::Value) -> Result<Self, String> {
-        let obj = spec
-            .as_object()
-            .ok_or_else(|| "comment spec must be a table".to_string())?;
-        let path = obj
-            .get("path")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "comment spec requires 'path'".to_string())?;
-        let body = obj
-            .get("body")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| "comment spec requires 'body'".to_string())?;
-        let line_start = obj
-            .get("line_start")
-            .and_then(|v| v.as_u64())
-            .ok_or_else(|| "comment spec requires 'line_start'".to_string())?
-            as u32;
-        // Half-open: a spec naming only a start line means that one line.
-        let line_end = obj
-            .get("line_end")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as u32)
-            .unwrap_or(line_start + 1);
-        // An agent commenting through a plugin tool is the §6 case, so
-        // `author` defaults to `agent` here — the RPC handler, whose caller is
-        // a human at a panel, defaults the other way.
-        let author = match obj
-            .get("author")
-            .and_then(|v| v.as_str())
-            .unwrap_or("agent")
-        {
-            "agent" => CommentAuthor::Agent,
-            "human" => CommentAuthor::Human,
-            other => return Err(format!("unknown comment author: {other}")),
-        };
-
-        Ok(Self {
-            root: obj.get("root").and_then(|v| v.as_str()).map(PathBuf::from),
-            path: PathBuf::from(path),
-            line_range: LineRange::new(line_start, line_end),
-            body: body.to_string(),
-            author,
-        })
-    }
-}
-
-/// Decode a JSON range descriptor into a [`Range`] value.
+/// Read a `cru.sessions.review_comment` spec as the wire request the RPC
+/// handler reads, so the two entry points share one set of field names.
 ///
-/// Accepted shapes:
-/// * `{ "type": "all" }`
-/// * `{ "type": "last" | "first", "n": N }`
-/// * `{ "type": "indices", "start": S, "end": E }` (half-open `[S, E)`)
-fn parse_range(v: &serde_json::Value) -> Result<crucible_core::traits::context_ops::Range, String> {
-    use crucible_core::traits::context_ops::Range;
-    let obj = v
-        .as_object()
-        .ok_or_else(|| "range must be an object".to_string())?;
-    let ty = obj.get("type").and_then(|x| x.as_str()).unwrap_or("");
-    match ty {
-        "all" => Ok(Range::All),
-        "last" => {
-            let n = obj
-                .get("n")
-                .and_then(|x| x.as_u64())
-                .ok_or_else(|| "range.n required for type='last'".to_string())?
-                as usize;
-            Ok(Range::Last(n))
-        }
-        "first" => {
-            let n = obj
-                .get("n")
-                .and_then(|x| x.as_u64())
-                .ok_or_else(|| "range.n required for type='first'".to_string())?
-                as usize;
-            Ok(Range::First(n))
-        }
-        "indices" => {
-            let start = obj
-                .get("start")
-                .and_then(|x| x.as_u64())
-                .ok_or_else(|| "range.start required for type='indices'".to_string())?
-                as usize;
-            let end = obj
-                .get("end")
-                .and_then(|x| x.as_u64())
-                .ok_or_else(|| "range.end required for type='indices'".to_string())?
-                as usize;
-            Ok(Range::Indices(start..end))
-        }
-        other => Err(format!("unknown range type '{other}'")),
-    }
+/// The Lua caller passes `session_id` as its own argument, so this merges
+/// it into the spec. An agent that comments through a plugin tool is the
+/// §6 case, so `author` defaults to `agent` here. The RPC handler, whose
+/// caller is a person at a panel, defaults the other way.
+fn parse_comment_spec(
+    session_id: String,
+    mut spec: serde_json::Value,
+) -> Result<(ReviewCommentRequest, CommentAuthor), String> {
+    let obj = spec
+        .as_object_mut()
+        .ok_or_else(|| "comment spec must be a table".to_string())?;
+    obj.insert("session_id".into(), serde_json::Value::String(session_id));
+    let req: ReviewCommentRequest = serde_json::from_value(spec).map_err(|e| e.to_string())?;
+    let author_str = req.author.as_deref().unwrap_or("agent");
+    let author = serde_json::from_value(serde_json::Value::String(author_str.to_owned()))
+        .map_err(|_| format!("unknown comment author: {author_str}"))?;
+    Ok((req, author))
 }
 
 fn truncate_json_preview(val: Option<&serde_json::Value>, max_len: usize) -> String {

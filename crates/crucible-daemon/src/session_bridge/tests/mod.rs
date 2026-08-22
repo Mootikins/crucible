@@ -10,6 +10,7 @@ mod lifecycle;
 use crucible_core::config::{BackendType, LlmConfig};
 use crucible_core::session::{OutputValidation, SessionAgent, SessionType};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::time::Duration;
 use tempfile::TempDir;
 
@@ -337,47 +338,6 @@ fn bridge_managers_are_the_contexts_own() {
     assert!(Arc::ptr_eq(&bridge.ctx, &ctx));
 }
 
-#[test]
-fn parse_range_accepts_known_types() {
-    use crucible_core::traits::context_ops::Range;
-    assert!(matches!(
-        parse_range(&serde_json::json!({"type": "all"})).unwrap(),
-        Range::All
-    ));
-    assert!(matches!(
-        parse_range(&serde_json::json!({"type": "last", "n": 3})).unwrap(),
-        Range::Last(3)
-    ));
-    assert!(matches!(
-        parse_range(&serde_json::json!({"type": "first", "n": 2})).unwrap(),
-        Range::First(2)
-    ));
-    match parse_range(&serde_json::json!({"type": "indices", "start": 1, "end": 4})).unwrap() {
-        Range::Indices(r) => assert_eq!(r, 1..4),
-        _ => panic!("expected Indices"),
-    }
-}
-
-#[test]
-fn parse_range_rejects_unknown_type() {
-    let err = parse_range(&serde_json::json!({"type": "bogus"})).unwrap_err();
-    assert!(err.contains("unknown range type"), "got: {err}");
-}
-
-#[test]
-fn parse_range_requires_n_for_last_and_first() {
-    let err = parse_range(&serde_json::json!({"type": "last"})).unwrap_err();
-    assert!(err.contains("range.n required"), "got: {err}");
-    let err = parse_range(&serde_json::json!({"type": "first"})).unwrap_err();
-    assert!(err.contains("range.n required"), "got: {err}");
-}
-
-#[test]
-fn parse_range_requires_start_end_for_indices() {
-    let err = parse_range(&serde_json::json!({"type": "indices", "start": 0})).unwrap_err();
-    assert!(err.contains("range.end required"), "got: {err}");
-}
-
 #[tokio::test]
 async fn context_usage_returns_expected_shape() {
     let tmp = TempDir::new().unwrap();
@@ -696,5 +656,5 @@ async fn remove_messages_invalid_range_type_errors() {
         .remove_messages(session.id.to_string(), serde_json::json!({"type": "bogus"}))
         .await
         .unwrap_err();
-    assert!(err.contains("unknown range type"), "got: {err}");
+    assert!(err.contains("unknown variant `bogus`"), "got: {err}");
 }

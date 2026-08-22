@@ -71,3 +71,51 @@ fn test_estimate_tokens_chars_div_four_ceil() {
     assert_eq!(estimate_tokens("12345678"), 2);
     assert_eq!(estimate_tokens("123456789"), 3); // ceil(9/4) = 3
 }
+
+#[test]
+fn range_deserializes_each_tagged_shape() {
+    let parse = |v: serde_json::Value| serde_json::from_value::<Range>(v);
+    assert!(matches!(
+        parse(serde_json::json!({"type": "all"})).unwrap(),
+        Range::All
+    ));
+    assert!(matches!(
+        parse(serde_json::json!({"type": "last", "n": 3})).unwrap(),
+        Range::Last(3)
+    ));
+    assert!(matches!(
+        parse(serde_json::json!({"type": "first", "n": 2})).unwrap(),
+        Range::First(2)
+    ));
+    match parse(serde_json::json!({"type": "indices", "start": 1, "end": 4})).unwrap() {
+        Range::Indices(r) => assert_eq!(r, 1..4),
+        _ => panic!("expected Indices"),
+    }
+}
+
+#[test]
+fn range_rejects_unknown_type() {
+    let err = serde_json::from_value::<Range>(serde_json::json!({"type": "bogus"})).unwrap_err();
+    assert!(
+        err.to_string().contains("unknown variant `bogus`"),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn range_requires_n_for_last_and_first() {
+    for ty in ["last", "first"] {
+        let err = serde_json::from_value::<Range>(serde_json::json!({"type": ty})).unwrap_err();
+        assert!(err.to_string().contains("missing field `n`"), "got: {err}");
+    }
+}
+
+#[test]
+fn range_requires_start_and_end_for_indices() {
+    let err = serde_json::from_value::<Range>(serde_json::json!({"type": "indices", "start": 0}))
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("missing field `end`"),
+        "got: {err}"
+    );
+}
