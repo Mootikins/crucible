@@ -313,36 +313,6 @@ impl CopilotAuth {
         let token: OAuthTokenResponse = serde_json::from_str(&text)?;
         Ok(token)
     }
-
-    /// Complete the full device flow with automatic polling
-    ///
-    /// This is a convenience method that handles polling automatically.
-    /// The callback is invoked with the user code and verification URI
-    /// so the caller can display them to the user.
-    pub async fn complete_device_flow<F>(&self, on_code: F) -> CopilotResult<OAuthTokenResponse>
-    where
-        F: FnOnce(&str, &str),
-    {
-        let device_code = self.start_device_flow().await?;
-
-        // Notify caller of the code
-        on_code(&device_code.user_code, &device_code.verification_uri);
-
-        let interval = Duration::from_secs(device_code.interval.max(5));
-        let deadline = Instant::now() + Duration::from_secs(device_code.expires_in);
-
-        while Instant::now() < deadline {
-            tokio::time::sleep(interval).await;
-
-            match self.poll_for_token(&device_code).await {
-                Ok(token) => return Ok(token),
-                Err(CopilotError::AuthorizationPending) => continue,
-                Err(e) => return Err(e),
-            }
-        }
-
-        Err(CopilotError::DeviceCodeExpired)
-    }
 }
 
 /// GitHub Copilot API client with automatic token refresh
@@ -377,11 +347,6 @@ impl CopilotClient {
             oauth_token: oauth_token.into(),
             cached_token: Arc::new(RwLock::new(None)),
         }
-    }
-
-    /// Get the OAuth token (for persistence)
-    pub fn oauth_token(&self) -> &str {
-        &self.oauth_token
     }
 
     /// Exchange OAuth token for Copilot API token
@@ -483,15 +448,6 @@ impl CopilotClient {
     pub async fn api_base(&self) -> CopilotResult<String> {
         let (_, api_base) = self.ensure_token().await?;
         Ok(api_base)
-    }
-
-    /// Get the current API token (for use with OpenAI-compatible clients)
-    ///
-    /// Note: This token expires after ~30 minutes. The client automatically
-    /// refreshes expired tokens on subsequent calls.
-    pub async fn api_token(&self) -> CopilotResult<String> {
-        let (token, _) = self.ensure_token().await?;
-        Ok(token)
     }
 }
 

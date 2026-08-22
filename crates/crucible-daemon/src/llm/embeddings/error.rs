@@ -47,10 +47,6 @@ pub enum EmbeddingError {
         timeout_secs: u64,
     },
 
-    /// Circuit breaker open
-    #[error("Circuit breaker open, too many failures")]
-    CircuitBreakerOpen,
-
     /// Invalid embedding dimensions
     #[error("Invalid embedding dimensions: expected {expected}, got {actual}")]
     InvalidDimensions {
@@ -63,22 +59,6 @@ pub enum EmbeddingError {
     /// Serialization/deserialization error
     #[error("Serialization error: {0}")]
     SerializationError(#[from] serde_json::Error),
-
-    /// Model discovery not supported by this provider
-    #[error("Model discovery not supported by provider: {0}")]
-    ModelDiscoveryNotSupported(String),
-
-    /// Model not found
-    #[error("Model not found: {0}")]
-    ModelNotFound(String),
-
-    /// Invalid model metadata
-    #[error("Invalid model metadata: {0}")]
-    InvalidModelMetadata(String),
-
-    /// Inference failed
-    #[error("Inference failed: {0}")]
-    InferenceFailed(String),
 
     /// Generic error
     #[error("Embedding error: {0}")]
@@ -124,15 +104,10 @@ impl EmbeddingError {
             // Non-retryable errors
             EmbeddingError::AuthenticationError(_) => false,
             EmbeddingError::ConfigError(_) => false,
-            EmbeddingError::CircuitBreakerOpen => false,
             EmbeddingError::InvalidDimensions { .. } => false,
             EmbeddingError::InvalidResponse(_) => false,
             EmbeddingError::ProviderError { .. } => false,
             EmbeddingError::SerializationError(_) => false,
-            EmbeddingError::ModelDiscoveryNotSupported(_) => false,
-            EmbeddingError::ModelNotFound(_) => false,
-            EmbeddingError::InvalidModelMetadata(_) => false,
-            EmbeddingError::InferenceFailed(_) => false,
             EmbeddingError::Other(_) => false,
         }
     }

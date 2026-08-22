@@ -250,25 +250,6 @@ impl ModelInfo {
     pub fn is_compatible_dimensions(&self, required_dims: usize) -> bool {
         self.dimensions.is_none_or(|dims| dims == required_dims)
     }
-
-    /// Format the model size as a human-readable string
-    pub fn formatted_size(&self) -> Option<String> {
-        self.size_bytes.map(|bytes| {
-            const KB: u64 = 1024;
-            const MB: u64 = KB * 1024;
-            const GB: u64 = MB * 1024;
-
-            if bytes >= GB {
-                format!("{:.1} GB", bytes as f64 / GB as f64)
-            } else if bytes >= MB {
-                format!("{} MB", bytes / MB)
-            } else if bytes >= KB {
-                format!("{} KB", bytes / KB)
-            } else {
-                format!("{} B", bytes)
-            }
-        })
-    }
 }
 
 /// Builder for ModelInfo instances

@@ -83,12 +83,6 @@ pub async fn create_provider(
     }
 }
 
-/// Create a mock embedding provider for testing
-#[cfg(any(test, feature = "test-utils"))]
-pub fn create_mock_provider(dimensions: usize) -> Arc<dyn EmbeddingProvider> {
-    Arc::new(mock::MockEmbeddingProvider::with_dimensions(dimensions))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

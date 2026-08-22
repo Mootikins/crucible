@@ -59,10 +59,8 @@ pub use embeddings::{
 
 // Re-export core enrichment config types for convenience
 pub use crucible_core::enrichment::{
-    CohereConfig, CustomConfig, EmbeddingProviderConfig as NewEmbeddingProviderConfig,
-    EnrichmentConfig, FastEmbedConfig as NewFastEmbedConfig, MockConfig as NewMockConfig,
-    OllamaConfig as NewOllamaConfig, OpenAIConfig as NewOpenAIConfig, PipelineConfig,
-    VertexAIConfig,
+    CohereConfig, CustomConfig, EmbeddingProviderConfig, EnrichmentConfig, FastEmbedConfig,
+    MockConfig, OllamaConfig, OpenAIConfig, PipelineConfig, VertexAIConfig,
 };
 
 // Re-export model discovery

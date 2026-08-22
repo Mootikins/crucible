@@ -21,8 +21,8 @@ fn http_client(timeout: std::time::Duration) -> reqwest::Result<reqwest::Client>
 const LIST_MODELS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 pub mod anthropic {
+    use super::openai_compat::parse_models_response;
     use super::{http_client, ModelListingError, ModelListingResult, LIST_MODELS_TIMEOUT};
-    use serde_json::Value;
 
     pub async fn list_models(endpoint: &str, api_key: &str) -> ModelListingResult<Vec<String>> {
         let endpoint = endpoint.trim_end_matches('/');
@@ -51,29 +51,6 @@ pub mod anthropic {
 
         let body = response.text().await?;
         parse_models_response(&body)
-    }
-
-    pub fn parse_models_response(body: &str) -> ModelListingResult<Vec<String>> {
-        let payload: Value = serde_json::from_str(body)?;
-        let data = payload
-            .get("data")
-            .and_then(Value::as_array)
-            .ok_or_else(|| {
-                ModelListingError::Api("expected 'data' key with array value in response".into())
-            })?;
-
-        let models = data
-            .iter()
-            .filter_map(|model| {
-                model
-                    .as_object()?
-                    .get("id")
-                    .and_then(Value::as_str)
-                    .map(ToString::to_string)
-            })
-            .collect();
-
-        Ok(models)
     }
 }
 
