@@ -10,6 +10,7 @@ use super::types::{EmptyParams, KilnPathRequest, PathRequest};
 use super::DaemonClient;
 
 use super::storage_requests::*;
+use crate::storage::sqlite::FtsResult;
 
 impl DaemonClient {
     // =========================================================================
@@ -86,35 +87,16 @@ impl DaemonClient {
         kiln_path: &Path,
         query: &str,
         limit: usize,
-    ) -> Result<Vec<TextSearchHit>> {
-        let result: serde_json::Value = self
-            .typed_call(
-                "search_text",
-                SearchTextRequest {
-                    kiln: kiln_path.to_string_lossy().to_string(),
-                    query: query.to_string(),
-                    limit,
-                },
-            )
-            .await?;
-
-        Ok(result
-            .as_array()
-            .unwrap_or(&vec![])
-            .iter()
-            .filter_map(|item| {
-                Some(TextSearchHit {
-                    path: item.get("path")?.as_str()?.to_string(),
-                    title: item.get("title")?.as_str()?.to_string(),
-                    snippet: item
-                        .get("snippet")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    rank: item.get("rank").and_then(|v| v.as_f64()).unwrap_or(0.0),
-                })
-            })
-            .collect())
+    ) -> Result<Vec<FtsResult>> {
+        self.typed_call(
+            "search_text",
+            SearchTextRequest {
+                kiln: kiln_path.to_string_lossy().to_string(),
+                query: query.to_string(),
+                limit,
+            },
+        )
+        .await
     }
 
     /// Semantic vector search.

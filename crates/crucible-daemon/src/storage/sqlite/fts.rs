@@ -36,14 +36,19 @@ CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
 );
 "#;
 
-/// A full-text search result
-#[derive(Debug, Clone, PartialEq)]
+/// A full-text search result.
+///
+/// Also the `search_text` wire shape: the daemon serializes it and the
+/// client deserializes it, so the field names are the JSON keys.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FtsResult {
     /// Path to the note
     pub path: String,
     /// Note title
     pub title: String,
-    /// Snippet of matching content (with highlights)
+    /// Snippet of matching content (with highlights). An older daemon may
+    /// omit it.
+    #[serde(default)]
     pub snippet: String,
     /// BM25 relevance score (lower is better in FTS5)
     pub rank: f64,
@@ -325,6 +330,44 @@ mod tests {
     async fn setup_test_fts() -> StorageResult<FtsIndex> {
         let pool = SqlitePool::new(SqliteConfig::memory())?;
         Ok(FtsIndex::new(pool))
+    }
+
+    /// The `search_text` RPC and its client share this one wire shape. The
+    /// JSON keys are the contract; a rename here changes what `cru search`
+    /// reads from an older daemon.
+    #[test]
+    fn the_wire_shape_is_path_title_snippet_rank() {
+        let hit = FtsResult {
+            path: "notes/a.md".into(),
+            title: "A".into(),
+            snippet: "<mark>word</mark>".into(),
+            rank: -1.5,
+        };
+        let json = serde_json::to_value(&hit).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "path": "notes/a.md",
+                "title": "A",
+                "snippet": "<mark>word</mark>",
+                "rank": -1.5,
+            })
+        );
+        let back: FtsResult = serde_json::from_value(json).unwrap();
+        assert_eq!(back, hit);
+    }
+
+    /// An older daemon may omit `snippet`; the client used to default it to
+    /// empty, and still must.
+    #[test]
+    fn a_missing_snippet_reads_as_empty() {
+        let hit: FtsResult = serde_json::from_value(serde_json::json!({
+            "path": "notes/a.md",
+            "title": "A",
+            "rank": 0.0,
+        }))
+        .unwrap();
+        assert_eq!(hit.snippet, "");
     }
 
     #[tokio::test]

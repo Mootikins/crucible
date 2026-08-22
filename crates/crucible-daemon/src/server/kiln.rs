@@ -317,20 +317,10 @@ pub(crate) async fn handle_search_text(req: Request, km: &Arc<KilnManager>) -> R
     let fts_query = crate::storage::sqlite::fts::build_match_query(query);
 
     match handle.text.search(&fts_query, limit).await {
-        Ok(results) => {
-            let json_results: Vec<_> = results
-                .into_iter()
-                .map(|r| {
-                    serde_json::json!({
-                        "path": r.path,
-                        "title": r.title,
-                        "snippet": r.snippet,
-                        "rank": r.rank,
-                    })
-                })
-                .collect();
-            Response::success(req.id, json_results)
-        }
+        Ok(results) => match serde_json::to_value(results) {
+            Ok(v) => Response::success(req.id, v),
+            Err(e) => internal_error(req.id, anyhow::anyhow!(e)),
+        },
         Err(e) => internal_error(req.id, anyhow::anyhow!(e)),
     }
 }

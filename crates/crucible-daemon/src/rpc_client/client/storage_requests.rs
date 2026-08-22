@@ -174,16 +174,6 @@ pub struct SearchTextRequest {
     pub limit: usize,
 }
 
-/// One full-text hit: note path, title, a highlighted snippet, and the BM25
-/// rank (lower is better).
-#[derive(Debug, Clone)]
-pub struct TextSearchHit {
-    pub path: String,
-    pub title: String,
-    pub snippet: String,
-    pub rank: f64,
-}
-
 /// Request for `embed.query`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct EmbedQueryRequest {
