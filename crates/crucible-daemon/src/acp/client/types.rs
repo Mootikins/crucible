@@ -22,7 +22,10 @@ pub struct ClientConfig {
     /// Timeout for agent operations (in milliseconds)
     pub timeout_ms: Option<u64>,
 
-    /// Maximum number of retry attempts
+    /// Maximum number of retry attempts.
+    ///
+    /// Reserved: no code reads this field. Delete it when `ClientConfig`
+    /// gets `#[serde(default)]`, so that the callers do not need the field.
     pub max_retries: Option<u32>,
 }
 

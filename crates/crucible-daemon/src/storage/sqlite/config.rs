@@ -10,10 +10,6 @@ pub struct SqliteConfig {
     /// Path to the SQLite database file
     pub path: PathBuf,
 
-    /// Connection pool size (default: 10)
-    #[serde(default = "default_pool_size")]
-    pub pool_size: u32,
-
     /// Enable WAL mode (recommended, default: true)
     #[serde(default = "default_true")]
     pub wal_mode: bool,
@@ -35,10 +31,6 @@ pub struct SqliteConfig {
     pub mmap_size: u64,
 }
 
-fn default_pool_size() -> u32 {
-    10
-}
-
 fn default_busy_timeout() -> u64 {
     5000
 }
@@ -56,7 +48,6 @@ impl SqliteConfig {
     pub fn new(path: impl Into<PathBuf>) -> Self {
         Self {
             path: path.into(),
-            pool_size: default_pool_size(),
             wal_mode: true,
             foreign_keys: true,
             busy_timeout_ms: default_busy_timeout(),
@@ -69,7 +60,6 @@ impl SqliteConfig {
     pub fn memory() -> Self {
         Self {
             path: PathBuf::from(":memory:"),
-            pool_size: 1, // Memory DBs can't be shared across connections
             wal_mode: false,
             foreign_keys: true,
             busy_timeout_ms: default_busy_timeout(),
@@ -92,7 +82,6 @@ mod tests {
     #[test]
     fn test_config_defaults() {
         let config = SqliteConfig::default();
-        assert_eq!(config.pool_size, 10);
         assert!(config.wal_mode);
         assert!(config.foreign_keys);
         assert_eq!(config.busy_timeout_ms, 5000);
@@ -102,7 +91,6 @@ mod tests {
     fn test_memory_config() {
         let config = SqliteConfig::memory();
         assert_eq!(config.path.to_str().unwrap(), ":memory:");
-        assert_eq!(config.pool_size, 1);
         assert!(!config.wal_mode);
     }
 }
