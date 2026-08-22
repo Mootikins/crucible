@@ -54,14 +54,6 @@ pub struct OilChatApp {
     /// `session.list_modes`; empty until that lands, which is why `/mode`
     /// cycling falls back to leaving the mode alone.
     pub(crate) available_modes: Vec<String>,
-    /// Scratch key/value store for `session:set_variable`/`get_variable`.
-    ///
-    /// TUI-local and deliberately not persisted: these are for a plugin
-    /// carrying state across handlers within one session, and a Lua script
-    /// that stashes a value must be able to read it back. The handler arm was
-    /// previously a literal no-op, so every write vanished and every read
-    /// returned nil.
-    session_variables: std::collections::HashMap<String, serde_json::Value>,
     /// Display name of the active LLM model
     model: String,
     /// Status text from the daemon (e.g. "Thinking…")
@@ -266,16 +258,6 @@ impl App for OilChatApp {
 // ─── Accessors & Lifecycle ───────────────────────────────────────────────────
 
 impl OilChatApp {
-    /// Store a Lua session variable (`session:set_variable`).
-    pub(crate) fn set_session_variable(&mut self, key: String, value: serde_json::Value) {
-        self.session_variables.insert(key, value);
-    }
-
-    /// Read a Lua session variable back (`session:get_variable`).
-    pub(crate) fn session_variable(&self, key: &str) -> Option<serde_json::Value> {
-        self.session_variables.get(key).cloned()
-    }
-
     /// Whether the daemon's last-known mode list contains `id`.
     ///
     /// A `false` means our list is stale, not that the mode is invalid — the
@@ -599,20 +581,10 @@ impl OilChatApp {
         self.notification_area.add(notification);
     }
 
-    pub(crate) fn toggle_messages(&mut self) {
-        self.notification_area.toggle();
-    }
-
+    /// Open the notification panel, so a story can assert on its content.
+    #[cfg(test)]
     pub(crate) fn show_messages(&mut self) {
         self.notification_area.show();
-    }
-
-    pub(crate) fn hide_messages(&mut self) {
-        self.notification_area.hide();
-    }
-
-    pub(crate) fn clear_messages(&mut self) {
-        self.notification_area.clear();
     }
 
     /// Drain completed containers and return graduation content for stdout.

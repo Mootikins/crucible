@@ -9,7 +9,6 @@ use anyhow::Result;
 use crossterm::event::{Event as CtEvent, EventStream};
 use crucible_core::events::SessionEvent;
 use crucible_core::traits::chat::AgentHandle;
-use crucible_lua::SessionCommand;
 use std::io;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -341,7 +340,6 @@ impl OilChatRunner {
     ) -> Result<()> {
         let mut event_stream = EventStream::new();
         let mut tick_interval = tokio::time::interval(self.tick_rate);
-        let mut session_cmd_rx = self.session_cmd_rx.take();
         let mut replay_auto_exit_deadline = if self.is_replay
             && self.replay_remaining_completes == 0
             && self.replay_auto_exit.is_some()
@@ -379,11 +377,6 @@ impl OilChatRunner {
                 _ = tick_interval.tick() => {
                     tracing::trace!("tick");
                     EventLoopSelectOutcome::Event(Some(Event::Tick))
-                }
-
-                Some(cmd) = Self::next_session_command(&mut session_cmd_rx) => {
-                    Self::handle_session_command(cmd, params.agent, params.app).await;
-                    EventLoopSelectOutcome::Continue
                 }
 
                 Some(interaction_event) = Self::next_interaction_event(&mut params.interaction_rx) => {
@@ -541,15 +534,6 @@ impl OilChatRunner {
             app.on_message(msg)
         } else {
             Action::Continue
-        }
-    }
-
-    async fn next_session_command(
-        session_cmd_rx: &mut Option<mpsc::UnboundedReceiver<SessionCommand>>,
-    ) -> Option<SessionCommand> {
-        match session_cmd_rx {
-            Some(rx) => rx.recv().await,
-            None => std::future::pending().await,
         }
     }
 

@@ -1,4 +1,4 @@
-use crate::tui::oil::chat_app::{ChatAppMsg, McpServerDisplay, OilChatApp};
+use crate::tui::oil::chat_app::{ChatAppMsg, McpServerDisplay};
 use crucible_core::error_utils::strip_tool_error_prefix;
 use crucible_core::events::SessionEvent;
 use crucible_core::interaction::InteractionRequest;
@@ -6,113 +6,10 @@ use crucible_core::protocol::session_events::{
     EventDecodeError, JobPayload, SessionEventPayload, SettingsPayload, SetupPayload,
     SystemPayload, ToolResultBody, TurnPayload,
 };
-use crucible_core::traits::chat::{AgentHandle, SessionKnobs};
-use crucible_lua::SessionCommand;
 
 use super::OilChatRunner;
 
 impl OilChatRunner {
-    pub(super) async fn handle_session_command<A: AgentHandle>(
-        cmd: SessionCommand,
-        agent: &mut A,
-        app: &mut OilChatApp,
-    ) {
-        match cmd {
-            SessionCommand::GetTemperature(reply) => {
-                let _ = reply.send(agent.get_temperature());
-            }
-            SessionCommand::SetTemperature(temp, reply) => {
-                let result = agent.set_temperature(temp).await.map_err(|e| e.to_string());
-                let _ = reply.send(result);
-            }
-            SessionCommand::GetMaxTokens(reply) => {
-                let _ = reply.send(agent.get_max_tokens());
-            }
-            SessionCommand::SetMaxTokens(tokens, reply) => {
-                let result = agent
-                    .set_max_tokens(tokens)
-                    .await
-                    .map_err(|e| e.to_string());
-                let _ = reply.send(result);
-            }
-            SessionCommand::GetMaxIterations(reply) => {
-                let _ = reply.send(agent.get_max_iterations());
-            }
-            SessionCommand::SetMaxIterations(iterations, reply) => {
-                let result = agent
-                    .set_max_iterations(iterations)
-                    .await
-                    .map_err(|e| e.to_string());
-                let _ = reply.send(result);
-            }
-            SessionCommand::GetExecutionTimeout(reply) => {
-                let _ = reply.send(agent.get_execution_timeout());
-            }
-            SessionCommand::SetExecutionTimeout(timeout, reply) => {
-                let result = agent
-                    .set_execution_timeout(timeout)
-                    .await
-                    .map_err(|e| e.to_string());
-                let _ = reply.send(result);
-            }
-            SessionCommand::GetThinkingBudget(reply) => {
-                let _ = reply.send(agent.get_thinking_budget());
-            }
-            SessionCommand::SetThinkingBudget(budget, reply) => {
-                let result = agent
-                    .set_thinking_budget(budget)
-                    .await
-                    .map_err(|e| e.to_string());
-                let _ = reply.send(result);
-            }
-            SessionCommand::GetModel(reply) => {
-                let _ = reply.send(agent.current_model().map(|s| s.to_string()));
-            }
-            SessionCommand::SwitchModel(model, reply) => {
-                let result = SessionKnobs::switch_model(agent, &model)
-                    .await
-                    .map_err(|e| e.to_string());
-                let _ = reply.send(result);
-            }
-            SessionCommand::ListModels(reply) => {
-                let _ = reply.send(agent.fetch_available_models().await);
-            }
-            SessionCommand::GetMode(reply) => {
-                let _ = reply.send(agent.get_mode_id().to_string());
-            }
-            SessionCommand::SetMode(mode, reply) => {
-                let result = agent.set_mode_str(&mode).await.map_err(|e| e.to_string());
-                let _ = reply.send(result);
-            }
-            // Notification commands - route to OilChatApp
-            SessionCommand::Notify(notification) => app.add_notification(notification),
-            SessionCommand::ToggleMessages => app.toggle_messages(),
-            SessionCommand::ShowMessages => app.show_messages(),
-            SessionCommand::HideMessages => app.hide_messages(),
-            SessionCommand::ClearMessages => app.clear_messages(),
-            SessionCommand::GetSystemPrompt(reply) => {
-                let _ = reply.send(agent.get_system_prompt());
-            }
-            SessionCommand::SetSystemPrompt(prompt, reply) => {
-                let result = agent
-                    .set_system_prompt(&prompt)
-                    .await
-                    .map_err(|e| e.to_string());
-                let _ = reply.send(result);
-            }
-            SessionCommand::MarkFirstMessageSent => {}
-            // Previously a no-op arm: `session:set_variable` silently
-            // discarded and `get_variable` always returned nil, so a plugin
-            // stashing state across handlers got documented silence.
-            SessionCommand::SetVariable { key, value } => {
-                app.set_session_variable(key, value);
-            }
-            SessionCommand::GetVariable { key, response } => {
-                let _ = response.send(app.session_variable(&key));
-            }
-        }
-    }
-
     /// Handle a SessionEvent, dispatching to appropriate ChatAppMsg.
     ///
     /// Returns Some(ChatAppMsg) if the event should be forwarded to the app,

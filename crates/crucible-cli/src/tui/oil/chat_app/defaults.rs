@@ -17,7 +17,6 @@ impl Default for OilChatApp {
             container_list: ContainerList::new(),
             mode: DEFAULT_MODE.into(),
             available_modes: DEFAULT_MODES.iter().map(|m| m.to_string()).collect(),
-            session_variables: std::collections::HashMap::new(),
             model: String::new(),
             status: String::new(),
             context_used: 0,

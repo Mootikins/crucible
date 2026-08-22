@@ -3,7 +3,6 @@ use crate::tui::oil::app::Action;
 use crate::tui::oil::chat_app::{ChatAppMsg, McpServerDisplay, OilChatApp, PluginStatusEntry};
 use crate::tui::oil::event::Event;
 use crucible_core::traits::chat::AgentHandle;
-use crucible_lua::SessionCommand;
 use crucible_oil::focus::FocusContext;
 use crucible_oil::terminal::Terminal;
 use std::io;
@@ -88,7 +87,6 @@ pub struct OilChatRunner {
     pub(super) plugin_status: Vec<PluginStatusEntry>,
     pub(super) show_thinking: bool,
     pub(super) show_diffs: bool,
-    pub(super) session_cmd_rx: Option<mpsc::UnboundedReceiver<SessionCommand>>,
     pub(super) slash_commands: Vec<(String, String)>,
     pub(super) plugin_commands: Vec<(String, String)>,
     pub(super) agent_name: Option<String>,
@@ -141,7 +139,6 @@ impl OilChatRunner {
             plugin_status: Vec::new(),
             show_thinking: false,
             show_diffs: true,
-            session_cmd_rx: None,
             slash_commands: Vec::new(),
             plugin_commands: Vec::new(),
             agent_name: None,
@@ -152,14 +149,6 @@ impl OilChatRunner {
             replay_remaining_completes: 0,
             is_replay: false,
         }
-    }
-
-    pub fn with_session_command_receiver(
-        mut self,
-        rx: mpsc::UnboundedReceiver<SessionCommand>,
-    ) -> Self {
-        self.session_cmd_rx = Some(rx);
-        self
     }
 
     pub fn with_context_limit(mut self, limit: usize) -> Self {

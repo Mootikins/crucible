@@ -189,8 +189,7 @@ pub use modes::{
     register_modes, ModeDefinition, ModePermissions, ModeRegistry, ModeStance, ToolSelector,
 };
 pub use session_api::{
-    register_session_module, ChannelSessionRpc, CurrentSession, Session, SessionCommand,
-    SessionConfigRpc, UnsupportedSessionRpc,
+    register_session_module, CurrentSession, Session, SessionConfigRpc, UnsupportedSessionRpc,
 };
 pub use session_defaults::{
     register_session_defaults, SessionDefaultValues, SessionDefaults, SessionDefaultsRpc,
