@@ -8,30 +8,22 @@
 //! it is absent, which is what lets a theme restyle a surface without every
 //! component having to know the theme exists.
 
+use super::slot::RenderSlot;
 use crucible_lua::hl::{HlRegistry, ResolvedHl};
-use std::sync::{OnceLock, RwLock};
 
-static GROUPS: RwLock<Option<&'static HlRegistry>> = RwLock::new(None);
-static FALLBACK: OnceLock<HlRegistry> = OnceLock::new();
+static GROUPS: RenderSlot<HlRegistry> = RenderSlot::new();
 
 /// Install the highlight table, replacing any previous one. See
 /// `theme::global` for the leak-on-install trade.
 pub fn set(registry: HlRegistry) {
-    let leaked: &'static HlRegistry = Box::leak(Box::new(registry));
-    if let Ok(mut guard) = GROUPS.write() {
-        *guard = Some(leaked);
-    }
+    GROUPS.set(registry);
 }
 
 /// The active highlight table; empty when none was delivered.
 ///
 /// Reading never initializes `GROUPS`; see the note in `geometry::active`.
 pub fn active() -> &'static HlRegistry {
-    GROUPS
-        .read()
-        .ok()
-        .and_then(|g| *g)
-        .unwrap_or_else(|| FALLBACK.get_or_init(HlRegistry::new))
+    GROUPS.get(HlRegistry::new)
 }
 
 /// Resolve a group against the active theme.

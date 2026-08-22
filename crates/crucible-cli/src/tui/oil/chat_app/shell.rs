@@ -101,10 +101,6 @@ impl OilChatApp {
 
         match modal.update(InteractionModalMsg::Key(key)) {
             InteractionModalOutput::None => Action::Continue,
-            InteractionModalOutput::Close => {
-                self.close_interaction();
-                Action::Continue
-            }
             InteractionModalOutput::PermissionResponse {
                 request_id,
                 response,
@@ -154,10 +150,6 @@ impl OilChatApp {
                 })
             }
             InteractionModalOutput::ToggleDiff => Action::Continue,
-            InteractionModalOutput::Notify(msg) => {
-                self.notify_toast(msg);
-                Action::Continue
-            }
         }
     }
 

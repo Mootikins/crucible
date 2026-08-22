@@ -5,29 +5,21 @@
 //! bar**. A statusline with no items is a blank line, not an unstyled one, so
 //! there is nothing sensible for a component to fall back to on its own.
 
+use super::slot::RenderSlot;
 use crucible_lua::statusline_items::{builtin_default, Layout};
-use std::sync::{OnceLock, RwLock};
 
-static LAYOUT: RwLock<Option<&'static Layout>> = RwLock::new(None);
-static FALLBACK: OnceLock<Layout> = OnceLock::new();
+static LAYOUT: RenderSlot<Layout> = RenderSlot::new();
 
 /// Install bar definitions, replacing any previous set.
 pub fn set(layout: Layout) {
-    let leaked: &'static Layout = Box::leak(Box::new(layout));
-    if let Ok(mut guard) = LAYOUT.write() {
-        *guard = Some(leaked);
-    }
+    LAYOUT.set(layout);
 }
 
 /// Active bars; the built-in default when none was delivered.
 ///
 /// Reading never initializes `LAYOUT` — see the note in `geometry::active`.
 pub fn active() -> &'static Layout {
-    LAYOUT
-        .read()
-        .ok()
-        .and_then(|g| *g)
-        .unwrap_or_else(|| FALLBACK.get_or_init(builtin_default))
+    LAYOUT.get(builtin_default)
 }
 
 #[cfg(test)]

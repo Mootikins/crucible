@@ -112,18 +112,8 @@ impl Component for InputComponent<'_> {
             Style::new().fg(bg),
         );
 
-        let display_content = match self.mode {
-            InputMode::Command => self.content.strip_prefix(':').unwrap_or(self.content),
-            InputMode::Shell => self.content.strip_prefix('!').unwrap_or(self.content),
-            InputMode::Normal => self.content,
-        };
-
-        let cursor_offset = if matches!(self.mode, InputMode::Command | InputMode::Shell) {
-            1
-        } else {
-            0
-        };
-        let display_cursor = self.cursor.saturating_sub(cursor_offset);
+        let display_content = InputStyle::display_content(&self.mode, self.content);
+        let display_cursor = InputStyle::display_cursor(&self.mode, self.cursor);
 
         let content_width = self.width.saturating_sub(prompt.len() + 1);
         let all_lines = wrap_chars(display_content, content_width);

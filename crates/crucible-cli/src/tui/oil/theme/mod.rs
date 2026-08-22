@@ -19,12 +19,13 @@ pub mod config;
 pub use config::*;
 
 pub mod global;
-pub use global::{active, is_initialized, set};
+pub use global::{active, set};
 
 pub mod bars;
 pub mod exprs;
 pub mod geometry;
 pub mod groups;
+pub mod slot;
 
 pub mod remote;
 pub use remote::apply_ui_config;

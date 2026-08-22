@@ -40,8 +40,6 @@ pub enum InteractionModalMsg {
 pub enum InteractionModalOutput {
     /// No action needed, continue.
     None,
-    /// Close the modal (cancelled).
-    Close,
     /// Permission response ready to send.
     PermissionResponse {
         request_id: String,
@@ -54,8 +52,6 @@ pub enum InteractionModalOutput {
     },
     /// Toggle diff preview visibility.
     ToggleDiff,
-    /// Show a notification toast.
-    Notify(String),
 }
 
 /// State for the interaction modal (Ask, AskBatch, Permission, etc.).
@@ -66,8 +62,6 @@ pub struct InteractionModal {
     pub request: InteractionRequest,
     /// Current selection index for choice-based requests.
     pub selected: usize,
-    /// Filter text for filterable panels (future use).
-    pub filter: String,
     /// Free-text input buffer for "Other" option.
     pub other_text: String,
     /// Current input mode.
@@ -76,8 +70,6 @@ pub struct InteractionModal {
     pub checked: HashSet<usize>,
     /// Current question index for multi-question batches.
     pub current_question: usize,
-    /// Track if "Other" text was previously entered (for dim rendering when deselected).
-    pub other_text_preserved: bool,
     /// Answers per question for AskBatch (Vec of selected indices per question).
     pub batch_answers: Vec<HashSet<usize>>,
     /// Other text per question for AskBatch.
@@ -120,12 +112,10 @@ impl InteractionModal {
             request_id,
             request,
             selected: 0,
-            filter: String::new(),
             other_text: String::new(),
             mode: InteractionMode::Selecting,
             checked,
             current_question: 0,
-            other_text_preserved: false,
             batch_answers: Vec::new(),
             batch_other_texts: Vec::new(),
             diff_collapsed: !show_diff,

@@ -130,7 +130,6 @@ impl StatusBar {
     ) -> Vec<Node> {
         use crate::tui::oil::components::status_items::{render_bar, ItemContext};
 
-        let data = self.item_data();
         let layout = crate::tui::oil::theme::bars::active();
         let exprs = crate::tui::oil::theme::exprs::snapshot();
 
@@ -142,27 +141,13 @@ impl StatusBar {
                 Element::Row(items) => render_bar(
                     items,
                     &ItemContext {
-                        data: &data,
+                        data: self,
                         streaming,
                         exprs: &exprs,
                     },
                 ),
             })
             .collect()
-    }
-
-    /// The frame's live values, as the item vocabulary sees them.
-    fn item_data(&self) -> crate::tui::oil::components::status_items::StatusBarData {
-        crate::tui::oil::components::status_items::StatusBarData {
-            mode: self.mode.clone(),
-            model: self.model.clone(),
-            context_used: self.context_used,
-            context_total: self.context_total,
-            status: self.status.clone(),
-            notification_toast: self.notification_toast.clone(),
-            notification_counts: self.notification_counts.clone(),
-            cache_hit_rate: self.cache_hit_rate,
-        }
     }
 
     pub fn emergency_view(&self) -> Node {

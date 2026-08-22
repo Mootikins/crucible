@@ -62,16 +62,11 @@ impl Margins {
     }
 }
 
+/// Pre-wrap all content to the terminal width, inside `margins`. Live and
+/// graduated content use the same widths, so one variant serves both.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderStyle {
-    /// Pre-wrap all content to terminal width. For viewport/streaming content.
     Viewport { width: usize, margins: Margins },
-    /// Pre-wrap to terminal width for consistent left/right alignment.
-    /// For graduated/scrollback content.
-    Natural {
-        terminal_width: usize,
-        margins: Margins,
-    },
 }
 
 impl RenderStyle {
@@ -86,48 +81,28 @@ impl RenderStyle {
         RenderStyle::Viewport { width, margins }
     }
 
+    /// Graduated (scrollback) content. Same layout as [`Self::viewport`];
+    /// the name records the caller's intent.
     pub fn natural(terminal_width: usize) -> Self {
-        RenderStyle::Natural {
-            terminal_width,
-            margins: Margins::default(),
-        }
+        Self::viewport(terminal_width)
     }
 
     pub fn natural_with_margins(terminal_width: usize, margins: Margins) -> Self {
-        RenderStyle::Natural {
-            terminal_width,
-            margins,
-        }
+        Self::viewport_with_margins(terminal_width, margins)
     }
 
     fn text_width(&self) -> usize {
-        match self {
-            RenderStyle::Viewport { width, margins }
-            | RenderStyle::Natural {
-                terminal_width: width,
-                margins,
-            } => width.saturating_sub(margins.left + margins.right),
-        }
+        let RenderStyle::Viewport { width, margins } = self;
+        width.saturating_sub(margins.left + margins.right)
     }
 
     fn table_width(&self) -> usize {
-        match self {
-            RenderStyle::Viewport { width, margins } => {
-                width.saturating_sub(margins.left + margins.right)
-            }
-            RenderStyle::Natural {
-                terminal_width,
-                margins,
-            } => terminal_width.saturating_sub(margins.left + margins.right),
-        }
+        self.text_width()
     }
 
     fn margins(&self) -> Margins {
-        match self {
-            RenderStyle::Viewport { margins, .. } | RenderStyle::Natural { margins, .. } => {
-                *margins
-            }
-        }
+        let RenderStyle::Viewport { margins, .. } = self;
+        *margins
     }
 
     fn blockquote_width(&self) -> usize {

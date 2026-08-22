@@ -62,17 +62,6 @@ pub fn set(key: &str, value: &str) -> bool {
     }
 }
 
-/// Drop a value, so its item renders nothing again.
-pub fn clear(key: &str) -> bool {
-    let Ok(mut guard) = EXPRS.write() else {
-        return false;
-    };
-    guard
-        .as_mut()
-        .map(|m| m.remove(key).is_some())
-        .unwrap_or(false)
-}
-
 /// Snapshot for one frame's render.
 pub fn snapshot() -> BTreeMap<String, String> {
     EXPRS
@@ -99,14 +88,6 @@ mod tests {
         assert!(set("k", "v"));
         assert!(!set("k", "v"), "unchanged value must not signal a repaint");
         assert!(set("k", "w"));
-    }
-
-    #[test]
-    fn clearing_removes_the_value() {
-        set("k", "v");
-        assert!(clear("k"));
-        assert!(!snapshot().contains_key("k"));
-        assert!(!clear("k"), "clearing twice is not a change");
     }
 
     /// The security property. A branch name or model-derived string must not be

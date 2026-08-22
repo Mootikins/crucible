@@ -61,10 +61,6 @@ impl ComponentHarness {
     pub fn focus(&self) -> &FocusContext {
         &self.focus
     }
-
-    pub fn focus_mut(&mut self) -> &mut FocusContext {
-        &mut self.focus
-    }
 }
 
 #[cfg(test)]

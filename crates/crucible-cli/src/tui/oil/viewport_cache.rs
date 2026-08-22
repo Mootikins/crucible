@@ -130,28 +130,12 @@ impl CachedToolCall {
         self.args = Arc::from(args);
     }
 
-    /// Record that this call's permission was granted without asking, and by
-    /// which layer. Rendered as a marker: an auto-approved call is otherwise
-    /// indistinguishable from one that never needed permission.
-    pub fn set_auto_approved(&mut self, reason: String) {
-        self.auto_approved = Some(reason);
-    }
-
     pub fn set_output_path(&mut self, path: PathBuf) {
         self.output_path = Some(path);
     }
 
     pub fn elapsed(&self) -> std::time::Duration {
         self.started_at.elapsed()
-    }
-
-    pub fn last_n_lines(&self, n: usize) -> Vec<&str> {
-        let skip = self.output_tail.len().saturating_sub(n);
-        self.output_tail
-            .iter()
-            .skip(skip)
-            .map(|s| s.as_ref())
-            .collect()
     }
 
     pub fn result(&self) -> String {

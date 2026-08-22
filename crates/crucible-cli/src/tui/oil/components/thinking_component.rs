@@ -34,19 +34,10 @@ impl ThinkingComponent {
         self.content.push_str(delta);
     }
 
-    /// Replace content wholesale (used by set_thinking).
-    pub fn replace(&mut self, content: String) {
-        self.content = content;
-    }
-
     /// Transition to graduated state. Render will always produce
     /// collapsed output after this call.
     pub fn graduate(&mut self) {
         self.graduated = true;
-    }
-
-    pub fn is_graduated(&self) -> bool {
-        self.graduated
     }
 
     /// Word count across all content.
@@ -183,7 +174,7 @@ mod tests {
     #[test]
     fn new_component_is_not_graduated() {
         let tc = ThinkingComponent::new("hello".into());
-        assert!(!tc.is_graduated());
+        assert!(!tc.graduated);
         assert_eq!(tc.word_count(), 1);
     }
 
@@ -196,18 +187,11 @@ mod tests {
     }
 
     #[test]
-    fn replace_overwrites_content() {
-        let mut tc = ThinkingComponent::new("old".into());
-        tc.replace("new content here".into());
-        assert_eq!(tc.content, "new content here");
-    }
-
-    #[test]
     fn graduate_transitions_state() {
         let mut tc = ThinkingComponent::new("thinking about things".into());
-        assert!(!tc.is_graduated());
+        assert!(!tc.graduated);
         tc.graduate();
-        assert!(tc.is_graduated());
+        assert!(tc.graduated);
     }
 
     #[test]

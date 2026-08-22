@@ -465,18 +465,6 @@ impl ShellModal {
         self.status == ShellStatus::Running
     }
 
-    pub fn command(&self) -> &str {
-        &self.command
-    }
-
-    pub fn status(&self) -> &ShellStatus {
-        &self.status
-    }
-
-    pub fn output_lines(&self) -> &[String] {
-        &self.output_lines
-    }
-
     #[cfg(test)]
     pub fn scroll_offset(&self) -> usize {
         self.scroll_offset
@@ -506,22 +494,6 @@ impl ShellModal {
                     .output();
             }
         }
-    }
-
-    pub fn working_dir(&self) -> &PathBuf {
-        &self.working_dir
-    }
-
-    pub fn duration(&self) -> Option<Duration> {
-        self.duration
-    }
-
-    pub fn output_path(&self) -> Option<&PathBuf> {
-        self.output_path.as_ref()
-    }
-
-    pub fn set_output_path(&mut self, path: PathBuf) {
-        self.output_path = Some(path);
     }
 
     fn format_header(&self) -> String {

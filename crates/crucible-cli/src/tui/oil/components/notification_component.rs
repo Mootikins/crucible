@@ -34,14 +34,6 @@ impl NotificationEntry {
     fn timestamp_label(&self) -> &str {
         &self.timestamp
     }
-
-    fn kind_label(&self) -> &'static str {
-        match self.kind {
-            NotificationToastKind::Info => "INFO",
-            NotificationToastKind::Warning => "WARN",
-            NotificationToastKind::Error => "ERROR",
-        }
-    }
 }
 
 /// View-only component that renders the notification/messages drawer.
@@ -98,7 +90,7 @@ impl Component for NotificationComponent {
                 let badge_style = Style::new().fg(entry.kind.color()).bold().reverse();
 
                 let timestamp_part = format!(" {}: ", entry.timestamp_label());
-                let badge_text = format!(" {} ", entry.kind_label());
+                let badge_text = format!(" {} ", entry.kind.label());
 
                 // Calculate available width for message
                 let prefix_width = timestamp_part.chars().count() + badge_text.chars().count();

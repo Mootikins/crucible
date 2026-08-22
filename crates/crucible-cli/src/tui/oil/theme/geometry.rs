@@ -4,20 +4,16 @@
 //! Callers therefore read this as an override, never as the source of truth —
 //! which is what keeps an untouched surface untouched rather than blanked.
 
+use super::slot::RenderSlot;
 use crucible_lua::ui_geometry::UiGeometry;
-use std::sync::{OnceLock, RwLock};
 
-static GEOMETRY: RwLock<Option<&'static UiGeometry>> = RwLock::new(None);
-static FALLBACK: OnceLock<UiGeometry> = OnceLock::new();
+static GEOMETRY: RenderSlot<UiGeometry> = RenderSlot::new();
 
 /// Install geometry, replacing any previous set. Swappable so a re-sent
 /// `ui.config` takes effect without a restart; see `theme::global` for why the
 /// previous value is leaked rather than reference-counted.
 pub fn set(geometry: UiGeometry) {
-    let leaked: &'static UiGeometry = Box::leak(Box::new(geometry));
-    if let Ok(mut guard) = GEOMETRY.write() {
-        *guard = Some(leaked);
-    }
+    GEOMETRY.set(geometry);
 }
 
 /// Active geometry; all-default when none was delivered.
@@ -27,11 +23,7 @@ pub fn set(geometry: UiGeometry) {
 /// later `set` silently no-ops, so the whole feature would do nothing with no
 /// error anywhere. The fallback lives in its own cell for that reason.
 pub fn active() -> &'static UiGeometry {
-    GEOMETRY
-        .read()
-        .ok()
-        .and_then(|g| *g)
-        .unwrap_or_else(|| FALLBACK.get_or_init(UiGeometry::default))
+    GEOMETRY.get(UiGeometry::default)
 }
 
 #[cfg(test)]

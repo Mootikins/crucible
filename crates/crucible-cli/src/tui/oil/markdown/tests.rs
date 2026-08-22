@@ -585,20 +585,13 @@ mod render_style_tests {
         let n = RenderStyle::natural(100);
 
         assert!(matches!(v, RenderStyle::Viewport { width: 100, .. }));
-        assert!(matches!(
-            n,
-            RenderStyle::Natural {
-                terminal_width: 100,
-                ..
-            }
-        ));
+        assert_eq!(n, v, "natural is a viewport layout under another name");
     }
 
     #[test]
     fn render_style_equality() {
         assert_eq!(RenderStyle::viewport(80), RenderStyle::viewport(80));
         assert_ne!(RenderStyle::viewport(80), RenderStyle::viewport(100));
-        assert_ne!(RenderStyle::viewport(80), RenderStyle::natural(80));
         assert_eq!(RenderStyle::natural(80), RenderStyle::natural(80));
     }
 }

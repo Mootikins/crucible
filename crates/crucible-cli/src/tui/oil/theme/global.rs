@@ -13,16 +13,10 @@
 //! per session at most), each leaking a few KB, so the trade is a bounded, tiny
 //! leak for a much simpler render path.
 
-use std::sync::{OnceLock, RwLock};
-
 use super::config::ThemeConfig;
+use super::slot::RenderSlot;
 
-static ACTIVE_THEME: RwLock<Option<&'static ThemeConfig>> = RwLock::new(None);
-static FALLBACK_THEME: OnceLock<ThemeConfig> = OnceLock::new();
-
-fn fallback() -> &'static ThemeConfig {
-    FALLBACK_THEME.get_or_init(ThemeConfig::default_dark)
-}
+static ACTIVE_THEME: RenderSlot<ThemeConfig> = RenderSlot::new();
 
 /// The active theme, or the built-in dark theme when none has been installed.
 ///
@@ -31,24 +25,12 @@ fn fallback() -> &'static ThemeConfig {
 /// make a later [`set`] look like a no-op — the theme would never apply, with
 /// nothing logged and nothing to catch it.
 pub fn active() -> &'static ThemeConfig {
-    ACTIVE_THEME
-        .read()
-        .ok()
-        .and_then(|g| *g)
-        .unwrap_or_else(fallback)
+    ACTIVE_THEME.get(ThemeConfig::default_dark)
 }
 
 /// Install a theme, replacing any previous one.
 pub fn set(config: ThemeConfig) {
-    let leaked: &'static ThemeConfig = Box::leak(Box::new(config));
-    if let Ok(mut guard) = ACTIVE_THEME.write() {
-        *guard = Some(leaked);
-    }
-}
-
-/// Whether a theme has been installed. A read alone does not count.
-pub fn is_initialized() -> bool {
-    ACTIVE_THEME.read().is_ok_and(|g| g.is_some())
+    ACTIVE_THEME.set(config);
 }
 
 #[cfg(test)]
@@ -83,22 +65,6 @@ mod tests {
             "second",
             "themes must be swappable at runtime"
         );
-    }
-
-    /// `is_initialized` means "a theme was installed", not "a theme was read".
-    #[test]
-    fn reading_the_theme_does_not_count_as_installing_one() {
-        let _ = active();
-        assert!(
-            !is_initialized(),
-            "a read must leave the slot open for a later set"
-        );
-    }
-
-    #[test]
-    fn installing_a_theme_marks_it_initialized() {
-        set(ThemeConfig::default_dark());
-        assert!(is_initialized());
     }
 
     #[test]

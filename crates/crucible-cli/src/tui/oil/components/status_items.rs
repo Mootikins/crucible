@@ -10,27 +10,14 @@ use crucible_lua::statusline_items::{StatusCond, StatusItem};
 use crucible_oil::node::{row, spacer, styled, Node};
 use crucible_oil::style::Style;
 
-use super::status_bar::NotificationToastKind;
+use super::status_bar::StatusBar;
 use crate::tui::oil::theme;
 use crate::tui::oil::utils::truncate_to_chars;
 
-/// The frame's worth of TUI-local state a bar can read.
-#[derive(Debug, Clone)]
-pub struct StatusBarData {
-    /// Mode id, not an enum: see `chat_app::state::DEFAULT_MODE`.
-    pub mode: String,
-    pub model: String,
-    pub context_used: usize,
-    pub context_total: usize,
-    pub status: String,
-    pub notification_toast: Option<(String, NotificationToastKind)>,
-    pub notification_counts: Vec<(NotificationToastKind, usize)>,
-    pub cache_hit_rate: Option<f64>,
-}
-
 /// Everything an item tree can read.
 pub struct ItemContext<'a> {
-    pub data: &'a StatusBarData,
+    /// The frame's worth of TUI-local state a bar can read.
+    pub data: &'a StatusBar,
     pub streaming: bool,
     /// Values pushed from daemon-side providers, keyed by `sl.expr` key.
     pub exprs: &'a std::collections::BTreeMap<String, String>,
@@ -338,11 +325,12 @@ fn context_label(ctx: &ItemContext<'_>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tui::oil::components::status_bar::NotificationToastKind;
     use crucible_oil::render::render_to_plain_text;
     use std::collections::BTreeMap;
 
-    fn data() -> StatusBarData {
-        StatusBarData {
+    fn data() -> StatusBar {
+        StatusBar {
             mode: "normal".into(),
             model: "claude-opus-5".to_string(),
             context_used: 5_000,
@@ -354,7 +342,7 @@ mod tests {
         }
     }
 
-    fn render(items: &[StatusItem], data: &StatusBarData, streaming: bool) -> String {
+    fn render(items: &[StatusItem], data: &StatusBar, streaming: bool) -> String {
         let exprs = BTreeMap::new();
         let ctx = ItemContext {
             data,
