@@ -79,21 +79,6 @@ pub struct NotePipeline {
 }
 
 impl NotePipeline {
-    /// Create a new pipeline with dependencies (uses default config)
-    pub fn new(enricher: Arc<Enricher>, note_store: Arc<dyn NoteStore>) -> Self {
-        let config = NotePipelineConfig::default();
-        let parser = Arc::new(CrucibleParser::new()) as Arc<dyn MarkdownParser>;
-
-        Self {
-            parser,
-            enricher,
-            note_store,
-            text_index: None,
-            config,
-            kiln_root: None,
-        }
-    }
-
     /// Create a new pipeline with custom configuration
     pub fn with_config(
         enricher: Arc<Enricher>,
@@ -218,14 +203,7 @@ impl NotePipeline {
             .collect::<Vec<_>>();
         debug!("Phase 2: Parsed note successfully");
 
-        let path_str = if let Some(ref kiln_root) = self.kiln_root {
-            std::borrow::Cow::Owned(
-                crate::kiln_manager::normalize_note_path(path, kiln_root)
-                    .unwrap_or_else(|| path.to_string_lossy().to_string()),
-            )
-        } else {
-            path.to_string_lossy()
-        };
+        let path_str = self.storage_key(path);
 
         // Phase 3: Enrichment (if enabled)
         let phase3_start = std::time::Instant::now();
@@ -328,11 +306,7 @@ impl NotePipeline {
         path: &Path,
         phase1_duration: u64,
     ) -> Result<(ProcessingResult, Vec<SessionEvent>)> {
-        let storage_path = match self.kiln_root.as_ref() {
-            Some(root) => crate::kiln_manager::normalize_note_path(path, root)
-                .unwrap_or_else(|| path.to_string_lossy().to_string()),
-            None => path.to_string_lossy().to_string(),
-        };
+        let storage_path = self.storage_key(path);
 
         let record = super::canvas_index::canvas_to_record(
             path,
@@ -372,11 +346,7 @@ impl NotePipeline {
         path: &Path,
         phase1_duration: u64,
     ) -> Result<(ProcessingResult, Vec<SessionEvent>)> {
-        let storage_path = match self.kiln_root.as_ref() {
-            Some(root) => crate::kiln_manager::normalize_note_path(path, root)
-                .unwrap_or_else(|| path.to_string_lossy().to_string()),
-            None => path.to_string_lossy().to_string(),
-        };
+        let storage_path = self.storage_key(path);
 
         let body = tokio::fs::read_to_string(path)
             .await
@@ -661,9 +631,7 @@ pub(super) fn stamp_scope_on_properties(
         },
         Some(scope) => scope,
         None => match kiln_root {
-            Some(root) => {
-                Scope::workspace(root).unwrap_or_else(|_| Scope::workspace_unchecked(root))
-            }
+            Some(root) => crate::kiln_manager::request_scope(root),
             None => Scope::workspace_unchecked(std::path::PathBuf::new()),
         },
     };

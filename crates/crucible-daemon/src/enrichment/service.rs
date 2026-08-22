@@ -11,12 +11,6 @@ use crucible_core::ParsedNote;
 use std::sync::Arc;
 use tracing::{debug, info};
 
-/// Default minimum word count for generating embeddings
-pub const DEFAULT_MIN_WORDS_FOR_EMBEDDING: usize = 5;
-
-/// Default maximum batch size for embedding generation
-pub const DEFAULT_MAX_BATCH_SIZE: usize = 10;
-
 /// Enriches parsed notes with embeddings and metadata.
 pub struct Enricher {
     embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
@@ -36,8 +30,8 @@ impl Enricher {
     pub fn new(embedding_provider: Arc<dyn EmbeddingProvider>) -> Self {
         Self {
             embedding_provider: Some(embedding_provider),
-            min_words_for_embedding: DEFAULT_MIN_WORDS_FOR_EMBEDDING,
-            max_batch_size: DEFAULT_MAX_BATCH_SIZE,
+            min_words_for_embedding: 5,
+            max_batch_size: 10,
         }
     }
 
@@ -45,8 +39,8 @@ impl Enricher {
     pub fn without_embeddings() -> Self {
         Self {
             embedding_provider: None,
-            min_words_for_embedding: DEFAULT_MIN_WORDS_FOR_EMBEDDING,
-            max_batch_size: DEFAULT_MAX_BATCH_SIZE,
+            min_words_for_embedding: 5,
+            max_batch_size: 10,
         }
     }
 
@@ -56,30 +50,6 @@ impl Enricher {
             Some(p) => Self::new(p),
             None => Self::without_embeddings(),
         }
-    }
-
-    #[allow(dead_code)] // builder API, exercised by tests
-    pub fn with_min_words(mut self, min_words: usize) -> Self {
-        self.min_words_for_embedding = min_words;
-        self
-    }
-
-    #[allow(dead_code)] // builder API, exercised by tests
-    pub fn with_max_batch_size(mut self, max_batch_size: usize) -> Self {
-        self.max_batch_size = max_batch_size;
-        self
-    }
-
-    pub fn min_words_for_embedding(&self) -> usize {
-        self.min_words_for_embedding
-    }
-
-    pub fn max_batch_size(&self) -> usize {
-        self.max_batch_size
-    }
-
-    pub fn has_embedding_provider(&self) -> bool {
-        self.embedding_provider.is_some()
     }
 
     /// Enrich a parsed note.
@@ -522,14 +492,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn with_min_words_overrides_default() {
-        let provider = Arc::new(MockEmbeddingProvider::new());
-        let service = Enricher::new(provider).with_min_words(10);
-
-        assert_eq!(service.min_words_for_embedding, 10);
-    }
-
-    #[tokio::test]
     async fn generate_embeddings_returns_empty_without_provider() {
         let service = Enricher::without_embeddings();
 
@@ -667,7 +629,8 @@ mod tests {
     #[tokio::test]
     async fn generate_embeddings_batches_by_max_batch_size() {
         let provider = Arc::new(MockEmbeddingProvider::new());
-        let service = Enricher::new(provider.clone()).with_max_batch_size(1);
+        let mut service = Enricher::new(provider.clone());
+        service.max_batch_size = 1;
         let parsed = create_test_parsed_note_with_content();
 
         let embeddings = service.generate_embeddings(&parsed, &[]).await.unwrap();
@@ -679,7 +642,8 @@ mod tests {
     #[tokio::test]
     async fn generate_embeddings_propagates_mid_batch_failure() {
         let provider = Arc::new(MockEmbeddingProvider::with_failure_on_batch_call(2));
-        let service = Enricher::new(provider).with_max_batch_size(1);
+        let mut service = Enricher::new(provider);
+        service.max_batch_size = 1;
         let parsed = create_test_parsed_note_with_three_paragraphs();
 
         let result = service.generate_embeddings(&parsed, &[]).await;
@@ -880,12 +844,5 @@ mod tests {
         ];
 
         assert_eq!(blocks, expected);
-    }
-
-    #[test]
-    fn builder_with_max_batch_size_stores_value() {
-        let provider = Arc::new(MockEmbeddingProvider::new());
-        let service = Enricher::new(provider).with_max_batch_size(5);
-        assert_eq!(service.max_batch_size, 5);
     }
 }

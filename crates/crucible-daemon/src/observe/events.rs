@@ -344,37 +344,12 @@ impl LogEvent {
         }
     }
 
-    /// Create a permission event with reason
-    pub fn permission_with_reason(
-        id: impl Into<String>,
-        tool: impl Into<String>,
-        decision: PermissionOutcome,
-        reason: impl Into<String>,
-    ) -> Self {
-        LogEvent::Permission {
-            ts: Utc::now(),
-            id: id.into(),
-            tool: tool.into(),
-            decision,
-            reason: Some(reason.into()),
-        }
-    }
-
     /// Create a context summary event
     pub fn summary(content: impl Into<String>) -> Self {
         LogEvent::Summary {
             ts: Utc::now(),
             content: content.into(),
             messages_summarized: None,
-        }
-    }
-
-    /// Create a context summary event with message count
-    pub fn summary_with_count(content: impl Into<String>, messages_summarized: u32) -> Self {
-        LogEvent::Summary {
-            ts: Utc::now(),
-            content: content.into(),
-            messages_summarized: Some(messages_summarized),
         }
     }
 

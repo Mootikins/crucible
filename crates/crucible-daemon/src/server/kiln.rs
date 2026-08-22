@@ -4,8 +4,6 @@ use crucible_core::config::{
     read_kiln_config, read_project_config, write_kiln_config, write_project_config,
     DataClassification, KilnConfig, KilnMeta, ProjectConfig,
 };
-use crucible_core::storage::Scope;
-
 /// Derive the read authority for a kiln-scoped RPC request.
 ///
 /// Authority is always derived from the `kiln` parameter — callers cannot
@@ -13,13 +11,8 @@ use crucible_core::storage::Scope;
 /// `decode_request_scope` did, which made the storage filter enforce
 /// caller-controlled input rather than a session boundary). Any `scope`
 /// in `req.params` is now ignored.
-///
-/// Canonicalization is best-effort: if `kiln_path` doesn't yet resolve
-/// (e.g. during early setup) the unchecked path is used so the request
-/// still reaches the storage layer.
-fn request_scope(kiln_path: &Path) -> Scope {
-    Scope::workspace(kiln_path).unwrap_or_else(|_| Scope::workspace_unchecked(kiln_path))
-}
+use crate::kiln_manager::request_scope;
+use crucible_core::storage::Scope;
 
 pub(crate) async fn handle_kiln_open(
     req: Request,

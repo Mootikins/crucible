@@ -73,13 +73,6 @@ pub struct Skill {
     pub indexed_at: DateTime<Utc>,
 }
 
-impl Skill {
-    /// Get unique identifier (scope + name)
-    pub fn id(&self) -> String {
-        format!("{}:{}", self.source.scope, self.name)
-    }
-}
-
 /// A skill after priority resolution (may shadow others)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolvedSkill {

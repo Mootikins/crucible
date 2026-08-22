@@ -24,9 +24,6 @@ pub enum SkillError {
 
     #[error("Discovery error: {0}")]
     DiscoveryError(String),
-
-    #[error("Skill not found: {name}")]
-    NotFound { name: String },
 }
 
 pub type SkillResult<T> = Result<T, SkillError>;

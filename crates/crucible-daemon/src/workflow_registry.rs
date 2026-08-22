@@ -43,30 +43,6 @@ impl WorkflowRegistry {
     pub fn remove(&self, session_id: &str) -> Option<ExecutionHandle> {
         self.inner.remove(session_id).map(|(_, handle)| handle)
     }
-
-    /// Drop executions that have reached a terminal status. Call after
-    /// the driver task finishes, or opportunistically during status
-    /// queries.
-    pub async fn prune_terminal(&self) {
-        let mut drop_keys = Vec::new();
-        for entry in self.inner.iter() {
-            let guard = entry.value().lock().await;
-            if guard.status().is_terminal() {
-                drop_keys.push(entry.key().clone());
-            }
-        }
-        for key in drop_keys {
-            self.inner.remove(&key);
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        self.inner.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
-    }
 }
 
 /// Shorthand for what a handler returns on `workflow.status`.

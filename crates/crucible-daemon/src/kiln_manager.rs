@@ -46,6 +46,16 @@ pub fn normalize_note_path(file_path: &Path, kiln_path: &Path) -> Option<String>
     Some(relative.to_string_lossy().replace('\\', "/"))
 }
 
+/// The read authority a kiln root grants: a workspace scope at that root.
+///
+/// Canonicalization is best-effort. When `kiln_path` does not resolve yet
+/// (for example during early setup), the unchecked path is used so the
+/// request still reaches the storage layer.
+pub(crate) fn request_scope(kiln_path: &Path) -> crucible_core::storage::Scope {
+    use crucible_core::storage::Scope;
+    Scope::workspace(kiln_path).unwrap_or_else(|_| Scope::workspace_unchecked(kiln_path))
+}
+
 // Backend-specific imports
 use crate::storage::sqlite::{adapters as sqlite_adapters, SqliteClientHandle, SqliteConfig};
 
