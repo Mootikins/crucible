@@ -136,12 +136,7 @@ impl ChatNode {
         is_complete: bool,
         ctx: &ViewContext<'_>,
     ) -> Node {
-        let render_state = RenderState {
-            terminal_width: ctx.terminal_size.0,
-            spinner_frame: ctx.spinner_frame,
-            show_thinking: ctx.show_thinking,
-            show_diffs: ctx.show_diffs,
-        };
+        let render_state = RenderState::from(ctx);
 
         let has_thinking = !thinking.is_empty();
         let margins = if is_continuation || has_thinking {

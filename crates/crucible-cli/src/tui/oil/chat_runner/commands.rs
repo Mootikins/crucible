@@ -330,21 +330,8 @@ fn setup_msgs(setup: SetupPayload) -> Vec<ChatAppMsg> {
         SetupPayload::KilnNotesIndexed(p) => vec![ChatAppMsg::KilnNotesIndexed(p.notes)],
         SetupPayload::PluginsDiscovered(p) => vec![ChatAppMsg::PluginsDiscovered(p.plugins)],
         SetupPayload::McpServersReady(p) => {
-            // Map McpServerInfo (tools: Vec<String>) → McpServerDisplay
-            // (tool_count: usize). The TUI renders tool_count only; collapsing at
-            // the boundary keeps the rest of the TUI unchanged. The real
-            // connected-state / tool count is refreshed later by the background
-            // MCP gateway task.
-            let servers: Vec<McpServerDisplay> = p
-                .servers
-                .into_iter()
-                .map(|s| McpServerDisplay {
-                    name: s.name,
-                    prefix: s.prefix.trim_end_matches('_').to_string(),
-                    tool_count: s.tools.len(),
-                    connected: s.connected,
-                })
-                .collect();
+            let servers: Vec<McpServerDisplay> =
+                p.servers.into_iter().map(McpServerDisplay::from).collect();
             vec![ChatAppMsg::McpServersReady(servers)]
         }
     }
