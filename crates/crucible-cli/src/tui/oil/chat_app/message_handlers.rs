@@ -170,7 +170,7 @@ impl OilChatApp {
                     error = %err,
                     "model state transition"
                 );
-                self.model_list_state = ModelListState::Failed(err.clone());
+                self.model_list_state = ModelListState::Failed;
             }
             ChatAppMsg::PluginStatusLoaded(entries) => {
                 self.plugin_status = entries;
@@ -270,10 +270,9 @@ impl OilChatApp {
             ChatAppMsg::CacheHitRate(rate) => {
                 self.cache_hit_rate = rate;
             }
-            ChatAppMsg::PrecognitionResult { notes_count, notes } => {
-                self.precognition.last_notes_count = Some(notes_count);
-                self.precognition.last_notes = notes;
-            }
+            // The TUI does not show precognition notes. The message stays so
+            // that the runner keeps one reply shape for the RPC.
+            ChatAppMsg::PrecognitionResult { .. } => {}
             ChatAppMsg::UndoComplete {
                 turns,
                 messages_removed,

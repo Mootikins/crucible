@@ -23,7 +23,7 @@ impl OilChatApp {
             let needs_model_fetch = kind == AutocompleteKind::Model
                 && matches!(
                     self.model_list_state,
-                    ModelListState::NotLoaded | ModelListState::Failed(_)
+                    ModelListState::NotLoaded | ModelListState::Failed
                 );
 
             self.popup.kind = kind;
@@ -132,9 +132,8 @@ impl OilChatApp {
                         ));
                     }
 
-                    let arg_index = args_part.split_whitespace().count();
                     return Some((
-                        AutocompleteKind::CommandArg { command, arg_index },
+                        AutocompleteKind::CommandArg { command },
                         trigger_pos,
                         filter,
                     ));
@@ -178,13 +177,18 @@ impl OilChatApp {
             AutocompleteKind::Note => {
                 Self::filter_to_popup_items(&self.kiln_notes, &filter, "note", 15)
             }
-            AutocompleteKind::Command => Self::filter_commands(
-                &[
-                    ("/mode", "Cycle chat mode", "command"),
-                    ("/help", "Show help", "command"),
-                ],
-                &filter,
-            ),
+            AutocompleteKind::Command => {
+                let owned: Vec<(String, String, String)> =
+                    crate::commands::chat::known_slash_commands()
+                        .into_iter()
+                        .map(|(name, desc)| (format!("/{}", name), desc, "command".to_string()))
+                        .collect();
+                let refs: Vec<(&str, &str, &str)> = owned
+                    .iter()
+                    .map(|(n, d, k)| (n.as_str(), d.as_str(), k.as_str()))
+                    .collect();
+                Self::filter_commands(&refs, &filter)
+            }
             AutocompleteKind::SlashCommand => {
                 let owned: Vec<(String, String, String)> = self
                     .slash_commands
@@ -226,7 +230,7 @@ impl OilChatApp {
                         kind: Some("info".to_string()),
                         description: None,
                     }]
-                } else if matches!(self.model_list_state, ModelListState::Failed(_))
+                } else if matches!(self.model_list_state, ModelListState::Failed)
                     && self.available_models.is_empty()
                 {
                     vec![PopupItemNode {
@@ -238,10 +242,9 @@ impl OilChatApp {
                     Self::filter_to_popup_items(&self.available_models, &filter, "model", 100)
                 }
             }
-            AutocompleteKind::CommandArg {
-                ref command,
-                arg_index,
-            } => self.get_command_arg_completions(command, arg_index, &filter),
+            AutocompleteKind::CommandArg { ref command } => {
+                self.get_command_arg_completions(command, &filter)
+            }
             AutocompleteKind::SetOption { ref option } => {
                 self.get_set_option_completions(option.as_deref(), &filter)
             }
@@ -402,7 +405,6 @@ impl OilChatApp {
     pub(super) fn get_command_arg_completions(
         &self,
         command: &str,
-        _arg_index: usize,
         filter: &str,
     ) -> Vec<PopupItemNode> {
         match command {

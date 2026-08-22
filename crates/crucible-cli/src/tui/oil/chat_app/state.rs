@@ -1,13 +1,6 @@
 use crate::tui::oil::theme;
 use crucible_oil::style::Color;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Role {
-    User,
-    Assistant,
-    System,
-}
-
 // Modes are declared in Lua (`cru.modes.review = { … }`), so the TUI cannot
 // know their names at compile time. It holds the id the daemon gave it and
 // derives presentation from that; the alternative — an enum with a `Custom`
@@ -78,7 +71,6 @@ pub enum AutocompleteKind {
     Model,
     CommandArg {
         command: String,
-        arg_index: usize,
     },
     SetOption {
         option: Option<String>,

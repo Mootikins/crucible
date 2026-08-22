@@ -37,7 +37,7 @@ pub use messages::ChatAppMsg;
 pub use model_state::{McpServerDisplay, ModelListState, PluginStatusEntry};
 use popup_state::{PermissionState, PopupState, PrecognitionState, ShellHistoryState};
 use state::MessageQueueState;
-pub use state::{mode_label, mode_style, next_mode, Role, DEFAULT_MODE, DEFAULT_MODES};
+pub use state::{mode_label, mode_style, next_mode, DEFAULT_MODE, DEFAULT_MODES};
 
 // ─── Main Struct ─────────────────────────────────────────────────────────────
 
@@ -338,6 +338,8 @@ impl OilChatApp {
         self.plugin_status = entries;
     }
 
+    /// Tests seed the model list without a daemon round trip.
+    #[cfg(test)]
     pub(crate) fn set_available_models(&mut self, models: Vec<String>) {
         self.available_models = models.clone();
         if !models.is_empty() {

@@ -86,7 +86,6 @@ pub struct OilChatRunner {
     pub(super) resume_history: Option<Vec<serde_json::Value>>,
     pub(super) mcp_servers: Vec<McpServerDisplay>,
     pub(super) plugin_status: Vec<PluginStatusEntry>,
-    pub(super) available_models: Vec<String>,
     pub(super) show_thinking: bool,
     pub(super) show_diffs: bool,
     pub(super) session_cmd_rx: Option<mpsc::UnboundedReceiver<SessionCommand>>,
@@ -94,8 +93,6 @@ pub struct OilChatRunner {
     pub(super) plugin_commands: Vec<(String, String)>,
     pub(super) agent_name: Option<String>,
     pub(super) initial_sets: Vec<SetEffect>,
-    pub(super) recording_mode: Option<String>,
-    pub(super) recording_path: Option<PathBuf>,
     pub(super) replay_path: Option<PathBuf>,
     pub(super) replay_speed: f64,
     pub(super) replay_auto_exit: Option<u64>,
@@ -142,7 +139,6 @@ impl OilChatRunner {
             resume_history: None,
             mcp_servers: Vec::new(),
             plugin_status: Vec::new(),
-            available_models: Vec::new(),
             show_thinking: false,
             show_diffs: true,
             session_cmd_rx: None,
@@ -150,8 +146,6 @@ impl OilChatRunner {
             plugin_commands: Vec::new(),
             agent_name: None,
             initial_sets: Vec::new(),
-            recording_mode: None,
-            recording_path: None,
             replay_path: None,
             replay_speed: 1.0,
             replay_auto_exit: None,
@@ -171,11 +165,6 @@ impl OilChatRunner {
     pub fn with_context_limit(mut self, limit: usize) -> Self {
         self.context_limit = Arc::new(AtomicUsize::new(limit));
         self
-    }
-
-    /// Returns a handle to set context_limit from a background task.
-    pub fn context_limit_handle(&self) -> Arc<AtomicUsize> {
-        Arc::clone(&self.context_limit)
     }
 
     pub fn with_mode(mut self, mode: impl Into<std::sync::Arc<str>>) -> Self {
@@ -200,11 +189,6 @@ impl OilChatRunner {
 
     pub fn with_resume_history(mut self, history: Vec<serde_json::Value>) -> Self {
         self.resume_history = Some(history);
-        self
-    }
-
-    pub fn with_available_models(mut self, models: Vec<String>) -> Self {
-        self.available_models = models;
         self
     }
 
@@ -238,16 +222,6 @@ impl OilChatRunner {
 
     pub fn with_initial_sets(mut self, sets: Vec<SetEffect>) -> Self {
         self.initial_sets = sets;
-        self
-    }
-
-    pub fn with_recording_mode(mut self, mode: Option<String>) -> Self {
-        self.recording_mode = mode;
-        self
-    }
-
-    pub fn with_recording_path(mut self, path: Option<PathBuf>) -> Self {
-        self.recording_path = path;
         self
     }
 

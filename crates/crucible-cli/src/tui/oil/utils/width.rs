@@ -28,17 +28,6 @@ pub fn terminal_size() -> (usize, usize) {
         .unwrap_or((80, 24))
 }
 
-/// Get current cursor position as (column, row).
-///
-/// Returns None if position unavailable (e.g., not a TTY, or
-/// the terminal doesn't support cursor position reporting).
-///
-/// Note: This function may block briefly while waiting for
-/// the terminal's response.
-pub fn cursor_position() -> Option<(u16, u16)> {
-    crossterm::cursor::position().ok()
-}
-
 // Re-export visible_width from ansi module for discoverability
 pub use crucible_oil::ansi::visible_width;
 

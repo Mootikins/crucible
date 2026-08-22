@@ -40,28 +40,11 @@ const KNOWN_REPL_COMMANDS: &[&str] = &[
     "lua",
 ];
 
-/// Minimal Levenshtein distance for command suggestions.
-fn levenshtein(a: &str, b: &str) -> usize {
-    let a = a.as_bytes();
-    let b = b.as_bytes();
-    let mut prev: Vec<usize> = (0..=b.len()).collect();
-    let mut curr = vec![0; b.len() + 1];
-    for i in 1..=a.len() {
-        curr[0] = i;
-        for j in 1..=b.len() {
-            let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
-            curr[j] = (prev[j] + 1).min(curr[j - 1] + 1).min(prev[j - 1] + cost);
-        }
-        std::mem::swap(&mut prev, &mut curr);
-    }
-    prev[b.len()]
-}
-
 /// Suggest the closest known command for a typo.
 fn suggest_command<'a>(input: &str, known: &[&'a str]) -> Option<&'a str> {
     known
         .iter()
-        .map(|cmd| (*cmd, levenshtein(input, cmd)))
+        .map(|cmd| (*cmd, crucible_core::fuzzy::levenshtein(input, cmd)))
         .filter(|(_, dist)| *dist <= 2)
         .min_by_key(|(_, dist)| *dist)
         .map(|(cmd, _)| cmd)
@@ -385,7 +368,7 @@ impl OilChatApp {
 
         if matches!(
             self.model_list_state,
-            ModelListState::NotLoaded | ModelListState::Failed(_)
+            ModelListState::NotLoaded | ModelListState::Failed
         ) {
             self.model_list_state = ModelListState::Loading;
             Action::Send(ChatAppMsg::FetchModels)

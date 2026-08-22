@@ -66,7 +66,7 @@ fn models_fetch_failed_updates_state() {
     assert!(
         matches!(
             app.model_list_state(),
-            crate::tui::oil::chat_app::model_state::ModelListState::Failed(_)
+            crate::tui::oil::chat_app::model_state::ModelListState::Failed
         ),
         "ModelsFetchFailed should set state to Failed"
     );

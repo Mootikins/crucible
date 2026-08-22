@@ -467,8 +467,6 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
         .with_show_diffs(config.chat.show_diffs)
         .with_agent_name(agent_name)
         .with_initial_sets(parsed_set_overrides)
-        .with_recording_mode(recording_mode.clone())
-        .with_recording_path(recording_path.clone())
         .with_replay_path(replay)
         .with_replay_speed(replay_speed)
         .with_replay_auto_exit(replay_auto_exit);

@@ -7,32 +7,6 @@
 
 use super::*;
 
-// --- levenshtein tests ---
-
-#[test]
-fn levenshtein_identical_strings() {
-    assert_eq!(levenshtein("quit", "quit"), 0);
-}
-
-#[test]
-fn levenshtein_single_char_difference() {
-    assert_eq!(levenshtein("quit", "qut"), 1); // deletion
-    assert_eq!(levenshtein("quit", "quiit"), 1); // insertion
-    assert_eq!(levenshtein("quit", "qxit"), 1); // substitution
-}
-
-#[test]
-fn levenshtein_empty_strings() {
-    assert_eq!(levenshtein("", ""), 0);
-    assert_eq!(levenshtein("abc", ""), 3);
-    assert_eq!(levenshtein("", "abc"), 3);
-}
-
-#[test]
-fn levenshtein_completely_different() {
-    assert_eq!(levenshtein("abc", "xyz"), 3);
-}
-
 // --- suggest_command tests ---
 
 #[test]

@@ -20,7 +20,6 @@ pub mod chat_runner;
 pub mod commands;
 pub mod component;
 pub mod components;
-mod composer;
 pub mod config;
 pub mod containers;
 mod event;
@@ -28,7 +27,6 @@ pub mod local_replay;
 pub mod markdown;
 pub mod noop_agent;
 mod render_state;
-mod runner;
 mod test_harness;
 pub mod theme;
 pub mod utils;
@@ -36,17 +34,13 @@ mod viewport_cache;
 
 pub use agent_selection::AgentSelection;
 pub use app::{Action, App, ViewContext};
-pub use chat_app::{
-    ChatAppMsg, McpServerDisplay, OilChatApp, PluginStatusEntry, Role, DEFAULT_MODE,
-};
+pub use chat_app::{ChatAppMsg, McpServerDisplay, OilChatApp, PluginStatusEntry, DEFAULT_MODE};
 pub use chat_runner::OilChatRunner;
 pub use component::{Component, ComponentHarness};
 pub use components::{InputMode, StatusBar, INPUT_MAX_CONTENT_LINES};
-pub use composer::{pad_popup_region, ComposerConfig};
 pub use containers::{ChatNode, ContainerList};
 pub use event::{Event, InputAction, InputBuffer};
 pub use render_state::RenderState;
-pub use runner::{run_sync, OilRunner};
 pub use test_harness::AppHarness;
 
 // Re-export commonly used crucible-oil types

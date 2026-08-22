@@ -46,3 +46,45 @@ impl Default for FuzzyMatcher {
         Self::new()
     }
 }
+
+/// Levenshtein distance between two strings, counted in chars.
+///
+/// The "did you mean" hints use it. Fifteen lines beat a dependency.
+pub fn levenshtein(a: &str, b: &str) -> usize {
+    let b_chars: Vec<char> = b.chars().collect();
+    let mut prev: Vec<usize> = (0..=b_chars.len()).collect();
+    let mut cur = vec![0usize; b_chars.len() + 1];
+    for (i, ca) in a.chars().enumerate() {
+        cur[0] = i + 1;
+        for (j, cb) in b_chars.iter().enumerate() {
+            let cost = usize::from(ca != *cb);
+            cur[j + 1] = (prev[j] + cost).min(prev[j + 1] + 1).min(cur[j] + 1);
+        }
+        std::mem::swap(&mut prev, &mut cur);
+    }
+    prev[b_chars.len()]
+}
+
+#[cfg(test)]
+mod levenshtein_tests {
+    use super::levenshtein;
+
+    #[test]
+    fn levenshtein_measures_what_it_claims() {
+        assert_eq!(levenshtein("", ""), 0);
+        assert_eq!(levenshtein("abc", ""), 3);
+        assert_eq!(levenshtein("", "abc"), 3);
+        assert_eq!(levenshtein("abc", "abc"), 0);
+        assert_eq!(levenshtein("quit", "qut"), 1);
+        assert_eq!(levenshtein("quit", "quiit"), 1);
+        assert_eq!(levenshtein("quit", "qxit"), 1);
+        assert_eq!(levenshtein("abc", "xyz"), 3);
+        assert_eq!(levenshtein("pre_toolcall", "pre_tool_call"), 1);
+        assert_eq!(levenshtein("kitten", "sitting"), 3);
+    }
+
+    #[test]
+    fn levenshtein_counts_chars_not_bytes() {
+        assert_eq!(levenshtein("é", "e"), 1);
+    }
+}

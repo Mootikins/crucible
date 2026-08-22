@@ -70,9 +70,6 @@ impl OilChatRunner {
             }
             app.set_plugin_status(entries);
         }
-        if !self.available_models.is_empty() {
-            app.set_available_models(std::mem::take(&mut self.available_models));
-        }
         app.set_show_thinking(self.show_thinking);
         app.set_show_diffs(self.show_diffs);
         if !self.slash_commands.is_empty() {

@@ -4,7 +4,7 @@ pub enum ModelListState {
     NotLoaded,
     Loading,
     Loaded,
-    Failed(String),
+    Failed,
 }
 
 #[derive(Debug, Clone)]

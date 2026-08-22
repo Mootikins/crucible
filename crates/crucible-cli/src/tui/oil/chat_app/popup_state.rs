@@ -1,7 +1,6 @@
 use std::collections::VecDeque;
 
 use crucible_core::interaction::PermRequest;
-use crucible_core::traits::chat::PrecognitionNoteInfo;
 
 use super::state::AutocompleteKind;
 use super::MAX_SHELL_HISTORY;
@@ -71,10 +70,6 @@ pub(crate) struct PrecognitionState {
     pub precognition: bool,
     /// Number of context results to inject per precognition query (1-20)
     pub precognition_results: usize,
-    /// Count of notes injected in the last precognition result
-    pub last_notes_count: Option<usize>,
-    /// Notes returned by the last precognition query
-    pub last_notes: Vec<PrecognitionNoteInfo>,
 }
 
 impl Default for PrecognitionState {
@@ -82,8 +77,6 @@ impl Default for PrecognitionState {
         Self {
             precognition: true,
             precognition_results: 5,
-            last_notes_count: None,
-            last_notes: Vec::new(),
         }
     }
 }
