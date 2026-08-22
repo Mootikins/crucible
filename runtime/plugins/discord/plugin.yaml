@@ -20,8 +20,31 @@ config:
       default: ""
     intents:
       type: number
-      description: Gateway intents bitmask (default 37889 = GUILDS | GUILD_MESSAGES | DIRECT_MESSAGES | MESSAGE_CONTENT)
-      default: 37889
+      description: Gateway intents bitmask (default 37377 = GUILDS | GUILD_MESSAGES | DIRECT_MESSAGES | MESSAGE_CONTENT)
+      default: 37377
+    mode:
+      type: string
+      description: >-
+        The deployment shape: "personal" (one correspondent, DMs only) or
+        "server" (several people, guilds). Defaults to "personal". Reply-chain
+        continuity, self-approval and the read tier are each safe in one and
+        wrong in the other, and this is what tells the plugin which it is
+        rather than leaving it to be inferred from allowed_guilds.
+        "personal" with allowed_guilds set refuses to start, because the quiet
+        resolution -- answering DMs and dropping every guild message -- looks
+        healthy. "server" requires a reply to come from the sender who owns the
+        session, and requires an approvers list before it will honour "ask".
+        An unknown value refuses to start.
+      default: "personal"
+      enum: ["personal", "server"]
+    share_reply_chains:
+      type: boolean
+      description: >-
+        Server mode only. Lets a reply join a session started by somebody else,
+        which is the collaborative behaviour personal mode has unconditionally.
+        Off by default: the joiner inherits the other person's context, and the
+        tier check does not catch it because at the default everyone is "read".
+      default: false
     auto_connect:
       type: boolean
       description: Automatically connect to gateway on plugin load

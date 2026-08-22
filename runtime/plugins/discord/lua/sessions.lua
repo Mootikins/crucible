@@ -226,8 +226,20 @@ function M.get_or_create(channel_id, guild_id, author_id, opts)
     -- built with. A mismatch makes them their own session instead of
     -- downgrading this one, which would mean discarding the conversation the
     -- reply was continuing.
+    --
+    -- Whose session a reply may join depends on the deployment shape. A
+    -- personal bot has one correspondent, so "somebody else" does not exist and
+    -- the chain is free. A server has several, and joining across senders hands
+    -- the replier the other person's context -- the tier check above does not
+    -- catch it, because at the default everybody is `read`. Server mode
+    -- therefore requires the same sender unless `share_reply_chains` asks for
+    -- the collaborative behaviour back.
+    local may_join_another_sender = config.mode() == "personal"
+        or config.get("share_reply_chains", false)
+
     local replied = opts.reply_to and bot_messages[tostring(opts.reply_to)]
     if replied and is_live(replied) and replied.tier == tier
+        and (may_join_another_sender or replied.key == key)
         and os.time() - replied.last_active < session_ttl(replied.guild_id) then
         replied.last_active = os.time()
         note_dispatch(opts.message_id, replied)
@@ -485,8 +497,14 @@ function M.access_tier(guild_id, author_id, roles)
     -- anywhere. Without one the requester answers, so the grant must have named
     -- them: `guild:` and `default` describe the room, and prompting a room is
     -- how the first person to type answers for everyone in it.
-    if tier == "ask" and #M.approvers() == 0
-        and (source == "guild" or source == "default") then
+    -- A server has no account that is both parties. Self-approval is the point
+    -- of `ask` on a personal bot and the hole approvals exist to close on a
+    -- shared one, so server mode needs a named approver whatever the grant's
+    -- source; personal mode keeps the narrower rule, where only a key naming a
+    -- ROOM (`guild:`, `default`) cannot answer for itself.
+    local needs_approver = config.mode() == "server"
+        or source == "guild" or source == "default"
+    if tier == "ask" and #M.approvers() == 0 and needs_approver then
         cru.log("info",
             "Discord plugin: 'ask' from a " .. source .. " key needs an approvers list; using read")
         return "read"

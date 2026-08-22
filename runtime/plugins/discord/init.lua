@@ -227,6 +227,24 @@ local plugin = {
                     cru.log("info", "Discord: no bot_token configured; gateway not started")
                     return
                 end
+                -- A personal bot with guilds listed is a contradiction, and the
+                -- dangerous resolution is the quiet one: answer the DMs, drop
+                -- every guild message, look healthy. Refuse and name the key --
+                -- a silently deaf bot is the bug the intents default already
+                -- was, and it went unnoticed from the day the plugin shipped.
+                local ok_mode, mode = pcall(config.mode)
+                if not ok_mode then
+                    cru.log("warn", "Discord: " .. tostring(mode) .. "; gateway not started")
+                    return
+                end
+                local guilds = config.get("allowed_guilds", {})
+                if mode == "personal" and type(guilds) == "table" and #guilds > 0 then
+                    cru.log("warn",
+                        "Discord: allowed_guilds is set but mode is 'personal', so no guild "
+                        .. "message would ever be answered. Set mode = \"server\" to run in "
+                        .. "servers, or clear allowed_guilds. Gateway not started.")
+                    return
+                end
                 gateway.connect()
             end,
         },

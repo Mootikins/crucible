@@ -804,3 +804,102 @@ describe("the session workspace invariant", function()
         )
     end)
 end)
+
+--- The deployment shape is declared, not inferred from four other keys.
+---
+--- Reply-chain continuity, self-approval and the `read` tier are each safe in a
+--- personal bot and wrong in a shared server, and until `mode` existed the only
+--- thing separating the two was whether `allowed_guilds` happened to be empty.
+describe("deployment mode", function()
+    local function cfg(extra)
+        local c = {
+            ["discord.kiln"] = "notes",
+            ["discord.provider"] = "p",
+            ["discord.model"] = "m",
+        }
+        for k, v in pairs(extra or {}) do c[k] = v end
+        return c
+    end
+
+    local function turn(channel, guild, author, msg_id, reply_to, bot_msg_id)
+        local id = sessions.get_or_create(channel, guild, author, {
+            message_id = msg_id,
+            reply_to = reply_to,
+        })
+        if id and bot_msg_id then sessions.note_bot_message(bot_msg_id, msg_id) end
+        return id
+    end
+
+    it("server mode keeps a reply out of another sender's session", function()
+        local calls, api = recording_api()
+        with_env(cfg({ ["discord.mode"] = "server" }), api, function()
+            local alice = turn("chan-srv", "g1", "alice", "srv-m1", nil, "srv-bot1")
+            local bob = turn("chan-srv", "g1", "bob", "srv-m2", "srv-bot1", nil)
+            assert.equals(true, alice ~= bob)
+            assert.equals(2, #calls.created)
+        end)
+    end)
+
+    it("server mode still follows a sender's reply to their OWN session", function()
+        local calls, api = recording_api()
+        with_env(cfg({ ["discord.mode"] = "server" }), api, function()
+            local first = turn("chan-own", "g1", "alice", "own-m1", nil, "own-bot1")
+            local again = turn("chan-own", "g1", "alice", "own-m2", "own-bot1", nil)
+            assert.equals(first, again)
+            assert.equals(1, #calls.created)
+        end)
+    end)
+
+    it("server mode restores collaborative chains when asked explicitly", function()
+        local calls, api = recording_api()
+        with_env(cfg({
+            ["discord.mode"] = "server",
+            ["discord.share_reply_chains"] = true,
+        }), api, function()
+            local alice = turn("chan-share", "g1", "alice", "shr-m1", nil, "shr-bot1")
+            local bob = turn("chan-share", "g1", "bob", "shr-m2", "shr-bot1", nil)
+            assert.equals(alice, bob)
+            assert.equals(1, #calls.created)
+        end)
+    end)
+
+    -- `ask` with no approvers means the requester approves their own write.
+    -- That is the whole point of a personal bot and the hole approvals exist to
+    -- close on a shared one, so server mode refuses it rather than trusting the
+    -- operator to have also set `approvers`.
+    it("server mode downgrades a self-approving ask to read", function()
+        local _, api = recording_api()
+        with_env(cfg({
+            ["discord.mode"] = "server",
+            ["discord.access"] = { ["user:alice"] = "ask" },
+        }), api, function()
+            assert.equals("read", sessions.access_tier("g1", "alice", nil))
+        end)
+    end)
+
+    it("server mode keeps ask when an approver can answer it", function()
+        local _, api = recording_api()
+        with_env(cfg({
+            ["discord.mode"] = "server",
+            ["discord.access"] = { ["user:alice"] = "ask" },
+            ["discord.approvers"] = { "carol" },
+        }), api, function()
+            assert.equals("ask", sessions.access_tier("g1", "alice", nil))
+        end)
+    end)
+
+    it("personal mode leaves self-approval alone -- you are both parties", function()
+        local _, api = recording_api()
+        with_env(cfg({ ["discord.access"] = { ["user:alice"] = "ask" } }), api, function()
+            assert.equals("ask", sessions.access_tier(nil, "alice", nil))
+        end)
+    end)
+
+    it("refuses an unknown mode rather than guessing which one you meant", function()
+        local _, api = recording_api()
+        with_env(cfg({ ["discord.mode"] = "sever" }), api, function()
+            local ok = pcall(function() return sessions.access_tier(nil, "alice", nil) end)
+            assert.equals(false, ok)
+        end)
+    end)
+end)
