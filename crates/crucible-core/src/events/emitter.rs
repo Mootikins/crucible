@@ -330,23 +330,15 @@ pub trait EventEmitter: Send + Sync {
     ///
     /// Returns a vector of outcomes, one for each event processed (including
     /// the original and any events emitted by handlers).
-    async fn emit_recursive(
-        &self,
-        event: Self::Event,
-    ) -> EmitResult<Vec<EmitOutcome<Self::Event>>> {
-        // Default implementation: just emit once
-        let outcome = self.emit(event).await?;
-        Ok(vec![outcome])
-    }
+    async fn emit_recursive(&self, event: Self::Event)
+        -> EmitResult<Vec<EmitOutcome<Self::Event>>>;
 
     /// Check if the event bus is available and ready.
     ///
     /// # Returns
     ///
     /// Returns `true` if events can be emitted, `false` otherwise.
-    fn is_available(&self) -> bool {
-        true
-    }
+    fn is_available(&self) -> bool;
 }
 
 /// A shared event bus reference.
@@ -382,6 +374,14 @@ impl<E: Send + Sync + Clone + 'static> EventEmitter for NoOpEmitter<E> {
 
     async fn emit(&self, event: Self::Event) -> EmitResult<EmitOutcome<Self::Event>> {
         Ok(EmitOutcome::new(event))
+    }
+
+    async fn emit_recursive(
+        &self,
+        event: Self::Event,
+    ) -> EmitResult<Vec<EmitOutcome<Self::Event>>> {
+        // No handler runs, so no handler emits a second event.
+        Ok(vec![EmitOutcome::new(event)])
     }
 
     fn is_available(&self) -> bool {
