@@ -63,33 +63,7 @@ pub(super) fn config_file(name: &str) -> Option<std::path::PathBuf> {
     Some(dirs::config_dir()?.join("crucible").join(name))
 }
 
-/// Write `contents` to `path`, creating parent directories and (on unix)
-/// keeping the file readable only by its owner.
-///
-/// Shared by the API key and the session store: both hold live credentials, so
-/// there is one place that decides how a credential file is created rather
-/// than one per caller to forget the mode in.
-pub(super) fn write_private(path: &std::path::Path, contents: &[u8]) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    #[cfg(unix)]
-    {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-        std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(path)?
-            .write_all(contents)
-    }
-    #[cfg(not(unix))]
-    {
-        std::fs::write(path, contents)
-    }
-}
+pub(super) use crucible_core::fs::write_private;
 
 /// Generate a fresh random key and persist it (0600 on unix), replacing any
 /// existing one. Used at first startup and by `cru web key --rotate`.

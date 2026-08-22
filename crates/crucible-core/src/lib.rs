@@ -10,6 +10,7 @@ pub mod discovery;
 pub mod enrichment;
 pub mod error_utils;
 pub mod events;
+pub mod fs;
 pub mod fuzzy;
 pub mod http;
 pub mod interaction;

@@ -62,6 +62,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crucible_core::fs::write_private;
+
 /// Crucible's own header for the timestamped scheme. Lowercase:
 /// `http::HeaderMap` normalises names, and this is compared against
 /// already-normalised keys.
@@ -398,7 +400,7 @@ pub fn mint_secret(path: &Path, name: &str, rotate: bool) -> anyhow::Result<Stri
     entry.insert("secret".to_string(), toml::Value::String(secret.clone()));
     webhooks.insert(name.to_string(), toml::Value::Table(entry));
 
-    write_private(path, &toml::to_string(&doc)?)
+    write_private(path, toml::to_string(&doc)?.as_bytes())
         .with_context(|| format!("writing {}", path.display()))?;
     Ok(secret)
 }
@@ -410,21 +412,6 @@ fn generate_secret() -> String {
     let mut raw = [0u8; 32];
     rand::rng().fill_bytes(&mut raw);
     hex::encode(raw)
-}
-
-/// Write a credential file readable only by its owner, including when it
-/// already exists with looser permissions.
-fn write_private(path: &Path, contents: &str) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(path, contents)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
-    }
-    Ok(())
 }
 
 fn signed_material(timestamp: &str, raw_body: &[u8]) -> Vec<u8> {

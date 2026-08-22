@@ -154,30 +154,8 @@ impl SecretsFile {
 
     /// Write the secrets file to disk with restricted permissions
     fn write(&self, content: &SecretsFileContent) -> CredentialResult<()> {
-        if let Some(parent) = self.path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
         let toml_str = toml::to_string_pretty(content)?;
-
-        #[cfg(unix)]
-        {
-            use std::io::Write;
-            use std::os::unix::fs::OpenOptionsExt;
-            let mut file = std::fs::OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .mode(0o600)
-                .open(&self.path)?;
-            file.write_all(toml_str.as_bytes())?;
-        }
-
-        #[cfg(not(unix))]
-        {
-            std::fs::write(&self.path, toml_str)?;
-        }
-
+        crate::fs::write_private(&self.path, toml_str.as_bytes())?;
         Ok(())
     }
 
