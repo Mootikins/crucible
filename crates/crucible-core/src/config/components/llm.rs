@@ -168,12 +168,6 @@ impl LlmProviderConfigBuilder {
         self
     }
 
-    /// Set timeout if Some
-    pub fn maybe_timeout_secs(mut self, secs: Option<u64>) -> Self {
-        self.timeout_secs = secs;
-        self
-    }
-
     /// Set API key
     pub fn api_key(mut self, key: impl Into<String>) -> Self {
         self.api_key = Some(key.into());

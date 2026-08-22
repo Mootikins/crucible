@@ -3,8 +3,8 @@
 //! # What is here
 //!
 //! - [`SessionEvent`] — the canonical event type, shared by the daemon bus,
-//!   the Lua bridge (`crucible-lua/src/handlers/conversion.rs`) and markdown
-//!   rendering.
+//!   the Lua bridge (`crucible-lua/src/handlers/conversion.rs`) and
+//!   dispatch.
 //! - `emitter` — the EventBus the **file-watch pipeline** runs on
 //!   (`crucible-daemon/src/watch/`, `file_watch_bridge.rs`). Documented for
 //!   years as "legacy, new code should use `Reactor` directly"; the Reactor is
@@ -30,7 +30,6 @@
 //! `EventSubscriber` trait that the file did not define.
 
 pub mod emitter;
-pub mod markdown;
 pub mod ring;
 pub mod session_event;
 
@@ -59,6 +58,3 @@ pub use session_event::{
 
 // Ring buffer for event storage
 pub use ring::{EventRing, OverflowCallback};
-
-// Event markdown serialization
-pub use markdown::{MarkdownParseError, MarkdownParseResult};

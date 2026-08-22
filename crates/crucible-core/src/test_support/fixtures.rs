@@ -72,7 +72,9 @@ pub fn create_kiln(fixture: KilnFixture) -> Result<TempDir> {
     }
 }
 
-fn create_basic_kiln() -> Result<TempDir> {
+/// Create a kiln with a minimal set of markdown documents that cover the most
+/// common CLI test scenarios.
+pub fn create_basic_kiln() -> Result<TempDir> {
     create_kiln_with_files(&[
         (
             "Getting Started.md",
@@ -185,7 +187,12 @@ fn create_complex_kiln(domains: usize, _depth: usize) -> Result<TempDir> {
     create_kiln_with_files(&files)
 }
 
-fn create_kiln_with_files(files: &[(&str, &str)]) -> Result<TempDir> {
+/// Create a temporary kiln populated with the provided files.
+///
+/// Each entry is `(relative_path, file_contents)`. Directories are created
+/// automatically. The returned [`TempDir`] remains responsible for cleaning up
+/// the kiln when dropped.
+pub fn create_kiln_with_files(files: &[(&str, &str)]) -> Result<TempDir> {
     let temp_dir = TempDir::new().context("failed to create temporary kiln directory")?;
     let kiln_path = temp_dir.path();
 

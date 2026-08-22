@@ -11,17 +11,6 @@ use crate::config::BackendType;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Embedding response from a provider
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EmbeddingResponse {
-    /// The embedding vector
-    pub embedding: Vec<f32>,
-    /// Number of tokens in the input
-    pub token_count: Option<usize>,
-    /// Model used for embedding
-    pub model: String,
-}
-
 /// Provider-level model capability flags.
 ///
 /// Indicates the **type** of model (embedding, chat, image, etc.) at the provider

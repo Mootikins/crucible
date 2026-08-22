@@ -133,19 +133,3 @@ pub trait EmbeddingProvider: Send + Sync {
     /// Returns an error if model discovery fails or is not supported.
     async fn list_models(&self) -> Result<Vec<String>>;
 }
-
-/// A cached embedding result
-///
-/// Contains the embedding vector along with metadata about how it was generated.
-/// Used for incremental embedding where we can reuse embeddings for unchanged content.
-#[derive(Debug, Clone)]
-pub struct CachedEmbedding {
-    /// The embedding vector
-    pub vector: Vec<f32>,
-    /// BLAKE3 hash of the content that was embedded
-    pub content_hash: String,
-    /// Model name used to generate this embedding
-    pub model: String,
-    /// Model version (e.g., "q8_0" for quantized models)
-    pub model_version: Option<String>,
-}

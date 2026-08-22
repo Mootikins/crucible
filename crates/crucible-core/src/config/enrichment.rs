@@ -536,36 +536,6 @@ impl BurnEmbedConfig {
             .to_string_lossy()
             .to_string()
     }
-
-    /// Get default model search paths based on model_dir
-    pub fn default_search_paths(model_dir: &str) -> Vec<String> {
-        use std::path::PathBuf;
-        let model_dir = PathBuf::from(model_dir);
-        let home = dirs::home_dir().unwrap_or_default();
-
-        vec![
-            model_dir.join("language").to_string_lossy().to_string(),
-            model_dir.to_string_lossy().to_string(),
-            model_dir.join("embeddings").to_string_lossy().to_string(),
-            model_dir
-                .join("language/.hf-cache/hub")
-                .to_string_lossy()
-                .to_string(),
-            home.join(".cache/huggingface/hub")
-                .to_string_lossy()
-                .to_string(),
-        ]
-    }
-
-    /// Get all search paths (model_dir subdirectories + configured paths)
-    pub fn all_search_paths(&self) -> Vec<String> {
-        let mut paths = Self::default_search_paths(&self.model_dir);
-
-        // Add user-configured paths
-        paths.extend(self.model_search_paths.clone());
-
-        paths
-    }
 }
 
 impl Default for BurnEmbedConfig {

@@ -30,7 +30,6 @@
 
 // Submodules for logical organization
 mod deserialize;
-pub mod display;
 pub mod helpers;
 pub mod internal;
 pub mod payloads;
@@ -140,9 +139,8 @@ impl std::fmt::Display for ScriptingEvent {
 /// Events that flow through a session — the **scripting** vocabulary.
 ///
 /// This type is **not** wire-facing, despite what this comment used to say.
-/// Nothing serializes it onto the RPC wire; its two serialization targets are the
-/// markdown session log ([`crate::events::markdown`]) and Lua tables
-/// (`crucible-lua/src/handlers/conversion.rs`). Its third use is
+/// Nothing serializes it onto the RPC wire; its one serialization target is Lua tables
+/// (`crucible-lua/src/handlers/conversion.rs`). Its other use is
 /// dispatch, which is what `crucible-daemon/src/observe/events.rs` says plainly.
 ///
 /// The transport vocabulary is

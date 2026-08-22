@@ -137,17 +137,6 @@ pub struct ValueInfo<T> {
     pub source_short: String,
 }
 
-/// Macro to help with tracking value sources during config loading
-#[macro_export]
-macro_rules! track_value {
-    ($config:expr, $path:expr, $value:expr, $source:expr) => {
-        if let Some(ref mut tracker) = $config.value_source_tracker {
-            tracker.set($path, $source);
-        }
-        $value
-    };
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -54,11 +54,6 @@ impl EnrichedNote {
             .to_string()
     }
 
-    /// Get the number of embeddings
-    pub fn embedding_count(&self) -> usize {
-        self.embeddings.len()
-    }
-
     /// Get total word count from parsed note metadata
     pub fn word_count(&self) -> usize {
         self.parsed.metadata.word_count

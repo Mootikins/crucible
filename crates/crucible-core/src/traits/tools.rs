@@ -254,12 +254,6 @@ impl ToolDefinition {
         self
     }
 
-    /// Add an example
-    pub fn with_example(mut self, example: ToolExample) -> Self {
-        self.examples.push(example);
-        self
-    }
-
     /// Add a required permission
     pub fn with_permission(mut self, permission: impl Into<String>) -> Self {
         self.required_permissions.push(permission.into());

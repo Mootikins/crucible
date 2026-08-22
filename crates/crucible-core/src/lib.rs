@@ -45,9 +45,7 @@ pub use kiln::{
 };
 
 // Re-export enrichment types (concrete implementation lives in crucible-daemon::enrichment)
-pub use enrichment::{
-    BlockEmbedding, CachedEmbedding, EmbeddingProvider, EnrichedNote, EnrichmentMetadata,
-};
+pub use enrichment::{BlockEmbedding, EmbeddingProvider, EnrichedNote, EnrichmentMetadata};
 
 // Re-export the pipeline result type
 pub use processing::ProcessingResult;

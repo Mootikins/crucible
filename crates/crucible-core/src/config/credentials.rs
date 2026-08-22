@@ -376,15 +376,6 @@ impl AutoStore {
             keyring: KeyringStore::new(),
         }
     }
-
-    /// Create a new `AutoStore` with a custom secrets file path.
-    pub fn with_file_path(path: PathBuf) -> Self {
-        Self {
-            file: SecretsFile::with_path(path),
-            #[cfg(feature = "keyring")]
-            keyring: KeyringStore::new(),
-        }
-    }
 }
 
 impl Default for AutoStore {

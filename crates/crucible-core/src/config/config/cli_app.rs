@@ -870,18 +870,6 @@ verbose = false
         "default".to_string()
     }
 
-    /// Returns the kiln a CLI-created session attaches to.
-    ///
-    /// Uses `session_kiln` if explicitly set, otherwise falls back to
-    /// `kiln_path` — matching the field's documented contract. Sessions no
-    /// longer *live* in a kiln (they are stored under the daemon's data root),
-    /// so this is purely the knowledge scope the session opens with.
-    pub fn session_kiln_path(&self) -> std::path::PathBuf {
-        self.session_kiln
-            .clone()
-            .unwrap_or_else(|| self.kiln_path.clone())
-    }
-
     /// The registry NAME of the kiln a new session should attach, if any.
     ///
     /// Sessions address kilns by name, so a client creating one has to send the

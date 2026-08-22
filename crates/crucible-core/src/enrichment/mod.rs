@@ -7,7 +7,7 @@
 pub mod embedding;
 pub mod types;
 
-pub use embedding::{CachedEmbedding, EmbeddingProvider};
+pub use embedding::EmbeddingProvider;
 pub use types::{BlockEmbedding, EnrichedNote, EnrichmentMetadata};
 
 pub use crate::config::{

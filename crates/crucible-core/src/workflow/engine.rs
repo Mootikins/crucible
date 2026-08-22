@@ -50,10 +50,6 @@ impl WorkflowStatus {
             WorkflowStatus::Completed | WorkflowStatus::Failed { .. } | WorkflowStatus::Cancelled
         )
     }
-
-    pub fn is_awaiting_gate(&self, gate_id: &str) -> bool {
-        matches!(self, WorkflowStatus::AwaitingApproval { gate } if gate.id == gate_id)
-    }
 }
 
 /// Serializable subset of [`WorkflowExecution`] — the fields the

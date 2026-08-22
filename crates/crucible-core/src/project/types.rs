@@ -75,11 +75,6 @@ impl Project {
         self
     }
 
-    pub fn with_named_kiln(mut self, kiln: PathBuf, name: Option<String>) -> Self {
-        self.kilns.push(ProjectKiln { path: kiln, name });
-        self
-    }
-
     pub fn with_kilns(mut self, kilns: Vec<ProjectKiln>) -> Self {
         self.kilns = kilns;
         self
@@ -92,11 +87,5 @@ impl Project {
 
     pub fn touch(&mut self) {
         self.last_accessed = Utc::now();
-    }
-
-    pub fn repository_id(&self) -> Option<&PathBuf> {
-        self.repository
-            .as_ref()
-            .map(|r| r.main_repo_git_dir.as_ref().unwrap_or(&r.root))
     }
 }

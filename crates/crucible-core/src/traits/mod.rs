@@ -27,7 +27,6 @@ pub use llm::{
     FunctionCall, FunctionDefinition, LlmToolDefinition, MessageRole, TokenUsage, ToolCall,
 };
 pub use parser::MarkdownParser;
-pub use provider::EmbeddingResponse;
 pub use storage_client::StorageClient;
 pub use tools::{
     ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult, ToolSurface,

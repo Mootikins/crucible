@@ -104,12 +104,6 @@ impl NotePayload {
         self.file_size = size;
         self
     }
-
-    /// Set word count.
-    pub fn with_word_count(mut self, count: usize) -> Self {
-        self.word_count = count;
-        self
-    }
 }
 
 impl Default for NotePayload {

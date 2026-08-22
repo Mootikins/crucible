@@ -170,23 +170,6 @@ impl<E> EventRing<E> {
         self.flushed_seq.fetch_max(up_to_seq, Ordering::SeqCst);
     }
 
-    /// Check if the ring is about to overflow unflushed events.
-    ///
-    /// Returns true if pushing a new event would overwrite an unflushed event.
-    pub fn would_overflow_unflushed(&self) -> bool {
-        let current = self.write_seq.load(Ordering::SeqCst);
-        let flushed = self.flushed_seq.load(Ordering::SeqCst);
-
-        // If we've written more than capacity events and the oldest
-        // unflushed event would be overwritten
-        if current >= self.capacity as u64 {
-            let oldest_seq = current - self.capacity as u64;
-            oldest_seq < flushed
-        } else {
-            false
-        }
-    }
-
     /// Get events that need to be flushed before they're overwritten.
     ///
     /// Returns events from flushed_seq to the oldest valid sequence that

@@ -28,11 +28,6 @@ impl Serializer {
             output: String::new(),
         }
     }
-
-    /// Get the output string
-    pub fn into_output(self) -> String {
-        self.output
-    }
 }
 
 impl Default for Serializer {
