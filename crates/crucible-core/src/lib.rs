@@ -22,7 +22,6 @@ pub mod protocol;
 pub mod recording;
 pub mod runtime_roots;
 pub mod serde_helpers;
-pub mod serde_md;
 pub mod session;
 pub mod storage;
 // Test helpers only. The `cru` binary never compiles them.

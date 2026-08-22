@@ -67,7 +67,6 @@ pub mod id;
 pub mod indexer;
 pub mod markdown;
 pub mod rebuild;
-pub mod serde_md;
 pub mod session;
 
 // Re-exports for convenience

@@ -108,7 +108,7 @@ pub use kiln_manager::KilnManager;
 pub use lifecycle::{remove_socket, socket_path, wait_for_shutdown};
 pub use mcp_host::InProcessMcpHost;
 pub use mcp_server::McpServerManager;
-pub use observe::{events, id, indexer, markdown, serde_md, session};
+pub use observe::{events, id, indexer, markdown, session};
 pub use observe::{
     extract_session_content, load_events, parse_session_log, render_to_markdown, wire_to_log_event,
     LogEvent, PermissionOutcome, RenderOptions, SessionContent, SessionId, SessionIdError,

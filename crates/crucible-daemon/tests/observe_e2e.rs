@@ -3,12 +3,12 @@
 //! Tests the full pipeline:
 //! 1. Write a session log (JSONL)
 //! 2. Load events back (JSONL roundtrip)
-//! 3. Export to Markdown (both imperative and serde-based)
+//! 3. Export to Markdown
 //! 4. Verify content correctness
 
 use crucible_daemon::{
-    events::TokenUsage, load_events, render_to_markdown, serde_md, LogEvent, RenderOptions,
-    SessionId, SessionType,
+    events::TokenUsage, load_events, render_to_markdown, LogEvent, RenderOptions, SessionId,
+    SessionType,
 };
 use serde_json::json;
 use std::path::{Path, PathBuf};
@@ -115,34 +115,13 @@ async fn test_markdown_export_imperative() {
         "Should have tool call"
     );
     assert!(md.contains("#### Result"), "Should have tool result");
+    assert!(md.contains("Cargo.toml"), "Should have tool args");
     assert!(md.contains("*Tokens:"), "Should have token usage");
 
     // Verify content order (user before assistant)
     let user1_pos = md.find("How do I read a file").unwrap();
     let asst1_pos = md.find("std::fs::read_to_string").unwrap();
     assert!(user1_pos < asst1_pos, "User should come before assistant");
-}
-
-#[tokio::test]
-async fn test_markdown_export_serde() {
-    let dir = TempDir::new().unwrap();
-    let sessions_dir = dir.path().join("sessions");
-
-    let session_dir = write_session_log(&sessions_dir, &as_jsonl(&sample_conversation())).await;
-
-    // Load and render via serde_md
-    let events = load_events(&session_dir).await.unwrap();
-    let md = serde_md::to_string_seq(&events).unwrap();
-
-    // Verify markdown structure (serde variant)
-    assert!(
-        md.contains("[!system]-"),
-        "Should have system prompt callout"
-    );
-    assert!(md.contains("## User"), "Should have user heading");
-    assert!(md.contains("## Assistant"), "Should have assistant heading");
-    assert!(md.contains("### Tool:"), "Should have tool call");
-    assert!(md.contains("#### Result"), "Should have tool result");
 }
 
 #[tokio::test]
@@ -273,25 +252,6 @@ async fn test_tool_truncated_roundtrip() {
     // Verify markdown indicates truncation
     let md = render_to_markdown(&events, &RenderOptions::default());
     assert!(md.contains("(truncated)"));
-}
-
-#[tokio::test]
-async fn test_both_markdown_renderers_produce_valid_output() {
-    let events = sample_conversation();
-
-    // Imperative renderer
-    let md_imperative = render_to_markdown(&events, &RenderOptions::default());
-
-    // Serde-based renderer
-    let md_serde = serde_md::to_string_seq(&events).unwrap();
-
-    // Both should contain the essential elements
-    for md in [&md_imperative, &md_serde] {
-        assert!(md.contains("User"), "Missing user section");
-        assert!(md.contains("Assistant"), "Missing assistant section");
-        assert!(md.contains("read_file"), "Missing tool call");
-        assert!(md.contains("Cargo.toml"), "Missing tool args");
-    }
 }
 
 #[tokio::test]
