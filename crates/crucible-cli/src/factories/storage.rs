@@ -56,12 +56,17 @@ impl CliStorageHandle {
 /// `kiln.open` already returned these counts and every caller threw them away,
 /// so a command that spent minutes indexing looked identical to one that spent
 /// milliseconds. They are the only thing that can explain the wait to the user.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone)]
 pub struct KilnOpenSummary {
     pub discovered: u64,
     pub processed: u64,
     pub skipped: u64,
     pub errors: u64,
+    /// Set when processing failed as a whole rather than file by file — an
+    /// unreachable embedding provider, say. The daemon reports this in place of
+    /// the counts, and answers `status: "ok"` while doing so, so a summary that
+    /// only read counts called a total failure a no-op and said nothing.
+    pub process_error: Option<String>,
 }
 
 impl KilnOpenSummary {
@@ -76,12 +81,20 @@ impl KilnOpenSummary {
                 .and_then(serde_json::Value::as_array)
                 .map(|e| e.len() as u64)
                 .unwrap_or(0),
+            process_error: value
+                .get("process_error")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string),
         }
     }
 
     /// One line for the user, or `None` when there is nothing worth saying —
-    /// an open that reindexed nothing should stay quiet.
+    /// an open that reindexed nothing should stay quiet. An open that FAILED
+    /// is not that case, and says so.
     pub fn describe(&self) -> Option<String> {
+        if let Some(error) = &self.process_error {
+            return Some(format!("Kiln: indexing failed: {error}"));
+        }
         if self.processed == 0 && self.errors == 0 {
             return None;
         }
@@ -136,4 +149,57 @@ pub async fn get_storage_with_summary(
         CliStorageHandle(Arc::new(DaemonStorageClient::new(client, kiln_path))),
         summary,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// The shape `handle_kiln_open` sends when `open_and_process` fails as a
+    /// whole. It answers `status: "ok"` and carries no counts, so a summary
+    /// that reads only counts sees an open that did nothing.
+    #[test]
+    fn a_whole_batch_failure_is_reported_not_swallowed() {
+        let summary = KilnOpenSummary::from_response(&json!({
+            "status": "ok",
+            "process_error": "embedding provider unavailable",
+        }));
+
+        assert_eq!(
+            summary.describe().as_deref(),
+            Some("Kiln: indexing failed: embedding provider unavailable")
+        );
+    }
+
+    #[test]
+    fn an_open_that_indexed_nothing_stays_quiet() {
+        let summary = KilnOpenSummary::from_response(&json!({
+            "status": "ok",
+            "discovered": 150,
+            "processed": 0,
+            "skipped": 150,
+            "errors": [],
+        }));
+
+        assert_eq!(summary.describe(), None);
+    }
+
+    #[test]
+    fn counts_and_per_file_errors_are_read_from_the_response() {
+        let summary = KilnOpenSummary::from_response(&json!({
+            "status": "ok",
+            "discovered": 150,
+            "processed": 3,
+            "skipped": 145,
+            "errors": [{"path": "a.md", "error": "boom"}, {"path": "b.md", "error": "boom"}],
+        }));
+
+        assert_eq!(summary.discovered, 150);
+        assert_eq!(summary.skipped, 145);
+        assert_eq!(
+            summary.describe().as_deref(),
+            Some("Kiln: indexed 3, 145 unchanged, 2 failed")
+        );
+    }
 }
