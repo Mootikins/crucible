@@ -18,9 +18,6 @@
 //! assert_eq!(stack.value(), &ConfigValue::Bool(false));
 //! assert!(stack.is_modified());
 //!
-//! // Reset to base value
-//! stack.reset();
-//! assert!(!stack.is_modified());
 //! ```
 
 use std::fmt;
@@ -128,11 +125,6 @@ impl ConfigStack {
         self.mods.pop()
     }
 
-    /// Clears all modifications, reverting to the base value.
-    pub fn reset(&mut self) {
-        self.mods.clear();
-    }
-
     /// Returns an iterator over the full history (base + all modifications).
     ///
     /// The base value is yielded first, followed by modifications in chronological order.
@@ -143,24 +135,6 @@ impl ConfigStack {
     /// Returns `true` if there are any modifications on the stack.
     pub fn is_modified(&self) -> bool {
         !self.mods.is_empty()
-    }
-
-    /// Returns the source of the current effective value.
-    pub fn current_source(&self) -> &ModSource {
-        self.mods
-            .last()
-            .map(|m| &m.source)
-            .unwrap_or(&self.base.source)
-    }
-
-    /// Returns the base modification (for inspection).
-    pub fn base(&self) -> &ConfigMod {
-        &self.base
-    }
-
-    /// Returns the number of modifications on the stack (excluding base).
-    pub fn modification_count(&self) -> usize {
-        self.mods.len()
     }
 }
 
@@ -207,7 +181,6 @@ mod tests {
         stack.push(make_int_value(3), ModSource::Cli);
 
         assert_eq!(stack.value(), &make_int_value(3));
-        assert_eq!(stack.modification_count(), 3);
     }
 
     #[test]
@@ -249,20 +222,6 @@ mod tests {
     }
 
     #[test]
-    fn test_stack_reset_clears_all_mods() {
-        let mut stack = ConfigStack::new(make_bool_value(true), ModSource::Default);
-        stack.push(make_bool_value(false), ModSource::Command);
-        stack.push(make_bool_value(true), ModSource::Plugin("test".to_string()));
-        stack.push(make_bool_value(false), ModSource::Cli);
-
-        stack.reset();
-
-        assert_eq!(stack.value(), &make_bool_value(true));
-        assert!(!stack.is_modified());
-        assert_eq!(stack.modification_count(), 0);
-    }
-
-    #[test]
     fn test_stack_history_includes_base_and_mods() {
         let mut stack = ConfigStack::new(make_int_value(0), ModSource::Default);
         stack.push(make_int_value(1), ModSource::Command);
@@ -299,28 +258,6 @@ mod tests {
         stack.push(make_bool_value(true), ModSource::Command); // Same value, still modified
 
         assert!(stack.is_modified());
-    }
-
-    #[test]
-    fn test_current_source_returns_base_source_when_no_mods() {
-        let stack = ConfigStack::new(make_bool_value(true), ModSource::Default);
-
-        assert_eq!(stack.current_source(), &ModSource::Default);
-    }
-
-    #[test]
-    fn test_current_source_returns_top_mod_source() {
-        let mut stack = ConfigStack::new(make_bool_value(true), ModSource::Default);
-        stack.push(make_bool_value(false), ModSource::Command);
-        stack.push(
-            make_bool_value(true),
-            ModSource::Plugin("myplugin".to_string()),
-        );
-
-        assert_eq!(
-            stack.current_source(),
-            &ModSource::Plugin("myplugin".to_string())
-        );
     }
 
     #[test]
@@ -367,21 +304,5 @@ mod tests {
 
         assert!(config_mod.timestamp >= before);
         assert!(config_mod.timestamp <= after);
-    }
-
-    #[test]
-    fn test_stack_base_returns_original() {
-        let stack = ConfigStack::new(make_string_value("original"), ModSource::Default);
-
-        assert_eq!(stack.base().value, make_string_value("original"));
-        assert_eq!(stack.base().source, ModSource::Default);
-    }
-
-    #[test]
-    fn test_stack_base_unchanged_after_mods() {
-        let mut stack = ConfigStack::new(make_string_value("original"), ModSource::Default);
-        stack.push(make_string_value("modified"), ModSource::Command);
-
-        assert_eq!(stack.base().value, make_string_value("original"));
     }
 }

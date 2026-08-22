@@ -16,19 +16,9 @@ use super::value::ConfigValue;
 /// Errors that can occur when setting config values.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum SetError {
-    /// Option was not found in shortcuts or base config.
-    #[error("Unknown option: {0}")]
-    NotFound(String),
     /// Attempted boolean operation on non-boolean value.
     #[error("Option '{0}' is not a boolean")]
     NotBoolean(String),
-    /// Value type doesn't match expected type.
-    #[error("Type mismatch for '{key}': expected {expected}, got {actual}")]
-    TypeMismatch {
-        key: String,
-        expected: &'static str,
-        actual: &'static str,
-    },
     /// Invalid value for the option.
     #[error("Invalid value for '{key}': {reason}")]
     InvalidValue { key: String, reason: String },
@@ -53,19 +43,6 @@ pub struct RuntimeConfig {
 }
 
 impl RuntimeConfig {
-    /// Create a new runtime config overlay from a base config.
-    ///
-    /// The base config is serialized to JSON for path-based access.
-    pub fn new<T: serde::Serialize>(base: &T) -> Result<Self, serde_json::Error> {
-        let base_json = serde_json::to_value(base)?;
-        Ok(Self {
-            stacks: HashMap::new(),
-            base_json,
-            shortcuts: ShortcutRegistry::new(),
-            virtuals: HashMap::new(),
-        })
-    }
-
     /// Create a runtime config with an empty base (for testing).
     pub fn empty() -> Self {
         Self {
@@ -97,11 +74,6 @@ impl RuntimeConfig {
 
         // Fall back to base config
         self.get_from_base(&path)
-    }
-
-    /// Get effective value or return a default.
-    pub fn get_or_default(&self, key: &str, default: ConfigValue) -> ConfigValue {
-        self.get(key).unwrap_or(default)
     }
 
     /// Set a value (pushes to the modification stack).
@@ -148,20 +120,6 @@ impl RuntimeConfig {
         let new_value = !current;
         self.set(key, ConfigValue::Bool(new_value), source);
         Ok(new_value)
-    }
-
-    /// Enable a boolean value (set to true).
-    ///
-    /// Returns an error if the option is not boolean.
-    pub fn enable(&mut self, key: &str, source: ModSource) -> Result<(), SetError> {
-        // Check if it's a boolean
-        if let Some(current) = self.get(key) {
-            if current.as_bool().is_none() {
-                return Err(SetError::NotBoolean(key.to_string()));
-            }
-        }
-        self.set(key, ConfigValue::Bool(true), source);
-        Ok(())
     }
 
     /// Disable a boolean value (set to false).
@@ -502,12 +460,9 @@ mod tests {
     }
 
     #[test]
-    fn test_enable_disable() {
+    fn test_disable() {
         let mut config = make_config();
-        config.set("flag", ConfigValue::Bool(false), ModSource::Default);
-
-        config.enable("flag", ModSource::Command).unwrap();
-        assert_eq!(config.get("flag"), Some(ConfigValue::Bool(true)));
+        config.set("flag", ConfigValue::Bool(true), ModSource::Default);
 
         config.disable("flag", ModSource::Command).unwrap();
         assert_eq!(config.get("flag"), Some(ConfigValue::Bool(false)));

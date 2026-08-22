@@ -102,32 +102,6 @@ impl ConfigValue {
         }
     }
 
-    /// Parse a string to a boolean value.
-    ///
-    /// Accepts: `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off`, `y`, `n`
-    /// (case-insensitive).
-    ///
-    /// # Panics
-    ///
-    /// Panics if the string is not a recognized boolean value.
-    /// Use [`try_parse_bool`](Self::try_parse_bool) for a non-panicking version.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use crucible_cli::tui::oil::config::ConfigValue;
-    ///
-    /// assert!(ConfigValue::parse_bool("yes"));
-    /// assert!(ConfigValue::parse_bool("TRUE"));
-    /// assert!(ConfigValue::parse_bool("1"));
-    /// assert!(!ConfigValue::parse_bool("no"));
-    /// assert!(!ConfigValue::parse_bool("OFF"));
-    /// ```
-    #[must_use]
-    pub fn parse_bool(s: &str) -> bool {
-        Self::try_parse_bool(s).expect("invalid boolean value")
-    }
-
     /// Try to parse a string as a boolean value.
     ///
     /// Accepts: `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off`, `y`, `n`
@@ -240,35 +214,6 @@ impl ConfigValue {
                 }
             }
             ConfigValue::Bool(b) => Some(if *b { 1 } else { 0 }),
-            ConfigValue::String(s) => s.parse().ok(),
-            ConfigValue::Json(_) => None,
-        }
-    }
-
-    /// Get the value as a float.
-    ///
-    /// - `Float`: returns the value directly
-    /// - `Int`: converts to float
-    /// - `Bool`: returns 1.0 for true, 0.0 for false
-    /// - `String`: attempts to parse as float
-    /// - `Json`: returns `None`
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use crucible_cli::tui::oil::config::ConfigValue;
-    ///
-    /// assert_eq!(ConfigValue::Float(3.15).as_float(), Some(3.15));
-    /// assert_eq!(ConfigValue::Int(42).as_float(), Some(42.0));
-    /// assert_eq!(ConfigValue::Bool(true).as_float(), Some(1.0));
-    /// assert_eq!(ConfigValue::String("2.5".into()).as_float(), Some(2.5));
-    /// ```
-    #[must_use]
-    pub fn as_float(&self) -> Option<f64> {
-        match self {
-            ConfigValue::Float(f) => Some(*f),
-            ConfigValue::Int(i) => Some(*i as f64),
-            ConfigValue::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
             ConfigValue::String(s) => s.parse().ok(),
             ConfigValue::Json(_) => None,
         }
@@ -435,12 +380,6 @@ mod tests {
         }
     }
 
-    #[test]
-    #[should_panic(expected = "invalid boolean value")]
-    fn parse_bool_panics_on_invalid() {
-        let _ = ConfigValue::parse_bool("invalid");
-    }
-
     // ==================== Auto-Detection Tests ====================
 
     #[test]
@@ -592,23 +531,6 @@ mod tests {
         assert_eq!(ConfigValue::String("not a number".into()).as_int(), None);
 
         assert_eq!(ConfigValue::Json(json!({})).as_int(), None);
-    }
-
-    #[test]
-    fn as_float_coercion() {
-        assert_eq!(ConfigValue::Float(3.15).as_float(), Some(3.15));
-
-        assert_eq!(ConfigValue::Int(42).as_float(), Some(42.0));
-        assert_eq!(ConfigValue::Int(-100).as_float(), Some(-100.0));
-
-        assert_eq!(ConfigValue::Bool(true).as_float(), Some(1.0));
-        assert_eq!(ConfigValue::Bool(false).as_float(), Some(0.0));
-
-        assert_eq!(ConfigValue::String("2.5".into()).as_float(), Some(2.5));
-        assert_eq!(ConfigValue::String("-1.5".into()).as_float(), Some(-1.5));
-        assert_eq!(ConfigValue::String("not a number".into()).as_float(), None);
-
-        assert_eq!(ConfigValue::Json(json!({})).as_float(), None);
     }
 
     #[test]

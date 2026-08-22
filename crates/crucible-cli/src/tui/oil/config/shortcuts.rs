@@ -17,12 +17,6 @@
 //!
 //! // Check if something is a shortcut
 //! assert!(registry.is_shortcut("model"));
-//!
-//! // Get the target path (None for Dynamic/Virtual)
-//! assert_eq!(
-//!     registry.target_path("syntax_theme"),
-//!     Some("cli.highlighting.theme")
-//! );
 //! ```
 
 /// Where a shortcut maps to.
@@ -203,24 +197,6 @@ impl ShortcutRegistry {
         SHORTCUTS.iter().any(|s| s.short == key)
     }
 
-    /// Check if the shortcut is virtual (TUI-only).
-    #[must_use]
-    pub fn is_virtual(&self, key: &str) -> bool {
-        self.get(key)
-            .is_some_and(|s| matches!(s.target, ShortcutTarget::Virtual))
-    }
-
-    /// Get the target path for a shortcut, if it maps to a direct path.
-    ///
-    /// Returns `None` for `Dynamic` and `Virtual` shortcuts.
-    #[must_use]
-    pub fn target_path(&self, key: &str) -> Option<&'static str> {
-        self.get(key).and_then(|s| match s.target {
-            ShortcutTarget::Path(path) => Some(path),
-            ShortcutTarget::Dynamic | ShortcutTarget::Virtual => None,
-        })
-    }
-
     /// Get the completion source for a shortcut.
     ///
     /// Returns `CompletionSource::None` if the shortcut doesn't exist.
@@ -275,47 +251,6 @@ mod tests {
 
         // Non-existent shortcut
         assert!(registry.get("nonexistent").is_none());
-    }
-
-    #[test]
-    fn is_virtual_detection() {
-        let registry = ShortcutRegistry::new();
-
-        // "thinking" is Virtual
-        assert!(registry.is_virtual("thinking"));
-
-        // "model" is Dynamic, not Virtual
-        assert!(!registry.is_virtual("model"));
-
-        // "syntax_theme" is Path, not Virtual
-        assert!(!registry.is_virtual("syntax_theme"));
-
-        // Non-existent is not Virtual
-        assert!(!registry.is_virtual("nonexistent"));
-    }
-
-    #[test]
-    fn target_path_for_path_vs_dynamic_vs_virtual() {
-        let registry = ShortcutRegistry::new();
-
-        // Path target returns the path
-        assert_eq!(
-            registry.target_path("syntax_theme"),
-            Some("cli.highlighting.theme")
-        );
-        assert_eq!(
-            registry.target_path("thinkingbudget"),
-            Some("llm.thinking_budget")
-        );
-
-        // Dynamic returns None
-        assert_eq!(registry.target_path("model"), None);
-
-        // Virtual returns None
-        assert_eq!(registry.target_path("thinking"), None);
-
-        // Non-existent returns None
-        assert_eq!(registry.target_path("nonexistent"), None);
     }
 
     #[test]
