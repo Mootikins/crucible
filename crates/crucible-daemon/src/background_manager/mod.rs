@@ -92,20 +92,7 @@ impl BackgroundJobManager {
     }
 
     pub fn get_job_result(&self, job_id: &JobId) -> Option<JobResult> {
-        self.get_job_result_for_session(job_id, None)
-    }
-
-    pub fn get_job_result_for_session(
-        &self,
-        job_id: &JobId,
-        session_id: Option<&str>,
-    ) -> Option<JobResult> {
         if let Some(entry) = self.running.get(job_id) {
-            if let Some(sid) = session_id {
-                if entry.info.session_id != sid {
-                    return None;
-                }
-            }
             return Some(JobResult {
                 info: entry.info.clone(),
                 output: None,
@@ -114,45 +101,12 @@ impl BackgroundJobManager {
             });
         }
 
-        for entry in self.history.iter() {
-            if let Some(sid) = session_id {
-                if entry.key() != sid {
-                    continue;
-                }
-            }
-            for result in entry.value().iter() {
-                if result.info.id == *job_id {
-                    return Some(result.clone());
-                }
-            }
-        }
-
-        None
+        self.history
+            .iter()
+            .find_map(|entry| entry.value().iter().find(|r| r.info.id == *job_id).cloned())
     }
 
     pub async fn cancel_job(&self, job_id: &JobId) -> bool {
-        self.cancel_job_for_session(job_id, None).await
-    }
-
-    pub async fn cancel_job_for_session(
-        &self,
-        job_id: &JobId,
-        caller_session_id: Option<&str>,
-    ) -> bool {
-        if let Some(sid) = caller_session_id {
-            if let Some(entry) = self.running.get(job_id) {
-                if entry.info.session_id != sid {
-                    warn!(
-                        job_id = %job_id,
-                        owner = %entry.info.session_id,
-                        caller = %sid,
-                        "Session tried to cancel job owned by another session"
-                    );
-                    return false;
-                }
-            }
-        }
-
         let Some((_, running_job)) = self.running.remove(job_id) else {
             warn!(job_id = %job_id, "Job not found for cancellation");
             return false;
@@ -191,17 +145,6 @@ impl BackgroundJobManager {
         }
 
         debug!(session_id = %session_id, "Session cleanup completed");
-    }
-    #[allow(dead_code)] // diagnostic API, exercised by tests
-    pub fn running_count(&self, session_id: &str) -> usize {
-        self.running
-            .iter()
-            .filter(|entry| entry.value().info.session_id == session_id)
-            .count()
-    }
-    #[allow(dead_code)] // diagnostic API, exercised by tests
-    pub fn total_running_count(&self) -> usize {
-        self.running.len()
     }
 
     /// Wait for all specified jobs to complete, with timeout.

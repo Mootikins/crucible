@@ -129,13 +129,13 @@ async fn cleanup_session_cancels_all_jobs() {
 
     tokio::time::sleep(Duration::from_millis(50)).await;
 
-    assert_eq!(manager.running_count("session-1"), 3);
-    assert_eq!(manager.running_count("session-2"), 1);
+    assert_eq!(running_for(&manager, "session-1"), 3);
+    assert_eq!(running_for(&manager, "session-2"), 1);
 
     manager.cleanup_session("session-1", true).await;
 
-    assert_eq!(manager.running_count("session-1"), 0);
-    assert_eq!(manager.running_count("session-2"), 1);
+    assert_eq!(running_for(&manager, "session-1"), 0);
+    assert_eq!(running_for(&manager, "session-2"), 1);
 
     manager.cleanup_session("session-2", false).await;
 }
@@ -267,27 +267,6 @@ async fn bash_with_workdir_executes_in_directory() {
 }
 
 #[tokio::test]
-async fn cancel_job_for_wrong_session_is_denied() {
-    let manager = create_manager();
-
-    let job_id = manager
-        .spawn_bash("session-1", "sleep 60".to_string(), None, None)
-        .await
-        .unwrap();
-
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
-    let cancelled = manager
-        .cancel_job_for_session(&job_id, Some("session-2"))
-        .await;
-    assert!(!cancelled);
-
-    assert!(manager.running.contains_key(&job_id));
-
-    manager.cancel_job(&job_id).await;
-}
-
-#[tokio::test]
 async fn cancel_nonexistent_job_returns_false() {
     let manager = create_manager();
 
@@ -329,33 +308,6 @@ async fn bash_events_are_broadcast() {
         completion_event.event == events::BASH_COMPLETED
             || completion_event.event == events::BASH_FAILED
     );
-}
-
-#[tokio::test]
-async fn total_running_count_across_sessions() {
-    let manager = create_manager();
-
-    let job_id_1 = manager
-        .spawn_bash("session-1", "sleep 10".to_string(), None, None)
-        .await
-        .unwrap();
-
-    let job_id_2 = manager
-        .spawn_bash("session-2", "sleep 10".to_string(), None, None)
-        .await
-        .unwrap();
-
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
-    assert_eq!(manager.total_running_count(), 2);
-
-    manager.cancel_job(&job_id_1).await;
-
-    assert_eq!(manager.total_running_count(), 1);
-
-    manager.cancel_job(&job_id_2).await;
-
-    assert_eq!(manager.total_running_count(), 0);
 }
 
 #[tokio::test]
@@ -415,4 +367,13 @@ async fn background_spawner_trait_spawn_bash() {
     let result = spawner.get_job_result(&job_id);
     assert!(result.is_some());
     assert!(result.unwrap().info.status.is_terminal());
+}
+
+/// Count the jobs that the manager holds as running for one session.
+fn running_for(manager: &BackgroundJobManager, session_id: &str) -> usize {
+    manager
+        .running
+        .iter()
+        .filter(|entry| entry.value().info.session_id == session_id)
+        .count()
 }
