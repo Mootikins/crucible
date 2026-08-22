@@ -151,6 +151,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   worth holding a task open for the provider's own timeout.
 
 ### Fixed
+- **`cru chat "<query>"` re-embedded the whole kiln before it answered.**
+  `NoteRecord::content_hash` is documented as "BLAKE3 content hash (32 bytes)
+  for change detection", and the plain-text and canvas paths filled it — but the
+  markdown parser left `ParsedNote::content_hash` EMPTY, so
+  `BlockHash::from_hex("")` failed and every markdown note stored
+  `BlockHash::zero()`. With the column useless, Phase 1 consulted an
+  `InMemoryChangeDetectionStore` instead, and that map does not outlive the
+  daemon: the first `kiln.open(process = true)` after every daemon start
+  reprocessed and re-embedded EVERY note. Measured on the 150-note `docs` kiln:
+  150 discovered, **0 skipped, 3m35s** — and one-shot chat waits for it, because
+  `get_storage` runs before the agent is created. It looked like a hang. The
+  parser now fills the hash (over the whole input, so a frontmatter-only edit
+  still counts), Phase 1 compares the file against `notes.content_hash`, and
+  `update_file_state` is gone — all three calls sat right after the upsert that
+  now persists it. Same command against a cold daemon: **15.9s**. The TUI was
+  never affected; it does not call `get_storage`.
+- **A long kiln open looked like a crash.** The status line only repainted
+  between steps, so minutes of indexing sat behind one static `⟳ Opening
+  kiln...` — and behind nothing at all when stdout is piped, since
+  `StatusLine::update` suppresses itself there. It now redraws each second with
+  the elapsed time, and prints what the open indexed. `kiln.open` already
+  returned `discovered`/`processed`/`skipped` and every caller discarded them.
 - **A message send froze the TUI while inotify walked `target/`.** The review
   watch registered ONE RECURSIVE watch on the repository top level, and the
   recursive mode of `notify` adds a watch for each directory it walks — so it
