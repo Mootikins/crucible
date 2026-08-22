@@ -164,6 +164,7 @@ conventional commits · bugfixes include regression tests · snapshots verified 
 ## Key Resources
 
 - [README.md](./README.md) — overview and quick start
+- [docs/Meta/Architecture/Index.md](./docs/Meta/Architecture/Index.md) — expected vs actual architecture, gaps, consolidation plan
 - [docs/Meta/Analysis/Systems.md](./docs/Meta/Analysis/Systems.md) — system boundaries by crate
 - [justfile](./justfile) — development recipes
 - [vendor/README.md](./vendor/README.md) — patched dependencies
