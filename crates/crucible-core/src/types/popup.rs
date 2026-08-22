@@ -12,17 +12,19 @@ use serde_json::Value;
 /// - Serializable (for web UI / IPC)
 /// - Simple enough for scripting (Lua)
 /// - Convertible from domain-specific PopupItem enum
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+///
+/// [`crate::interaction::PanelItem`] is an alias of this type.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PopupEntry {
     /// Primary display text (required)
     pub label: String,
 
     /// Secondary descriptive text (optional)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 
     /// Arbitrary data returned to caller on selection (optional)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<Value>,
 }
 

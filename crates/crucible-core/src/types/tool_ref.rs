@@ -70,69 +70,9 @@ pub enum ToolSource {
 }
 
 impl ToolRef {
-    /// Create a new core tool reference
-    pub fn core(name: impl Into<String>, definition: Tool) -> Self {
-        let name = name.into();
-        Self {
-            name: name.clone(),
-            source: ToolSource::Core,
-            definition,
-            tags: vec!["core".to_string()],
-            always_available: true,
-        }
-    }
-
-    /// Create a new Crucible tool reference
-    pub fn crucible(name: impl Into<String>, definition: Tool) -> Self {
-        let name = name.into();
-        Self {
-            name: name.clone(),
-            source: ToolSource::Crucible,
-            definition,
-            tags: vec!["crucible".to_string()],
-            always_available: true,
-        }
-    }
-
-    /// Create a tool reference from an MCP server
-    pub fn from_mcp(server: impl Into<String>, definition: Tool) -> Self {
-        let server = server.into();
-        let name = definition.name.to_string();
-        Self {
-            name: format!("{}_{}", server, name),
-            source: ToolSource::Mcp {
-                server: server.clone(),
-            },
-            definition,
-            tags: vec!["mcp".to_string(), server],
-            always_available: false, // Discovered via search
-        }
-    }
-
-    /// Create a tool reference from a plugin
-    pub fn from_plugin(plugin: impl Into<String>, definition: Tool) -> Self {
-        let plugin = plugin.into();
-        let name = definition.name.to_string();
-        Self {
-            name: format!("{}_{}", plugin, name),
-            source: ToolSource::Plugin {
-                name: plugin.clone(),
-            },
-            definition,
-            tags: vec!["plugin".to_string(), plugin],
-            always_available: false,
-        }
-    }
-
     /// Add tags for indexing
     pub fn with_tags(mut self, tags: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.tags.extend(tags.into_iter().map(|t| t.into()));
-        self
-    }
-
-    /// Mark as always available (included in agent context)
-    pub fn with_always_available(mut self, always: bool) -> Self {
-        self.always_available = always;
         self
     }
 
@@ -143,35 +83,6 @@ impl ToolRef {
             .as_ref()
             .map(|s| s.as_ref())
             .unwrap_or("")
-    }
-
-    /// Get searchable text (name + description + tags)
-    pub fn searchable_text(&self) -> String {
-        let mut text = self.name.clone();
-        text.push(' ');
-        text.push_str(self.description());
-        for tag in &self.tags {
-            text.push(' ');
-            text.push_str(tag);
-        }
-        text
-    }
-
-    /// Check if this tool matches a source type
-    pub fn is_core(&self) -> bool {
-        matches!(self.source, ToolSource::Core)
-    }
-
-    pub fn is_crucible(&self) -> bool {
-        matches!(self.source, ToolSource::Crucible)
-    }
-
-    pub fn is_mcp(&self) -> bool {
-        matches!(self.source, ToolSource::Mcp { .. })
-    }
-
-    pub fn is_plugin(&self) -> bool {
-        matches!(self.source, ToolSource::Plugin { .. })
     }
 }
 
@@ -229,57 +140,12 @@ mod tests {
     }
 
     #[test]
-    fn test_core_tool_ref() {
-        let tool = make_test_tool("read_file", "Read file contents");
-        let tool_ref = ToolRef::core("read_file", tool);
-
-        assert_eq!(tool_ref.name, "read_file");
-        assert!(tool_ref.is_core());
-        assert!(tool_ref.always_available);
-        assert!(tool_ref.tags.contains(&"core".to_string()));
-    }
-
-    #[test]
-    fn test_crucible_tool_ref() {
-        let tool = make_test_tool("semantic_search", "Search notes semantically");
-        let tool_ref = ToolRef::crucible("semantic_search", tool);
-
-        assert_eq!(tool_ref.name, "semantic_search");
-        assert!(tool_ref.is_crucible());
-        assert!(tool_ref.always_available);
-    }
-
-    #[test]
-    fn test_mcp_tool_ref() {
-        let tool = make_test_tool("send_email", "Send an email");
-        let tool_ref = ToolRef::from_mcp("gmail", tool);
-
-        assert_eq!(tool_ref.name, "gmail_send_email");
-        assert!(tool_ref.is_mcp());
-        assert!(!tool_ref.always_available);
-        assert!(tool_ref.tags.contains(&"mcp".to_string()));
-        assert!(tool_ref.tags.contains(&"gmail".to_string()));
-    }
-
-    #[test]
-    fn test_searchable_text() {
-        let tool = make_test_tool("read_file", "Read file contents from disk");
-        let tool_ref = ToolRef::core("read_file", tool).with_tags(["filesystem", "io"]);
-
-        let text = tool_ref.searchable_text();
-        assert!(text.contains("read_file"));
-        assert!(text.contains("Read file contents"));
-        assert!(text.contains("filesystem"));
-        assert!(text.contains("io"));
-    }
-
-    #[test]
     fn test_from_tool() {
         let tool = make_test_tool("test", "Test tool");
         let tool_ref: ToolRef = tool.into();
 
         assert_eq!(tool_ref.name, "test");
-        assert!(tool_ref.is_core()); // Default source
+        assert!(matches!(tool_ref.source, ToolSource::Core)); // Default source
     }
 
     #[test]

@@ -131,20 +131,6 @@ impl BuiltinMode {
 /// This type extends the ACP SessionMode with additional fields for UI display,
 /// such as icon and color. It can be created from a SessionMode for interoperability
 /// with the ACP protocol.
-///
-/// # Example
-///
-/// ```rust
-/// use crucible_core::types::mode::ModeDescriptor;
-///
-/// let mode = ModeDescriptor::new("plan", "Plan Mode")
-///     .with_description("Read-only exploration mode")
-///     .with_icon("📖")
-///     .with_color("#3b82f6");
-///
-/// assert_eq!(mode.id, "plan");
-/// assert_eq!(mode.name, "Plan Mode");
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModeDescriptor {
     /// Unique identifier for the mode (e.g., "plan", "act")
@@ -167,19 +153,6 @@ pub struct ModeDescriptor {
 }
 
 impl ModeDescriptor {
-    /// Create a new mode descriptor with required fields
-    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
-        let id = id.into();
-        Self {
-            name: name.into(),
-            description: None,
-            icon: None,
-            color: None,
-            review_policy: ReviewPolicy::for_mode_id(&id),
-            id,
-        }
-    }
-
     /// Degrade the policy to what an agent of `agent_type` can actually
     /// enforce, so a client renders the effective policy and not the
     /// configured one.
@@ -189,24 +162,6 @@ impl ModeDescriptor {
     /// the effective value rather than two fields a client has to reconcile.
     pub fn degraded_for(mut self, agent_type: &str) -> Self {
         self.review_policy = self.review_policy.effective_for(agent_type);
-        self
-    }
-
-    /// Set the description
-    pub fn with_description(mut self, description: impl Into<String>) -> Self {
-        self.description = Some(description.into());
-        self
-    }
-
-    /// Set the icon
-    pub fn with_icon(mut self, icon: impl Into<String>) -> Self {
-        self.icon = Some(icon.into());
-        self
-    }
-
-    /// Set the color
-    pub fn with_color(mut self, color: impl Into<String>) -> Self {
-        self.color = Some(color.into());
         self
     }
 }
@@ -301,31 +256,6 @@ mod tests {
     }
 
     #[test]
-    fn test_mode_descriptor_new() {
-        let mode = ModeDescriptor::new("normal", "Normal Mode");
-
-        assert_eq!(mode.id, "normal");
-        assert_eq!(mode.name, "Normal Mode");
-        assert_eq!(mode.description, None);
-        assert_eq!(mode.icon, None);
-        assert_eq!(mode.color, None);
-    }
-
-    #[test]
-    fn test_mode_descriptor_with_all_fields() {
-        let mode = ModeDescriptor::new("act", "Act Mode")
-            .with_description("Write-enabled mode")
-            .with_icon("✏️")
-            .with_color("#22c55e");
-
-        assert_eq!(mode.id, "act");
-        assert_eq!(mode.name, "Act Mode");
-        assert_eq!(mode.description, Some("Write-enabled mode".to_string()));
-        assert_eq!(mode.icon, Some("✏️".to_string()));
-        assert_eq!(mode.color, Some("#22c55e".to_string()));
-    }
-
-    #[test]
     fn test_mode_descriptor_from_session_mode() {
         let session_mode =
             test_session_mode("plan", "Plan Mode", Some("Read-only exploration mode"));
@@ -354,21 +284,15 @@ mod tests {
     }
 
     #[test]
-    fn test_mode_descriptor_equality() {
-        let mode1 = ModeDescriptor::new("normal", "Normal Mode").with_icon("⚡");
-        let mode2 = ModeDescriptor::new("normal", "Normal Mode").with_icon("⚡");
-        let mode3 = ModeDescriptor::new("plan", "Plan Mode");
-
-        assert_eq!(mode1, mode2);
-        assert_ne!(mode1, mode3);
-    }
-
-    #[test]
     fn test_mode_descriptor_serialization() {
-        let mode = ModeDescriptor::new("normal", "Normal")
-            .with_description("desc")
-            .with_icon("⚡")
-            .with_color("#000");
+        let mode = ModeDescriptor {
+            id: "normal".to_string(),
+            name: "Normal".to_string(),
+            description: Some("desc".to_string()),
+            icon: Some("⚡".to_string()),
+            color: Some("#000".to_string()),
+            review_policy: ReviewPolicy::for_mode_id("normal"),
+        };
 
         let json = serde_json::to_string(&mode).unwrap();
         let restored: ModeDescriptor = serde_json::from_str(&json).unwrap();
@@ -479,22 +403,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn descriptor_derives_its_policy_from_the_mode_id() {
-        assert_eq!(
-            ModeDescriptor::new("plan", "Plan").review_policy,
-            ReviewPolicy::None
-        );
-        assert_eq!(
-            ModeDescriptor::new("auto", "Auto").review_policy,
-            ReviewPolicy::PostTurn
-        );
-        assert_eq!(
-            ModeDescriptor::new("normal", "Normal").review_policy,
-            ReviewPolicy::PreWrite
-        );
-    }
-
     /// The conversion is the only source `session.list_modes` has, so a policy
     /// that did not survive it would leave every mode reporting the default.
     #[test]
@@ -505,7 +413,8 @@ mod tests {
 
     #[test]
     fn descriptor_degraded_for_an_external_agent_reports_the_effective_policy() {
-        let descriptor = ModeDescriptor::new("normal", "Normal").degraded_for("acp");
+        let descriptor =
+            ModeDescriptor::from(&test_session_mode("normal", "Normal", None)).degraded_for("acp");
         assert_eq!(descriptor.review_policy, ReviewPolicy::PostTurn);
     }
 

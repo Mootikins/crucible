@@ -20,8 +20,6 @@ pub mod tree;
 
 pub use tree::{ConversationTree, NodeContent, NodeId, NodeMeta, TurnNode};
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 use serde::{Deserialize, Serialize};
@@ -418,9 +416,6 @@ macro_rules! impl_noop_agent {
         }
     };
 }
-
-/// Shared agent instance.
-pub type SharedAgent = Arc<tokio::sync::Mutex<BoxAgent>>;
 
 #[cfg(test)]
 mod tests {

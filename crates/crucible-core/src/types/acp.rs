@@ -71,11 +71,6 @@ impl SessionId {
         Self(uuid)
     }
 
-    /// Get the underlying UUID
-    pub fn as_uuid(&self) -> &Uuid {
-        &self.0
-    }
-
     /// Get the session ID as a string
     pub fn as_str(&self) -> String {
         self.0.to_string()
@@ -179,12 +174,6 @@ impl SessionConfig {
     /// Enable or disable context enrichment
     pub fn with_enrichment(mut self, enabled: bool) -> Self {
         self.enable_enrichment = enabled;
-        self
-    }
-
-    /// Set the number of enrichment results
-    pub fn with_enrichment_count(mut self, count: usize) -> Self {
-        self.enrichment_count = count;
         self
     }
 
@@ -596,12 +585,6 @@ impl FileMetadata {
     /// Set file size
     pub fn with_size(mut self, size: u64) -> Self {
         self.size = Some(size);
-        self
-    }
-
-    /// Mark as directory
-    pub fn as_directory(mut self) -> Self {
-        self.is_directory = true;
         self
     }
 

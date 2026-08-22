@@ -130,40 +130,9 @@ impl PopupResponse {
 /// An item in an interactive panel.
 ///
 /// Each item has a label, optional description, and optional arbitrary data
-/// that can be returned when selected.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PanelItem {
-    /// Display label for this item.
-    pub label: String,
-    /// Optional description shown below or beside the label.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    /// Arbitrary data associated with this item (returned on selection).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data: Option<serde_json::Value>,
-}
-
-impl PanelItem {
-    pub fn new(label: impl Into<String>) -> Self {
-        Self {
-            label: label.into(),
-            description: None,
-            data: None,
-        }
-    }
-
-    /// Add a description to this item.
-    pub fn with_description(mut self, description: impl Into<String>) -> Self {
-        self.description = Some(description.into());
-        self
-    }
-
-    /// Add arbitrary data to this item.
-    pub fn with_data(mut self, data: serde_json::Value) -> Self {
-        self.data = Some(data);
-        self
-    }
-}
+/// that can be returned when selected. It has the same serde shape as
+/// [`PopupEntry`], so it is the same type.
+pub type PanelItem = PopupEntry;
 
 /// Render/behavior hints for an interactive panel.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

@@ -6,7 +6,6 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use std::time::Instant;
 
 /// A notification message with metadata.
 ///
@@ -17,8 +16,6 @@ pub struct Notification {
     pub id: String,
     pub kind: NotificationKind,
     pub message: String,
-    #[allow(dead_code)]
-    pub(crate) created_at: Instant,
 }
 
 impl Serialize for Notification {
@@ -52,7 +49,6 @@ impl<'de> Deserialize<'de> for Notification {
             id: data.id,
             kind: data.kind,
             message: data.message,
-            created_at: Instant::now(),
         })
     }
 }
@@ -64,7 +60,6 @@ impl Notification {
             id: generate_notification_id(),
             kind,
             message: message.into(),
-            created_at: Instant::now(),
         }
     }
 
@@ -128,24 +123,6 @@ impl NotificationQueue {
         } else {
             false
         }
-    }
-
-    /// Remove notifications older than the given duration.
-    ///
-    /// Returns the number of notifications expired.
-    pub fn expire_old(&mut self, max_age: std::time::Duration) -> usize {
-        let now = Instant::now();
-        let initial_len = self.notifications.len();
-
-        self.notifications
-            .retain(|n| now.duration_since(n.created_at) < max_age);
-
-        initial_len - self.notifications.len()
-    }
-
-    /// Get all current notifications.
-    pub fn notifications(&self) -> &VecDeque<Notification> {
-        &self.notifications
     }
 
     /// Get all notifications as a Vec (for serialization).
@@ -265,29 +242,6 @@ mod tests {
         // Dismiss second notification
         assert!(queue.dismiss(&id2));
         assert!(queue.is_empty());
-    }
-
-    #[test]
-    fn test_notification_queue_expire_old() {
-        use std::time::Duration;
-
-        let mut queue = NotificationQueue::new();
-
-        // Create notifications with different ages
-        let mut old_notif = Notification::toast("Old");
-        old_notif.created_at = Instant::now() - Duration::from_secs(10);
-
-        let recent_notif = Notification::toast("Recent");
-
-        queue.add(old_notif);
-        queue.add(recent_notif);
-        assert_eq!(queue.len(), 2);
-
-        // Expire notifications older than 5 seconds
-        let expired = queue.expire_old(Duration::from_secs(5));
-        assert_eq!(expired, 1);
-        assert_eq!(queue.len(), 1);
-        assert_eq!(queue.notifications()[0].message, "Recent");
     }
 
     #[test]

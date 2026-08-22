@@ -122,9 +122,7 @@ pub use parser::{
     // Note: MarkdownParser trait is exported from traits:: module above
 };
 pub use properties::{AttributeValue, PropertyMap};
-pub use types::database::{
-    DbError, DbResult, DocumentId, QueryResult, Record, RecordId, SearchResult, UnifiedSearchResult,
-};
+pub use types::database::{DocumentId, QueryResult, Record, RecordId, SearchResult};
 
 // Re-export interaction protocol types
 pub use interaction::{
