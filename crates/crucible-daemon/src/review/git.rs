@@ -53,20 +53,40 @@ pub(super) async fn top_level(path: &Path) -> ReviewResult<PhysicalRoot> {
     }
 }
 
-/// Directories under `root` that git ignores.
+/// What git ignores under `root`, split by what each is for.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct IgnoredEntries {
+    /// Wholly ignored directories. These prune the watch walk.
+    pub dirs: Vec<std::path::PathBuf>,
+    /// Ignored files sitting inside directories that must stay watched. These
+    /// cannot be pruned, only filtered when their events arrive.
+    pub files: Vec<std::path::PathBuf>,
+}
+
+impl IgnoredEntries {
+    /// Every ignored path, for a prefix test at event time.
+    pub fn all(&self) -> impl Iterator<Item = &std::path::PathBuf> {
+        self.dirs.iter().chain(self.files.iter())
+    }
+}
+
+/// What git ignores under `root`.
 ///
-/// `--directory` collapses a wholly ignored directory to one entry, so git
-/// never descends into `target/` to answer. The call costs milliseconds on a
-/// tree whose ignored half is hundreds of gigabytes.
+/// `--directory` collapses a wholly ignored directory to one entry with a
+/// trailing slash, so git never descends into `target/` to answer. The call
+/// costs milliseconds on a tree whose ignored half is hundreds of gigabytes.
 ///
 /// Every tree the ledger records comes from `git add -A`, which honours these
 /// same rules. An ignored path can therefore never reach a hunk, which is what
 /// makes pruning these from the review watch a statement about the ledger
-/// rather than a guess about which directories are build output.
+/// rather than a guess about which directories hold build output.
 ///
-/// Only directories are returned. An ignored *file* still needs an event-time
-/// check, because it sits inside a directory that must stay watched.
-pub(crate) async fn ignored_dirs(root: &Path) -> ReviewResult<Vec<std::path::PathBuf>> {
+/// The two lists stay apart because they do different jobs, and conflating
+/// them breaks both: an ignored FILE handed to the walk would split its parent
+/// into a non-recursive watch plus a descent for nothing, and an ignored
+/// DIRECTORY is the only kind the walk can prune. Filtering only the
+/// directories is what left `.env.local` reported as an external change.
+pub(crate) async fn ignored_entries(root: &Path) -> ReviewResult<IgnoredEntries> {
     let out = git(
         root,
         &[
@@ -79,11 +99,15 @@ pub(crate) async fn ignored_dirs(root: &Path) -> ReviewResult<Vec<std::path::Pat
         ],
     )
     .await?;
-    Ok(out
-        .split('\0')
-        .filter(|entry| entry.ends_with('/'))
-        .map(|dir| root.join(dir.trim_end_matches('/')))
-        .collect())
+
+    let mut entries = IgnoredEntries::default();
+    for entry in out.split('\0').filter(|entry| !entry.is_empty()) {
+        match entry.strip_suffix('/') {
+            Some(dir) => entries.dirs.push(root.join(dir)),
+            None => entries.files.push(root.join(entry)),
+        }
+    }
+    Ok(entries)
 }
 
 /// Paths differing between two trees, with the kind of change.

@@ -441,6 +441,18 @@ impl ExternalChangeWatch {
     /// holds are reused.
     pub async fn watch_session(&self, session_id: &str, roots: &[PathBuf]) -> Result<()> {
         let fresh = self.tracker.track(session_id, roots);
+
+        // Refresh every tracked root's ignore set, not only the fresh ones.
+        // The set is what keeps build output out of the queue, and it is a
+        // snapshot: a `target/` created after the watch was established is
+        // inside a recursive watch (that is how directories created later stay
+        // covered) and matches nothing frozen, so its events would arrive
+        // unfiltered. Re-asking git costs about five milliseconds per root per
+        // turn, because git does not descend a wholly ignored tree.
+        for root in roots {
+            self.tracker.set_ignored(root, ignored_paths(root).await);
+        }
+
         if fresh.is_empty() {
             return Ok(());
         }
@@ -448,16 +460,16 @@ impl ExternalChangeWatch {
         let mut manager = self.manager.lock().await;
         let mut watches = self.watches.lock().await;
         for root in fresh {
-            // Ask git which directories it ignores. `--directory` collapses a
-            // wholly ignored tree to one entry, so this stays in milliseconds
-            // however large that tree is.
+            // Only the DIRECTORIES prune the walk. An ignored file cannot be
+            // pruned — it sits inside a directory that must stay watched — so
+            // handing it to the plan would split that parent for nothing.
             //
             // A root git cannot answer for is watched whole rather than not at
             // all: a slow watch still reports external edits, and this module
             // exists to prevent silence.
             let mut ignored: HashSet<PathBuf> = always_excluded(&root).collect();
-            match crate::review::git::ignored_dirs(&root).await {
-                Ok(dirs) => ignored.extend(dirs),
+            match crate::review::git::ignored_entries(&root).await {
+                Ok(entries) => ignored.extend(entries.dirs),
                 Err(e) => {
                     warn!(
                         root = %root.display(),
@@ -488,8 +500,6 @@ impl ExternalChangeWatch {
                     }
                 }
             };
-            self.tracker.set_ignored(&root, ignored);
-
             let template = WatchConfig::new(String::new())
                 .with_debounce(DebounceConfig::new(DEBOUNCE.as_millis() as u64));
             let group = watch_group_id(&root);
@@ -551,6 +561,26 @@ impl ExternalChangeWatch {
     }
 }
 
+/// Every path git ignores under `root`, plus the names excluded regardless.
+///
+/// Directories AND files: the event-time filter tests by prefix, and an
+/// ignored file (`.env.local`) sits inside a directory that stays watched, so
+/// nothing else can catch it.
+async fn ignored_paths(root: &Path) -> HashSet<PathBuf> {
+    let mut ignored: HashSet<PathBuf> = always_excluded(root).collect();
+    match crate::review::git::ignored_entries(root).await {
+        Ok(entries) => ignored.extend(entries.all().cloned()),
+        Err(e) => {
+            debug!(
+                root = %root.display(),
+                error = %e,
+                "git could not list ignored paths; build output may reach the queue"
+            );
+        }
+    }
+    ignored
+}
+
 /// The backend group holding every watch for `root`.
 fn watch_group_id(root: &Path) -> String {
     format!("review-{}", root.display())
@@ -575,8 +605,19 @@ fn plan_watches(root: &Path, ignored: &HashSet<PathBuf>) -> Vec<(PathBuf, bool)>
         }
         plan.push((dir.to_path_buf(), false));
 
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
+        let entries = match std::fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(e) => {
+                // `dir` keeps its own non-recursive watch, but everything below
+                // it now has none. Every other failure here says so; this one
+                // used to return in silence, which reads as "nothing to watch".
+                warn!(
+                    dir = %dir.display(),
+                    error = %e,
+                    "could not read directory; changes below it will not be detected"
+                );
+                return;
+            }
         };
         for entry in entries.flatten() {
             // `file_type` reports the link itself, so a symlinked directory is
@@ -705,20 +746,77 @@ mod tests {
             .any(|(path, _)| path == &root.join("dirty/link")));
     }
 
+    /// A repository with one wholly ignored directory and one ignored file
+    /// beside tracked ones — the two shapes that need opposite handling.
+    async fn repo_with_ignored_entries(root: &Path) {
+        crate::test_support::init_repo(
+            root,
+            &[(".gitignore", "target/\n.env.local\n"), ("src/a.rs", "")],
+        )
+        .await;
+        dirs(root, &["target/debug/build/deps"]);
+        std::fs::write(root.join("target/debug/x.o"), "").unwrap();
+        std::fs::write(root.join(".env.local"), "SECRET=1").unwrap();
+    }
+
     #[tokio::test]
     async fn git_reports_an_ignored_directory_as_one_entry() {
         let tmp = tempfile::TempDir::new().unwrap();
         let root = tmp.path();
-        crate::test_support::init_repo(root, &[(".gitignore", "target/\n"), ("src/a.rs", "")])
-            .await;
-        dirs(root, &["target/debug/build/deps"]);
-        std::fs::write(root.join("target/debug/x.o"), "").unwrap();
+        repo_with_ignored_entries(root).await;
 
-        let ignored = crate::review::git::ignored_dirs(root).await.unwrap();
+        let ignored = crate::review::git::ignored_entries(root).await.unwrap();
 
         // One entry, not one per directory: git does not descend a wholly
         // ignored tree, which is what keeps this call cheap on a large one.
-        assert_eq!(ignored, vec![root.join("target")]);
+        assert_eq!(ignored.dirs, vec![root.join("target")]);
+    }
+
+    #[tokio::test]
+    async fn git_reports_an_ignored_file_separately_from_a_directory() {
+        // `--directory` collapses only WHOLLY ignored directories. A standalone
+        // ignored file is listed on its own, with no trailing slash. Keeping
+        // just the trailing-slash entries dropped it, so the event-time filter
+        // never learned about `.env.local` and reported it as an external
+        // change — the thing this was supposed to stop.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        repo_with_ignored_entries(root).await;
+
+        let ignored = crate::review::git::ignored_entries(root).await.unwrap();
+
+        assert_eq!(ignored.files, vec![root.join(".env.local")]);
+    }
+
+    #[tokio::test]
+    async fn the_event_time_set_carries_ignored_files_from_git() {
+        // The end-to-end shape. The other test for this built the tracker
+        // state by hand, so it passed while the real pipeline produced a set
+        // that could never contain a file.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        repo_with_ignored_entries(root).await;
+
+        let ignored = ignored_paths(root).await;
+
+        assert!(ignored.contains(&root.join(".env.local")));
+        assert!(ignored.contains(&root.join("target")));
+    }
+
+    #[tokio::test]
+    async fn an_ignored_file_from_git_is_untracked_at_event_time() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().to_path_buf();
+        repo_with_ignored_entries(&root).await;
+
+        let tracker = tracker_over(&root);
+        tracker.set_ignored(&root, ignored_paths(&root).await);
+
+        assert_eq!(
+            tracker.observe(&root.join(".env.local")),
+            Ownership::Untracked
+        );
+        assert_eq!(tracker.observe(&root.join("src/a.rs")), Ownership::External);
     }
 
     #[tokio::test]
@@ -1030,6 +1128,51 @@ mod tests {
     /// [`ExternalChangeHandler`] → tracker. Every other test in this module
     /// drives `observe` directly, so without this one a broken watch
     /// registration would look exactly like a quiet worktree.
+    #[tokio::test]
+    async fn a_build_directory_born_mid_session_still_gets_filtered() {
+        // `watch_session` runs every turn but only PLANS for roots it has not
+        // seen. The ignore set used to be planned with it, so it froze at the
+        // first turn: a `target/` created later sits inside a recursive watch
+        // (that is how directories created later stay covered) and matched
+        // nothing frozen, so `cargo build` flooded the queue unfiltered. The
+        // name list that used to catch it by spelling is gone.
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        crate::test_support::init_repo(&root, &[(".gitignore", "target/\n"), ("src/a.rs", "")])
+            .await;
+
+        let tracker = Arc::new(ExternalChangeTracker::default());
+        let watch = ExternalChangeWatch::start(Arc::clone(&tracker))
+            .await
+            .unwrap();
+
+        // Turn one: no `target/` exists yet.
+        watch
+            .watch_session("s1", std::slice::from_ref(&root))
+            .await
+            .unwrap();
+        assert_eq!(
+            tracker.observe(&root.join("target/debug/x.o")),
+            Ownership::External,
+            "nothing has told the tracker about `target/` yet"
+        );
+
+        // A build happens.
+        std::fs::create_dir_all(root.join("target/debug")).unwrap();
+        std::fs::write(root.join("target/debug/x.o"), "").unwrap();
+
+        // Turn two: same root, already tracked.
+        watch
+            .watch_session("s1", std::slice::from_ref(&root))
+            .await
+            .unwrap();
+        assert_eq!(
+            tracker.observe(&root.join("target/debug/x.o")),
+            Ownership::Untracked,
+            "a later turn must re-ask git, or build output never gets filtered"
+        );
+    }
+
     #[tokio::test]
     async fn a_write_nobody_bracketed_reaches_the_tracker_through_the_watch() {
         let dir = tempfile::TempDir::new().unwrap();
