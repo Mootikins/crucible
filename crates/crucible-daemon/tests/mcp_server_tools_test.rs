@@ -40,8 +40,8 @@ const EXPECTED_TOOLS: &[&str] = &[
 
 fn create_test_server() -> CrucibleMcpServer {
     let temp = TempDir::new().unwrap();
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
 
     CrucibleMcpServer::new(
         temp.path().to_string_lossy().to_string(),

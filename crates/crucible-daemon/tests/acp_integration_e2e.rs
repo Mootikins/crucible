@@ -291,8 +291,8 @@ fn test_delegation_context_construction() {
 #[tokio::test]
 async fn test_mcp_host_initializes() {
     let temp = TempDir::new().expect("temp dir");
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
 
     let host = match InProcessMcpHost::start(
         temp.path().to_path_buf(),
@@ -417,8 +417,8 @@ async fn test_mcp_host_initializes_with_delegation_context() {
     }
 
     let temp = TempDir::new().expect("temp dir");
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
 
     let delegation_ctx = DelegationContext {
         background_spawner: Arc::new(MockSpawner),

@@ -410,70 +410,8 @@ fn build_breadcrumbs(parsed: &ParsedNote) -> std::collections::HashMap<usize, St
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::MockEmbeddingProvider;
     use std::path::PathBuf;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    struct MockEmbeddingProvider {
-        model: String,
-        dimensions: usize,
-        embed_batch_calls: AtomicUsize,
-        fail_on_batch_call: Option<usize>,
-    }
-
-    impl MockEmbeddingProvider {
-        fn new() -> Self {
-            Self {
-                model: "mock-model".to_string(),
-                dimensions: 3,
-                embed_batch_calls: AtomicUsize::new(0),
-                fail_on_batch_call: None,
-            }
-        }
-
-        fn with_failure_on_batch_call(fail_on_batch_call: usize) -> Self {
-            Self {
-                model: "mock-model".to_string(),
-                dimensions: 3,
-                embed_batch_calls: AtomicUsize::new(0),
-                fail_on_batch_call: Some(fail_on_batch_call),
-            }
-        }
-
-        fn batch_calls(&self) -> usize {
-            self.embed_batch_calls.load(Ordering::SeqCst)
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl EmbeddingProvider for MockEmbeddingProvider {
-        async fn embed(&self, _text: &str) -> Result<Vec<f32>> {
-            Ok(vec![0.1, 0.2, 0.3])
-        }
-
-        async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-            let call_idx = self.embed_batch_calls.fetch_add(1, Ordering::SeqCst) + 1;
-            if self.fail_on_batch_call == Some(call_idx) {
-                anyhow::bail!("forced embed_batch failure on call {call_idx}");
-            }
-            Ok(texts.iter().map(|_| vec![0.1, 0.2, 0.3]).collect())
-        }
-
-        fn model_name(&self) -> &str {
-            &self.model
-        }
-
-        fn dimensions(&self) -> usize {
-            self.dimensions
-        }
-
-        fn provider_name(&self) -> &str {
-            "mock"
-        }
-
-        async fn list_models(&self) -> Result<Vec<String>> {
-            Ok(vec![self.model.clone()])
-        }
-    }
 
     #[tokio::test]
     async fn new_with_provider_keeps_provider() {

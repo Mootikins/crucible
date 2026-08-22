@@ -10,6 +10,7 @@ use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::chat::{AgentHandle, ChatResult};
 use crucible_core::traits::KnowledgeRepository;
 use crucible_core::turn::{StopReason, TurnError, TurnEvent};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 /// A literal session id for tests, through the same validation production uses.
@@ -21,11 +22,37 @@ pub fn sid(id: &str) -> crucible_core::session::SessionId {
     crucible_core::session::SessionId::parse(id).expect("a valid test session id")
 }
 
-/// Canonical mock implementation of KnowledgeRepository for testing
+/// Canonical mock implementation of `KnowledgeRepository` for tests.
 ///
-/// Returns empty/default values for all methods. Use this in tests that need
-/// a KnowledgeRepository but don't care about the actual data.
-pub struct MockKnowledgeRepository;
+/// [`MockKnowledgeRepository::new`] returns empty values from every method.
+/// [`MockKnowledgeRepository::with_results`] scripts what `search_vectors`
+/// returns. [`MockKnowledgeRepository::failing`] makes `search_vectors` fail,
+/// so a test can check how a caller treats one broken kiln.
+#[derive(Default)]
+pub struct MockKnowledgeRepository {
+    results: Vec<crucible_core::types::SearchResult>,
+    fail_search: bool,
+}
+
+impl MockKnowledgeRepository {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_results(results: Vec<crucible_core::types::SearchResult>) -> Self {
+        Self {
+            results,
+            fail_search: false,
+        }
+    }
+
+    pub fn failing() -> Self {
+        Self {
+            results: Vec::new(),
+            fail_search: true,
+        }
+    }
+}
 
 #[async_trait]
 impl KnowledgeRepository for MockKnowledgeRepository {
@@ -48,25 +75,81 @@ impl KnowledgeRepository for MockKnowledgeRepository {
         _vector: Vec<f32>,
         _limit: usize,
     ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
-        Ok(vec![])
+        if self.fail_search {
+            return Err(crucible_core::CrucibleError::DatabaseError(
+                "mock failure".into(),
+            ));
+        }
+        Ok(self.results.clone())
     }
 }
 
-/// Canonical mock implementation of EmbeddingProvider for testing
+/// Canonical mock implementation of `EmbeddingProvider` for tests.
 ///
-/// Returns mock embeddings (384-dimensional vectors of 0.1) for all inputs.
-/// Use this in tests that need an EmbeddingProvider but don't care about
-/// actual embedding quality.
-pub struct MockEmbeddingProvider;
+/// Every embedding is a vector of `0.1` with [`dimensions`](Self::dimensions)
+/// entries (384 by default). The mock counts `embed_batch` calls, so a test can
+/// check how a caller splits its batches. [`with_failure_on_batch_call`]
+/// (Self::with_failure_on_batch_call) makes one numbered call fail, so a test
+/// can check that a caller reports a failure in the middle of a run.
+pub struct MockEmbeddingProvider {
+    dimensions: usize,
+    embed_batch_calls: AtomicUsize,
+    fail_on_batch_call: Option<usize>,
+}
+
+impl Default for MockEmbeddingProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MockEmbeddingProvider {
+    pub fn new() -> Self {
+        Self {
+            dimensions: 384,
+            embed_batch_calls: AtomicUsize::new(0),
+            fail_on_batch_call: None,
+        }
+    }
+
+    pub fn with_dimensions(dimensions: usize) -> Self {
+        Self {
+            dimensions,
+            ..Self::new()
+        }
+    }
+
+    /// Make the `fail_on_batch_call`-th call to `embed_batch` fail. Calls are
+    /// counted from one.
+    pub fn with_failure_on_batch_call(fail_on_batch_call: usize) -> Self {
+        Self {
+            fail_on_batch_call: Some(fail_on_batch_call),
+            ..Self::new()
+        }
+    }
+
+    /// The number of `embed_batch` calls so far.
+    pub fn batch_calls(&self) -> usize {
+        self.embed_batch_calls.load(Ordering::SeqCst)
+    }
+
+    fn vector(&self) -> Vec<f32> {
+        vec![0.1; self.dimensions]
+    }
+}
 
 #[async_trait]
 impl EmbeddingProvider for MockEmbeddingProvider {
     async fn embed(&self, _text: &str) -> anyhow::Result<Vec<f32>> {
-        Ok(vec![0.1; 384])
+        Ok(self.vector())
     }
 
-    async fn embed_batch(&self, _texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
-        Ok(vec![vec![0.1; 384]; _texts.len()])
+    async fn embed_batch(&self, texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
+        let call_idx = self.embed_batch_calls.fetch_add(1, Ordering::SeqCst) + 1;
+        if self.fail_on_batch_call == Some(call_idx) {
+            anyhow::bail!("forced embed_batch failure on call {call_idx}");
+        }
+        Ok(vec![self.vector(); texts.len()])
     }
 
     fn model_name(&self) -> &str {
@@ -74,7 +157,7 @@ impl EmbeddingProvider for MockEmbeddingProvider {
     }
 
     fn dimensions(&self) -> usize {
-        384
+        self.dimensions
     }
 
     fn provider_name(&self) -> &str {

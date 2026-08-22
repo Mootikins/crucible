@@ -136,8 +136,8 @@ impl Default for DelegationContext {
 #[test]
 fn test_server_creation() {
     let temp = TempDir::new().unwrap();
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
 
     let _server = CrucibleMcpServer::new(
         temp.path().to_str().unwrap().to_string(),
@@ -164,8 +164,8 @@ async fn skill_view_appends_allowed_tools_advisory() {
     let server = CrucibleMcpServer::new_with_workspace_and_delegation(
         kiln.path().to_str().unwrap().to_string(),
         ws.path().to_path_buf(),
-        Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
-        Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
+        Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>,
+        Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>,
         None,
         crate::tools::containment::RootSet::Ambient,
     );
@@ -217,8 +217,8 @@ async fn skill_view_finds_workspace_and_kiln_skills() {
     let server = CrucibleMcpServer::new_with_workspace_and_delegation(
         kiln.path().to_str().unwrap().to_string(),
         ws.path().to_path_buf(),
-        Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
-        Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
+        Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>,
+        Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>,
         None,
         crate::tools::containment::RootSet::Ambient,
     );
@@ -256,8 +256,8 @@ async fn skill_view_finds_workspace_and_kiln_skills() {
 #[test]
 fn test_tool_router_creation() {
     let temp = TempDir::new().unwrap();
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
 
     let _server = CrucibleMcpServer::new(
         temp.path().to_str().unwrap().to_string(),
@@ -277,8 +277,8 @@ fn test_tool_router_creation() {
 /// unconditional ENOENT dressed up as a path-traversal refusal.
 #[test]
 fn a_kiln_less_server_advertises_no_kiln_backed_tools() {
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
     let server = CrucibleMcpServer::new(String::new(), knowledge_repo, embedding_provider);
 
     let names: Vec<String> = server
@@ -303,8 +303,8 @@ fn a_kiln_less_server_advertises_no_kiln_backed_tools() {
 #[test]
 fn a_kiln_backed_server_advertises_every_kiln_tool() {
     let temp = TempDir::new().unwrap();
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
     let server = CrucibleMcpServer::new(
         temp.path().to_str().unwrap().to_string(),
         knowledge_repo,
@@ -328,8 +328,8 @@ fn a_kiln_backed_server_advertises_every_kiln_tool() {
 #[tokio::test]
 async fn test_delegate_session_without_context_returns_graceful_error() {
     let temp = TempDir::new().unwrap();
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
     let server = CrucibleMcpServer::new(
         temp.path().to_str().unwrap().to_string(),
         knowledge_repo,
@@ -353,8 +353,8 @@ async fn test_delegate_session_without_context_returns_graceful_error() {
 #[tokio::test]
 async fn test_delegate_session_spawns_background_subagent() {
     let temp = TempDir::new().unwrap();
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
     let spawner = Arc::new(MockDelegationSpawner::default());
 
     let server = CrucibleMcpServer::new_with_delegation(
@@ -384,8 +384,8 @@ async fn test_delegate_session_spawns_background_subagent() {
 #[test]
 fn test_delegate_session_description_includes_target_hints() {
     let temp = TempDir::new().unwrap();
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
     let server = CrucibleMcpServer::new_with_delegation(
         temp.path().to_str().unwrap().to_string(),
         knowledge_repo,
@@ -422,8 +422,8 @@ fn test_delegate_session_description_includes_target_hints() {
 #[test]
 fn test_delegate_session_filtered_when_no_delegation_context() {
     let temp = TempDir::new().unwrap();
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
 
     let server = CrucibleMcpServer::new(
         temp.path().to_str().unwrap().to_string(),
@@ -441,8 +441,8 @@ fn test_delegate_session_filtered_when_no_delegation_context() {
 #[test]
 fn test_delegate_session_description_generic_when_empty_targets() {
     let temp = TempDir::new().unwrap();
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
     let server = CrucibleMcpServer::new_with_delegation(
         temp.path().to_str().unwrap().to_string(),
         knowledge_repo,
@@ -474,8 +474,8 @@ fn make_server_without_delegation() -> CrucibleMcpServer {
     let temp = TempDir::new().unwrap();
     CrucibleMcpServer::new(
         temp.path().to_str().unwrap().to_string(),
-        Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
-        Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
+        Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>,
+        Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>,
     )
 }
 
@@ -483,8 +483,8 @@ fn make_server_with_job_spawner() -> CrucibleMcpServer {
     let temp = TempDir::new().unwrap();
     CrucibleMcpServer::new_with_delegation(
         temp.path().to_str().unwrap().to_string(),
-        Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
-        Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
+        Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>,
+        Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>,
         Some(DelegationContext {
             session_id: "test-session".to_string(),
             ..Default::default()
@@ -497,8 +497,8 @@ fn make_server_with_delegation() -> (CrucibleMcpServer, Arc<MockDelegationSpawne
     let spawner = Arc::new(MockDelegationSpawner::default());
     let server = CrucibleMcpServer::new_with_delegation(
         temp.path().to_str().unwrap().to_string(),
-        Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
-        Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
+        Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>,
+        Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>,
         Some(DelegationContext {
             delegation_spawner: spawner.clone(),
             ..Default::default()
@@ -512,8 +512,8 @@ fn make_server_with_delegation_disabled() -> CrucibleMcpServer {
     let temp = TempDir::new().unwrap();
     CrucibleMcpServer::new_with_delegation(
         temp.path().to_str().unwrap().to_string(),
-        Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
-        Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
+        Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>,
+        Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>,
         Some(DelegationContext {
             enabled: false,
             ..Default::default()

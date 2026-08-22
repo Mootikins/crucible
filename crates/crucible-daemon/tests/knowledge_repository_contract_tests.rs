@@ -3,7 +3,7 @@ use crucible_daemon::test_support::MockKnowledgeRepository;
 
 #[tokio::test]
 async fn contract_get_note_by_name_returns_none_for_missing_note() {
-    let repository = MockKnowledgeRepository;
+    let repository = MockKnowledgeRepository::new();
 
     let note = repository
         .get_note_by_name("missing-note.md")
@@ -18,7 +18,7 @@ async fn contract_get_note_by_name_returns_none_for_missing_note() {
 
 #[tokio::test]
 async fn contract_list_notes_returns_empty_when_repository_has_no_notes() {
-    let repository = MockKnowledgeRepository;
+    let repository = MockKnowledgeRepository::new();
 
     let all_notes = repository
         .list_notes(None)
@@ -41,7 +41,7 @@ async fn contract_list_notes_returns_empty_when_repository_has_no_notes() {
 
 #[tokio::test]
 async fn contract_search_vectors_returns_empty_for_unmatched_embeddings() {
-    let repository = MockKnowledgeRepository;
+    let repository = MockKnowledgeRepository::new();
 
     let results = repository
         .search_vectors(vec![0.13, 0.42, 0.99], 10)

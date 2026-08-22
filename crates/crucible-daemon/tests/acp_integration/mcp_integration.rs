@@ -290,8 +290,8 @@ async fn start_mcp_host(
 #[tokio::test]
 async fn test_in_process_mcp_host_provides_valid_sse_url() {
     let temp = TempDir::new().unwrap();
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
 
     let host = start_mcp_host(
         temp.path().to_path_buf(),
@@ -321,8 +321,8 @@ async fn test_in_process_mcp_host_provides_valid_sse_url() {
 #[tokio::test]
 async fn test_in_process_mcp_sse_endpoint_is_reachable() {
     let temp = TempDir::new().unwrap();
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
 
     let host = start_mcp_host(
         temp.path().to_path_buf(),
@@ -363,8 +363,8 @@ async fn test_mcp_server_http_variant_with_host_url() {
     use agent_client_protocol::{McpServer, McpServerHttp};
 
     let temp = TempDir::new().unwrap();
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
 
     let host = start_mcp_host(
         temp.path().to_path_buf(),
@@ -394,8 +394,8 @@ async fn test_new_session_request_with_http_mcp() {
     use serde_json::json;
 
     let temp = TempDir::new().unwrap();
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
 
     let host = start_mcp_host(
         temp.path().to_path_buf(),
@@ -437,8 +437,8 @@ async fn test_new_session_request_with_http_mcp() {
 #[tokio::test]
 async fn test_in_process_mcp_host_graceful_shutdown() {
     let temp = TempDir::new().unwrap();
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
 
     let host = start_mcp_host(
         temp.path().to_path_buf(),
@@ -483,8 +483,8 @@ async fn test_in_process_mcp_host_graceful_shutdown() {
 #[tokio::test]
 async fn test_streamable_http_accept_header_without_sse_still_succeeds() {
     let temp = TempDir::new().unwrap();
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
 
     let host = start_mcp_host(
         temp.path().to_path_buf(),
@@ -521,8 +521,8 @@ async fn test_streamable_http_accept_header_without_sse_still_succeeds() {
 #[tokio::test]
 async fn test_tools_list_over_http_returns_delegate_session() {
     let temp = TempDir::new().unwrap();
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
 
     let host = start_mcp_host(
         temp.path().to_path_buf(),
@@ -623,8 +623,8 @@ async fn test_tools_list_over_http_returns_delegate_session() {
 #[tokio::test]
 async fn test_http_capable_agent_gets_http_transport_with_mcp_host() {
     let temp = TempDir::new().unwrap();
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
 
     let host = start_mcp_host(
         temp.path().to_path_buf(),
@@ -660,8 +660,8 @@ async fn test_http_capable_agent_gets_http_transport_with_mcp_host() {
 #[tokio::test]
 async fn test_stdio_only_agent_still_gets_session_with_mcp_host() {
     let temp = TempDir::new().unwrap();
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
 
     let host = start_mcp_host(
         temp.path().to_path_buf(),

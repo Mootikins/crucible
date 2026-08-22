@@ -10,8 +10,8 @@ use tempfile::TempDir;
 use crate::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
 
 fn create_search_tools(kiln_path: String) -> SearchTools {
-    let knowledge_repo = Arc::new(MockKnowledgeRepository);
-    let embedding_provider = Arc::new(MockEmbeddingProvider);
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new());
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new());
     SearchTools::new(kiln_path, knowledge_repo, embedding_provider)
 }
 
@@ -63,7 +63,7 @@ async fn semantic_search_never_returns_a_kiln_directory() {
     let tools = SearchTools::new(
         kiln_path.clone(),
         Arc::new(OneHitRepository),
-        Arc::new(MockEmbeddingProvider),
+        Arc::new(MockEmbeddingProvider::new()),
     );
 
     let result = tools
@@ -102,8 +102,8 @@ async fn semantic_search_returns_the_registry_name_when_there_is_one() {
 
     let tools = SearchTools::new(
         kiln_path.to_string_lossy().to_string(),
-        Arc::new(MockKnowledgeRepository),
-        Arc::new(MockEmbeddingProvider),
+        Arc::new(MockKnowledgeRepository::new()),
+        Arc::new(MockEmbeddingProvider::new()),
     )
     .with_search_sources(vec![KilnSearchSource {
         kiln_path: kiln_path.clone(),

@@ -100,41 +100,9 @@ pub async fn search_across_kilns(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
-    use crucible_core::parser::ParsedNote;
-    use crucible_core::traits::knowledge::NoteInfo;
+    use crate::test_support::MockKnowledgeRepository;
     use std::fs;
     use tempfile::TempDir;
-
-    struct MockKnowledgeRepository {
-        results: Vec<SearchResult>,
-        should_fail: bool,
-    }
-
-    #[async_trait]
-    impl KnowledgeRepository for MockKnowledgeRepository {
-        async fn get_note_by_name(&self, _name: &str) -> crucible_core::Result<Option<ParsedNote>> {
-            Ok(None)
-        }
-
-        async fn list_notes(&self, _path: Option<&str>) -> crucible_core::Result<Vec<NoteInfo>> {
-            Ok(vec![])
-        }
-
-        async fn search_vectors(
-            &self,
-            _vector: Vec<f32>,
-            _limit: usize,
-        ) -> crucible_core::Result<Vec<SearchResult>> {
-            if self.should_fail {
-                Err(crucible_core::CrucibleError::DatabaseError(
-                    "mock failure".into(),
-                ))
-            } else {
-                Ok(self.results.clone())
-            }
-        }
-    }
 
     fn mock_result(document_id: &str, score: f64) -> SearchResult {
         SearchResult {
@@ -164,9 +132,10 @@ mod tests {
         KilnSearchSource {
             kiln_name: name_of(&kiln_path),
             kiln_path,
-            knowledge_repo: Arc::new(MockKnowledgeRepository {
-                results,
-                should_fail,
+            knowledge_repo: Arc::new(if should_fail {
+                MockKnowledgeRepository::failing()
+            } else {
+                MockKnowledgeRepository::with_results(results)
             }),
         }
     }
@@ -182,9 +151,10 @@ mod tests {
         KilnSearchSource {
             kiln_path,
             kiln_name: None,
-            knowledge_repo: Arc::new(MockKnowledgeRepository {
-                results,
-                should_fail,
+            knowledge_repo: Arc::new(if should_fail {
+                MockKnowledgeRepository::failing()
+            } else {
+                MockKnowledgeRepository::with_results(results)
             }),
         }
     }

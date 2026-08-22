@@ -196,8 +196,8 @@ async fn call_semantic_search(
 #[tokio::test]
 async fn test_acp_delegation_pipeline_all_fixes_work() {
     let temp = TempDir::new().expect("temp dir");
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
 
     let host = match InProcessMcpHost::start(
         temp.path().to_path_buf(),
@@ -239,8 +239,10 @@ async fn test_acp_delegation_pipeline_all_fixes_work() {
 
     let (temp_none, knowledge_none, embedding_none) = {
         let temp = TempDir::new().expect("temp dir");
-        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+        let knowledge_repo =
+            Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider =
+            Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
         (temp, knowledge_repo, embedding_provider)
     };
     let server_none = CrucibleMcpServer::new_with_delegation(
@@ -261,8 +263,10 @@ async fn test_acp_delegation_pipeline_all_fixes_work() {
 
     let (temp_disabled, knowledge_disabled, embedding_disabled) = {
         let temp = TempDir::new().expect("temp dir");
-        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+        let knowledge_repo =
+            Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider =
+            Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
         (temp, knowledge_repo, embedding_provider)
     };
     let server_disabled = CrucibleMcpServer::new_with_delegation(
@@ -283,8 +287,10 @@ async fn test_acp_delegation_pipeline_all_fixes_work() {
 
     let (temp_enabled, knowledge_enabled, embedding_enabled) = {
         let temp = TempDir::new().expect("temp dir");
-        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+        let knowledge_repo =
+            Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider =
+            Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
         (temp, knowledge_repo, embedding_provider)
     };
     let server_enabled = CrucibleMcpServer::new_with_delegation(
@@ -304,8 +310,8 @@ async fn test_acp_delegation_pipeline_all_fixes_work() {
     );
 
     let temp = TempDir::new().expect("temp dir");
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
 
     let host = match InProcessMcpHost::start(
         temp.path().to_path_buf(),

@@ -435,8 +435,8 @@ async fn test_acp_tool_roundtrip_with_mcp_server() {
     )
     .unwrap();
 
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
 
     let host = match InProcessMcpHost::start(
         temp.path().to_path_buf(),

@@ -505,8 +505,10 @@ mod tests {
     #[test]
     fn test_kiln_only_server_creation() {
         let temp = TempDir::new().unwrap();
-        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+        let knowledge_repo =
+            Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider =
+            Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
 
         let _server = ExtendedMcpServer::kiln_only(
             temp.path().to_str().unwrap().to_string(),
@@ -518,8 +520,10 @@ mod tests {
     #[tokio::test]
     async fn test_extended_server_creation() {
         let temp = TempDir::new().unwrap();
-        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+        let knowledge_repo =
+            Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider =
+            Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
 
         let server = ExtendedMcpServer::new(
             temp.path().to_str().unwrap().to_string(),
@@ -538,8 +542,10 @@ mod tests {
     #[tokio::test]
     async fn test_list_all_tools() {
         let temp = TempDir::new().unwrap();
-        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+        let knowledge_repo =
+            Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider =
+            Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
 
         let server = ExtendedMcpServer::kiln_only(
             temp.path().to_str().unwrap().to_string(),
@@ -564,8 +570,8 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let server = ExtendedMcpServer::kiln_only(
             temp.path().to_str().unwrap().to_string(),
-            Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
-            Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
+            Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>,
+            Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>,
         );
         assert!(!server.is_gateway_tool("gh_search_repos").await);
         let before = server.tool_count().await;
@@ -604,8 +610,8 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let server = ExtendedMcpServer::kiln_only(
             temp.path().to_str().unwrap().to_string(),
-            Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
-            Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
+            Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>,
+            Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>,
         );
         assert!(!server.has_plugin_tool("greet").await);
         assert!(!server.has_plugin_tool("lua_greet").await);

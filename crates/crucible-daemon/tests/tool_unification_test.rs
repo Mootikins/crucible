@@ -38,8 +38,8 @@ fn to_set(names: &[&str]) -> HashSet<String> {
 #[tokio::test]
 async fn test_acp_mcp_server_tool_names() {
     let temp = TempDir::new().expect("temp dir");
-    let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-    let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+    let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+    let embedding_provider = Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
     let host = start_mcp_host(
         temp.path().to_path_buf(),
         knowledge_repo,

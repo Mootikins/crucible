@@ -244,8 +244,8 @@ mod tests {
         let server = InProcessMcpHost::build_server(
             home.path(),
             home.path(),
-            Arc::new(MockKnowledgeRepository),
-            Arc::new(MockEmbeddingProvider),
+            Arc::new(MockKnowledgeRepository::new()),
+            Arc::new(MockEmbeddingProvider::new()),
             None,
             containment,
         );
@@ -301,8 +301,8 @@ mod tests {
         let server = InProcessMcpHost::build_server(
             kiln.path(),
             workspace.path(),
-            Arc::new(MockKnowledgeRepository),
-            Arc::new(MockEmbeddingProvider),
+            Arc::new(MockKnowledgeRepository::new()),
+            Arc::new(MockEmbeddingProvider::new()),
             None,
             crate::tools::containment::RootSet::Ambient,
         );
@@ -330,8 +330,10 @@ mod tests {
     #[tokio::test]
     async fn test_mcp_host_starts_and_binds() {
         let temp = TempDir::new().unwrap();
-        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+        let knowledge_repo =
+            Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider =
+            Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
 
         let host = match InProcessMcpHost::start(
             temp.path().to_path_buf(),
@@ -374,8 +376,10 @@ mod tests {
     #[tokio::test]
     async fn test_mcp_host_shutdown_on_drop() {
         let temp = TempDir::new().unwrap();
-        let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
-        let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
+        let knowledge_repo =
+            Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
+        let embedding_provider =
+            Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>;
 
         let host = match InProcessMcpHost::start(
             temp.path().to_path_buf(),
