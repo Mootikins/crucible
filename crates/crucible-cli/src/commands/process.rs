@@ -244,10 +244,7 @@ pub async fn execute(
 /// Polls for file changes every 2 seconds and sends changed files to the
 /// daemon for processing. This is a temporary approach until watch mode
 /// is fully moved into the daemon.
-async fn run_watch_mode(
-    config: &CliConfig,
-    target: &std::path::Path,
-) -> Result<()> {
+async fn run_watch_mode(config: &CliConfig, target: &std::path::Path) -> Result<()> {
     println!("\nWatching for changes (Press Ctrl+C to stop)...");
     info!("Starting watch mode");
 
