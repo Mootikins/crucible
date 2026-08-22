@@ -190,18 +190,6 @@ impl CellGrid {
         self.cells.iter().map(|row| cells_to_string(row)).collect()
     }
 
-    /// Extract rows `[y_start, y_end)` as a compact string (trailing padding stripped).
-    ///
-    /// Each row is rendered with `cells_to_string_compact`, joined with `\r\n`.
-    /// Panics if indices are out of bounds.
-    pub fn extract_rows(&self, y_start: usize, y_end: usize) -> String {
-        self.cells[y_start..y_end]
-            .iter()
-            .map(|row| cells_to_string_compact(row))
-            .collect::<Vec<_>>()
-            .join("\r\n")
-    }
-
     /// Find the last row with non-space (or styled) content, returning count of content rows.
     ///
     /// Returns 0 for an entirely blank grid.

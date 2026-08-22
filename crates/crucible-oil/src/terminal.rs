@@ -3,13 +3,12 @@ use crate::output::OutputBuffer;
 use crate::planning::{FramePlanner, FrameSnapshot};
 use crate::render::CursorInfo;
 use crossterm::{
-    cursor::{self, Hide, MoveDown, MoveTo, MoveToColumn, MoveUp, SetCursorStyle, Show},
+    cursor::{self, Hide, MoveDown, MoveToColumn, MoveUp, SetCursorStyle, Show},
     event::{
         self, Event as CtEvent, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
         PushKeyboardEnhancementFlags,
     },
-    execute,
-    terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
+    execute, terminal,
 };
 use std::io::{self, Stdout, Write};
 use std::time::Duration;
@@ -18,7 +17,6 @@ pub struct Terminal<W: Write = Stdout> {
     width: u16,
     height: u16,
     planner: FramePlanner,
-    use_alternate_screen: bool,
     output: OutputBuffer<W>,
     keyboard_enhanced: bool,
     last_cursor: Option<CursorInfo>,
@@ -39,7 +37,6 @@ impl Terminal<Stdout> {
             width,
             height,
             planner: FramePlanner::new(width, height),
-            use_alternate_screen: false,
             output: OutputBuffer::new(width as usize, height as usize),
             keyboard_enhanced: false,
             last_cursor: None,
@@ -63,18 +60,13 @@ impl Terminal<Stdout> {
         }
 
         let w = self.output.writer();
-        if self.use_alternate_screen {
-            execute!(w, EnterAlternateScreen, Hide)?;
-        } else {
-            execute!(w, Hide)?;
-        }
+        execute!(w, Hide)?;
         let w = self.output.writer();
         let _ = execute!(w, self.cursor_style);
         Ok(())
     }
 
     pub fn exit(&mut self) -> io::Result<()> {
-        let use_alt = self.use_alternate_screen;
         let kb_enhanced = self.keyboard_enhanced;
 
         // Move cursor to bottom of viewport so content above is preserved
@@ -83,9 +75,6 @@ impl Terminal<Stdout> {
         let w = self.output.writer();
         let _ = execute!(w, SetCursorStyle::DefaultUserShape);
         execute!(w, Show)?;
-        if use_alt {
-            execute!(w, LeaveAlternateScreen)?;
-        }
         if kb_enhanced {
             let _ = execute!(w, PopKeyboardEnhancementFlags);
         }
@@ -133,7 +122,6 @@ impl Terminal<Vec<u8>> {
             width,
             height,
             planner: FramePlanner::new(width, height),
-            use_alternate_screen: false,
             output: OutputBuffer::with_writer(Vec::new(), width as usize, height as usize),
             keyboard_enhanced: false,
             last_cursor: None,
@@ -165,11 +153,6 @@ impl Terminal<Vec<u8>> {
 // --- Generic: works with any writer ---
 
 impl<W: Write> Terminal<W> {
-    pub fn with_alternate_screen(mut self, use_alt: bool) -> Self {
-        self.use_alternate_screen = use_alt;
-        self
-    }
-
     pub fn cursor_style(mut self, style: SetCursorStyle) -> Self {
         self.cursor_style = style;
         self
@@ -306,10 +289,6 @@ impl<W: Write> Terminal<W> {
         let result = crate::render::render_tree(tree, self.width, self.height);
         self.output.render_fullscreen(&result.content)?;
         Ok(())
-    }
-
-    pub fn show_cursor_at(&mut self, x: u16, y: u16) -> io::Result<()> {
-        execute!(self.output.writer(), MoveTo(x, y), Show)
     }
 }
 

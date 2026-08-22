@@ -50,20 +50,6 @@ pub fn arb_border() -> impl Strategy<Value = Option<Border>> {
     ]
 }
 
-/// Gap generator for rows/columns
-pub fn arb_gap() -> impl Strategy<Value = Gap> {
-    (0u16..4, 0u16..4).prop_map(|(r, c)| Gap { row: r, column: c })
-}
-
-/// Size variants
-pub fn arb_size() -> impl Strategy<Value = Size> {
-    prop_oneof![
-        3 => Just(Size::Content),
-        2 => (1u16..30).prop_map(Size::Fixed),
-        2 => (1u16..4).prop_map(Size::Flex),
-    ]
-}
-
 /// Direction: Row or Column
 pub fn arb_direction() -> impl Strategy<Value = Direction> {
     prop_oneof![Just(Direction::Column), Just(Direction::Row),]
@@ -124,15 +110,6 @@ pub fn arb_popup_item() -> impl Strategy<Value = PopupItemNode> {
             }
             item
         })
-}
-
-/// Popup node generator
-pub fn arb_popup() -> impl Strategy<Value = Node> {
-    prop::collection::vec(arb_popup_item(), 1..10).prop_flat_map(|items| {
-        let len = items.len();
-        (Just(items), 0..len, 1usize..=10)
-            .prop_map(|(items, selected, max_visible)| popup(items, selected, max_visible.min(10)))
-    })
 }
 
 /// Recursive node generator with bounded depth
@@ -277,30 +254,6 @@ pub fn assert_render_fits_width(output: &str, width: usize) -> Result<(), TestCa
         prop_assert!(
             line_width <= width || width == 0,
             "Line {} exceeds width {}: got {} (content: {:?})",
-            i,
-            width,
-            line_width,
-            if line.len() > 100 {
-                format!("{}...", &line[..100])
-            } else {
-                line.to_string()
-            }
-        );
-    }
-    Ok(())
-}
-
-/// Helper: Assert all rendered lines have exactly the expected width (for bordered content)
-pub fn assert_lines_exact_width(output: &str, width: usize) -> Result<(), TestCaseError> {
-    for (i, line) in output.split("\r\n").enumerate() {
-        // Skip empty lines
-        if line.is_empty() {
-            continue;
-        }
-        let line_width = visible_width(line);
-        prop_assert!(
-            line_width == width,
-            "Line {} should be exactly {} wide, got {} (content: {:?})",
             i,
             width,
             line_width,

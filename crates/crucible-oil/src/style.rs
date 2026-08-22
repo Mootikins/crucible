@@ -326,34 +326,6 @@ impl AdaptiveColor {
     }
 }
 
-/// Detect if the terminal has a dark background.
-/// Parses COLORFGBG environment variable (format: "fg;bg").
-/// If bg < 8, terminal is dark; if bg >= 8, terminal is light.
-/// Defaults to dark (true) if COLORFGBG is not set or cannot be parsed.
-pub fn detect_dark_terminal() -> bool {
-    detect_dark_from_colorfgbg(std::env::var("COLORFGBG").ok().as_deref())
-}
-
-fn detect_dark_from_colorfgbg(colorfgbg: Option<&str>) -> bool {
-    match colorfgbg {
-        Some(value) => {
-            // Format is "foreground;background"
-            if let Some(bg_str) = value.split(';').nth(1) {
-                if let Ok(bg) = bg_str.parse::<u8>() {
-                    // bg < 8 means dark terminal, bg >= 8 means light terminal
-                    return bg < 8;
-                }
-            }
-            // Default to dark if parsing fails
-            true
-        }
-        None => {
-            // Default to dark if COLORFGBG is not set
-            true
-        }
-    }
-}
-
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Padding {
@@ -912,31 +884,5 @@ mod tests {
         };
         assert_eq!(ac.resolve_inner(true, true), Color::Reset);
         assert_eq!(ac.resolve_inner(false, true), Color::Reset);
-    }
-
-    #[test]
-    fn test_detect_dark_terminal_dark_bg() {
-        assert!(detect_dark_from_colorfgbg(Some("15;0")));
-    }
-
-    #[test]
-    fn test_detect_dark_terminal_light_bg() {
-        assert!(!detect_dark_from_colorfgbg(Some("0;15")));
-    }
-
-    #[test]
-    fn test_detect_dark_terminal_not_set() {
-        assert!(detect_dark_from_colorfgbg(None));
-    }
-
-    #[test]
-    fn test_detect_dark_terminal_invalid_format() {
-        assert!(detect_dark_from_colorfgbg(Some("invalid")));
-    }
-
-    #[test]
-    fn test_detect_dark_terminal_boundary() {
-        assert!(detect_dark_from_colorfgbg(Some("15;7")));
-        assert!(!detect_dark_from_colorfgbg(Some("15;8")));
     }
 }

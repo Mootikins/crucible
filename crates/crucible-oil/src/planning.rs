@@ -77,11 +77,6 @@ impl FrameSnapshot {
     pub fn screen(&self) -> String {
         format!("{}{}", self.stdout_content(), self.plan.viewport.content)
     }
-
-    pub fn screen_with_overlays(&self, width: usize) -> String {
-        let viewport_with_overlays = self.viewport_with_overlays(width);
-        format!("{}{}", self.stdout_content(), viewport_with_overlays)
-    }
 }
 
 /// Orchestrates frame rendering.
