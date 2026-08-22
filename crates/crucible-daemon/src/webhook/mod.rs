@@ -328,8 +328,10 @@ impl WebhookSecrets {
 }
 
 /// Build the timestamped signature value (`X-Crucible-Signature`,
-/// `Stripe-Signature`) a sender must send. Exposed so senders (and tests) share
-/// one definition of the scheme with the verifier.
+/// `Stripe-Signature`) a sender must send. Tests in `crucible-web` use it, so
+/// they share one definition of the scheme with the verifier. No production
+/// code signs; the `test-utils` feature keeps it out of the `cru` binary.
+#[cfg(any(test, feature = "test-utils"))]
 pub fn sign(secret: &str, timestamp: i64, raw_body: &[u8]) -> String {
     let timestamp = timestamp.to_string();
     let material = signed_material(&timestamp, raw_body);
@@ -337,7 +339,8 @@ pub fn sign(secret: &str, timestamp: i64, raw_body: &[u8]) -> String {
 }
 
 /// Build the body-only signature value (`X-Hub-Signature-256`) GitHub would
-/// send for `raw_body`.
+/// send for `raw_body`. Test-only, for the same reason as [`sign`].
+#[cfg(any(test, feature = "test-utils"))]
 pub fn sign_body_only(secret: &str, raw_body: &[u8]) -> String {
     format!("sha256={}", hex::encode(tag(secret, raw_body)))
 }
@@ -439,6 +442,8 @@ fn keyed_mac(secret: &str, message: &[u8]) -> Hmac<Sha256> {
     mac
 }
 
+/// Only the signers finish the MAC; the verifier compares it in place.
+#[cfg(any(test, feature = "test-utils"))]
 fn tag(secret: &str, message: &[u8]) -> [u8; 32] {
     let mut out = [0u8; 32];
     out.copy_from_slice(&keyed_mac(secret, message).finalize().into_bytes());

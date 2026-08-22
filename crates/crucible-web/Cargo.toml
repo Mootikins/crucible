@@ -13,7 +13,7 @@ doctest = false
 
 [features]
 # Expose the mock daemon + route test helpers for integration tests.
-test-utils = ["dep:tempfile", "dep:proptest"]
+test-utils = ["dep:tempfile", "dep:proptest", "crucible-daemon/test-utils"]
 
 [dependencies]
 crucible-core = { path = "../crucible-core" }
