@@ -1,6 +1,6 @@
 //! SetCommand parser for vim-style `:set` commands.
 
-use crate::tui::oil::config::ThinkingPreset;
+use crate::tui::oil::config::{ConfigValue, ThinkingPreset};
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ParseError {
@@ -446,12 +446,10 @@ fn is_daemon_rpc_key(key: &str) -> bool {
     )
 }
 
+/// Parse a boolean option value with the same tokens `ConfigValue` accepts.
 pub(crate) fn parse_bool(value: &str) -> Result<bool, String> {
-    match value.to_ascii_lowercase().as_str() {
-        "true" | "1" | "yes" | "on" => Ok(true),
-        "false" | "0" | "no" | "off" => Ok(false),
-        _ => Err(format!("invalid value: '{}'. Use true/false", value)),
-    }
+    ConfigValue::try_parse_bool(value)
+        .ok_or_else(|| format!("invalid value: '{}'. Use true/false", value))
 }
 
 impl SetCommand {
@@ -591,6 +589,17 @@ fn split_on_value_colon(input: &str) -> Option<(&str, &str)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_bool_accepts_the_config_value_tokens() {
+        for input in ["y", "Y", "yes", "on", "1", "TRUE"] {
+            assert_eq!(parse_bool(input), Ok(true), "{input}");
+        }
+        for input in ["n", "N", "no", "off", "0", "FALSE"] {
+            assert_eq!(parse_bool(input), Ok(false), "{input}");
+        }
+        assert!(parse_bool("maybe").is_err());
+    }
 
     #[test]
     fn parse_empty_shows_modified() {
