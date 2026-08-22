@@ -56,17 +56,7 @@ pub mod anthropic {
 
 pub mod ollama {
     use super::{http_client, ModelListingError, ModelListingResult, LIST_MODELS_TIMEOUT};
-    use serde::{Deserialize, Serialize};
-
-    #[derive(Debug, Serialize, Deserialize)]
-    struct TagsResponse {
-        models: Vec<ModelTag>,
-    }
-
-    #[derive(Debug, Serialize, Deserialize)]
-    struct ModelTag {
-        name: String,
-    }
+    use crucible_core::config::OllamaTagsResponse;
 
     pub async fn list_models(endpoint: &str) -> ModelListingResult<Vec<String>> {
         let endpoint = endpoint.trim_end_matches('/');
@@ -90,8 +80,8 @@ pub mod ollama {
     }
 
     pub fn parse_tags_response(body: &str) -> ModelListingResult<Vec<String>> {
-        let response: TagsResponse = serde_json::from_str(body)?;
-        Ok(response.models.into_iter().map(|m| m.name).collect())
+        let response: OllamaTagsResponse = serde_json::from_str(body)?;
+        Ok(response.model_names())
     }
 }
 

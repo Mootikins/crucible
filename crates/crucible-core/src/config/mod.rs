@@ -56,9 +56,9 @@ pub use components::mcp;
 pub use components::{
     AcpConfig, AgentPreference, AgentProfile, BackendType, ChatConfig, CliConfig,
     CompiledPermissions, ContextConfig, DataClassification, DelegationConfig, DiscoveryPathsConfig,
-    HighlightingConfig, LlmConfig, LlmProviderConfig, McpConfig, PermissionConfig,
-    PermissionDecision, PermissionEngine, PermissionMode, StorageConfig, TransportType, TrustLevel,
-    TypeDiscoveryConfig, UpstreamServerConfig,
+    HighlightingConfig, LlmConfig, LlmProviderConfig, McpConfig, OllamaModelTag,
+    OllamaTagsResponse, PermissionConfig, PermissionDecision, PermissionEngine, PermissionMode,
+    StorageConfig, TransportType, TrustLevel, TypeDiscoveryConfig, UpstreamServerConfig,
 };
 pub use config::registry::{resolve_kiln_entries, KilnEntry, ProjectEntry};
 // Its own line rather than folded into the block below: this is the

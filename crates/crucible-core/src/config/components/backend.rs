@@ -332,6 +332,30 @@ impl BackendType {
     }
 }
 
+/// The body of an Ollama `GET /api/tags` reply.
+///
+/// Both the embedding client and the model listing client read this shape.
+/// Ollama sends more fields per model; serde ignores the fields not named here.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OllamaTagsResponse {
+    /// The models that the Ollama server holds.
+    pub models: Vec<OllamaModelTag>,
+}
+
+/// One model entry in an Ollama `/api/tags` reply.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OllamaModelTag {
+    /// The model name with its tag, for example `nomic-embed-text:latest`.
+    pub name: String,
+}
+
+impl OllamaTagsResponse {
+    /// Return the model names in reply order.
+    pub fn model_names(self) -> Vec<String> {
+        self.models.into_iter().map(|m| m.name).collect()
+    }
+}
+
 impl std::fmt::Display for BackendType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())

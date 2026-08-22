@@ -10,6 +10,7 @@ use std::time::Duration;
 use super::config::EmbeddingConfig;
 use super::error::{EmbeddingError, EmbeddingResult};
 use super::provider::EmbeddingResponse;
+use crucible_core::config::OllamaTagsResponse;
 use crucible_core::enrichment::EmbeddingProvider;
 
 /// Request structure for Ollama legacy embedding API (/api/embeddings)
@@ -36,18 +37,6 @@ struct OllamaBatchEmbeddingRequest {
 #[derive(Debug, Deserialize)]
 struct OllamaBatchEmbeddingResponse {
     embeddings: Vec<Vec<f32>>,
-}
-
-/// Response structure from Ollama /api/tags endpoint
-#[derive(Debug, Deserialize)]
-struct OllamaTagsResponse {
-    models: Vec<OllamaModelInfo>,
-}
-
-/// Model information from Ollama /api/tags
-#[derive(Debug, Deserialize)]
-struct OllamaModelInfo {
-    name: String,
 }
 
 /// Ollama embedding provider
@@ -423,7 +412,7 @@ impl EmbeddingProvider for OllamaProvider {
             .await
             .map_err(|e| anyhow::anyhow!("Failed to parse model list: {}", e))?;
 
-        Ok(tags_response.models.into_iter().map(|m| m.name).collect())
+        Ok(tags_response.model_names())
     }
 }
 

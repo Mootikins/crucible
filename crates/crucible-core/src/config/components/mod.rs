@@ -37,5 +37,5 @@ pub use permissions::{
 };
 pub use storage::StorageConfig;
 
-pub use backend::BackendType;
+pub use backend::{BackendType, OllamaModelTag, OllamaTagsResponse};
 pub use trust::{DataClassification, TrustLevel};
