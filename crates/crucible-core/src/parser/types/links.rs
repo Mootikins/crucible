@@ -69,22 +69,6 @@ impl Wikilink {
         }
     }
 
-    /// Create a wikilink with alias
-    pub fn with_alias(target: impl Into<String>, alias: impl Into<String>, offset: usize) -> Self {
-        let target = target.into();
-        let start = offset + Self::open_len(false);
-        let target_span = (start, start + target.len());
-        Self {
-            target,
-            alias: Some(alias.into()),
-            offset,
-            target_span,
-            is_embed: false,
-            block_ref: None,
-            heading_ref: None,
-        }
-    }
-
     /// Create an embed wikilink
     pub fn embed(target: impl Into<String>, offset: usize) -> Self {
         let target = target.into();
@@ -266,30 +250,9 @@ impl FootnoteMap {
         self.definitions.insert(identifier, definition);
     }
 
-    /// Add a footnote reference
-    pub fn add_reference(&mut self, reference: FootnoteReference) {
-        self.references.push(reference);
-    }
-
     /// Get a footnote definition by identifier
     pub fn get_definition(&self, identifier: &str) -> Option<&FootnoteDefinition> {
         self.definitions.get(identifier)
-    }
-
-    /// Get all orphaned references (no definition found)
-    pub fn orphaned_references(&self) -> Vec<&FootnoteReference> {
-        self.references
-            .iter()
-            .filter(|ref_| !self.definitions.contains_key(&ref_.identifier))
-            .collect()
-    }
-
-    /// Get all unused definitions (no references found)
-    pub fn unused_definitions(&self) -> Vec<&String> {
-        self.definitions
-            .keys()
-            .filter(|key| !self.references.iter().any(|ref_| &ref_.identifier == *key))
-            .collect()
     }
 }
 

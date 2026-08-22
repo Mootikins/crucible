@@ -217,15 +217,17 @@ impl BlockExtractor {
 
             // Extract the specific block type
             let block = match position.block_type {
-                ExtractionType::Heading => self.extract_heading_block(note, &position)?,
-                ExtractionType::CodeBlock => self.extract_code_block(note, &position)?,
-                ExtractionType::List => self.extract_list_block(note, &position)?,
-                ExtractionType::Callout => self.extract_callout_block(note, &position)?,
-                ExtractionType::Latex => self.extract_latex_block(note, &position)?,
-                ExtractionType::Blockquote => self.extract_blockquote_block(note, &position)?,
-                ExtractionType::Table => self.extract_table_block(note, &position)?,
-                ExtractionType::HorizontalRule => self.extract_horizontal_rule(note, &position)?,
-                ExtractionType::ThematicBreak => self.extract_thematic_break(note, &position)?,
+                ASTBlockType::Heading => self.extract_heading_block(note, &position)?,
+                ASTBlockType::Code => self.extract_code_block(note, &position)?,
+                ASTBlockType::List => self.extract_list_block(note, &position)?,
+                ASTBlockType::Callout => self.extract_callout_block(note, &position)?,
+                ASTBlockType::Latex => self.extract_latex_block(note, &position)?,
+                ASTBlockType::Blockquote => self.extract_blockquote_block(note, &position)?,
+                ASTBlockType::Table => self.extract_table_block(note, &position)?,
+                ASTBlockType::HorizontalRule => self.extract_horizontal_rule(note, &position)?,
+                ASTBlockType::ThematicBreak => self.extract_thematic_break(note, &position)?,
+                // Paragraphs come from the gaps between positions, never from a position.
+                ASTBlockType::Paragraph => None,
             };
 
             if let Some(mut block) = block {
@@ -363,7 +365,7 @@ impl BlockExtractor {
         // Add all headings
         for heading in &content_map.headings {
             positions.push(ExtractionPosition {
-                block_type: ExtractionType::Heading,
+                block_type: ASTBlockType::Heading,
                 start_offset: heading.heading.offset,
                 end_offset: heading.heading.offset
                     + heading.heading.text.len()
@@ -376,7 +378,7 @@ impl BlockExtractor {
         // Add all code blocks
         for code_block in &content_map.code_blocks {
             positions.push(ExtractionPosition {
-                block_type: ExtractionType::CodeBlock,
+                block_type: ASTBlockType::Code,
                 start_offset: code_block.code_block.offset,
                 end_offset: code_block.code_block.offset + code_block.code_block.content.len() + 6, // Approximate ``` markers
                 index: code_block.index,
@@ -386,7 +388,7 @@ impl BlockExtractor {
         // Add all lists
         for list in &content_map.lists {
             positions.push(ExtractionPosition {
-                block_type: ExtractionType::List,
+                block_type: ASTBlockType::List,
                 start_offset: list.list.offset,
                 end_offset: list.list.offset + self.estimate_list_length(&list.list),
                 index: list.index,
@@ -396,7 +398,7 @@ impl BlockExtractor {
         // Add all callouts
         for callout in &content_map.callouts {
             positions.push(ExtractionPosition {
-                block_type: ExtractionType::Callout,
+                block_type: ASTBlockType::Callout,
                 start_offset: callout.callout.offset,
                 end_offset: callout.callout.offset + callout.callout.length(),
                 index: callout.index,
@@ -406,7 +408,7 @@ impl BlockExtractor {
         // Add all LaTeX expressions
         for latex in &content_map.latex_expressions {
             positions.push(ExtractionPosition {
-                block_type: ExtractionType::Latex,
+                block_type: ASTBlockType::Latex,
                 start_offset: latex.latex.offset,
                 end_offset: latex.latex.offset + latex.latex.length,
                 index: latex.index,
@@ -417,7 +419,7 @@ impl BlockExtractor {
         for table in &content_map.tables {
             let table_len = table.table.raw_content.len();
             positions.push(ExtractionPosition {
-                block_type: ExtractionType::Table,
+                block_type: ASTBlockType::Table,
                 start_offset: table.table.offset,
                 end_offset: table.table.offset + table_len,
                 index: table.index,
@@ -427,7 +429,7 @@ impl BlockExtractor {
         // Add all horizontal rules
         for hr in &content_map.horizontal_rules {
             positions.push(ExtractionPosition {
-                block_type: ExtractionType::HorizontalRule,
+                block_type: ASTBlockType::HorizontalRule,
                 start_offset: hr.hr.offset,
                 end_offset: hr.hr.offset + hr.hr.length(),
                 index: hr.index,
@@ -823,25 +825,10 @@ impl ContentMap {
     }
 }
 
-/// Types of content that can be extracted
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // Future extensions planned
-enum ExtractionType {
-    Heading,
-    CodeBlock,
-    List,
-    Callout,
-    Latex,
-    Blockquote,
-    Table,
-    HorizontalRule,
-    ThematicBreak,
-}
-
 /// Position information for extraction
 #[derive(Debug, Clone)]
 struct ExtractionPosition {
-    block_type: ExtractionType,
+    block_type: ASTBlockType,
     start_offset: usize,
     end_offset: usize,
     index: usize,
@@ -931,7 +918,7 @@ mod tests {
         let note = create_test_document();
 
         let position = ExtractionPosition {
-            block_type: ExtractionType::Heading,
+            block_type: ASTBlockType::Heading,
             start_offset: 0,
             end_offset: 16,
             index: 0,
@@ -960,7 +947,7 @@ mod tests {
         let note = create_test_document();
 
         let position = ExtractionPosition {
-            block_type: ExtractionType::CodeBlock,
+            block_type: ASTBlockType::Code,
             start_offset: 50,
             end_offset: 90,
             index: 0,
@@ -993,7 +980,7 @@ mod tests {
         let note = create_test_document();
 
         let position = ExtractionPosition {
-            block_type: ExtractionType::List,
+            block_type: ASTBlockType::List,
             start_offset: 100,
             end_offset: 130,
             index: 0,

@@ -44,8 +44,7 @@ pub mod markdown_it;
 // Re-export error types
 pub use error::{ErrorSeverity, ParseError, ParseErrorType, ParserError, ParserResult};
 pub use extensions::{
-    ExtensionCapabilities, ExtensionRegistry, ExtensionRegistryBuilder, ExtensionRegistryStats,
-    SyntaxExtension,
+    ExtensionRegistry, ExtensionRegistryBuilder, ExtensionRegistryStats, SyntaxExtension,
 };
 pub use traits::{MarkdownParser, ParserCapabilities, ParserRequirements};
 

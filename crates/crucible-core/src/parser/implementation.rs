@@ -492,23 +492,8 @@ impl MarkdownParser for CrucibleParser {
 
     fn capabilities(&self) -> ParserCapabilities {
         ParserCapabilities {
-            name: "crucible-parser",
-            version: env!("CARGO_PKG_VERSION"),
-            yaml_frontmatter: true,
-            toml_frontmatter: true,
-            wikilinks: true,
-            tags: true,
-            headings: true,
-            code_blocks: true,
-            tables: true,
-            callouts: true,
-            latex_expressions: true,
-            footnotes: true,
-            blockquotes: true,
-            horizontal_rules: true,
-            full_content: true,
             max_file_size: self.max_file_size,
-            extensions: crate::kiln::KilnFileKind::NOTE_EXTENSIONS.to_vec(),
+            ..ParserCapabilities::full()
         }
     }
 

@@ -131,19 +131,6 @@ impl ParserRequirements {
             max_file_size: Some(10 * 1024 * 1024), // 10 MB
         }
     }
-
-    /// Minimal requirements (links and tags only)
-    pub fn links_and_tags_only() -> Self {
-        Self {
-            yaml_frontmatter: false,
-            toml_frontmatter: false,
-            wikilinks: true,
-            tags: true,
-            headings: false,
-            code_blocks: false,
-            max_file_size: None,
-        }
-    }
 }
 
 #[cfg(test)]

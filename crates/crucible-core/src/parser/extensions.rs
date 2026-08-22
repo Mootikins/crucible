@@ -54,37 +54,6 @@ pub trait SyntaxExtension: Send + Sync {
     fn is_enabled(&self) -> bool {
         true // Default to enabled
     }
-
-    /// Process content synchronously (convenience method for tests)
-    fn process_content(&self, content: &str) -> NoteContent {
-        let mut doc_content = NoteContent::new();
-        // Use block_in_place to bridge async to sync for tests
-        let rt = tokio::runtime::Handle::current();
-        rt.block_on(async {
-            self.parse(content, &mut doc_content).await;
-        });
-        doc_content
-    }
-
-    /// Get extension capabilities (convenience method)
-    fn capabilities(&self) -> ExtensionCapabilities {
-        ExtensionCapabilities {
-            name: self.name().to_string(),
-            priority: self.priority(),
-            enabled: self.is_enabled(),
-        }
-    }
-}
-
-/// Extension capabilities metadata
-#[derive(Debug, Clone)]
-pub struct ExtensionCapabilities {
-    /// Extension name
-    pub name: String,
-    /// Priority (higher = applied first)
-    pub priority: u8,
-    /// Whether extension is enabled
-    pub enabled: bool,
 }
 
 /// Registry for managing syntax extensions

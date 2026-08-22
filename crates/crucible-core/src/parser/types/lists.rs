@@ -56,26 +56,6 @@ impl ListBlock {
         }
     }
 
-    /// Create a new list block with marker style
-    pub fn with_marker_style(
-        list_type: ListType,
-        marker_style: ListMarkerStyle,
-        offset: usize,
-    ) -> Self {
-        Self {
-            list_type,
-            items: Vec::new(),
-            offset,
-            item_count: 0,
-            max_depth: 0,
-            marker_style,
-            has_tasks: false,
-            is_tight: true,
-            raw_content: String::new(),
-            top_level_count: 0,
-        }
-    }
-
     /// Add an item to the list
     pub fn add_item(&mut self, item: ListItem) {
         // Update depth information
@@ -93,31 +73,6 @@ impl ListBlock {
         }
 
         self.items.push(item);
-    }
-
-    /// Get items at a specific nesting level
-    pub fn items_at_level(&self, level: usize) -> Vec<&ListItem> {
-        self.items
-            .iter()
-            .filter(|item| item.level == level)
-            .collect()
-    }
-
-    /// Get nested items under a parent item (by index)
-    pub fn nested_items(&self, parent_index: usize) -> Vec<&ListItem> {
-        if parent_index >= self.items.len() {
-            return Vec::new();
-        }
-
-        let parent_level = self.items[parent_index].level;
-        let next_level = parent_level + 1;
-
-        self.items
-            .iter()
-            .skip(parent_index + 1)
-            .take_while(|item| item.level >= next_level)
-            .filter(|item| item.level == next_level)
-            .collect()
     }
 
     /// Get statistics about the list structure
@@ -257,31 +212,6 @@ impl ListItem {
         }
     }
 
-    /// Create a list item with full metadata
-    pub fn with_metadata(
-        content: String,
-        level: usize,
-        marker: ListMarkerStyle,
-        marker_text: String,
-        sequence_number: Option<String>,
-        offset: usize,
-        indent_spaces: usize,
-    ) -> Self {
-        Self {
-            content,
-            level,
-            task_status: None,
-            checkbox_status: None,
-            marker,
-            marker_text,
-            sequence_number,
-            offset,
-            indent_spaces,
-            has_nested: false,
-            metadata: Vec::new(),
-        }
-    }
-
     /// Create a task list item
     pub fn new_task(content: String, level: usize, completed: bool) -> Self {
         Self {
@@ -307,46 +237,6 @@ impl ListItem {
         }
     }
 
-    /// Create a task list item with full metadata
-    #[allow(clippy::too_many_arguments)]
-    pub fn new_task_with_metadata(
-        content: String,
-        level: usize,
-        completed: bool,
-        marker: ListMarkerStyle,
-        marker_text: String,
-        sequence_number: Option<String>,
-        offset: usize,
-        indent_spaces: usize,
-    ) -> Self {
-        Self {
-            content,
-            level,
-            task_status: Some(if completed {
-                TaskStatus::Completed
-            } else {
-                TaskStatus::Pending
-            }),
-            checkbox_status: Some(if completed {
-                CheckboxStatus::Done
-            } else {
-                CheckboxStatus::Pending
-            }),
-            marker,
-            marker_text,
-            sequence_number,
-            offset,
-            indent_spaces,
-            has_nested: false,
-            metadata: Vec::new(),
-        }
-    }
-
-    /// Set the nested flag for this item
-    pub fn set_nested(&mut self, has_nested: bool) {
-        self.has_nested = has_nested;
-    }
-
     /// Check if this item is ordered
     pub fn is_ordered(&self) -> bool {
         self.marker.is_ordered()
@@ -355,30 +245,6 @@ impl ListItem {
     /// Check if this item is unordered
     pub fn is_unordered(&self) -> bool {
         self.marker.is_unordered()
-    }
-
-    /// Get the effective indentation (including marker width)
-    pub fn effective_indent(&self) -> usize {
-        let marker_width = self.marker_text.len();
-        self.indent_spaces + marker_width
-    }
-
-    /// Extract the content without task checkbox
-    pub fn content_without_task(&self) -> String {
-        if self.task_status.is_some() {
-            // Remove task checkbox patterns like "[x] " or "[ ] "
-            let content = self.content.trim();
-            if let Some(remaining) = content
-                .strip_prefix("[x] ")
-                .or_else(|| content.strip_prefix("[ ] "))
-            {
-                remaining.trim().to_string()
-            } else {
-                content.to_string()
-            }
-        } else {
-            self.content.clone()
-        }
     }
 
     /// Create a new list item with inline metadata extraction
