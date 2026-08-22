@@ -136,7 +136,7 @@ pub fn derive_repo_name(url: &str) -> Result<String, ScmError> {
 /// expanding a leading `~/` using `home`. `home = None` leaves a `~/` prefix
 /// unexpanded (only reachable when the OS reports no home dir).
 pub fn resolve_workspace_root_dir(configured: Option<&str>, home: Option<&Path>) -> PathBuf {
-    crate::project_manager::resolve_registration_root(configured.unwrap_or("~/Projects"), home)
+    crucible_core::config::expand_tilde(configured.unwrap_or("~/Projects"), home)
 }
 
 /// Contain an EXPLICIT clone destination inside `base` (the resolved
@@ -198,7 +198,7 @@ pub fn resolve_session_scratch_dir(
     let Some(raw) = configured else {
         return default_base.join("workspaces");
     };
-    crate::project_manager::resolve_registration_root(raw, home)
+    crucible_core::config::expand_tilde(raw, home)
 }
 
 /// Run `git clone -- <url> <dest>` with an argument vector (never a shell

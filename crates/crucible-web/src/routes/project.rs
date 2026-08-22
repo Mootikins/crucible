@@ -5,7 +5,8 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use crucible_daemon::project_manager::{forbidden_root_reason, resolve_registration_root};
+use crucible_core::config::expand_tilde;
+use crucible_daemon::project_manager::forbidden_root_reason;
 use serde::Deserialize;
 use std::path::{Component, Path, PathBuf};
 
@@ -103,7 +104,7 @@ pub(crate) fn registration_roots(state: &AppState) -> Option<Vec<PathBuf>> {
 
     let mut roots = Vec::with_capacity(configured.len());
     for raw in configured {
-        let raw = resolve_registration_root(raw, home.as_deref());
+        let raw = expand_tilde(raw, home.as_deref());
         let Ok(root) = raw.canonicalize() else {
             tracing::debug!(root = %raw.display(), "Ignoring unresolvable registration_roots entry");
             continue;

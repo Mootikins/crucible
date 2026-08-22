@@ -41,6 +41,7 @@ mod patterns;
 mod project_config;
 mod security;
 pub mod serde_helpers;
+mod tilde;
 mod value_source;
 mod workspace;
 
@@ -93,5 +94,6 @@ pub use patterns::{
 };
 pub use project_config::{read_project_config, write_project_config, ProjectConfig, ProjectMeta};
 pub use security::{ProjectFileAccess, ShellPolicy};
+pub use tilde::expand_tilde;
 pub use value_source::{ValueInfo, ValueSource, ValueSourceMap};
 pub use workspace::{KilnAttachment, SecurityConfig};

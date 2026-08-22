@@ -61,18 +61,6 @@ pub fn forbidden_root_reason(path: &Path, home: Option<&Path>) -> Option<&'stati
     None
 }
 
-/// Expand a configured registration root (`~/…` relative to `home`) to a path.
-/// Kept beside [`forbidden_root_reason`] so all root policy reads in one
-/// place; `home = None` leaves a `~` prefix unexpanded, which then fails
-/// containment rather than resolving somewhere surprising.
-pub fn resolve_registration_root(raw: &str, home: Option<&Path>) -> PathBuf {
-    match (raw.strip_prefix("~/"), raw, home) {
-        (Some(rest), _, Some(home)) => home.join(rest),
-        (None, "~", Some(home)) => home.to_path_buf(),
-        _ => PathBuf::from(raw),
-    }
-}
-
 /// Manages registered projects in the daemon.
 pub struct ProjectManager {
     projects: DashMap<PathBuf, Project>,

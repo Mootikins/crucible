@@ -1190,7 +1190,7 @@ pub(crate) fn expand_tilde_path(path: &Path) -> PathBuf {
     // used.
     match path.to_str() {
         Some(s) if s.starts_with('~') => {
-            crate::project_manager::resolve_registration_root(s, dirs::home_dir().as_deref())
+            crucible_core::config::expand_tilde(s, dirs::home_dir().as_deref())
         }
         _ => path.to_path_buf(),
     }

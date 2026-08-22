@@ -61,10 +61,10 @@ impl ValidationResult {
 
 /// Expand tilde in a path string to the user's home directory.
 ///
-/// Delegates to the daemon's expander so the CLI and the kiln registry agree
-/// on what `~/vault` means; a second implementation is a second answer.
+/// Delegates to the core expander so the CLI, the daemon and the web server
+/// agree on what `~/vault` means; a second implementation is a second answer.
 pub fn expand_tilde(path: &str) -> PathBuf {
-    crucible_daemon::project_manager::resolve_registration_root(path, dirs::home_dir().as_deref())
+    crucible_core::config::expand_tilde(path, dirs::home_dir().as_deref())
 }
 
 /// Validate a proposed kiln path.

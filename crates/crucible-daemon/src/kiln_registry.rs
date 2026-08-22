@@ -43,9 +43,10 @@ use std::path::{Path, PathBuf};
 use crucible_core::config::{resolve_kiln_entries, KilnEntry, KilnName};
 use tracing::{debug, warn};
 
-use crate::project_manager::{forbidden_root_reason, resolve_registration_root};
+use crate::project_manager::forbidden_root_reason;
 use crate::session_storage::FileSessionStorage;
 use crate::tools::path_resolution::ResolvedPath;
+use crucible_core::config::expand_tilde;
 
 /// How many `-2`, `-3`, … suffixes a derived name may try before the
 /// registration is refused outright.
@@ -155,7 +156,7 @@ pub struct KilnRegistryContext {
     /// Home directory for `~` expansion. `None` leaves a `~` prefix
     /// unexpanded, which then fails the floor's own resolution rather than
     /// landing somewhere surprising — the same contract as
-    /// [`resolve_registration_root`].
+    /// [`expand_tilde`].
     home: Option<PathBuf>,
     /// Daemon data root. Refused as a kiln, along with every ancestor of it.
     data_home: PathBuf,
@@ -580,7 +581,7 @@ impl KilnRegistry {
         // hold one; anything else passes through byte-for-byte rather than
         // being lossily rewritten into a different path.
         let expanded = match raw.to_str() {
-            Some(s) if s.starts_with('~') => resolve_registration_root(s, self.ctx.home.as_deref()),
+            Some(s) if s.starts_with('~') => expand_tilde(s, self.ctx.home.as_deref()),
             _ => raw.to_path_buf(),
         };
         if expanded.is_absolute() || expanded.as_os_str().is_empty() {
