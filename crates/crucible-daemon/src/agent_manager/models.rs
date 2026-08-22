@@ -20,7 +20,6 @@ impl AgentManager {
             return Some(ResolvedProvider {
                 provider_type: llm_provider.provider_type,
                 endpoint: Some(llm_provider.endpoint()),
-                api_key: llm_provider.api_key.clone(),
                 source: "llm_config",
             });
         }

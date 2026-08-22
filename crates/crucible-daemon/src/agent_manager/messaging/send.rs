@@ -88,7 +88,6 @@ impl AgentManager {
                 e.insert(RequestState {
                     cancel_tx: Some(cancel_tx),
                     task_handle: None,
-                    started_at: Instant::now(),
                 });
             }
         }

@@ -45,6 +45,22 @@ pub(crate) async fn handle_mcp_status(req: Request, mcp_mgr: &Arc<McpServerManag
     Response::success(req.id, status)
 }
 
+/// Discover the skills visible from `kiln_path`, off the async runtime.
+async fn discover_skills(
+    kiln_path: String,
+) -> Result<
+    crate::skills::SkillResult<std::collections::HashMap<String, crate::skills::ResolvedSkill>>,
+    tokio::task::JoinError,
+> {
+    tokio::task::spawn_blocking(move || {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let kiln = PathBuf::from(&kiln_path);
+        let paths = default_discovery_paths(Some(&cwd), Some(&kiln), dirs::home_dir().as_deref());
+        FolderDiscovery::new(paths).discover()
+    })
+    .await
+}
+
 pub(crate) async fn handle_skills_list(req: Request) -> Response {
     let params = match typed_params::<crate::rpc_client::SkillsListRequest>(&req) {
         Ok(p) => p,
@@ -53,14 +69,7 @@ pub(crate) async fn handle_skills_list(req: Request) -> Response {
     let kiln_path = params.kiln_path;
     let scope_filter = params.scope_filter;
 
-    let result = tokio::task::spawn_blocking(move || {
-        let cwd = std::env::current_dir().unwrap_or_default();
-        let kiln = PathBuf::from(&kiln_path);
-        let paths = default_discovery_paths(Some(&cwd), Some(&kiln), dirs::home_dir().as_deref());
-        let discovery = FolderDiscovery::new(paths);
-        discovery.discover()
-    })
-    .await;
+    let result = discover_skills(kiln_path).await;
 
     match result {
         Ok(Ok(skills)) => {
@@ -103,14 +112,7 @@ pub(crate) async fn handle_skills_get(req: Request) -> Response {
     let name = params.name;
     let kiln_path = params.kiln_path;
 
-    let result = tokio::task::spawn_blocking(move || {
-        let cwd = std::env::current_dir().unwrap_or_default();
-        let kiln = PathBuf::from(&kiln_path);
-        let paths = default_discovery_paths(Some(&cwd), Some(&kiln), dirs::home_dir().as_deref());
-        let discovery = FolderDiscovery::new(paths);
-        discovery.discover()
-    })
-    .await;
+    let result = discover_skills(kiln_path).await;
 
     match result {
         Ok(Ok(skills)) => match skills.get(&name) {
@@ -145,14 +147,7 @@ pub(crate) async fn handle_skills_search(req: Request) -> Response {
     let kiln_path = params.kiln_path;
     let limit = params.limit.unwrap_or(20);
 
-    let result = tokio::task::spawn_blocking(move || {
-        let cwd = std::env::current_dir().unwrap_or_default();
-        let kiln = PathBuf::from(&kiln_path);
-        let paths = default_discovery_paths(Some(&cwd), Some(&kiln), dirs::home_dir().as_deref());
-        let discovery = FolderDiscovery::new(paths);
-        discovery.discover()
-    })
-    .await;
+    let result = discover_skills(kiln_path).await;
 
     match result {
         Ok(Ok(skills)) => {

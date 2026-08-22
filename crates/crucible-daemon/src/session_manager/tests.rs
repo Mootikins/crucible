@@ -347,43 +347,6 @@ async fn test_remove_session() {
 }
 
 #[tokio::test]
-async fn test_counts() {
-    let _tmp = TempDir::new().unwrap();
-    let manager = temp_session_manager();
-
-    assert_eq!(manager.active_count(), 0);
-    assert_eq!(manager.total_count(), 0);
-
-    let session1 = manager
-        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
-        .await
-        .unwrap();
-    let session2 = manager
-        .create_session(SessionType::Agent, vec![kiln_name("kiln")], None, None)
-        .await
-        .unwrap();
-
-    assert_eq!(manager.active_count(), 2);
-    assert_eq!(manager.total_count(), 2);
-
-    manager.pause_session(&session1.id).await.unwrap();
-    assert_eq!(manager.active_count(), 1);
-    assert_eq!(manager.total_count(), 2);
-
-    manager.end_session(&session2.id).await.unwrap();
-    assert_eq!(manager.active_count(), 0);
-    // Both are still resident — one Paused, one Ended — which is what
-    // `total_count`'s "including paused/ended" has always claimed. Ending is a
-    // lifecycle transition; eviction is `remove_session`'s job (and the archive
-    // sweep's), because evicting on end dropped the turn's in-flight events.
-    assert_eq!(manager.total_count(), 2);
-    manager
-        .remove_session(&session2.id)
-        .expect("an ended session may be evicted");
-    assert_eq!(manager.total_count(), 1);
-}
-
-#[tokio::test]
 async fn test_set_title() {
     let _tmp = TempDir::new().unwrap();
     let manager = temp_session_manager();

@@ -599,7 +599,6 @@ async fn cleanup_session_cancels_pending_requests() {
         RequestState {
             cancel_tx: Some(cancel_tx),
             task_handle: None,
-            started_at: Instant::now(),
         },
     );
 
@@ -732,7 +731,6 @@ async fn cleanup_session_leaves_no_per_session_residue() {
         RequestState {
             cancel_tx: Some(cancel_tx),
             task_handle: None,
-            started_at: Instant::now(),
         },
     );
     let (response_tx, _response_rx) = oneshot::channel();

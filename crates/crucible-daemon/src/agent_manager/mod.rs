@@ -133,8 +133,6 @@ pub enum AgentError {
 struct RequestState {
     cancel_tx: Option<oneshot::Sender<()>>,
     task_handle: Option<JoinHandle<()>>,
-    #[allow(dead_code)] // stored for timing diagnostics; written on creation, readable for metrics
-    started_at: Instant,
 }
 
 /// Terminal status of a `send_message` turn.
@@ -200,7 +198,6 @@ impl RequestSlotGuard {
                 e.insert(RequestState {
                     cancel_tx: None,
                     task_handle: None,
-                    started_at: Instant::now(),
                 });
             }
         }
@@ -354,8 +351,6 @@ pub(crate) struct ResolvedProvider {
     pub provider_type: BackendType,
     /// API endpoint, if configured
     pub endpoint: Option<String>,
-    /// API key, if configured
-    pub api_key: Option<String>,
     /// Which config system this was resolved from, for logging
     pub source: &'static str,
 }
@@ -929,10 +924,6 @@ impl AgentManager {
     #[cfg(test)]
     pub(crate) fn mode_stance(&self, mode_id: &str) -> Option<crucible_lua::ModeStance> {
         self.modes.get(mode_id).map(|m| m.permissions.default)
-    }
-
-    pub fn invalidate_model_cache(&self) {
-        self.model_cache.clear();
     }
 
     pub async fn get_or_create_session_dispatcher(

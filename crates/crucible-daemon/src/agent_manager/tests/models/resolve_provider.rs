@@ -33,7 +33,6 @@ async fn test_resolve_provider_config_from_llm_config() {
         resolved.endpoint.as_deref(),
         Some("https://api.z.ai/api/coding/paas/v4")
     );
-    assert_eq!(resolved.api_key.as_deref(), Some("test-key-123"));
     assert_eq!(resolved.source, "llm_config");
 }
 
@@ -65,7 +64,6 @@ async fn test_resolve_provider_config_from_providers_config() {
     let resolved = resolved.unwrap();
     assert_eq!(resolved.provider_type, BackendType::Ollama);
     assert_eq!(resolved.endpoint.as_deref(), Some("http://localhost:11434"));
-    assert_eq!(resolved.api_key.as_deref(), Some("ollama-key"));
     assert_eq!(resolved.source, "llm_config");
 }
 
@@ -131,5 +129,4 @@ async fn test_resolve_provider_config_llm_config_wins_over_providers_config() {
         resolved.endpoint.as_deref(),
         Some("https://api.openai.com/v1")
     );
-    assert_eq!(resolved.api_key.as_deref(), Some("openai-key"));
 }

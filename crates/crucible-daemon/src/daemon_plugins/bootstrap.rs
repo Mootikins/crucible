@@ -54,7 +54,7 @@ pub fn daemon_plugin_paths(runtimepath: &[std::path::PathBuf]) -> Vec<(PathBuf, 
     // 3a. Configured runtimepath entries, ahead of the shipped runtime so they
     // can shadow a bundled plugin by name. Additive — 3b still runs.
     for rtp in runtimepath {
-        let expanded = expand_tilde(rtp);
+        let expanded = crate::kiln_manager::expand_tilde_path(rtp);
         let plugins_dir = expanded.join("plugins");
         if plugins_dir.exists() {
             tracing::debug!("Adding runtimepath plugin dir: {:?}", plugins_dir);
@@ -104,22 +104,6 @@ pub(crate) fn runtime_plugin_paths(roots: &[PathBuf]) -> Vec<(PathBuf, PluginSou
         .inspect(|dir| tracing::debug!("Adding runtime plugin path: {:?}", dir))
         .map(|dir| (dir, PluginSource::Runtime))
         .collect()
-}
-
-/// Expand `~` at the start of a path to the user's home directory.
-///
-/// Delegates to the one expander rather than keeping a fourth copy — this one
-/// indexed `&s[2..]` on a bare `~`, which is a panic, not an expansion.
-fn expand_tilde(path: &std::path::Path) -> PathBuf {
-    // Only a `~` path reaches the expander; a non-UTF-8 path is returned
-    // byte-for-byte rather than lossily rewritten. See
-    // `kiln_manager::expand_tilde_path`.
-    match path.to_str() {
-        Some(s) if s.starts_with('~') => {
-            crate::project_manager::resolve_registration_root(s, dirs::home_dir().as_deref())
-        }
-        _ => path.to_path_buf(),
-    }
 }
 
 /// Return default plugin paths (no config runtimepath).

@@ -126,7 +126,6 @@ async fn test_switch_model_rejected_during_active_request() {
         super::RequestState {
             cancel_tx: None,
             task_handle: None,
-            started_at: std::time::Instant::now(),
         },
     );
 

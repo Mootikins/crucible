@@ -140,18 +140,7 @@ impl StorageHandle {
         Ok(records
             .into_iter()
             .filter(|r| path_filter.is_none_or(|p| r.path.contains(p)))
-            .map(|r| NoteInfo {
-                name: std::path::Path::new(&r.path)
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or(&r.path)
-                    .to_string(),
-                path: r.path,
-                title: Some(r.title),
-                tags: r.tags,
-                created_at: None,
-                updated_at: Some(r.updated_at),
-            })
+            .map(NoteInfo::from)
             .collect())
     }
 
@@ -216,18 +205,7 @@ impl StorageHandle {
             .into_iter()
             .filter(|r| r.path != target.path)
             .filter(|r| source_set.contains(r.path.as_str()))
-            .map(|r| NoteInfo {
-                name: Path::new(&r.path)
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or(&r.path)
-                    .to_string(),
-                path: r.path,
-                title: Some(r.title),
-                tags: r.tags,
-                created_at: None,
-                updated_at: Some(r.updated_at),
-            })
+            .map(NoteInfo::from)
             .collect();
         backlinks.sort_by(|a, b| a.path.cmp(&b.path));
 
@@ -738,7 +716,6 @@ impl KilnManager {
     }
 
     /// Get handle for a kiln if it's already open (does not open if closed)
-    #[allow(dead_code)] // peek-without-open API, exercised by tests
     pub async fn get(&self, kiln_path: &Path) -> Option<StorageHandle> {
         let canonical = canonical_or_self(kiln_path);
 

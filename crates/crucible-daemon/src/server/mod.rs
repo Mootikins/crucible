@@ -457,8 +457,7 @@ impl Server {
         // The same registry the session manager resolves against. Without it
         // this task would save sessions whose every kiln name resolves to
         // nothing — silently emptying `kilns` in each `meta.json` it touches.
-        let storage = FileSessionStorage::new(self.session_manager.sessions_root().to_path_buf())
-            .with_registry(self.session_manager.kiln_registry().clone());
+        let storage = self.session_manager.storage().clone();
         let sm_clone = self.session_manager.clone();
         let mut persist_rx = self.event_tx.subscribe();
         let persist_cancel = CancellationToken::new();
@@ -479,7 +478,7 @@ impl Server {
                                                     warn!(session_id = %event.session_id, error = %e, "Failed to update last activity during shutdown drain");
                                                 }
                                             }
-                                            if let Err(e) = persist_event(&event, &sm_clone, &storage).await {
+                                            if let Err(e) = persist_event(&event, &sm_clone, storage.as_ref()).await {
                                                 warn!(session_id = %event.session_id, error = %e, "Failed to persist event during shutdown drain");
                                             }
                                         }
@@ -518,7 +517,7 @@ impl Server {
                                                     last_persist_times.insert(event.session_id.clone(), Instant::now());
                                                 }
 
-                                                if let Err(e) = persist_event(&event, &sm_clone, &storage).await {
+                                                if let Err(e) = persist_event(&event, &sm_clone, storage.as_ref()).await {
                                                     warn!(session_id = %event.session_id, event = %event.event, error = %e, "Failed to persist event");
                                                 }
                                             }

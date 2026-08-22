@@ -204,8 +204,7 @@ pub(crate) async fn handle_session_fork(
         }
     };
 
-    let storage = FileSessionStorage::new(sm.sessions_root().to_path_buf())
-        .with_registry(sm.kiln_registry().clone());
+    let storage = sm.storage();
     let mut count = 0u64;
     for event in &events {
         if let Some(limit) = up_to {

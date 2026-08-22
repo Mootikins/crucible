@@ -174,6 +174,27 @@ pub struct SessionManager {
     kiln_registry: Arc<crate::kiln_registry::KilnRegistry>,
 }
 
+/// The one listing predicate, over the fields `Session` and `SessionSummary` share.
+#[allow(clippy::too_many_arguments)]
+fn session_matches(
+    kiln: &KilnFilter<'_>,
+    workspace: Option<&PathBuf>,
+    session_type: Option<SessionType>,
+    state: Option<SessionState>,
+    include_archived: bool,
+    kilns: &[KilnName],
+    session_workspace: Option<&PathBuf>,
+    actual_type: SessionType,
+    actual_state: SessionState,
+    archived: bool,
+) -> bool {
+    kiln.matches(kilns)
+        && workspace.is_none_or(|w| session_workspace == Some(w))
+        && session_type.is_none_or(|t| actual_type == t)
+        && state.is_none_or(|st| actual_state == st)
+        && (include_archived || !archived)
+}
+
 impl SessionManager {
     /// Create a new session manager with file-based storage rooted at
     /// `sessions_root` (see [`FileSessionStorage::root_for`]).
@@ -202,6 +223,11 @@ impl SessionManager {
     /// for why an unresolvable name contributes nothing.
     pub fn kiln_paths(&self, kilns: &[KilnName]) -> Vec<PathBuf> {
         self.kiln_registry.paths_for(kilns)
+    }
+
+    /// The storage backend every session write goes through.
+    pub fn storage(&self) -> &Arc<dyn SessionStorage> {
+        &self.storage
     }
 
     /// Root directory holding every session's storage.
@@ -470,11 +496,18 @@ impl SessionManager {
             .iter()
             .filter(|r| {
                 let s = r.value();
-                kiln.matches(&s.kilns)
-                    && workspace.is_none_or(|w| s.workspace.as_ref() == Some(w))
-                    && session_type.is_none_or(|t| s.session_type == t)
-                    && state.is_none_or(|st| s.state == st)
-                    && (include_archived || !s.archived)
+                session_matches(
+                    &kiln,
+                    workspace,
+                    session_type,
+                    state,
+                    include_archived,
+                    &s.kilns,
+                    s.workspace.as_ref(),
+                    s.session_type,
+                    s.state,
+                    s.archived,
+                )
             })
             .map(|r| SessionSummary::from(r.value()))
             .collect()
@@ -500,12 +533,18 @@ impl SessionManager {
         // First, collect in-memory sessions (they have the latest state)
         for entry in self.sessions.iter() {
             let s = entry.value();
-            if kiln.matches(&s.kilns)
-                && workspace.is_none_or(|w| s.workspace.as_ref() == Some(w))
-                && session_type.is_none_or(|t| s.session_type == t)
-                && state.is_none_or(|st| s.state == st)
-                && (include_archived || !s.archived)
-            {
+            if session_matches(
+                &kiln,
+                workspace,
+                session_type,
+                state,
+                include_archived,
+                &s.kilns,
+                s.workspace.as_ref(),
+                s.session_type,
+                s.state,
+                s.archived,
+            ) {
                 seen_ids.insert(s.id.clone());
                 results.push(SessionSummary::from(s));
             }
@@ -518,12 +557,18 @@ impl SessionManager {
                 if seen_ids.contains(&summary.id) {
                     continue;
                 }
-                if kiln.matches(&summary.kilns)
-                    && workspace.is_none_or(|w| summary.workspace.as_ref() == Some(w))
-                    && session_type.is_none_or(|t| summary.session_type == t)
-                    && state.is_none_or(|st| summary.state == st)
-                    && (include_archived || !summary.archived)
-                {
+                if session_matches(
+                    &kiln,
+                    workspace,
+                    session_type,
+                    state,
+                    include_archived,
+                    &summary.kilns,
+                    summary.workspace.as_ref(),
+                    summary.session_type,
+                    summary.state,
+                    summary.archived,
+                ) {
                     results.push(summary);
                 }
             }
@@ -697,23 +742,7 @@ impl SessionManager {
         // After `end_session` above, never before: the guard is not reentrant.
         let _guard = self.persist_guard(session_id).await;
 
-        let session_dir = self.session_dir(session_id);
-        let meta_path = session_dir.join("meta.json");
-        let legacy_path = session_dir.join("session.json");
-
-        let source_path = if tokio::fs::metadata(&meta_path).await.is_ok() {
-            meta_path.clone()
-        } else if tokio::fs::metadata(&legacy_path).await.is_ok() {
-            legacy_path
-        } else {
-            return Err(SessionError::NotFound(session_id.to_string()));
-        };
-
-        let mut session: Session =
-            serde_json::from_str(&tokio::fs::read_to_string(&source_path).await?)?;
-        session.archived = true;
-
-        tokio::fs::write(&meta_path, serde_json::to_string_pretty(&session)?).await?;
+        let session = self.set_archived(session_id, true).await?;
 
         self.sessions.remove(session_id);
         self.recording_senders.remove(session_id);
@@ -722,9 +751,12 @@ impl SessionManager {
         Ok(session)
     }
 
-    pub async fn unarchive_session(&self, session_id: &SessionId) -> Result<Session, SessionError> {
-        let _guard = self.persist_guard(session_id).await;
-
+    /// Rewrite the persisted `archived` flag. The caller holds the persist guard.
+    async fn set_archived(
+        &self,
+        session_id: &SessionId,
+        archived: bool,
+    ) -> Result<Session, SessionError> {
         let session_dir = self.session_dir(session_id);
         let meta_path = session_dir.join("meta.json");
         let legacy_path = session_dir.join("session.json");
@@ -739,9 +771,16 @@ impl SessionManager {
 
         let mut session: Session =
             serde_json::from_str(&tokio::fs::read_to_string(&source_path).await?)?;
-        session.archived = false;
+        session.archived = archived;
 
         tokio::fs::write(&meta_path, serde_json::to_string_pretty(&session)?).await?;
+        Ok(session)
+    }
+
+    pub async fn unarchive_session(&self, session_id: &SessionId) -> Result<Session, SessionError> {
+        let _guard = self.persist_guard(session_id).await;
+
+        let session = self.set_archived(session_id, false).await?;
 
         info!(session_id = %session_id, "Session unarchived");
         Ok(session)
@@ -796,21 +835,6 @@ impl SessionManager {
             }),
             None => Err(SessionError::NotFound(session_id.to_string())),
         }
-    }
-
-    /// Get the count of active sessions.
-    #[allow(dead_code)] // diagnostic API, exercised by tests
-    pub fn active_count(&self) -> usize {
-        self.sessions
-            .iter()
-            .filter(|r| r.value().state == SessionState::Active)
-            .count()
-    }
-
-    /// Get the total count of sessions (including paused/ended).
-    #[allow(dead_code)] // diagnostic API, exercised by tests
-    pub fn total_count(&self) -> usize {
-        self.sessions.len()
     }
 
     /// Update session title and persist the change.

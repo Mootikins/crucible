@@ -70,6 +70,26 @@ pub struct NoteInfo {
     pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
+/// The listing view of a stored note. `name` is the file stem, or the whole
+/// path when the stem is not UTF-8.
+impl From<crate::storage::note_store::NoteRecord> for NoteInfo {
+    fn from(record: crate::storage::note_store::NoteRecord) -> Self {
+        let name = std::path::Path::new(&record.path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(&record.path)
+            .to_string();
+        Self {
+            name,
+            path: record.path,
+            title: Some(record.title),
+            tags: record.tags,
+            created_at: None,
+            updated_at: Some(record.updated_at),
+        }
+    }
+}
+
 /// Abstract interface for accessing knowledge in the kiln
 ///
 /// This trait decouples the tool system from the specific storage backend (SQLite),

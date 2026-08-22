@@ -7,7 +7,6 @@ use crate::agent_manager::AgentManager;
 use crate::protocol::SessionEventMessage;
 use crate::rpc::RpcContext;
 use crate::session_manager::SessionManager;
-use crate::session_storage::{FileSessionStorage, SessionStorage};
 use crucible_core::session::{CommentAuthor, HunkId, LineRange, ReviewState};
 use crucible_lua::{DaemonSessionApi, ResponsePart};
 use std::future::Future;
@@ -413,8 +412,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
                 .await
                 .unwrap_or_default();
 
-            let storage = FileSessionStorage::new(sm.sessions_root().to_path_buf())
-                .with_registry(sm.kiln_registry().clone());
+            let storage = sm.storage();
             let mut count = 0u64;
             for event in &events {
                 if let Some(limit) = up_to {
@@ -575,7 +573,9 @@ impl DaemonSessionApi for DaemonSessionBridge {
                                         .and_then(|r| r.get("error"))
                                         .and_then(|v| v.as_str());
                                     let result_brief = match error_str {
-                                        Some(e) => truncate_str(e, max_result),
+                                        Some(e) => {
+                                            crucible_core::background::truncate(e, max_result)
+                                        }
                                         None => truncate_json_preview(result_data, max_result),
                                     };
                                     emit!(ResponsePart::ToolResult {
@@ -958,20 +958,8 @@ fn parse_range(v: &serde_json::Value) -> Result<crucible_core::traits::context_o
     }
 }
 
-fn truncate_str(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else {
-        let mut end = max_len.saturating_sub(3);
-        while end > 0 && !s.is_char_boundary(end) {
-            end -= 1;
-        }
-        format!("{}...", &s[..end])
-    }
-}
-
 fn truncate_json_preview(val: Option<&serde_json::Value>, max_len: usize) -> String {
-    val.map(|v| truncate_str(&v.to_string(), max_len))
+    val.map(|v| crucible_core::background::truncate(&v.to_string(), max_len))
         .unwrap_or_default()
 }
 

@@ -769,7 +769,7 @@ async fn test_model_cache_invalidation() {
     );
 
     // Invalidate cache
-    agent_manager.invalidate_model_cache();
+    agent_manager.model_cache.clear();
     assert!(
         !agent_manager.model_cache.contains_key("all"),
         "Cache should be cleared after invalidation"

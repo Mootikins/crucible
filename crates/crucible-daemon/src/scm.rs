@@ -22,12 +22,6 @@ pub struct ScmCloneResponse {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ScmError {
-    #[error("not a git repository: {0}")]
-    NotARepo(String),
-
-    #[error("invalid branch name: {0}")]
-    InvalidBranch(String),
-
     #[error("invalid repository url: {0}")]
     InvalidUrl(String),
 
@@ -42,18 +36,6 @@ pub enum ScmError {
 
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
-}
-
-/// Resolve the workdir of the checkout that `path` belongs to.
-///
-/// Mirrors `ProjectManager::detect_repository`: `gix::discover` walks up from
-/// `path` and, inside a linked worktree, resolves to that worktree's workdir
-/// (not the main checkout) — which is what `current_branch`/`is_current` need.
-pub fn discover_workdir(path: &Path) -> Result<PathBuf, ScmError> {
-    let repo = gix::discover(path).map_err(|_| ScmError::NotARepo(path.display().to_string()))?;
-    repo.workdir()
-        .map(Path::to_path_buf)
-        .ok_or_else(|| ScmError::NotARepo(format!("{} (bare repository)", path.display())))
 }
 
 // ── scm.clone helpers ────────────────────────────────────────────────────
@@ -154,17 +136,7 @@ pub fn derive_repo_name(url: &str) -> Result<String, ScmError> {
 /// expanding a leading `~/` using `home`. `home = None` leaves a `~/` prefix
 /// unexpanded (only reachable when the OS reports no home dir).
 pub fn resolve_workspace_root_dir(configured: Option<&str>, home: Option<&Path>) -> PathBuf {
-    let raw = configured.unwrap_or("~/Projects");
-    if let Some(rest) = raw.strip_prefix("~/") {
-        if let Some(home) = home {
-            return home.join(rest);
-        }
-    } else if raw == "~" {
-        if let Some(home) = home {
-            return home.to_path_buf();
-        }
-    }
-    PathBuf::from(raw)
+    crate::project_manager::resolve_registration_root(configured.unwrap_or("~/Projects"), home)
 }
 
 /// Contain an EXPLICIT clone destination inside `base` (the resolved
@@ -226,16 +198,7 @@ pub fn resolve_session_scratch_dir(
     let Some(raw) = configured else {
         return default_base.join("workspaces");
     };
-    if let Some(rest) = raw.strip_prefix("~/") {
-        if let Some(home) = home {
-            return home.join(rest);
-        }
-    } else if raw == "~" {
-        if let Some(home) = home {
-            return home.to_path_buf();
-        }
-    }
-    PathBuf::from(raw)
+    crate::project_manager::resolve_registration_root(raw, home)
 }
 
 /// Run `git clone -- <url> <dest>` with an argument vector (never a shell
