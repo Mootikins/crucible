@@ -269,6 +269,94 @@ impl WatchManager {
         }
     }
 
+    /// Add many paths to one backend, registered together under `group_id`.
+    ///
+    /// [`Self::add_watch`] builds a backend per call, and each notify backend
+    /// owns an inotify instance — a resource Linux caps at 128 per user. A
+    /// plan that covers a repository directory by directory is hundreds of
+    /// paths, so they have to share one instance or the cap is the limit on
+    /// how many repositories a daemon can watch at all.
+    ///
+    /// Each entry is `(path, recursive)`. Remove the whole group with
+    /// [`Self::remove_watch_group`].
+    pub async fn add_watch_group(
+        &mut self,
+        group_id: &str,
+        paths: &[(PathBuf, bool)],
+        template: &WatchConfig,
+    ) -> Result<usize> {
+        if !*self.is_running.read().await {
+            return Err(Error::NotRunning);
+        }
+        if paths.is_empty() {
+            return Ok(0);
+        }
+
+        let event_sender = self
+            .event_sender
+            .as_ref()
+            .ok_or_else(|| Error::Internal("Event sender not available".to_string()))?
+            .clone();
+
+        let requirements = WatcherRequirements::high_performance();
+        let mut watcher_arc = self
+            .backend_registry
+            .create_optimal_watcher(&requirements)
+            .await?;
+
+        let Some(watcher) = Arc::get_mut(&mut watcher_arc) else {
+            return Err(Error::Internal(
+                "Cannot get mutable access to watcher".to_string(),
+            ));
+        };
+        watcher.set_event_sender(event_sender);
+
+        // A path that cannot be watched is one directory going unobserved, not
+        // a reason to abandon the other several hundred. It is counted out of
+        // the return so the caller can say how much of the plan landed.
+        let mut added = 0usize;
+        for (index, (path, recursive)) in paths.iter().enumerate() {
+            let config = template
+                .clone()
+                .with_id(format!("{group_id}#{index}"))
+                .with_recursive(*recursive);
+            match watcher.watch(path.clone(), config).await {
+                Ok(_) => added += 1,
+                Err(e) => {
+                    debug!(path = %path.display(), error = %e, "watch path skipped");
+                }
+            }
+        }
+
+        if added == 0 {
+            return Err(Error::Watch(format!(
+                "no path of {} could be watched",
+                paths.len()
+            )));
+        }
+
+        self.watchers
+            .write()
+            .await
+            .insert(group_id.to_string(), watcher_arc);
+        info!("Added watch group: {} ({} paths)", group_id, added);
+        Ok(added)
+    }
+
+    /// Remove a group added by [`Self::add_watch_group`].
+    ///
+    /// Dropping the backend drops its debouncer, which releases every inotify
+    /// watch the group held. Returns whether the group existed.
+    pub async fn remove_watch_group(&mut self, group_id: &str) -> Result<bool> {
+        let removed = self.watchers.write().await.remove(group_id).is_some();
+        if removed {
+            info!("Removed watch group: {}", group_id);
+        } else {
+            warn!("Watch group not found: {}", group_id);
+        }
+        Ok(removed)
+    }
+
     /// Remove a watch.
     pub async fn remove_watch(&mut self, handle: WatchHandle) -> Result<()> {
         debug!("Removing watch for: {}", handle.path.display());

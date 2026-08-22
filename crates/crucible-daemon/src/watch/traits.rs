@@ -90,6 +90,15 @@ impl WatchConfig {
         }
     }
 
+    /// Replace the identifier.
+    ///
+    /// A watch group derives one id per path from a single template, so the
+    /// backend's handle map keys them apart instead of overwriting.
+    pub fn with_id(mut self, id: impl Into<String>) -> Self {
+        self.id = id.into();
+        self
+    }
+
     /// Set recursive watching.
     pub fn with_recursive(mut self, recursive: bool) -> Self {
         self.recursive = recursive;
