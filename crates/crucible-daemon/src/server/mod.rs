@@ -102,11 +102,8 @@ pub struct Server {
     session_manager: Arc<SessionManager>,
     workspace_tools: Arc<WorkspaceTools>,
     agent_manager: Arc<AgentManager>,
-    #[allow(dead_code)] // Stored for Arc lifetime; accessed via AgentManager
-    background_manager: Arc<BackgroundJobManager>,
     subscription_manager: Arc<SubscriptionManager>,
     project_manager: Arc<ProjectManager>,
-    lua_sessions: Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
     event_tx: broadcast::Sender<SessionEventMessage>,
     dispatcher: Arc<RpcDispatcher>,
     /// The same context the dispatcher runs handlers against. Held so plugin
@@ -117,15 +114,10 @@ pub struct Server {
     runtimepath: Vec<std::path::PathBuf>,
     plugin_watch: bool,
     auto_archive_hours: Option<u64>,
-    llm_config: Option<LlmConfig>,
     schedules: Vec<crucible_core::config::ScheduleEntry>,
     /// Resolved daemon data root (see `BindWithPluginConfigParams::data_home`);
     /// `run()`'s open-kilns/archive-sweep read this instead of `crucible_home()`.
     data_home: std::path::PathBuf,
-    #[cfg(feature = "web")]
-    #[allow(dead_code)] // web server started externally by crucible-web crate
-    web_config: Option<crucible_core::config::WebConfig>,
-    mcp_server_manager: Arc<McpServerManager>,
     /// Held open for the daemon's lifetime; the flock on it enforces that only
     /// one daemon binds this socket. Dropped (unlocked) when the Server drops.
     #[allow(dead_code)]
@@ -304,7 +296,6 @@ impl Server {
             .with_kiln_registry(kiln_registry.clone())
             .with_session_workspace_dir(Some(session_workspace_dir)),
         );
-        let background_manager = Arc::new(BackgroundJobManager::new(event_tx.clone()));
         let workspace_tools = Arc::new(WorkspaceTools::new(&data_home));
         let delegation_service =
             crate::delegation::DelegationService::new(session_manager.clone(), event_tx.clone());
@@ -313,7 +304,7 @@ impl Server {
                 AgentManagerParams {
                     kiln_manager: kiln_manager.clone(),
                     session_manager: session_manager.clone(),
-                    background_manager: background_manager.clone(),
+                    background_manager: Arc::new(BackgroundJobManager::new(event_tx.clone())),
                     mcp_gateway,
                     llm_config: params.llm_config.clone(),
                     acp_config: params.acp_config.clone(),
@@ -378,10 +369,10 @@ impl Server {
             event_tx.clone(),
             shutdown_tx.clone(),
             project_manager.clone(),
-            lua_sessions.clone(),
+            lua_sessions,
             plugin_loader.clone(),
             params.llm_config.clone(),
-            mcp_server_manager.clone(),
+            mcp_server_manager,
             params.mcp_config.clone(),
             data_home.clone(),
             config_home,
@@ -404,10 +395,8 @@ impl Server {
             session_manager,
             workspace_tools,
             agent_manager,
-            background_manager,
             subscription_manager,
             project_manager,
-            lua_sessions,
             event_tx,
             dispatcher,
             rpc_context: ctx,
@@ -415,14 +404,10 @@ impl Server {
             runtimepath: params.runtimepath,
             plugin_watch: params.plugin_watch,
             auto_archive_hours: params.auto_archive_hours,
-            llm_config: params.llm_config.clone(),
             schedules: params.schedules,
             data_home,
-            mcp_server_manager,
             socket_lock,
             authorized_uid: daemon_uid(),
-            #[cfg(feature = "web")]
-            web_config: params.web_config.clone(),
         })
     }
 
@@ -467,17 +452,6 @@ impl Server {
                 }
             });
         }
-
-        #[cfg(feature = "web")]
-        let web_cancel = {
-            let cancel = CancellationToken::new();
-            // Web server is started by crucible-web crate, not from daemon.
-            // The daemon provides the cancel token; crucible-web calls start_server externally.
-            cancel
-        };
-
-        #[cfg(not(feature = "web"))]
-        let _web_cancel = CancellationToken::new();
 
         // Spawn event persistence task with cancellation support
         // The same registry the session manager resolves against. Without it
@@ -688,7 +662,7 @@ impl Server {
                         // Same tick, same sessions root: keep refs whose
                         // session directory has been removed pin git objects
                         // that nothing else will ever release.
-                        let dropped = sweep_review_refs(
+                        let dropped = crate::review::sweep_review_refs(
                             sweep_session_manager.sessions_root(),
                         ).await;
                         if dropped > 0 {
@@ -849,16 +823,8 @@ impl Server {
                         Ok((stream, _)) => {
                             let ctx = Arc::new(ServerContext {
                                 dispatcher: self.dispatcher.clone(),
-                                kiln_manager: self.kiln_manager.clone(),
-                                session_manager: self.session_manager.clone(),
-                                agent_manager: self.agent_manager.clone(),
                                 subscription_manager: self.subscription_manager.clone(),
-                                project_manager: self.project_manager.clone(),
-                                lua_sessions: self.lua_sessions.clone(),
                                 event_tx: self.event_tx.clone(),
-                                plugin_loader: self.plugin_loader.clone(),
-                                llm_config: self.llm_config.clone(),
-                                mcp_server_manager: self.mcp_server_manager.clone(),
                                 shutdown: self.rpc_context.shutdown.clone(),
                                 authorized_uid: self.authorized_uid,
                             });
@@ -900,8 +866,6 @@ impl Server {
         }
 
         // Graceful shutdown: signal cancellation, wait with timeout, then abort if needed
-        #[cfg(feature = "web")]
-        web_cancel.cancel();
         persist_cancel.cancel();
         reprocess_cancel.cancel();
         sweep_cancel.cancel();
@@ -946,19 +910,10 @@ impl Server {
 }
 
 #[derive(Clone)]
-#[allow(dead_code)] // some fields held for Arc ownership; dispatch accesses them via RpcContext
 struct ServerContext {
     dispatcher: Arc<RpcDispatcher>,
-    kiln_manager: Arc<KilnManager>,
-    session_manager: Arc<SessionManager>,
-    agent_manager: Arc<AgentManager>,
     subscription_manager: Arc<SubscriptionManager>,
-    project_manager: Arc<ProjectManager>,
-    lua_sessions: Arc<DashMap<String, Arc<Mutex<LuaSessionState>>>>,
     event_tx: broadcast::Sender<SessionEventMessage>,
-    plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
-    llm_config: Option<LlmConfig>,
-    mcp_server_manager: Arc<McpServerManager>,
     /// The same latch the `shutdown` handler arms — cloned from the dispatcher's
     /// context so the connection fires exactly the shutdown its own reply
     /// confirmed. See [`crate::rpc::DeferredShutdown`].

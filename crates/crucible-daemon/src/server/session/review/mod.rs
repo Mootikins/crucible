@@ -168,7 +168,7 @@ pub(crate) async fn set_state(
 /// The hunk is read *before* the revert: afterwards its identity is gone from
 /// the composed diff, and the note has to name the lines the user was looking
 /// at, not whatever occupies them now.
-pub(crate) async fn reject_hunk(
+async fn reject_hunk(
     am: &AgentManager,
     sm: &SessionManager,
     event_tx: &broadcast::Sender<SessionEventMessage>,

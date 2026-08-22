@@ -30,7 +30,7 @@ STEPS = [
     (
         "param",
         re.compile(
-            r"require_param!|optional_param!|require_session_id!"
+            r"require_param!|optional_param!"
             r"|typed_params::<|parse_params|\.params\s*\.get\("
         ),
     ),

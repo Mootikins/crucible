@@ -167,7 +167,7 @@ async fn a_delegated_child_inherits_its_parents_isolation() {
 
 /// The wiring that makes a delegated child go through the shared lifecycle.
 ///
-/// `Server::bind` is the only place `bind_session_lifecycle` is called, and
+/// `Server::bind_with_plugin_config` is the only place `bind_session_lifecycle` is called, and
 /// nothing observes it: unbound, `enforce_child_isolation` stops firing plugin
 /// start hooks and silently reopens the delegation escape — a sandboxed
 /// parent's subagent gets no container and runs every tool on the host, with no
@@ -188,7 +188,7 @@ async fn binding_a_server_wires_delegation_to_the_shared_session_lifecycle() {
             .agent_manager
             .delegation_service()
             .session_lifecycle_bound(),
-        "Server::bind must bind the delegation service to the session lifecycle, \
+        "Server::bind_with_plugin_config must bind the delegation service to the session lifecycle, \
          or delegated children fire no plugin start hooks and run unsandboxed"
     );
 }

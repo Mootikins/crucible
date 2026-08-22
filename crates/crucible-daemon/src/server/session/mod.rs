@@ -20,10 +20,9 @@ pub(crate) mod scope;
 
 pub(crate) use create::handle_session_create;
 // Re-exported for tests.rs (accessed via `use session::*`).
-#[allow(unused_imports)]
+#[cfg(test)]
 pub(crate) use create::{
     resolve_kiln_classification_for_create, resolve_provider_trust_level_for_create,
-    validate_trust_level,
 };
 pub(crate) use lifecycle::{
     handle_session_archive, handle_session_compact, handle_session_delete, handle_session_end,

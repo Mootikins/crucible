@@ -306,7 +306,7 @@ pub(super) fn discover_plugin_test_files(path: &Path) -> Result<Vec<PathBuf>> {
     Ok(files)
 }
 
-pub(super) fn collect_plugin_test_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+fn collect_plugin_test_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     for entry in std::fs::read_dir(dir)? {
         let path = entry?.path();
         if path.is_file() {

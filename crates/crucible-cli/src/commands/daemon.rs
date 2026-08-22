@@ -131,7 +131,6 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
             acp_config: Some(config.acp.clone()),
             context_config: config.context.clone(),
             permission_config: config.permissions.clone(),
-            web_config: None,
             schedules: config.schedules.clone(),
             app_config: serde_json::to_value(&config).ok(),
             data_home: config.data_home.clone(),

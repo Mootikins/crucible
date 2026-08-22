@@ -577,7 +577,7 @@ pub(super) fn spawn_plugin_watcher(
     });
 }
 
-pub(super) fn find_owning_plugin(
+fn find_owning_plugin(
     path: &Path,
     dir_to_plugin: &std::collections::HashMap<PathBuf, String>,
 ) -> Option<String> {

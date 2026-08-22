@@ -85,7 +85,7 @@ const MAX_DIR_ENTRIES: usize = 1_000;
 /// more" — so a capped listing would have been indistinguishable from a complete
 /// one, which is worse than the slow response it replaces.
 #[derive(serde::Serialize)]
-pub(crate) struct DirListing {
+struct DirListing {
     pub entries: Vec<FsEntry>,
     pub truncated: bool,
 }

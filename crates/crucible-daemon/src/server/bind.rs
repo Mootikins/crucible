@@ -24,7 +24,6 @@ pub struct BindWithPluginConfigParams {
     pub acp_config: Option<crucible_core::config::components::acp::AcpConfig>,
     pub context_config: Option<crucible_core::config::ContextConfig>,
     pub permission_config: Option<crucible_core::config::components::permissions::PermissionConfig>,
-    pub web_config: Option<crucible_core::config::WebConfig>,
     pub schedules: Vec<crucible_core::config::ScheduleEntry>,
     /// Full loaded app config as JSON — seeds the Lua `cru.config` store
     /// before init.lua runs (TOML seeds, Lua overrides, RPC merges).
@@ -60,7 +59,6 @@ impl Default for BindWithPluginConfigParams {
             acp_config: None,
             context_config: None,
             permission_config: None,
-            web_config: None,
             schedules: Vec::new(),
             app_config: None,
             data_home: None,
@@ -70,20 +68,6 @@ impl Default for BindWithPluginConfigParams {
 }
 
 impl Server {
-    /// Bind to a Unix socket path
-    #[allow(dead_code)] // convenience constructor used in integration tests
-    pub async fn bind(
-        path: &Path,
-        mcp_config: Option<&crucible_core::config::McpConfig>,
-    ) -> Result<Self> {
-        Self::bind_with_plugin_config(BindWithPluginConfigParams {
-            path: path.to_path_buf(),
-            mcp_config: mcp_config.cloned(),
-            ..Default::default()
-        })
-        .await
-    }
-
     /// Test constructor: bind with an isolated data root injected as a value
     /// (no `CRUCIBLE_HOME` env mutation). The daemon reads registry, sessions,
     /// and the home kiln from `data_home` instead of the developer's real

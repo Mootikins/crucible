@@ -296,7 +296,7 @@ impl DaemonPluginLoader {
 
     /// Bind the data root persisted plugin options live under.
     ///
-    /// Set once, by `Server::bind`, from the daemon's resolved `data_home`.
+    /// Set once, by `Server::bind_with_plugin_config`, from the daemon's resolved `data_home`.
     pub fn with_option_store(mut self, dir: PathBuf) -> Self {
         self.option_store_dir = Some(dir);
         self

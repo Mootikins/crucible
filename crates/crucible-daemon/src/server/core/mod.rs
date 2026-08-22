@@ -542,26 +542,6 @@ pub(super) async fn sweep_and_archive_stale_sessions(
     Ok(archived)
 }
 
-/// Release review keep refs whose sessions are gone.
-///
-/// Rides the archive sweep rather than getting its own timer: both walk the
-/// same sessions root and both are cheap, and a second half-hourly task
-/// spawning `git` subprocesses in every tracked repository is not worth the
-/// tick.
-///
-/// Only the *orphans* go. A keep ref whose session still has a journal is
-/// still protecting trees a live review depends on, however old the session
-/// is — expiring on age would delete the base tree out from under a queue
-/// somebody is halfway through.
-pub(super) async fn sweep_review_refs(sessions_root: &Path) -> usize {
-    // Every session in one scan. This used to have to enumerate registered
-    // kilns as well as open ones, because a kiln nobody had opened this run was
-    // invisible and its live journals would read as orphans — a shared
-    // repository would then lose the base tree of a queue somebody was halfway
-    // through. With one sessions root there is no such partial view.
-    crate::review::sweep_review_refs(sessions_root).await
-}
-
 /// Dispatch one request, converting a panic into an error response.
 ///
 /// A panicking handler used to unwind the connection task, so the client saw
