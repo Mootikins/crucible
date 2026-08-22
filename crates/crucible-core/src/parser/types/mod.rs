@@ -46,7 +46,10 @@ pub use lists::{
 };
 pub use parsed_note::{ParsedNote, ParsedNoteBuilder, ParsedNoteMetadata};
 pub use task::{TaskFile, TaskGraph, TaskItem};
-pub use workflow::{Gate, ValidationEntry, WorkflowDoc, WorkflowParseWarning, WorkflowStep};
+pub use workflow::{
+    extract_yaml_frontmatter, Gate, ValidationEntry, WorkflowDoc, WorkflowParseWarning,
+    WorkflowStep,
+};
 
 #[cfg(test)]
 mod tests {

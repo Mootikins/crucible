@@ -7,6 +7,7 @@
 
 use anyhow::Result;
 
+use super::session::SessionIdRequest;
 use super::DaemonClient;
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -23,11 +24,6 @@ pub struct WorkflowStartRequest {
 pub struct WorkflowApproveGateRequest {
     pub session_id: String,
     pub gate_id: String,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct WorkflowSessionRequest {
-    pub session_id: String,
 }
 
 impl DaemonClient {
@@ -47,7 +43,7 @@ impl DaemonClient {
     pub async fn workflow_status(&self, session_id: &str) -> Result<serde_json::Value> {
         self.call(
             "workflow.status",
-            serde_json::to_value(WorkflowSessionRequest {
+            serde_json::to_value(SessionIdRequest {
                 session_id: session_id.to_string(),
             })?,
         )
@@ -57,7 +53,7 @@ impl DaemonClient {
     pub async fn workflow_cancel(&self, session_id: &str) -> Result<serde_json::Value> {
         self.call(
             "workflow.cancel",
-            serde_json::to_value(WorkflowSessionRequest {
+            serde_json::to_value(SessionIdRequest {
                 session_id: session_id.to_string(),
             })?,
         )

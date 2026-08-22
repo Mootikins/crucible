@@ -38,19 +38,6 @@ impl DaemonClient {
         .await
     }
 
-    pub async fn kiln_set_classification(&self, path: &Path, classification: &str) -> Result<()> {
-        let _: serde_json::Value = self
-            .typed_call(
-                "kiln.set_classification",
-                KilnSetClassificationRequest {
-                    path: path.to_string_lossy().to_string(),
-                    classification: classification.to_string(),
-                },
-            )
-            .await?;
-        Ok(())
-    }
-
     pub async fn kiln_list(&self) -> Result<Vec<serde_json::Value>> {
         let result: serde_json::Value = self.typed_call("kiln.list", EmptyParams {}).await?;
         Ok(result.as_array().cloned().unwrap_or_default())
@@ -692,26 +679,6 @@ impl DaemonClient {
                 root: root.to_string(),
                 kind: kind.to_string(),
                 rel_path: rel_path.to_string(),
-            },
-        )
-        .await
-    }
-
-    /// Rename/move a NOTE within an open kiln, rewriting unambiguous inbound
-    /// wikilinks (daemon `note.move`). Returns the outcome object
-    /// (`rewritten_sources`, `skipped`) for caller UX.
-    pub async fn note_move(
-        &self,
-        kiln: &str,
-        from_rel: &str,
-        to_rel: &str,
-    ) -> Result<serde_json::Value> {
-        self.typed_call(
-            "note.move",
-            NoteRenameRequest {
-                kiln: kiln.to_string(),
-                from_rel: from_rel.to_string(),
-                to_rel: to_rel.to_string(),
             },
         )
         .await

@@ -8,7 +8,9 @@
 //!
 //! Canonical location for workflow AST. Re-exported from [`crate::parser`].
 
-use super::{Callout, CheckboxStatus, Frontmatter, InlineMetadata, ParsedNote, TaskItem};
+use super::{
+    Callout, CheckboxStatus, Frontmatter, FrontmatterFormat, InlineMetadata, ParsedNote, TaskItem,
+};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -271,6 +273,17 @@ struct RawGate {
     content: String,
     line: usize,
     byte_offset: usize,
+}
+
+/// Extract the YAML frontmatter block of a workflow source, without parsing it.
+/// The block must start at byte 0 with `---\n` and end with `\n---\n`.
+pub fn extract_yaml_frontmatter(source: &str) -> Option<Frontmatter> {
+    let rest = source.strip_prefix("---\n")?;
+    let end = rest.find("\n---\n")?;
+    Some(Frontmatter::new(
+        rest[..end].to_string(),
+        FrontmatterFormat::Yaml,
+    ))
 }
 
 fn body_start_offset(source: &str) -> usize {

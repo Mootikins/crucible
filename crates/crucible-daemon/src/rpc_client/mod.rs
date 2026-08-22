@@ -16,24 +16,22 @@ pub mod lifecycle;
 mod storage;
 
 pub use agent::DaemonAgentHandle;
-pub use client::workflow::{
-    WorkflowApproveGateRequest, WorkflowSessionRequest, WorkflowStartRequest,
-};
+pub use client::workflow::{WorkflowApproveGateRequest, WorkflowStartRequest};
 pub use client::{
     DaemonCapabilities, DaemonClient, FsListDirRequest, FsMoveRequest, FsPathRequest,
     GrepSearchRequest, KilnOpenRequest, KilnSetClassificationRequest, ListAllModelsRequest,
     ListProvidersRequest, LuaDiscoverPluginsRequest, LuaDiscoverPluginsResponse,
     LuaGenerateStubsRequest, LuaGenerateStubsResponse, LuaInitSessionRequest,
     LuaInitSessionResponse, LuaPluginHealthRequest, LuaPluginHealthResponse,
-    LuaRegisterCommandsRequest, LuaRegisterCommandsResponse, LuaRunPluginTestsRequest,
-    LuaRunPluginTestsResponse, LuaShutdownSessionRequest, LuaShutdownSessionResponse,
-    McpStartRequest, NameRequest, NoteRenameRequest, PathRequest, PluginInstallRequest,
-    PluginOptionCallRequest, PluginOptionsRequest, PluginPublicationsRequest, PluginRemoveRequest,
-    PluginRunCommandRequest, PluginTestFailure, PluginTestLoadFailure, ProcessFileRequest,
-    ReviewCommentRequest, ReviewResolveCommentRequest, ReviewSetStateRequest, ScmCloneRequest,
-    SearchVectorsRequest, SessionAgentSpec, SessionConfigureAgentRequest, SessionCreateParams,
-    SessionCreateRequest, SessionDismissNotificationRequest, SessionEvent,
-    SessionExportToFileRequest, SessionForkRequest, SessionIdRequest, SessionInjectContextRequest,
+    LuaRegisterCommandsRequest, LuaRunPluginTestsRequest, LuaRunPluginTestsResponse,
+    LuaShutdownSessionRequest, LuaShutdownSessionResponse, McpStartRequest, NameRequest,
+    NoteRenameRequest, PathRequest, PluginInstallRequest, PluginOptionCallRequest,
+    PluginOptionsRequest, PluginPublicationsRequest, PluginRemoveRequest, PluginRunCommandRequest,
+    PluginTestFailure, PluginTestLoadFailure, ProcessFileRequest, ReviewCommentRequest,
+    ReviewResolveCommentRequest, ReviewSetStateRequest, ScmCloneRequest, SearchVectorsRequest,
+    SessionAgentSpec, SessionConfigureAgentRequest, SessionCreateParams, SessionCreateRequest,
+    SessionDismissNotificationRequest, SessionEvent, SessionExportToFileRequest,
+    SessionForkRequest, SessionIdRequest, SessionInjectContextRequest,
     SessionInteractionRespondRequest, SessionRenderMarkdownRequest, SessionReplayRequest,
     SessionResumeFromStorageRequest, SessionSetTitleRequest, SessionSwitchModelRequest,
     SessionTestInteractionRequest, SkillsGetRequest, SkillsListRequest, SkillsSearchRequest,

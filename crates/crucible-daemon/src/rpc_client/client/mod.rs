@@ -56,9 +56,8 @@ pub use lua::{
     LuaDiscoverPluginsRequest, LuaDiscoverPluginsResponse, LuaGenerateStubsRequest,
     LuaGenerateStubsResponse, LuaInitSessionRequest, LuaInitSessionResponse,
     LuaPluginHealthRequest, LuaPluginHealthResponse, LuaRegisterCommandsRequest,
-    LuaRegisterCommandsResponse, LuaRunPluginTestsRequest, LuaRunPluginTestsResponse,
-    LuaShutdownSessionRequest, LuaShutdownSessionResponse, PluginTestFailure,
-    PluginTestLoadFailure,
+    LuaRunPluginTestsRequest, LuaRunPluginTestsResponse, LuaShutdownSessionRequest,
+    LuaShutdownSessionResponse, PluginTestFailure, PluginTestLoadFailure,
 };
 // `SessionCreateRequest` is exported (it was `#[cfg(test)]`-only, for the
 // wire-format tests below) because the daemon's own `handle_session_create`

@@ -130,11 +130,6 @@ pub struct LuaRegisterCommandsRequest {
     pub commands: Vec<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct LuaRegisterCommandsResponse {
-    pub registered: usize,
-}
-
 impl DaemonClient {
     pub async fn lua_init_session(
         &self,
@@ -184,13 +179,5 @@ impl DaemonClient {
         params: LuaRunPluginTestsRequest,
     ) -> Result<LuaRunPluginTestsResponse> {
         self.typed_call("lua.run_plugin_tests", params).await
-    }
-
-    /// Register Lua commands in a session.
-    pub async fn lua_register_commands(
-        &self,
-        params: LuaRegisterCommandsRequest,
-    ) -> Result<LuaRegisterCommandsResponse> {
-        self.typed_call("lua.register_commands", params).await
     }
 }

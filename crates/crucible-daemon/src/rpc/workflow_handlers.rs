@@ -34,10 +34,11 @@ use crate::protocol::{RpcError, SessionEventMessage, INTERNAL_ERROR, INVALID_PAR
 use crate::rpc::context::RpcContext;
 use crate::rpc::dispatch::RpcResult;
 use crate::rpc::params::parse_params;
+use crate::rpc_client::SessionIdRequest;
 use crate::workflow_handlers::DaemonInlineHandler;
 use crate::workflow_registry::{ExecutionHandle, WorkflowStatusSnapshot};
 use crucible_core::config::components::permissions::PermissionEngine;
-use crucible_core::parser::types::{Frontmatter, FrontmatterFormat, ParsedNote, WorkflowDoc};
+use crucible_core::parser::types::{extract_yaml_frontmatter, ParsedNote, WorkflowDoc};
 use crucible_core::protocol::Request;
 use crucible_core::workflow::{
     DefaultHandler, DispatchTable, GateHandler, WorkflowEvent, WorkflowExecution, WorkflowSnapshot,
@@ -161,11 +162,7 @@ pub async fn handle_workflow_status(
     ctx: &RpcContext,
     req: &Request,
 ) -> RpcResult<serde_json::Value> {
-    #[derive(Deserialize)]
-    struct Params {
-        session_id: String,
-    }
-    let p: Params = parse_params(req)?;
+    let p: SessionIdRequest = parse_params(req)?;
 
     let handle = resolve_or_rehydrate(ctx, &p.session_id)
         .await
@@ -578,15 +575,6 @@ fn workflow_event_to_message(session_id: &str, ev: WorkflowEvent) -> SessionEven
         }
         WorkflowEvent::WorkflowCancelled => SessionEventMessage::workflow_cancelled(session_id),
     }
-}
-
-fn extract_yaml_frontmatter(source: &str) -> Option<Frontmatter> {
-    let rest = source.strip_prefix("---\n")?;
-    let end = rest.find("\n---\n")?;
-    Some(Frontmatter::new(
-        rest[..end].to_string(),
-        FrontmatterFormat::Yaml,
-    ))
 }
 
 #[cfg(test)]

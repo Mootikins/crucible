@@ -406,14 +406,6 @@ impl DaemonClient {
         .await
     }
 
-    /// Fetch the prompt-cache aggregate for a session as a raw JSON object.
-    /// Always returns a value — fields are zero before any completion has
-    /// reported cache data, with `hit_rate` set to `null`.
-    pub async fn session_cache_stats(&self, session_id: &str) -> Result<serde_json::Value> {
-        let req = serde_json::json!({ "session_id": session_id });
-        self.call_with_retry("session.cache_stats", req).await
-    }
-
     pub async fn session_set_system_prompt(&self, session_id: &str, prompt: &str) -> Result<()> {
         self.typed_unit_call_with_retry(
             "session.set_system_prompt",
@@ -765,22 +757,6 @@ impl DaemonClient {
         let summaries: Vec<crucible_core::types::UndoSummary> =
             serde_json::from_value(undone).unwrap_or_default();
         Ok(summaries)
-    }
-
-    /// Check whether a session has any turns that can be undone.
-    pub async fn session_can_undo(&self, session_id: &str) -> Result<bool> {
-        self.get_session_option("session.can_undo", session_id, "can_undo", |v| v.as_bool())
-            .await
-            .map(|opt| opt.unwrap_or(false))
-    }
-
-    /// Get the number of undoable turns for a session.
-    pub async fn session_undo_depth(&self, session_id: &str) -> Result<usize> {
-        self.get_session_option("session.undo_depth", session_id, "undo_depth", |v| {
-            v.as_u64().map(|n| n as usize)
-        })
-        .await
-        .map(|opt| opt.unwrap_or(0))
     }
 
     // =========================================================================

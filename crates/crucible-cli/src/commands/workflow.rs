@@ -10,7 +10,7 @@
 use anyhow::{anyhow, Context, Result};
 use clap::Subcommand;
 use crucible_core::parser::types::{
-    CheckboxStatus, Frontmatter, FrontmatterFormat, ParsedNote, WorkflowDoc, WorkflowStep,
+    extract_yaml_frontmatter, CheckboxStatus, ParsedNote, WorkflowDoc, WorkflowStep,
 };
 use crucible_core::EXCLUDED_DIRS;
 use crucible_daemon::rpc_client::{WorkflowApproveGateRequest, WorkflowStartRequest};
@@ -360,13 +360,6 @@ fn try_parse_workflow(path: &Path) -> Result<Option<WorkflowDoc>> {
     let mut note = ParsedNote::new(path.to_path_buf());
     note.frontmatter = fm;
     Ok(WorkflowDoc::from_parsed(&note, &source))
-}
-
-fn extract_yaml_frontmatter(source: &str) -> Option<Frontmatter> {
-    let rest = source.strip_prefix("---\n")?;
-    let end = rest.find("\n---\n")?;
-    let yaml = &rest[..end];
-    Some(Frontmatter::new(yaml.to_string(), FrontmatterFormat::Yaml))
 }
 
 fn walk_markdown<F>(root: &Path, visit: &mut F) -> Result<()>
