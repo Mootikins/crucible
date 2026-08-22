@@ -8,7 +8,7 @@
 
 use super::*;
 use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
-use crate::tools::mcp_server::{CrucibleMcpServer, KILN_BACKED_TOOLS};
+use crate::tools::mcp_server::CrucibleMcpServer;
 use crate::tools::workspace::WorkspaceTools;
 use crucible_core::traits::tools::ToolExecutor;
 use std::collections::BTreeSet;
@@ -20,6 +20,14 @@ fn classified_names() -> BTreeSet<String> {
     BuiltinTool::iter().map(|t| t.name().to_string()).collect()
 }
 
+/// `ALL` is hand-written; the compiler does not check it. `EnumIter` walks
+/// what the compiler knows, so a variant missing from `ALL` fails here.
+#[test]
+fn all_lists_every_variant_once() {
+    let walked: Vec<BuiltinTool> = BuiltinTool::iter().collect();
+    assert_eq!(BuiltinTool::ALL.to_vec(), walked);
+}
+
 /// The gap rustc cannot close: a tool added to `CrucibleMcpServer` or
 /// `WorkspaceTools` with no [`BuiltinTool`] variant.
 ///
@@ -27,7 +35,7 @@ fn classified_names() -> BTreeSet<String> {
 /// `CrucibleMcpServer::all_tool_names`, never the session-filtered
 /// `list_tools`. The filtered set is what a particular session may call — it
 /// drops `delegate_session` without a delegation context and every
-/// `KILN_BACKED_TOOLS` name on a kiln-less server — so a coverage claim built
+/// `needs_kiln` name on a kiln-less server — so a coverage claim built
 /// from it silently excuses exactly the tools some session shape hides, and
 /// has to hand-patch names back in to stay honest.
 ///
@@ -82,11 +90,11 @@ fn every_workspace_tool_is_host_surface() {
 
 /// Kiln tools surviving a sandbox is the property `Daemon` exists for —
 /// default-deny by name is what made "turning on the sandbox turns off
-/// Crucible" true. Asserted over the same constant the kiln-less filter uses,
+/// Crucible" true. Asserted over the same rule the kiln-less filter uses,
 /// so a kiln tool added later is covered without editing this test.
 #[test]
 fn every_kiln_backed_tool_is_daemon_surface() {
-    for name in KILN_BACKED_TOOLS {
+    for name in kiln_backed_tool_names() {
         assert_eq!(
             classify(name),
             ToolSurface::Daemon,

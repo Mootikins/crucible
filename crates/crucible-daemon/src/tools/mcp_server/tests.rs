@@ -13,6 +13,7 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 use crate::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
+use crate::tools::surface::kiln_backed_tool_names;
 
 /// Bash-side test spawner: serves a single canned job `job-test-123` for
 /// the job-tool tests.
@@ -286,7 +287,7 @@ fn a_kiln_less_server_advertises_no_kiln_backed_tools() {
         .map(|t| t.name.to_string())
         .collect();
 
-    for tool in KILN_BACKED_TOOLS {
+    for tool in kiln_backed_tool_names() {
         assert!(
             !names.iter().any(|n| n == tool),
             "{tool} needs a kiln and must not be advertised without one: {names:?}"
@@ -316,7 +317,7 @@ fn a_kiln_backed_server_advertises_every_kiln_tool() {
         .map(|t| t.name.to_string())
         .collect();
 
-    for tool in KILN_BACKED_TOOLS {
+    for tool in kiln_backed_tool_names() {
         assert!(
             names.iter().any(|n| n == tool),
             "{tool} missing from a kiln-backed server: {names:?}"

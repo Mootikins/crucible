@@ -93,6 +93,37 @@ pub enum BuiltinTool {
 }
 
 impl BuiltinTool {
+    /// Every built-in, in declaration order.
+    ///
+    /// Hand-written because `strum` is a dev-dependency. The test
+    /// `all_lists_every_variant_once` walks `EnumIter` to prove the array
+    /// complete, so a new variant that is not added here fails the suite.
+    pub const ALL: [Self; 23] = [
+        Self::ReadFile,
+        Self::EditFile,
+        Self::WriteFile,
+        Self::Bash,
+        Self::Glob,
+        Self::Grep,
+        Self::CreateNote,
+        Self::ReadNote,
+        Self::ReadMetadata,
+        Self::UpdateNote,
+        Self::DeleteNote,
+        Self::ListNotes,
+        Self::SemanticSearch,
+        Self::GrepNotes,
+        Self::PropertySearch,
+        Self::GetKilnInfo,
+        Self::SkillView,
+        Self::DelegateSession,
+        Self::ListJobs,
+        Self::GetJobResult,
+        Self::CancelJob,
+        Self::DiscoverTools,
+        Self::GetToolSchema,
+    ];
+
     /// The wire name the model calls this tool by.
     ///
     /// Exhaustive on purpose, same as [`Self::surface`]: a variant with no name
@@ -228,6 +259,55 @@ impl BuiltinTool {
             Self::DiscoverTools | Self::GetToolSchema => ToolSurface::Daemon,
         }
     }
+
+    /// Whether this tool reads or writes a kiln.
+    ///
+    /// Without a kiln attached there is no corpus for these tools to act on,
+    /// so `CrucibleMcpServer::list_tools` does not advertise them and the
+    /// dispatcher answers `NotFound`. `skill_view`, `delegate_session` and the
+    /// job tools are not kiln tools: they answer to the workspace and the
+    /// daemon's own managers, and a kiln-less session keeps them.
+    ///
+    /// Exhaustive, like [`Self::surface`]: a new tool must say whether it
+    /// needs a kiln before it compiles.
+    #[must_use]
+    pub fn needs_kiln(self) -> bool {
+        match self {
+            Self::CreateNote
+            | Self::ReadNote
+            | Self::ReadMetadata
+            | Self::UpdateNote
+            | Self::DeleteNote
+            | Self::ListNotes
+            | Self::SemanticSearch
+            | Self::GrepNotes
+            | Self::PropertySearch
+            | Self::GetKilnInfo => true,
+
+            Self::ReadFile
+            | Self::EditFile
+            | Self::WriteFile
+            | Self::Bash
+            | Self::Glob
+            | Self::Grep
+            | Self::SkillView
+            | Self::DelegateSession
+            | Self::ListJobs
+            | Self::GetJobResult
+            | Self::CancelJob
+            | Self::DiscoverTools
+            | Self::GetToolSchema => false,
+        }
+    }
+}
+
+/// Whether the built-in tool called `name` needs a kiln.
+///
+/// A name with no variant answers `false`: foreign tools do not act on the
+/// kiln corpus, and the kiln-less filters only hide built-ins.
+#[must_use]
+pub fn needs_kiln(name: &str) -> bool {
+    BuiltinTool::from_name(name).is_some_and(BuiltinTool::needs_kiln)
 }
 
 /// The surface of a built-in tool by name — `Unknown` when nothing classifies
@@ -247,7 +327,7 @@ pub fn classify(name: &str) -> ToolSurface {
 ///
 /// The full catalog, deliberately: [`CrucibleMcpServer::all_tool_names`] and
 /// not `list_tools`, because `list_tools` answers "what may *this* session
-/// call" — it strips `KILN_BACKED_TOOLS` on a kiln-less server and
+/// call" — it strips the tools that `needs_kiln` on a kiln-less server and
 /// `delegate_session` without a delegation context. A caller asking "is this
 /// name ours" that used the session-filtered set would leave every name one
 /// session shape happens to hide open for a plugin or an upstream MCP server
@@ -300,6 +380,17 @@ pub(crate) fn reserved_tool_names() -> BTreeSet<String> {
     // deferred tool call the model makes.
     names.insert("invoke_tool".to_string());
     names
+}
+
+/// The wire names of every built-in that needs a kiln, for tests that
+/// assert the kiln-less filters over the same rule production uses.
+#[cfg(test)]
+pub(crate) fn kiln_backed_tool_names() -> Vec<&'static str> {
+    BuiltinTool::ALL
+        .into_iter()
+        .filter(|t| t.needs_kiln())
+        .map(BuiltinTool::name)
+        .collect()
 }
 
 #[cfg(test)]

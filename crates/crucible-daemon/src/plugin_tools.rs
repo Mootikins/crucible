@@ -339,6 +339,7 @@ impl ToolExecutor for PluginToolExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tools::surface::kiln_backed_tool_names;
     use crucible_lua::DiscoveredParam;
 
     /// Flipping this to `Daemon` is a one-line, superficially reasonable edit —
@@ -432,7 +433,7 @@ mod tests {
 
     /// The collision set must name every built-in the daemon *owns*, not the
     /// subset one particular session happens to advertise. `list_tools()`
-    /// strips [`KILN_BACKED_TOOLS`] when there is no kiln, so computing the set
+    /// strips the tools that `needs_kiln` when there is no kiln, so computing the set
     /// from a kiln-less server left all ten claimable — and dispatch's
     /// `Err(NotFound) => continue` then runs the plugin's Lua under the name
     /// `read_note` while the model believes it called the built-in.
@@ -442,9 +443,8 @@ mod tests {
         let registry = PluginRegistry::new();
         // `delegate_session` is hidden by the same method for a different
         // reason (delegation disabled), so it belongs in the same assertion.
-        let hidden: Vec<&str> = crate::tools::mcp_server::KILN_BACKED_TOOLS
-            .iter()
-            .copied()
+        let hidden: Vec<&str> = kiln_backed_tool_names()
+            .into_iter()
             .chain(["delegate_session"])
             .collect();
         let declared: Vec<DiscoveredTool> = hidden.iter().map(|name| tool(name)).collect();

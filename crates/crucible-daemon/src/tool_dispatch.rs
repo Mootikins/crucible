@@ -29,6 +29,61 @@ use crate::tools::tool_discovery::{DiscoverToolsParams, GetToolSchemaParams, Too
 /// `handle_tool_call_in_stream` and never reaches dispatch.
 pub(crate) const DISCOVERY_TOOL_NAMES: &[&str] = &["discover_tools", "get_tool_schema"];
 
+/// The one definition of the two discovery tools.
+///
+/// MCP `tools/list` (`ExtendedMcpServer::discovery_tools`) and the provider's
+/// deferral bridge (`bridge_tool_defs`) both project this. They used to carry
+/// separate literals, and the MCP copy advertised a `source` enum the handler
+/// never accepted.
+pub(crate) fn discovery_tool_definitions() -> Vec<ToolDefinition> {
+    use serde_json::json;
+    vec![
+        crate::tools::tool_definition(
+            "discover_tools".to_string(),
+            Some(
+                "Search available tools by name, description, or source. \
+                 Use to find tools before calling them."
+                    .to_string(),
+            ),
+            json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query to filter by name or description"
+                    },
+                    "source": {
+                        "type": "string",
+                        "enum": ["builtin", "just", "upstream"],
+                        "description": "Filter by tool source"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Maximum results to return"
+                    }
+                }
+            }),
+            "discovery",
+        ),
+        crate::tools::tool_definition(
+            "get_tool_schema".to_string(),
+            Some("Get the full JSON Schema for a specific tool's input parameters.".to_string()),
+            json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "The name of the tool to get schema for"
+                    }
+                },
+                "required": ["name"]
+            }),
+            "discovery",
+        ),
+    ]
+}
+
 /// How long the blocking hydration path waits for providers to list their tools.
 ///
 /// Insurance, not a fix for anything reproducible: no provider's `list_tools`
@@ -476,7 +531,7 @@ impl ToolExecutor for McpToolExecutor {
         // an execution failure: with no kiln the tool genuinely does not
         // exist, and letting it through would reach
         // `validate_path_within_kiln` with `""`.
-        if !self.server.has_kiln() && crate::tools::mcp_server::KILN_BACKED_TOOLS.contains(&name) {
+        if !self.server.has_kiln() && crate::tools::surface::needs_kiln(name) {
             return Err(ToolError::NotFound(format!(
                 "{name} needs a kiln, and this session has none attached"
             )));

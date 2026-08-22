@@ -16,6 +16,18 @@ mod dispatch {
         Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp")))
     }
 
+    /// `DISCOVERY_TOOL_NAMES` routes a call; `discovery_tool_definitions`
+    /// advertises it. A name in one and not the other is a tool the model can
+    /// see and not call, or call and not see.
+    #[test]
+    fn discovery_names_match_the_definitions() {
+        let advertised: Vec<String> = discovery_tool_definitions()
+            .into_iter()
+            .map(|d| d.name)
+            .collect();
+        assert_eq!(advertised, DISCOVERY_TOOL_NAMES);
+    }
+
     fn test_dispatcher() -> DaemonToolDispatcher {
         DaemonToolDispatcher::new(vec![workspace_tools() as Arc<dyn ToolExecutor>])
     }

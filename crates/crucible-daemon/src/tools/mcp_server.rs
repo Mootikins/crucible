@@ -109,24 +109,6 @@ pub struct SkillViewParams {
     pub name: String,
 }
 
-/// The tools that read or write a kiln. Without one attached there is no
-/// corpus for them to act on, so they are not registered at all — see
-/// [`CrucibleMcpServer::list_tools`]. `skill_view`, `delegate_session` and the
-/// job tools are not here: they answer to the workspace and the daemon's own
-/// managers, and a kiln-less session keeps them.
-pub const KILN_BACKED_TOOLS: &[&str] = &[
-    "create_note",
-    "read_note",
-    "read_metadata",
-    "update_note",
-    "delete_note",
-    "list_notes",
-    "semantic_search",
-    "grep_notes",
-    "property_search",
-    "get_kiln_info",
-];
-
 impl CrucibleMcpServer {
     /// Whether this server was built around an actual kiln.
     ///
@@ -229,7 +211,7 @@ impl CrucibleMcpServer {
     /// Every tool name this server owns, before any per-session filtering.
     ///
     /// [`Self::list_tools`] answers "what may *this* session call", which is a
-    /// smaller set: no kiln strips [`KILN_BACKED_TOOLS`], no delegation strips
+    /// smaller set: no kiln strips the tools that `needs_kiln`, no delegation strips
     /// `delegate_session`. Callers asking "is this name ours" — the plugin
     /// collision check — must use this instead, or a plugin gets to claim the
     /// names one session shape happens to hide.
@@ -262,7 +244,7 @@ impl CrucibleMcpServer {
         // `canonicalize()` is an unconditional ENOENT reported as a
         // path-traversal refusal.
         if !self.has_kiln() {
-            tools.retain(|t| !KILN_BACKED_TOOLS.contains(&t.name.as_ref()));
+            tools.retain(|t| !crate::tools::surface::needs_kiln(t.name.as_ref()));
         }
 
         // Filter delegate_session when delegation is unavailable or disabled

@@ -140,7 +140,7 @@ impl ExtendedMcpServer {
 
         if let Some(plugins) = &self.plugin_tools {
             for def in plugins.tool_definitions() {
-                tools.push(Self::mcp_tool_from_plugin(&def));
+                tools.push(Self::mcp_tool_from_definition(&def));
             }
         }
 
@@ -166,63 +166,21 @@ impl ExtendedMcpServer {
         )
     }
 
+    /// The discovery tools as MCP `Tool`s, from the one definition in
+    /// `tool_dispatch::discovery_tool_definitions`.
     fn discovery_tools() -> Vec<Tool> {
-        use std::sync::Arc;
-
-        vec![
-            Tool::new(
-                "discover_tools",
-                "Search available tools by name, description, or source. \
-                 Use to find tools before calling them.",
-                Arc::new(serde_json::Map::from_iter([
-                    ("type".to_string(), json!("object")),
-                    (
-                        "properties".to_string(),
-                        json!({
-                            "query": {
-                                "type": "string",
-                                "description": "Search query to filter by name or description"
-                            },
-                            "source": {
-                                "type": "string",
-                                "enum": ["builtin", "lua"],
-                                "description": "Filter by tool source"
-                            },
-                            "limit": {
-                                "type": "integer",
-                                "default": 50,
-                                "description": "Maximum results to return"
-                            }
-                        }),
-                    ),
-                ])),
-            ),
-            Tool::new(
-                "get_tool_schema",
-                "Get the full JSON Schema for a specific tool's input parameters.",
-                Arc::new(serde_json::Map::from_iter([
-                    ("type".to_string(), json!("object")),
-                    (
-                        "properties".to_string(),
-                        json!({
-                            "name": {
-                                "type": "string",
-                                "description": "The name of the tool to get schema for"
-                            }
-                        }),
-                    ),
-                    ("required".to_string(), json!(["name"])),
-                ])),
-            ),
-        ]
+        crate::tool_dispatch::discovery_tool_definitions()
+            .iter()
+            .map(Self::mcp_tool_from_definition)
+            .collect()
     }
 
-    /// A plugin's `ToolDefinition` as an MCP `Tool`.
+    /// A `ToolDefinition` as an MCP `Tool`, for plugin and discovery tools.
     ///
     /// The name is passed through unprefixed. The annotation path used to emit
     /// `lua_<name>`, which meant the same tool was `greet` to an internal agent
     /// and `lua_greet` over MCP.
-    fn mcp_tool_from_plugin(def: &crucible_core::traits::tools::ToolDefinition) -> Tool {
+    fn mcp_tool_from_definition(def: &crucible_core::traits::tools::ToolDefinition) -> Tool {
         let schema = match &def.parameters {
             Some(Value::Object(map)) => map.clone(),
             _ => {
@@ -494,6 +452,55 @@ mod tests {
     use super::*;
     use crate::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
     use tempfile::TempDir;
+
+    /// The discovery tools are served as MCP `tools/list`, so their wire
+    /// shape is pinned here. Change this literal only with the intent to
+    /// change what every MCP client sees.
+    #[test]
+    fn discovery_tools_keep_their_wire_shape() {
+        let actual = serde_json::to_value(ExtendedMcpServer::discovery_tools()).unwrap();
+        let expected = json!([
+            {
+                "name": "discover_tools",
+                "description": "Search available tools by name, description, or source. \
+                                Use to find tools before calling them.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query to filter by name or description"
+                        },
+                        "source": {
+                            "type": "string",
+                            "enum": ["builtin", "just", "upstream"],
+                            "description": "Filter by tool source"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "default": 50,
+                            "description": "Maximum results to return"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "get_tool_schema",
+                "description": "Get the full JSON Schema for a specific tool's input parameters.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "The name of the tool to get schema for"
+                        }
+                    },
+                    "required": ["name"]
+                }
+            }
+        ]);
+        assert_eq!(actual, expected);
+    }
 
     #[test]
     fn test_kiln_only_server_creation() {

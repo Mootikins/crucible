@@ -445,51 +445,16 @@ fn tool_schema_tokens(defs: &[LlmToolDefinition]) -> usize {
 }
 
 /// The three discovery-bridge tool definitions attached in place of the
-/// deferred tools. `discover_tools`/`get_tool_schema` mirror
-/// `ExtendedMcpServer::discovery_tools()`; `invoke_tool` is a generic proxy
-/// the daemon unwraps to the real tool *before* hooks and permissions run.
+/// deferred tools. `discover_tools`/`get_tool_schema` come from
+/// `tool_dispatch::discovery_tool_definitions`, the same definition MCP
+/// `tools/list` serves; `invoke_tool` is a generic proxy the daemon unwraps to
+/// the real tool *before* hooks and permissions run.
 pub(crate) fn bridge_tool_defs() -> Vec<LlmToolDefinition> {
     use serde_json::json;
-    vec![
-        LlmToolDefinition::new(
-            "discover_tools",
-            "Search available tools by name, description, or source. Some tools are \
-             deferred to save context — use this to find them before calling them with \
-             invoke_tool.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Search query to filter by name or description"
-                    },
-                    "source": {
-                        "type": "string",
-                        "description": "Filter by tool source"
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "default": 50,
-                        "description": "Maximum results to return"
-                    }
-                }
-            }),
-        ),
-        LlmToolDefinition::new(
-            "get_tool_schema",
-            "Get the full JSON Schema for a specific tool's input parameters.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": "The name of the tool to get schema for"
-                    }
-                },
-                "required": ["name"]
-            }),
-        ),
-        LlmToolDefinition::new(
+    crate::tool_dispatch::discovery_tool_definitions()
+        .into_iter()
+        .map(LlmToolDefinition::from)
+        .chain(std::iter::once(LlmToolDefinition::new(
             "invoke_tool",
             "Call a deferred tool by name. Routes through the normal permission and hook \
              pipeline exactly as a direct call would. Use discover_tools and get_tool_schema \
@@ -508,8 +473,8 @@ pub(crate) fn bridge_tool_defs() -> Vec<LlmToolDefinition> {
                 },
                 "required": ["name"]
             }),
-        ),
-    ]
+        )))
+        .collect()
 }
 
 /// System-prompt line appended when deferral is active for a request. Kept
