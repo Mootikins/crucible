@@ -30,7 +30,7 @@ use crate::acp::streaming::{channel_callback, StreamingChunk};
 use crate::mcp_host::InProcessMcpHost;
 use crate::tools::DelegationContext;
 use crucible_core::background::BackgroundSpawner;
-use crucible_core::config::{AcpConfig, DataClassification, DelegationConfig};
+use crucible_core::config::{AcpConfig, DelegationConfig};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::{AgentHandle, ChatError, ChatResult};
@@ -170,19 +170,10 @@ impl AcpAgentHandle {
                     .and_then(|c| c.allowed_targets.clone())
                     .unwrap_or_default(),
                 enabled: delegation_config.map(|c| c.enabled).unwrap_or(false),
-                depth: 0,
                 result_max_bytes: delegation_config
                     .map(|c| c.result_max_bytes)
                     .unwrap_or(51200),
                 timeout_secs: delegation_config.map(|c| c.timeout_secs).unwrap_or(300),
-                data_classification: kiln_path
-                    .and_then(|kiln| {
-                        crate::trust_resolution::resolve_session_classification(
-                            Some(workspace),
-                            kiln,
-                        )
-                    })
-                    .unwrap_or(DataClassification::Public),
             }),
             _ => None,
         };

@@ -1031,12 +1031,6 @@ impl AgentManager {
                     Some(&session.id),
                     Some(self.background_manager.clone()),
                     Some(self.delegation_service.clone()),
-                    // The real workspace, not the tool anchor below: this
-                    // feeds data-classification resolution, and resolving a
-                    // kiln's classification against the session's own storage
-                    // directory would answer "unclassified" for every kiln.
-                    session.workspace.as_deref(),
-                    default_kiln.as_deref(),
                 )
             });
             // Security posture for the session's tools: a default-deny

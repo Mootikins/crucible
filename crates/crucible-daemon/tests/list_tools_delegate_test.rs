@@ -1,5 +1,4 @@
 use crucible_core::background::{BackgroundSpawner, JobError, JobId, JobInfo, JobKind, JobResult};
-use crucible_core::config::DataClassification;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_daemon::delegation::{DelegationRequest, DelegationSpawned, DelegationSpawner};
@@ -111,10 +110,8 @@ fn delegation_context(enabled: bool) -> DelegationContext {
         session_id: "test-session".to_string(),
         targets: vec!["claude".to_string()],
         enabled,
-        depth: 0,
         result_max_bytes: 51200,
         timeout_secs: 300,
-        data_classification: DataClassification::default(),
     }
 }
 

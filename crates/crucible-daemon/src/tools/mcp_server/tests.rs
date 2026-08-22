@@ -125,10 +125,8 @@ impl Default for DelegationContext {
             session_id: "chat-parent".to_string(),
             targets: vec![],
             enabled: true,
-            depth: 0,
             result_max_bytes: 51200,
             timeout_secs: 300,
-            data_classification: DataClassification::Public,
         }
     }
 }
@@ -492,9 +490,7 @@ fn make_server_with_job_spawner() -> CrucibleMcpServer {
     )
 }
 
-fn make_server_with_delegation_classification(
-    data_classification: DataClassification,
-) -> (CrucibleMcpServer, Arc<MockDelegationSpawner>) {
+fn make_server_with_delegation() -> (CrucibleMcpServer, Arc<MockDelegationSpawner>) {
     let temp = TempDir::new().unwrap();
     let spawner = Arc::new(MockDelegationSpawner::default());
     let server = CrucibleMcpServer::new_with_delegation(
@@ -503,7 +499,6 @@ fn make_server_with_delegation_classification(
         Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
         Some(DelegationContext {
             delegation_spawner: spawner.clone(),
-            data_classification,
             ..Default::default()
         }),
     );
@@ -511,9 +506,7 @@ fn make_server_with_delegation_classification(
     (server, spawner)
 }
 
-fn make_server_with_delegation_disabled(
-    data_classification: DataClassification,
-) -> CrucibleMcpServer {
+fn make_server_with_delegation_disabled() -> CrucibleMcpServer {
     let temp = TempDir::new().unwrap();
     CrucibleMcpServer::new_with_delegation(
         temp.path().to_str().unwrap().to_string(),
@@ -521,28 +514,9 @@ fn make_server_with_delegation_disabled(
         Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
         Some(DelegationContext {
             enabled: false,
-            data_classification,
             ..Default::default()
         }),
     )
-}
-
-#[tokio::test]
-async fn test_delegation_allowed_for_internal_kiln() {
-    let (server, spawner) =
-        make_server_with_delegation_classification(DataClassification::Internal);
-
-    let result = server
-        .delegate_session(Parameters(DelegateSessionParams {
-            prompt: "do work".to_string(),
-            description: Some("desc".to_string()),
-            target: None,
-            background: Some(true),
-        }))
-        .await;
-
-    assert!(result.is_ok());
-    assert_eq!(spawner.spawn_calls.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
@@ -552,8 +526,7 @@ async fn test_delegation_trust_is_enforced_service_side_not_in_tool() {
     // DelegationService::spawn_delegation, so the tool defers: the spawn
     // call goes through and the service is the gate (covered by
     // delegation_integration tests).
-    let (server, spawner) =
-        make_server_with_delegation_classification(DataClassification::Confidential);
+    let (server, spawner) = make_server_with_delegation();
 
     let result = server
         .delegate_session(Parameters(DelegateSessionParams {
@@ -569,52 +542,8 @@ async fn test_delegation_trust_is_enforced_service_side_not_in_tool() {
 }
 
 #[tokio::test]
-async fn test_delegation_allowed_for_public_kiln() {
-    let (server, spawner) = make_server_with_delegation_classification(DataClassification::Public);
-
-    let result = server
-        .delegate_session(Parameters(DelegateSessionParams {
-            prompt: "do work".to_string(),
-            description: Some("desc".to_string()),
-            target: None,
-            background: Some(true),
-        }))
-        .await;
-
-    assert!(result.is_ok());
-    assert_eq!(spawner.spawn_calls.load(Ordering::SeqCst), 1);
-}
-
-#[tokio::test]
-async fn test_delegation_disabled_fires_before_trust_check() {
-    // enabled=false + Confidential: should get "disabled" error, not trust error
-    let server = make_server_with_delegation_disabled(DataClassification::Confidential);
-    let result = server
-        .delegate_session(Parameters(DelegateSessionParams {
-            prompt: "do work".to_string(),
-            description: None,
-            target: None,
-            background: Some(true),
-        }))
-        .await;
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(
-        err.message.contains("disabled"),
-        "Expected 'disabled' error but got: {}",
-        err.message
-    );
-    assert!(
-        !err.message.contains("insufficient"),
-        "Should not get trust error, got: {}",
-        err.message
-    );
-}
-
-#[tokio::test]
-async fn test_delegation_disabled_with_public_kiln() {
-    // enabled=false + Public: should still get "disabled" error
-    let server = make_server_with_delegation_disabled(DataClassification::Public);
+async fn test_delegation_disabled_returns_disabled_error() {
+    let server = make_server_with_delegation_disabled();
     let result = server
         .delegate_session(Parameters(DelegateSessionParams {
             prompt: "do work".to_string(),

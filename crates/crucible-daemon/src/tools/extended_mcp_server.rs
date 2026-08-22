@@ -29,7 +29,6 @@ use super::mcp_gateway::McpGatewayManager;
 use super::toon_response::toon_success_smart;
 use super::CrucibleMcpServer;
 use crucible_core::enrichment::EmbeddingProvider;
-use crucible_core::events::SessionEvent;
 use crucible_core::traits::KnowledgeRepository;
 use rmcp::model::{CallToolResult, ContentBlock, Tool};
 use rmcp::service::RequestContext;
@@ -114,11 +113,6 @@ impl ExtendedMcpServer {
             plugin_tools: None,
             gateway: None,
         }
-    }
-
-    #[must_use]
-    pub fn kiln_server(&self) -> &CrucibleMcpServer {
-        &self.kiln_server
     }
 
     /// Attach an MCP gateway for upstream server tools.
@@ -243,18 +237,6 @@ impl ExtendedMcpServer {
         )
     }
 
-    /// The tool-event seam: returns the event and whether it was cancelled.
-    ///
-    /// Currently identity. It dispatched through a `Reactor` whose `Handler`
-    /// trait had no production implementation and could not acquire one —
-    /// nothing outside its own tests ever called `register` — so every call
-    /// returned the event unmodified with `cancelled = false`. The Reactor is
-    /// gone; this keeps the shape its six callers read, and inlining it is a
-    /// separate, mechanical change.
-    async fn emit_event(&self, event: SessionEvent) -> (SessionEvent, bool) {
-        (event, false)
-    }
-
     pub async fn tool_count(&self) -> usize {
         let kiln = self.kiln_server.tool_count();
         let discovery = Self::discovery_tools().len();
@@ -286,26 +268,6 @@ impl ExtendedMcpServer {
 
         debug!("Executing plugin tool: {} with args: {:?}", name, arguments);
 
-        let pre_event = SessionEvent::ToolCalled {
-            name: name.to_string(),
-            args: arguments.clone(),
-            description: None,
-            source: None,
-        };
-        let (modified_event, cancelled) = self.emit_event(pre_event).await;
-
-        if cancelled {
-            return Err(rmcp::ErrorData::internal_error(
-                format!("Plugin tool '{name}' execution cancelled by hook"),
-                None,
-            ));
-        }
-
-        let effective_args = match modified_event {
-            SessionEvent::ToolCalled { args, .. } => args,
-            _ => arguments,
-        };
-
         let Some(plugins) = self.plugin_tools.clone() else {
             return Err(rmcp::ErrorData::internal_error(
                 format!("No plugin registry available for tool '{name}'"),
@@ -317,49 +279,21 @@ impl ExtendedMcpServer {
         let ctx = crucible_core::traits::tools::ExecutionContext::default();
         let outcome = {
             use crucible_core::traits::tools::ToolExecutor;
-            executor.execute_tool(name, effective_args, &ctx).await
+            executor.execute_tool(name, arguments, &ctx).await
         };
 
         match outcome {
-            Ok(content) => {
-                let result_text = serde_json::to_string(&content).unwrap_or_default();
-                let post_event = SessionEvent::ToolCompleted {
-                    name: name.to_string(),
-                    result: result_text,
-                    error: None,
-                    terminate: false,
-                };
-                let (modified_result, _) = self.emit_event(post_event).await;
-
-                let final_content = match modified_result {
-                    SessionEvent::ToolCompleted { result: r, .. } => {
-                        serde_json::from_str(&r).unwrap_or(content)
-                    }
-                    _ => content,
-                };
-
-                match &final_content {
-                    Value::Object(_) | Value::Array(_) => Ok(toon_success_smart(&final_content)),
-                    Value::String(s) => Ok(text_success(s.clone())),
-                    Value::Number(n) => Ok(text_success(n.to_string())),
-                    Value::Bool(b) => Ok(text_success(b.to_string())),
-                    Value::Null => Ok(CallToolResult::success(vec![])),
-                }
-            }
-            Err(e) => {
-                let event = SessionEvent::ToolCompleted {
-                    name: name.to_string(),
-                    result: String::new(),
-                    error: Some(e.to_string()),
-                    terminate: false,
-                };
-                self.emit_event(event).await;
-
-                Err(rmcp::ErrorData::internal_error(
-                    format!("Plugin tool '{name}' failed: {e}"),
-                    None,
-                ))
-            }
+            Ok(content) => match &content {
+                Value::Object(_) | Value::Array(_) => Ok(toon_success_smart(&content)),
+                Value::String(s) => Ok(text_success(s.clone())),
+                Value::Number(n) => Ok(text_success(n.to_string())),
+                Value::Bool(b) => Ok(text_success(b.to_string())),
+                Value::Null => Ok(CallToolResult::success(vec![])),
+            },
+            Err(e) => Err(rmcp::ErrorData::internal_error(
+                format!("Plugin tool '{name}' failed: {e}"),
+                None,
+            )),
         }
     }
 
@@ -379,45 +313,10 @@ impl ExtendedMcpServer {
             name, arguments
         );
 
-        let pre_event = SessionEvent::ToolCalled {
-            name: name.to_string(),
-            args: arguments.clone(),
-            description: None,
-            source: None,
-        };
-        let (modified_event, cancelled) = self.emit_event(pre_event).await;
-
-        if cancelled {
-            return Err(rmcp::ErrorData::internal_error(
-                format!("Gateway tool '{name}' execution cancelled by hook"),
-                None,
-            ));
-        }
-
-        let effective_args = match modified_event {
-            SessionEvent::ToolCalled { args, .. } => args,
-            _ => arguments,
-        };
-
         let gateway = gw.read().await;
-        match gateway.call_tool(name, effective_args).await {
+        match gateway.call_tool(name, arguments).await {
             Ok(result) => {
-                let result_text = result
-                    .content
-                    .iter()
-                    .filter_map(|c| c.as_text().map(str::to_string))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-
-                let post_event = SessionEvent::ToolCompleted {
-                    name: name.to_string(),
-                    result: result_text,
-                    error: None,
-                    terminate: false,
-                };
                 drop(gateway);
-                self.emit_event(post_event).await;
-
                 let content_vec: Vec<ContentBlock> = result
                     .content
                     .into_iter()
@@ -430,15 +329,7 @@ impl ExtendedMcpServer {
                 })
             }
             Err(e) => {
-                let event = SessionEvent::ToolCompleted {
-                    name: name.to_string(),
-                    result: String::new(),
-                    error: Some(e.to_string()),
-                    terminate: false,
-                };
                 drop(gateway);
-                self.emit_event(event).await;
-
                 Err(rmcp::ErrorData::internal_error(
                     format!("Gateway tool '{name}' failed: {e}"),
                     None,
@@ -467,12 +358,6 @@ impl ExtendedMcpService {
             inner: Arc::new(server),
             cached_tools: Arc::new(RwLock::new(tools)),
         }
-    }
-
-    /// Refresh the cached tools list
-    pub async fn refresh_tools(&self) {
-        let tools = self.inner.list_all_tools().await;
-        *self.cached_tools.write().await = tools;
     }
 
     /// Get inner server reference

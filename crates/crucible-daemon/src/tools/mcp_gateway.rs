@@ -330,25 +330,6 @@ impl McpGatewayManager {
         Ok(())
     }
 
-    /// Remove an upstream server.
-    ///
-    /// # Errors
-    /// Returns error if upstream not found.
-    pub fn remove_upstream(&mut self, name: &str) -> GatewayResult<()> {
-        let mut client = self
-            .upstreams
-            .remove(name)
-            .ok_or_else(|| GatewayError::UpstreamNotFound(name.to_string()))?;
-
-        for tool in client.tools() {
-            self.tool_index.remove(&tool.prefixed_name);
-        }
-
-        client.disconnect();
-        info!("Removed upstream '{}'", name);
-        Ok(())
-    }
-
     /// Get all tools from all connected upstreams.
     #[must_use]
     pub fn all_tools(&self) -> Vec<McpToolInfo> {
@@ -414,11 +395,6 @@ impl McpGatewayManager {
     #[must_use]
     pub fn has_tool(&self, prefixed_name: &str) -> bool {
         self.tool_index.contains_key(prefixed_name)
-    }
-
-    /// Get upstream names.
-    pub fn upstream_names(&self) -> impl Iterator<Item = &str> {
-        self.upstreams.keys().map(String::as_str)
     }
 
     /// Get upstream count.

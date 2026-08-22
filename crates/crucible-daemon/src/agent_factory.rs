@@ -13,7 +13,7 @@ use crate::tools::mcp_server::CrucibleMcpServer;
 use crate::tools::DelegationContext;
 use crucible_core::background::BackgroundSpawner;
 use crucible_core::config::credentials::resolve_copilot_oauth_token;
-use crucible_core::config::{BackendType, DataClassification, LlmProviderConfig};
+use crucible_core::config::{BackendType, LlmProviderConfig};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::session::SessionAgent;
 use crucible_core::traits::auth::AuthHeaders;
@@ -105,8 +105,6 @@ pub(crate) fn build_internal_delegation_context(
     parent_session_id: Option<&str>,
     background_spawner: Option<Arc<dyn BackgroundSpawner>>,
     delegation_spawner: Option<Arc<dyn crate::delegation::DelegationSpawner>>,
-    workspace: Option<&Path>,
-    kiln_path: Option<&Path>,
 ) -> Option<DelegationContext> {
     let session_id = parent_session_id?;
     let background_spawner = background_spawner?;
@@ -120,16 +118,10 @@ pub(crate) fn build_internal_delegation_context(
             .and_then(|c| c.allowed_targets.clone())
             .unwrap_or_default(),
         enabled: delegation_config.map(|c| c.enabled).unwrap_or(false),
-        depth: 0,
         result_max_bytes: delegation_config
             .map(|c| c.result_max_bytes)
             .unwrap_or(51200),
         timeout_secs: delegation_config.map(|c| c.timeout_secs).unwrap_or(300),
-        data_classification: kiln_path
-            .and_then(|kiln| {
-                crate::trust_resolution::resolve_session_classification(workspace, kiln)
-            })
-            .unwrap_or(DataClassification::Public),
     })
 }
 
@@ -703,8 +695,6 @@ pub async fn create_agent_from_session_config(
         parent_session_id,
         background_spawner.clone(),
         delegation_spawner.clone(),
-        Some(workspace),
-        kiln_path,
     );
     let (tool_defs, deferrable_tool_names, plugin_tool_names) =
         create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {

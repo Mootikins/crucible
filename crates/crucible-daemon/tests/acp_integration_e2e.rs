@@ -158,7 +158,6 @@ fn test_delegation_context_construction() {
     use crucible_core::background::{
         BackgroundSpawner, JobError, JobId, JobInfo, JobKind, JobResult,
     };
-    use crucible_core::config::DataClassification;
     use crucible_daemon::delegation::{DelegationRequest, DelegationSpawned, DelegationSpawner};
     use std::path::PathBuf as StdPathBuf;
     use std::time::Duration;
@@ -245,16 +244,13 @@ fn test_delegation_context_construction() {
         session_id: "test-session-123".to_string(),
         targets: targets.clone(),
         enabled: true,
-        depth: 0,
         result_max_bytes: 51200,
         timeout_secs: 300,
-        data_classification: DataClassification::default(),
     };
 
     // Verify all fields are constructed correctly
     assert_eq!(ctx.session_id, "test-session-123");
     assert!(ctx.enabled);
-    assert_eq!(ctx.depth, 0);
     assert_eq!(ctx.targets.len(), 2);
     assert!(ctx.targets.contains(&"claude".to_string()));
     assert!(ctx.targets.contains(&"opencode".to_string()));
@@ -266,10 +262,8 @@ fn test_delegation_context_construction() {
         session_id: "disabled-session".to_string(),
         targets: vec![],
         enabled: false,
-        depth: 0,
         result_max_bytes: 51200,
         timeout_secs: 300,
-        data_classification: DataClassification::default(),
     };
 
     assert!(!disabled_ctx.enabled);
@@ -332,7 +326,6 @@ async fn test_mcp_host_initializes_with_delegation_context() {
     use crucible_core::background::{
         BackgroundSpawner, JobError, JobId, JobInfo, JobKind, JobResult,
     };
-    use crucible_core::config::DataClassification;
     use crucible_daemon::delegation::{DelegationRequest, DelegationSpawned, DelegationSpawner};
     use std::path::PathBuf as StdPathBuf;
     use std::time::Duration;
@@ -419,10 +412,8 @@ async fn test_mcp_host_initializes_with_delegation_context() {
         session_id: "mcp-delegation-test".to_string(),
         targets: vec!["claude".to_string()],
         enabled: true,
-        depth: 0,
         result_max_bytes: 51200,
         timeout_secs: 300,
-        data_classification: DataClassification::default(),
     };
 
     let host = match InProcessMcpHost::start(

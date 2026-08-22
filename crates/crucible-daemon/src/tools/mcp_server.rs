@@ -29,7 +29,6 @@
 use super::helpers::{make_server_info, McpResultExt};
 use super::{KilnTools, NoteTools, SearchTools};
 use crucible_core::background::{BackgroundSpawner, JobStatus};
-use crucible_core::config::DataClassification;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::storage::NoteStore;
 use crucible_core::traits::KnowledgeRepository;
@@ -74,12 +73,10 @@ pub struct DelegationContext {
     pub session_id: String,
     pub targets: Vec<String>,
     pub enabled: bool,
-    pub depth: u32,
     /// Max bytes of a blocking delegation's result, from DelegationConfig.
     pub result_max_bytes: usize,
     /// Seconds a blocking delegation may run before it is cancelled.
     pub timeout_secs: u64,
-    pub data_classification: DataClassification,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]

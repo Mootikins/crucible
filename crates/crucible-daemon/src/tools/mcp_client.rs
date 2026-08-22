@@ -21,12 +21,9 @@
     clippy::unnecessary_wraps
 )]
 
-use crucible_core::traits::mcp::{
-    ContentBlock, McpError, McpServerInfo, McpToolInfo, ToolCallResult,
-};
+use crucible_core::traits::mcp::{ContentBlock, McpError, McpToolInfo, ToolCallResult};
 use rmcp::model::{
-    CallToolRequestParams, ContentBlock as RmcpContentBlock, InitializeResult, ListToolsResult,
-    Tool as RmcpTool,
+    CallToolRequestParams, ContentBlock as RmcpContentBlock, ListToolsResult, Tool as RmcpTool,
 };
 use rmcp::service::{RunningService, ServiceExt};
 use rmcp::transport::{ConfigureCommandExt, TokioChildProcess};
@@ -44,8 +41,6 @@ use tracing::{debug, info};
 pub struct RmcpExecutor {
     /// The underlying rmcp service
     service: Arc<RunningService<RoleClient, ()>>,
-    /// Cached server info
-    server_info: Option<McpServerInfo>,
     /// Cached tools by name
     tools: Arc<RwLock<HashMap<String, McpToolInfo>>>,
 }
@@ -54,11 +49,6 @@ impl RmcpExecutor {
     /// Create from an already-initialized rmcp service
     pub async fn from_service(service: RunningService<RoleClient, ()>) -> Result<Self, McpError> {
         let service = Arc::new(service);
-
-        // Get server info. rmcp 1.8 returns peer_info as Option<Arc<InitializeResult>>;
-        // deref to &InitializeResult for convert_server_info.
-        let init_result = service.peer_info();
-        let server_info = init_result.as_deref().and_then(convert_server_info);
 
         // Discover tools
         let tools_result = service
@@ -73,43 +63,13 @@ impl RmcpExecutor {
 
         Ok(Self {
             service,
-            server_info,
             tools: Arc::new(RwLock::new(tools_map)),
         })
-    }
-
-    /// Get server information
-    #[must_use]
-    pub fn server_info(&self) -> Option<&McpServerInfo> {
-        self.server_info.as_ref()
     }
 
     /// Get discovered tools
     pub async fn tools(&self) -> Vec<McpToolInfo> {
         self.tools.read().await.values().cloned().collect()
-    }
-
-    /// Get a tool by name
-    pub async fn get_tool(&self, name: &str) -> Option<McpToolInfo> {
-        self.tools.read().await.get(name).cloned()
-    }
-
-    /// Refresh the tool list from server
-    pub async fn refresh_tools(&self) -> Result<(), McpError> {
-        let tools_result = self
-            .service
-            .list_tools(Default::default())
-            .await
-            .map_err(|e| McpError::Transport(e.to_string()))?;
-
-        let tools = convert_tools_list(tools_result);
-        let mut tools_map = self.tools.write().await;
-        tools_map.clear();
-        for tool in tools {
-            tools_map.insert(tool.name.clone(), tool);
-        }
-
-        Ok(())
     }
 }
 
@@ -185,15 +145,6 @@ pub async fn create_stdio_executor_with_env(
 // =============================================================================
 // Conversion Helpers
 // =============================================================================
-
-fn convert_server_info(init: &InitializeResult) -> Option<McpServerInfo> {
-    Some(McpServerInfo {
-        name: init.server_info.name.clone(),
-        version: Some(init.server_info.version.clone()),
-        protocol_version: init.protocol_version.to_string(),
-        capabilities: serde_json::to_value(&init.capabilities).unwrap_or_default(),
-    })
-}
 
 fn convert_tools_list(result: ListToolsResult) -> Vec<McpToolInfo> {
     result

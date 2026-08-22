@@ -11,11 +11,8 @@
 //! `crates/crucible-daemon/src/server/mod.rs`) — so the helper takes
 //! `Option<&McpConfig>` directly rather than re-reading a per-kiln file.
 //!
-//! Two projections, differing only in whether live gateway state is available:
 //! [`project_mcp_servers`] merges the config with the tool names the gateway
-//! currently sees, and [`read_mcp_servers`] is that same function with an empty
-//! map — which is exactly the old "not probed, `connected: false`" shape. The
-//! merge exists because the TUI used to open its own MCP connections to learn
+//! currently sees. The merge exists because the TUI used to open its own MCP connections to learn
 //! the tool counts (one stdio child process per configured upstream, per `cru
 //! chat` launch) while the daemon already held a connected gateway. Publishing
 //! it here is what makes that fork deletable.
@@ -63,15 +60,6 @@ pub fn project_mcp_servers(
         .collect()
 }
 
-/// Project an [`McpConfig`] with no live gateway state available.
-///
-/// Equivalent to [`project_mcp_servers`] with an empty map: every configured
-/// server is listed, none connected, no tools. That is the shape the setup event
-/// carried before the gateway was consulted.
-pub fn read_mcp_servers(config: Option<&McpConfig>) -> Vec<McpServerInfo> {
-    project_mcp_servers(config, &std::collections::HashMap::new())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -91,63 +79,6 @@ mod tests {
             auto_reconnect: false,
             timeout_secs: 30,
         }
-    }
-
-    #[test]
-    fn read_mcp_servers_returns_empty_when_config_none() {
-        let entries = read_mcp_servers(None);
-        assert!(entries.is_empty());
-    }
-
-    #[test]
-    fn read_mcp_servers_returns_empty_when_servers_empty() {
-        let cfg = McpConfig {
-            servers: Vec::new(),
-        };
-        let entries = read_mcp_servers(Some(&cfg));
-        assert!(entries.is_empty());
-    }
-
-    #[test]
-    fn read_mcp_servers_projects_all_configured_servers() {
-        let cfg = McpConfig {
-            servers: vec![
-                stdio_server("github", "gh_"),
-                stdio_server("filesystem", "fs_"),
-            ],
-        };
-
-        let entries = read_mcp_servers(Some(&cfg));
-
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].name, "github");
-        assert_eq!(entries[0].prefix, "gh");
-        assert!(entries[0].tools.is_empty());
-        assert!(!entries[0].connected);
-        assert_eq!(entries[1].name, "filesystem");
-        assert_eq!(entries[1].prefix, "fs");
-    }
-
-    #[test]
-    fn read_mcp_servers_strips_trailing_underscore_from_prefix() {
-        let cfg = McpConfig {
-            servers: vec![stdio_server("example", "ex_")],
-        };
-
-        let entries = read_mcp_servers(Some(&cfg));
-
-        assert_eq!(entries[0].prefix, "ex");
-    }
-
-    #[test]
-    fn read_mcp_servers_preserves_prefix_without_underscore() {
-        let cfg = McpConfig {
-            servers: vec![stdio_server("example", "exact")],
-        };
-
-        let entries = read_mcp_servers(Some(&cfg));
-
-        assert_eq!(entries[0].prefix, "exact");
     }
 
     fn live(pairs: &[(&str, &[&str])]) -> std::collections::HashMap<String, Vec<String>> {
