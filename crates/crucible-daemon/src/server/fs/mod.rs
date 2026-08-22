@@ -46,7 +46,8 @@
 use crate::kiln_manager::KilnManager;
 use crate::project_manager::ProjectManager;
 use crate::protocol::{Request, Response, INTERNAL_ERROR, INVALID_PARAMS};
-use std::path::{Component, Path, PathBuf};
+use crate::tools::containment::reject_non_normal;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// One directory entry in an `fs.list_dir` response.
@@ -157,12 +158,7 @@ fn resolve_within(base: &Path, rel_path: &str) -> Result<PathBuf, FsListError> {
     if rel.is_absolute() || rel_path.contains('\0') {
         return Err(FsListError::Escape);
     }
-    for c in rel.components() {
-        // Only plain path segments: no `..`, `.`, root, or Windows prefix.
-        if !matches!(c, Component::Normal(_)) {
-            return Err(FsListError::Escape);
-        }
-    }
+    reject_non_normal(rel).map_err(|_| FsListError::Escape)?;
     let canon = base
         .join(rel)
         .canonicalize()
@@ -384,11 +380,7 @@ fn split_contained(
     if rel_p.is_absolute() || rel.contains('\0') {
         return Err(FsMoveError::Escape);
     }
-    for c in rel_p.components() {
-        if !matches!(c, Component::Normal(_)) {
-            return Err(FsMoveError::Escape);
-        }
-    }
+    reject_non_normal(rel_p).map_err(|_| FsMoveError::Escape)?;
     // file_name is None only for empty/`..`-ish paths — the root itself is
     // never a valid move source or destination.
     let name = rel_p.file_name().ok_or(FsMoveError::Escape)?;
@@ -457,11 +449,7 @@ fn mkdir_within(base: &Path, rel_path: &str) -> Result<(), FsMoveError> {
     if rel.is_absolute() || rel_path.is_empty() || rel_path.contains('\0') {
         return Err(FsMoveError::Escape);
     }
-    for c in rel.components() {
-        if !matches!(c, Component::Normal(_)) {
-            return Err(FsMoveError::Escape);
-        }
-    }
+    reject_non_normal(rel).map_err(|_| FsMoveError::Escape)?;
     let target = base.join(rel);
     if target.symlink_metadata().is_ok() {
         return Err(FsMoveError::DestinationExists);

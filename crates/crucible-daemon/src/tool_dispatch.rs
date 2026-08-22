@@ -178,13 +178,6 @@ impl DaemonToolDispatcher {
         self
     }
 
-    fn is_core_tool_name(name: &str) -> bool {
-        matches!(
-            name,
-            "read_file" | "edit_file" | "write_file" | "bash" | "glob" | "grep"
-        )
-    }
-
     fn tool_ref_from_definition(def: &ToolDefinition) -> ToolRef {
         let schema = def
             .parameters
@@ -197,7 +190,7 @@ impl DaemonToolDispatcher {
             def.description.clone()
         };
         let tool = Tool::new(def.name.clone(), description, Arc::new(schema));
-        let source = if Self::is_core_tool_name(&def.name) {
+        let source = if crate::tools::surface::classify(&def.name) == ToolSurface::Host {
             ToolSource::Core
         } else {
             ToolSource::Crucible
@@ -575,15 +568,7 @@ impl ToolExecutor for McpToolExecutor {
     async fn list_tools(&self) -> ToolResult<Vec<ToolDefinition>> {
         let tools = CrucibleMcpServer::list_tools(self.server.as_ref())
             .into_iter()
-            .map(|tool| ToolDefinition {
-                name: tool.name.to_string(),
-                description: tool.description.map(|d| d.to_string()).unwrap_or_default(),
-                category: Some("mcp".to_string()),
-                parameters: Some(serde_json::Value::Object((*tool.input_schema).clone())),
-                returns: None,
-                examples: vec![],
-                required_permissions: vec![],
-            })
+            .map(|tool| crate::tools::tool_definition_from_rmcp(tool, "mcp"))
             .collect();
 
         Ok(tools)

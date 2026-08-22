@@ -59,10 +59,7 @@ pub async fn drive_replay(
 ) {
     let mut prev: Option<DateTime<Utc>> = None;
     for ev in events {
-        if matches!(
-            ev.event.as_str(),
-            "key_press" | "keypress" | "key_press_event" | "KeyPress"
-        ) {
+        if crucible_daemon::replay::is_keypress_event(&ev.event) {
             continue;
         }
         if let Some(p) = prev {

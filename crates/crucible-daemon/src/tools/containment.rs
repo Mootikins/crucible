@@ -60,7 +60,23 @@
 //! session's transcript" is defense in depth, not a guarantee.
 
 use super::path_resolution::ResolvedPath;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
+
+/// Refuse a relative path that holds anything except plain segments.
+///
+/// `..`, `.`, a root and a Windows prefix all let a name step outside the
+/// directory it is joined to. The callers canonicalize afterwards; this check
+/// stops the shapes that canonicalization cannot see, such as a `..` whose
+/// prefix does not exist yet.
+pub(crate) fn reject_non_normal(path: &Path) -> anyhow::Result<()> {
+    match path
+        .components()
+        .find(|c| !matches!(c, Component::Normal(_)))
+    {
+        None => Ok(()),
+        Some(c) => anyhow::bail!("path component {c:?} is not a plain segment"),
+    }
+}
 
 /// The verdict on a path, with symlink escape as its own outcome.
 ///

@@ -36,6 +36,37 @@ pub mod tool_modes;
 pub mod toon_response;
 pub mod utils;
 pub mod workspace;
+
+/// One [`ToolDefinition`] shape for every executor that lists tools.
+pub(crate) fn tool_definition(
+    name: String,
+    description: Option<String>,
+    parameters: serde_json::Value,
+    category: &str,
+) -> crucible_core::traits::tools::ToolDefinition {
+    crucible_core::traits::tools::ToolDefinition {
+        name,
+        description: description.unwrap_or_default(),
+        category: Some(category.to_string()),
+        parameters: Some(parameters),
+        returns: None,
+        required_permissions: vec![],
+        examples: vec![],
+    }
+}
+
+/// The [`ToolDefinition`] for a tool an rmcp server advertises.
+pub(crate) fn tool_definition_from_rmcp(
+    tool: rmcp::model::Tool,
+    category: &str,
+) -> crucible_core::traits::tools::ToolDefinition {
+    tool_definition(
+        tool.name.to_string(),
+        tool.description.map(|d| d.to_string()),
+        serde_json::Value::Object((*tool.input_schema).clone()),
+        category,
+    )
+}
 pub(crate) mod workspace_defs;
 
 // ===== PUBLIC API EXPORTS =====

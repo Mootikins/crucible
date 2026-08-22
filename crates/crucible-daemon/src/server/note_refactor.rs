@@ -227,9 +227,7 @@ pub(crate) async fn rename_note(
     let to_p = Path::new(to_rel);
     if to_p.is_absolute()
         || to_rel.contains('\0')
-        || to_p
-            .components()
-            .any(|c| !matches!(c, std::path::Component::Normal(_)))
+        || crate::tools::containment::reject_non_normal(to_p).is_err()
     {
         return Err(RenameError::Move(crate::server::fs::FsMoveError::Escape));
     }

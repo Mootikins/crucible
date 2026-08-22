@@ -28,13 +28,14 @@ use crate::rpc_client::{
 };
 use crate::rpc_helpers::typed_params;
 
-use std::path::{Component, Path};
+use std::path::Path;
 
 use crucible_core::session::{
     Comment, CommentAuthor, ComposedHunk, HunkId, LineRange, ReviewState, RootBase, RootStatus,
 };
 
 use crate::review::{paths, ReviewError, ReviewResult};
+use crate::tools::containment::reject_non_normal;
 
 // ── Operations (shared with the Lua bridge) ─────────────────────────────────
 
@@ -159,7 +160,7 @@ pub(crate) async fn set_state(
         return reject_hunk(am, sm, event_tx, session_id, hunk_id).await;
     }
     am.review.set_state(session_id, hunk_id, state).await?;
-    emit_review_changed(event_tx, session_id, state_reason(state));
+    emit_review_changed(event_tx, session_id, &state_reason(state));
     Ok(())
 }
 
@@ -344,7 +345,7 @@ pub(crate) async fn handle_review_set_state(
     let state_str = &params.state;
     ensure_loaded(am, sm, session_id).await;
 
-    let Some(state) = parse_state(state_str) else {
+    let Some(state) = parse_wire::<ReviewState>(state_str) else {
         return Response::error(
             req.id,
             INVALID_PARAMS,
@@ -386,7 +387,7 @@ pub(crate) async fn handle_review_comment(
     let root = params.root.as_deref().map(Path::new);
     let author_str = params.author.as_deref().unwrap_or("human");
 
-    let Some(author) = parse_author(author_str) else {
+    let Some(author) = parse_wire::<CommentAuthor>(author_str) else {
         return Response::error(
             req.id,
             INVALID_PARAMS,
@@ -487,29 +488,17 @@ fn emit_review_changed(
     }
 }
 
-fn state_reason(state: ReviewState) -> &'static str {
-    match state {
-        ReviewState::Unreviewed => "unreviewed",
-        ReviewState::Accepted => "accepted",
-        ReviewState::Rejected => "rejected",
-    }
+/// The wire string for a state: the serde spelling, so one table serves both.
+fn state_reason(state: ReviewState) -> String {
+    serde_json::to_value(state)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default()
 }
 
-fn parse_state(raw: &str) -> Option<ReviewState> {
-    match raw {
-        "unreviewed" => Some(ReviewState::Unreviewed),
-        "accepted" => Some(ReviewState::Accepted),
-        "rejected" => Some(ReviewState::Rejected),
-        _ => None,
-    }
-}
-
-fn parse_author(raw: &str) -> Option<CommentAuthor> {
-    match raw {
-        "human" => Some(CommentAuthor::Human),
-        "agent" => Some(CommentAuthor::Agent),
-        _ => None,
-    }
+/// Parse a wire string through the type's own serde derive.
+fn parse_wire<T: serde::de::DeserializeOwned>(raw: &str) -> Option<T> {
+    serde_json::from_value(serde_json::Value::String(raw.to_owned())).ok()
 }
 
 /// What the agent is told when one of its edits is rejected.
@@ -602,9 +591,8 @@ fn resolve_root<'a>(
             // A `..` whose whole prefix is missing survives normalisation —
             // nothing can resolve it — and `strip_prefix` is component-wise, so
             // it would come back out as a relative path that still escapes.
-            relative
-                .components()
-                .all(|c| matches!(c, Component::Normal(_)))
+            reject_non_normal(relative)
+                .is_ok()
                 .then(|| (*b, relative.to_string_lossy().into_owned()))
         })
         .max_by_key(|(base, _)| base.root.as_os_str().len())

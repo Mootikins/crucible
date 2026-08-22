@@ -196,7 +196,8 @@ fn scaled_delay(previous: DateTime<Utc>, current: DateTime<Utc>, speed: f64) -> 
     Duration::from_secs_f64((delay_ms as f64 / speed) / 1000.0)
 }
 
-fn is_keypress_event(event_name: &str) -> bool {
+/// A recorded key press is input, not output: replay drops it.
+pub fn is_keypress_event(event_name: &str) -> bool {
     matches!(
         event_name,
         "key_press" | "keypress" | "key_press_event" | "KeyPress"

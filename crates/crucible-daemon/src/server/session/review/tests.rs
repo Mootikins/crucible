@@ -761,18 +761,33 @@ fn a_path_through_a_symlinked_root_resolves_to_the_tracked_root() {
 
 #[test]
 fn state_strings_are_the_wire_contract() {
-    assert_eq!(parse_state("unreviewed"), Some(ReviewState::Unreviewed));
-    assert_eq!(parse_state("accepted"), Some(ReviewState::Accepted));
-    assert_eq!(parse_state("rejected"), Some(ReviewState::Rejected));
-    assert_eq!(parse_state("Accepted"), None);
-    assert_eq!(parse_state(""), None);
+    assert_eq!(
+        parse_wire::<ReviewState>("unreviewed"),
+        Some(ReviewState::Unreviewed)
+    );
+    assert_eq!(
+        parse_wire::<ReviewState>("accepted"),
+        Some(ReviewState::Accepted)
+    );
+    assert_eq!(
+        parse_wire::<ReviewState>("rejected"),
+        Some(ReviewState::Rejected)
+    );
+    assert_eq!(parse_wire::<ReviewState>("Accepted"), None);
+    assert_eq!(parse_wire::<ReviewState>(""), None);
 }
 
 #[test]
 fn author_strings_are_the_wire_contract() {
-    assert_eq!(parse_author("human"), Some(CommentAuthor::Human));
-    assert_eq!(parse_author("agent"), Some(CommentAuthor::Agent));
-    assert_eq!(parse_author("bot"), None);
+    assert_eq!(
+        parse_wire::<CommentAuthor>("human"),
+        Some(CommentAuthor::Human)
+    );
+    assert_eq!(
+        parse_wire::<CommentAuthor>("agent"),
+        Some(CommentAuthor::Agent)
+    );
+    assert_eq!(parse_wire::<CommentAuthor>("bot"), None);
 }
 
 /// A stale client acting on a hunk that moved must be told to re-list,
