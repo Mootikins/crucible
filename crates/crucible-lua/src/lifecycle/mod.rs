@@ -112,21 +112,8 @@ impl PluginManager {
     /// A kiln's plugins load by putting the kiln on `runtimepath`, which is
     /// the one path list and is the user's own config saying so.
     pub fn with_standard_paths() -> Self {
-        let mut paths = Vec::new();
-
-        if let Ok(env_paths) = std::env::var("CRUCIBLE_PLUGIN_PATH") {
-            let separator = if cfg!(windows) { ';' } else { ':' };
-            for p in env_paths.split(separator) {
-                let path = PathBuf::from(p);
-                if !p.is_empty() && !paths.contains(&path) {
-                    paths.push(path);
-                }
-            }
-        }
-
-        if let Some(config_dir) = dirs::config_dir() {
-            paths.push(config_dir.join("crucible").join("plugins"));
-        }
+        let mut paths = crucible_core::paths::env_plugin_paths();
+        paths.extend(crucible_core::paths::user_plugins_dir());
 
         Self::new().with_search_paths(paths)
     }

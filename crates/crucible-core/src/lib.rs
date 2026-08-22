@@ -16,6 +16,7 @@ pub mod http;
 pub mod interaction;
 pub mod kiln;
 pub mod parser;
+pub mod paths;
 pub mod processing;
 pub mod project;
 pub mod prompts;

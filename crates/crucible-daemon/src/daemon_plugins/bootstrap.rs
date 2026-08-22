@@ -34,21 +34,15 @@ pub fn daemon_plugin_paths(runtimepath: &[std::path::PathBuf]) -> Vec<(PathBuf, 
     let mut paths = Vec::new();
 
     // 1. CRUCIBLE_PLUGIN_PATH env var (highest priority, for dev/CI)
-    if let Ok(env_paths) = std::env::var("CRUCIBLE_PLUGIN_PATH") {
-        let sep = if cfg!(windows) { ';' } else { ':' };
-        for p in env_paths.split(sep) {
-            if !p.is_empty() {
-                paths.push((PathBuf::from(p), PluginSource::EnvPath));
-            }
-        }
-    }
+    paths.extend(
+        crucible_core::paths::env_plugin_paths()
+            .into_iter()
+            .map(|p| (p, PluginSource::EnvPath)),
+    );
 
     // 2. User plugins (~/.config/crucible/plugins/)
-    if let Some(config_dir) = dirs::config_dir() {
-        paths.push((
-            config_dir.join("crucible").join("plugins"),
-            PluginSource::User,
-        ));
+    if let Some(dir) = crucible_core::paths::user_plugins_dir() {
+        paths.push((dir, PluginSource::User));
     }
 
     // 3a. Configured runtimepath entries, ahead of the shipped runtime so they
