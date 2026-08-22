@@ -283,42 +283,30 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
     ///
     /// JSON shape:
     /// `{ messages: u32, prompt_tokens: u32, budget: u32, percent: f64 }`
-    ///
-    /// Default implementation returns `Err("not implemented")`; wired in Task A2.
     fn context_usage(
         &self,
-        _session_id: String,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
-        Box::pin(async { Err("not implemented".into()) })
-    }
+        session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>>;
 
     /// Trigger compaction on a session.
     ///
     /// Returns `()`; compaction runs asynchronously on the next agent turn.
     /// Wraps `SessionManager::request_compaction`.
-    ///
-    /// Default implementation returns `Err("not implemented")`; wired in Task A2.
     fn compact(
         &self,
-        _session_id: String,
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
-        Box::pin(async { Err("not implemented".into()) })
-    }
+        session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
 
     /// Remove messages from a session's conversation tree by range.
     ///
     /// `range` is `{ "type": "all" }` | `{ "type": "last" | "first", "n": N }` |
     /// `{ "type": "indices", "start": S, "end": E }` (half-open `[S, E)`).
     /// Returns the count of messages actually removed.
-    ///
-    /// Default implementation returns `Err("not implemented")`; wired in Task A2.
     fn remove_messages(
         &self,
-        _session_id: String,
-        _range: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<usize, String>> + Send>> {
-        Box::pin(async { Err("not implemented".into()) })
-    }
+        session_id: String,
+        range: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<usize, String>> + Send>>;
 
     /// Run one completion against the session's own client and answer with
     /// its text.
@@ -328,15 +316,11 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
     /// nothing written back to the session — the primitive a plugin needs to
     /// ask the model a small question ABOUT a session rather than take a turn
     /// in it. `runtime/plugins/auto-title` is the worked example.
-    ///
-    /// Default implementation returns `Err("not implemented")`.
     fn complete(
         &self,
-        _session_id: String,
-        _params: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
-        Box::pin(async { Err("not implemented".into()) })
-    }
+        session_id: String,
+        params: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>>;
 
     /// Set the output validation mode for a session.
     ///
@@ -345,64 +329,39 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
     /// `"regex:<pattern>"` | `"lua:<name>"`. The Lua binding accepts
     /// either a raw string or a structured table and serialises the
     /// table form to one of the above before crossing this trait.
-    ///
-    /// Default implementation returns `Err("not implemented")`; wired
-    /// in Task B4.
     fn set_output_validation(
         &self,
-        _session_id: String,
-        _spec: String,
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
-        Box::pin(async { Err("not implemented".into()) })
-    }
+        session_id: String,
+        spec: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
 
     /// Undo the last `count` agent turns by rewinding the session's
     /// conversation tree cursor. Returns the number of turns actually
     /// undone (capped at available turns).
-    ///
-    /// Default implementation returns `Err("not implemented")`; wired
-    /// in Task C1.
     fn undo(
         &self,
-        _session_id: String,
-        _count: usize,
-    ) -> Pin<Box<dyn Future<Output = Result<usize, String>> + Send>> {
-        Box::pin(async { Err("not implemented".into()) })
-    }
+        session_id: String,
+        count: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<usize, String>> + Send>>;
 
     /// Whether the session has at least one turn that can be undone.
-    ///
-    /// Default implementation returns `Err("not implemented")`; wired
-    /// in Task C1.
     fn can_undo(
         &self,
-        _session_id: String,
-    ) -> Pin<Box<dyn Future<Output = Result<bool, String>> + Send>> {
-        Box::pin(async { Err("not implemented".into()) })
-    }
+        session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<bool, String>> + Send>>;
 
     /// Number of turns currently available for undo.
-    ///
-    /// Default implementation returns `Err("not implemented")`; wired
-    /// in Task C1.
     fn undo_depth(
         &self,
-        _session_id: String,
-    ) -> Pin<Box<dyn Future<Output = Result<usize, String>> + Send>> {
-        Box::pin(async { Err("not implemented".into()) })
-    }
+        session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<usize, String>> + Send>>;
 
     /// Per-turn summaries of every turn currently undoable, oldest-to-
     /// newest. Each entry serialises to (at minimum) `{ messages_removed }`.
-    ///
-    /// Default implementation returns `Err("not implemented")`; wired
-    /// in Task C1.
     fn undo_history(
         &self,
-        _session_id: String,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
-        Box::pin(async { Err("not implemented".into()) })
-    }
+        session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>>;
 
     // ── Attributed-diff review ──────────────────────────────────────────
     //
@@ -410,52 +369,40 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
     // whole point: a delegating agent reviews the session it delegated to,
     // not itself. An RPC-only review surface could not express that from
     // inside a plugin tool.
-    //
-    // Every method defaults to `Err("not implemented")` so an embedder that
-    // predates review keeps compiling and reports the gap honestly at the
-    // call site rather than silently answering "no hunks".
 
     /// The session's composed diff: one JSON object per hunk, shaped like
     /// `ComposedHunk`. A session that never ran a turn has an empty queue,
     /// not an error.
     fn review_list_hunks(
         &self,
-        _session_id: String,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
-        Box::pin(async { Err("not implemented".into()) })
-    }
+        session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>>;
 
     /// Record a decision about one hunk. `state` is `"unreviewed"`,
     /// `"accepted"` or `"rejected"`; rejecting reverts the hunk on disk and
     /// tells the session's agent it was rejected.
     fn review_set_state(
         &self,
-        _session_id: String,
-        _hunk_id: String,
-        _state: String,
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
-        Box::pin(async { Err("not implemented".into()) })
-    }
+        session_id: String,
+        hunk_id: String,
+        state: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
 
     /// Anchor a comment to a line range. `spec` carries
     /// `{ path, line_start, line_end?, body, root?, author? }`; the stored
     /// comment (including its minted id) comes back.
     fn review_comment(
         &self,
-        _session_id: String,
-        _spec: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
-        Box::pin(async { Err("not implemented".into()) })
-    }
+        session_id: String,
+        spec: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>>;
 
     /// Mark a comment answered.
     fn review_resolve_comment(
         &self,
-        _session_id: String,
-        _comment_id: String,
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
-        Box::pin(async { Err("not implemented".into()) })
-    }
+        session_id: String,
+        comment_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
 
     /// Send a message and stream structured response parts.
     ///

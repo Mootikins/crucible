@@ -87,6 +87,59 @@ impl MockDaemonApi {
 }
 
 impl DaemonSessionApi for MockDaemonApi {
+    // The tests here do not call these. A required method with no body
+    // makes a missing override a compile error, not a silent stub.
+    fn context_usage(
+        &self,
+        _: String,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
+        unimplemented!()
+    }
+
+    fn compact(&self, _: String) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+        unimplemented!()
+    }
+
+    fn remove_messages(
+        &self,
+        _: String,
+        _: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<usize, String>> + Send>> {
+        unimplemented!()
+    }
+
+    fn review_list_hunks(
+        &self,
+        _: String,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
+        unimplemented!()
+    }
+
+    fn review_set_state(
+        &self,
+        _: String,
+        _: String,
+        _: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+        unimplemented!()
+    }
+
+    fn review_comment(
+        &self,
+        _: String,
+        _: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
+        unimplemented!()
+    }
+
+    fn review_resolve_comment(
+        &self,
+        _: String,
+        _: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+        unimplemented!()
+    }
+
     /// Answers with the prompt it was given, so a test can assert what
     /// crossed the boundary without a provider behind it.
     fn complete(

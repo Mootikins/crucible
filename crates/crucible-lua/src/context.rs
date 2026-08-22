@@ -313,6 +313,85 @@ mod tests {
     struct StubApi;
 
     impl DaemonSessionApi for StubApi {
+        // The tests here do not call these. A required method with no body
+        // makes a missing override a compile error, not a silent stub.
+        fn complete(
+            &self,
+            _: String,
+            _: serde_json::Value,
+        ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
+            unimplemented!()
+        }
+
+        fn set_output_validation(
+            &self,
+            _: String,
+            _: String,
+        ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+            unimplemented!()
+        }
+
+        fn undo(
+            &self,
+            _: String,
+            _: usize,
+        ) -> Pin<Box<dyn Future<Output = Result<usize, String>> + Send>> {
+            unimplemented!()
+        }
+
+        fn can_undo(
+            &self,
+            _: String,
+        ) -> Pin<Box<dyn Future<Output = Result<bool, String>> + Send>> {
+            unimplemented!()
+        }
+
+        fn undo_depth(
+            &self,
+            _: String,
+        ) -> Pin<Box<dyn Future<Output = Result<usize, String>> + Send>> {
+            unimplemented!()
+        }
+
+        fn undo_history(
+            &self,
+            _: String,
+        ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
+            unimplemented!()
+        }
+
+        fn review_list_hunks(
+            &self,
+            _: String,
+        ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
+            unimplemented!()
+        }
+
+        fn review_set_state(
+            &self,
+            _: String,
+            _: String,
+            _: String,
+        ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+            unimplemented!()
+        }
+
+        fn review_comment(
+            &self,
+            _: String,
+            _: serde_json::Value,
+        ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, String>> + Send>> {
+            unimplemented!()
+        }
+
+        fn review_resolve_comment(
+            &self,
+            _: String,
+            _: String,
+        ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+            unimplemented!()
+        }
+
         fn request_interaction(
             &self,
             _: String,
@@ -464,7 +543,7 @@ mod tests {
             unimplemented!()
         }
 
-        // The three new defaults — override with canned successes so we can
+        // Override with canned successes so we can
         // exercise the (value, nil) Lua return path.
         fn context_usage(
             &self,
