@@ -121,28 +121,6 @@ pub(super) fn display_events_text(id: &str, events: &[LogEvent]) {
             LogEvent::Thinking { content, .. } => {
                 println!("[thinking] {}", truncate(content, 100));
             }
-            LogEvent::Permission { tool, decision, .. } => {
-                println!("[permission] {}:{:?}", tool, decision);
-            }
-            LogEvent::Summary {
-                content,
-                messages_summarized,
-                ..
-            } => {
-                let count = messages_summarized
-                    .map(|n| format!(" ({n} msgs)"))
-                    .unwrap_or_default();
-                println!("[summary{}] {}", count, truncate(content, 100));
-            }
-            LogEvent::BashSpawned { id, command, .. } => {
-                println!("[bash:{}] {}", id, truncate(command, 80));
-            }
-            LogEvent::BashCompleted { id, exit_code, .. } => {
-                println!("[bash:{}] exit={}", id, exit_code);
-            }
-            LogEvent::BashFailed { id, error, .. } => {
-                println!("[bash:{}] FAILED: {}", id, truncate(error, 80));
-            }
             LogEvent::SubagentSpawned {
                 id, session_link, ..
             } => {

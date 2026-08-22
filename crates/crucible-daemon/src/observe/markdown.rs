@@ -1,6 +1,6 @@
 //! JSONL to Markdown rendering for session export
 
-use crate::observe::events::{LogEvent, PermissionOutcome};
+use crate::observe::events::LogEvent;
 use std::fmt::Write;
 
 /// Options for markdown rendering
@@ -155,34 +155,6 @@ fn render_event(output: &mut String, event: &LogEvent, options: &RenderOptions) 
             writeln!(output, "```\n").unwrap();
         }
 
-        LogEvent::Permission {
-            ts,
-            id,
-            tool,
-            decision,
-            reason,
-        } => {
-            if !options.include_tools {
-                return;
-            }
-
-            if options.include_timestamps {
-                writeln!(output, "<!-- permission: {} -->", ts.format("%H:%M:%S")).unwrap();
-            }
-
-            let decision_str = match decision {
-                PermissionOutcome::Allow => "✓ Allowed",
-                PermissionOutcome::Deny => "✗ Denied",
-                PermissionOutcome::AutoAllow => "⚡ Auto-allowed",
-            };
-
-            if let Some(reason) = reason {
-                writeln!(output, "> {decision_str}: `{tool}` (id: {id}) - {reason}\n").unwrap();
-            } else {
-                writeln!(output, "> {decision_str}: `{tool}` (id: {id})\n").unwrap();
-            }
-        }
-
         LogEvent::ToolResult {
             ts,
             id,
@@ -213,27 +185,6 @@ fn render_event(output: &mut String, event: &LogEvent, options: &RenderOptions) 
             }
         }
 
-        LogEvent::Summary {
-            ts,
-            content,
-            messages_summarized,
-        } => {
-            if options.include_timestamps {
-                writeln!(output, "<!-- summary: {} -->", ts.format("%H:%M:%S")).unwrap();
-            }
-            let count_str = messages_summarized
-                .map(|n| format!(" ({n} messages)"))
-                .unwrap_or_default();
-            writeln!(output, "---\n**Context Summary**{count_str}\n").unwrap();
-            writeln!(
-                output,
-                "{}\n",
-                truncate(content, options.max_content_length)
-            )
-            .unwrap();
-            writeln!(output, "---\n").unwrap();
-        }
-
         LogEvent::Error {
             ts,
             message,
@@ -244,54 +195,6 @@ fn render_event(output: &mut String, event: &LogEvent, options: &RenderOptions) 
             }
             let severity = if *recoverable { "Warning" } else { "Error" };
             writeln!(output, "> **{severity}:** {message}\n").unwrap();
-        }
-
-        LogEvent::BashSpawned { ts, id, command } => {
-            if options.include_timestamps {
-                writeln!(output, "<!-- {} -->", ts.format("%H:%M:%S")).unwrap();
-            }
-            writeln!(output, "### Background Task: `{id}`\n").unwrap();
-            writeln!(output, "```bash").unwrap();
-            writeln!(output, "{}", truncate(command, options.max_content_length)).unwrap();
-            writeln!(output, "```\n").unwrap();
-        }
-
-        LogEvent::BashCompleted {
-            ts,
-            id,
-            output: cmd_output,
-            exit_code,
-        } => {
-            if options.include_timestamps {
-                writeln!(output, "<!-- {} -->", ts.format("%H:%M:%S")).unwrap();
-            }
-            writeln!(output, "#### Bash Result (id: {id}, exit: {exit_code})\n").unwrap();
-            writeln!(output, "```").unwrap();
-            writeln!(
-                output,
-                "{}",
-                truncate(cmd_output, options.max_content_length)
-            )
-            .unwrap();
-            writeln!(output, "```\n").unwrap();
-        }
-
-        LogEvent::BashFailed {
-            ts,
-            id,
-            error,
-            exit_code,
-        } => {
-            if options.include_timestamps {
-                writeln!(output, "<!-- {} -->", ts.format("%H:%M:%S")).unwrap();
-            }
-            let exit_str = exit_code
-                .map(|c| format!(", exit: {c}"))
-                .unwrap_or_default();
-            writeln!(output, "#### Bash Failed (id: {id}{exit_str})\n").unwrap();
-            writeln!(output, "```").unwrap();
-            writeln!(output, "{}", truncate(error, options.max_content_length)).unwrap();
-            writeln!(output, "```\n").unwrap();
         }
 
         LogEvent::SubagentSpawned {

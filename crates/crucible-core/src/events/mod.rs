@@ -51,9 +51,8 @@ pub use emitter::{
 
 // Session event types
 pub use session_event::{
-    EntityType, EventCategory, FileChangeKind, InputType, InternalSessionEvent, NoteChangeType,
-    NotePayload, Priority, ScriptingEvent, SessionEvent, SessionEventConfig, TerminalStream,
-    ToolCall, ToolProvider,
+    EventCategory, FileChangeKind, InternalSessionEvent, NoteChangeType, Priority, ScriptingEvent,
+    SessionEvent,
 };
 
 // Ring buffer for event storage

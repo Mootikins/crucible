@@ -111,8 +111,8 @@ pub use mcp_server::McpServerManager;
 pub use observe::{events, id, indexer, markdown, session};
 pub use observe::{
     extract_session_content, load_events, parse_session_log, render_to_markdown, wire_to_log_event,
-    LogEvent, PermissionOutcome, RenderOptions, SessionContent, SessionId, SessionIdError,
-    SessionLogLine, SessionType, TokenUsage,
+    LogEvent, RenderOptions, SessionContent, SessionId, SessionIdError, SessionLogLine,
+    SessionType, TokenUsage,
 };
 pub use permission_bridge::DaemonPermissionGate;
 pub use project_manager::{ProjectError, ProjectManager};

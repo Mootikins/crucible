@@ -19,30 +19,6 @@ use serde_json::Value;
 /// between crates.
 pub use crucible_core::traits::llm::TokenUsage;
 
-/// What the gate did about one permission request, as recorded in the session
-/// log.
-///
-/// The **outcome**, not the verdict.
-/// [`crucible_core::config::components::permissions::PermissionDecision`] is
-/// what the rule engine returns *before* anything happens, and it carries an
-/// `Ask` that this type deliberately does not: by the time a line reaches the
-/// log the prompt has resolved, so `Ask` is not a thing that can have happened.
-///
-/// `AutoAllow` runs the other way — it is a distinction only the log needs. The
-/// gate allowed the call without prompting, and an auditor reading the
-/// transcript wants to see which allows a human actually saw.
-/// Permission decision for a tool call
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PermissionOutcome {
-    /// User allowed the operation
-    Allow,
-    /// User denied the operation
-    Deny,
-    /// Operation was auto-approved (e.g., allowlisted)
-    AutoAllow,
-}
-
 /// A single event in the session log
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -89,20 +65,6 @@ pub enum LogEvent {
         args: Value,
     },
 
-    /// Permission decision for a tool call
-    Permission {
-        ts: DateTime<Utc>,
-        /// Correlation ID matching the ToolCall
-        id: String,
-        /// Tool name
-        tool: String,
-        /// The decision made
-        decision: PermissionOutcome,
-        /// Optional reason for the decision
-        #[serde(skip_serializing_if = "Option::is_none")]
-        reason: Option<String>,
-    },
-
     /// Tool execution result
     ToolResult {
         ts: DateTime<Utc>,
@@ -121,16 +83,6 @@ pub enum LogEvent {
         error: Option<String>,
     },
 
-    /// Context summary (for compaction/resume)
-    Summary {
-        ts: DateTime<Utc>,
-        /// Summarized content replacing earlier messages
-        content: String,
-        /// Number of messages summarized
-        #[serde(skip_serializing_if = "Option::is_none")]
-        messages_summarized: Option<u32>,
-    },
-
     /// Error during session
     Error {
         ts: DateTime<Utc>,
@@ -138,38 +90,6 @@ pub enum LogEvent {
         /// Whether the error is recoverable
         #[serde(default)]
         recoverable: bool,
-    },
-
-    /// Background bash task spawned
-    BashSpawned {
-        ts: DateTime<Utc>,
-        /// Task identifier
-        id: String,
-        /// Shell command being executed
-        command: String,
-    },
-
-    /// Background bash task completed
-    BashCompleted {
-        ts: DateTime<Utc>,
-        /// Task identifier
-        id: String,
-        /// Command output (stdout)
-        output: String,
-        /// Process exit code
-        exit_code: i32,
-    },
-
-    /// Background bash task failed
-    BashFailed {
-        ts: DateTime<Utc>,
-        /// Task identifier
-        id: String,
-        /// Error message
-        error: String,
-        /// Process exit code if available
-        #[serde(skip_serializing_if = "Option::is_none")]
-        exit_code: Option<i32>,
     },
 
     /// Subagent spawned - links to subagent's own session file
@@ -329,70 +249,12 @@ impl LogEvent {
         }
     }
 
-    /// Create a permission event
-    pub fn permission(
-        id: impl Into<String>,
-        tool: impl Into<String>,
-        decision: PermissionOutcome,
-    ) -> Self {
-        LogEvent::Permission {
-            ts: Utc::now(),
-            id: id.into(),
-            tool: tool.into(),
-            decision,
-            reason: None,
-        }
-    }
-
-    /// Create a context summary event
-    pub fn summary(content: impl Into<String>) -> Self {
-        LogEvent::Summary {
-            ts: Utc::now(),
-            content: content.into(),
-            messages_summarized: None,
-        }
-    }
-
     /// Create an error event
     pub fn error(message: impl Into<String>, recoverable: bool) -> Self {
         LogEvent::Error {
             ts: Utc::now(),
             message: message.into(),
             recoverable,
-        }
-    }
-
-    pub fn bash_spawned(id: impl Into<String>, command: impl Into<String>) -> Self {
-        LogEvent::BashSpawned {
-            ts: Utc::now(),
-            id: id.into(),
-            command: command.into(),
-        }
-    }
-
-    pub fn bash_completed(
-        id: impl Into<String>,
-        output: impl Into<String>,
-        exit_code: i32,
-    ) -> Self {
-        LogEvent::BashCompleted {
-            ts: Utc::now(),
-            id: id.into(),
-            output: output.into(),
-            exit_code,
-        }
-    }
-
-    pub fn bash_failed(
-        id: impl Into<String>,
-        error: impl Into<String>,
-        exit_code: Option<i32>,
-    ) -> Self {
-        LogEvent::BashFailed {
-            ts: Utc::now(),
-            id: id.into(),
-            error: error.into(),
-            exit_code,
         }
     }
 
@@ -444,13 +306,8 @@ impl LogEvent {
             | LogEvent::Assistant { ts, .. }
             | LogEvent::Thinking { ts, .. }
             | LogEvent::ToolCall { ts, .. }
-            | LogEvent::Permission { ts, .. }
             | LogEvent::ToolResult { ts, .. }
-            | LogEvent::Summary { ts, .. }
             | LogEvent::Error { ts, .. }
-            | LogEvent::BashSpawned { ts, .. }
-            | LogEvent::BashCompleted { ts, .. }
-            | LogEvent::BashFailed { ts, .. }
             | LogEvent::SubagentSpawned { ts, .. }
             | LogEvent::SubagentCompleted { ts, .. }
             | LogEvent::SubagentFailed { ts, .. } => *ts,
@@ -833,34 +690,6 @@ mod tests {
     }
 
     #[test]
-    fn test_bash_spawned_json() {
-        let event = LogEvent::bash_spawned("task-001", "cargo build");
-        let json = event.to_jsonl().unwrap();
-
-        assert!(json.contains("\"type\":\"bash_spawned\""));
-        assert!(json.contains("\"id\":\"task-001\""));
-        assert!(json.contains("\"command\":\"cargo build\""));
-    }
-
-    #[test]
-    fn test_bash_completed_json() {
-        let event = LogEvent::bash_completed("task-001", "Build succeeded", 0);
-        let json = event.to_jsonl().unwrap();
-
-        assert!(json.contains("\"type\":\"bash_completed\""));
-        assert!(json.contains("\"exit_code\":0"));
-    }
-
-    #[test]
-    fn test_bash_failed_json() {
-        let event = LogEvent::bash_failed("task-001", "Command failed", Some(1));
-        let json = event.to_jsonl().unwrap();
-
-        assert!(json.contains("\"type\":\"bash_failed\""));
-        assert!(json.contains("\"exit_code\":1"));
-    }
-
-    #[test]
     fn test_subagent_spawned_json() {
         let event = LogEvent::subagent_spawned(
             "sub-20260124-1432-beef",
@@ -903,9 +732,6 @@ mod tests {
     #[test]
     fn test_background_events_roundtrip() {
         let events = vec![
-            LogEvent::bash_spawned("t1", "ls -la"),
-            LogEvent::bash_completed("t1", "output", 0),
-            LogEvent::bash_failed("t2", "error", Some(1)),
             LogEvent::subagent_spawned("t3", "[[.subagents/t3/session]]", "prompt"),
             LogEvent::subagent_completed("t3", "[[.subagents/t3/session]]", "result"),
             LogEvent::subagent_failed("t4", "[[.subagents/t4/session]]", "failed"),

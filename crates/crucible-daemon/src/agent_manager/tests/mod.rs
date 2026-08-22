@@ -1,15 +1,11 @@
 use super::*;
 use crate::test_support::{kiln_name, temp_session_manager, temp_session_manager_with_kilns};
 use async_trait::async_trait;
-use crucible_core::events::{InternalSessionEvent, SessionEvent};
-use crucible_core::parser::ParsedNote;
+use crucible_core::events::SessionEvent;
 use crucible_core::session::SessionType;
 use crucible_core::test_support::EnvVarGuard;
 use crucible_core::traits::chat::{AgentHandle, ChatResult};
-use crucible_core::traits::knowledge::NoteInfo;
-use crucible_core::traits::KnowledgeRepository;
 use crucible_core::turn::{StopReason, TurnEvent};
-use crucible_core::types::SearchResult;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex as StdMutex};
 use tempfile::TempDir;
@@ -240,29 +236,6 @@ impl AgentHandle for PromptCapturingAgent {
     }
     async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
         Ok(())
-    }
-}
-
-struct MockKnowledgeRepository {
-    results: Vec<SearchResult>,
-}
-
-#[async_trait]
-impl KnowledgeRepository for MockKnowledgeRepository {
-    async fn get_note_by_name(&self, _name: &str) -> crucible_core::Result<Option<ParsedNote>> {
-        Ok(None)
-    }
-
-    async fn list_notes(&self, _path: Option<&str>) -> crucible_core::Result<Vec<NoteInfo>> {
-        Ok(vec![])
-    }
-
-    async fn search_vectors(
-        &self,
-        _vector: Vec<f32>,
-        _limit: usize,
-    ) -> crucible_core::Result<Vec<SearchResult>> {
-        Ok(self.results.clone())
     }
 }
 

@@ -633,6 +633,7 @@ Recommend: delete `ContentHasher` too once B17 lands and `rg ContentHasher` show
 **B7. Session event parallel enums.** `SessionEventMessage` (wire, canonical), `TurnPayload` and seven groups (`protocol/session_events/`), `SessionEvent` + `InternalSessionEvent` (scripting, 12 of 52 variants live), `LogEvent` (5 of 16 written), `rpc_client/client/types.rs:10 SessionEvent`, web `ChatEvent` (6 dead variants). Families from the duplicate audit: `PostLlmCall` x2, `SessionEnded` vs `Ended`, `Delegation*` x2, `BashTask*` vs `BashJob*`, `Interaction*` x2, `Subagent*` x2, file/note variants vs `SystemPayload`.
 Options: (a) delete the 40 dead scripting variants and the 11 dead `LogEvent` variants; keep the rest; (b) make the scripting enum a projection of the wire enum (`From<SessionEventMessage>`); (c) leave.
 Recommend (a) now, (b) as a follow-up after B18 removes the markdown transcript format. Payoff: a new event is one wire variant plus one projection arm, not five enums. Risk: Lua handlers read the scripting names (`handlers/conversion.rs`); a deleted variant that a script matches fails silently at runtime. Grep `runtime/` for each name before deletion. Cost: L.
+Result, 2026-08-22: (a) landed. Removed 11 `SessionEvent` and 31 `InternalSessionEvent` variants, and the types only they carried (`SessionEventConfig`, `NotePayload`, `events::ToolCall`, `EntityType`, `InputType`, `TerminalStream`, `ToolProvider`). `LogEvent` had 11 live variants, not 5: `wire_to_log_event` yields `Thinking`, and the daemon writes `Subagent*`. Removed the 5 with no writer (`Permission`, `Summary`, `Bash*`) and `PermissionOutcome`. `runtime/` matched none of the names. (b) stays open.
 
 **B8. `StreamingChunk` vs `TurnEvent`.** `acp/streaming.rs:23`, `turn/mod.rs:41`.
 Recommend: add `name` to `StreamingChunk::ToolEnd` and `impl From<StreamingChunk> for TurnEvent`; then delete `send_prompt_with_streaming`, `process_streaming_message`, `apply_session_update` and the four diff-extraction copies (no production caller). Payoff: ACP becomes one translation. Risk: M; `acp_handle.rs` is the only consumer. Cost: M.
@@ -828,8 +829,8 @@ For each item: run `rg -nw <name>` over `crates/ runtime/ docs/ scripts/ example
 - [ ] `EventCategory` `events/session_event/types.rs:262`
 - [ ] `InputType`, `TerminalStream` `events/session_event/types.rs:113`
 - [ ] `SessionEventConfig`, `NotePayload` builders `events/session_event/payloads.rs:31`
-- [ ] 30 of 38 `InternalSessionEvent` variants (list in plan_data) — feeds Tier 3 B7
-- [ ] 8 of 14 `SessionEvent` variants — feeds Tier 3 B7
+- [x] 30 of 38 `InternalSessionEvent` variants (list in plan_data) — done in Tier 3 B7 (31 removed)
+- [x] 8 of 14 `SessionEvent` variants — done in Tier 3 B7 (11 removed)
 
 **crucible-core other**
 - [ ] `Session::is_granular`, `recording_jsonl_path`, `artifacts_path`, `can_access_kiln` `session/types/session.rs:398`

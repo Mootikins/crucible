@@ -4,11 +4,7 @@ use super::helpers::truncate;
 use super::*;
 use std::path::PathBuf;
 
-mod awaiting_input;
-mod event_type;
-mod pre_events;
-mod serialization;
-mod session_state;
+mod events;
 mod types;
 
 /// Cross-platform test path helper

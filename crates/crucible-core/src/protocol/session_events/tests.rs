@@ -6,7 +6,7 @@
 use super::*;
 use crate::events::session_event::{FileChangeKind, InternalSessionEvent, ScriptingEvent};
 use crate::events::SessionEvent;
-use crate::interaction::{InteractionRequest, InteractionResponse, PermRequest};
+use crate::interaction::{InteractionRequest, PermRequest};
 use crate::protocol::SessionEventMessage;
 use crate::types::mcp_status::McpServerInfo;
 use crate::types::{PluginStatusEntry, ProviderInfo};
@@ -347,22 +347,21 @@ fn every_scripting_event_variant_is_listed() {
     assert_eq!(listed, known, "ScriptingEvent::ALL is missing a variant");
 }
 
-/// Every shared name is the one its own event reports.
+/// Every shared name with a scripting event is the one that event reports.
 ///
 /// The correspondence this file used to test — `as_scripting_event` against
 /// `event_type` — is now a type identity: both read the name off
 /// [`ScriptingEvent`], so they cannot disagree and nothing needs to check it.
-/// That test `include_str!`d two files, sliced each between literal markers,
-/// and collected every quoted lowercase-ish literal it found, with a
-/// `len() > 20` canary admitting the extraction was fragile.
 ///
 /// What is left to check is the arms themselves: an `event_type` arm written
 /// back as a bare literal silently reopens the drift. Red-proofed by doing
-/// exactly that — `Self::ToolCalled { .. } => "tool_call"` fails here.
+/// exactly that — `Self::MessageReceived { .. } => "user_message"` fails here.
 #[test]
 fn every_scripting_name_is_one_an_event_reports() {
     for scripting in ScriptingEvent::ALL {
-        let event = event_reporting(*scripting);
+        let Some(event) = event_reporting(*scripting) else {
+            continue;
+        };
         assert_eq!(
             event.event_type(),
             scripting.as_str(),
@@ -371,59 +370,39 @@ fn every_scripting_name_is_one_an_event_reports() {
     }
 }
 
-/// One `SessionEvent` per [`ScriptingEvent`], for the round trip above.
+/// The `SessionEvent` that reports each [`ScriptingEvent`], for the round
+/// trip above.
 ///
-/// Exhaustive on purpose: a variant added to the shared set must be given an
-/// event that reports it, or this does not compile.
-fn event_reporting(scripting: ScriptingEvent) -> SessionEvent {
+/// Exhaustive on purpose: a variant added to the shared set must be placed
+/// here, or this does not compile. `None` is a name the wire reports through
+/// `as_scripting_event` with no scripting-side event behind it; plan T3-B7
+/// removed those seven variants because nothing constructed them.
+fn event_reporting(scripting: ScriptingEvent) -> Option<SessionEvent> {
     match scripting {
-        ScriptingEvent::MessageReceived => SessionEvent::MessageReceived {
+        ScriptingEvent::MessageReceived => Some(SessionEvent::MessageReceived {
             content: String::new(),
             participant_id: String::new(),
-        },
-        ScriptingEvent::TextDelta => SessionEvent::TextDelta {
-            delta: String::new(),
-            seq: 0,
-        },
-        ScriptingEvent::AgentThinking => SessionEvent::AgentThinking {
-            thought: String::new(),
-        },
-        ScriptingEvent::AgentResponded => SessionEvent::AgentResponded {
-            content: String::new(),
-            tool_calls: Vec::new(),
-        },
-        ScriptingEvent::ToolCalled => SessionEvent::ToolCalled {
-            name: String::new(),
-            args: serde_json::Value::Null,
-            description: None,
-            source: None,
-        },
-        ScriptingEvent::ToolCompleted => SessionEvent::ToolCompleted {
-            name: String::new(),
-            result: String::new(),
-            error: None,
-            terminate: false,
-        },
-        ScriptingEvent::SessionEnded => SessionEvent::SessionEnded {
-            reason: String::new(),
-        },
-        ScriptingEvent::InteractionRequested => SessionEvent::InteractionRequested {
+        }),
+        ScriptingEvent::InteractionRequested => Some(SessionEvent::InteractionRequested {
             request_id: String::new(),
             request: InteractionRequest::Permission(PermRequest::bash(["true"])),
-        },
-        ScriptingEvent::InteractionCompleted => SessionEvent::InteractionCompleted {
-            request_id: String::new(),
-            response: InteractionResponse::Cancelled,
-        },
-        ScriptingEvent::PrecognitionComplete => {
-            SessionEvent::internal(InternalSessionEvent::PrecognitionComplete {
+        }),
+        ScriptingEvent::PrecognitionComplete => Some(SessionEvent::internal(
+            InternalSessionEvent::PrecognitionComplete {
                 notes_count: 0,
                 query_summary: String::new(),
                 kilns_searched: 0,
                 kilns_filtered: 0,
                 kilns_failed: 0,
-            })
-        }
+            },
+        )),
+        ScriptingEvent::TextDelta
+        | ScriptingEvent::AgentThinking
+        | ScriptingEvent::AgentResponded
+        | ScriptingEvent::ToolCalled
+        | ScriptingEvent::ToolCompleted
+        | ScriptingEvent::SessionEnded
+        | ScriptingEvent::InteractionCompleted => None,
     }
 }
 

@@ -121,20 +121,15 @@ pub use events::{
     EmitOutcome,
     EmitResult,
     // Session event types
-    EntityType,
     EventEmitter,
     EventError,
     FileChangeKind,
     HandlerErrorInfo,
     NoOpEmitter,
     NoteChangeType,
-    NotePayload,
     Priority,
     SessionEvent,
-    SessionEventConfig,
     SharedEventBus,
-    ToolCall,
-    ToolProvider,
 };
 
 #[derive(Debug, thiserror::Error)]

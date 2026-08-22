@@ -527,8 +527,8 @@ Rust; `KilnFileKind::of` is the single file-kind predicate guarded by A2f in
 | `JobPayload`, `ReviewPayload`, `NotificationPayload`, `WorkflowPayload`, `SystemPayload` | `lifecycle.rs:44,116,156,178,233` | 7, 3, 2, 8, 13 variants |
 | `EventDecodeError` | `crucible-core/src/protocol/session_events/mod.rs:227` | Decode boundary error |
 | `Request`, `Response`, `RpcError`, `RequestId` | `crucible-core/src/protocol/rpc/mod.rs:17,27,38,11` | JSON-RPC 2.0 envelope |
-| `SessionEvent` | `crucible-core/src/events/session_event/mod.rs:175` | Scripting vocabulary, 14 variants; Lua sees it as a flat table |
-| `InternalSessionEvent` | `crucible-core/src/events/session_event/internal.rs:26` | 38 variants boxed in `SessionEvent::Internal` |
+| `SessionEvent` | `crucible-core/src/events/session_event/mod.rs` | Scripting vocabulary, 4 variants after plan T3-B7; Lua sees it as a flat table |
+| `InternalSessionEvent` | `crucible-core/src/events/session_event/internal.rs` | 7 variants boxed in `SessionEvent::Internal` (38 before plan T3-B7) |
 | `ScriptingEvent` | `crucible-core/src/events/session_event/mod.rs:75` | The ten names both vocabularies share |
 | `EventEmitter`, `NoOpEmitter`, `EmitOutcome` | `crucible-core/src/events/emitter.rs:293,366,151` | Emitter trait for the watch pipeline |
 | `EventRing` | `crucible-core/src/events/ring.rs:74` | Bounded ring; write-only in production |
@@ -539,7 +539,7 @@ Rust; `KilnFileKind::of` is the single file-kind predicate guarded by A2f in
 | `SYSTEM_SESSION`, `WEBHOOK_SESSION` | `crucible-daemon/src/event_map.rs:55,58` | Session ids for daemon-wide events |
 | `SubscriptionManager`, `ClientId`, `WILDCARD_SESSION` | `crucible-daemon/src/subscription.rs:74,20,50` | Which client listens to which session |
 | `DeferredShutdown` | `crucible-daemon/src/rpc/context.rs:30` | Arms shutdown; fired after the reply is written |
-| `LogEvent`, `PermissionOutcome` | `crucible-daemon/src/observe/events.rs:49,37` | Presentation event in `session.jsonl`, 16 variants |
+| `LogEvent` | `crucible-daemon/src/observe/events.rs` | Presentation event in `session.jsonl`, 11 variants (16 before plan T3-B7) |
 | `RenderOptions` | `crucible-daemon/src/observe/markdown.rs:8` | Markdown export flags |
 | `RecordingWriter`, `ReplaySession` | `crucible-daemon/src/recording.rs:21`, `replay.rs:14` | `recording.jsonl` writer and replayer |
 | `RecordedEvent`, `RecordingHeader`, `RecordingFooter` | `crucible-core/src/recording.rs:31,15,66` | JSONL frames |
@@ -577,11 +577,11 @@ synchronous except `EventEmitter::emit`.
 
 **Confirmed problems.**
 
-- The scripting vocabulary is mostly hollow: production constructs 12 of 52
-  `SessionEvent` plus `InternalSessionEvent` variants; the `identifier`,
-  `priority`, `category`, `estimate_tokens`, `payload` families (about 700
-  lines) have no caller since the Reactor removal noted at
-  `crucible-core/src/events/mod.rs:14-30`.
+- The scripting vocabulary was mostly hollow: production constructed 12 of 52
+  `SessionEvent` plus `InternalSessionEvent` variants. Plan T3-B7 removed the
+  other 40 on 2026-08-22; 11 remain. The `identifier`, `priority`,
+  `category`, `estimate_tokens`, `payload` families still have no caller
+  since the Reactor removal noted at `crucible-core/src/events/mod.rs:14-30`.
 - `crucible-core/src/events/markdown/` (1,148 lines) is unreachable; the live
   renderer is `crucible-daemon/src/observe/markdown.rs`. The daemon also
   carries a second renderer, `observe/serde_md.rs` (687 lines), which copies
@@ -594,14 +594,15 @@ synchronous except `EventEmitter::emit`.
   calls. `EventError` (five variants) is never constructed;
   `EmitOutcome.cancelled/.errors` are never set, so
   `watch/handlers/indexing.rs:255-263` is dead.
-- Parallel enums across the two vocabularies: `InternalSessionEvent::PostLlmCall`
-  equals `TurnPayload::PostLlmCall` field for field (`internal.rs:223`,
-  `turn.rs:216`); `SessionEvent::SessionEnded` equals `TurnPayload::Ended`;
-  `SessionEvent::Interaction*` equals `TurnPayload::Interaction*`;
-  `Delegation*` and `BashTask*` mirror `JobPayload` with renamed fields.
-  `LogEvent::Bash*` and `Subagent*` (`observe/events.rs:144-206`) mirror both
-  and have no production writer; `wire_to_log_event` maps five wire events
-  while `LogEvent` has 16 variants.
+- Parallel enums across the two vocabularies, before plan T3-B7:
+  `InternalSessionEvent::PostLlmCall` equalled `TurnPayload::PostLlmCall`
+  field for field; `SessionEvent::SessionEnded` equalled `TurnPayload::Ended`;
+  `SessionEvent::Interaction*` equalled `TurnPayload::Interaction*`;
+  `Delegation*` and `BashTask*` mirrored `JobPayload` with renamed fields;
+  `LogEvent::Bash*` had no production writer. All of those are gone. What
+  remains: `SessionEvent::InteractionRequested` beside
+  `TurnPayload::InteractionRequested` (the CLI constructs it), and
+  `LogEvent::Subagent*` beside `JobPayload` (the daemon writes them).
 - `Group::of` is a hand-maintained 70-name string match that mirrors the
   `rename_all` output of eight enums; drift surfaces at runtime as
   `UnknownEvent` (`session_events/mod.rs:133`).
@@ -620,9 +621,7 @@ synchronous except `EventEmitter::emit`.
   text (`rpc_client/client/mod.rs`); the web sniffs `-32602` as a substring
   (`crucible-web/src/error.rs:88`, `routes/search.rs:563`);
   `services/daemon.rs:213` retries on a "broken pipe" substring.
-- `SessionEvent::ToolCalled.description/source` are always `None` at the one
-  production constructor (`tools/extended_mcp_server.rs`).
-  `Request.jsonrpc` carries `#[allow(dead_code)]` and is read nowhere
+- `Request.jsonrpc` carries `#[allow(dead_code)]` and is read nowhere
   (`protocol/rpc/mod.rs:18`).
 - `ClientId::as_u64` (`subscription.rs:32`) and `DeferredShutdown::subscribe`
   (`rpc/context.rs:56`) are production-dead.
@@ -630,8 +629,6 @@ synchronous except `EventEmitter::emit`.
   job; callers must inspect `info.status`. `running_count`,
   `total_running_count` are test-only behind `#[allow(dead_code)]`
   (`background_manager/mod.rs:195,202`).
-- `PermissionOutcome` (`observe/events.rs:37`) is a near-twin of
-  `PermissionDecision`; no production code writes `LogEvent::Permission`.
 - Hand-rolled calendar math in `events/markdown/format.rs:319-392` and
   `parse.rs:58-164` beside a `chrono` dependency.
 - Still true from the older notes: the daemon has no request middleware;

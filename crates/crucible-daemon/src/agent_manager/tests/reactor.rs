@@ -198,31 +198,6 @@ async fn reactor_lua_handler_discovery_empty_dir() {
     assert_eq!(prompt.as_deref(), Some("hello"));
 }
 
-#[test]
-fn event_patterns_match_event_type() {
-    let _repo = MockKnowledgeRepository { results: vec![] };
-
-    let pre_llm = SessionEvent::internal(InternalSessionEvent::PreLlmCall {
-        prompt: String::new(),
-        model: String::new(),
-    });
-    assert_eq!(pre_llm.event_type(), "pre_llm_call");
-
-    let post_llm = SessionEvent::internal(InternalSessionEvent::PostLlmCall {
-        response_summary: String::new(),
-        model: String::new(),
-        duration_ms: 0,
-        token_count: None,
-    });
-    assert_eq!(post_llm.event_type(), "post_llm_call");
-
-    let pre_tool = SessionEvent::internal(InternalSessionEvent::PreToolCall {
-        name: String::new(),
-        args: serde_json::Value::Null,
-    });
-    assert_eq!(pre_tool.event_type(), "pre_tool_call");
-}
-
 #[tokio::test]
 async fn runtime_transform_context_appends_system_message() {
     // Pi-style two-stage seam: a transform_context handler operates on

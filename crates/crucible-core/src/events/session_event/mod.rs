@@ -1,30 +1,24 @@
 //! Session event types for the Crucible event system.
 //!
-//! This module defines the canonical `SessionEvent` enum that represents all events
-//! flowing through the Crucible system. Events are categorized by their source:
+//! This module defines the `SessionEvent` enum the Lua bridge and the
+//! file-watch bus dispatch on. Events are categorized by their source:
 //!
 //! - **User events**: Messages from participants
-//! - **Agent events**: Responses and thinking from AI agents
-//! - **Tool events**: Tool calls and completions
-//! - **Session lifecycle**: Start, compaction, end
-//! - **Subagent events**: Spawning and completion of subagents
-//! - **Streaming events**: Incremental text deltas
-//! - **Note events**: File system changes to notes
-//! - **Storage events**: Database persistence (entities, blocks, relations, embeddings)
-//! - **MCP events**: Model Context Protocol server connections
+//! - **Interaction events**: Structured prompts waiting on a client
+//! - **Custom events**: Named events with a JSON payload
+//! - **Internal events**: File, note and enrichment signals ([`InternalSessionEvent`])
 //!
 //! # Example
 //!
-//! ```ignore
-//! use crucible_core::events::{SessionEvent, NoteChangeType};
+//! ```
+//! use crucible_core::events::{SessionEvent, InternalSessionEvent, NoteChangeType};
 //! use std::path::PathBuf;
 //!
-//! let event = SessionEvent::NoteModified {
+//! let event = SessionEvent::internal(InternalSessionEvent::NoteModified {
 //!     path: PathBuf::from("/notes/test.md"),
 //!     change_type: NoteChangeType::Content,
-//! };
+//! });
 //!
-//! assert!(event.category() == EventCategory::Note);
 //! assert_eq!(event.event_type(), "note_modified");
 //! ```
 
@@ -32,8 +26,6 @@
 mod deserialize;
 pub mod helpers;
 pub mod internal;
-pub mod payloads;
-pub mod tool_call;
 pub mod types;
 
 #[cfg(test)]
@@ -45,12 +37,7 @@ use serde_json::Value as JsonValue;
 use helpers::{estimate_content_len, identifier_for_event, payload_for_event, truncate};
 
 pub use internal::InternalSessionEvent;
-pub use payloads::{NotePayload, SessionEventConfig};
-pub use tool_call::ToolCall;
-pub use types::{
-    EntityType, EventCategory, FileChangeKind, InputType, NoteChangeType, Priority, TerminalStream,
-    ToolProvider,
-};
+pub use types::{EventCategory, FileChangeKind, NoteChangeType, Priority};
 
 /// The ten scripting names the transport vocabulary also has a payload for.
 ///
@@ -64,11 +51,15 @@ pub use types::{
 /// holding them together was a test that `include_str!`d two files and sliced
 /// between literal markers. Now [`SessionEvent::event_type`] and
 /// [`TurnPayload::as_scripting_event`](crate::protocol::session_events::TurnPayload::as_scripting_event)
-/// return the same constant, so they cannot disagree and the scan is gone.
+/// read the same constant, so they cannot disagree and the scan is gone.
 ///
 /// This is the **overlap**, not the whole scripting vocabulary: an event with
-/// no transport payload — `session_started`, `custom`, every
-/// [`InternalSessionEvent`] but one — keeps its literal in `event_type`.
+/// no transport payload — `custom`, every [`InternalSessionEvent`] but one —
+/// keeps its literal in `event_type`. Nor is it the whole transport
+/// vocabulary: only three of the ten still have a [`SessionEvent`] variant.
+/// The other seven were scripting variants nothing ever constructed; plan
+/// T3-B7 removed them, and the names stay here because
+/// `as_scripting_event` still reports them for the wire.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(test, derive(strum::EnumIter))]
 pub enum ScriptingEvent {
@@ -138,17 +129,15 @@ impl std::fmt::Display for ScriptingEvent {
 
 /// Events that flow through a session — the **scripting** vocabulary.
 ///
-/// This type is **not** wire-facing, despite what this comment used to say.
-/// Nothing serializes it onto the RPC wire; its one serialization target is Lua tables
+/// This type is **not** wire-facing. Nothing serializes it onto the RPC wire;
+/// its one serialization target is Lua tables
 /// (`crucible-lua/src/handlers/conversion.rs`). Its other use is
-/// dispatch, which is what `crucible-daemon/src/observe/events.rs` says plainly.
+/// dispatch on the file-watch bus (`events::emitter`).
 ///
 /// The transport vocabulary is
 /// [`SessionEventPayload`](crate::protocol::session_events::SessionEventPayload),
-/// carried by `SessionEventMessage`. The two are disjoint by design and spell ten
-/// of the same events differently — this type's `tool_called`/`tool_completed`/
-/// `agent_responded` are the wire's `tool_call`/`tool_result`/
-/// `message_complete`. See
+/// carried by `SessionEventMessage`. The two are disjoint by design and spell
+/// some of the same events differently; see
 /// [`TurnPayload::as_scripting_event`](crate::protocol::session_events::TurnPayload::as_scripting_event)
 /// for the mapping, and that module's doc for why unifying them is not on the
 /// table.
@@ -156,24 +145,14 @@ impl std::fmt::Display for ScriptingEvent {
 /// Internal pipeline events live in [`InternalSessionEvent`] and are wrapped via
 /// the `Internal` variant for reactor dispatch.
 ///
-/// # Event Categories
-///
-/// - **User/participant**: `MessageReceived`
-/// - **Agent**: `AgentResponded`, `AgentThinking`
-/// - **Tool**: `ToolCalled`, `ToolCompleted`
-/// - **Session lifecycle**: `SessionStarted`, `SessionEnded`
-/// - **Delegation**: `DelegationSpawned`, `DelegationCompleted`, `DelegationFailed`
-/// - **Streaming**: `TextDelta`
-/// - **Interaction**: `InteractionRequested`, `InteractionCompleted`
-/// - **Custom**: `Custom` for extensibility
-/// - **Internal**: Wrapper for [`InternalSessionEvent`]
+/// This enum once mirrored the transport vocabulary with eleven more variants
+/// (`ToolCalled`, `TextDelta`, `DelegationSpawned`, ...). No producer existed
+/// for any of them: the daemon raises Lua stages as `Custom` events and the
+/// turn loop speaks `SessionEventMessage`. Plan T3-B7 removed them.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
 pub enum SessionEvent {
-    // ─────────────────────────────────────────────────────────────────────
-    // User/participant events
-    // ─────────────────────────────────────────────────────────────────────
     /// Message received from a participant.
     MessageReceived {
         /// The message content.
@@ -182,82 +161,6 @@ pub enum SessionEvent {
         participant_id: String,
     },
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Agent events
-    // ─────────────────────────────────────────────────────────────────────
-    /// Agent responded with content and/or tool calls.
-    AgentResponded {
-        /// The response content.
-        content: String,
-        /// Tool calls made by the agent.
-        tool_calls: Vec<ToolCall>,
-    },
-
-    /// Agent is thinking (intermediate state).
-    AgentThinking {
-        /// The thought content.
-        thought: String,
-    },
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Tool events
-    // ─────────────────────────────────────────────────────────────────────
-    /// Tool was called.
-    ToolCalled {
-        /// Name of the tool being called.
-        name: String,
-        /// Arguments passed to the tool.
-        args: JsonValue,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        description: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        source: Option<String>,
-    },
-
-    /// Tool execution completed.
-    ToolCompleted {
-        /// Name of the tool that completed.
-        name: String,
-        /// Result of the tool execution.
-        result: String,
-        /// Error message if the tool failed.
-        error: Option<String>,
-        /// Whether this tool requested the agent turn end after this batch.
-        /// Consumed by the conjunctive early-stop in the agent loop; surfaced
-        /// to clients so UI can render a "Terminated" indicator.
-        #[serde(default)]
-        terminate: bool,
-    },
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Session lifecycle
-    // ─────────────────────────────────────────────────────────────────────
-    /// Session started with configuration.
-    SessionStarted {
-        /// Session configuration.
-        config: SessionEventConfig,
-    },
-
-    /// Session ended.
-    SessionEnded {
-        /// Reason for ending the session.
-        reason: String,
-    },
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Streaming events
-    // ─────────────────────────────────────────────────────────────────────
-    /// Incremental text delta from agent (for streaming responses).
-    TextDelta {
-        /// The text chunk.
-        delta: String,
-        /// Sequence number for ordering.
-        seq: u64,
-    },
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Interaction events
-    // ─────────────────────────────────────────────────────────────────────
     /// Agent/tool requests structured user interaction.
     InteractionRequested {
         /// Unique ID for correlating request with response.
@@ -266,53 +169,6 @@ pub enum SessionEvent {
         request: crate::interaction::InteractionRequest,
     },
 
-    /// User responded to an interaction request.
-    InteractionCompleted {
-        /// The request ID this response corresponds to.
-        request_id: String,
-        /// The user's response.
-        response: crate::interaction::InteractionResponse,
-    },
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Delegation events (session-to-session delegation via ACP)
-    // ─────────────────────────────────────────────────────────────────────
-    /// Delegation was spawned (child session created).
-    DelegationSpawned {
-        /// Unique identifier for the delegation.
-        delegation_id: String,
-        /// Prompt given to the delegated session.
-        prompt: String,
-        /// Parent session ID that initiated the delegation.
-        parent_session_id: String,
-        /// Target agent name if delegating to a different agent.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        target_agent: Option<String>,
-    },
-
-    /// Delegation completed successfully.
-    DelegationCompleted {
-        /// Identifier of the completed delegation.
-        delegation_id: String,
-        /// Summary of the delegation result.
-        result_summary: String,
-        /// Parent session ID that initiated the delegation.
-        parent_session_id: String,
-    },
-
-    /// Delegation failed.
-    DelegationFailed {
-        /// Identifier of the failed delegation.
-        delegation_id: String,
-        /// Error message.
-        error: String,
-        /// Parent session ID that initiated the delegation.
-        parent_session_id: String,
-    },
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Custom events
-    // ─────────────────────────────────────────────────────────────────────
     /// Custom event for extensibility.
     Custom {
         /// Name/identifier of the custom event.
@@ -335,24 +191,13 @@ impl SessionEvent {
     /// Get the event type name for filtering and pattern matching.
     ///
     /// Returns a stable string identifier that can be used for:
-    /// - Handler registration (e.g., `bus.on("tool_called", ...)`)
+    /// - Handler registration (e.g., `bus.on("message_received", ...)`)
     /// - Event filtering in queries
     /// - Logging and debugging
     pub fn event_type(&self) -> &'static str {
         match self {
             Self::MessageReceived { .. } => ScriptingEvent::MessageReceived.as_str(),
-            Self::AgentResponded { .. } => ScriptingEvent::AgentResponded.as_str(),
-            Self::AgentThinking { .. } => ScriptingEvent::AgentThinking.as_str(),
-            Self::ToolCalled { .. } => ScriptingEvent::ToolCalled.as_str(),
-            Self::ToolCompleted { .. } => ScriptingEvent::ToolCompleted.as_str(),
-            Self::SessionStarted { .. } => "session_started",
-            Self::SessionEnded { .. } => ScriptingEvent::SessionEnded.as_str(),
-            Self::TextDelta { .. } => ScriptingEvent::TextDelta.as_str(),
             Self::InteractionRequested { .. } => ScriptingEvent::InteractionRequested.as_str(),
-            Self::InteractionCompleted { .. } => ScriptingEvent::InteractionCompleted.as_str(),
-            Self::DelegationSpawned { .. } => "delegation_spawned",
-            Self::DelegationCompleted { .. } => "delegation_completed",
-            Self::DelegationFailed { .. } => "delegation_failed",
             Self::Custom { .. } => "custom",
             Self::Internal(inner) => inner.event_type(),
         }
@@ -367,21 +212,11 @@ impl SessionEvent {
 
     /// Broad classification used for filtering events by concern.
     ///
-    /// Each event belongs to exactly one category; see [`EventCategory`] for the
-    /// tiebreak rule when an event could plausibly fit multiple categories.
+    /// Each event belongs to exactly one category.
     pub fn category(&self) -> EventCategory {
         match self {
             Self::MessageReceived { .. } => EventCategory::Message,
-            Self::AgentResponded { .. } | Self::AgentThinking { .. } => EventCategory::Agent,
-            Self::ToolCalled { .. } | Self::ToolCompleted { .. } => EventCategory::Tool,
-            Self::SessionStarted { .. } | Self::SessionEnded { .. } => EventCategory::Lifecycle,
-            Self::DelegationSpawned { .. }
-            | Self::DelegationCompleted { .. }
-            | Self::DelegationFailed { .. } => EventCategory::Delegation,
-            Self::TextDelta { .. } => EventCategory::Streaming,
-            Self::InteractionRequested { .. } | Self::InteractionCompleted { .. } => {
-                EventCategory::Interaction
-            }
+            Self::InteractionRequested { .. } => EventCategory::Interaction,
             Self::Custom { .. } => EventCategory::Custom,
             Self::Internal(inner) => inner.category(),
         }
@@ -397,7 +232,6 @@ impl SessionEvent {
     /// - `FileChanged(Created)` → High (new files should be indexed promptly)
     /// - `FileChanged(Modified)` → Normal (standard processing)
     /// - `FileDeleted` → Low (cleanup can wait)
-    /// - `EmbeddingRequested` → uses the embedded priority field
     /// - All other events → Normal (default priority)
     ///
     /// # Example
@@ -420,7 +254,8 @@ impl SessionEvent {
     pub fn priority(&self) -> Priority {
         match self {
             Self::Internal(inner) => inner.priority(),
-            _ => Priority::Normal,
+            Self::MessageReceived { .. } | Self::InteractionRequested { .. } => Priority::Normal,
+            Self::Custom { .. } => Priority::Normal,
         }
     }
 
@@ -434,31 +269,17 @@ impl SessionEvent {
     ///
     /// ```
     /// use crucible_core::events::SessionEvent;
-    /// use serde_json::Value as JsonValue;
     ///
-    /// let event = SessionEvent::ToolCalled {
-    ///     name: "search".into(),
-    ///     args: JsonValue::Null,
-    ///     description: None,
-    ///     source: None,
+    /// let event = SessionEvent::MessageReceived {
+    ///     content: "hi".into(),
+    ///     participant_id: "user".into(),
     /// };
-    /// assert_eq!(event.type_name(), "ToolCalled");
+    /// assert_eq!(event.type_name(), "MessageReceived");
     /// ```
     pub fn type_name(&self) -> &'static str {
         match self {
             Self::MessageReceived { .. } => "MessageReceived",
-            Self::AgentResponded { .. } => "AgentResponded",
-            Self::AgentThinking { .. } => "AgentThinking",
-            Self::ToolCalled { .. } => "ToolCalled",
-            Self::ToolCompleted { .. } => "ToolCompleted",
-            Self::SessionStarted { .. } => "SessionStarted",
-            Self::SessionEnded { .. } => "SessionEnded",
-            Self::TextDelta { .. } => "TextDelta",
             Self::InteractionRequested { .. } => "InteractionRequested",
-            Self::InteractionCompleted { .. } => "InteractionCompleted",
-            Self::DelegationSpawned { .. } => "DelegationSpawned",
-            Self::DelegationCompleted { .. } => "DelegationCompleted",
-            Self::DelegationFailed { .. } => "DelegationFailed",
             Self::Custom { .. } => "Custom",
             Self::Internal(inner) => inner.type_name(),
         }
@@ -467,26 +288,20 @@ impl SessionEvent {
     /// Get a summary of this event's content.
     ///
     /// Returns a concise string describing the event's key fields, suitable for
-    /// logging and debugging. The summary is truncated to `max_len` characters.
-    ///
-    /// # Arguments
-    ///
-    /// * `max_len` - Maximum length for any individual string field in the summary
+    /// logging and debugging. Free-text fields are cut to `max_len` characters.
     ///
     /// # Example
     ///
     /// ```
     /// use crucible_core::events::SessionEvent;
-    /// use serde_json::Value as JsonValue;
+    /// use serde_json::json;
     ///
-    /// let event = SessionEvent::ToolCalled {
-    ///     name: "search".into(),
-    ///     args: JsonValue::String("query".into()),
-    ///     description: None,
-    ///     source: None,
+    /// let event = SessionEvent::Custom {
+    ///     name: "tool_called".into(),
+    ///     payload: json!({"tool": "search"}),
     /// };
     /// let summary = event.summary(100);
-    /// assert!(summary.contains("tool=search"));
+    /// assert!(summary.contains("name=tool_called"));
     /// ```
     pub fn summary(&self, max_len: usize) -> String {
         match self {
@@ -496,98 +311,18 @@ impl SessionEvent {
             } => {
                 format!("from={}, content_len={}", participant_id, content.len())
             }
-            Self::AgentResponded {
-                content,
-                tool_calls,
-            } => {
-                format!(
-                    "content_len={}, tool_calls={}",
-                    content.len(),
-                    tool_calls.len()
-                )
-            }
-            Self::AgentThinking { thought } => {
-                format!("thought_len={}", thought.len())
-            }
-            Self::ToolCalled { name, args, .. } => {
-                format!("tool={}, args_size={}", name, args.to_string().len())
-            }
-            Self::ToolCompleted {
-                name,
-                result,
-                error,
-                terminate,
-            } => {
-                format!(
-                    "tool={}, result_len={}, error={}, terminate={}",
-                    name,
-                    result.len(),
-                    error.is_some(),
-                    terminate
-                )
-            }
-            Self::SessionStarted { config } => {
-                format!("session_id={}", config.session_id)
-            }
-            Self::SessionEnded { reason } => {
-                format!("reason={}", truncate(reason, max_len))
-            }
-            Self::TextDelta { delta, seq } => {
-                format!("seq={}, delta_len={}", seq, delta.len())
-            }
             Self::InteractionRequested {
                 request_id,
                 request,
             } => {
                 format!("id={}, kind={}", request_id, request.kind())
             }
-            Self::InteractionCompleted { request_id, .. } => {
-                format!("id={}", request_id)
-            }
-            Self::DelegationSpawned {
-                delegation_id,
-                prompt,
-                parent_session_id,
-                target_agent,
-            } => {
-                let target_str = target_agent
-                    .as_ref()
-                    .map(|t| format!(", target={}", t))
-                    .unwrap_or_default();
-                format!(
-                    "delegation_id={}, parent={}, prompt_len={}{}",
-                    delegation_id,
-                    parent_session_id,
-                    prompt.len(),
-                    target_str
-                )
-            }
-            Self::DelegationCompleted {
-                delegation_id,
-                result_summary,
-                parent_session_id,
-            } => {
-                format!(
-                    "delegation_id={}, parent={}, result_len={}",
-                    delegation_id,
-                    parent_session_id,
-                    result_summary.len()
-                )
-            }
-            Self::DelegationFailed {
-                delegation_id,
-                error,
-                parent_session_id,
-            } => {
-                format!(
-                    "delegation_id={}, parent={}, error={}",
-                    delegation_id,
-                    parent_session_id,
-                    truncate(error, max_len)
-                )
-            }
             Self::Custom { name, payload } => {
-                format!("name={}, payload_size={}", name, payload.to_string().len())
+                format!(
+                    "name={}, payload_size={}",
+                    truncate(name, max_len),
+                    payload.to_string().len()
+                )
             }
             Self::Internal(inner) => inner.summary(max_len),
         }
@@ -598,10 +333,6 @@ impl SessionEvent {
     /// Returns the main content or data associated with this event, truncated to
     /// `max_len` characters. Returns `None` for events that have no meaningful
     /// payload content.
-    ///
-    /// # Arguments
-    ///
-    /// * `max_len` - Maximum length for the returned string
     ///
     /// # Example
     ///

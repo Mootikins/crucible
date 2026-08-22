@@ -1,6 +1,6 @@
 //! Manual `Deserialize` impl for `SessionEvent`.
 //!
-//! The wire-facing `SessionEvent` enum dispatches unknown tag values to
+//! The `SessionEvent` enum dispatches unknown tag values to
 //! `InternalSessionEvent` so that internal daemon events remain deserializable
 //! from the same JSON stream. A helper enum mirrors the known variants to avoid
 //! infinite recursion through the `Deserialize` impl.
@@ -8,7 +8,7 @@
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 
-use super::{InternalSessionEvent, SessionEvent, SessionEventConfig, ToolCall};
+use super::{InternalSessionEvent, SessionEvent};
 
 impl<'de> Deserialize<'de> for SessionEvent {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -27,22 +27,7 @@ impl<'de> Deserialize<'de> for SessionEvent {
             .ok_or_else(|| D::Error::missing_field("type"))?;
 
         // Known SessionEvent variants (non-Internal)
-        const KNOWN_VARIANTS: &[&str] = &[
-            "message_received",
-            "agent_responded",
-            "agent_thinking",
-            "tool_called",
-            "tool_completed",
-            "session_started",
-            "session_ended",
-            "text_delta",
-            "interaction_requested",
-            "interaction_completed",
-            "delegation_spawned",
-            "delegation_completed",
-            "delegation_failed",
-            "custom",
-        ];
+        const KNOWN_VARIANTS: &[&str] = &["message_received", "interaction_requested", "custom"];
 
         if KNOWN_VARIANTS.contains(&type_str) {
             // For known SessionEvent variants, use serde_json to deserialize
@@ -71,63 +56,9 @@ pub(super) enum SessionEventHelper {
         content: String,
         participant_id: String,
     },
-    AgentResponded {
-        content: String,
-        tool_calls: Vec<ToolCall>,
-    },
-    AgentThinking {
-        thought: String,
-    },
-    ToolCalled {
-        name: String,
-        args: JsonValue,
-        #[serde(default)]
-        description: Option<String>,
-        #[serde(default)]
-        source: Option<String>,
-    },
-    ToolCompleted {
-        name: String,
-        result: String,
-        #[serde(default)]
-        error: Option<String>,
-        #[serde(default)]
-        terminate: bool,
-    },
-    SessionStarted {
-        config: SessionEventConfig,
-    },
-    SessionEnded {
-        reason: String,
-    },
-    TextDelta {
-        delta: String,
-        seq: u64,
-    },
     InteractionRequested {
         request_id: String,
         request: crate::interaction::InteractionRequest,
-    },
-    InteractionCompleted {
-        request_id: String,
-        response: crate::interaction::InteractionResponse,
-    },
-    DelegationSpawned {
-        delegation_id: String,
-        prompt: String,
-        parent_session_id: String,
-        #[serde(default)]
-        target_agent: Option<String>,
-    },
-    DelegationCompleted {
-        delegation_id: String,
-        result_summary: String,
-        parent_session_id: String,
-    },
-    DelegationFailed {
-        delegation_id: String,
-        error: String,
-        parent_session_id: String,
     },
     Custom {
         name: String,
@@ -145,85 +76,12 @@ impl From<SessionEventHelper> for SessionEvent {
                 content,
                 participant_id,
             },
-            SessionEventHelper::AgentResponded {
-                content,
-                tool_calls,
-            } => SessionEvent::AgentResponded {
-                content,
-                tool_calls,
-            },
-            SessionEventHelper::AgentThinking { thought } => {
-                SessionEvent::AgentThinking { thought }
-            }
-            SessionEventHelper::ToolCalled {
-                name,
-                args,
-                description,
-                source,
-            } => SessionEvent::ToolCalled {
-                name,
-                args,
-                description,
-                source,
-            },
-            SessionEventHelper::ToolCompleted {
-                name,
-                result,
-                error,
-                terminate,
-            } => SessionEvent::ToolCompleted {
-                name,
-                result,
-                error,
-                terminate,
-            },
-            SessionEventHelper::SessionStarted { config } => {
-                SessionEvent::SessionStarted { config }
-            }
-            SessionEventHelper::SessionEnded { reason } => SessionEvent::SessionEnded { reason },
-            SessionEventHelper::TextDelta { delta, seq } => SessionEvent::TextDelta { delta, seq },
             SessionEventHelper::InteractionRequested {
                 request_id,
                 request,
             } => SessionEvent::InteractionRequested {
                 request_id,
                 request,
-            },
-            SessionEventHelper::InteractionCompleted {
-                request_id,
-                response,
-            } => SessionEvent::InteractionCompleted {
-                request_id,
-                response,
-            },
-            SessionEventHelper::DelegationSpawned {
-                delegation_id,
-                prompt,
-                parent_session_id,
-                target_agent,
-            } => SessionEvent::DelegationSpawned {
-                delegation_id,
-                prompt,
-                parent_session_id,
-                target_agent,
-            },
-            SessionEventHelper::DelegationCompleted {
-                delegation_id,
-                result_summary,
-                parent_session_id,
-            } => SessionEvent::DelegationCompleted {
-                delegation_id,
-                result_summary,
-                parent_session_id,
-            },
-            SessionEventHelper::DelegationFailed {
-                delegation_id,
-                error,
-                parent_session_id,
-            } => SessionEvent::DelegationFailed {
-                delegation_id,
-                error,
-                parent_session_id,
             },
             SessionEventHelper::Custom { name, payload } => SessionEvent::Custom { name, payload },
         }

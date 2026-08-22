@@ -157,9 +157,9 @@ pub fn row_for_wire(wire: &str) -> Option<&'static EventRow> {
 /// `every_outbound_name_is_its_row` pins the names that come out against the
 /// table.
 ///
-/// Returns `None` for an internal event with no wire form. Those are not
-/// oversights — storage, embedding and interception events are pipeline
-/// signals that deliberately never cross the RPC wire.
+/// Returns `None` for an internal event with no wire form. That is not an
+/// oversight — `PrecognitionComplete` reaches the wire through the turn
+/// payload, not through this table.
 pub fn message_for(event: &InternalSessionEvent) -> Option<SessionEventMessage> {
     let payload = match event {
         InternalSessionEvent::FileChanged { path, kind } => SystemPayload::FileChanged {
@@ -604,9 +604,12 @@ mod tests {
     /// The internal events with no wire form stay internal.
     #[test]
     fn a_pipeline_only_event_has_no_message() {
-        assert!(message_for(&InternalSessionEvent::EntityStored {
-            entity_id: "e1".into(),
-            entity_type: crucible_core::events::EntityType::Note,
+        assert!(message_for(&InternalSessionEvent::PrecognitionComplete {
+            notes_count: 0,
+            query_summary: String::new(),
+            kilns_searched: 0,
+            kilns_filtered: 0,
+            kilns_failed: 0,
         })
         .is_none());
     }

@@ -7,7 +7,7 @@
 //! makes you update the docs too.
 
 use crate::handlers::conversion::{session_event_to_flat_json, session_event_to_lua};
-use crucible_core::events::SessionEvent;
+use crucible_core::events::{InternalSessionEvent, NoteChangeType, SessionEvent};
 use mlua::{Lua, LuaSerdeExt, Table};
 
 fn pre_tool_call_event() -> SessionEvent {
@@ -75,34 +75,27 @@ fn envelope_keys_win_over_colliding_payload_keys() {
 #[test]
 fn non_custom_events_keep_their_flattened_fields() {
     let lua = Lua::new();
-    let event = SessionEvent::ToolCalled {
-        name: "read".to_string(),
-        args: serde_json::json!({ "path": "a.md" }),
-        description: None,
-        source: None,
+    let event = SessionEvent::MessageReceived {
+        content: "hello".to_string(),
+        participant_id: "user".to_string(),
     };
     let table = session_event_to_lua(&lua, &event).unwrap();
 
-    assert_eq!(table.get::<String>("type").unwrap(), "ToolCalled");
-    assert_eq!(table.get::<String>("name").unwrap(), "read");
+    assert_eq!(table.get::<String>("type").unwrap(), "MessageReceived");
+    assert_eq!(table.get::<String>("participant_id").unwrap(), "user");
 }
 
 fn sample_events() -> Vec<SessionEvent> {
     vec![
         pre_tool_call_event(),
-        SessionEvent::ToolCalled {
-            name: "read".to_string(),
-            args: serde_json::json!({ "path": "a.md" }),
-            description: None,
-            source: None,
-        },
         SessionEvent::MessageReceived {
             content: "hello".to_string(),
             participant_id: "user".to_string(),
         },
-        SessionEvent::AgentThinking {
-            thought: "hmm".to_string(),
-        },
+        SessionEvent::internal(InternalSessionEvent::NoteModified {
+            path: std::path::PathBuf::from("a.md"),
+            change_type: NoteChangeType::Content,
+        }),
     ]
 }
 
