@@ -104,8 +104,5 @@ pub trait KnowledgeRepository: Send + Sync {
 
     /// Search for notes using vector embeddings, returning at most `limit`
     /// hits ranked by similarity descending.
-    async fn search_vectors(&self, _vector: Vec<f32>, _limit: usize) -> Result<Vec<SearchResult>> {
-        // Default implementation returns empty if not supported
-        Ok(Vec::new())
-    }
+    async fn search_vectors(&self, vector: Vec<f32>, limit: usize) -> Result<Vec<SearchResult>>;
 }

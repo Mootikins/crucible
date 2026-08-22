@@ -6,7 +6,8 @@ use chrono::{DateTime, Utc};
 use crucible_core::events::{InternalSessionEvent, SessionEvent};
 use crucible_core::parser::{BlockHash, ParsedNote};
 use crucible_core::storage::{
-    NoteRecord, NoteStore, SearchResult as StorageSearchResult, StorageResult, StorageResultExt,
+    GraphLink, InboundLink, LinkOccurrence, NoteRecord, NoteStore,
+    SearchResult as StorageSearchResult, StorageError, StorageResult, StorageResultExt,
 };
 use crucible_core::traits::{KnowledgeRepository, NoteInfo, StorageClient};
 use crucible_core::types::SearchResult as KnowledgeSearchResult;
@@ -294,6 +295,46 @@ impl NoteStore for DaemonNoteStore {
             .storage_backend()
     }
 
+    async fn backlinks(&self, target_path: &str) -> StorageResult<Vec<String>> {
+        // `kiln.graph` is the one RPC that carries the resolved-link index.
+        // A resolved edge names its target by note path, so the backlinks of
+        // `target_path` are the sources of the resolved edges that end there.
+        let mut sources: Vec<String> = self
+            .graph_links()
+            .await?
+            .into_iter()
+            .filter(|e| e.resolved && e.target == target_path)
+            .map(|e| e.source)
+            .collect();
+        sources.sort_unstable();
+        sources.dedup();
+        Ok(sources)
+    }
+
+    async fn inbound_links(&self, _target_path: &str) -> StorageResult<Vec<InboundLink>> {
+        Err(no_link_index_over_rpc("inbound_links"))
+    }
+
+    async fn graph_links(&self) -> StorageResult<Vec<GraphLink>> {
+        let graph = self
+            .client
+            .client
+            .kiln_graph(self.client.kiln_path(), None)
+            .await
+            .storage_backend()?;
+        let links = graph.get("links").cloned().unwrap_or(Value::Array(vec![]));
+        serde_json::from_value(links).map_err(|e| StorageError::Deserialization(e.to_string()))
+    }
+
+    fn needs_link_reindex(&self) -> bool {
+        // The relink pass runs in the daemon, against the SQLite store.
+        false
+    }
+
+    async fn reindex_links(&self, _path: &str, _links: &[LinkOccurrence]) -> StorageResult<()> {
+        Err(no_link_index_over_rpc("reindex_links"))
+    }
+
     async fn get_by_hash(
         &self,
         hash: &BlockHash,
@@ -347,6 +388,15 @@ impl NoteStore for DaemonNoteStore {
 
         Ok(hits)
     }
+}
+
+/// The rename splice and the relink pass read and write link rows directly.
+/// They run in the daemon, and the RPC surface does not expose the rows. A
+/// CLI-side store that answered "no rows" would make a rename splice nothing.
+fn no_link_index_over_rpc(method: &str) -> StorageError {
+    StorageError::Backend(format!(
+        "NoteStore::{method} is not available through the daemon; the link index is daemon-side"
+    ))
 }
 
 /// Walk a `Filter` tree and pull out a scope authority if one was specified.
@@ -414,5 +464,55 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("not supported through the daemon"));
+    }
+    /// The link queries go through `kiln.graph`, so a CLI-side store answers
+    /// them from the daemon's resolved-link index, not with an empty list.
+    #[tokio::test]
+    async fn daemon_note_store_answers_link_queries_from_the_daemon_index() {
+        let (_tmp, _sock_path, daemon_client) = setup_test_daemon().await;
+        let kiln_dir = TempDir::new().unwrap();
+        let kiln = kiln_dir.path().canonicalize().unwrap();
+        std::fs::write(
+            kiln.join("Alpha.md"),
+            "# Alpha\n\nlinks [[Beta]] and [[Ghost]]\n",
+        )
+        .unwrap();
+        std::fs::write(kiln.join("Beta.md"), "# Beta\n\npoints [[Gamma]]\n").unwrap();
+        std::fs::write(kiln.join("Gamma.md"), "# Gamma\n").unwrap();
+        daemon_client
+            .kiln_open_with_options(&kiln, true, false)
+            .await
+            .unwrap();
+
+        let store = DaemonNoteStore::new(Arc::new(DaemonStorageClient::new(
+            daemon_client,
+            kiln.clone(),
+        )));
+
+        let mut edges: Vec<(String, String, bool)> = store
+            .graph_links()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|e| (e.source, e.target, e.resolved))
+            .collect();
+        edges.sort();
+        assert_eq!(
+            edges,
+            vec![
+                ("Alpha.md".into(), "Beta.md".into(), true),
+                ("Alpha.md".into(), "ghost".into(), false),
+                ("Beta.md".into(), "Gamma.md".into(), true),
+            ]
+        );
+
+        assert_eq!(store.backlinks("Beta.md").await.unwrap(), vec!["Alpha.md"]);
+        assert!(store.backlinks("Alpha.md").await.unwrap().is_empty());
+        assert!(!store.needs_link_reindex());
+
+        // The daemon owns the index. A CLI-side store says so instead of
+        // answering "no rows", which a rename would read as "nothing to splice".
+        assert!(store.inbound_links("Beta.md").await.is_err());
+        assert!(store.reindex_links("Beta.md", &[]).await.is_err());
     }
 }

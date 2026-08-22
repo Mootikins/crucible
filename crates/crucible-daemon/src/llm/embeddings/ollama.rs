@@ -400,16 +400,6 @@ impl EmbeddingProvider for OllamaProvider {
         self.expected_dimensions
     }
 
-    async fn health_check(&self) -> anyhow::Result<bool> {
-        match self.embed_single("health check").await {
-            Ok(response) => Ok(response.dimensions == self.expected_dimensions),
-            Err(e) => {
-                tracing::warn!("Ollama health check failed: {}", e);
-                Ok(false)
-            }
-        }
-    }
-
     async fn list_models(&self) -> anyhow::Result<Vec<String>> {
         let url = format!("{}/api/tags", self.endpoint);
 

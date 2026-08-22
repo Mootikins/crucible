@@ -205,12 +205,8 @@ pub trait EventHandler: Send + Sync {
     fn name(&self) -> &'static str;
 
     /// Get handler priority (higher numbers = higher priority).
-    fn priority(&self) -> u32 {
-        100
-    }
+    fn priority(&self) -> u32;
 
     /// Check if this handler can process the given event.
-    fn can_handle(&self, _event: &FileEvent) -> bool {
-        true
-    }
+    fn can_handle(&self, event: &FileEvent) -> bool;
 }

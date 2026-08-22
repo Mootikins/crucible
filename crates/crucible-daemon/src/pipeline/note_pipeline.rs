@@ -709,6 +709,39 @@ mod tests {
 
     #[async_trait::async_trait]
     impl NoteStore for MockNoteStore {
+        async fn backlinks(
+            &self,
+            _target_path: &str,
+        ) -> crucible_core::storage::StorageResult<Vec<String>> {
+            unimplemented!("test double: no link index")
+        }
+
+        async fn inbound_links(
+            &self,
+            _target_path: &str,
+        ) -> crucible_core::storage::StorageResult<Vec<crucible_core::storage::InboundLink>>
+        {
+            unimplemented!("test double: no link index")
+        }
+
+        async fn graph_links(
+            &self,
+        ) -> crucible_core::storage::StorageResult<Vec<crucible_core::storage::GraphLink>> {
+            unimplemented!("test double: no link index")
+        }
+
+        fn needs_link_reindex(&self) -> bool {
+            false
+        }
+
+        async fn reindex_links(
+            &self,
+            _path: &str,
+            _links: &[crucible_core::storage::LinkOccurrence],
+        ) -> crucible_core::storage::StorageResult<()> {
+            unimplemented!("test double: no link index")
+        }
+
         async fn upsert(
             &self,
             note: NoteRecord,

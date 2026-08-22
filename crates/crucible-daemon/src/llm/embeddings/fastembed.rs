@@ -461,13 +461,6 @@ impl EmbeddingProvider for FastEmbedProvider {
         "FastEmbed"
     }
 
-    async fn health_check(&self) -> anyhow::Result<bool> {
-        match EmbeddingProvider::embed(self, "health check").await {
-            Ok(_) => Ok(true),
-            Err(_) => Ok(false),
-        }
-    }
-
     async fn list_models(&self) -> anyhow::Result<Vec<String>> {
         Ok(vec![
             Self::get_model_info(&EmbeddingModel::BGESmallENV15).name,

@@ -79,17 +79,6 @@ pub trait EmbeddingProvider: Send + Sync {
     /// "text-embedding-3-small")
     fn model_name(&self) -> &str;
 
-    /// Get the version of the model being used
-    ///
-    /// # Returns
-    ///
-    /// The model version if available (e.g., "q8_0" for quantized models,
-    /// "v1.5" for versioned models). Returns None for providers that don't
-    /// track model versions.
-    fn model_version(&self) -> Option<&str> {
-        None
-    }
-
     /// Get the dimensionality of embeddings produced by this provider
     ///
     /// # Returns
@@ -103,20 +92,6 @@ pub trait EmbeddingProvider: Send + Sync {
     ///
     /// The provider name as a string slice (e.g., "Ollama", "FastEmbed", "OpenAI")
     fn provider_name(&self) -> &str;
-
-    /// Check if the provider is healthy/available
-    ///
-    /// # Returns
-    ///
-    /// `Ok(true)` if the provider is healthy, `Ok(false)` if it's not responding,
-    /// or an error if the health check cannot be performed.
-    async fn health_check(&self) -> Result<bool> {
-        // Default implementation: try to embed a test string
-        match self.embed("test").await {
-            Ok(_) => Ok(true),
-            Err(_) => Ok(false),
-        }
-    }
 
     /// List available model names from this provider
     ///

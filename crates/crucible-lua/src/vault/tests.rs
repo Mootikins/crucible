@@ -154,6 +154,25 @@ mod store_tests {
 
     #[async_trait]
     impl NoteStore for MockNoteStore {
+        async fn inbound_links(
+            &self,
+            _target_path: &str,
+        ) -> StorageResult<Vec<crucible_core::storage::InboundLink>> {
+            unimplemented!("test double: no rename splice")
+        }
+
+        fn needs_link_reindex(&self) -> bool {
+            false
+        }
+
+        async fn reindex_links(
+            &self,
+            _path: &str,
+            _links: &[crucible_core::storage::LinkOccurrence],
+        ) -> StorageResult<()> {
+            unimplemented!("test double: no relink pass")
+        }
+
         /// Change detection is not what this mock is for.
         async fn content_hash(
             &self,

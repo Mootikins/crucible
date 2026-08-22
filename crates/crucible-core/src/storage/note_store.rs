@@ -494,36 +494,27 @@ pub trait NoteStore: Send + Sync {
 
     /// Source paths of notes with at least one link that RESOLVES to
     /// `target_path` (deterministic backlinks, via the resolved-link index).
-    /// Backends without such an index return an empty list.
-    async fn backlinks(&self, _target_path: &str) -> StorageResult<Vec<String>> {
-        Ok(Vec::new())
-    }
+    ///
+    /// Required, like the other link methods: a default that returned an
+    /// empty list let a backend omit the link index. Its only symptom was a
+    /// note with no backlinks, and a rename that spliced nothing.
+    async fn backlinks(&self, target_path: &str) -> StorageResult<Vec<String>>;
 
     /// Every inbound link occurrence resolving to `target_path` — the exact
-    /// rows a rename/move rewrite splices. Empty for backends without a
-    /// resolved-link index.
-    async fn inbound_links(&self, _target_path: &str) -> StorageResult<Vec<InboundLink>> {
-        Ok(Vec::new())
-    }
+    /// rows a rename/move rewrite splices.
+    async fn inbound_links(&self, target_path: &str) -> StorageResult<Vec<InboundLink>>;
 
     /// The whole note-link graph as deduped directed edges (the resolved-link
-    /// index projected for graph views). Self-links are excluded. Empty for
-    /// backends without a resolved-link index.
-    async fn graph_links(&self) -> StorageResult<Vec<GraphLink>> {
-        Ok(Vec::new())
-    }
+    /// index projected for graph views). Self-links are excluded.
+    async fn graph_links(&self) -> StorageResult<Vec<GraphLink>>;
 
     /// True when the resolved-link index must be rebuilt (set once by the
     /// schema migration; cleared by the relink pass).
-    fn needs_link_reindex(&self) -> bool {
-        false
-    }
+    fn needs_link_reindex(&self) -> bool;
 
     /// Rebuild the resolved-link rows for one note without touching the note
     /// row itself (migration relink pass; embeddings stay intact).
-    async fn reindex_links(&self, _path: &str, _links: &[LinkOccurrence]) -> StorageResult<()> {
-        Ok(())
-    }
+    async fn reindex_links(&self, path: &str, links: &[LinkOccurrence]) -> StorageResult<()>;
 
     /// Find a note by its content hash, scoped by request authority.
     ///

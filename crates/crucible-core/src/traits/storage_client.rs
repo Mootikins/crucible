@@ -5,7 +5,6 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 /// Client abstraction for storage queries
@@ -16,8 +15,7 @@ use serde_json::Value;
 /// ## Design
 ///
 /// - `query_raw()` returns raw JSON for maximum flexibility
-/// - `query()` provides typed deserialization convenience
-/// - Both methods abstract over daemon RPC vs direct storage access
+/// - The method abstracts over daemon RPC vs direct storage access
 ///
 /// ## Implementations
 ///
@@ -35,27 +33,6 @@ pub trait StorageClient: Send + Sync {
     ///
     /// Returns raw JSON result from the storage backend
     async fn query_raw(&self, sql: &str) -> Result<Value>;
-
-    /// Execute a query and deserialize results
-    ///
-    /// This is a convenience method that calls `query_raw()` and deserializes
-    /// the result into the specified type.
-    ///
-    /// # Type Parameters
-    ///
-    /// * `T` - The type to deserialize results into
-    ///
-    /// # Arguments
-    ///
-    /// * `sql` - The query string to execute
-    ///
-    /// # Returns
-    ///
-    /// Returns a vector of deserialized records
-    async fn query<T: DeserializeOwned + Send>(&self, sql: &str) -> Result<Vec<T>> {
-        let result = self.query_raw(sql).await?;
-        Ok(serde_json::from_value(result)?)
-    }
 }
 
 #[cfg(feature = "test-utils")]
