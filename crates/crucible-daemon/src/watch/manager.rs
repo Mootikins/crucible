@@ -5,14 +5,13 @@ use crate::watch::{
     error::{Error, Result},
     events::FileEvent,
     handlers::{create_default_handlers, HandlerRegistry},
-    traits::{EventHandler, WatchConfig, WatchHandle},
+    traits::{DebounceConfig, EventHandler, WatchConfig, WatchHandle},
     utils::{Debouncer, EventQueue, PerformanceMonitor},
 };
 use crucible_core::events::{EventEmitter, NoOpEmitter, SessionEvent};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
@@ -31,8 +30,8 @@ use tracing::{debug, error, info, warn};
 pub struct WatchManagerConfig {
     /// Queue capacity
     pub queue_capacity: usize,
-    /// Debounce delay
-    pub debounce_delay: Duration,
+    /// Debounce settings for the manager's event debouncer.
+    pub debounce: DebounceConfig,
     /// Enable default handlers
     pub enable_default_handlers: bool,
 }
@@ -41,7 +40,7 @@ impl Default for WatchManagerConfig {
     fn default() -> Self {
         Self {
             queue_capacity: 10000,
-            debounce_delay: Duration::from_millis(100),
+            debounce: DebounceConfig::default(),
             enable_default_handlers: true,
         }
     }
@@ -91,7 +90,7 @@ impl WatchManager {
             watchers: Arc::new(RwLock::new(HashMap::new())),
             handlers: Arc::new(RwLock::new(HandlerRegistry::new())),
             event_queue: Arc::new(Mutex::new(EventQueue::new(config.queue_capacity))),
-            debouncer: Arc::new(Mutex::new(Debouncer::new(config.debounce_delay))),
+            debouncer: Arc::new(Mutex::new(Debouncer::new(config.debounce.clone()))),
             performance_monitor: Arc::new(Mutex::new(PerformanceMonitor::new())),
             processor_task: None,
             event_sender: None,

@@ -1,5 +1,6 @@
 //! Event debouncing for reducing event spam.
 
+use crate::watch::traits::DebounceConfig;
 use crate::watch::FileEvent;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -33,13 +34,13 @@ struct PendingEvent {
 }
 
 impl Debouncer {
-    /// Create a new debouncer with the specified delay.
-    pub fn new(delay: Duration) -> Self {
+    /// Create a new debouncer from a debounce configuration.
+    pub fn new(config: DebounceConfig) -> Self {
         Self {
-            delay,
+            delay: Duration::from_millis(config.delay_ms),
             pending_events: HashMap::new(),
-            max_batch_size: 100,
-            deduplicate: true,
+            max_batch_size: config.max_batch_size,
+            deduplicate: config.deduplicate,
             last_cleanup: Instant::now(),
         }
     }

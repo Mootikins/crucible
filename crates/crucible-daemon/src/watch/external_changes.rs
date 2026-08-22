@@ -415,7 +415,7 @@ impl ExternalChangeWatch {
             // source file in the repo on every build.
             enable_default_handlers: false,
             queue_capacity: 1000,
-            debounce_delay: DEBOUNCE,
+            debounce: DebounceConfig::new(DEBOUNCE.as_millis() as u64),
         };
 
         let mut manager = WatchManager::new(config).await?;
