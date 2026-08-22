@@ -3,22 +3,10 @@ use crate::node::{BoxNode, Direction, Node, Size as OilSize};
 use crate::style::{
     AlignItems as OilAlignItems, JustifyContent as OilJustifyContent, Style as OilStyle,
 };
-use std::collections::HashMap;
 use taffy::prelude::*;
-
-#[derive(Debug, Clone, Copy)]
-pub struct ComputedLayout {
-    pub x: f32,
-    pub y: f32,
-    pub width: f32,
-    pub height: f32,
-}
 
 pub struct LayoutEngine {
     tree: TaffyTree<usize>,
-    node_map: HashMap<usize, NodeId>,
-    reverse_node_map: HashMap<NodeId, usize>,
-    next_id: usize,
 }
 
 impl Default for LayoutEngine {
@@ -31,35 +19,7 @@ impl LayoutEngine {
     pub fn new() -> Self {
         Self {
             tree: TaffyTree::new(),
-            node_map: HashMap::new(),
-            reverse_node_map: HashMap::new(),
-            next_id: 0,
         }
-    }
-
-    pub fn compute(
-        &mut self,
-        node: &Node,
-        width: f32,
-        height: f32,
-    ) -> HashMap<usize, ComputedLayout> {
-        self.tree.clear();
-        self.node_map.clear();
-        self.reverse_node_map.clear();
-        self.next_id = 0;
-
-        let root_id = self.build_node(node, width);
-
-        let available = Size {
-            width: AvailableSpace::Definite(width),
-            height: AvailableSpace::Definite(height),
-        };
-
-        self.tree.compute_layout(root_id, available).ok();
-
-        let mut layouts = HashMap::new();
-        self.collect_layouts(root_id, 0.0, 0.0, &mut layouts);
-        layouts
     }
 
     /// Create a leaf node with the given dimensions.
@@ -106,9 +66,6 @@ impl LayoutEngine {
     }
 
     fn build_node(&mut self, node: &Node, available_width: f32) -> NodeId {
-        let id = self.next_id;
-        self.next_id += 1;
-
         let node_id = match node {
             Node::Empty => self
                 .tree
@@ -168,17 +125,12 @@ impl LayoutEngine {
             }
         };
 
-        self.node_map.insert(id, node_id);
-        self.reverse_node_map.insert(node_id, id);
         node_id
     }
 
     /// Build a node that sizes to its content width rather than filling available space.
     /// Used for children inside Row layouts so items sit side-by-side at natural width.
     fn build_node_content_sized(&mut self, node: &Node, available_width: f32) -> NodeId {
-        let id = self.next_id;
-        self.next_id += 1;
-
         let node_id = match node {
             Node::Text(text) => {
                 let content_width = crate::ansi::visible_width(&text.content) as f32;
@@ -212,17 +164,12 @@ impl LayoutEngine {
             }
 
             Node::Box(boxnode) => {
-                let node_id = self.build_box(boxnode, available_width, true);
-                self.node_map.insert(id, node_id);
-                self.reverse_node_map.insert(node_id, id);
-                return node_id;
+                return self.build_box(boxnode, available_width, true);
             }
 
             _ => return self.build_node(node, available_width),
         };
 
-        self.node_map.insert(id, node_id);
-        self.reverse_node_map.insert(node_id, id);
         node_id
     }
 
@@ -348,42 +295,6 @@ impl LayoutEngine {
             .expect("taffy operation failed")
     }
 
-    fn collect_layouts(
-        &self,
-        node_id: NodeId,
-        offset_x: f32,
-        offset_y: f32,
-        layouts: &mut HashMap<usize, ComputedLayout>,
-    ) {
-        let layout = self
-            .tree
-            .layout(node_id)
-            .expect("failed to get taffy layout");
-        let x = offset_x + layout.location.x;
-        let y = offset_y + layout.location.y;
-
-        if let Some(&id) = self.reverse_node_map.get(&node_id) {
-            layouts.insert(
-                id,
-                ComputedLayout {
-                    x,
-                    y,
-                    width: layout.size.width,
-                    height: layout.size.height,
-                },
-            );
-        }
-
-        for &child_id in self
-            .tree
-            .children(node_id)
-            .expect("failed to get taffy children")
-            .iter()
-        {
-            self.collect_layouts(child_id, x, y, layouts);
-        }
-    }
-
     pub fn to_layout_tree(&self, node: &Node, root_id: NodeId) -> LayoutTree {
         let root_box = self.node_to_layout_box(node, root_id, 0.0, 0.0);
         LayoutTree::new(root_box)
@@ -391,8 +302,6 @@ impl LayoutEngine {
 
     pub fn compute_layout_tree(&mut self, node: &Node, width: f32, height: f32) -> LayoutTree {
         self.tree.clear();
-        self.node_map.clear();
-        self.next_id = 0;
 
         let root_id = self.build_node(node, width);
 
@@ -602,35 +511,7 @@ mod tests {
     use super::*;
     use crate::ansi::strip_ansi;
     use crate::layout::{build_layout_tree, render_layout_tree, LayoutContent};
-    use crate::node::{col, flex as oil_flex, row, text};
-
-    #[test]
-    fn test_simple_column() {
-        let mut engine = LayoutEngine::new();
-        let tree = col([text("Header"), text("Body content here"), text("Footer")]);
-        let layouts = engine.compute(&tree, 80.0, 24.0);
-        assert!(!layouts.is_empty());
-    }
-
-    #[test]
-    fn test_flex_grow() {
-        let mut engine = LayoutEngine::new();
-        let tree = col([
-            text("Fixed header"),
-            oil_flex(1, col([text("Expanding body")])),
-            text("Fixed footer"),
-        ]);
-        let layouts = engine.compute(&tree, 80.0, 24.0);
-        assert!(!layouts.is_empty());
-    }
-
-    #[test]
-    fn test_row_layout() {
-        let mut engine = LayoutEngine::new();
-        let tree = row([text("Left"), text("Center"), text("Right")]);
-        let layouts = engine.compute(&tree, 80.0, 24.0);
-        assert!(!layouts.is_empty());
-    }
+    use crate::node::{col, row, text};
 
     #[test]
     fn to_layout_tree_simple_text() {
