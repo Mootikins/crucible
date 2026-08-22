@@ -4,6 +4,43 @@ use crate::lua_util::register_in_namespaces;
 use mlua::{Lua, LuaSerdeExt, Table, Value};
 use std::sync::Arc;
 
+/// Every function in `cru.sessions`, in registration order.
+///
+/// The stub path and the daemon-backed path both read this list, so a new
+/// session function cannot land in one path only: the stub loop registers
+/// every name here, and [`register_sessions_module_with_api`] refuses a table
+/// whose key set differs from it.
+pub(crate) const SESSION_FN_NAMES: &[&str] = &[
+    "create",
+    "get",
+    "list",
+    "configure_agent",
+    "send_message",
+    "cancel",
+    "pause",
+    "resume",
+    "end_session",
+    "interaction_respond",
+    "subscribe",
+    "unsubscribe",
+    "send_and_collect",
+    "inject",
+    "collect_subagents",
+    "messages",
+    "fork",
+    "cache_stats",
+    "complete",
+    "set_output_validation",
+    "undo",
+    "can_undo",
+    "undo_depth",
+    "undo_history",
+    "review_list_hunks",
+    "review_set_state",
+    "review_comment",
+    "review_resolve_comment",
+];
+
 /// Register the sessions module with stub functions.
 ///
 /// Creates the `cru.sessions` and `crucible.sessions` namespaces with functions
@@ -12,69 +49,37 @@ use std::sync::Arc;
 pub fn register_sessions_module(lua: &Lua) -> Result<(), LuaError> {
     let sessions = lua.create_table()?;
 
-    // Helper: all stubs return (nil, error_string)
-    macro_rules! stub_async {
-        ($name:expr, $lua:expr, $sessions:expr, $args:ty) => {
-            let f = $lua.create_async_function(|lua, _args: $args| async move {
-                let err = lua.create_string("no daemon connected")?;
-                Ok((Value::Nil, Value::String(err)))
-            })?;
-            $sessions.set($name, f)?;
-        };
+    // A stub ignores its arguments, so one shape serves every name.
+    for name in SESSION_FN_NAMES {
+        let f = lua.create_async_function(|lua, _args: mlua::MultiValue| async move {
+            let err = lua.create_string("no daemon connected")?;
+            Ok((Value::Nil, Value::String(err)))
+        })?;
+        sessions.set(*name, f)?;
     }
-
-    stub_async!("create", lua, sessions, mlua::Value);
-    stub_async!("get", lua, sessions, String);
-    stub_async!("list", lua, sessions, ());
-    stub_async!("configure_agent", lua, sessions, (String, mlua::Value));
-    stub_async!("send_message", lua, sessions, (String, String));
-    stub_async!("cancel", lua, sessions, String);
-    stub_async!("pause", lua, sessions, String);
-    stub_async!("resume", lua, sessions, String);
-    stub_async!("end_session", lua, sessions, String);
-    stub_async!(
-        "interaction_respond",
-        lua,
-        sessions,
-        (String, String, mlua::Value)
-    );
-    stub_async!("subscribe", lua, sessions, String);
-    stub_async!("unsubscribe", lua, sessions, String);
-    stub_async!(
-        "send_and_collect",
-        lua,
-        sessions,
-        (String, String, mlua::Value)
-    );
-    stub_async!("inject", lua, sessions, (String, String, String));
-    stub_async!(
-        "collect_subagents",
-        lua,
-        sessions,
-        (mlua::Value, mlua::Value)
-    );
-    stub_async!("messages", lua, sessions, (String, mlua::Value));
-    stub_async!("fork", lua, sessions, (String, mlua::Value));
-    stub_async!("cache_stats", lua, sessions, String);
-    stub_async!("complete", lua, sessions, (String, mlua::Value));
-    stub_async!(
-        "set_output_validation",
-        lua,
-        sessions,
-        (String, mlua::Value)
-    );
-    stub_async!("undo", lua, sessions, (String, mlua::Value));
-    stub_async!("can_undo", lua, sessions, String);
-    stub_async!("undo_depth", lua, sessions, String);
-    stub_async!("undo_history", lua, sessions, String);
-    stub_async!("review_list_hunks", lua, sessions, String);
-    stub_async!("review_set_state", lua, sessions, (String, String, String));
-    stub_async!("review_comment", lua, sessions, (String, mlua::Value));
-    stub_async!("review_resolve_comment", lua, sessions, (String, String));
 
     register_in_namespaces(lua, "sessions", sessions)?;
 
     Ok(())
+}
+
+/// Compare the keys of a registered table against [`SESSION_FN_NAMES`].
+///
+/// Returns the names that only one side has.
+fn key_set_difference(sessions: &Table) -> Result<Vec<String>, LuaError> {
+    let mut diff = Vec::new();
+    for name in SESSION_FN_NAMES {
+        if !sessions.contains_key(*name)? {
+            diff.push(format!("missing {name}"));
+        }
+    }
+    for pair in sessions.pairs::<String, Value>() {
+        let (key, _) = pair?;
+        if !SESSION_FN_NAMES.contains(&key.as_str()) {
+            diff.push(format!("unlisted {key}"));
+        }
+    }
+    Ok(diff)
 }
 
 /// Fields that name or override the session's agent.
@@ -150,13 +155,10 @@ pub fn register_sessions_module_with_api(
     lua: &Lua,
     api: Arc<dyn DaemonSessionApi>,
 ) -> Result<(), LuaError> {
-    // First register stubs to create the table structure
-    register_sessions_module(lua)?;
-
-    // Now get the table and replace stubs with real implementations
-    let globals = lua.globals();
-    let cru: Table = globals.get("cru")?;
-    let sessions: Table = cru.get("sessions")?;
+    // Build a fresh table. The gate at the end compares its keys against
+    // SESSION_FN_NAMES, so a name with no daemon-backed body cannot hide
+    // behind a stub.
+    let sessions = lua.create_table()?;
 
     // create({ type = "chat", kilns = {"..."}, workspace = "...",
     //          agent_card = "..." })
@@ -865,6 +867,16 @@ pub fn register_sessions_module_with_api(
             }
         })?;
     sessions.set("review_resolve_comment", review_resolve_fn)?;
+
+    let diff = key_set_difference(&sessions)?;
+    if !diff.is_empty() {
+        return Err(LuaError::Runtime(format!(
+            "cru.sessions daemon functions disagree with SESSION_FN_NAMES: {}",
+            diff.join(", ")
+        )));
+    }
+
+    register_in_namespaces(lua, "sessions", sessions)?;
 
     Ok(())
 }

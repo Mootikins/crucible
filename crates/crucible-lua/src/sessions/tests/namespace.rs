@@ -82,3 +82,50 @@ async fn sessions_stub_get_returns_nil() {
 
     assert!(matches!(result.0, Value::Nil));
 }
+
+fn sorted_keys(sessions: &Table) -> Vec<String> {
+    let mut keys: Vec<String> = sessions
+        .pairs::<String, Value>()
+        .map(|pair| pair.expect("string key").0)
+        .collect();
+    keys.sort();
+    keys
+}
+
+/// The stub table and the daemon-backed table expose the same function names,
+/// and both match `SESSION_FN_NAMES`. A name that lands in one path only fails
+/// here, not in a plugin at run time.
+#[test]
+fn stub_and_daemon_tables_expose_the_same_functions() {
+    use crate::sessions::register::SESSION_FN_NAMES;
+    use crate::sessions::{register_sessions_module_with_api, DaemonSessionApi};
+    use std::sync::Arc;
+
+    let stub = TestLuaBuilder::new().with_sessions().build();
+    let stub_keys = sorted_keys(
+        &stub
+            .globals()
+            .get::<Table>("cru")
+            .unwrap()
+            .get("sessions")
+            .unwrap(),
+    );
+
+    let real = TestLuaBuilder::new().build();
+    let api = Arc::new(super::MockDaemonApi::new()) as Arc<dyn DaemonSessionApi>;
+    register_sessions_module_with_api(&real, api).expect("daemon-backed module");
+    let real_keys = sorted_keys(
+        &real
+            .globals()
+            .get::<Table>("cru")
+            .unwrap()
+            .get("sessions")
+            .unwrap(),
+    );
+
+    let mut listed: Vec<String> = SESSION_FN_NAMES.iter().map(|s| s.to_string()).collect();
+    listed.sort();
+
+    assert_eq!(stub_keys, listed);
+    assert_eq!(real_keys, listed);
+}
