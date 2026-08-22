@@ -135,6 +135,7 @@ async fn setup_with_plugin(
             context_config: None,
             permission_config: None,
             plugin_loader: Some(plugin_loader.clone()),
+            card_roots: Default::default(),
         },
         service.clone(),
     ));
@@ -611,6 +612,7 @@ async fn factory_failure_fails_spawn_and_emits_failed_event() {
             context_config: None,
             permission_config: None,
             plugin_loader: None,
+            card_roots: Default::default(),
         },
         service.clone(),
     ));
@@ -816,6 +818,7 @@ async fn child_tool_calls_are_dispatched_by_the_scheduler() {
             context_config: None,
             permission_config: None,
             plugin_loader: None,
+            card_roots: Default::default(),
         },
         service.clone(),
     ));
@@ -1044,6 +1047,7 @@ async fn card_tool_policy_deny_blocks_child_tool_call() {
             context_config: None,
             permission_config: None,
             plugin_loader: None,
+            card_roots: Default::default(),
         },
         service.clone(),
     ));
@@ -1263,6 +1267,7 @@ async fn card_specialty_resolves_through_llm_models_table() {
             context_config: None,
             permission_config: None,
             plugin_loader: None,
+            card_roots: Default::default(),
         },
         service.clone(),
     ));

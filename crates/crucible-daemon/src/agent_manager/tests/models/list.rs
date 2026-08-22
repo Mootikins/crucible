@@ -41,6 +41,7 @@ async fn test_list_models_returns_all_providers() {
         context_config: None,
         permission_config: None,
         plugin_loader: None,
+        card_roots: Default::default(),
     });
 
     agent_manager
@@ -396,6 +397,7 @@ async fn test_list_models_no_llm_config() {
         context_config: None,
         permission_config: None,
         plugin_loader: None,
+        card_roots: Default::default(),
     });
 
     agent_manager
@@ -535,6 +537,7 @@ async fn test_list_models_prefixes_with_provider_key() {
         context_config: None,
         permission_config: None,
         plugin_loader: None,
+        card_roots: Default::default(),
     });
 
     agent_manager

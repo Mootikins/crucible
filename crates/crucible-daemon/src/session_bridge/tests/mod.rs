@@ -73,6 +73,7 @@ fn build_test_agent_manager_with_llm_config(
         context_config: None,
         permission_config: None,
         plugin_loader: None,
+        card_roots: Default::default(),
     }))
 }
 
@@ -207,6 +208,7 @@ async fn bash_calling_rig(
         context_config: None,
         permission_config: None,
         plugin_loader: None,
+        card_roots: Default::default(),
     }));
     agent_manager.set_agent_factory_override(Box::new(|_, _| {
         Box::pin(async {

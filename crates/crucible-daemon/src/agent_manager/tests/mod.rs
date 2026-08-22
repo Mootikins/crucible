@@ -597,6 +597,7 @@ fn create_test_agent_manager(session_manager: Arc<SessionManager>) -> AgentManag
         context_config: None,
         permission_config: None,
         plugin_loader: None,
+        card_roots: Default::default(),
     })
 }
 
@@ -616,6 +617,7 @@ fn create_test_agent_manager_with_providers(
         context_config: None,
         permission_config: None,
         plugin_loader: None,
+        card_roots: Default::default(),
     })
 }
 
@@ -639,6 +641,7 @@ fn create_test_agent_manager_with_enrichment(
         context_config: None,
         permission_config: None,
         plugin_loader: None,
+        card_roots: Default::default(),
     })
 }
 
@@ -658,6 +661,7 @@ fn create_test_agent_manager_with_llm_config(
         context_config: None,
         permission_config: None,
         plugin_loader: None,
+        card_roots: Default::default(),
     })
 }
 
@@ -758,6 +762,7 @@ fn create_test_agent_manager_with_both(
         context_config: None,
         permission_config: None,
         plugin_loader: None,
+        card_roots: Default::default(),
     })
 }
 

@@ -42,6 +42,7 @@ async fn a_plugin_creating_a_session_from_on_session_end_does_not_deadlock() {
         context_config: None,
         permission_config: None,
         plugin_loader: Some(plugin_loader.clone()),
+        card_roots: Default::default(),
     }));
     let ctx = Arc::new(RpcContext::for_test_with_plugin_loader(
         Arc::new(KilnManager::new()),

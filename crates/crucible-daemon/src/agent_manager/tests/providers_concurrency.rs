@@ -92,6 +92,7 @@ fn manager_with(providers: std::collections::HashMap<String, LlmProviderConfig>)
         context_config: None,
         permission_config: None,
         plugin_loader: None,
+        card_roots: Default::default(),
     })
 }
 

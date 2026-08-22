@@ -91,6 +91,13 @@ pub fn mock_session_agent(agent_path: &str) -> SessionAgent {
 ///     ..mock_handle_params(&agent_config, workspace.path())
 /// })
 /// ```
+/// No global cards, no configured card directories.
+static NO_CARD_ROOTS: crucible_daemon::agent_cards::CardRoots =
+    crucible_daemon::agent_cards::CardRoots {
+        config_home: None,
+        agent_directories: Vec::new(),
+    };
+
 #[allow(dead_code)]
 pub fn mock_handle_params<'a>(
     agent_config: &'a SessionAgent,
@@ -106,6 +113,7 @@ pub fn mock_handle_params<'a>(
         delegation_spawner: None,
         parent_session_id: None,
         delegation_config: None,
+        card_roots: &NO_CARD_ROOTS,
         acp_config: None,
         permission_handler: None,
         sandbox_exec: None,

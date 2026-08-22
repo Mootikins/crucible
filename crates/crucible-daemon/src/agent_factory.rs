@@ -64,6 +64,8 @@ pub struct CreateAgentFromSessionConfigParams<'a> {
     pub parent_session_id: Option<&'a str>,
     pub background_spawner: Option<Arc<dyn BackgroundSpawner>>,
     pub delegation_spawner: Option<Arc<dyn crate::delegation::DelegationSpawner>>,
+    /// Where agent cards come from, for the `delegate_session` tool text.
+    pub card_roots: &'a crate::agent_cards::CardRoots,
     pub mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
     pub acp_permission_handler: Option<PermissionRequestHandler>,
     pub acp_config: Option<&'a crucible_core::config::components::acp::AcpConfig>,
@@ -105,6 +107,7 @@ pub(crate) fn build_internal_delegation_context(
     parent_session_id: Option<&str>,
     background_spawner: Option<Arc<dyn BackgroundSpawner>>,
     delegation_spawner: Option<Arc<dyn crate::delegation::DelegationSpawner>>,
+    card_roots: &crate::agent_cards::CardRoots,
 ) -> Option<DelegationContext> {
     let session_id = parent_session_id?;
     let background_spawner = background_spawner?;
@@ -122,6 +125,7 @@ pub(crate) fn build_internal_delegation_context(
             .map(|c| c.result_max_bytes)
             .unwrap_or(51200),
         timeout_secs: delegation_config.map(|c| c.timeout_secs).unwrap_or(300),
+        card_roots: card_roots.clone(),
     })
 }
 
@@ -650,6 +654,7 @@ pub async fn create_agent_from_session_config(
         parent_session_id,
         background_spawner,
         delegation_spawner,
+        card_roots,
         mcp_gateway,
         acp_permission_handler,
         acp_config,
@@ -672,6 +677,7 @@ pub async fn create_agent_from_session_config(
             delegation_spawner,
             parent_session_id,
             delegation_config: agent_config.delegation_config.as_ref(),
+            card_roots,
             acp_config,
             permission_handler: acp_permission_handler,
             sandbox_exec,
@@ -695,6 +701,7 @@ pub async fn create_agent_from_session_config(
         parent_session_id,
         background_spawner.clone(),
         delegation_spawner.clone(),
+        card_roots,
     );
     let (tool_defs, deferrable_tool_names, plugin_tool_names) =
         create_internal_mcp_tool_defs(CreateInternalMcpToolDefsParams {

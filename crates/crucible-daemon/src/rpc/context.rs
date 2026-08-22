@@ -84,13 +84,6 @@ pub struct RpcContext {
     /// Runtime handlers (session list) read this instead of calling
     /// `crucible_home()`, so they honor the injected data_home in tests.
     pub data_home: std::path::PathBuf,
-    /// Root the global agent-card directory (`<config_home>/crucible/agents`)
-    /// hangs off — `dirs::config_dir()` in production. Injected as a value for
-    /// the same reason `data_home` is: global cards are first in discovery
-    /// precedence, so a handler that read the environment would resolve a
-    /// developer's personal cards in every test. `None` means "no global
-    /// cards".
-    pub config_home: Option<std::path::PathBuf>,
     /// Active workflow executions keyed by session id (Phase 3a).
     pub workflows: Arc<WorkflowRegistry>,
     /// Workspace directories — `scm.clone` reads `root_dir` from here.
@@ -124,7 +117,6 @@ impl RpcContext {
         mcp_server_manager: Arc<McpServerManager>,
         mcp_config: Option<McpConfig>,
         data_home: std::path::PathBuf,
-        config_home: Option<std::path::PathBuf>,
         workspace_config: Option<WorkspaceConfig>,
         kiln_registry: Arc<crate::kiln_registry::KilnRegistry>,
     ) -> Self {
@@ -144,7 +136,6 @@ impl RpcContext {
             mcp_server_manager,
             mcp_config,
             data_home,
-            config_home,
             workflows: Arc::new(WorkflowRegistry::new()),
             workspace_config,
             kiln_registry,
@@ -158,8 +149,8 @@ impl RpcContext {
     ///
     /// `data_home` is a parameter rather than `crucible_home()` for the usual
     /// reason: a test that reads the developer's real `~/.crucible` passes on
-    /// CI and fails locally. `config_home` is `None` for the same reason —
-    /// no global agent cards unless a test asks for them.
+    /// CI and fails locally. The agent manager's card roots are empty for
+    /// the same reason — no global agent cards unless a test asks for them.
     #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn for_test(
@@ -217,7 +208,6 @@ impl RpcContext {
             Arc::new(McpServerManager::new()),
             None,
             data_home.clone(),
-            None,
             None,
             // The session manager's own registry, not a second empty one: the
             // handlers resolve caller-supplied names through `ctx`, the storage

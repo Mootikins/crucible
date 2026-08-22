@@ -378,7 +378,8 @@ impl DelegationSpawner for DelegationService {
         let parent_kilns = manager.session_manager().kiln_paths(&parent.kilns);
         let mut child_agent: SessionAgent = match req.target_agent.as_deref() {
             Some(name) => {
-                let cards = crate::agent_cards::discover_agent_cards(
+                let cards = crate::agent_cards::discover_agent_cards_in(
+                    manager.card_roots(),
                     // `card_directories` treats the empty path as "no
                     // workspace directory" rather than as the daemon's cwd.
                     parent

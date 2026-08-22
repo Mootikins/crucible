@@ -104,6 +104,7 @@ fn build_delegation_stack(
             context_config: None,
             permission_config: None,
             plugin_loader: None,
+            card_roots: Default::default(),
         },
         service.clone(),
     ));

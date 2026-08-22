@@ -4,7 +4,8 @@
 
 use anyhow::Result;
 use crucible_core::agent::{AgentCard, AgentCardLoader, AgentCardRegistry};
-use std::path::PathBuf;
+use crucible_daemon::agent_cards::{card_directories, CardRoots};
+use std::path::{Path, PathBuf};
 
 use crate::cli::AgentsCommands;
 use crate::config::CliConfig;
@@ -33,7 +34,7 @@ pub async fn execute(config: CliConfig, command: Option<AgentsCommands>) -> Resu
 /// Load all agent cards from configured directories
 fn load_agent_registry(config: &CliConfig) -> AgentCardRegistry {
     let mut registry = AgentCardRegistry::default();
-    let dirs = collect_agent_directories(config);
+    let dirs = collect_agent_directories(config, &current_workspace());
 
     for dir in dirs {
         if dir.exists() && dir.is_dir() {
@@ -48,38 +49,36 @@ fn load_agent_registry(config: &CliConfig) -> AgentCardRegistry {
     registry
 }
 
-/// Collect all agent card directories in load order per spec.
+/// The agent card directories a session started from `workspace` would
+/// search, in load order (later sources override earlier by agent name).
 ///
-/// Load order (later sources override earlier by agent name):
-/// 1. `~/.config/crucible/agents/` - Global default directory
-/// 2. Paths from global config `agent_directories`
-/// 3. `KILN_DIR/.crucible/agents/` - Kiln config directory
+/// This is the daemon's own list, [`crucible_daemon::agent_cards::card_directories`],
+/// built from the same config: global cards, then `agent_directories`, then
+/// the kiln's `.crucible/agents/`, then the workspace's. A second
+/// implementation is how `cru agents list` came to advertise cards the daemon
+/// would not resolve. The kiln's visible `agents/` is deliberately not in it;
+/// see the daemon function for why.
 ///
-/// Must stay in step with `crucible-daemon/src/agent_cards.rs::card_directories`.
-pub fn collect_agent_directories(config: &CliConfig) -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
+/// Cards are still read off disk here, not over RPC: someone running
+/// `cru agents list` to find out why a card does not load must not be told
+/// the daemon is down, and `validate` reports per-file errors the daemon
+/// does not expose.
+pub fn collect_agent_directories(config: &CliConfig, workspace: &Path) -> Vec<PathBuf> {
+    let roots = CardRoots {
+        config_home: dirs::config_dir(),
+        agent_directories: config
+            .agent_directories
+            .iter()
+            .map(|dir| crate::kiln_validate::expand_tilde(&dir.to_string_lossy()))
+            .collect(),
+    };
+    card_directories(&roots, workspace, Some(&config.kiln_path))
+}
 
-    // 1. Global default: ~/.config/crucible/agents/ (or %APPDATA%\crucible\agents\ on Windows)
-    if let Some(config_dir) = dirs::config_dir() {
-        let global_agents = config_dir.join("crucible").join("agents");
-        dirs.push(global_agents);
-    }
-
-    // 2. Global config agent_directories
-    for dir in &config.agent_directories {
-        dirs.push(crate::kiln_validate::expand_tilde(&dir.to_string_lossy()));
-    }
-
-    // 3. Kiln config: KILN_DIR/.crucible/agents/
-    //
-    // The kiln's visible `agents/` is deliberately NOT here, matching
-    // `crucible-daemon/src/agent_cards.rs`: a card names a model, a system
-    // prompt and a tool policy, so a cloned or synced kiln must not be able to
-    // introduce one just by containing a directory. A kiln that is a card
-    // library adds itself to the path in Lua instead.
-    dirs.push(config.kiln_path.join(".crucible").join("agents"));
-
-    dirs
+/// The workspace `cru agents` answers for: the current directory, which is
+/// what `cru chat` started here attaches as the session workspace.
+fn current_workspace() -> PathBuf {
+    std::env::current_dir().unwrap_or_default()
 }
 
 /// List all registered agent cards
@@ -338,7 +337,7 @@ struct ValidationResult {
 
 /// Validate all agent cards
 async fn validate(config: &CliConfig, verbose: bool) -> Result<()> {
-    let dirs = collect_agent_directories(config);
+    let dirs = collect_agent_directories(config, &current_workspace());
     let mut loader = AgentCardLoader::new();
     let mut results: Vec<ValidationResult> = Vec::new();
     let mut total_files = 0;
@@ -523,25 +522,21 @@ You are a test agent.
     fn test_collect_agent_directories_includes_defaults() {
         let kiln_path = test_path("test-kiln");
         let config = test_config(kiln_path.clone());
-        let dirs = collect_agent_directories(&config);
+        let dirs = collect_agent_directories(&config, Path::new("/ws"));
 
         // Global default plus the kiln's config dir.
         assert!(dirs.len() >= 2, "{dirs:?}");
         assert!(dirs.contains(&kiln_path.join(".crucible/agents")));
     }
 
-    /// The CLI's list must match the daemon's — the kiln's visible `agents/`
-    /// is not a discovery path in either.
-    ///
-    /// Two implementations of one list is how they drift: this is a second
-    /// copy of `crucible-daemon/src/agent_cards.rs::card_directories`, and it
-    /// is what `cru agents list` answers from, so a divergence means the CLI
-    /// advertises cards the daemon will not resolve.
+    /// The CLI's list is the daemon's — the kiln's visible `agents/` is not
+    /// a discovery path, so `cru agents list` never advertises a card the
+    /// daemon will not resolve.
     #[test]
     fn test_collect_agent_directories_excludes_the_kilns_visible_tree() {
         let kiln_path = test_path("test-kiln");
         let config = test_config(kiln_path.clone());
-        let dirs = collect_agent_directories(&config);
+        let dirs = collect_agent_directories(&config, Path::new("/ws"));
 
         assert!(
             !dirs.contains(&kiln_path.join("agents")),
@@ -562,7 +557,7 @@ You are a test agent.
             PathBuf::from("./local-agents"),
         ];
 
-        let dirs = collect_agent_directories(&config);
+        let dirs = collect_agent_directories(&config, Path::new("/ws"));
 
         // Should include custom directories
         assert!(dirs.contains(&PathBuf::from("/custom/agents")));
@@ -574,7 +569,7 @@ You are a test agent.
         let kiln_path = test_path("test-kiln");
         let mut config = test_config(kiln_path.clone());
         config.agent_directories = vec![PathBuf::from("/custom/agents")];
-        let dirs = collect_agent_directories(&config);
+        let dirs = collect_agent_directories(&config, Path::new("/ws"));
 
         let custom_idx = dirs
             .iter()
@@ -588,6 +583,16 @@ You are a test agent.
         // Later shadows earlier, so the kiln's own cards win over a
         // globally-configured directory.
         assert!(custom_idx < kiln_idx, "{dirs:?}");
+    }
+
+    /// The workspace's own `.crucible/agents/` is searched last, so a
+    /// project card shadows everything else — as it does in the daemon.
+    #[test]
+    fn test_collect_agent_directories_ends_with_the_workspace() {
+        let kiln_path = test_path("test-kiln");
+        let config = test_config(kiln_path);
+        let dirs = collect_agent_directories(&config, Path::new("/ws"));
+        assert_eq!(dirs.last(), Some(&PathBuf::from("/ws/.crucible/agents")));
     }
 
     #[test]

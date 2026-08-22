@@ -346,6 +346,7 @@ async fn reading_plugin_state_does_not_queue_behind_the_loader_lock() {
         context_config: None,
         permission_config: None,
         plugin_loader: Some(loader.clone()),
+        card_roots: Default::default(),
     });
 
     // What the daemon binds at startup, and what the read paths must prefer.

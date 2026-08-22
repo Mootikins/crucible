@@ -859,6 +859,7 @@ mod tests {
             context_config: None,
             permission_config: Some(config),
             plugin_loader: None,
+            card_roots: Default::default(),
         }));
 
         let mut session = crucible_core::session::Session::new(

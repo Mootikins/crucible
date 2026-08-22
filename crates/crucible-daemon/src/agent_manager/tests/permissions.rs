@@ -751,6 +751,7 @@ mod session_permission_config_tests {
                 ..Default::default()
             }),
             plugin_loader: None,
+            card_roots: Default::default(),
         })
     }
 

@@ -23,6 +23,7 @@ fn make_agent_manager() -> (AgentManager, Arc<SessionManager>, TempDir) {
         context_config: None,
         permission_config: None,
         plugin_loader: None,
+        card_roots: Default::default(),
     });
     (agent_manager, session_manager, tmp)
 }

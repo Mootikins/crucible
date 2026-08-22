@@ -217,9 +217,14 @@ impl Server {
             .clone()
             .unwrap_or_else(crucible_core::config::crucible_home);
 
-        // Same treatment for the global agent-card root: resolved once here so
+        // Same treatment for the agent-card roots: the global card directory
+        // and the config's `agent_directories`, resolved once here so
         // handlers read a value instead of the environment.
-        let config_home = params.config_home.clone().or_else(dirs::config_dir);
+        let card_roots = crate::agent_cards::CardRoots::from_app_config(
+            params.config_home.clone().or_else(dirs::config_dir),
+            params.app_config.as_ref(),
+            dirs::home_dir().as_deref(),
+        );
 
         // The kiln registry, built from the config the daemon was HANDED —
         // never re-read from disk, or the daemon and the client that spawned
@@ -312,6 +317,7 @@ impl Server {
                     context_config: params.context_config.clone(),
                     permission_config: params.permission_config.clone(),
                     plugin_loader: Some(plugin_loader.clone()),
+                    card_roots,
                 },
                 delegation_service.clone(),
             )
@@ -376,7 +382,6 @@ impl Server {
             mcp_server_manager,
             params.mcp_config.clone(),
             data_home.clone(),
-            config_home,
             workspace_config,
             kiln_registry,
         ));

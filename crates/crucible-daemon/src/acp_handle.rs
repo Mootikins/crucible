@@ -93,6 +93,8 @@ pub struct AcpAgentHandleParams<'a> {
     pub delegation_spawner: Option<Arc<dyn crate::delegation::DelegationSpawner>>,
     pub parent_session_id: Option<&'a str>,
     pub delegation_config: Option<&'a DelegationConfig>,
+    /// Where agent cards come from, for the `delegate_session` tool text.
+    pub card_roots: &'a crate::agent_cards::CardRoots,
     pub acp_config: Option<&'a AcpConfig>,
     pub permission_handler: Option<PermissionRequestHandler>,
     /// How to run the agent inside a plugin's sandbox, from the session's
@@ -134,6 +136,7 @@ impl AcpAgentHandle {
             delegation_spawner,
             parent_session_id,
             delegation_config,
+            card_roots,
             acp_config,
             permission_handler,
             sandbox_exec,
@@ -174,6 +177,7 @@ impl AcpAgentHandle {
                     .map(|c| c.result_max_bytes)
                     .unwrap_or(51200),
                 timeout_secs: delegation_config.map(|c| c.timeout_secs).unwrap_or(300),
+                card_roots: card_roots.clone(),
             }),
             _ => None,
         };

@@ -8,19 +8,65 @@
 //!
 //! Discovery precedence (later shadows earlier, by card name):
 //! 1. `~/.config/crucible/agents/` — global personal cards
-//! 2. `KILN/.crucible/agents/` — kiln config
-//! 3. `WORKSPACE/.crucible/agents/` — project-scoped cards (repos)
+//! 2. `agent_directories` from the app config, in config order
+//! 3. `KILN/.crucible/agents/` — kiln config
+//! 4. `WORKSPACE/.crucible/agents/` — project-scoped cards (repos)
 //!
 //! Only `.crucible/` directories. See [`card_directories`] for why a kiln's
 //! visible top level is not scanned.
 //!
 //! Discovery runs per use (like skills discovery) rather than through a
 //! cached registry — card sets are tiny and this avoids staleness/watchers.
+//!
+//! The CLI (`cru agents`) reads cards off disk through [`card_directories`]
+//! too, so the two never disagree about where a card may come from.
 
 use crucible_core::agent::{AgentCard, AgentCardLoader};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tracing::debug;
+
+/// The session-independent roots of agent-card discovery: the global config
+/// directory and the directories the app config names.
+///
+/// Both are injected as values, never read from the environment at discovery
+/// time. Global cards are first in precedence, so a handler that read
+/// `dirs::config_dir()` would resolve a developer's own cards in every test —
+/// passing on CI, failing locally. `Default` is "no global cards, no
+/// configured directories".
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CardRoots {
+    /// The config home `<config_home>/crucible/agents` hangs off. `None`
+    /// means "no global cards".
+    pub config_home: Option<PathBuf>,
+    /// `agent_directories` from the app config, tilde already expanded.
+    pub agent_directories: Vec<PathBuf>,
+}
+
+impl CardRoots {
+    /// Read `agent_directories` out of the serialized app config. `home`
+    /// expands a leading `~`; `None` leaves the path as written.
+    pub fn from_app_config(
+        config_home: Option<PathBuf>,
+        app_config: Option<&serde_json::Value>,
+        home: Option<&Path>,
+    ) -> Self {
+        let agent_directories = app_config
+            .and_then(|v| v.get("agent_directories"))
+            .and_then(|v| v.as_array())
+            .map(|dirs| {
+                dirs.iter()
+                    .filter_map(|d| d.as_str())
+                    .map(|d| crucible_core::config::expand_tilde(d, home))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Self {
+            config_home,
+            agent_directories,
+        }
+    }
+}
 
 /// Candidate card directories for a session context, in precedence order
 /// (later shadows earlier).
@@ -36,15 +82,12 @@ use tracing::debug;
 /// repo — composes itself in rather than being scanned: its Lua adds the
 /// directory to the path at load. The component brings itself, the host does
 /// not go looking.
-fn card_directories(
-    config_dir: Option<&Path>,
-    workspace: &Path,
-    kiln: Option<&Path>,
-) -> Vec<PathBuf> {
+pub fn card_directories(roots: &CardRoots, workspace: &Path, kiln: Option<&Path>) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    if let Some(config_dir) = config_dir {
-        dirs.push(config_dir.join("crucible").join("agents"));
+    if let Some(config_home) = &roots.config_home {
+        dirs.push(config_home.join("crucible").join("agents"));
     }
+    dirs.extend(roots.agent_directories.iter().cloned());
     if let Some(kiln) = kiln {
         dirs.push(kiln.join(".crucible").join("agents"));
     }
@@ -61,28 +104,19 @@ fn card_directories(
 }
 
 /// Discover agent cards visible to a session (workspace + kiln), keyed by
-/// card name, with the global config directory taken from the environment.
-pub fn discover_agent_cards(workspace: &Path, kiln: Option<&Path>) -> HashMap<String, AgentCard> {
-    discover_agent_cards_in(dirs::config_dir().as_deref(), workspace, kiln)
-}
-
-/// Discover agent cards visible to a session (workspace + kiln), keyed by
 /// card name. Best-effort: unreadable directories or invalid cards are
 /// skipped (the loader warns per file).
 ///
-/// `config_dir` is injected rather than read from the environment so it is
-/// testable: it is *first* in precedence, so reading `dirs::config_dir()` here
-/// would let any developer's own `~/.config/crucible/agents/` shadow a
-/// fixture's cards — passing on CI and failing locally, or worse, the other way
-/// around. `None` means "no global cards".
+/// `roots` is injected rather than read from the environment; see
+/// [`CardRoots`] for why.
 pub fn discover_agent_cards_in(
-    config_dir: Option<&Path>,
+    roots: &CardRoots,
     workspace: &Path,
     kiln: Option<&Path>,
 ) -> HashMap<String, AgentCard> {
     let mut cards = HashMap::new();
     let mut loader = AgentCardLoader::new();
-    for dir in card_directories(config_dir, workspace, kiln) {
+    for dir in card_directories(roots, workspace, kiln) {
         if !dir.is_dir() {
             continue;
         }
@@ -122,7 +156,7 @@ mod tests {
             "---\ndescription: Explores and synthesizes knowledge\nspecialty: reasoning\ntools:\n  semantic_search: true\n  read_note: true\n  create_note: ask\nmcps:\n  - context7\n---\n\nYou are a research assistant.\n",
         );
 
-        let cards = discover_agent_cards_in(None, kiln.path(), Some(kiln.path()));
+        let cards = discover_agent_cards_in(&CardRoots::default(), kiln.path(), Some(kiln.path()));
         let card = cards.get("Researcher").expect("card named from file stem");
         assert_eq!(card.version, "0.1.0");
         assert_eq!(card.specialty.as_deref(), Some("reasoning"));
@@ -143,7 +177,7 @@ mod tests {
             "---\nname: worker\nversion: 1.2.3\ndescription: base\nmodel: llama3.2\nprovider: ollama\ntemperature: 0.2\nmax_tokens: 1000\nmax_turns: 4\nmode: plan\ntools:\n  bash: deny\n---\n\nBase prompt.\n",
         );
 
-        let cards = discover_agent_cards_in(None, kiln.path(), Some(kiln.path()));
+        let cards = discover_agent_cards_in(&CardRoots::default(), kiln.path(), Some(kiln.path()));
         let card = cards.get("worker").unwrap();
         assert_eq!(card.description, "base");
         assert_eq!(card.version, "1.2.3");
@@ -174,7 +208,8 @@ mod tests {
             "---\ndescription: project helper\n---\n\nProject prompt.\n",
         );
 
-        let cards = discover_agent_cards_in(None, workspace.path(), Some(kiln.path()));
+        let cards =
+            discover_agent_cards_in(&CardRoots::default(), workspace.path(), Some(kiln.path()));
         assert_eq!(cards["helper"].description, "project helper");
     }
 
@@ -202,7 +237,7 @@ mod tests {
             "---\ndescription: loads\n---\n\nPrompt.\n",
         );
 
-        let cards = discover_agent_cards_in(None, kiln.path(), Some(kiln.path()));
+        let cards = discover_agent_cards_in(&CardRoots::default(), kiln.path(), Some(kiln.path()));
         assert!(
             !cards.contains_key("ambient"),
             "a card in the kiln's visible tree must not load: {:?}",
@@ -228,7 +263,7 @@ mod tests {
             "good.md",
             "---\ndescription: fine\n---\n\nPrompt.\n",
         );
-        let cards = discover_agent_cards_in(None, kiln.path(), Some(kiln.path()));
+        let cards = discover_agent_cards_in(&CardRoots::default(), kiln.path(), Some(kiln.path()));
         assert!(!cards.contains_key("bad"));
         assert!(cards.contains_key("good"));
     }
@@ -255,12 +290,90 @@ mod tests {
             "---\ndescription: kiln helper\n---\n\nKiln prompt.\n",
         );
 
-        let cards = discover_agent_cards_in(Some(config.path()), kiln.path(), Some(kiln.path()));
+        let cards = discover_agent_cards_in(
+            &CardRoots {
+                config_home: Some(config.path().to_path_buf()),
+                agent_directories: Vec::new(),
+            },
+            kiln.path(),
+            Some(kiln.path()),
+        );
         assert_eq!(cards["helper"].description, "kiln helper");
         assert_eq!(cards["global_only"].description, "global only");
 
         // And nothing global leaks in when the caller injects None.
-        let cards = discover_agent_cards_in(None, kiln.path(), Some(kiln.path()));
+        let cards = discover_agent_cards_in(&CardRoots::default(), kiln.path(), Some(kiln.path()));
         assert!(!cards.contains_key("global_only"));
+    }
+    /// A directory named in `agent_directories` supplies cards. It sits
+    /// between the global cards and the kiln, so the kiln still wins.
+    #[test]
+    fn configured_agent_directories_supply_cards_that_the_kiln_shadows() {
+        let shared = TempDir::new().unwrap();
+        let kiln = TempDir::new().unwrap();
+        write_card(
+            shared.path(),
+            "helper.md",
+            "---\ndescription: shared helper\n---\n\nShared prompt.\n",
+        );
+        write_card(
+            shared.path(),
+            "shared_only.md",
+            "---\ndescription: shared only\n---\n\nShared prompt.\n",
+        );
+        write_card(
+            &kiln.path().join(".crucible").join("agents"),
+            "helper.md",
+            "---\ndescription: kiln helper\n---\n\nKiln prompt.\n",
+        );
+
+        let roots = CardRoots {
+            config_home: None,
+            agent_directories: vec![shared.path().to_path_buf()],
+        };
+        let cards = discover_agent_cards_in(&roots, kiln.path(), Some(kiln.path()));
+        assert_eq!(cards["helper"].description, "kiln helper");
+        assert_eq!(cards["shared_only"].description, "shared only");
+    }
+
+    /// `agent_directories` comes off the serialized app config with `~`
+    /// expanded against the injected home, never the environment.
+    #[test]
+    fn card_roots_read_agent_directories_from_the_app_config() {
+        let home = Path::new("/home/tester");
+        let config = serde_json::json!({
+            "agent_directories": ["~/shared-agents", "/abs/agents"],
+            "kiln_path": "/unrelated",
+        });
+        let roots = CardRoots::from_app_config(None, Some(&config), Some(home));
+        assert_eq!(
+            roots.agent_directories,
+            vec![
+                PathBuf::from("/home/tester/shared-agents"),
+                PathBuf::from("/abs/agents")
+            ]
+        );
+
+        let roots = CardRoots::from_app_config(None, None, Some(home));
+        assert!(roots.agent_directories.is_empty());
+    }
+
+    /// Precedence order of the full list: global, configured, kiln, workspace.
+    #[test]
+    fn card_directories_follow_the_documented_precedence() {
+        let roots = CardRoots {
+            config_home: Some(PathBuf::from("/cfg")),
+            agent_directories: vec![PathBuf::from("/shared")],
+        };
+        let dirs = card_directories(&roots, Path::new("/ws"), Some(Path::new("/kiln")));
+        assert_eq!(
+            dirs,
+            vec![
+                PathBuf::from("/cfg/crucible/agents"),
+                PathBuf::from("/shared"),
+                PathBuf::from("/kiln/.crucible/agents"),
+                PathBuf::from("/ws/.crucible/agents"),
+            ]
+        );
     }
 }

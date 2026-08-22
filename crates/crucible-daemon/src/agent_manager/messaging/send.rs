@@ -815,6 +815,7 @@ impl AgentManager {
             parent_session_id: Some(session_id),
             background_spawner: Some(self.background_manager.clone()),
             delegation_spawner: Some(self.delegation_service.clone()),
+            card_roots: &self.card_roots,
             mcp_gateway: self.mcp_gateway.clone(),
             acp_permission_handler,
             acp_config: self.acp_config.as_ref(),

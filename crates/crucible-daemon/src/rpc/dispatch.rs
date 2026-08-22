@@ -1876,6 +1876,7 @@ mod tests {
             context_config: None,
             permission_config: None,
             plugin_loader: None,
+            card_roots: Default::default(),
         }));
 
         Arc::new(RpcContext::for_test(
@@ -2692,6 +2693,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             context_config: None,
             permission_config: None,
             plugin_loader: None,
+            card_roots: Default::default(),
         }));
 
         Arc::new(RpcContext::new(
@@ -2708,7 +2710,6 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             Arc::new(McpServerManager::new()),
             None,
             std::path::PathBuf::from("/tmp"),
-            None,
             Some(crucible_core::config::WorkspaceConfig::default()),
             Arc::new(crate::kiln_registry::KilnRegistry::empty(
                 crate::kiln_registry::KilnRegistryContext::for_daemon(std::path::PathBuf::from(

@@ -258,6 +258,7 @@ fn test_delegation_context_construction() {
         enabled: true,
         result_max_bytes: 51200,
         timeout_secs: 300,
+        card_roots: Default::default(),
     };
 
     // Verify all fields are constructed correctly
@@ -276,6 +277,7 @@ fn test_delegation_context_construction() {
         enabled: false,
         result_max_bytes: 51200,
         timeout_secs: 300,
+        card_roots: Default::default(),
     };
 
     assert!(!disabled_ctx.enabled);
@@ -426,6 +428,7 @@ async fn test_mcp_host_initializes_with_delegation_context() {
         enabled: true,
         result_max_bytes: 51200,
         timeout_secs: 300,
+        card_roots: Default::default(),
     };
 
     let host = match InProcessMcpHost::start(

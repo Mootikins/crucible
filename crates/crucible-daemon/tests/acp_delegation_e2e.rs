@@ -95,6 +95,7 @@ fn delegation_context(enabled: bool) -> DelegationContext {
         enabled,
         result_max_bytes: 51200,
         timeout_secs: 300,
+        card_roots: Default::default(),
     }
 }
 

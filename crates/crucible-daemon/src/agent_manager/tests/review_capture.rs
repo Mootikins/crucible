@@ -18,6 +18,7 @@ fn manager() -> AgentManager {
         context_config: None,
         permission_config: None,
         plugin_loader: None,
+        card_roots: Default::default(),
     })
 }
 

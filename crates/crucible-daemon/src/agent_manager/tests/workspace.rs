@@ -19,6 +19,7 @@ fn create_test_agent_manager_with_workspace_root(
         context_config: None,
         permission_config: None,
         plugin_loader: None,
+        card_roots: Default::default(),
     })
 }
 

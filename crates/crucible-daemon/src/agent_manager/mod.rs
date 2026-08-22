@@ -385,6 +385,7 @@ pub struct AgentManager {
     /// strong Arc creates no cycle.
     delegation_service: Arc<DelegationService>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
+    card_roots: crate::agent_cards::CardRoots,
     llm_config: Option<crucible_core::config::LlmConfig>,
     acp_config: Option<AcpConfig>,
     /// `[context]` from the daemon config — which project rules files get
@@ -481,6 +482,9 @@ pub struct AgentManagerParams {
     pub context_config: Option<crucible_core::config::ContextConfig>,
     pub permission_config: Option<PermissionConfig>,
     pub plugin_loader: Option<Arc<Mutex<Option<DaemonPluginLoader>>>>,
+    /// Where agent cards come from outside a session's kiln and workspace.
+    /// See [`crate::agent_cards::CardRoots`] for why it is a value.
+    pub card_roots: crate::agent_cards::CardRoots,
 }
 
 impl AgentManager {
@@ -518,6 +522,7 @@ impl AgentManager {
             context_config: params.context_config,
             permission_config: params.permission_config,
             plugin_loader: params.plugin_loader,
+            card_roots: params.card_roots,
             lua_validators: std::sync::OnceLock::new(),
             plugin_handlers: std::sync::OnceLock::new(),
             isolation: std::sync::OnceLock::new(),
@@ -532,6 +537,11 @@ impl AgentManager {
             external_watch: std::sync::OnceLock::new(),
             agent_factory_override: std::sync::OnceLock::new(),
         }
+    }
+
+    /// The agent-card roots this daemon was bound with.
+    pub fn card_roots(&self) -> &crate::agent_cards::CardRoots {
+        &self.card_roots
     }
 
     /// Test-support: install an agent-factory override (first call wins).
@@ -1021,6 +1031,7 @@ impl AgentManager {
                     Some(&session.id),
                     Some(self.background_manager.clone()),
                     Some(self.delegation_service.clone()),
+                    &self.card_roots,
                 )
             });
             // Security posture for the session's tools: a default-deny

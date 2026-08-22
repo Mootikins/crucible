@@ -62,6 +62,7 @@ async fn delegated_turn_events(env: &[(&str, &str)]) -> Vec<SessionEventMessage>
         context_config: None,
         permission_config: None,
         plugin_loader: None,
+        card_roots: Default::default(),
     });
 
     let session = session_manager

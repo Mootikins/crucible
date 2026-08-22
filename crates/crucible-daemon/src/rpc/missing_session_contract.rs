@@ -85,6 +85,7 @@ fn test_context(data_home: &std::path::Path, kiln: &std::path::Path) -> Arc<RpcC
         context_config: None,
         permission_config: None,
         plugin_loader: None,
+        card_roots: Default::default(),
     }));
 
     Arc::new(RpcContext::for_test(

@@ -105,6 +105,7 @@ async fn plugin_declared_tool_is_dispatchable_by_the_agent() {
         context_config: None,
         permission_config: None,
         plugin_loader: Some(Arc::new(tokio::sync::Mutex::new(Some(loader)))),
+        card_roots: Default::default(),
     });
 
     let session = Session::new(SessionType::Chat, vec![kiln_name("kiln")]);

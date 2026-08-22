@@ -68,6 +68,9 @@ pub struct DelegationContext {
     pub result_max_bytes: usize,
     /// Seconds a blocking delegation may run before it is cancelled.
     pub timeout_secs: u64,
+    /// Where agent cards come from, so the tool description can name the
+    /// cards a delegation may target.
+    pub card_roots: crate::agent_cards::CardRoots,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -280,7 +283,8 @@ impl CrucibleMcpServer {
             if delegation_available {
                 let mut targets = delegation_context.targets.clone();
                 if targets.is_empty() {
-                    targets = crate::agent_cards::discover_agent_cards(
+                    targets = crate::agent_cards::discover_agent_cards_in(
+                        &delegation_context.card_roots,
                         &self.workspace_path,
                         Some(self.kiln_path.as_path()),
                     )
