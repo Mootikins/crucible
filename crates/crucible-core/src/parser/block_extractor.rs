@@ -225,7 +225,6 @@ impl BlockExtractor {
                 ASTBlockType::Blockquote => self.extract_blockquote_block(note, &position)?,
                 ASTBlockType::Table => self.extract_table_block(note, &position)?,
                 ASTBlockType::HorizontalRule => self.extract_horizontal_rule(note, &position)?,
-                ASTBlockType::ThematicBreak => self.extract_thematic_break(note, &position)?,
                 // Paragraphs come from the gaps between positions, never from a position.
                 ASTBlockType::Paragraph => None,
             };
@@ -641,16 +640,6 @@ impl BlockExtractor {
         );
 
         Ok(Some(block))
-    }
-
-    /// Extract thematic break blocks (not yet implemented in ParsedNote)
-    fn extract_thematic_break(
-        &self,
-        _document: &ParsedNote,
-        _position: &ExtractionPosition,
-    ) -> Result<Option<ASTBlock>, ParseError> {
-        // TODO: Implement thematic break extraction when available in ParsedNote
-        Ok(None)
     }
 
     /// Extract paragraph blocks from gaps between other content

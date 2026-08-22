@@ -28,8 +28,6 @@ pub enum ASTBlockType {
     Table,
     /// Horizontal rule (--- or ***)
     HorizontalRule,
-    /// Thematic break or divider
-    ThematicBreak,
 }
 
 impl ASTBlockType {
@@ -47,7 +45,6 @@ impl ASTBlockType {
             ASTBlockType::Blockquote => "blockquote",
             ASTBlockType::Table => "table",
             ASTBlockType::HorizontalRule => "horizontal_rule",
-            ASTBlockType::ThematicBreak => "thematic_break",
         }
     }
 }
