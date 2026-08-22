@@ -462,6 +462,20 @@ pub trait NoteStore: Send + Sync {
     /// "exists but denied" would itself be a side-channel.
     async fn get(&self, path: &str, authority: &Scope) -> StorageResult<Option<NoteRecord>>;
 
+    /// The content hash recorded for `path`, if the note has a row.
+    ///
+    /// Unscoped, like [`Self::upsert`] and [`Self::delete`]: the caller is the
+    /// indexer asking what it already wrote, and it is about to overwrite the
+    /// row either way. A scoped read is wrong here — a note carrying an
+    /// explicit `scope: workspace:/elsewhere` is invisible to the kiln's own
+    /// authority, so the indexer would be told "no row", reprocess it, and
+    /// re-embed it on every single open.
+    ///
+    /// Required rather than defaulted: a default returning `Ok(None)` would
+    /// silently turn change detection off for any store that forgot to
+    /// implement it, and the only symptom is a slow reindex nobody attributes.
+    async fn content_hash(&self, path: &str) -> StorageResult<Option<BlockHash>>;
+
     /// Delete a note record by path
     ///
     /// This is idempotent: deleting a non-existent note succeeds.

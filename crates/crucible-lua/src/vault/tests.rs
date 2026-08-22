@@ -154,6 +154,14 @@ mod store_tests {
 
     #[async_trait]
     impl NoteStore for MockNoteStore {
+        /// Change detection is not what this mock is for.
+        async fn content_hash(
+            &self,
+            _path: &str,
+        ) -> StorageResult<Option<crucible_core::parser::BlockHash>> {
+            Ok(None)
+        }
+
         async fn upsert(&self, note: NoteRecord) -> StorageResult<Vec<SessionEvent>> {
             let title = note.title.clone();
             let path = note.path.clone();

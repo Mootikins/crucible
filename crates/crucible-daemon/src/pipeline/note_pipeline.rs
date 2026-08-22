@@ -23,7 +23,6 @@ use crucible_core::events::SessionEvent;
 use crucible_core::parser::types::BlockHash;
 use crucible_core::parser::{traits::MarkdownParser, CrucibleParser};
 use crucible_core::processing::ProcessingResult;
-use crucible_core::storage::Scope;
 use crucible_core::storage::{NoteRecord, NoteStore};
 use std::collections::HashMap;
 use std::path::Path;
@@ -477,26 +476,23 @@ impl NotePipeline {
 
     /// The hash recorded on this path's note row, if it has one.
     ///
-    /// A read failure is not an error here: it means "no usable record", which
+    /// Unscoped on purpose. A scoped `get` would answer "no row" for a note
+    /// whose frontmatter names another workspace (`scope: workspace:/other`),
+    /// because the kiln's own authority cannot read it — and that note would
+    /// then be re-parsed and re-embedded on every open, forever. The indexer
+    /// is the writer here, and it is about to overwrite the row either way.
+    ///
+    /// A read failure is not an error: it means "no usable record", which
     /// reprocesses. Refusing to index because the index could not be read is
     /// the wrong way round.
+    ///
+    /// No special case for the `BlockHash::zero()` that every markdown note
+    /// carried before the parser filled `content_hash` in: zero is not the
+    /// hash of any file, so such a row compares unequal and reprocesses once.
+    /// A guard for it would be a branch no input reaches.
     async fn stored_content_hash(&self, path: &Path) -> Option<BlockHash> {
         let key = self.storage_key(path);
-        // The same spelling the storage key is derived from, so a note whose
-        // row carries an explicit `scope` still matches. A mismatch returns
-        // `None`, which reprocesses — the safe direction.
-        let root = match self.kiln_root.as_ref() {
-            Some(root) => root.clone(),
-            None => path.parent().unwrap_or(path).to_path_buf(),
-        };
-        let authority = Scope::workspace_unchecked(root);
-        let record = self.note_store.get(&key, &authority).await.ok()??;
-
-        // No special case for the `BlockHash::zero()` that every markdown note
-        // carried before the parser filled `content_hash` in: zero is not the
-        // hash of any file, so such a row simply compares unequal and
-        // reprocesses once. A guard for it would be a branch no input reaches.
-        Some(record.content_hash)
+        self.note_store.content_hash(&key).await.ok()?
     }
 
     /// BLAKE3 of the bytes on disk.
@@ -756,12 +752,36 @@ mod tests {
             Ok(vec![])
         }
 
+        /// Enforces scope the way `SqliteNoteStore` does, so a scoped read
+        /// here is as blind as it is in production. Without this the mock
+        /// would answer every authority and a scoped change-detection read
+        /// would look correct in tests and re-embed forever in the field.
         async fn get(
             &self,
             path: &str,
-            _authority: &crucible_core::storage::Scope,
+            authority: &crucible_core::storage::Scope,
         ) -> std::result::Result<Option<NoteRecord>, StorageError> {
-            Ok(self.notes.lock().unwrap().get(path).cloned())
+            use crucible_core::storage::note_store::SCOPE_PROPERTY_KEY;
+            use crucible_core::storage::Scope;
+
+            let notes = self.notes.lock().unwrap();
+            let Some(note) = notes.get(path) else {
+                return Ok(None);
+            };
+            let visible = match note.properties.get(SCOPE_PROPERTY_KEY) {
+                None => true,
+                Some(value) => Scope::from_property_value(value)
+                    .and_then(Result::ok)
+                    .is_some_and(|scope| scope.path() == authority.path()),
+            };
+            Ok(visible.then(|| note.clone()))
+        }
+
+        async fn content_hash(
+            &self,
+            path: &str,
+        ) -> std::result::Result<Option<BlockHash>, StorageError> {
+            Ok(self.notes.lock().unwrap().get(path).map(|n| n.content_hash))
         }
 
         async fn delete(&self, _path: &str) -> std::result::Result<SessionEvent, StorageError> {
@@ -879,6 +899,31 @@ mod tests {
         assert!(
             second.process(tmp.path()).await.unwrap().is_skipped(),
             "a pipeline built after the first must not reindex what the store already holds"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_note_scoped_to_another_workspace_is_still_skipped() {
+        // `scope: workspace:/elsewhere` is a documented frontmatter form, and
+        // `stamp_scope_on_properties` keeps it verbatim. The kiln's own
+        // authority cannot read such a row, so a SCOPED change-detection read
+        // is told "no row" and re-parses and re-embeds this note on every
+        // single open — the very cost this fix removes, left in place for one
+        // class of note. The read is unscoped for exactly this reason.
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::new());
+        let config = NotePipelineConfig {
+            skip_enrichment: true,
+            force_reprocess: false,
+        };
+        let mut pipeline = NotePipeline::with_config(passing_enricher(), store, config);
+        pipeline.set_kiln_root(std::env::temp_dir());
+
+        let tmp = write_temp_note("---\nscope: workspace:/elsewhere\n---\n# T\n\nBody.\n");
+
+        assert!(!pipeline.process(tmp.path()).await.unwrap().is_skipped());
+        assert!(
+            pipeline.process(tmp.path()).await.unwrap().is_skipped(),
+            "a note scoped elsewhere must not be reindexed on every pass"
         );
     }
 

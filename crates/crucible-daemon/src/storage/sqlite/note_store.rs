@@ -270,6 +270,13 @@ fn filter_to_sql(
 // Row Conversion
 // ============================================================================
 
+/// Decode a `content_hash` blob. `None` when it is not 32 bytes, which is not
+/// a hash of anything.
+fn blob_to_block_hash(bytes: &[u8]) -> Option<BlockHash> {
+    let arr: [u8; 32] = bytes.try_into().ok()?;
+    Some(BlockHash::new(arr))
+}
+
 /// Convert a database row to a NoteRecord
 fn row_to_note(row: &rusqlite::Row<'_>) -> Result<NoteRecord, rusqlite::Error> {
     let path: String = row.get(0)?;
@@ -283,14 +290,7 @@ fn row_to_note(row: &rusqlite::Row<'_>) -> Result<NoteRecord, rusqlite::Error> {
     let properties_json: String = row.get(8)?;
     let updated_at_str: String = row.get(9)?;
 
-    // Parse content hash
-    let content_hash = if content_hash_bytes.len() == 32 {
-        let mut arr = [0u8; 32];
-        arr.copy_from_slice(&content_hash_bytes);
-        BlockHash::new(arr)
-    } else {
-        BlockHash::zero()
-    };
+    let content_hash = blob_to_block_hash(&content_hash_bytes).unwrap_or_else(BlockHash::zero);
 
     // Parse embedding
     let embedding = embedding_bytes.map(|bytes| deserialize_embedding(&bytes));
@@ -476,6 +476,32 @@ impl NoteStore for SqliteNoteStore {
         .await??;
 
         Ok(result)
+    }
+
+    async fn content_hash(&self, path: &str) -> StorageResult<Option<BlockHash>> {
+        let pool = self.pool.clone();
+        let path = path.to_string();
+
+        tokio::task::spawn_blocking(move || {
+            pool.with_connection(|conn| {
+                // No scope predicate, deliberately. See the trait docs: this
+                // answers the indexer's "what did I already write for this
+                // path", and a scoped read would hide a note whose frontmatter
+                // names another workspace — condemning it to be re-parsed and
+                // re-embedded on every kiln open.
+                let hash: Option<Vec<u8>> = conn
+                    .query_row(
+                        "SELECT content_hash FROM notes WHERE path = ?1",
+                        rusqlite::params![path],
+                        |row| row.get(0),
+                    )
+                    .optional()
+                    .sql()?;
+                Ok(hash.as_deref().and_then(blob_to_block_hash))
+            })
+        })
+        .await
+        .map_err(|e| StorageError::Backend(format!("join error: {e}")))?
     }
 
     async fn get(&self, path: &str, authority: &Scope) -> StorageResult<Option<NoteRecord>> {

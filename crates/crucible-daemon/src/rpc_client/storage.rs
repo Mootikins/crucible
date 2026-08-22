@@ -253,6 +253,18 @@ impl NoteStore for DaemonNoteStore {
             .storage_backend()
     }
 
+    async fn content_hash(
+        &self,
+        path: &str,
+    ) -> StorageResult<Option<crucible_core::parser::BlockHash>> {
+        // Best effort over the scoped read: the RPC surface has no unscoped
+        // note fetch, and it does not need one. The indexer runs daemon-side
+        // against the SQLite store; this client-side impl exists for CLI
+        // callers, none of which drive the pipeline.
+        let authority = crucible_core::storage::Scope::workspace_unchecked(self.client.kiln_path());
+        Ok(self.get(path, &authority).await?.map(|n| n.content_hash))
+    }
+
     async fn delete(&self, path: &str) -> StorageResult<SessionEvent> {
         // Internal existence check bound to this client's kiln so the
         // bookkeeping `get` doesn't need an admin authority.
