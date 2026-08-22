@@ -5,7 +5,7 @@
 //! ## Key Components
 //!
 //! - **NoteStore**: Unified note metadata and vector search storage
-//! - **Pure computation**: Hash and embedding generation
+//! - **PropertyStore**: Note property storage
 //!
 //! ## Architecture
 //!
@@ -20,7 +20,6 @@ pub mod error_ext;
 pub mod note_store;
 pub mod property_store;
 pub mod scope;
-pub mod traits;
 
 // Re-export main types for convenience
 pub use error::{StorageError, StorageResult};
@@ -30,4 +29,3 @@ pub use note_store::{
 };
 pub use property_store::PropertyStore;
 pub use scope::{Scope, ScopeError};
-pub use traits::ContentHasher;

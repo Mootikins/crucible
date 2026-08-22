@@ -76,7 +76,7 @@ impl FromStr for FileHash {
     }
 }
 
-/// Hash algorithms supported by the ContentHasher trait
+/// Hash algorithms that the hash types can name
 ///
 /// BLAKE3 is recommended for production due to its speed and security.
 /// SHA256 is available for compatibility with existing systems.
