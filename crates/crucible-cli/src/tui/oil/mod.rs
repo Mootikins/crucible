@@ -34,7 +34,7 @@ pub mod utils;
 mod viewport_cache;
 
 pub use agent_selection::AgentSelection;
-pub use app::{Action, App, ViewContext};
+pub use app::{Action, ViewContext};
 pub use chat_app::{ChatAppMsg, McpServerDisplay, OilChatApp, PluginStatusEntry, DEFAULT_MODE};
 pub use chat_runner::OilChatRunner;
 pub use component::Component;

@@ -4,14 +4,13 @@
 //! and produces the expected state change. Catches category mismatches
 //! where a message is categorized as one type but handled in another.
 
-use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 
 // ─── Error routing ─────────────────────────────────────────────────────────
 
 #[test]
 fn error_message_creates_notification() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::Error("something broke".into()));
 
     assert!(
@@ -22,7 +21,7 @@ fn error_message_creates_notification() {
 
 #[test]
 fn error_during_streaming_creates_notification() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::TextDelta("partial response".into()));
     app.on_message(ChatAppMsg::Error("LLM connection lost".into()));
 
@@ -36,7 +35,7 @@ fn error_during_streaming_creates_notification() {
 
 #[test]
 fn context_usage_updates_state() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::ContextUsage {
         used: 5000,
         total: 128000,
@@ -51,7 +50,7 @@ fn context_usage_updates_state() {
 
 #[test]
 fn models_loaded_updates_state() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let models = vec!["ollama/llama3".into(), "openai/gpt-4".into()];
     app.on_message(ChatAppMsg::ModelsLoaded(models));
 
@@ -60,7 +59,7 @@ fn models_loaded_updates_state() {
 
 #[test]
 fn models_fetch_failed_updates_state() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::ModelsFetchFailed("timeout".into()));
 
     assert!(
@@ -76,7 +75,7 @@ fn models_fetch_failed_updates_state() {
 
 #[test]
 fn status_message_updates_status() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::Status("Thinking...".into()));
 
     assert_eq!(app.status_text(), "Thinking...");
@@ -86,7 +85,7 @@ fn status_message_updates_status() {
 
 #[test]
 fn mode_changed_updates_mode() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::ModeChanged("plan".into()));
 
     assert_eq!(app.mode(), "plan");
@@ -96,7 +95,7 @@ fn mode_changed_updates_mode() {
 
 #[test]
 fn text_delta_starts_streaming() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     assert!(!app.is_streaming());
 
     app.on_message(ChatAppMsg::TextDelta("hello".into()));
@@ -105,7 +104,7 @@ fn text_delta_starts_streaming() {
 
 #[test]
 fn stream_complete_ends_streaming() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::TextDelta("hello".into()));
     assert!(app.is_streaming());
 
@@ -115,7 +114,7 @@ fn stream_complete_ends_streaming() {
 
 #[test]
 fn stream_cancelled_ends_streaming() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::TextDelta("partial".into()));
     assert!(app.is_streaming());
 
@@ -127,7 +126,7 @@ fn stream_cancelled_ends_streaming() {
 
 #[test]
 fn subagent_spawned_creates_container() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::SubagentSpawned {
         id: "agent-1".into(),
         prompt: "analyze code".into(),
@@ -138,7 +137,7 @@ fn subagent_spawned_creates_container() {
 
 #[test]
 fn subagent_completed_marks_container_complete() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::SubagentSpawned {
         id: "agent-1".into(),
         prompt: "analyze code".into(),
@@ -159,7 +158,7 @@ fn subagent_completed_marks_container_complete() {
 
 #[test]
 fn tool_call_creates_tool_group() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::ToolCall {
         name: "read_file".into(),
         args: r#"{"path": "main.rs"}"#.into(),
@@ -181,7 +180,7 @@ fn tool_call_diff_update_replaces_empty_diffs_with_late_content() {
     // Simulates the ACP late-diff flow (Claude Code): the daemon
     // first emits a ToolCall with empty diffs, then a follow-up
     // ToolCallDiffUpdate carries the diff content.
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::ToolCall {
         name: "edit_file".into(),
         args: r#"{"path": "src/late.rs"}"#.into(),
@@ -218,7 +217,7 @@ fn tool_call_diff_update_replaces_empty_diffs_with_late_content() {
 fn tool_call_diff_update_for_unknown_call_id_is_a_noop() {
     use crucible_core::types::acp::FileDiff;
 
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let diffs = vec![FileDiff::from_contents(
         "src/orphan.rs",
         None,
@@ -238,7 +237,7 @@ fn tool_call_diff_update_for_unknown_call_id_is_a_noop() {
 
 #[test]
 fn tool_result_error_sets_error_on_tool() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::ToolCall {
         name: "bash".into(),
         args: "{}".into(),
@@ -267,7 +266,7 @@ fn tool_result_error_sets_error_on_tool() {
 
 #[test]
 fn open_interaction_opens_modal() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     use crucible_core::interaction::{InteractionRequest, PermRequest};
 
     let request = InteractionRequest::Permission(PermRequest::bash(["ls", "-la"]));
@@ -333,7 +332,7 @@ fn no_message_silently_dropped() {
     ];
 
     for (name, msg, check) in test_cases {
-        let mut app = OilChatApp::init();
+        let mut app = OilChatApp::default();
         app.on_message(msg);
         assert!(
             check(&app),
@@ -353,7 +352,7 @@ fn no_message_silently_dropped() {
 fn a_lua_declared_mode_reaches_the_statusline() {
     use crate::tui::oil::tests::helpers::vt_render;
 
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::ModesLoaded(vec![
         "normal".to_string(),
         "review".to_string(),
@@ -385,7 +384,7 @@ fn a_mode_change_from_another_client_updates_the_mode() {
          the daemon, which re-emits the event, which never terminates"
     );
 
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     for msg in msgs {
         app.on_message(msg);
     }
@@ -412,7 +411,7 @@ fn provider_info(name: &str) -> crucible_core::types::ProviderInfo {
 /// with remedies instead of staying silent.
 #[test]
 fn an_empty_provider_list_surfaces_a_warning_with_remedies() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::ProvidersListed(vec![]));
 
     assert!(
@@ -423,7 +422,7 @@ fn an_empty_provider_list_surfaces_a_warning_with_remedies() {
 
 #[test]
 fn a_populated_provider_list_sets_the_provider_without_warning() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::ProvidersListed(vec![provider_info(
         "Ollama (Local)",
     )]));

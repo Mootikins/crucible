@@ -1,4 +1,4 @@
-use crate::tui::oil::app::{App, ViewContext};
+use crate::tui::oil::app::ViewContext;
 use crate::tui::oil::chat_app::OilChatApp;
 use crate::tui::oil::theme;
 use anyhow::Result;

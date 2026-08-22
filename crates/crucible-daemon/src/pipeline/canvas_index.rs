@@ -52,7 +52,7 @@ pub struct CanvasLinks {
 /// only symlink resolution needs one.
 pub async fn extract_links(
     canvas: &Canvas,
-    parser: &dyn crucible_core::parser::MarkdownParser,
+    parser: &crucible_core::parser::CrucibleParser,
     source_path: &Path,
     kiln_root: Option<&Path>,
 ) -> CanvasLinks {
@@ -98,7 +98,7 @@ pub async fn extract_links(
 pub async fn canvas_to_record(
     path: &Path,
     storage_path: &str,
-    parser: &dyn crucible_core::parser::MarkdownParser,
+    parser: &crucible_core::parser::CrucibleParser,
     kiln_root: Option<&Path>,
 ) -> Result<NoteRecord> {
     let source = tokio::fs::read_to_string(path)

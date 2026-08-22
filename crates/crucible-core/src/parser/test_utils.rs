@@ -22,7 +22,7 @@
 //! }
 //! ```
 
-use super::{CrucibleParser, MarkdownParser, ParsedNote};
+use super::{CrucibleParser, ParsedNote};
 use std::path::Path;
 
 /// Parse markdown content into a ParsedNote for testing.

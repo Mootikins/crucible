@@ -1,13 +1,13 @@
 use std::path::Path;
 
-use crucible_core::parser::{CrucibleParser, MarkdownParser};
+use crucible_core::parser::CrucibleParser;
 use tempfile::tempdir;
 use tokio::fs;
 
-/// Asserts the behavioral contract that ALL MarkdownParser implementations must satisfy.
+/// Asserts the behavioral contract the parser must satisfy.
 /// Some optional fields (like plain_text) may not be populated by all parsers — test those
 /// separately per implementation in the extended contract below.
-async fn assert_markdown_parser_contract(parser: &dyn MarkdownParser) {
+async fn assert_markdown_parser_contract(parser: &CrucibleParser) {
     assert!(parser.can_parse(Path::new("note.md")));
     assert!(parser.can_parse(Path::new("note.markdown")));
     assert!(!parser.can_parse(Path::new("note.txt")));
@@ -49,7 +49,7 @@ async fn assert_markdown_parser_contract(parser: &dyn MarkdownParser) {
 }
 
 /// Extended contract for parsers that populate plain_text (e.g. CrucibleParser).
-async fn assert_plain_text_contract(parser: &dyn MarkdownParser) {
+async fn assert_plain_text_contract(parser: &CrucibleParser) {
     let source_path = Path::new("contract.md");
     let content = "# Contract Title\n\nSee [[Target]] and #contract_tag.";
     let parsed = parser
@@ -101,7 +101,7 @@ async fn contract_parse_file_returns_error_for_missing_path() {
 /// So this covers the whole extension set, not just footnotes — the same
 /// mistake in any of them would surface here.
 mod never_panics_on_multibyte {
-    use crucible_core::parser::{CrucibleParser, MarkdownParser};
+    use crucible_core::parser::CrucibleParser;
     use std::path::Path;
 
     /// Text that is cheap to get wrong: each of these is multi-byte in UTF-8,

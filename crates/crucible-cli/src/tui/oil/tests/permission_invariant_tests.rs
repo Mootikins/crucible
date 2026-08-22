@@ -9,7 +9,7 @@
 //! Uses property-based testing with proptest to verify invariants across
 //! a wide range of permission requests and key sequences.
 
-use crate::tui::oil::app::{Action, App};
+use crate::tui::oil::app::Action;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::event::Event;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};

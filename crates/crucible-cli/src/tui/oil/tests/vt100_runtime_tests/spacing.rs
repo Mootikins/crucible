@@ -5,7 +5,7 @@ use super::*;
 
 #[test]
 fn vt100_runtime_renders_viewport_content() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("Hello World".into()));
@@ -21,7 +21,7 @@ fn vt100_runtime_renders_viewport_content() {
 
 #[test]
 fn vt100_runtime_shows_graduated_content_in_scrollback() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // User message + assistant response (will graduate)
@@ -48,7 +48,7 @@ fn vt100_runtime_shows_graduated_content_in_scrollback() {
 /// This is the scenario that exposed the phantom blank line bug.
 #[test]
 fn vt100_multi_frame_graduation_spacing() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // Frame 1: user message graduates
@@ -88,7 +88,7 @@ fn vt100_multi_frame_graduation_spacing() {
 /// Cleanup moves cursor below viewport so post-exit prints don't overlap.
 #[test]
 fn vt100_cleanup_viewport_positions_cursor_below_content() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // Render some content so the viewport has lines
@@ -115,7 +115,7 @@ fn vt100_cleanup_viewport_positions_cursor_below_content() {
 /// Consecutive tools across separate frames — the exact bug scenario.
 #[test]
 fn vt100_runtime_consecutive_tools_no_phantom_blank() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("Do stuff".into()));
@@ -195,7 +195,7 @@ fn vt100_runtime_consecutive_tools_no_phantom_blank() {
 /// Exactly 1 blank line between graduated user box and the thought.
 #[test]
 fn vt100_user_then_thought_one_blank_line() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(120, 40);
 
     app.on_message(ChatAppMsg::UserMessage("Hello".into()));
@@ -229,7 +229,7 @@ fn vt100_user_then_thought_one_blank_line() {
 /// Exactly 1 blank line.
 #[test]
 fn vt100_user_then_tool_one_blank_line() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(120, 40);
 
     app.on_message(ChatAppMsg::UserMessage("Do stuff".into()));
@@ -260,7 +260,7 @@ fn vt100_user_then_tool_one_blank_line() {
 /// Variant 3: Tool graduates, then thought. Cross-frame. Exactly 1 blank.
 #[test]
 fn vt100_tool_then_thought_cross_frame_one_blank() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(120, 40);
 
     app.on_message(ChatAppMsg::UserMessage("Go".into()));
@@ -295,7 +295,7 @@ fn vt100_tool_then_thought_cross_frame_one_blank() {
 /// Variant 4: Full conversation — no triple blanks anywhere.
 #[test]
 fn vt100_full_conversation_no_triple_blanks() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(120, 40);
 
     // Turn 1
@@ -333,7 +333,7 @@ fn vt100_full_conversation_no_triple_blanks() {
 /// Variant 5: Rapid tick-per-event rendering — no triple blanks.
 #[test]
 fn vt100_tick_per_event_no_triple_blanks() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(120, 40);
 
     app.on_message(ChatAppMsg::UserMessage("Go".into()));
@@ -382,7 +382,7 @@ fn vt100_tick_per_event_no_triple_blanks() {
 fn permission_modal_opens_without_corruption() {
     use crucible_core::interaction::{InteractionRequest, PermRequest};
 
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("Do something".into()));
@@ -412,7 +412,7 @@ fn permission_modal_opens_without_corruption() {
 fn ask_interaction_opens_without_crash() {
     use crucible_core::interaction::{AskRequest, InteractionRequest};
 
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("Question".into()));
@@ -451,7 +451,7 @@ fn model_popup_bg_matches_command_prompt_bg() {
     use crate::tui::oil::event::Event;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(100, 30);
 
     app.on_message(ChatAppMsg::ModelsLoaded(vec![
@@ -498,7 +498,7 @@ fn model_popup_bg_matches_command_prompt_bg() {
 /// long streamed response.
 #[test]
 fn graduated_thinking_scrolls_off_top_row_during_long_stream() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("go".into()));

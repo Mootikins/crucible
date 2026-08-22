@@ -21,7 +21,7 @@ use crate::enrichment::Enricher;
 use anyhow::{Context, Result};
 use crucible_core::events::SessionEvent;
 use crucible_core::parser::types::BlockHash;
-use crucible_core::parser::{traits::MarkdownParser, CrucibleParser};
+use crucible_core::parser::CrucibleParser;
 use crucible_core::processing::ProcessingResult;
 use crucible_core::storage::{NoteRecord, NoteStore};
 use std::collections::HashMap;
@@ -56,7 +56,7 @@ pub struct NotePipelineConfig {
 ///
 pub struct NotePipeline {
     /// Markdown parser (Phase 2) - supports multiple backends
-    parser: Arc<dyn MarkdownParser>,
+    parser: Arc<CrucibleParser>,
 
     /// Enricher for embeddings and metadata (Phase 3)
     enricher: Arc<Enricher>,
@@ -85,7 +85,7 @@ impl NotePipeline {
         note_store: Arc<dyn NoteStore>,
         config: NotePipelineConfig,
     ) -> Self {
-        let parser = Arc::new(CrucibleParser::new()) as Arc<dyn MarkdownParser>;
+        let parser = Arc::new(CrucibleParser::new());
 
         Self {
             parser,

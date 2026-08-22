@@ -5,7 +5,6 @@ mod spacing;
 mod spinner_leak;
 
 use super::vt100_runtime::Vt100TestRuntime;
-use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 
 /// Count blank lines between two content patterns in screen text.

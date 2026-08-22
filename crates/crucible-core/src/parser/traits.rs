@@ -1,32 +1,6 @@
-//! Traits for markdown parsing
+//! Parser capabilities and requirements.
 //!
-//! This module defines the core MarkdownParser trait that all parser implementations must follow.
-//! This is the canonical location for parser traits (Dependency Inversion Principle).
-
-use crate::parser::error::ParserResult;
-use crate::parser::types::ParsedNote;
-use async_trait::async_trait;
-use std::path::Path;
-
-/// Core trait for parsing markdown documents
-///
-/// This trait defines the interface for parsing markdown files into structured
-/// `ParsedNote` instances. This is the main parser trait used throughout
-/// the crucible system.
-#[async_trait]
-pub trait MarkdownParser: Send + Sync {
-    /// Parse a markdown file from the filesystem
-    async fn parse_file(&self, path: &Path) -> ParserResult<ParsedNote>;
-
-    /// Parse markdown content from a string
-    async fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedNote>;
-
-    /// Get parser capabilities
-    fn capabilities(&self) -> ParserCapabilities;
-
-    /// Validate if the parser can handle this file
-    fn can_parse(&self, path: &Path) -> bool;
-}
+//! `CrucibleParser` is the one parser. These types describe what it supports.
 
 /// Parser capabilities and configuration
 #[derive(Debug, Clone, PartialEq, Eq)]

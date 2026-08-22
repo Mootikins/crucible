@@ -12,7 +12,6 @@
 //!   context-usage formatting.
 
 use super::helpers::vt_render;
-use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::containers::ChatNode;
 
@@ -28,7 +27,7 @@ use crate::tui::oil::containers::ChatNode;
 fn user_message_creates_user_container() {
     // Formerly `snapshot_user_message`.
     // Visual class now outside coverage: user-message box (▄▄/▀▀ bars, `>` prefix).
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::UserMessage(
         "What is the meaning of life?".into(),
     ));
@@ -45,7 +44,7 @@ fn user_message_creates_user_container() {
 fn assistant_text_creates_response_container() {
     // Formerly `snapshot_assistant_text`.
     // Visual class now outside coverage: assistant markdown bullet (`● ` prefix).
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::UserMessage("Hello".into()));
     app.on_message(ChatAppMsg::TextDelta("The answer is 42.".into()));
     app.on_message(ChatAppMsg::StreamComplete);
@@ -72,7 +71,7 @@ fn assistant_text_creates_response_container() {
 fn tool_complete_creates_tool_group() {
     // Formerly `snapshot_tool_complete`.
     // Visual class now outside coverage: completed-tool checkmark (`✓ ToolName arg`).
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::UserMessage("Read a file".into()));
     app.on_message(ChatAppMsg::ToolCall {
         name: "read_file".into(),
@@ -111,7 +110,7 @@ fn multi_turn_creates_containers_in_order() {
     // Formerly `snapshot_multi_turn`.
     // Visual class now outside coverage: thinking-block collapse formatting,
     // continuation-text indentation, tool checkmark row.
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
 
     // Turn 1: user → thinking → text → tool → continuation text
     app.on_message(ChatAppMsg::UserMessage("Analyze this code".into()));
@@ -180,7 +179,7 @@ fn multi_turn_creates_containers_in_order() {
 fn user_assistant_exchange_creates_two_containers() {
     // Formerly `snapshot_user_and_assistant_exchange`.
     // Visual class now outside coverage: user-message box, assistant bullet prefix.
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("What is Rust?".into()));
     app.on_message(ChatAppMsg::TextDelta(
@@ -212,7 +211,7 @@ fn user_assistant_exchange_creates_two_containers() {
 #[test]
 fn snapshot_tool_pending() {
     // Visual indicator: pending-tool spinner frame (`◐` braille).
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::UserMessage("Run a command".into()));
     app.on_message(ChatAppMsg::ToolCall {
         name: "bash".into(),
@@ -233,7 +232,7 @@ fn snapshot_tool_pending() {
 #[test]
 fn snapshot_context_indicator_after_usage() {
     // Visual rendering: statusline token-count format ("Nk tok").
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Hi".into()));
     app.on_message(ChatAppMsg::TextDelta("Hello!".into()));
@@ -255,7 +254,7 @@ fn snapshot_context_indicator_after_usage() {
 #[test]
 fn snapshot_context_indicator_with_percentage() {
     // Visual rendering: statusline context-percentage format ("N% ctx").
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("Hi".into()));
     app.on_message(ChatAppMsg::TextDelta("Hello!".into()));
@@ -280,7 +279,7 @@ fn snapshot_context_indicator_with_percentage() {
 fn show_diffs_off_omits_diff_body() {
     use crucible_core::types::acp::FileDiff;
 
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.set_show_diffs(false);
     app.on_message(ChatAppMsg::UserMessage("edit a file".into()));
     app.on_message(ChatAppMsg::ToolCall {
@@ -316,7 +315,7 @@ fn show_diffs_off_omits_diff_body() {
 fn show_diffs_on_includes_diff_body() {
     use crucible_core::types::acp::FileDiff;
 
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.set_show_diffs(true);
     app.on_message(ChatAppMsg::UserMessage("edit a file".into()));
     app.on_message(ChatAppMsg::ToolCall {

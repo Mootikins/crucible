@@ -1,6 +1,6 @@
 #![allow(dead_code)] // helpers used by disabled test modules awaiting reconstruction
 
-use crate::tui::oil::app::{App, ViewContext};
+use crate::tui::oil::app::ViewContext;
 use crate::tui::oil::chat_app::OilChatApp;
 use crate::tui::oil::Node;
 use crucible_oil::ansi::strip_ansi;

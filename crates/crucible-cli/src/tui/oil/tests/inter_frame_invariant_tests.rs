@@ -5,7 +5,6 @@
 //! and check invariants after EVERY frame, catching issues that only
 //! appear during transitions (graduation boundaries, streaming, etc).
 
-use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crucible_oil::ansi::strip_ansi;
 

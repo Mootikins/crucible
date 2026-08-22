@@ -1,6 +1,6 @@
 use crate::chat::bridge::AgentEventBridge;
 use crate::tui::oil::agent_selection::AgentSelection;
-use crate::tui::oil::app::{Action, App, ViewContext};
+use crate::tui::oil::app::{Action, ViewContext};
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::commands::SetEffect;
 use crate::tui::oil::event::Event;

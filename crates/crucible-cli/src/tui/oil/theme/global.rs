@@ -6,7 +6,7 @@
 //!
 //! Installing leaks the previous theme rather than reference-counting it. That
 //! is deliberate: `active()` returning `&'static ThemeConfig` is what lets a
-//! render borrow from it for free — including `InputStyle::prompt`, which hands
+//! render borrow from it for free — including `InputMode::prompt`, which hands
 //! back a `&'static str` straight out of the store — and lets `ViewContext` stay
 //! `Copy`. An `Arc` would push a lifetime or a clone into every one of ~60 call
 //! sites on the render path. Theme installs are user-initiated and rare (a few

@@ -530,16 +530,13 @@ pub trait AgentHandle: crate::turn::Agent + SessionKnobs + Send + Sync {
         Ok(())
     }
 
-    /// Downcast to [`Undoable`] for agents that support undoing turns.
-    /// Default: not supported.
-    fn as_undoable(&self) -> Option<&dyn super::Undoable> {
-        None
-    }
-
-    /// Mutable counterpart to [`Self::as_undoable`]. Returns `None` for
-    /// agents that don't implement [`Undoable`].
-    fn as_undoable_mut(&mut self) -> Option<&mut dyn super::Undoable> {
-        None
+    /// Undo up to `count` turns. Returns one summary per turn removed.
+    ///
+    /// The default refuses, because only an agent that tracks conversation
+    /// state can rewind it.
+    async fn undo(&mut self, count: usize) -> ChatResult<Vec<crate::types::UndoSummary>> {
+        let _ = count;
+        Err(ChatError::NotSupported("undo".to_string()))
     }
 
     /// Cancel the current agent operation
@@ -790,12 +787,8 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
         (**self).clear_history().await
     }
 
-    fn as_undoable(&self) -> Option<&dyn super::Undoable> {
-        (**self).as_undoable()
-    }
-
-    fn as_undoable_mut(&mut self) -> Option<&mut dyn super::Undoable> {
-        (**self).as_undoable_mut()
+    async fn undo(&mut self, count: usize) -> ChatResult<Vec<crate::types::UndoSummary>> {
+        (**self).undo(count).await
     }
 
     async fn cancel(&self) -> ChatResult<()> {

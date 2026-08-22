@@ -8,7 +8,6 @@
 //! content patterns.
 
 use super::helpers::vt_render;
-use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 
 /// Assert no triple-blank lines anywhere in the output (always a bug).
@@ -29,7 +28,7 @@ fn assert_no_triple_blanks(screen: &str, context: &str) {
 
 #[test]
 fn adjacent_tools_no_gap() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::UserMessage("Do two things".into()));
 
     // Tool 1
@@ -101,7 +100,7 @@ fn adjacent_tools_no_gap() {
 
 #[test]
 fn tool_then_text_one_blank_line() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::UserMessage("Check and explain".into()));
 
     // Tool call
@@ -152,7 +151,7 @@ fn tool_then_text_one_blank_line() {
 
 #[test]
 fn user_then_assistant_one_blank_line() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::UserMessage("Hello there".into()));
     app.on_message(ChatAppMsg::TextDelta("General Kenobi".into()));
     app.on_message(ChatAppMsg::StreamComplete);
@@ -180,7 +179,7 @@ fn user_then_assistant_one_blank_line() {
 
 #[test]
 fn thinking_then_tools_one_blank_line() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::UserMessage("Plan and execute".into()));
     app.on_message(ChatAppMsg::ThinkingDelta(
         "I need to check the codebase first".into(),
@@ -228,7 +227,7 @@ fn thinking_then_tools_one_blank_line() {
 
 #[test]
 fn no_triple_blanks_in_multi_turn_conversation() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = super::vt100_runtime::Vt100TestRuntime::new(80, 24);
 
     // Turn 1
@@ -259,7 +258,7 @@ fn no_triple_blanks_in_multi_turn_conversation() {
 /// happens afterward, extra blank lines appear.
 #[test]
 fn permission_modal_does_not_cause_double_blanks() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = super::vt100_runtime::Vt100TestRuntime::new(124, 59);
 
     app.on_message(ChatAppMsg::UserMessage("tell me about this repo".into()));
@@ -343,7 +342,7 @@ fn permission_modal_does_not_cause_double_blanks() {
 /// margin produces a blank line between adjacent tools.
 #[test]
 fn tools_across_graduation_batches_no_gap() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = super::vt100_runtime::Vt100TestRuntime::new(80, 24);
 
     // User message
@@ -376,7 +375,7 @@ fn tools_across_graduation_batches_no_gap() {
     // Actually let's match the fixture exactly:
     // thinking → text → tool1 → tool1_result → tool2 → tool2_result
     // with render_frame after EACH event
-    let mut app2 = OilChatApp::init();
+    let mut app2 = OilChatApp::default();
     let mut vt2 = super::vt100_runtime::Vt100TestRuntime::new(80, 24);
 
     app2.on_message(ChatAppMsg::UserMessage("Do stuff".into()));

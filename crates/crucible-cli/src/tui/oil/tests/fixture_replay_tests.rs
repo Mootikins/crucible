@@ -6,7 +6,6 @@
 
 use std::path::Path;
 
-use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::OilChatApp;
 use crate::tui::oil::chat_runner::SessionEventStream;
 use crucible_oil::ansi::strip_ansi;
@@ -172,7 +171,7 @@ fn replay_demo_60x20() {
 
 #[test]
 fn styled_snapshot_basic_conversation() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(crate::tui::oil::chat_app::ChatAppMsg::UserMessage(
@@ -203,7 +202,7 @@ fn styled_snapshot_basic_conversation() {
 /// uses a tool the table deliberately does not summarize.
 #[test]
 fn styled_snapshot_tool_call() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(crate::tui::oil::chat_app::ChatAppMsg::UserMessage(
@@ -246,7 +245,7 @@ fn styled_snapshot_tool_call() {
 /// snapshot that covers them.
 #[test]
 fn styled_snapshot_tool_call_with_body() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(crate::tui::oil::chat_app::ChatAppMsg::UserMessage(
@@ -284,7 +283,7 @@ fn styled_snapshot_tool_call_with_body() {
 #[test]
 fn styled_snapshot_thinking_collapsed() {
     // show_thinking=off: graduated thinking collapses to "◇ Thought (N words)".
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.set_show_thinking(false);
     let mut vt = Vt100TestRuntime::new(80, 24);
 
@@ -307,7 +306,7 @@ fn styled_snapshot_thinking_collapsed() {
 #[test]
 fn styled_snapshot_thinking_expanded_after_graduation() {
     // show_thinking=on: graduated thinking keeps the expanded content.
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.set_show_thinking(true);
     let mut vt = Vt100TestRuntime::new(80, 24);
 

@@ -1,6 +1,5 @@
-//! Concrete implementation of the MarkdownParser trait
+//! The markdown parser.
 
-use async_trait::async_trait;
 use std::path::Path;
 use tokio::fs;
 use tokio::io::AsyncReadExt;
@@ -10,7 +9,7 @@ use super::block_hasher::SimpleBlockHasher;
 use super::error::ParseErrorType;
 use super::error::{ParserError, ParserResult};
 use super::extensions::ExtensionRegistry;
-use super::traits::{MarkdownParser, ParserCapabilities};
+use super::traits::ParserCapabilities;
 use super::types::{
     Callout, FootnoteMap, LatexExpression, NoteContent, ParseError, ParsedNote, ParsedNoteMetadata,
 };
@@ -52,7 +51,7 @@ impl BlockProcessingConfig {
     }
 }
 
-/// Default implementation of the MarkdownParser trait
+/// The markdown parser.
 ///
 /// This parser supports:
 /// - Obsidian-compatible wikilinks and transclusions
@@ -335,9 +334,9 @@ impl Default for CrucibleParser {
     }
 }
 
-#[async_trait]
-impl MarkdownParser for CrucibleParser {
-    async fn parse_file(&self, path: &Path) -> ParserResult<ParsedNote> {
+impl CrucibleParser {
+    /// Parse a markdown file from the filesystem.
+    pub async fn parse_file(&self, path: &Path) -> ParserResult<ParsedNote> {
         // Read file contents
         let mut file = fs::File::open(path).await.map_err(ParserError::Io)?;
 
@@ -354,7 +353,12 @@ impl MarkdownParser for CrucibleParser {
         self.parse_content(&content, path).await
     }
 
-    async fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedNote> {
+    /// Parse markdown content from a string.
+    pub async fn parse_content(
+        &self,
+        content: &str,
+        source_path: &Path,
+    ) -> ParserResult<ParsedNote> {
         // Parse frontmatter. The body is always a SUFFIX slice of the input,
         // so the frontmatter's byte length (the body's file-absolute offset)
         // is the length delta — recorded as `body_offset` so consumers can
@@ -490,14 +494,16 @@ impl MarkdownParser for CrucibleParser {
         Ok(parsed_doc)
     }
 
-    fn capabilities(&self) -> ParserCapabilities {
+    /// Get parser capabilities.
+    pub fn capabilities(&self) -> ParserCapabilities {
         ParserCapabilities {
             max_file_size: self.max_file_size,
             ..ParserCapabilities::full()
         }
     }
 
-    fn can_parse(&self, path: &Path) -> bool {
+    /// Validate that the parser can handle this file.
+    pub fn can_parse(&self, path: &Path) -> bool {
         crate::kiln::is_note_file(path)
     }
 }

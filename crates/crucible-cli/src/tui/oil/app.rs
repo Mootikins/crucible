@@ -1,8 +1,5 @@
-use crate::tui::oil::event::Event;
 use crate::tui::oil::theme::{self, ThemeConfig};
 use crucible_oil::focus::FocusContext;
-use crucible_oil::node::Node;
-use std::time::Duration;
 
 pub struct ViewContext<'a> {
     pub focus: &'a FocusContext,
@@ -62,24 +59,6 @@ impl<'a> ViewContext<'a> {
 
     pub fn is_focused(&self, id: &str) -> bool {
         self.focus.is_focused(id)
-    }
-}
-
-pub trait App: Sized {
-    type Msg: Send + 'static;
-
-    fn init() -> Self;
-
-    fn view(&self, ctx: &ViewContext<'_>) -> Node;
-
-    fn update(&mut self, event: Event) -> Action<Self::Msg>;
-
-    fn on_message(&mut self, _msg: Self::Msg) -> Action<Self::Msg> {
-        Action::Continue
-    }
-
-    fn tick_rate(&self) -> Option<Duration> {
-        None
     }
 }
 

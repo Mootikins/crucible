@@ -227,7 +227,7 @@ impl AgentManager {
             self.permission_config.clone(),
         );
 
-        let gate: Arc<dyn PermissionGate> = Arc::new(
+        let gate = Arc::new(
             DaemonPermissionGate::new(effective_config, is_interactive)
                 .with_prompt_callback(ask_callback),
         );
@@ -1315,7 +1315,6 @@ mod acp_tool_name_tests {
     use super::*;
     use agent_client_protocol::{ToolCallUpdateFields, ToolKind};
     use crucible_core::interaction::PermRequest;
-    use crucible_core::traits::PermissionGate;
 
     fn fields(kind: Option<ToolKind>, title: &str) -> ToolCallUpdateFields {
         // `ToolCallUpdateFields` is `#[non_exhaustive]`, so it is built by

@@ -12,11 +12,9 @@ pub mod knowledge;
 pub mod llm;
 pub mod mcp;
 pub mod parser;
-pub mod permission_gate;
 pub mod provider;
 pub mod storage_client;
 pub mod tools;
-pub mod undoable;
 
 // Re-export key traits
 
@@ -26,7 +24,6 @@ pub use knowledge::{KnowledgeRepository, NoteInfo};
 pub use llm::{
     FunctionCall, FunctionDefinition, LlmToolDefinition, MessageRole, TokenUsage, ToolCall,
 };
-pub use parser::MarkdownParser;
 pub use storage_client::StorageClient;
 pub use tools::{
     ExecutionContext, ToolDefinition, ToolError, ToolExecutor, ToolResult, ToolSurface,
@@ -36,5 +33,3 @@ pub use tools::{
 pub use mcp::{
     ContentBlock, McpError, McpServerInfo, McpToolInfo, McpTransportConfig, ToolCallResult,
 };
-pub use permission_gate::PermissionGate;
-pub use undoable::Undoable;

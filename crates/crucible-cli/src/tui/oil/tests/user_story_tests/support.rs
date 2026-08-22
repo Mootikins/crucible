@@ -12,7 +12,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::tui::oil::app::{Action, App};
+use crate::tui::oil::app::Action;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::chat_runner::SessionEventStream;
 use crate::tui::oil::event::Event;
@@ -77,7 +77,7 @@ impl StoryRuntime {
 
     pub(crate) fn new(width: u16, height: u16) -> Self {
         Self {
-            app: OilChatApp::init(),
+            app: OilChatApp::default(),
             vt: Vt100TestRuntime::new(width, height),
             frames: Vec::new(),
             recent_frames: std::collections::VecDeque::with_capacity(Self::RECENT_FRAME_CAP),

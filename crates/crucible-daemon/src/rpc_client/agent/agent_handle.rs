@@ -31,14 +31,6 @@ impl AgentHandle for DaemonAgentHandle {
         Some(&self.session_id)
     }
 
-    fn as_undoable(&self) -> Option<&dyn crucible_core::traits::Undoable> {
-        Some(self)
-    }
-
-    fn as_undoable_mut(&mut self) -> Option<&mut dyn crucible_core::traits::Undoable> {
-        Some(self)
-    }
-
     fn get_mode_id(&self) -> &str {
         &self.mode_id
     }
@@ -175,6 +167,14 @@ impl AgentHandle for DaemonAgentHandle {
             .map_err(|e| {
                 ChatError::Communication(format!("Failed to send interaction response: {}", e))
             })
+    }
+
+    async fn undo(&mut self, count: usize) -> ChatResult<Vec<crucible_core::types::UndoSummary>> {
+        tracing::info!(session_id = %self.session_id, count = count, "Undoing agent turns via daemon");
+        self.client
+            .session_undo(&self.session_id, count)
+            .await
+            .map_err(|e| ChatError::Communication(format!("Failed to undo: {}", e)))
     }
 }
 
@@ -437,29 +437,5 @@ impl SessionKnobs for DaemonAgentHandle {
 
     fn get_precognition_results(&self) -> usize {
         self.cached_precognition_results.unwrap_or(5)
-    }
-}
-
-#[async_trait]
-impl crucible_core::traits::Undoable for DaemonAgentHandle {
-    async fn undo(&mut self, count: usize) -> ChatResult<Vec<crucible_core::types::UndoSummary>> {
-        tracing::info!(session_id = %self.session_id, count = count, "Undoing agent turns via daemon");
-        self.client
-            .session_undo(&self.session_id, count)
-            .await
-            .map_err(|e| ChatError::Communication(format!("Failed to undo: {}", e)))
-    }
-
-    // `can_undo` and `undo_depth` are sync so we can't hit the daemon here.
-    // The authoritative values live on the daemon side (session.can_undo /
-    // session.undo_depth RPCs). No caller in the TUI consults these — the
-    // undo flow goes straight to `undo()` and inspects the returned summary.
-    // If these ever become hot paths, cache them from undo events.
-    fn can_undo(&self) -> bool {
-        false
-    }
-
-    fn undo_depth(&self) -> usize {
-        0
     }
 }

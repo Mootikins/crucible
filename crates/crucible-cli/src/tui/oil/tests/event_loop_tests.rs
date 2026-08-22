@@ -1,4 +1,4 @@
-use crate::tui::oil::app::{App, ViewContext};
+use crate::tui::oil::app::ViewContext;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::event::Event;
 use crossterm::event::EventStream;
@@ -150,7 +150,7 @@ async fn event_stream_with_timeout_does_not_block() {
 
 #[tokio::test]
 async fn escape_key_closes_popup() {
-    use crate::tui::oil::app::{Action, App};
+    use crate::tui::oil::app::Action;
     use crate::tui::oil::chat_app::OilChatApp;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -169,7 +169,7 @@ async fn escape_key_closes_popup() {
 
 #[tokio::test]
 async fn double_ctrl_c_triggers_quit_action() {
-    use crate::tui::oil::app::{Action, App};
+    use crate::tui::oil::app::Action;
     use crate::tui::oil::chat_app::OilChatApp;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -194,7 +194,7 @@ async fn double_ctrl_c_triggers_quit_action() {
 
 #[tokio::test]
 async fn ctrl_c_clears_input_first() {
-    use crate::tui::oil::app::{Action, App};
+    use crate::tui::oil::app::Action;
     use crate::tui::oil::chat_app::OilChatApp;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 

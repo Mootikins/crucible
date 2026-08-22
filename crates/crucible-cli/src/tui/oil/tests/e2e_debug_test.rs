@@ -2,7 +2,6 @@
 //! Run with: cargo test --lib -p crucible-cli -- e2e_debug_test --nocapture
 
 use super::vt100_runtime::Vt100TestRuntime;
-use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::containers::ChatNode;
 use crucible_oil::ansi::strip_ansi;
@@ -11,7 +10,7 @@ use crucible_oil::ansi::strip_ansi;
 /// "tell me about this repo" → thinking → text → tools → more text
 #[test]
 fn e2e_full_conversation_render() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(124, 40);
 
     // Step 1: User message
@@ -136,7 +135,7 @@ fn e2e_full_conversation_render() {
 
 #[test]
 fn debug_continuation_flag() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::ThinkingDelta("thinking...".into()));
     app.on_message(ChatAppMsg::TextDelta("first text".into()));
@@ -185,7 +184,7 @@ fn debug_continuation_rendering() {
     use crucible_oil::focus::FocusContext;
     use crucible_oil::render::render_to_plain_text;
 
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::ThinkingDelta("thinking...".into()));
     app.on_message(ChatAppMsg::TextDelta("first text".into()));
@@ -242,7 +241,7 @@ fn debug_continuation_rendering() {
 fn debug_full_view_rendering() {
     use super::helpers::vt_render;
 
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::ThinkingDelta("thinking...".into()));
     app.on_message(ChatAppMsg::TextDelta("first text".into()));
@@ -282,7 +281,7 @@ fn debug_full_view_rendering() {
 /// (is_streaming returns false, new messages can be sent).
 #[test]
 fn after_stream_complete_tui_is_responsive() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // First turn
@@ -321,7 +320,7 @@ fn after_stream_complete_tui_is_responsive() {
 fn only_one_spinner_visible_during_thinking() {
     use crucible_oil::node::SPINNER_FRAMES;
 
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("think hard".into()));
@@ -351,7 +350,7 @@ fn only_one_spinner_visible_during_thinking() {
 /// Verify user message and input box use consistent styling.
 #[test]
 fn user_message_matches_input_style() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("hello world".into()));
@@ -401,7 +400,7 @@ fn user_message_matches_input_style() {
 /// Verifies: Turn 1 in scrollback, Turn 2 in viewport, no spinners in scrollback.
 #[test]
 fn e2e_multi_turn_graduation() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(100, 24);
 
     // === Turn 1 ===
@@ -497,7 +496,7 @@ fn e2e_multi_turn_graduation() {
 #[test]
 fn e2e_history_replay_matches_live() {
     // Live streaming path
-    let mut live_app = OilChatApp::init();
+    let mut live_app = OilChatApp::default();
     let mut live_vt = Vt100TestRuntime::new(80, 24);
 
     live_app.on_message(ChatAppMsg::UserMessage("hello".into()));
@@ -507,7 +506,7 @@ fn e2e_history_replay_matches_live() {
     let live_output = strip_ansi(&live_vt.full_history());
 
     // Replay path: same events applied without render between each
-    let mut replay_app = OilChatApp::init();
+    let mut replay_app = OilChatApp::default();
     let mut replay_vt = Vt100TestRuntime::new(80, 24);
 
     replay_app.on_message(ChatAppMsg::UserMessage("hello".into()));
@@ -542,7 +541,7 @@ fn e2e_history_replay_matches_live() {
 /// Test 3: Tool output with multiple lines renders with pipe prefix.
 #[test]
 fn e2e_tool_multiline_output() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("run ls".into()));
@@ -591,7 +590,7 @@ fn e2e_tool_multiline_output() {
 /// Test 4: Tool error rendering shows error icon and message.
 #[test]
 fn e2e_tool_error_rendering() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("do something".into()));
@@ -635,7 +634,7 @@ fn e2e_tool_error_rendering() {
 /// Test 5: Multiple thinking blocks in one response.
 #[test]
 fn e2e_multiple_thinking_blocks() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("think hard".into()));
     app.on_message(ChatAppMsg::ThinkingDelta("first line of thought".into()));
@@ -672,7 +671,7 @@ fn e2e_multiple_thinking_blocks() {
 /// Test 6: Empty text deltas don't create spurious nodes.
 #[test]
 fn e2e_empty_text_deltas_ignored() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::UserMessage("test".into()));
     app.on_message(ChatAppMsg::TextDelta("".into()));
@@ -709,7 +708,7 @@ fn e2e_empty_text_deltas_ignored() {
 /// Test 7: Rapid tool calls (3+) in sequence group into one ToolGroup.
 #[test]
 fn e2e_rapid_tool_calls_group() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("do three things".into()));
@@ -775,7 +774,7 @@ fn e2e_rapid_tool_calls_group() {
 /// Content should re-render at new width without corruption.
 #[test]
 fn e2e_terminal_resize_during_streaming() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
 
     // Start at 80x24
     let mut vt = Vt100TestRuntime::new(80, 24);
@@ -829,7 +828,7 @@ fn e2e_modal_doesnt_corrupt_content() {
         InteractionRequest, InteractionResponse, PermRequest, PermResponse,
     };
 
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // Set up some content
@@ -876,7 +875,7 @@ fn e2e_modal_doesnt_corrupt_content() {
 /// Partial state should graduate, no crash, no spinners in scrollback.
 #[test]
 fn e2e_cancel_during_tool_execution() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("do something".into()));
@@ -933,7 +932,7 @@ fn e2e_cancel_during_tool_execution() {
 /// Test 11: SubagentSpawned + SubagentCompleted rendering.
 #[test]
 fn e2e_subagent_lifecycle() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("delegate this".into()));
@@ -978,17 +977,17 @@ fn e2e_subagent_lifecycle() {
 fn e2e_user_message_wrapping() {
     let long_msg = "This is a very long user message that should definitely wrap at narrow terminal widths because it contains more than one hundred characters in total length for testing purposes";
 
-    let mut app40 = OilChatApp::init();
+    let mut app40 = OilChatApp::default();
     app40.on_message(ChatAppMsg::UserMessage(long_msg.into()));
     app40.on_message(ChatAppMsg::TextDelta("ok".into()));
     app40.on_message(ChatAppMsg::StreamComplete);
 
-    let mut app80 = OilChatApp::init();
+    let mut app80 = OilChatApp::default();
     app80.on_message(ChatAppMsg::UserMessage(long_msg.into()));
     app80.on_message(ChatAppMsg::TextDelta("ok".into()));
     app80.on_message(ChatAppMsg::StreamComplete);
 
-    let mut app120 = OilChatApp::init();
+    let mut app120 = OilChatApp::default();
     app120.on_message(ChatAppMsg::UserMessage(long_msg.into()));
     app120.on_message(ChatAppMsg::TextDelta("ok".into()));
     app120.on_message(ChatAppMsg::StreamComplete);
@@ -1034,7 +1033,7 @@ fn e2e_user_message_wrapping() {
 /// Test 13: Stress test with many nodes.
 #[test]
 fn e2e_stress_many_containers() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // 50 turns: user + assistant alternating
@@ -1073,7 +1072,7 @@ fn e2e_stress_many_containers() {
 /// The collapsed summary "◇ Thought" appears only after text starts.
 #[test]
 fn thinking_not_duplicated_in_content_and_chrome() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("think hard".into()));
@@ -1128,7 +1127,7 @@ fn thinking_not_duplicated_in_content_and_chrome() {
 #[test]
 fn open_interaction_opens_modal() {
     use crucible_core::interaction::{InteractionRequest, PermRequest};
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     assert!(!app.interaction_visible());
 
     app.on_message(ChatAppMsg::OpenInteraction {
@@ -1146,7 +1145,7 @@ fn close_interaction_closes_modal() {
     use crucible_core::interaction::{
         InteractionRequest, InteractionResponse, PermRequest, PermResponse,
     };
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::OpenInteraction {
         request_id: "perm-1".into(),
@@ -1166,7 +1165,7 @@ fn close_interaction_closes_modal() {
 
 #[test]
 fn thinking_indicator_appears_at_most_once_on_screen() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("think".into()));
@@ -1196,7 +1195,7 @@ fn thinking_indicator_appears_at_most_once_on_screen() {
 
 #[test]
 fn thinking_transitions_to_thought_when_text_starts() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("think then respond".into()));
@@ -1226,7 +1225,7 @@ fn thinking_transitions_to_thought_when_text_starts() {
 fn spinners_only_in_chrome_area() {
     use crucible_oil::node::{BRAILLE_SPINNER_FRAMES, SPINNER_FRAMES};
 
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // Streaming with text (turn active = spinner in chrome)
@@ -1266,7 +1265,7 @@ fn all_container_types_render_at_all_widths() {
     use crucible_oil::focus::FocusContext;
     use crucible_oil::render::render_to_plain_text;
 
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
 
     // Create various node types
     app.on_message(ChatAppMsg::UserMessage("test message".into()));

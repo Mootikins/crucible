@@ -310,7 +310,7 @@ async fn backfill_text_index(
 }
 
 async fn relink_kiln(root: &Path, store: &dyn crucible_core::storage::NoteStore) {
-    use crucible_core::parser::{traits::MarkdownParser, CrucibleParser};
+    use crucible_core::parser::CrucibleParser;
     use crucible_core::storage::{LinkOccurrence, Scope};
 
     let authority = Scope::workspace_unchecked(root);

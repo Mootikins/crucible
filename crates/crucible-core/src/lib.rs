@@ -53,7 +53,7 @@ pub use enrichment::{BlockEmbedding, EmbeddingProvider, EnrichedNote, Enrichment
 pub use processing::ProcessingResult;
 
 // Re-export core traits (abstractions for Dependency Inversion)
-pub use traits::{ContextMessage, MarkdownParser, ToolExecutor};
+pub use traits::{ContextMessage, ToolExecutor};
 
 // Re-export key types used across module boundaries
 pub use types::{
@@ -97,7 +97,6 @@ pub use parser::{
     ParserResult,
     Tag,
     Wikilink,
-    // Note: MarkdownParser trait is exported from traits:: module above
 };
 pub use types::database::{DocumentId, QueryResult, Record, RecordId, SearchResult};
 

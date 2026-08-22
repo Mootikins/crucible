@@ -5,7 +5,7 @@
 //!
 //! # Module Organization
 //!
-//! - `traits` - Core parser trait (`MarkdownParser`)
+//! - `traits` - Parser capabilities and requirements
 //! - `types` - All parser data types (`ParsedNote`, `Wikilink`, `Tag`, etc.)
 //! - `error` - Parser error types
 //! - `extensions` - Syntax extension system
@@ -47,7 +47,7 @@ pub use error::{ErrorSeverity, ParseError, ParseErrorType, ParserError, ParserRe
 pub use extensions::{
     ExtensionRegistry, ExtensionRegistryBuilder, ExtensionRegistryStats, SyntaxExtension,
 };
-pub use traits::{MarkdownParser, ParserCapabilities, ParserRequirements};
+pub use traits::{ParserCapabilities, ParserRequirements};
 
 // Re-export implementation types
 pub use block_extractor::{BlockExtractor, ExtractionConfig};

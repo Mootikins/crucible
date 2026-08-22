@@ -7,14 +7,13 @@
 //! - Turn indicator (spinner) only appears in viewport chrome, never in scrollback
 
 use super::vt100_runtime::Vt100TestRuntime;
-use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 
 // ─── No spinners in scrollback ─────────────────────────────────────────────
 
 #[test]
 fn no_spinners_in_scrollback() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("Test".into()));
@@ -34,7 +33,7 @@ fn no_spinners_in_scrollback() {
 
 #[test]
 fn no_spinners_in_scrollback_after_tool_use() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("Use a tool".into()));
@@ -67,7 +66,7 @@ fn no_spinners_in_scrollback_after_tool_use() {
 
 #[test]
 fn no_spinners_after_multi_tool_graduation() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("Multi-tool".into()));
@@ -105,7 +104,7 @@ fn no_spinners_after_multi_tool_graduation() {
 
 #[test]
 fn graduated_thinking_is_collapsed() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("Think deeply".into()));
@@ -146,7 +145,7 @@ fn graduated_thinking_is_collapsed() {
 
 #[test]
 fn graduation_preserves_content() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("Explain Rust".into()));
@@ -175,7 +174,7 @@ fn graduation_preserves_content() {
 
 #[test]
 fn graduation_preserves_tool_results() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("Check files".into()));
@@ -217,7 +216,7 @@ fn graduation_preserves_tool_results() {
 
 #[test]
 fn turn_indicator_not_in_scrollback() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // Send a message and let it stream (turn indicator should be active)
@@ -243,7 +242,7 @@ fn turn_indicator_not_in_scrollback() {
 
 #[test]
 fn empty_stream_complete_does_not_crash() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // StreamComplete without any prior content
@@ -260,7 +259,7 @@ fn empty_stream_complete_does_not_crash() {
 
 #[test]
 fn cancelled_stream_graduates_cleanly() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("Start something".into()));

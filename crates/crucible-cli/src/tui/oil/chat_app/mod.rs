@@ -1,4 +1,4 @@
-use crate::tui::oil::app::{Action, App, ViewContext};
+use crate::tui::oil::app::{Action, ViewContext};
 use crate::tui::oil::component::Component;
 use crate::tui::oil::components::{
     CommandPanel, InputComponent, InteractionModal, NotificationArea, ShellModal, StatusComponent,
@@ -13,7 +13,6 @@ use crucible_oil::style::{Gap, Padding};
 use std::cell::Cell;
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::time::Duration;
 
 const POPUP_HEIGHT: usize = 10;
 pub const INPUT_MAX_CONTENT_LINES: usize = 3;
@@ -130,16 +129,11 @@ pub struct OilChatApp {
     plugin_command_names: std::collections::HashSet<String>,
 }
 
-// ─── App Trait ────────────────────────────────────────────────────────────────
+// ─── View, update, message ───────────────────────────────────────────────────
 
-impl App for OilChatApp {
-    type Msg = ChatAppMsg;
-
-    fn init() -> Self {
-        Self::default()
-    }
-
-    fn view(&self, ctx: &ViewContext<'_>) -> Node {
+impl OilChatApp {
+    /// Build the frame for the current state.
+    pub fn view(&self, ctx: &ViewContext<'_>) -> Node {
         self.terminal_size.set(ctx.terminal_size);
 
         if let Some(ref modal) = self.shell_modal {
@@ -214,7 +208,8 @@ impl App for OilChatApp {
         .gap(Gap::row(1))
     }
 
-    fn update(&mut self, event: Event) -> Action<ChatAppMsg> {
+    /// Apply one terminal event.
+    pub fn update(&mut self, event: Event) -> Action<ChatAppMsg> {
         match event {
             Event::Key(key) => self.handle_key(key),
             Event::Tick => {
@@ -232,7 +227,8 @@ impl App for OilChatApp {
         }
     }
 
-    fn on_message(&mut self, msg: ChatAppMsg) -> Action<ChatAppMsg> {
+    /// Apply one application message.
+    pub fn on_message(&mut self, msg: ChatAppMsg) -> Action<ChatAppMsg> {
         use messages::MsgCategory;
         match msg.category() {
             MsgCategory::User => {
@@ -248,10 +244,6 @@ impl App for OilChatApp {
             MsgCategory::Delegation => self.handle_delegation_msg(msg),
             MsgCategory::Ui => self.handle_ui_msg(msg),
         }
-    }
-
-    fn tick_rate(&self) -> Option<Duration> {
-        Some(Duration::from_millis(100))
     }
 }
 
@@ -471,7 +463,6 @@ impl OilChatApp {
         }
 
         use crate::tui::oil::components::{InputMode as ComponentInputMode, PopupOverlay};
-        use crucible_oil::components::InputStyle;
         use state::AutocompleteKind;
 
         // Inline triggers complete a word inside the message being written;
@@ -521,14 +512,14 @@ impl OilChatApp {
             // display column so item labels align with the word being
             // completed; floats on the themed popup surface.
             let t = crate::tui::oil::theme::active();
-            let prompt_width = InputStyle::prompt(&mode).len();
+            let prompt_width = mode.prompt().len();
             let content_width = (ctx.terminal_size.0 as usize)
                 .saturating_sub(prompt_width + 1)
                 .max(1);
             let chars_before = self.input.content()[..self.popup.trigger_pos]
                 .chars()
                 .count();
-            let display_pos = InputStyle::display_cursor(&mode, chars_before);
+            let display_pos = mode.display_cursor(chars_before);
             let anchor = prompt_width + (display_pos % content_width);
 
             use crate::tui::oil::theme::groups;
@@ -543,7 +534,7 @@ impl OilChatApp {
             // Panel strip: the popup extends the prompt, so it shares the
             // CURRENT input mode's (possibly user-themed) bg — command-mode
             // completions match the `:` prompt, shell the `!` prompt.
-            overlay.bg(InputStyle::bg_color(&mode))
+            overlay.bg(mode.bg_color())
         };
 
         overlay.view(&crucible_oil::focus::FocusContext::default())

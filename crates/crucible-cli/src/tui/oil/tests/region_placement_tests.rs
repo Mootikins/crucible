@@ -5,7 +5,6 @@
 //! test noticed, because every test drove that one bar directly. A knob that
 //! round-trips is not a shipped feature — assert on the rendered frame.
 
-use crate::tui::oil::chat_app::OilChatApp;
 use crate::tui::oil::test_harness::AppHarness;
 use crucible_lua::statusline_items::{Element, Layout, StatusItem};
 
@@ -15,7 +14,7 @@ fn row(text: &str) -> Element {
 
 fn frame_with(layout: Layout) -> String {
     crate::tui::oil::theme::bars::set(layout);
-    let mut harness: AppHarness<OilChatApp> = AppHarness::new(80, 24);
+    let mut harness = AppHarness::new(80, 24);
     harness.render();
     harness.viewport().to_string()
 }

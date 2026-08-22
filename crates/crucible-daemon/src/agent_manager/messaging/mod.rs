@@ -197,7 +197,6 @@ mod permission_override_tests {
     async fn gate_with_allow_override_approves_tool_blocked_by_base_ask_rule() {
         use crate::permission_bridge::DaemonPermissionGate;
         use crucible_core::interaction::PermRequest;
-        use crucible_core::traits::PermissionGate;
 
         let base = base_config_with_ask_rule();
         let effective =
@@ -217,7 +216,6 @@ mod permission_override_tests {
     async fn gate_with_deny_override_blocks_tool_allowed_by_base_allow_rule() {
         use crate::permission_bridge::DaemonPermissionGate;
         use crucible_core::interaction::PermRequest;
-        use crucible_core::traits::PermissionGate;
 
         let base = PermissionConfig {
             default: PermissionMode::Allow,

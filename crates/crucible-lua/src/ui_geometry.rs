@@ -38,7 +38,7 @@ pub struct SurfaceStyle {
 }
 
 /// Input-area prompt glyphs, per input mode. These are compiled-in today
-/// (`InputStyle::prompt` returns `&'static str`), so this is the first thing
+/// (`InputMode::prompt` returns `&'static str`), so this is the first thing
 /// that makes them authorable.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PromptStyle {

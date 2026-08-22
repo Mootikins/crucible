@@ -49,7 +49,7 @@ fn mode_label_badges_a_mode_the_tui_has_never_heard_of() {
 
 #[test]
 fn test_app_init() {
-    let app = OilChatApp::init();
+    let app = OilChatApp::default();
     assert!(!app.is_streaming());
     assert_eq!(&*app.mode, "normal");
 }
@@ -58,11 +58,10 @@ fn test_app_init() {
 
 #[test]
 fn setup_events_populate_app_progressively() {
-    use crate::tui::oil::app::App;
     use crucible_core::protocol::session_events::{ContextLimitSource, SessionInitializedPayload};
     use std::path::PathBuf;
 
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.set_status("Loading...");
     assert_eq!(app.status_text(), "Loading...");
 
@@ -96,11 +95,10 @@ fn setup_events_populate_app_progressively() {
 
 #[test]
 fn session_initialized_preserves_model_when_empty_string() {
-    use crate::tui::oil::app::App;
     use crucible_core::protocol::session_events::SessionInitializedPayload;
     use std::path::PathBuf;
 
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.set_model("existing-model");
 
     app.on_message(ChatAppMsg::SessionInitialized(SessionInitializedPayload {
@@ -120,7 +118,7 @@ fn set_show_diffs_disable_then_enable_round_trips_field() {
     // The :set show_diffs command flows through runtime_config.set + sync_runtime_to_fields;
     // this test locks in that the cli-visible field actually flips. Without coverage,
     // the cross-layer plumbing could regress silently.
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     assert!(app.show_diffs(), "show_diffs default expected to be true");
 
     app.handle_set_command("set show_diffs false");
@@ -140,17 +138,16 @@ fn set_show_diffs_disable_then_enable_round_trips_field() {
 fn set_show_diffs_disable_via_short_form() {
     // `:set disable show_diffs` and `:set show_diffs=0` are alternate forms;
     // the runtime config layer normalizes both into a bool. Smoke-test one.
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.handle_set_command("set show_diffs=0");
     assert!(!app.show_diffs(), "':set show_diffs=0' should disable");
 }
 
 #[test]
 fn plugins_discovered_raises_notification_for_failed_plugin() {
-    use crate::tui::oil::app::App;
     use crucible_core::types::PluginStatusEntry;
 
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     assert!(!app.has_notifications());
 
     app.on_message(ChatAppMsg::PluginsDiscovered(vec![PluginStatusEntry {
@@ -167,7 +164,7 @@ fn plugins_discovered_raises_notification_for_failed_plugin() {
 
 #[test]
 fn shell_history_stores_commands_in_arrival_order() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.push_shell_history("ls -la".into());
     app.push_shell_history("git status".into());
     app.push_shell_history("cargo test".into());
@@ -180,7 +177,7 @@ fn shell_history_stores_commands_in_arrival_order() {
 
 #[test]
 fn shell_history_caps_at_max_and_evicts_oldest() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     for i in 0..(MAX_SHELL_HISTORY + 10) {
         app.push_shell_history(format!("cmd{i}"));
     }
@@ -215,7 +212,7 @@ fn shell_history_caps_at_max_and_evicts_oldest() {
 fn a_closed_shell_command_is_recorded_in_the_transcript() {
     use crate::tui::oil::components::{ShellHistoryItem, ShellModalOutput};
 
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     assert_eq!(app.container_list().nodes().len(), 0);
 
     app.handle_shell_modal_output(ShellModalOutput::Close {
@@ -242,7 +239,7 @@ fn a_closed_shell_command_is_recorded_in_the_transcript() {
 fn inserting_shell_output_fills_the_composer_and_the_transcript() {
     use crate::tui::oil::components::{InsertedOutput, ShellHistoryItem, ShellModalOutput};
 
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.handle_shell_modal_output(ShellModalOutput::Close {
         history_item: ShellHistoryItem {
             command: "echo hi".to_string(),

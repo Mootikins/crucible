@@ -4,7 +4,7 @@ use std::io;
 use std::sync::{Arc, Mutex};
 
 use crucible_cli::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
-use crucible_cli::tui::oil::{App, AppHarness};
+use crucible_cli::tui::oil::AppHarness;
 use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter};
 
 #[derive(Clone)]
@@ -56,7 +56,7 @@ fn model_flow_log_state_transitions_to_loaded() {
     let subscriber = model_flow_subscriber(buf.clone());
 
     tracing::subscriber::with_default(subscriber, || {
-        let mut app = OilChatApp::init();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::FetchModels);
         app.on_message(ChatAppMsg::ModelsLoaded(vec!["ollama/llama3".to_string()]));
     });
@@ -82,7 +82,7 @@ fn model_flow_log_state_transitions_to_failed() {
     let subscriber = model_flow_subscriber(buf.clone());
 
     tracing::subscriber::with_default(subscriber, || {
-        let mut app = OilChatApp::init();
+        let mut app = OilChatApp::default();
         app.on_message(ChatAppMsg::FetchModels);
         app.on_message(ChatAppMsg::ModelsFetchFailed(
             "connection refused".to_string(),
@@ -110,7 +110,7 @@ fn model_flow_log_repl_command_state() {
     let subscriber = model_flow_subscriber(buf.clone());
 
     tracing::subscriber::with_default(subscriber, || {
-        let mut harness: AppHarness<OilChatApp> = AppHarness::new(80, 24);
+        let mut harness: AppHarness = AppHarness::new(80, 24);
         harness.render();
 
         harness.send_text(":model");
@@ -130,7 +130,7 @@ fn model_flow_log_full_lifecycle() {
     let subscriber = model_flow_subscriber(buf.clone());
 
     tracing::subscriber::with_default(subscriber, || {
-        let mut app = OilChatApp::init();
+        let mut app = OilChatApp::default();
 
         app.on_message(ChatAppMsg::FetchModels);
         app.on_message(ChatAppMsg::ModelsFetchFailed("timeout".to_string()));

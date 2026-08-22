@@ -323,7 +323,6 @@ fn popup_positioned_above_input_bar() {
 #[cfg(any())] // disabled: awaiting test reconstruction
 mod overlay_graduation_tests {
     use super::*;
-    use crate::tui::oil::app::App;
     use crate::tui::oil::chat_app::OilChatApp;
     use crate::tui::oil::event::Event;
     use crate::tui::oil::tests::helpers::view_with_default_ctx;
@@ -507,7 +506,6 @@ mod overlay_graduation_tests {
 #[cfg(any())] // disabled: awaiting test reconstruction
 mod composer_stability_tests {
     use super::*;
-    use crate::tui::oil::app::App;
     use crate::tui::oil::chat_app::OilChatApp;
     use crate::tui::oil::event::Event;
     use crate::tui::oil::tests::helpers::view_with_default_ctx;
@@ -645,7 +643,6 @@ mod composer_stability_tests {
 }
 
 mod completion_style_behavior {
-    use crate::tui::oil::app::App;
     use crate::tui::oil::chat_app::OilChatApp;
     use crate::tui::oil::event::Event;
     use crate::tui::oil::tests::helpers::view_with_default_ctx;
@@ -736,7 +733,6 @@ mod completion_style_behavior {
 /// anchored style used for inline `@`/`[[` triggers draws at the trigger column
 /// and never consults the offset, so it cannot exercise this.
 mod popup_clears_the_prompt_region {
-    use crate::tui::oil::app::App;
     use crate::tui::oil::chat_app::OilChatApp;
     use crate::tui::oil::event::Event;
     use crate::tui::oil::tests::helpers::view_with_default_ctx;

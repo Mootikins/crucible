@@ -1,6 +1,5 @@
 use crate::tui::oil::theme;
 use crucible_oil::style::Color;
-use crucible_oil::InputStyle;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum InputMode {
@@ -25,7 +24,7 @@ impl InputMode {
     ///
     /// Stays `&'static str`: the geometry store leaks on install, so a themed
     /// glyph borrows from it for the life of the process — no allocation per
-    /// frame, and no signature change rippling through `InputStyle`.
+    /// frame, and no signature change at the render call sites.
     pub fn prompt(&self) -> &'static str {
         let themed = &theme::geometry::active().prompt;
         let override_glyph = match self {
@@ -51,16 +50,9 @@ impl InputMode {
     }
 }
 
-impl InputStyle for InputMode {
-    fn bg_color(&self) -> Color {
-        self.bg_color()
-    }
-
-    fn prompt(&self) -> &'static str {
-        self.prompt()
-    }
-
-    fn display_content<'a>(&self, content: &'a str) -> &'a str {
+impl InputMode {
+    /// The content with the mode prefix removed.
+    pub fn display_content<'a>(&self, content: &'a str) -> &'a str {
         match self {
             InputMode::Command => content.strip_prefix(':').unwrap_or(content),
             InputMode::Shell => content.strip_prefix('!').unwrap_or(content),
@@ -68,7 +60,8 @@ impl InputStyle for InputMode {
         }
     }
 
-    fn display_cursor(&self, cursor: usize) -> usize {
+    /// The cursor position after the mode prefix is removed.
+    pub fn display_cursor(&self, cursor: usize) -> usize {
         let offset = if matches!(self, InputMode::Command | InputMode::Shell) {
             1
         } else {

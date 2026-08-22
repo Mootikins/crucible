@@ -1,22 +1,23 @@
-use crate::tui::oil::app::{Action, App, ViewContext};
+use crate::tui::oil::app::{Action, ViewContext};
+use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::event::Event;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crucible_oil::focus::FocusContext;
 use crucible_oil::node::Node;
 use crucible_oil::planning::{FramePlanner, FrameSnapshot};
 
-pub struct AppHarness<A: App> {
-    app: A,
+pub struct AppHarness {
+    app: OilChatApp,
     focus: FocusContext,
     planner: FramePlanner,
     last_snapshot: Option<FrameSnapshot>,
     stdout_buffer: String,
 }
 
-impl<A: App> AppHarness<A> {
+impl AppHarness {
     pub fn new(width: u16, height: u16) -> Self {
         Self {
-            app: A::init(),
+            app: OilChatApp::default(),
             focus: FocusContext::new(),
             planner: FramePlanner::new(width, height),
             last_snapshot: None,
@@ -80,14 +81,14 @@ impl<A: App> AppHarness<A> {
         self
     }
 
-    pub fn send_message(&mut self, msg: A::Msg) -> &mut Self {
+    pub fn send_message(&mut self, msg: ChatAppMsg) -> &mut Self {
         let action = self.app.on_message(msg);
         self.process_action(action);
         self.render();
         self
     }
 
-    fn process_action(&mut self, action: Action<A::Msg>) {
+    fn process_action(&mut self, action: Action<ChatAppMsg>) {
         match action {
             Action::Quit => {}
             Action::Continue => {}
@@ -159,11 +160,11 @@ impl<A: App> AppHarness<A> {
         self.focus.active_id().map(|id| id.0.as_str())
     }
 
-    pub fn app(&self) -> &A {
+    pub fn app(&self) -> &OilChatApp {
         &self.app
     }
 
-    pub fn app_mut(&mut self) -> &mut A {
+    pub fn app_mut(&mut self) -> &mut OilChatApp {
         &mut self.app
     }
 }
@@ -171,11 +172,10 @@ impl<A: App> AppHarness<A> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::oil::chat_app::OilChatApp;
 
     #[test]
     fn harness_initializes_and_renders() {
-        let mut harness: AppHarness<OilChatApp> = AppHarness::new(80, 24);
+        let mut harness: AppHarness = AppHarness::new(80, 24);
         harness.render();
 
         assert!(!harness.viewport().is_empty());
@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn harness_sends_keys() {
-        let mut harness: AppHarness<OilChatApp> = AppHarness::new(80, 24);
+        let mut harness: AppHarness = AppHarness::new(80, 24);
         harness.render();
 
         harness.send_key(KeyCode::Char('h'));
@@ -192,7 +192,7 @@ mod tests {
 
     #[test]
     fn harness_sends_text() {
-        let mut harness: AppHarness<OilChatApp> = AppHarness::new(80, 24);
+        let mut harness: AppHarness = AppHarness::new(80, 24);
         harness.render();
 
         harness.send_text("hello");
@@ -200,7 +200,7 @@ mod tests {
 
     #[test]
     fn frame_no_available_after_render() {
-        let mut harness: AppHarness<OilChatApp> = AppHarness::new(80, 24);
+        let mut harness: AppHarness = AppHarness::new(80, 24);
 
         assert!(harness.frame_no().is_none());
 
@@ -211,7 +211,7 @@ mod tests {
 
     #[test]
     fn screen_combines_stdout_and_viewport() {
-        let mut harness: AppHarness<OilChatApp> = AppHarness::new(80, 24);
+        let mut harness: AppHarness = AppHarness::new(80, 24);
         harness.render();
 
         let screen = harness.screen();

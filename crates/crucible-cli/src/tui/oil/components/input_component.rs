@@ -6,7 +6,6 @@ use crucible_oil::node::*;
 use crucible_oil::style::Style;
 
 use super::INPUT_MAX_CONTENT_LINES;
-use crucible_oil::components::InputStyle;
 
 pub struct InputComponent<'a> {
     pub content: &'a str,
@@ -25,7 +24,7 @@ impl<'a> InputComponent<'a> {
     /// it knows how tall the input actually is — a multi-line message makes any
     /// fixed guess wrong.
     pub fn height(&self) -> usize {
-        let prompt = InputStyle::prompt(&self.mode);
+        let prompt = self.mode.prompt();
         let content_width = self.width.saturating_sub(prompt.len() + 1);
         let lines = if content_width == 0 {
             1
@@ -112,8 +111,8 @@ impl Component for InputComponent<'_> {
             Style::new().fg(bg),
         );
 
-        let display_content = InputStyle::display_content(&self.mode, self.content);
-        let display_cursor = InputStyle::display_cursor(&self.mode, self.cursor);
+        let display_content = self.mode.display_content(self.content);
+        let display_cursor = self.mode.display_cursor(self.cursor);
 
         let content_width = self.width.saturating_sub(prompt.len() + 1);
         let all_lines = wrap_chars(display_content, content_width);

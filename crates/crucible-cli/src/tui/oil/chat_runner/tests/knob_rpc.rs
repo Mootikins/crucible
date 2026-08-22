@@ -18,7 +18,7 @@ use std::sync::Arc;
 use test_case::test_case;
 
 use crate::chat::bridge::AgentEventBridge;
-use crate::tui::oil::app::{Action, App};
+use crate::tui::oil::app::Action;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crate::tui::oil::chat_runner::OilChatRunner;
 use crate::tui::oil::event::Event;
@@ -229,7 +229,7 @@ async fn record_rpc_calls(app: &mut OilChatApp, action: Action<ChatAppMsg>) -> V
 #[test_case("autocompact_threshold=0.8", "set_autocompact_threshold" ; "autocompact threshold")]
 #[tokio::test]
 async fn interactive_set_knob_reaches_matching_rpc(body: &str, expected_rpc: &str) {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let action = type_and_submit(&mut app, &format!(":set {body}"));
     assert!(
         matches!(action, Action::Send(_)),
@@ -274,7 +274,7 @@ impl AgentHandle for ModeRejectingAgent {
 /// prevent.
 #[tokio::test]
 async fn a_rejected_mode_change_reverts_the_badge_and_surfaces_the_error() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut agent = ModeRejectingAgent;
     let bridge = AgentEventBridge::new(Arc::new(EventRing::new(16)));
 
@@ -482,7 +482,7 @@ impl SessionKnobs for ModeListingAgent {
 /// whole suite green while the TUI silently ran on its built-in fallback.
 #[tokio::test]
 async fn fetch_modes_reaches_the_app_through_the_agent() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let fetches = std::sync::Arc::new(std::sync::Mutex::new(0));
     let mut agent = ModeListingAgent {
         modes: vec!["normal".to_string(), "review".to_string()],
@@ -518,7 +518,7 @@ async fn fetch_modes_reaches_the_app_through_the_agent() {
 /// a mode we do not have.
 #[tokio::test]
 async fn a_mode_declared_after_startup_is_picked_up() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let fetches = std::sync::Arc::new(std::sync::Mutex::new(0));
     let mut agent = ModeListingAgent {
         modes: vec!["normal".to_string(), "review".to_string()],

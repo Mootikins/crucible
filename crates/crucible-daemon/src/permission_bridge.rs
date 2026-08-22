@@ -1,11 +1,9 @@
 //! Bridge from ACP permission requests to the daemon's permission system.
 
-use async_trait::async_trait;
 use crucible_core::config::components::permissions::{
     PermissionConfig, PermissionDecision, PermissionEngine,
 };
 use crucible_core::interaction::{PermAction, PermRequest, PermResponse};
-use crucible_core::traits::PermissionGate;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -52,9 +50,9 @@ impl Default for DaemonPermissionGate {
     }
 }
 
-#[async_trait]
-impl PermissionGate for DaemonPermissionGate {
-    async fn request_permission(&self, request: PermRequest) -> PermResponse {
+impl DaemonPermissionGate {
+    /// Decide one permission request for an agent action.
+    pub async fn request_permission(&self, request: PermRequest) -> PermResponse {
         let (tool_name, input) = Self::to_engine_input(&request);
 
         // The engine first, so a `deny` the operator wrote by hand is

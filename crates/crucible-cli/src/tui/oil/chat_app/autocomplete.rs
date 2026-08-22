@@ -596,11 +596,10 @@ mod tests {
     //! unit tests the story doc calls out as the T1 gap for US-501.
 
     use super::*;
-    use crate::tui::oil::app::App;
     use crate::tui::oil::chat_app::state::{AutocompleteKind, PickSource};
 
     fn app() -> OilChatApp {
-        let mut app = OilChatApp::init();
+        let mut app = OilChatApp::default();
         app.set_workspace_files(vec![
             "src/main.rs".into(),
             "src/lib.rs".into(),

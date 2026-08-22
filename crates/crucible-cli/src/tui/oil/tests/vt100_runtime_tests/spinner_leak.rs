@@ -6,7 +6,7 @@ use super::*;
 /// Graduated thinking must NOT contain spinner characters.
 #[test]
 fn graduated_thinking_has_no_spinner() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("Do something".into()));
@@ -32,7 +32,7 @@ fn graduated_thinking_has_no_spinner() {
 /// Exact sequence from user's real session.
 #[test]
 fn vt100_spinner_does_not_leak_to_scrollback() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(124, 59);
 
     // User message
@@ -115,7 +115,7 @@ fn vt100_spinner_does_not_leak_to_scrollback() {
 /// viewport spinner "ghosts" that could leak to scrollback in real terminals.
 #[test]
 fn vt100_no_spinner_in_any_graduated_content() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(124, 59);
 
     let spinner_chars = [
@@ -213,7 +213,7 @@ fn vt100_no_spinner_in_any_graduated_content() {
 /// survive in scrollback.
 #[test]
 fn vt100_small_terminal_spinner_no_leak_on_scroll() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     // Very small terminal — 10 rows. Viewport + graduation will exceed this.
     let mut vt = Vt100TestRuntime::new(80, 10);
 
@@ -286,7 +286,7 @@ fn vt100_small_terminal_spinner_no_leak_on_scroll() {
 /// This uses the actual vt100 screen state which models real terminal behavior.
 #[test]
 fn vt100_screen_no_spinner_after_graduation() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(124, 59);
 
     app.on_message(ChatAppMsg::UserMessage("go".into()));
@@ -344,7 +344,7 @@ fn vt100_screen_no_spinner_after_graduation() {
 /// Same test but with tick-per-event (renders between every event).
 #[test]
 fn vt100_spinner_no_leak_tick_per_event() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(124, 59);
 
     app.on_message(ChatAppMsg::UserMessage("go".into()));
@@ -433,7 +433,7 @@ fn vt100_spinner_no_leak_tick_per_event() {
 fn vt100_scrollback_no_spinner_after_permission_graduation() {
     use crucible_core::interaction::{InteractionRequest, PermRequest};
 
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // User message
@@ -487,7 +487,7 @@ fn vt100_scrollback_no_spinner_after_permission_graduation() {
 /// Mimics the 25ms burst from the production log.
 #[test]
 fn vt100_rapid_sequential_graduations_clean_scrollback() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("Do many things".into()));
@@ -518,7 +518,7 @@ fn vt100_rapid_sequential_graduations_clean_scrollback() {
 /// states where old spinner content is visible.
 #[test]
 fn vt100_graduation_bytes_inside_sync_update() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     app.on_message(ChatAppMsg::UserMessage("go".into()));
@@ -609,7 +609,7 @@ fn reproduce_permission_modal_spinner_leak() {
         .copied()
         .collect();
 
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(124, 59);
 
     // Helper: check scrollback for spinners after each phase.

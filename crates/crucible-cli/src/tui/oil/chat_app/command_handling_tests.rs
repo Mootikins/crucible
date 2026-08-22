@@ -50,12 +50,11 @@ fn suggest_command_empty_input() {
 // US-104: `:set` runtime-config dispatch matrix
 // ════════════════════════════════════════════════════════════════
 
-use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::ChatAppMsg;
 use test_case::test_case;
 
 fn app() -> OilChatApp {
-    OilChatApp::init()
+    OilChatApp::default()
 }
 
 /// Run a `:set` body (e.g. `"thinkingbudget=high"`) through the real

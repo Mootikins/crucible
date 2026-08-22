@@ -1,5 +1,5 @@
 use crate::chat::bridge::AgentEventBridge;
-use crate::tui::oil::app::{Action, App};
+use crate::tui::oil::app::Action;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crucible_core::events::SessionEvent;
 use crucible_core::traits::chat::{AgentHandle, SessionKnobs};
@@ -158,15 +158,7 @@ impl OilChatRunner {
                             return Ok(false);
                         }
                         let count = *count;
-                        let Some(undoable) = params.agent.as_undoable_mut() else {
-                            params.app.add_notification(
-                                crucible_core::types::Notification::warning(
-                                    "Undo not supported by this agent".to_string(),
-                                ),
-                            );
-                            return Ok(false);
-                        };
-                        match undoable.undo(count).await {
+                        match params.agent.undo(count).await {
                             Ok(summaries) if !summaries.is_empty() => {
                                 let total_removed: usize =
                                     summaries.iter().map(|s| s.messages_removed).sum();

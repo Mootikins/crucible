@@ -265,11 +265,10 @@ impl OilChatApp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::oil::app::App;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     fn streaming_app_with_draft(draft: &str) -> OilChatApp {
-        let mut app = OilChatApp::init();
+        let mut app = OilChatApp::default();
         app.container_list_mut().mark_turn_active();
         assert!(app.is_streaming(), "precondition: turn must be active");
         app.set_input(draft);

@@ -3,7 +3,6 @@
 //! Tests for visual artifacts, styling consistency, and animation issues
 //! that are hard to catch with unit tests alone.
 
-use crate::tui::oil::app::App;
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crucible_oil::ansi::strip_ansi;
 
@@ -13,7 +12,7 @@ use super::vt100_runtime::Vt100TestRuntime;
 
 #[test]
 fn cancelled_stream_graduates_all_containers() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // Start a turn with text + pending tool
@@ -57,7 +56,7 @@ fn cancelled_stream_graduates_all_containers() {
 
 #[test]
 fn cancelled_during_thinking_graduates_cleanly() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // Start thinking, no text yet
@@ -80,7 +79,7 @@ fn cancelled_during_thinking_graduates_cleanly() {
 
 #[test]
 fn thinking_not_duplicated_between_chrome_and_content() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
 
     // Only thinking, no text yet — chrome shows thinking indicator
     app.on_message(ChatAppMsg::ThinkingDelta(
@@ -103,7 +102,7 @@ fn thinking_not_duplicated_between_chrome_and_content() {
 
 #[test]
 fn thinking_transitions_to_collapsed_on_text_start() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
 
     app.on_message(ChatAppMsg::ThinkingDelta(
         "reasoning about the answer ".into(),
@@ -130,7 +129,7 @@ fn thinking_transitions_to_collapsed_on_text_start() {
 
 #[test]
 fn user_message_has_consistent_width() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     app.on_message(ChatAppMsg::UserMessage("Hello world".into()));
 
     let mut vt = Vt100TestRuntime::new(60, 24);
@@ -151,7 +150,7 @@ fn user_message_has_consistent_width() {
 
 #[test]
 fn user_message_wraps_long_text() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let long_text = "This is a very long message that should wrap across multiple lines when the terminal width is narrow enough to require wrapping behavior";
     app.on_message(ChatAppMsg::UserMessage(long_text.into()));
 
@@ -192,7 +191,7 @@ fn assert_no_triple_blanks(screen: &str, context: &str) {
 
 #[test]
 fn no_triple_blanks_tool_heavy_conversation() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 30);
 
     // User asks, assistant uses multiple tools
@@ -255,7 +254,7 @@ fn no_triple_blanks_tool_heavy_conversation() {
 
 #[test]
 fn no_triple_blanks_thinking_then_tools_then_text() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 30);
 
     app.on_message(ChatAppMsg::UserMessage("Plan this".into()));
@@ -297,7 +296,7 @@ fn no_triple_blanks_thinking_then_tools_then_text() {
 
 #[test]
 fn graduation_across_multiple_frames_consistent() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // Frame 1: user message (graduates immediately)
@@ -333,7 +332,7 @@ fn graduation_across_multiple_frames_consistent() {
 
 #[test]
 fn empty_text_delta_does_not_create_visible_artifact() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
 
     // Empty delta should not create visible content
     app.on_message(ChatAppMsg::TextDelta("".into()));
@@ -351,7 +350,7 @@ fn empty_text_delta_does_not_create_visible_artifact() {
 
 #[test]
 fn thinking_only_no_text_graduates_cleanly() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // Only thinking, then stream complete (no text delta)
@@ -378,7 +377,7 @@ fn thinking_only_no_text_graduates_cleanly() {
 
 #[test]
 fn multiple_thinking_blocks_render_without_duplication() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 30);
 
     // First thinking → text → tool → second thinking → more text
@@ -435,7 +434,7 @@ fn multiple_thinking_blocks_render_without_duplication() {
 
 #[test]
 fn continuation_after_tool_has_no_bullet() {
-    let mut app = OilChatApp::init();
+    let mut app = OilChatApp::default();
     let mut vt = Vt100TestRuntime::new(80, 24);
 
     // Text → tool → continuation text
