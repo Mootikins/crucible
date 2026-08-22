@@ -20,13 +20,14 @@
 use crate::enrichment::Enricher;
 use anyhow::{Context, Result};
 use crucible_core::events::SessionEvent;
+use crucible_core::parser::types::BlockHash;
 use crucible_core::parser::{traits::MarkdownParser, CrucibleParser};
-use crucible_core::processing::{ChangeDetectionStore, FileState, ProcessingResult};
+use crucible_core::processing::ProcessingResult;
+use crucible_core::storage::Scope;
 use crucible_core::storage::{NoteRecord, NoteStore};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::SystemTime;
 use tracing::{debug, info};
 
 /// Configuration for pipeline behavior
@@ -48,7 +49,7 @@ pub struct NotePipelineConfig {
 ///
 /// ```text
 /// NotePipeline (orchestration)
-///   ├─> ChangeDetectionStore (Phase 1: skip checks)
+///   ├─> NoteStore (Phase 1: skip check, against the stored content hash)
 ///   ├─> crucible-parser (Phase 2: AST)
 ///   ├─> Enricher (Phase 3: embeddings)
 ///   └─> NoteStore (Phase 4: persistence)
@@ -57,9 +58,6 @@ pub struct NotePipelineConfig {
 pub struct NotePipeline {
     /// Markdown parser (Phase 2) - supports multiple backends
     parser: Arc<dyn MarkdownParser>,
-
-    /// Storage for file state tracking (Phase 1)
-    change_detector: Arc<dyn ChangeDetectionStore>,
 
     /// Enricher for embeddings and metadata (Phase 3)
     enricher: Arc<Enricher>,
@@ -83,17 +81,12 @@ pub struct NotePipeline {
 
 impl NotePipeline {
     /// Create a new pipeline with dependencies (uses default config)
-    pub fn new(
-        change_detector: Arc<dyn ChangeDetectionStore>,
-        enricher: Arc<Enricher>,
-        note_store: Arc<dyn NoteStore>,
-    ) -> Self {
+    pub fn new(enricher: Arc<Enricher>, note_store: Arc<dyn NoteStore>) -> Self {
         let config = NotePipelineConfig::default();
         let parser = Arc::new(CrucibleParser::new()) as Arc<dyn MarkdownParser>;
 
         Self {
             parser,
-            change_detector,
             enricher,
             note_store,
             text_index: None,
@@ -104,7 +97,6 @@ impl NotePipeline {
 
     /// Create a new pipeline with custom configuration
     pub fn with_config(
-        change_detector: Arc<dyn ChangeDetectionStore>,
         enricher: Arc<Enricher>,
         note_store: Arc<dyn NoteStore>,
         config: NotePipelineConfig,
@@ -113,7 +105,6 @@ impl NotePipeline {
 
         Self {
             parser,
-            change_detector,
             enricher,
             note_store,
             text_index: None,
@@ -305,14 +296,6 @@ impl NotePipeline {
             }
         }
 
-        // Update file state tracking
-        self.update_file_state(path).await.with_context(|| {
-            format!(
-                "Phase 4: Failed to update file state for '{}'",
-                path.display()
-            )
-        })?;
-
         let phase4_duration = phase4_start.elapsed().as_millis() as u64;
 
         let total_duration = start.elapsed().as_millis() as u64;
@@ -366,10 +349,6 @@ impl NotePipeline {
             .await
             .map_err(|e| anyhow::anyhow!("Storage error: {}", e))
             .with_context(|| format!("Failed to store canvas '{}'", path.display()))?;
-
-        self.update_file_state(path)
-            .await
-            .with_context(|| format!("Failed to update file state for '{}'", path.display()))?;
 
         debug!(
             "Indexed canvas {} (P1:{}ms)",
@@ -448,10 +427,6 @@ impl NotePipeline {
             }
         }
 
-        self.update_file_state(path)
-            .await
-            .with_context(|| format!("Failed to update file state for '{}'", path.display()))?;
-
         debug!(
             "Indexed plain text {} (P1:{}ms)",
             path.display(),
@@ -466,65 +441,83 @@ impl NotePipeline {
 
     /// Phase 1: Quick filter check
     ///
-    /// Checks if the file has changed since last processing by comparing
-    /// file hash and modification time. Returns `Some(ProcessingResult::Skipped)`
-    /// if the file is unchanged, or `None` if processing should continue.
+    /// Compares the file's BLAKE3 hash against the one stored on its note row.
+    /// Returns `Some(ProcessingResult::Skipped)` when they agree, `None` when
+    /// processing must continue.
+    ///
+    /// The stored hash IS the record of what was indexed — `content_hash` is
+    /// documented on `NoteRecord` as "BLAKE3 content hash (32 bytes) for change
+    /// detection", and it is written by the same upsert that writes the note.
+    /// Nothing can therefore claim a note is current when its row is missing,
+    /// which a separate state table alongside the row could.
+    ///
+    /// This used to consult an in-process `HashMap` instead, because the
+    /// markdown path stored `BlockHash::zero()` and the column was useless. A
+    /// map does not outlive the daemon, so the first `kiln.open(process=true)`
+    /// after every start reindexed and re-embedded the whole kiln — 3m35s for
+    /// 150 notes here, with `cru chat "..."` blocked behind it.
     async fn phase1_quick_filter(&self, path: &Path) -> Result<Option<ProcessingResult>> {
         if self.config.force_reprocess {
             debug!("Force reprocess enabled, skipping quick filter");
             return Ok(None);
         }
 
-        // Get stored file state
-        let stored_state = self.change_detector.get_file_state(path).await?;
+        let Some(stored) = self.stored_content_hash(path).await else {
+            return Ok(None);
+        };
 
-        // Compute current file state
-        let current_state = self.compute_file_state(path).await?;
-
-        // Compare states
-        if let Some(stored) = stored_state {
-            if stored.file_hash == current_state.file_hash
-                && stored.file_size == current_state.file_size
-            {
-                debug!(
-                    "File unchanged (hash: {}, size: {})",
-                    &current_state.file_hash[..8],
-                    current_state.file_size
-                );
-                return Ok(Some(ProcessingResult::skipped()));
-            }
+        let current = self.compute_content_hash(path).await?;
+        if stored == current {
+            debug!("File unchanged (hash: {})", &current.to_hex()[..8]);
+            return Ok(Some(ProcessingResult::skipped()));
         }
 
         Ok(None)
     }
 
-    /// Compute current file state (hash, modified time, size)
-    async fn compute_file_state(&self, path: &Path) -> Result<FileState> {
-        let metadata = tokio::fs::metadata(path)
-            .await
-            .context("Failed to read file metadata")?;
+    /// The hash recorded on this path's note row, if it has one.
+    ///
+    /// A read failure is not an error here: it means "no usable record", which
+    /// reprocesses. Refusing to index because the index could not be read is
+    /// the wrong way round.
+    async fn stored_content_hash(&self, path: &Path) -> Option<BlockHash> {
+        let key = self.storage_key(path);
+        // The same spelling the storage key is derived from, so a note whose
+        // row carries an explicit `scope` still matches. A mismatch returns
+        // `None`, which reprocesses — the safe direction.
+        let root = match self.kiln_root.as_ref() {
+            Some(root) => root.clone(),
+            None => path.parent().unwrap_or(path).to_path_buf(),
+        };
+        let authority = Scope::workspace_unchecked(root);
+        let record = self.note_store.get(&key, &authority).await.ok()??;
 
+        // No special case for the `BlockHash::zero()` that every markdown note
+        // carried before the parser filled `content_hash` in: zero is not the
+        // hash of any file, so such a row simply compares unequal and
+        // reprocesses once. A guard for it would be a branch no input reaches.
+        Some(record.content_hash)
+    }
+
+    /// BLAKE3 of the bytes on disk.
+    ///
+    /// Raw bytes, matching what the parser hashes: it hashes the `String` it
+    /// read from this same file, and the two agree for anything that parses.
+    async fn compute_content_hash(&self, path: &Path) -> Result<BlockHash> {
         let content = tokio::fs::read(path)
             .await
             .context("Failed to read file content")?;
-
-        let hash = blake3::hash(&content);
-
-        Ok(FileState {
-            file_hash: hash.to_hex().to_string(),
-            modified_time: metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH),
-            file_size: metadata.len(),
-        })
+        Ok(BlockHash::new(*blake3::hash(&content).as_bytes()))
     }
 
-    /// Update stored file state after successful processing
-    async fn update_file_state(&self, path: &Path) -> Result<()> {
-        let state = self.compute_file_state(path).await?;
-        self.change_detector
-            .store_file_state(path, state)
-            .await
-            .context("Failed to store file state")?;
-        Ok(())
+    /// The key a note is stored under: kiln-relative when the pipeline knows
+    /// the root, absolute otherwise. Must match what Phase 4 upserts.
+    fn storage_key(&self, path: &Path) -> String {
+        match self.kiln_root.as_ref() {
+            Some(root) => crate::kiln_manager::normalize_note_path(path, root)
+                .unwrap_or_else(|| path.to_string_lossy().to_string()),
+            None => path.to_string_lossy().to_string(),
+        }
     }
 
     /// Convert an EnrichedNote to a NoteRecord for storage
@@ -688,7 +681,6 @@ mod tests {
     use crucible_core::enrichment::EmbeddingProvider;
     use crucible_core::events::{InternalSessionEvent, SessionEvent};
     use crucible_core::parser::BlockHash;
-    use crucible_core::processing::InMemoryChangeDetectionStore;
     use crucible_core::storage::{Filter, NoteRecord, SearchResult, StorageError};
     use std::io::Write;
     use std::sync::Arc;
@@ -727,17 +719,27 @@ mod tests {
 
     // -- Mock NoteStore --
 
+    /// Records what it is given. A stub that discarded writes could not
+    /// exercise Phase 1 at all: the stored `content_hash` IS the skip check,
+    /// so a store that forgets makes every pass look like the first.
     struct MockNoteStore {
         should_fail: bool,
+        notes: std::sync::Mutex<std::collections::HashMap<String, NoteRecord>>,
     }
 
     impl MockNoteStore {
         fn new() -> Self {
-            Self { should_fail: false }
+            Self {
+                should_fail: false,
+                notes: std::sync::Mutex::new(std::collections::HashMap::new()),
+            }
         }
 
         fn failing() -> Self {
-            Self { should_fail: true }
+            Self {
+                should_fail: true,
+                notes: std::sync::Mutex::new(std::collections::HashMap::new()),
+            }
         }
     }
 
@@ -745,20 +747,21 @@ mod tests {
     impl NoteStore for MockNoteStore {
         async fn upsert(
             &self,
-            _note: NoteRecord,
+            note: NoteRecord,
         ) -> std::result::Result<Vec<SessionEvent>, StorageError> {
             if self.should_fail {
                 return Err(StorageError::Backend("mock storage failure".into()));
             }
+            self.notes.lock().unwrap().insert(note.path.clone(), note);
             Ok(vec![])
         }
 
         async fn get(
             &self,
-            _path: &str,
+            path: &str,
             _authority: &crucible_core::storage::Scope,
         ) -> std::result::Result<Option<NoteRecord>, StorageError> {
-            Ok(None)
+            Ok(self.notes.lock().unwrap().get(path).cloned())
         }
 
         async fn delete(&self, _path: &str) -> std::result::Result<SessionEvent, StorageError> {
@@ -794,12 +797,11 @@ mod tests {
     }
 
     fn create_pipeline(enricher: Arc<Enricher>, note_store: Arc<dyn NoteStore>) -> NotePipeline {
-        let change_detector = Arc::new(InMemoryChangeDetectionStore::new());
         let config = NotePipelineConfig {
             skip_enrichment: false,
             force_reprocess: true,
         };
-        NotePipeline::with_config(change_detector, enricher, note_store, config)
+        NotePipeline::with_config(enricher, note_store, config)
     }
 
     fn passing_enricher() -> Arc<Enricher> {
@@ -831,7 +833,6 @@ mod tests {
 
     #[tokio::test]
     async fn pipeline_skips_unchanged_file_on_second_pass() {
-        let change_detector = Arc::new(InMemoryChangeDetectionStore::new());
         let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::new());
 
         // force_reprocess=false so the change detector is consulted
@@ -839,8 +840,7 @@ mod tests {
             skip_enrichment: true,
             force_reprocess: false,
         };
-        let pipeline =
-            NotePipeline::with_config(change_detector, passing_enricher(), store, config);
+        let pipeline = NotePipeline::with_config(passing_enricher(), store, config);
 
         let tmp = write_temp_note("# Test\n\nParagraph.\n");
 
@@ -854,6 +854,92 @@ mod tests {
             r2.is_skipped(),
             "unchanged file should be skipped on second pass"
         );
+    }
+
+    #[tokio::test]
+    async fn a_fresh_pipeline_over_the_same_store_still_skips() {
+        // The regression. Change detection used to live in a `HashMap` owned by
+        // the pipeline, so a new one — every daemon restart — knew nothing and
+        // reindexed the whole kiln. Measured at 3m35s for 150 notes, with
+        // `cru chat "..."` blocked behind it. The record now lives on the note
+        // row, so a second pipeline over the same store sees what the first did.
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::new());
+        let config = NotePipelineConfig {
+            skip_enrichment: true,
+            force_reprocess: false,
+        };
+
+        let tmp = write_temp_note("# Test\n\nParagraph.\n");
+
+        let first =
+            NotePipeline::with_config(passing_enricher(), Arc::clone(&store), config.clone());
+        assert!(!first.process(tmp.path()).await.unwrap().is_skipped());
+
+        let second = NotePipeline::with_config(passing_enricher(), store, config);
+        assert!(
+            second.process(tmp.path()).await.unwrap().is_skipped(),
+            "a pipeline built after the first must not reindex what the store already holds"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_edited_file_is_reprocessed() {
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::new());
+        let config = NotePipelineConfig {
+            skip_enrichment: true,
+            force_reprocess: false,
+        };
+        let pipeline = NotePipeline::with_config(passing_enricher(), store, config);
+
+        let mut tmp = write_temp_note("# Test\n\nParagraph.\n");
+        assert!(!pipeline.process(tmp.path()).await.unwrap().is_skipped());
+        assert!(pipeline.process(tmp.path()).await.unwrap().is_skipped());
+
+        write!(tmp, "\nAnother paragraph.\n").unwrap();
+        tmp.flush().unwrap();
+        assert!(
+            !pipeline.process(tmp.path()).await.unwrap().is_skipped(),
+            "an edited file must be reprocessed"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_note_indexed_by_an_older_binary_is_reprocessed_once() {
+        // Every markdown note written before the parser filled `content_hash`
+        // carries `BlockHash::zero()`. Trusting that would pin a whole existing
+        // kiln as permanently current, and no edit would ever be indexed.
+        let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::new());
+        let tmp = write_temp_note("# Test\n\nParagraph.\n");
+        let key = tmp.path().to_string_lossy().to_string();
+
+        store
+            .upsert(NoteRecord {
+                path: key,
+                content_hash: BlockHash::zero(),
+                embedding: None,
+                embedding_model: None,
+                embedding_dimensions: None,
+                title: "Test".to_string(),
+                tags: vec![],
+                links_to: vec![],
+                links: vec![],
+                properties: Default::default(),
+                updated_at: chrono::Utc::now(),
+            })
+            .await
+            .unwrap();
+
+        let config = NotePipelineConfig {
+            skip_enrichment: true,
+            force_reprocess: false,
+        };
+        let pipeline = NotePipeline::with_config(passing_enricher(), store, config);
+
+        assert!(
+            !pipeline.process(tmp.path()).await.unwrap().is_skipped(),
+            "a zero hash means unknown, not current"
+        );
+        assert!(pipeline.process(tmp.path()).await.unwrap().is_skipped());
     }
 
     #[tokio::test]
@@ -892,7 +978,6 @@ mod tests {
 
     #[tokio::test]
     async fn pipeline_skip_enrichment_config_bypasses_enrichment() {
-        let change_detector = Arc::new(InMemoryChangeDetectionStore::new());
         let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::new());
 
         let config = NotePipelineConfig {
@@ -901,8 +986,7 @@ mod tests {
         };
         // Enrichment is configured to fail, but skip_enrichment=true means it
         // never runs — the pipeline should still succeed.
-        let pipeline =
-            NotePipeline::with_config(change_detector, failing_enricher(), store, config);
+        let pipeline = NotePipeline::with_config(failing_enricher(), store, config);
 
         let tmp = write_temp_note("# Skip enrichment\n\nBody text.\n");
         let result = pipeline.process(tmp.path()).await.unwrap();
@@ -929,15 +1013,13 @@ mod tests {
 
     #[tokio::test]
     async fn force_reprocess_overrides_skip() {
-        let change_detector = Arc::new(InMemoryChangeDetectionStore::new());
         let store: Arc<dyn NoteStore> = Arc::new(MockNoteStore::new());
 
         let config = NotePipelineConfig {
             skip_enrichment: true,
             force_reprocess: true,
         };
-        let pipeline =
-            NotePipeline::with_config(change_detector, passing_enricher(), store, config);
+        let pipeline = NotePipeline::with_config(passing_enricher(), store, config);
 
         let tmp = write_temp_note("# Force Test\n\nContent here.\n");
 

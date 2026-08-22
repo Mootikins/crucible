@@ -15,7 +15,6 @@ use tracing::{info, warn};
 
 use crate::pipeline::{NotePipeline, NotePipelineConfig};
 use crate::watch::{EventFilter, WatchManager, WatchManagerConfig};
-use crucible_core::processing::InMemoryChangeDetectionStore;
 use crucible_core::storage::note_store::NoteRecord;
 use crucible_core::traits::{KnowledgeRepository, NoteInfo};
 use crucible_core::EXCLUDED_DIRS;
@@ -1097,7 +1096,7 @@ impl Default for KilnManager {
 /// Create a NotePipeline for daemon-side file processing
 ///
 /// Creates a pipeline with:
-/// - In-memory change detection
+/// - Change detection against each note's stored `content_hash`
 /// - NoteStore from the storage handle
 fn pipeline_config(enrichment_config: Option<&EmbeddingProviderConfig>) -> NotePipelineConfig {
     NotePipelineConfig {
@@ -1110,9 +1109,6 @@ async fn create_pipeline(
     handle: &StorageHandle,
     enrichment_config: Option<&EmbeddingProviderConfig>,
 ) -> Result<NotePipeline> {
-    // Change detection (in-memory)
-    let change_detector = Arc::new(InMemoryChangeDetectionStore::new());
-
     let embedding_provider = if let Some(config) = enrichment_config {
         match get_or_create_embedding_provider(config).await {
             Ok(provider) => {
@@ -1137,7 +1133,7 @@ async fn create_pipeline(
 
     let config = pipeline_config(enrichment_config);
 
-    let pipeline = NotePipeline::with_config(change_detector, enricher, note_store, config)
+    let pipeline = NotePipeline::with_config(enricher, note_store, config)
         .with_text_index(handle.text.clone());
 
     Ok(pipeline)
