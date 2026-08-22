@@ -174,7 +174,7 @@ cannot tell which is canonical. A change has to be made twice.
 | `ModelsResponse` | `crates/crucible-daemon/src/agent_manager/context_length.rs:37` <br> `crates/crucible-daemon/src/provider/copilot.rs:194` <br> `crates/crucible-web/src/routes/helpers.rs:13` |
 | `AgentError` | `crates/crucible-core/src/turn/mod.rs:220` <br> `crates/crucible-daemon/src/agent_manager/mod.rs:90` |
 | `EmbeddingResponse` | `crates/crucible-core/src/traits/provider.rs:16` <br> `crates/crucible-daemon/src/llm/embeddings/provider.rs:400` |
-| `FileState` | `crates/crucible-core/src/processing/change_detection.rs:72` <br> `crates/crucible-daemon/src/watch/backends/polling_backend.rs:31` |
+| `FileState` | ~~`crucible-core/src/processing/`~~ (removed 2026-08-22) <br> `crates/crucible-daemon/src/watch/backends/polling_backend.rs:31` |
 | `ShowRequest` | `crates/crucible-core/src/interaction/edit.rs:84` <br> `crates/crucible-daemon/src/agent_manager/context_length.rs:92` |
 | `ToolResult` | `crates/crucible-core/src/traits/tools.rs:11` (a `Result` alias) <br> `crates/crucible-lua/src/types.rs:71` (a struct) |
 

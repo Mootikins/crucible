@@ -1031,7 +1031,6 @@ impl KilnManager {
             enable_default_handlers: true,
             queue_capacity: 1000,
             debounce_delay: std::time::Duration::from_millis(500),
-            ..Default::default()
         };
 
         let mut wm = match WatchManager::with_emitter(config, bridge).await {

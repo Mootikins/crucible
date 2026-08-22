@@ -12,6 +12,12 @@ pub struct RenderSlot<T: 'static> {
     fallback: OnceLock<T>,
 }
 
+impl<T: 'static> Default for RenderSlot<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: 'static> RenderSlot<T> {
     pub const fn new() -> Self {
         Self {

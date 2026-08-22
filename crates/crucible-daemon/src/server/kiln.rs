@@ -1,9 +1,4 @@
 use super::*;
-use crate::rpc_helpers::typed_params;
-use crucible_core::config::{
-    read_kiln_config, read_project_config, write_kiln_config, write_project_config,
-    DataClassification, KilnConfig, KilnMeta, ProjectConfig,
-};
 /// Derive the read authority for a kiln-scoped RPC request.
 ///
 /// Authority is always derived from the `kiln` parameter — callers cannot
@@ -12,6 +7,11 @@ use crucible_core::config::{
 /// caller-controlled input rather than a session boundary). Any `scope`
 /// in `req.params` is now ignored.
 use crate::kiln_manager::request_scope;
+use crate::rpc_helpers::typed_params;
+use crucible_core::config::{
+    read_kiln_config, read_project_config, write_kiln_config, write_project_config,
+    DataClassification, KilnConfig, KilnMeta, ProjectConfig,
+};
 use crucible_core::storage::Scope;
 
 pub(crate) async fn handle_kiln_open(
