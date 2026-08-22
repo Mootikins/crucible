@@ -115,10 +115,13 @@ impl ExtendedMcpServer {
         }
     }
 
-    /// Attach an MCP gateway for upstream server tools.
+    /// Attach the daemon's MCP gateway, so upstream tools reach this surface.
+    ///
+    /// The gateway is shared, not owned: the agent manager dispatches through
+    /// the same one, so the reconnect loop keeps both surfaces current.
     #[must_use]
-    pub fn with_gateway(mut self, gateway: McpGatewayManager) -> Self {
-        self.gateway = Some(Arc::new(RwLock::new(gateway)));
+    pub fn with_gateway(mut self, gateway: Arc<RwLock<McpGatewayManager>>) -> Self {
+        self.gateway = Some(gateway);
         self
     }
 
@@ -542,6 +545,45 @@ mod tests {
         // skill_view) + 3 job tools + 2 discovery tools. No workspace tools:
         // the MCP surface serves the kiln.
         assert_eq!(tools.len(), 16);
+    }
+
+    /// The daemon's gateway puts its upstream tools on the MCP host surface.
+    ///
+    /// Without the gateway the surface lists 16 tools (see
+    /// `test_list_all_tools`). With it, each upstream tool appears under its
+    /// prefixed name, and the server routes that name to the gateway.
+    #[tokio::test]
+    async fn a_gateway_adds_its_upstream_tools_to_the_mcp_surface() {
+        let temp = TempDir::new().unwrap();
+        let server = ExtendedMcpServer::kiln_only(
+            temp.path().to_str().unwrap().to_string(),
+            Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
+            Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
+        );
+        assert!(!server.is_gateway_tool("gh_search_repos").await);
+        let before = server.tool_count().await;
+
+        let upstream_tool = crucible_core::traits::mcp::McpToolInfo {
+            name: "search_repos".to_string(),
+            prefixed_name: "gh_search_repos".to_string(),
+            description: Some("Search repositories".to_string()),
+            input_schema: serde_json::json!({"type": "object"}),
+            upstream: "gh".to_string(),
+            read_only: Some(true),
+        };
+        let gateway = Arc::new(RwLock::new(McpGatewayManager::new_with_test_upstream(
+            "gh",
+            "gh_",
+            vec![upstream_tool],
+        )));
+        let server = server.with_gateway(gateway);
+
+        let tools = server.list_all_tools().await;
+        let names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        assert_eq!(tools.len(), 17, "{names:?}");
+        assert_eq!(server.tool_count().await, before + 1);
+        assert!(names.contains(&"gh_search_repos"), "{names:?}");
+        assert!(server.is_gateway_tool("gh_search_repos").await);
     }
 
     /// A plugin tool routes by registry membership, not by a name prefix.

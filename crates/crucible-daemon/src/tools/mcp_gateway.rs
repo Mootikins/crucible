@@ -561,6 +561,41 @@ impl Default for McpGatewayManager {
 }
 
 #[cfg(test)]
+impl McpGatewayManager {
+    /// A gateway with one upstream that never connects but already holds
+    /// `tools`, so a test can exercise the surface without a child process.
+    pub(crate) fn new_with_test_upstream(
+        name: &str,
+        prefix: &str,
+        tools: Vec<McpToolInfo>,
+    ) -> Self {
+        let config = UpstreamServerConfig {
+            name: name.to_string(),
+            prefix: prefix.to_string(),
+            transport: TransportType::Stdio {
+                command: "echo".to_string(),
+                args: vec![],
+                env: HashMap::new(),
+            },
+            allowed_tools: None,
+            blocked_tools: None,
+            auto_reconnect: true,
+            timeout_secs: 30,
+        };
+        let mut client = UpstreamClient::new(config);
+        let mut manager = Self::new();
+        for tool in &tools {
+            manager
+                .tool_index
+                .insert(tool.prefixed_name.clone(), name.to_string());
+        }
+        client.tools = tools;
+        manager.upstreams.insert(name.to_string(), client);
+        manager
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashMap;
@@ -944,11 +979,7 @@ mod tests {
     }
 
     fn manager_with(tools: Vec<McpToolInfo>) -> McpGatewayManager {
-        let mut client = UpstreamClient::new(test_config("gh", "gh_"));
-        client.tools = tools;
-        let mut manager = McpGatewayManager::new();
-        manager.upstreams.insert("gh".to_string(), client);
-        manager
+        McpGatewayManager::new_with_test_upstream("gh", "gh_", tools)
     }
 
     /// A server's `readOnlyHint` reaches Lua policy — and stops there.

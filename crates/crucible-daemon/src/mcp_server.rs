@@ -6,13 +6,14 @@
 
 use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
 use crate::kiln_manager::KilnManager;
+use crate::tools::mcp_gateway::McpGatewayManager;
 use crate::tools::{ExtendedMcpServer, ExtendedMcpService};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
@@ -39,13 +40,21 @@ enum McpServerState {
 /// via SSE or stdio transport, mirroring the CLI's `cru mcp` command.
 pub struct McpServerManager {
     state: Arc<Mutex<McpServerState>>,
+    /// The daemon's gateway, so a served MCP surface also lists upstream tools.
+    gateway: Option<Arc<RwLock<McpGatewayManager>>>,
 }
 
 impl McpServerManager {
-    /// Create a new manager with no running server.
+    /// Create a new manager with no running server and no gateway.
     pub fn new() -> Self {
+        Self::new_with_gateway(None)
+    }
+
+    /// Create a new manager that attaches `gateway` to each server it starts.
+    pub fn new_with_gateway(gateway: Option<Arc<RwLock<McpGatewayManager>>>) -> Self {
         Self {
             state: Arc::new(Mutex::new(McpServerState::Stopped)),
+            gateway,
         }
     }
 
@@ -123,6 +132,11 @@ impl McpServerManager {
                     ExtendedMcpServer::kiln_only(kiln_path.to_string(), kr, ep)
                 }
             }
+        };
+
+        let server = match self.gateway.clone() {
+            Some(gateway) => server.with_gateway(gateway),
+            None => server,
         };
 
         let tool_count = server.tool_count().await;

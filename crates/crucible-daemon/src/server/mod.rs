@@ -360,7 +360,7 @@ impl Server {
         )
         .await;
         let lua_sessions = Arc::new(DashMap::new());
-        let mcp_server_manager = Arc::new(McpServerManager::new());
+        let mcp_server_manager = Arc::new(McpServerManager::new_with_gateway(mcp_gateway.clone()));
 
         let ctx = Arc::new(RpcContext::new(
             kiln_manager.clone(),
