@@ -43,6 +43,35 @@ Rules that apply to every batch:
 - When a batch removes the last reader of a field, remove the field in the same batch.
 - Do not touch `protocol/`, `rpc/dispatch.rs` or `crucible-web/src/routes/`. Items in those files are listed at the end of Tier 1.
 
+## 1a. Result, 2026-08-22
+
+Tier 1 and Tier 2 ran the same day, one commit per batch, `b31aa0b00` to
+`5fb48681d`. 266 items were removed or merged: 248 in Tier 1, 18 in Tier 2.
+Net change: about 280 files, −14,300 lines. `just test quick` passed after
+every batch (8492 tests before, 8210 after; the difference is tests of removed
+items). `just ci` passed at the end, after `1f7a555ae` fixed three clippy
+findings the removals exposed.
+
+Skipped items, with the reason, now live in Tier 3 or Tier 4:
+
+| Batch | Item | Why | Now |
+|---|---|---|---|
+| B3 | `with_debounce` calls at `external_changes.rs`, `kiln_manager.rs` | Those are `WatchConfig::with_debounce`, a live method; the plan conflated two methods | dropped |
+| B5 | `impl Default` for `ClientId`, `SubscriptionManager` | clippy `new_without_default`; `ClientId::new` draws from a counter, so a derived Default changes behaviour | Tier 3 |
+| B7 | `KILN_BACKED_TOOLS` | deferred by the plan | Tier 3 |
+| B11 | `SessionManager::remove_session` | live test callers in two test modules | Tier 4 |
+| B11 | `KilnRegistry::iter` | live caller `server/session/list.rs:109`; the grep missed it | dropped |
+| B13 | `Component::Normal` loop in `core/canvas/containment.rs` | different crate from the daemon helper | Tier 3 |
+| B18 | `ModelCapability`, `UnifiedModelInfo`, `McpTransportConfig` | carry `serde` attributes; rule 2 | Tier 3 |
+| B22 | `kiln_validate::is_temp_directory` | not a duplicate; `starts_with` flags subdirectories, and a test depends on it | dropped |
+| B23 | `parse_capability` → serde | behaviour differs (case fold, nine names) | Tier 3 |
+| T2-B1 | `resolve_path` parameter | B22 removed the function | done |
+| T2-B3 | `InputArea::with_popup` | B24 removed it | done |
+
+Two follow-ons that the batches applied under the Method rules: B2 removed
+`PerformanceStats`, `QueueStats` and their readers once `get_status` went; B5
+removed three `Server` fields that lost their last reader with `ServerContext`.
+
 ## 2. Tier 1 — safe mechanical, this session
 
 Actions: `delete` removes the item. `narrow` changes visibility. `merge-into X` keeps X and deletes the other copy. `call X` replaces an inline body with a call to X.

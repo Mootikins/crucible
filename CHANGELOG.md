@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Removed
+- **266 dead items and duplicate copies are gone, about 14,000 lines.** An
+  audit at `7053bcfe7` read every module, and skeptic agents verified each
+  claim. The removals are unused `pub` builders, accessors and modules
+  (`crucible-core/src/processing/`, `hashing/`, `content_category.rs`,
+  `note.rs`, `properties.rs`), plus exact duplicates merged into one
+  definition (`extract_yaml_frontmatter`, `truncate_to_width`, the theme
+  render slots, `SessionIdRequest`). No wire type changed. The audit and the
+  remaining work are in `docs/Meta/Architecture/`.
+
 ### Added
 - **`[workspace] discover` registers the checkouts under `root_dir`.** With
   `discover = true` the daemon registers every git repository that is a DIRECT
