@@ -70,7 +70,6 @@ pub use types::{
     FileHash,
     FileHashInfo,
     HashAlgorithm,
-    HashError,
     // Mode descriptor types
     ModeDescriptor,
     SessionMode,

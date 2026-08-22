@@ -35,9 +35,7 @@ pub use crate::parser::types::{
 pub use self::database::{DocumentId, QueryResult, Record, RecordId, SearchResult};
 
 // Re-export hashing types
-pub use crate::types::hashing::{
-    BlockHash, BlockHashInfo, FileHash, FileHashInfo, HashAlgorithm, HashError,
-};
+pub use crate::types::hashing::{BlockHash, BlockHashInfo, FileHash, FileHashInfo, HashAlgorithm};
 
 // Re-export ACP types
 // NOTE: ToolDescriptor and ToolExample removed - use ToolDefinition from traits::tools

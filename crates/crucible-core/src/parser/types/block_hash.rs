@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 
 /// A BLAKE3 hash used for block-level content addressing
 ///
-/// Similar to FileHash but specifically used for individual content blocks
+/// The one content hash type. `FileHash` is an alias for it. It names
+/// the hash of a whole file or of an individual content block
 /// extracted from documents (headings, paragraphs, code blocks, etc.).
 ///
 /// This is the canonical definition of BlockHash in the Crucible system.
