@@ -324,24 +324,14 @@ impl BlockExtractor {
             map.add_list(list.clone(), index);
         }
 
-        // Add callouts from both note.content.callouts and note.callouts
-        for (index, callout) in note.content.callouts.iter().enumerate() {
+        // The note owns the callouts and the LaTeX expressions; the parser
+        // moves them out of `content`.
+        for (index, callout) in note.callouts.iter().enumerate() {
             map.add_callout(callout.clone(), index);
         }
-        for (index, callout) in note.callouts.iter().enumerate() {
-            if !note.content.callouts.contains(callout) {
-                map.add_callout(callout.clone(), index + note.content.callouts.len());
-            }
-        }
 
-        // Add LaTeX expressions
-        for (index, latex) in note.content.latex_expressions.iter().enumerate() {
-            map.add_latex(latex.clone(), index);
-        }
         for (index, latex) in note.latex_expressions.iter().enumerate() {
-            if !note.content.latex_expressions.contains(latex) {
-                map.add_latex(latex.clone(), index + note.content.latex_expressions.len());
-            }
+            map.add_latex(latex.clone(), index);
         }
 
         // Add tables
@@ -522,12 +512,7 @@ impl BlockExtractor {
         note: &ParsedNote,
         position: &ExtractionPosition,
     ) -> Result<Option<ASTBlock>, ParseError> {
-        // Try to get callout from content.callouts first, then from note.callouts
-        let callout = if position.index < note.content.callouts.len() {
-            &note.content.callouts[position.index]
-        } else {
-            &note.callouts[position.index - note.content.callouts.len()]
-        };
+        let callout = &note.callouts[position.index];
 
         let metadata =
             ASTBlockMetadata::callout(callout.callout_type.clone(), callout.title.clone());
@@ -549,12 +534,7 @@ impl BlockExtractor {
         note: &ParsedNote,
         position: &ExtractionPosition,
     ) -> Result<Option<ASTBlock>, ParseError> {
-        // Try to get LaTeX from content.latex_expressions first, then from note.latex_expressions
-        let latex = if position.index < note.content.latex_expressions.len() {
-            &note.content.latex_expressions[position.index]
-        } else {
-            &note.latex_expressions[position.index - note.content.latex_expressions.len()]
-        };
+        let latex = &note.latex_expressions[position.index];
 
         let metadata = ASTBlockMetadata::latex(latex.is_block);
 

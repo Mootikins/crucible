@@ -111,9 +111,9 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
                 let raw_yaml = yaml_parts.join("\n");
                 note.frontmatter = Some(Frontmatter::new(raw_yaml, FrontmatterFormat::Yaml));
 
-                // Add links_to as wikilinks
+                // The daemon reads `ParsedNote::wikilinks`, not the content copy.
                 for (i, link_path) in record.links_to.iter().enumerate() {
-                    note.content.wikilinks.push(Wikilink::new(link_path, i));
+                    note.wikilinks.push(Wikilink::new(link_path, i));
                 }
 
                 Ok(Some(note))
@@ -312,17 +312,16 @@ mod tests {
         assert!(note.is_none());
     }
 
+    /// The daemon reads `ParsedNote::wikilinks`. The repository wrote the
+    /// list into `content.wikilinks`, so every stored link was invisible.
     #[tokio::test]
-    async fn test_get_note_preserves_wikilinks() {
+    async fn get_note_by_name_puts_links_where_the_daemon_reads_them() {
         let (repo, _) = setup_test_repo().await;
 
         let note = repo.get_note_by_name("Index").await.unwrap().unwrap();
-        assert_eq!(note.content.wikilinks.len(), 2);
-        assert!(note
-            .content
-            .wikilinks
-            .iter()
-            .any(|w| w.target == "notes/rust.md"));
+        assert_eq!(note.wikilinks.len(), 2);
+        assert!(note.wikilinks.iter().any(|w| w.target == "notes/rust.md"));
+        assert!(note.content.wikilinks.is_empty());
     }
 
     #[tokio::test]

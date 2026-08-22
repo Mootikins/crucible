@@ -7,6 +7,11 @@ use super::{
 use serde::{Deserialize, Serialize};
 
 /// Parsed note content structure
+///
+/// The extensions write the six link lists (`wikilinks`, `tags`,
+/// `inline_links`, `callouts`, `latex_expressions`, `footnotes`) here while
+/// they run. `parse_content` then moves them to `ParsedNote`. Read them from
+/// the note; on a parsed note these copies are empty.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NoteContent {
     /// Plain text content (markdown syntax stripped)

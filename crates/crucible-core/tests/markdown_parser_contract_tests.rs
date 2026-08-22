@@ -207,14 +207,14 @@ mod never_panics_on_multibyte {
 
         // No frontmatter here, so body offsets and content offsets coincide;
         // with frontmatter these would need `parsed.body_offset` added first.
-        for wl in &parsed.content.wikilinks {
+        for wl in &parsed.wikilinks {
             assert!(
                 content.is_char_boundary(wl.offset),
                 "wikilink offset {} splits a codepoint",
                 wl.offset
             );
         }
-        for def in parsed.content.footnotes.definitions.values() {
+        for def in parsed.footnotes.definitions.values() {
             assert!(
                 content.is_char_boundary(def.offset),
                 "footnote offset {} splits a codepoint",

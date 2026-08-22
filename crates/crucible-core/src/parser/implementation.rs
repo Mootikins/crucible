@@ -425,13 +425,16 @@ impl CrucibleParser {
 
         parse_errors.extend(self.extensions.apply(content, &mut document_content));
 
-        // Extract top-level fields from document_content before building
-        let callouts = document_content.callouts.clone();
-        let latex_expressions = document_content.latex_expressions.clone();
-        let footnotes = document_content.footnotes.clone();
-        let wikilinks = document_content.wikilinks.clone();
-        let tags = document_content.tags.clone();
-        let inline_links = document_content.inline_links.clone();
+        // The extensions fill the lists in `document_content`. The note owns
+        // them from here on, so move them out. The content copies stay empty;
+        // a reader of `content.wikilinks` sees nothing, which makes the one
+        // source of truth visible in a test.
+        let callouts = std::mem::take(&mut document_content.callouts);
+        let latex_expressions = std::mem::take(&mut document_content.latex_expressions);
+        let footnotes = std::mem::take(&mut document_content.footnotes);
+        let wikilinks = std::mem::take(&mut document_content.wikilinks);
+        let tags = std::mem::take(&mut document_content.tags);
+        let inline_links = std::mem::take(&mut document_content.inline_links);
 
         // Extract structural metadata from parsed content
         let metadata =
@@ -514,6 +517,33 @@ impl CrucibleParser {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    /// The six link lists live on `ParsedNote`; `parse_content` moves them out
+    /// of `NoteContent`. A reader of the content copy must see an empty list.
+    #[tokio::test]
+    async fn link_lists_live_on_the_note_not_in_content() {
+        let parser = CrucibleParser::new();
+        let content = "See [[other]] and [text](https://x.io)\n\n#tag\n\n\
+            > [!note] Hi\n> body\n\nInline $x$ and a note[^1].\n\n[^1]: Foot.\n";
+        let doc = parser
+            .parse_content(content, &PathBuf::from("n.md"))
+            .await
+            .unwrap();
+
+        assert_eq!(doc.wikilinks.len(), 1);
+        assert_eq!(doc.inline_links.len(), 1);
+        assert_eq!(doc.tags.len(), 1);
+        assert_eq!(doc.callouts.len(), 1);
+        assert_eq!(doc.latex_expressions.len(), 1);
+        assert_eq!(doc.footnotes.definitions.len(), 1);
+
+        assert!(doc.content.wikilinks.is_empty());
+        assert!(doc.content.inline_links.is_empty());
+        assert!(doc.content.tags.is_empty());
+        assert!(doc.content.callouts.is_empty());
+        assert!(doc.content.latex_expressions.is_empty());
+        assert!(doc.content.footnotes.definitions.is_empty());
+    }
 
     /// `content_hash` is BLAKE3 over the WHOLE input. It is what the daemon
     /// stores on the note row and compares the file against, so a note whose
