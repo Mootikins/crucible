@@ -3,11 +3,9 @@
 use crate::watch::{
     error::{Error, Result},
     events::FileEvent,
-    traits::{BackendCapabilities, FileWatcher, WatchConfig, WatchHandle},
+    traits::{WatchConfig, WatchHandle},
 };
 
-// Import the WatcherFactory trait
-use async_trait::async_trait;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -68,8 +66,6 @@ pub struct EditorWatcher {
     monitor_task: Option<JoinHandle<()>>,
     /// Shutdown signal
     shutdown_tx: Option<mpsc::Sender<()>>,
-    /// Capabilities
-    capabilities: BackendCapabilities,
 }
 
 impl Default for EditorWatcher {
@@ -86,17 +82,6 @@ impl EditorWatcher {
             watches: HashMap::new(),
             monitor_task: None,
             shutdown_tx: None,
-            capabilities: BackendCapabilities {
-                recursive: false,          // Editor watching is typically non-recursive
-                fine_grained_events: true, // Can detect specific editor events
-                multiple_paths: true,
-                hot_reconfig: true,
-                platforms: vec![
-                    "linux".to_string(),
-                    "macos".to_string(),
-                    "windows".to_string(),
-                ],
-            },
         }
     }
 
@@ -142,17 +127,14 @@ impl EditorWatcher {
     }
 }
 
-#[async_trait]
-impl FileWatcher for EditorWatcher {
-    fn backend_type(&self) -> &'static str {
-        "editor"
-    }
-
-    fn set_event_sender(&mut self, sender: mpsc::UnboundedSender<FileEvent>) {
+impl EditorWatcher {
+    /// Set the channel the watcher sends events on. Call this before `watch`.
+    pub fn set_event_sender(&mut self, sender: mpsc::UnboundedSender<FileEvent>) {
         self.event_sender = Some(sender);
     }
 
-    async fn watch(&mut self, path: PathBuf, config: WatchConfig) -> Result<WatchHandle> {
+    /// Start to watch `path` with `config`.
+    pub async fn watch(&mut self, path: PathBuf, config: WatchConfig) -> Result<WatchHandle> {
         debug!("Adding editor watch for: {}", path.display());
 
         // Initialize if not already done
@@ -179,7 +161,8 @@ impl FileWatcher for EditorWatcher {
         Ok(watch_handle)
     }
 
-    async fn unwatch(&mut self, handle: WatchHandle) -> Result<()> {
+    /// Stop the watch behind `handle`.
+    pub async fn unwatch(&mut self, handle: WatchHandle) -> Result<()> {
         debug!("Removing editor watch for: {}", handle.path.display());
 
         // Find and remove watch by handle ID
@@ -203,7 +186,8 @@ impl FileWatcher for EditorWatcher {
         Ok(())
     }
 
-    fn active_watches(&self) -> Vec<WatchHandle> {
+    /// Every watch the backend holds.
+    pub fn active_watches(&self) -> Vec<WatchHandle> {
         self.watches
             .iter()
             .map(|(id, state)| WatchHandle {
@@ -212,98 +196,11 @@ impl FileWatcher for EditorWatcher {
             })
             .collect()
     }
-
-    fn is_available(&self) -> bool {
-        // Editor backend is available on most platforms
-        // but might have different capabilities per platform
-        true
-    }
-
-    fn capabilities(&self) -> BackendCapabilities {
-        self.capabilities.clone()
-    }
-}
-
-/// Factory for creating editor-based watchers.
-pub struct EditorFactory {
-    capabilities: BackendCapabilities,
-}
-
-impl Default for EditorFactory {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl EditorFactory {
-    /// Create a new editor factory.
-    pub fn new() -> Self {
-        Self {
-            capabilities: BackendCapabilities {
-                recursive: false, // Editor watching is typically non-recursive
-                fine_grained_events: true,
-                multiple_paths: true,
-                hot_reconfig: true,
-                platforms: vec![
-                    "linux".to_string(),
-                    "macos".to_string(),
-                    "windows".to_string(),
-                ],
-            },
-        }
-    }
-}
-
-#[async_trait]
-impl super::WatcherFactory for EditorFactory {
-    async fn create_watcher(&self) -> Result<Box<dyn FileWatcher>> {
-        Ok(Box::new(EditorWatcher::new()))
-    }
-
-    fn backend_type(&self) -> crate::watch::WatchBackend {
-        crate::watch::WatchBackend::Editor
-    }
-
-    fn is_available(&self) -> bool {
-        // Editor backend is available on all platforms
-        true
-    }
-
-    fn capabilities(&self) -> BackendCapabilities {
-        self.capabilities.clone()
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::watch::traits::FileWatcher;
-
-    #[test]
-    fn default_not_recursive() {
-        let watcher = EditorWatcher::default();
-        let caps = watcher.capabilities();
-        assert!(!caps.recursive);
-    }
-
-    #[test]
-    fn default_fine_grained() {
-        let watcher = EditorWatcher::default();
-        let caps = watcher.capabilities();
-        assert!(caps.fine_grained_events);
-    }
-
-    #[test]
-    fn backend_type_editor() {
-        let watcher = EditorWatcher::new();
-        assert_eq!(watcher.backend_type(), "editor");
-    }
-
-    #[test]
-    fn is_always_available() {
-        let watcher = EditorWatcher::new();
-        assert!(watcher.is_available());
-    }
 
     #[test]
     fn initial_watches_empty() {
@@ -349,19 +246,5 @@ mod tests {
 
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["poll_interval"], serde_json::json!(5000));
-    }
-
-    #[test]
-    fn factory_platforms() {
-        let factory = EditorFactory::new();
-        let caps = <EditorFactory as super::super::WatcherFactory>::capabilities(&factory);
-        assert_eq!(
-            caps.platforms,
-            vec![
-                "linux".to_string(),
-                "macos".to_string(),
-                "windows".to_string()
-            ]
-        );
     }
 }

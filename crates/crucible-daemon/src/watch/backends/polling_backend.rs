@@ -3,11 +3,9 @@
 use crate::watch::{
     error::{Error, Result},
     events::{EventMetadata, FileEvent, FileEventKind},
-    traits::{BackendCapabilities, FileWatcher, WatchConfig, WatchHandle},
+    traits::{WatchConfig, WatchHandle},
 };
 
-// Import the WatcherFactory trait
-use async_trait::async_trait;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
@@ -47,8 +45,6 @@ pub struct PollingWatcher {
     poll_task: Option<JoinHandle<()>>,
     /// Shutdown signal
     shutdown_tx: Option<mpsc::Sender<()>>,
-    /// Capabilities
-    capabilities: BackendCapabilities,
 }
 
 impl Default for PollingWatcher {
@@ -71,7 +67,6 @@ impl PollingWatcher {
             poll_interval: interval,
             poll_task: None,
             shutdown_tx: None,
-            capabilities: BackendCapabilities::basic(),
         }
     }
 
@@ -195,17 +190,14 @@ impl PollingWatcher {
     }
 }
 
-#[async_trait]
-impl FileWatcher for PollingWatcher {
-    fn backend_type(&self) -> &'static str {
-        "polling"
-    }
-
-    fn set_event_sender(&mut self, sender: mpsc::UnboundedSender<FileEvent>) {
+impl PollingWatcher {
+    /// Set the channel the watcher sends events on. Call this before `watch`.
+    pub fn set_event_sender(&mut self, sender: mpsc::UnboundedSender<FileEvent>) {
         self.event_sender = Some(sender);
     }
 
-    async fn watch(&mut self, path: PathBuf, config: WatchConfig) -> Result<WatchHandle> {
+    /// Start to watch `path` with `config`.
+    pub async fn watch(&mut self, path: PathBuf, config: WatchConfig) -> Result<WatchHandle> {
         debug!("Adding polling watch for: {}", path.display());
 
         // Initialize if not already done
@@ -245,7 +237,8 @@ impl FileWatcher for PollingWatcher {
         Ok(watch_handle)
     }
 
-    async fn unwatch(&mut self, handle: WatchHandle) -> Result<()> {
+    /// Stop the watch behind `handle`.
+    pub async fn unwatch(&mut self, handle: WatchHandle) -> Result<()> {
         debug!("Removing polling watch for: {}", handle.path.display());
 
         // Find and remove watch by handle ID
@@ -269,7 +262,8 @@ impl FileWatcher for PollingWatcher {
         Ok(())
     }
 
-    fn active_watches(&self) -> Vec<WatchHandle> {
+    /// Every watch the backend holds.
+    pub fn active_watches(&self) -> Vec<WatchHandle> {
         self.watches
             .iter()
             .map(|(id, state)| WatchHandle {
@@ -277,15 +271,6 @@ impl FileWatcher for PollingWatcher {
                 path: state.watched_path.clone(),
             })
             .collect()
-    }
-
-    fn is_available(&self) -> bool {
-        // Polling is always available
-        true
-    }
-
-    fn capabilities(&self) -> BackendCapabilities {
-        self.capabilities.clone()
     }
 }
 
@@ -297,56 +282,9 @@ impl Drop for PollingWatcher {
     }
 }
 
-/// Factory for creating polling-based watchers.
-pub struct PollingFactory {
-    capabilities: BackendCapabilities,
-}
-
-impl Default for PollingFactory {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl PollingFactory {
-    /// Create a new polling factory.
-    pub fn new() -> Self {
-        Self {
-            capabilities: BackendCapabilities {
-                recursive: true,
-                fine_grained_events: false, // Polling has coarse-grained detection
-                multiple_paths: true,
-                hot_reconfig: true, // Polling supports hot reconfiguration
-                platforms: vec!["all".to_string()],
-            },
-        }
-    }
-}
-
-#[async_trait]
-impl super::WatcherFactory for PollingFactory {
-    async fn create_watcher(&self) -> Result<Box<dyn FileWatcher>> {
-        Ok(Box::new(PollingWatcher::new()))
-    }
-
-    fn backend_type(&self) -> crate::watch::WatchBackend {
-        crate::watch::WatchBackend::Polling
-    }
-
-    fn is_available(&self) -> bool {
-        // Polling is always available
-        true
-    }
-
-    fn capabilities(&self) -> BackendCapabilities {
-        self.capabilities.clone()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::watch::traits::FileWatcher;
 
     #[test]
     fn default_interval_1_second() {
@@ -361,44 +299,8 @@ mod tests {
     }
 
     #[test]
-    fn backend_type_polling() {
-        let watcher = PollingWatcher::new();
-        assert_eq!(watcher.backend_type(), "polling");
-    }
-
-    #[test]
-    fn is_always_available() {
-        let watcher = PollingWatcher::new();
-        assert!(watcher.is_available());
-    }
-
-    #[test]
     fn initial_watches_empty() {
         let watcher = PollingWatcher::new();
         assert!(watcher.active_watches().is_empty());
-    }
-
-    #[test]
-    fn factory_backend_type() {
-        let factory = PollingFactory::new();
-        assert_eq!(
-            <PollingFactory as super::super::WatcherFactory>::backend_type(&factory),
-            crate::watch::WatchBackend::Polling
-        );
-    }
-
-    #[test]
-    fn factory_capabilities_recursive() {
-        let factory = PollingFactory::new();
-        let caps = <PollingFactory as super::super::WatcherFactory>::capabilities(&factory);
-        assert!(caps.recursive);
-    }
-
-    #[test]
-    fn factory_capabilities_not_fine_grained() {
-        // GOLDEN: captures current behavior
-        let factory = PollingFactory::new();
-        let caps = <PollingFactory as super::super::WatcherFactory>::capabilities(&factory);
-        assert!(!caps.fine_grained_events);
     }
 }

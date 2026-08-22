@@ -1,115 +1,227 @@
-//! Backend implementations for file watching.
+//! The file watch backends.
+//!
+//! `WatchBackend` names a backend. `Backend` holds a live one. The two enums
+//! replace a `FileWatcher` trait, a `WatcherFactory` trait and three factory
+//! structs, each of which carried its own copy of the capability table. A new
+//! backend is one variant in each enum plus one row in `capabilities`; the
+//! `deny` lints below make the compiler list every match to update.
+
+#![deny(clippy::wildcard_enum_match_arm)]
+#![deny(clippy::match_wildcard_for_single_variants)]
 
 mod editor_backend;
-mod factory;
 mod notify_backend;
 mod polling_backend;
+mod select;
 
-pub use editor_backend::{EditorConfig, EditorFactory, EditorWatcher};
-pub use factory::{ExtendedBackendRegistry, WatcherRequirements, WatcherUseCase};
-pub use notify_backend::{NotifyFactory, NotifyWatcher};
-pub use polling_backend::{PollingFactory, PollingWatcher};
+pub use editor_backend::{EditorConfig, EditorWatcher};
+pub use notify_backend::NotifyWatcher;
+pub use polling_backend::PollingWatcher;
+pub use select::{select_optimal_backend, WatcherRequirements, WatcherUseCase};
 
-use crate::watch::error::{Error, Result};
-use crate::watch::traits::{BackendCapabilities, FileWatcher};
-use crate::watch::WatchBackend;
-use async_trait::async_trait;
+use crate::watch::error::Result;
+use crate::watch::events::FileEvent;
+use crate::watch::traits::{BackendCapabilities, WatchConfig, WatchHandle};
+use std::path::PathBuf;
+use tokio::sync::mpsc;
 
-/// Factory trait for creating file watcher backends.
-#[async_trait]
-pub trait WatcherFactory: Send + Sync {
-    /// Create a new watcher instance.
-    async fn create_watcher(&self) -> Result<Box<dyn FileWatcher>>;
-
-    /// Get the backend type this factory creates.
-    fn backend_type(&self) -> WatchBackend;
-
-    /// Check if this backend is available on the current platform.
-    fn is_available(&self) -> bool;
-
-    /// Get the backend capabilities.
-    fn capabilities(&self) -> BackendCapabilities;
+/// The name of a file watch backend.
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
+#[cfg_attr(test, derive(strum::EnumIter))]
+pub enum WatchBackend {
+    /// OS file system notifications through `notify`.
+    Notify,
+    /// A portable polling loop.
+    Polling,
+    /// A low-frequency loop for editor integrations.
+    Editor,
 }
 
-/// Registry for managing watcher factories.
-pub struct BackendRegistry {
-    factories: std::collections::HashMap<WatchBackend, Box<dyn WatcherFactory>>,
-}
+impl WatchBackend {
+    /// Every backend, in declaration order.
+    pub const ALL: [WatchBackend; 3] = [
+        WatchBackend::Notify,
+        WatchBackend::Polling,
+        WatchBackend::Editor,
+    ];
 
-impl std::fmt::Debug for BackendRegistry {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BackendRegistry")
-            .field(
-                "factories",
-                &format!("{} registered backends", self.factories.len()),
-            )
-            .finish()
-    }
-}
-
-impl BackendRegistry {
-    /// Create a new backend registry.
-    pub fn new() -> Self {
-        let mut registry = Self {
-            factories: std::collections::HashMap::new(),
-        };
-
-        // Register built-in backends
-        registry.register_factory(Box::new(NotifyFactory::new()));
-        registry.register_factory(Box::new(PollingFactory::new()));
-        registry.register_factory(Box::new(EditorFactory::new()));
-
-        registry
-    }
-
-    /// Register a new watcher factory.
-    pub fn register_factory(&mut self, factory: Box<dyn WatcherFactory>) {
-        let backend_type = factory.backend_type();
-        self.factories.insert(backend_type, factory);
-    }
-
-    /// Create a watcher for the specified backend type.
-    pub async fn create_watcher(&self, backend_type: WatchBackend) -> Result<Box<dyn FileWatcher>> {
-        let factory = self
-            .factories
-            .get(&backend_type)
-            .ok_or_else(|| Error::BackendUnavailable(format!("{:?}", backend_type)))?;
-
-        if !factory.is_available() {
-            return Err(Error::BackendUnavailable(format!(
-                "{:?} not available on this platform",
-                backend_type
-            )));
+    /// The backend name as event metadata and logs print it.
+    pub const fn name(self) -> &'static str {
+        match self {
+            WatchBackend::Notify => "notify",
+            WatchBackend::Polling => "polling",
+            WatchBackend::Editor => "editor",
         }
-
-        factory.create_watcher().await
     }
 
-    /// Get all available backends.
-    pub fn available_backends(&self) -> Vec<WatchBackend> {
-        self.factories
+    /// What the backend can do. This is the one capability table.
+    pub const fn capabilities(self) -> BackendCapabilities {
+        match self {
+            WatchBackend::Notify => BackendCapabilities {
+                recursive: true,
+                fine_grained_events: true,
+                multiple_paths: true,
+                hot_reconfig: false,
+                platforms: &["linux", "macos", "windows"],
+            },
+            WatchBackend::Polling => BackendCapabilities {
+                recursive: true,
+                fine_grained_events: false,
+                multiple_paths: true,
+                hot_reconfig: true,
+                platforms: &["all"],
+            },
+            WatchBackend::Editor => BackendCapabilities {
+                recursive: false,
+                fine_grained_events: true,
+                multiple_paths: true,
+                hot_reconfig: true,
+                platforms: &["linux", "macos", "windows"],
+            },
+        }
+    }
+
+    /// The shortest latency the backend can promise, in milliseconds.
+    ///
+    /// Notify is event driven. Polling waits for its interval. The editor
+    /// loop ticks every five seconds.
+    pub const fn latency_floor_ms(self) -> u64 {
+        match self {
+            WatchBackend::Notify => 50,
+            WatchBackend::Polling => 1000,
+            WatchBackend::Editor => 5000,
+        }
+    }
+
+    /// Whether the backend works on this platform.
+    pub fn is_available(self) -> bool {
+        let current = std::env::consts::OS;
+        self.capabilities()
+            .platforms
             .iter()
-            .filter(|(_, factory)| factory.is_available())
-            .map(|(backend_type, _)| *backend_type)
-            .collect()
+            .any(|platform| *platform == "all" || *platform == current)
     }
 
-    /// Get capabilities for a backend type.
-    pub fn get_capabilities(&self, backend_type: WatchBackend) -> Option<BackendCapabilities> {
-        self.factories.get(&backend_type).map(|f| f.capabilities())
-    }
-
-    /// Check if a backend is available.
-    pub fn is_available(&self, backend_type: WatchBackend) -> bool {
-        self.factories
-            .get(&backend_type)
-            .map(|f| f.is_available())
-            .unwrap_or(false)
+    /// Build a fresh instance of the backend.
+    pub fn create(self) -> Backend {
+        match self {
+            WatchBackend::Notify => Backend::Notify(NotifyWatcher::new()),
+            WatchBackend::Polling => Backend::Polling(PollingWatcher::new()),
+            WatchBackend::Editor => Backend::Editor(EditorWatcher::new()),
+        }
     }
 }
 
-impl Default for BackendRegistry {
-    fn default() -> Self {
-        Self::new()
+/// A live file watch backend.
+pub enum Backend {
+    /// See [`NotifyWatcher`].
+    Notify(NotifyWatcher),
+    /// See [`PollingWatcher`].
+    Polling(PollingWatcher),
+    /// See [`EditorWatcher`].
+    Editor(EditorWatcher),
+}
+
+impl Backend {
+    /// Which backend this is.
+    pub fn kind(&self) -> WatchBackend {
+        match self {
+            Backend::Notify(_) => WatchBackend::Notify,
+            Backend::Polling(_) => WatchBackend::Polling,
+            Backend::Editor(_) => WatchBackend::Editor,
+        }
+    }
+
+    /// The backend name as event metadata and logs print it.
+    pub fn backend_type(&self) -> &'static str {
+        self.kind().name()
+    }
+
+    /// What the backend can do.
+    pub fn capabilities(&self) -> BackendCapabilities {
+        self.kind().capabilities()
+    }
+
+    /// Set the channel the backend sends events on. Call this before `watch`.
+    pub fn set_event_sender(&mut self, sender: mpsc::UnboundedSender<FileEvent>) {
+        match self {
+            Backend::Notify(w) => w.set_event_sender(sender),
+            Backend::Polling(w) => w.set_event_sender(sender),
+            Backend::Editor(w) => w.set_event_sender(sender),
+        }
+    }
+
+    /// Start to watch `path` with `config`.
+    pub async fn watch(&mut self, path: PathBuf, config: WatchConfig) -> Result<WatchHandle> {
+        match self {
+            Backend::Notify(w) => w.watch(path, config).await,
+            Backend::Polling(w) => w.watch(path, config).await,
+            Backend::Editor(w) => w.watch(path, config).await,
+        }
+    }
+
+    /// Stop the watch behind `handle`.
+    pub async fn unwatch(&mut self, handle: WatchHandle) -> Result<()> {
+        match self {
+            Backend::Notify(w) => w.unwatch(handle).await,
+            Backend::Polling(w) => w.unwatch(handle).await,
+            Backend::Editor(w) => w.unwatch(handle).await,
+        }
+    }
+
+    /// Every watch the backend holds.
+    pub fn active_watches(&self) -> Vec<WatchHandle> {
+        match self {
+            Backend::Notify(w) => w.active_watches(),
+            Backend::Polling(w) => w.active_watches(),
+            Backend::Editor(w) => w.active_watches(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use strum::IntoEnumIterator;
+
+    #[test]
+    fn all_lists_every_backend() {
+        let from_iter: Vec<WatchBackend> = WatchBackend::iter().collect();
+        assert_eq!(from_iter, WatchBackend::ALL.to_vec());
+    }
+
+    #[test]
+    fn create_returns_the_named_backend() {
+        for kind in WatchBackend::iter() {
+            let backend = kind.create();
+            assert_eq!(backend.kind(), kind);
+            assert_eq!(backend.backend_type(), kind.name());
+            assert!(backend.active_watches().is_empty());
+        }
+    }
+
+    #[test]
+    fn capability_table_rows() {
+        let notify = WatchBackend::Notify.capabilities();
+        assert!(notify.recursive);
+        assert!(notify.fine_grained_events);
+        assert!(!notify.hot_reconfig);
+
+        let polling = WatchBackend::Polling.capabilities();
+        assert!(polling.recursive);
+        assert!(!polling.fine_grained_events);
+        assert!(polling.hot_reconfig);
+
+        let editor = WatchBackend::Editor.capabilities();
+        assert!(!editor.recursive);
+        assert!(editor.fine_grained_events);
+        assert_eq!(editor.platforms, &["linux", "macos", "windows"]);
+    }
+
+    #[test]
+    fn every_backend_is_available_here() {
+        for kind in WatchBackend::iter() {
+            assert!(kind.is_available(), "{kind:?}");
+        }
     }
 }

@@ -1,11 +1,11 @@
 //! Main watch manager that coordinates all file watching activities.
 
 use crate::watch::{
-    backends::{ExtendedBackendRegistry, WatcherRequirements},
+    backends::{select_optimal_backend, Backend, WatcherRequirements},
     error::{Error, Result},
     events::FileEvent,
     handlers::{create_default_handlers, HandlerRegistry},
-    traits::{EventHandler, FileWatcher, WatchConfig, WatchHandle},
+    traits::{EventHandler, WatchConfig, WatchHandle},
     utils::{Debouncer, EventQueue, PerformanceMonitor},
 };
 use crucible_core::events::{EventEmitter, NoOpEmitter, SessionEvent};
@@ -49,10 +49,8 @@ impl Default for WatchManagerConfig {
 
 /// Main manager for file watching operations.
 pub struct WatchManager {
-    /// Backend registry
-    backend_registry: ExtendedBackendRegistry,
     /// Active watchers
-    watchers: Arc<RwLock<HashMap<String, Arc<dyn FileWatcher>>>>,
+    watchers: Arc<RwLock<HashMap<String, Backend>>>,
     /// Event handlers
     handlers: Arc<RwLock<HandlerRegistry>>,
     /// Event queue for processing
@@ -90,7 +88,6 @@ impl WatchManager {
         emitter: Arc<dyn EventEmitter<Event = SessionEvent>>,
     ) -> Result<Self> {
         let manager = Self {
-            backend_registry: ExtendedBackendRegistry::new(),
             watchers: Arc::new(RwLock::new(HashMap::new())),
             handlers: Arc::new(RwLock::new(HandlerRegistry::new())),
             event_queue: Arc::new(Mutex::new(EventQueue::new(config.queue_capacity))),
@@ -195,41 +192,17 @@ impl WatchManager {
             .ok_or_else(|| Error::Internal("Event sender not available".to_string()))?
             .clone();
 
-        // Select appropriate backend
-        let requirements = WatcherRequirements::high_performance(); // Could be configurable
-        let mut watcher_arc = self
-            .backend_registry
-            .create_optimal_watcher(&requirements)
-            .await?;
+        let requirements = WatcherRequirements::high_performance();
+        let mut watcher = select_optimal_backend(&requirements)?.create();
+        watcher.set_event_sender(event_sender);
 
-        // Try to get mutable access to the watcher to call watch()
-        // SAFETY: This works because the Arc was just created by create_optimal_watcher()
-        // and no other references exist yet. If this fails, it would indicate a bug in
-        // the factory implementation that's cloning the Arc internally.
-        //
-        // TODO: A more robust approach would be to either:
-        // 1. Pass event_sender to create_optimal_watcher() so it's set during construction
-        // 2. Change WatcherBackend trait methods to take &self with interior mutability
-        // For now, this is safe because we control the factory and know it doesn't clone.
-        if let Some(watcher) = Arc::get_mut(&mut watcher_arc) {
-            // Set the event sender so the watcher can send events to our processing pipeline
-            watcher.set_event_sender(event_sender.clone());
+        let handle = watcher.watch(path.clone(), config.clone()).await?;
 
-            // Call watch to actually start monitoring the path
-            let handle = watcher.watch(path.clone(), config.clone()).await?;
+        let mut watchers = self.watchers.write().await;
+        watchers.insert(config.id.clone(), watcher);
 
-            // Store the watcher
-            let mut watchers = self.watchers.write().await;
-            watchers.insert(config.id.clone(), watcher_arc);
-
-            info!("Added watch: {} -> {}", config.id, path.display());
-            Ok(handle)
-        } else {
-            // If we can't get mutable access, return an error
-            Err(Error::Internal(
-                "Cannot get mutable access to watcher".to_string(),
-            ))
-        }
+        info!("Added watch: {} -> {}", config.id, path.display());
+        Ok(handle)
     }
 
     /// Add many paths to one backend, registered together under `group_id`.
@@ -262,16 +235,7 @@ impl WatchManager {
             .clone();
 
         let requirements = WatcherRequirements::high_performance();
-        let mut watcher_arc = self
-            .backend_registry
-            .create_optimal_watcher(&requirements)
-            .await?;
-
-        let Some(watcher) = Arc::get_mut(&mut watcher_arc) else {
-            return Err(Error::Internal(
-                "Cannot get mutable access to watcher".to_string(),
-            ));
-        };
+        let mut watcher = select_optimal_backend(&requirements)?.create();
         watcher.set_event_sender(event_sender);
 
         // A path that cannot be watched is one directory going unobserved, not
@@ -301,7 +265,7 @@ impl WatchManager {
         self.watchers
             .write()
             .await
-            .insert(group_id.to_string(), watcher_arc);
+            .insert(group_id.to_string(), watcher);
         info!("Added watch group: {} ({} paths)", group_id, added);
         Ok(added)
     }

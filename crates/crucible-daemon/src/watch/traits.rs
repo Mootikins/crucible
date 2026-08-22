@@ -1,35 +1,9 @@
-//! Core traits for the file watching system.
+//! Shared types of the file watching system: handles, configs, capabilities
+//! and the `EventHandler` trait.
 
 use crate::watch::{error::Result, events::FileEvent};
 use async_trait::async_trait;
 use std::path::PathBuf;
-use tokio::sync::mpsc;
-
-/// Core trait for file watching backends.
-#[async_trait]
-pub trait FileWatcher: Send + Sync {
-    /// Get the backend type identifier.
-    fn backend_type(&self) -> &'static str;
-
-    /// Set the event sender for this watcher.
-    /// This must be called before adding any watches.
-    fn set_event_sender(&mut self, sender: mpsc::UnboundedSender<FileEvent>);
-
-    /// Start watching the specified path with the given configuration.
-    async fn watch(&mut self, path: PathBuf, config: WatchConfig) -> Result<WatchHandle>;
-
-    /// Stop watching the specified path.
-    async fn unwatch(&mut self, handle: WatchHandle) -> Result<()>;
-
-    /// Get all active watches.
-    fn active_watches(&self) -> Vec<WatchHandle>;
-
-    /// Check if the backend is available on this platform.
-    fn is_available(&self) -> bool;
-
-    /// Get backend capabilities.
-    fn capabilities(&self) -> BackendCapabilities;
-}
 
 /// Handle to an active watch.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -152,8 +126,8 @@ impl Default for DebounceConfig {
     }
 }
 
-/// Backend capabilities.
-#[derive(Debug, Clone)]
+/// What a backend can do. `WatchBackend::capabilities` is the one table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BackendCapabilities {
     /// Supports recursive watching.
     pub recursive: bool,
@@ -167,32 +141,8 @@ pub struct BackendCapabilities {
     /// Supports hot reconfiguration.
     pub hot_reconfig: bool,
 
-    /// Platform availability.
-    pub platforms: Vec<String>,
-}
-
-impl BackendCapabilities {
-    /// Create a capabilities instance with all features supported.
-    pub fn full_support() -> Self {
-        Self {
-            recursive: true,
-            fine_grained_events: true,
-            multiple_paths: true,
-            hot_reconfig: true,
-            platforms: vec!["all".to_string()],
-        }
-    }
-
-    /// Create a capabilities instance for basic support.
-    pub fn basic() -> Self {
-        Self {
-            recursive: false,
-            fine_grained_events: false,
-            multiple_paths: true,
-            hot_reconfig: false,
-            platforms: vec!["all".to_string()],
-        }
-    }
+    /// Platforms the backend runs on, as `std::env::consts::OS` names, or `"all"`.
+    pub platforms: &'static [&'static str],
 }
 
 /// Trait for handling file events.

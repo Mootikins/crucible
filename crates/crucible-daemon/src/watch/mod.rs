@@ -14,8 +14,8 @@
 //!
 //! ## Architecture Overview
 //!
-//! The system is built around a trait-based architecture that allows for multiple
-//! file watching backends while maintaining a consistent interface:
+//! `WatchManager` drives one `Backend` per watch group. `Backend` is an enum
+//! over the three backends, so every backend offers one interface:
 //!
 //! ```text
 //! ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
@@ -56,8 +56,7 @@ pub mod traits;
 mod utils;
 
 pub use backends::{
-    BackendRegistry, EditorConfig, EditorFactory, EditorWatcher, NotifyFactory, NotifyWatcher,
-    PollingFactory, PollingWatcher, WatcherFactory,
+    Backend, EditorConfig, EditorWatcher, NotifyWatcher, PollingWatcher, WatchBackend,
 };
 pub use error::{Error, Result};
 pub use events::{EventFilter, EventMetadata, FileEvent, FileEventKind};
@@ -67,17 +66,4 @@ pub use external_changes::{
 pub use handlers::{ExternalChangeHandler, HandlerRegistry, IndexingHandler};
 pub use manager::{WatchManager, WatchManagerConfig};
 
-pub use traits::{
-    BackendCapabilities, DebounceConfig, EventHandler, FileWatcher, WatchConfig, WatchHandle,
-};
-
-/// Available file watching backends.
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
-pub enum WatchBackend {
-    /// High-performance backend using OS-specific file system notifications
-    Notify,
-    /// Cross-platform polling backend
-    Polling,
-    /// Low-frequency backend for editor integrations
-    Editor,
-}
+pub use traits::{BackendCapabilities, DebounceConfig, EventHandler, WatchConfig, WatchHandle};

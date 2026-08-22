@@ -6,7 +6,7 @@
 
 use crucible_daemon::watch::{
     traits::{DebounceConfig, WatchConfig},
-    EventFilter, FileEvent, FileWatcher, NotifyWatcher,
+    EventFilter, FileEvent, NotifyWatcher,
 };
 use std::fs;
 use std::path::PathBuf;

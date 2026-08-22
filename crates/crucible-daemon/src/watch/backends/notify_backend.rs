@@ -3,11 +3,9 @@
 use crate::watch::{
     error::{Error, Result},
     events::{EventFilter, EventMetadata, FileEvent, FileEventKind},
-    traits::{BackendCapabilities, FileWatcher, WatchConfig, WatchHandle},
+    traits::{WatchConfig, WatchHandle},
 };
 
-// Import the WatcherFactory trait
-use async_trait::async_trait;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{
     new_debouncer, DebounceEventResult, DebouncedEvent, Debouncer, RecommendedCache,
@@ -26,8 +24,6 @@ pub struct NotifyWatcher {
     event_sender: Option<mpsc::UnboundedSender<FileEvent>>,
     /// Active watches
     watches: std::collections::HashMap<String, WatchHandle>,
-    /// Capabilities
-    capabilities: BackendCapabilities,
     /// Event filter (shared with debouncer callback)
     filter: Arc<RwLock<Option<EventFilter>>>,
 }
@@ -45,7 +41,6 @@ impl NotifyWatcher {
             debouncer: None,
             event_sender: None,
             watches: std::collections::HashMap::new(),
-            capabilities: BackendCapabilities::full_support(),
             filter: Arc::new(RwLock::new(None)),
         }
     }
@@ -121,7 +116,9 @@ impl NotifyWatcher {
                     FileEventKind::Unknown("Other".to_string())
                 }
             }
-            _ => FileEventKind::Unknown(format!("{:?}", event.event.kind)),
+            EventKind::Any | EventKind::Access(_) => {
+                FileEventKind::Unknown(format!("{:?}", event.event.kind))
+            }
         };
 
         // For batch events, create a single event for each path
@@ -155,17 +152,14 @@ impl NotifyWatcher {
     }
 }
 
-#[async_trait]
-impl FileWatcher for NotifyWatcher {
-    fn backend_type(&self) -> &'static str {
-        "notify"
-    }
-
-    fn set_event_sender(&mut self, sender: mpsc::UnboundedSender<FileEvent>) {
+impl NotifyWatcher {
+    /// Set the channel the watcher sends events on. Call this before `watch`.
+    pub fn set_event_sender(&mut self, sender: mpsc::UnboundedSender<FileEvent>) {
         self.event_sender = Some(sender);
     }
 
-    async fn watch(&mut self, path: PathBuf, config: WatchConfig) -> Result<WatchHandle> {
+    /// Start to watch `path` with `config`.
+    pub async fn watch(&mut self, path: PathBuf, config: WatchConfig) -> Result<WatchHandle> {
         debug!("Adding watch for: {}", path.display());
 
         // Store filter from config (if provided and not already set)
@@ -211,7 +205,8 @@ impl FileWatcher for NotifyWatcher {
         Ok(watch_handle)
     }
 
-    async fn unwatch(&mut self, handle: WatchHandle) -> Result<()> {
+    /// Stop the watch behind `handle`.
+    pub async fn unwatch(&mut self, handle: WatchHandle) -> Result<()> {
         debug!("Removing watch for: {}", handle.path.display());
 
         // Find and remove watch by path
@@ -234,68 +229,8 @@ impl FileWatcher for NotifyWatcher {
         Ok(())
     }
 
-    fn active_watches(&self) -> Vec<WatchHandle> {
+    /// Every watch the backend holds.
+    pub fn active_watches(&self) -> Vec<WatchHandle> {
         self.watches.values().cloned().collect()
-    }
-
-    fn is_available(&self) -> bool {
-        // Notify is available on most platforms
-        true
-    }
-
-    fn capabilities(&self) -> BackendCapabilities {
-        self.capabilities.clone()
-    }
-}
-
-/// Factory for creating notify-based watchers.
-pub struct NotifyFactory {
-    capabilities: BackendCapabilities,
-}
-
-impl Default for NotifyFactory {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl NotifyFactory {
-    /// Create a new notify factory.
-    pub fn new() -> Self {
-        Self {
-            capabilities: BackendCapabilities {
-                recursive: true,
-                fine_grained_events: true,
-                multiple_paths: true,
-                hot_reconfig: false, // Notify doesn't support hot reconfiguration
-                platforms: vec![
-                    "linux".to_string(),
-                    "macos".to_string(),
-                    "windows".to_string(),
-                ],
-            },
-        }
-    }
-}
-
-#[async_trait]
-impl super::WatcherFactory for NotifyFactory {
-    async fn create_watcher(&self) -> Result<Box<dyn FileWatcher>> {
-        Ok(Box::new(NotifyWatcher::new()))
-    }
-
-    fn backend_type(&self) -> crate::watch::WatchBackend {
-        crate::watch::WatchBackend::Notify
-    }
-
-    fn is_available(&self) -> bool {
-        // Check if notify is available
-        // This is a simple check - in reality, you might want to test
-        // if the underlying file system notifications work
-        true
-    }
-
-    fn capabilities(&self) -> BackendCapabilities {
-        self.capabilities.clone()
     }
 }
