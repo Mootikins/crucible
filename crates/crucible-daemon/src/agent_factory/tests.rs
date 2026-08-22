@@ -4,6 +4,7 @@
 //! gate — same shape as `kiln_manager/tests.rs`.
 
 use super::*;
+use crucible_core::traits::chat::SessionKnobs;
 
 use std::collections::HashMap;
 use std::sync::Mutex;

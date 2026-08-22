@@ -15,7 +15,7 @@ use crucible_core::background::JobStatus;
 use crucible_core::config::{AcpConfig, AgentProfile, DelegationConfig};
 use crucible_core::session::RecordingMode;
 use crucible_core::session::{SessionAgent, SessionType};
-use crucible_core::traits::chat::AgentHandle;
+use crucible_core::traits::chat::{AgentHandle, SessionKnobs};
 use crucible_core::turn::{Agent, TurnContext, TurnEvent};
 use crucible_daemon::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
 use crucible_daemon::agent_manager::AgentFactoryOverride;
@@ -327,7 +327,7 @@ async fn acp_model_switching_round_trips() {
 
     // Current model = the advertised current.
     assert_eq!(
-        AgentHandle::current_model(&handle),
+        SessionKnobs::current_model(&handle),
         Some("mock-sonnet"),
         "handle should expose the agent's current model"
     );
@@ -340,12 +340,12 @@ async fn acp_model_switching_round_trips() {
     );
 
     // Switch — sends session/set_model to the live process.
-    AgentHandle::switch_model(&mut handle, "mock-opus")
+    SessionKnobs::switch_model(&mut handle, "mock-opus")
         .await
         .expect("switch_model should succeed for an ACP agent that advertises models");
 
     assert_eq!(
-        AgentHandle::current_model(&handle),
+        SessionKnobs::current_model(&handle),
         Some("mock-opus"),
         "current model should update after switch"
     );

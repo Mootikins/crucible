@@ -780,6 +780,8 @@ async fn child_tool_calls_are_dispatched_by_the_scheduler() {
             Err(crucible_core::turn::NotSupported::new("switch_model"))
         }
     }
+    crucible_core::impl_unsupported_session_knobs!(ToolCallingAgent);
+
     #[async_trait::async_trait]
     impl AgentHandle for ToolCallingAgent {
         async fn send_message_fire_and_forget(
@@ -1005,6 +1007,8 @@ async fn card_tool_policy_deny_blocks_child_tool_call() {
             Err(crucible_core::turn::NotSupported::new("switch_model"))
         }
     }
+    crucible_core::impl_unsupported_session_knobs!(BashCallingAgent);
+
     #[async_trait::async_trait]
     impl AgentHandle for BashCallingAgent {
         async fn send_message_fire_and_forget(

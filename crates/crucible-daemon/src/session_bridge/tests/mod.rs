@@ -169,6 +169,8 @@ impl crucible_core::turn::Agent for BashCallingAgent {
     }
 }
 
+crucible_core::impl_unsupported_session_knobs!(BashCallingAgent);
+
 #[async_trait::async_trait]
 impl crucible_core::traits::chat::AgentHandle for BashCallingAgent {
     async fn send_message_fire_and_forget(

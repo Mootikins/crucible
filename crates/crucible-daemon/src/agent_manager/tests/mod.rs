@@ -183,6 +183,8 @@ impl crucible_core::turn::Agent for MultiTurnScriptedAgent {
     }
 }
 
+crucible_core::impl_unsupported_session_knobs!(MultiTurnScriptedAgent);
+
 #[async_trait::async_trait]
 impl AgentHandle for MultiTurnScriptedAgent {
     async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
@@ -226,6 +228,8 @@ impl crucible_core::turn::Agent for PromptCapturingAgent {
     }
 }
 
+crucible_core::impl_unsupported_session_knobs!(PromptCapturingAgent);
+
 #[async_trait::async_trait]
 impl AgentHandle for PromptCapturingAgent {
     async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
@@ -262,6 +266,8 @@ impl KnowledgeRepository for MockKnowledgeRepository {
     }
 }
 
+crucible_core::impl_unsupported_session_knobs!(MockAgent);
+
 #[async_trait::async_trait]
 impl AgentHandle for MockAgent {
     async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
@@ -274,6 +280,8 @@ impl AgentHandle for MockAgent {
         Ok(())
     }
 }
+
+crucible_core::impl_unsupported_session_knobs!(StreamingMockAgent);
 
 #[async_trait::async_trait]
 impl AgentHandle for StreamingMockAgent {
@@ -328,6 +336,8 @@ impl crucible_core::turn::Agent for OwnsToolsMockAgent {
         Err(crucible_core::turn::NotSupported::new("switch_model"))
     }
 }
+
+crucible_core::impl_unsupported_session_knobs!(OwnsToolsMockAgent);
 
 #[async_trait::async_trait]
 impl AgentHandle for OwnsToolsMockAgent {
@@ -863,6 +873,8 @@ impl crucible_core::turn::Agent for InboundRecordingAgent {
         Err(crucible_core::turn::NotSupported::new("switch_model"))
     }
 }
+
+crucible_core::impl_unsupported_session_knobs!(InboundRecordingAgent);
 
 #[async_trait::async_trait]
 impl AgentHandle for InboundRecordingAgent {

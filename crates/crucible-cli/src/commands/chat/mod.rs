@@ -842,7 +842,7 @@ async fn apply_rpc_action(
 
     match action {
         SetRpcAction::SwitchModel(model) => {
-            crucible_core::traits::chat::AgentHandle::switch_model(handle, &model)
+            crucible_core::traits::chat::SessionKnobs::switch_model(handle, &model)
                 .await
                 .map_err(|e| e.to_string())
         }

@@ -6,7 +6,7 @@ use crucible_core::protocol::session_events::{
     EventDecodeError, JobPayload, SessionEventPayload, SettingsPayload, SetupPayload,
     SystemPayload, ToolResultBody, TurnPayload,
 };
-use crucible_core::traits::chat::AgentHandle;
+use crucible_core::traits::chat::{AgentHandle, SessionKnobs};
 use crucible_lua::SessionCommand;
 
 use super::OilChatRunner;
@@ -69,7 +69,7 @@ impl OilChatRunner {
                 let _ = reply.send(agent.current_model().map(|s| s.to_string()));
             }
             SessionCommand::SwitchModel(model, reply) => {
-                let result = AgentHandle::switch_model(agent, &model)
+                let result = SessionKnobs::switch_model(agent, &model)
                     .await
                     .map_err(|e| e.to_string());
                 let _ = reply.send(result);

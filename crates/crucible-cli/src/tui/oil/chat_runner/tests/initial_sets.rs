@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use crucible_core::events::EventRing;
-use crucible_core::traits::chat::{AgentHandle, ChatResult};
+use crucible_core::traits::chat::{AgentHandle, ChatError, ChatResult, SessionKnobs};
 use crucible_oil::terminal::Terminal;
 use tokio::sync::mpsc;
 
@@ -41,22 +41,150 @@ impl AgentHandle for RpcCountingAgent {
     async fn send_message_fire_and_forget(&mut self, _message: String) -> ChatResult<()> {
         Ok(())
     }
-
     fn get_mode_id(&self) -> &str {
         "normal"
     }
     async fn set_mode_str(&mut self, _mode_id: &str) -> ChatResult<()> {
         Ok(())
     }
+}
 
+/// The two startup knobs count. The rest is the empty answer.
+#[async_trait::async_trait]
+impl SessionKnobs for RpcCountingAgent {
     async fn set_thinking_budget(&mut self, _budget: i64) -> ChatResult<()> {
         self.thinking_budget_calls.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
-
     async fn switch_model(&mut self, _model_id: &str) -> ChatResult<()> {
         self.switch_model_calls.fetch_add(1, Ordering::Relaxed);
         Ok(())
+    }
+
+    fn current_model(&self) -> Option<&str> {
+        None
+    }
+
+    async fn fetch_available_models(&mut self) -> Vec<String> {
+        Vec::new()
+    }
+
+    async fn fetch_available_modes(&mut self) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn get_thinking_budget(&self) -> Option<i64> {
+        None
+    }
+
+    async fn set_system_prompt(&mut self, _prompt: &str) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_system_prompt".into()))
+    }
+
+    fn get_system_prompt(&self) -> Option<String> {
+        None
+    }
+
+    async fn set_temperature(&mut self, _temperature: f64) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_temperature".into()))
+    }
+
+    fn get_temperature(&self) -> Option<f64> {
+        None
+    }
+
+    async fn set_max_tokens(&mut self, _max_tokens: Option<u32>) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_max_tokens".into()))
+    }
+
+    fn get_max_tokens(&self) -> Option<u32> {
+        None
+    }
+
+    async fn set_max_iterations(&mut self, _max_iterations: Option<u32>) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_max_iterations".into()))
+    }
+
+    fn get_max_iterations(&self) -> Option<u32> {
+        None
+    }
+
+    async fn set_execution_timeout(&mut self, _timeout_secs: Option<u64>) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_execution_timeout".into()))
+    }
+
+    fn get_execution_timeout(&self) -> Option<u64> {
+        None
+    }
+
+    async fn set_context_budget(&mut self, _budget: Option<usize>) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_context_budget".into()))
+    }
+
+    fn get_context_budget(&self) -> Option<usize> {
+        None
+    }
+
+    async fn set_context_strategy(
+        &mut self,
+        _strategy: crucible_core::session::ContextStrategy,
+    ) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_context_strategy".into()))
+    }
+
+    fn get_context_strategy(&self) -> crucible_core::session::ContextStrategy {
+        crucible_core::session::ContextStrategy::default()
+    }
+
+    async fn set_context_window(&mut self, _window: Option<usize>) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_context_window".into()))
+    }
+
+    fn get_context_window(&self) -> Option<usize> {
+        None
+    }
+
+    async fn set_output_validation(
+        &mut self,
+        _validation: crucible_core::session::OutputValidation,
+    ) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_output_validation".into()))
+    }
+
+    fn get_output_validation(&self) -> &crucible_core::session::OutputValidation {
+        &crucible_core::session::OutputValidation::None
+    }
+
+    async fn set_validation_retries(&mut self, _retries: u32) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_validation_retries".into()))
+    }
+
+    fn get_validation_retries(&self) -> u32 {
+        3
+    }
+
+    async fn set_autocompact_threshold(&mut self, _threshold: Option<f32>) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_autocompact_threshold".into()))
+    }
+
+    fn get_autocompact_threshold(&self) -> Option<f32> {
+        None
+    }
+
+    async fn set_precognition(&mut self, _enabled: bool) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_precognition".into()))
+    }
+
+    fn get_precognition(&self) -> bool {
+        true
+    }
+
+    async fn set_precognition_results(&mut self, _count: usize) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_precognition_results".into()))
+    }
+
+    fn get_precognition_results(&self) -> usize {
+        5
     }
 }
 

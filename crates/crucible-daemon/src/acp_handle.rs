@@ -33,7 +33,7 @@ use crucible_core::background::BackgroundSpawner;
 use crucible_core::config::{AcpConfig, DelegationConfig};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::session::SessionAgent;
-use crucible_core::traits::chat::{AgentHandle, ChatError, ChatResult};
+use crucible_core::traits::chat::{AgentHandle, ChatError, ChatResult, SessionKnobs};
 use crucible_core::traits::KnowledgeRepository;
 use crucible_core::types::acp::schema::SessionModeState;
 use crucible_core::types::mode::default_internal_modes;
@@ -313,6 +313,24 @@ impl AgentHandle for AcpAgentHandle {
         ))
     }
 
+    fn get_modes(&self) -> Option<&SessionModeState> {
+        Some(&self.mode_state)
+    }
+
+    async fn cancel(&self) -> ChatResult<()> {
+        // Cancellation is driven by the daemon dropping the turn stream, which
+        // the ACP client detects (callback returns false) and answers by
+        // sending `session/cancel` to the agent. This handle method is not on
+        // that path — the daemon never calls it — so it is a no-op.
+        debug!("Cancel requested for ACP agent (handled via stream drop)");
+        Ok(())
+    }
+}
+
+/// The ACP agent runs its own model loop. The handle caches the three
+/// knobs the ACP wire can carry; the rest return the empty answer.
+#[async_trait]
+impl SessionKnobs for AcpAgentHandle {
     async fn set_temperature(&mut self, temperature: f64) -> ChatResult<()> {
         debug!(temperature, "Caching temperature for ACP agent");
         self.cached_temperature = Some(temperature);
@@ -407,17 +425,102 @@ impl AgentHandle for AcpAgentHandle {
             .unwrap_or_default()
     }
 
-    fn get_modes(&self) -> Option<&SessionModeState> {
-        Some(&self.mode_state)
+    async fn fetch_available_modes(&mut self) -> Vec<String> {
+        Vec::new()
     }
 
-    async fn cancel(&self) -> ChatResult<()> {
-        // Cancellation is driven by the daemon dropping the turn stream, which
-        // the ACP client detects (callback returns false) and answers by
-        // sending `session/cancel` to the agent. This handle method is not on
-        // that path — the daemon never calls it — so it is a no-op.
-        debug!("Cancel requested for ACP agent (handled via stream drop)");
-        Ok(())
+    async fn set_system_prompt(&mut self, _prompt: &str) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_system_prompt".into()))
+    }
+
+    fn get_system_prompt(&self) -> Option<String> {
+        None
+    }
+
+    async fn set_max_iterations(&mut self, _max_iterations: Option<u32>) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_max_iterations".into()))
+    }
+
+    fn get_max_iterations(&self) -> Option<u32> {
+        None
+    }
+
+    async fn set_execution_timeout(&mut self, _timeout_secs: Option<u64>) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_execution_timeout".into()))
+    }
+
+    fn get_execution_timeout(&self) -> Option<u64> {
+        None
+    }
+
+    async fn set_context_budget(&mut self, _budget: Option<usize>) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_context_budget".into()))
+    }
+
+    fn get_context_budget(&self) -> Option<usize> {
+        None
+    }
+
+    async fn set_context_strategy(
+        &mut self,
+        _strategy: crucible_core::session::ContextStrategy,
+    ) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_context_strategy".into()))
+    }
+
+    fn get_context_strategy(&self) -> crucible_core::session::ContextStrategy {
+        crucible_core::session::ContextStrategy::default()
+    }
+
+    async fn set_context_window(&mut self, _window: Option<usize>) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_context_window".into()))
+    }
+
+    fn get_context_window(&self) -> Option<usize> {
+        None
+    }
+
+    async fn set_output_validation(
+        &mut self,
+        _validation: crucible_core::session::OutputValidation,
+    ) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_output_validation".into()))
+    }
+
+    fn get_output_validation(&self) -> &crucible_core::session::OutputValidation {
+        &crucible_core::session::OutputValidation::None
+    }
+
+    async fn set_validation_retries(&mut self, _retries: u32) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_validation_retries".into()))
+    }
+
+    fn get_validation_retries(&self) -> u32 {
+        3
+    }
+
+    async fn set_autocompact_threshold(&mut self, _threshold: Option<f32>) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_autocompact_threshold".into()))
+    }
+
+    fn get_autocompact_threshold(&self) -> Option<f32> {
+        None
+    }
+
+    async fn set_precognition(&mut self, _enabled: bool) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_precognition".into()))
+    }
+
+    fn get_precognition(&self) -> bool {
+        true
+    }
+
+    async fn set_precognition_results(&mut self, _count: usize) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_precognition_results".into()))
+    }
+
+    fn get_precognition_results(&self) -> usize {
+        5
     }
 }
 
@@ -822,7 +925,7 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
         // Delegate to the AgentHandle impl (the daemon's RPC path). The Agent
         // trait can only signal `NotSupported`, so a runtime wire failure is
         // surfaced through that variant; the AgentHandle path carries detail.
-        AgentHandle::switch_model(self, model_id)
+        SessionKnobs::switch_model(self, model_id)
             .await
             .map_err(|_| crucible_core::turn::NotSupported::new("switch_model"))
     }

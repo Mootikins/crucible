@@ -2,7 +2,7 @@ use crate::chat::bridge::AgentEventBridge;
 use crate::tui::oil::app::{Action, App};
 use crate::tui::oil::chat_app::{ChatAppMsg, OilChatApp};
 use crucible_core::events::SessionEvent;
-use crucible_core::traits::chat::AgentHandle;
+use crucible_core::traits::chat::{AgentHandle, SessionKnobs};
 use std::io;
 use tokio::sync::mpsc;
 
@@ -234,7 +234,7 @@ impl OilChatRunner {
                     }
                     ChatAppMsg::SwitchModel(model_id) => {
                         tracing::info!(model = %model_id, "Model switch requested");
-                        match AgentHandle::switch_model(params.agent, model_id).await {
+                        match SessionKnobs::switch_model(params.agent, model_id).await {
                             Ok(()) => {
                                 tracing::info!(model = %model_id, "Model switched successfully");
                             }

@@ -741,6 +741,8 @@ impl ScriptedHandle {
     }
 }
 
+crucible_core::impl_unsupported_session_knobs!(ScriptedHandle);
+
 #[async_trait::async_trait]
 impl AgentHandle for ScriptedHandle {
     async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {

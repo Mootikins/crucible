@@ -6,7 +6,7 @@
 
 use async_trait::async_trait;
 use crucible_core::interaction::InteractionEvent;
-use crucible_core::traits::chat::{AgentHandle, ChatError, ChatResult};
+use crucible_core::traits::chat::{AgentHandle, ChatError, ChatResult, SessionKnobs};
 use tokio::sync::mpsc;
 
 use super::DaemonAgentHandle;
@@ -150,6 +150,36 @@ impl AgentHandle for DaemonAgentHandle {
         Ok(())
     }
 
+    async fn cancel(&self) -> ChatResult<()> {
+        tracing::info!(session_id = %self.session_id, "Cancelling agent via daemon");
+        self.client
+            .session_cancel(&self.session_id)
+            .await
+            .chat_comm()?;
+        Ok(())
+    }
+
+    async fn interaction_respond(
+        &mut self,
+        request_id: String,
+        response: crucible_core::interaction::InteractionResponse,
+    ) -> ChatResult<()> {
+        tracing::info!(
+            session_id = %self.session_id,
+            request_id = %request_id,
+            "Sending interaction response via daemon"
+        );
+        self.client
+            .session_interaction_respond(&self.session_id, &request_id, response)
+            .await
+            .map_err(|e| {
+                ChatError::Communication(format!("Failed to send interaction response: {}", e))
+            })
+    }
+}
+
+#[async_trait]
+impl SessionKnobs for DaemonAgentHandle {
     async fn switch_model(&mut self, model_id: &str) -> ChatResult<()> {
         tracing::info!(session_id = %self.session_id, model = %model_id, "Switching model via daemon");
         self.client
@@ -182,15 +212,6 @@ impl AgentHandle for DaemonAgentHandle {
                 Vec::new()
             }
         }
-    }
-
-    async fn cancel(&self) -> ChatResult<()> {
-        tracing::info!(session_id = %self.session_id, "Cancelling agent via daemon");
-        self.client
-            .session_cancel(&self.session_id)
-            .await
-            .chat_comm()?;
-        Ok(())
     }
 
     async fn set_thinking_budget(&mut self, budget: i64) -> ChatResult<()> {
@@ -416,24 +437,6 @@ impl AgentHandle for DaemonAgentHandle {
 
     fn get_precognition_results(&self) -> usize {
         self.cached_precognition_results.unwrap_or(5)
-    }
-
-    async fn interaction_respond(
-        &mut self,
-        request_id: String,
-        response: crucible_core::interaction::InteractionResponse,
-    ) -> ChatResult<()> {
-        tracing::info!(
-            session_id = %self.session_id,
-            request_id = %request_id,
-            "Sending interaction response via daemon"
-        );
-        self.client
-            .session_interaction_respond(&self.session_id, &request_id, response)
-            .await
-            .map_err(|e| {
-                ChatError::Communication(format!("Failed to send interaction response: {}", e))
-            })
     }
 }
 

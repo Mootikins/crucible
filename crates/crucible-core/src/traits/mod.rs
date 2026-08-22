@@ -20,7 +20,7 @@ pub mod undoable;
 
 // Re-export key traits
 
-pub use chat::{AgentHandle, ChatError, ChatResult, ChatToolCall};
+pub use chat::{AgentHandle, ChatError, ChatResult, ChatToolCall, SessionKnobs};
 pub use context_ops::{ContextMessage, MessageMetadata, Position, Range};
 pub use knowledge::{KnowledgeRepository, NoteInfo};
 pub use llm::{

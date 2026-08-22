@@ -174,6 +174,8 @@ impl crucible_core::turn::Agent for MockSubagentHandle {
     }
 }
 
+crucible_core::impl_unsupported_session_knobs!(MockSubagentHandle);
+
 #[async_trait]
 impl AgentHandle for MockSubagentHandle {
     async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {

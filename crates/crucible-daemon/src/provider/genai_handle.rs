@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use crucible_core::session::{ContextStrategy, OutputValidation};
 use crucible_core::traits::chat::{
-    AgentHandle, ChatError, ChatResult, ChatToolCall, ChatToolResult,
+    AgentHandle, ChatError, ChatResult, ChatToolCall, ChatToolResult, SessionKnobs,
 };
 use crucible_core::traits::llm::LlmToolDefinition;
 use crucible_core::traits::TokenUsage;
@@ -1507,17 +1507,6 @@ impl AgentHandle for GenaiAgentHandle {
         Some(&self.mode_state)
     }
 
-    /// The prompt this handle will actually send, after the factory's
-    /// enrichment (workspace header, rules files, skills catalog) — not the
-    /// agent card's `system_prompt` the session config stores.
-    fn get_system_prompt(&self) -> Option<String> {
-        Some(if self.session_context.is_empty() {
-            self.system_prompt.clone()
-        } else {
-            format!("{}\n\n{}", self.system_prompt, self.session_context)
-        })
-    }
-
     fn get_mode_id(&self) -> &str {
         &self.current_mode_id
     }
@@ -1546,7 +1535,12 @@ impl AgentHandle for GenaiAgentHandle {
         self.mode_context_sent = false;
         Ok(())
     }
+}
 
+/// The knobs the genai handle does not hold return the empty answer.
+/// The daemon session holds them; see `DaemonAgentHandle`.
+#[async_trait]
+impl SessionKnobs for GenaiAgentHandle {
     async fn switch_model(&mut self, model_id: &str) -> ChatResult<()> {
         self.model = self.model.from_name(model_id.to_string());
         Ok(())
@@ -1554,6 +1548,37 @@ impl AgentHandle for GenaiAgentHandle {
 
     fn current_model(&self) -> Option<&str> {
         Some(&self.model.model_name)
+    }
+
+    async fn fetch_available_models(&mut self) -> Vec<String> {
+        Vec::new()
+    }
+
+    async fn fetch_available_modes(&mut self) -> Vec<String> {
+        Vec::new()
+    }
+
+    async fn set_thinking_budget(&mut self, _budget: i64) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_thinking_budget".into()))
+    }
+
+    fn get_thinking_budget(&self) -> Option<i64> {
+        None
+    }
+
+    async fn set_system_prompt(&mut self, _prompt: &str) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_system_prompt".into()))
+    }
+
+    /// The prompt this handle will actually send, after the factory's
+    /// enrichment (workspace header, rules files, skills catalog) — not the
+    /// agent card's `system_prompt` the session config stores.
+    fn get_system_prompt(&self) -> Option<String> {
+        Some(if self.session_context.is_empty() {
+            self.system_prompt.clone()
+        } else {
+            format!("{}\n\n{}", self.system_prompt, self.session_context)
+        })
     }
 
     async fn set_temperature(&mut self, temperature: f64) -> ChatResult<()> {
@@ -1630,6 +1655,38 @@ impl AgentHandle for GenaiAgentHandle {
     fn get_autocompact_threshold(&self) -> Option<f32> {
         self.autocompact_threshold
     }
+
+    async fn set_max_iterations(&mut self, _max_iterations: Option<u32>) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_max_iterations".into()))
+    }
+
+    fn get_max_iterations(&self) -> Option<u32> {
+        None
+    }
+
+    async fn set_execution_timeout(&mut self, _timeout_secs: Option<u64>) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_execution_timeout".into()))
+    }
+
+    fn get_execution_timeout(&self) -> Option<u64> {
+        None
+    }
+
+    async fn set_precognition(&mut self, _enabled: bool) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_precognition".into()))
+    }
+
+    fn get_precognition(&self) -> bool {
+        true
+    }
+
+    async fn set_precognition_results(&mut self, _count: usize) -> ChatResult<()> {
+        Err(ChatError::NotSupported("set_precognition_results".into()))
+    }
+
+    fn get_precognition_results(&self) -> usize {
+        5
+    }
 }
 
 #[async_trait]
@@ -1667,7 +1724,7 @@ impl crucible_core::turn::Agent for GenaiAgentHandle {
         &mut self,
         model_id: &str,
     ) -> Result<(), crucible_core::turn::NotSupported> {
-        AgentHandle::switch_model(self, model_id)
+        SessionKnobs::switch_model(self, model_id)
             .await
             .map_err(|_| crucible_core::turn::NotSupported::new("switch_model"))
     }

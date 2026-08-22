@@ -94,7 +94,7 @@ async fn test_session_switch_model() {
 #[tokio::test]
 async fn test_daemon_agent_handle_switch_model() {
     use crucible_core::session::{OutputValidation, SessionAgent};
-    use crucible_core::traits::chat::AgentHandle;
+    use crucible_core::traits::chat::SessionKnobs;
     use crucible_daemon::DaemonAgentHandle;
 
     let server = TestServer::start().await.expect("Failed to start server");

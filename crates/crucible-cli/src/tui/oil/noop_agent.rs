@@ -63,6 +63,8 @@ impl Agent for NoopAgentHandle {
     }
 }
 
+crucible_core::impl_unsupported_session_knobs!(NoopAgentHandle);
+
 #[async_trait]
 impl AgentHandle for NoopAgentHandle {
     async fn send_message_fire_and_forget(&mut self, _message: String) -> ChatResult<()> {

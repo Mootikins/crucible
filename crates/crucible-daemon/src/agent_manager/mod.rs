@@ -24,7 +24,7 @@ use crucible_core::config::{
 use crucible_core::events::{InternalSessionEvent, SessionEvent};
 use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse, PermissionScope};
 use crucible_core::session::{ContextStrategy, OutputValidation, SessionAgent};
-use crucible_core::traits::chat::{AgentHandle, ChatError};
+use crucible_core::traits::chat::{AgentHandle, ChatError, SessionKnobs};
 use crucible_core::traits::tools::ToolExecutor;
 use crucible_core::traits::PermissionGate;
 use crucible_lua::{

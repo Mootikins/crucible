@@ -134,6 +134,8 @@ impl crucible_core::turn::Agent for OneToolAgent {
     }
 }
 
+crucible_core::impl_unsupported_session_knobs!(OneToolAgent);
+
 #[async_trait::async_trait]
 impl AgentHandle for OneToolAgent {
     async fn send_message_fire_and_forget(

@@ -89,8 +89,9 @@ and syncs via RPC; pure display state (theme, show_thinking) stays in `OilChatAp
 Session-scoped needs the full chain: `AgentHandle` → `DaemonAgentHandle` → `ChatAppMsg` →
 `chat_runner` handler → TUI command. TUI-only breaks multi-client, and mismatched JSON field
 names fail silently — verify `session.get_*` returns what `session.set_*` stored and survives
-resume. (`AgentHandle` is 44 methods and only **3** are required: a new knob compiles
-everywhere without being implemented anywhere.)
+resume. (The knobs live in `SessionKnobs`, a supertrait of `AgentHandle`, and every
+knob is required: a handle that omits one does not compile. A test double that uses no
+knob writes `crucible_core::impl_unsupported_session_knobs!(Ty)`.)
 
 ### Hooks and ACP
 

@@ -31,6 +31,8 @@ impl CountingAgent {
 
 crucible_core::impl_noop_agent!(CountingAgent);
 
+crucible_core::impl_unsupported_session_knobs!(CountingAgent);
+
 #[async_trait]
 impl AgentHandle for CountingAgent {
     async fn send_message_fire_and_forget(&mut self, _message: String) -> ChatResult<()> {
