@@ -628,6 +628,23 @@ impl CrucibleMcpServer {
         let params = params.0;
         let delegation = self.require_delegation("cancel_job")?;
 
+        // Both the MCP tool and the RPC `tool_dispatch` path arrive here, so
+        // this is the one gate. A session may cancel only a job it owns: the
+        // spawners look a job up by ID alone, and without this check any
+        // session that learned an ID could stop another session's work. An
+        // unknown job gets the same answer, so the ID reveals nothing.
+        let owner = delegation
+            .delegation_spawner
+            .get_delegation_result(&params.job_id)
+            .or_else(|| delegation.background_spawner.get_job_result(&params.job_id))
+            .map(|result| result.info.session_id);
+        if owner.as_deref() != Some(delegation.session_id.as_str()) {
+            return Err(rmcp::ErrorData::invalid_params(
+                format!("Job not found in this session: {}", params.job_id),
+                None,
+            ));
+        }
+
         let cancelled = delegation
             .delegation_spawner
             .cancel_delegation(&params.job_id)

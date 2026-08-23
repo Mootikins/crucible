@@ -97,24 +97,29 @@ impl BackgroundSpawner for MockBackgroundSpawner {
     }
 
     fn get_job_result(&self, job_id: &String) -> Option<JobResult> {
-        if job_id == "job-test-123" {
+        // `job-test-123` belongs to the context session; `job-other-456`
+        // belongs to a different session.
+        let owner = match job_id.as_str() {
+            "job-test-123" => "test-session",
+            "job-other-456" => "other-session",
+            _ => return None,
+        };
+        {
             let mut info = JobInfo::new(
-                "test-session".to_string(),
+                owner.to_string(),
                 JobKind::Subagent {
                     prompt: "test".to_string(),
                     context: None,
                 },
             );
-            info.id = "job-test-123".to_string();
+            info.id = job_id.clone();
             info.mark_completed();
             Some(JobResult::success(info, "completed output".to_string()))
-        } else {
-            None
         }
     }
 
     async fn cancel_job(&self, job_id: &String) -> bool {
-        job_id == "job-test-123"
+        job_id == "job-test-123" || job_id == "job-other-456"
     }
 }
 
@@ -651,6 +656,35 @@ async fn test_cancel_job_returns_cancelled_status() {
     assert!(result.is_ok());
     let call_result = result.unwrap();
     assert!(!call_result.content.is_empty());
+}
+
+#[tokio::test]
+async fn cancel_job_denies_a_job_that_another_session_owns() {
+    let server = make_server_with_job_spawner();
+    let result = server
+        .cancel_job(Parameters(CancelJobParams {
+            job_id: "job-other-456".to_string(),
+        }))
+        .await;
+
+    let err = result.expect_err("a foreign job must not be cancellable");
+    assert!(
+        err.message.contains("job-other-456"),
+        "error names the job: {}",
+        err.message
+    );
+}
+
+#[tokio::test]
+async fn cancel_job_denies_an_unknown_job() {
+    let server = make_server_with_job_spawner();
+    let result = server
+        .cancel_job(Parameters(CancelJobParams {
+            job_id: "nonexistent-job".to_string(),
+        }))
+        .await;
+
+    assert!(result.is_err(), "an unknown job must not reach the spawner");
 }
 
 #[test]
