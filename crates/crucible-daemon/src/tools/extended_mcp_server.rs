@@ -198,20 +198,12 @@ impl ExtendedMcpServer {
         )
     }
 
+    /// The number of tools [`Self::list_all_tools`] advertises.
+    ///
+    /// This counts the listed tools, so the per-session filter in the kiln
+    /// server (no delegation context removes `delegate_session`) applies here too.
     pub async fn tool_count(&self) -> usize {
-        let kiln = self.kiln_server.tool_count();
-        let discovery = Self::discovery_tools().len();
-        let lua = self
-            .plugin_tools
-            .as_ref()
-            .map(|p| p.tool_definitions().len())
-            .unwrap_or(0);
-        let gateway = if let Some(gw) = &self.gateway {
-            gw.read().await.tool_count()
-        } else {
-            0
-        };
-        kiln + discovery + lua + gateway
+        self.list_all_tools().await.len()
     }
 
     pub async fn has_plugin_tool(&self, name: &str) -> bool {
@@ -537,6 +529,28 @@ mod tests {
         // Should have at least the 13 kiln tools
         let count = server.tool_count().await;
         assert!(count >= 13);
+    }
+
+    /// `tool_count` reports the number of tools `list_all_tools` advertises.
+    ///
+    /// The kiln server filters `delegate_session` when no delegation context
+    /// exists. A count that reads the unfiltered router overstates the surface
+    /// by one, and `mcp.start` then reports a tool the client cannot list.
+    #[tokio::test]
+    async fn tool_count_agrees_with_list_all_tools() {
+        let temp = TempDir::new().unwrap();
+        let server = ExtendedMcpServer::kiln_only(
+            temp.path().to_str().unwrap().to_string(),
+            Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>,
+            Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>,
+        );
+
+        let listed = server.list_all_tools().await;
+        assert!(
+            !listed.iter().any(|t| t.name == "delegate_session"),
+            "no delegation context, so delegate_session must not be listed"
+        );
+        assert_eq!(server.tool_count().await, listed.len());
     }
 
     #[tokio::test]

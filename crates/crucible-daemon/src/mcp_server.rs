@@ -4,7 +4,7 @@
 //! This replaces the CLI's `cru mcp` command with daemon-managed lifecycle,
 //! allowing clients to start/stop MCP servers through JSON-RPC.
 
-use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
+use crate::empty_providers::EmptyKnowledgeRepository;
 use crate::kiln_manager::KilnManager;
 use crate::tools::mcp_gateway::McpGatewayManager;
 use crate::tools::{ExtendedMcpServer, ExtendedMcpService};
@@ -62,6 +62,11 @@ impl McpServerManager {
     ///
     /// Creates an `ExtendedMcpServer` with the given kiln path and spawns
     /// a tokio task to serve via the specified transport.
+    ///
+    /// The caller resolves `embedding_provider` from the daemon's enrichment
+    /// config, so `semantic_search` on the served surface uses the same
+    /// provider as an internal agent.
+    #[allow(clippy::too_many_arguments)]
     pub async fn start(
         &self,
         kiln_manager: &KilnManager,
@@ -70,6 +75,7 @@ impl McpServerManager {
         kiln_path: &str,
         no_just: bool,
         plugin_tools: Option<Arc<crate::plugin_tools::PluginRegistry>>,
+        embedding_provider: Arc<dyn EmbeddingProvider>,
     ) -> Result<serde_json::Value, String> {
         let mut state = self.state.lock().await;
 
@@ -80,28 +86,17 @@ impl McpServerManager {
 
         // Get or open the kiln to obtain knowledge_repo
         let kiln_path_ref = Path::new(kiln_path);
-        let (knowledge_repo, embedding_provider): (
-            Arc<dyn KnowledgeRepository>,
-            Arc<dyn EmbeddingProvider>,
-        ) = match kiln_manager.get_or_open(kiln_path_ref).await {
-            Ok(handle) => {
-                let kr = handle.as_knowledge_repository();
-                // Try to get an embedding provider from daemon config;
-                // fall back to empty provider if unavailable
-                let ep: Arc<dyn EmbeddingProvider> = Arc::new(EmptyEmbeddingProvider);
-                (kr, ep)
-            }
-            Err(e) => {
-                warn!(
-                    "Failed to open kiln for MCP server, using empty providers: {}",
-                    e
-                );
-                (
-                    Arc::new(EmptyKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
-                    Arc::new(EmptyEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
-                )
-            }
-        };
+        let knowledge_repo: Arc<dyn KnowledgeRepository> =
+            match kiln_manager.get_or_open(kiln_path_ref).await {
+                Ok(handle) => handle.as_knowledge_repository(),
+                Err(e) => {
+                    warn!(
+                        "Failed to open kiln for MCP server, using empty knowledge repository: {}",
+                        e
+                    );
+                    Arc::new(EmptyKnowledgeRepository)
+                }
+            };
 
         // Create the ExtendedMcpServer
         let server = if no_just {
@@ -109,8 +104,8 @@ impl McpServerManager {
         } else {
             match ExtendedMcpServer::new(
                 kiln_path.to_string(),
-                knowledge_repo,
-                embedding_provider,
+                knowledge_repo.clone(),
+                embedding_provider.clone(),
                 plugin_tools.clone(),
             )
             .await
@@ -118,18 +113,11 @@ impl McpServerManager {
                 Ok(s) => s,
                 Err(e) => {
                     warn!("Failed to create ExtendedMcpServer with Just, falling back to kiln-only: {}", e);
-                    // Re-open kiln for fallback (previous knowledge_repo was consumed)
-                    let (kr, ep) = match kiln_manager.get_or_open(kiln_path_ref).await {
-                        Ok(handle) => (
-                            handle.as_knowledge_repository(),
-                            Arc::new(EmptyEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
-                        ),
-                        Err(_) => (
-                            Arc::new(EmptyKnowledgeRepository) as Arc<dyn KnowledgeRepository>,
-                            Arc::new(EmptyEmbeddingProvider) as Arc<dyn EmbeddingProvider>,
-                        ),
-                    };
-                    ExtendedMcpServer::kiln_only(kiln_path.to_string(), kr, ep)
+                    ExtendedMcpServer::kiln_only(
+                        kiln_path.to_string(),
+                        knowledge_repo,
+                        embedding_provider,
+                    )
                 }
             }
         };

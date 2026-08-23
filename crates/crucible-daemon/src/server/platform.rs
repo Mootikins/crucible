@@ -1,5 +1,7 @@
 use super::*;
+use crate::empty_providers::EmptyEmbeddingProvider;
 use crate::rpc_helpers::typed_params;
+use crucible_core::enrichment::EmbeddingProvider;
 
 pub(crate) async fn handle_mcp_start(
     req: Request,
@@ -17,6 +19,23 @@ pub(crate) async fn handle_mcp_start(
     let transport = params.transport.as_deref().unwrap_or("sse");
     let port = params.port.unwrap_or(3847);
 
+    // The same provider an internal agent gets: the daemon's enrichment
+    // config, or the empty provider, which reports semantic_search unavailable.
+    let embedding_provider: Arc<dyn EmbeddingProvider> = match km.enrichment_config() {
+        Some(config) => match crate::embedding::get_or_create_embedding_provider(config).await {
+            Ok(provider) => provider,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "Failed to create embedding provider for the MCP server; \
+                     semantic_search will report unavailable"
+                );
+                Arc::new(EmptyEmbeddingProvider)
+            }
+        },
+        None => Arc::new(EmptyEmbeddingProvider),
+    };
+
     match mcp_mgr
         .start(
             km,
@@ -25,6 +44,7 @@ pub(crate) async fn handle_mcp_start(
             &params.kiln_path,
             params.no_just,
             plugin_tools,
+            embedding_provider,
         )
         .await
     {
