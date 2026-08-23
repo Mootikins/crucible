@@ -1,6 +1,5 @@
 //! Tests for session events.
 
-use super::helpers::truncate;
 use super::*;
 use std::path::PathBuf;
 

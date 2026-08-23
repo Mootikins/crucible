@@ -46,20 +46,3 @@ pub(super) fn estimate_content_len(event: &SessionEvent) -> usize {
         SessionEvent::Internal(inner) => inner.estimate_content_len(),
     }
 }
-
-/// Truncate a string to `max_len`, respecting UTF-8 char boundaries.
-///
-/// If the string is longer than `max_len`, it will be truncated at the nearest
-/// valid UTF-8 character boundary.
-pub(super) fn truncate(s: &str, max_len: usize) -> &str {
-    if s.len() <= max_len {
-        s
-    } else {
-        // Find a char boundary near max_len
-        let mut end = max_len;
-        while !s.is_char_boundary(end) && end > 0 {
-            end -= 1;
-        }
-        &s[..end]
-    }
-}

@@ -5,6 +5,7 @@
 //! in a real implementation (`DaemonInlineHandler` or similar) without
 //! touching the dispatch table shape.
 
+use crate::text::truncate_chars;
 use crate::workflow::handler::{DispatchTable, ExecContext, StepHandler, StepOutcome};
 use async_trait::async_trait;
 
@@ -23,7 +24,7 @@ impl StepHandler for DefaultHandler {
                 "placeholder": true,
                 "produced_by": ctx.step_id,
                 "output_name": name,
-                "prompt_preview": truncate(&ctx.step.body, 120),
+                "prompt_preview": truncate_chars(&ctx.step.body, 120, true),
             })
         });
         StepOutcome::Advance { output }
@@ -69,14 +70,4 @@ pub fn stdlib_dispatch() -> DispatchTable {
     let mut table = DispatchTable::new(Box::new(DefaultHandler));
     table.register("gate", Box::new(GateHandler));
     table
-}
-
-fn truncate(s: &str, n: usize) -> String {
-    if s.chars().count() <= n {
-        s.to_string()
-    } else {
-        let mut out: String = s.chars().take(n.saturating_sub(1)).collect();
-        out.push('…');
-        out
-    }
 }

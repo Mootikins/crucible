@@ -12,6 +12,7 @@ use clap::Subcommand;
 use crucible_core::parser::types::{
     extract_yaml_frontmatter, CheckboxStatus, ParsedNote, WorkflowDoc, WorkflowStep,
 };
+use crucible_core::text::truncate_chars;
 use crucible_core::EXCLUDED_DIRS;
 use crucible_daemon::rpc_client::{WorkflowApproveGateRequest, WorkflowStartRequest};
 use serde::Serialize;
@@ -172,8 +173,8 @@ fn run_list(config: CliConfig, format: OutputFormat) -> Result<()> {
             for e in &entries {
                 println!(
                     "{:<40}  {:<30}  {:>5}  {:>5}  {:>5}  {:>5}",
-                    truncate(&e.path, 40),
-                    truncate(&e.title, 30),
+                    truncate_chars(&e.path, 40, true),
+                    truncate_chars(&e.title, 30, true),
                     e.steps_count,
                     e.goals_count,
                     e.validations_count,
@@ -276,16 +277,6 @@ fn render_step(step: &WorkflowStep, depth: usize) {
 
     for child in &step.children {
         render_step(child, depth + 1);
-    }
-}
-
-fn truncate(s: &str, n: usize) -> String {
-    if s.chars().count() <= n {
-        s.to_string()
-    } else {
-        let mut out: String = s.chars().take(n.saturating_sub(1)).collect();
-        out.push('…');
-        out
     }
 }
 

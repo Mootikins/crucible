@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use super::{EventCategory, FileChangeKind, NoteChangeType, Priority};
+use crate::text::truncate_bytes;
 
 /// Internal session events that flow through the daemon's event system but never
 /// cross the RPC wire to clients.
@@ -182,27 +183,19 @@ impl InternalSessionEvent {
 
     /// Get a summary of this event's content.
     ///
-    /// Free-text fields are cut to `max_len` characters.
+    /// Free-text fields are cut to `max_len` bytes on a char boundary.
     pub fn summary(&self, max_len: usize) -> String {
-        fn trunc(s: &str, max_len: usize) -> &str {
-            if s.len() <= max_len {
-                s
-            } else {
-                let mut end = max_len;
-                while !s.is_char_boundary(end) && end > 0 {
-                    end -= 1;
-                }
-                &s[..end]
-            }
-        }
-
         match self {
             Self::FileChanged { path, kind } => format!("path={}, kind={:?}", path.display(), kind),
             Self::FileDeleted { path } => format!("path={}", path.display()),
             Self::FileMoved { from, to } => format!("from={}, to={}", from.display(), to.display()),
             Self::NoteCreated { path, title } => {
                 let t = title.as_deref().unwrap_or("(none)");
-                format!("path={}, title={}", path.display(), trunc(t, max_len))
+                format!(
+                    "path={}, title={}",
+                    path.display(),
+                    truncate_bytes(t, max_len)
+                )
             }
             Self::NoteModified { path, change_type } => {
                 format!("path={}, change={:?}", path.display(), change_type)
@@ -220,7 +213,7 @@ impl InternalSessionEvent {
                 format!(
                     "notes={}, query={}, searched={}, filtered={}, failed={}",
                     notes_count,
-                    trunc(query_summary, max_len),
+                    truncate_bytes(query_summary, max_len),
                     kilns_searched,
                     kilns_filtered,
                     kilns_failed

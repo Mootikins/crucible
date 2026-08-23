@@ -34,7 +34,8 @@ mod tests;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
-use helpers::{estimate_content_len, identifier_for_event, payload_for_event, truncate};
+use crate::text::truncate_bytes;
+use helpers::{estimate_content_len, identifier_for_event, payload_for_event};
 
 pub use internal::InternalSessionEvent;
 pub use types::{EventCategory, FileChangeKind, NoteChangeType, Priority};
@@ -320,7 +321,7 @@ impl SessionEvent {
             Self::Custom { name, payload } => {
                 format!(
                     "name={}, payload_size={}",
-                    truncate(name, max_len),
+                    truncate_bytes(name, max_len),
                     payload.to_string().len()
                 )
             }
@@ -347,7 +348,7 @@ impl SessionEvent {
     /// assert_eq!(payload, Some("Hello, world!".to_string()));
     /// ```
     pub fn payload(&self, max_len: usize) -> Option<String> {
-        payload_for_event(self).map(|p| truncate(&p, max_len).to_string())
+        payload_for_event(self).map(|p| truncate_bytes(&p, max_len).to_string())
     }
 
     /// Estimate the number of tokens in this event.

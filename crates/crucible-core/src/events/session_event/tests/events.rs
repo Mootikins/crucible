@@ -189,15 +189,3 @@ fn an_unknown_tag_is_an_error() {
         .to_string();
     assert!(err.contains("unknown event type 'tool_called'"), "{err}");
 }
-
-#[test]
-fn truncate_respects_char_boundaries() {
-    assert_eq!(truncate("hello", 10), "hello");
-    assert_eq!(truncate("hello", 5), "hello");
-    assert_eq!(truncate("hello world", 5), "hello");
-
-    let utf8 = "hello\u{00e9}world";
-    let truncated = truncate(utf8, 6);
-    assert!(truncated.len() <= 6);
-    assert!(truncated.is_char_boundary(truncated.len()));
-}

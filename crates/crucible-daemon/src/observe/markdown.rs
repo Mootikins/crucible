@@ -253,16 +253,13 @@ fn render_event(output: &mut String, event: &LogEvent, options: &RenderOptions) 
     }
 }
 
+/// Cut to `max_len` bytes. A `max_len` of 0 is the `MarkdownOptions` default
+/// and means no limit.
 fn truncate(s: &str, max_len: usize) -> &str {
-    if max_len == 0 || s.len() <= max_len {
+    if max_len == 0 {
         s
     } else {
-        // Find char boundary
-        let mut end = max_len;
-        while !s.is_char_boundary(end) && end > 0 {
-            end -= 1;
-        }
-        &s[..end]
+        crucible_core::text::truncate_bytes(s, max_len)
     }
 }
 

@@ -1,4 +1,5 @@
-//! Making untrusted text safe to paint into a terminal.
+//! Making untrusted text safe to paint into a terminal, and cutting text to a
+//! budget.
 //!
 //! Text that reaches a Crucible surface is not all authored by the user.
 //! Branch names, shell output, model prose and — widest of all — the stdout of
@@ -63,6 +64,39 @@ pub fn sanitize_multiline(value: &str) -> String {
         .collect()
 }
 
+/// Cut `s` to at most `max_len` bytes on a char boundary.
+///
+/// A byte cap serves a storage or log budget, where the cost is the encoded
+/// size. Nothing marks the cut: the caller decides how a cut reads.
+pub fn truncate_bytes(s: &str, max_len: usize) -> &str {
+    if s.len() <= max_len {
+        return s;
+    }
+    let mut end = max_len;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
+/// Cut `s` to at most `max_chars` characters.
+///
+/// A char cap serves a label a person reads, where the cost is the count of
+/// glyphs. With `ellipsis`, the last character of a cut string is `…`, so a
+/// cut result has exactly `max_chars` characters (one, when `max_chars` is 0).
+pub fn truncate_chars(s: &str, max_chars: usize, ellipsis: bool) -> String {
+    if s.chars().count() <= max_chars {
+        return s.to_string();
+    }
+    if ellipsis {
+        let mut out: String = s.chars().take(max_chars.saturating_sub(1)).collect();
+        out.push('\u{2026}');
+        out
+    } else {
+        s.chars().take(max_chars).collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -122,5 +156,24 @@ mod tests {
         let text = "Reading `src/main.rs` — 你好 🦀 (100%)";
         assert_eq!(sanitize_multiline(text), text);
         assert_eq!(sanitize_single_line(text), text);
+    }
+
+    #[test]
+    fn truncate_bytes_cuts_on_a_char_boundary() {
+        assert_eq!(truncate_bytes("hello", 10), "hello");
+        assert_eq!(truncate_bytes("hello", 5), "hello");
+        assert_eq!(truncate_bytes("hello world", 5), "hello");
+        let cut = truncate_bytes("hello\u{00e9}world", 6);
+        assert_eq!(cut, "hello");
+        assert!(cut.len() <= 6);
+    }
+
+    #[test]
+    fn truncate_chars_counts_glyphs_not_bytes() {
+        assert_eq!(truncate_chars("héllo", 5, false), "héllo");
+        assert_eq!(truncate_chars("héllo wörld", 5, false), "héllo");
+        assert_eq!(truncate_chars("héllo wörld", 5, true), "héll…");
+        assert_eq!(truncate_chars("abc", 1, true), "…");
+        assert_eq!(truncate_chars("abc", 0, true), "…");
     }
 }
