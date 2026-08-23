@@ -35,7 +35,7 @@ pub(crate) async fn handle_lua_init_session(
     }
 
     let session = LuaSession::new("chat".to_string());
-    session.bind(Box::new(NoopSessionRpc));
+    session.bind(Box::new(crucible_lua::UnsupportedSessionRpc));
     executor.current_session().set_current(session.clone());
 
     if let Err(e) = executor.sync_session_start_hooks() {

@@ -29,6 +29,7 @@
 
 use crate::error::LuaError;
 use mlua::{Lua, LuaSerdeExt, MetaMethod, UserData, UserDataMethods, Value};
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 /// The message a setter with no backing gives back, naming the field so a
@@ -67,7 +68,7 @@ pub trait SessionConfigRpc: Send + Sync {
     fn get_system_prompt(&self) -> Option<String>;
     fn set_system_prompt(&self, prompt: &str) -> Result<(), String>;
     fn mark_first_message_sent(&self);
-    fn set_variable(&self, key: &str, value: serde_json::Value);
+    fn set_variable(&self, key: &str, value: serde_json::Value) -> Result<(), String>;
     fn get_variable(&self, key: &str) -> Option<serde_json::Value>;
     fn notify(&self, notification: crucible_core::types::Notification);
     fn toggle_messages(&self);
@@ -125,7 +126,9 @@ impl SessionConfigRpc for UnsupportedSessionRpc {
         Err(unsupported("system_prompt"))
     }
     fn mark_first_message_sent(&self) {}
-    fn set_variable(&self, _key: &str, _value: serde_json::Value) {}
+    fn set_variable(&self, _key: &str, _value: serde_json::Value) -> Result<(), String> {
+        Err(unsupported("variables"))
+    }
     fn get_variable(&self, _key: &str) -> Option<serde_json::Value> {
         None
     }
@@ -134,6 +137,49 @@ impl SessionConfigRpc for UnsupportedSessionRpc {
     fn show_messages(&self) {}
     fn hide_messages(&self) {}
     fn clear_messages(&self) {}
+}
+
+/// The per-session key/value map behind `session:set_variable` and
+/// `session:get_variable`.
+///
+/// Cheap to clone: every clone shares one map, so the daemon keeps a clone on
+/// the session slot while the Lua session object holds another. The daemon
+/// seeds it from the persisted session and writes it back, which is what makes
+/// a variable survive a resume. The keys mean nothing to the daemon.
+#[derive(Debug, Clone, Default)]
+pub struct SessionVariables {
+    inner: Arc<Mutex<BTreeMap<String, serde_json::Value>>>,
+}
+
+impl SessionVariables {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, BTreeMap<String, serde_json::Value>> {
+        self.inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    pub fn get(&self, key: &str) -> Option<serde_json::Value> {
+        self.lock().get(key).cloned()
+    }
+
+    pub fn set(&self, key: &str, value: serde_json::Value) {
+        self.lock().insert(key.to_string(), value);
+    }
+
+    /// A copy of every pair, in key order.
+    pub fn snapshot(&self) -> BTreeMap<String, serde_json::Value> {
+        self.lock().clone()
+    }
+
+    /// Replace every pair at once. The daemon calls this with the persisted
+    /// map before the session's hooks run.
+    pub fn replace(&self, values: BTreeMap<String, serde_json::Value>) {
+        *self.lock() = values;
+    }
 }
 
 /// Session object with property access (returned by get_session())
@@ -288,10 +334,7 @@ impl UserData for Session {
             let json_val: serde_json::Value = lua.from_value(val).map_err(|_| {
                 mlua::Error::runtime("session variables must be JSON-serializable (cannot store functions, userdata, or recursive tables)")
             })?;
-            this.with_rpc(|r| {
-                r.set_variable(&key, json_val);
-                Ok(())
-            })
+            this.with_rpc(|r| r.set_variable(&key, json_val))
         });
 
         methods.add_method("get_variable", |lua, this, key: String| {
@@ -444,11 +487,12 @@ pub mod tests {
         fn mark_first_message_sent(&self) {
             *self.first_message_sent.write().unwrap() = true;
         }
-        fn set_variable(&self, key: &str, value: serde_json::Value) {
+        fn set_variable(&self, key: &str, value: serde_json::Value) -> Result<(), String> {
             self.variables
                 .write()
                 .unwrap()
                 .insert(key.to_string(), value);
+            Ok(())
         }
         fn get_variable(&self, key: &str) -> Option<serde_json::Value> {
             self.variables.read().unwrap().get(key).cloned()
@@ -710,6 +754,7 @@ mod unsupported_rpc_tests {
             ("model", rpc.switch_model("gpt-4o")),
             ("mode", rpc.set_mode("plan")),
             ("system_prompt", rpc.set_system_prompt("hi")),
+            ("variables", rpc.set_variable("k", serde_json::json!(1))),
         ] {
             let err = result.expect_err("{name}: a no-op setter must not report success");
             assert!(

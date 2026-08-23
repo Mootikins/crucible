@@ -132,10 +132,6 @@ pub struct Server {
     mcp_gateway: Option<Arc<tokio::sync::RwLock<McpGatewayManager>>>,
 }
 
-/// Session handle backing for contexts that only need identity, not the full
-/// config RPC surface (plugin lifecycle hooks, `lua.init_session`).
-pub(crate) use crucible_lua::UnsupportedSessionRpc as NoopSessionRpc;
-
 pub struct LuaSessionState {
     pub(crate) executor: LuaExecutor,
     /// Set to `true` after `on_session_end` hooks fire for this session.

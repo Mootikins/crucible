@@ -2,6 +2,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use super::agent::SessionAgent;
@@ -139,6 +140,14 @@ pub struct Session {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub isolation: Option<serde_json::Value>,
 
+    /// Plugin-owned key/value pairs, written by Lua `session:set_variable`.
+    ///
+    /// The daemon knows nothing about the keys. It persists them so a resumed
+    /// session reads back what a hook stored before the resume. Sorted so the
+    /// `meta.json` spelling is stable across saves.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub variables: BTreeMap<String, serde_json::Value>,
+
     /// The kiln set as it appears on disk: paths, in all three spellings a
     /// `meta.json` has ever used. See [`PersistedKilns`].
     #[serde(flatten)]
@@ -211,6 +220,7 @@ impl Session {
             archived: false,
             last_activity: Some(Utc::now()),
             isolation: None,
+            variables: BTreeMap::new(),
         }
     }
 

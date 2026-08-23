@@ -203,7 +203,7 @@ impl SessionLifecycle {
         if let Some(workspace) = &daemon_session.workspace {
             session = session.with_workspace(workspace.to_string_lossy());
         }
-        session.bind(Box::new(crate::server::NoopSessionRpc));
+        session.bind(Box::new(crucible_lua::UnsupportedSessionRpc));
         if let Err(e) = loader.fire_session_end(&session).await {
             tracing::warn!(session_id = %session_id, error = %e, "plugin session_end hooks failed");
         }
@@ -231,7 +231,7 @@ impl SessionLifecycle {
                 session = session.with_isolation(isolation);
             }
         }
-        session.bind(Box::new(crate::server::NoopSessionRpc));
+        session.bind(Box::new(crucible_lua::UnsupportedSessionRpc));
         loader.fire_session_start(&session).await
     }
 }

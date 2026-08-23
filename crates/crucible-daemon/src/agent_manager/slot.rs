@@ -51,6 +51,11 @@ pub(crate) struct SessionSlot {
     /// VM construction failed outright falls back to the raw globals, which is
     /// a different answer from "the VM ran and captured nothing".
     overrides: Mutex<Option<crucible_lua::SessionDefaultValues>>,
+    /// The live copy of the session's `session:set_variable` map. The VM
+    /// builder seeds it from the persisted session before the start hooks
+    /// run, so a hook that runs after a resume reads what it stored before.
+    /// `AgentManager::persist_session_variables` writes it back.
+    variables: crucible_lua::SessionVariables,
     /// A mode change deferred because the handle was busy serving a turn. The
     /// dispatch path *drains* this (take, not read) at the start of the next
     /// turn; `set_mode` is its only writer.
@@ -234,6 +239,11 @@ impl SessionSlot {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
+    }
+
+    /// The shared variable map; a clone reaches the Lua session object.
+    pub(crate) fn variables(&self) -> crucible_lua::SessionVariables {
+        self.variables.clone()
     }
 
     /// Record what `on_session_start` left in the session's scope.

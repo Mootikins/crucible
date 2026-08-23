@@ -45,7 +45,7 @@
 use mlua::{Lua, MetaMethod, Result as LuaResult, UserData, UserDataMethods, Value};
 use std::sync::{Arc, RwLock};
 
-use crate::session_api::{SessionConfigRpc, UnsupportedSessionRpc};
+use crate::session_api::{SessionConfigRpc, SessionVariables, UnsupportedSessionRpc};
 
 /// Session settings that carry a global default. Every field is `Option`
 /// because "unset" is meaningful: a `None` default leaves whatever the agent
@@ -200,11 +200,24 @@ impl UserData for SessionDefaults {
 /// ```
 pub struct SessionDefaultsRpc {
     store: SessionDefaults,
+    /// Where `session:set_variable` lands. `None` reports the knob as
+    /// unsupported, the same way the model knobs do.
+    variables: Option<SessionVariables>,
 }
 
 impl SessionDefaultsRpc {
     pub fn new(store: SessionDefaults) -> Self {
-        Self { store }
+        Self {
+            store,
+            variables: None,
+        }
+    }
+
+    /// Give `session:set_variable` and `session:get_variable` a store.
+    #[must_use]
+    pub fn with_variables(mut self, variables: SessionVariables) -> Self {
+        self.variables = Some(variables);
+        self
     }
 }
 
@@ -271,10 +284,18 @@ impl SessionConfigRpc for SessionDefaultsRpc {
 
     fn mark_first_message_sent(&self) {}
 
-    fn set_variable(&self, _key: &str, _value: serde_json::Value) {}
+    fn set_variable(&self, key: &str, value: serde_json::Value) -> Result<(), String> {
+        match &self.variables {
+            Some(variables) => {
+                variables.set(key, value);
+                Ok(())
+            }
+            None => UnsupportedSessionRpc.set_variable(key, value),
+        }
+    }
 
-    fn get_variable(&self, _key: &str) -> Option<serde_json::Value> {
-        None
+    fn get_variable(&self, key: &str) -> Option<serde_json::Value> {
+        self.variables.as_ref().and_then(|v| v.get(key))
     }
 
     fn notify(&self, _notification: crucible_core::types::Notification) {}

@@ -49,6 +49,7 @@ impl AgentManager {
         // for one documented field that disagreed would be worse than the field
         // not existing on one of them.
         let daemon_session = self.session_manager.get_session(session_id);
+        let variables = self.slot(session_id).variables();
         let mut lua_session = crucible_lua::Session::new(session_id.to_string());
         if let Some(daemon_session) = daemon_session {
             // Only when there IS one: `session.workspace` reads `nil` in
@@ -59,10 +60,13 @@ impl AgentManager {
             if let Some(isolation) = daemon_session.isolation {
                 lua_session = lua_session.with_isolation(isolation);
             }
+            // Seed before the hooks run, so `get_variable` reads what an
+            // earlier life of this session stored.
+            variables.replace(daemon_session.variables);
         }
-        lua_session.bind(Box::new(crucible_lua::SessionDefaultsRpc::new(
-            scope.clone(),
-        )));
+        lua_session.bind(Box::new(
+            crucible_lua::SessionDefaultsRpc::new(scope.clone()).with_variables(variables),
+        ));
 
         for key in &hooks {
             match lua.registry_value::<mlua::Function>(key) {
@@ -226,6 +230,7 @@ impl AgentManager {
         scope.set(self.session_defaults.get());
         self.fire_session_start_hooks(&lua, session_id, &scope);
         self.slot(session_id).set_overrides(scope.get());
+        self.schedule_variable_persist(session_id);
 
         Arc::new(Mutex::new(SessionEventState {
             lua,
@@ -234,6 +239,33 @@ impl AgentManager {
             permission_functions,
             spill_counter: std::sync::atomic::AtomicU32::new(1),
         }))
+    }
+
+    /// Persist the variables a start hook stored, from the synchronous VM
+    /// builder. The Lua setter is synchronous and storage is not, so the map
+    /// lives on the slot and reaches `meta.json` from this task. A builder
+    /// that runs outside a runtime (a unit test) leaves the map on the slot;
+    /// `configure_agent` merges it with its own save.
+    fn schedule_variable_persist(&self, session_id: &str) {
+        let slot = self.slot(session_id);
+        let stored = self
+            .session_manager
+            .get_session(session_id)
+            .map(|s| s.variables)
+            .unwrap_or_default();
+        if slot.variables().snapshot() == stored {
+            return;
+        }
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let session_manager = Arc::clone(&self.session_manager);
+        let session_id = session_id.to_string();
+        handle.spawn(async move {
+            if let Err(e) = persist_variables(&session_manager, &slot, &session_id).await {
+                warn!(session_id = %session_id, error = %e, "Could not persist session variables");
+            }
+        });
     }
 
     fn apply_session_defaults(&self, session_id: &str, mut agent: SessionAgent) -> SessionAgent {
@@ -283,6 +315,9 @@ impl AgentManager {
 
         let agent = self.apply_session_defaults(session_id, agent);
         session.agent = Some(agent.clone());
+        // The VM may just have run the start hooks; save what they stored
+        // with this write instead of racing the scheduled one.
+        session.variables = self.slot(session_id).variables().snapshot();
 
         self.session_manager
             .update_session(&session)
@@ -298,4 +333,25 @@ impl AgentManager {
 
         Ok(())
     }
+}
+
+/// Copy the slot's variable map into the session and save it. A no-op when
+/// the session already holds the same map.
+async fn persist_variables(
+    session_manager: &SessionManager,
+    slot: &slot::SessionSlot,
+    session_id: &str,
+) -> Result<(), AgentError> {
+    let mut session = session_manager
+        .get_session(session_id)
+        .ok_or_else(|| AgentError::SessionNotFound(session_id.to_string()))?;
+    let variables = slot.variables().snapshot();
+    if session.variables == variables {
+        return Ok(());
+    }
+    session.variables = variables;
+    session_manager
+        .update_session(&session)
+        .await
+        .map_err(AgentError::Session)
 }
