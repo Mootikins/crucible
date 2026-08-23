@@ -551,9 +551,10 @@ impl CrucibleMcpServer {
                 "delegation_id": spawned.delegation_id,
                 "child_session_id": spawned.child_session_id,
                 "status": "completed",
-                "result": crucible_core::background::truncate(
+                "result": crucible_core::text::truncate_chars(
                     &result.output.unwrap_or_default(),
                     delegation.result_max_bytes,
+                    true,
                 ),
             })
         } else {

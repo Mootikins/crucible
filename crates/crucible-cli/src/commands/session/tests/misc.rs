@@ -1,6 +1,7 @@
-use super::super::helpers::{resolve_send_inputs, resolve_session_id, truncate};
+use super::super::helpers::{resolve_send_inputs, resolve_session_id};
 use super::env_lock;
 use crucible_core::test_support::EnvVarGuard;
+use crucible_core::text::truncate_chars;
 
 #[test]
 fn session_id_resolver_explicit_wins_over_env() {
@@ -92,9 +93,9 @@ fn resolve_send_inputs_single_positional_without_env_uses_stdin_for_message() {
 }
 
 #[test]
-fn test_truncate() {
-    assert_eq!(truncate("hello", 10), "hello");
-    assert_eq!(truncate("hello world", 5), "hello...");
+fn truncate_marks_a_cut_with_one_ellipsis_glyph_inside_the_budget() {
+    assert_eq!(truncate_chars("hello", 10, true), "hello");
+    assert_eq!(truncate_chars("hello world", 5, true), "hell\u{2026}");
 }
 
 #[test]

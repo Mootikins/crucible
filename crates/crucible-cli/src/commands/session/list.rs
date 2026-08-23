@@ -1,8 +1,8 @@
-use super::helpers::truncate;
 use super::io::{list_session_dirs, read_session_events, sessions_dir};
 use crate::common::daemon_client;
 use crate::config::CliConfig;
 use anyhow::{anyhow, Result};
+use crucible_core::text::truncate_chars;
 use crucible_daemon::{LogEvent, SessionId, SessionType};
 
 pub(super) async fn list(
@@ -127,7 +127,7 @@ pub(super) async fn list_persisted(
                 let title = events
                     .iter()
                     .find_map(|e| match e {
-                        LogEvent::User { content, .. } => Some(truncate(content, 50)),
+                        LogEvent::User { content, .. } => Some(truncate_chars(content, 50, true)),
                         _ => None,
                     })
                     .unwrap_or_else(|| "(empty)".to_string());

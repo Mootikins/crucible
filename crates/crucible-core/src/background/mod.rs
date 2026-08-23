@@ -4,9 +4,7 @@
 
 mod types;
 
-pub use types::{
-    generate_job_id, truncate, JobError, JobId, JobInfo, JobKind, JobResult, JobStatus,
-};
+pub use types::{generate_job_id, JobError, JobId, JobInfo, JobKind, JobResult, JobStatus};
 
 use async_trait::async_trait;
 use std::path::PathBuf;

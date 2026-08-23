@@ -72,11 +72,3 @@ pub(super) fn resolve_send_inputs(
 
     (session_id_pos, message, false)
 }
-
-pub(super) fn truncate(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else {
-        format!("{}...", s.chars().take(max_len).collect::<String>())
-    }
-}

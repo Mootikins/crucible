@@ -1,6 +1,6 @@
-use super::helpers::truncate;
 use crate::config::CliConfig;
 use anyhow::{anyhow, Result};
+use crucible_core::text::truncate_chars;
 use crucible_daemon::{FileSessionStorage, LogEvent};
 use std::path::PathBuf;
 use tokio::fs;
@@ -88,7 +88,7 @@ pub(super) fn display_events_text(id: &str, events: &[LogEvent]) {
     for event in events {
         match event {
             LogEvent::System { content, .. } => {
-                println!("[system] {}", truncate(content, 100));
+                println!("[system] {}", truncate_chars(content, 100, true));
             }
             LogEvent::User { content, .. } => {
                 println!("\n[user]\n{}\n", content);
@@ -119,7 +119,7 @@ pub(super) fn display_events_text(id: &str, events: &[LogEvent]) {
                 println!("[init] session={}, model={}", session_id, model_str);
             }
             LogEvent::Thinking { content, .. } => {
-                println!("[thinking] {}", truncate(content, 100));
+                println!("[thinking] {}", truncate_chars(content, 100, true));
             }
             LogEvent::SubagentSpawned {
                 id, session_link, ..
@@ -136,7 +136,7 @@ pub(super) fn display_events_text(id: &str, events: &[LogEvent]) {
                     "[subagent:{}] {} -> {}",
                     id,
                     session_link,
-                    truncate(summary, 60)
+                    truncate_chars(summary, 60, true)
                 );
             }
             LogEvent::SubagentFailed {
@@ -149,7 +149,7 @@ pub(super) fn display_events_text(id: &str, events: &[LogEvent]) {
                     "[subagent:{}] {} FAILED: {}",
                     id,
                     session_link,
-                    truncate(error, 60)
+                    truncate_chars(error, 60, true)
                 );
             }
         }

@@ -1,3 +1,4 @@
+use crate::text::truncate_chars;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -47,8 +48,8 @@ impl JobKind {
 
     pub fn summary(&self) -> String {
         match self {
-            JobKind::Subagent { prompt, .. } => truncate(prompt, 80),
-            JobKind::Bash { command, .. } => truncate(command, 80),
+            JobKind::Subagent { prompt, .. } => truncate_chars(prompt, 80, true),
+            JobKind::Bash { command, .. } => truncate_chars(command, 80, true),
         }
     }
 }
@@ -56,8 +57,12 @@ impl JobKind {
 impl fmt::Display for JobKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            JobKind::Subagent { prompt, .. } => write!(f, "subagent: {}", truncate(prompt, 50)),
-            JobKind::Bash { command, .. } => write!(f, "bash: {}", truncate(command, 50)),
+            JobKind::Subagent { prompt, .. } => {
+                write!(f, "subagent: {}", truncate_chars(prompt, 50, true))
+            }
+            JobKind::Bash { command, .. } => {
+                write!(f, "bash: {}", truncate_chars(command, 50, true))
+            }
         }
     }
 }
@@ -212,7 +217,7 @@ impl JobResult {
 
     pub fn truncated_output(&self, max_len: usize) -> String {
         match &self.output {
-            Some(out) => truncate(out, max_len),
+            Some(out) => truncate_chars(out, max_len, true),
             None => String::new(),
         }
     }
@@ -237,21 +242,6 @@ pub enum JobError {
 
     #[error("Job limit exceeded for session")]
     LimitExceeded,
-}
-
-pub fn truncate(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        return s.to_string();
-    }
-
-    let target_len = max_len.saturating_sub(3);
-    let mut end = target_len.min(s.len());
-
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
-    }
-
-    format!("{}...", &s[..end])
 }
 
 #[cfg(test)]
@@ -282,11 +272,12 @@ mod tests {
         };
 
         let summary = subagent.summary();
-        assert!(
-            summary.len() <= 83,
-            "summary should be at most 80 chars + ellipsis"
+        assert_eq!(
+            summary.chars().count(),
+            80,
+            "the summary fits the 80-char budget with its ellipsis"
         );
-        assert!(summary.ends_with("..."));
+        assert!(summary.ends_with('\u{2026}'));
     }
 
     #[test]
@@ -392,8 +383,8 @@ mod tests {
         let result = JobResult::success(info, long_output);
 
         let truncated = result.truncated_output(100);
-        assert!(truncated.len() <= 100);
-        assert!(truncated.ends_with("..."));
+        assert_eq!(truncated.chars().count(), 100);
+        assert!(truncated.ends_with('\u{2026}'));
     }
 
     #[test]
@@ -429,33 +420,5 @@ mod tests {
             let parsed: JobStatus = serde_json::from_str(&json).unwrap();
             assert_eq!(status, parsed);
         }
-    }
-
-    #[test]
-    fn truncate_short_string_unchanged() {
-        assert_eq!(truncate("hello", 10), "hello");
-    }
-
-    #[test]
-    fn truncate_long_string_adds_ellipsis() {
-        let result = truncate("hello world", 8);
-        assert_eq!(result, "hello...");
-    }
-
-    #[test]
-    fn truncate_handles_multibyte_utf8() {
-        let result = truncate("こんにちは世界", 10);
-        assert!(result.ends_with("..."));
-        assert!(result.len() <= 13);
-    }
-
-    #[test]
-    fn truncate_empty_string() {
-        assert_eq!(truncate("", 10), "");
-    }
-
-    #[test]
-    fn truncate_exact_length() {
-        assert_eq!(truncate("hello", 5), "hello");
     }
 }

@@ -132,7 +132,7 @@ impl BackgroundJobManager {
                 events::BASH_COMPLETED,
                 serde_json::json!({
                     "job_id": job_id,
-                    "output": truncate(output, 1000),
+                    "output": crucible_core::text::truncate_chars(output, 1000, true),
                     "exit_code": result.exit_code,
                 }),
             )

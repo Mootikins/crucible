@@ -576,7 +576,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
                                         .and_then(|v| v.as_str());
                                     let result_brief = match error_str {
                                         Some(e) => {
-                                            crucible_core::background::truncate(e, max_result)
+                                            crucible_core::text::truncate_chars(e, max_result, true)
                                         }
                                         None => truncate_json_preview(result_data, max_result),
                                     };
@@ -882,7 +882,7 @@ fn parse_comment_spec(
 }
 
 fn truncate_json_preview(val: Option<&serde_json::Value>, max_len: usize) -> String {
-    val.map(|v| crucible_core::background::truncate(&v.to_string(), max_len))
+    val.map(|v| crucible_core::text::truncate_chars(&v.to_string(), max_len, true))
         .unwrap_or_default()
 }
 

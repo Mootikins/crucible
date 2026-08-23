@@ -3,6 +3,7 @@
 use crate::ansi::{apply_style, visible_width};
 
 use crate::style::Style;
+use crate::utils::truncate_to_chars;
 use textwrap::{wrap, Options, WordSplitter};
 
 /// Wraps text to a given width, applies a style, and pads each line to fill
@@ -89,24 +90,6 @@ pub(crate) fn select_spinner_frame(frame: usize, frames: Option<&'static [char]>
         .unwrap_or('⠋')
 }
 
-/// Truncates text to a maximum character count, appending an ellipsis if truncated.
-///
-/// # Arguments
-/// - `input`: The text to truncate
-/// - `max_chars`: The maximum number of characters (including the ellipsis)
-///
-/// # Returns
-/// The input text if it fits within `max_chars`, or the first `max_chars - 1` characters
-/// followed by an ellipsis (U+2026) if truncation is needed.
-pub(crate) fn truncate_with_ellipsis(input: &str, max_chars: usize) -> String {
-    if input.chars().count() > max_chars && max_chars > 1 {
-        let s: String = input.chars().take(max_chars - 1).collect();
-        format!("{}\u{2026}", s)
-    } else {
-        input.to_string()
-    }
-}
-
 /// Formats a single popup item line (unstyled) with the standard layout:
 /// `[indicator] [kind] [label]  [description]` padded to `width`.
 ///
@@ -146,7 +129,7 @@ pub(crate) fn format_popup_item_line(
 
     let prefix_width = visible_width(&line);
     let max_label_width = width.saturating_sub(prefix_width + 2);
-    let label_text = truncate_with_ellipsis(label, max_label_width);
+    let label_text = truncate_to_chars(label, max_label_width, true);
     line.push_str(&label_text);
 
     let label_width = visible_width(&line);
@@ -154,7 +137,7 @@ pub(crate) fn format_popup_item_line(
     if let Some(desc) = description {
         let available = width.saturating_sub(label_width + 3);
         if available > 10 {
-            let truncated = truncate_with_ellipsis(desc, available);
+            let truncated = truncate_to_chars(desc, available, true);
 
             line.push_str("  ");
             line.push_str(&truncated);

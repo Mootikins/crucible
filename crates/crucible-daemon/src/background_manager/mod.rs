@@ -29,9 +29,7 @@ use crate::event_emitter::emit_event;
 use crate::protocol::SessionEventMessage;
 use async_trait::async_trait;
 
-use crucible_core::background::{
-    truncate, BackgroundSpawner, JobError, JobId, JobInfo, JobKind, JobResult,
-};
+use crucible_core::background::{BackgroundSpawner, JobError, JobId, JobInfo, JobKind, JobResult};
 use dashmap::DashMap;
 use std::path::PathBuf;
 use std::sync::Arc;

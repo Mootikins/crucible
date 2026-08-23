@@ -19,8 +19,9 @@ use crate::protocol::SessionEventMessage;
 use crate::session_lifecycle::SessionLifecycle;
 use crate::session_manager::SessionManager;
 use async_trait::async_trait;
-use crucible_core::background::{truncate, JobError, JobInfo, JobKind, JobResult};
+use crucible_core::background::{JobError, JobInfo, JobKind, JobResult};
 use crucible_core::session::SessionAgent;
+use crucible_core::text::truncate_chars;
 use dashmap::DashMap;
 use std::sync::{Arc, OnceLock, Weak};
 use std::time::Duration;
@@ -288,7 +289,7 @@ impl DelegationService {
                 serde_json::json!({
                     "delegation_id": delegation_id,
                     "child_session_id": delegation_id,
-                    "result_summary": truncate(result.output.as_deref().unwrap_or(""), 500),
+                    "result_summary": truncate_chars(result.output.as_deref().unwrap_or(""), 500, true),
                     "parent_session_id": parent_id,
                 }),
             )
@@ -466,7 +467,7 @@ impl DelegationSpawner for DelegationService {
         let title = req
             .description
             .clone()
-            .unwrap_or_else(|| truncate(&req.prompt, 60));
+            .unwrap_or_else(|| truncate_chars(&req.prompt, 60, true));
         let child = self
             .session_manager
             .create_child_session(&parent, child_agent, Some(title))
@@ -508,7 +509,7 @@ impl DelegationSpawner for DelegationService {
                 serde_json::json!({
                     "delegation_id": child.id,
                     "child_session_id": child.id,
-                    "prompt": truncate(&req.prompt, 100),
+                    "prompt": truncate_chars(&req.prompt, 100, true),
                     "target_agent": req.target_agent,
                     "parent_session_id": parent.id,
                 }),

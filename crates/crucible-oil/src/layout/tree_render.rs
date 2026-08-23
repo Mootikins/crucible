@@ -11,12 +11,11 @@
 
 use crate::ansi::apply_style;
 use crate::cell_grid::CellGrid;
-use crate::utils::visible_width;
+use crate::utils::{truncate_to_chars, visible_width};
 
 use crate::render::CursorInfo;
 use crate::render_helpers::{
-    format_popup_item_line, select_spinner_frame, truncate_with_ellipsis,
-    wrap_and_style_padded_clamped,
+    format_popup_item_line, select_spinner_frame, wrap_and_style_padded_clamped,
 };
 use crate::style::{Border, Style};
 
@@ -290,7 +289,7 @@ fn render_popup(
             let bg = if is_selected { selected_bg } else { popup_bg };
             let label_w = visible_width(&item.label);
             let line = if label_w + 2 > box_w {
-                format!(" {}", truncate_with_ellipsis(&item.label, box_w - 1))
+                format!(" {}", truncate_to_chars(&item.label, box_w - 1, true))
             } else {
                 format!(" {}{}", item.label, " ".repeat(box_w - label_w - 1))
             };
