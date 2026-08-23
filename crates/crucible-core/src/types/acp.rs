@@ -13,7 +13,8 @@
 //!
 //! ## Organization
 //!
-//! - **Tool types**: ToolCallInfo, FileDiff (see traits::tools for ToolDefinition)
+//! - **Tool types**: ToolCallInfo (the ACP client builds it), FileDiff (TurnEvent::ToolCall carries it).
+//!   ToolDefinition lives in traits::tools.
 
 use serde::{Deserialize, Serialize};
 
@@ -149,21 +150,5 @@ impl FileDiff {
             old_content: old,
             new_content: new.into(),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_tool_definition_from_traits() {
-        use crate::traits::tools::ToolDefinition;
-
-        let tool = ToolDefinition::new("test_tool", "A test tool")
-            .with_category("test")
-            .with_permission("read:notes");
-
-        assert_eq!(tool.name, "test_tool");
-        assert_eq!(tool.category, Some("test".to_string()));
-        assert_eq!(tool.required_permissions, vec!["read:notes"]);
     }
 }

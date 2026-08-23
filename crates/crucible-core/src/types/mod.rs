@@ -6,7 +6,7 @@
 //! ## Organization
 //!
 //! Domain types are currently defined in their respective modules:
-//! - ACP types: `acp` (ToolCallInfo, FileDiff)
+//! - ACP types: `acp` (ToolCallInfo, FileDiff); callers import them by the `types::acp` path
 //! - Parser types: `parser::types` (ParsedNote, Wikilink, Tag, etc.)
 //! - Database types: `types::database` (SearchResult, DocumentId, Record, etc.)
 //! - Hash type: `parser::types::BlockHash`, the one content hash
@@ -32,10 +32,6 @@ pub use crate::parser::types::{
 
 // Re-export database domain types (canonical definitions in types::database)
 pub use self::database::{DocumentId, QueryResult, Record, RecordId, SearchResult};
-
-// Re-export ACP types
-// NOTE: ToolDescriptor and ToolExample removed - use ToolDefinition from traits::tools
-pub use crate::types::acp::{FileDiff, ToolCallInfo};
 
 // Re-export ACP schema types from agent-client-protocol-schema
 pub use crate::types::acp::schema::{

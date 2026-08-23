@@ -12,8 +12,6 @@
 use crate::acp::Result;
 
 use crucible_core::types::acp::FileDiff;
-// Re-export ToolCallInfo from core for backwards compatibility
-pub use crucible_core::types::acp::ToolCallInfo;
 
 /// A streaming chunk from an ACP agent.
 ///
