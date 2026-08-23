@@ -54,6 +54,7 @@ pub use crucible_oil::node::*;
 pub use crucible_oil::overlay::{composite_overlays, Overlay, OverlayAnchor};
 pub use crucible_oil::planning::{FramePlan, FramePlanner, FrameSnapshot};
 pub use crucible_oil::render::*;
+#[cfg(any(test, feature = "test-utils"))]
 pub use crucible_oil::runtime::TestRuntime;
 pub use crucible_oil::style::*;
 pub use crucible_oil::terminal::Terminal;

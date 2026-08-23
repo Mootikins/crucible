@@ -77,8 +77,8 @@ pub struct UiGeometry {
 // Borders
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Parse a border from a preset name. The names are the theme `border_style`
-/// names, so one vocabulary serves both surfaces.
+/// Parse a border from a preset name. The names are the `BorderStyle` names,
+/// so one vocabulary serves every surface.
 fn border_from_name(s: &str) -> Option<Border> {
     match BorderStyle::from_name(s) {
         Some(style) => style.to_border(),
@@ -396,8 +396,8 @@ mod tests {
         assert_eq!(g.popup.border, Some(Border::Rounded));
     }
 
-    /// The geometry border names are the theme `border_style` names, so a
-    /// theme author uses one vocabulary for both.
+    /// The geometry border names are the `BorderStyle` names, so a theme
+    /// author uses one vocabulary for every surface.
     #[test]
     fn the_ascii_border_style_resolves_to_plus_and_dash_cells() {
         let g = setup(r#"return { popup = { border = "ascii" } }"#);

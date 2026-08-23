@@ -68,7 +68,9 @@ pub use render::{
     render_to_plain_text, render_to_string, render_tree, render_with_cursor, CursorInfo,
     RenderResult, NATURAL_HEIGHT,
 };
-pub use runtime::{FrameRenderer, TestRuntime};
+pub use runtime::FrameRenderer;
+#[cfg(any(test, feature = "test-utils"))]
+pub use runtime::TestRuntime;
 pub use style::{AlignItems, Border, Color, Gap, JustifyContent, Padding, Style};
 pub use terminal::Terminal;
 

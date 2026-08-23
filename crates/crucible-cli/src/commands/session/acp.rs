@@ -104,6 +104,17 @@ async fn is_known_acp_profile(client: &DaemonClient, name: &str) -> bool {
         .is_ok_and(|v| !v.is_null())
 }
 
+/// The `--raw` line for one session event. The keys match the wire message
+/// (`SessionEventMessage`), so a reader of `cru session send --raw` and a
+/// reader of the RPC stream parse the same shape.
+fn raw_event_json(event: &crucible_daemon::rpc_client::SessionEvent) -> serde_json::Value {
+    serde_json::json!({
+        "session_id": event.session_id,
+        "event": event.event,
+        "data": event.data,
+    })
+}
+
 /// Print one session event the way `send` and `replay` show it: raw JSON on
 /// stdout, or a short human line. Returns `false` when the event type has no
 /// shared rendering, so the caller prints its own `ended` and fallback lines.
@@ -111,14 +122,7 @@ fn print_event(event: &crucible_daemon::rpc_client::SessionEvent, raw: bool) -> 
     use std::io::Write;
 
     if raw {
-        println!(
-            "{}",
-            serde_json::json!({
-                "session_id": event.session_id,
-                "event_type": event.event,
-                "data": event.data,
-            })
-        );
+        println!("{}", raw_event_json(event));
         return true;
     }
 
@@ -668,7 +672,7 @@ pub(super) mod rpc {
 #[cfg(test)]
 mod tests {
     use super::rpc::configured_agent;
-    use super::{agent_type_for, annotate_unknown_agent, wants_bare_id};
+    use super::{agent_type_for, annotate_unknown_agent, raw_event_json, wants_bare_id};
     use crate::config::CliConfig;
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
 
@@ -806,5 +810,26 @@ mod tests {
     fn quiet_wins_over_a_named_format() {
         assert!(wants_bare_id(true, true, "json"));
         assert!(wants_bare_id(true, false, "json"));
+    }
+
+    /// `--raw` output keys the event name as `event`, the same key the wire
+    /// message uses. The old key `event_type` must not come back.
+    #[test]
+    fn raw_output_uses_the_wire_key_event() {
+        let event = crucible_daemon::rpc_client::SessionEvent::new(
+            "s1",
+            "text_delta",
+            serde_json::json!({ "content": "hi" }),
+        );
+        let line = raw_event_json(&event);
+        assert_eq!(
+            line,
+            serde_json::json!({
+                "session_id": "s1",
+                "event": "text_delta",
+                "data": { "content": "hi" },
+            })
+        );
+        assert!(line.get("event_type").is_none());
     }
 }

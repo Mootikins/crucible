@@ -18,8 +18,8 @@
 //! added to [`ThemeColors`] cannot be silently dropped from one side only.
 
 use crate::theme::{
-    BorderStyle, StatusBarPosition, ThemeColors, ThemeConfig, ThemeDecorations, ThemeIcons,
-    ThemeLayout, ThemeSpinnerStyle,
+    StatusBarPosition, ThemeColors, ThemeConfig, ThemeDecorations, ThemeIcons, ThemeLayout,
+    ThemeSpinnerStyle,
 };
 use crucible_oil::style::{AdaptiveColor, Color};
 use serde_json::{json, Map, Value};
@@ -221,17 +221,6 @@ string_wire!(
 // Enum names
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn border_style_name(s: BorderStyle) -> &'static str {
-    match s {
-        BorderStyle::Rounded => "rounded",
-        BorderStyle::Sharp => "sharp",
-        BorderStyle::Double => "double",
-        BorderStyle::Thick => "thick",
-        BorderStyle::Ascii => "ascii",
-        BorderStyle::Hidden => "hidden",
-    }
-}
-
 fn spinner_name(s: ThemeSpinnerStyle) -> &'static str {
     match s {
         ThemeSpinnerStyle::Braille => "braille",
@@ -256,10 +245,6 @@ fn status_bar_position_name(p: StatusBarPosition) -> &'static str {
 
 fn decorations_to_wire(d: &ThemeDecorations) -> Value {
     let mut m = decoration_strings_to_wire(d);
-    m.insert(
-        "border_style".to_string(),
-        Value::String(border_style_name(d.border_style).to_string()),
-    );
     // Single chars ride as one-char strings; JSON has no char type.
     m.insert(
         "half_block_top".to_string(),
@@ -276,13 +261,6 @@ fn decorations_from_wire(v: &Value) -> ThemeDecorations {
     let mut d = ThemeDecorations::default();
     decoration_strings_from_wire(v, &mut d);
     let Some(m) = v.as_object() else { return d };
-    if let Some(style) = m
-        .get("border_style")
-        .and_then(Value::as_str)
-        .and_then(BorderStyle::from_name)
-    {
-        d.border_style = style;
-    }
     if let Some(c) = m
         .get("half_block_top")
         .and_then(Value::as_str)

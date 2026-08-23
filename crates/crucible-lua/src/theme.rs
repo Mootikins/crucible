@@ -197,14 +197,12 @@ impl Default for ThemeColors {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ThemeDecorations — border style, indicator chars, icons
+// ThemeDecorations — indicator chars, icons
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Visual decoration tokens: borders, indicators, and icon characters.
+/// Visual decoration tokens: indicators and icon characters.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ThemeDecorations {
-    /// Border drawing style for panels and popups
-    pub border_style: BorderStyle,
     /// Left-edge indicator for user messages
     pub message_user_indicator: String,
     /// Left-edge indicator for assistant messages
@@ -234,7 +232,6 @@ pub struct ThemeDecorations {
 impl Default for ThemeDecorations {
     fn default() -> Self {
         Self {
-            border_style: BorderStyle::Rounded,
             message_user_indicator: "▌".to_string(),
             message_assistant_indicator: " ".to_string(),
             tool_pending_icon: "●".to_string(),
@@ -331,8 +328,8 @@ impl ThemeSpinnerStyle {
 
 /// Border drawing style for panels, popups, and input areas.
 ///
-/// This is a theme-level abstraction over `crucible_oil::style::Border`.
-/// Maps to oil's `Border` enum for actual character rendering.
+/// The names are the border presets that `ui_geometry` parses from Lua.
+/// `ui_geometry::border_from_name` maps each name to oil's `Border` enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BorderStyle {
     /// Rounded corners: ╭ ╮ ╰ ╯
@@ -882,12 +879,6 @@ impl ThemeColors {
 
 impl ThemeDecorations {
     fn apply_table(&mut self, table: &Table) {
-        if let Ok(s) = table.get::<String>("border_style") {
-            match BorderStyle::from_name(&s) {
-                Some(style) => self.border_style = style,
-                None => warn!("Unknown border_style '{}', using default", s),
-            }
-        }
         parse_string_field!(table, self, message_user_indicator);
         parse_string_field!(table, self, message_assistant_indicator);
         parse_string_field!(table, self, tool_pending_icon);
@@ -1212,9 +1203,9 @@ mod tests {
 
     #[test]
     fn test_decorations_parsing() {
-        let lua = r#"return { decorations = { border_style = "sharp", bullet_char = "*" } }"#;
+        let lua = r#"return { decorations = { divider_char = "=", bullet_char = "*" } }"#;
         let config = load_theme_from_lua(lua).expect("decorations should parse");
-        assert_eq!(config.decorations.border_style, BorderStyle::Sharp);
+        assert_eq!(config.decorations.divider_char, "=");
         assert_eq!(config.decorations.bullet_char, "*");
         // Default preserved
         assert_eq!(config.decorations.check_char, "✓");
@@ -1302,10 +1293,6 @@ mod tests {
 
         // Decorations
         assert_eq!(
-            config.decorations.border_style,
-            dark.decorations.border_style
-        );
-        assert_eq!(
             config.decorations.message_user_indicator,
             dark.decorations.message_user_indicator
         );
@@ -1336,8 +1323,8 @@ mod tests {
             default.resolve_color(default.colors.primary),
             "opencode primary should differ from default"
         );
-        // border_style should be sharp
-        assert_eq!(theme.decorations.border_style, BorderStyle::Sharp);
+        // The opencode theme sets its own divider character.
+        assert_eq!(theme.decorations.divider_char, "─");
     }
     #[test]
     fn default_lua_matches_default_dark() {

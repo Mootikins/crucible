@@ -81,7 +81,6 @@ return {
   },
 
   decorations = {
-    border_style                 = "rounded",  -- Border drawing style
     message_user_indicator       = "▌",        -- Left-edge indicator for user messages
     message_assistant_indicator  = " ",        -- Left-edge indicator for assistant messages
     tool_pending_icon            = "●",        -- Icon for pending tool calls

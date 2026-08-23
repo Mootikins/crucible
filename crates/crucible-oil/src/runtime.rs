@@ -1,5 +1,6 @@
 use crate::node::Node;
 use crate::planning::Graduation;
+#[cfg(any(test, feature = "test-utils"))]
 use crate::terminal::Terminal;
 
 /// Shared interface for rendering a frame. Implemented by Terminal<W> for all
@@ -17,9 +18,12 @@ pub trait FrameRenderer {
 
 /// Test runtime wrapping `Terminal<Vec<u8>>`.
 ///
+/// Tests only: the production binary never renders into a buffer.
+///
 /// Delegates to the real `Terminal` implementation — same escape sequence
 /// generation, cursor math, and viewport diff logic as the production TUI.
 /// The only additions are convenience methods for test assertions.
+#[cfg(any(test, feature = "test-utils"))]
 pub struct TestRuntime {
     terminal: Terminal<Vec<u8>>,
     /// Accumulated graduation content (rendered strings, not escape sequences).
@@ -27,6 +31,7 @@ pub struct TestRuntime {
     stdout_buffer: String,
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 impl TestRuntime {
     pub fn new(width: u16, height: u16) -> Self {
         Self {
@@ -93,6 +98,7 @@ impl TestRuntime {
     }
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 impl FrameRenderer for TestRuntime {
     fn render_frame(&mut self, tree: &Node, graduation: Option<&Graduation>) {
         self.render_with_graduation(tree, graduation);

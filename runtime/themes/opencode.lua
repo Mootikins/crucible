@@ -80,7 +80,6 @@ return {
   },
 
   decorations = {
-    border_style                 = "sharp",   -- Key visual difference from default's "rounded"
     message_user_indicator       = "▌",        -- Left-edge indicator for user messages
     message_assistant_indicator  = " ",        -- Left-edge indicator for assistant messages
     tool_pending_icon            = "●",        -- Icon for pending tool calls
