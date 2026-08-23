@@ -80,8 +80,8 @@ pub use config::{
 };
 pub use config::{LOCATION_CONFIG_KEYS, SETTINGS_CONFIG_KEYS};
 pub use credentials::{
-    resolve_api_key, CredentialError, CredentialResult, CredentialSource, ProviderSecrets,
-    SecretsFile, SecretsFileContent,
+    discover_credentials, resolve_api_key, CredentialError, CredentialResult, CredentialSource,
+    DiscoveredCredential, ProviderSecrets, SecretsFile, SecretsFileContent,
 };
 pub use enrichment::{
     default_max_precognition_chars, BurnBackendConfig, BurnEmbedConfig, CohereConfig, CustomConfig,

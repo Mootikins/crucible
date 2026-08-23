@@ -106,11 +106,11 @@ default = "anthropic"
 
 [llm.providers.anthropic]
 type = "anthropic"
-default_model = "claude-3-5-sonnet-20241022"
+default_model = "claude-sonnet-5"
 api_key = "{env:ANTHROPIC_API_KEY}"
 ```
 
-Defaults to `claude-3-5-sonnet-20241022` on `https://api.anthropic.com/v1` if not specified. Available models depend on your account. Run `cru models` to see the current list.
+Defaults to `claude-sonnet-5` on `https://api.anthropic.com/v1` if not specified. Available models depend on your account. Run `cru models` to see the current list.
 
 **Environment variable:**
 ```bash
@@ -190,7 +190,7 @@ api_key = "{env:OPENAI_API_KEY}"
 
 [llm.providers.claude]
 type = "anthropic"
-default_model = "claude-3-5-sonnet-20241022"
+default_model = "claude-sonnet-5"
 api_key = "{env:ANTHROPIC_API_KEY}"
 ```
 

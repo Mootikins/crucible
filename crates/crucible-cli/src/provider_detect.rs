@@ -10,50 +10,37 @@
 //! also run daemon-side — see
 //! `crucible_daemon::agent_manager::context_length::fetch_model_context_length`.
 
-use crucible_core::config::credentials::{env_var_for_provider, CredentialSource, SecretsFile};
+use crucible_core::config::credentials::{discover_credentials, CredentialSource, SecretsFile};
 use crucible_core::config::{
     ollama_endpoint_from_env, BackendType, ChatConfig, DEFAULT_OLLAMA_ENDPOINT,
 };
+use crucible_core::types::ProviderInfo;
 
-/// A detected provider with availability info
+/// A provider `cru init` found, with where its credential came from.
+///
+/// The daemon describes a provider with [`ProviderInfo`]. This is the same
+/// record, seen before the daemon runs, plus the credential source that
+/// ranks the entries. `Deref` gives callers the `ProviderInfo` fields.
 #[derive(Debug, Clone)]
 pub struct DetectedProvider {
-    pub name: String,
-    pub provider_type: String,
-    pub available: bool,
-    pub reason: String,
-    pub default_model: Option<String>,
+    pub info: ProviderInfo,
     pub source: Option<CredentialSource>,
 }
 
-/// Whether a credential for `provider` exists, and where it came from.
-///
-/// The store is a parameter so callers — and tests — say which one they mean:
-/// the default `SecretsFile::new()` reads the developer's real
-/// `~/.config/crucible/secrets.toml`, whose contents would otherwise leak into
-/// assertions (pass on CI, fail on any box with stored credentials).
-fn has_api_key_with_source_in(store: &SecretsFile, provider: &str) -> Option<CredentialSource> {
-    if let Some(env_var) = env_var_for_provider(provider) {
-        if std::env::var(env_var).is_ok_and(|v| !v.trim().is_empty()) {
-            return Some(CredentialSource::EnvVar);
-        }
-    }
+impl std::ops::Deref for DetectedProvider {
+    type Target = ProviderInfo;
 
-    if let Ok(Some(_)) = store.get(provider) {
-        return Some(CredentialSource::Store);
+    fn deref(&self) -> &ProviderInfo {
+        &self.info
     }
-
-    None
 }
 
-/// Chat backends that authenticate with an API key, in the order they are
-/// offered when several have credentials.
-const KEYED_CHAT_BACKENDS: &[BackendType] = &[
-    BackendType::Anthropic,
-    BackendType::OpenAI,
-    BackendType::OpenRouter,
-    BackendType::ZAI,
-];
+impl DetectedProvider {
+    /// Why the provider is listed, for a person to read.
+    pub fn reason(&self) -> &str {
+        self.info.reason.as_deref().unwrap_or_default()
+    }
+}
 
 /// Detect available providers from config, environment, and the credential
 /// store — no network traffic.
@@ -79,24 +66,31 @@ fn detect_providers_inner(
     probe: bool,
     store: &SecretsFile,
 ) -> Vec<DetectedProvider> {
-    let mut providers = Vec::new();
-
-    for &backend in KEYED_CHAT_BACKENDS {
-        let provider_type = backend.as_str();
-        if let Some(src) = has_api_key_with_source_in(store, provider_type) {
-            providers.push(DetectedProvider {
-                name: backend.label().to_string(),
-                provider_type: provider_type.to_string(),
-                available: true,
-                reason: format!("API key found ({})", src),
-                default_model: config
-                    .model
-                    .clone()
-                    .or_else(|| backend.default_chat_model().map(str::to_string)),
-                source: Some(src),
-            });
-        }
-    }
+    // The scan is the daemon's scan. Ollama gets its own entry below, so the
+    // scan's OLLAMA_HOST hit is dropped here.
+    let mut providers: Vec<DetectedProvider> = discover_credentials(Some(store))
+        .into_iter()
+        .filter(|found| found.backend != BackendType::Ollama)
+        .map(|found| {
+            let backend = found.backend;
+            DetectedProvider {
+                info: ProviderInfo {
+                    name: backend.label().to_string(),
+                    provider_type: backend.as_str().to_string(),
+                    available: true,
+                    default_model: config
+                        .model
+                        .clone()
+                        .or_else(|| backend.default_chat_model().map(str::to_string)),
+                    models: Vec::new(),
+                    endpoint: backend.default_endpoint().map(str::to_string),
+                    reason: Some(found.reason),
+                    is_local: backend.is_local(),
+                },
+                source: Some(found.source),
+            }
+        })
+        .collect();
 
     // Ollama is always offered: it is the no-credential path. `available` is
     // an assumption unless the caller asked for a probe. The shared helper
@@ -126,11 +120,16 @@ fn detect_providers_inner(
         true
     };
     providers.push(DetectedProvider {
-        name: "Ollama (Local)".to_string(),
-        provider_type: "ollama".to_string(),
-        available,
-        reason,
-        default_model: config.model.clone(),
+        info: ProviderInfo {
+            name: "Ollama (Local)".to_string(),
+            provider_type: "ollama".to_string(),
+            available,
+            default_model: config.model.clone(),
+            models: Vec::new(),
+            endpoint: Some(endpoint),
+            reason: Some(reason),
+            is_local: BackendType::Ollama.is_local(),
+        },
         source: None,
     });
 
@@ -138,7 +137,7 @@ fn detect_providers_inner(
     // and reachable ones ahead of dead ones. `cru init -y` picks from the
     // front, so without this a user whose only credential is
     // ANTHROPIC_API_KEY got an Ollama kiln. Stable sort preserves the
-    // KEYED_CHAT_BACKENDS order within each group.
+    // `BackendType::all()` order within each group.
     providers.sort_by_key(|p| (p.source.is_none(), !p.available));
 
     providers
@@ -237,7 +236,7 @@ mod tests {
         let detected = detect_isolated(&config, false);
         assert!(!detected.is_empty());
         assert_eq!(detected[0].provider_type, "ollama");
-        assert!(detected[0].reason.contains("config provider=ollama"));
+        assert!(detected[0].reason().contains("config provider=ollama"));
     }
 
     #[test]
@@ -251,7 +250,7 @@ mod tests {
             .iter()
             .find(|p| p.provider_type == "ollama")
             .unwrap();
-        assert!(ollama.reason.contains("OLLAMA_HOST"));
+        assert!(ollama.reason().contains("OLLAMA_HOST"));
     }
 
     #[test]
@@ -290,7 +289,12 @@ mod tests {
     fn has_key_isolated(provider: &str) -> bool {
         let tmp = tempfile::TempDir::new().unwrap();
         let store = SecretsFile::with_path(tmp.path().join("secrets.toml"));
-        has_api_key_with_source_in(&store, provider).is_some()
+        let Ok(backend) = provider.parse::<BackendType>() else {
+            return false;
+        };
+        discover_credentials(Some(&store))
+            .iter()
+            .any(|c| c.backend == backend)
     }
 
     #[test]
@@ -334,18 +338,23 @@ mod tests {
     #[test]
     fn test_detected_provider_struct() {
         let provider = DetectedProvider {
-            name: "Test Provider".to_string(),
-            provider_type: "test".to_string(),
-            available: true,
-            reason: "Test reason".to_string(),
-            default_model: Some("test-model".to_string()),
+            info: ProviderInfo {
+                name: "Test Provider".to_string(),
+                provider_type: "test".to_string(),
+                available: true,
+                default_model: Some("test-model".to_string()),
+                models: Vec::new(),
+                endpoint: None,
+                reason: Some("Test reason".to_string()),
+                is_local: false,
+            },
             source: Some(CredentialSource::EnvVar),
         };
 
         assert_eq!(provider.name, "Test Provider");
         assert_eq!(provider.provider_type, "test");
         assert!(provider.available);
-        assert_eq!(provider.reason, "Test reason");
+        assert_eq!(provider.reason(), "Test reason");
         assert_eq!(provider.default_model, Some("test-model".to_string()));
     }
 
@@ -415,9 +424,9 @@ mod tests {
             .unwrap();
 
         assert!(
-            !ollama.reason.contains("OLLAMA_HOST"),
+            !ollama.reason().contains("OLLAMA_HOST"),
             "an empty OLLAMA_HOST must not be reported as the source: {}",
-            ollama.reason
+            ollama.reason()
         );
     }
 
@@ -457,9 +466,9 @@ mod tests {
             "a dead endpoint must not claim available"
         );
         assert!(
-            ollama.reason.contains("not answering"),
+            ollama.reason().contains("not answering"),
             "the reason must say why: {}",
-            ollama.reason
+            ollama.reason()
         );
     }
 

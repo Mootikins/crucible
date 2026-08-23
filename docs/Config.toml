@@ -109,7 +109,7 @@ timeout_secs = 120
 
 # [llm.providers.claude]
 # type = "anthropic"
-# default_model = "claude-3-5-sonnet-20241022"
+# default_model = "claude-sonnet-5"
 # api_key = "{env:ANTHROPIC_API_KEY}"
 
 # Specialty -> model mapping for agent cards that declare `specialty:`.

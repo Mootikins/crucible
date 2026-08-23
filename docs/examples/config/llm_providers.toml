@@ -41,7 +41,7 @@ timeout_secs = 300
 [llm.providers.anthropic]
 type = "anthropic"
 api_key = "{env:ANTHROPIC_API_KEY}"
-default_model = "claude-3-5-sonnet-20241022"
+default_model = "claude-sonnet-5"
 temperature = 0.7
 max_tokens = 4096
 

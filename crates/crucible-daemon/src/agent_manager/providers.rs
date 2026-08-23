@@ -1,5 +1,5 @@
 use super::*;
-use crucible_core::config::ollama_endpoint_from_env;
+use crucible_core::config::{discover_credentials, ollama_endpoint_from_env};
 
 // `ProviderInfo` now lives in `crucible-core` so session-setup event
 // consumers (the CLI/TUI) can depend on it without pulling in the daemon.
@@ -91,66 +91,41 @@ impl AgentManager {
         .await
     }
 
+    /// Chat backends with a credential in the environment that no
+    /// configured provider already covers. The scan itself lives in core,
+    /// next to the one `cru init` runs, so the two cannot disagree.
     pub(super) fn discover_env_providers(
         &self,
         seen_types: &std::collections::HashSet<String>,
     ) -> Vec<(String, LlmProviderConfig, String)> {
-        let mut providers = Vec::new();
-
-        for &backend in BackendType::all() {
-            if !backend.supports_chat() {
-                continue;
-            }
-
-            if seen_types.contains(backend.as_str()) {
-                continue;
-            }
-
-            let reason = if backend == BackendType::Ollama {
-                std::env::var("OLLAMA_HOST")
-                    .ok()
-                    .filter(|value| !value.trim().is_empty())
-                    .map(|_| "OLLAMA_HOST env var".to_string())
-            } else {
-                backend.api_key_env_var().and_then(|env_var| {
-                    std::env::var(env_var)
-                        .ok()
-                        .filter(|value| !value.trim().is_empty())
-                        .map(|_| format!("{env_var} env var"))
-                })
-            };
-
-            if reason.is_none() {
-                continue;
-            }
-
-            let endpoint = if backend == BackendType::Ollama {
-                ollama_endpoint_from_env()
-            } else {
-                backend.default_endpoint().map(str::to_string)
-            };
-
-            providers.push((
-                backend.as_str().to_string(),
-                LlmProviderConfig {
-                    provider_type: backend,
-                    endpoint,
-                    default_model: backend.default_chat_model().map(str::to_string),
-                    temperature: None,
-                    max_tokens: None,
-                    timeout_secs: None,
-                    api_key: backend
-                        .api_key_env_var()
-                        .and_then(|env_var| std::env::var(env_var).ok()),
-                    available_models: None,
-                    trust_level: None,
-                    name: None,
-                },
-                reason.expect("env-discovered providers always have a reason"),
-            ));
-        }
-
-        providers
+        discover_credentials(None)
+            .into_iter()
+            .filter(|found| !seen_types.contains(found.backend.as_str()))
+            .map(|found| {
+                let backend = found.backend;
+                let endpoint = if backend == BackendType::Ollama {
+                    ollama_endpoint_from_env()
+                } else {
+                    backend.default_endpoint().map(str::to_string)
+                };
+                (
+                    backend.as_str().to_string(),
+                    LlmProviderConfig {
+                        provider_type: backend,
+                        endpoint,
+                        default_model: backend.default_chat_model().map(str::to_string),
+                        temperature: None,
+                        max_tokens: None,
+                        timeout_secs: None,
+                        api_key: found.api_key,
+                        available_models: None,
+                        trust_level: None,
+                        name: None,
+                    },
+                    found.reason,
+                )
+            })
+            .collect()
     }
 }
 

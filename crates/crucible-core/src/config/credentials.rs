@@ -34,7 +34,7 @@
 //! 2. Credential store (the secrets file)
 //! 3. Config file value (already resolved from `{env:VAR}` / `{file:path}`)
 
-use crate::config::components::backend::BackendType;
+use crate::config::components::backend::{ollama_endpoint_from_env, BackendType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -267,6 +267,62 @@ impl std::fmt::Display for CredentialSource {
             CredentialSource::Config => write!(f, "config"),
         }
     }
+}
+
+/// A chat backend that has a credential outside the config file.
+#[derive(Debug, Clone)]
+pub struct DiscoveredCredential {
+    /// The backend the credential belongs to.
+    pub backend: BackendType,
+    /// Where the scan found the credential.
+    pub source: CredentialSource,
+    /// The API key. Ollama has no key: `OLLAMA_HOST` stands in for it.
+    pub api_key: Option<String>,
+    /// A short phrase that says where the credential came from.
+    pub reason: String,
+}
+
+/// Scan the environment, then `store`, for chat backends with a credential.
+///
+/// Each backend appears at most once, in [`BackendType::all`] order, and the
+/// environment wins over the store. The CLI and the daemon both call this:
+/// two scans let OpenRouter and Z.AI keys go undetected in one of them. The
+/// daemon passes `None` for the store. It reads stored keys through the
+/// config include, so a second read here would list them twice.
+pub fn discover_credentials(store: Option<&SecretsFile>) -> Vec<DiscoveredCredential> {
+    BackendType::all()
+        .iter()
+        .filter(|backend| backend.supports_chat())
+        .filter_map(|&backend| {
+            if backend == BackendType::Ollama {
+                return ollama_endpoint_from_env().map(|_| DiscoveredCredential {
+                    backend,
+                    source: CredentialSource::EnvVar,
+                    api_key: None,
+                    reason: "OLLAMA_HOST env var".to_string(),
+                });
+            }
+            let env_var = backend.api_key_env_var()?;
+            if let Some(key) = std::env::var(env_var)
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+            {
+                return Some(DiscoveredCredential {
+                    backend,
+                    source: CredentialSource::EnvVar,
+                    api_key: Some(key),
+                    reason: format!("{env_var} env var"),
+                });
+            }
+            let key = store?.get(backend.as_str()).ok().flatten()?;
+            Some(DiscoveredCredential {
+                backend,
+                source: CredentialSource::Store,
+                api_key: Some(key),
+                reason: "credential store".to_string(),
+            })
+        })
+        .collect()
 }
 
 /// Resolve the OAuth token for GitHub Copilot.
@@ -776,5 +832,60 @@ api_key = "sk-old-key"
             .get_oauth_token("github-copilot")
             .expect("get oauth_token");
         assert_eq!(oauth_token, None);
+    }
+
+    #[test]
+    #[serial]
+    fn discovery_reads_the_environment_before_the_store() {
+        let (mut store, _dir) = temp_store();
+        store.set("openai", "sk-stored").unwrap();
+        store.set("anthropic", "sk-ant-stored").unwrap();
+        let _openai = EnvVarGuard::set("OPENAI_API_KEY", "sk-env".to_string());
+        let _anthropic = EnvVarGuard::remove("ANTHROPIC_API_KEY");
+        let _openrouter = EnvVarGuard::remove("OPENROUTER_API_KEY");
+        let _zai = EnvVarGuard::remove("GLM_AUTH_TOKEN");
+        let _ollama = EnvVarGuard::remove("OLLAMA_HOST");
+
+        let found = discover_credentials(Some(&store));
+
+        let openai = found
+            .iter()
+            .find(|c| c.backend == BackendType::OpenAI)
+            .expect("the env key is found");
+        assert_eq!(openai.source, CredentialSource::EnvVar);
+        assert_eq!(openai.api_key.as_deref(), Some("sk-env"));
+        assert_eq!(openai.reason, "OPENAI_API_KEY env var");
+
+        let anthropic = found
+            .iter()
+            .find(|c| c.backend == BackendType::Anthropic)
+            .expect("the stored key is found");
+        assert_eq!(anthropic.source, CredentialSource::Store);
+        assert_eq!(anthropic.api_key.as_deref(), Some("sk-ant-stored"));
+
+        assert!(
+            !found.iter().any(|c| c.backend == BackendType::Ollama),
+            "Ollama needs OLLAMA_HOST: {found:#?}"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn discovery_without_a_store_sees_only_the_environment() {
+        let _openai = EnvVarGuard::remove("OPENAI_API_KEY");
+        let _anthropic = EnvVarGuard::remove("ANTHROPIC_API_KEY");
+        let _openrouter = EnvVarGuard::remove("OPENROUTER_API_KEY");
+        let _zai = EnvVarGuard::remove("GLM_AUTH_TOKEN");
+        let _copilot = EnvVarGuard::remove("GITHUB_COPILOT_OAUTH_TOKEN");
+        let _cohere = EnvVarGuard::remove("COHERE_API_KEY");
+        let _google = EnvVarGuard::remove("GOOGLE_API_KEY");
+        let _ollama = EnvVarGuard::set("OLLAMA_HOST", "myhost:11434".to_string());
+
+        let found = discover_credentials(None);
+
+        assert_eq!(found.len(), 1, "{found:#?}");
+        assert_eq!(found[0].backend, BackendType::Ollama);
+        assert_eq!(found[0].api_key, None);
+        assert_eq!(found[0].reason, "OLLAMA_HOST env var");
     }
 }

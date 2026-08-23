@@ -175,7 +175,7 @@ pub fn fill_default_model_if_missing(config: &mut CliConfig) {
 
     let providers = detect_providers(&config.chat);
     if let Some(ollama) = providers.iter().find(|p| p.provider_type == "ollama") {
-        info!("Auto-detected Ollama: {}", ollama.reason.as_str());
+        info!("Auto-detected Ollama: {}", ollama.reason());
         if let Some(ref model) = ollama.default_model {
             config.chat.model = Some(model.clone());
             info!("Set default model to {}", model);

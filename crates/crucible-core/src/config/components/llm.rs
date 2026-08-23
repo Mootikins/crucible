@@ -318,7 +318,7 @@ mod tests {
         let anthropic = LlmProviderConfig::builder(BackendType::Anthropic).build();
 
         assert_eq!(anthropic.endpoint(), "https://api.anthropic.com/v1");
-        assert_eq!(anthropic.model(), "claude-3-5-sonnet-20241022");
+        assert_eq!(anthropic.model(), "claude-sonnet-5");
 
         let copilot = LlmProviderConfig::builder(BackendType::GitHubCopilot).build();
 

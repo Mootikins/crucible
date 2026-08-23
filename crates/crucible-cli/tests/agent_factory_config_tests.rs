@@ -259,7 +259,7 @@ fn test_provider_type_anthropic_defaults() {
     };
 
     assert_eq!(provider.endpoint(), "https://api.anthropic.com/v1");
-    assert_eq!(provider.model(), "claude-3-5-sonnet-20241022");
+    assert_eq!(provider.model(), "claude-sonnet-5");
     assert_eq!(provider.temperature(), 0.7);
     assert_eq!(provider.max_tokens(), 4096);
     assert_eq!(provider.timeout_secs(), 120);

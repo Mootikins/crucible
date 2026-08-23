@@ -499,7 +499,7 @@ pub struct MockConfig {
 
 impl MockConfig {
     fn default_model() -> String {
-        "mock-test-model".to_string()
+        table_embedding_model(BackendType::Mock)
     }
 
     fn default_dimensions() -> u32 {

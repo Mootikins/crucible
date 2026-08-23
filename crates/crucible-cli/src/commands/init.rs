@@ -436,7 +436,7 @@ fn select_provider_noninteractive(providers: &[DetectedProvider]) -> (String, St
                 println!(
                     "{} No reachable provider found ({}).",
                     "Warning:".yellow(),
-                    p.reason
+                    p.reason()
                 );
             }
             let model = p
@@ -458,7 +458,7 @@ fn prompt_provider_selection(providers: &[DetectedProvider]) -> Result<(String, 
 
     println!("{}", "Detected providers:".green().bold());
     for (i, p) in providers.iter().enumerate() {
-        println!("  {}. {} - {}", i + 1, p.name, p.reason);
+        println!("  {}. {} - {}", i + 1, p.name, p.reason());
     }
 
     // The selectable items carry the probe result too — the header above
@@ -466,7 +466,7 @@ fn prompt_provider_selection(providers: &[DetectedProvider]) -> Result<(String, 
     // at the moment of choice.
     let items: Vec<String> = providers
         .iter()
-        .map(|p| format!("{} — {}", p.name, p.reason))
+        .map(|p| format!("{} — {}", p.name, p.reason()))
         .collect();
     let selection = Select::with_theme(&theme)
         .with_prompt("Select LLM provider")
@@ -606,11 +606,16 @@ mod tests {
 
     fn detected(provider_type: &str, available: bool) -> DetectedProvider {
         DetectedProvider {
-            name: provider_type.to_string(),
-            provider_type: provider_type.to_string(),
-            available,
-            reason: "test".to_string(),
-            default_model: None,
+            info: crucible_core::types::ProviderInfo {
+                name: provider_type.to_string(),
+                provider_type: provider_type.to_string(),
+                available,
+                default_model: None,
+                models: Vec::new(),
+                endpoint: None,
+                reason: Some("test".to_string()),
+                is_local: false,
+            },
             source: None,
         }
     }

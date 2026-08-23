@@ -50,7 +50,7 @@ pub const DEFAULT_ZAI_ENDPOINT: &str = "https://api.z.ai/api/coding/paas/v4";
 pub const DEFAULT_OPENAI_MODEL: &str = "gpt-4o";
 
 /// Default model for Anthropic
-pub const DEFAULT_ANTHROPIC_MODEL: &str = "claude-3-5-sonnet-20241022";
+pub const DEFAULT_ANTHROPIC_MODEL: &str = "claude-sonnet-5";
 
 /// Default model for GitHub Copilot
 pub const DEFAULT_GITHUB_COPILOT_MODEL: &str = "gpt-4o";
@@ -67,6 +67,7 @@ pub const DEFAULT_ZAI_MODEL: &str = "GLM-4.7";
 
 /// Available Anthropic models (hardcoded fallback when API enumeration unavailable)
 pub const ANTHROPIC_MODELS: &[&str] = &[
+    DEFAULT_ANTHROPIC_MODEL,
     "claude-sonnet-4-20250514",
     "claude-3-7-sonnet-20250219",
     "claude-3-5-sonnet-20241022",

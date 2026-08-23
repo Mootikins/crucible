@@ -66,6 +66,24 @@ struct BackendMetadata {
     default_endpoint: Option<&'static str>,
     default_embedding_model: Option<&'static str>,
     default_chat_model: Option<&'static str>,
+    default_max_concurrent: MaxConcurrent,
+}
+
+/// How many requests a backend runs at once when the config says nothing.
+#[derive(Debug, Clone, Copy)]
+enum MaxConcurrent {
+    Fixed(usize),
+    /// CPU-bound work: half the cores, and at least one.
+    HalfTheCpus,
+}
+
+impl MaxConcurrent {
+    fn resolve(self) -> usize {
+        match self {
+            Self::Fixed(n) => n,
+            Self::HalfTheCpus => (num_cpus::get() / 2).max(1),
+        }
+    }
 }
 
 impl BackendType {
@@ -81,6 +99,7 @@ impl BackendType {
         default_endpoint: Some(super::defaults::DEFAULT_OLLAMA_ENDPOINT),
         default_embedding_model: Some("nomic-embed-text"),
         default_chat_model: Some(super::defaults::DEFAULT_CHAT_MODEL),
+        default_max_concurrent: MaxConcurrent::Fixed(1),
     };
 
     const OPENAI_METADATA: BackendMetadata = BackendMetadata {
@@ -95,6 +114,7 @@ impl BackendType {
         default_endpoint: Some(super::defaults::DEFAULT_OPENAI_ENDPOINT),
         default_embedding_model: Some("text-embedding-3-small"),
         default_chat_model: Some(super::defaults::DEFAULT_OPENAI_MODEL),
+        default_max_concurrent: MaxConcurrent::Fixed(8),
     };
 
     const ANTHROPIC_METADATA: BackendMetadata = BackendMetadata {
@@ -109,6 +129,7 @@ impl BackendType {
         default_endpoint: Some(super::defaults::DEFAULT_ANTHROPIC_ENDPOINT),
         default_embedding_model: None,
         default_chat_model: Some(super::defaults::DEFAULT_ANTHROPIC_MODEL),
+        default_max_concurrent: MaxConcurrent::Fixed(8),
     };
 
     const COHERE_METADATA: BackendMetadata = BackendMetadata {
@@ -123,6 +144,7 @@ impl BackendType {
         default_endpoint: Some("https://api.cohere.ai/v1"),
         default_embedding_model: Some("embed-english-v3.0"),
         default_chat_model: Some("command-r-plus"),
+        default_max_concurrent: MaxConcurrent::Fixed(8),
     };
 
     const VERTEX_AI_METADATA: BackendMetadata = BackendMetadata {
@@ -137,6 +159,7 @@ impl BackendType {
         default_endpoint: Some("https://aiplatform.googleapis.com/v1"),
         default_embedding_model: Some("textembedding-gecko@003"),
         default_chat_model: Some("gemini-1.5-pro"),
+        default_max_concurrent: MaxConcurrent::Fixed(8),
     };
 
     const FAST_EMBED_METADATA: BackendMetadata = BackendMetadata {
@@ -151,6 +174,7 @@ impl BackendType {
         default_endpoint: None,
         default_embedding_model: Some("BAAI/bge-small-en-v1.5"),
         default_chat_model: None,
+        default_max_concurrent: MaxConcurrent::HalfTheCpus,
     };
 
     const BURN_METADATA: BackendMetadata = BackendMetadata {
@@ -165,6 +189,7 @@ impl BackendType {
         default_endpoint: None,
         default_embedding_model: Some("nomic-embed-text"),
         default_chat_model: None,
+        default_max_concurrent: MaxConcurrent::Fixed(1),
     };
 
     const GITHUB_COPILOT_METADATA: BackendMetadata = BackendMetadata {
@@ -179,6 +204,7 @@ impl BackendType {
         default_endpoint: Some(super::defaults::DEFAULT_GITHUB_COPILOT_ENDPOINT),
         default_embedding_model: None,
         default_chat_model: Some(super::defaults::DEFAULT_GITHUB_COPILOT_MODEL),
+        default_max_concurrent: MaxConcurrent::Fixed(8),
     };
 
     const OPENROUTER_METADATA: BackendMetadata = BackendMetadata {
@@ -193,6 +219,7 @@ impl BackendType {
         default_endpoint: Some(super::defaults::DEFAULT_OPENROUTER_ENDPOINT),
         default_embedding_model: None,
         default_chat_model: Some(super::defaults::DEFAULT_OPENROUTER_MODEL),
+        default_max_concurrent: MaxConcurrent::Fixed(8),
     };
 
     const ZAI_METADATA: BackendMetadata = BackendMetadata {
@@ -207,6 +234,7 @@ impl BackendType {
         default_endpoint: Some(super::defaults::DEFAULT_ZAI_ENDPOINT),
         default_embedding_model: None,
         default_chat_model: Some(super::defaults::DEFAULT_ZAI_MODEL),
+        default_max_concurrent: MaxConcurrent::Fixed(8),
     };
 
     const CUSTOM_METADATA: BackendMetadata = BackendMetadata {
@@ -221,6 +249,7 @@ impl BackendType {
         default_endpoint: None,
         default_embedding_model: None,
         default_chat_model: None,
+        default_max_concurrent: MaxConcurrent::Fixed(4),
     };
 
     const MOCK_METADATA: BackendMetadata = BackendMetadata {
@@ -233,8 +262,9 @@ impl BackendType {
         as_str: "mock",
         label: "Mock",
         default_endpoint: None,
-        default_embedding_model: Some("mock-embed-model"),
+        default_embedding_model: Some("mock-test-model"),
         default_chat_model: Some("mock-chat-model"),
+        default_max_concurrent: MaxConcurrent::Fixed(16),
     };
 
     fn metadata(&self) -> &'static BackendMetadata {
@@ -308,20 +338,7 @@ impl BackendType {
 
     /// Get default max concurrent requests for this backend
     pub fn default_max_concurrent(&self) -> usize {
-        match self {
-            Self::Ollama => 1,                               // Single GPU, sequential
-            Self::Burn => 1,                                 // GPU-bound
-            Self::FastEmbed => (num_cpus::get() / 2).max(1), // CPU-bound
-            Self::OpenAI
-            | Self::Anthropic
-            | Self::Cohere
-            | Self::VertexAI
-            | Self::GitHubCopilot
-            | Self::OpenRouter
-            | Self::ZAI => 8, // Rate-limited
-            Self::Mock => 16,                                // Testing
-            Self::Custom => 4,                               // Conservative
-        }
+        self.metadata().default_max_concurrent.resolve()
     }
 
     /// Get the environment variable name for this backend's API key
@@ -1069,7 +1086,7 @@ mod tests {
         assert_eq!(BackendType::Custom.default_embedding_model(), None);
         assert_eq!(
             BackendType::Mock.default_embedding_model(),
-            Some("mock-embed-model")
+            Some("mock-test-model")
         );
     }
 
@@ -1259,7 +1276,7 @@ mod tests {
         // Mock variant should have test infrastructure values
         assert_eq!(
             BackendType::Mock.default_embedding_model(),
-            Some("mock-embed-model")
+            Some("mock-test-model")
         );
         assert_eq!(
             BackendType::Mock.default_chat_model(),
