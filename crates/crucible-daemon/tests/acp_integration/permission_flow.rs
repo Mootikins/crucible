@@ -848,3 +848,121 @@ async fn acp_multiple_permission_requests_in_single_turn() {
     );
     assert!(content.contains("Both operations completed"));
 }
+
+/// Hermes attaches a fresh id `perm-check-N` to a dangerous-command
+/// permission request. The id matches no announced tool call. The daemon
+/// names the tool from `kind`, not from the id, so the request still gets
+/// an answer. This test pins that contract: a later "look the call up by
+/// id" change must not break Hermes.
+#[tokio::test]
+async fn permission_request_with_an_unknown_tool_call_id_is_answered_from_kind() {
+    use agent_client_protocol::schema::v1::ToolKind;
+
+    let (mut client, mut agent_reader, mut agent_writer) = client_with_custom_transport(Some(2000));
+
+    // The handler reads only `kind`, the way the daemon's gate does. An
+    // answer therefore proves the kind survived, and that the unknown id
+    // did not stop the request.
+    let handler: PermissionRequestHandler = Arc::new(|request| {
+        Box::pin(async move {
+            if request.tool_call.fields.kind != Some(ToolKind::Execute) {
+                return agent_client_protocol::schema::v1::RequestPermissionOutcome::Cancelled;
+            }
+            let option_id = request
+                .options
+                .iter()
+                .find(|o| {
+                    o.kind == agent_client_protocol::schema::v1::PermissionOptionKind::AllowOnce
+                })
+                .map(|o| o.option_id.clone())
+                .expect("hermes always offers allow_once");
+            agent_client_protocol::schema::v1::RequestPermissionOutcome::Selected(
+                agent_client_protocol::schema::v1::SelectedPermissionOutcome::new(option_id),
+            )
+        })
+    });
+    client = client.with_permission_handler(handler);
+
+    tokio::spawn(async move {
+        let mut request_line = String::new();
+        agent_reader.read_line(&mut request_line).await.unwrap();
+        let request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
+        let prompt_request_id = request["id"].as_u64().unwrap();
+
+        // The running call is announced under its own `tc-` id.
+        write_json_line(
+            &mut agent_writer,
+            tool_call_notification(
+                "ses-hermes-perm",
+                "tc-1a2b3c4d5e6f",
+                "terminal: rm -rf build",
+                Some(json!({"command": "rm -rf build"})),
+            ),
+        )
+        .await
+        .unwrap();
+
+        // The permission request carries a fresh id, in the hermes shape:
+        // five options, and a toolCall that names no announced id.
+        write_json_line(
+            &mut agent_writer,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 700,
+                "method": "session/request_permission",
+                "params": {
+                    "sessionId": "ses-hermes-perm",
+                    "toolCall": {
+                        "toolCallId": "perm-check-1",
+                        "title": "terminal: rm -rf build",
+                        "kind": "execute",
+                        "status": "pending"
+                    },
+                    "options": [
+                        {"optionId": "allow_once", "name": "Allow once", "kind": "allow_once"},
+                        {"optionId": "allow_session", "name": "Allow for this session", "kind": "allow_always"},
+                        {"optionId": "deny", "name": "Deny", "kind": "reject_once"},
+                        {"optionId": "deny_always", "name": "Always deny", "kind": "reject_always"}
+                    ]
+                }
+            }),
+        )
+        .await
+        .unwrap();
+
+        let mut response_line = String::new();
+        agent_reader.read_line(&mut response_line).await.unwrap();
+        let response: serde_json::Value = serde_json::from_str(&response_line).unwrap();
+
+        assert_eq!(response["id"], 700, "response id must match the request");
+        assert_eq!(
+            response["result"]["outcome"]["outcome"], "selected",
+            "an unknown tool call id must not block the answer"
+        );
+        assert_eq!(response["result"]["outcome"]["optionId"], "allow_once");
+
+        // Permission granted. The running call completes under its own id.
+        write_json_line(
+            &mut agent_writer,
+            tool_call_update_completed("ses-hermes-perm", "tc-1a2b3c4d5e6f", None),
+        )
+        .await
+        .unwrap();
+
+        write_json_line(&mut agent_writer, text_chunk("ses-hermes-perm", "Removed."))
+            .await
+            .unwrap();
+
+        write_json_line(&mut agent_writer, final_response(prompt_request_id))
+            .await
+            .unwrap();
+    });
+
+    let request = make_prompt_request("ses-hermes-perm", "remove the build directory");
+    let (summary, _response) = client
+        .send_prompt_with_callback(request, Box::new(|_| true))
+        .await
+        .expect("the turn must complete after the permission answer");
+
+    assert!(summary.announced_any, "the tc- call was announced");
+}
