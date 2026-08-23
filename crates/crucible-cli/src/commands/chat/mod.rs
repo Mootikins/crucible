@@ -59,6 +59,7 @@ impl ChatParams {
 }
 
 /// Which kind of chat run the flags select.
+#[derive(Debug)]
 pub enum ChatMode {
     /// The TUI. `record` writes a granular transcript to that path.
     Interactive { record: Option<PathBuf> },
@@ -129,14 +130,13 @@ pub async fn execute(mut params: ChatParams) -> Result<()> {
 
     info!("Starting chat command");
 
-    // If no explicit query but stdin is piped, read query from stdin (oneshot mode)
-    if let ChatMode::Interactive { .. } = params.mode {
-        if crate::commands::stdin::stdin_is_piped() {
-            if let Ok(query) = crate::commands::stdin::read_stdin_message() {
-                params.mode = ChatMode::Oneshot { query };
-            }
-        }
-    }
+    // A piped stdin is a query: the TUI becomes a oneshot run.
+    let piped_query = if crate::commands::stdin::stdin_is_piped() {
+        crate::commands::stdin::read_stdin_message().ok()
+    } else {
+        None
+    };
+    params.mode = apply_piped_query(params.mode, piped_query)?;
 
     if let ChatMode::Interactive { .. } = params.mode {
         ensure_valid_kiln(&mut params.config).await?;
@@ -171,6 +171,38 @@ pub async fn execute(mut params: ChatParams) -> Result<()> {
         ChatMode::Oneshot { query } => run_oneshot_chat(params, query).await,
         ChatMode::Replay { .. } => unreachable!("replay returns above"),
     }
+}
+
+/// Fold a piped stdin query into the mode.
+///
+/// Only the TUI reads stdin as a query. A oneshot run has no TUI to
+/// record, so `--record` with a piped query is an error; before this
+/// check the recording path vanished without a word.
+fn apply_piped_query(mode: ChatMode, piped_query: Option<String>) -> Result<ChatMode> {
+    match (mode, piped_query) {
+        (ChatMode::Interactive { record: Some(_) }, Some(_)) => {
+            anyhow::bail!("--record needs an interactive terminal; a piped query runs oneshot")
+        }
+        (ChatMode::Interactive { record: None }, Some(query)) => Ok(ChatMode::Oneshot { query }),
+        (mode, _) => Ok(mode),
+    }
+}
+
+/// The mode name `--plan` selects. The daemon owns what the name means.
+fn initial_mode(read_only: bool) -> &'static str {
+    if read_only {
+        "plan"
+    } else {
+        "normal"
+    }
+}
+
+/// The mode `cru chat -q` must apply before its turn.
+///
+/// Without `--plan` nothing is sent: a resumed session keeps the mode it
+/// has, and a new session starts in the daemon's default.
+fn oneshot_mode_override(read_only: bool) -> Option<&'static str> {
+    read_only.then(|| initial_mode(true))
 }
 
 async fn run_replay(
@@ -373,7 +405,7 @@ async fn run_interactive_chat(params: ChatParams, record: Option<PathBuf>) -> Re
         set_overrides,
         mode: _,
     } = params;
-    let initial_mode = if read_only { "plan" } else { "normal" };
+    let initial_mode = initial_mode(read_only);
     info!("Initial mode: {}", initial_mode);
     let parsed_env = parse_env_overrides(&env_overrides);
     let working_dir = std::env::current_dir().ok();
@@ -635,14 +667,13 @@ where
     }
 }
 
-/// `cru chat -q` runs whatever mode the session already has. To apply
-/// `--plan` here needs `--mode <name>` plumbing (see the mode transport
-/// work); neither `read_only` nor `max_context_tokens` reaches the agent.
+/// `cru chat -q` applies `--plan` through `set_mode_str`, the same RPC the
+/// TUI's `/plan` uses. `max_context_tokens` does not reach the agent.
 async fn run_oneshot_chat(params: ChatParams, query_text: String) -> Result<()> {
     let ChatParams {
         config,
         agent_name,
-        read_only: _,
+        read_only,
         no_context,
         context_size,
         provider_key,
@@ -691,6 +722,13 @@ async fn run_oneshot_chat(params: ChatParams, query_text: String) -> Result<()> 
     status.success("Ready");
 
     let _autoconfirm_session = apply_oneshot_set_overrides(&mut handle, &set_overrides).await;
+
+    if let Some(mode_id) = oneshot_mode_override(read_only) {
+        handle
+            .set_mode_str(mode_id)
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to apply --plan: {e}"))?;
+    }
 
     // `--no-context` / `--context-size` are session state, not a local
     // transform: the daemon owns Precognition, and it is already enabled by
