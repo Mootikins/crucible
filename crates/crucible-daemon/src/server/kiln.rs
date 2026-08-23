@@ -406,6 +406,11 @@ pub(crate) async fn handle_get_note_by_name(req: Request, km: &Arc<KilnManager>)
                 "title": note.title,
                 "tags": note.tags,
                 "links_to": note.links_to,
+                // The client DTO (`rpc_client/storage.rs`) reads `wikilinks`,
+                // not `links_to`. Both stay: the web reader pins `links_to`.
+                "wikilinks": note.links_to.iter()
+                    .map(|t| serde_json::json!({ "target": t }))
+                    .collect::<Vec<_>>(),
                 "content_hash": note.content_hash.to_string()
             }),
         ),
@@ -812,6 +817,47 @@ mod tests {
             "params": {},
         }))
         .unwrap()
+    }
+
+    /// The client-side `DaemonStorageClient` reads `wikilinks` from this
+    /// reply. The daemon wrote only `links_to`, so every note came back with
+    /// no links. The test parses the reply with the same DTO the client uses.
+    #[tokio::test]
+    async fn get_note_by_name_reply_carries_wikilinks_the_client_reads() {
+        let tmp = TempDir::new().unwrap();
+        let kiln_dir = tmp.path();
+        std::fs::write(kiln_dir.join("target.md"), "# Target\n").unwrap();
+        let source = kiln_dir.join("source.md");
+        std::fs::write(&source, "# Source\n\nSee [[target]].\n").unwrap();
+
+        let km = Arc::new(KilnManager::new());
+        km.process_file(kiln_dir, &source).await.unwrap();
+
+        let req: Request = serde_json::from_value(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "get_note_by_name",
+            "params": { "kiln": kiln_dir.to_string_lossy(), "name": "source" },
+        }))
+        .unwrap();
+        let resp = handle_get_note_by_name(req, &km).await;
+        let data = resp.result.expect("the note exists");
+
+        assert_eq!(
+            data["links_to"],
+            serde_json::json!(["target"]),
+            "the existing field stays for the web reader: {data}"
+        );
+        assert_eq!(
+            data["wikilinks"][0]["target"],
+            serde_json::json!("target"),
+            "the client DTO reads `wikilinks[].target`: {data}"
+        );
+
+        let note = crate::rpc_client::parse_note_from_record(&data)
+            .expect("the client DTO parses the reply");
+        assert_eq!(note.wikilinks.len(), 1, "the client must see the link");
+        assert_eq!(note.wikilinks[0].target, "target");
     }
 
     /// `kiln.list`'s `name` is the registry key, not the name the kiln asserts

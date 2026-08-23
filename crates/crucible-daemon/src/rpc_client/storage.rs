@@ -129,7 +129,7 @@ impl NoteRecordDto {
 }
 
 /// Parse a record into a ParsedNote (minimal version for daemon)
-fn parse_note_from_record(record: &Value) -> Option<ParsedNote> {
+pub(crate) fn parse_note_from_record(record: &Value) -> Option<ParsedNote> {
     serde_json::from_value::<NoteRecordDto>(record.clone())
         .ok()
         .map(NoteRecordDto::into_parsed_note)
@@ -335,12 +335,18 @@ impl NoteStore for DaemonNoteStore {
         Err(no_link_index_over_rpc("reindex_links"))
     }
 
+    /// Find a note by content hash.
+    ///
+    /// The RPC surface has no hash lookup. This method lists every note in
+    /// scope, then scans the list for the hash. The cost is one `list_notes`
+    /// call plus a linear scan; it is best effort for CLI callers. Do not
+    /// call it in a loop. `content_hash` above has the same shape: it
+    /// fetches the whole note to read one field.
     async fn get_by_hash(
         &self,
         hash: &BlockHash,
         authority: &crucible_core::storage::Scope,
     ) -> StorageResult<Option<NoteRecord>> {
-        // Not yet implemented via RPC — linear scan, scope-filtered by list.
         let notes = self.list(authority).await?;
         Ok(notes.into_iter().find(|n| &n.content_hash == hash))
     }

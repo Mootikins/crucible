@@ -158,7 +158,7 @@ export interface NoteEntry {
 
 export interface NoteContent {
   /** Several fields are NOT sent by GET /api/notes/{name} — the daemon payload
-   * carries only path/title/tags/links_to/content_hash. Derive display names
+   * carries only path/title/tags/links_to/wikilinks/content_hash. Derive display names
    * by falling through title → name → file stem; content/updated_at are
    * absent (typing them required yielded `undefined` at runtime). */
   name?: string;

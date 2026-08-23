@@ -38,6 +38,11 @@ pub use client::{
     VersionCheck,
 };
 pub use error_ext::ChatResultExt;
+// `DaemonClient::fts_search` returns this type, so callers of the client
+// must name it without a path into the storage module.
+pub use crate::storage::sqlite::FtsResult;
+#[cfg(test)]
+pub(crate) use storage::parse_note_from_record;
 pub use storage::{DaemonNoteStore, DaemonStorageClient};
 
 pub use crucible_core::protocol::socket_path;
