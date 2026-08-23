@@ -305,14 +305,6 @@ impl CrucibleAcpClient {
 
             if method_name == "session/update" {
                 if let Some(params) = response.get("params") {
-                    // Handled ahead of the typed parse: see
-                    // `usage.rs::extract_context_window`.
-                    if let Some((used, limit)) = super::usage::extract_context_window(params) {
-                        if !callback(StreamingChunk::ContextWindow { used, limit }) {
-                            state.cancelled = true;
-                        }
-                        return Ok(None);
-                    }
                     match serde_json::from_value::<SessionNotification>(params.clone()) {
                         Ok(notification) => {
                             self.apply_session_update_with_callback(notification, state, callback);
@@ -452,6 +444,29 @@ impl CrucibleAcpClient {
             // agent's answer, so it must not reach `accumulated_text`.
             SessionUpdate::UserMessageChunk(chunk) => {
                 tracing::debug!("Ignoring user_message_chunk: {:?}", chunk.content);
+            }
+            // The agent reports its context-window occupancy. Schema 1.5
+            // made the variant stable, so the typed parse carries it; a raw
+            // reader ran ahead of the parse before that. A frame without
+            // `used` or `size` fails the parse above and is dropped there.
+            //
+            // `size: 0` is refused because it describes no window. To pass
+            // it on emits `context_limit_resolved { limit: 0, source:
+            // Agent }`, a claim that the window is resolved, while the
+            // statusline guards `total > 0` and renders the no-data state.
+            // To report nothing keeps unresolved unresolved. `used: 0` is
+            // accepted: a fresh turn used nothing yet, and that is a real
+            // reading of a real window.
+            //
+            // `update.cost` is dropped. Nothing in Crucible displays or
+            // aggregates a monetary figure.
+            SessionUpdate::UsageUpdate(update) => {
+                if update.size > 0 {
+                    state.cancelled |= !callback(StreamingChunk::ContextWindow {
+                        used: update.used,
+                        limit: update.size,
+                    });
+                }
             }
             other => {
                 tracing::debug!("Ignoring session update: {:?}", other);

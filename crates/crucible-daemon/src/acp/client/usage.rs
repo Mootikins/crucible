@@ -1,12 +1,11 @@
-//! Extract token usage and context-window size from raw ACP JSON.
+//! Extract end-turn token usage from a raw ACP prompt response.
 //!
-//! The ACP spec defines a `usage` field on `PromptResponse` and a
-//! `usage_update` session update. When this module was written, both sat
-//! behind an unstable feature flag in the upstream Rust types, and a typed
-//! parse of `sessionUpdate: "usage_update"` failed as an unknown variant. So
-//! the fields are read from the raw JSON ahead of the typed parse in
-//! `streaming.rs`. Schema 1.5 stabilized `UsageUpdate`; ACP item W9 moves
-//! this reader to the typed variant.
+//! The ACP spec defines a `usage` field on `PromptResponse`. Schema 1.5
+//! keeps that field behind the `unstable_end_turn_token_usage` feature, and
+//! the workspace enables no unstable schema feature. So this one field is
+//! read from the raw JSON. The `usage_update` session update is stable in
+//! schema 1.5, and the typed parse in `streaming.rs` carries it; the raw
+//! reader for it lived here until ACP item W9 removed it.
 //!
 //! Wire shape (Claude Code 2.1.114, captured 2026-04-19):
 //!
@@ -88,51 +87,6 @@ fn saturating_u32(v: u64) -> u32 {
     v.min(u32::MAX as u64) as u32
 }
 
-/// Pull `(used, size)` out of a `session/update` params payload, if it is a
-/// `usage_update`.
-///
-/// Wire shape (claude 2.1.114 and opencode, captured in
-/// `tests/fixtures/acp/recorded/*/basic-chat.jsonl`):
-///
-/// ```json
-/// {
-///   "sessionId": "…",
-///   "update": {
-///     "sessionUpdate": "usage_update",
-///     "used": 22700,
-///     "size": 1000000,
-///     "cost": { "amount": 0.14204, "currency": "USD" }
-///   }
-/// }
-/// ```
-///
-/// `cost` is deliberately dropped: nothing in Crucible displays or aggregates
-/// a monetary figure, and inventing a consumer for it is not this function's
-/// job.
-///
-/// Both counts are required. A frame carrying only one of them describes
-/// neither an occupancy nor a window, and a zero-filled stand-in would be
-/// indistinguishable from a real reading downstream.
-///
-/// `size: 0` is refused for the same reason a missing `size` is: it is not a
-/// window. It travels as `TurnEvent::ContextWindow { limit: 0 }` and is
-/// re-emitted as `context_limit_resolved { limit: 0, source: Agent }`, which
-/// tells every subscriber the agent's window has been *resolved* — the
-/// statusline consumers guard on `total > 0` so nothing divides by zero, but
-/// they then display the "no data" state under a source that claims otherwise.
-/// Reporting nothing lets the unresolved path stay unresolved.
-pub fn extract_context_window(params: &Value) -> Option<(u64, u64)> {
-    let update = params.get("update")?;
-    if update.get("sessionUpdate").and_then(Value::as_str) != Some("usage_update") {
-        return None;
-    }
-
-    let used = update.get("used").and_then(Value::as_u64)?;
-    let size = update.get("size").and_then(Value::as_u64)?;
-
-    (size > 0).then_some((used, size))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -196,105 +150,6 @@ mod tests {
         });
         let usage = extract_usage(&result).expect("usage present");
         assert_eq!(usage.total_tokens, 10);
-    }
-
-    /// `extract_context_window` reads raw JSON because the schema that the
-    /// SDK 0.10 pulled in had no stable `UsageUpdate` variant. Schema 1.5
-    /// stabilized it, so the typed parse now accepts the frame too. The raw
-    /// reader still runs first in `streaming.rs` and keeps the behaviour
-    /// identical. ACP item W9 moves the reader to the typed variant.
-    #[test]
-    fn usage_update_deserializes_as_a_typed_session_notification() {
-        use agent_client_protocol::schema::v1::{SessionNotification, SessionUpdate};
-
-        let params = json!({
-            "sessionId": "c299d62f",
-            "update": {
-                "sessionUpdate": "usage_update",
-                "used": 22700,
-                "size": 1_000_000,
-                "cost": { "amount": 0.14204, "currency": "USD" }
-            }
-        });
-
-        let notification = serde_json::from_value::<SessionNotification>(params.clone())
-            .expect("usage_update parses as a typed SessionNotification");
-        assert!(
-            matches!(notification.update, SessionUpdate::UsageUpdate(_)),
-            "expected the UsageUpdate variant, got {:?}",
-            notification.update
-        );
-
-        // The raw reader still reads it.
-        assert_eq!(extract_context_window(&params), Some((22700, 1_000_000)));
-    }
-
-    #[test]
-    fn extracts_the_opencode_window() {
-        // Second recorded agent, different window — the reader must not be
-        // tuned to one agent's numbers.
-        let params = json!({
-            "sessionId": "ses_257dac",
-            "update": {
-                "sessionUpdate": "usage_update",
-                "used": 28224,
-                "size": 200_000,
-                "cost": { "amount": 0, "currency": "USD" }
-            }
-        });
-
-        assert_eq!(extract_context_window(&params), Some((28224, 200_000)));
-    }
-
-    #[test]
-    fn ignores_session_updates_that_are_not_usage_updates() {
-        let params = json!({
-            "sessionId": "s",
-            "update": {
-                "sessionUpdate": "agent_message_chunk",
-                "content": { "type": "text", "text": "hi" }
-            }
-        });
-
-        assert!(extract_context_window(&params).is_none());
-    }
-
-    #[test]
-    fn a_half_reported_window_is_no_window() {
-        // Zero-filling the missing half would be indistinguishable downstream
-        // from a real reading: a stand-in `size` sets a window the agent never
-        // reported, and `used: 0` makes the statusline draw a confident
-        // "0% ctx".
-        let used_only = json!({
-            "update": { "sessionUpdate": "usage_update", "used": 22700 }
-        });
-        let size_only = json!({
-            "update": { "sessionUpdate": "usage_update", "size": 1_000_000 }
-        });
-
-        assert!(extract_context_window(&used_only).is_none());
-        assert!(extract_context_window(&size_only).is_none());
-    }
-
-    #[test]
-    fn a_zero_size_is_no_window() {
-        // Same reasoning as the missing half, one step further in: an explicit
-        // `size: 0` is a value, so it survives `as_u64`, but it describes no
-        // window. Passing it on emits `context_limit_resolved { limit: 0,
-        // source: Agent }` — a claim that the agent's window is *resolved*,
-        // sitting under a statusline that renders the no-data state because it
-        // guards `total > 0`. Reporting nothing keeps unresolved unresolved.
-        let zero_size = json!({
-            "update": { "sessionUpdate": "usage_update", "used": 22700, "size": 0 }
-        });
-        assert!(extract_context_window(&zero_size).is_none());
-
-        // Only `size` is refused for being zero. A fresh turn legitimately has
-        // used nothing yet, and that is a real reading of a real window.
-        let zero_used = json!({
-            "update": { "sessionUpdate": "usage_update", "used": 0, "size": 200_000 }
-        });
-        assert_eq!(extract_context_window(&zero_used), Some((0, 200_000)));
     }
 
     #[test]

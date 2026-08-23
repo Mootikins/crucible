@@ -862,3 +862,79 @@ fn user_message_chunk_emits_nothing_and_stays_out_of_the_answer() {
     assert_eq!(state.accumulated_text, "");
     assert!(!state.produced_content);
 }
+
+#[test]
+fn usage_update_emits_a_context_window_chunk() {
+    // The claude wire shape, recorded in
+    // `tests/fixtures/acp/recorded/claude/basic-chat.jsonl`. The typed
+    // parse must carry it; no raw reader runs ahead of it.
+    let mut client = make_client();
+    let mut state = StreamingState::default();
+    let chunks = capture_apply(
+        &mut client,
+        &mut state,
+        json!({
+            "sessionId": "c299d62f",
+            "update": {
+                "sessionUpdate": "usage_update",
+                "used": 22700,
+                "size": 1_000_000,
+                "cost": { "amount": 0.14204, "currency": "USD" }
+            }
+        }),
+    );
+    assert_eq!(
+        chunks,
+        vec![StreamingChunk::ContextWindow {
+            used: 22700,
+            limit: 1_000_000
+        }]
+    );
+}
+
+#[test]
+fn a_zero_size_usage_update_is_not_a_window() {
+    // An explicit `size: 0` describes no window. To pass it on emits
+    // `context_limit_resolved { limit: 0, source: Agent }`, a claim that
+    // the window is resolved while the statusline renders the no-data
+    // state. To report nothing keeps unresolved unresolved.
+    let mut client = make_client();
+    let mut state = StreamingState::default();
+    let chunks = capture_apply(
+        &mut client,
+        &mut state,
+        json!({
+            "sessionId": "s",
+            "update": { "sessionUpdate": "usage_update", "used": 22700, "size": 0 }
+        }),
+    );
+    assert!(chunks.is_empty(), "size 0 must not become a ContextWindow");
+}
+
+#[test]
+fn a_zero_used_usage_update_is_a_window() {
+    // A fresh turn used nothing yet. That is a real reading of a real
+    // window, so only `size` is refused for a zero value.
+    let mut client = make_client();
+    let mut state = StreamingState::default();
+    let chunks = capture_apply(
+        &mut client,
+        &mut state,
+        json!({
+            "sessionId": "ses_257dac",
+            "update": {
+                "sessionUpdate": "usage_update",
+                "used": 0,
+                "size": 200_000,
+                "cost": { "amount": 0, "currency": "USD" }
+            }
+        }),
+    );
+    assert_eq!(
+        chunks,
+        vec![StreamingChunk::ContextWindow {
+            used: 0,
+            limit: 200_000
+        }]
+    );
+}
