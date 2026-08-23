@@ -558,11 +558,8 @@ impl AcpToolExecutor {
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use crucible_core::traits::acp::AcpError;
     use crucible_core::traits::tools::{ExecutionContext, ToolDefinition, ToolError, ToolExecutor};
     use serde_json::json;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
     use tempfile::TempDir;
 
     fn test_tool(name: &str, category: &str, input_schema: serde_json::Value) -> ToolDefinition {
@@ -612,87 +609,6 @@ mod tests {
 
         fn surface(&self, _tool: &str) -> crucible_core::traits::ToolSurface {
             crucible_core::traits::ToolSurface::Unknown
-        }
-    }
-
-    struct PermissionedToolBridge {
-        registry: ToolRegistry,
-        allow_unsafe: bool,
-        permission_checks: Arc<AtomicUsize>,
-    }
-
-    impl PermissionedToolBridge {
-        fn new(allow_unsafe: bool) -> Self {
-            let mut registry = ToolRegistry::new();
-            registry
-                .register(test_tool("read_note", "notes", object_schema(&["path"])))
-                .unwrap();
-            registry
-                .register(test_tool(
-                    "create_note",
-                    "notes",
-                    object_schema(&["path", "content"]),
-                ))
-                .unwrap();
-
-            Self {
-                registry,
-                allow_unsafe,
-                permission_checks: Arc::new(AtomicUsize::new(0)),
-            }
-        }
-
-        fn requires_permission_check(tool_name: &str) -> bool {
-            !matches!(tool_name, "read_note" | "list_notes" | "read_metadata")
-        }
-    }
-
-    impl PermissionedToolBridge {
-        /// Execute a tool by name; the gate runs before the call.
-        pub async fn execute_tool(
-            &self,
-            tool_name: &str,
-            parameters: serde_json::Value,
-        ) -> std::result::Result<serde_json::Value, AcpError> {
-            if !self.registry.contains(tool_name) {
-                return Err(AcpError::NotFound(tool_name.to_string()));
-            }
-
-            if Self::requires_permission_check(tool_name) {
-                self.permission_checks.fetch_add(1, Ordering::SeqCst);
-                if !self.allow_unsafe {
-                    return Err(AcpError::PermissionDenied(format!(
-                        "Tool '{}' denied by permission gate",
-                        tool_name
-                    )));
-                }
-            }
-
-            Ok(json!({
-                "tool": tool_name,
-                "parameters": parameters,
-            }))
-        }
-
-        /// List all available tools
-        pub async fn list_tools(&self) -> std::result::Result<Vec<ToolDefinition>, AcpError> {
-            Ok(self
-                .registry
-                .list()
-                .into_iter()
-                .cloned()
-                .collect::<Vec<_>>())
-        }
-
-        /// Get the schema for a specific tool
-        pub async fn get_tool_schema(
-            &self,
-            tool_name: &str,
-        ) -> std::result::Result<serde_json::Value, AcpError> {
-            self.registry
-                .get(tool_name)
-                .and_then(|tool| tool.parameters.clone())
-                .ok_or_else(|| AcpError::NotFound(tool_name.to_string()))
         }
     }
 
@@ -885,79 +801,5 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(output, json!({"value": 1}));
-    }
-
-    #[tokio::test]
-    async fn permission_gate_allowed_passes() {
-        let bridge = PermissionedToolBridge::new(true);
-
-        let output = bridge
-            .execute_tool("create_note", json!({"path": "x.md", "content": "ok"}))
-            .await
-            .unwrap();
-
-        assert_eq!(output["tool"], json!("create_note"));
-        assert_eq!(bridge.permission_checks.load(Ordering::SeqCst), 1);
-    }
-
-    #[tokio::test]
-    async fn permission_bridge_list_tools_returns_registry() {
-        let bridge = PermissionedToolBridge::new(true);
-
-        let tools = bridge.list_tools().await.unwrap();
-        let names = tools
-            .iter()
-            .map(|tool| tool.name.as_str())
-            .collect::<Vec<_>>();
-
-        assert!(names.contains(&"read_note"));
-        assert!(names.contains(&"create_note"));
-    }
-
-    #[tokio::test]
-    async fn permission_bridge_get_tool_schema_returns_expected_schema() {
-        let bridge = PermissionedToolBridge::new(true);
-
-        let schema = bridge.get_tool_schema("create_note").await.unwrap();
-
-        assert_eq!(schema["type"], json!("object"));
-        assert!(schema["required"].is_array());
-    }
-
-    #[tokio::test]
-    async fn permission_gate_denied_fails_with_permission_denied() {
-        let bridge = PermissionedToolBridge::new(false);
-
-        let err = bridge
-            .execute_tool("create_note", json!({"path": "x.md", "content": "blocked"}))
-            .await
-            .unwrap_err();
-
-        assert!(matches!(err, AcpError::PermissionDenied(_)));
-    }
-
-    #[tokio::test]
-    async fn permission_patterns_safe_tool_skips_permission_check() {
-        let bridge = PermissionedToolBridge::new(false);
-
-        let output = bridge
-            .execute_tool("read_note", json!({"path": "x.md"}))
-            .await
-            .unwrap();
-
-        assert_eq!(output["tool"], json!("read_note"));
-        assert_eq!(bridge.permission_checks.load(Ordering::SeqCst), 0);
-    }
-
-    #[tokio::test]
-    async fn permission_patterns_unsafe_tool_triggers_check() {
-        let bridge = PermissionedToolBridge::new(true);
-
-        bridge
-            .execute_tool("create_note", json!({"path": "x.md", "content": "ok"}))
-            .await
-            .unwrap();
-
-        assert_eq!(bridge.permission_checks.load(Ordering::SeqCst), 1);
     }
 }

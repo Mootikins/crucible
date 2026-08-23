@@ -349,12 +349,14 @@ async fn run_case(case: &FixtureCase) {
         .await;
 
     let mut shapes = Vec::new();
+    let mut text = String::new();
     let mut thinking = String::new();
     let mut windows: Vec<(u64, u64)> = Vec::new();
     while let Ok(chunk) = rx.try_recv() {
         shapes.push(shape_of(&chunk));
         match chunk {
-            StreamingChunk::Thinking(text) => thinking.push_str(&text),
+            StreamingChunk::Text(chunk_text) => text.push_str(&chunk_text),
+            StreamingChunk::Thinking(chunk_text) => thinking.push_str(&chunk_text),
             StreamingChunk::ContextWindow { used, limit } => windows.push((used, limit)),
             _ => {}
         }
@@ -370,8 +372,7 @@ async fn run_case(case: &FixtureCase) {
             usage: expected_usage,
             context_window: expected_window,
         } => {
-            let (text, tools, response) =
-                result.unwrap_or_else(|e| panic!("[{agent}] send prompt: {e}"));
+            let (tools, response) = result.unwrap_or_else(|e| panic!("[{agent}] send prompt: {e}"));
 
             assert_eq!(shapes, *expected_shapes, "[{agent}] streamed chunk shapes");
             assert_eq!(text.trim(), *expected_text, "[{agent}] reassembled answer");

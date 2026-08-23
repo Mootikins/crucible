@@ -107,8 +107,7 @@ fn thought_chunks_stay_out_of_the_answer_text() {
         "reasoning and the answer share one accumulator, so one masked the other"
     );
     assert_eq!(
-        state.formatted_output(),
-        "weigh the options",
+        state.accumulated_text, "weigh the options",
         "reasoning leaked into the assistant's answer text"
     );
 }
@@ -177,18 +176,10 @@ fn agent_text_is_sanitised_before_it_leaves_the_acp_boundary() {
         ],
         "agent-controlled text reached the turn stream unsanitised"
     );
-    // `formatted_output` is the answer plus a rendering of the tool call,
-    // so assert on what must be absent rather than on the exact string.
-    let persisted = state.formatted_output();
-    assert!(
-        persisted.starts_with(clean),
-        "the persisted answer kept its control characters: {persisted:?}"
-    );
-    assert!(
-        !persisted
-            .chars()
-            .any(|c| !matches!(c, '\n' | '\t') && crucible_core::text::is_display_hostile(c)),
-        "the persisted turn output still carries hostile characters: {persisted:?}"
+    let persisted = &state.accumulated_text;
+    assert_eq!(
+        persisted, clean,
+        "the accumulated answer kept its control characters: {persisted:?}"
     );
     assert_eq!(
         state.title_for_tool("t1").as_deref(),

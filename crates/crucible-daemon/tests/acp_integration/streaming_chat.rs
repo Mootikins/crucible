@@ -7,6 +7,7 @@
 //! 4. Client accumulates chunks and returns complete response
 
 use crate::support::{MockStdioAgentConfig, ThreadedMockAgent};
+use crucible_daemon::acp::StreamingChunk;
 
 /// Test that ChatSession properly handles streaming responses from agent
 ///
@@ -61,10 +62,12 @@ async fn test_prompt_with_streaming_response() {
         .await
         .expect("Should complete handshake");
 
-    let (content, tool_calls, response) = client
-        .send_prompt_with_callback(prompt_request(session.id()), Box::new(|_| true))
+    let (chunks, callback) = crate::support::parity::capture_chunks();
+    let (tool_calls, response) = client
+        .send_prompt_with_callback(prompt_request(session.id()), callback)
         .await
         .expect("Should successfully receive streaming response");
+    let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     assert_eq!(
         content, "The answer is 4",
@@ -91,19 +94,23 @@ async fn test_prompt_with_streamed_tool_call() {
         .await
         .expect("Should complete handshake");
 
-    let (content, tool_calls, response) = client
-        .send_prompt_with_callback(prompt_request(session.id()), Box::new(|_| true))
+    let (chunks, callback) = crate::support::parity::capture_chunks();
+    let (tool_calls, response) = client
+        .send_prompt_with_callback(prompt_request(session.id()), callback)
         .await
         .expect("Should successfully receive streaming response");
+    let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
-    // formatted_output() interleaves a rendered tool-call line into the text.
-    assert!(
-        content.starts_with("Calculating…"),
-        "text chunks must precede the tool call rendering: {content:?}"
+    assert_eq!(
+        content, "Calculating…",
+        "the answer text must hold the text chunks only: {content:?}"
     );
     assert!(
-        content.contains("Mock Tool"),
-        "the tool call must be rendered into the formatted output: {content:?}"
+        chunks.lock().unwrap().iter().any(|chunk| matches!(
+            chunk,
+            StreamingChunk::ToolStart { name, .. } if name == "Mock Tool"
+        )),
+        "the tool call must reach the stream as a ToolStart chunk"
     );
     assert_eq!(
         tool_calls.len(),
@@ -138,7 +145,7 @@ async fn test_cancel_mid_stream_reaches_agent() {
     // stream being dropped — the user cancelled.
     let callback: crucible_daemon::acp::StreamingCallback = Box::new(|_chunk| false);
 
-    let (_content, _tool_calls, response) = client
+    let (_tool_calls, response) = client
         .send_prompt_with_callback(prompt_request(session.id()), callback)
         .await
         .expect("cancelled turn should still complete cleanly");

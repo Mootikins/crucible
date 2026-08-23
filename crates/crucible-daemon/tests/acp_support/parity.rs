@@ -190,6 +190,36 @@ pub fn chunk_kind(chunk: &crucible_daemon::acp::StreamingChunk) -> &'static str 
     }
 }
 
+/// The answer text of a turn: every `Text` chunk, in arrival order.
+///
+/// The ACP client returns no text of its own, so a test that asserts on the
+/// answer reads it from the chunks its callback captured.
+#[allow(dead_code)]
+pub fn text_of(chunks: &[crucible_daemon::acp::StreamingChunk]) -> String {
+    chunks
+        .iter()
+        .filter_map(|chunk| match chunk {
+            crucible_daemon::acp::StreamingChunk::Text(text) => Some(text.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A callback that captures every chunk of one turn into the returned buffer.
+#[allow(dead_code)]
+pub fn capture_chunks() -> (
+    std::sync::Arc<std::sync::Mutex<Vec<crucible_daemon::acp::StreamingChunk>>>,
+    crucible_daemon::acp::StreamingCallback,
+) {
+    let chunks = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let chunks_cb = chunks.clone();
+    let callback: crucible_daemon::acp::StreamingCallback = Box::new(move |chunk| {
+        chunks_cb.lock().unwrap().push(chunk);
+        true
+    });
+    (chunks, callback)
+}
+
 fn diff_paths(diffs: &[FileDiff]) -> Vec<String> {
     diffs.iter().map(|d| d.path.clone()).collect()
 }

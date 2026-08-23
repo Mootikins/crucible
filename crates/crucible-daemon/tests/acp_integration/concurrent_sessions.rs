@@ -313,8 +313,7 @@ async fn stream_edge_chunk_ordering_preserved_per_stream_with_parallel_streams()
                 }),
             )
             .await
-            .unwrap()
-            .0
+            .unwrap();
     });
 
     let seen_b_cb = seen_b.clone();
@@ -331,18 +330,15 @@ async fn stream_edge_chunk_ordering_preserved_per_stream_with_parallel_streams()
                 }),
             )
             .await
-            .unwrap()
-            .0
+            .unwrap();
     });
 
     barrier.wait().await;
 
-    let (content_a, content_b) = tokio::join!(stream_a, stream_b);
-    let content_a = content_a.unwrap();
-    let content_b = content_b.unwrap();
+    let (turn_a, turn_b) = tokio::join!(stream_a, stream_b);
+    turn_a.unwrap();
+    turn_b.unwrap();
 
-    assert_eq!(content_a, "A-1A-2A-3");
-    assert_eq!(content_b, "B-1B-2B-3");
     assert_eq!(&*seen_a.lock().unwrap(), &["A-1", "A-2", "A-3"]);
     assert_eq!(&*seen_b.lock().unwrap(), &["B-1", "B-2", "B-3"]);
 
@@ -501,10 +497,12 @@ async fn stream_edge_large_response_near_max_output_is_accumulated() {
     });
 
     let request = make_prompt_request("large-session", "big stream");
-    let (content, tool_calls, _response) = client
-        .send_prompt_with_callback(request, Box::new(|_| true))
+    let (chunks, callback) = crate::support::parity::capture_chunks();
+    let (tool_calls, _response) = client
+        .send_prompt_with_callback(request, callback)
         .await
         .expect("large streaming response should succeed");
+    let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     assert_eq!(content.len(), expected_len);
     assert!(content.starts_with('x'));
@@ -528,10 +526,12 @@ async fn stream_edge_empty_response_returns_empty_content() {
     });
 
     let request = make_prompt_request("empty-session", "respond with nothing");
-    let (content, tool_calls, _response) = client
-        .send_prompt_with_callback(request, Box::new(|_| true))
+    let (chunks, callback) = crate::support::parity::capture_chunks();
+    let (tool_calls, _response) = client
+        .send_prompt_with_callback(request, callback)
         .await
         .expect("empty response should still complete");
+    let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     assert!(content.is_empty(), "no chunks should produce empty content");
     assert!(tool_calls.is_empty());

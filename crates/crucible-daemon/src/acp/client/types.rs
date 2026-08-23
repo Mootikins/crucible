@@ -29,18 +29,10 @@ pub struct ClientConfig {
     pub max_retries: Option<u32>,
 }
 
-pub(super) enum ResponseSegment {
-    Text(String),
-    Tool { label: String, diff: Option<String> },
-}
-
 #[derive(Default)]
 pub(super) struct StreamingState {
-    pub(super) segments: Vec<ResponseSegment>,
     pub(super) tool_calls: Vec<ToolCallInfo>,
     pub(super) notification_count: usize,
-    pub(super) tool_segment_index: std::collections::HashMap<String, usize>,
-    pub(super) tool_block_active: bool,
     /// Raw accumulated text (for deduplication of full-text re-sends).
     /// Some ACP agents (e.g. cursor-acp) send the complete accumulated text
     /// as a final notification before the JSON-RPC response. We track the
@@ -59,13 +51,6 @@ impl StreamingState {
             return;
         }
         self.accumulated_text.push_str(text);
-        let chunk = text.to_string();
-        if let Some(ResponseSegment::Text(last)) = self.segments.last_mut() {
-            last.push_str(&chunk);
-        } else {
-            self.segments.push(ResponseSegment::Text(chunk));
-        }
-        self.tool_block_active = false;
     }
 
     /// Check if incoming text is a full re-send of already-accumulated content.
@@ -74,51 +59,6 @@ impl StreamingState {
     /// text equals the accumulated text so far.
     pub(super) fn is_duplicate_resend(&self, text: &str) -> bool {
         !self.accumulated_text.is_empty() && text.trim() == self.accumulated_text.trim()
-    }
-
-    pub(super) fn formatted_output(&self) -> String {
-        let mut output = String::new();
-        let mut in_tool_block = false;
-        for seg in &self.segments {
-            match seg {
-                ResponseSegment::Text(text) => {
-                    if in_tool_block {
-                        // End tool block with blank line
-                        output.push('\n');
-                        in_tool_block = false;
-                    }
-                    output.push_str(text);
-                }
-                ResponseSegment::Tool { label, diff } => {
-                    if !in_tool_block {
-                        // Start tool block with blank line before
-                        if !output.is_empty() && !output.ends_with('\n') {
-                            output.push('\n');
-                        }
-                        output.push('\n');
-                        in_tool_block = true;
-                    }
-                    // All tool calls indented in the block
-                    output.push_str("  ");
-                    output.push_str(label);
-                    output.push('\n');
-
-                    // Render diff if present (each line indented)
-                    if let Some(diff_str) = diff {
-                        for line in diff_str.lines() {
-                            output.push_str("    ");
-                            output.push_str(line);
-                            output.push('\n');
-                        }
-                    }
-                }
-            }
-        }
-        // End tool block if we finished with tools
-        if in_tool_block {
-            output.push('\n');
-        }
-        output
     }
 
     pub(super) fn title_for_tool(&self, id: &str) -> Option<String> {
@@ -210,33 +150,6 @@ mod streaming_state_proptests {
             let expected = !state.accumulated_text.is_empty()
                 && candidate.trim() == state.accumulated_text.trim();
             prop_assert_eq!(state.is_duplicate_resend(&candidate), expected);
-        }
-
-        /// formatted_output is monotonic — appending more never shrinks
-        /// the output. Whitespace-only chunks are dropped (documented
-        /// behavior of `append_text`), so the expected final output is
-        /// the concatenation of non-whitespace inputs only.
-        #[test]
-        fn text_only_formatted_output_grows_monotonically(
-            chunks in proptest::collection::vec("[a-zA-Z0-9 ]{1,16}", 1..16)
-        ) {
-            let mut state = StreamingState::default();
-            let mut last_len = 0;
-            for chunk in &chunks {
-                state.append_text(chunk);
-                let out = state.formatted_output();
-                prop_assert!(
-                    out.len() >= last_len,
-                    "formatted_output shrunk: {} -> {}", last_len, out.len()
-                );
-                last_len = out.len();
-            }
-            let expected: String = chunks
-                .iter()
-                .filter(|c| !c.trim().is_empty())
-                .cloned()
-                .collect();
-            prop_assert_eq!(state.formatted_output(), expected);
         }
     }
 }

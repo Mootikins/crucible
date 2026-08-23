@@ -340,10 +340,12 @@ async fn acp_permission_no_handler_does_not_crash() {
     });
 
     let request = make_prompt_request("ses-no-handler", "delete everything");
-    let (content, _tool_calls, _response) = client
-        .send_prompt_with_callback(request, Box::new(|_| true))
+    let (chunks, callback) = crate::support::parity::capture_chunks();
+    let (_tool_calls, _response) = client
+        .send_prompt_with_callback(request, callback)
         .await
         .expect("streaming should complete without crashing even with no handler");
+    let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     assert!(content.contains("cancelled"));
 }
@@ -405,7 +407,7 @@ async fn acp_safe_tool_no_permission_request_needed() {
     });
 
     let request = make_prompt_request("ses-safe", "read main.rs");
-    let (content, tool_calls, _response) = client
+    let (tool_calls, _response) = client
         .send_prompt_with_callback(
             request,
             Box::new(move |chunk| {
@@ -415,6 +417,7 @@ async fn acp_safe_tool_no_permission_request_needed() {
         )
         .await
         .expect("streaming should complete without permission request");
+    let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     // Permission handler should NOT have been called
     let requests = recorded.lock().unwrap();
@@ -490,10 +493,12 @@ async fn acp_permission_deny_handler_invoked() {
     });
 
     let request = make_prompt_request("ses-deny", "write a file");
-    let (content, _tool_calls, _response) = client
-        .send_prompt_with_callback(request, Box::new(|_| true))
+    let (chunks, callback) = crate::support::parity::capture_chunks();
+    let (_tool_calls, _response) = client
+        .send_prompt_with_callback(request, callback)
         .await
         .expect("streaming should complete");
+    let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     assert!(
         *denied.lock().unwrap(),
@@ -580,7 +585,7 @@ async fn acp_permission_approved_sends_selected_response_to_agent() {
     });
 
     let request = make_prompt_request("ses-perm-approve", "run echo hello");
-    let (content, tool_calls, _response) = client
+    let (tool_calls, _response) = client
         .send_prompt_with_callback(
             request,
             Box::new(move |chunk| {
@@ -590,6 +595,7 @@ async fn acp_permission_approved_sends_selected_response_to_agent() {
         )
         .await
         .expect("streaming should complete after permission approval");
+    let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     assert!(content.contains("Command executed successfully"));
     assert_eq!(tool_calls.len(), 1);
@@ -642,10 +648,12 @@ async fn acp_permission_denied_sends_cancelled_response_to_agent() {
     });
 
     let request = make_prompt_request("ses-perm-deny", "write a file");
-    let (content, _tool_calls, _response) = client
-        .send_prompt_with_callback(request, Box::new(|_| true))
+    let (chunks, callback) = crate::support::parity::capture_chunks();
+    let (_tool_calls, _response) = client
+        .send_prompt_with_callback(request, callback)
         .await
         .expect("streaming should complete after permission denial");
+    let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     assert!(content.contains("denied"));
 }
@@ -693,10 +701,12 @@ async fn acp_permission_handler_not_set_defaults_to_cancelled() {
     });
 
     let request = make_prompt_request("ses-no-handler", "delete everything");
-    let (content, _tool_calls, _response) = client
-        .send_prompt_with_callback(request, Box::new(|_| true))
+    let (chunks, callback) = crate::support::parity::capture_chunks();
+    let (_tool_calls, _response) = client
+        .send_prompt_with_callback(request, callback)
         .await
         .expect("streaming should complete with auto-cancelled permission");
+    let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     assert!(content.contains("cancelled"));
 }
@@ -799,7 +809,7 @@ async fn acp_multiple_permission_requests_in_single_turn() {
     });
 
     let request = make_prompt_request("ses-multi", "list files then write output");
-    let (content, tool_calls, _response) = client
+    let (tool_calls, _response) = client
         .send_prompt_with_callback(
             request,
             Box::new(move |chunk| {
@@ -809,6 +819,7 @@ async fn acp_multiple_permission_requests_in_single_turn() {
         )
         .await
         .expect("streaming should complete with multiple permission requests");
+    let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     let requests = recorded.lock().unwrap();
     assert_eq!(requests.len(), 2);

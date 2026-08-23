@@ -157,16 +157,13 @@ impl CrucibleAcpClient {
     ///
     /// # Returns
     ///
-    /// Tuple of (formatted_content, tool_calls, PromptResponse)
+    /// The tool calls the agent announced, and the final PromptResponse. The
+    /// text of the turn reaches the caller only through the callback.
     pub async fn send_prompt_with_callback(
         &mut self,
         request: agent_client_protocol::PromptRequest,
         mut callback: StreamingCallback,
-    ) -> Result<(
-        String,
-        Vec<ToolCallInfo>,
-        agent_client_protocol::PromptResponse,
-    )> {
+    ) -> Result<(Vec<ToolCallInfo>, agent_client_protocol::PromptResponse)> {
         use serde_json::json;
 
         let request_id = REQUEST_ID.fetch_add(1, Ordering::SeqCst);
@@ -240,7 +237,7 @@ impl CrucibleAcpClient {
         };
 
         match tokio::time::timeout(overall_timeout, streaming_future).await {
-            Ok(Ok((state, response))) => Ok((state.formatted_output(), state.tool_calls, response)),
+            Ok(Ok((state, response))) => Ok((state.tool_calls, response)),
             Ok(Err(e)) => Err(e),
             Err(_) => Err(ClientError::Timeout(format!(
                 "Streaming operation timed out after {}s",

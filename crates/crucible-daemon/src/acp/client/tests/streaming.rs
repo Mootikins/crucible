@@ -1,12 +1,10 @@
-use serde_json::json;
-use tempfile::TempDir;
-
-use super::{test_path, upsert_tool_info};
+use super::test_path;
 use crate::acp::client::types::{ClientConfig, StreamingState};
 use crate::acp::client::CrucibleAcpClient;
 use crate::acp::streaming::{StreamingCallback, StreamingChunk};
 use agent_client_protocol::SessionNotification;
 use crucible_core::types::acp::ToolCallInfo;
+use serde_json::json;
 
 #[test]
 fn streaming_state_merges_chunks_without_newlines() {
@@ -15,76 +13,26 @@ fn streaming_state_merges_chunks_without_newlines() {
     state.append_text("d a few notes from the kiln.");
 
     assert_eq!(
-        state.formatted_output(),
+        state.accumulated_text,
         "I'll read a few notes from the kiln."
     );
 }
 
 #[test]
-fn streaming_state_adds_padding_after_tools() {
-    let config = ClientConfig {
-        agent_path: test_path("agent"),
-        agent_args: None,
-        working_dir: None,
-        env_vars: None,
-        timeout_ms: Some(1000),
-        max_retries: Some(1),
-    };
-    let client = CrucibleAcpClient::new(config);
+fn streaming_state_drops_whitespace_only_chunks() {
     let mut state = StreamingState::default();
-    state.append_text("First chunk");
-
-    let tool_call = ToolCallInfo::new("test_tool");
-    client.record_tool_call(tool_call, &mut state);
-    state.append_text("Response after the tool call.");
-
-    assert_eq!(
-        state.formatted_output(),
-        "First chunk\n\n  ▷ Test Tool()\n\nResponse after the tool call."
-    );
-}
-
-#[test]
-fn tool_call_indents_after_text() {
-    let config = ClientConfig {
-        agent_path: test_path("test-agent"),
-        agent_args: None,
-        working_dir: None,
-        env_vars: None,
-        timeout_ms: Some(1000),
-        max_retries: Some(1),
-    };
-    let client = CrucibleAcpClient::new(config);
-    let mut state = StreamingState::default();
-
     state.append_text("Hello");
-
-    client.record_tool_call(
-        ToolCallInfo::new("mcp__crucible__read_note")
-            .with_id("tool-1")
-            .with_arguments(json!({"path": "PRIME"})),
-        &mut state,
-    );
-
+    state.append_text("   ");
     state.append_text("World");
 
-    let output = state.formatted_output();
-    // Tool block has blank line before and after
-    assert!(output.contains("Hello\n\n  ▷ Read Note"));
-    assert!(output.contains("\n\nWorld"));
+    assert_eq!(state.accumulated_text, "HelloWorld");
 }
 
+/// A second frame for the same call id replaces the first, so the recorded
+/// call carries the fuller arguments of the later frame.
 #[test]
 fn tool_call_updates_existing_entry() {
-    let config = ClientConfig {
-        agent_path: test_path("test-agent"),
-        agent_args: None,
-        working_dir: None,
-        env_vars: None,
-        timeout_ms: Some(1000),
-        max_retries: Some(1),
-    };
-    let client = CrucibleAcpClient::new(config);
+    let client = make_client();
     let mut state = StreamingState::default();
 
     client.record_tool_call(
@@ -101,158 +49,10 @@ fn tool_call_updates_existing_entry() {
         &mut state,
     );
 
-    let output = state.formatted_output();
-    assert_eq!(output.matches("▷ Read Note").count(), 1);
-    assert!(output.contains("PRIME.md"));
-}
-
-/// A write tool's rendered output carries the unified diff.
-///
-/// The workspace is load-bearing, not scenery. This test used to build the
-/// client with `working_dir: None` and point it at a `NamedTempFile` in the
-/// system temp dir — an absolute path with no session scope at all. That
-/// shape passed only because the synthesizer, having no root, opened whatever
-/// absolute path the tool arguments named; the assertion "the diff shows
-/// `-old content`" was therefore an assertion that an unrooted preview reads
-/// and publishes an arbitrary file, i.e. it pinned the exfiltration primitive
-/// as desired behaviour. `acp/client/tests/diff.rs` was corrected the same
-/// way. The behaviour actually under test — a write tool renders old/new
-/// lines — is unchanged; it is now exercised through a legitimate in-session
-/// target, which is the only way it happens in production.
-#[test]
-fn test_formatted_output_includes_diff() {
-    let workspace = TempDir::new().unwrap();
-    let config = ClientConfig {
-        agent_path: test_path("agent"),
-        agent_args: None,
-        working_dir: Some(workspace.path().to_path_buf()),
-        env_vars: None,
-        timeout_ms: Some(1000),
-        max_retries: Some(1),
-    };
-    let client = CrucibleAcpClient::new(config);
-    let mut state = StreamingState::default();
-
-    std::fs::write(workspace.path().join("note.md"), "SENTINEL-ON-DISK\n").unwrap();
-
-    // Record a write tool call
-    client.record_tool_call(
-        ToolCallInfo::new("update_note")
-            .with_id("tool-1")
-            .with_arguments(json!({
-                "path": "note.md",
-                "content": "new content\n"
-            })),
-        &mut state,
-    );
-
-    let output = state.formatted_output();
-    assert!(output.contains("▷ Update Note"), "Should have tool label");
-    // The replaced line is deliberately absent: showing it required reading
-    // the target from the model's unapproved arguments. See `diff_synth`.
-    assert!(
-        !output.contains("SENTINEL-ON-DISK"),
-        "the preview must not read the target: {output}"
-    );
-    assert!(
-        output.contains("+new content"),
-        "Should show inserted line in diff"
-    );
-}
-
-// =========================================================================
-// RED Tests: StreamingState Formatting Edge Cases
-// These tests are designed to expose formatting issues (TDD approach)
-// =========================================================================
-
-#[test]
-fn test_streaming_state_empty_text_handling() {
-    // RED: Verify whitespace-only chunks don't create spurious newlines
-    let mut state = StreamingState::default();
-    state.append_text("Hello");
-    state.append_text("   "); // whitespace only - should be ignored
-    state.append_text("World");
-
-    let output = state.formatted_output();
-    // Whitespace-only text is ignored by append_text, so Hello and World
-    // should be concatenated without extra spacing
-    assert!(
-        !output.contains("\n\n"),
-        "Should not have double newlines from whitespace: {:?}",
-        output
-    );
-    assert_eq!(output.trim(), "HelloWorld");
-}
-
-#[test]
-fn test_streaming_state_consecutive_tools_no_double_spacing() {
-    // RED: Multiple consecutive tools should be in one block with single spacing
-    let config = ClientConfig {
-        agent_path: test_path("test-agent"),
-        agent_args: None,
-        working_dir: None,
-        env_vars: None,
-        timeout_ms: Some(1000),
-        max_retries: Some(1),
-    };
-    let client = CrucibleAcpClient::new(config);
-    let mut state = StreamingState::default();
-
-    client.record_tool_call(ToolCallInfo::new("tool1").with_id("t1"), &mut state);
-    client.record_tool_call(ToolCallInfo::new("tool2").with_id("t2"), &mut state);
-    client.record_tool_call(ToolCallInfo::new("tool3").with_id("t3"), &mut state);
-
-    let output = state.formatted_output();
-    // Should only have one blank line before the tool block, not between each tool
-    // The tool block should have format: "\n\n  ▷ tool1()\n  ▷ tool2()\n  ▷ tool3()\n\n"
-    let tool_section: &str = output.trim();
-    let blank_line_pairs = tool_section.matches("\n\n").count();
-    assert!(
-        blank_line_pairs <= 1,
-        "Should have max 1 blank line separator at start, got {} in: {:?}",
-        blank_line_pairs,
-        output
-    );
-}
-
-#[test]
-fn test_streaming_state_text_tool_text_formatting() {
-    // RED: Text -> Tools -> Text should have proper separation
-    let config = ClientConfig {
-        agent_path: test_path("test-agent"),
-        agent_args: None,
-        working_dir: None,
-        env_vars: None,
-        timeout_ms: Some(1000),
-        max_retries: Some(1),
-    };
-    let client = CrucibleAcpClient::new(config);
-    let mut state = StreamingState::default();
-
-    state.append_text("Before tools\n");
-    client.record_tool_call(
-        ToolCallInfo::new("read_file")
-            .with_id("t1")
-            .with_arguments(json!({"path": "test.md"})),
-        &mut state,
-    );
-    state.append_text("After tools");
-
-    let output = state.formatted_output();
-    assert!(
-        output.contains("Before tools"),
-        "Should contain text before tools"
-    );
-    assert!(output.contains("▷"), "Should contain tool indicator");
-    assert!(
-        output.contains("After tools"),
-        "Should contain text after tools"
-    );
-    // Verify proper blank line separation before tool block
-    assert!(
-        output.contains("\n\n  ▷"),
-        "Tool block should have blank line before it: {:?}",
-        output
+    assert_eq!(state.tool_calls.len(), 1);
+    assert_eq!(
+        state.tool_calls[0].arguments.as_ref().unwrap()["path"],
+        json!("PRIME.md")
     );
 }
 
@@ -268,10 +68,9 @@ fn test_tool_deduplication_different_ids_same_args() {
         .with_id("call-2")
         .with_arguments(json!({"path": "test.md"}));
 
-    // Use upsert_tool_info directly to test deduplication logic
-    // (record_tool_call also modifies segments, we want to isolate the dedup logic)
-    upsert_tool_info(tool1, &mut state);
-    upsert_tool_info(tool2, &mut state);
+    let client = make_client();
+    client.record_tool_call(tool1, &mut state);
+    client.record_tool_call(tool2, &mut state);
 
     assert_eq!(
         state.tool_calls.len(),
@@ -292,8 +91,9 @@ fn test_tool_deduplication_same_id_updates() {
         .with_id("same-id")
         .with_arguments(json!({"path": "new.md"}));
 
-    upsert_tool_info(tool1, &mut state);
-    upsert_tool_info(tool2, &mut state);
+    let client = make_client();
+    client.record_tool_call(tool1, &mut state);
+    client.record_tool_call(tool2, &mut state);
 
     assert_eq!(
         state.tool_calls.len(),

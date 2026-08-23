@@ -272,7 +272,7 @@ async fn tool_start_with_arguments_emits_chunk_with_args() {
     });
 
     let request = make_prompt_request("ses-tool-args", "search something");
-    let (_content, tool_calls, _response) = client
+    let (tool_calls, _response) = client
         .send_prompt_with_callback(
             request,
             Box::new(move |chunk| {
@@ -856,10 +856,12 @@ async fn stream_without_usage_data_completes_gracefully() {
     });
 
     let request = make_prompt_request("ses-no-usage", "say hello");
-    let (content, tool_calls, response) = client
-        .send_prompt_with_callback(request, Box::new(|_| true))
+    let (chunks, callback) = crate::support::parity::capture_chunks();
+    let (tool_calls, response) = client
+        .send_prompt_with_callback(request, callback)
         .await
         .expect("stream should complete without crash when no usage data");
+    let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     assert!(
         content.contains("Hello from agent"),
@@ -888,10 +890,12 @@ async fn empty_stream_no_usage_no_chunks_completes() {
     });
 
     let request = make_prompt_request("ses-empty", "nothing");
-    let (content, tool_calls, _response) = client
-        .send_prompt_with_callback(request, Box::new(|_| true))
+    let (chunks, callback) = crate::support::parity::capture_chunks();
+    let (tool_calls, _response) = client
+        .send_prompt_with_callback(request, callback)
         .await
         .expect("empty stream should complete without crash");
+    let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     assert!(content.is_empty(), "no chunks = empty content");
     assert!(tool_calls.is_empty());
@@ -953,7 +957,7 @@ async fn full_flow_text_tool_result_text_via_callback() {
     });
 
     let request = make_prompt_request("ses-full", "search async patterns");
-    let (content, tool_calls, _response) = client
+    let (tool_calls, _response) = client
         .send_prompt_with_callback(
             request,
             Box::new(move |chunk| {
@@ -963,6 +967,7 @@ async fn full_flow_text_tool_result_text_via_callback() {
         )
         .await
         .expect("full flow should complete");
+    let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     let captured = chunks.lock().unwrap();
 

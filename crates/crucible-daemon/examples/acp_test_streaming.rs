@@ -50,12 +50,23 @@ async fn main() {
     }))
     .expect("Failed to create PromptRequest");
 
+    let content = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+    let content_cb = content.clone();
     let result = client
-        .send_prompt_with_callback(prompt_request, Box::new(|_| true))
+        .send_prompt_with_callback(
+            prompt_request,
+            Box::new(move |chunk| {
+                if let crucible_daemon::acp::StreamingChunk::Text(text) = chunk {
+                    content_cb.lock().unwrap().push_str(&text);
+                }
+                true
+            }),
+        )
         .await;
 
     match result {
-        Ok((content, tool_calls, response)) => {
+        Ok((tool_calls, response)) => {
+            let content = content.lock().unwrap().clone();
             println!("\n✅ Streaming successful!");
             println!("Accumulated content: '{}'", content);
             println!("Tool calls: {}", tool_calls.len());

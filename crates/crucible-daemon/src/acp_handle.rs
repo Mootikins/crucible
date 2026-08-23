@@ -636,8 +636,7 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                 *guard = Some(owned_client);
             }
 
-            let _ = result_tx
-                .send(result.map(|(content, tools, response)| (content, tools, response, usage)));
+            let _ = result_tx.send(result.map(|(tools, response)| (tools, response, usage)));
         });
 
         let body = stream! {
@@ -762,7 +761,7 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
             }
 
             match result_rx.await {
-                Ok(Ok((_content, acp_tool_calls, response, usage))) => {
+                Ok(Ok((acp_tool_calls, response, usage))) => {
                     debug!(
                         tool_count = acp_tool_calls.len(),
                         has_usage = usage.is_some(),

@@ -1,11 +1,7 @@
 use std::path::PathBuf;
 
-use super::types::StreamingState;
-use crucible_core::types::acp::ToolCallInfo;
-
 mod connection;
 mod creation;
-mod diff;
 mod io;
 mod process_streaming;
 mod protocol;
@@ -70,19 +66,4 @@ pub(super) fn get_sleep_command() -> (PathBuf, Option<Vec<String>>) {
     {
         (PathBuf::from("sleep"), Some(vec!["5".to_string()]))
     }
-}
-
-/// Helper to test upsert logic in isolation
-pub(super) fn upsert_tool_info(tool_call: ToolCallInfo, state: &mut StreamingState) {
-    if let Some(id) = &tool_call.id {
-        if let Some(existing) = state
-            .tool_calls
-            .iter_mut()
-            .find(|t| t.id.as_deref() == Some(id.as_str()))
-        {
-            *existing = tool_call;
-            return;
-        }
-    }
-    state.tool_calls.push(tool_call);
 }

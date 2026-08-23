@@ -200,7 +200,7 @@ async fn test_acp_tool_roundtrip_read_file() {
     });
 
     let request = make_prompt_request(session_id, "read /tmp/test.md");
-    let (content, tool_calls, response) = client
+    let (tool_calls, response) = client
         .send_prompt_with_callback(
             request,
             Box::new(move |chunk| {
@@ -210,6 +210,7 @@ async fn test_acp_tool_roundtrip_read_file() {
         )
         .await
         .expect("tool roundtrip should complete");
+    let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     // Verify chunk ordering: text -> tool_start -> tool_end -> text
     let captured = chunks.lock().unwrap();
@@ -371,7 +372,7 @@ async fn test_acp_tool_roundtrip_multiple_tools() {
     });
 
     let request = make_prompt_request(session_id, "search and read config");
-    let (content, tool_calls, _response) = client
+    let (tool_calls, _response) = client
         .send_prompt_with_callback(
             request,
             Box::new(move |chunk| {
@@ -381,6 +382,7 @@ async fn test_acp_tool_roundtrip_multiple_tools() {
         )
         .await
         .expect("multi-tool roundtrip should complete");
+    let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     let captured = chunks.lock().unwrap();
     let kinds: Vec<&str> = captured
@@ -587,7 +589,7 @@ async fn test_acp_tool_roundtrip_with_mcp_server() {
     });
 
     let request = make_prompt_request(acp_session_id, "list my notes");
-    let (content, tool_calls, _response) = client
+    let (tool_calls, _response) = client
         .send_prompt_with_callback(
             request,
             Box::new(move |chunk| {
@@ -597,6 +599,7 @@ async fn test_acp_tool_roundtrip_with_mcp_server() {
         )
         .await
         .expect("MCP tool roundtrip should complete");
+    let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     {
         let captured = chunks.lock().unwrap();
@@ -707,10 +710,12 @@ async fn test_acp_tool_roundtrip_content_after_tool() {
     });
 
     let request = make_prompt_request(session_id, "find main function");
-    let (content, tool_calls, _response) = client
-        .send_prompt_with_callback(request, Box::new(|_| true))
+    let (chunks, callback) = crate::support::parity::capture_chunks();
+    let (tool_calls, _response) = client
+        .send_prompt_with_callback(request, callback)
         .await
         .expect("content-after-tool roundtrip should complete");
+    let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     assert!(
         content.contains("main function is defined at line 1"),
