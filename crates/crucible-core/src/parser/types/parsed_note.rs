@@ -151,39 +151,6 @@ impl ParsedNote {
     pub fn builder(path: PathBuf) -> ParsedNoteBuilder {
         ParsedNoteBuilder::new(path)
     }
-
-    /// Legacy compatibility constructor for existing tests
-    #[allow(clippy::too_many_arguments)]
-    pub fn legacy(
-        path: PathBuf,
-        frontmatter: Option<Frontmatter>,
-        wikilinks: Vec<Wikilink>,
-        tags: Vec<Tag>,
-        content: NoteContent,
-        parsed_at: DateTime<Utc>,
-        content_hash: String,
-        file_size: u64,
-    ) -> Self {
-        Self {
-            path,
-            frontmatter,
-            wikilinks,
-            tags,
-            inline_links: Vec::new(),
-            content,
-            callouts: Vec::new(),
-            latex_expressions: Vec::new(),
-            footnotes: FootnoteMap::new(),
-            parsed_at,
-            content_hash,
-            file_size,
-            parse_errors: Vec::new(),
-            body_offset: 0,
-            block_hashes: Vec::new(), // Phase 2: empty by default for backward compatibility
-            merkle_root: None,        // Phase 2: None by default for backward compatibility
-            metadata: ParsedNoteMetadata::default(), // Metadata extracted during parsing
-        }
-    }
 }
 
 impl Default for ParsedNote {
@@ -222,36 +189,14 @@ impl ParsedNote {
         all_tags
     }
 
-    /// Check if this note has block hashes (Phase 2 support)
-    pub fn has_block_hashes(&self) -> bool {
-        !self.block_hashes.is_empty()
-    }
-
     /// Get the number of block hashes
     pub fn block_hash_count(&self) -> usize {
         self.block_hashes.len()
     }
 
-    /// Check if this note has a Merkle root (Phase 2 support)
-    pub fn has_merkle_root(&self) -> bool {
-        self.merkle_root.is_some()
-    }
-
     /// Get the Merkle root hash if available
     pub fn get_merkle_root(&self) -> Option<BlockHash> {
         self.merkle_root
-    }
-
-    /// Set block hashes (for Phase 2 parser implementation)
-    pub fn with_block_hashes(mut self, block_hashes: Vec<BlockHash>) -> Self {
-        self.block_hashes = block_hashes;
-        self
-    }
-
-    /// Set Merkle root (for Phase 2 parser implementation)
-    pub fn with_merkle_root(mut self, merkle_root: Option<BlockHash>) -> Self {
-        self.merkle_root = merkle_root;
-        self
     }
 
     /// Add a single block hash (for incremental building)

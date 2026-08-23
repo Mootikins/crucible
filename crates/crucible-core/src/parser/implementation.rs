@@ -778,9 +778,9 @@ let x = 42;
         assert_eq!(doc.title(), "test");
 
         // Should have no block hashes when disabled
-        assert!(!doc.has_block_hashes());
+        assert!(doc.block_hashes.is_empty());
         assert_eq!(doc.block_hash_count(), 0);
-        assert!(!doc.has_merkle_root());
+        assert!(doc.merkle_root.is_none());
         assert_eq!(doc.get_merkle_root(), None);
     }
 
@@ -810,9 +810,9 @@ let x = 42;
         assert_eq!(doc.title(), "test");
 
         // Should have block hashes when enabled
-        assert!(doc.has_block_hashes());
+        assert!(!doc.block_hashes.is_empty());
         assert!(doc.block_hash_count() > 0);
-        assert!(doc.has_merkle_root());
+        assert!(doc.merkle_root.is_some());
         assert!(doc.get_merkle_root().is_some());
 
         // Verify hashes are non-zero
@@ -852,8 +852,8 @@ let x = 42;
 
         let doc = result.unwrap();
         // Empty documents should have no block hashes
-        assert!(!doc.has_block_hashes());
-        assert!(!doc.has_merkle_root());
+        assert!(doc.block_hashes.is_empty());
+        assert!(doc.merkle_root.is_none());
     }
 
     #[test]
@@ -897,10 +897,10 @@ let x = 42;
         assert_eq!(result1.merkle_root, result2.merkle_root);
 
         // Both should have hashes
-        assert!(result1.has_block_hashes());
-        assert!(result1.has_merkle_root());
-        assert!(result2.has_block_hashes());
-        assert!(result2.has_merkle_root());
+        assert!(!result1.block_hashes.is_empty());
+        assert!(result1.merkle_root.is_some());
+        assert!(!result2.block_hashes.is_empty());
+        assert!(result2.merkle_root.is_some());
     }
 
     #[tokio::test]
@@ -924,10 +924,10 @@ Content 2."#;
         assert_ne!(result1.merkle_root, result2.merkle_root);
 
         // But both should have hashes
-        assert!(result1.has_block_hashes());
-        assert!(result1.has_merkle_root());
-        assert!(result2.has_block_hashes());
-        assert!(result2.has_merkle_root());
+        assert!(!result1.block_hashes.is_empty());
+        assert!(result1.merkle_root.is_some());
+        assert!(!result2.block_hashes.is_empty());
+        assert!(result2.merkle_root.is_some());
     }
 
     #[tokio::test]
@@ -963,8 +963,8 @@ Content 2."#;
         let doc = result.unwrap();
         // No frontmatter title, so title() returns the filename without extension
         assert_eq!(doc.title(), "large");
-        assert!(doc.has_block_hashes());
-        assert!(doc.has_merkle_root());
+        assert!(!doc.block_hashes.is_empty());
+        assert!(doc.merkle_root.is_some());
 
         // Should have processed multiple blocks
         assert!(doc.block_hash_count() > 10);

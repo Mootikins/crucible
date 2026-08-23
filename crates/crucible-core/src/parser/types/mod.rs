@@ -342,19 +342,19 @@ mod tests {
         doc.add_block_hash(hash2);
 
         assert_eq!(doc.block_hash_count(), 2);
-        assert!(doc.has_block_hashes());
+        assert!(!doc.block_hashes.is_empty());
         assert_eq!(doc.block_hashes[0], hash1);
         assert_eq!(doc.block_hashes[1], hash2);
 
         // Test setting Merkle root
-        doc = doc.with_merkle_root(Some(merkle_root));
-        assert!(doc.has_merkle_root());
+        doc.merkle_root = Some(merkle_root);
+        assert!(doc.merkle_root.is_some());
         assert_eq!(doc.get_merkle_root(), Some(merkle_root));
 
         // Test clearing hash data
         doc.clear_hash_data();
-        assert!(!doc.has_block_hashes());
-        assert!(!doc.has_merkle_root());
+        assert!(doc.block_hashes.is_empty());
+        assert!(doc.merkle_root.is_none());
         assert_eq!(doc.block_hash_count(), 0);
     }
 
@@ -377,48 +377,11 @@ mod tests {
             .with_merkle_root(Some(merkle_root))
             .build();
 
-        assert!(doc.has_block_hashes());
+        assert!(!doc.block_hashes.is_empty());
         assert_eq!(doc.block_hash_count(), 1);
         assert_eq!(doc.block_hashes[0], hash1);
-        assert!(doc.has_merkle_root());
+        assert!(doc.merkle_root.is_some());
         assert_eq!(doc.get_merkle_root(), Some(merkle_root));
-    }
-
-    #[test]
-    fn test_parsed_note_backward_compatibility() {
-        use chrono::Utc;
-
-        // Test that legacy constructor still works with empty hash fields
-        let path = PathBuf::from("test.md");
-        let frontmatter = None;
-        let wikilinks = vec![];
-        let tags = vec![];
-        let content = NoteContent::new();
-        let parsed_at = Utc::now();
-        let content_hash = "test_hash".to_string();
-        let file_size = 1024;
-
-        let doc = ParsedNote::legacy(
-            path.clone(),
-            frontmatter,
-            wikilinks,
-            tags,
-            content,
-            parsed_at,
-            content_hash.clone(),
-            file_size,
-        );
-
-        // Legacy documents should have empty hash fields
-        assert!(!doc.has_block_hashes());
-        assert_eq!(doc.block_hash_count(), 0);
-        assert!(!doc.has_merkle_root());
-        assert_eq!(doc.get_merkle_root(), None);
-
-        // But other fields should still work
-        assert_eq!(doc.path, path);
-        assert_eq!(doc.content_hash, content_hash);
-        assert_eq!(doc.file_size, file_size);
     }
 
     #[test]
@@ -446,10 +409,10 @@ mod tests {
             serde_json::from_str(&json).expect("Failed to deserialize");
 
         // Verify the fields are preserved
-        assert!(deserialized_doc.has_block_hashes());
+        assert!(!deserialized_doc.block_hashes.is_empty());
         assert_eq!(deserialized_doc.block_hash_count(), 1);
         assert_eq!(deserialized_doc.block_hashes[0], hash1);
-        assert!(deserialized_doc.has_merkle_root());
+        assert!(deserialized_doc.merkle_root.is_some());
         assert_eq!(deserialized_doc.get_merkle_root(), Some(merkle_root));
         assert_eq!(deserialized_doc.path, original_doc.path);
     }
