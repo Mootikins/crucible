@@ -344,7 +344,7 @@ async fn acp_permission_no_handler_does_not_crash() {
 
     let request = make_prompt_request("ses-no-handler", "delete everything");
     let (chunks, callback) = crate::support::parity::capture_chunks();
-    let (_tool_calls, _response) = client
+    let (_summary, _response) = client
         .send_prompt_with_callback(request, callback)
         .await
         .expect("streaming should complete without crashing even with no handler");
@@ -410,7 +410,7 @@ async fn acp_safe_tool_no_permission_request_needed() {
     });
 
     let request = make_prompt_request("ses-safe", "read main.rs");
-    let (tool_calls, _response) = client
+    let (summary, _response) = client
         .send_prompt_with_callback(
             request,
             Box::new(move |chunk| {
@@ -430,8 +430,11 @@ async fn acp_safe_tool_no_permission_request_needed() {
     );
 
     assert!(content.contains("file content"));
-    assert_eq!(tool_calls.len(), 1);
-    assert_eq!(tool_calls[0].title, "read_file");
+    assert!(summary.announced_any);
+    assert_eq!(
+        crate::support::parity::tool_names_of(&chunks.lock().unwrap()),
+        vec!["Read File"]
+    );
 
     let captured = chunks.lock().unwrap();
     let chunk_kinds: Vec<&str> = captured
@@ -497,7 +500,7 @@ async fn acp_permission_deny_handler_invoked() {
 
     let request = make_prompt_request("ses-deny", "write a file");
     let (chunks, callback) = crate::support::parity::capture_chunks();
-    let (_tool_calls, _response) = client
+    let (_summary, _response) = client
         .send_prompt_with_callback(request, callback)
         .await
         .expect("streaming should complete");
@@ -588,7 +591,7 @@ async fn acp_permission_approved_sends_selected_response_to_agent() {
     });
 
     let request = make_prompt_request("ses-perm-approve", "run echo hello");
-    let (tool_calls, _response) = client
+    let (summary, _response) = client
         .send_prompt_with_callback(
             request,
             Box::new(move |chunk| {
@@ -601,8 +604,11 @@ async fn acp_permission_approved_sends_selected_response_to_agent() {
     let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     assert!(content.contains("Command executed successfully"));
-    assert_eq!(tool_calls.len(), 1);
-    assert_eq!(tool_calls[0].title, "bash");
+    assert!(summary.announced_any);
+    assert_eq!(
+        crate::support::parity::tool_names_of(&chunks.lock().unwrap()),
+        vec!["Bash"]
+    );
 }
 
 #[tokio::test]
@@ -652,7 +658,7 @@ async fn acp_permission_denied_sends_cancelled_response_to_agent() {
 
     let request = make_prompt_request("ses-perm-deny", "write a file");
     let (chunks, callback) = crate::support::parity::capture_chunks();
-    let (_tool_calls, _response) = client
+    let (_summary, _response) = client
         .send_prompt_with_callback(request, callback)
         .await
         .expect("streaming should complete after permission denial");
@@ -705,7 +711,7 @@ async fn acp_permission_handler_not_set_defaults_to_cancelled() {
 
     let request = make_prompt_request("ses-no-handler", "delete everything");
     let (chunks, callback) = crate::support::parity::capture_chunks();
-    let (_tool_calls, _response) = client
+    let (_summary, _response) = client
         .send_prompt_with_callback(request, callback)
         .await
         .expect("streaming should complete with auto-cancelled permission");
@@ -812,7 +818,7 @@ async fn acp_multiple_permission_requests_in_single_turn() {
     });
 
     let request = make_prompt_request("ses-multi", "list files then write output");
-    let (tool_calls, _response) = client
+    let (summary, _response) = client
         .send_prompt_with_callback(
             request,
             Box::new(move |chunk| {
@@ -835,6 +841,10 @@ async fn acp_multiple_permission_requests_in_single_turn() {
         "tool-write-m1"
     );
 
-    assert_eq!(tool_calls.len(), 2);
+    assert!(summary.announced_any);
+    assert_eq!(
+        crate::support::parity::tool_names_of(&chunks.lock().unwrap()).len(),
+        2
+    );
     assert!(content.contains("Both operations completed"));
 }

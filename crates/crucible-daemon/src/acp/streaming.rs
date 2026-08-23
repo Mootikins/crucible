@@ -28,16 +28,19 @@ pub enum StreamingChunk {
         name: String,
         id: String,
         arguments: Option<serde_json::Value>,
-        /// File diffs extracted from `ToolCallContent::Diff` frames in the
-        /// initial `SessionUpdate::ToolCall` notification. Empty when the
-        /// agent hadn't attached any diff content yet (e.g. diffs that
-        /// arrive in a later `ToolCallUpdate` will surface via the
-        /// post-stream replay path instead of this live event).
+        /// The file diffs the call carried when the client announced it.
+        /// Empty when no frame had attached a diff yet; a diff that arrives
+        /// in a later `ToolCallUpdate` comes as a `ToolDiffUpdate`.
         diffs: Vec<FileDiff>,
     },
-    /// Tool execution completed
+    /// Tool execution completed.
+    ///
+    /// `name` is the name the matching `ToolStart` carried. The client
+    /// announces every call before it completes it, so the consumer keeps
+    /// no name table of its own.
     ToolEnd {
         id: String,
+        name: String,
         result: Option<String>,
         error: Option<String>,
     },
@@ -66,6 +69,18 @@ pub enum StreamingChunk {
     /// The daemon cannot derive either number for a delegated session — it has
     /// no endpoint or model to query — so this is the only source (A3).
     ContextWindow { used: u64, limit: u64 },
+}
+
+/// What one turn showed the user, for the stop reason and the batch end.
+///
+/// The client counts this from the same chunks it sends to the callback, so
+/// the consumer does not count them a second time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TurnSummary {
+    /// The turn produced text or a thought with a visible character.
+    pub produced_content: bool,
+    /// The turn announced at least one tool call.
+    pub announced_any: bool,
 }
 
 /// Callback type for receiving streaming chunks.
@@ -513,6 +528,7 @@ mod tests {
 
         let chunk = StreamingChunk::ToolEnd {
             id: "tool_123".to_string(),
+            name: "Search".to_string(),
             result: Some("Found 5 results".to_string()),
             error: None,
         };
@@ -535,6 +551,7 @@ mod tests {
 
         let chunk = StreamingChunk::ToolEnd {
             id: "tool_456".to_string(),
+            name: "Search".to_string(),
             result: None,
             error: Some("Tool execution failed".to_string()),
         };

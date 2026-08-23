@@ -21,7 +21,7 @@ pub use discovery::{discover_agent, is_agent_available, reset_agent_cache, Agent
 pub use session::{AcpSession, TransportConfig};
 pub use streaming::{
     channel_callback, humanize_tool_title, StreamConfig, StreamHandler, StreamingCallback,
-    StreamingChunk,
+    StreamingChunk, TurnSummary,
 };
 
 // Re-export test utilities when feature is enabled

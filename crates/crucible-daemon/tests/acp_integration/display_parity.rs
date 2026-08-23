@@ -273,7 +273,7 @@ async fn tool_start_with_arguments_emits_chunk_with_args() {
     });
 
     let request = make_prompt_request("ses-tool-args", "search something");
-    let (tool_calls, _response) = client
+    let (summary, _response) = client
         .send_prompt_with_callback(
             request,
             Box::new(move |chunk| {
@@ -306,14 +306,7 @@ async fn tool_start_with_arguments_emits_chunk_with_args() {
         _ => unreachable!(),
     }
 
-    assert!(!tool_calls.is_empty(), "should have accumulated tool calls");
-    let tc = &tool_calls[0];
-    assert_eq!(tc.title, "mcp__crucible__semantic_search");
-    assert!(tc.arguments.is_some());
-    assert_eq!(
-        tc.arguments.as_ref().unwrap()["query"],
-        "rust async patterns"
-    );
+    assert!(summary.announced_any, "the summary must report the call");
 }
 
 #[tokio::test]
@@ -683,7 +676,9 @@ async fn tool_end_with_result_emits_chunk() {
         .expect("should have ToolEnd chunk");
 
     match tool_end {
-        StreamingChunk::ToolEnd { id, result, error } => {
+        StreamingChunk::ToolEnd {
+            id, result, error, ..
+        } => {
             assert_eq!(id, "tool-r1");
             assert!(result.is_some(), "completed tool should have result");
             assert!(
@@ -858,7 +853,7 @@ async fn stream_without_usage_data_completes_gracefully() {
 
     let request = make_prompt_request("ses-no-usage", "say hello");
     let (chunks, callback) = crate::support::parity::capture_chunks();
-    let (tool_calls, response) = client
+    let (summary, response) = client
         .send_prompt_with_callback(request, callback)
         .await
         .expect("stream should complete without crash when no usage data");
@@ -868,7 +863,7 @@ async fn stream_without_usage_data_completes_gracefully() {
         content.contains("Hello from agent"),
         "content should be accumulated"
     );
-    assert!(tool_calls.is_empty());
+    assert!(!summary.announced_any);
     assert_eq!(
         response.stop_reason,
         agent_client_protocol::schema::v1::StopReason::EndTurn
@@ -892,14 +887,14 @@ async fn empty_stream_no_usage_no_chunks_completes() {
 
     let request = make_prompt_request("ses-empty", "nothing");
     let (chunks, callback) = crate::support::parity::capture_chunks();
-    let (tool_calls, _response) = client
+    let (summary, _response) = client
         .send_prompt_with_callback(request, callback)
         .await
         .expect("empty stream should complete without crash");
     let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     assert!(content.is_empty(), "no chunks = empty content");
-    assert!(tool_calls.is_empty());
+    assert!(!summary.announced_any);
 }
 
 #[tokio::test]
@@ -958,7 +953,7 @@ async fn full_flow_text_tool_result_text_via_callback() {
     });
 
     let request = make_prompt_request("ses-full", "search async patterns");
-    let (tool_calls, _response) = client
+    let (summary, _response) = client
         .send_prompt_with_callback(
             request,
             Box::new(move |chunk| {
@@ -986,13 +981,8 @@ async fn full_flow_text_tool_result_text_via_callback() {
     assert!(content.contains("Let me search"));
     assert!(content.contains("here is your answer"));
 
-    assert_eq!(tool_calls.len(), 1);
-    assert!(tool_calls[0]
-        .arguments
-        .as_ref()
-        .unwrap()
-        .get("query")
-        .is_some());
+    assert!(summary.announced_any);
+    assert!(summary.produced_content);
 }
 
 #[test]
@@ -1007,8 +997,13 @@ fn streaming_chunk_variants_roundtrip_via_json() {
                 arguments,
                 ..
             } => json!({"kind": "tool_start", "name": name, "id": id, "arguments": arguments}),
-            StreamingChunk::ToolEnd { id, result, error } => {
-                json!({"kind": "tool_end", "id": id, "result": result, "error": error})
+            StreamingChunk::ToolEnd {
+                id,
+                name,
+                result,
+                error,
+            } => {
+                json!({"kind": "tool_end", "id": id, "name": name, "result": result, "error": error})
             }
             StreamingChunk::ToolDiffUpdate { call_id, diffs } => {
                 json!({"kind": "tool_diff_update", "id": call_id, "diffs": diffs})
@@ -1038,6 +1033,7 @@ fn streaming_chunk_variants_roundtrip_via_json() {
             },
             "tool_end" => StreamingChunk::ToolEnd {
                 id: serialized["id"].as_str().unwrap().to_string(),
+                name: serialized["name"].as_str().unwrap().to_string(),
                 result: serialized
                     .get("result")
                     .and_then(|v| v.as_str().map(str::to_string)),
@@ -1078,11 +1074,13 @@ fn streaming_chunk_variants_roundtrip_via_json() {
         },
         StreamingChunk::ToolEnd {
             id: "tool-1".to_string(),
+            name: "Semantic Search".to_string(),
             result: Some("found 5 results".to_string()),
             error: None,
         },
         StreamingChunk::ToolEnd {
             id: "tool-3".to_string(),
+            name: "Slow Tool".to_string(),
             result: None,
             error: Some("timeout".to_string()),
         },
@@ -1122,16 +1120,19 @@ fn streaming_chunk_variants_roundtrip_via_json() {
             (
                 StreamingChunk::ToolEnd {
                     id: a_i,
+                    name: a_n,
                     result: a_r,
                     error: a_e,
                 },
                 StreamingChunk::ToolEnd {
                     id: b_i,
+                    name: b_n,
                     result: b_r,
                     error: b_e,
                 },
             ) => {
                 assert_eq!(a_i, b_i);
+                assert_eq!(a_n, b_n);
                 assert_eq!(a_r, b_r);
                 assert_eq!(a_e, b_e);
             }

@@ -370,13 +370,19 @@ async fn run_case(case: &FixtureCase) {
             usage: expected_usage,
             context_window: expected_window,
         } => {
-            let (tools, response) = result.unwrap_or_else(|e| panic!("[{agent}] send prompt: {e}"));
+            let (summary, response) =
+                result.unwrap_or_else(|e| panic!("[{agent}] send prompt: {e}"));
 
             assert_eq!(shapes, *expected_shapes, "[{agent}] streamed chunk shapes");
             assert_eq!(text.trim(), *expected_text, "[{agent}] reassembled answer");
             assert!(
-                tools.is_empty(),
-                "[{agent}] greeting turn should call no tools; got {tools:?}"
+                !summary.announced_any,
+                "[{agent}] greeting turn should call no tools; got {summary:?}"
+            );
+            assert_eq!(
+                summary.produced_content,
+                !expected_text.is_empty(),
+                "[{agent}] the summary must say whether the turn showed text; got {summary:?}"
             );
             assert_eq!(response.stop_reason, *stop_reason, "[{agent}] stop reason");
 

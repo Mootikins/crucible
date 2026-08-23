@@ -20,7 +20,9 @@ use serde_json::Value;
 use super::CrucibleAcpClient;
 use crate::acp::streaming::{humanize_tool_title, StreamingChunk};
 use crucible_core::text::sanitize_single_line;
-use crucible_core::types::acp::{FileDiff, ToolCallInfo};
+use crucible_core::types::acp::FileDiff;
+#[cfg(test)]
+use crucible_core::types::acp::ToolCallInfo;
 
 /// The name of a call that no frame named before the turn ended.
 pub(super) const PLACEHOLDER_TOOL_NAME: &str = "Unnamed tool";
@@ -102,6 +104,7 @@ impl Entry {
             self.completions += 1;
             out.push(StreamingChunk::ToolEnd {
                 id: self.id.clone(),
+                name: self.name(),
                 result: held.result,
                 error: held.error,
             });
@@ -231,6 +234,7 @@ impl ToolCallTable {
                 entry.completions += 1;
                 out.push(StreamingChunk::ToolEnd {
                     id: entry.id.clone(),
+                    name: entry.name(),
                     result: completion.result,
                     error: completion.error,
                 });
@@ -259,6 +263,7 @@ impl ToolCallTable {
                 entry.completions += 1;
                 out.push(StreamingChunk::ToolEnd {
                     id: entry.id.clone(),
+                    name: entry.name(),
                     result: None,
                     error: Some(format!("turn ended: {stop_reason}")),
                 });
@@ -268,7 +273,14 @@ impl ToolCallTable {
         out
     }
 
-    /// The calls the turn reported, for the caller that keeps a list.
+    /// Whether the turn announced at least one call. After `flush` this is
+    /// true for every non-empty table.
+    pub(super) fn announced_any(&self) -> bool {
+        self.entries.iter().any(|entry| entry.announced)
+    }
+
+    /// The calls the turn reported, for tests that inspect the table.
+    #[cfg(test)]
     pub(super) fn to_tool_call_infos(&self) -> Vec<ToolCallInfo> {
         self.entries
             .iter()
@@ -386,9 +398,12 @@ mod tests {
             .iter()
             .map(|c| match c {
                 StreamingChunk::ToolStart { name, id, .. } => format!("start {id} {name}"),
-                StreamingChunk::ToolEnd { id, result, error } => {
-                    format!("end {id} {result:?} {error:?}")
-                }
+                StreamingChunk::ToolEnd {
+                    id,
+                    name,
+                    result,
+                    error,
+                } => format!("end {id} {name} {result:?} {error:?}"),
                 StreamingChunk::ToolArgsUpdate { call_id, .. } => format!("args {call_id}"),
                 StreamingChunk::ToolDiffUpdate { call_id, .. } => format!("diffs {call_id}"),
                 other => format!("{other:?}"),
@@ -413,7 +428,7 @@ mod tests {
         })));
         assert_eq!(
             shapes(&second),
-            vec!["start t1 Late Call", "end t1 Some(\"four\") None"]
+            vec!["start t1 Late Call", "end t1 Late Call Some(\"four\") None"]
         );
         assert!(table.flush("end_turn").is_empty());
     }
@@ -430,7 +445,10 @@ mod tests {
         })));
         assert_eq!(
             shapes(&chunks),
-            vec!["start t1 Late Named Tool", "end t1 Some(\"done\") None"]
+            vec![
+                "start t1 Late Named Tool",
+                "end t1 Late Named Tool Some(\"done\") None"
+            ]
         );
     }
 
@@ -446,7 +464,7 @@ mod tests {
             shapes(&table.flush("end_turn")),
             vec![
                 format!("start t1 {PLACEHOLDER_TOOL_NAME}"),
-                "end t1 Some(\"orphaned output\") None".to_string(),
+                format!("end t1 {PLACEHOLDER_TOOL_NAME} Some(\"orphaned output\") None"),
             ]
         );
     }
@@ -459,8 +477,14 @@ mod tests {
         let first = table.upsert_update(completed("t1", "PARTIAL"));
         let second = table.upsert_update(completed("t1", "FINAL"));
 
-        assert_eq!(shapes(&first), vec!["end t1 Some(\"PARTIAL\") None"]);
-        assert_eq!(shapes(&second), vec!["end t1 Some(\"FINAL\") None"]);
+        assert_eq!(
+            shapes(&first),
+            vec!["end t1 Repeated Tool Some(\"PARTIAL\") None"]
+        );
+        assert_eq!(
+            shapes(&second),
+            vec!["end t1 Repeated Tool Some(\"FINAL\") None"]
+        );
         assert!(table.flush("end_turn").is_empty());
     }
 
@@ -512,7 +536,7 @@ mod tests {
 
         assert_eq!(
             shapes(&table.flush("cancelled")),
-            vec!["end t1 None Some(\"turn ended: cancelled\")"]
+            vec!["end t1 Slow Tool None Some(\"turn ended: cancelled\")"]
         );
     }
 
@@ -593,7 +617,7 @@ mod tests {
         let flushed = table.flush("end_turn");
         assert_eq!(
             shapes(&flushed)[1],
-            format!("end huge None Some({HELD_RESULT_DROPPED:?})")
+            format!("end huge {PLACEHOLDER_TOOL_NAME} None Some({HELD_RESULT_DROPPED:?})")
         );
     }
 

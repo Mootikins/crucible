@@ -1,7 +1,7 @@
 use super::test_path;
 use crate::acp::client::types::{ClientConfig, StreamingState};
 use crate::acp::client::CrucibleAcpClient;
-use crate::acp::streaming::{StreamingCallback, StreamingChunk};
+use crate::acp::streaming::{StreamingCallback, StreamingChunk, TurnSummary};
 use agent_client_protocol::schema::v1::SessionNotification;
 use serde_json::json;
 
@@ -288,6 +288,146 @@ fn tool_call_update_without_a_title_for_an_unseen_id_emits_nothing() {
 
     assert!(chunks.is_empty(), "got {chunks:?}");
     assert_eq!(state.tool_calls.to_tool_call_infos().len(), 1);
+
+    // The turn ends. The flush announces the call under the placeholder
+    // label, with the diff it held, and then closes it with the stop reason.
+    let flushed = state.tool_calls.flush("end_turn");
+    assert_eq!(flushed.len(), 2, "got {flushed:?}");
+    match &flushed[0] {
+        StreamingChunk::ToolStart {
+            id, name, diffs, ..
+        } => {
+            assert_eq!(id, "ghost-1");
+            assert_eq!(name, "Unnamed tool");
+            assert_eq!(diffs.len(), 1);
+        }
+        other => panic!("expected ToolStart, got {other:?}"),
+    }
+    match &flushed[1] {
+        StreamingChunk::ToolEnd {
+            id,
+            name,
+            result,
+            error,
+        } => {
+            assert_eq!(id, "ghost-1");
+            assert_eq!(name, "Unnamed tool");
+            assert_eq!(result, &None);
+            assert_eq!(error.as_deref(), Some("turn ended: end_turn"));
+        }
+        other => panic!("expected ToolEnd, got {other:?}"),
+    }
+}
+
+/// A `ToolEnd` carries the name of its call, so the handle does not keep a
+/// name table of its own.
+#[test]
+fn tool_end_carries_the_name_of_its_call() {
+    let mut client = make_client();
+    let mut state = StreamingState::default();
+
+    capture_apply(
+        &mut client,
+        &mut state,
+        json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "tool-7",
+                "title": "mcp__crucible__read_note",
+            },
+        }),
+    );
+    let chunks = capture_apply(
+        &mut client,
+        &mut state,
+        json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "tool-7",
+                "status": "completed",
+                "rawOutput": "the note body",
+            },
+        }),
+    );
+
+    assert_eq!(
+        chunks,
+        vec![StreamingChunk::ToolEnd {
+            id: "tool-7".into(),
+            name: "Read Note".into(),
+            result: Some("the note body".into()),
+            error: None,
+        }]
+    );
+}
+
+/// The client counts what the turn showed the user. Text and thoughts
+/// count; a tool announcement counts as a batch; whitespace counts as
+/// nothing.
+#[test]
+fn turn_summary_reports_visible_content_and_announced_calls() {
+    let mut client = make_client();
+
+    let mut state = StreamingState::default();
+    assert_eq!(
+        state.summary(),
+        TurnSummary {
+            produced_content: false,
+            announced_any: false,
+        }
+    );
+
+    capture_apply(
+        &mut client,
+        &mut state,
+        json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": {"type": "text", "text": "  \n"},
+            },
+        }),
+    );
+    assert!(
+        !state.summary().produced_content,
+        "whitespace is not content"
+    );
+
+    capture_apply(
+        &mut client,
+        &mut state,
+        json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "tool-1",
+                "title": "read_file",
+            },
+        }),
+    );
+    assert_eq!(
+        state.summary(),
+        TurnSummary {
+            produced_content: false,
+            announced_any: true,
+        }
+    );
+
+    let mut state = StreamingState::default();
+    capture_apply(
+        &mut client,
+        &mut state,
+        json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "agent_thought_chunk",
+                "content": {"type": "text", "text": "thinking"},
+            },
+        }),
+    );
+    assert!(state.summary().produced_content, "a thought is visible");
 }
 
 // ---------------------------------------------------------------------------

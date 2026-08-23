@@ -63,7 +63,7 @@ async fn test_prompt_with_streaming_response() {
         .expect("Should complete handshake");
 
     let (chunks, callback) = crate::support::parity::capture_chunks();
-    let (tool_calls, response) = client
+    let (summary, response) = client
         .send_prompt_with_callback(prompt_request(session.id()), callback)
         .await
         .expect("Should successfully receive streaming response");
@@ -73,7 +73,8 @@ async fn test_prompt_with_streaming_response() {
         content, "The answer is 4",
         "chunks must accumulate in order into the final content"
     );
-    assert!(tool_calls.is_empty(), "no tool calls were streamed");
+    assert!(!summary.announced_any, "no tool calls were streamed");
+    assert!(summary.produced_content, "the answer is visible content");
     assert_eq!(
         response.stop_reason,
         agent_client_protocol::schema::v1::StopReason::EndTurn
@@ -95,7 +96,7 @@ async fn test_prompt_with_streamed_tool_call() {
         .expect("Should complete handshake");
 
     let (chunks, callback) = crate::support::parity::capture_chunks();
-    let (tool_calls, response) = client
+    let (summary, response) = client
         .send_prompt_with_callback(prompt_request(session.id()), callback)
         .await
         .expect("Should successfully receive streaming response");
@@ -112,12 +113,14 @@ async fn test_prompt_with_streamed_tool_call() {
         )),
         "the tool call must reach the stream as a ToolStart chunk"
     );
-    assert_eq!(
-        tool_calls.len(),
-        1,
+    assert!(
+        summary.announced_any,
         "the streamed tool_call must be recorded"
     );
-    assert_eq!(tool_calls[0].title, "mock_tool");
+    assert_eq!(
+        crate::support::parity::tool_names_of(&chunks.lock().unwrap()),
+        vec!["Mock Tool"]
+    );
     assert_eq!(
         response.stop_reason,
         agent_client_protocol::schema::v1::StopReason::EndTurn
@@ -145,7 +148,7 @@ async fn test_cancel_mid_stream_reaches_agent() {
     // stream being dropped — the user cancelled.
     let callback: crucible_daemon::acp::StreamingCallback = Box::new(|_chunk| false);
 
-    let (_tool_calls, response) = client
+    let (_summary, response) = client
         .send_prompt_with_callback(prompt_request(session.id()), callback)
         .await
         .expect("cancelled turn should still complete cleanly");

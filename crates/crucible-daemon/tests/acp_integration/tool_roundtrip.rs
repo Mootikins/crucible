@@ -201,7 +201,7 @@ async fn test_acp_tool_roundtrip_read_file() {
     });
 
     let request = make_prompt_request(session_id, "read /tmp/test.md");
-    let (tool_calls, response) = client
+    let (_summary, response) = client
         .send_prompt_with_callback(
             request,
             Box::new(move |chunk| {
@@ -254,7 +254,9 @@ async fn test_acp_tool_roundtrip_read_file() {
         .expect("should have ToolEnd chunk");
 
     match tool_end {
-        StreamingChunk::ToolEnd { id, result, error } => {
+        StreamingChunk::ToolEnd {
+            id, result, error, ..
+        } => {
             assert_eq!(id, "tc-read-1");
             let result_text = result.as_ref().expect("completed tool should have result");
             assert!(
@@ -270,14 +272,21 @@ async fn test_acp_tool_roundtrip_read_file() {
     assert!(content.contains("Let me read that file"));
     assert!(content.contains("heading and a paragraph"));
 
-    // Verify tool_calls accumulator
-    assert_eq!(tool_calls.len(), 1, "should have one tool call");
-    assert_eq!(tool_calls[0].title, "read_file");
-    assert!(tool_calls[0].arguments.is_some());
-    assert_eq!(
-        tool_calls[0].arguments.as_ref().unwrap()["path"],
-        "/tmp/test.md"
-    );
+    // Verify the announced call
+    let tool_start = captured
+        .iter()
+        .find(|c| matches!(c, StreamingChunk::ToolStart { .. }))
+        .expect("should have ToolStart chunk");
+    match tool_start {
+        StreamingChunk::ToolStart {
+            name, arguments, ..
+        } => {
+            assert_eq!(name, "Read File");
+            let arguments = arguments.as_ref().expect("the call carries arguments");
+            assert_eq!(arguments["path"], "/tmp/test.md");
+        }
+        _ => unreachable!(),
+    }
 
     // Verify stop reason
     assert_eq!(
@@ -373,7 +382,7 @@ async fn test_acp_tool_roundtrip_multiple_tools() {
     });
 
     let request = make_prompt_request(session_id, "search and read config");
-    let (tool_calls, _response) = client
+    let (summary, _response) = client
         .send_prompt_with_callback(
             request,
             Box::new(move |chunk| {
@@ -405,9 +414,11 @@ async fn test_acp_tool_roundtrip_multiple_tools() {
     );
 
     // Verify both tool calls captured
-    assert_eq!(tool_calls.len(), 2, "should have two tool calls");
-    assert_eq!(tool_calls[0].title, "mcp__crucible__semantic_search");
-    assert_eq!(tool_calls[1].title, "read_file");
+    assert!(summary.announced_any, "should have two tool calls");
+    assert_eq!(
+        crate::support::parity::tool_names_of(&captured),
+        vec!["Semantic Search", "Read File"]
+    );
 
     // Verify content accumulates text from between and after tools
     assert!(content.contains("check the config"));
@@ -590,7 +601,7 @@ async fn test_acp_tool_roundtrip_with_mcp_server() {
     });
 
     let request = make_prompt_request(acp_session_id, "list my notes");
-    let (tool_calls, _response) = client
+    let (summary, _response) = client
         .send_prompt_with_callback(
             request,
             Box::new(move |chunk| {
@@ -634,7 +645,9 @@ async fn test_acp_tool_roundtrip_with_mcp_server() {
             .expect("should have ToolEnd chunk");
 
         match tool_end {
-            StreamingChunk::ToolEnd { id, result, error } => {
+            StreamingChunk::ToolEnd {
+                id, result, error, ..
+            } => {
                 assert_eq!(id, "tc-list-1");
                 let result_text = result.as_ref().expect("should have result");
                 assert!(
@@ -649,8 +662,11 @@ async fn test_acp_tool_roundtrip_with_mcp_server() {
 
     // Verify accumulated state
     assert!(content.contains("found the test note"));
-    assert_eq!(tool_calls.len(), 1);
-    assert_eq!(tool_calls[0].title, "mcp__crucible__list_notes");
+    assert!(summary.announced_any);
+    assert_eq!(
+        crate::support::parity::tool_names_of(&chunks.lock().unwrap()),
+        vec!["List Notes"]
+    );
 
     host.shutdown().await;
 }
@@ -712,7 +728,7 @@ async fn test_acp_tool_roundtrip_content_after_tool() {
 
     let request = make_prompt_request(session_id, "find main function");
     let (chunks, callback) = crate::support::parity::capture_chunks();
-    let (tool_calls, _response) = client
+    let (summary, _response) = client
         .send_prompt_with_callback(request, callback)
         .await
         .expect("content-after-tool roundtrip should complete");
@@ -723,6 +739,9 @@ async fn test_acp_tool_roundtrip_content_after_tool() {
         "content after tool call should be in accumulated output, got: {}",
         content
     );
-    assert_eq!(tool_calls.len(), 1);
-    assert_eq!(tool_calls[0].title, "grep");
+    assert!(summary.announced_any);
+    assert_eq!(
+        crate::support::parity::tool_names_of(&chunks.lock().unwrap()),
+        vec!["Grep"]
+    );
 }

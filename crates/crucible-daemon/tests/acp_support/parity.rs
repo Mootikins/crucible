@@ -205,6 +205,19 @@ pub fn text_of(chunks: &[crucible_daemon::acp::StreamingChunk]) -> String {
         .collect()
 }
 
+/// The names of the calls a turn announced, in stream order. The client
+/// returns no call list of its own, so a test reads them from the chunks.
+#[allow(dead_code)]
+pub fn tool_names_of(chunks: &[crucible_daemon::acp::StreamingChunk]) -> Vec<String> {
+    chunks
+        .iter()
+        .filter_map(|chunk| match chunk {
+            crucible_daemon::acp::StreamingChunk::ToolStart { name, .. } => Some(name.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 /// A callback that captures every chunk of one turn into the returned buffer.
 #[allow(dead_code)]
 pub fn capture_chunks() -> (

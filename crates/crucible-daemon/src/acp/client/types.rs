@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use super::tool_table::ToolCallTable;
+use crate::acp::streaming::TurnSummary;
 
 /// Configuration for the ACP client.
 ///
@@ -40,9 +41,20 @@ pub(super) struct StreamingState {
     /// The read loop reacts by sending `session/cancel` to the agent so it
     /// stops generating server-side instead of running to completion.
     pub(super) cancelled: bool,
+    /// Set when a text or thought chunk had a visible character. Drives
+    /// `StopReason::Empty` in the consumer.
+    pub(super) produced_content: bool,
 }
 
 impl StreamingState {
+    /// What the turn showed the user so far.
+    pub(super) fn summary(&self) -> TurnSummary {
+        TurnSummary {
+            produced_content: self.produced_content,
+            announced_any: self.tool_calls.announced_any(),
+        }
+    }
+
     pub(super) fn append_text(&mut self, text: &str) {
         if text.trim().is_empty() {
             return;

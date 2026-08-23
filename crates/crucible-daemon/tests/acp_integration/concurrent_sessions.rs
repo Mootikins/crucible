@@ -104,8 +104,13 @@ fn serialize_chunk(chunk: &StreamingChunk) -> serde_json::Value {
         } => {
             json!({"kind": "tool_start", "name": name, "id": id, "arguments": arguments})
         }
-        StreamingChunk::ToolEnd { id, result, error } => {
-            json!({"kind": "tool_end", "id": id, "result": result, "error": error})
+        StreamingChunk::ToolEnd {
+            id,
+            name,
+            result,
+            error,
+        } => {
+            json!({"kind": "tool_end", "id": id, "name": name, "result": result, "error": error})
         }
         StreamingChunk::ToolDiffUpdate { call_id, diffs } => {
             json!({"kind": "tool_diff_update", "id": call_id, "diffs": diffs})
@@ -136,6 +141,7 @@ fn deserialize_chunk(value: &serde_json::Value) -> StreamingChunk {
         },
         "tool_end" => StreamingChunk::ToolEnd {
             id: value["id"].as_str().unwrap().to_string(),
+            name: value["name"].as_str().unwrap().to_string(),
             result: value
                 .get("result")
                 .and_then(|v| v.as_str().map(str::to_string)),
@@ -172,16 +178,19 @@ fn assert_chunk_eq(left: &StreamingChunk, right: &StreamingChunk) {
         (
             StreamingChunk::ToolEnd {
                 id: a_id,
+                name: a_name,
                 result: a_result,
                 error: a_error,
             },
             StreamingChunk::ToolEnd {
                 id: b_id,
+                name: b_name,
                 result: b_result,
                 error: b_error,
             },
         ) => {
             assert_eq!(a_id, b_id);
+            assert_eq!(a_name, b_name);
             assert_eq!(a_result, b_result);
             assert_eq!(a_error, b_error);
         }
@@ -457,6 +466,7 @@ fn stream_edge_streaming_chunk_round_trip_variants() {
         },
         StreamingChunk::ToolEnd {
             id: "tool-1".to_string(),
+            name: "read_note".to_string(),
             result: Some("ok".to_string()),
             error: None,
         },
@@ -496,7 +506,7 @@ async fn stream_edge_large_response_near_max_output_is_accumulated() {
 
     let request = make_prompt_request("large-session", "big stream");
     let (chunks, callback) = crate::support::parity::capture_chunks();
-    let (tool_calls, _response) = client
+    let (summary, _response) = client
         .send_prompt_with_callback(request, callback)
         .await
         .expect("large streaming response should succeed");
@@ -505,7 +515,7 @@ async fn stream_edge_large_response_near_max_output_is_accumulated() {
     assert_eq!(content.len(), expected_len);
     assert!(content.starts_with('x'));
     assert!(content.ends_with('x'));
-    assert!(tool_calls.is_empty());
+    assert!(!summary.announced_any);
 }
 
 #[tokio::test]
@@ -525,12 +535,13 @@ async fn stream_edge_empty_response_returns_empty_content() {
 
     let request = make_prompt_request("empty-session", "respond with nothing");
     let (chunks, callback) = crate::support::parity::capture_chunks();
-    let (tool_calls, _response) = client
+    let (summary, _response) = client
         .send_prompt_with_callback(request, callback)
         .await
         .expect("empty response should still complete");
     let content = crate::support::parity::text_of(&chunks.lock().unwrap());
 
     assert!(content.is_empty(), "no chunks should produce empty content");
-    assert!(tool_calls.is_empty());
+    assert!(!summary.announced_any);
+    assert!(!summary.produced_content);
 }

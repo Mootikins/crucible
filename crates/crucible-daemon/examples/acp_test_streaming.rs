@@ -63,11 +63,11 @@ async fn main() {
         .await;
 
     match result {
-        Ok((tool_calls, response)) => {
+        Ok((summary, response)) => {
             let content = content.lock().unwrap().clone();
             println!("\n✅ Streaming successful!");
             println!("Accumulated content: '{}'", content);
-            println!("Tool calls: {}", tool_calls.len());
+            println!("Announced a tool call: {}", summary.announced_any);
             println!("Stop reason: {:?}", response.stop_reason);
 
             // Verify we got the expected content

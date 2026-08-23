@@ -8,7 +8,6 @@
 //! and Lua handlers — ACP agents get all of these for free by routing through
 //! this handle instead of being spawned directly by the CLI.
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -19,9 +18,7 @@ use tracing::{debug, info, warn};
 
 mod translate;
 
-use translate::{
-    acp_prompt_text, replay_unannounced_tool_calls, turn_stop_reason, OrphanedResults,
-};
+use translate::{acp_prompt_text, turn_stop_reason};
 
 use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
 
@@ -515,7 +512,7 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
         crucible_core::turn::AgentError,
     > {
         use async_stream::stream;
-        use crucible_core::turn::{is_visible_content, TurnError, TurnEvent};
+        use crucible_core::turn::{TurnError, TurnEvent};
         use tokio::sync::mpsc;
 
         // Forward daemon-injected context (Precognition, Lua transform_context)
@@ -584,43 +581,27 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                 *guard = Some(owned_client);
             }
 
-            let _ = result_tx.send(result.map(|(tools, response)| (tools, response, usage)));
+            let _ = result_tx.send(result.map(|(summary, response)| (summary, response, usage)));
         });
 
         let body = stream! {
-            let mut announced_ids: std::collections::HashSet<String> =
-                std::collections::HashSet::new();
-            // Whether this turn announced *any* tool call. Deliberately not
-            // `!announced_ids.is_empty()`: the replay below yields calls that
-            // contribute no id (see `replay_unannounced_tool_calls`), so the
-            // set answers "which ids are spoken for", not "did a batch exist".
-            let mut announced_any = false;
-            let mut tool_names_by_id: HashMap<String, String> = HashMap::new();
-            // Whether the turn produced anything the user can see. Drives
-            // `StopReason::Empty`, which is otherwise unreachable here.
-            let mut produced_content = false;
-            // Results whose `ToolStart` never arrived, held until the
-            // post-stream replay can name them. See the `ToolEnd` arm.
-            let mut orphaned_results = OrphanedResults::default();
-
+            // The client already decided everything the stream needs to know:
+            // every `ToolEnd` follows a `ToolStart` for its id and carries the
+            // name that start carried, and the summary at the end says what
+            // the turn showed the user. So each chunk maps to one event, and
+            // the handle keeps no state of its own.
             while let Some(chunk) = chunk_rx.recv().await {
                 match chunk {
                     StreamingChunk::Text(text) => {
                         debug!(chunk_type = "text", len = text.len(), "ACP streaming chunk");
-                        produced_content |= is_visible_content(&text);
                         yield TurnEvent::TextDelta(text);
                     }
                     StreamingChunk::Thinking(text) => {
                         debug!(chunk_type = "thinking", len = text.len(), "ACP streaming chunk");
-                        produced_content |= is_visible_content(&text);
                         yield TurnEvent::Thinking(text);
                     }
                     StreamingChunk::ContextWindow { used, limit } => {
                         debug!(used, limit, "ACP agent reported its context window");
-                        // Deliberately not `produced_content`: a window
-                        // reading is chrome, not an answer. A turn whose only
-                        // output was a usage frame still showed the user
-                        // nothing, and must still report `StopReason::Empty`.
                         yield TurnEvent::ContextWindow { used, limit };
                     }
                     StreamingChunk::ToolStart { name, id, arguments, diffs } => {
@@ -630,9 +611,6 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                             diff_count = diffs.len(),
                             "ACP tool call started"
                         );
-                        tool_names_by_id.insert(id.clone(), name.clone());
-                        announced_ids.insert(id.clone());
-                        announced_any = true;
                         yield TurnEvent::ToolCall {
                             id,
                             name,
@@ -640,38 +618,7 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                             diffs,
                         };
                     }
-                    StreamingChunk::ToolEnd { id, result, error } => {
-                        // Read, never consume: ACP `tool_call_update` frames are
-                        // partial-field merges, so an agent may send `completed`
-                        // more than once for one call (the later frame usually
-                        // carrying the fuller `rawOutput`). Both renderers key a
-                        // result on the call id, so every one of those results
-                        // belongs to the call this name came from.
-                        let Some(name) = tool_names_by_id.get(&id).cloned() else {
-                            // No `ToolStart` for this id — an ACP
-                            // `tool_call_update{status: completed}` whose
-                            // `tool_call` has not arrived (yet). Naming it here
-                            // would have to invent one, and the renderer keys
-                            // results on the id of an announced call
-                            // (`containers.rs::update_tool`), so a made-up name
-                            // reaches the transcript and the web view while the
-                            // TUI silently drops the result.
-                            //
-                            // Hold it instead: by the end of the turn either the
-                            // naming `tool_call` has landed, or — if that same
-                            // update carried a title/raw_input/diff — the client
-                            // recorded the call and the post-stream replay below
-                            // announces it. Both supply the real name.
-                            debug!(
-                                tool_id = %id,
-                                "ACP tool result arrived before its call; deferring until named"
-                            );
-                            // Bounded in count *and* bytes; past either cap the
-                            // drop is immediate and loud rather than deferred
-                            // and silent. See `OrphanedResults`.
-                            orphaned_results.push(id, result, error);
-                            continue;
-                        };
+                    StreamingChunk::ToolEnd { id, name, result, error } => {
                         info!(
                             tool = %name, tool_id = %id,
                             has_error = error.is_some(),
@@ -709,97 +656,31 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
             }
 
             match result_rx.await {
-                Ok(Ok((acp_tool_calls, response, usage))) => {
+                Ok(Ok((summary, response, usage))) => {
                     debug!(
-                        tool_count = acp_tool_calls.len(),
+                        produced_content = summary.produced_content,
+                        announced_any = summary.announced_any,
                         has_usage = usage.is_some(),
                         "ACP stream completed"
                     );
 
-                    // Emit any final tool calls the ACP client reported but
-                    // the streaming callback hadn't announced.
-                    let replayed = replay_unannounced_tool_calls(acp_tool_calls, &announced_ids);
-                    announced_any |= !replayed.is_empty();
-                    let mut replayed_names: HashMap<String, String> = HashMap::new();
-                    for event in replayed {
-                        if let TurnEvent::ToolCall { id, name, .. } = &event {
-                            replayed_names.insert(id.clone(), name.clone());
-                        }
-                        yield event;
-                    }
-
-                    // Results deferred above, now that every name this turn can
-                    // produce is known: the replay's, plus the live table for a
-                    // `ToolStart` that simply arrived after its `ToolEnd`.
-                    //
-                    // A result whose call is still unknown is dropped. That is
-                    // the right call — it references a `call_id` no other row
-                    // mentions, so no renderer has a card for it — but it is a
-                    // real loss, not a no-op: the row never reaches
-                    // `{kiln}/.crucible/sessions/{id}/session.jsonl`
-                    // (`should_persist` persists `tool_result`), never reaches
-                    // `recording.jsonl` (which records every broadcast event),
-                    // never fires a Lua `tool_result` handler or redactor, and
-                    // never becomes a `ResponsePart::ToolResult` for
-                    // `cru.sessions.send_and_collect` (which some plugins render
-                    // standalone). So log the payload, not just the id — the
-                    // daemon log is the only place it survives.
-                    for (id, result, error) in orphaned_results {
-                        let Some(name) = replayed_names
-                            .remove(&id)
-                            .or_else(|| tool_names_by_id.get(&id).cloned())
-                        else {
-                            warn!(
-                                tool_id = %id,
-                                result = ?result,
-                                error = ?error,
-                                "ACP reported a tool result for a call it never announced; \
-                                 dropping (lost from session.jsonl, recordings, Lua handlers \
-                                 and send_and_collect)"
-                            );
-                            continue;
-                        };
-                        info!(
-                            tool = %name, tool_id = %id,
-                            has_error = error.is_some(),
-                            "ACP tool call completed (named by post-stream replay)"
-                        );
-                        yield TurnEvent::ToolResult {
-                            id,
-                            name,
-                            result: serde_json::Value::String(result.unwrap_or_default()),
-                            error,
-                        };
-                    }
-
                     // Close the batch. An ACP agent runs its own tool loop, so
                     // the whole turn is one batch — there is no boundary on the
-                    // wire to split it at — and it closes once every call has
-                    // been announced. That is *after* the replay above, not
-                    // before it: `ToolBatchEnd` claims "no further tool calls in
-                    // this batch", so emitting it first would split one logical
-                    // batch in two and leave the second half never closed.
+                    // wire to split it at — and it closes once the client has
+                    // flushed every call, which happens before the response
+                    // arrives here. `ToolBatchEnd` claims "no further tool
+                    // calls in this batch", so it comes after every call.
                     //
                     // The scheduler resets per-batch state on this event
-                    // (`agent_manager/messaging/stream.rs:839`) — but today that
-                    // is a no-op here rather than a reason for the ordering:
-                    // every variable it touches (`in_tool_batch`,
-                    // `capped_this_batch`, `batch_terminate_signals`) is still
-                    // at its default on an `owns_history` turn, because the
-                    // pass-through arm `continue`s before any of them is
-                    // written. Emitting this is control-flow neutral today; it
-                    // is emitted for contract consistency with
-                    // `GenaiAgentHandle`, so a future consumer of the batch
-                    // boundary is not silently wrong on delegated turns.
+                    // (`agent_manager/messaging/stream.rs`), but that is a
+                    // no-op on an `owns_history` turn today. It is emitted for
+                    // contract consistency with `GenaiAgentHandle`, so a future
+                    // consumer of the batch boundary is not silently wrong on
+                    // delegated turns.
                     //
                     // A turn that called nothing announces nothing: an empty
-                    // batch-end would claim a batch that never existed. The
-                    // guard is honest in both directions now that an unnamed
-                    // result is dropped rather than emitted: every `ToolResult`
-                    // this turn yields belongs to a `ToolCall` it also yielded,
-                    // so "a batch existed" and "a result was reported" can no
-                    // longer disagree (divergence B4).
-                    if announced_any {
+                    // batch-end would claim a batch that never existed.
+                    if summary.announced_any {
                         yield TurnEvent::ToolBatchEnd;
                     }
 
@@ -809,13 +690,12 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                     yield TurnEvent::Done {
                         stop_reason: turn_stop_reason(
                             response.stop_reason,
-                            produced_content || announced_any,
+                            summary.produced_content || summary.announced_any,
                         ),
                     };
                 }
                 Ok(Err(e)) => {
                     warn!(error = %e, "ACP stream error");
-                    orphaned_results.log_dropped("ACP stream error");
                     let turn_err = match e {
                         crate::acp::ClientError::Connection(msg) => TurnError::Connection(
                             format!("ACP agent connection lost: {msg}"),
@@ -858,7 +738,6 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
                 }
                 Err(_) => {
                     warn!("ACP streaming task dropped (oneshot cancelled)");
-                    orphaned_results.log_dropped("ACP streaming task dropped");
                     yield TurnEvent::Error(TurnError::AgentUnavailable(
                         "ACP agent process terminated unexpectedly".to_string(),
                     ));

@@ -6,10 +6,10 @@ use agent_client_protocol::schema::v1::{
 
 use super::types::StreamingState;
 use super::{CrucibleAcpClient, REQUEST_ID};
-use crate::acp::streaming::{StreamingCallback, StreamingChunk};
+use crate::acp::streaming::{StreamingCallback, StreamingChunk, TurnSummary};
 use crate::acp::{ClientError, Result};
 use crucible_core::text::{sanitize_multiline, sanitize_single_line};
-use crucible_core::types::acp::ToolCallInfo;
+use crucible_core::turn::is_visible_content;
 
 /// The wire spelling of a stop reason, for the error a call that never
 /// completed carries: `end_turn`, `cancelled`, and so on.
@@ -165,14 +165,14 @@ impl CrucibleAcpClient {
     ///
     /// # Returns
     ///
-    /// The tool calls the agent announced, and the final PromptResponse. The
-    /// text of the turn reaches the caller only through the callback.
+    /// What the turn showed the user, and the final PromptResponse. The
+    /// chunks of the turn reach the caller only through the callback.
     pub async fn send_prompt_with_callback(
         &mut self,
         request: agent_client_protocol::schema::v1::PromptRequest,
         mut callback: StreamingCallback,
     ) -> Result<(
-        Vec<ToolCallInfo>,
+        TurnSummary,
         agent_client_protocol::schema::v1::PromptResponse,
     )> {
         use serde_json::json;
@@ -254,7 +254,7 @@ impl CrucibleAcpClient {
         };
 
         match tokio::time::timeout(overall_timeout, streaming_future).await {
-            Ok(Ok((state, response))) => Ok((state.tool_calls.to_tool_call_infos(), response)),
+            Ok(Ok((state, response))) => Ok((state.summary(), response)),
             Ok(Err(e)) => Err(e),
             Err(_) => Err(ClientError::Timeout(format!(
                 "Streaming operation timed out after {}s",
@@ -393,6 +393,7 @@ impl CrucibleAcpClient {
                         return;
                     }
                     state.append_text(&text);
+                    state.produced_content |= is_visible_content(&text);
                     state.cancelled |= !callback(StreamingChunk::Text(text));
                 }
                 other => {
@@ -415,9 +416,9 @@ impl CrucibleAcpClient {
             // (`crucible-cli/src/tui/oil/chat_runner/stream.rs`).
             SessionUpdate::AgentThoughtChunk(chunk) => match chunk.content {
                 ContentBlock::Text(text_block) => {
-                    state.cancelled |= !callback(StreamingChunk::Thinking(sanitize_multiline(
-                        &text_block.text,
-                    )));
+                    let text = sanitize_multiline(&text_block.text);
+                    state.produced_content |= is_visible_content(&text);
+                    state.cancelled |= !callback(StreamingChunk::Thinking(text));
                 }
                 other => {
                     tracing::debug!("Ignoring non-text thought block: {:?}", other);
