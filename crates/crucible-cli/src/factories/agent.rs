@@ -32,10 +32,6 @@ pub struct AgentInitParams {
     pub agent_name: Option<String>,
     /// Preferred LLM provider key (for internal type)
     pub provider_key: Option<String>,
-    /// Initial read-only mode
-    pub read_only: bool,
-    /// Maximum context tokens
-    pub max_context_tokens: Option<usize>,
     /// Environment variable overrides for ACP agents
     /// These are merged with any env vars from config profiles
     pub env_overrides: std::collections::HashMap<String, String>,
@@ -58,8 +54,6 @@ impl AgentInitParams {
             agent_type: None,
             agent_name: None,
             provider_key: None,
-            read_only: false,
-            max_context_tokens: None,
             env_overrides: std::collections::HashMap::new(),
             working_dir: None,
             resume_session_id: None,
@@ -91,18 +85,9 @@ impl AgentInitParams {
         self
     }
 
+    #[cfg(test)]
     pub fn with_provider(mut self, key: impl Into<String>) -> Self {
         self.provider_key = Some(key.into());
-        self
-    }
-
-    pub fn with_read_only(mut self, read_only: bool) -> Self {
-        self.read_only = read_only;
-        self
-    }
-
-    pub fn with_max_context_tokens(mut self, tokens: usize) -> Self {
-        self.max_context_tokens = Some(tokens);
         self
     }
 
@@ -471,14 +456,10 @@ mod tests {
     fn test_agent_init_params_builder() {
         let params = AgentInitParams::new()
             .with_type(AgentType::Internal)
-            .with_provider("local".to_string())
-            .with_read_only(false)
-            .with_max_context_tokens(8192);
+            .with_provider("local".to_string());
 
         assert_eq!(params.agent_type, Some(AgentType::Internal));
         assert_eq!(params.provider_key, Some("local".to_string()));
-        assert!(!params.read_only);
-        assert_eq!(params.max_context_tokens, Some(8192));
     }
 
     #[test]
@@ -487,8 +468,6 @@ mod tests {
         assert_eq!(params.agent_type, None);
         assert_eq!(params.agent_name, None);
         assert_eq!(params.provider_key, None);
-        assert!(!params.read_only);
-        assert_eq!(params.max_context_tokens, None);
     }
 
     #[test]

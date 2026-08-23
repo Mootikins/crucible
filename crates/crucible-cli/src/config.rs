@@ -18,10 +18,12 @@ pub use crucible_core::config::{
 };
 
 /// Builder for programmatically constructing CliConfig (top-level CLI configuration)
+#[cfg(test)]
 pub struct CliConfigBuilder {
     kiln_path: Option<std::path::PathBuf>,
 }
 
+#[cfg(test)]
 impl CliConfigBuilder {
     /// Create a new builder with defaults
     pub fn new() -> Self {
@@ -46,6 +48,7 @@ impl CliConfigBuilder {
     }
 }
 
+#[cfg(test)]
 impl Default for CliConfigBuilder {
     fn default() -> Self {
         Self::new()

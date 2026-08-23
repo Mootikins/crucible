@@ -365,7 +365,9 @@ async fn run_interactive_chat(params: ChatParams, record: Option<PathBuf>) -> Re
         no_context,
         context_size,
         provider_key,
-        max_context_tokens,
+        // `--max-context` never reached the daemon; the flag stays until a
+        // session knob carries it.
+        max_context_tokens: _,
         env_overrides,
         resume_session_id,
         set_overrides,
@@ -560,8 +562,6 @@ async fn run_interactive_chat(params: ChatParams, record: Option<PathBuf>) -> Re
             // Build common params once
             let mut params = factories::AgentInitParams::new()
                 .with_provider_opt(provider_key)
-                .with_read_only(read_only)
-                .with_max_context_tokens(max_context_tokens)
                 .with_env_overrides(parsed_env)
                 .with_resume_session_id(resume_session_id)
                 .with_recording_mode(recording_mode)
@@ -637,16 +637,16 @@ where
 
 /// `cru chat -q` runs whatever mode the session already has. To apply
 /// `--plan` here needs `--mode <name>` plumbing (see the mode transport
-/// work); only `read_only` reaches the agent.
+/// work); neither `read_only` nor `max_context_tokens` reaches the agent.
 async fn run_oneshot_chat(params: ChatParams, query_text: String) -> Result<()> {
     let ChatParams {
         config,
         agent_name,
-        read_only,
+        read_only: _,
         no_context,
         context_size,
         provider_key,
-        max_context_tokens,
+        max_context_tokens: _,
         env_overrides,
         resume_session_id,
         set_overrides,
@@ -660,8 +660,6 @@ async fn run_oneshot_chat(params: ChatParams, query_text: String) -> Result<()> 
     let mut agent_params = factories::AgentInitParams::new()
         .with_agent_name_opt(agent_name.clone().or(default_agent.clone()))
         .with_provider_opt(provider_key)
-        .with_read_only(read_only)
-        .with_max_context_tokens(max_context_tokens)
         .with_env_overrides(parsed_env)
         .with_resume_session_id(resume_session_id);
 

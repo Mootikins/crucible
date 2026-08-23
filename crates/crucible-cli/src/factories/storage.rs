@@ -6,7 +6,6 @@ use crate::common::daemon_client;
 use crate::config::CliConfig;
 use anyhow::Result;
 use crucible_core::storage::NoteStore;
-use crucible_core::traits::StorageClient;
 use crucible_daemon::{DaemonNoteStore, DaemonStorageClient};
 use std::sync::Arc;
 use tracing::info;
@@ -18,11 +17,6 @@ use tracing::info;
 pub struct CliStorageHandle(Arc<DaemonStorageClient>);
 
 impl CliStorageHandle {
-    /// Execute a raw query and return JSON
-    pub async fn query_raw(&self, sql: &str) -> Result<serde_json::Value> {
-        self.0.query_raw(sql).await
-    }
-
     /// Get the inner `DaemonStorageClient`.
     pub fn as_daemon_client(&self) -> &Arc<DaemonStorageClient> {
         &self.0
@@ -44,10 +38,6 @@ impl CliStorageHandle {
     /// Get NoteStore trait object.
     pub fn note_store(&self) -> Arc<dyn NoteStore> {
         Arc::new(DaemonNoteStore::new(Arc::clone(&self.0)))
-    }
-
-    pub fn as_knowledge_repository(&self) -> Arc<dyn crucible_core::traits::KnowledgeRepository> {
-        Arc::clone(&self.0) as Arc<dyn crucible_core::traits::KnowledgeRepository>
     }
 }
 

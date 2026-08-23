@@ -74,29 +74,6 @@ pub fn run_setup_wizard(config_path: &Path) -> Result<()> {
         }
     }
 
-    // --- Embedding backend ---
-
-    let embedding_items = &["FastEmbed (local, no key needed)", "Ollama", "OpenAI"];
-    let embedding_idx = match dialoguer::Select::new()
-        .with_prompt("  Embeddings")
-        .items(embedding_items)
-        .default(0)
-        .interact_opt()?
-    {
-        Some(idx) => idx,
-        None => {
-            println!("  {}", "Setup cancelled.".dimmed());
-            return Ok(());
-        }
-    };
-
-    let embedding_provider = match embedding_idx {
-        0 => "fastembed",
-        1 => "ollama",
-        2 => "openai",
-        _ => unreachable!(),
-    };
-
     // --- Default kiln path ---
 
     let kiln_path: String = dialoguer::Input::<String>::new()
@@ -106,7 +83,7 @@ pub fn run_setup_wizard(config_path: &Path) -> Result<()> {
 
     // --- Write config ---
 
-    let config_toml = generate_initial_config(provider_id, embedding_provider, &kiln_path);
+    let config_toml = generate_initial_config(provider_id, &kiln_path);
 
     if let Some(parent) = config_path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -133,11 +110,7 @@ pub fn run_setup_wizard(config_path: &Path) -> Result<()> {
 }
 
 /// Produce a minimal but valid `config.toml` from wizard answers.
-pub fn generate_initial_config(
-    provider: &str,
-    embedding_provider: &str,
-    default_kiln_path: &str,
-) -> String {
+pub fn generate_initial_config(provider: &str, default_kiln_path: &str) -> String {
     // The `BackendType` table is the one place a provider's default model
     // lives; an unknown provider gets a placeholder the user must edit.
     let model = provider
@@ -153,9 +126,8 @@ pub fn generate_initial_config(
     out.push_str(&format!("[chat]\nmodel = \"{}\"\n\n", model));
     out.push_str(&format!("[llm]\ndefault = \"{}\"\n", provider));
 
-    // Enrichment provider is not written to config — the default (fastembed)
-    // works out of the box. Users can configure it later in config.toml.
-    let _ = embedding_provider;
+    // The config does not name an embedding provider. The default (fastembed)
+    // works with no key, and the user can set one later in config.toml.
 
     out
 }
@@ -181,7 +153,7 @@ mod tests {
 
     #[test]
     fn generate_initial_config_produces_valid_toml() {
-        let config = generate_initial_config("anthropic", "fastembed", "~/vault");
+        let config = generate_initial_config("anthropic", "~/vault");
         let parsed: toml::Value = toml::from_str(&config).unwrap();
         assert!(parsed.get("kilns").is_some());
         assert!(parsed.get("chat").is_some());
@@ -195,7 +167,7 @@ mod tests {
 
     #[test]
     fn generate_initial_config_deserializes_as_cli_app_config() {
-        let config = generate_initial_config("anthropic", "fastembed", "~/vault");
+        let config = generate_initial_config("anthropic", "~/vault");
         let parsed: crucible_core::config::CliAppConfig = toml::from_str(&config).unwrap();
         assert_eq!(parsed.default_kiln.as_deref(), Some("default"));
         assert_eq!(parsed.kilns.len(), 1);
@@ -203,7 +175,7 @@ mod tests {
 
     #[test]
     fn generate_config_anthropic_defaults() {
-        let config = generate_initial_config("anthropic", "fastembed", "~/notes");
+        let config = generate_initial_config("anthropic", "~/notes");
         let parsed: toml::Value = toml::from_str(&config).unwrap();
         assert_eq!(parsed["kilns"]["default"].as_str().unwrap(), "~/notes");
         assert_eq!(
@@ -215,7 +187,7 @@ mod tests {
 
     #[test]
     fn generate_config_ollama_defaults() {
-        let config = generate_initial_config("ollama", "ollama", "~/vault");
+        let config = generate_initial_config("ollama", "~/vault");
         let parsed: toml::Value = toml::from_str(&config).unwrap();
         assert_eq!(parsed["chat"]["model"].as_str().unwrap(), "llama3.2");
         assert_eq!(parsed["llm"]["default"].as_str().unwrap(), "ollama");
@@ -223,14 +195,14 @@ mod tests {
 
     #[test]
     fn generate_config_openai_model() {
-        let config = generate_initial_config("openai", "openai", "~/vault");
+        let config = generate_initial_config("openai", "~/vault");
         let parsed: toml::Value = toml::from_str(&config).unwrap();
         assert_eq!(parsed["chat"]["model"].as_str().unwrap(), "gpt-4o");
     }
 
     #[test]
     fn generate_config_openrouter_model() {
-        let config = generate_initial_config("openrouter", "fastembed", "~/vault");
+        let config = generate_initial_config("openrouter", "~/vault");
         let parsed: toml::Value = toml::from_str(&config).unwrap();
         assert_eq!(
             parsed["chat"]["model"].as_str().unwrap(),

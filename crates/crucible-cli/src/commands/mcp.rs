@@ -43,6 +43,8 @@ pub struct McpArgs {
     pub no_just: bool,
 }
 
+/// Tests build `McpArgs` from a base value; clap owns the runtime defaults.
+#[cfg(test)]
 impl Default for McpArgs {
     fn default() -> Self {
         Self {

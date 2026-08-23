@@ -7,7 +7,6 @@
 //! These tests validate that configurations are properly parsed, validated, and
 //! used to create internal agents with the correct settings.
 
-use crucible_cli::factories::AgentInitParams;
 use crucible_core::config::{BackendType, CliAppConfig, LlmConfig, LlmProviderConfig};
 use std::collections::HashMap;
 
@@ -337,22 +336,6 @@ fn test_model_name_from_named_provider() {
 
     let provider = config.llm.get_provider("custom").unwrap();
     assert_eq!(provider.model(), "custom-provider-model");
-}
-
-// ============================================================================
-// Context Token Configuration Tests
-// ============================================================================
-
-#[test]
-fn test_agent_params_accept_max_context_tokens() {
-    let params = AgentInitParams::new().with_max_context_tokens(8192);
-    assert_eq!(params.max_context_tokens, Some(8192));
-}
-
-#[test]
-fn test_agent_params_default_max_context_tokens_is_none() {
-    let params = AgentInitParams::new();
-    assert_eq!(params.max_context_tokens, None);
 }
 
 // ============================================================================
