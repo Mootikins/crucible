@@ -84,6 +84,20 @@ pub struct SkillsSearchRequest {
     pub limit: Option<usize>,
 }
 
+/// Request for `agents.list_cards`.
+///
+/// Paths, not kiln names: the caller is `cru agents list`, which knows the
+/// directory it runs in and the kiln path its config names, and the daemon
+/// resolves cards by directory (`agent_cards::card_directories`).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AgentsListCardsRequest {
+    /// The workspace a session started here would attach.
+    pub workspace: String,
+    /// The kiln whose `.crucible/agents/` is searched. `None` means no kiln.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kiln_path: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VersionCheck {
     Match,

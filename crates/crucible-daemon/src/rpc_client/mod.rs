@@ -18,11 +18,11 @@ mod storage;
 pub use agent::{strip_chat_error_prefix, DaemonAgentHandle};
 pub use client::workflow::{WorkflowApproveGateRequest, WorkflowStartRequest};
 pub use client::{
-    DaemonCapabilities, DaemonClient, FsListDirRequest, FsMoveRequest, FsPathRequest,
-    GrepSearchRequest, KilnOpenRequest, KilnSetClassificationRequest, ListAllModelsRequest,
-    ListProvidersRequest, LuaDiscoverPluginsRequest, LuaDiscoverPluginsResponse,
-    LuaGenerateStubsRequest, LuaGenerateStubsResponse, LuaInitSessionRequest,
-    LuaInitSessionResponse, LuaPluginHealthRequest, LuaPluginHealthResponse,
+    AgentsListCardsRequest, DaemonCapabilities, DaemonClient, FsListDirRequest, FsMoveRequest,
+    FsPathRequest, GrepSearchRequest, KilnOpenRequest, KilnSetClassificationRequest,
+    ListAllModelsRequest, ListProvidersRequest, LuaDiscoverPluginsRequest,
+    LuaDiscoverPluginsResponse, LuaGenerateStubsRequest, LuaGenerateStubsResponse,
+    LuaInitSessionRequest, LuaInitSessionResponse, LuaPluginHealthRequest, LuaPluginHealthResponse,
     LuaRegisterCommandsRequest, LuaRunPluginTestsRequest, LuaRunPluginTestsResponse,
     LuaShutdownSessionRequest, LuaShutdownSessionResponse, McpStartRequest, NameRequest,
     NoteRenameRequest, PathRequest, PluginInstallRequest, PluginOptionCallRequest,

@@ -815,6 +815,22 @@ impl DaemonClient {
             .await
     }
 
+    /// List the agent cards a session started from `workspace` would resolve.
+    pub async fn agents_list_cards(
+        &self,
+        workspace: &Path,
+        kiln_path: Option<&Path>,
+    ) -> Result<serde_json::Value> {
+        self.typed_call(
+            "agents.list_cards",
+            super::types::AgentsListCardsRequest {
+                workspace: workspace.to_string_lossy().to_string(),
+                kiln_path: kiln_path.map(|p| p.to_string_lossy().to_string()),
+            },
+        )
+        .await
+    }
+
     /// Resolve a named agent profile.
     pub async fn agents_resolve_profile(&self, name: &str) -> Result<serde_json::Value> {
         self.typed_call(

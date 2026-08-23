@@ -1068,7 +1068,7 @@ last group.
 - `test_support.rs`: `tests/common/mod.rs` re-exports the canonical mocks and could go; `llm/embeddings/mock.rs::MockEmbeddingProvider` shares the name with the `test_support` one. `server/tests/truncation.rs::truncate_utf8_safe` re-implements `truncate_bytes`. [C10, C1]
 - `tests/replay_e2e.rs:73` rebuilds a `SessionEventMessage` to set `msg_type`; mutate in place. [B9]
 - `runtime_defaults.rs`, `execution_roots.rs`: could read `crucible_core::paths::env_plugin_paths` directly. [C8]
-- No RPC lists agent cards; `agents.list_cards` in `rpc/dispatch.rs` with a pinned JSON test would let `cru agents list` use the daemon. [C7]
+- `rpc/dispatch.rs`: done in T5-29. `agents.list_cards` answers with the cards `agent_cards::discover_agent_cards_in` resolves for a workspace and kiln path; `dispatch_agents_list_cards_pins_the_card_json` pins the reply. `cru agents list` asks a running daemon first and reads disk only when none answers. [C7]
 - Existing `0o600` assertions in `credentials.rs`, `api_key.rs`, `session.rs` and `webhook/tests.rs` now test the shared helper through each caller; they could thin. [C16]
 
 ### crucible-cli

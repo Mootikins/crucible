@@ -233,6 +233,30 @@ pub(crate) async fn handle_agents_list_profiles(
     Response::success(req.id, serde_json::json!({ "profiles": entries }))
 }
 
+/// The agent cards a session started from the request's workspace would
+/// resolve, sorted by name. The daemon's own discovery answers, so
+/// `cru agents list` cannot advertise a card `session.create` would refuse.
+pub(crate) async fn handle_agents_list_cards(
+    req: Request,
+    agent_manager: &Arc<AgentManager>,
+) -> Response {
+    let params = match typed_params::<crate::rpc_client::AgentsListCardsRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+    let workspace = std::path::PathBuf::from(params.workspace);
+    let kiln_path = params.kiln_path.map(std::path::PathBuf::from);
+    let mut cards: Vec<_> = crate::agent_cards::discover_agent_cards_in(
+        agent_manager.card_roots(),
+        &workspace,
+        kiln_path.as_deref(),
+    )
+    .into_values()
+    .collect();
+    cards.sort_by(|a, b| a.name.cmp(&b.name));
+    Response::success(req.id, serde_json::json!({ "cards": cards }))
+}
+
 /// A profile with no command can never spawn, so it is never available;
 /// otherwise availability is the binary probe (PATH + bounded --version).
 async fn probe_profile_availability(profile: &crucible_core::config::AgentProfile) -> bool {

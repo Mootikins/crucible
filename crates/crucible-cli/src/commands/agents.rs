@@ -5,6 +5,7 @@
 use anyhow::Result;
 use crucible_core::agent::{AgentCard, AgentCardLoader, AgentCardRegistry};
 use crucible_daemon::agent_cards::{card_directories, CardRoots};
+use crucible_daemon::DaemonClient;
 use std::path::{Path, PathBuf};
 
 use crate::cli::AgentsCommands;
@@ -59,10 +60,9 @@ fn load_agent_registry(config: &CliConfig) -> AgentCardRegistry {
 /// would not resolve. The kiln's visible `agents/` is deliberately not in it;
 /// see the daemon function for why.
 ///
-/// Cards are still read off disk here, not over RPC: someone running
-/// `cru agents list` to find out why a card does not load must not be told
-/// the daemon is down, and `validate` reports per-file errors the daemon
-/// does not expose.
+/// `list` asks a running daemon first (`agents.list_cards`) and reads disk
+/// only when no daemon answers; `show` and `validate` always read disk,
+/// because `validate` reports per-file errors the daemon does not expose.
 pub fn collect_agent_directories(config: &CliConfig, workspace: &Path) -> Vec<PathBuf> {
     let roots = CardRoots {
         config_home: dirs::config_dir(),
@@ -81,7 +81,6 @@ fn current_workspace() -> PathBuf {
     std::env::current_dir().unwrap_or_default()
 }
 
-/// List all registered agent cards
 /// An ACP profile as `cru agents list` shows it.
 ///
 /// Flattened out of the daemon's `agents.list_profiles` reply at the edge so
@@ -92,19 +91,58 @@ struct AcpProfile {
     available: bool,
 }
 
+/// A running daemon, or `None` when there is none to ask.
+///
+/// `connect`, never `connect_or_start`: listing is a read-only inspection,
+/// and `connect_or_start` spawns `cru daemon serve` — worse, on a version
+/// mismatch it shuts the running daemon down and starts a fresh one. Someone
+/// running `cru agents list` to find out why their card is not loading
+/// should not have it restart their daemon as a side effect.
+async fn running_daemon() -> Option<DaemonClient> {
+    DaemonClient::connect().await.ok()
+}
+
+/// The cards the daemon resolves for the current workspace.
+///
+/// The daemon's list is the one `session.create --agent` resolves against,
+/// so asking it is how this command stops advertising a card the daemon
+/// would refuse. `None` when the daemon does not answer: the caller then
+/// reads disk, so a user debugging a card that does not load is not told the
+/// daemon is down instead.
+async fn daemon_cards(client: &DaemonClient, config: &CliConfig) -> Option<Vec<AgentCard>> {
+    let reply = client
+        .agents_list_cards(&current_workspace(), Some(&config.kiln_path))
+        .await
+        .ok()?;
+    parse_cards_reply(reply)
+}
+
+/// The `cards` array of an `agents.list_cards` reply, as the shared type.
+fn parse_cards_reply(reply: serde_json::Value) -> Option<Vec<AgentCard>> {
+    let cards = reply.get("cards")?.clone();
+    serde_json::from_value(cards).ok()
+}
+
+/// The cards `list` shows: the daemon's when it answers, else disk.
+async fn list_cards(config: &CliConfig, client: Option<&DaemonClient>) -> Vec<AgentCard> {
+    if let Some(client) = client {
+        if let Some(cards) = daemon_cards(client, config).await {
+            return cards;
+        }
+    }
+    let registry = load_agent_registry(config);
+    registry
+        .list()
+        .iter()
+        .filter_map(|name| registry.get(name).cloned())
+        .collect()
+}
+
 /// The ACP profiles the daemon knows, or an empty list.
 ///
-/// Best-effort on purpose. Cards are read straight off disk, so listing them
-/// must not start depending on a daemon: someone running `cru agents list` to
-/// find out why their card is not loading should not be told the daemon is
-/// down. An unreachable daemon simply means no ACP section.
-async fn acp_profiles() -> Vec<AcpProfile> {
-    // `connect`, never `connect_or_start`: listing is a read-only inspection,
-    // and `connect_or_start` spawns `cru daemon serve` — worse, on a version
-    // mismatch it shuts the running daemon down and starts a fresh one. Someone
-    // running `cru agents list` to find out why their card is not loading
-    // should not have it restart their daemon as a side effect.
-    let Ok(client) = crucible_daemon::DaemonClient::connect().await else {
+/// Best-effort on purpose: an unreachable daemon simply means no ACP section.
+async fn acp_profiles(client: Option<&DaemonClient>) -> Vec<AcpProfile> {
+    let Some(client) = client else {
         return Vec::new();
     };
     let Ok(reply) = client.agents_list_profiles().await else {
@@ -133,24 +171,23 @@ async fn acp_profiles() -> Vec<AcpProfile> {
 /// talk to?" is one question, and answering half of it was why `--agent` and
 /// this command disagreed about what an agent is. Two sections, one command.
 async fn list(config: &CliConfig, tag: Option<String>, format: OutputFormat) -> Result<()> {
-    let registry = load_agent_registry(config);
+    let client = running_daemon().await;
+    let all_cards = list_cards(config, client.as_ref()).await;
 
     // Get cards, optionally filtered by tag
-    let cards: Vec<&AgentCard> = if let Some(ref tag_filter) = tag {
-        registry.get_by_tag(tag_filter)
-    } else {
-        registry
-            .list()
+    let cards: Vec<&AgentCard> = match &tag {
+        Some(tag_filter) => all_cards
             .iter()
-            .filter_map(|name| registry.get(name))
-            .collect()
+            .filter(|card| card.tags.iter().any(|t| t == tag_filter))
+            .collect(),
+        None => all_cards.iter().collect(),
     };
 
     // A tag filter is a question about cards — profiles have no tags, so
     // showing them all under a filtered heading would misreport them as matches.
     let profiles = match tag {
         Some(_) => Vec::new(),
-        None => acp_profiles().await,
+        None => acp_profiles(client.as_ref()).await,
     };
 
     if cards.is_empty() && profiles.is_empty() {
@@ -494,6 +531,37 @@ You are a test agent.
             dir.join(format!("{}.md", name.to_lowercase().replace(" ", "-"))),
             content,
         )
+    }
+
+    /// The CLI reads the daemon's `agents.list_cards` reply through the
+    /// shared `AgentCard` type, so the wire shape pinned in
+    /// `rpc::dispatch::tests::dispatch_agents_list_cards_pins_the_card_json`
+    /// is the shape parsed here.
+    #[test]
+    fn parse_cards_reply_reads_the_daemon_wire_shape() {
+        let reply = serde_json::json!({
+            "cards": [{
+                "id": "9d7a4a3e-3c2f-4a4a-9e2b-0d0f3f5d8b11",
+                "name": "alpha",
+                "version": "0.1.0",
+                "description": "First by name",
+                "tags": ["review"],
+                "system_prompt": "Help.",
+                "mcp_servers": [],
+                "config": {},
+                "loaded_at": "2026-08-23T00:00:00Z",
+            }]
+        });
+        let cards = parse_cards_reply(reply).expect("cards parse");
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].name, "alpha");
+        assert_eq!(cards[0].tags, vec!["review".to_string()]);
+    }
+
+    /// A reply without `cards` is not a list; the caller reads disk instead.
+    #[test]
+    fn parse_cards_reply_without_cards_is_none() {
+        assert!(parse_cards_reply(serde_json::json!({})).is_none());
     }
 
     #[test]

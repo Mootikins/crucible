@@ -227,6 +227,7 @@ rpc_methods! {
     SkillsGet = "skills.get",
     SkillsSearch = "skills.search",
     AgentsListProfiles = "agents.list_profiles",
+    AgentsListCards = "agents.list_cards",
     AgentsResolveProfile = "agents.resolve_profile",
     ModelsList = "models.list",
     ProvidersList = "providers.list",
@@ -1058,6 +1059,10 @@ impl RpcDispatcher {
             RpcMethod::AgentsListProfiles => forward!(
                 id,
                 crate::server::platform::handle_agents_list_profiles(req.clone(), &self.ctx.agents)
+            ),
+            RpcMethod::AgentsListCards => forward!(
+                id,
+                crate::server::platform::handle_agents_list_cards(req.clone(), &self.ctx.agents)
             ),
             RpcMethod::AgentsResolveProfile => {
                 forward!(
@@ -2418,6 +2423,87 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
     /// tests in this binary share it — so config tests here must use
     /// test-unique keys and never reset or read the whole store expecting
     /// exclusivity.
+    /// `agents.list_cards` answers with the cards a session started from
+    /// `workspace` would resolve, sorted by name, in the `AgentCard` wire
+    /// shape. The CLI reads this list, so the keys are pinned here.
+    #[tokio::test]
+    async fn dispatch_agents_list_cards_pins_the_card_json() {
+        let workspace = tempfile::TempDir::new().unwrap();
+        let dir = workspace.path().join(".crucible").join("agents");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("zeta.md"),
+            "---\nname: zeta\nversion: 2.0.0\ndescription: Last by name\ntags: [review]\n---\n\nReview.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("alpha.md"),
+            "---\nname: alpha\ndescription: First by name\n---\n\nHelp.\n",
+        )
+        .unwrap();
+
+        let dispatcher = RpcDispatcher::new(test_context());
+        let req = make_request(
+            "agents.list_cards",
+            serde_json::json!({ "workspace": workspace.path() }),
+        );
+        let resp = dispatcher.dispatch(ClientId::new(), req).await;
+        assert!(
+            resp.error.is_none(),
+            "agents.list_cards failed: {:?}",
+            resp.error
+        );
+
+        let mut result = resp.result.unwrap();
+        let cards = result["cards"].as_array_mut().expect("cards array");
+        // The id and the load time are minted at load; every other key is
+        // pinned.
+        for card in cards.iter_mut() {
+            let card = card.as_object_mut().unwrap();
+            assert!(card.remove("id").expect("id key").is_string());
+            assert!(card.remove("loaded_at").expect("loaded_at key").is_string());
+        }
+        assert_eq!(
+            result,
+            serde_json::json!({
+                "cards": [
+                    {
+                        "name": "alpha",
+                        "version": "0.1.0",
+                        "description": "First by name",
+                        "tags": [],
+                        "system_prompt": "Help.",
+                        "mcp_servers": [],
+                        "config": {},
+                    },
+                    {
+                        "name": "zeta",
+                        "version": "2.0.0",
+                        "description": "Last by name",
+                        "tags": ["review"],
+                        "system_prompt": "Review.",
+                        "mcp_servers": [],
+                        "config": {},
+                    },
+                ]
+            })
+        );
+    }
+
+    /// A workspace with no cards is an empty list, not an error.
+    #[tokio::test]
+    async fn dispatch_agents_list_cards_without_cards_is_empty() {
+        let workspace = tempfile::TempDir::new().unwrap();
+        let dispatcher = RpcDispatcher::new(test_context());
+        let req = make_request(
+            "agents.list_cards",
+            serde_json::json!({ "workspace": workspace.path(), "kiln_path": null }),
+        );
+        let resp = dispatcher.dispatch(ClientId::new(), req).await;
+        assert!(resp.error.is_none(), "{:?}", resp.error);
+        assert_eq!(resp.result.unwrap(), serde_json::json!({ "cards": [] }));
+    }
+
     #[tokio::test]
     async fn dispatch_config_set_then_get_round_trips() {
         let dispatcher = RpcDispatcher::new(test_context());

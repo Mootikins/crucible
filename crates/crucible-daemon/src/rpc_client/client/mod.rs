@@ -84,8 +84,8 @@ pub use storage_requests::{
     ScmCloneRequest, SearchVectorsRequest,
 };
 pub use types::{
-    DaemonCapabilities, NameRequest, PathRequest, SessionEvent, SkillsGetRequest,
-    SkillsListRequest, SkillsSearchRequest, VersionCheck,
+    AgentsListCardsRequest, DaemonCapabilities, NameRequest, PathRequest, SessionEvent,
+    SkillsGetRequest, SkillsListRequest, SkillsSearchRequest, VersionCheck,
 };
 
 use types::{extract_string_array, EmptyParams};
