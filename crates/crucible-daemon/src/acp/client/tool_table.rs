@@ -21,8 +21,6 @@ use super::CrucibleAcpClient;
 use crate::acp::streaming::{humanize_tool_title, StreamingChunk};
 use crucible_core::text::sanitize_single_line;
 use crucible_core::types::acp::FileDiff;
-#[cfg(test)]
-use crucible_core::types::acp::ToolCallInfo;
 
 /// The name of a call that no frame named before the turn ended.
 pub(super) const PLACEHOLDER_TOOL_NAME: &str = "Unnamed tool";
@@ -279,26 +277,29 @@ impl ToolCallTable {
         self.entries.iter().any(|entry| entry.announced)
     }
 
-    /// The calls the turn reported, for tests that inspect the table.
+    /// The number of calls the turn reported, for tests that inspect the table.
     #[cfg(test)]
-    pub(super) fn to_tool_call_infos(&self) -> Vec<ToolCallInfo> {
+    pub(super) fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// The sanitized wire titles in arrival order, for tests that inspect
+    /// the table. An unnamed call reads as `PLACEHOLDER_TOOL_NAME`.
+    #[cfg(test)]
+    pub(super) fn titles(&self) -> Vec<&str> {
         self.entries
             .iter()
-            .map(|entry| {
-                let mut info = ToolCallInfo::new(
-                    entry
-                        .title
-                        .clone()
-                        .unwrap_or_else(|| PLACEHOLDER_TOOL_NAME.to_string()),
-                )
-                .with_id(entry.id.clone())
-                .with_diffs(entry.diffs.clone());
-                if let Some(args) = entry.args.clone() {
-                    info = info.with_arguments(args);
-                }
-                info
-            })
+            .map(|entry| entry.title.as_deref().unwrap_or(PLACEHOLDER_TOOL_NAME))
             .collect()
+    }
+
+    /// The arguments of one call, for tests that inspect the table.
+    #[cfg(test)]
+    pub(super) fn args_of(&self, id: &str) -> Option<&Value> {
+        self.entries
+            .iter()
+            .find(|entry| entry.id == id)
+            .and_then(|entry| entry.args.as_ref())
     }
 }
 

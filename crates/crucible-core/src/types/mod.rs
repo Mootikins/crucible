@@ -6,7 +6,7 @@
 //! ## Organization
 //!
 //! Domain types are currently defined in their respective modules:
-//! - ACP types: `acp` (ToolCallInfo, FileDiff); callers import them by the `types::acp` path
+//! - ACP types: `acp` (FileDiff); callers import them by the `types::acp` path
 //! - Parser types: `parser::types` (ParsedNote, Wikilink, Tag, etc.)
 //! - Database types: `types::database` (SearchResult, DocumentId, Record, etc.)
 //! - Hash type: `parser::types::BlockHash`, the one content hash

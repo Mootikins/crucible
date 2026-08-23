@@ -51,10 +51,13 @@ fn tool_call_updates_existing_entry() {
         );
     }
 
-    let recorded = state.tool_calls.to_tool_call_infos();
-    assert_eq!(recorded.len(), 1, "same id must merge, not duplicate");
     assert_eq!(
-        recorded[0].arguments.as_ref().unwrap()["path"],
+        state.tool_calls.len(),
+        1,
+        "same id must merge, not duplicate"
+    );
+    assert_eq!(
+        state.tool_calls.args_of("tool-42").unwrap()["path"],
         json!("PRIME.md")
     );
 }
@@ -82,7 +85,7 @@ fn tool_calls_with_different_ids_are_both_recorded() {
         );
     }
 
-    assert_eq!(state.tool_calls.to_tool_call_infos().len(), 2);
+    assert_eq!(state.tool_calls.len(), 2);
 }
 
 // =========================================================================
@@ -287,7 +290,7 @@ fn tool_call_update_without_a_title_for_an_unseen_id_emits_nothing() {
     );
 
     assert!(chunks.is_empty(), "got {chunks:?}");
-    assert_eq!(state.tool_calls.to_tool_call_infos().len(), 1);
+    assert_eq!(state.tool_calls.len(), 1);
 
     // The turn ends. The flush announces the call under the placeholder
     // label, with the diff it held, and then closes it with the stop reason.

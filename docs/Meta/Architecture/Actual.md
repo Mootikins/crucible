@@ -1249,7 +1249,7 @@ validated string, every RPC path) and `crucible-core/src/types/acp.rs:61`
 
 **`ToolCall` x2.** `crucible-core/src/traits/llm.rs:38` (OpenAI shape) and
 `crucible-core/src/events/session_event/tool_call.rs:10` (`name, args, call_id`).
-Also `ChatToolCall` (`traits/chat.rs:669`) and `ToolCallInfo` (`types/acp.rs:269`).
+Also `ChatToolCall` (`traits/chat.rs:669`). `ToolCallInfo` is removed (acp W5).
 
 **Mock embedding providers x3 and mock repositories x3.**
 `crucible-daemon/src/llm/embeddings/mock.rs:13` (hash-based, pub),

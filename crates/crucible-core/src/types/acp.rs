@@ -13,7 +13,7 @@
 //!
 //! ## Organization
 //!
-//! - **Tool types**: ToolCallInfo (the ACP client builds it), FileDiff (TurnEvent::ToolCall carries it).
+//! - **Tool types**: FileDiff (TurnEvent::ToolCall carries it).
 //!   ToolDefinition lives in traits::tools.
 
 use serde::{Deserialize, Serialize};
@@ -34,66 +34,6 @@ pub mod schema {
     pub use agent_client_protocol_schema::v1::{
         AvailableCommand, AvailableCommandInput, AvailableCommandsUpdate,
     };
-}
-
-/// Tool call information for streaming/display
-///
-/// Represents a tool call during agent execution. Used by streaming handlers
-/// and UI layers to display tool activity. This is a protocol-agnostic type
-/// that can be populated from ACP, MCP, or other agent protocols.
-///
-/// # Example
-///
-/// ```rust
-/// use crucible_core::types::acp::ToolCallInfo;
-///
-/// let tool = ToolCallInfo::new("semantic_search")
-///     .with_id("call-123")
-///     .with_arguments(serde_json::json!({"query": "rust async"}));
-/// ```
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ToolCallInfo {
-    /// Human-readable title/description of the tool call
-    pub title: String,
-
-    /// Tool parameters/arguments as JSON
-    pub arguments: Option<serde_json::Value>,
-
-    /// Unique identifier for deduplication/updates during streaming
-    pub id: Option<String>,
-
-    /// File diffs produced by this tool call (for write operations)
-    pub diffs: Vec<FileDiff>,
-}
-
-impl ToolCallInfo {
-    /// Create a new tool call info with a title
-    pub fn new(title: impl Into<String>) -> Self {
-        Self {
-            title: title.into(),
-            arguments: None,
-            id: None,
-            diffs: Vec::new(),
-        }
-    }
-
-    /// Set the tool call ID
-    pub fn with_id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
-        self
-    }
-
-    /// Set the tool arguments
-    pub fn with_arguments(mut self, args: serde_json::Value) -> Self {
-        self.arguments = Some(args);
-        self
-    }
-
-    /// Add multiple file diffs
-    pub fn with_diffs(mut self, diffs: impl IntoIterator<Item = FileDiff>) -> Self {
-        self.diffs.extend(diffs);
-        self
-    }
 }
 
 /// File diff representing changes to a file
