@@ -81,7 +81,7 @@ impl BasicMarkdownItExtension {
                     )
                 };
 
-                eprintln!("WARNING: {}", error_detail);
+                tracing::error!("{}", error_detail);
 
                 errors.push(ParseError {
                     message: error_detail,
@@ -110,8 +110,8 @@ impl BasicMarkdownItExtension {
                 doc_content.tables.extend(converted.tables);
             }
             Err(e) => {
-                // Log error but don't fail - other extensions can still run
-                eprintln!("markdown-it conversion error: {:?}", e);
+                // The other extensions can still run, so the error is not fatal.
+                tracing::error!(error = ?e, "markdown-it conversion failed");
             }
         }
 

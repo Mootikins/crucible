@@ -1,6 +1,6 @@
-//! Parser capabilities and requirements.
+//! Parser capabilities.
 //!
-//! `CrucibleParser` is the one parser. These types describe what it supports.
+//! `CrucibleParser` is the one parser. This type describes what it supports.
 
 /// Parser capabilities and configuration
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,16 +46,6 @@ impl ParserCapabilities {
             extensions: crate::kiln::KilnFileKind::NOTE_EXTENSIONS.to_vec(),
         }
     }
-
-    /// Check if all required features are supported
-    pub fn supports_all(&self, requirements: &ParserRequirements) -> bool {
-        (!requirements.yaml_frontmatter || self.yaml_frontmatter)
-            && (!requirements.toml_frontmatter || self.toml_frontmatter)
-            && (!requirements.wikilinks || self.wikilinks)
-            && (!requirements.tags || self.tags)
-            && (!requirements.headings || self.headings)
-            && (!requirements.code_blocks || self.code_blocks)
-    }
 }
 
 impl Default for ParserCapabilities {
@@ -64,60 +54,9 @@ impl Default for ParserCapabilities {
     }
 }
 
-/// Requirements for parser selection
-///
-/// Used to select an appropriate parser implementation based on
-/// required features.
-#[derive(Debug, Clone, Default)]
-pub struct ParserRequirements {
-    /// Requires YAML frontmatter support
-    pub yaml_frontmatter: bool,
-
-    /// Requires TOML frontmatter support
-    pub toml_frontmatter: bool,
-
-    /// Requires wikilink extraction
-    pub wikilinks: bool,
-
-    /// Requires tag extraction
-    pub tags: bool,
-
-    /// Requires heading extraction
-    pub headings: bool,
-
-    /// Requires code block extraction
-    pub code_blocks: bool,
-
-    /// Minimum supported file size
-    pub max_file_size: Option<usize>,
-}
-
-impl ParserRequirements {
-    /// Requirements for Crucible kiln parsing (all features)
-    pub fn crucible_kiln() -> Self {
-        Self {
-            yaml_frontmatter: true,
-            toml_frontmatter: false, // Optional
-            wikilinks: true,
-            tags: true,
-            headings: true,
-            code_blocks: true,
-            max_file_size: Some(10 * 1024 * 1024), // 10 MB
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_capabilities_supports_all() {
-        let caps = ParserCapabilities::full();
-        let reqs = ParserRequirements::crucible_kiln();
-
-        assert!(caps.supports_all(&reqs));
-    }
 
     /// The advertised list is not a second predicate: it is the `Note` arm of
     /// `KilnFileKind`, so it cannot drift from `is_note_file`.

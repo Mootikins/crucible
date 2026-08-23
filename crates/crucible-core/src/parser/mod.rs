@@ -45,7 +45,7 @@ pub mod markdown_it;
 // Re-export error types
 pub use error::{ErrorSeverity, ParseError, ParseErrorType, ParserError, ParserResult};
 pub use extensions::{Extension, ExtensionRegistry};
-pub use traits::{ParserCapabilities, ParserRequirements};
+pub use traits::ParserCapabilities;
 
 // Re-export implementation types
 pub use block_extractor::{BlockExtractor, ExtractionConfig};

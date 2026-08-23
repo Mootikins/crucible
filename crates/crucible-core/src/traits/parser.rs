@@ -2,5 +2,4 @@
 
 pub use crate::parser::error::{ParserError, ParserResult};
 pub use crate::parser::traits::ParserCapabilities;
-pub use crate::parser::traits::ParserRequirements;
 pub use crate::parser::types::ParsedNote;

@@ -90,7 +90,6 @@ pub use parser::{
 
     // Error types (canonical definitions in crucible-core::parser::error)
     ParserError,
-    ParserRequirements,
     ParserResult,
     Tag,
     Wikilink,

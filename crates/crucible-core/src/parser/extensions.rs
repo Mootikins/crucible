@@ -14,6 +14,10 @@ use super::types::NoteContent;
 use super::wikilinks::WikilinkExtension;
 
 /// One syntax extension of the markdown parser.
+///
+/// The variant order is the run order of `ExtensionRegistry::with_defaults`.
+/// The basic markdown pass runs first, so that the later passes see the note
+/// structure it produced.
 #[derive(Debug, Clone)]
 pub enum Extension {
     /// Headings, paragraphs, code blocks and tables from markdown-it.
@@ -48,24 +52,6 @@ impl Extension {
             Self::Blockquote(_) => "markdown-blockquotes",
             Self::EnhancedTags(_) => "enhanced-tags",
             Self::Footnote(_) => "markdown-footnotes",
-        }
-    }
-
-    /// The run order. The registry runs a higher priority first.
-    ///
-    /// The basic markdown pass runs first, so that the later passes see the
-    /// note structure it produced.
-    pub fn priority(&self) -> u8 {
-        match self {
-            #[cfg(feature = "markdown-it-parser")]
-            Self::BasicMarkdownIt(_) => 100,
-            Self::Wikilink(_) => 80,
-            Self::Latex(_) => 80,
-            Self::Footnote(_) => 80,
-            Self::InlineLink(_) => 75,
-            Self::Callout(_) => 70,
-            Self::EnhancedTags(_) => 70,
-            Self::Blockquote(_) => 50,
         }
     }
 
@@ -105,7 +91,7 @@ impl Extension {
 /// The ordered set of extensions that a parser runs.
 #[derive(Debug, Clone, Default)]
 pub struct ExtensionRegistry {
-    /// Sorted by priority, highest first.
+    /// In registration order. `with_defaults` registers in variant order.
     extensions: Vec<Extension>,
 }
 
@@ -137,7 +123,7 @@ impl ExtensionRegistry {
         registry
     }
 
-    /// Register an extension.
+    /// Register an extension. The registry runs it after the ones before it.
     ///
     /// Returns an error when an extension with the same name is registered.
     pub fn register(&mut self, extension: Extension) -> Result<(), String> {
@@ -146,17 +132,15 @@ impl ExtensionRegistry {
             return Err(format!("Extension '{}' already registered", name));
         }
         self.extensions.push(extension);
-        self.extensions
-            .sort_by_key(|e| std::cmp::Reverse(e.priority()));
         Ok(())
     }
 
-    /// The registered extensions, highest priority first.
+    /// The registered extensions, in run order.
     pub fn extensions(&self) -> &[Extension] {
         &self.extensions
     }
 
-    /// Run every extension that can handle `content`, in priority order.
+    /// Run every extension that can handle `content`, in run order.
     ///
     /// Returns the parse errors of all the extensions.
     pub fn apply(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
@@ -184,27 +168,21 @@ mod tests {
     }
 
     #[test]
-    fn register_keeps_the_highest_priority_first() {
-        let mut registry = ExtensionRegistry::new();
-        registry
-            .register(Extension::Blockquote(BlockquoteExtension::new()))
-            .unwrap();
-        registry
-            .register(Extension::Wikilink(WikilinkExtension::new()))
-            .unwrap();
-        registry
-            .register(Extension::Callout(CalloutExtension::new()))
-            .unwrap();
-
+    fn with_defaults_runs_the_variants_in_declaration_order() {
+        let registry = ExtensionRegistry::with_defaults();
         let names: Vec<_> = registry.extensions().iter().map(|e| e.name()).collect();
-        assert_eq!(
-            names,
-            [
-                "obsidian-wikilinks",
-                "obsidian-callouts",
-                "markdown-blockquotes"
-            ]
-        );
+        let expected = [
+            #[cfg(feature = "markdown-it-parser")]
+            "basic-markdown-it",
+            "obsidian-wikilinks",
+            "markdown-inline-links",
+            "latex-math",
+            "obsidian-callouts",
+            "markdown-blockquotes",
+            "enhanced-tags",
+            "markdown-footnotes",
+        ];
+        assert_eq!(names, expected);
     }
 
     #[test]

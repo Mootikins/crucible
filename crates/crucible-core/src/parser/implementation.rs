@@ -458,8 +458,8 @@ impl CrucibleParser {
         // Apply block-level processing if enabled (Phase 2 optimize-data-flow)
         if self.block_config.enabled {
             if let Err(e) = self.process_blocks(&mut parsed_doc).await {
-                // Log error but don't fail parsing - block processing is optional
-                eprintln!("Block processing error: {}", e);
+                // Block processing is optional, so the error is not fatal.
+                tracing::error!(error = %e, "block processing failed");
             }
         }
 
