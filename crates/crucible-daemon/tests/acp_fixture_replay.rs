@@ -124,6 +124,11 @@ enum TurnExpectation {
         /// source of a context limit on a delegated session (A3), so the
         /// numbers are asserted, not just the shape.
         context_window: Option<(u64, u64)>,
+        /// Substring the one tool call's `ToolEnd.result` must carry, or
+        /// `None` for a turn with no tool calls. Hermes puts a polished
+        /// tool's result only in `content` text blocks (`rawOutput` is
+        /// absent), so this asserts the content path fills the result.
+        tool_result_contains: Option<&'static str>,
     },
     /// The agent answered `session/prompt` with a JSON-RPC error, so the turn
     /// never produced a response. Substrings the surfaced error must contain.
@@ -178,6 +183,7 @@ const CLAUDE: FixtureCase = FixtureCase {
         // context *before* the 7 output tokens landed, so the two numbers
         // measure the same quantity a moment apart.
         context_window: Some((22700, 1_000_000)),
+        tool_result_contains: None,
     },
 };
 
@@ -215,6 +221,7 @@ const OPENCODE: FixtureCase = FixtureCase {
         // totalTokens 28278 adds the 54 output tokens on top, which is why
         // the `PromptResponse` usage is preferred when both are present.
         context_window: Some((28224, 200_000)),
+        tool_result_contains: None,
     },
 };
 
@@ -238,6 +245,7 @@ const CURSOR: FixtureCase = FixtureCase {
         // Reports neither usage nor a window: the delegated session that gets
         // no context indicator at all, and must not get a fabricated one.
         context_window: None,
+        tool_result_contains: None,
     },
 };
 
@@ -264,6 +272,47 @@ const CODEX: FixtureCase = FixtureCase {
             "-32603",
             "The 'gpt-5.2-codex' model is not supported when using Codex with a ChatGPT account.",
         ],
+    },
+};
+
+/// Hermes 0.20.5. Not a live capture: the frames are built one by one from
+/// the `acp_adapter` sources at commit `f293e720` (see the fixture header).
+/// Re-record with `just record-acp-fixture hermes` when a live Hermes is
+/// available, and keep one polished tool in the turn.
+///
+/// The turn runs the polished `terminal` tool. Hermes sends the result only
+/// in `content` text blocks — `rawOutput` is absent, and the completion
+/// frame carries no `title`. The case therefore pins the two Hermes-shaped
+/// behaviours: the result reaches `ToolEnd` through the content path, and
+/// the call keeps the name its own `tool_call` announced.
+const HERMES: FixtureCase = FixtureCase {
+    agent: "hermes",
+    cwd: "<HOME>/.crucible",
+    prompt: "run pwd and tell me the directory",
+    agent_info: Some(("hermes-agent", "0.20.5")),
+    auth_methods: &["hermes-setup"],
+    session_id: "6f0d2b9e-8c47-4a53-b1a9-2e7d4c5f8a10",
+    turn: TurnExpectation::Completed {
+        shapes: &[
+            ChunkShape::ToolStart,
+            ChunkShape::ToolEnd,
+            ChunkShape::Text,
+            ChunkShape::ContextWindow,
+        ],
+        text: "The working directory is <HOME>/.crucible.",
+        thinking_contains: None,
+        stop_reason: StopReason::EndTurn,
+        // Hermes reports `thoughtTokens` and `cachedReadTokens` only when
+        // the run counted them; this turn reports the three base numbers.
+        usage: Some(ExpectedUsage {
+            prompt_tokens: 5210,
+            completion_tokens: 74,
+            total_tokens: 5284,
+            cache_read_tokens: None,
+            cache_creation_tokens: None,
+        }),
+        context_window: Some((6100, 128_000)),
+        tool_result_contains: Some("<HOME>/.crucible"),
     },
 };
 
@@ -350,12 +399,19 @@ async fn run_case(case: &FixtureCase) {
     let mut text = String::new();
     let mut thinking = String::new();
     let mut windows: Vec<(u64, u64)> = Vec::new();
+    let mut tool_ends: Vec<(String, Option<String>, Option<String>)> = Vec::new();
     while let Ok(chunk) = rx.try_recv() {
         shapes.push(shape_of(&chunk));
         match chunk {
             StreamingChunk::Text(chunk_text) => text.push_str(&chunk_text),
             StreamingChunk::Thinking(chunk_text) => thinking.push_str(&chunk_text),
             StreamingChunk::ContextWindow { used, limit } => windows.push((used, limit)),
+            StreamingChunk::ToolEnd {
+                name,
+                result,
+                error,
+                ..
+            } => tool_ends.push((name, result, error)),
             _ => {}
         }
     }
@@ -369,16 +425,37 @@ async fn run_case(case: &FixtureCase) {
             stop_reason,
             usage: expected_usage,
             context_window: expected_window,
+            tool_result_contains,
         } => {
             let (summary, response) =
                 result.unwrap_or_else(|e| panic!("[{agent}] send prompt: {e}"));
 
             assert_eq!(shapes, *expected_shapes, "[{agent}] streamed chunk shapes");
             assert_eq!(text.trim(), *expected_text, "[{agent}] reassembled answer");
-            assert!(
-                !summary.announced_any,
-                "[{agent}] greeting turn should call no tools; got {summary:?}"
+            assert_eq!(
+                summary.announced_any,
+                tool_result_contains.is_some(),
+                "[{agent}] the summary must say whether the turn called tools; got {summary:?}"
             );
+            match tool_result_contains {
+                Some(needle) => {
+                    assert_eq!(tool_ends.len(), 1, "[{agent}] expected one ToolEnd");
+                    let (name, result, error) = &tool_ends[0];
+                    assert!(!name.is_empty(), "[{agent}] ToolEnd must carry a name");
+                    let result = result
+                        .as_deref()
+                        .unwrap_or_else(|| panic!("[{agent}] ToolEnd carried no result"));
+                    assert!(
+                        result.contains(needle),
+                        "[{agent}] tool result should contain {needle:?}; got {result:?}"
+                    );
+                    assert_eq!(error, &None, "[{agent}] the tool did not fail");
+                }
+                None => assert!(
+                    tool_ends.is_empty(),
+                    "[{agent}] unexpected tool calls: {tool_ends:?}"
+                ),
+            }
             assert_eq!(
                 summary.produced_content,
                 !expected_text.is_empty(),
@@ -498,6 +575,11 @@ async fn cursor_basic_chat_replays_cleanly() {
 #[tokio::test]
 async fn codex_basic_chat_replays_cleanly() {
     run_case(&CODEX).await;
+}
+
+#[tokio::test]
+async fn hermes_basic_chat_replays_cleanly() {
+    run_case(&HERMES).await;
 }
 
 /// The `gemini` capture is a stub, not a turn: header plus a single outbound
