@@ -9,13 +9,12 @@
 //! - ACP types: `acp` (ToolCallInfo, FileDiff)
 //! - Parser types: `parser::types` (ParsedNote, Wikilink, Tag, etc.)
 //! - Database types: `types::database` (SearchResult, DocumentId, Record, etc.)
-//! - Hashing types: `types::hashing` (FileHash, BlockHash, HashAlgorithm, etc.)
+//! - Hash type: `parser::types::BlockHash`, the one content hash
 //!
 //! This module serves as a central re-export point for types that cross module boundaries.
 
 pub mod acp;
 pub mod database;
-pub mod hashing;
 pub mod mcp_status;
 pub mod mode;
 pub mod notification;
@@ -27,15 +26,12 @@ pub mod tool_ref;
 pub mod undo;
 // Re-export parser domain types
 pub use crate::parser::types::{
-    CodeBlock, Frontmatter, FrontmatterFormat, Heading, ListBlock, ListItem, ListType, NoteContent,
-    Paragraph, ParsedNote, Tag, TaskStatus, Wikilink,
+    BlockHash, CodeBlock, Frontmatter, FrontmatterFormat, Heading, ListBlock, ListItem, ListType,
+    NoteContent, Paragraph, ParsedNote, Tag, TaskStatus, Wikilink,
 };
 
 // Re-export database domain types (canonical definitions in types::database)
 pub use self::database::{DocumentId, QueryResult, Record, RecordId, SearchResult};
-
-// Re-export hashing types
-pub use crate::types::hashing::{BlockHash, BlockHashInfo, FileHash, FileHashInfo, HashAlgorithm};
 
 // Re-export ACP types
 // NOTE: ToolDescriptor and ToolExample removed - use ToolDefinition from traits::tools

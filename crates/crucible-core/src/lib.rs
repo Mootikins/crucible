@@ -62,15 +62,11 @@ pub use types::{
     AvailableCommand,
     AvailableCommandInput,
     AvailableCommandsUpdate,
-    // Hashing types
+    // The one content hash type
     BlockHash,
-    BlockHashInfo,
     // Storage trait types (from traits/storage.rs)
     // Note: Parser types (ParsedNote, Wikilink, Tag, etc.) are exported from parser:: module below
     ExecutionContext,
-    FileHash,
-    FileHashInfo,
-    HashAlgorithm,
     // Mode descriptor types
     ModeDescriptor,
     SessionMode,

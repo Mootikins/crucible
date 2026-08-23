@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// A BLAKE3 hash used for block-level content addressing
 ///
-/// The one content hash type. `FileHash` is an alias for it. It names
+/// The one content hash type. It names
 /// the hash of a whole file or of an individual content block
 /// extracted from documents (headings, paragraphs, code blocks, etc.).
 ///

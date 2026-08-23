@@ -77,8 +77,8 @@ which is what the compiler knows.
 
 ### Type ownership
 
-Parser types are canonical in `crucible-core/src/parser/types/`; other hashing in
-`types/hashing.rs`; `ContextMessage` is the conversation message type. **Never duplicate types
+Parser types are canonical in `crucible-core/src/parser/types/`; `BlockHash` is the one
+content hash; `ContextMessage` is the conversation message type. **Never duplicate types
 between crates** — one canonical location, then re-export. Result aliases follow
 `<Domain>Result<T>`.
 
