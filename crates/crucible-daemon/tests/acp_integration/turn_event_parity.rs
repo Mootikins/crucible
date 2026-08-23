@@ -163,10 +163,10 @@ async fn acp_shapes_for_blank_text_turn() -> Vec<EventShape> {
 ///
 /// `flavor` picks the mock's `CRU_MOCK_ORPHAN_TOOL_END` script: `"bare"` omits
 /// every field the client records a call from, so the name is unknowable;
-/// `"titled"` carries a title, so the call *is* recorded and the handle's
-/// post-stream replay can still name it; `"repeat"` completes a properly
-/// announced call twice; `"out_of_order"` completes a call before announcing
-/// it.
+/// `"titled"` carries a title, so the client names the call from it;
+/// `"repeat"` completes a properly announced call twice; `"out_of_order"`
+/// completes a call before announcing it; `"never_completes"` announces a
+/// call and never completes it.
 async fn acp_shapes_for_orphaned_tool_end(flavor: &str) -> Vec<EventShape> {
     let agent_path = mock_agent_path().to_string_lossy().into_owned();
     let mut agent_config = mock_session_agent(&agent_path);
@@ -447,55 +447,81 @@ async fn acp_whitespace_only_turn_reports_empty_stop_reason() {
     );
 }
 
-/// B4: a result for a call that was never announced must not invent a name.
+/// B4: a result for a call that no frame named is announced under the
+/// placeholder label, and then reported.
 ///
 /// A bare `tool_call_update{status: completed}` — no title, no rawInput, no
-/// diff — reaches the handle as a `ToolEnd` with an id the stream never saw a
-/// `ToolStart` for. The handle used to name it `"unknown_tool"`, which is a
-/// tool that does not exist: it reaches the session transcript and the web view
-/// as a real tool result, while the TUI drops it silently (`update_tool`
-/// matches nothing and warns, `containers.rs:335-364`) because no card was ever
-/// created for that id.
+/// diff — is not a fault. The ACP spec gives no order between `tool_call` and
+/// `tool_call_update`, many agents send only updates, and the v2 spec makes
+/// the update an upsert. The client holds the result until the turn ends,
+/// announces the call under the placeholder label, as Zed does, and then
+/// emits the result. So the row reaches `session.jsonl`, `recording.jsonl`,
+/// Lua `tool_result` handlers and `send_and_collect`, and the renderer has a
+/// card for the result to land on.
 ///
-/// Dropping it is not free, and the loss is not only cosmetic: the row also
-/// never reaches `session.jsonl` (`should_persist` persists `tool_result`),
-/// `recording.jsonl`, Lua `tool_result` handlers and redactors, or
-/// `cru.sessions.send_and_collect`. It is still the right trade — the row names
-/// a `call_id` nothing else in the turn mentions — and the daemon log keeps the
-/// payload so the drop stays diagnosable.
-///
-/// It must also not leave the `ToolBatchEnd` guard lying: a turn that announced
-/// no call must not claim a batch.
+/// The name is never read from the payload: `rawOutput` is agent-authored.
 #[tokio::test]
-async fn acp_orphaned_tool_end_does_not_invent_a_tool_name() {
+async fn acp_bare_orphaned_tool_end_is_announced_under_the_placeholder_label() {
     let shapes = acp_shapes_for_orphaned_tool_end("bare").await;
 
-    assert!(
-        !shapes.iter().any(|s| matches!(
-            s,
-            EventShape::ToolResult { name, .. } if name == "unknown_tool"
-        )),
-        "a tool_call_update with no matching tool_call produced a result for a \
-         fabricated tool; got {shapes:#?}"
-    );
     assert_eq!(
         shapes,
         vec![
             EventShape::Text("Done".into()),
+            EventShape::ToolCall {
+                call: "call#0".into(),
+                name: "Unnamed tool".into(),
+                diff_paths: vec![],
+            },
+            EventShape::ToolResult {
+                call: "call#0".into(),
+                name: "Unnamed tool".into(),
+                is_error: false,
+            },
+            EventShape::ToolBatchEnd,
             EventShape::Done(StopReason::EndTurn),
         ],
-        "an unnameable result has no card to land in, so the turn must carry \
-         neither the result nor a batch end; got {shapes:#?}"
+        "a bare orphaned result must be announced once under the placeholder \
+         label, before its result, and close the batch; got {shapes:#?}"
+    );
+}
+
+/// A call the agent announced and never completed is closed when the turn
+/// ends, with an error that names the stop reason. Hermes leaves calls open
+/// after `session/cancel` and after its iteration budget; without this the
+/// card stays open forever.
+#[tokio::test]
+async fn acp_call_with_no_completion_is_closed_when_the_turn_ends() {
+    let shapes = acp_shapes_for_orphaned_tool_end("never_completes").await;
+
+    assert_eq!(
+        shapes,
+        vec![
+            EventShape::Text("Done".into()),
+            EventShape::ToolCall {
+                call: "call#0".into(),
+                name: "Open Tool".into(),
+                diff_paths: vec![],
+            },
+            EventShape::ToolResult {
+                call: "call#0".into(),
+                name: "Open Tool".into(),
+                is_error: true,
+            },
+            EventShape::ToolBatchEnd,
+            EventShape::Done(StopReason::EndTurn),
+        ],
+        "a call with no completion must be closed with an error at the end \
+         of the turn; got {shapes:#?}"
     );
 }
 
 /// B4, the recoverable half: the name arrives late, so use it.
 ///
-/// When the orphaned `tool_call_update` carries a title, the client records the
-/// call and the handle's post-stream replay announces it — after the result.
-/// Emitting the result live would have to guess a name; holding it until the
-/// replay names it keeps the real one *and* puts the `ToolCall` before its
-/// `ToolResult`, which is the order the renderer needs to build the card first.
+/// When the orphaned `tool_call_update` carries a title, the client announces
+/// the call from that title, and then emits the result. The `ToolCall` comes
+/// before its `ToolResult`, which is the order the renderer needs to build the
+/// card first.
 #[tokio::test]
 async fn acp_orphaned_tool_end_with_a_late_title_reports_the_real_name() {
     let shapes = acp_shapes_for_orphaned_tool_end("titled").await;
@@ -567,11 +593,9 @@ async fn acp_repeated_completion_for_an_announced_call_keeps_its_name() {
 
 /// A result that arrives before its call is named by the call that follows.
 ///
-/// The bare completed update carries nothing the client records a call from, so
-/// it reaches the handle as a `ToolEnd` for an id the stream has not announced
-/// *yet* — the naming `tool_call` is still in flight. Deferring the result to
-/// the end of the turn is what makes it nameable: by then the `ToolStart` has
-/// landed and the live name table answers.
+/// The bare completed update carries nothing that names the call, so the
+/// client holds the result. The `tool_call` that follows names the entry,
+/// and the held result is emitted right after the announcement.
 #[tokio::test]
 async fn acp_result_arriving_before_its_call_is_named_by_the_later_call() {
     let shapes = acp_shapes_for_orphaned_tool_end("out_of_order").await;

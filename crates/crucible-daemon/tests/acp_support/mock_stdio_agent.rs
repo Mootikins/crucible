@@ -685,6 +685,13 @@ impl MockStdioAgent {
                     "rawOutput": { "result": "FINAL_ANSWER_4" }
                 })));
             }
+            Ok("never_completes") => notifications.push(update(json!({
+                "sessionUpdate": "tool_call",
+                "toolCallId": "mock-open-1",
+                "title": "open_tool",
+                "status": "in_progress",
+                "rawInput": { "query": "2+2" }
+            }))),
             Ok("out_of_order") => {
                 notifications.push(update(json!({
                     "sessionUpdate": "tool_call_update",

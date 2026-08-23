@@ -3,7 +3,6 @@ use crate::acp::client::types::{ClientConfig, StreamingState};
 use crate::acp::client::CrucibleAcpClient;
 use crate::acp::streaming::{StreamingCallback, StreamingChunk};
 use agent_client_protocol::schema::v1::SessionNotification;
-use crucible_core::types::acp::ToolCallInfo;
 use serde_json::json;
 
 #[test]
@@ -28,85 +27,62 @@ fn streaming_state_drops_whitespace_only_chunks() {
     assert_eq!(state.accumulated_text, "HelloWorld");
 }
 
-/// A second frame for the same call id replaces the first, so the recorded
-/// call carries the fuller arguments of the later frame.
+/// A second frame for the same call id merges into the first entry, so the
+/// recorded call carries the fuller arguments of the later frame and the
+/// table still holds one entry per id.
 #[test]
 fn tool_call_updates_existing_entry() {
-    let client = make_client();
+    let mut client = make_client();
     let mut state = StreamingState::default();
 
-    client.record_tool_call(
-        ToolCallInfo::new("mcp__crucible__read_note")
-            .with_id("tool-42")
-            .with_arguments(json!({"path": "PRIME"})),
-        &mut state,
-    );
+    for path in ["PRIME", "PRIME.md"] {
+        capture_apply(
+            &mut client,
+            &mut state,
+            json!({
+                "sessionId": "s1",
+                "update": {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-42",
+                    "title": "mcp__crucible__read_note",
+                    "rawInput": {"path": path},
+                },
+            }),
+        );
+    }
 
-    client.record_tool_call(
-        ToolCallInfo::new("mcp__crucible__read_note")
-            .with_id("tool-42")
-            .with_arguments(json!({"path": "PRIME.md"})),
-        &mut state,
-    );
-
-    assert_eq!(state.tool_calls.len(), 1);
+    let recorded = state.tool_calls.to_tool_call_infos();
+    assert_eq!(recorded.len(), 1, "same id must merge, not duplicate");
     assert_eq!(
-        state.tool_calls[0].arguments.as_ref().unwrap()["path"],
+        recorded[0].arguments.as_ref().unwrap()["path"],
         json!("PRIME.md")
     );
 }
 
+/// Two calls with the same tool and arguments but different ids are two
+/// entries.
 #[test]
-fn test_tool_deduplication_different_ids_same_args() {
-    // RED: Same tool+args but different IDs should both be recorded
+fn tool_calls_with_different_ids_are_both_recorded() {
+    let mut client = make_client();
     let mut state = StreamingState::default();
 
-    let tool1 = ToolCallInfo::new("read_file")
-        .with_id("call-1")
-        .with_arguments(json!({"path": "test.md"}));
-    let tool2 = ToolCallInfo::new("read_file")
-        .with_id("call-2")
-        .with_arguments(json!({"path": "test.md"}));
+    for id in ["call-1", "call-2"] {
+        capture_apply(
+            &mut client,
+            &mut state,
+            json!({
+                "sessionId": "s1",
+                "update": {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": id,
+                    "title": "read_file",
+                    "rawInput": {"path": "test.md"},
+                },
+            }),
+        );
+    }
 
-    let client = make_client();
-    client.record_tool_call(tool1, &mut state);
-    client.record_tool_call(tool2, &mut state);
-
-    assert_eq!(
-        state.tool_calls.len(),
-        2,
-        "Both tool calls should be recorded (different IDs)"
-    );
-}
-
-#[test]
-fn test_tool_deduplication_same_id_updates() {
-    // Verify that same ID correctly updates existing entry
-    let mut state = StreamingState::default();
-
-    let tool1 = ToolCallInfo::new("read_file")
-        .with_id("same-id")
-        .with_arguments(json!({"path": "old.md"}));
-    let tool2 = ToolCallInfo::new("read_file")
-        .with_id("same-id")
-        .with_arguments(json!({"path": "new.md"}));
-
-    let client = make_client();
-    client.record_tool_call(tool1, &mut state);
-    client.record_tool_call(tool2, &mut state);
-
-    assert_eq!(
-        state.tool_calls.len(),
-        1,
-        "Same ID should update, not duplicate"
-    );
-    // Should have the updated arguments
-    let args = state.tool_calls[0].arguments.as_ref().unwrap();
-    assert_eq!(
-        args.get("path").and_then(|v| v.as_str()),
-        Some("new.md"),
-        "Arguments should be updated to new values"
-    );
+    assert_eq!(state.tool_calls.to_tool_call_infos().len(), 2);
 }
 
 // =========================================================================
@@ -244,11 +220,11 @@ fn tool_call_update_with_unchanged_diffs_does_not_emit_diff_update() {
     );
 }
 
+/// An update for an unseen id that carries a title announces the call
+/// itself, with the diffs on the `ToolStart`. No `ToolDiffUpdate` follows,
+/// because nothing was announced before it.
 #[test]
-fn tool_call_update_without_prior_announcement_does_not_emit_diff_update() {
-    // If we never saw the initial tool_call, a tool_call_update with diffs
-    // should not fire a late-diff chunk — the post-stream replay will
-    // handle the brand-new tool call as usual.
+fn tool_call_update_with_a_title_for_an_unseen_id_announces_it_with_its_diffs() {
     let mut client = make_client();
     let mut state = StreamingState::default();
 
@@ -271,20 +247,47 @@ fn tool_call_update_without_prior_announcement_does_not_emit_diff_update() {
         }),
     );
 
-    let prior = state
-        .tool_calls
-        .iter()
-        .filter(|tc| tc.id.as_deref() == Some("ghost-1"))
-        .count();
-    assert_eq!(prior, 1, "tool_calls should record the new entry");
+    assert_eq!(chunks.len(), 1, "got {chunks:?}");
+    match &chunks[0] {
+        StreamingChunk::ToolStart {
+            id, name, diffs, ..
+        } => {
+            assert_eq!(id, "ghost-1");
+            assert_eq!(name, "Edit File");
+            assert_eq!(diffs.len(), 1);
+        }
+        other => panic!("expected ToolStart, got {other:?}"),
+    }
+}
 
-    assert!(
-        !chunks
-            .iter()
-            .any(|c| matches!(c, StreamingChunk::ToolDiffUpdate { .. })),
-        "expected no ToolDiffUpdate without prior announcement, got: {:?}",
-        chunks
+/// An update for an unseen id with a diff and no title announces nothing.
+/// The table holds the diff until a frame names the call, or until the turn
+/// ends.
+#[test]
+fn tool_call_update_without_a_title_for_an_unseen_id_emits_nothing() {
+    let mut client = make_client();
+    let mut state = StreamingState::default();
+
+    let chunks = capture_apply(
+        &mut client,
+        &mut state,
+        json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "ghost-1",
+                "content": [{
+                    "type": "diff",
+                    "path": "/tmp/y.rs",
+                    "oldText": "a\n",
+                    "newText": "b\n",
+                }],
+            },
+        }),
     );
+
+    assert!(chunks.is_empty(), "got {chunks:?}");
+    assert_eq!(state.tool_calls.to_tool_call_infos().len(), 1);
 }
 
 // ---------------------------------------------------------------------------

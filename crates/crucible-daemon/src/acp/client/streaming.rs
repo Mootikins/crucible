@@ -1,16 +1,24 @@
 use std::sync::atomic::Ordering;
 
 use agent_client_protocol::schema::v1::{
-    ContentBlock, RequestPermissionRequest, SessionNotification, SessionUpdate, ToolCallContent,
-    ToolCallStatus,
+    ContentBlock, RequestPermissionRequest, SessionNotification, SessionUpdate,
 };
 
 use super::types::StreamingState;
 use super::{CrucibleAcpClient, REQUEST_ID};
-use crate::acp::streaming::{humanize_tool_title, StreamingCallback, StreamingChunk};
+use crate::acp::streaming::{StreamingCallback, StreamingChunk};
 use crate::acp::{ClientError, Result};
 use crucible_core::text::{sanitize_multiline, sanitize_single_line};
-use crucible_core::types::acp::{FileDiff, ToolCallInfo};
+use crucible_core::types::acp::ToolCallInfo;
+
+/// The wire spelling of a stop reason, for the error a call that never
+/// completed carries: `end_turn`, `cancelled`, and so on.
+fn stop_reason_label(stop_reason: agent_client_protocol::schema::v1::StopReason) -> String {
+    serde_json::to_value(stop_reason)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_else(|| format!("{stop_reason:?}"))
+}
 
 /// Build the `session/cancel` JSON-RPC notification (no `id` — notifications
 /// are fire-and-forget). The agent must abort the in-flight turn and end it
@@ -222,6 +230,12 @@ impl CrucibleAcpClient {
                     )
                     .await?
                 {
+                    // The turn is over: name every call the agent never
+                    // named, and close every call it never completed.
+                    let stop_reason = stop_reason_label(prompt_response.stop_reason);
+                    for chunk in state.tool_calls.flush(&stop_reason) {
+                        state.cancelled |= !callback(chunk);
+                    }
                     return Ok((state, prompt_response));
                 }
 
@@ -240,7 +254,7 @@ impl CrucibleAcpClient {
         };
 
         match tokio::time::timeout(overall_timeout, streaming_future).await {
-            Ok(Ok((state, response))) => Ok((state.tool_calls, response)),
+            Ok(Ok((state, response))) => Ok((state.tool_calls.to_tool_call_infos(), response)),
             Ok(Err(e)) => Err(e),
             Err(_) => Err(ClientError::Timeout(format!(
                 "Streaming operation timed out after {}s",
@@ -409,135 +423,18 @@ impl CrucibleAcpClient {
                     tracing::debug!("Ignoring non-text thought block: {:?}", other);
                 }
             },
+            // Both frames merge into the per-turn table, which decides what
+            // the stream sees: one announcement per call, a held result for
+            // a call with no name yet, and an update only when a value
+            // changed. See `tool_table.rs`.
             SessionUpdate::ToolCall(tool_call) => {
-                // A title is a one-line label naming what the agent is about
-                // to do, so it gets the single-line form: a newline or a bidi
-                // override in it makes the card claim one action and perform
-                // another.
-                let title = sanitize_single_line(&tool_call.title);
-                let tool_name = humanize_tool_title(&title);
-                let tool_id = tool_call.tool_call_id.to_string();
-
-                // Extract diffs once from this notification's content; reuse
-                // for both the live `ToolStart` chunk and the `ToolCallInfo`
-                // recorded in `state.tool_calls`.
-                let diffs = diffs_from_content(tool_call.content.iter());
-
-                // Emit tool start event with the diffs we just extracted so
-                // the TUI can render them in scrollback as the call appears.
-                state.cancelled |= !callback(StreamingChunk::ToolStart {
-                    name: tool_name.clone(),
-                    id: tool_id.clone(),
-                    arguments: tool_call.raw_input.clone(),
-                    diffs: diffs.clone(),
-                });
-
-                let mut info = ToolCallInfo::new(title).with_id(tool_id).with_diffs(diffs);
-                if let Some(args) = tool_call.raw_input.clone() {
-                    info = info.with_arguments(args);
+                for chunk in state.tool_calls.upsert_call(tool_call) {
+                    state.cancelled |= !callback(chunk);
                 }
-                self.record_tool_call(info, state);
             }
             SessionUpdate::ToolCallUpdate(update) => {
-                let tool_id = update.tool_call_id.to_string();
-                // Tool updates often indicate completion
-                if matches!(
-                    update.fields.status,
-                    Some(ToolCallStatus::Completed | ToolCallStatus::Failed)
-                ) {
-                    state.cancelled |= !callback(StreamingChunk::ToolEnd {
-                        id: tool_id.clone(),
-                        result: Self::extract_tool_result(update.fields.raw_output.as_ref()),
-                        error: Self::extract_tool_error(
-                            update.fields.status,
-                            update.fields.raw_output.as_ref(),
-                        ),
-                    });
-                }
-
-                // Check if update has interesting fields (title, raw_input, or content with diffs)
-                let has_content_diffs = update
-                    .fields
-                    .content
-                    .as_ref()
-                    .map(|c| {
-                        c.iter()
-                            .any(|item| matches!(item, ToolCallContent::Diff(_)))
-                    })
-                    .unwrap_or(false);
-
-                if update.fields.title.is_some()
-                    || update.fields.raw_input.is_some()
-                    || has_content_diffs
-                {
-                    // Only the wire title needs sanitising; the fallback comes
-                    // from `state`, which is only ever written with one that
-                    // already passed through here.
-                    let title = update
-                        .fields
-                        .title
-                        .as_deref()
-                        .map(sanitize_single_line)
-                        .or_else(|| state.title_for_tool(&tool_id))
-                        .unwrap_or_else(|| "Unnamed tool".to_string());
-
-                    let diffs = diffs_from_content(update.fields.content.iter().flatten());
-
-                    // Late-diff path: if the tool was already announced via
-                    // a prior `ToolStart` and this update brings *changed*
-                    // diff content (e.g. Claude Code defers diffs), fire a
-                    // live `ToolDiffUpdate` chunk so the TUI can replace the
-                    // diff snapshot in the existing scrollback entry.
-                    // Without this, the diffs are recorded into
-                    // `state.tool_calls` but the post-stream replay in
-                    // `acp_handle.rs` filters out already-announced ids and
-                    // silently drops them.
-                    //
-                    // Skip the emit when the prior recorded diffs already
-                    // match — re-rendering an identical snapshot causes a
-                    // visual flash with no informational gain.
-                    if has_content_diffs && !diffs.is_empty() {
-                        let prior_diffs = state
-                            .tool_calls
-                            .iter()
-                            .find(|tc| tc.id.as_deref() == Some(tool_id.as_str()))
-                            .map(|tc| &tc.diffs);
-                        let mut cancelled = false;
-                        if let Some(prior) = prior_diffs {
-                            if prior != &diffs {
-                                cancelled = !callback(StreamingChunk::ToolDiffUpdate {
-                                    call_id: tool_id.clone(),
-                                    diffs: diffs.clone(),
-                                });
-                            }
-                        }
-                        state.cancelled |= cancelled;
-                    }
-
-                    // Late-args path, mirroring the late-diff path above: the
-                    // call was announced without `rawInput` (claude-agent-acp
-                    // defers it), so re-emit once the arguments are known.
-                    // Skip when the recorded call already carries the same
-                    // arguments — an identical snapshot is pure noise.
-                    if let Some(args) = update.fields.raw_input.as_ref() {
-                        let prior_args = state
-                            .tool_calls
-                            .iter()
-                            .find(|tc| tc.id.as_deref() == Some(tool_id.as_str()))
-                            .and_then(|tc| tc.arguments.as_ref());
-                        if prior_args != Some(args) {
-                            state.cancelled |= !callback(StreamingChunk::ToolArgsUpdate {
-                                call_id: tool_id.clone(),
-                                arguments: args.clone(),
-                            });
-                        }
-                    }
-
-                    let mut info = ToolCallInfo::new(title).with_id(tool_id).with_diffs(diffs);
-                    if let Some(args) = update.fields.raw_input.clone() {
-                        info = info.with_arguments(args);
-                    }
-                    self.record_tool_call(info, state);
+                for chunk in state.tool_calls.upsert_update(update) {
+                    state.cancelled |= !callback(chunk);
                 }
             }
             SessionUpdate::AvailableCommandsUpdate(update) => {
@@ -551,40 +448,6 @@ impl CrucibleAcpClient {
                 tracing::debug!("Ignoring session update: {:?}", other);
             }
         }
-    }
-}
-
-/// The file diffs in a tool call's content, with oversize diffs dropped.
-///
-/// Both the initial `tool_call` frame and a later `tool_call_update` frame
-/// carry diffs in the same `ToolCallContent::Diff` shape, so both read them
-/// through this one function.
-fn diffs_from_content<'a>(content: impl Iterator<Item = &'a ToolCallContent>) -> Vec<FileDiff> {
-    content
-        .filter_map(|c| match c {
-            ToolCallContent::Diff(diff) => Some(FileDiff::from_contents(
-                diff.path.to_string_lossy().to_string(),
-                diff.old_text.clone(),
-                diff.new_text.clone(),
-            )),
-            _ => None,
-        })
-        .filter(filter_oversize_diff)
-        .collect()
-}
-
-/// True if this diff is within the size cap; logs and returns false otherwise.
-/// Use as a `.filter()` predicate when ingesting ACP-supplied diffs so the
-/// cache and renderer never have to hold huge payloads.
-fn filter_oversize_diff(d: &FileDiff) -> bool {
-    if d.is_oversize() {
-        tracing::debug!(
-            path = %d.path,
-            "ACP-supplied diff exceeded MAX_DIFF_BYTES; dropping at edge"
-        );
-        false
-    } else {
-        true
     }
 }
 

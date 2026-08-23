@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use crucible_core::types::acp::ToolCallInfo;
+use super::tool_table::ToolCallTable;
 
 /// Configuration for the ACP client.
 ///
@@ -27,7 +27,8 @@ pub struct ClientConfig {
 
 #[derive(Default)]
 pub(super) struct StreamingState {
-    pub(super) tool_calls: Vec<ToolCallInfo>,
+    /// The tool calls of this turn, one entry per id.
+    pub(super) tool_calls: ToolCallTable,
     pub(super) notification_count: usize,
     /// Raw accumulated text (for deduplication of full-text re-sends).
     /// Some ACP agents (e.g. cursor-acp) send the complete accumulated text
@@ -55,13 +56,6 @@ impl StreamingState {
     /// text equals the accumulated text so far.
     pub(super) fn is_duplicate_resend(&self, text: &str) -> bool {
         !self.accumulated_text.is_empty() && text.trim() == self.accumulated_text.trim()
-    }
-
-    pub(super) fn title_for_tool(&self, id: &str) -> Option<String> {
-        self.tool_calls
-            .iter()
-            .find(|tool| tool.id.as_deref() == Some(id))
-            .map(|tool| tool.title.clone())
     }
 }
 

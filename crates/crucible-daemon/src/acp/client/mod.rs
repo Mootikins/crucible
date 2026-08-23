@@ -38,6 +38,7 @@ mod protocol;
 mod recording;
 pub mod replay;
 mod streaming;
+mod tool_table;
 mod tools;
 mod types;
 mod usage;

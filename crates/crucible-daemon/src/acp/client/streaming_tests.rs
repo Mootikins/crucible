@@ -178,9 +178,13 @@ fn agent_text_is_sanitised_before_it_leaves_the_acp_boundary() {
         persisted, clean,
         "the accumulated answer kept its control characters: {persisted:?}"
     );
+    let recorded = state.tool_calls.to_tool_call_infos();
     assert_eq!(
-        state.title_for_tool("t1").as_deref(),
-        Some("readtxt.exe"),
+        recorded
+            .iter()
+            .map(|t| t.title.as_str())
+            .collect::<Vec<_>>(),
+        vec!["readtxt.exe"],
         "the recorded tool title kept its bidi override"
     );
 }

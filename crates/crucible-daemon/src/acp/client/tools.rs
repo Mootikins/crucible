@@ -1,10 +1,8 @@
 use agent_client_protocol::schema::v1::ToolCallStatus;
 
 use super::streaming::elide;
-use super::types::StreamingState;
 use super::CrucibleAcpClient;
 use crucible_core::text::sanitize_single_line;
-use crucible_core::types::acp::ToolCallInfo;
 
 impl CrucibleAcpClient {
     pub(super) fn extract_tool_result(raw_output: Option<&serde_json::Value>) -> Option<String> {
@@ -70,21 +68,5 @@ impl CrucibleAcpClient {
         } else {
             value.to_string()
         }
-    }
-
-    /// Record a tool call the agent announced; a second call with the same
-    /// id replaces the first, so a later frame with fuller arguments wins.
-    pub(super) fn record_tool_call(&self, tool_call: ToolCallInfo, state: &mut StreamingState) {
-        if let Some(id) = &tool_call.id {
-            if let Some(existing) = state
-                .tool_calls
-                .iter_mut()
-                .find(|t| t.id.as_deref() == Some(id.as_str()))
-            {
-                *existing = tool_call;
-                return;
-            }
-        }
-        state.tool_calls.push(tool_call);
     }
 }
