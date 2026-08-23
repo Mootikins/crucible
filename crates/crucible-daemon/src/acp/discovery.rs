@@ -90,6 +90,17 @@ const BUILTIN_AGENTS: &[BuiltinAgent] = &[
         requires: Some("Cursor CLI"),
         install: "npm install -g cursor-acp",
     },
+    BuiltinAgent {
+        name: "hermes",
+        command: "hermes",
+        args: &["acp"],
+        description: "Nous Research Hermes agent, speaks ACP directly",
+        // The `acp` subcommand ships inside the Hermes CLI, so the agent
+        // is standalone. The install line comes from the Hermes README at
+        // github.com/NousResearch/hermes-agent.
+        requires: None,
+        install: "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
+    },
 ];
 
 fn is_builtin(name: &str) -> bool {
@@ -713,7 +724,7 @@ mod tests {
     fn test_default_agent_profiles_include_all_builtin_agents() {
         let profiles = default_agent_profiles();
 
-        for name in ["opencode", "claude", "gemini", "codex", "cursor"] {
+        for name in ["opencode", "claude", "gemini", "codex", "cursor", "hermes"] {
             assert!(profiles.contains_key(name), "missing profile: {}", name);
         }
     }
@@ -722,7 +733,7 @@ mod tests {
     fn test_default_agent_profiles_have_command_args_and_description() {
         let profiles = default_agent_profiles();
 
-        for name in ["opencode", "claude", "gemini", "codex", "cursor"] {
+        for name in ["opencode", "claude", "gemini", "codex", "cursor", "hermes"] {
             let profile = profiles.get(name).expect("profile should exist");
             assert!(
                 profile.command.as_ref().is_some_and(|v| !v.is_empty()),

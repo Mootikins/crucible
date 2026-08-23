@@ -70,7 +70,7 @@ fn session_create_rejects_empty_agent_profile() {
 fn session_create_accepts_builtin_acp_profiles() {
     let daemon = TestDaemon::start();
 
-    for profile in ["claude", "opencode", "gemini", "codex", "cursor"] {
+    for profile in ["claude", "opencode", "gemini", "codex", "cursor", "hermes"] {
         daemon
             .command()
             .args(["session", "create", "--acp", profile, "--format", "json"])
