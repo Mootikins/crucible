@@ -10,7 +10,9 @@ struct ExecuteMultiKilnSearchParams<'a> {
 }
 
 use super::*;
+use crate::agent_manager::vm_pass::{fold_vms_locked, PluginHandlers};
 use crucible_lua::StageId;
+use std::ops::ControlFlow;
 
 /// One retrieved note, as a Lua handler sees it.
 ///
@@ -66,10 +68,7 @@ impl AgentManager {
         results: &[crucible_core::SearchResult],
         label_kilns: bool,
         state: &SessionEventState,
-        plugin_handlers: Option<&(
-            std::sync::Arc<crucible_lua::LuaScriptHandlerRegistry>,
-            std::sync::Arc<mlua::Lua>,
-        )>,
+        plugin_handlers: Option<&PluginHandlers>,
     ) -> String {
         if results.is_empty() {
             return String::new();
@@ -133,10 +132,7 @@ impl AgentManager {
         original_content: &str,
         results: &[crucible_core::SearchResult],
         state: &SessionEventState,
-        plugin_handlers: Option<&(
-            std::sync::Arc<crucible_lua::LuaScriptHandlerRegistry>,
-            std::sync::Arc<mlua::Lua>,
-        )>,
+        plugin_handlers: Option<&PluginHandlers>,
     ) -> Option<String> {
         let results_payload: Vec<serde_json::Value> = results
             .iter()
@@ -156,22 +152,16 @@ impl AgentManager {
         // custom formatter overrides a plugin's default. Formatters run
         // pre-turn and are expected to be quick, so the plugin pass runs
         // under the same caller-held state lock rather than after it.
-        if let Some(formatted) =
-            Self::run_precognition_format_pass(session_id, &state.registry, &state.lua, &event)
-                .await
-        {
-            return Some(formatted);
-        }
-        if let Some((plugin_registry, plugin_lua)) = plugin_handlers {
-            return Self::run_precognition_format_pass(
-                session_id,
-                plugin_registry,
-                plugin_lua,
-                &event,
-            )
-            .await;
-        }
-        None
+        fold_vms_locked(state, plugin_handlers, None, |_, registry, lua, _| {
+            let event = &event;
+            Box::pin(async move {
+                match Self::run_precognition_format_pass(session_id, &registry, &lua, event).await {
+                    Some(formatted) => ControlFlow::Break(Some(formatted)),
+                    None => ControlFlow::Continue(None),
+                }
+            })
+        })
+        .await
     }
 
     /// One registry's `precognition_format` pass; its first Transform wins.
@@ -224,10 +214,7 @@ impl AgentManager {
         results: &[crucible_core::SearchResult],
         char_budget: usize,
         state: &SessionEventState,
-        plugin_handlers: Option<&(
-            std::sync::Arc<crucible_lua::LuaScriptHandlerRegistry>,
-            std::sync::Arc<mlua::Lua>,
-        )>,
+        plugin_handlers: Option<&PluginHandlers>,
     ) -> Option<Vec<crucible_core::SearchResult>> {
         let results_payload: Vec<serde_json::Value> = results
             .iter()
@@ -250,28 +237,20 @@ impl AgentManager {
 
         // Session VM before plugin VM, first Transform wins — same precedence
         // as `precognition_format`, so a session's policy overrides a plugin's.
-        if let Some(selected) = Self::run_precognition_select_pass(
-            session_id,
-            &state.registry,
-            &state.lua,
-            &event,
-            results,
-        )
+        fold_vms_locked(state, plugin_handlers, None, |_, registry, lua, _| {
+            let event = &event;
+            Box::pin(async move {
+                match Self::run_precognition_select_pass(
+                    session_id, &registry, &lua, event, results,
+                )
+                .await
+                {
+                    Some(selected) => ControlFlow::Break(Some(selected)),
+                    None => ControlFlow::Continue(None),
+                }
+            })
+        })
         .await
-        {
-            return Some(selected);
-        }
-        if let Some((plugin_registry, plugin_lua)) = plugin_handlers {
-            return Self::run_precognition_select_pass(
-                session_id,
-                plugin_registry,
-                plugin_lua,
-                &event,
-                results,
-            )
-            .await;
-        }
-        None
     }
 
     /// One registry's `precognition_select` pass; its first usable Transform wins.

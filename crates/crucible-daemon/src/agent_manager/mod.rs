@@ -1394,6 +1394,7 @@ pub(crate) mod stream_config;
 pub(crate) use stream_config::{AgentStreamConfig, TurnEnvironment};
 pub(crate) mod title;
 pub mod tool_tracking;
+pub(crate) mod vm_pass;
 
 #[cfg(test)]
 mod tests;

@@ -3,6 +3,9 @@ use crucible_core::types::acp::FileDiff;
 use crucible_core::types::ToolSource;
 use crucible_lua::StageId;
 use crucible_lua::{ToolBeforeExecuteEvent, ToolDisplayCompleteEvent, ToolDisplayStartEvent};
+use std::ops::ControlFlow;
+
+use crate::agent_manager::vm_pass::fold_vms;
 
 /// Deny a tool call: emit the `tool_result` so views show the outcome, and
 /// hand the agent loop an errored result.
@@ -229,7 +232,7 @@ impl AgentManager {
             tool_call
         };
 
-        let mut args = tool_call
+        let args = tool_call
             .arguments
             .clone()
             .unwrap_or(serde_json::Value::Null);
@@ -351,43 +354,40 @@ impl AgentManager {
         // bracketed and `invoke_tool`→`delegate_session` is correctly excluded.
         *bracket = stream_ctx.open_review_bracket(&tool_call.name).await;
 
-        let mut intercepted = {
-            let state = stream_ctx.session_state.lock().await;
-            // Session-scoped handlers, then plugin-registered ones. Plugins
-            // live in the loader's VM with their own registry; a RegistryKey
-            // is only valid against the state that made it, so the two can't
-            // be merged into one registry.
-            run_pre_tool_call_handlers(
-                stream_ctx,
-                &state.registry,
-                &state.lua,
-                &tool_call.name,
-                &mut args,
-                &call_id,
-            )
-            .await
-        };
-
+        // Session-scoped handlers first, then plugin-registered ones; the
+        // first interception wins. Plugins live in the loader's VM with their
+        // own registry; a RegistryKey is only valid against the state that
+        // made it, so the two can't be merged into one registry.
+        //
         // Plugin handlers run OUTSIDE the session-state lock: a handler like
         // oci's exec-into-container can legitimately run for minutes, and
         // holding the session's whole state across that starves every other
         // operation on the session (and deadlocks a handler that calls back
         // into an API needing the same lock).
-        if intercepted.is_none() {
-            if let Some((plugin_registry, plugin_lua)) =
-                stream_ctx.agent_stream_config.plugin_handlers.as_ref()
-            {
-                intercepted = run_pre_tool_call_handlers(
-                    stream_ctx,
-                    plugin_registry,
-                    plugin_lua,
-                    &tool_call.name,
-                    &mut args,
-                    &call_id,
-                )
-                .await;
-            }
-        }
+        let (args, intercepted) = fold_vms(
+            &stream_ctx.session_state,
+            stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
+            (args, None),
+            |_, registry, lua, (mut args, _)| {
+                let call_id = &call_id;
+                Box::pin(async move {
+                    let hit = run_pre_tool_call_handlers(
+                        stream_ctx,
+                        &registry,
+                        &lua,
+                        &tool_call.name,
+                        &mut args,
+                        call_id,
+                    )
+                    .await;
+                    match hit {
+                        Some(hit) => ControlFlow::Break((args, Some(hit))),
+                        None => ControlFlow::Continue((args, None)),
+                    }
+                })
+            },
+        )
+        .await;
         if let Some(mut result) = intercepted {
             // A denial already emitted its events inside deny_tool_call. A
             // Handled result runs the `tool_result` seam first, then emits —

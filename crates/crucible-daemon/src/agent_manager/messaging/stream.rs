@@ -31,6 +31,9 @@ use crucible_core::types::ToolSource;
 use crucible_lua::StageId;
 use futures::StreamExt;
 use std::collections::{HashMap, HashSet};
+use std::ops::ControlFlow;
+
+use crate::agent_manager::vm_pass::{fold_vms, PluginHandlers};
 use tokio::sync::mpsc;
 
 /// Outcome of running output validation on an accumulated response.
@@ -1168,8 +1171,6 @@ impl AgentManager {
             );
         }
 
-        let state = stream_ctx.session_state.lock().await;
-
         // Observational event; session VM first, then plugin VM with the
         // state lock released (plugin Lua may run for seconds).
         let post_llm_event = SessionEvent::Custom {
@@ -1180,25 +1181,21 @@ impl AgentManager {
                 "duration_ms": duration_ms,
             }),
         };
-        Self::run_post_llm_call_handlers(
-            &stream_ctx.session_id,
-            &state.registry,
-            &state.lua,
-            &post_llm_event,
+        fold_vms(
+            &stream_ctx.session_state,
+            stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
+            (),
+            |_, registry, lua, ()| {
+                let post_llm_event = &post_llm_event;
+                let session_id = stream_ctx.session_id.as_str();
+                Box::pin(async move {
+                    Self::run_post_llm_call_handlers(session_id, &registry, &lua, post_llm_event)
+                        .await;
+                    ControlFlow::Continue(())
+                })
+            },
         )
         .await;
-        drop(state);
-        if let Some((plugin_registry, plugin_lua)) =
-            stream_ctx.agent_stream_config.plugin_handlers.as_ref()
-        {
-            Self::run_post_llm_call_handlers(
-                &stream_ctx.session_id,
-                plugin_registry,
-                plugin_lua,
-                &post_llm_event,
-            )
-            .await;
-        }
 
         continuation_outcome
     }
@@ -1229,7 +1226,7 @@ impl AgentManager {
         message_id: &str,
         response: &str,
         session_state: &Arc<Mutex<SessionEventState>>,
-        plugin_handlers: Option<&(Arc<crucible_lua::LuaScriptHandlerRegistry>, Arc<mlua::Lua>)>,
+        plugin_handlers: Option<&PluginHandlers>,
         is_continuation: bool,
     ) -> Option<(String, String)> {
         let event = SessionEvent::Custom {
@@ -1248,36 +1245,26 @@ impl AgentManager {
         // win can use priority within its own registry, but cross-registry
         // the later (plugin) pass acts last by the same rule that lets
         // plugin transforms see session transforms' output.
-        let mut pending_injection: Option<(String, String)> = None;
-        {
-            let state = session_state.lock().await;
-            if let Some(injection) = Self::run_turn_complete_handlers(
-                session_id,
-                &state.registry,
-                &state.lua,
-                &event,
-                is_continuation,
-            )
-            .await
-            {
-                pending_injection = Some(injection);
-            }
-        }
-        if let Some((plugin_registry, plugin_lua)) = plugin_handlers {
-            if let Some(injection) = Self::run_turn_complete_handlers(
-                session_id,
-                plugin_registry,
-                plugin_lua,
-                &event,
-                is_continuation,
-            )
-            .await
-            {
-                pending_injection = Some(injection);
-            }
-        }
-
-        pending_injection
+        fold_vms(
+            session_state,
+            plugin_handlers,
+            None,
+            |_, registry, lua, pending_injection| {
+                let event = &event;
+                Box::pin(async move {
+                    let injection = Self::run_turn_complete_handlers(
+                        session_id,
+                        &registry,
+                        &lua,
+                        event,
+                        is_continuation,
+                    )
+                    .await;
+                    ControlFlow::Continue(injection.or(pending_injection))
+                })
+            },
+        )
+        .await
     }
 
     /// One registry's `turn:complete` pass; returns its last inject, if any.

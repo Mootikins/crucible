@@ -4,6 +4,9 @@ use crucible_core::config::components::permissions::{
 };
 use crucible_lua::StageId;
 use std::future::Future;
+use std::ops::ControlFlow;
+
+use crate::agent_manager::vm_pass::fold_vms;
 
 /// The name the permission engine matches an ACP tool call against.
 ///
@@ -350,39 +353,33 @@ impl AgentManager {
         stream_ctx: &StreamContext,
         stream_config: &AgentStreamConfig,
     ) -> Option<String> {
-        let state = stream_ctx.session_state.lock().await;
-        let mut current_content = content;
         // Session-scoped handlers first (more specific), under the state
         // lock; then plugin handlers with the lock RELEASED — plugin Lua can
         // call `cru.shell`/`cru.http` for seconds, and holding the session's
         // whole state across that starves everything else on the session.
-        let (content, mut cancelled) = Self::run_pre_llm_call_handlers(
-            stream_ctx,
-            &state.registry,
-            &state.lua,
-            &stream_config.model,
-            current_content,
+        let (current_content, cancelled) = fold_vms(
+            &stream_ctx.session_state,
+            stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
+            (content, false),
+            |_, registry, lua, (content, _)| {
+                Box::pin(async move {
+                    let (content, cancelled) = Self::run_pre_llm_call_handlers(
+                        stream_ctx,
+                        &registry,
+                        &lua,
+                        &stream_config.model,
+                        content,
+                    )
+                    .await;
+                    if cancelled {
+                        ControlFlow::Break((content, true))
+                    } else {
+                        ControlFlow::Continue((content, false))
+                    }
+                })
+            },
         )
         .await;
-        current_content = content;
-        drop(state);
-
-        if !cancelled {
-            if let Some((plugin_registry, plugin_lua)) =
-                stream_ctx.agent_stream_config.plugin_handlers.as_ref()
-            {
-                let (content, plugin_cancelled) = Self::run_pre_llm_call_handlers(
-                    stream_ctx,
-                    plugin_registry,
-                    plugin_lua,
-                    &stream_config.model,
-                    current_content,
-                )
-                .await;
-                current_content = content;
-                cancelled = plugin_cancelled;
-            }
-        }
 
         // A crucible.on Cancel cancels the TURN — same as the reactor path
         // above and transform_context. It used to merely stop the handler
@@ -489,7 +486,6 @@ impl AgentManager {
         stream_ctx: &StreamContext,
         stream_config: &AgentStreamConfig,
     ) -> Option<Vec<crucible_core::traits::ContextMessage>> {
-        let state = stream_ctx.session_state.lock().await;
         let mut current = messages;
 
         // Built-in producer: prepend the pre-computed Precognition
@@ -523,36 +519,31 @@ impl AgentManager {
         // returning `{ messages = ... }`. Session-scoped handlers first,
         // under the state lock; then plugin handlers with the lock released
         // (same rationale as `apply_pre_llm_call_handlers`).
-        current = match Self::run_transform_context_handlers(
-            stream_ctx,
-            &state.registry,
-            &state.lua,
-            &stream_config.model,
-            current,
+        current = fold_vms(
+            &stream_ctx.session_state,
+            stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
+            Some(current),
+            |_, registry, lua, current| {
+                Box::pin(async move {
+                    let Some(current) = current else {
+                        return ControlFlow::Break(None);
+                    };
+                    match Self::run_transform_context_handlers(
+                        stream_ctx,
+                        &registry,
+                        &lua,
+                        &stream_config.model,
+                        current,
+                    )
+                    .await
+                    {
+                        Ok(messages) => ControlFlow::Continue(Some(messages)),
+                        Err(()) => ControlFlow::Break(None),
+                    }
+                })
+            },
         )
-        .await
-        {
-            Ok(messages) => messages,
-            Err(()) => return None,
-        };
-        drop(state);
-
-        if let Some((plugin_registry, plugin_lua)) =
-            stream_ctx.agent_stream_config.plugin_handlers.as_ref()
-        {
-            current = match Self::run_transform_context_handlers(
-                stream_ctx,
-                plugin_registry,
-                plugin_lua,
-                &stream_config.model,
-                current,
-            )
-            .await
-            {
-                Ok(messages) => messages,
-                Err(()) => return None,
-            };
-        }
+        .await?;
 
         // Defensive: if a Lua handler returned a new `messages` array
         // that dropped the built-in Precognition block, re-prepend it.

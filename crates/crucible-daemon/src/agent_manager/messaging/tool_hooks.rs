@@ -15,15 +15,18 @@ use crucible_lua::{
     execute_tool_display_start_hooks, ToolBeforeExecuteEvent, ToolDisplayCompleteEvent,
     ToolDisplayCompleteHints, ToolDisplayStartEvent, ToolDisplayStartHints,
 };
+use std::ops::ControlFlow;
 use tracing::warn;
+
+use crate::agent_manager::vm_pass::fold_vms;
 
 use super::StreamContext;
 
 /// A display stage a tool call passes through, with the Lua hook that
 /// resolves its hints. The two stages differ only in their event, their
 /// hints, and the hook they call.
-pub(super) trait DisplayStage {
-    type Hints;
+pub(super) trait DisplayStage: Sync {
+    type Hints: Send;
     const STAGE: &'static str;
 
     fn tool_name(&self) -> &str;
@@ -33,7 +36,7 @@ pub(super) trait DisplayStage {
         lua: &mlua::Lua,
         registry: &crucible_lua::LuaScriptHandlerRegistry,
         session_id: &str,
-    ) -> impl std::future::Future<Output = mlua::Result<Option<Self::Hints>>>;
+    ) -> impl std::future::Future<Output = mlua::Result<Option<Self::Hints>>> + Send;
 }
 
 impl DisplayStage for ToolDisplayStartEvent {
@@ -78,45 +81,31 @@ pub(super) async fn resolve_hints<E: DisplayStage>(
     stream_ctx: &StreamContext,
     event: &E,
 ) -> Option<E::Hints> {
-    let session_hints = {
-        let state = stream_ctx.session_state.lock().await;
-        match event
-            .run(&state.lua, &state.registry, &stream_ctx.session_id)
-            .await
-        {
-            Ok(hints) => hints,
-            Err(error) => {
-                warn!(
-                    session_id = %stream_ctx.session_id,
-                    tool = %event.tool_name(),
-                    error = %error,
-                    "Lua {} hook error, falling back to default metadata",
-                    E::STAGE
-                );
-                None
-            }
-        }
-    };
-    if session_hints.is_some() {
-        return session_hints;
-    }
-    let (plugin_registry, plugin_lua) = stream_ctx.agent_stream_config.plugin_handlers.as_ref()?;
-    match event
-        .run(plugin_lua, plugin_registry, &stream_ctx.session_id)
-        .await
-    {
-        Ok(hints) => hints,
-        Err(error) => {
-            warn!(
-                session_id = %stream_ctx.session_id,
-                tool = %event.tool_name(),
-                error = %error,
-                "plugin {} hook error, falling back to default metadata",
-                E::STAGE
-            );
-            None
-        }
-    }
+    fold_vms(
+        &stream_ctx.session_state,
+        stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
+        None,
+        |vm, registry, lua, _| {
+            Box::pin(async move {
+                match event.run(&lua, &registry, &stream_ctx.session_id).await {
+                    Ok(Some(hints)) => ControlFlow::Break(Some(hints)),
+                    Ok(None) => ControlFlow::Continue(None),
+                    Err(error) => {
+                        warn!(
+                            session_id = %stream_ctx.session_id,
+                            tool = %event.tool_name(),
+                            error = %error,
+                            "{} {} hook error, falling back to default metadata",
+                            vm,
+                            E::STAGE
+                        );
+                        ControlFlow::Continue(None)
+                    }
+                }
+            })
+        },
+    )
+    .await
 }
 
 /// The `tool_result` seam: chained partial patches over a finished tool
@@ -134,8 +123,8 @@ pub(super) async fn apply_tool_result_handlers(
     stream_ctx: &StreamContext,
     tool_name: &str,
     args: &serde_json::Value,
-    mut result: String,
-    mut error: Option<String>,
+    result: String,
+    error: Option<String>,
 ) -> (String, Option<String>) {
     async fn run_pass(
         stream_ctx: &StreamContext,
@@ -187,88 +176,65 @@ pub(super) async fn apply_tool_result_handlers(
         }
     }
 
-    {
-        let state = stream_ctx.session_state.lock().await;
-        run_pass(
-            stream_ctx,
-            &state.registry,
-            &state.lua,
-            tool_name,
-            args,
-            &mut result,
-            &mut error,
-        )
-        .await;
-    }
-    if let Some((plugin_registry, plugin_lua)) =
-        stream_ctx.agent_stream_config.plugin_handlers.as_ref()
-    {
-        run_pass(
-            stream_ctx,
-            plugin_registry,
-            plugin_lua,
-            tool_name,
-            args,
-            &mut result,
-            &mut error,
-        )
-        .await;
-    }
-    (result, error)
+    fold_vms(
+        &stream_ctx.session_state,
+        stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
+        (result, error),
+        |_, registry, lua, (mut result, mut error)| {
+            Box::pin(async move {
+                run_pass(
+                    stream_ctx,
+                    &registry,
+                    &lua,
+                    tool_name,
+                    args,
+                    &mut result,
+                    &mut error,
+                )
+                .await;
+                ControlFlow::Continue((result, error))
+            })
+        },
+    )
+    .await
 }
 
 pub(super) async fn resolve_before_execute_env(
     stream_ctx: &StreamContext,
     event: &ToolBeforeExecuteEvent,
 ) -> std::collections::HashMap<String, String> {
-    let session_env = {
-        let state = stream_ctx.session_state.lock().await;
-        match execute_tool_before_execute_hooks(
-            &state.lua,
-            &state.registry,
-            Some(&stream_ctx.session_id),
-            event,
-        )
-        .await
-        {
-            Ok(Some(result)) => result.env,
-            Ok(None) => std::collections::HashMap::new(),
-            Err(error) => {
-                warn!(
-                    session_id = %stream_ctx.session_id,
-                    tool = %event.name,
-                    error = %error,
-                    "Lua tool:before_execute hook error, proceeding without env vars"
-                );
-                std::collections::HashMap::new()
-            }
-        }
-    };
-    let mut env = match stream_ctx.agent_stream_config.plugin_handlers.as_ref() {
-        Some((plugin_registry, plugin_lua)) => {
-            match execute_tool_before_execute_hooks(
-                plugin_lua,
-                plugin_registry,
-                Some(&stream_ctx.session_id),
-                event,
-            )
-            .await
-            {
-                Ok(Some(result)) => result.env,
-                Ok(None) => std::collections::HashMap::new(),
-                Err(error) => {
-                    warn!(
-                        session_id = %stream_ctx.session_id,
-                        tool = %event.name,
-                        error = %error,
-                        "plugin tool:before_execute hook error, proceeding without env vars"
-                    );
-                    std::collections::HashMap::new()
-                }
-            }
-        }
-        None => std::collections::HashMap::new(),
-    };
-    env.extend(session_env);
-    env
+    // Each VM's env is folded under the one before it, so a session value
+    // wins over a plugin value for the same key.
+    fold_vms(
+        &stream_ctx.session_state,
+        stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
+        std::collections::HashMap::new(),
+        |vm, registry, lua, acc| {
+            Box::pin(async move {
+                let mut env = match execute_tool_before_execute_hooks(
+                    &lua,
+                    &registry,
+                    Some(&stream_ctx.session_id),
+                    event,
+                )
+                .await
+                {
+                    Ok(Some(result)) => result.env,
+                    Ok(None) => std::collections::HashMap::new(),
+                    Err(error) => {
+                        warn!(
+                            session_id = %stream_ctx.session_id,
+                            tool = %event.name,
+                            error = %error,
+                            "{vm} tool:before_execute hook error, proceeding without env vars"
+                        );
+                        std::collections::HashMap::new()
+                    }
+                };
+                env.extend(acc);
+                ControlFlow::Continue(env)
+            })
+        },
+    )
+    .await
 }
