@@ -191,13 +191,13 @@ wrong. The hazard is that `use ...::Event` reads as unambiguous and is not.
 | `Event` | `crates/crucible-cli/src/tui/oil/event.rs:4` <br> `crates/crucible-core/src/events/emitter.rs:298` (an associated type) <br> `crates/crucible-daemon/src/file_watch_bridge.rs:40` (an associated type) |
 | `Direction` | `crates/crucible-daemon/src/acp/client/recording.rs:28` <br> `crates/crucible-oil/src/node.rs:130` |
 | `Drawer` | `crates/crucible-cli/src/tui/oil/components/drawer.rs:7` (an alias of `OilDrawer`) <br> `crates/crucible-oil/src/components/drawer.rs:39` |
-| `MapSerializer` | `crates/crucible-core/src/serde_md/serializer.rs:277` <br> `crates/crucible-daemon/src/observe/serde_md.rs:283` |
+| `MapSerializer` | ~~core `serde_md/`, daemon `observe/serde_md.rs`~~ (both removed 2026-08-22, plan T3-B17) |
 | `Op` | `crates/crucible-core/src/storage/note_store.rs:318` <br> `crates/crucible-oil/src/proptest_strategies.rs:224` |
 | `ParseError` | `crates/crucible-cli/src/tui/oil/commands/set.rs:6` <br> `crates/crucible-core/src/parser/error.rs:55` |
 | `Record` | `crates/crucible-core/src/types/database.rs:56` <br> `crates/crucible-daemon/src/review/journal.rs:52` |
-| `SeqSerializer` | `crates/crucible-core/src/serde_md/serializer.rs:210` <br> `crates/crucible-daemon/src/observe/serde_md.rs:216` |
-| `StructSerializer` | `crates/crucible-core/src/serde_md/serializer.rs:307` <br> `crates/crucible-daemon/src/observe/serde_md.rs:313` |
-| `ToolOutput` | `crates/crucible-cli/src/commands/tools.rs:9` <br> `crates/crucible-core/src/types/acp.rs:375` |
+| `SeqSerializer` | ~~core `serde_md/`, daemon `observe/serde_md.rs`~~ (both removed 2026-08-22, plan T3-B17) |
+| `StructSerializer` | ~~core `serde_md/`, daemon `observe/serde_md.rs`~~ (both removed 2026-08-22, plan T3-B17) |
+| `ToolOutput` | `crates/crucible-cli/src/commands/tools.rs:9` <br> ~~core `types/acp.rs`~~ (removed 2026-08-22, plan T3-B11) |
 | `Verdict` | `crates/crucible-core/src/session/types/review.rs:601` <br> `crates/crucible-daemon/src/tools/fs_scope.rs:501` |
 
 `Session` in `crucible-web/src/middleware/auth/session.rs:33` is a private HTTP
