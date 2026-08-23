@@ -78,9 +78,9 @@ fn test_session_reaches_every_kiln_in_its_set() {
     let reference = kiln_name("reference");
     let session = Session::new(SessionType::Chat, vec![kiln.clone()]).with_kiln(reference.clone());
 
-    assert!(session.can_access_kiln(&kiln));
-    assert!(session.can_access_kiln(&reference));
-    assert!(!session.can_access_kiln(&kiln_name("other")));
+    assert!(session.kilns.contains(&kiln));
+    assert!(session.kilns.contains(&reference));
+    assert!(!session.kilns.contains(&kiln_name("other")));
 }
 
 #[test]
@@ -105,9 +105,6 @@ fn test_session_storage_paths() {
     assert!(session
         .jsonl_path(&sessions_root)
         .ends_with("session.jsonl"));
-    assert!(session
-        .artifacts_path(&sessions_root)
-        .ends_with("artifacts"));
 }
 
 #[test]
@@ -441,7 +438,6 @@ fn test_session_default_no_recording_mode() {
     let session = Session::new(SessionType::Chat, vec![kiln]);
 
     assert_eq!(session.recording_mode, None);
-    assert!(!session.is_granular());
 }
 
 #[test]

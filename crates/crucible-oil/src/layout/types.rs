@@ -35,6 +35,7 @@ impl LayoutTree {
     }
 
     /// Create an empty layout tree with zero dimensions.
+    #[cfg(test)]
     pub fn empty() -> Self {
         Self {
             root: LayoutBox::empty(),
@@ -82,6 +83,7 @@ impl LayoutBox {
     }
 
     /// Create an empty layout box with zero dimensions.
+    #[cfg(test)]
     pub fn empty() -> Self {
         Self {
             rect: Rect::new(0, 0, 0, 0),

@@ -118,6 +118,7 @@ impl std::fmt::Display for Priority {
 /// Broad classification of a session event, used to filter events by concern.
 ///
 /// Every event belongs to exactly one category.
+#[cfg(any(test, feature = "test-utils"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EventCategory {
     /// User/participant message.

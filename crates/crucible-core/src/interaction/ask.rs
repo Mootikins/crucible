@@ -131,14 +131,6 @@ impl AskBatch {
         }
     }
 
-    /// Create a batch with a specific ID.
-    pub fn with_id(id: uuid::Uuid) -> Self {
-        Self {
-            id,
-            questions: Vec::new(),
-        }
-    }
-
     /// Add a question to the batch.
     pub fn question(mut self, q: AskQuestion) -> Self {
         self.questions.push(q);
@@ -238,15 +230,6 @@ impl AskBatchResponse {
         self.answers.push(a);
         self
     }
-
-    /// Mark as cancelled.
-    pub fn cancelled(id: impl Into<String>) -> Self {
-        Self {
-            id: id.into(),
-            answers: Vec::new(),
-            cancelled: true,
-        }
-    }
 }
 
 /// Answer to a single question in an [`AskBatch`].
@@ -260,6 +243,8 @@ pub struct QuestionAnswer {
     pub other: Option<String>,
 }
 
+/// Test fixtures; production builds a `QuestionAnswer` from the wire.
+#[cfg(test)]
 impl QuestionAnswer {
     /// Create answer with a single choice selection.
     pub fn choice(index: usize) -> Self {
@@ -394,17 +379,6 @@ mod tests {
 
         assert_eq!(answer.selected, vec![0, 2]);
         assert!(answer.other.is_none());
-    }
-
-    #[test]
-    fn ask_batch_cancelled() {
-        // The daemon's correlation token, which is what a client is handed.
-        let id = "ix-8a2f5c1e-0000-4000-8000-000000000000";
-        let response = AskBatchResponse::cancelled(id);
-
-        assert!(response.cancelled);
-        assert!(response.answers.is_empty());
-        assert_eq!(response.id, id);
     }
 
     #[test]

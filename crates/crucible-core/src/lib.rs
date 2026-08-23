@@ -104,9 +104,9 @@ pub use types::database::{DocumentId, QueryResult, Record, RecordId, SearchResul
 // Re-export interaction protocol types
 pub use interaction::{
     ArtifactFormat, AskBatch, AskBatchResponse, AskQuestion, AskRequest, AskResponse, EditRequest,
-    EditResponse, InteractionRequest, InteractionResponse, InteractivePanel, PanelAction,
-    PanelHints, PanelItem, PanelResult, PanelState, PermAction, PermRequest, PermResponse,
-    PermissionScope, PopupRequest, PopupResponse, QuestionAnswer, ShowRequest,
+    EditResponse, InteractionRequest, InteractionResponse, InteractivePanel, PanelHints, PanelItem,
+    PanelResult, PanelState, PermAction, PermRequest, PermResponse, PermissionScope, PopupRequest,
+    PopupResponse, QuestionAnswer, ShowRequest,
 };
 
 // Re-export session types (daemon session management)

@@ -267,35 +267,6 @@ impl PanelState {
     }
 }
 
-/// Action returned by a key handler to control panel behavior.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "action", rename_all = "snake_case")]
-pub enum PanelAction {
-    /// Continue with default key handling.
-    Continue,
-    /// Accept current selection and close panel.
-    Accept,
-    /// Accept with specific selection (overrides current).
-    AcceptWith {
-        selected: Vec<usize>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        other: Option<String>,
-    },
-    /// Cancel and close panel.
-    Cancel,
-    /// Toggle selection at specified index.
-    ToggleSelect {
-        index: usize,
-    },
-    /// Move cursor by delta (positive = down, negative = up).
-    MoveCursor {
-        delta: i32,
-    },
-    SetFilter {
-        text: String,
-    },
-}
-
 /// Result when an interactive panel closes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PanelResult {
@@ -392,11 +363,6 @@ impl InteractionRequest {
             Self::Popup(_) => "popup",
             Self::Panel(_) => "panel",
         }
-    }
-
-    /// Check if this request expects a response.
-    pub fn expects_response(&self) -> bool {
-        !matches!(self, Self::Show(_))
     }
 }
 
@@ -527,7 +493,6 @@ mod tests {
 
         assert!(matches!(req, InteractionRequest::AskBatch(_)));
         assert_eq!(req.kind(), "ask_batch");
-        assert!(req.expects_response());
     }
 
     #[test]
@@ -550,7 +515,6 @@ mod tests {
 
         assert!(matches!(req, InteractionRequest::Ask(_)));
         assert_eq!(req.kind(), "ask");
-        assert!(req.expects_response());
     }
 
     #[test]
@@ -560,7 +524,6 @@ mod tests {
 
         assert!(matches!(req, InteractionRequest::Permission(_)));
         assert_eq!(req.kind(), "permission");
-        assert!(req.expects_response());
     }
 
     #[test]
@@ -570,7 +533,6 @@ mod tests {
 
         assert!(matches!(req, InteractionRequest::Show(_)));
         assert_eq!(req.kind(), "show");
-        assert!(!req.expects_response());
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -662,7 +624,6 @@ mod tests {
 
         assert!(matches!(req, InteractionRequest::Popup(_)));
         assert_eq!(req.kind(), "popup");
-        assert!(req.expects_response());
     }
 
     #[test]
@@ -778,7 +739,6 @@ mod tests {
 
         assert!(matches!(req, InteractionRequest::Panel(_)));
         assert_eq!(req.kind(), "panel");
-        assert!(req.expects_response());
     }
 
     #[test]
@@ -832,18 +792,6 @@ mod tests {
         assert!(json.contains("\"kind\":\"panel\""));
         let restored: InteractionResponse = serde_json::from_str(&json).unwrap();
         assert!(matches!(restored, InteractionResponse::Panel(_)));
-    }
-
-    #[test]
-    fn panel_action_serialization() {
-        let action = PanelAction::AcceptWith {
-            selected: vec![0, 1],
-            other: Some("custom".into()),
-        };
-        let json = serde_json::to_string(&action).unwrap();
-        let restored: PanelAction = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(action, restored);
     }
 
     /// The compile-time guard behind [`InteractionRequest::KINDS`].

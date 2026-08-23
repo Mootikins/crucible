@@ -1,5 +1,5 @@
 use crate::overlay::OverlayAnchor;
-use crate::style::{AlignItems, Border, Color, Gap, JustifyContent, Padding, Style};
+use crate::style::{AlignItems, Border, Gap, JustifyContent, Padding, Style};
 
 pub use crate::popup_node::{
     popup, popup_item, PopupItemNode, PopupNode, DEFAULT_POPUP_BG, DEFAULT_POPUP_SELECTED_BG,
@@ -262,13 +262,6 @@ pub fn overlay_from_bottom(child: Node, offset: usize) -> Node {
     })
 }
 
-pub fn overlay_from_bottom_right(child: Node, offset: usize) -> Node {
-    Node::Overlay(OverlayNode {
-        child: Box::new(child),
-        anchor: OverlayAnchor::FromBottomRight(offset),
-    })
-}
-
 pub fn raw(content: impl Into<String>, display_width: u16, display_height: u16) -> Node {
     Node::Raw(RawNode {
         content: content.into(),
@@ -502,40 +495,6 @@ impl From<Option<Node>> for Node {
             Some(node) => node,
             None => Node::Empty,
         }
-    }
-}
-
-impl TextNode {
-    pub fn fg(mut self, color: Color) -> Self {
-        self.style = self.style.fg(color);
-        self
-    }
-
-    pub fn bg(mut self, color: Color) -> Self {
-        self.style = self.style.bg(color);
-        self
-    }
-
-    pub fn bold(mut self) -> Self {
-        self.style = self.style.bold();
-        self
-    }
-
-    pub fn dim(mut self) -> Self {
-        self.style = self.style.dim();
-        self
-    }
-}
-
-impl InputNode {
-    pub fn placeholder(mut self, text: impl Into<String>) -> Self {
-        self.placeholder = Some(text.into());
-        self
-    }
-
-    pub fn focused(mut self, focused: bool) -> Self {
-        self.focused = focused;
-        self
     }
 }
 

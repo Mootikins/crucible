@@ -195,6 +195,7 @@ impl PluginManager {
         self.on_unload_hooks.remove(name);
     }
 
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn reload_plugin(&mut self, name: &str) -> LifecycleResult<()> {
         self.unload(name)?;
         self.clear_plugin_modules(name)?;

@@ -358,10 +358,12 @@ impl Padding {
         }
     }
 
+    #[cfg(test)]
     pub fn horizontal(&self) -> u16 {
         self.left + self.right
     }
 
+    #[cfg(test)]
     pub fn vertical(&self) -> u16 {
         self.top + self.bottom
     }

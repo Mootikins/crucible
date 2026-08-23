@@ -174,6 +174,7 @@ impl StatuslineExprRegistry {
     }
 
     /// Forget a session's values.
+    #[cfg(test)]
     pub fn forget(&self, session_id: &str) {
         if let Ok(mut s) = self.sessions.lock() {
             s.remove(session_id);

@@ -18,7 +18,7 @@
 
 pub mod tree;
 
-pub use tree::{ConversationTree, NodeContent, NodeId, NodeMeta, TurnNode};
+pub use tree::{ConversationTree, NodeContent, NodeId, TurnNode};
 
 use async_trait::async_trait;
 use futures::stream::BoxStream;
@@ -221,12 +221,6 @@ pub enum AgentError {
 
     #[error("communication error: {0}")]
     Communication(String),
-
-    #[error("agent not available: {0}")]
-    AgentUnavailable(String),
-
-    #[error("internal error: {0}")]
-    Internal(String),
 }
 
 /// Typed "this capability is not supported" error.
@@ -366,9 +360,6 @@ pub trait Agent: Send + Sync {
     /// `capabilities.model_switching = false`.
     async fn switch_model(&mut self, model_id: &str) -> Result<(), NotSupported>;
 }
-
-/// A boxed agent instance.
-pub type BoxAgent = Box<dyn Agent + Send + Sync>;
 
 /// Convenience macro for test fixtures that need to satisfy the
 /// [`Agent`] supertrait bound on [`crate::traits::chat::AgentHandle`]

@@ -174,17 +174,6 @@ impl PermRequest {
             }
         }
     }
-
-    pub fn pattern_at(&self, boundary: usize) -> String {
-        let tokens = self.tokens();
-        if boundary == 0 {
-            "*".to_string()
-        } else if boundary >= tokens.len() {
-            tokens.join(" ")
-        } else {
-            format!("{} *", tokens[..boundary].join(" "))
-        }
-    }
 }
 
 /// Response to a permission request.
@@ -246,24 +235,6 @@ mod tests {
         let req = PermRequest::bash(["npm", "install", "lodash"]);
 
         assert_eq!(req.tokens(), &["npm", "install", "lodash"]);
-    }
-
-    #[test]
-    fn perm_request_pattern_at_boundary() {
-        let req = PermRequest::bash(["npm", "install", "lodash"]);
-
-        assert_eq!(req.pattern_at(0), "*");
-        assert_eq!(req.pattern_at(1), "npm *");
-        assert_eq!(req.pattern_at(2), "npm install *");
-        assert_eq!(req.pattern_at(3), "npm install lodash");
-        assert_eq!(req.pattern_at(100), "npm install lodash");
-    }
-
-    #[test]
-    fn perm_request_read_segments() {
-        let req = PermRequest::read(["home", "user", "project", "src"]);
-
-        assert_eq!(req.pattern_at(2), "home user *");
     }
 
     #[test]

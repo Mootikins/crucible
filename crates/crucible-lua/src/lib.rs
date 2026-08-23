@@ -135,10 +135,7 @@ pub use oil::{register_oil_module, LuaNode};
 pub use paths::{register_paths_module, PathsContext};
 pub use ratelimit::register_ratelimit_module;
 pub use schedule::register_schedule_module;
-pub use schema::{
-    discovered_params_to_json_schema, generate_input_schema, type_to_string, FunctionSignature,
-    LuauType, TypedParam,
-};
+pub use schema::{discovered_params_to_json_schema, generate_input_schema};
 pub use shell::{register_shell_module, ExecResult, PluginShellPolicy};
 pub use statusline_exprs::{
     register_statusline_exprs, ExprRejection, StatuslineExprRegistry, MAX_KEYS_PER_SESSION,

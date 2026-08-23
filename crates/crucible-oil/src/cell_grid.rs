@@ -53,12 +53,7 @@ impl CellGrid {
         self.height
     }
 
-    pub fn set(&mut self, x: usize, y: usize, cell: StyledCell) {
-        if x < self.width && y < self.height {
-            self.cells[y][x] = cell;
-        }
-    }
-
+    #[cfg(test)]
     pub fn get(&self, x: usize, y: usize) -> Option<&StyledCell> {
         self.cells.get(y).and_then(|row| row.get(x))
     }
@@ -177,6 +172,7 @@ impl CellGrid {
         }
     }
 
+    #[cfg(test)]
     pub fn blit_string(&mut self, content: &str, x: usize, y: usize) {
         for (row_idx, line) in content.lines().enumerate() {
             let target_y = y + row_idx;
@@ -186,6 +182,7 @@ impl CellGrid {
         }
     }
 
+    #[cfg(test)]
     pub fn to_lines(&self) -> Vec<String> {
         self.cells.iter().map(|row| cells_to_string(row)).collect()
     }

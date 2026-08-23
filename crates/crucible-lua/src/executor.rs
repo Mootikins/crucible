@@ -11,12 +11,11 @@ use crate::hooks::register_hooks_module;
 use crate::http::register_http_module;
 use crate::oil::register_oil_module;
 use crate::session_api::{register_session_module, CurrentSession, Session};
-use crate::types::{LuaExecutionResult, LuaTool, ToolResult};
+use crate::types::LuaExecutionResult;
 use mlua::{Function, Lua, LuaOptions, LuaSerdeExt, RegistryKey, StdLib, Value};
 use serde_json::Value as JsonValue;
 use std::path::Path;
 use std::time::Instant;
-use tracing::instrument;
 
 /// Lua script executor
 ///
@@ -75,6 +74,7 @@ impl LuaExecutor {
     }
 
     /// Check if Fennel compiler is available
+    #[cfg(test)]
     pub fn fennel_available(&self) -> bool {
         #[cfg(feature = "fennel")]
         {
@@ -91,6 +91,7 @@ impl LuaExecutor {
     }
 
     /// Get all session start hooks
+    #[cfg(test)]
     pub fn session_start_hooks(&self) -> &[RegistryKey] {
         &self.on_session_start_hooks
     }
@@ -296,21 +297,6 @@ end
         Ok(())
     }
 
-    /// Execute a Lua or Fennel file
-    #[instrument(skip(self, args), fields(path = %path.as_ref().display()))]
-    pub async fn execute_file(
-        &self,
-        path: impl AsRef<Path>,
-        args: JsonValue,
-    ) -> Result<LuaExecutionResult, LuaError> {
-        let path = path.as_ref();
-        let source = tokio::fs::read_to_string(path).await?;
-
-        let is_fennel = path.extension().map(|e| e == "fnl").unwrap_or(false);
-
-        self.execute_source(&source, is_fennel, args).await
-    }
-
     /// Compile Fennel source to Lua with this executor's compiler.
     ///
     /// Public so callers that `lua().load()` sources directly (the plugin
@@ -340,6 +326,7 @@ end
     }
 
     /// Execute Lua or Fennel source code
+    #[cfg(any(test, feature = "test-utils"))]
     pub async fn execute_source(
         &self,
         source: &str,
@@ -407,23 +394,6 @@ end
 
         // Convert result back to JSON
         Ok(serde_json::to_value(&result)?)
-    }
-
-    /// Execute a tool by name from the registry
-    pub async fn execute_tool(
-        &self,
-        tool: &LuaTool,
-        args: JsonValue,
-    ) -> Result<ToolResult, LuaError> {
-        let result = self.execute_file(&tool.source_path, args).await?;
-
-        if result.success {
-            Ok(ToolResult::ok(result.content.unwrap_or(JsonValue::Null)))
-        } else {
-            Ok(ToolResult::err(
-                result.error.unwrap_or_else(|| "Unknown error".into()),
-            ))
-        }
     }
 
     /// Get a reference to the underlying Lua state

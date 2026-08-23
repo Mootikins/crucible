@@ -24,6 +24,7 @@
 
 // Submodules for logical organization
 mod deserialize;
+#[cfg(any(test, feature = "test-utils"))]
 pub mod helpers;
 pub mod internal;
 pub mod types;
@@ -35,10 +36,13 @@ use serde::Serialize;
 use serde_json::Value as JsonValue;
 
 use crate::text::truncate_bytes;
+#[cfg(any(test, feature = "test-utils"))]
 use helpers::{estimate_content_len, identifier_for_event, payload_for_event};
 
 pub use internal::InternalSessionEvent;
-pub use types::{EventCategory, FileChangeKind, NoteChangeType, Priority};
+#[cfg(any(test, feature = "test-utils"))]
+pub use types::EventCategory;
+pub use types::{FileChangeKind, NoteChangeType, Priority};
 
 /// The ten scripting names the transport vocabulary also has a payload for.
 ///
@@ -207,6 +211,7 @@ impl SessionEvent {
     /// Get the identifier for pattern matching (tool name, note path, etc.).
     ///
     /// This is used by the EventBus for glob pattern matching against handlers.
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn identifier(&self) -> String {
         identifier_for_event(self)
     }
@@ -214,6 +219,7 @@ impl SessionEvent {
     /// Broad classification used for filtering events by concern.
     ///
     /// Each event belongs to exactly one category.
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn category(&self) -> EventCategory {
         match self {
             Self::MessageReceived { .. } => EventCategory::Message,
@@ -252,6 +258,7 @@ impl SessionEvent {
     /// });
     /// assert_eq!(deleted.priority(), Priority::Low);
     /// ```
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn priority(&self) -> Priority {
         match self {
             Self::Internal(inner) => inner.priority(),
@@ -347,6 +354,7 @@ impl SessionEvent {
     /// let payload = event.payload(100);
     /// assert_eq!(payload, Some("Hello, world!".to_string()));
     /// ```
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn payload(&self, max_len: usize) -> Option<String> {
         payload_for_event(self).map(|p| truncate_bytes(&p, max_len).to_string())
     }
@@ -374,6 +382,7 @@ impl SessionEvent {
     /// let tokens = event.estimate_tokens();
     /// assert!(tokens > 10); // At least structural overhead
     /// ```
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn estimate_tokens(&self) -> usize {
         let content_len = estimate_content_len(self);
         // Rough estimate: ~4 characters per token

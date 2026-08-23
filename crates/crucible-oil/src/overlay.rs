@@ -1,3 +1,4 @@
+#[cfg(test)]
 use crate::ansi::visible_width;
 use crate::cell_grid::{cells_to_string, StyledCell};
 use crate::node::{Node, OverlayNode};
@@ -11,7 +12,6 @@ use unicode_width::UnicodeWidthChar;
 )]
 pub enum OverlayAnchor {
     FromBottom(usize),
-    FromBottomRight(usize),
 }
 
 fn parse_line_to_cells(line: &str, width: usize) -> Vec<StyledCell> {
@@ -157,31 +157,6 @@ pub fn composite_overlays(base: &[String], overlays: &[Overlay], width: usize) -
                     if target_line < result.len().saturating_sub(preserve_bottom) {
                         result[target_line] =
                             composite_line(&result[target_line], overlay_line, 0, width);
-                    }
-                }
-            }
-            OverlayAnchor::FromBottomRight(protected_bottom_lines) => {
-                let viewport_height = result.len();
-                let overlay_height = overlay.lines.len();
-
-                let anchor_line = viewport_height.saturating_sub(protected_bottom_lines);
-                let zone_bottom = if anchor_line == 0 {
-                    viewport_height
-                } else {
-                    anchor_line
-                };
-
-                let lines_to_show = overlay_height.min(zone_bottom);
-                let overlay_start_idx = overlay_height.saturating_sub(lines_to_show);
-                let start_line = zone_bottom.saturating_sub(lines_to_show);
-
-                for (i, overlay_line) in overlay.lines[overlay_start_idx..].iter().enumerate() {
-                    let target_line = start_line + i;
-                    if target_line < zone_bottom {
-                        let overlay_width = visible_width(overlay_line);
-                        let start_col = width.saturating_sub(overlay_width);
-                        result[target_line] =
-                            composite_line(&result[target_line], overlay_line, start_col, width);
                     }
                 }
             }

@@ -14,7 +14,7 @@
 //! # Example
 //!
 //! ```
-//! use crucible_core::interaction::{AskRequest, AskResponse, PermRequest, PermissionScope};
+//! use crucible_core::interaction::{AskRequest, PermRequest};
 //!
 //! // Create a question with choices
 //! let ask = AskRequest::new("Which option?")
@@ -23,7 +23,7 @@
 //!
 //! // Create a permission request
 //! let perm = PermRequest::bash(["npm", "install", "lodash"]);
-//! assert_eq!(perm.pattern_at(2), "npm install *");
+//! assert_eq!(perm.tokens(), &["npm", "install", "lodash"]);
 //! ```
 
 mod ask;
@@ -35,6 +35,6 @@ pub use ask::{AskBatch, AskBatchResponse, AskQuestion, AskRequest, AskResponse, 
 pub use edit::{ArtifactFormat, EditRequest, EditResponse, ShowRequest};
 pub use permission::{PermAction, PermRequest, PermResponse, PermissionScope};
 pub use types::{
-    InteractionEvent, InteractionRequest, InteractionResponse, InteractivePanel, PanelAction,
-    PanelHints, PanelItem, PanelResult, PanelState, PopupRequest, PopupResponse,
+    InteractionEvent, InteractionRequest, InteractionResponse, InteractivePanel, PanelHints,
+    PanelItem, PanelResult, PanelState, PopupRequest, PopupResponse,
 };

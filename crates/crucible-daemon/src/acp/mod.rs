@@ -4,13 +4,6 @@
 //! AI agents. Orchestration (history, context, streaming aggregation) lives
 //! in `crucible-daemon`; this crate handles only the wire protocol.
 
-// Re-export commonly used types from agent-client-protocol
-// Note: agent-client-protocol exports types directly, not in a types module
-pub use agent_client_protocol::{
-    AgentNotification, AgentRequest, AgentResponse, ClientNotification, ClientRequest,
-    ClientResponse, Error as ProtocolError, IncomingMessage, OutgoingMessage,
-};
-
 // Module declarations
 pub mod client;
 pub mod discovery;

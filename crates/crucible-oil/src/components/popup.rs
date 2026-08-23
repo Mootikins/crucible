@@ -97,6 +97,7 @@ impl PopupOverlay {
         }
     }
 
+    #[cfg(test)]
     pub fn move_selection_up_wrap(&mut self) {
         if !self.items.is_empty() {
             self.selected = if self.selected == 0 {
@@ -107,6 +108,7 @@ impl PopupOverlay {
         }
     }
 
+    #[cfg(test)]
     pub fn move_selection_down_wrap(&mut self) {
         if !self.items.is_empty() {
             self.selected = (self.selected + 1) % self.items.len();
@@ -117,6 +119,7 @@ impl PopupOverlay {
         self.items.get(self.selected)
     }
 
+    #[cfg(test)]
     pub fn selected_label(&self) -> Option<&str> {
         self.selected_item().map(|item| item.label.as_str())
     }

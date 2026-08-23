@@ -153,6 +153,7 @@ impl Terminal<Vec<u8>> {
 // --- Generic: works with any writer ---
 
 impl<W: Write> Terminal<W> {
+    #[cfg(test)]
     pub fn cursor_style(mut self, style: SetCursorStyle) -> Self {
         self.cursor_style = style;
         self

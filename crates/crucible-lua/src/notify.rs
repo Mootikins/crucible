@@ -238,6 +238,7 @@ fn kind_to_string(kind: &NotificationKind) -> &'static str {
 }
 
 /// Retrieve and clear pending notifications from Lua execution
+#[cfg(test)]
 pub fn get_pending_notifications(lua: &Lua) -> LuaResult<Vec<Notification>> {
     let globals = lua.globals();
     let queue: Table = match globals.get(NOTIFICATIONS_KEY) {
@@ -259,6 +260,7 @@ pub fn get_pending_notifications(lua: &Lua) -> LuaResult<Vec<Notification>> {
 }
 
 /// Get pending messages panel action (toggle/show/hide/clear)
+#[cfg(test)]
 pub fn get_messages_action(lua: &Lua) -> LuaResult<Option<String>> {
     let globals = lua.globals();
     let action: Option<String> = globals.get("__crucible_messages_action__").ok();
@@ -268,6 +270,7 @@ pub fn get_messages_action(lua: &Lua) -> LuaResult<Option<String>> {
     Ok(action)
 }
 
+#[cfg(test)]
 fn table_to_notification(entry: &Table) -> LuaResult<Notification> {
     let message: String = entry.get("message")?;
     let kind_str: String = entry.get("kind")?;

@@ -1,7 +1,6 @@
 //! Append-only conversation tree.
 //!
 //! Conversations naturally branch: a user may fork from a prior turn,
-//! a workflow may fan out parallel sub-tasks and collect their results,
 //! a plan may be re-tried from an earlier decision point. Modelling
 //! this as a tree (rather than a linear `Vec<Message>`) makes those
 //! operations primitive instead of bolted-on.
@@ -17,13 +16,7 @@
 //!   creation. Text deltas land on the *current leaf* via
 //!   `append_delta`; completing the text moves the current node onto
 //!   a fresh child.
-//! * `path_to_here` walks `parent` links only. Fanout/collect live in
-//!   [`NodeMeta`] as side-channel metadata; they do not affect the
-//!   linear path delivered to an agent.
-//! * Collect merges never target a leaf as their parent: the merge
-//!   node attaches to the common ancestor of the branches it joins, so
-//!   the linear path downstream of the merge does not traverse any one
-//!   branch arbitrarily.
+//! * `path_to_here` walks `parent` links only.
 
 use std::num::NonZeroU32;
 
@@ -82,28 +75,6 @@ pub enum NodeContent {
         result: serde_json::Value,
         error: Option<String>,
     },
-    /// Marker node introduced by `fanout` or `collect`. Holds no text.
-    /// The tree-walker treats it transparently; UIs may render it as
-    /// a branch / merge annotation.
-    Marker { label: String },
-}
-
-/// Side-channel metadata on a node.
-///
-/// `merged_from` is how `collect` records the branches it unified
-/// without violating the "parent link is the one true link" invariant.
-/// The merge node's `parent` is the common ancestor; `merged_from`
-/// lists the leaves (or sub-roots) whose contents contributed.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct NodeMeta {
-    /// Non-empty iff this node was produced by `collect`.
-    pub merged_from: Vec<NodeId>,
-    /// Non-empty iff this node was produced by `fanout`. The children
-    /// are the parallel branches about to run.
-    pub fanout_children: Vec<NodeId>,
-    /// Arbitrary tags (e.g. "plan", "tool-batch") used by handlers /
-    /// workflow scripts to recognise structural intent.
-    pub tags: Vec<String>,
 }
 
 /// A single node in the conversation tree.
@@ -112,7 +83,6 @@ pub struct TurnNode {
     /// `None` only for the root node.
     pub parent: Option<NodeId>,
     pub content: NodeContent,
-    pub meta: NodeMeta,
 }
 
 /// Append-only conversation tree.
@@ -135,7 +105,6 @@ impl ConversationTree {
         let root = TurnNode {
             parent: None,
             content: NodeContent::Root,
-            meta: NodeMeta::default(),
         };
         Self {
             nodes: vec![root],
@@ -180,21 +149,10 @@ impl ConversationTree {
     /// move `current`. Callers use [`Self::add_child_and_advance`] when
     /// they want the new node to become `current`.
     pub fn add_child(&mut self, parent: NodeId, content: NodeContent) -> NodeId {
-        self.add_child_with_meta(parent, content, NodeMeta::default())
-    }
-
-    /// As [`Self::add_child`] but with explicit metadata.
-    pub fn add_child_with_meta(
-        &mut self,
-        parent: NodeId,
-        content: NodeContent,
-        meta: NodeMeta,
-    ) -> NodeId {
         let id = NodeId::new((self.nodes.len() + 1) as u32);
         self.nodes.push(TurnNode {
             parent: Some(parent),
             content,
-            meta,
         });
         id
     }
@@ -231,8 +189,7 @@ impl ConversationTree {
     }
 
     /// Walk `parent` links from `id` up to the root, returning the path
-    /// in root-to-`id` order. Does **not** traverse `merged_from`; that
-    /// is structural metadata a renderer may consult separately.
+    /// in root-to-`id` order.
     pub fn path_to_here(&self, id: NodeId) -> Vec<NodeId> {
         let mut out = Vec::new();
         let mut cur = Some(id);
@@ -242,52 +199,6 @@ impl ConversationTree {
         }
         out.reverse();
         out
-    }
-
-    /// Branch `parent` into `n` parallel child markers. Returns their
-    /// ids. The `parent` node gains `fanout_children` metadata listing
-    /// them. Useful for workflow scripts that want to run several
-    /// agents concurrently and later merge.
-    pub fn fanout(&mut self, parent: NodeId, labels: Vec<String>) -> Vec<NodeId> {
-        let ids: Vec<NodeId> = labels
-            .into_iter()
-            .map(|label| self.add_child(parent, NodeContent::Marker { label }))
-            .collect();
-        let parent_meta = &mut self.nodes[(parent.index() - 1) as usize]
-            .meta
-            .fanout_children;
-        parent_meta.extend(ids.iter().copied());
-        ids
-    }
-
-    /// Merge a set of branch nodes into a single marker whose parent
-    /// is their common ancestor. `branches` must be non-empty; every
-    /// branch id must exist in this tree; they must share an ancestor
-    /// strictly above every branch (this is always true for branches
-    /// produced by `fanout`).
-    ///
-    /// Returns the new merge node's id. Its parent is the common
-    /// ancestor (never any of the branches themselves), and its
-    /// `merged_from` metadata records the branches it unified.
-    pub fn collect(&mut self, branches: &[NodeId], label: impl Into<String>) -> NodeId {
-        assert!(!branches.is_empty(), "collect requires ≥1 branch");
-        let ancestor = self
-            .common_ancestor(branches)
-            .expect("collect: branches share no ancestor");
-        for b in branches {
-            debug_assert_ne!(*b, ancestor, "collect: ancestor must not equal a branch");
-        }
-        let meta = NodeMeta {
-            merged_from: branches.to_vec(),
-            ..Default::default()
-        };
-        self.add_child_with_meta(
-            ancestor,
-            NodeContent::Marker {
-                label: label.into(),
-            },
-            meta,
-        )
     }
 
     /// Count the `User` nodes on the current path — the number of
@@ -440,7 +351,7 @@ impl ConversationTree {
         for id in path {
             let node = self.get(id);
             match &node.content {
-                NodeContent::Root | NodeContent::Marker { .. } => continue,
+                NodeContent::Root => continue,
                 NodeContent::User { text } => out.push(ContextMessage::user(text)),
                 NodeContent::Agent { text } if !text.is_empty() => {
                     out.push(ContextMessage::assistant(text));
@@ -457,22 +368,6 @@ impl ConversationTree {
             }
         }
         out
-    }
-
-    /// Lowest common ancestor of the supplied nodes. `None` only if the
-    /// slice is empty.
-    pub fn common_ancestor(&self, nodes: &[NodeId]) -> Option<NodeId> {
-        let mut iter = nodes.iter().copied();
-        let first = iter.next()?;
-        let mut ancestors: Vec<NodeId> = self.path_to_here(first);
-        for n in iter {
-            let path = self.path_to_here(n);
-            ancestors.retain(|a| path.contains(a));
-            if ancestors.is_empty() {
-                return None;
-            }
-        }
-        ancestors.last().copied()
     }
 }
 
@@ -550,40 +445,6 @@ mod tests {
         let b = t.add_child(a, text("b"));
         let c = t.add_child(b, text("c"));
         assert_eq!(t.path_to_here(c), vec![t.root(), a, b, c]);
-    }
-
-    #[test]
-    fn fanout_records_children_metadata() {
-        let mut t = ConversationTree::new();
-        let kids = t.fanout(t.root(), vec!["l".into(), "r".into()]);
-        assert_eq!(kids.len(), 2);
-        assert_eq!(t.get(t.root()).meta.fanout_children, kids);
-        for k in kids {
-            assert_eq!(t.get(k).parent, Some(t.root()));
-        }
-    }
-
-    #[test]
-    fn collect_attaches_to_common_ancestor_not_to_a_branch() {
-        let mut t = ConversationTree::new();
-        let a = t.add_child(t.root(), text("ctx"));
-        let kids = t.fanout(a, vec!["l".into(), "r".into()]);
-        let merge = t.collect(&kids, "joined");
-        // Merge parent is the fanout parent, not a branch.
-        assert_eq!(t.get(merge).parent, Some(a));
-        assert_eq!(t.get(merge).meta.merged_from, kids);
-        // path_to_here for merge does not traverse any branch.
-        let path = t.path_to_here(merge);
-        assert_eq!(path, vec![t.root(), a, merge]);
-    }
-
-    #[test]
-    fn common_ancestor_handles_siblings() {
-        let mut t = ConversationTree::new();
-        let a = t.add_child(t.root(), text("a"));
-        let b = t.add_child(a, text("b"));
-        let c = t.add_child(a, text("c"));
-        assert_eq!(t.common_ancestor(&[b, c]), Some(a));
     }
 
     #[test]

@@ -13,7 +13,9 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use super::{EventCategory, FileChangeKind, NoteChangeType, Priority};
+#[cfg(any(test, feature = "test-utils"))]
+use super::EventCategory;
+use super::{FileChangeKind, NoteChangeType, Priority};
 use crate::text::truncate_bytes;
 
 /// Internal session events that flow through the daemon's event system but never
@@ -125,6 +127,7 @@ impl InternalSessionEvent {
     }
 
     /// Get the identifier for pattern matching (path, entity id, etc.).
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn identifier(&self) -> String {
         match self {
             Self::FileChanged { path, .. } => path.display().to_string(),
@@ -138,6 +141,7 @@ impl InternalSessionEvent {
     }
 
     /// Get the priority of this event.
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn priority(&self) -> Priority {
         match self {
             Self::FileChanged { kind, .. } => match kind {
@@ -152,6 +156,7 @@ impl InternalSessionEvent {
     }
 
     /// Broad classification used for filtering internal events by concern.
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn category(&self) -> EventCategory {
         match self {
             Self::NoteCreated { .. } | Self::NoteModified { .. } | Self::NoteDeleted { .. } => {
@@ -165,6 +170,7 @@ impl InternalSessionEvent {
     }
 
     /// Estimate the content length for token estimation.
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn estimate_content_len(&self) -> usize {
         match self {
             Self::NoteCreated { title, .. } => title.as_ref().map(|t| t.len()).unwrap_or(0) + 50,
@@ -223,6 +229,7 @@ impl InternalSessionEvent {
     }
 
     /// Get the detailed payload content of this event.
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn payload_content(&self) -> Option<String> {
         match self {
             Self::NoteCreated { path, title } => Some(format!(

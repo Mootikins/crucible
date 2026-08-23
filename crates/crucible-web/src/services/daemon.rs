@@ -1,10 +1,6 @@
 use crate::{Result, WebError};
 use crucible_core::config::CliAppConfig;
-use crucible_daemon::{
-    agent_manager::providers::ProviderInfo, DaemonCapabilities, DaemonClient,
-    LuaDiscoverPluginsRequest, LuaDiscoverPluginsResponse, LuaPluginHealthRequest,
-    LuaPluginHealthResponse, SessionEvent,
-};
+use crucible_daemon::{agent_manager::providers::ProviderInfo, DaemonClient, SessionEvent};
 use futures::future::BoxFuture;
 use std::collections::HashMap;
 use std::path::Path;
@@ -238,11 +234,6 @@ impl ReconnectingDaemon {
         false
     }
 
-    pub async fn capabilities(&self) -> anyhow::Result<DaemonCapabilities> {
-        self.call_with_reconnect("capabilities", |daemon| Box::pin(daemon.capabilities()))
-            .await
-    }
-
     pub async fn kiln_list(&self) -> anyhow::Result<Vec<serde_json::Value>> {
         self.call_with_reconnect("kiln.list", |daemon| Box::pin(daemon.kiln_list()))
             .await
@@ -321,21 +312,6 @@ impl ReconnectingDaemon {
         .await
     }
 
-    pub async fn note_upsert(
-        &self,
-        kiln_path: &Path,
-        note: &crucible_core::storage::NoteRecord,
-    ) -> anyhow::Result<()> {
-        let kiln_path = kiln_path.to_path_buf();
-        let note = note.clone();
-        self.call_with_reconnect("note.upsert", move |daemon| {
-            let kiln_path = kiln_path.clone();
-            let note = note.clone();
-            Box::pin(async move { daemon.note_upsert(&kiln_path, &note).await })
-        })
-        .await
-    }
-
     pub async fn search_vectors(
         &self,
         kiln_path: &Path,
@@ -405,26 +381,6 @@ impl ReconnectingDaemon {
         .await
     }
 
-    pub async fn lua_discover_plugins(
-        &self,
-        params: LuaDiscoverPluginsRequest,
-    ) -> anyhow::Result<LuaDiscoverPluginsResponse> {
-        self.call_with_reconnect("lua.discover_plugins", |daemon| {
-            Box::pin(daemon.lua_discover_plugins(params.clone()))
-        })
-        .await
-    }
-
-    pub async fn lua_plugin_health(
-        &self,
-        params: LuaPluginHealthRequest,
-    ) -> anyhow::Result<LuaPluginHealthResponse> {
-        self.call_with_reconnect("lua.plugin_health", |daemon| {
-            Box::pin(daemon.lua_plugin_health(params.clone()))
-        })
-        .await
-    }
-
     pub async fn mcp_status(&self) -> anyhow::Result<serde_json::Value> {
         self.call_with_reconnect("mcp.status", |daemon| Box::pin(daemon.mcp_status()))
             .await
@@ -468,19 +424,6 @@ impl ReconnectingDaemon {
             let query = query.clone();
             let kiln = kiln.clone();
             Box::pin(async move { daemon.skills_search(&query, &kiln, limit).await })
-        })
-        .await
-    }
-
-    /// A `None` kiln is omitted from the wire so the daemon resolves its own
-    /// default (home kiln) — the fallback lives in exactly one place.
-    pub async fn session_create(
-        &self,
-        params: crucible_daemon::rpc_client::SessionCreateParams,
-    ) -> anyhow::Result<serde_json::Value> {
-        self.call_with_reconnect("session.create", move |daemon| {
-            let params = params.clone();
-            Box::pin(async move { daemon.session_create(params).await })
         })
         .await
     }
@@ -894,16 +837,6 @@ impl ReconnectingDaemon {
     pub async fn agents_list_profiles(&self) -> anyhow::Result<serde_json::Value> {
         self.call_with_reconnect("agents.list_profiles", move |daemon| {
             Box::pin(async move { daemon.agents_list_profiles().await })
-        })
-        .await
-    }
-
-    /// Resolve a named ACP agent profile (JSON null when unknown).
-    pub async fn agents_resolve_profile(&self, name: &str) -> anyhow::Result<serde_json::Value> {
-        let name = name.to_string();
-        self.call_with_reconnect("agents.resolve_profile", move |daemon| {
-            let name = name.clone();
-            Box::pin(async move { daemon.agents_resolve_profile(&name).await })
         })
         .await
     }

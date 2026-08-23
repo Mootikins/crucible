@@ -30,33 +30,6 @@ fn test_session_recording_mode_roundtrip() {
 }
 
 #[test]
-fn test_session_is_granular() {
-    let kiln = KilnName::parse("notes").unwrap();
-
-    // Granular mode returns true
-    let granular_session = Session::new(SessionType::Chat, vec![kiln.clone()])
-        .with_recording_mode(RecordingMode::Granular);
-    assert!(granular_session.is_granular());
-
-    // Coarse mode returns false
-    let coarse_session = Session::new(SessionType::Chat, vec![kiln.clone()])
-        .with_recording_mode(RecordingMode::Coarse);
-    assert!(!coarse_session.is_granular());
-
-    // None returns false
-    let no_mode_session = Session::new(SessionType::Chat, vec![kiln]);
-    assert!(!no_mode_session.is_granular());
-}
-
-#[test]
-fn test_session_recording_jsonl_path() {
-    let kiln = KilnName::parse("notes").unwrap();
-    let session = Session::new(SessionType::Chat, vec![kiln]);
-
-    assert_eq!(session.recording_jsonl_path(), "recording.jsonl");
-}
-
-#[test]
 fn test_session_recording_mode_omitted_when_none() {
     // When recording_mode is None, it should be omitted from JSON
     let kiln = KilnName::parse("notes").unwrap();
@@ -80,5 +53,4 @@ fn test_session_recording_mode_backward_compat_old_json_without_field() {
 
     let session: Session = serde_json::from_str(old_json).unwrap();
     assert_eq!(session.recording_mode, None);
-    assert!(!session.is_granular());
 }

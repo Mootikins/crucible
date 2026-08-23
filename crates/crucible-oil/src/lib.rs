@@ -17,7 +17,6 @@
 //! ```
 
 pub mod ansi;
-pub mod bounded;
 pub mod cell_grid;
 pub mod components;
 pub mod focus;
@@ -38,8 +37,6 @@ pub mod template;
 pub mod terminal;
 pub mod viewport;
 
-pub use bounded::{bounded, bounded_head};
-
 /// Lean-JSON contract: default-valued fields are omitted when serializing nodes
 /// (missing key ⇒ default on the consumer side). One helper, used uniformly via
 /// `skip_serializing_if` across the node/style type graph.
@@ -58,10 +55,10 @@ pub use layout::Rect;
 pub use layout::{build_layout_tree, render_layout_tree, LayoutBox, LayoutContent, LayoutTree};
 pub use node::{
     badge, bullet_list, col, divider, fixed, flex, fragment, horizontal_rule, if_else, key_value,
-    maybe, numbered_list, overlay_from_bottom, overlay_from_bottom_right, popup, progress_bar, raw,
-    row, show, spacer, spinner, styled, text, text_input, when, BoxNode, Direction, InputNode,
-    Node, OverlayNode, PopupItemNode, PopupNode, RawNode, Size, SpinnerNode, TextNode,
-    DEFAULT_POPUP_BG, DEFAULT_POPUP_SELECTED_BG,
+    maybe, numbered_list, overlay_from_bottom, popup, progress_bar, raw, row, show, spacer,
+    spinner, styled, text, text_input, when, BoxNode, Direction, InputNode, Node, OverlayNode,
+    PopupItemNode, PopupNode, RawNode, Size, SpinnerNode, TextNode, DEFAULT_POPUP_BG,
+    DEFAULT_POPUP_SELECTED_BG,
 };
 pub use output::OutputBuffer;
 pub use overlay::{composite_overlays, Overlay, OverlayAnchor};

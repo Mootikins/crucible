@@ -394,26 +394,6 @@ impl Session {
         self.storage_path(sessions_root).join("session.jsonl")
     }
 
-    /// Get the path to the granular recording JSONL file.
-    pub fn recording_jsonl_path(&self) -> &'static str {
-        "recording.jsonl"
-    }
-
-    /// Check if this session is in granular recording mode.
-    pub fn is_granular(&self) -> bool {
-        matches!(self.recording_mode, Some(RecordingMode::Granular))
-    }
-
-    /// Get the artifacts directory path.
-    pub fn artifacts_path(&self, sessions_root: &Path) -> PathBuf {
-        self.storage_path(sessions_root).join("artifacts")
-    }
-
-    /// Check if this session can access a given kiln.
-    pub fn can_access_kiln(&self, kiln: &KilnName) -> bool {
-        self.kilns.contains(kiln)
-    }
-
     /// The kiln for consumers that need exactly one: note writes, agent-card
     /// discovery, and the single `kiln_path` the MCP server is built around.
     ///

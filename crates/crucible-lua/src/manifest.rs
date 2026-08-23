@@ -102,38 +102,6 @@ pub enum Capability {
     InterceptTools,
 }
 
-impl Capability {
-    pub fn all() -> Vec<Self> {
-        vec![
-            Self::InterceptTools,
-            Self::Filesystem,
-            Self::Network,
-            Self::Shell,
-            Self::Kiln,
-            Self::Agent,
-            Self::Ui,
-            Self::Config,
-            Self::System,
-            Self::WebSocket,
-        ]
-    }
-
-    pub fn description(&self) -> &'static str {
-        match self {
-            Self::Filesystem => "Read/write files outside the kiln",
-            Self::Network => "Make HTTP requests",
-            Self::Shell => "Execute shell commands",
-            Self::Kiln => "Access the knowledge kiln",
-            Self::Agent => "Interact with AI agents",
-            Self::Ui => "Create custom UI views",
-            Self::Config => "Access user configuration",
-            Self::System => "Access system information",
-            Self::WebSocket => "Establish persistent WebSocket connections",
-            Self::InterceptTools => "Replace or rewrite a tool call before it runs",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PluginDependency {
     pub name: String,
