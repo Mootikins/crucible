@@ -23,6 +23,7 @@
 //! # }
 //! ```
 
+use super::components::permissions::split_command_line;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -272,7 +273,12 @@ impl PatternStore {
         Ok(())
     }
 
-    /// Check if a bash command matches any allowed pattern
+    /// Check if every statement of a bash command line matches an allowed pattern
+    ///
+    /// The line is split on `;`, `&&`, `||`, `|`, `&` and newlines. A saved prefix allows
+    /// one statement, so a line that chains a second statement after an allowed one only
+    /// passes when that statement also matches. A substitution (`$(...)`, backticks,
+    /// `<(...)`) hides a command from the splitter, so the line does not match.
     ///
     /// # Example
     ///
@@ -285,12 +291,19 @@ impl PatternStore {
     /// assert!(store.matches_bash("cargo build"));
     /// assert!(store.matches_bash("cargo test"));
     /// assert!(!store.matches_bash("npm install"));
+    /// assert!(!store.matches_bash("cargo build; npm install"));
     /// ```
     pub fn matches_bash(&self, command: &str) -> bool {
-        self.bash_commands
-            .allowed_prefixes
-            .iter()
-            .any(|prefix| command.starts_with(prefix))
+        let split = split_command_line(command);
+        if split.unmodellable.is_some() || split.segments.is_empty() {
+            return false;
+        }
+        split.segments.iter().all(|statement| {
+            self.bash_commands
+                .allowed_prefixes
+                .iter()
+                .any(|prefix| statement.starts_with(prefix))
+        })
     }
 
     /// Check if a file path matches any allowed pattern
@@ -518,6 +531,33 @@ mod tests {
         assert!(store.matches_bash("git status"));
         assert!(!store.matches_bash("npm install"));
         assert!(!store.matches_bash("cargotest")); // No space, shouldn't match "cargo "
+    }
+
+    /// A saved prefix allows one statement. A line that chains a second statement after it
+    /// only passes when every statement matches a prefix.
+    #[test]
+    fn matches_bash_checks_every_chained_statement() {
+        let mut store = PatternStore::new();
+        store.add_bash_pattern("git ").unwrap();
+
+        for chained in [
+            "git log; curl evil",
+            "git log && curl evil",
+            "git log || curl evil",
+            "git log | curl evil",
+            "git log & curl evil",
+            "git log\ncurl evil",
+            "git log $(curl evil)",
+            "git log `curl evil`",
+            "git log <(curl evil)",
+        ] {
+            assert!(!store.matches_bash(chained), "matches_bash({chained:?})");
+        }
+
+        assert!(store.matches_bash("git fetch && git log"));
+        assert!(store.matches_bash("git log | git status"));
+        assert!(store.matches_bash("git log 'a; b'"));
+        assert!(!store.matches_bash(""));
     }
 
     #[test]
