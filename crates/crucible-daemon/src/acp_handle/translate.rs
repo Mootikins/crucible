@@ -63,6 +63,87 @@ pub(super) fn turn_stop_reason(
     }
 }
 
+/// Map one client chunk onto one `TurnEvent`.
+///
+/// The client decides everything before a chunk reaches the handle: every
+/// `ToolEnd` follows a `ToolStart` for its id and carries that start's name.
+/// So this map is total and keeps no state. A new `StreamingChunk` variant
+/// with no `TurnEvent` fails to compile here, not at run time.
+impl From<crate::acp::streaming::StreamingChunk> for crucible_core::turn::TurnEvent {
+    fn from(chunk: crate::acp::streaming::StreamingChunk) -> Self {
+        use crate::acp::streaming::StreamingChunk;
+        use crucible_core::turn::TurnEvent;
+
+        match chunk {
+            StreamingChunk::Text(text) => {
+                tracing::debug!(chunk_type = "text", len = text.len(), "ACP streaming chunk");
+                TurnEvent::TextDelta(text)
+            }
+            StreamingChunk::Thinking(text) => {
+                tracing::debug!(
+                    chunk_type = "thinking",
+                    len = text.len(),
+                    "ACP streaming chunk"
+                );
+                TurnEvent::Thinking(text)
+            }
+            StreamingChunk::ContextWindow { used, limit } => {
+                tracing::debug!(used, limit, "ACP agent reported its context window");
+                TurnEvent::ContextWindow { used, limit }
+            }
+            StreamingChunk::ToolStart {
+                name,
+                id,
+                arguments,
+                diffs,
+            } => {
+                tracing::info!(
+                    tool = %name,
+                    tool_id = %id,
+                    diff_count = diffs.len(),
+                    "ACP tool call started"
+                );
+                TurnEvent::ToolCall {
+                    id,
+                    name,
+                    args: arguments.unwrap_or(serde_json::Value::Null),
+                    diffs,
+                }
+            }
+            StreamingChunk::ToolEnd {
+                id,
+                name,
+                result,
+                error,
+            } => {
+                tracing::info!(
+                    tool = %name,
+                    tool_id = %id,
+                    has_error = error.is_some(),
+                    "ACP tool call completed"
+                );
+                TurnEvent::ToolResult {
+                    id,
+                    name,
+                    result: serde_json::Value::String(result.unwrap_or_default()),
+                    error,
+                }
+            }
+            StreamingChunk::ToolDiffUpdate { call_id, diffs } => {
+                tracing::debug!(tool_id = %call_id, diff_count = diffs.len(), "ACP late diff update");
+                TurnEvent::ToolCallDiffUpdate { id: call_id, diffs }
+            }
+            StreamingChunk::ToolArgsUpdate { call_id, arguments } => {
+                tracing::debug!(tool_id = %call_id, "ACP late args update");
+                TurnEvent::ToolCallArgsUpdate {
+                    id: call_id,
+                    arguments,
+                }
+            }
+        }
+    }
+}
+
 /// Build the prompt text sent to an ACP agent for one turn.
 ///
 /// ACP agents own their conversation history, so we send only the new user
@@ -233,6 +314,98 @@ mod tests {
             agent_client_protocol::schema::v1::StopReason::Refusal,
         ] {
             assert_eq!(turn_stop_reason(acp, false), StopReason::Empty, "{acp:?}");
+        }
+    }
+
+    // -- Chunk to event: one sample per variant --------------------------------
+
+    /// Every `StreamingChunk` variant maps to exactly one `TurnEvent`.
+    ///
+    /// The match below has no wildcard, so a new chunk variant fails to
+    /// compile here until someone writes down its event.
+    #[test]
+    fn every_streaming_chunk_maps_to_one_turn_event() {
+        use crate::acp::streaming::StreamingChunk;
+        use crucible_core::turn::TurnEvent;
+
+        let samples = [
+            StreamingChunk::Text("hi".into()),
+            StreamingChunk::Thinking("hmm".into()),
+            StreamingChunk::ContextWindow { used: 3, limit: 10 },
+            StreamingChunk::ToolStart {
+                name: "Read".into(),
+                id: "t1".into(),
+                arguments: None,
+                diffs: vec![],
+            },
+            StreamingChunk::ToolEnd {
+                id: "t1".into(),
+                name: "Read".into(),
+                result: Some("out".into()),
+                error: None,
+            },
+            StreamingChunk::ToolDiffUpdate {
+                call_id: "t1".into(),
+                diffs: vec![],
+            },
+            StreamingChunk::ToolArgsUpdate {
+                call_id: "t1".into(),
+                arguments: serde_json::json!({"path": "a"}),
+            },
+        ];
+
+        for chunk in samples {
+            let expected_shape = match &chunk {
+                StreamingChunk::Text(_) => "TextDelta",
+                StreamingChunk::Thinking(_) => "Thinking",
+                StreamingChunk::ContextWindow { .. } => "ContextWindow",
+                StreamingChunk::ToolStart { .. } => "ToolCall",
+                StreamingChunk::ToolEnd { .. } => "ToolResult",
+                StreamingChunk::ToolDiffUpdate { .. } => "ToolCallDiffUpdate",
+                StreamingChunk::ToolArgsUpdate { .. } => "ToolCallArgsUpdate",
+            };
+            let event = TurnEvent::from(chunk);
+            let actual_shape = match &event {
+                TurnEvent::TextDelta(text) => {
+                    assert_eq!(text, "hi");
+                    "TextDelta"
+                }
+                TurnEvent::Thinking(text) => {
+                    assert_eq!(text, "hmm");
+                    "Thinking"
+                }
+                TurnEvent::ContextWindow { used, limit } => {
+                    assert_eq!((*used, *limit), (3, 10));
+                    "ContextWindow"
+                }
+                TurnEvent::ToolCall { id, name, args, .. } => {
+                    assert_eq!((id.as_str(), name.as_str()), ("t1", "Read"));
+                    assert!(args.is_null(), "absent arguments become Null");
+                    "ToolCall"
+                }
+                TurnEvent::ToolResult {
+                    id,
+                    name,
+                    result,
+                    error,
+                } => {
+                    assert_eq!((id.as_str(), name.as_str()), ("t1", "Read"));
+                    assert_eq!(result, &serde_json::Value::String("out".into()));
+                    assert!(error.is_none());
+                    "ToolResult"
+                }
+                TurnEvent::ToolCallDiffUpdate { id, .. } => {
+                    assert_eq!(id, "t1");
+                    "ToolCallDiffUpdate"
+                }
+                TurnEvent::ToolCallArgsUpdate { id, arguments } => {
+                    assert_eq!(id, "t1");
+                    assert_eq!(arguments["path"], "a");
+                    "ToolCallArgsUpdate"
+                }
+                other => panic!("no chunk maps to {other:?}"),
+            };
+            assert_eq!(actual_shape, expected_shape);
         }
     }
 }

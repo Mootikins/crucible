@@ -588,71 +588,10 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
             // The client already decided everything the stream needs to know:
             // every `ToolEnd` follows a `ToolStart` for its id and carries the
             // name that start carried, and the summary at the end says what
-            // the turn showed the user. So each chunk maps to one event, and
-            // the handle keeps no state of its own.
+            // the turn showed the user. So each chunk maps to one event
+            // through a total `From`, and the handle keeps no state of its own.
             while let Some(chunk) = chunk_rx.recv().await {
-                match chunk {
-                    StreamingChunk::Text(text) => {
-                        debug!(chunk_type = "text", len = text.len(), "ACP streaming chunk");
-                        yield TurnEvent::TextDelta(text);
-                    }
-                    StreamingChunk::Thinking(text) => {
-                        debug!(chunk_type = "thinking", len = text.len(), "ACP streaming chunk");
-                        yield TurnEvent::Thinking(text);
-                    }
-                    StreamingChunk::ContextWindow { used, limit } => {
-                        debug!(used, limit, "ACP agent reported its context window");
-                        yield TurnEvent::ContextWindow { used, limit };
-                    }
-                    StreamingChunk::ToolStart { name, id, arguments, diffs } => {
-                        info!(
-                            tool = %name,
-                            tool_id = %id,
-                            diff_count = diffs.len(),
-                            "ACP tool call started"
-                        );
-                        yield TurnEvent::ToolCall {
-                            id,
-                            name,
-                            args: arguments.unwrap_or(serde_json::Value::Null),
-                            diffs,
-                        };
-                    }
-                    StreamingChunk::ToolEnd { id, name, result, error } => {
-                        info!(
-                            tool = %name, tool_id = %id,
-                            has_error = error.is_some(),
-                            "ACP tool call completed"
-                        );
-                        yield TurnEvent::ToolResult {
-                            id,
-                            name,
-                            result: serde_json::Value::String(result.unwrap_or_default()),
-                            error,
-                        };
-                    }
-                    StreamingChunk::ToolDiffUpdate { call_id, diffs } => {
-                        debug!(
-                            tool_id = %call_id,
-                            diff_count = diffs.len(),
-                            "ACP late diff update"
-                        );
-                        yield TurnEvent::ToolCallDiffUpdate {
-                            id: call_id,
-                            diffs,
-                        };
-                    }
-                    StreamingChunk::ToolArgsUpdate { call_id, arguments } => {
-                        debug!(
-                            tool_id = %call_id,
-                            "ACP late args update"
-                        );
-                        yield TurnEvent::ToolCallArgsUpdate {
-                            id: call_id,
-                            arguments,
-                        };
-                    }
-                }
+                yield TurnEvent::from(chunk);
             }
 
             match result_rx.await {
