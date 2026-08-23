@@ -25,7 +25,7 @@ This document records the order in which the daemon checks a `bash` tool call. F
 |---|---|---|---|
 | Hardcoded deny | `is_hardcoded_denied` (`config/components/permissions/hardcoded.rs`) | compiled in | Deny only. No config overrides it. |
 | Config rules | `PermissionConfig.{allow,deny,ask}` (`config/components/permissions/types.rs`) | `[permissions]` in the daemon config, the agent card, or a mode | Deny beats ask. Ask beats allow. `default` decides the rest. |
-| Saved patterns | `BashPatterns.allowed_prefixes` (`config/patterns.rs`) | the user chose "always allow" at a prompt; saved per project under the whitelists directory | Allow only. A prefix match skips the prompt. |
+| Saved patterns | `BashPatterns.allowed_prefixes` (`config/patterns.rs`) | the user chose "always allow" at a prompt; a `Project` grant is saved per project under the whitelists directory, a `User` grant in `user.toml` there; the gate reads both | Allow only. A prefix match skips the prompt. |
 | Shell policy | `ShellPolicy.{whitelist,blacklist}` (`config/security.rs`) | `[security.shell]` in `.crucible/project.toml` | Blacklist beats whitelist. An empty policy imposes nothing. A non-empty whitelist denies every command that it does not list. |
 
 ## Order of evaluation

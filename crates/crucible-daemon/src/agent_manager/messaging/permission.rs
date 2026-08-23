@@ -163,15 +163,8 @@ impl AgentManager {
             Box::pin(async move {
                 serializer
                     .run(async move {
-                        let permission_id = format!("perm-{}", uuid::Uuid::new_v4());
-                        let (response_tx, response_rx) = oneshot::channel();
-
-                        let pending = PendingPermission {
-                            request: perm_request.clone(),
-                            response_tx,
-                        };
-
-                        slot.insert_permission(permission_id.clone(), pending);
+                        let (permission_id, response_rx) =
+                            slot.register_permission(perm_request.clone());
 
                         let interaction_request = InteractionRequest::Permission(perm_request);
                         if !emit_event(
@@ -721,7 +714,10 @@ impl AgentManager {
         }
 
         let project_path = stream_ctx.workspace_path.to_string_lossy();
-        let pattern_store = PatternStore::load_sync(&project_path).unwrap_or_default();
+        // A grant at either persisted scope skips the prompt.
+        let pattern_store = PatternStore::load_sync(&project_path)
+            .unwrap_or_default()
+            .merge(&PatternStore::load_user_sync().unwrap_or_default());
         let pattern_matched = Self::check_pattern_match(&tool_call.name, args, &pattern_store);
 
         if pattern_matched {
@@ -882,17 +878,8 @@ impl AgentManager {
                 let perm_request =
                     PermRequest::tool(&tool_call.name, args.clone()).with_diffs(diffs);
                 let interaction_request = InteractionRequest::Permission(perm_request.clone());
-                let permission_id = format!("perm-{}", uuid::Uuid::new_v4());
-                let (response_tx, response_rx) = oneshot::channel();
-
-                let pending = PendingPermission {
-                    request: perm_request,
-                    response_tx,
-                };
-
-                stream_ctx
-                    .slot
-                    .insert_permission(permission_id.clone(), pending);
+                let (permission_id, response_rx) =
+                    stream_ctx.slot.register_permission(perm_request);
 
                 debug!(
                     session_id = %stream_ctx.session_id,
@@ -951,12 +938,12 @@ impl AgentManager {
 
                             if response.allowed {
                                 if let Some(ref pattern) = response.pattern {
-                                    if response.scope == PermissionScope::Project {
-                                        if let Err(e) = Self::store_pattern(
-                                            &tool_call.name,
-                                            pattern,
-                                            &project_path,
-                                        ) {
+                                    if let Some(file) =
+                                        PatternStore::store_file(response.scope, &project_path)
+                                    {
+                                        if let Err(e) =
+                                            Self::store_pattern_to(&file, &tool_call.name, pattern)
+                                        {
                                             warn!(
                                                 session_id = %stream_ctx.session_id,
                                                 tool = %tool_call.name,
@@ -1078,12 +1065,14 @@ impl AgentManager {
         }
     }
 
-    pub(in crate::agent_manager) fn store_pattern(
+    /// Add `pattern` to the store at `file`, which a `Project` or `User`
+    /// grant resolves through [`PatternStore::store_file`].
+    pub(in crate::agent_manager) fn store_pattern_to(
+        file: &std::path::Path,
         tool_name: &str,
         pattern: &str,
-        project_path: &str,
     ) -> Result<(), crucible_core::config::PatternError> {
-        let mut store = PatternStore::load_sync(project_path).unwrap_or_default();
+        let mut store = PatternStore::load_file(file).unwrap_or_default();
 
         match tool_name {
             "bash" => store.add_bash_pattern(pattern)?,
@@ -1091,7 +1080,7 @@ impl AgentManager {
             _ => store.add_tool_pattern(pattern)?,
         }
 
-        store.save_sync(project_path)?;
+        store.save_file(file)?;
         Ok(())
     }
 

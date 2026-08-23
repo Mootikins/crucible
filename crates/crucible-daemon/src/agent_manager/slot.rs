@@ -12,9 +12,10 @@ use super::cache_stats::CacheStats;
 use super::interaction::PendingInteraction;
 use super::{BoxedAgentHandle, PendingPermission, PermissionId};
 use crate::tool_dispatch::ToolDispatcher;
-use crucible_core::interaction::{InteractionRequest, PermRequest};
+use crucible_core::interaction::{InteractionRequest, PermRequest, PermResponse};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use tokio::sync::oneshot;
 
 /// Everything scoped to one live session, so teardown is one `remove` and a
 /// forgotten field is impossible rather than merely unlikely.
@@ -276,13 +277,26 @@ impl SessionSlot {
     }
 
     /// Register a prompt this session is waiting on.
-    pub(crate) fn insert_permission(&self, id: PermissionId, pending: PendingPermission) {
-        self.lock_permissions().insert(id, pending);
+    ///
+    /// Mints the id and the reply channel here, so every gate parks a prompt
+    /// the same way. The caller emits the `interaction_requested` event and
+    /// awaits the receiver.
+    pub(crate) fn register_permission(
+        &self,
+        request: PermRequest,
+    ) -> (PermissionId, oneshot::Receiver<PermResponse>) {
+        let id = format!("perm-{}", uuid::Uuid::new_v4());
+        let (response_tx, response_rx) = oneshot::channel();
+        self.lock_permissions().insert(
+            id.clone(),
+            PendingPermission {
+                request,
+                response_tx,
+            },
+        );
+        (id, response_rx)
     }
 
-    /// Take a prompt out, to answer it or to abandon it. The caller owns the
-    /// `oneshot::Sender` afterwards: sending answers the waiter, dropping makes
-    /// its receiver error out immediately.
     /// Whether the permission registry — not the interaction one — owns `id`.
     ///
     /// The routing predicate: a reply belongs to whichever map holds its id,
@@ -291,6 +305,9 @@ impl SessionSlot {
         self.lock_permissions().contains_key(id)
     }
 
+    /// Take a prompt out, to answer it or to abandon it. The caller owns the
+    /// `oneshot::Sender` afterwards: sending answers the waiter, dropping makes
+    /// its receiver error out immediately.
     pub(crate) fn take_permission(&self, id: &str) -> Option<PendingPermission> {
         self.lock_permissions().remove(id)
     }

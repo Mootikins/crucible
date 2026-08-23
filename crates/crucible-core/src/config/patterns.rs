@@ -24,9 +24,10 @@
 //! ```
 
 use super::components::permissions::split_command_line;
+use crate::interaction::PermissionScope;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 /// Errors that can occur during pattern operations
@@ -131,13 +132,21 @@ impl PatternStore {
 
     /// Load patterns synchronously (for non-async contexts)
     pub fn load_sync(project_path: &str) -> PatternResult<Self> {
-        let file_path = Self::pattern_file_path(project_path);
+        Self::load_file(&Self::pattern_file_path(project_path))
+    }
 
+    /// Load the user-wide store, the one a `User` scope grant writes to.
+    pub fn load_user_sync() -> PatternResult<Self> {
+        Self::load_file(&Self::user_file_in(&Self::whitelists_dir()))
+    }
+
+    /// Load one store file. A missing file is an empty store.
+    pub fn load_file(file_path: &Path) -> PatternResult<Self> {
         if !file_path.exists() {
             return Ok(Self::new());
         }
 
-        let content = std::fs::read_to_string(&file_path)?;
+        let content = std::fs::read_to_string(file_path)?;
         let store: PatternStore = toml::from_str(&content)?;
         Ok(store)
     }
@@ -177,15 +186,17 @@ impl PatternStore {
 
     /// Save patterns synchronously (for non-async contexts)
     pub fn save_sync(&self, project_path: &str) -> PatternResult<()> {
-        let file_path = Self::pattern_file_path(project_path);
+        self.save_file(&Self::pattern_file_path(project_path))
+    }
 
-        // Ensure parent directory exists
+    /// Write this store to one file. Creates the parent directory.
+    pub fn save_file(&self, file_path: &Path) -> PatternResult<()> {
         if let Some(parent) = file_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
 
         let content = toml::to_string_pretty(self)?;
-        std::fs::write(&file_path, content)?;
+        std::fs::write(file_path, content)?;
         Ok(())
     }
 
@@ -425,8 +436,38 @@ impl PatternStore {
 
     /// Get the full path to the pattern file for a project
     fn pattern_file_path(project_path: &str) -> PathBuf {
+        Self::project_file_in(&Self::whitelists_dir(), project_path)
+    }
+
+    /// The project store file under `dir`.
+    pub fn project_file_in(dir: &Path, project_path: &str) -> PathBuf {
         let hash = Self::project_hash(project_path);
-        Self::whitelists_dir().join(format!("{}.toml", hash))
+        dir.join(format!("{}.toml", hash))
+    }
+
+    /// The user-wide store file under `dir`. The name cannot collide with a
+    /// project file, because a project file name is sixteen hex digits.
+    pub fn user_file_in(dir: &Path) -> PathBuf {
+        dir.join("user.toml")
+    }
+
+    /// The file a grant at `scope` persists to, under the default directory.
+    /// `Once` and `Session` grants are not persisted.
+    pub fn store_file(scope: PermissionScope, project_path: &str) -> Option<PathBuf> {
+        Self::store_file_in(&Self::whitelists_dir(), scope, project_path)
+    }
+
+    /// [`Self::store_file`] with the directory injected, for tests.
+    pub fn store_file_in(
+        dir: &Path,
+        scope: PermissionScope,
+        project_path: &str,
+    ) -> Option<PathBuf> {
+        match scope {
+            PermissionScope::Project => Some(Self::project_file_in(dir, project_path)),
+            PermissionScope::User => Some(Self::user_file_in(dir)),
+            PermissionScope::Once | PermissionScope::Session => None,
+        }
     }
 
     /// Validate that a pattern is not too permissive
@@ -712,6 +753,18 @@ always_allow = ["read_note", "grep_notes"]
         assert!(loaded.matches_bash("cargo build"));
         assert!(loaded.matches_file("src/main.rs"));
         assert!(loaded.matches_tool("read_note"));
+    }
+
+    #[test]
+    fn save_file_then_load_file_round_trips() {
+        let temp_dir = TempDir::new().unwrap();
+        let file = PatternStore::user_file_in(&temp_dir.path().join("whitelists.d"));
+        let mut store = PatternStore::new();
+        store.add_bash_pattern("cargo ").unwrap();
+
+        store.save_file(&file).unwrap();
+
+        assert_eq!(PatternStore::load_file(&file).unwrap(), store);
     }
 
     #[test]

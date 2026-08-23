@@ -627,7 +627,6 @@ async fn cleanup_session_cancels_pending_requests() {
 /// timeout. Regression test for the cancel-arm fix.
 #[tokio::test]
 async fn cancel_drops_pending_permission_senders() {
-    use crate::agent_manager::PendingPermission;
     use crucible_core::interaction::PermRequest;
 
     let session_manager = temp_session_manager();
@@ -635,16 +634,11 @@ async fn cancel_drops_pending_permission_senders() {
 
     let session_id = "cancel-pending-perm";
 
-    // Insert a pending permission with a oneshot we can poll.
-    let (response_tx, mut response_rx) = oneshot::channel();
+    // Register a pending permission with a oneshot we can poll.
     let perm_request = PermRequest::tool("bash", serde_json::json!({"command": "ls"}));
-    agent_manager.slot(session_id).insert_permission(
-        "perm-1".to_string(),
-        PendingPermission {
-            request: perm_request,
-            response_tx,
-        },
-    );
+    let (_permission_id, mut response_rx) = agent_manager
+        .slot(session_id)
+        .register_permission(perm_request);
 
     // Receiver should still be open right now.
     assert!(
@@ -684,7 +678,6 @@ async fn cancel_drops_pending_permission_senders() {
 /// process-global `static` shared with every other test in this binary.
 #[tokio::test]
 async fn cleanup_session_leaves_no_per_session_residue() {
-    use crate::agent_manager::PendingPermission;
     use crucible_core::interaction::PermRequest;
     use crucible_core::session::{Comment, CommentAuthor, LineRange, PhysicalRoot, TreeSha};
 
@@ -733,14 +726,13 @@ async fn cleanup_session_leaves_no_per_session_residue() {
             task_handle: None,
         },
     );
-    let (response_tx, _response_rx) = oneshot::channel();
-    agent_manager.slot(session_id).insert_permission(
-        "perm-1".to_string(),
-        PendingPermission {
-            request: PermRequest::tool("bash", serde_json::json!({"command": "ls"})),
-            response_tx,
-        },
-    );
+    let (_permission_id, _response_rx) =
+        agent_manager
+            .slot(session_id)
+            .register_permission(PermRequest::tool(
+                "bash",
+                serde_json::json!({"command": "ls"}),
+            ));
     // A comment is the cheapest review-ledger entry: no git repo needed, and
     // teardown for a session with no registered parent is synchronous.
     agent_manager

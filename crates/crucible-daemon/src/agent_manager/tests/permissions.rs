@@ -229,19 +229,57 @@ mod pattern_matching_tests {
         ));
     }
 
+    /// A `User` grant lands in the user-wide store, not in a project store.
+    #[test]
+    fn store_pattern_persists_user_scope_grant() {
+        let tmp = TempDir::new().unwrap();
+        let whitelists_dir = tmp.path().join("whitelists.d");
+        let project_path = "/some/project";
+
+        let file = PatternStore::store_file_in(
+            &whitelists_dir,
+            crucible_core::interaction::PermissionScope::User,
+            project_path,
+        )
+        .expect("User scope has a store file");
+        assert_eq!(file, whitelists_dir.join("user.toml"));
+
+        AgentManager::store_pattern_to(&file, "bash", "cargo build").unwrap();
+
+        let user_store = PatternStore::load_file(&file).unwrap();
+        assert!(user_store.matches_bash("cargo build --release"));
+
+        let project_file = PatternStore::store_file_in(
+            &whitelists_dir,
+            crucible_core::interaction::PermissionScope::Project,
+            project_path,
+        )
+        .unwrap();
+        assert!(
+            !project_file.exists(),
+            "a User grant must not touch the project store"
+        );
+        assert!(PatternStore::store_file_in(
+            &whitelists_dir,
+            crucible_core::interaction::PermissionScope::Once,
+            project_path,
+        )
+        .is_none());
+    }
+
     #[test_case("bash", "cargo build", "cargo build --release", true; "store_pattern_adds_bash_pattern")]
     #[test_case("write_file", "src/", "src/main.rs", true; "store_pattern_adds_file_pattern")]
     #[test_case("custom_tool", "custom_tool", "custom_tool", true; "store_pattern_adds_tool_pattern")]
     #[test_case("bash", "*", "", false; "store_pattern_rejects_star_pattern")]
     fn store_pattern_outcomes(kind: &str, pattern: &str, sample: &str, should_succeed: bool) {
         let tmp = TempDir::new().unwrap();
-        let project_path = tmp.path().to_string_lossy().to_string();
+        let file = PatternStore::project_file_in(&tmp.path().join("whitelists.d"), "/project");
 
-        let result = AgentManager::store_pattern(kind, pattern, &project_path);
+        let result = AgentManager::store_pattern_to(&file, kind, pattern);
 
         if should_succeed {
             result.unwrap();
-            let store = PatternStore::load_sync(&project_path).unwrap();
+            let store = PatternStore::load_file(&file).unwrap();
             match kind {
                 "bash" => assert!(store.matches_bash(sample), "matches_bash({sample:?})"),
                 "write_file" => assert!(store.matches_file(sample), "matches_file({sample:?})"),
@@ -259,23 +297,14 @@ mod permission_channel_tests {
     use test_case::test_case;
     use tokio::sync::oneshot;
 
-    /// Park a prompt in the session's registry the way the tool gate does,
-    /// so the tests exercise the one production path.
+    /// Park a prompt in the session's registry through the one production
+    /// path, `SessionSlot::register_permission`.
     pub(super) fn register_permission(
         agent_manager: &AgentManager,
         session_id: &str,
         request: PermRequest,
     ) -> (PermissionId, oneshot::Receiver<PermResponse>) {
-        let permission_id = format!("perm-{}", uuid::Uuid::new_v4());
-        let (response_tx, response_rx) = oneshot::channel();
-        agent_manager.slot(session_id).insert_permission(
-            permission_id.clone(),
-            PendingPermission {
-                request,
-                response_tx,
-            },
-        );
-        (permission_id, response_rx)
+        agent_manager.slot(session_id).register_permission(request)
     }
 
     #[derive(Clone, Copy)]
