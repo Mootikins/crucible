@@ -836,3 +836,26 @@ fn raw_output_wins_over_content_when_both_exist() {
         .expect("completed update must emit ToolEnd");
     assert_eq!(result.as_deref(), Some(r#"{"hits":3}"#));
 }
+
+/// Hermes drains a queued prompt inside one `session/prompt` reply. It then
+/// streams the queued text as a `user_message_chunk`. The chunk is the
+/// user's own text. It must emit nothing, and it must not enter the answer.
+#[test]
+fn user_message_chunk_emits_nothing_and_stays_out_of_the_answer() {
+    let mut client = make_client();
+    let mut state = StreamingState::default();
+    let chunks = capture_apply(
+        &mut client,
+        &mut state,
+        json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "user_message_chunk",
+                "content": {"type": "text", "text": "also delete the cache"}
+            }
+        }),
+    );
+    assert!(chunks.is_empty(), "a user chunk must emit no StreamingChunk");
+    assert_eq!(state.accumulated_text, "");
+    assert!(!state.produced_content);
+}

@@ -445,6 +445,14 @@ impl CrucibleAcpClient {
                 );
                 self.available_commands = update.available_commands;
             }
+            // Hermes streams a `user_message_chunk` when it drains a queued
+            // prompt inside one `session/prompt` reply. Crucible refuses a
+            // concurrent turn at the handle lock, so the queue path is not
+            // reachable from here. The chunk is the user's own text, not the
+            // agent's answer, so it must not reach `accumulated_text`.
+            SessionUpdate::UserMessageChunk(chunk) => {
+                tracing::debug!("Ignoring user_message_chunk: {:?}", chunk.content);
+            }
             other => {
                 tracing::debug!("Ignoring session update: {:?}", other);
             }
