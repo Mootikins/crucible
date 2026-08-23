@@ -20,14 +20,20 @@ fn stop_reason_label(stop_reason: agent_client_protocol::schema::v1::StopReason)
         .unwrap_or_else(|| format!("{stop_reason:?}"))
 }
 
-/// Build the `session/cancel` JSON-RPC notification (no `id` — notifications
-/// are fire-and-forget). The agent must abort the in-flight turn and end it
-/// with `StopReason::Cancelled`.
+/// Build the `session/cancel` JSON-RPC notification. A notification carries
+/// no `id`, so no reply comes back. The agent must abort the in-flight turn
+/// and end it with `StopReason::Cancelled`.
+///
+/// The params come from the schema's `CancelNotification`, so the frame
+/// cannot drift from the spec shape.
 pub(super) fn build_cancel_notification(session_id: &str) -> serde_json::Value {
+    use agent_client_protocol::schema::v1::{CancelNotification, SessionId};
+
+    let params = CancelNotification::new(SessionId::from(session_id.to_string()));
     serde_json::json!({
         "jsonrpc": "2.0",
         "method": "session/cancel",
-        "params": { "sessionId": session_id }
+        "params": params
     })
 }
 

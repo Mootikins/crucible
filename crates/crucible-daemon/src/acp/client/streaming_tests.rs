@@ -20,7 +20,9 @@ fn cancel_notification_is_a_valid_jsonrpc_notification() {
     let n = build_cancel_notification("sess-123");
     assert_eq!(n["jsonrpc"], "2.0");
     assert_eq!(n["method"], "session/cancel");
-    assert_eq!(n["params"]["sessionId"], "sess-123");
+    // The exact params object is the wire pin: no `_meta: null`, no extra
+    // key. An agent must see only what the spec requires.
+    assert_eq!(n["params"], serde_json::json!({ "sessionId": "sess-123" }));
     // Notifications MUST NOT carry an id.
     assert!(
         n.get("id").is_none(),
