@@ -124,10 +124,8 @@ impl CrucibleAcpClient {
     /// ```rust,ignore
     /// let config = ClientConfig {
     ///     agent_path: PathBuf::from("/path/to/agent"),
-    ///     working_dir: None,
-    ///     env_vars: None,
     ///     timeout_ms: Some(5000),
-    ///     max_retries: Some(3),
+    ///     ..Default::default()
     /// };
     /// let client = CrucibleAcpClient::new(config);
     /// ```

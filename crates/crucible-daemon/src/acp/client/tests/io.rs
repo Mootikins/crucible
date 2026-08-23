@@ -9,10 +9,8 @@ async fn test_message_sending() {
     let config = ClientConfig {
         agent_path: PathBuf::from("/test/agent"),
         agent_args: None,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(5000),
-        max_retries: Some(3),
+        ..Default::default()
     };
     let mut client = CrucibleAcpClient::new(config);
 
@@ -40,10 +38,8 @@ async fn test_stdio_message_exchange() {
     let config = ClientConfig {
         agent_path: cmd,
         agent_args: args,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(1000),
-        max_retries: Some(1),
+        ..Default::default()
     };
     let mut client = CrucibleAcpClient::new(config);
 
@@ -70,10 +66,8 @@ async fn test_read_agent_response() {
     let config = ClientConfig {
         agent_path: cmd,
         agent_args: args,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(500), // Short timeout
-        max_retries: Some(1),
+        ..Default::default()
     };
     let mut client = CrucibleAcpClient::new(config);
 
@@ -95,10 +89,8 @@ async fn test_write_agent_request() {
     let config = ClientConfig {
         agent_path: cmd,
         agent_args: args,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(1000),
-        max_retries: Some(1),
+        ..Default::default()
     };
     let mut client = CrucibleAcpClient::new(config);
 
@@ -125,10 +117,8 @@ async fn test_read_timeout() {
     let config = ClientConfig {
         agent_path: cmd,
         agent_args: args,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(100), // Very short timeout
-        max_retries: Some(1),
+        ..Default::default()
     };
     let mut client = CrucibleAcpClient::new(config);
 
@@ -150,10 +140,8 @@ async fn test_full_request_response_cycle() {
     let config = ClientConfig {
         agent_path: cmd,
         agent_args: args,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(2000),
-        max_retries: Some(1),
+        ..Default::default()
     };
     let mut client = CrucibleAcpClient::new(config);
 
@@ -183,10 +171,8 @@ async fn test_send_message_with_json() {
     let config = ClientConfig {
         agent_path: cmd,
         agent_args: args,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(1000),
-        max_retries: Some(1),
+        ..Default::default()
     };
     let mut client = CrucibleAcpClient::new(config);
 

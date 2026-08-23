@@ -23,10 +23,8 @@ fn test_config(timeout_ms: Option<u64>) -> ClientConfig {
     ClientConfig {
         agent_path: PathBuf::from("mock-permission-agent"),
         agent_args: None,
-        working_dir: None,
-        env_vars: None,
         timeout_ms,
-        max_retries: Some(1),
+        ..Default::default()
     }
 }
 

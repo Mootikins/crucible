@@ -74,7 +74,6 @@ pub(crate) fn build_client_config(
             Some(env_vars)
         },
         timeout_ms: Some(timeout_ms),
-        max_retries: None,
     })
 }
 

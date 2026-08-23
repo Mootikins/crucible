@@ -12,10 +12,8 @@ async fn test_agent_process_spawning() {
     let config = ClientConfig {
         agent_path: cmd,
         agent_args: args,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(5000),
-        max_retries: Some(3),
+        ..Default::default()
     };
     let mut client = CrucibleAcpClient::new(config);
 
@@ -38,10 +36,8 @@ async fn test_connection_establishment() {
     let config = ClientConfig {
         agent_path: PathBuf::from("/test/agent"),
         agent_args: None,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(5000),
-        max_retries: Some(3),
+        ..Default::default()
     };
     let mut client = CrucibleAcpClient::new(config);
 
@@ -58,10 +54,8 @@ async fn test_connection_cleanup() {
     let config = ClientConfig {
         agent_path: PathBuf::from("/test/agent"),
         agent_args: None,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(5000),
-        max_retries: Some(3),
+        ..Default::default()
     };
     let mut client = CrucibleAcpClient::new(config);
 
@@ -86,10 +80,8 @@ async fn test_bad_agent_path_error() {
     let config = ClientConfig {
         agent_path: PathBuf::from("/nonexistent/agent"),
         agent_args: None,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(1000),
-        max_retries: Some(1),
+        ..Default::default()
     };
     let mut client = CrucibleAcpClient::new(config);
 
@@ -110,10 +102,8 @@ async fn test_connection_timeout() {
     let config = ClientConfig {
         agent_path: PathBuf::from("/test/hanging-agent"),
         agent_args: None,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(100), // Very short timeout
-        max_retries: Some(1),
+        ..Default::default()
     };
     let mut client = CrucibleAcpClient::new(config);
 
@@ -136,10 +126,8 @@ async fn test_connection_state_tracking() {
     let config = ClientConfig {
         agent_path: cmd,
         agent_args: args,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(1000),
-        max_retries: Some(1),
+        ..Default::default()
     };
     let mut client = CrucibleAcpClient::new(config);
 
@@ -168,10 +156,8 @@ async fn test_connect_spawns_and_establishes_session() {
     let config = ClientConfig {
         agent_path: cmd,
         agent_args: args,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(5000),
-        max_retries: Some(3),
+        ..Default::default()
     };
     let mut client = CrucibleAcpClient::new(config);
 
@@ -193,10 +179,8 @@ async fn test_disconnect_cleanup() {
     let config = ClientConfig {
         agent_path: cmd,
         agent_args: args,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(1000),
-        max_retries: Some(1),
+        ..Default::default()
     };
     let mut client = CrucibleAcpClient::new(config);
 
@@ -226,10 +210,8 @@ async fn test_full_agent_lifecycle() {
     let config = ClientConfig {
         agent_path: cmd,
         agent_args: args,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(2000),
-        max_retries: Some(1),
+        ..Default::default()
     };
     let mut client = CrucibleAcpClient::new(config);
 

@@ -490,11 +490,10 @@ mod tests {
         assert_eq!(response.embedding[2], 0.3);
     }
 
-    #[tokio::test]
-    async fn test_list_models_response_deserialization() {
-        use crate::llm::embeddings::provider::{ModelFamily, ModelInfo, ParameterSize};
-
-        // Test Ollama /api/tags response parsing
+    /// The `/api/tags` body parses into the shared `OllamaTagsResponse`.
+    /// Ollama sends more fields per model than the struct names.
+    #[test]
+    fn test_list_models_response_deserialization() {
         let json = r#"{
             "models": [
                 {
@@ -528,39 +527,11 @@ mod tests {
             ]
         }"#;
 
-        // This test verifies we can parse the Ollama API response
-        // The actual deserialization will be implemented in OllamaTagsResponse
-        let response: serde_json::Value = serde_json::from_str(json).unwrap();
-        assert!(response["models"].is_array());
-        assert_eq!(response["models"].as_array().unwrap().len(), 2);
-
-        // Verify we can build ModelInfo from this data
-        let first_model = &response["models"][0];
-        let model_info = ModelInfo::builder()
-            .name(first_model["name"].as_str().unwrap())
-            .size_bytes(first_model["size"].as_u64().unwrap())
-            .digest(first_model["digest"].as_str().unwrap())
-            .family(ModelFamily::from_str(
-                first_model["details"]["family"].as_str().unwrap(),
-            ))
-            .parameter_size(
-                ParameterSize::from_str(first_model["details"]["parameter_size"].as_str().unwrap())
-                    .unwrap(),
-            )
-            .quantization(
-                first_model["details"]["quantization_level"]
-                    .as_str()
-                    .unwrap(),
-            )
-            .format(first_model["details"]["format"].as_str().unwrap())
-            .build();
-
-        assert_eq!(model_info.name, "nomic-embed-text:latest");
-        assert_eq!(model_info.size_bytes, Some(274301056));
-        assert_eq!(model_info.family, Some(ModelFamily::Bert));
-        assert!(model_info.parameter_size.is_some());
-        assert_eq!(model_info.parameter_size.unwrap().to_string(), "137M");
-        assert_eq!(model_info.quantization, Some("Q4_0".to_string()));
+        let response: OllamaTagsResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            response.model_names(),
+            vec!["nomic-embed-text:latest", "mxbai-embed-large:latest"]
+        );
     }
 
     #[test]

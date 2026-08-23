@@ -296,10 +296,8 @@ async fn run_case(case: &FixtureCase) {
     let config = crucible_daemon::acp::client::ClientConfig {
         agent_path: PathBuf::from("/dev/null"),
         agent_args: None,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(5_000),
-        max_retries: None,
+        ..Default::default()
     };
     let mut client = CrucibleAcpClient::with_transport(config, writer, reader);
 

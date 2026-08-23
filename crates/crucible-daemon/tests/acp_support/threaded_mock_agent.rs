@@ -155,10 +155,8 @@ impl ThreadedMockAgent {
         let client_config = crucible_daemon::acp::client::ClientConfig {
             agent_path: PathBuf::from("mock-threaded-agent"),
             agent_args: None,
-            working_dir: None,
-            env_vars: None,
             timeout_ms: Some(5000),
-            max_retries: Some(1),
+            ..Default::default()
         };
 
         // Use with_transport to inject the in-process reader/writer

@@ -22,10 +22,8 @@ async fn main() {
     let client_config = crucible_daemon::acp::client::ClientConfig {
         agent_path: mock_agent_path,
         agent_args: Some(vec!["--behavior".to_string(), "streaming".to_string()]),
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(10000),
-        max_retries: Some(1),
+        ..Default::default()
     };
 
     let mut client = crucible_daemon::acp::CrucibleAcpClient::new(client_config);

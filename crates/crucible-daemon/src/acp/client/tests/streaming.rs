@@ -120,10 +120,8 @@ fn make_client() -> CrucibleAcpClient {
     let config = ClientConfig {
         agent_path: test_path("test-agent"),
         agent_args: None,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(1000),
-        max_retries: Some(1),
+        ..Default::default()
     };
     CrucibleAcpClient::new(config)
 }

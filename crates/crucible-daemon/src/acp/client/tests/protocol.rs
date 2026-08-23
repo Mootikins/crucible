@@ -13,10 +13,8 @@ async fn test_protocol_initialize_handshake() {
     let config = ClientConfig {
         agent_path: cmd,
         agent_args: args,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(1000),
-        max_retries: Some(1),
+        ..Default::default()
     };
     let mut client = CrucibleAcpClient::new(config);
 
@@ -42,10 +40,8 @@ async fn test_protocol_new_session() {
     let config = ClientConfig {
         agent_path: cmd,
         agent_args: args,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(1000),
-        max_retries: Some(1),
+        ..Default::default()
     };
     let mut client = CrucibleAcpClient::new(config);
 
@@ -68,10 +64,8 @@ async fn test_connect_performs_protocol_handshake() {
     let config = ClientConfig {
         agent_path: cmd,
         agent_args: args,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(2000),
-        max_retries: Some(1),
+        ..Default::default()
     };
     let mut client = CrucibleAcpClient::new(config);
 

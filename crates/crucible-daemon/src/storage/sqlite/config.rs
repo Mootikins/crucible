@@ -1,33 +1,28 @@
 //! SQLite configuration types
 
-use crucible_core::serde_helpers::default_true;
-use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// Configuration for SQLite storage backend
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Configuration for SQLite storage backend.
+///
+/// No loader reads this from a file. Code builds it with `new` or `memory`.
+#[derive(Debug, Clone)]
 pub struct SqliteConfig {
     /// Path to the SQLite database file
     pub path: PathBuf,
 
     /// Enable WAL mode (recommended, default: true)
-    #[serde(default = "default_true")]
     pub wal_mode: bool,
 
     /// Enable foreign keys (default: true)
-    #[serde(default = "default_true")]
     pub foreign_keys: bool,
 
     /// Busy timeout in milliseconds (default: 5000)
-    #[serde(default = "default_busy_timeout")]
     pub busy_timeout_ms: u64,
 
     /// Cache size in pages (default: 2000, ~8MB)
-    #[serde(default = "default_cache_size")]
     pub cache_size: i32,
 
     /// MMAP size in bytes (default: 1GB)
-    #[serde(default = "default_mmap_size")]
     pub mmap_size: u64,
 }
 

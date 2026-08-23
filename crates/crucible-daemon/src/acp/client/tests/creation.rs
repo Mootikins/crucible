@@ -10,10 +10,8 @@ fn test_client_creation() {
     let config = ClientConfig {
         agent_path: PathBuf::from("/test/agent"),
         agent_args: None,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(5000),
-        max_retries: Some(3),
+        ..Default::default()
     };
     let client = CrucibleAcpClient::new(config);
     assert_eq!(client.config().agent_path, PathBuf::from("/test/agent"));

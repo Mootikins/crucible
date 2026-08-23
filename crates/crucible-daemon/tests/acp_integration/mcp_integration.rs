@@ -35,9 +35,8 @@ async fn test_mcp_server_configuration_in_handshake() {
         agent_path: PathBuf::from("cru"),
         agent_args: None,
         working_dir: Some(PathBuf::from("/test")),
-        env_vars: None,
         timeout_ms: Some(5000),
-        max_retries: Some(1),
+        ..Default::default()
     };
 
     let _client = CrucibleAcpClient::new(config);

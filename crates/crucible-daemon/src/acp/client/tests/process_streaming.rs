@@ -15,10 +15,8 @@ async fn process_streaming_message_prioritizes_methods() {
     let config = ClientConfig {
         agent_path: test_path("test-agent"),
         agent_args: None,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(1000),
-        max_retries: Some(1),
+        ..Default::default()
     };
     let mut client = CrucibleAcpClient::new(config);
     let mut state = StreamingState::default();
@@ -43,10 +41,8 @@ async fn process_streaming_message_returns_prompt_response() {
     let config = ClientConfig {
         agent_path: test_path("test-agent"),
         agent_args: None,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(1000),
-        max_retries: Some(1),
+        ..Default::default()
     };
     let mut client = CrucibleAcpClient::new(config);
     let mut state = StreamingState::default();
@@ -77,10 +73,8 @@ async fn process_streaming_message_tracks_available_commands() {
     let config = ClientConfig {
         agent_path: test_path("test-agent"),
         agent_args: None,
-        working_dir: None,
-        env_vars: None,
         timeout_ms: Some(1000),
-        max_retries: Some(1),
+        ..Default::default()
     };
     let mut client = CrucibleAcpClient::new(config);
     let mut state = StreamingState::default();

@@ -11,10 +11,7 @@ fn test_client() -> CrucibleAcpClient {
     CrucibleAcpClient::new(ClientConfig {
         agent_path: std::path::PathBuf::from("/nonexistent"),
         agent_args: None,
-        working_dir: None,
-        env_vars: None,
-        timeout_ms: None,
-        max_retries: None,
+        ..Default::default()
     })
 }
 
