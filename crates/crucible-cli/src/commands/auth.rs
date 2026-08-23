@@ -227,7 +227,7 @@ async fn list() -> Result<()> {
                         provider.bold(),
                         format!("${}", env_var).dimmed(),
                         CredentialSource::EnvVar.to_string().cyan(),
-                        ", overrides file".dimmed()
+                        ", overrides store".dimmed()
                     );
                 }
             }

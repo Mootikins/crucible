@@ -263,19 +263,24 @@ impl std::fmt::Display for CredentialSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CredentialSource::EnvVar => write!(f, "env"),
-            CredentialSource::Store => write!(f, "file"),
+            CredentialSource::Store => write!(f, "store"),
             CredentialSource::Config => write!(f, "config"),
         }
     }
 }
 
-/// Resolve OAuth token for GitHub Copilot from credential store
+/// Resolve the OAuth token for GitHub Copilot.
 ///
 /// Resolution order:
 /// 1. Environment variable (GITHUB_COPILOT_OAUTH_TOKEN)
-/// 2. Credential store (secrets.toml)
+/// 2. The given credential store (`store`)
 /// 3. Config api_key (fallback)
-pub fn resolve_copilot_oauth_token(config_api_key: Option<&str>) -> Option<String> {
+///
+/// The caller supplies the store, so a test can point it at a temporary file.
+pub fn resolve_copilot_oauth_token(
+    store: &SecretsFile,
+    config_api_key: Option<&str>,
+) -> Option<String> {
     if let Ok(token) = std::env::var("GITHUB_COPILOT_OAUTH_TOKEN") {
         if !token.is_empty() {
             debug!("Using GitHub Copilot OAuth token from environment variable");
@@ -283,8 +288,7 @@ pub fn resolve_copilot_oauth_token(config_api_key: Option<&str>) -> Option<Strin
         }
     }
 
-    let secrets = SecretsFile::new();
-    if let Ok(Some(token)) = secrets.get_oauth_token("github-copilot") {
+    if let Ok(Some(token)) = store.get_oauth_token("github-copilot") {
         debug!("Using GitHub Copilot OAuth token from credential store");
         return Some(token);
     }
@@ -583,8 +587,58 @@ mod tests {
     #[test]
     fn credential_source_display() {
         assert_eq!(CredentialSource::EnvVar.to_string(), "env");
-        assert_eq!(CredentialSource::Store.to_string(), "file");
+        assert_eq!(CredentialSource::Store.to_string(), "store");
         assert_eq!(CredentialSource::Config.to_string(), "config");
+    }
+
+    // =========================================================================
+    // resolve_copilot_oauth_token: reads the store it is given
+    // =========================================================================
+
+    #[test]
+    #[serial]
+    fn copilot_oauth_token_env_var_wins_over_store() {
+        let (mut store, _dir) = temp_store();
+        store
+            .set_oauth_token("github-copilot", "gho_store")
+            .expect("set");
+        let _guard = EnvVarGuard::set("GITHUB_COPILOT_OAUTH_TOKEN", "gho_env".to_string());
+
+        let token = resolve_copilot_oauth_token(&store, Some("config-key"));
+        assert_eq!(token, Some("gho_env".to_string()));
+    }
+
+    #[test]
+    #[serial]
+    fn copilot_oauth_token_falls_back_to_store() {
+        let (mut store, _dir) = temp_store();
+        store
+            .set_oauth_token("github-copilot", "gho_store")
+            .expect("set");
+        let _guard = EnvVarGuard::remove("GITHUB_COPILOT_OAUTH_TOKEN");
+
+        let token = resolve_copilot_oauth_token(&store, Some("config-key"));
+        assert_eq!(token, Some("gho_store".to_string()));
+    }
+
+    #[test]
+    #[serial]
+    fn copilot_oauth_token_falls_back_to_config() {
+        let (store, _dir) = temp_store();
+        let _guard = EnvVarGuard::remove("GITHUB_COPILOT_OAUTH_TOKEN");
+
+        let token = resolve_copilot_oauth_token(&store, Some("config-key"));
+        assert_eq!(token, Some("config-key".to_string()));
+    }
+
+    #[test]
+    #[serial]
+    fn copilot_oauth_token_none_when_nothing_configured() {
+        let (store, _dir) = temp_store();
+        let _guard = EnvVarGuard::remove("GITHUB_COPILOT_OAUTH_TOKEN");
+
+        assert_eq!(resolve_copilot_oauth_token(&store, None), None);
+        assert_eq!(resolve_copilot_oauth_token(&store, Some("")), None);
     }
 
     // =========================================================================

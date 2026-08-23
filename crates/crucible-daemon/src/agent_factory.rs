@@ -12,7 +12,7 @@ use crate::provider::genai_handle::GenaiAgentHandle;
 use crate::tools::mcp_server::CrucibleMcpServer;
 use crate::tools::DelegationContext;
 use crucible_core::background::BackgroundSpawner;
-use crucible_core::config::credentials::resolve_copilot_oauth_token;
+use crucible_core::config::credentials::{resolve_copilot_oauth_token, SecretsFile};
 use crucible_core::config::{BackendType, LlmProviderConfig};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::session::SessionAgent;
@@ -532,7 +532,7 @@ pub(crate) fn build_chat_client_for_agent(
         // `with_api_key_env_var_name` yields None for Custom, Ollama,
         // FastEmbed, Burn and Mock, so gating on it would reproduce the same
         // bug for anyone running `cru auth login --provider custom`.
-        let store = crucible_core::config::credentials::SecretsFile::new();
+        let store = SecretsFile::new();
         match crucible_core::config::credentials::resolve_api_key(&provider_name, &store, None) {
             Some((key, source)) => {
                 debug!("Resolved API key for {provider_name} from {source:?}");
@@ -608,7 +608,10 @@ pub(crate) fn build_chat_client_for_agent(
     }
 
     if agent_config.provider == BackendType::GitHubCopilot {
-        if let Some(oauth_token) = resolve_copilot_oauth_token(llm_config.api_key.as_deref()) {
+        let store = SecretsFile::new();
+        if let Some(oauth_token) =
+            resolve_copilot_oauth_token(&store, llm_config.api_key.as_deref())
+        {
             llm_config.api_key = Some(oauth_token);
         }
     }

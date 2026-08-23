@@ -212,9 +212,9 @@ fn auth_list_reports_both_sources_when_env_overrides_stored_credential() {
         .arg("list")
         .assert()
         .success()
-        .stdout(predicates::str::contains("file"))
+        .stdout(predicates::str::contains("(store)"))
         .stdout(predicates::str::contains("env"))
-        .stdout(predicates::str::contains("overrides file"));
+        .stdout(predicates::str::contains("overrides store"));
 }
 
 #[test]
@@ -230,7 +230,7 @@ fn auth_list_ignores_blank_env_var_for_stored_credential() {
         .arg("list")
         .assert()
         .success()
-        .stdout(predicates::str::contains("overrides file").not());
+        .stdout(predicates::str::contains("overrides store").not());
 }
 
 #[test]
