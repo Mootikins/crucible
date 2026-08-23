@@ -298,7 +298,11 @@ pub(super) async fn tree_exists(root: &Path, tree: &TreeSha) -> bool {
 /// Run git in `root` and return stdout. A non-zero exit surfaces as
 /// [`ReviewError::Io`] through the shared [`crate::scm::run_git`].
 async fn git(root: &Path, args: &[&str]) -> ReviewResult<String> {
-    Ok(crate::scm::run_git(root, args, None).await?)
+    Ok(
+        crate::scm::run_git(root, args, crate::scm::GitOpts::default())
+            .await
+            .map_err(std::io::Error::from)?,
+    )
 }
 
 /// As [`git`], feeding `input` on stdin. `mktree` is the only caller.

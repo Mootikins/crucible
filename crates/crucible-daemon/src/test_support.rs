@@ -282,11 +282,12 @@ impl AgentHandle for MockSubagentHandle {
     }
 }
 
-/// Run one `git` command in `dir`, asserting it succeeded.
+/// Run one `git` command in `dir`, asserting it succeeded, and return its
+/// stdout.
 ///
-/// Shared because three test modules each grew their own copy with slightly
+/// Shared because test modules each grew their own copy with slightly
 /// different failure messages and one of them silently discarded stderr.
-pub async fn git(dir: &std::path::Path, args: &[&str]) {
+pub async fn git(dir: &std::path::Path, args: &[&str]) -> String {
     let out = tokio::process::Command::new("git")
         .args(args)
         .current_dir(dir)
@@ -298,6 +299,7 @@ pub async fn git(dir: &std::path::Path, args: &[&str]) {
         "git {args:?}: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+    String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
 /// A git repository at `dir` containing `files`, all committed.

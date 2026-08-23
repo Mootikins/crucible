@@ -28,7 +28,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::scm;
+use crate::scm::{self, GitOpts};
 use tracing::{debug, warn};
 
 const DEFAULT_JOURNAL_CAP: usize = 5 * 1024 * 1024;
@@ -232,12 +232,15 @@ impl WorkspaceSnapshot {
             // repo when the workspace *is* the repo root, and exactly the
             // agent's subtree when it is not.
             let restore = ["restore", "--source", sha, "--worktree", "--staged", "."];
-            if scm::run_git(workspace, &restore, None).await.is_err() {
+            if scm::run_git(workspace, &restore, GitOpts::default())
+                .await
+                .is_err()
+            {
                 // Older git versions (< 2.23) lack `git restore`. Fall
                 // back to checkout; this restores tracked files but
                 // won't remove files the turn newly created. That's a
                 // graceful degradation rather than a hard failure.
-                scm::run_git(workspace, &["checkout", sha, "--", "."], None)
+                scm::run_git(workspace, &["checkout", sha, "--", "."], GitOpts::default())
                     .await
                     .map_err(|e| {
                         std::io::Error::other(format!("git restore/checkout failed: {e}"))
@@ -267,7 +270,7 @@ impl WorkspaceSnapshot {
 /// answers true and takes the git path. That is intentional: the tree it
 /// produces still describes that directory's contents.
 pub async fn is_git_repo(p: &Path) -> bool {
-    scm::run_git(p, &["rev-parse", "--git-dir"], None)
+    scm::run_git(p, &["rev-parse", "--git-dir"], GitOpts::default())
         .await
         .is_ok()
 }
@@ -292,7 +295,7 @@ pub async fn capture_tree(p: &Path) -> std::io::Result<String> {
 
     // Absolute: git resolves a relative GIT_INDEX_FILE against the worktree
     // top level, not the current directory.
-    let git_dir = scm::run_git(p, &["rev-parse", "--absolute-git-dir"], None).await?;
+    let git_dir = scm::run_git(p, &["rev-parse", "--absolute-git-dir"], GitOpts::default()).await?;
     let real_index = Path::new(git_dir.trim()).join("index");
     if let Ok(source) = std::fs::metadata(&real_index) {
         std::fs::copy(&real_index, &index_path)?;
@@ -313,23 +316,37 @@ pub async fn capture_tree(p: &Path) -> std::io::Result<String> {
     let index_env = index_path.as_os_str();
     // Additions, modifications and deletions under `p`. `.gitignore` still
     // applies, so build output never lands in the tree.
-    scm::run_git(p, &["add", "-A", "."], Some(index_env)).await?;
-    let tree = scm::run_git(p, &["write-tree"], Some(index_env)).await?;
+    scm::run_git(
+        p,
+        &["add", "-A", "."],
+        GitOpts {
+            index_file: Some(index_env),
+            ..GitOpts::default()
+        },
+    )
+    .await?;
+    let tree = scm::run_git(
+        p,
+        &["write-tree"],
+        GitOpts {
+            index_file: Some(index_env),
+            ..GitOpts::default()
+        },
+    )
+    .await?;
     Ok(tree.trim().to_string())
 }
 
 /// Point `name` at `tree`, pinning it against `git gc`.
 async fn update_keep(root: &Path, name: &str, tree: &str) -> std::io::Result<()> {
-    scm::run_git(root, &["update-ref", name, tree], None)
-        .await
-        .map(|_| ())
+    scm::run_git(root, &["update-ref", name, tree], GitOpts::default()).await?;
+    Ok(())
 }
 
 /// Delete `name`, if it still exists.
 async fn drop_keep(root: &Path, name: &str) -> std::io::Result<()> {
-    scm::run_git(root, &["update-ref", "-d", name], None)
-        .await
-        .map(|_| ())
+    scm::run_git(root, &["update-ref", "-d", name], GitOpts::default()).await?;
+    Ok(())
 }
 
 /// Walk `workspace` and collect every file's bytes into an in-memory
@@ -385,54 +402,9 @@ fn build_journal(workspace: &Path, cap: usize) -> WorkspaceSnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{git, init_repo};
     use std::fs;
     use tempfile::tempdir;
-    use tokio::process::Command;
-
-    async fn git_status(p: &Path) -> String {
-        let out = Command::new("git")
-            .args(["status", "--porcelain"])
-            .current_dir(p)
-            .output()
-            .await
-            .unwrap();
-        String::from_utf8_lossy(&out.stdout).into_owned()
-    }
-
-    async fn git_init(p: &Path) {
-        Command::new("git")
-            .args(["init", "-q"])
-            .current_dir(p)
-            .output()
-            .await
-            .unwrap();
-        Command::new("git")
-            .args(["config", "user.email", "t@t"])
-            .current_dir(p)
-            .output()
-            .await
-            .unwrap();
-        Command::new("git")
-            .args(["config", "user.name", "t"])
-            .current_dir(p)
-            .output()
-            .await
-            .unwrap();
-        // Initial commit so HEAD exists.
-        fs::write(p.join(".gitkeep"), b"").unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(p)
-            .output()
-            .await
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-q", "-m", "init"])
-            .current_dir(p)
-            .output()
-            .await
-            .unwrap();
-    }
 
     /// The captured tree is unreachable from any branch, so without a keep
     /// ref `git gc --prune=now` in the agent's own repo collects it and undo
@@ -440,19 +412,13 @@ mod tests {
     #[tokio::test]
     async fn a_snapshot_survives_an_aggressive_prune() {
         let dir = tempdir().unwrap();
-        git_init(dir.path()).await;
+        init_repo(dir.path(), &[(".gitkeep", "")]).await;
         fs::write(dir.path().join("a.txt"), b"before").unwrap();
 
         let snap = WorkspaceSnapshot::create(dir.path(), "sess", 7).await;
         fs::write(dir.path().join("a.txt"), b"after the turn").unwrap();
 
-        let out = Command::new("git")
-            .args(["gc", "--prune=now", "--aggressive", "-q"])
-            .current_dir(dir.path())
-            .output()
-            .await
-            .unwrap();
-        assert!(out.status.success(), "gc: {:?}", out);
+        git(dir.path(), &["gc", "--prune=now", "--aggressive", "-q"]).await;
 
         snap.restore(dir.path()).await.expect("restore after gc");
         assert_eq!(
@@ -472,25 +438,15 @@ mod tests {
     #[tokio::test]
     async fn undo_leaves_uncommitted_work_outside_the_workspace_alone() {
         let dir = tempdir().unwrap();
-        git_init(dir.path()).await;
+        init_repo(dir.path(), &[(".gitkeep", "")]).await;
         let ws = dir.path().join("ws");
         let sibling = dir.path().join("sibling");
         fs::create_dir(&ws).unwrap();
         fs::create_dir(&sibling).unwrap();
         fs::write(ws.join("a.txt"), b"before").unwrap();
         fs::write(sibling.join("s.txt"), b"committed").unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(dir.path())
-            .output()
-            .await
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-q", "-m", "init"])
-            .current_dir(dir.path())
-            .output()
-            .await
-            .unwrap();
+        git(dir.path(), &["add", "."]).await;
+        git(dir.path(), &["commit", "-q", "-m", "init"]).await;
 
         // The user is editing elsewhere in the repo while the agent works.
         fs::write(sibling.join("s.txt"), b"the user's uncommitted work").unwrap();
@@ -516,7 +472,7 @@ mod tests {
     #[tokio::test]
     async fn releasing_a_snapshot_drops_its_keep_ref() {
         let dir = tempdir().unwrap();
-        git_init(dir.path()).await;
+        init_repo(dir.path(), &[(".gitkeep", "")]).await;
         fs::write(dir.path().join("a.txt"), b"before").unwrap();
         let snap = WorkspaceSnapshot::create(dir.path(), "sess", 7).await;
 
@@ -524,7 +480,7 @@ mod tests {
         let present = |name: String| {
             let d = dir.path().to_path_buf();
             async move {
-                Command::new("git")
+                tokio::process::Command::new("git")
                     .args(["rev-parse", "--verify", "--quiet", &name])
                     .current_dir(&d)
                     .output()
@@ -542,7 +498,7 @@ mod tests {
     #[tokio::test]
     async fn snapshot_git_captures_uncommitted_change_and_restores() {
         let dir = tempdir().unwrap();
-        git_init(dir.path()).await;
+        init_repo(dir.path(), &[(".gitkeep", "")]).await;
         fs::write(dir.path().join("a.txt"), b"hello").unwrap();
         let snap = WorkspaceSnapshot::create(dir.path(), "sess", 1).await;
         assert!(snap.tree_id.is_some(), "expected a captured tree sha");
@@ -614,10 +570,10 @@ mod tests {
     #[tokio::test]
     async fn capture_leaves_the_real_index_alone() {
         let dir = tempdir().unwrap();
-        git_init(dir.path()).await;
+        init_repo(dir.path(), &[(".gitkeep", "")]).await;
         fs::write(dir.path().join("untracked.txt"), b"new").unwrap();
         let index_before = fs::read(dir.path().join(".git").join("index")).unwrap();
-        let status_before = git_status(dir.path()).await;
+        let status_before = git(dir.path(), &["status", "--porcelain"]).await;
 
         capture_tree(dir.path()).await.unwrap();
 
@@ -626,23 +582,20 @@ mod tests {
             index_before,
             "capture wrote through to the repository index"
         );
-        assert_eq!(git_status(dir.path()).await, status_before);
+        assert_eq!(
+            git(dir.path(), &["status", "--porcelain"]).await,
+            status_before
+        );
     }
 
     #[tokio::test]
     async fn capture_tree_includes_untracked_files() {
         let dir = tempdir().unwrap();
-        git_init(dir.path()).await;
+        init_repo(dir.path(), &[(".gitkeep", "")]).await;
         fs::write(dir.path().join("brand_new.txt"), b"hi").unwrap();
 
         let tree = capture_tree(dir.path()).await.unwrap();
-        let listing = Command::new("git")
-            .args(["ls-tree", "-r", "--name-only", &tree])
-            .current_dir(dir.path())
-            .output()
-            .await
-            .unwrap();
-        let listing = String::from_utf8_lossy(&listing.stdout);
+        let listing = git(dir.path(), &["ls-tree", "-r", "--name-only", &tree]).await;
         assert!(
             listing.contains("brand_new.txt"),
             "untracked file missing from tree: {listing}"
@@ -654,7 +607,7 @@ mod tests {
     #[tokio::test]
     async fn capture_tree_is_stable_across_no_op_captures() {
         let dir = tempdir().unwrap();
-        git_init(dir.path()).await;
+        init_repo(dir.path(), &[(".gitkeep", "")]).await;
         fs::write(dir.path().join("a.txt"), b"hello").unwrap();
 
         let first = capture_tree(dir.path()).await.unwrap();
@@ -673,16 +626,10 @@ mod tests {
     #[tokio::test]
     async fn capture_tree_sees_a_same_size_edit_made_in_the_index_second() {
         let dir = tempdir().unwrap();
-        git_init(dir.path()).await;
+        init_repo(dir.path(), &[(".gitkeep", "")]).await;
         fs::write(dir.path().join("a.txt"), b"aaaa\n").unwrap();
-        for args in [&["add", "a.txt"][..], &["commit", "-q", "-m", "a"][..]] {
-            Command::new("git")
-                .args(args)
-                .current_dir(dir.path())
-                .output()
-                .await
-                .unwrap();
-        }
+        git(dir.path(), &["add", "a.txt"]).await;
+        git(dir.path(), &["commit", "-q", "-m", "a"]).await;
 
         fs::write(dir.path().join("a.txt"), b"bbbb\n").unwrap();
         // Push the capture past the second boundary the write shares with the
@@ -690,15 +637,8 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
 
         let captured = capture_tree(dir.path()).await.unwrap();
-        let head_tree = Command::new("git")
-            .args(["rev-parse", "HEAD^{tree}"])
-            .current_dir(dir.path())
-            .output()
-            .await
-            .unwrap();
-        let head_tree = String::from_utf8_lossy(&head_tree.stdout)
-            .trim()
-            .to_string();
+        let head_tree = git(dir.path(), &["rev-parse", "HEAD^{tree}"]).await;
+        let head_tree = head_tree.trim().to_string();
         assert_ne!(captured, head_tree, "capture silently dropped the edit");
     }
 

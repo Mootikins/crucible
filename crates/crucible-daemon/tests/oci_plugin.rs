@@ -12,6 +12,7 @@
 
 use crucible_core::events::SessionEvent;
 use crucible_daemon::daemon_plugins::DaemonPluginLoader;
+use crucible_daemon::test_support::git;
 use crucible_lua::{PluginSource, ScriptHandlerResult, Session, UnsupportedSessionRpc};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -377,48 +378,41 @@ async fn an_unknown_isolation_profile_refuses_the_session() {
 // This is also the only coverage that runs the parse against the *real*
 // `cru.fs` and `cru.json.decode`; the plugin's own Lua suite stubs both.
 
-/// Run git in `workspace`, asserting it succeeded.
-///
-/// `-c` overrides rather than `git config` so the run does not depend on (or
-/// touch) the developer's global identity, and `--no-gpg-sign` so a globally
-/// enabled `commit.gpgsign` cannot fail the commit.
-fn git(workspace: &Path, args: &[&str]) {
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(workspace)
-        .args(["-c", "user.name=crucible-test"])
-        .args(["-c", "user.email=test@crucible.invalid"])
-        .args(args)
-        .output()
-        .expect("git is required to exercise committed-only devcontainer resolution");
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-}
-
 /// A workspace whose `.devcontainer/devcontainer.json` is **committed**.
 ///
 /// Committed, because resolution reads HEAD and not the working tree — an
 /// uncommitted devcontainer is refused. See
 /// `an_uncommitted_devcontainer_is_refused_rather_than_honoured` for why.
-fn workspace_with_devcontainer(tmp: &Path, body: &str) -> PathBuf {
-    let workspace = workspace_with_uncommitted_devcontainer(tmp, body);
-    git(&workspace, &["add", ".devcontainer/devcontainer.json"]);
+///
+/// `-c` overrides rather than `git config` so the run does not depend on (or
+/// touch) the developer's global identity, and `--no-gpg-sign` so a globally
+/// enabled `commit.gpgsign` cannot fail the commit.
+async fn workspace_with_devcontainer(tmp: &Path, body: &str) -> PathBuf {
+    let workspace = workspace_with_uncommitted_devcontainer(tmp, body).await;
+    git(&workspace, &["add", ".devcontainer/devcontainer.json"]).await;
     git(
         &workspace,
-        &["commit", "--no-gpg-sign", "-m", "add devcontainer"],
-    );
+        &[
+            "-c",
+            "user.name=crucible-test",
+            "-c",
+            "user.email=test@crucible.invalid",
+            "commit",
+            "--no-gpg-sign",
+            "-m",
+            "add devcontainer",
+        ],
+    )
+    .await;
     workspace
 }
 
 /// The same workspace, with the devcontainer left uncommitted in a git repo.
-fn workspace_with_uncommitted_devcontainer(tmp: &Path, body: &str) -> PathBuf {
+async fn workspace_with_uncommitted_devcontainer(tmp: &Path, body: &str) -> PathBuf {
     let workspace = tmp.join("workspace");
     std::fs::create_dir_all(workspace.join(".devcontainer")).unwrap();
     std::fs::write(workspace.join(".devcontainer/devcontainer.json"), body).unwrap();
-    git(&workspace, &["init", "-q", "-b", "main"]);
+    git(&workspace, &["init", "-q", "-b", "main"]).await;
     workspace
 }
 
@@ -519,7 +513,7 @@ async fn a_devcontainer_asking_to_reach_the_host_is_refused_however_it_was_writt
         "image": "example.invalid/dc:latest",
         "runArgs": ["--privileged", "-v", "/:/host"]
     }"#;
-    let workspace = workspace_with_uncommitted_devcontainer(tmp.path(), escape);
+    let workspace = workspace_with_uncommitted_devcontainer(tmp.path(), escape).await;
     let mut loader = load_oci(
         tmp.path(),
         serde_json::json!({ "image": "alpine:latest", "runtime": UNUSABLE }),
@@ -546,7 +540,7 @@ async fn a_devcontainer_asking_to_reach_the_host_is_refused_however_it_was_writt
 async fn an_uncommitted_devcontainer_that_asks_for_nothing_special_is_honoured() {
     let tmp = tempfile::tempdir().unwrap();
     let benign = r#"{ "image": "example.invalid/dc:latest" }"#;
-    let workspace = workspace_with_uncommitted_devcontainer(tmp.path(), benign);
+    let workspace = workspace_with_uncommitted_devcontainer(tmp.path(), benign).await;
     let mut loader = load_oci(
         tmp.path(),
         serde_json::json!({ "image": "alpine:latest", "runtime": UNUSABLE }),
@@ -574,7 +568,7 @@ async fn an_uncommitted_devcontainer_that_asks_for_nothing_special_is_honoured()
 #[tokio::test]
 async fn a_devcontainer_key_that_cannot_be_honoured_refuses_the_session_naming_it() {
     let tmp = tempfile::tempdir().unwrap();
-    let workspace = workspace_with_devcontainer(tmp.path(), UNSUPPORTED_DEVCONTAINER);
+    let workspace = workspace_with_devcontainer(tmp.path(), UNSUPPORTED_DEVCONTAINER).await;
     let mut loader = load_oci(
         tmp.path(),
         serde_json::json!({ "image": "alpine:latest", "runtime": UNUSABLE }),
@@ -598,7 +592,7 @@ async fn a_devcontainer_key_that_cannot_be_honoured_refuses_the_session_naming_i
 #[tokio::test]
 async fn a_project_can_opt_out_of_its_devcontainer() {
     let tmp = tempfile::tempdir().unwrap();
-    let workspace = workspace_with_devcontainer(tmp.path(), UNSUPPORTED_DEVCONTAINER);
+    let workspace = workspace_with_devcontainer(tmp.path(), UNSUPPORTED_DEVCONTAINER).await;
     let mut loader = load_oci(
         tmp.path(),
         serde_json::json!({
@@ -622,7 +616,7 @@ async fn a_project_can_opt_out_of_its_devcontainer() {
 #[tokio::test]
 async fn an_inline_isolation_object_outranks_the_devcontainer() {
     let tmp = tempfile::tempdir().unwrap();
-    let workspace = workspace_with_devcontainer(tmp.path(), UNSUPPORTED_DEVCONTAINER);
+    let workspace = workspace_with_devcontainer(tmp.path(), UNSUPPORTED_DEVCONTAINER).await;
     let mut loader = load_oci(
         tmp.path(),
         serde_json::json!({ "image": "alpine:latest", "runtime": UNUSABLE }),
@@ -652,7 +646,7 @@ async fn an_inline_isolation_object_outranks_the_devcontainer() {
 #[tokio::test]
 async fn isolation_false_suppresses_a_devcontainer_too() {
     let tmp = tempfile::tempdir().unwrap();
-    let workspace = workspace_with_devcontainer(tmp.path(), UNSUPPORTED_DEVCONTAINER);
+    let workspace = workspace_with_devcontainer(tmp.path(), UNSUPPORTED_DEVCONTAINER).await;
     let mut loader = load_oci(
         tmp.path(),
         serde_json::json!({ "image": "alpine:latest", "runtime": UNUSABLE }),
@@ -678,7 +672,7 @@ async fn isolation_false_suppresses_a_devcontainer_too() {
 #[tokio::test]
 async fn a_devcontainer_alone_does_not_containerize_a_project_that_never_asked() {
     let tmp = tempfile::tempdir().unwrap();
-    let workspace = workspace_with_devcontainer(tmp.path(), UNSUPPORTED_DEVCONTAINER);
+    let workspace = workspace_with_devcontainer(tmp.path(), UNSUPPORTED_DEVCONTAINER).await;
     let mut loader = load_oci(tmp.path(), serde_json::Value::Null).await;
 
     start_session(&mut loader, "dc-unasked", &workspace).await;
@@ -701,7 +695,7 @@ async fn a_devcontainer_alone_does_not_containerize_a_project_that_never_asked()
 #[tokio::test]
 async fn devcontainer_true_opts_a_project_in_with_no_image_configured() {
     let tmp = tempfile::tempdir().unwrap();
-    let workspace = workspace_with_devcontainer(tmp.path(), UNSUPPORTED_DEVCONTAINER);
+    let workspace = workspace_with_devcontainer(tmp.path(), UNSUPPORTED_DEVCONTAINER).await;
     let mut loader = load_oci(
         tmp.path(),
         serde_json::json!({ "devcontainer": true, "runtime": UNUSABLE }),

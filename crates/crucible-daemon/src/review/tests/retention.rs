@@ -3,21 +3,6 @@
 
 use super::*;
 
-async fn git_out(dir: &Path, args: &[&str]) -> String {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .await
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    String::from_utf8_lossy(&out.stdout).into_owned()
-}
-
 /// Defect 14, with its own negative control. `write-tree` output is reachable
 /// from no ref, so the second half of this test is what proves the first half
 /// is doing anything at all.
@@ -47,7 +32,7 @@ async fn a_keep_ref_survives_an_aggressive_gc_and_an_unkept_tree_does_not() {
         "gc kept an unreferenced tree, so this test proves nothing about the keep ref"
     );
     assert!(
-        git_out(dir.path(), &["fsck", "--no-progress"])
+        git(dir.path(), &["fsck", "--no-progress"])
             .await
             .trim()
             .is_empty(),
@@ -66,7 +51,7 @@ async fn a_keep_ref_is_invisible_to_git_log_all() {
     let tree = TreeSha::new(workspace_snapshot::capture_tree(dir.path()).await.unwrap());
     git::update_keep(dir.path(), "sess", &[tree]).await.unwrap();
 
-    let log = git_out(dir.path(), &["log", "--all", "--format=%s"]).await;
+    let log = git(dir.path(), &["log", "--all", "--format=%s"]).await;
     assert_eq!(
         log.lines().collect::<Vec<_>>(),
         vec!["init"],

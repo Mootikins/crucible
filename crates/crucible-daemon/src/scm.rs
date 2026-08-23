@@ -205,71 +205,99 @@ pub fn resolve_session_scratch_dir(
 /// string). The `--` separator guarantees `url` and `dest` can't be read as
 /// flags. No timeout and no credential handling — cloning uses git's ambient
 /// auth (ssh-agent / credential helper). On failure the error carries the last
-/// ~10 lines of git's stderr.
+/// 10 lines of git's stderr.
 pub async fn clone_repo(url: &str, dest: &Path) -> Result<(), ScmError> {
     if dest.exists() {
         return Err(ScmError::DestExists(dest.to_string_lossy().to_string()));
     }
+    // `run_git` needs a directory that exists. The clone target does not, so
+    // git runs in the target's parent with an absolute target path.
+    let dest = std::path::absolute(dest)?;
+    let parent = dest.parent().unwrap_or(&dest);
+    std::fs::create_dir_all(parent)?;
     let dest_str = dest.to_string_lossy().to_string();
-    let output = Command::new("git")
-        .args(["clone", "--", url, &dest_str])
-        .output()
-        .await?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let tail = stderr
-            .lines()
-            .rev()
-            .take(10)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect::<Vec<_>>()
-            .join("\n");
-        return Err(ScmError::Git("clone".to_string(), tail.trim().to_string()));
+    let opts = GitOpts {
+        stderr_tail: Some(10),
+        ..GitOpts::default()
+    };
+    match run_git(parent, &["clone", "--", url, &dest_str], opts).await {
+        Ok(_) => Ok(()),
+        Err(GitError::Spawn(e)) => Err(ScmError::Io(e)),
+        Err(GitError::Failed { stderr, .. }) => Err(ScmError::Git("clone".to_string(), stderr)),
     }
-    Ok(())
+}
+
+/// Per-run settings for [`run_git`].
+#[derive(Clone, Copy, Default)]
+pub(crate) struct GitOpts<'a> {
+    /// Points git at an alternate index through `GIT_INDEX_FILE`, so a caller
+    /// can stage a scratch tree without touching the user's index.
+    pub index_file: Option<&'a std::ffi::OsStr>,
+    /// Keep only this many trailing lines of stderr in a failure. `None`
+    /// keeps all of it.
+    pub stderr_tail: Option<usize>,
+}
+
+/// Why a [`run_git`] call produced no stdout.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum GitError {
+    /// The process did not start.
+    #[error(transparent)]
+    Spawn(#[from] std::io::Error),
+    /// The process started and exited non-zero. `stderr` is trimmed, and cut
+    /// to [`GitOpts::stderr_tail`] lines when the caller asked for that.
+    #[error("git {args} failed: {stderr}")]
+    Failed { args: String, stderr: String },
+}
+
+impl From<GitError> for std::io::Error {
+    fn from(e: GitError) -> Self {
+        match e {
+            GitError::Spawn(io) => io,
+            failed @ GitError::Failed { .. } => std::io::Error::other(failed.to_string()),
+        }
+    }
 }
 
 /// Run git in `dir` and return its stdout.
 ///
-/// `index_file` points git at an alternate index through `GIT_INDEX_FILE`, so
-/// a caller can stage a scratch tree without touching the user's index. A
-/// non-zero exit is an error that carries git's stderr.
+/// A non-zero exit is a [`GitError::Failed`] that carries git's stderr.
 pub(crate) async fn run_git(
     dir: &Path,
     args: &[&str],
-    index_file: Option<&std::ffi::OsStr>,
-) -> std::io::Result<String> {
+    opts: GitOpts<'_>,
+) -> Result<String, GitError> {
     let mut cmd = Command::new("git");
     cmd.args(args).current_dir(dir);
-    if let Some(index) = index_file {
+    if let Some(index) = opts.index_file {
         cmd.env("GIT_INDEX_FILE", index);
     }
     let out = cmd.output().await?;
     if !out.status.success() {
-        return Err(std::io::Error::other(format!(
-            "git {} failed: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&out.stderr).trim()
-        )));
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let stderr = match opts.stderr_tail {
+            Some(n) => tail_lines(&stderr, n),
+            None => stderr.trim().to_string(),
+        };
+        return Err(GitError::Failed {
+            args: args.join(" "),
+            stderr,
+        });
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// The last `n` lines of `text`, trimmed.
+fn tail_lines(text: &str, n: usize) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    let start = lines.len().saturating_sub(n);
+    lines[start..].join("\n").trim().to_string()
+}
+
 #[cfg(test)]
 mod tests {
-    /// Run git in a fixture repo, failing the test rather than the assertion
-    /// if git itself errors.
-    fn git(args: &[&str]) {
-        let status = std::process::Command::new("git")
-            .args(args)
-            .status()
-            .expect("run git");
-        assert!(status.success(), "git {args:?} failed");
-    }
-
     use super::*;
+    use crate::test_support::git;
 
     #[test]
     fn normalizes_https_and_ssh_urls_verbatim() {
@@ -426,6 +454,30 @@ mod tests {
         );
     }
 
+    /// `git --bogus` prints an "unknown option" line and then its whole
+    /// usage text. A tail option keeps only the last lines of that.
+    #[tokio::test]
+    async fn run_git_keeps_only_the_requested_stderr_tail() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let opts = GitOpts {
+            stderr_tail: Some(2),
+            ..GitOpts::default()
+        };
+        let err = run_git(tmp.path(), &["--bogus"], opts).await.unwrap_err();
+        let GitError::Failed { stderr, .. } = err else {
+            panic!("git ran, so the failure is a non-zero exit: {err}");
+        };
+        assert_eq!(stderr.lines().count(), 2, "{stderr}");
+
+        let err = run_git(tmp.path(), &["--bogus"], GitOpts::default())
+            .await
+            .unwrap_err();
+        let GitError::Failed { stderr, .. } = err else {
+            panic!("{err}");
+        };
+        assert!(stderr.lines().count() > 2, "{stderr}");
+    }
+
     /// End-to-end clone against a real local fixture repo. `clone_repo` is
     /// exercised directly with a `file://`-free local path — the URL-validation
     /// layer (which rejects local paths) is bypassed on purpose, matching how
@@ -438,21 +490,23 @@ mod tests {
         let src = tmp.path().join("src");
         std::fs::create_dir(&src).unwrap();
         let src_s = src.to_string_lossy().to_string();
-        git(&["-C", &src_s, "init", "-q", "-b", "master"]);
+        git(&src, &["init", "-q", "-b", "master"]).await;
         std::fs::write(src.join("README.md"), "hello").unwrap();
-        git(&["-C", &src_s, "add", "."]);
-        git(&[
-            "-C",
-            &src_s,
-            "-c",
-            "user.name=t",
-            "-c",
-            "user.email=t@t",
-            "commit",
-            "-q",
-            "-m",
-            "init",
-        ]);
+        git(&src, &["add", "."]).await;
+        git(
+            &src,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-q",
+                "-m",
+                "init",
+            ],
+        )
+        .await;
 
         // Clone it to a fresh destination that does not yet exist.
         let dest = tmp.path().join("clone");

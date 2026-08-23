@@ -20,7 +20,6 @@ use crucible_core::session::{
     CommentAuthor, ComposedHunk, HunkId, LineRange, ReviewState, SkipKind, Verdict,
 };
 use tempfile::TempDir;
-use tokio::process::Command;
 
 use super::*;
 use crate::test_support::{git, init_repo as repo};

@@ -17,44 +17,26 @@
 mod common;
 
 use common::{RpcConn, TestDaemon};
+use crucible_daemon::test_support::git;
 use serde_json::json;
 use std::path::{Path, PathBuf};
-
-/// Run git, failing the test rather than the assertion when git itself errors.
-fn git(args: &[&str]) {
-    let status = std::process::Command::new("git")
-        .args(args)
-        .status()
-        .expect("run git");
-    assert!(status.success(), "git {args:?} failed");
-}
-
-fn git_stdout(args: &[&str]) -> String {
-    let out = std::process::Command::new("git")
-        .args(args)
-        .output()
-        .expect("run git");
-    assert!(out.status.success(), "git {args:?} failed");
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
-}
 
 /// A repository on `master` with one commit and an unchecked-out `feat/x`.
 ///
 /// Returned as its own TempDir so the worktrees the plugin creates — which land
 /// under `{repo}/tree/` by default — are cleaned up with it.
-fn a_repo() -> (tempfile::TempDir, PathBuf) {
+async fn a_repo() -> (tempfile::TempDir, PathBuf) {
     let tmp = tempfile::tempdir().expect("tempdir");
     let repo = tmp.path().join("repo");
     std::fs::create_dir(&repo).unwrap();
-    let repo_s = repo.to_string_lossy().to_string();
 
-    git(&["-C", &repo_s, "init", "-q", "-b", "master"]);
-    git(&["-C", &repo_s, "config", "user.email", "test@example.com"]);
-    git(&["-C", &repo_s, "config", "user.name", "Test"]);
+    git(&repo, &["init", "-q", "-b", "master"]).await;
+    git(&repo, &["config", "user.email", "test@example.com"]).await;
+    git(&repo, &["config", "user.name", "Test"]).await;
     std::fs::write(repo.join("README.md"), "# test\n").unwrap();
-    git(&["-C", &repo_s, "add", "."]);
-    git(&["-C", &repo_s, "commit", "-q", "-m", "initial"]);
-    git(&["-C", &repo_s, "branch", "feat/x"]);
+    git(&repo, &["add", "."]).await;
+    git(&repo, &["commit", "-q", "-m", "initial"]).await;
+    git(&repo, &["branch", "feat/x"]).await;
 
     (tmp, repo)
 }
@@ -141,7 +123,7 @@ async fn the_shipped_worktree_plugin_declares_itself_on_the_workspace_axis() {
 #[tokio::test]
 #[ignore = "requires: cru binary"]
 async fn enumerating_targets_says_what_picking_each_branch_will_do() {
-    let (_tmp, repo) = a_repo();
+    let (_tmp, repo) = a_repo().await;
     let (_daemon, mut conn) = daemon_and_conn().await;
 
     let targets = worktree_targets(&mut conn, &repo).await;
@@ -170,7 +152,7 @@ async fn enumerating_targets_says_what_picking_each_branch_will_do() {
 #[tokio::test]
 #[ignore = "requires: cru binary"]
 async fn a_session_created_against_a_branch_is_born_in_that_branch_s_worktree() {
-    let (_tmp, repo) = a_repo();
+    let (_tmp, repo) = a_repo().await;
     let (_daemon, mut conn) = daemon_and_conn().await;
 
     let result = ok(&create_with_target(&mut conn, &repo, "worktree:feat/x", 3).await);
@@ -192,13 +174,9 @@ async fn a_session_created_against_a_branch_is_born_in_that_branch_s_worktree() 
         "a linked worktree's .git is a file, not a directory"
     );
     assert_eq!(
-        git_stdout(&[
-            "-C",
-            &expected.to_string_lossy(),
-            "rev-parse",
-            "--abbrev-ref",
-            "HEAD"
-        ]),
+        git(&expected, &["rev-parse", "--abbrev-ref", "HEAD"])
+            .await
+            .trim(),
         "feat/x",
         "the worktree must be checked out on the branch that was asked for"
     );
@@ -211,7 +189,7 @@ async fn a_session_created_against_a_branch_is_born_in_that_branch_s_worktree() 
 #[tokio::test]
 #[ignore = "requires: cru binary"]
 async fn a_second_session_on_the_same_branch_reuses_the_checkout() {
-    let (_tmp, repo) = a_repo();
+    let (_tmp, repo) = a_repo().await;
     let (_daemon, mut conn) = daemon_and_conn().await;
 
     let first = ok(&create_with_target(&mut conn, &repo, "worktree:feat/x", 4).await);
@@ -228,7 +206,7 @@ async fn a_second_session_on_the_same_branch_reuses_the_checkout() {
 #[tokio::test]
 #[ignore = "requires: cru binary"]
 async fn a_name_no_branch_has_yet_becomes_a_new_branch_and_worktree() {
-    let (_tmp, repo) = a_repo();
+    let (_tmp, repo) = a_repo().await;
     let (_daemon, mut conn) = daemon_and_conn().await;
 
     let result = ok(&create_with_target(&mut conn, &repo, "worktree:brand-new", 6).await);
@@ -236,13 +214,9 @@ async fn a_name_no_branch_has_yet_becomes_a_new_branch_and_worktree() {
 
     assert_eq!(result["workspace"], *expected.to_string_lossy());
     assert_eq!(
-        git_stdout(&[
-            "-C",
-            &expected.to_string_lossy(),
-            "rev-parse",
-            "--abbrev-ref",
-            "HEAD"
-        ]),
+        git(&expected, &["rev-parse", "--abbrev-ref", "HEAD"])
+            .await
+            .trim(),
         "brand-new"
     );
 }
@@ -256,7 +230,7 @@ async fn a_name_no_branch_has_yet_becomes_a_new_branch_and_worktree() {
 #[tokio::test]
 #[ignore = "requires: cru binary"]
 async fn a_target_the_provider_refuses_refuses_the_session() {
-    let (_tmp, repo) = a_repo();
+    let (_tmp, repo) = a_repo().await;
     let (_daemon, mut conn) = daemon_and_conn().await;
 
     // `..` would escape the destination template; the plugin rejects the name
@@ -280,7 +254,7 @@ async fn a_target_the_provider_refuses_refuses_the_session() {
 #[tokio::test]
 #[ignore = "requires: cru binary"]
 async fn a_target_naming_a_provider_nobody_has_refuses_the_session() {
-    let (_tmp, repo) = a_repo();
+    let (_tmp, repo) = a_repo().await;
     let (_daemon, mut conn) = daemon_and_conn().await;
 
     let response = create_with_target(&mut conn, &repo, "nosuchplugin:main", 8).await;
@@ -295,7 +269,7 @@ async fn a_target_naming_a_provider_nobody_has_refuses_the_session() {
 #[tokio::test]
 #[ignore = "requires: cru binary"]
 async fn a_session_that_asks_for_no_target_is_created_against_the_workspace_given() {
-    let (_tmp, repo) = a_repo();
+    let (_tmp, repo) = a_repo().await;
     let (_daemon, mut conn) = daemon_and_conn().await;
 
     let result = ok(&conn
