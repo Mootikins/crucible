@@ -37,7 +37,6 @@
 #![warn(clippy::all)]
 #![deny(unsafe_code)]
 #![allow(
-    clippy::ptr_arg,
     clippy::field_reassign_with_default,
     clippy::stable_sort_primitive,
     clippy::assertions_on_constants,

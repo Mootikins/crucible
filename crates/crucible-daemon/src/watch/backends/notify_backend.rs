@@ -22,8 +22,8 @@ pub struct NotifyWatcher {
     debouncer: Option<Debouncer<RecommendedWatcher, RecommendedCache>>,
     /// Event sender
     event_sender: Option<mpsc::UnboundedSender<FileEvent>>,
-    /// Active watches
-    watches: std::collections::HashMap<String, WatchHandle>,
+    /// Watched paths, keyed by watch id.
+    watches: std::collections::HashMap<String, PathBuf>,
     /// Event filter (shared with debouncer callback)
     filter: Arc<RwLock<Option<EventFilter>>>,
 }
@@ -45,15 +45,21 @@ impl NotifyWatcher {
         }
     }
 
-    /// Initialize the watcher with event sender.
-    async fn initialize(&mut self, event_sender: mpsc::UnboundedSender<FileEvent>) -> Result<()> {
+    /// Build the debouncer that delays events by `delay`.
+    ///
+    /// `notify` debounces at its own level, so the delay is fixed when the
+    /// first watch creates the debouncer. Later watches reuse it.
+    async fn initialize(
+        &mut self,
+        event_sender: mpsc::UnboundedSender<FileEvent>,
+        delay: Duration,
+    ) -> Result<()> {
         let sender = event_sender.clone();
         let filter = self.filter.clone();
 
-        // Create debounced watcher
         let debouncer = new_debouncer(
-            Duration::from_millis(100), // Default debounce time
-            None,                       // Use default tick rate
+            delay,
+            None, // Use default tick rate
             move |result: DebounceEventResult| match result {
                 Ok(events) => {
                     // Get the filter once per batch (read lock)
@@ -180,11 +186,15 @@ impl NotifyWatcher {
             let sender = self.event_sender.clone().ok_or_else(|| {
                 Error::Internal("Event sender not set before calling watch".to_string())
             })?;
-            self.initialize(sender).await?;
+            let delay = Duration::from_millis(config.debounce.delay_ms);
+            self.initialize(sender, delay).await?;
         }
 
         let watch_id = config.id.clone();
-        let watch_handle = WatchHandle::new(path.clone());
+        let watch_handle = WatchHandle {
+            id: watch_id.clone(),
+            path: path.clone(),
+        };
 
         // Add path to notify watcher
         if let Some(ref mut debouncer) = self.debouncer {
@@ -199,38 +209,105 @@ impl NotifyWatcher {
                 .map_err(|e| Error::Watch(format!("Failed to watch path: {}", e)))?;
         }
 
-        self.watches.insert(watch_id.clone(), watch_handle.clone());
+        self.watches.insert(watch_id.clone(), path.clone());
         info!("Added notify watch: {} -> {}", watch_id, path.display());
 
         Ok(watch_handle)
     }
 
-    /// Stop the watch behind `handle`.
+    /// Stop the watch behind `handle`, keyed by its id like the other backends.
+    #[cfg(test)]
     pub async fn unwatch(&mut self, handle: WatchHandle) -> Result<()> {
-        debug!("Removing watch for: {}", handle.path.display());
-
-        // Find and remove watch by path
-        for watch_handle in self.watches.values() {
-            if watch_handle.path == handle.path {
-                // This is the watch to remove
-                if let Some(ref mut debouncer) = self.debouncer {
-                    debouncer
-                        .unwatch(&watch_handle.path)
-                        .map_err(|e| Error::Watch(format!("Failed to unwatch path: {}", e)))?;
-                }
-                break;
+        if self.watches.contains_key(&handle.id) {
+            if let Some(ref mut debouncer) = self.debouncer {
+                debouncer
+                    .unwatch(&handle.path)
+                    .map_err(|e| Error::Watch(format!("Failed to unwatch path: {}", e)))?;
             }
         }
-
-        // Remove from our tracking
-        self.watches.retain(|_, h| h.path != handle.path);
-        info!("Removed notify watch: {}", handle.path.display());
-
+        super::remove_watch(&mut self.watches, &handle, "notify");
         Ok(())
     }
 
     /// Every watch the backend holds.
+    #[cfg(test)]
     pub fn active_watches(&self) -> Vec<WatchHandle> {
-        self.watches.values().cloned().collect()
+        super::watch_handles(&self.watches, |path| path.as_path())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::watch::traits::DebounceConfig;
+    use tempfile::TempDir;
+
+    /// Build a watcher, or `None` when this box has no inotify instance left.
+    async fn watch_dirs(
+        dirs: &[(&str, &TempDir)],
+        debounce: DebounceConfig,
+    ) -> Option<(
+        NotifyWatcher,
+        Vec<WatchHandle>,
+        mpsc::UnboundedReceiver<FileEvent>,
+    )> {
+        let mut watcher = NotifyWatcher::new();
+        let (tx, rx) = mpsc::unbounded_channel();
+        watcher.set_event_sender(tx);
+        let mut handles = Vec::new();
+        for (id, dir) in dirs {
+            let config = WatchConfig::new(*id).with_debounce(debounce.clone());
+            match watcher.watch(dir.path().to_path_buf(), config).await {
+                Ok(handle) => handles.push(handle),
+                Err(e) if e.to_string().contains("os error 24") => {
+                    eprintln!("skip: inotify limit exhausted: {e}");
+                    return None;
+                }
+                Err(e) => panic!("watch failed: {e}"),
+            }
+        }
+        Some((watcher, handles, rx))
+    }
+
+    #[tokio::test]
+    async fn unwatch_removes_the_handle_by_id() {
+        let a = TempDir::new().unwrap();
+        let b = TempDir::new().unwrap();
+        let Some((mut watcher, handles, _rx)) =
+            watch_dirs(&[("a", &a), ("b", &b)], DebounceConfig::default()).await
+        else {
+            return;
+        };
+        assert_eq!(handles[0].id, "a");
+        assert_eq!(handles[1].id, "b");
+
+        watcher.unwatch(handles[0].clone()).await.unwrap();
+
+        let left = watcher.active_watches();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].id, "b");
+        assert_eq!(left[0].path, b.path());
+    }
+
+    #[tokio::test]
+    async fn first_watch_config_sets_the_debounce_delay() {
+        let dir = TempDir::new().unwrap();
+        let Some((_watcher, _handles, mut rx)) =
+            watch_dirs(&[("a", &dir)], DebounceConfig::new(600)).await
+        else {
+            return;
+        };
+
+        std::fs::write(dir.path().join("note.md"), "x").unwrap();
+
+        // The default delay is 100 ms, so a 600 ms delay holds the event
+        // past 250 ms.
+        let early = tokio::time::timeout(Duration::from_millis(250), rx.recv()).await;
+        assert!(early.is_err(), "event arrived before the debounce delay");
+        let late = tokio::time::timeout(Duration::from_secs(3), rx.recv()).await;
+        assert!(
+            late.is_ok(),
+            "event did not arrive after the debounce delay"
+        );
     }
 }

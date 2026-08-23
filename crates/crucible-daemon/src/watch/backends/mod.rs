@@ -22,15 +22,20 @@ pub use select::{select_optimal_backend, WatcherRequirements, WatcherUseCase};
 use crate::watch::error::Result;
 use crate::watch::events::FileEvent;
 use crate::watch::traits::{BackendCapabilities, WatchConfig, WatchHandle};
+#[cfg(test)]
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::path::Path;
+use std::path::PathBuf;
 use tokio::sync::mpsc;
+#[cfg(test)]
 use tracing::{debug, info, warn};
 
 /// Remove the watch behind `handle` from a backend's table, keyed by handle id.
 ///
-/// The polling and editor backends share this body. `backend` names the
-/// backend in the log lines.
+/// The three backends share this body. `backend` names the backend in the
+/// log lines.
+#[cfg(test)]
 fn remove_watch<S>(watches: &mut HashMap<String, S>, handle: &WatchHandle, backend: &str) {
     debug!("Removing {} watch for: {}", backend, handle.path.display());
     if watches.remove(&handle.id).is_some() {
@@ -43,6 +48,7 @@ fn remove_watch<S>(watches: &mut HashMap<String, S>, handle: &WatchHandle, backe
 /// Rebuild one `WatchHandle` per entry of a backend's table.
 ///
 /// `path_of` reads the watched path out of the backend's state type.
+#[cfg(test)]
 fn watch_handles<S>(
     watches: &HashMap<String, S>,
     path_of: impl Fn(&S) -> &Path,
@@ -168,11 +174,6 @@ impl Backend {
         self.kind().name()
     }
 
-    /// What the backend can do.
-    pub fn capabilities(&self) -> BackendCapabilities {
-        self.kind().capabilities()
-    }
-
     /// Set the channel the backend sends events on. Call this before `watch`.
     pub fn set_event_sender(&mut self, sender: mpsc::UnboundedSender<FileEvent>) {
         match self {
@@ -192,6 +193,10 @@ impl Backend {
     }
 
     /// Stop the watch behind `handle`.
+    ///
+    /// Production drops a whole backend to release its watches; see
+    /// `WatchManager::remove_watch_group`.
+    #[cfg(test)]
     pub async fn unwatch(&mut self, handle: WatchHandle) -> Result<()> {
         match self {
             Backend::Notify(w) => w.unwatch(handle).await,
@@ -201,6 +206,7 @@ impl Backend {
     }
 
     /// Every watch the backend holds.
+    #[cfg(test)]
     pub fn active_watches(&self) -> Vec<WatchHandle> {
         match self {
             Backend::Notify(w) => w.active_watches(),

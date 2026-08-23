@@ -7,7 +7,7 @@ use crate::watch::{
 };
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -18,7 +18,8 @@ use tracing::{debug, error, info, warn};
 struct WatchState {
     /// Watch configuration
     config: WatchConfig,
-    /// Path being watched
+    /// Path being watched. Only `active_watches` reads it.
+    #[cfg(test)]
     watched_path: PathBuf,
     /// Last known modification times for files
     file_states: HashMap<PathBuf, FileState>,
@@ -90,7 +91,6 @@ impl PollingWatcher {
             .ok_or_else(|| Error::Internal("Event sender not initialized".to_string()))?;
 
         let poll_interval = self.poll_interval;
-        let _watches_snapshot: HashMap<String, WatchState> = HashMap::new();
 
         let task = tokio::spawn(async move {
             let mut ticker = tokio::time::interval(poll_interval);
@@ -99,8 +99,7 @@ impl PollingWatcher {
             loop {
                 tokio::select! {
                     _ = ticker.tick() => {
-                        // Update watches snapshot (this would need proper synchronization)
-                        // For now, we'll use a simplified approach
+                        // The loop does not scan yet. `watch` scans once.
                     }
                     _ = shutdown_rx.recv() => {
                         info!("Polling task shutting down");
@@ -117,12 +116,11 @@ impl PollingWatcher {
     }
 
     /// Check for changes in a specific path.
-    async fn check_path_changes(&self, path: &PathBuf, watch_state: &mut WatchState) -> Result<()> {
+    async fn check_path_changes(&self, path: &Path, watch_state: &mut WatchState) -> Result<()> {
         let metadata = std::fs::metadata(path).map_err(Error::Io)?;
 
         let modified_time = metadata.modified().ok();
         let size = Some(metadata.len());
-        let _file_path = path.to_string_lossy().to_string();
 
         let current_state = FileState {
             modified_time,
@@ -134,17 +132,21 @@ impl PollingWatcher {
         match previous_state {
             None => {
                 // File is new
-                self.send_event(FileEventKind::Created, path.clone()).await;
+                self.send_event(FileEventKind::Created, path.to_path_buf())
+                    .await;
             }
             Some(prev) => {
                 // Check for modifications
                 if prev.modified_time != modified_time || prev.size != size {
-                    self.send_event(FileEventKind::Modified, path.clone()).await;
+                    self.send_event(FileEventKind::Modified, path.to_path_buf())
+                        .await;
                 }
             }
         }
 
-        watch_state.file_states.insert(path.clone(), current_state);
+        watch_state
+            .file_states
+            .insert(path.to_path_buf(), current_state);
         Ok(())
     }
 
@@ -163,7 +165,7 @@ impl PollingWatcher {
     /// Scan a directory recursively if configured.
     fn scan_directory<'a>(
         &'a self,
-        dir: &'a PathBuf,
+        dir: &'a Path,
         watch_state: &'a mut WatchState,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'a>> {
         Box::pin(async move {
@@ -209,7 +211,6 @@ impl PollingWatcher {
         }
 
         let watch_id = config.id.clone();
-        let _path_str = path.to_string_lossy().to_string();
         let watch_handle = WatchHandle {
             id: watch_id.clone(),
             path: path.clone(),
@@ -218,6 +219,7 @@ impl PollingWatcher {
         // Create initial watch state
         let mut watch_state = WatchState {
             config: config.clone(),
+            #[cfg(test)]
             watched_path: path.clone(),
             file_states: HashMap::new(),
         };
@@ -238,12 +240,14 @@ impl PollingWatcher {
     }
 
     /// Stop the watch behind `handle`.
+    #[cfg(test)]
     pub async fn unwatch(&mut self, handle: WatchHandle) -> Result<()> {
         super::remove_watch(&mut self.watches, &handle, "polling");
         Ok(())
     }
 
     /// Every watch the backend holds.
+    #[cfg(test)]
     pub fn active_watches(&self) -> Vec<WatchHandle> {
         super::watch_handles(&self.watches, |state| &state.watched_path)
     }

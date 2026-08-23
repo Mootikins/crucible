@@ -49,19 +49,12 @@ mod duration_serde {
     }
 }
 
-/// State information for an editor watch.
-#[derive(Debug, Clone)]
-struct EditorWatchState {
-    /// Path being watched
-    watched_path: PathBuf,
-}
-
 /// Editor integration backend for low-frequency file watching.
 pub struct EditorWatcher {
     /// Event sender
     event_sender: Option<mpsc::UnboundedSender<FileEvent>>,
-    /// Active watches
-    watches: HashMap<String, EditorWatchState>,
+    /// Watched paths, keyed by watch id.
+    watches: HashMap<String, PathBuf>,
     /// Background monitoring task
     monitor_task: Option<JoinHandle<()>>,
     /// Shutdown signal
@@ -151,25 +144,23 @@ impl EditorWatcher {
             path: path.clone(),
         };
 
-        let watch_state = EditorWatchState {
-            watched_path: path.clone(),
-        };
-
-        self.watches.insert(watch_id.clone(), watch_state);
+        self.watches.insert(watch_id.clone(), path.clone());
         info!("Added editor watch: {} -> {}", watch_id, path.display());
 
         Ok(watch_handle)
     }
 
     /// Stop the watch behind `handle`.
+    #[cfg(test)]
     pub async fn unwatch(&mut self, handle: WatchHandle) -> Result<()> {
         super::remove_watch(&mut self.watches, &handle, "editor");
         Ok(())
     }
 
     /// Every watch the backend holds.
+    #[cfg(test)]
     pub fn active_watches(&self) -> Vec<WatchHandle> {
-        super::watch_handles(&self.watches, |state| &state.watched_path)
+        super::watch_handles(&self.watches, |path| path.as_path())
     }
 }
 

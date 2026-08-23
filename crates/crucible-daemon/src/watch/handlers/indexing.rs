@@ -5,8 +5,6 @@
 //! to the event bus. Embedding generation is owned by the `NotePipeline`
 //! (`crucible-daemon::pipeline`), which parses and embeds notes on change.
 
-#![allow(clippy::ptr_arg)]
-
 use crate::watch::{
     error::{Error, Result},
     events::FileEvent,
@@ -14,7 +12,7 @@ use crate::watch::{
 };
 use async_trait::async_trait;
 use crucible_core::events::{EventEmitter, InternalSessionEvent, SessionEvent};
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
@@ -37,13 +35,13 @@ impl IndexingHandler {
     /// `INDEXABLE_EXTENSIONS` alone (`kiln_manager.rs`) and the notify backend
     /// applies it before any handler runs, so those three extensions were
     /// filtered out upstream of here.
-    fn should_index_file(&self, path: &PathBuf) -> bool {
+    fn should_index_file(&self, path: &Path) -> bool {
         crucible_core::kiln::is_indexable_file(path)
     }
 
     async fn index_file(
         &self,
-        path: &PathBuf,
+        path: &Path,
         _event_kind: crate::watch::events::FileEventKind,
     ) -> Result<()> {
         debug!("Indexing file: {}", path.display());
@@ -89,20 +87,20 @@ impl IndexingHandler {
         Ok(())
     }
 
-    async fn remove_file_index(&self, path: &PathBuf) -> Result<()> {
+    async fn remove_file_index(&self, path: &Path) -> Result<()> {
         debug!("Removing index for file: {}", path.display());
         Ok(())
     }
 
     /// Check if a file event should be processed (debouncing logic)
-    async fn should_process_file_event(&self, path: &PathBuf) -> bool {
+    async fn should_process_file_event(&self, path: &Path) -> bool {
         // Simple debouncing - in a real implementation, you'd track recent events
         // For now, always process supported files
         self.should_index_file(path)
     }
 
     /// Handle file move events (delete + create)
-    async fn handle_file_move(&self, from: &PathBuf, to: &PathBuf) -> Result<()> {
+    async fn handle_file_move(&self, from: &Path, to: &Path) -> Result<()> {
         debug!("Handling file move: {} -> {}", from.display(), to.display());
 
         // Remove old index

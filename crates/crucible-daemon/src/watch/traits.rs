@@ -38,6 +38,9 @@ pub struct WatchConfig {
     pub filter: Option<crate::watch::events::EventFilter>,
 
     /// Debouncing configuration.
+    ///
+    /// The notify backend builds its debouncer from the first watch it gets.
+    /// The polling backend waits for its poll interval instead.
     pub debounce: DebounceConfig,
 
     /// Additional backend-specific options.
@@ -111,12 +114,6 @@ impl DebounceConfig {
             max_batch_size: 100,
             deduplicate: true,
         }
-    }
-
-    /// Set maximum batch size.
-    pub fn with_max_batch_size(mut self, size: usize) -> Self {
-        self.max_batch_size = size;
-        self
     }
 }
 
