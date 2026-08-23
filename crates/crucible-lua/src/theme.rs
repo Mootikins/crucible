@@ -7,7 +7,7 @@
 //! [`load_theme_from_lua`] parses a Lua table string into a `ThemeConfig`,
 //! merging partial overrides onto the dark defaults.
 
-use crucible_oil::style::{AdaptiveColor, Color};
+use crucible_oil::style::{AdaptiveColor, Border, BorderChars, Color};
 use mlua::{FromLua, Lua, Result as LuaResult, Table, Value};
 use tracing::warn;
 
@@ -716,6 +716,15 @@ fn parse_adaptive_color(value: &Value) -> Option<AdaptiveColor> {
             let color = parse_color_string(&s.to_str().ok()?)?;
             Some(AdaptiveColor::from_single(color))
         }
+        other => adaptive_from_lua_structured(other),
+    }
+}
+
+/// The non-string authoring forms of an adaptive colour. The theme and the
+/// highlight surfaces share these; each keeps its own String arm, because the
+/// highlight surface also accepts palette names.
+pub(crate) fn adaptive_from_lua_structured(value: &Value) -> Option<AdaptiveColor> {
+    match value {
         // `fg = 4` — a bare integer is a terminal palette index, which is how
         // every other terminal config spells it.
         Value::Integer(n) => u8::try_from(*n)
@@ -939,15 +948,32 @@ impl ThemeSpinnerStyle {
 }
 
 impl BorderStyle {
+    /// The `single`, `heavy` and `none` aliases are the oil spellings, which
+    /// the geometry wire emits; the theme accepts them so one vocabulary
+    /// serves both surfaces.
     pub(crate) fn from_name(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "rounded" => Some(Self::Rounded),
-            "sharp" => Some(Self::Sharp),
+            "sharp" | "single" => Some(Self::Sharp),
             "double" => Some(Self::Double),
-            "thick" => Some(Self::Thick),
+            "thick" | "heavy" => Some(Self::Thick),
             "ascii" => Some(Self::Ascii),
-            "hidden" => Some(Self::Hidden),
+            "hidden" | "none" => Some(Self::Hidden),
             _ => None,
+        }
+    }
+
+    /// The oil border that draws this style. `Hidden` draws nothing.
+    pub fn to_border(self) -> Option<Border> {
+        match self {
+            Self::Rounded => Some(Border::Rounded),
+            Self::Sharp => Some(Border::Single),
+            Self::Double => Some(Border::Double),
+            Self::Thick => Some(Border::Heavy),
+            Self::Ascii => Some(Border::Custom(BorderChars::uniform(
+                '+', '-', '+', '|', '+', '-', '+', '|',
+            ))),
+            Self::Hidden => None,
         }
     }
 }

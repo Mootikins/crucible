@@ -80,13 +80,17 @@ fn adaptive_to_wire(c: AdaptiveColor) -> Value {
 fn adaptive_from_wire(v: &Value) -> Option<AdaptiveColor> {
     match v {
         Value::String(s) => crate::theme::parse_color_string(s).map(AdaptiveColor::from_single),
-        Value::Object(o) => {
-            let dark = crate::theme::parse_color_string(o.get("dark")?.as_str()?)?;
-            let light = crate::theme::parse_color_string(o.get("light")?.as_str()?)?;
-            Some(AdaptiveColor { dark, light })
-        }
+        Value::Object(o) => adaptive_pair_from_wire(o),
         _ => None,
     }
+}
+
+/// The `{dark, light}` wire object. The theme colours and the highlight
+/// groups share this form.
+pub(crate) fn adaptive_pair_from_wire(o: &Map<String, Value>) -> Option<AdaptiveColor> {
+    let dark = crate::theme::parse_color_string(o.get("dark")?.as_str()?)?;
+    let light = crate::theme::parse_color_string(o.get("light")?.as_str()?)?;
+    Some(AdaptiveColor { dark, light })
 }
 
 /// Generates both directions from one field list. Adding a color to

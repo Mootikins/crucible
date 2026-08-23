@@ -23,6 +23,7 @@
 //! That is the difference between a surface a theme chose not to touch and one
 //! it blanked.
 
+use crate::theme::BorderStyle;
 use crucible_oil::style::{Border, BorderChars, Padding};
 use mlua::{Lua, Table, Value};
 use serde_json::{json, Map, Value as Json};
@@ -76,16 +77,13 @@ pub struct UiGeometry {
 // Borders
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Parse a border from a preset name.
+/// Parse a border from a preset name. The names are the theme `border_style`
+/// names, so one vocabulary serves both surfaces.
 fn border_from_name(s: &str) -> Option<Border> {
-    match s.to_lowercase().as_str() {
-        "none" | "hidden" => None,
-        "single" | "sharp" => Some(Border::Single),
-        "double" => Some(Border::Double),
-        "rounded" => Some(Border::Rounded),
-        "heavy" | "thick" => Some(Border::Heavy),
-        other => {
-            tracing::warn!("unknown border style '{other}'; keeping the built-in");
+    match BorderStyle::from_name(s) {
+        Some(style) => style.to_border(),
+        None => {
+            tracing::warn!("unknown border style '{s}'; keeping the built-in");
             None
         }
     }
@@ -396,6 +394,19 @@ mod tests {
     fn a_preset_border_name_resolves() {
         let g = setup(r#"return { popup = { border = "rounded" } }"#);
         assert_eq!(g.popup.border, Some(Border::Rounded));
+    }
+
+    /// The geometry border names are the theme `border_style` names, so a
+    /// theme author uses one vocabulary for both.
+    #[test]
+    fn the_ascii_border_style_resolves_to_plus_and_dash_cells() {
+        let g = setup(r#"return { popup = { border = "ascii" } }"#);
+        let Some(Border::Custom(c)) = g.popup.border else {
+            panic!("expected a custom border, got {:?}", g.popup.border);
+        };
+        assert_eq!(c.top_left, Some('+'));
+        assert_eq!(c.top, Some('-'));
+        assert_eq!(c.left, Some('|'));
     }
 
     #[test]

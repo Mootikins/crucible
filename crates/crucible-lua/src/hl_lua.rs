@@ -10,9 +10,8 @@
 
 use crate::error::LuaError;
 use crate::hl::{HlColor, HlGroup, HlRegistry};
-use crate::theme::parse_any_color;
-use crate::theme_wire::color_to_name;
-use crucible_oil::style::{AdaptiveColor, Color};
+use crate::theme::adaptive_from_lua_structured;
+use crate::theme_wire::{adaptive_pair_from_wire, color_to_name};
 use mlua::{Lua, Table, Value};
 use serde_json::{json, Map, Value as Json};
 
@@ -20,21 +19,7 @@ use serde_json::{json, Map, Value as Json};
 fn color_from_lua(table: &Table, key: &str) -> Option<HlColor> {
     match table.get::<Value>(key).ok()? {
         Value::String(s) => Some(HlColor::parse(&s.to_str().ok()?)),
-        // `fg = 4` — a bare integer is a terminal palette index.
-        Value::Integer(n) => u8::try_from(n)
-            .ok()
-            .map(|i| HlColor::Adaptive(AdaptiveColor::from_single(Color::Indexed(i)))),
-        Value::Table(t) => {
-            if let Ok(idx) = t.get::<u8>("idx") {
-                return Some(HlColor::Adaptive(AdaptiveColor::from_single(
-                    Color::Indexed(idx),
-                )));
-            }
-            let dark = parse_any_color(&t.get::<Value>("dark").ok()?)?;
-            let light = parse_any_color(&t.get::<Value>("light").ok()?)?;
-            Some(HlColor::Adaptive(AdaptiveColor { dark, light }))
-        }
-        _ => None,
+        other => adaptive_from_lua_structured(&other).map(HlColor::Adaptive),
     }
 }
 
@@ -97,11 +82,7 @@ fn color_to_wire(c: &HlColor) -> Json {
 fn color_from_wire(v: &Json) -> Option<HlColor> {
     match v {
         Json::String(s) => Some(HlColor::parse(s)),
-        Json::Object(o) => {
-            let dark = crate::theme::parse_color_string(o.get("dark")?.as_str()?)?;
-            let light = crate::theme::parse_color_string(o.get("light")?.as_str()?)?;
-            Some(HlColor::Adaptive(AdaptiveColor { dark, light }))
-        }
+        Json::Object(o) => adaptive_pair_from_wire(o).map(HlColor::Adaptive),
         _ => None,
     }
 }
@@ -170,6 +151,7 @@ mod tests {
     use super::*;
     use crate::hl::resolve;
     use crate::theme::ThemeConfig;
+    use crucible_oil::style::{AdaptiveColor, Color};
 
     fn lua_with_hl() -> Lua {
         let lua = Lua::new();
@@ -214,6 +196,44 @@ mod tests {
             .unwrap();
 
         let registry = crate::config::get_hl_registry();
+        assert_eq!(
+            registry.get("T").unwrap().fg,
+            Some(HlColor::Adaptive(AdaptiveColor {
+                dark: Color::White,
+                light: Color::Black
+            }))
+        );
+    }
+
+    /// The highlight surface reads the same integer and `{ idx = n }` forms
+    /// as the theme colours, through the same helper.
+    #[test]
+    fn palette_index_forms_match_the_theme_parser() {
+        let lua = lua_with_hl();
+        lua.load(r#"crucible.hl.set("I", { fg = 4, bg = { idx = 12 } })"#)
+            .exec()
+            .unwrap();
+
+        let registry = crate::config::get_hl_registry();
+        let group = registry.get("I").unwrap();
+        assert_eq!(
+            group.fg,
+            Some(HlColor::Adaptive(AdaptiveColor::from_single(
+                Color::Indexed(4)
+            )))
+        );
+        assert_eq!(
+            group.bg,
+            Some(HlColor::Adaptive(AdaptiveColor::from_single(
+                Color::Indexed(12)
+            )))
+        );
+    }
+
+    #[test]
+    fn an_adaptive_pair_crosses_the_wire_as_an_object() {
+        let wire = json!({ "T": { "fg": { "dark": "white", "light": "black" } } });
+        let registry = registry_from_wire(&wire);
         assert_eq!(
             registry.get("T").unwrap().fg,
             Some(HlColor::Adaptive(AdaptiveColor {
