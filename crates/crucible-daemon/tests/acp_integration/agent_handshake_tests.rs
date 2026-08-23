@@ -92,3 +92,103 @@ async fn error_injection_fails_handshake(make_config: fn() -> MockStdioAgentConf
     let result = client.connect_with_best_mcp(None).await;
     assert!(result.is_err(), "Should fail when errors are injected");
 }
+
+// -- session/close (plan W7, decision d) ------------------------------------
+
+/// The client sends `session/close` when the agent advertises the
+/// capability, and the agent answers it.
+#[tokio::test]
+async fn close_is_sent_when_the_agent_advertises_it() {
+    let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut config = MockStdioAgentConfig::opencode();
+    config.supports_session_close = true;
+    config.method_log = Some(log.clone());
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
+
+    let session = client
+        .connect_with_best_mcp(None)
+        .await
+        .expect("handshake succeeds");
+    assert!(
+        client.agent_supports_session_close(),
+        "the initialize reply advertises sessionCapabilities.close"
+    );
+
+    client
+        .close_session(session.id())
+        .await
+        .expect("session/close succeeds");
+    assert!(
+        log.lock().unwrap().iter().any(|m| m == "session/close"),
+        "the agent received session/close, got: {:?}",
+        log.lock().unwrap()
+    );
+}
+
+/// An agent without `session/close` answers `-32601`. That answer is a
+/// normal shutdown, not an error (Hermes behaves this way).
+#[tokio::test]
+async fn a_method_not_found_reply_to_close_is_not_an_error() {
+    let config = MockStdioAgentConfig::opencode();
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
+
+    let session = client
+        .connect_with_best_mcp(None)
+        .await
+        .expect("handshake succeeds");
+    assert!(
+        !client.agent_supports_session_close(),
+        "the default mock does not advertise sessionCapabilities.close"
+    );
+
+    client
+        .close_session(session.id())
+        .await
+        .expect("a -32601 reply to session/close is tolerated");
+}
+
+/// When the handle drops, the daemon sends `session/close` before it kills
+/// the agent process. The spawned mock binary records the closed session id.
+#[tokio::test]
+async fn close_is_sent_on_handle_drop_when_the_agent_advertises_it() {
+    use crucible_daemon::acp_handle::AcpAgentHandle;
+
+    let workspace = tempfile::TempDir::new().expect("temp workspace");
+    let capture = workspace.path().join("close-capture");
+    let agent_path = crate::support::mock_agent_path()
+        .to_string_lossy()
+        .into_owned();
+    let mut agent_config = crate::support::mock_session_agent(&agent_path);
+    agent_config
+        .env_overrides
+        .insert("CRU_MOCK_SESSION_CLOSE".into(), "1".into());
+    agent_config.env_overrides.insert(
+        "CRU_MOCK_CLOSE_CAPTURE".into(),
+        capture.to_string_lossy().into_owned(),
+    );
+
+    let handle = AcpAgentHandle::new(crate::support::mock_handle_params(
+        &agent_config,
+        workspace.path(),
+    ))
+    .await
+    .expect("ACP handshake succeeds");
+    drop(handle);
+
+    // The drop spawns the goodbye as a task; poll for the capture file.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let session_id = loop {
+        if let Ok(content) = std::fs::read_to_string(&capture) {
+            break content;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the agent never received session/close"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    };
+    assert!(
+        session_id.starts_with("mock-session-"),
+        "session/close names the agent session, got: {session_id}"
+    );
+}

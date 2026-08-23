@@ -3,6 +3,17 @@ use std::path::PathBuf;
 use super::CrucibleAcpClient;
 use crate::acp::{ClientError, Result};
 
+/// True when a JSON-RPC reply carries error code `-32601` (method not
+/// found). The lifecycle methods treat that reply as "the agent does not
+/// speak this method", not as a failure.
+fn is_method_not_found(response: &serde_json::Value) -> bool {
+    response
+        .get("error")
+        .and_then(|error| error.get("code"))
+        .and_then(serde_json::Value::as_i64)
+        == Some(-32601)
+}
+
 impl CrucibleAcpClient {
     /// Send InitializeRequest to agent
     ///
@@ -42,6 +53,14 @@ impl CrucibleAcpClient {
         // Store agent MCP capabilities for transport negotiation
         self.agent_mcp_capabilities =
             Some(init_response.agent_capabilities.mcp_capabilities.clone());
+
+        // Remember whether the agent takes `session/close`, so shutdown
+        // knows to say goodbye before it kills the process.
+        self.session_close_supported = init_response
+            .agent_capabilities
+            .session_capabilities
+            .close
+            .is_some();
 
         tracing::debug!(
             http_mcp = ?self.agent_mcp_capabilities.as_ref().map(|c| c.http),
@@ -177,6 +196,33 @@ impl CrucibleAcpClient {
         })?;
 
         Ok(serde_json::from_value(result.clone())?)
+    }
+
+    /// Send `session/close` so the agent frees the session's resources.
+    ///
+    /// A `-32601` reply is tolerated: an agent without the method (Hermes)
+    /// still exits on the pipe close that follows. Any other error reply is
+    /// reported to the caller.
+    pub async fn close_session(&mut self, session_id: impl Into<String>) -> Result<()> {
+        use agent_client_protocol::schema::v1::{ClientRequest, CloseSessionRequest, SessionId};
+
+        let request = CloseSessionRequest::new(SessionId::from(session_id.into()));
+        let response = self
+            .send_request(ClientRequest::CloseSessionRequest(request))
+            .await?;
+
+        if is_method_not_found(&response) {
+            tracing::debug!(
+                agent = %self.agent_name,
+                "agent has no session/close; shutdown continues without it"
+            );
+            return Ok(());
+        }
+
+        response
+            .get("result")
+            .ok_or_else(|| ClientError::Session(format!("session/close failed: {response}")))?;
+        Ok(())
     }
 
     /// Build a stdio MCP server configuration pointing to `cru mcp`.

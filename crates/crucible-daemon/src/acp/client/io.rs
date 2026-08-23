@@ -180,6 +180,12 @@ impl CrucibleAcpClient {
             agent_client_protocol::schema::v1::ClientRequest::LoadSessionRequest(req) => {
                 ("session/load", serde_json::to_value(req)?)
             }
+            agent_client_protocol::schema::v1::ClientRequest::ResumeSessionRequest(req) => {
+                ("session/resume", serde_json::to_value(req)?)
+            }
+            agent_client_protocol::schema::v1::ClientRequest::CloseSessionRequest(req) => {
+                ("session/close", serde_json::to_value(req)?)
+            }
             agent_client_protocol::schema::v1::ClientRequest::SetSessionModeRequest(req) => {
                 ("session/set_mode", serde_json::to_value(req)?)
             }

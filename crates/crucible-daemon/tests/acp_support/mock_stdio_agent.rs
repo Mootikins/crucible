@@ -73,6 +73,21 @@ pub struct MockStdioAgentConfig {
     /// Honored by `ThreadedMockAgent`; the stdio binary ignores it.
     #[allow(dead_code)]
     pub hold_turn_until_cancel: bool,
+    /// Advertise `sessionCapabilities.close` and answer `session/close`.
+    /// Off = the unknown-method fallthrough answers `-32601`, which is what
+    /// an agent without the method (Hermes) does. The spawned binary cannot
+    /// reach this field; it honors the `CRU_MOCK_SESSION_CLOSE` env hook.
+    pub supports_session_close: bool,
+    /// Advertise `sessionCapabilities.resume` and answer `session/resume`
+    /// by adopting the requested session id. Off = `-32601`, the reply that
+    /// makes the client fall back to `session/new`. The spawned binary
+    /// honors the `CRU_MOCK_SESSION_RESUME` env hook instead.
+    pub supports_session_resume: bool,
+    /// Record every method that reaches `handle_request`, so an in-process
+    /// test can assert which requests crossed the wire. `session/prompt`
+    /// and `session/cancel` take other paths and are not recorded.
+    #[allow(dead_code)]
+    pub method_log: Option<std::sync::Arc<std::sync::Mutex<Vec<String>>>>,
 }
 
 impl Default for MockStdioAgentConfig {
@@ -93,6 +108,9 @@ impl Default for MockStdioAgentConfig {
             stream_chunks: Vec::new(),
             stream_tool_call: false,
             hold_turn_until_cancel: false,
+            supports_session_close: false,
+            supports_session_resume: false,
+            method_log: None,
         }
     }
 }
@@ -116,6 +134,9 @@ impl MockStdioAgentConfig {
             stream_chunks: Vec::new(),
             stream_tool_call: false,
             hold_turn_until_cancel: false,
+            supports_session_close: false,
+            supports_session_resume: false,
+            method_log: None,
         }
     }
 
@@ -139,6 +160,9 @@ impl MockStdioAgentConfig {
             stream_chunks: Vec::new(),
             stream_tool_call: false,
             hold_turn_until_cancel: false,
+            supports_session_close: false,
+            supports_session_resume: false,
+            method_log: None,
         }
     }
 
@@ -160,6 +184,9 @@ impl MockStdioAgentConfig {
             stream_chunks: Vec::new(),
             stream_tool_call: false,
             hold_turn_until_cancel: false,
+            supports_session_close: false,
+            supports_session_resume: false,
+            method_log: None,
         }
     }
 
@@ -182,6 +209,9 @@ impl MockStdioAgentConfig {
             stream_chunks: Vec::new(),
             stream_tool_call: false,
             hold_turn_until_cancel: false,
+            supports_session_close: false,
+            supports_session_resume: false,
+            method_log: None,
         }
     }
 }
@@ -208,6 +238,15 @@ fn scripted_stop_reason_is_cancelled() -> bool {
 fn parse_usage_script(value: &str) -> Option<(u64, u64)> {
     let (used, size) = value.trim().split_once('/')?;
     Some((used.trim().parse().ok()?, size.trim().parse().ok()?))
+}
+
+/// Read an on/off env hook as a value, not a presence: `=0`, `=false` and
+/// the empty string mean off.
+fn env_flag(name: &str) -> bool {
+    env::var(name)
+        .as_deref()
+        .map(str::trim)
+        .is_ok_and(|value| !matches!(value, "" | "0" | "false"))
 }
 
 /// Mock stdio-based ACP agent
@@ -322,6 +361,19 @@ impl MockStdioAgent {
         }
     }
 
+    /// True when the flag names support for `session/close`. The env hook
+    /// serves the spawned binary; the config field serves in-process tests.
+    /// Read as a value, not a presence: `=0` means off.
+    fn close_supported(&self) -> bool {
+        self.config.supports_session_close || env_flag("CRU_MOCK_SESSION_CLOSE")
+    }
+
+    /// True when the flag names support for `session/resume`. Same grammar
+    /// as `close_supported`.
+    fn resume_supported(&self) -> bool {
+        self.config.supports_session_resume || env_flag("CRU_MOCK_SESSION_RESUME")
+    }
+
     /// Handle a JSON-RPC request and generate appropriate response
     pub fn handle_request(&mut self, request: &Value) -> Value {
         // Extract method from request
@@ -330,14 +382,58 @@ impl MockStdioAgent {
             .and_then(|m| m.as_str())
             .unwrap_or("unknown");
 
+        if let Some(log) = &self.config.method_log {
+            log.lock().unwrap().push(method.to_string());
+        }
+
         match method {
             "initialize" => self.handle_initialize(request),
             "session/new" => self.handle_new_session(request),
             "session/prompt" => self.handle_prompt(request),
             "session/set_config_option" => self.handle_set_config_option(request),
+            "session/close" if self.close_supported() => self.handle_close_session(request),
+            "session/resume" if self.resume_supported() => self.handle_resume_session(request),
             "authenticate" => self.handle_authenticate(request),
             _ => self.error_response(request, -32601, "Method not found"),
         }
+    }
+
+    /// Answer `session/close`. Records the closed session id to the file
+    /// named by `CRU_MOCK_CLOSE_CAPTURE` (when set), so a test that drops
+    /// the daemon handle can assert the goodbye reached the agent.
+    fn handle_close_session(&mut self, request: &Value) -> Value {
+        let session_id = request
+            .get("params")
+            .and_then(|p| p.get("sessionId"))
+            .and_then(|s| s.as_str())
+            .unwrap_or_default();
+        if let Ok(path) = env::var("CRU_MOCK_CLOSE_CAPTURE") {
+            let _ = fs::write(path, session_id);
+        }
+        self.session_id = None;
+        json!({
+            "jsonrpc": "2.0",
+            "id": request.get("id"),
+            "result": {}
+        })
+    }
+
+    /// Answer `session/resume` by adopting the requested session id, the way
+    /// a real agent continues an existing conversation. The reply is the
+    /// minimal `ResumeSessionResponse`: no modes, no config options.
+    fn handle_resume_session(&mut self, request: &Value) -> Value {
+        let session_id = request
+            .get("params")
+            .and_then(|p| p.get("sessionId"))
+            .and_then(|s| s.as_str())
+            .unwrap_or_default()
+            .to_string();
+        self.session_id = Some(session_id);
+        json!({
+            "jsonrpc": "2.0",
+            "id": request.get("id"),
+            "result": {}
+        })
     }
 
     /// Handle `session/set_config_option`. Captures `configId=value` to the
@@ -413,13 +509,24 @@ impl MockStdioAgent {
         // Serialize auth_methods first for JSON construction
         let auth_methods_json = serde_json::to_value(&auth_methods).unwrap();
 
+        // Advertise the session lifecycle methods the flags turn on.
+        // `{}` means supported; an absent key means not advertised.
+        let mut session_capabilities = serde_json::Map::new();
+        if self.close_supported() {
+            session_capabilities.insert("close".to_string(), json!({}));
+        }
+        if self.resume_supported() {
+            session_capabilities.insert("resume".to_string(), json!({}));
+        }
+
         let response: InitializeResponse = serde_json::from_value(json!({
             "protocolVersion": self.config.protocol_version,
             "agentCapabilities": {
                 "mcpCapabilities": {
                     "http": self.config.mcp_http,
                     "sse": self.config.mcp_sse
-                }
+                },
+                "sessionCapabilities": session_capabilities
             },
             "authMethods": auth_methods_json,
             "agentInfo": {

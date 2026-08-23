@@ -767,7 +767,24 @@ impl Drop for AcpAgentHandle {
         // is SIGKILLed via kill_on_drop (pipe close alone only sends EOF).
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(async move {
-                if let Some(client) = client_arc.lock().await.take() {
+                if let Some(mut client) = client_arc.lock().await.take() {
+                    // Say goodbye first: `session/close` lets the agent free
+                    // the session (plan W7, decision d). The timeout keeps a
+                    // hung agent from delaying its own SIGKILL, which the
+                    // drop below performs. A refusal is only logged — the
+                    // agent dies either way.
+                    if let (Some(id), true) =
+                        (session_id.as_deref(), client.agent_supports_session_close())
+                    {
+                        let close = client.close_session(id);
+                        match tokio::time::timeout(std::time::Duration::from_secs(2), close).await {
+                            Ok(Ok(())) => debug!(agent = %agent, "session/close acknowledged"),
+                            Ok(Err(e)) => {
+                                debug!(agent = %agent, error = %e, "session/close refused")
+                            }
+                            Err(_) => debug!(agent = %agent, "session/close timed out"),
+                        }
+                    }
                     drop(client);
                     info!(agent = %agent, session_id = ?session_id, "ACP session terminated");
                 }

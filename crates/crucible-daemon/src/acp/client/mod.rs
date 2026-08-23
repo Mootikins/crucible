@@ -84,6 +84,9 @@ pub struct CrucibleAcpClient {
     pub(super) permission_handler: Option<PermissionRequestHandler>,
     /// Agent's MCP transport capabilities, populated after initialize()
     pub(super) agent_mcp_capabilities: Option<agent_client_protocol::schema::v1::McpCapabilities>,
+    /// True when the agent advertised `sessionCapabilities.close` at
+    /// initialize. Gates the `session/close` goodbye on shutdown.
+    pub(super) session_close_supported: bool,
     /// Wire-level recorder. Populated automatically when
     /// `CRUCIBLE_ACP_RECORD_DIR` is set, otherwise `None`.
     pub(super) recorder: Option<recording::Recorder>,
@@ -109,6 +112,7 @@ impl std::fmt::Debug for CrucibleAcpClient {
             .field("available_commands", &self.available_commands.len())
             .field("permission_handler", &self.permission_handler.is_some())
             .field("agent_mcp_capabilities", &self.agent_mcp_capabilities)
+            .field("session_close_supported", &self.session_close_supported)
             .field("recorder", &self.recorder)
             .field("last_usage", &self.last_usage.is_some())
             .finish()
@@ -151,6 +155,7 @@ impl CrucibleAcpClient {
             available_commands: Vec::new(),
             permission_handler: None,
             agent_mcp_capabilities: None,
+            session_close_supported: false,
             recorder,
             last_usage: None,
         }
@@ -186,6 +191,14 @@ impl CrucibleAcpClient {
             .as_ref()
             .map(|c| c.http)
             .unwrap_or(false)
+    }
+
+    /// Whether the agent advertised `sessionCapabilities.close` during
+    /// initialization.
+    ///
+    /// Returns `false` if `initialize()` has not been called yet.
+    pub fn agent_supports_session_close(&self) -> bool {
+        self.session_close_supported
     }
 
     /// Whether the agent reported SSE MCP transport support during initialization.

@@ -46,6 +46,7 @@ impl CrucibleAcpClient {
             available_commands: Vec::new(),
             permission_handler: None,
             agent_mcp_capabilities: None,
+            session_close_supported: false,
             recorder: None,
             last_usage: None,
         }
