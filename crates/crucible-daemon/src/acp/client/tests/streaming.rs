@@ -2,7 +2,7 @@ use super::test_path;
 use crate::acp::client::types::{ClientConfig, StreamingState};
 use crate::acp::client::CrucibleAcpClient;
 use crate::acp::streaming::{StreamingCallback, StreamingChunk};
-use agent_client_protocol::SessionNotification;
+use agent_client_protocol::schema::v1::SessionNotification;
 use crucible_core::types::acp::ToolCallInfo;
 use serde_json::json;
 
@@ -429,7 +429,7 @@ fn describe_rpc_error_stops_unwrapping_self_referential_payloads() {
 /// "Tool call failed" hides the only actionable part.
 #[test]
 fn failed_tool_error_surfaces_content_block_text() {
-    use agent_client_protocol::ToolCallStatus;
+    use agent_client_protocol::schema::v1::ToolCallStatus;
 
     let raw = json!([
         {"type": "text", "text": "MCP error -32602: File not found: Concepts/Target.md"}
@@ -444,7 +444,7 @@ fn failed_tool_error_surfaces_content_block_text() {
 /// An explicit `error` field still wins over content blocks.
 #[test]
 fn failed_tool_error_prefers_explicit_error_field() {
-    use agent_client_protocol::ToolCallStatus;
+    use agent_client_protocol::schema::v1::ToolCallStatus;
 
     let raw = json!({
         "error": "explicit reason",
@@ -457,7 +457,7 @@ fn failed_tool_error_prefers_explicit_error_field() {
 /// With nothing usable in the output, the generic label remains the floor.
 #[test]
 fn failed_tool_error_without_detail_falls_back_to_generic() {
-    use agent_client_protocol::ToolCallStatus;
+    use agent_client_protocol::schema::v1::ToolCallStatus;
 
     for raw in [
         None,
@@ -475,7 +475,7 @@ fn failed_tool_error_without_detail_falls_back_to_generic() {
 /// `describe_rpc_error`'s output — control characters stripped, length elided.
 #[test]
 fn failed_tool_error_text_is_sanitized_and_capped() {
-    use agent_client_protocol::ToolCallStatus;
+    use agent_client_protocol::schema::v1::ToolCallStatus;
 
     let hostile = format!("bad\x1b[31m\r{}", "x".repeat(4096));
     let raw = json!([{"type": "text", "text": hostile}]);

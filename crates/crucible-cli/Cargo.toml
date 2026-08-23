@@ -55,11 +55,7 @@ crucible-oil = { path = "../crucible-oil", default-features = false }
 # ACP agent mode: `cru acp` serves the internal agent over the Agent Client
 # Protocol on stdio. Feature-matched to crucible-daemon's host-side dependency
 # so cargo unifies to one build of the crate.
-agent-client-protocol = { version = "0.10.4", features = [
-    "unstable_session_model",
-    "unstable_session_close",
-] }
-tokio-util = { version = "0.7", features = ["compat"] }
+agent-client-protocol = "2.0.0"
 
 # Web UI server (`cru web`), optional behind the `web` feature
 crucible-web = { workspace = true, optional = true }
@@ -139,6 +135,8 @@ textwrap = "0.16.2"
 toml = { workspace = true }
 
 [dev-dependencies]
+# The `cru acp` initialize test joins tokio duplex pipes to the SDK byte streams.
+tokio-util = { version = "0.7", features = ["compat"] }
 crucible-cli = { path = ".", features = ["test-utils"] }
 # `EnumIter` over `chat_app::repl_command::ReplCommand`, so the table test
 # walks every variant the compiler knows. Dev-only: the derive is

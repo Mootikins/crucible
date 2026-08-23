@@ -7,7 +7,7 @@ use crate::acp::client::CrucibleAcpClient;
 // Test that initialize() method exists and sends messages
 #[tokio::test]
 async fn test_protocol_initialize_handshake() {
-    use agent_client_protocol::InitializeRequest;
+    use agent_client_protocol::schema::v1::InitializeRequest;
 
     let (cmd, args) = get_cat_command();
     let config = ClientConfig {
@@ -34,7 +34,7 @@ async fn test_protocol_initialize_handshake() {
 // Test that create_new_session() method exists and sends messages
 #[tokio::test]
 async fn test_protocol_new_session() {
-    use agent_client_protocol::NewSessionRequest;
+    use agent_client_protocol::schema::v1::NewSessionRequest;
 
     let (cmd, args) = get_cat_command();
     let config = ClientConfig {

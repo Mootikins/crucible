@@ -4,7 +4,7 @@
 //! event pump in [`super::agent`] consumes [`classify_event`] and drives the
 //! side effects (sending `session/update`, requesting permission).
 
-use agent_client_protocol::{
+use agent_client_protocol::schema::v1::{
     ContentBlock, ContentChunk, PermissionOption, PermissionOptionId, PermissionOptionKind,
     RequestPermissionOutcome, SessionUpdate, StopReason, TextContent, ToolCall, ToolCallContent,
     ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind,
@@ -422,9 +422,9 @@ mod tests {
     fn allow_once_maps_to_allow() {
         let req = InteractionRequest::Permission(PermRequest::bash(["ls"]));
         let outcome = RequestPermissionOutcome::Selected(
-            agent_client_protocol::SelectedPermissionOutcome::new(PermissionOptionId::new(
-                OPT_ALLOW_ONCE,
-            )),
+            agent_client_protocol::schema::v1::SelectedPermissionOutcome::new(
+                PermissionOptionId::new(OPT_ALLOW_ONCE),
+            ),
         );
         match outcome_to_interaction_response(&outcome, &req) {
             InteractionResponse::Permission(p) => {
@@ -439,9 +439,9 @@ mod tests {
     fn allow_always_carries_pattern_and_session_scope() {
         let req = InteractionRequest::Permission(PermRequest::bash(["cargo", "test"]));
         let outcome = RequestPermissionOutcome::Selected(
-            agent_client_protocol::SelectedPermissionOutcome::new(PermissionOptionId::new(
-                OPT_ALLOW_ALWAYS,
-            )),
+            agent_client_protocol::schema::v1::SelectedPermissionOutcome::new(
+                PermissionOptionId::new(OPT_ALLOW_ALWAYS),
+            ),
         );
         match outcome_to_interaction_response(&outcome, &req) {
             InteractionResponse::Permission(p) => {
@@ -457,9 +457,9 @@ mod tests {
     fn reject_once_maps_to_deny() {
         let req = InteractionRequest::Permission(PermRequest::bash(["ls"]));
         let outcome = RequestPermissionOutcome::Selected(
-            agent_client_protocol::SelectedPermissionOutcome::new(PermissionOptionId::new(
-                OPT_REJECT_ONCE,
-            )),
+            agent_client_protocol::schema::v1::SelectedPermissionOutcome::new(
+                PermissionOptionId::new(OPT_REJECT_ONCE),
+            ),
         );
         match outcome_to_interaction_response(&outcome, &req) {
             InteractionResponse::Permission(p) => assert!(!p.allowed),

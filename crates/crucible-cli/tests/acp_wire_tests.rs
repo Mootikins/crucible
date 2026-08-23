@@ -66,7 +66,10 @@ fn initialize_reply_on_the_wire_is_pinned() {
                         "embeddedContext": false
                     },
                     "mcpCapabilities": { "http": false, "sse": false },
-                    "sessionCapabilities": { "close": {} }
+                    "sessionCapabilities": { "close": {} },
+                    // Schema 1.5 adds the stable `auth` capability object.
+                    // SDK 0.10 (schema 0.11) did not write it.
+                    "auth": {}
                 },
                 "authMethods": []
             }

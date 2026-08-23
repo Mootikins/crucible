@@ -27,7 +27,9 @@ use tokio::process::{Child, ChildStdin, ChildStdout};
 /// Shared between send_request and send_prompt_with_callback to ensure unique IDs.
 static REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 
-use agent_client_protocol::{AvailableCommand, RequestPermissionOutcome, RequestPermissionRequest};
+use agent_client_protocol::schema::v1::{
+    AvailableCommand, RequestPermissionOutcome, RequestPermissionRequest,
+};
 
 mod connection;
 mod io;
@@ -80,14 +82,14 @@ pub struct CrucibleAcpClient {
     pub(super) available_commands: Vec<AvailableCommand>,
     pub(super) permission_handler: Option<PermissionRequestHandler>,
     /// Agent's MCP transport capabilities, populated after initialize()
-    pub(super) agent_mcp_capabilities: Option<agent_client_protocol::McpCapabilities>,
+    pub(super) agent_mcp_capabilities: Option<agent_client_protocol::schema::v1::McpCapabilities>,
     /// Wire-level recorder. Populated automatically when
     /// `CRUCIBLE_ACP_RECORD_DIR` is set, otherwise `None`.
     pub(super) recorder: Option<recording::Recorder>,
     /// Token usage from the most recent prompt response. Set by the
     /// streaming code when an ACP `PromptResponse` carries a `usage`
-    /// field (currently behind `unstable_session_usage` upstream — see
-    /// `client/usage.rs`). Consumed via `take_last_usage()`.
+    /// field (read from raw JSON — see `client/usage.rs`). Consumed via
+    /// `take_last_usage()`.
     pub(super) last_usage: Option<crucible_core::traits::llm::TokenUsage>,
 }
 

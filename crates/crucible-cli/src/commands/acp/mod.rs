@@ -35,11 +35,10 @@ mod agent;
 mod translate;
 
 use std::path::PathBuf;
-use std::rc::Rc;
+use std::sync::Arc;
 
-use agent_client_protocol::AgentSideConnection;
+use agent_client_protocol::Stdio;
 use anyhow::{Context, Result};
-use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::info;
 
 use crate::config::CliConfig;
@@ -61,28 +60,12 @@ pub async fn execute(
     resolve_kiln(&mut config, kiln_override, config_path)?;
     info!(kiln = %config.kiln_path.display(), "starting ACP agent (cru acp)");
 
-    // The ACP `Agent` trait is `?Send`; its serving machinery uses `spawn_local`
-    // and must run inside a `LocalSet`. The daemon RPC reader tasks are spawned
-    // on the outer multi-thread runtime independently, so this composes cleanly.
-    let local = tokio::task::LocalSet::new();
-    local
-        .run_until(async move {
-            let agent = Rc::new(CrucibleAcpAgent::new(config));
-
-            // ACP framing is line-delimited JSON on stdio. Wrap tokio handles as
-            // futures AsyncRead/AsyncWrite for the connection.
-            let incoming = tokio::io::stdin().compat();
-            let outgoing = tokio::io::stdout().compat_write();
-
-            let (conn, io_task) =
-                AgentSideConnection::new(agent.clone(), outgoing, incoming, |fut| {
-                    tokio::task::spawn_local(fut);
-                });
-            agent.set_connection(Rc::new(conn));
-
-            io_task.await.context("ACP stdio connection terminated")
-        })
+    // ACP framing is line-delimited JSON on stdio. The SDK transport reads
+    // stdin on a blocking thread; the daemon RPC tasks run on the tokio runtime.
+    Arc::new(CrucibleAcpAgent::new(config))
+        .serve(Stdio::new())
         .await
+        .context("ACP stdio connection terminated")
 }
 
 /// Decide which kiln this ACP session attaches, and make sure it has a *name*.
@@ -135,85 +118,46 @@ fn resolve_kiln(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agent_client_protocol::{
-        Agent, Client, ClientSideConnection, InitializeRequest, ProtocolVersion,
-        RequestPermissionRequest, RequestPermissionResponse, SessionNotification,
-    };
+    use agent_client_protocol::schema::v1::InitializeRequest;
+    use agent_client_protocol::schema::ProtocolVersion;
+    use agent_client_protocol::{ByteStreams, Client};
     use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-    /// Minimal host-side client: the initialize round-trip never calls back into
-    /// the client, so both methods are unreachable in this test.
-    struct NoopClient;
-
-    #[async_trait::async_trait(?Send)]
-    impl Client for NoopClient {
-        async fn request_permission(
-            &self,
-            _args: RequestPermissionRequest,
-        ) -> agent_client_protocol::Result<RequestPermissionResponse> {
-            Err(agent_client_protocol::Error::method_not_found())
-        }
-        async fn session_notification(
-            &self,
-            _args: SessionNotification,
-        ) -> agent_client_protocol::Result<()> {
-            Ok(())
-        }
-    }
-
     // Drives the real ACP framing over an in-process duplex pipe: a host-side
-    // `ClientSideConnection` calls `initialize` on our `CrucibleAcpAgent` served
-    // via `AgentSideConnection`. Exercises the LocalSet/spawn_local serving path
-    // without needing a daemon (initialize is daemon-independent).
+    // client sends `initialize` to our `CrucibleAcpAgent` served through the
+    // SDK builder. Initialize needs no daemon.
     #[tokio::test]
     async fn initialize_round_trip_over_stdio_framing() {
-        let local = tokio::task::LocalSet::new();
-        local
-            .run_until(async {
-                let (agent_end, client_end) = tokio::io::duplex(16 * 1024);
-                let (a_read, a_write) = tokio::io::split(agent_end);
-                let (c_read, c_write) = tokio::io::split(client_end);
+        let (agent_end, client_end) = tokio::io::duplex(16 * 1024);
+        let (a_read, a_write) = tokio::io::split(agent_end);
+        let (c_read, c_write) = tokio::io::split(client_end);
 
-                let agent = Rc::new(CrucibleAcpAgent::new(CliConfig::default()));
-                let (a_conn, a_io) = AgentSideConnection::new(
-                    agent.clone(),
-                    a_write.compat_write(),
-                    a_read.compat(),
-                    |fut| {
-                        tokio::task::spawn_local(fut);
-                    },
-                );
-                agent.set_connection(Rc::new(a_conn));
-                tokio::task::spawn_local(async move {
-                    let _ = a_io.await;
-                });
+        let agent = Arc::new(CrucibleAcpAgent::new(CliConfig::default()));
+        let serving =
+            tokio::spawn(agent.serve(ByteStreams::new(a_write.compat_write(), a_read.compat())));
 
-                let (client, c_io) = ClientSideConnection::new(
-                    NoopClient,
-                    c_write.compat_write(),
-                    c_read.compat(),
-                    |fut| {
-                        tokio::task::spawn_local(fut);
-                    },
-                );
-                tokio::task::spawn_local(async move {
-                    let _ = c_io.await;
-                });
+        let resp = Client
+            .builder()
+            .connect_with(
+                ByteStreams::new(c_write.compat_write(), c_read.compat()),
+                async |cx| {
+                    cx.send_request(InitializeRequest::new(ProtocolVersion::V1))
+                        .block_task()
+                        .await
+                },
+            )
+            .await
+            .expect("initialize should succeed");
+        assert_eq!(resp.protocol_version, ProtocolVersion::V1);
+        assert!(
+            resp.agent_capabilities.load_session,
+            "agent should advertise load_session"
+        );
+        assert!(
+            resp.agent_capabilities.session_capabilities.close.is_some(),
+            "agent should advertise session/close support"
+        );
 
-                let resp = client
-                    .initialize(InitializeRequest::new(ProtocolVersion::V1))
-                    .await
-                    .expect("initialize should succeed");
-                assert_eq!(resp.protocol_version, ProtocolVersion::V1);
-                assert!(
-                    resp.agent_capabilities.load_session,
-                    "agent should advertise load_session"
-                );
-                assert!(
-                    resp.agent_capabilities.session_capabilities.close.is_some(),
-                    "agent should advertise session/close support"
-                );
-            })
-            .await;
+        serving.abort();
     }
 }

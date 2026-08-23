@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use agent_client_protocol::{ContentBlock, SessionNotification, SessionUpdate};
+use agent_client_protocol::schema::v1::{ContentBlock, SessionNotification, SessionUpdate};
 
 use crate::acp::client::types::ClientConfig;
 use crate::acp::client::CrucibleAcpClient;

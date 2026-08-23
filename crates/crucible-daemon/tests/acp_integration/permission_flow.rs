@@ -53,7 +53,10 @@ fn client_with_custom_transport(
     (client, BufReader::new(agent_read), agent_write)
 }
 
-fn make_prompt_request(session_id: &str, text: &str) -> agent_client_protocol::PromptRequest {
+fn make_prompt_request(
+    session_id: &str,
+    text: &str,
+) -> agent_client_protocol::schema::v1::PromptRequest {
     serde_json::from_value(json!({
         "sessionId": session_id,
         "prompt": [{"type": "text", "text": text}],
@@ -185,14 +188,14 @@ fn always_approve_handler() -> PermissionRequestHandler {
                 .find(|o| {
                     matches!(
                         o.kind,
-                        agent_client_protocol::PermissionOptionKind::AllowOnce
-                            | agent_client_protocol::PermissionOptionKind::AllowAlways
+                        agent_client_protocol::schema::v1::PermissionOptionKind::AllowOnce
+                            | agent_client_protocol::schema::v1::PermissionOptionKind::AllowAlways
                     )
                 })
                 .map(|o| o.option_id.clone())
                 .unwrap_or_else(|| request.options[0].option_id.clone());
-            agent_client_protocol::RequestPermissionOutcome::Selected(
-                agent_client_protocol::SelectedPermissionOutcome::new(option_id),
+            agent_client_protocol::schema::v1::RequestPermissionOutcome::Selected(
+                agent_client_protocol::schema::v1::SelectedPermissionOutcome::new(option_id),
             )
         })
     })
@@ -201,7 +204,9 @@ fn always_approve_handler() -> PermissionRequestHandler {
 /// Build a permission handler that always denies (cancels) the request.
 fn always_deny_handler() -> PermissionRequestHandler {
     Arc::new(|_request| {
-        Box::pin(async move { agent_client_protocol::RequestPermissionOutcome::Cancelled })
+        Box::pin(
+            async move { agent_client_protocol::schema::v1::RequestPermissionOutcome::Cancelled },
+        )
     })
 }
 
@@ -209,9 +214,9 @@ fn always_deny_handler() -> PermissionRequestHandler {
 /// then approves by selecting the first option.
 fn recording_handler() -> (
     PermissionRequestHandler,
-    Arc<Mutex<Vec<agent_client_protocol::RequestPermissionRequest>>>,
+    Arc<Mutex<Vec<agent_client_protocol::schema::v1::RequestPermissionRequest>>>,
 ) {
-    let recorded: Arc<Mutex<Vec<agent_client_protocol::RequestPermissionRequest>>> =
+    let recorded: Arc<Mutex<Vec<agent_client_protocol::schema::v1::RequestPermissionRequest>>> =
         Arc::new(Mutex::new(Vec::new()));
     let recorded_clone = Arc::clone(&recorded);
 
@@ -220,8 +225,8 @@ fn recording_handler() -> (
         Box::pin(async move {
             recorded.lock().unwrap().push(request.clone());
             let option_id = request.options[0].option_id.clone();
-            agent_client_protocol::RequestPermissionOutcome::Selected(
-                agent_client_protocol::SelectedPermissionOutcome::new(option_id),
+            agent_client_protocol::schema::v1::RequestPermissionOutcome::Selected(
+                agent_client_protocol::schema::v1::SelectedPermissionOutcome::new(option_id),
             )
         })
     });
@@ -288,12 +293,12 @@ async fn acp_permission_handler_receives_correct_request_details() {
     assert_eq!(req.options[0].option_id.0.as_ref(), "allow_once");
     assert_eq!(
         req.options[0].kind,
-        agent_client_protocol::PermissionOptionKind::AllowOnce
+        agent_client_protocol::schema::v1::PermissionOptionKind::AllowOnce
     );
     assert_eq!(req.options[1].option_id.0.as_ref(), "reject_once");
     assert_eq!(
         req.options[1].kind,
-        agent_client_protocol::PermissionOptionKind::RejectOnce
+        agent_client_protocol::schema::v1::PermissionOptionKind::RejectOnce
     );
 }
 
@@ -454,7 +459,7 @@ async fn acp_permission_deny_handler_invoked() {
         let denied = denied_clone.clone();
         Box::pin(async move {
             *denied.lock().unwrap() = true;
-            agent_client_protocol::RequestPermissionOutcome::Cancelled
+            agent_client_protocol::schema::v1::RequestPermissionOutcome::Cancelled
         })
     });
     client = client.with_permission_handler(handler);

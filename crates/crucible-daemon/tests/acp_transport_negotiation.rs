@@ -37,7 +37,7 @@ async fn capabilities_stored_after_initialize() {
     );
 
     // Perform initialize (but not full connect — just the init step)
-    use agent_client_protocol::InitializeRequest;
+    use agent_client_protocol::schema::v1::InitializeRequest;
     let init_request = InitializeRequest::new(1u16.into());
     let init_response = client
         .initialize(init_request)

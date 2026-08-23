@@ -31,8 +31,8 @@ use crate::agent_manager::vm_pass::fold_vms;
 /// this outright. Reaching it means upgrading `agent-client-protocol` 0.10 →
 /// 2.0 and opting into a field its own docs call removable, so this is the
 /// one place to change when that lands.
-fn acp_tool_name(fields: &agent_client_protocol::ToolCallUpdateFields) -> String {
-    use agent_client_protocol::ToolKind;
+fn acp_tool_name(fields: &agent_client_protocol::schema::v1::ToolCallUpdateFields) -> String {
+    use agent_client_protocol::schema::v1::ToolKind;
     match fields.kind {
         Some(ToolKind::Read) => "read",
         Some(ToolKind::Edit) => "edit",
@@ -121,8 +121,10 @@ fn engine_input(tool_name: &str, args: &serde_json::Value) -> String {
 /// `AllowAlways` only when the decision is one the user asked to be
 /// remembered — a saved pattern, or a scope wider than this single call.
 /// Anything else that was allowed is allowed once.
-fn outcome_kind(response: &PermResponse) -> agent_client_protocol::PermissionOptionKind {
-    use agent_client_protocol::PermissionOptionKind;
+fn outcome_kind(
+    response: &PermResponse,
+) -> agent_client_protocol::schema::v1::PermissionOptionKind {
+    use agent_client_protocol::schema::v1::PermissionOptionKind;
 
     if !response.allowed {
         return PermissionOptionKind::RejectOnce;
@@ -231,12 +233,12 @@ impl AgentManager {
         let tool_policy = tool_policy.map(Arc::new);
 
         Arc::new(
-            move |request: agent_client_protocol::RequestPermissionRequest| {
+            move |request: agent_client_protocol::schema::v1::RequestPermissionRequest| {
                 let gate = gate.clone();
                 let tool_policy = tool_policy.clone();
 
                 Box::pin(async move {
-                    use agent_client_protocol::{
+                    use agent_client_protocol::schema::v1::{
                         PermissionOptionKind, RequestPermissionOutcome, SelectedPermissionOutcome,
                     };
                     use crucible_core::agent::ToolPolicy;
@@ -1290,7 +1292,7 @@ mod permission_serializer_tests {
 #[cfg(test)]
 mod acp_tool_name_tests {
     use super::*;
-    use agent_client_protocol::{ToolCallUpdateFields, ToolKind};
+    use agent_client_protocol::schema::v1::{ToolCallUpdateFields, ToolKind};
     use crucible_core::interaction::PermRequest;
 
     fn fields(kind: Option<ToolKind>, title: &str) -> ToolCallUpdateFields {

@@ -12,7 +12,9 @@
 //! Both groups are preserved verbatim — no duplicate-behavior tests were found
 //! during the consolidation audit.
 
-use agent_client_protocol::{EnvVariable, McpServer, McpServerStdio, NewSessionRequest};
+use agent_client_protocol::schema::v1::{
+    EnvVariable, McpServer, McpServerStdio, NewSessionRequest,
+};
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_daemon::acp::client::{ClientConfig, CrucibleAcpClient};
@@ -359,7 +361,7 @@ async fn test_in_process_mcp_sse_endpoint_is_reachable() {
 /// Test that McpServer::Http can be constructed with the host's URL
 #[tokio::test]
 async fn test_mcp_server_http_variant_with_host_url() {
-    use agent_client_protocol::{McpServer, McpServerHttp};
+    use agent_client_protocol::schema::v1::{McpServer, McpServerHttp};
 
     let temp = TempDir::new().unwrap();
     let knowledge_repo = Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>;
@@ -389,7 +391,7 @@ async fn test_mcp_server_http_variant_with_host_url() {
 /// Test that the ACP NewSessionRequest can include Streamable HTTP MCP server
 #[tokio::test]
 async fn test_new_session_request_with_http_mcp() {
-    use agent_client_protocol::{McpServer, McpServerHttp, NewSessionRequest};
+    use agent_client_protocol::schema::v1::{McpServer, McpServerHttp, NewSessionRequest};
     use serde_json::json;
 
     let temp = TempDir::new().unwrap();

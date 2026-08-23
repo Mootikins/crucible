@@ -1,4 +1,4 @@
-use agent_client_protocol::ToolCallStatus;
+use agent_client_protocol::schema::v1::ToolCallStatus;
 
 use super::streaming::elide;
 use super::types::StreamingState;

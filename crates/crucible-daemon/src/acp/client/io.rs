@@ -162,41 +162,38 @@ impl CrucibleAcpClient {
     /// Returns an error if communication fails
     pub async fn send_request(
         &mut self,
-        request: agent_client_protocol::ClientRequest,
+        request: agent_client_protocol::schema::v1::ClientRequest,
     ) -> Result<serde_json::Value> {
         use serde_json::json;
 
         // Determine method name and params from ClientRequest
         let (method, params) = match &request {
-            agent_client_protocol::ClientRequest::InitializeRequest(req) => {
+            agent_client_protocol::schema::v1::ClientRequest::InitializeRequest(req) => {
                 ("initialize", serde_json::to_value(req)?)
             }
-            agent_client_protocol::ClientRequest::AuthenticateRequest(req) => {
+            agent_client_protocol::schema::v1::ClientRequest::AuthenticateRequest(req) => {
                 ("authenticate", serde_json::to_value(req)?)
             }
-            agent_client_protocol::ClientRequest::NewSessionRequest(req) => {
+            agent_client_protocol::schema::v1::ClientRequest::NewSessionRequest(req) => {
                 ("session/new", serde_json::to_value(req)?)
             }
-            agent_client_protocol::ClientRequest::LoadSessionRequest(req) => {
+            agent_client_protocol::schema::v1::ClientRequest::LoadSessionRequest(req) => {
                 ("session/load", serde_json::to_value(req)?)
             }
-            agent_client_protocol::ClientRequest::SetSessionModeRequest(req) => {
+            agent_client_protocol::schema::v1::ClientRequest::SetSessionModeRequest(req) => {
                 ("session/set_mode", serde_json::to_value(req)?)
             }
-            agent_client_protocol::ClientRequest::SetSessionModelRequest(req) => {
-                ("session/set_model", serde_json::to_value(req)?)
-            }
-            agent_client_protocol::ClientRequest::PromptRequest(req) => {
+            agent_client_protocol::schema::v1::ClientRequest::PromptRequest(req) => {
                 ("session/prompt", serde_json::to_value(req)?)
             }
-            agent_client_protocol::ClientRequest::ExtMethodRequest(req) => {
+            agent_client_protocol::schema::v1::ClientRequest::ExtMethodRequest(req) => {
                 ("ext", serde_json::to_value(req)?)
             }
             // Handle any new variants that may be added in future versions
             _ => {
                 return Err(ClientError::Session(format!(
                     "Unsupported ClientRequest variant: {:?}",
-                    std::any::type_name::<agent_client_protocol::ClientRequest>()
+                    std::any::type_name::<agent_client_protocol::schema::v1::ClientRequest>()
                 )))
             }
         };

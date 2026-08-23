@@ -1,4 +1,4 @@
-//! `CrucibleAcpAgent`: implements the ACP `Agent` trait by delegating to the
+//! `CrucibleAcpAgent`: serves the ACP agent role by delegating to the
 //! Crucible daemon over RPC.
 //!
 //! This is a thin protocol adapter — all agent logic (LLM calls, tools,
@@ -7,18 +7,25 @@
 //! `session.send_message`, and translates the daemon's event stream into ACP
 //! `session/update` notifications. Permission requests round-trip to the host
 //! via `session/request_permission`.
+//!
+//! The SDK 2.0 builder registers one handler per request type. Every handler
+//! runs on the dispatch loop, so a handler that waits for a whole turn would
+//! stop `session/cancel` from being read. [`CrucibleAcpAgent::serve`] therefore
+//! spawns the prompt turn as a connection task and answers from that task.
 
-use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex as StdMutex};
 
+use agent_client_protocol::schema::v1::{
+    AgentCapabilities, AuthenticateRequest, AuthenticateResponse, CancelNotification,
+    CloseSessionRequest, CloseSessionResponse, Error, InitializeRequest, InitializeResponse,
+    LoadSessionRequest, LoadSessionResponse, NewSessionRequest, NewSessionResponse,
+    PromptCapabilities, PromptRequest, PromptResponse, RequestPermissionRequest,
+    Result as AcpResult, SessionCapabilities, SessionCloseCapabilities, SessionId,
+    SessionNotification, StopReason,
+};
 use agent_client_protocol::{
-    Agent, AgentCapabilities, AuthenticateRequest, AuthenticateResponse, CancelNotification,
-    Client, CloseSessionRequest, CloseSessionResponse, Error, InitializeRequest,
-    InitializeResponse, LoadSessionRequest, LoadSessionResponse, NewSessionRequest,
-    NewSessionResponse, PromptCapabilities, PromptRequest, PromptResponse,
-    RequestPermissionRequest, Result as AcpResult, SessionCapabilities, SessionCloseCapabilities,
-    SessionId, SessionNotification, StopReason,
+    on_receive_notification, on_receive_request, Agent, Client, ConnectTo, ConnectionTo, Responder,
 };
 use crucible_core::config::CliAppConfig;
 use crucible_core::interaction::{InteractionRequest, InteractionResponse};
@@ -33,15 +40,18 @@ use super::translate::{
 };
 
 /// Shared event stream for one ACP session's daemon connection.
-type EventStream = Rc<Mutex<mpsc::UnboundedReceiver<SessionEvent>>>;
+type EventStream = Arc<Mutex<mpsc::UnboundedReceiver<SessionEvent>>>;
 
 /// A resolved session: its daemon client, daemon session id, and event stream.
-type SessionRef = (Rc<DaemonClient>, String, EventStream);
+type SessionRef = (Arc<DaemonClient>, String, EventStream);
+
+/// The connection handle to the ACP host.
+type HostConnection = ConnectionTo<Client>;
 
 /// Per-ACP-session state: a dedicated daemon connection, the daemon session id,
 /// and the event stream for that connection.
 struct SessionEntry {
-    client: Rc<DaemonClient>,
+    client: Arc<DaemonClient>,
     daemon_session_id: String,
     events: EventStream,
 }
@@ -49,33 +59,119 @@ struct SessionEntry {
 /// ACP agent backed by the Crucible daemon.
 pub struct CrucibleAcpAgent {
     config: CliAppConfig,
-    /// Set once, immediately after the connection is constructed. Used to send
-    /// `session/update` notifications and `session/request_permission`.
-    conn: OnceCell<Rc<agent_client_protocol::AgentSideConnection>>,
-    sessions: RefCell<HashMap<String, SessionEntry>>,
+    sessions: StdMutex<HashMap<String, SessionEntry>>,
 }
 
 impl CrucibleAcpAgent {
     pub fn new(config: CliAppConfig) -> Self {
         Self {
             config,
-            conn: OnceCell::new(),
-            sessions: RefCell::new(HashMap::new()),
+            sessions: StdMutex::new(HashMap::new()),
         }
     }
 
-    /// Inject the connection handle after `AgentSideConnection::new`.
-    pub fn set_connection(&self, conn: Rc<agent_client_protocol::AgentSideConnection>) {
-        let _ = self.conn.set(conn);
-    }
-
-    fn connection(&self) -> AcpResult<Rc<agent_client_protocol::AgentSideConnection>> {
-        self.conn.get().cloned().ok_or_else(Error::internal_error)
+    /// Serve the ACP agent role over `transport` until the host closes it.
+    ///
+    /// Every ACP method maps to one handler. The prompt handler spawns the
+    /// turn as a connection task, because a turn waits on the daemon for a
+    /// long time and the dispatch loop must stay free to read `session/cancel`.
+    pub async fn serve(
+        self: Arc<Self>,
+        transport: impl ConnectTo<Agent> + 'static,
+    ) -> AcpResult<()> {
+        let agent = self;
+        Agent
+            .builder()
+            .name("crucible")
+            .on_receive_request(
+                {
+                    let agent = agent.clone();
+                    async move |req: InitializeRequest,
+                                responder: Responder<InitializeResponse>,
+                                _cx| {
+                        responder.respond(agent.initialize(req).await?)
+                    }
+                },
+                on_receive_request!(),
+            )
+            .on_receive_request(
+                {
+                    let agent = agent.clone();
+                    async move |req: AuthenticateRequest,
+                                responder: Responder<AuthenticateResponse>,
+                                _cx| {
+                        responder.respond(agent.authenticate(req).await?)
+                    }
+                },
+                on_receive_request!(),
+            )
+            .on_receive_request(
+                {
+                    let agent = agent.clone();
+                    async move |req: NewSessionRequest,
+                                responder: Responder<NewSessionResponse>,
+                                _cx| {
+                        responder.respond(agent.new_session(req).await?)
+                    }
+                },
+                on_receive_request!(),
+            )
+            .on_receive_request(
+                {
+                    let agent = agent.clone();
+                    async move |req: LoadSessionRequest,
+                                responder: Responder<LoadSessionResponse>,
+                                _cx| {
+                        responder.respond(agent.load_session(req).await?)
+                    }
+                },
+                on_receive_request!(),
+            )
+            .on_receive_request(
+                {
+                    let agent = agent.clone();
+                    async move |req: CloseSessionRequest,
+                                responder: Responder<CloseSessionResponse>,
+                                _cx| {
+                        responder.respond(agent.close_session(req).await?)
+                    }
+                },
+                on_receive_request!(),
+            )
+            .on_receive_request(
+                {
+                    let agent = agent.clone();
+                    async move |req: PromptRequest,
+                                responder: Responder<PromptResponse>,
+                                cx: HostConnection| {
+                        let agent = agent.clone();
+                        let host = cx.clone();
+                        cx.spawn(async move {
+                            match agent.prompt(req, &host).await {
+                                Ok(response) => responder.respond(response),
+                                Err(error) => responder.respond_with_error(error),
+                            }
+                        })
+                    }
+                },
+                on_receive_request!(),
+            )
+            .on_receive_notification(
+                {
+                    let agent = agent.clone();
+                    async move |notification: CancelNotification, _cx| {
+                        agent.cancel(notification).await
+                    }
+                },
+                on_receive_notification!(),
+            )
+            .connect_to(transport)
+            .await
     }
 
     /// Look up a session's daemon client, id, and event stream.
     fn lookup(&self, acp_session_id: &str) -> Option<SessionRef> {
-        let sessions = self.sessions.borrow();
+        let sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
         let entry = sessions.get(acp_session_id)?;
         Some((
             entry.client.clone(),
@@ -90,17 +186,20 @@ impl CrucibleAcpAgent {
         client: DaemonClient,
         events: mpsc::UnboundedReceiver<SessionEvent>,
     ) {
-        self.sessions.borrow_mut().insert(
-            id.clone(),
-            SessionEntry {
-                client: Rc::new(client),
-                daemon_session_id: id,
-                events: Rc::new(Mutex::new(events)),
-            },
-        );
+        self.sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(
+                id.clone(),
+                SessionEntry {
+                    client: Arc::new(client),
+                    daemon_session_id: id,
+                    events: Arc::new(Mutex::new(events)),
+                },
+            );
     }
 
-    /// Drop a session's map entry. This releases the last `Rc<DaemonClient>`
+    /// Drop a session's map entry. This releases the last `Arc<DaemonClient>`
     /// (unless a turn is still borrowing it), closing that session's dedicated
     /// daemon connection — which the daemon treats as a disconnect and uses to
     /// clean up all of the session's subscriptions server-side. No explicit
@@ -108,7 +207,8 @@ impl CrucibleAcpAgent {
     fn remove_session(&self, daemon_session_id: &str) {
         if self
             .sessions
-            .borrow_mut()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
             .remove(daemon_session_id)
             .is_some()
         {
@@ -121,11 +221,11 @@ impl CrucibleAcpAgent {
     async fn pump_turn(
         &self,
         acp_session_id: &SessionId,
-        client: &Rc<DaemonClient>,
+        client: &Arc<DaemonClient>,
         daemon_session_id: &str,
         events: &EventStream,
+        conn: &HostConnection,
     ) -> AcpResult<StopReason> {
-        let conn = self.connection()?;
         let mut rx = events.lock().await;
         loop {
             let Some(event) = rx.recv().await else {
@@ -141,7 +241,7 @@ impl CrucibleAcpAgent {
             match classify_event(&event) {
                 TurnStep::Update(update) => {
                     let notif = SessionNotification::new(acp_session_id.clone(), *update);
-                    if let Err(e) = conn.session_notification(notif).await {
+                    if let Err(e) = conn.send_notification(notif) {
                         warn!(error = ?e, "failed to send session/update; ending turn");
                         return Ok(StopReason::EndTurn);
                     }
@@ -154,7 +254,7 @@ impl CrucibleAcpAgent {
                         acp_session_id,
                         client,
                         daemon_session_id,
-                        &conn,
+                        conn,
                         &request_id,
                         &request,
                     )
@@ -169,9 +269,9 @@ impl CrucibleAcpAgent {
     async fn handle_interaction(
         &self,
         acp_session_id: &SessionId,
-        client: &Rc<DaemonClient>,
+        client: &Arc<DaemonClient>,
         daemon_session_id: &str,
-        conn: &Rc<agent_client_protocol::AgentSideConnection>,
+        conn: &HostConnection,
         request_id: &str,
         request: &InteractionRequest,
     ) -> AcpResult<()> {
@@ -186,7 +286,7 @@ impl CrucibleAcpAgent {
                 tool_call,
                 permission_options(),
             );
-            match conn.request_permission(req).await {
+            match conn.send_request(req).block_task().await {
                 Ok(resp) => outcome_to_interaction_response(&resp.outcome, request),
                 Err(e) => {
                     warn!(error = ?e, "request_permission failed; denying");
@@ -211,8 +311,7 @@ impl CrucibleAcpAgent {
     }
 }
 
-#[async_trait::async_trait(?Send)]
-impl Agent for CrucibleAcpAgent {
+impl CrucibleAcpAgent {
     async fn initialize(&self, args: InitializeRequest) -> AcpResult<InitializeResponse> {
         // Echo the client's requested protocol version (we support v1 shapes);
         // advertise text prompts, load_session, and session/close support.
@@ -292,7 +391,11 @@ impl Agent for CrucibleAcpAgent {
         Ok(NewSessionResponse::new(daemon_session_id))
     }
 
-    async fn prompt(&self, args: PromptRequest) -> AcpResult<PromptResponse> {
+    async fn prompt(
+        &self,
+        args: PromptRequest,
+        conn: &HostConnection,
+    ) -> AcpResult<PromptResponse> {
         let acp_session_id = args.session_id.clone();
         let key = acp_session_id.0.as_ref().to_string();
         let (client, daemon_session_id, events) =
@@ -313,7 +416,7 @@ impl Agent for CrucibleAcpAgent {
             })?;
 
         let reason = self
-            .pump_turn(&acp_session_id, &client, &daemon_session_id, &events)
+            .pump_turn(&acp_session_id, &client, &daemon_session_id, &events, conn)
             .await?;
         Ok(PromptResponse::new(reason))
     }
@@ -387,7 +490,7 @@ async fn narrow_subscription(client: &DaemonClient, daemon_session_id: &str) {
 
 /// Concatenate the text content blocks of a prompt into a single string.
 fn prompt_text(req: &PromptRequest) -> String {
-    use agent_client_protocol::ContentBlock;
+    use agent_client_protocol::schema::v1::ContentBlock;
     let mut parts = Vec::new();
     for block in &req.prompt {
         match block {

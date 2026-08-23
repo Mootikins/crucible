@@ -1,5 +1,5 @@
 use crate::support::ThreadedMockAgent;
-use agent_client_protocol::{InitializeRequest, PromptRequest};
+use agent_client_protocol::schema::v1::{InitializeRequest, PromptRequest};
 use crucible_daemon::acp::client::{ClientConfig, CrucibleAcpClient};
 use crucible_daemon::acp::ClientError;
 use std::path::PathBuf;

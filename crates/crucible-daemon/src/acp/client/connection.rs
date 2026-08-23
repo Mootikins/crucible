@@ -251,7 +251,7 @@ impl CrucibleAcpClient {
     /// * `mcp_url` - Optional URL to an in-process MCP server. If `None` or if
     ///   the agent doesn't support HTTP, falls back to stdio transport.
     pub async fn connect_with_best_mcp(&mut self, mcp_url: Option<&str>) -> Result<AcpSession> {
-        use agent_client_protocol::{
+        use agent_client_protocol::schema::v1::{
             InitializeRequest, McpServer, McpServerHttp, NewSessionRequest,
         };
 
@@ -321,8 +321,7 @@ impl CrucibleAcpClient {
         Ok(AcpSession::new(
             TransportConfig::default(),
             session_response.session_id.to_string(),
-        )
-        .with_models(session_response.models))
+        ))
     }
 
     /// Mark the client as connected.

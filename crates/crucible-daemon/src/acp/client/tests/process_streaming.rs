@@ -1,4 +1,4 @@
-use agent_client_protocol::StopReason;
+use agent_client_protocol::schema::v1::StopReason;
 
 use super::test_path;
 use crate::acp::client::types::{ClientConfig, StreamingState};

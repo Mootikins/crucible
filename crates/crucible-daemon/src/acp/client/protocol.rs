@@ -21,9 +21,9 @@ impl CrucibleAcpClient {
     /// Returns an error if initialization fails
     pub async fn initialize(
         &mut self,
-        request: agent_client_protocol::InitializeRequest,
-    ) -> Result<agent_client_protocol::InitializeResponse> {
-        use agent_client_protocol::ClientRequest;
+        request: agent_client_protocol::schema::v1::InitializeRequest,
+    ) -> Result<agent_client_protocol::schema::v1::InitializeResponse> {
+        use agent_client_protocol::schema::v1::ClientRequest;
 
         // Send the initialize request
         let response = self
@@ -36,7 +36,7 @@ impl CrucibleAcpClient {
         })?;
 
         // Parse the result as InitializeResponse
-        let init_response: agent_client_protocol::InitializeResponse =
+        let init_response: agent_client_protocol::schema::v1::InitializeResponse =
             serde_json::from_value(result.clone())?;
 
         // Store agent MCP capabilities for transport negotiation
@@ -79,9 +79,9 @@ impl CrucibleAcpClient {
     /// Returns an error if session creation fails
     pub async fn create_new_session(
         &mut self,
-        request: agent_client_protocol::NewSessionRequest,
-    ) -> Result<agent_client_protocol::NewSessionResponse> {
-        use agent_client_protocol::ClientRequest;
+        request: agent_client_protocol::schema::v1::NewSessionRequest,
+    ) -> Result<agent_client_protocol::schema::v1::NewSessionResponse> {
+        use agent_client_protocol::schema::v1::ClientRequest;
 
         let client_request = ClientRequest::NewSessionRequest(request);
         if let Ok(json) = serde_json::to_string(&client_request) {
@@ -100,7 +100,7 @@ impl CrucibleAcpClient {
         })?;
 
         // Parse the result as NewSessionResponse
-        let session_response: agent_client_protocol::NewSessionResponse =
+        let session_response: agent_client_protocol::schema::v1::NewSessionResponse =
             serde_json::from_value(result.clone())?;
 
         Ok(session_response)
@@ -126,8 +126,8 @@ impl CrucibleAcpClient {
         &mut self,
         session_id: impl Into<String>,
         mode_id: impl Into<String>,
-    ) -> Result<agent_client_protocol::SetSessionModeResponse> {
-        use agent_client_protocol::{ClientRequest, SetSessionModeRequest};
+    ) -> Result<agent_client_protocol::schema::v1::SetSessionModeResponse> {
+        use agent_client_protocol::schema::v1::{ClientRequest, SetSessionModeRequest};
 
         let request = SetSessionModeRequest::new(session_id.into(), mode_id.into());
 
@@ -141,46 +141,17 @@ impl CrucibleAcpClient {
         })?;
 
         // Parse the result as SetSessionModeResponse
-        let mode_response: agent_client_protocol::SetSessionModeResponse =
+        let mode_response: agent_client_protocol::schema::v1::SetSessionModeResponse =
             serde_json::from_value(result.clone())?;
 
         Ok(mode_response)
     }
 
-    /// Send `session/set_model` to switch the agent's active model.
-    ///
-    /// Part of ACP's `unstable_session_model` feature — supported by agents
-    /// that advertise a model list in their `session/new` response (e.g.
-    /// claude-agent-acp). Unlike a provider switch on an internal agent, this
-    /// changes the model on the *running* agent process, preserving history.
-    pub async fn set_session_model(
-        &mut self,
-        session_id: impl Into<String>,
-        model_id: impl Into<String>,
-    ) -> Result<agent_client_protocol::SetSessionModelResponse> {
-        use agent_client_protocol::{ClientRequest, SetSessionModelRequest};
-
-        let request = SetSessionModelRequest::new(session_id.into(), model_id.into());
-
-        let response = self
-            .send_request(ClientRequest::SetSessionModelRequest(request))
-            .await?;
-
-        let result = response.get("result").ok_or_else(|| {
-            ClientError::Session("Missing result field in set model response".to_string())
-        })?;
-
-        let model_response: agent_client_protocol::SetSessionModelResponse =
-            serde_json::from_value(result.clone())?;
-
-        Ok(model_response)
-    }
-
     /// Build a stdio MCP server configuration pointing to `cru mcp`.
     ///
     /// This is the universal fallback — all ACP agents MUST support stdio transport.
-    pub(super) fn build_stdio_mcp_server() -> agent_client_protocol::McpServer {
-        use agent_client_protocol::{McpServer, McpServerStdio};
+    pub(super) fn build_stdio_mcp_server() -> agent_client_protocol::schema::v1::McpServer {
+        use agent_client_protocol::schema::v1::{McpServer, McpServerStdio};
 
         let cru_command = std::env::current_exe()
             .unwrap_or_else(|_| PathBuf::from("cru"))

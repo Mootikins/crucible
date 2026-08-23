@@ -31,7 +31,7 @@ async fn test_message_sending() {
 
 #[tokio::test]
 async fn test_stdio_message_exchange() {
-    use agent_client_protocol::{ClientRequest, InitializeRequest};
+    use agent_client_protocol::schema::v1::{ClientRequest, InitializeRequest};
 
     // Use 'cat' equivalent as a simple echo agent for testing
     let (cmd, args) = get_cat_command();
@@ -134,7 +134,7 @@ async fn test_read_timeout() {
 
 #[tokio::test]
 async fn test_full_request_response_cycle() {
-    use agent_client_protocol::{ClientRequest, InitializeRequest};
+    use agent_client_protocol::schema::v1::{ClientRequest, InitializeRequest};
 
     let (cmd, args) = get_cat_command();
     let config = ClientConfig {

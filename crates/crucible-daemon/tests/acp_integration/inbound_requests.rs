@@ -56,7 +56,10 @@ fn client_with_custom_transport(
     (client, BufReader::new(agent_read), agent_write)
 }
 
-fn make_prompt_request(session_id: &str, text: &str) -> agent_client_protocol::PromptRequest {
+fn make_prompt_request(
+    session_id: &str,
+    text: &str,
+) -> agent_client_protocol::schema::v1::PromptRequest {
     serde_json::from_value(json!({
         "sessionId": session_id,
         "prompt": [{"type": "text", "text": text}],

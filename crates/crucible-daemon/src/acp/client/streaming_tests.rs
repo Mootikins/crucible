@@ -30,7 +30,7 @@ fn cancel_notification_is_a_valid_jsonrpc_notification() {
 
 #[test]
 fn streaming_callback_returning_false_marks_state_cancelled() {
-    use agent_client_protocol::SessionNotification;
+    use agent_client_protocol::schema::v1::SessionNotification;
 
     let mut client = test_client();
     let mut state = StreamingState::default();
@@ -60,7 +60,7 @@ fn streaming_callback_returning_false_marks_state_cancelled() {
 /// mask a later answer chunk through `is_duplicate_resend`.
 #[test]
 fn thought_chunks_stay_out_of_the_answer_text() {
-    use agent_client_protocol::SessionNotification;
+    use agent_client_protocol::schema::v1::SessionNotification;
 
     let mut client = test_client();
     let mut state = StreamingState::default();
@@ -119,7 +119,7 @@ fn thought_chunks_stay_out_of_the_answer_text() {
 /// reaches the terminal as `C2 9B` and is decoded back into CSI.
 #[test]
 fn agent_text_is_sanitised_before_it_leaves_the_acp_boundary() {
-    use agent_client_protocol::SessionNotification;
+    use agent_client_protocol::schema::v1::SessionNotification;
 
     let mut client = test_client();
     let mut state = StreamingState::default();
@@ -189,7 +189,7 @@ fn agent_text_is_sanitised_before_it_leaves_the_acp_boundary() {
 /// layout, and the renderers downstream already treat them as such.
 #[test]
 fn newlines_and_tabs_survive_sanitising_of_agent_prose() {
-    use agent_client_protocol::SessionNotification;
+    use agent_client_protocol::schema::v1::SessionNotification;
 
     let mut client = test_client();
     let mut state = StreamingState::default();
@@ -304,7 +304,7 @@ fn an_envelope_past_the_input_cap_is_not_unwrapped() {
 
 #[test]
 fn streaming_callback_returning_true_leaves_state_running() {
-    use agent_client_protocol::SessionNotification;
+    use agent_client_protocol::schema::v1::SessionNotification;
 
     let mut client = test_client();
     let mut state = StreamingState::default();

@@ -39,7 +39,7 @@ async fn main() {
 
     // Send a prompt with streaming
     println!("\n=== Sending prompt with streaming ===");
-    use agent_client_protocol::PromptRequest;
+    use agent_client_protocol::schema::v1::PromptRequest;
 
     let prompt_request: PromptRequest = serde_json::from_value(serde_json::json!({
         "sessionId": session.id().to_string(),

@@ -39,7 +39,7 @@ async fn test_streaming_chat_with_mock_agent() {
 }
 
 /// Build a PromptRequest for the given session.
-fn prompt_request(session_id: &str) -> agent_client_protocol::PromptRequest {
+fn prompt_request(session_id: &str) -> agent_client_protocol::schema::v1::PromptRequest {
     serde_json::from_value(serde_json::json!({
         "sessionId": session_id,
         "prompt": [{"type": "text", "text": "What is 2+2?"}],
@@ -76,7 +76,7 @@ async fn test_prompt_with_streaming_response() {
     assert!(tool_calls.is_empty(), "no tool calls were streamed");
     assert_eq!(
         response.stop_reason,
-        agent_client_protocol::StopReason::EndTurn
+        agent_client_protocol::schema::v1::StopReason::EndTurn
     );
 }
 
@@ -120,7 +120,7 @@ async fn test_prompt_with_streamed_tool_call() {
     assert_eq!(tool_calls[0].title, "mock_tool");
     assert_eq!(
         response.stop_reason,
-        agent_client_protocol::StopReason::EndTurn
+        agent_client_protocol::schema::v1::StopReason::EndTurn
     );
 }
 
@@ -152,7 +152,7 @@ async fn test_cancel_mid_stream_reaches_agent() {
 
     assert_eq!(
         response.stop_reason,
-        agent_client_protocol::StopReason::Cancelled,
+        agent_client_protocol::schema::v1::StopReason::Cancelled,
         "the agent only sends `cancelled` after receiving session/cancel, \
          so this proves the client propagated the cancellation"
     );

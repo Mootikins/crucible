@@ -1,20 +1,12 @@
 //! Extract token usage and context-window size from raw ACP JSON.
 //!
 //! The ACP spec defines a `usage` field on `PromptResponse` and a
-//! `usage_update` session update (see the `unstable_session_usage` feature in
-//! `agent-client-protocol-schema`), but both are gated behind an unstable
-//! feature flag in the upstream Rust types. Rather than coupling to that flag,
-//! we extract the fields directly from the deserialized JSON so we capture the
-//! data whether or not the upstream crate exposes them as typed items.
-//!
-//! For `usage_update` this is not merely convenient, it is load-bearing.
-//! `SessionUpdate` is an internally tagged enum, so with the feature off the
-//! `UsageUpdate` variant does not exist and `sessionUpdate: "usage_update"` is
-//! an *unknown variant*: the whole `SessionNotification` fails to deserialize
-//! and the frame dies at the `Failed to parse SessionNotification` warning in
-//! `streaming.rs`, before any `match` on the update runs. Enabling the feature
-//! would only move the problem — the next unstable update type an agent sends
-//! would kill its notification the same way.
+//! `usage_update` session update. When this module was written, both sat
+//! behind an unstable feature flag in the upstream Rust types, and a typed
+//! parse of `sessionUpdate: "usage_update"` failed as an unknown variant. So
+//! the fields are read from the raw JSON ahead of the typed parse in
+//! `streaming.rs`. Schema 1.5 stabilized `UsageUpdate`; ACP item W9 moves
+//! this reader to the typed variant.
 //!
 //! Wire shape (Claude Code 2.1.114, captured 2026-04-19):
 //!
@@ -206,18 +198,15 @@ mod tests {
         assert_eq!(usage.total_tokens, 10);
     }
 
-    /// The reason `extract_context_window` reads raw JSON instead of matching
-    /// a `SessionUpdate` variant.
-    ///
-    /// `SessionUpdate` is internally tagged on `sessionUpdate` and its
-    /// `UsageUpdate` variant is `#[cfg(feature = "unstable_session_usage")]`,
-    /// which this build does not enable. So the tag is an *unknown variant*
-    /// and the entire notification fails to deserialize — the frame never
-    /// reaches a `match`, and no amount of arms in `streaming.rs` could have
-    /// caught it. If a future dependency bump stabilizes the variant this test
-    /// starts failing, which is the signal to reconsider the raw-JSON reader.
+    /// `extract_context_window` reads raw JSON because the schema that the
+    /// SDK 0.10 pulled in had no stable `UsageUpdate` variant. Schema 1.5
+    /// stabilized it, so the typed parse now accepts the frame too. The raw
+    /// reader still runs first in `streaming.rs` and keeps the behaviour
+    /// identical. ACP item W9 moves the reader to the typed variant.
     #[test]
-    fn usage_update_does_not_deserialize_as_a_typed_session_notification() {
+    fn usage_update_deserializes_as_a_typed_session_notification() {
+        use agent_client_protocol::schema::v1::{SessionNotification, SessionUpdate};
+
         let params = json!({
             "sessionId": "c299d62f",
             "update": {
@@ -228,15 +217,15 @@ mod tests {
             }
         });
 
-        let err =
-            serde_json::from_value::<agent_client_protocol::SessionNotification>(params.clone())
-                .expect_err("usage_update parsed as a typed SessionNotification");
+        let notification = serde_json::from_value::<SessionNotification>(params.clone())
+            .expect("usage_update parses as a typed SessionNotification");
         assert!(
-            err.to_string().contains("unknown variant"),
-            "expected an unknown-variant error, got {err}"
+            matches!(notification.update, SessionUpdate::UsageUpdate(_)),
+            "expected the UsageUpdate variant, got {:?}",
+            notification.update
         );
 
-        // The raw reader gets it anyway.
+        // The raw reader still reads it.
         assert_eq!(extract_context_window(&params), Some((22700, 1_000_000)));
     }
 

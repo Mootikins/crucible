@@ -48,9 +48,6 @@ impl Default for TransportConfig {
 #[derive(Debug)]
 pub struct AcpSession {
     session_id: String,
-    /// Model state advertised by the agent in its `session/new` response
-    /// (`unstable_session_model`). `None` if the agent doesn't expose models.
-    models: Option<agent_client_protocol::SessionModelState>,
 }
 
 impl AcpSession {
@@ -61,26 +58,12 @@ impl AcpSession {
     /// * `config` - Session configuration
     /// * `session_id` - Unique identifier for this session
     pub fn new(_config: TransportConfig, session_id: String) -> Self {
-        Self {
-            session_id,
-            models: None,
-        }
-    }
-
-    /// Attach the agent-advertised model state.
-    pub fn with_models(mut self, models: Option<agent_client_protocol::SessionModelState>) -> Self {
-        self.models = models;
-        self
+        Self { session_id }
     }
 
     /// Get the session ID
     pub fn id(&self) -> &str {
         &self.session_id
-    }
-
-    /// The model state advertised by the agent, if any.
-    pub fn models(&self) -> Option<&agent_client_protocol::SessionModelState> {
-        self.models.as_ref()
     }
 }
 

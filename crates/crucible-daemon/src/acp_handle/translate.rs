@@ -92,10 +92,10 @@ pub(super) fn replay_unannounced_tool_calls(
 /// stop reason is not silently wrong on delegated turns — not because a reader
 /// exists today.
 pub(super) fn turn_stop_reason(
-    acp: agent_client_protocol::StopReason,
+    acp: agent_client_protocol::schema::v1::StopReason,
     produced_anything: bool,
 ) -> crucible_core::turn::StopReason {
-    use agent_client_protocol::StopReason as Acp;
+    use agent_client_protocol::schema::v1::StopReason as Acp;
     use crucible_core::turn::StopReason;
 
     match acp {
@@ -528,11 +528,17 @@ mod tests {
         // empty: "the agent said nothing" and "the user stopped it" are
         // different things to report, and the cancellation is the cause.
         assert_eq!(
-            turn_stop_reason(agent_client_protocol::StopReason::Cancelled, false),
+            turn_stop_reason(
+                agent_client_protocol::schema::v1::StopReason::Cancelled,
+                false
+            ),
             StopReason::Cancelled
         );
         assert_eq!(
-            turn_stop_reason(agent_client_protocol::StopReason::Cancelled, true),
+            turn_stop_reason(
+                agent_client_protocol::schema::v1::StopReason::Cancelled,
+                true
+            ),
             StopReason::Cancelled
         );
     }
@@ -542,11 +548,14 @@ mod tests {
         use crucible_core::turn::StopReason;
 
         assert_eq!(
-            turn_stop_reason(agent_client_protocol::StopReason::EndTurn, false),
+            turn_stop_reason(
+                agent_client_protocol::schema::v1::StopReason::EndTurn,
+                false
+            ),
             StopReason::Empty
         );
         assert_eq!(
-            turn_stop_reason(agent_client_protocol::StopReason::EndTurn, true),
+            turn_stop_reason(agent_client_protocol::schema::v1::StopReason::EndTurn, true),
             StopReason::EndTurn
         );
     }
@@ -560,9 +569,9 @@ mod tests {
         // the agent said nothing. Both are false — the agent ended a turn that
         // produced output, which is `EndTurn`.
         for acp in [
-            agent_client_protocol::StopReason::MaxTokens,
-            agent_client_protocol::StopReason::MaxTurnRequests,
-            agent_client_protocol::StopReason::Refusal,
+            agent_client_protocol::schema::v1::StopReason::MaxTokens,
+            agent_client_protocol::schema::v1::StopReason::MaxTurnRequests,
+            agent_client_protocol::schema::v1::StopReason::Refusal,
         ] {
             assert_eq!(turn_stop_reason(acp, true), StopReason::EndTurn, "{acp:?}");
         }
@@ -579,9 +588,9 @@ mod tests {
         use crucible_core::turn::StopReason;
 
         for acp in [
-            agent_client_protocol::StopReason::MaxTokens,
-            agent_client_protocol::StopReason::MaxTurnRequests,
-            agent_client_protocol::StopReason::Refusal,
+            agent_client_protocol::schema::v1::StopReason::MaxTokens,
+            agent_client_protocol::schema::v1::StopReason::MaxTurnRequests,
+            agent_client_protocol::schema::v1::StopReason::Refusal,
         ] {
             assert_eq!(turn_stop_reason(acp, false), StopReason::Empty, "{acp:?}");
         }

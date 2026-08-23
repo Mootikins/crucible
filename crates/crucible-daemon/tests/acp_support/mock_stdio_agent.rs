@@ -17,7 +17,9 @@ use std::fs;
 use std::io::{self, BufRead, Write};
 
 // Import ACP protocol types for proper response construction
-use agent_client_protocol::{AuthMethod, InitializeResponse, NewSessionResponse, PromptResponse};
+use agent_client_protocol::schema::v1::{
+    AuthMethod, InitializeResponse, NewSessionResponse, PromptResponse,
+};
 
 /// Defines the behavior profile of a mock agent
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -891,7 +893,7 @@ mod tests {
     /// would exercise a wire shape no production code accepts.
     #[test]
     fn streamed_notifications_parse_as_session_notifications() {
-        use agent_client_protocol::SessionNotification;
+        use agent_client_protocol::schema::v1::SessionNotification;
 
         let mut config = MockStdioAgentConfig::opencode();
         config.stream_chunks = vec!["a".into(), "b".into()];
@@ -925,12 +927,15 @@ mod tests {
         // Final responses must parse as PromptResponse with the right reasons.
         let end: PromptResponse =
             serde_json::from_value(turn.end_turn["result"].clone()).expect("end_turn parses");
-        assert_eq!(end.stop_reason, agent_client_protocol::StopReason::EndTurn);
+        assert_eq!(
+            end.stop_reason,
+            agent_client_protocol::schema::v1::StopReason::EndTurn
+        );
         let cancelled: PromptResponse =
             serde_json::from_value(turn.cancelled["result"].clone()).expect("cancelled parses");
         assert_eq!(
             cancelled.stop_reason,
-            agent_client_protocol::StopReason::Cancelled
+            agent_client_protocol::schema::v1::StopReason::Cancelled
         );
     }
 

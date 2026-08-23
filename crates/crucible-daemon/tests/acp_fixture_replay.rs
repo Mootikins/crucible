@@ -43,7 +43,7 @@
 
 use std::path::{Path, PathBuf};
 
-use agent_client_protocol::{
+use agent_client_protocol::schema::v1::{
     ContentBlock, InitializeRequest, NewSessionRequest, PromptRequest, StopReason, TextContent,
 };
 use crucible_daemon::acp::client::replay::{ReplayFixture, ReplayOutcome};

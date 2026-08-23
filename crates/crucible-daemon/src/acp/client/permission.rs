@@ -1,4 +1,4 @@
-use agent_client_protocol::{
+use agent_client_protocol::schema::v1::{
     RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
 };
 

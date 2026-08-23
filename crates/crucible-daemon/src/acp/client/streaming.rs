@@ -1,6 +1,6 @@
 use std::sync::atomic::Ordering;
 
-use agent_client_protocol::{
+use agent_client_protocol::schema::v1::{
     ContentBlock, RequestPermissionRequest, SessionNotification, SessionUpdate, ToolCallContent,
     ToolCallStatus,
 };
@@ -161,9 +161,12 @@ impl CrucibleAcpClient {
     /// text of the turn reaches the caller only through the callback.
     pub async fn send_prompt_with_callback(
         &mut self,
-        request: agent_client_protocol::PromptRequest,
+        request: agent_client_protocol::schema::v1::PromptRequest,
         mut callback: StreamingCallback,
-    ) -> Result<(Vec<ToolCallInfo>, agent_client_protocol::PromptResponse)> {
+    ) -> Result<(
+        Vec<ToolCallInfo>,
+        agent_client_protocol::schema::v1::PromptResponse,
+    )> {
         use serde_json::json;
 
         let request_id = REQUEST_ID.fetch_add(1, Ordering::SeqCst);
@@ -281,15 +284,15 @@ impl CrucibleAcpClient {
         request_id: u64,
         state: &mut StreamingState,
         callback: &mut StreamingCallback,
-    ) -> Result<Option<agent_client_protocol::PromptResponse>> {
+    ) -> Result<Option<agent_client_protocol::schema::v1::PromptResponse>> {
         if let Some(method_value) = response.get("method") {
             state.notification_count += 1;
             let method_name = method_value.as_str().unwrap_or_default();
 
             if method_name == "session/update" {
                 if let Some(params) = response.get("params") {
-                    // Handled ahead of the typed parse, which cannot see it:
-                    // see `usage.rs::extract_context_window`.
+                    // Handled ahead of the typed parse: see
+                    // `usage.rs::extract_context_window`.
                     if let Some((used, limit)) = super::usage::extract_context_window(params) {
                         if !callback(StreamingChunk::ContextWindow { used, limit }) {
                             state.cancelled = true;

@@ -60,7 +60,10 @@ fn client_with_custom_transport(
     (client, BufReader::new(agent_read), agent_write)
 }
 
-fn make_prompt_request(session_id: &str, text: &str) -> agent_client_protocol::PromptRequest {
+fn make_prompt_request(
+    session_id: &str,
+    text: &str,
+) -> agent_client_protocol::schema::v1::PromptRequest {
     serde_json::from_value(json!({
         "sessionId": session_id,
         "prompt": [{"type": "text", "text": text}],
@@ -868,7 +871,7 @@ async fn stream_without_usage_data_completes_gracefully() {
     assert!(tool_calls.is_empty());
     assert_eq!(
         response.stop_reason,
-        agent_client_protocol::StopReason::EndTurn
+        agent_client_protocol::schema::v1::StopReason::EndTurn
     );
 }
 

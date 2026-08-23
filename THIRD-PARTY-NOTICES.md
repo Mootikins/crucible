@@ -360,16 +360,16 @@ as `Apache-2.0 OR GPL-2.0-only`; Crucible elects **Apache-2.0**.
 
 ---
 
-## Rust crates (602)
+## Rust crates (615)
 
 Linked into the released binary.
 
 | Package | Version | Licence |
 |---------|---------|---------|
 | `adler2` | 2.0.1 | 0BSD OR MIT OR Apache-2.0 |
-| `agent-client-protocol` | 0.10.4 | Apache-2.0 |
-| `agent-client-protocol-schema` | 0.11.4 | Apache-2.0 |
-| `agent-client-protocol-schema` | 1.6.0 | Apache-2.0 |
+| `agent-client-protocol` | 2.0.0 | Apache-2.0 |
+| `agent-client-protocol-derive` | 2.0.0 | Apache-2.0 |
+| `agent-client-protocol-schema` | 1.5.0 | Apache-2.0 |
 | `ahash` | 0.8.12 | MIT OR Apache-2.0 |
 | `aho-corasick` | 1.1.4 | Unlicense OR MIT |
 | `aligned` | 0.4.3 | MIT OR Apache-2.0 |
@@ -388,10 +388,15 @@ Linked into the released binary.
 | `arrayref` | 0.3.9 | BSD-2-Clause |
 | `arrayvec` | 0.7.7 | MIT OR Apache-2.0 |
 | `as-slice` | 0.2.1 | MIT OR Apache-2.0 |
-| `async-broadcast` | 0.7.2 | MIT OR Apache-2.0 |
+| `async-channel` | 2.5.0 | Apache-2.0 OR MIT |
 | `async-compression` | 0.4.42 | MIT OR Apache-2.0 |
+| `async-io` | 2.6.0 | Apache-2.0 OR MIT |
+| `async-lock` | 3.4.2 | Apache-2.0 OR MIT |
+| `async-process` | 2.5.0 | Apache-2.0 OR MIT |
+| `async-signal` | 0.2.14 | Apache-2.0 OR MIT |
 | `async-stream` | 0.3.6 | MIT |
 | `async-stream-impl` | 0.3.6 | MIT |
+| `async-task` | 4.7.1 | Apache-2.0 OR MIT |
 | `async-trait` | 0.1.91 | MIT OR Apache-2.0 |
 | `atomic-waker` | 1.1.2 | Apache-2.0 OR MIT |
 | `av-scenechange` | 0.14.1 | MIT |
@@ -415,6 +420,7 @@ Linked into the released binary.
 | `blake3` | 1.8.5 | CC0-1.0 OR Apache-2.0 OR Apache-2.0 WITH LLVM-exception |
 | `block-buffer` | 0.10.4 | MIT OR Apache-2.0 |
 | `block-buffer` | 0.12.1 | MIT OR Apache-2.0 |
+| `blocking` | 1.7.0 | Apache-2.0 OR MIT |
 | `bstr` | 1.12.3 | MIT OR Apache-2.0 |
 | `bytemuck` | 1.25.0 | Zlib OR Apache-2.0 OR MIT |
 | `byteorder` | 1.5.0 | Unlicense OR MIT |
@@ -459,12 +465,12 @@ Linked into the released binary.
 | `crossbeam-utils` | 0.8.21 | MIT OR Apache-2.0 |
 | `crossterm` | 0.28.1 | MIT |
 | `crossterm` | 0.29.0 | MIT |
-| `crucible-cli` | 0.26.1 | MIT OR Apache-2.0 |
-| `crucible-core` | 0.26.1 | MIT OR Apache-2.0 |
-| `crucible-daemon` | 0.26.1 | MIT OR Apache-2.0 |
-| `crucible-lua` | 0.26.1 | MIT OR Apache-2.0 |
-| `crucible-oil` | 0.26.1 | MIT OR Apache-2.0 |
-| `crucible-web` | 0.26.1 | MIT OR Apache-2.0 |
+| `crucible-cli` | 0.28.1 | MIT OR Apache-2.0 |
+| `crucible-core` | 0.28.1 | MIT OR Apache-2.0 |
+| `crucible-daemon` | 0.28.1 | MIT OR Apache-2.0 |
+| `crucible-lua` | 0.28.1 | MIT OR Apache-2.0 |
+| `crucible-oil` | 0.28.1 | MIT OR Apache-2.0 |
+| `crucible-web` | 0.28.1 | MIT OR Apache-2.0 |
 | `crypto-common` | 0.1.7 | MIT OR Apache-2.0 |
 | `crypto-common` | 0.2.2 | MIT OR Apache-2.0 |
 | `ctutils` | 0.4.2 | Apache-2.0 OR MIT |
@@ -522,6 +528,7 @@ Linked into the released binary.
 | `file-id` | 0.2.3 | MIT OR Apache-2.0 |
 | `filedescriptor` | 0.8.3 | MIT |
 | `filetime` | 0.2.29 | MIT/Apache-2.0 |
+| `fixedbitset` | 0.5.7 | MIT OR Apache-2.0 |
 | `flate2` | 1.1.9 | MIT OR Apache-2.0 |
 | `flume` | 0.12.0 | Apache-2.0/MIT |
 | `fnv` | 1.0.7 | Apache-2.0 / MIT |
@@ -531,9 +538,11 @@ Linked into the released binary.
 | `fs2` | 0.4.3 | MIT/Apache-2.0 |
 | `futures` | 0.3.33 | MIT OR Apache-2.0 |
 | `futures-channel` | 0.3.33 | MIT OR Apache-2.0 |
+| `futures-concurrency` | 7.7.1 | MIT OR Apache-2.0 |
 | `futures-core` | 0.3.33 | MIT OR Apache-2.0 |
 | `futures-executor` | 0.3.33 | MIT OR Apache-2.0 |
 | `futures-io` | 0.3.33 | MIT OR Apache-2.0 |
+| `futures-lite` | 2.6.1 | Apache-2.0 OR MIT |
 | `futures-macro` | 0.3.33 | MIT OR Apache-2.0 |
 | `futures-sink` | 0.3.33 | MIT OR Apache-2.0 |
 | `futures-task` | 0.3.33 | MIT OR Apache-2.0 |
@@ -744,9 +753,13 @@ Linked into the released binary.
 | `pest_derive` | 2.8.6 | MIT OR Apache-2.0 |
 | `pest_generator` | 2.8.6 | MIT OR Apache-2.0 |
 | `pest_meta` | 2.8.6 | MIT OR Apache-2.0 |
+| `pin-project` | 1.1.13 | Apache-2.0 OR MIT |
+| `pin-project-internal` | 1.1.13 | Apache-2.0 OR MIT |
 | `pin-project-lite` | 0.2.17 | Apache-2.0 OR MIT |
+| `piper` | 0.2.5 | MIT OR Apache-2.0 |
 | `plist` | 1.9.0 | MIT |
 | `png` | 0.18.1 | MIT OR Apache-2.0 |
+| `polling` | 3.11.0 | Apache-2.0 OR MIT |
 | `portable-atomic` | 1.13.1 | Apache-2.0 OR MIT |
 | `portable-pty` | 0.9.0 | MIT |
 | `potential_utf` | 0.1.5 | Unicode-3.0 |
@@ -971,7 +984,7 @@ Linked into the released binary.
 
 ---
 
-## npm packages (845)
+## npm packages (841)
 
 Installed in the web tree; a subset is bundled into the shipped UI.
 
@@ -986,7 +999,6 @@ Installed in the web tree; a subset is bundled into the shipped UI.
 | `@asamuzakjp/dom-selector` | 7.0.9 | MIT |
 | `@asamuzakjp/nwsapi` | 2.3.9 | MIT |
 | `@atlaskit/pragmatic-drag-and-drop` | 2.0.1 | Apache-2.0 |
-| `@atlaskit/pragmatic-drag-and-drop-hitbox` | 2.0.0 | Apache-2.0 |
 | `@babel/code-frame` | 7.29.0 | MIT |
 | `@babel/compat-data` | 7.29.7 | MIT |
 | `@babel/core` | 7.29.0 | MIT |
@@ -1268,12 +1280,9 @@ Installed in the web tree; a subset is bundled into the shipped UI.
 | `@types/d3-transition` | 3.0.9 | MIT |
 | `@types/d3-zoom` | 3.0.8 | MIT |
 | `@types/deep-eql` | 4.0.2 | MIT |
-| `@types/diff` | 8.0.0 | MIT |
-| `@types/dompurify` | 3.2.0 | MIT |
 | `@types/estree` | 1.0.8 | MIT |
 | `@types/geojson` | 7946.0.16 | MIT |
 | `@types/hast` | 3.0.4 | MIT |
-| `@types/katex` | 0.16.8 | MIT |
 | `@types/linkify-it` | 5.0.0 | MIT |
 | `@types/markdown-it` | 14.1.2 | MIT |
 | `@types/mdast` | 4.0.4 | MIT |

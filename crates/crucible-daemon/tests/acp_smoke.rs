@@ -15,7 +15,7 @@ use crucible_core::background::JobStatus;
 use crucible_core::config::{AcpConfig, AgentProfile, DelegationConfig};
 use crucible_core::session::RecordingMode;
 use crucible_core::session::{SessionAgent, SessionType};
-use crucible_core::traits::chat::{AgentHandle, SessionKnobs};
+use crucible_core::traits::chat::{AgentHandle, ChatError, SessionKnobs};
 use crucible_core::turn::{Agent, TurnContext, TurnEvent};
 use crucible_daemon::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
 use crucible_daemon::agent_manager::AgentFactoryOverride;
@@ -290,15 +290,14 @@ async fn injected_system_context_reaches_acp_prompt() {
     );
 }
 
-/// ACP model switching round-trips against the live agent: the handle
-/// captures the agent-advertised model list at connect, reports
-/// `model_switching` capability, exposes the current model, and `switch_model`
-/// sends `session/set_model` over the wire (captured by the mock) without
-/// restarting the agent process (history-preserving).
+/// Model switching on an ACP agent is off until ACP item W6 reads
+/// `configOptions` from `session/new` and sends `session/set_config_option`.
+/// The SDK 2.0 upgrade removed the `unstable_session_model` API that the old
+/// `session/set_model` path used. This test pins the stub: the handle reports
+/// no model switching, no current model, no model list, and `switch_model`
+/// fails with `NotSupported` even when the agent advertises a `models` list.
 #[tokio::test]
-async fn acp_model_switching_round_trips() {
-    use crucible_core::turn::Agent;
-
+async fn acp_model_switching_is_unsupported_until_config_options() {
     let workspace = TempDir::new().expect("temp workspace");
     let model_capture = workspace.path().join("set_model.txt");
     let agent_path = mock_agent_path().to_string_lossy().into_owned();
@@ -320,43 +319,23 @@ async fn acp_model_switching_round_trips() {
     .expect("ACP handshake timed out")
     .expect("ACP handshake failed");
 
-    // Capability reflects that the agent advertised models.
     assert!(
-        Agent::capabilities(&handle).model_switching,
-        "model_switching capability should be true when the agent advertises models"
+        !Agent::capabilities(&handle).model_switching,
+        "model_switching capability must be false until W6 lands"
     );
+    assert_eq!(SessionKnobs::current_model(&handle), None);
+    assert!(handle.fetch_available_models().await.is_empty());
 
-    // Current model = the advertised current.
-    assert_eq!(
-        SessionKnobs::current_model(&handle),
-        Some("mock-sonnet"),
-        "handle should expose the agent's current model"
-    );
-
-    // Available models come from the agent's advertised list.
-    let models = handle.fetch_available_models().await;
-    assert!(
-        models.iter().any(|m| m == "mock-opus"),
-        "available models should include the advertised list, got: {models:?}"
-    );
-
-    // Switch — sends session/set_model to the live process.
-    SessionKnobs::switch_model(&mut handle, "mock-opus")
+    let err = SessionKnobs::switch_model(&mut handle, "mock-opus")
         .await
-        .expect("switch_model should succeed for an ACP agent that advertises models");
-
-    assert_eq!(
-        SessionKnobs::current_model(&handle),
-        Some("mock-opus"),
-        "current model should update after switch"
+        .expect_err("switch_model must fail on an ACP agent until W6 lands");
+    assert!(
+        matches!(err, ChatError::NotSupported(_)),
+        "expected NotSupported, got {err:?}"
     );
-
-    let captured = std::fs::read_to_string(&model_capture)
-        .expect("mock should have captured the set_model request");
-    assert_eq!(
-        captured.trim(),
-        "mock-opus",
-        "the switched model id must reach the agent over the wire"
+    assert!(
+        !model_capture.exists(),
+        "no session/set_model frame may reach the agent"
     );
 }
 

@@ -20,7 +20,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 use crate::acp::{ClientError, Result};
-use agent_client_protocol::ClientRequest;
+use agent_client_protocol::schema::v1::ClientRequest;
 
 /// Configuration for the mock agent
 #[derive(Debug, Clone, Default)]
@@ -115,7 +115,7 @@ impl Default for MockAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agent_client_protocol::{ClientRequest, InitializeRequest, NewSessionRequest};
+    use agent_client_protocol::schema::v1::{ClientRequest, InitializeRequest, NewSessionRequest};
     use std::path::PathBuf;
 
     #[test]
