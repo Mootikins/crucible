@@ -3,7 +3,7 @@
 //! These tests verify that the IndexingHandler correctly emits SessionEvent::FileDeleted
 //! events when processing file deletion events.
 
-use crucible_core::events::{EventCategory, InternalSessionEvent, Priority, SessionEvent};
+use crucible_core::events::{InternalSessionEvent, SessionEvent};
 use crucible_core::test_support::mocks::MockEventEmitter;
 use crucible_daemon::watch::handlers::IndexingHandler;
 use crucible_daemon::watch::traits::EventHandler;
@@ -41,28 +41,6 @@ async fn test_file_deleted_emission() {
         }
         other => panic!("Expected FileDeleted event, got: {:?}", other),
     }
-}
-
-/// Test that FileDeleted events have Low priority.
-#[tokio::test]
-async fn test_file_deleted_event_priority() {
-    let emitter: Arc<MockEventEmitter<SessionEvent>> = Arc::new(MockEventEmitter::new());
-    let handler = IndexingHandler::with_emitter(emitter.clone()).expect("Failed to create handler");
-
-    let deleted_path = mock_path("deleted_note.md");
-    let file_event = FileEvent::new(FileEventKind::Deleted, deleted_path.clone());
-
-    handler.handle(file_event).await.expect("Handler failed");
-
-    let emitted_events = emitter.emitted_events();
-    assert_eq!(emitted_events.len(), 1);
-
-    // FileDeleted events should have Low priority (cleanup can wait)
-    assert_eq!(
-        emitted_events[0].priority(),
-        Priority::Low,
-        "FileDeleted events should have Low priority"
-    );
 }
 
 /// Test FileDeleted emission with various file extensions.
@@ -244,50 +222,6 @@ async fn test_file_deleted_emission_spaces_in_path() {
     }
 }
 
-/// Test that FileDeleted is a file event.
-#[tokio::test]
-async fn test_file_deleted_is_file_event() {
-    let emitter: Arc<MockEventEmitter<SessionEvent>> = Arc::new(MockEventEmitter::new());
-    let handler = IndexingHandler::with_emitter(emitter.clone()).expect("Failed to create handler");
-
-    let deleted_path = mock_path("deleted.md");
-    let file_event = FileEvent::new(FileEventKind::Deleted, deleted_path.clone());
-
-    handler.handle(file_event).await.expect("Handler failed");
-
-    let emitted_events = emitter.emitted_events();
-    assert_eq!(emitted_events.len(), 1);
-
-    // FileDeleted should be categorized as a file event
-    assert!(
-        emitted_events[0].category() == EventCategory::File,
-        "FileDeleted should be categorized as a file event"
-    );
-}
-
-/// Test that FileDeleted is NOT a note event.
-/// Note events are for parsed content (NoteParsed, NoteCreated, NoteModified).
-/// File events are raw filesystem changes.
-#[tokio::test]
-async fn test_file_deleted_is_not_note_event() {
-    let emitter: Arc<MockEventEmitter<SessionEvent>> = Arc::new(MockEventEmitter::new());
-    let handler = IndexingHandler::with_emitter(emitter.clone()).expect("Failed to create handler");
-
-    let deleted_path = mock_path("deleted.md");
-    let file_event = FileEvent::new(FileEventKind::Deleted, deleted_path.clone());
-
-    handler.handle(file_event).await.expect("Handler failed");
-
-    let emitted_events = emitter.emitted_events();
-    assert_eq!(emitted_events.len(), 1);
-
-    // FileDeleted should NOT be categorized as a note event
-    assert!(
-        emitted_events[0].category() != EventCategory::Note,
-        "FileDeleted should NOT be categorized as a note event"
-    );
-}
-
 /// Test FileDeleted event_type string.
 #[tokio::test]
 async fn test_file_deleted_event_type() {
@@ -306,28 +240,6 @@ async fn test_file_deleted_event_type() {
         emitted_events[0].event_type(),
         "file_deleted",
         "FileDeleted event_type should be 'file_deleted'"
-    );
-}
-
-/// Test FileDeleted identifier (used for pattern matching).
-#[tokio::test]
-async fn test_file_deleted_identifier() {
-    let emitter: Arc<MockEventEmitter<SessionEvent>> = Arc::new(MockEventEmitter::new());
-    let handler = IndexingHandler::with_emitter(emitter.clone()).expect("Failed to create handler");
-
-    let deleted_path = PathBuf::from("/notes/deleted.md");
-    let file_event = FileEvent::new(FileEventKind::Deleted, deleted_path.clone());
-
-    handler.handle(file_event).await.expect("Handler failed");
-
-    let emitted_events = emitter.emitted_events();
-    assert_eq!(emitted_events.len(), 1);
-
-    // The identifier should be the path display string
-    assert_eq!(
-        emitted_events[0].identifier(),
-        "/notes/deleted.md",
-        "FileDeleted identifier should be the path"
     );
 }
 
@@ -440,7 +352,7 @@ async fn test_file_deleted_emission_with_cancelled_outcome() {
     assert_eq!(emitted_events.len(), 1);
 }
 
-/// Test FileDeleted serialization/deserialization.
+/// Test FileDeleted serialization.
 #[tokio::test]
 async fn test_file_deleted_serialization() {
     let emitter: Arc<MockEventEmitter<SessionEvent>> = Arc::new(MockEventEmitter::new());
@@ -454,14 +366,10 @@ async fn test_file_deleted_serialization() {
     let emitted_events = emitter.emitted_events();
     assert_eq!(emitted_events.len(), 1);
 
-    // Test serialization round-trip
     let json = serde_json::to_string(&emitted_events[0]).unwrap();
     assert!(json.contains("file_deleted"), "JSON should contain type");
     assert!(
         json.contains("serialization-test.md"),
         "JSON should contain path"
     );
-
-    let deserialized: SessionEvent = serde_json::from_str(&json).unwrap();
-    assert_eq!(emitted_events[0], deserialized);
 }

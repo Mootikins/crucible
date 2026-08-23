@@ -125,7 +125,6 @@ pub use events::{
     HandlerErrorInfo,
     NoOpEmitter,
     NoteChangeType,
-    Priority,
     SessionEvent,
     SharedEventBus,
 };

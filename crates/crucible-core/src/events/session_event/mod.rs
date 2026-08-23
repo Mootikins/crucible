@@ -22,10 +22,6 @@
 //! assert_eq!(event.event_type(), "note_modified");
 //! ```
 
-// Submodules for logical organization
-mod deserialize;
-#[cfg(any(test, feature = "test-utils"))]
-pub mod helpers;
 pub mod internal;
 pub mod types;
 
@@ -36,13 +32,9 @@ use serde::Serialize;
 use serde_json::Value as JsonValue;
 
 use crate::text::truncate_bytes;
-#[cfg(any(test, feature = "test-utils"))]
-use helpers::{estimate_content_len, identifier_for_event, payload_for_event};
 
 pub use internal::InternalSessionEvent;
-#[cfg(any(test, feature = "test-utils"))]
-pub use types::EventCategory;
-pub use types::{FileChangeKind, NoteChangeType, Priority};
+pub use types::{FileChangeKind, NoteChangeType};
 
 /// The ten scripting names the transport vocabulary also has a payload for.
 ///
@@ -208,65 +200,6 @@ impl SessionEvent {
         }
     }
 
-    /// Get the identifier for pattern matching (tool name, note path, etc.).
-    ///
-    /// This is used by the EventBus for glob pattern matching against handlers.
-    #[cfg(any(test, feature = "test-utils"))]
-    pub fn identifier(&self) -> String {
-        identifier_for_event(self)
-    }
-
-    /// Broad classification used for filtering events by concern.
-    ///
-    /// Each event belongs to exactly one category.
-    #[cfg(any(test, feature = "test-utils"))]
-    pub fn category(&self) -> EventCategory {
-        match self {
-            Self::MessageReceived { .. } => EventCategory::Message,
-            Self::InteractionRequested { .. } => EventCategory::Interaction,
-            Self::Custom { .. } => EventCategory::Custom,
-            Self::Internal(inner) => inner.category(),
-        }
-    }
-
-    /// Get the priority of this event.
-    ///
-    /// Priority affects processing order in priority-aware handlers.
-    /// Higher priority events are processed before lower priority events.
-    ///
-    /// # Priority Mapping
-    ///
-    /// - `FileChanged(Created)` → High (new files should be indexed promptly)
-    /// - `FileChanged(Modified)` → Normal (standard processing)
-    /// - `FileDeleted` → Low (cleanup can wait)
-    /// - All other events → Normal (default priority)
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use crucible_core::events::{SessionEvent, InternalSessionEvent, FileChangeKind, Priority};
-    /// use std::path::PathBuf;
-    ///
-    /// let created = SessionEvent::internal(InternalSessionEvent::FileChanged {
-    ///     path: PathBuf::from("/notes/new.md"),
-    ///     kind: FileChangeKind::Created,
-    /// });
-    /// assert_eq!(created.priority(), Priority::High);
-    ///
-    /// let deleted = SessionEvent::internal(InternalSessionEvent::FileDeleted {
-    ///     path: PathBuf::from("/notes/old.md"),
-    /// });
-    /// assert_eq!(deleted.priority(), Priority::Low);
-    /// ```
-    #[cfg(any(test, feature = "test-utils"))]
-    pub fn priority(&self) -> Priority {
-        match self {
-            Self::Internal(inner) => inner.priority(),
-            Self::MessageReceived { .. } | Self::InteractionRequested { .. } => Priority::Normal,
-            Self::Custom { .. } => Priority::Normal,
-        }
-    }
-
     /// Get the PascalCase type name of this event.
     ///
     /// Returns a human-readable type name suitable for logging and display.
@@ -334,60 +267,6 @@ impl SessionEvent {
             }
             Self::Internal(inner) => inner.summary(max_len),
         }
-    }
-
-    /// Get the detailed payload content of this event.
-    ///
-    /// Returns the main content or data associated with this event, truncated to
-    /// `max_len` characters. Returns `None` for events that have no meaningful
-    /// payload content.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use crucible_core::events::SessionEvent;
-    ///
-    /// let event = SessionEvent::MessageReceived {
-    ///     content: "Hello, world!".into(),
-    ///     participant_id: "user".into(),
-    /// };
-    /// let payload = event.payload(100);
-    /// assert_eq!(payload, Some("Hello, world!".to_string()));
-    /// ```
-    #[cfg(any(test, feature = "test-utils"))]
-    pub fn payload(&self, max_len: usize) -> Option<String> {
-        payload_for_event(self).map(|p| truncate_bytes(&p, max_len).to_string())
-    }
-
-    /// Estimate the number of tokens in this event.
-    ///
-    /// This is a simple heuristic - real implementations should use a proper
-    /// tokenizer like tiktoken. The estimate uses a rough approximation of
-    /// ~4 characters per token for English text, plus a fixed overhead for
-    /// event structure.
-    ///
-    /// # Returns
-    ///
-    /// An estimated token count, always at least 11 (10 overhead + 1 minimum content).
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use crucible_core::events::SessionEvent;
-    ///
-    /// let event = SessionEvent::MessageReceived {
-    ///     content: "Hello, world!".into(),
-    ///     participant_id: "user".into(),
-    /// };
-    /// let tokens = event.estimate_tokens();
-    /// assert!(tokens > 10); // At least structural overhead
-    /// ```
-    #[cfg(any(test, feature = "test-utils"))]
-    pub fn estimate_tokens(&self) -> usize {
-        let content_len = estimate_content_len(self);
-        // Rough estimate: ~4 characters per token
-        // Add fixed overhead for event structure
-        (content_len / 4).max(1) + 10
     }
 }
 

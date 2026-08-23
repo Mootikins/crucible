@@ -13,9 +13,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[cfg(any(test, feature = "test-utils"))]
-use super::EventCategory;
-use super::{FileChangeKind, NoteChangeType, Priority};
+use super::{FileChangeKind, NoteChangeType};
 use crate::text::truncate_bytes;
 
 /// Internal session events that flow through the daemon's event system but never
@@ -126,67 +124,6 @@ impl InternalSessionEvent {
         }
     }
 
-    /// Get the identifier for pattern matching (path, entity id, etc.).
-    #[cfg(any(test, feature = "test-utils"))]
-    pub fn identifier(&self) -> String {
-        match self {
-            Self::FileChanged { path, .. } => path.display().to_string(),
-            Self::FileDeleted { path, .. } => path.display().to_string(),
-            Self::FileMoved { to, .. } => to.display().to_string(),
-            Self::NoteCreated { path, .. } => path.display().to_string(),
-            Self::NoteModified { path, .. } => path.display().to_string(),
-            Self::NoteDeleted { path, .. } => path.display().to_string(),
-            Self::PrecognitionComplete { .. } => "precognition:complete".into(),
-        }
-    }
-
-    /// Get the priority of this event.
-    #[cfg(any(test, feature = "test-utils"))]
-    pub fn priority(&self) -> Priority {
-        match self {
-            Self::FileChanged { kind, .. } => match kind {
-                FileChangeKind::Created => Priority::High,
-                FileChangeKind::Modified => Priority::Normal,
-            },
-            Self::FileDeleted { .. } => Priority::Low,
-            Self::FileMoved { .. } | Self::NoteCreated { .. } => Priority::Normal,
-            Self::NoteModified { .. } | Self::NoteDeleted { .. } => Priority::Normal,
-            Self::PrecognitionComplete { .. } => Priority::Normal,
-        }
-    }
-
-    /// Broad classification used for filtering internal events by concern.
-    #[cfg(any(test, feature = "test-utils"))]
-    pub fn category(&self) -> EventCategory {
-        match self {
-            Self::NoteCreated { .. } | Self::NoteModified { .. } | Self::NoteDeleted { .. } => {
-                EventCategory::Note
-            }
-            Self::FileChanged { .. } | Self::FileDeleted { .. } | Self::FileMoved { .. } => {
-                EventCategory::File
-            }
-            Self::PrecognitionComplete { .. } => EventCategory::Other,
-        }
-    }
-
-    /// Estimate the content length for token estimation.
-    #[cfg(any(test, feature = "test-utils"))]
-    pub fn estimate_content_len(&self) -> usize {
-        match self {
-            Self::NoteCreated { title, .. } => title.as_ref().map(|t| t.len()).unwrap_or(0) + 50,
-            Self::NoteModified { .. } => 50,
-            Self::NoteDeleted { .. } => 50,
-            Self::FileChanged { .. } => 50,
-            Self::FileDeleted { .. } => 50,
-            Self::FileMoved { .. } => 50,
-            Self::PrecognitionComplete {
-                notes_count,
-                query_summary,
-                ..
-            } => notes_count.to_string().len() + query_summary.len() + 50,
-        }
-    }
-
     /// Get a summary of this event's content.
     ///
     /// Free-text fields are cut to `max_len` bytes on a char boundary.
@@ -225,32 +162,6 @@ impl InternalSessionEvent {
                     kilns_failed
                 )
             }
-        }
-    }
-
-    /// Get the detailed payload content of this event.
-    #[cfg(any(test, feature = "test-utils"))]
-    pub fn payload_content(&self) -> Option<String> {
-        match self {
-            Self::NoteCreated { path, title } => Some(format!(
-                "{}: {}",
-                path.display(),
-                title.as_deref().unwrap_or("(none)")
-            )),
-            Self::NoteModified { path, change_type } => {
-                Some(format!("{}: {:?}", path.display(), change_type))
-            }
-            Self::NoteDeleted { path, existed } => {
-                Some(format!("{}: existed={}", path.display(), existed))
-            }
-            Self::FileChanged { path, kind } => Some(format!("{}: {:?}", path.display(), kind)),
-            Self::FileDeleted { path } => Some(path.display().to_string()),
-            Self::FileMoved { from, to } => Some(format!("{} -> {}", from.display(), to.display())),
-            Self::PrecognitionComplete {
-                notes_count,
-                query_summary,
-                ..
-            } => Some(format!("notes={}, query={}", notes_count, query_summary)),
         }
     }
 }

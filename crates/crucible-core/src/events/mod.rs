@@ -50,10 +50,8 @@ pub use emitter::{
 };
 
 // Session event types
-#[cfg(any(test, feature = "test-utils"))]
-pub use session_event::EventCategory;
 pub use session_event::{
-    FileChangeKind, InternalSessionEvent, NoteChangeType, Priority, ScriptingEvent, SessionEvent,
+    FileChangeKind, InternalSessionEvent, NoteChangeType, ScriptingEvent, SessionEvent,
 };
 
 // Ring buffer for event storage

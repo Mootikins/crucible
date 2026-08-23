@@ -1,5 +1,5 @@
-//! Tests for the live `SessionEvent` variants: names, identifiers,
-//! categories, summaries, payloads and the serde round trip.
+//! Tests for the live `SessionEvent` variants: names, summaries and the
+//! JSON tag.
 
 use super::*;
 use crate::interaction::{InteractionRequest, PermRequest};
@@ -91,34 +91,6 @@ fn type_name_is_the_variant_name() {
 }
 
 #[test]
-fn identifier_names_the_subject() {
-    assert_eq!(message().identifier(), "message:user");
-    assert_eq!(interaction().identifier(), "interaction:permission:req-1");
-    assert_eq!(custom().identifier(), "tool_called");
-    assert_eq!(
-        note_modified().identifier(),
-        test_path("note.md").display().to_string()
-    );
-    assert_eq!(precognition().identifier(), "precognition:complete");
-}
-
-#[test]
-fn category_groups_by_concern() {
-    assert_eq!(message().category(), EventCategory::Message);
-    assert_eq!(interaction().category(), EventCategory::Interaction);
-    assert_eq!(custom().category(), EventCategory::Custom);
-    assert_eq!(note_modified().category(), EventCategory::Note);
-    assert_eq!(
-        SessionEvent::internal(InternalSessionEvent::FileDeleted {
-            path: test_path("a.md"),
-        })
-        .category(),
-        EventCategory::File
-    );
-    assert_eq!(precognition().category(), EventCategory::Other);
-}
-
-#[test]
 fn summary_names_the_key_fields() {
     assert_eq!(message().summary(100), "from=user, content_len=13");
     assert!(interaction().summary(100).starts_with("id=req-1, kind="));
@@ -144,48 +116,9 @@ fn summary_cuts_free_text_to_max_len() {
 }
 
 #[test]
-fn payload_is_the_main_content() {
-    assert_eq!(message().payload(100), Some("Hello, world!".to_string()));
-    assert_eq!(message().payload(5), Some("Hello".to_string()));
-    assert_eq!(interaction().payload(100), None);
-    assert_eq!(
-        custom().payload(100),
-        Some(r#"{"tool":"search"}"#.to_string())
-    );
-    assert_eq!(
-        precognition().payload(100),
-        Some("notes=3, query=rust".to_string())
-    );
-}
-
-#[test]
-fn estimate_tokens_adds_overhead() {
-    assert_eq!(message().estimate_tokens(), 13 / 4 + 10);
-    assert_eq!(interaction().estimate_tokens(), 100 / 4 + 10);
-    assert_eq!(note_modified().estimate_tokens(), 50 / 4 + 10);
-}
-
-#[test]
-fn every_live_event_round_trips_through_json() {
-    for event in every_live_event() {
-        let json = serde_json::to_string(&event).unwrap();
-        let back: SessionEvent = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, event, "{json}");
-    }
-}
-
-#[test]
 fn json_tag_is_the_event_type() {
     for event in every_live_event() {
         let value = serde_json::to_value(&event).unwrap();
         assert_eq!(value["type"], event.event_type(), "{value}");
     }
-}
-
-#[test]
-fn an_unknown_tag_is_an_error() {
-    let err = serde_json::from_str::<SessionEvent>(r#"{"type":"tool_called","name":"x"}"#)
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("unknown event type 'tool_called'"), "{err}");
 }
