@@ -7,7 +7,6 @@ pub mod chat;
 pub mod cli;
 pub mod context;
 pub mod defaults;
-pub mod discovery;
 pub mod llm;
 pub mod mcp;
 pub mod permissions;
@@ -28,7 +27,6 @@ pub use defaults::{
     DEFAULT_PROVIDER_MAX_TOKENS, DEFAULT_TEMPERATURE, DEFAULT_TIMEOUT_SECS, DEFAULT_ZAI_ENDPOINT,
     DEFAULT_ZAI_MODEL, OPENAI_HARDCODED_MODELS, OPENAI_MODEL_PREFIXES, ZAI_MODELS,
 };
-pub use discovery::{DiscoveryPathsConfig, TypeDiscoveryConfig};
 pub use llm::{LlmConfig, LlmProviderConfig, LlmProviderConfigBuilder};
 pub use mcp::{McpConfig, TransportType, UpstreamServerConfig};
 pub use permissions::{

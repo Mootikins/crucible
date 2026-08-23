@@ -51,6 +51,10 @@ default_model = "llama3.2"
 | `agent_directories` | list | `[]` | Additional directories to search for agent cards |
 | `runtimepath` | list | `[]` | *Extra* runtime roots for plugins and themes, searched after the well-known ones (`~/.config/crucible/runtime`, `$CRUCIBLE_RUNTIME`, next to the binary). Skills discovery does not read it yet |
 
+A `[discovery]` section is ignored. Crucible removed the unread `[discovery]` types in
+the consolidation plan (item T5-09). An old config file that still sets `[discovery.tools]`
+or `[discovery.handlers]` loads without an error. Set `runtimepath` to add plugin roots.
+
 ### [kilns] — Named Kiln Registry
 
 Register kilns by name. Each entry can be a **shorthand** (just a path string) or a **full table** with extra options.

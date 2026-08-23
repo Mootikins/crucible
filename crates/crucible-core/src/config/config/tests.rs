@@ -346,3 +346,20 @@ fn plugins_config_roundtrips_through_toml() {
     assert_eq!(deserialized.plugin[0].url, "user/my-plugin");
     assert_eq!(deserialized.plugin[0].branch.as_deref(), Some("dev"));
 }
+
+/// A `[discovery]` section in an old config file does not stop the load.
+///
+/// Plan item T5-09 deleted the unread `DiscoveryPathsConfig` types. The root
+/// config does not set `deny_unknown_fields`, so the section is ignored.
+#[test]
+fn a_discovery_section_is_ignored_not_rejected() {
+    let config: CliAppConfig = toml::from_str(
+        r#"
+[discovery.tools]
+additional_paths = ["/opt/crucible/tools"]
+use_defaults = false
+"#,
+    )
+    .expect("an ignored [discovery] section must still load");
+    assert_eq!(config.kiln_path, CliAppConfig::default().kiln_path);
+}

@@ -26,7 +26,7 @@ at). Every field has a default, so `[acp]` is optional.
 | `enable_discovery` | bool | `true` | **Currently unread** — agents are discovered unconditionally |
 | `session_timeout_minutes` | integer | `30` | **Currently unread** — no idle-drop is wired to it |
 | `max_message_size_mb` | integer | `25` | **Currently unread** — no size check is wired to it |
-| `lazy_agent_selection` | bool | `true` | **Currently unread** — nothing consults it |
+| `lazy_agent_selection` | bool | `true` | **Reserved** — no code reads it; the value has no effect |
 
 ```toml
 [acp]
