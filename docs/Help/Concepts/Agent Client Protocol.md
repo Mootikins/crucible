@@ -109,9 +109,13 @@ Crucible ships with profiles for common ACP-compatible agents:
 | `gemini` | `gemini` | `npm install -g @google/gemini-cli` |
 | `codex` | `npx @zed-industries/codex-acp` | `npm install -g @zed-industries/codex-acp` (bridges to the OpenAI Codex CLI) |
 | `cursor` | `cursor-acp` | `npm install -g cursor-acp` (bridges to the Cursor CLI) |
+| `hermes` | `hermes acp` | `curl -fsSL https://hermes-agent.nousresearch.com/install.sh \| bash` |
 
-`opencode` and `gemini` speak ACP directly; the other three are bridges that also need the
-underlying vendor CLI installed. `cru` prints the same install lines when no agent is
+`opencode`, `gemini` and `hermes` speak ACP directly; the other three are bridges that also
+need the underlying vendor CLI installed. Hermes notes: a polished tool's result arrives in
+`content` text blocks with no `rawOutput`; permission requests carry a fresh `perm-check-N`
+id that matches no announced tool call; `session/close` and `ping` answer `-32601`, which is
+not an error. `cru` prints the same install lines when no agent is
 found, so if this table ever disagrees with the binary, trust the binary.
 
 Agent discovery uses parallel probing: Crucible checks all known agents concurrently via `which` + `--version`, caches the result, and falls back through the priority list if the preferred agent isn't available.

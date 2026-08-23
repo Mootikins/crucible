@@ -855,7 +855,10 @@ fn user_message_chunk_emits_nothing_and_stays_out_of_the_answer() {
             }
         }),
     );
-    assert!(chunks.is_empty(), "a user chunk must emit no StreamingChunk");
+    assert!(
+        chunks.is_empty(),
+        "a user chunk must emit no StreamingChunk"
+    );
     assert_eq!(state.accumulated_text, "");
     assert!(!state.produced_content);
 }

@@ -70,7 +70,7 @@ Applied when you run `cru chat --acp <name>` or bring up the agent picker.
 ```toml
 [acp]
 # Default ACP agent to use when --acp is omitted (optional)
-default_agent = "opencode"  # or "claude", "gemini", "codex", "cursor"
+default_agent = "opencode"  # or "claude", "gemini", "codex", "cursor", "hermes"
 
 # Streaming response timeout in minutes
 streaming_timeout_minutes = 15

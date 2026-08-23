@@ -36,7 +36,7 @@ Creates a new daemon session.
 |--------|---------|-------------|
 | `-t, --session-type <type>` | `chat` | `chat`, `agent`, or `workflow` (`mcp` is deprecated and maps to `chat` with a warning) |
 | `-a, --agent <card>` | — | Agent card to configure: the prompt, model, and tool policy of an internal agent (`cru agents list`) |
-| `--acp <profile>` | — | ACP profile instead: an external agent subprocess (`claude`, `gemini`, `codex`, `cursor`, `opencode`, or `[acp.agents.*]`) |
+| `--acp <profile>` | — | ACP profile instead: an external agent subprocess (`claude`, `gemini`, `codex`, `cursor`, `opencode`, `hermes`, or `[acp.agents.*]`) |
 | `--recording-mode <mode>` | — | `granular` or `coarse` |
 | `-q, --quiet` | off | Print only the session ID |
 | `-f, --format <format>` | `text` | `text` or `json` |
