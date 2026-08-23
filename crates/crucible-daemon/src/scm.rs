@@ -231,6 +231,32 @@ pub async fn clone_repo(url: &str, dest: &Path) -> Result<(), ScmError> {
     Ok(())
 }
 
+/// Run git in `dir` and return its stdout.
+///
+/// `index_file` points git at an alternate index through `GIT_INDEX_FILE`, so
+/// a caller can stage a scratch tree without touching the user's index. A
+/// non-zero exit is an error that carries git's stderr.
+pub(crate) async fn run_git(
+    dir: &Path,
+    args: &[&str],
+    index_file: Option<&std::ffi::OsStr>,
+) -> std::io::Result<String> {
+    let mut cmd = Command::new("git");
+    cmd.args(args).current_dir(dir);
+    if let Some(index) = index_file {
+        cmd.env("GIT_INDEX_FILE", index);
+    }
+    let out = cmd.output().await?;
+    if !out.status.success() {
+        return Err(std::io::Error::other(format!(
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim()
+        )));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
 #[cfg(test)]
 mod tests {
     /// Run git in a fixture repo, failing the test rather than the assertion

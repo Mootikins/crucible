@@ -295,22 +295,10 @@ pub(super) async fn tree_exists(root: &Path, tree: &TreeSha) -> bool {
     .is_ok()
 }
 
-/// Run git in `root` and return stdout, mapping a non-zero exit to
-/// [`ReviewError::Git`] with git's own stderr.
+/// Run git in `root` and return stdout. A non-zero exit surfaces as
+/// [`ReviewError::Io`] through the shared [`crate::scm::run_git`].
 async fn git(root: &Path, args: &[&str]) -> ReviewResult<String> {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .await?;
-    if !out.status.success() {
-        return Err(ReviewError::Git(format!(
-            "{}: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&out.stderr).trim()
-        )));
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    Ok(crate::scm::run_git(root, args, None).await?)
 }
 
 /// As [`git`], feeding `input` on stdin. `mktree` is the only caller.

@@ -27,7 +27,8 @@ use dashmap::DashMap;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::process::Command;
+
+use crate::scm;
 use tracing::{debug, warn};
 
 const DEFAULT_JOURNAL_CAP: usize = 5 * 1024 * 1024;
@@ -230,27 +231,17 @@ impl WorkspaceSnapshot {
             // `.` resolves against `current_dir` below, so this is the whole
             // repo when the workspace *is* the repo root, and exactly the
             // agent's subtree when it is not.
-            let out = Command::new("git")
-                .args(["restore", "--source", sha, "--worktree", "--staged", "."])
-                .current_dir(workspace)
-                .output()
-                .await?;
-            if !out.status.success() {
+            let restore = ["restore", "--source", sha, "--worktree", "--staged", "."];
+            if scm::run_git(workspace, &restore, None).await.is_err() {
                 // Older git versions (< 2.23) lack `git restore`. Fall
                 // back to checkout; this restores tracked files but
                 // won't remove files the turn newly created. That's a
                 // graceful degradation rather than a hard failure.
-                let out2 = Command::new("git")
-                    .args(["checkout", sha, "--", "."])
-                    .current_dir(workspace)
-                    .output()
-                    .await?;
-                if !out2.status.success() {
-                    return Err(std::io::Error::other(format!(
-                        "git restore/checkout failed: {}",
-                        String::from_utf8_lossy(&out2.stderr)
-                    )));
-                }
+                scm::run_git(workspace, &["checkout", sha, "--", "."], None)
+                    .await
+                    .map_err(|e| {
+                        std::io::Error::other(format!("git restore/checkout failed: {e}"))
+                    })?;
             }
             Ok(())
         } else if let Some(j) = &self.journal {
@@ -276,12 +267,9 @@ impl WorkspaceSnapshot {
 /// answers true and takes the git path. That is intentional: the tree it
 /// produces still describes that directory's contents.
 pub async fn is_git_repo(p: &Path) -> bool {
-    let out = Command::new("git")
-        .args(["rev-parse", "--git-dir"])
-        .current_dir(p)
-        .output()
-        .await;
-    matches!(out, Ok(o) if o.status.success())
+    scm::run_git(p, &["rev-parse", "--git-dir"], None)
+        .await
+        .is_ok()
 }
 
 /// Stage everything under `p` into a *throwaway* index and return the
@@ -304,7 +292,7 @@ pub async fn capture_tree(p: &Path) -> std::io::Result<String> {
 
     // Absolute: git resolves a relative GIT_INDEX_FILE against the worktree
     // top level, not the current directory.
-    let git_dir = run_git(p, &["rev-parse", "--absolute-git-dir"], None).await?;
+    let git_dir = scm::run_git(p, &["rev-parse", "--absolute-git-dir"], None).await?;
     let real_index = Path::new(git_dir.trim()).join("index");
     if let Ok(source) = std::fs::metadata(&real_index) {
         std::fs::copy(&real_index, &index_path)?;
@@ -325,46 +313,23 @@ pub async fn capture_tree(p: &Path) -> std::io::Result<String> {
     let index_env = index_path.as_os_str();
     // Additions, modifications and deletions under `p`. `.gitignore` still
     // applies, so build output never lands in the tree.
-    run_git(p, &["add", "-A", "."], Some(index_env)).await?;
-    let tree = run_git(p, &["write-tree"], Some(index_env)).await?;
+    scm::run_git(p, &["add", "-A", "."], Some(index_env)).await?;
+    let tree = scm::run_git(p, &["write-tree"], Some(index_env)).await?;
     Ok(tree.trim().to_string())
 }
 
 /// Point `name` at `tree`, pinning it against `git gc`.
 async fn update_keep(root: &Path, name: &str, tree: &str) -> std::io::Result<()> {
-    run_git(root, &["update-ref", name, tree], None)
+    scm::run_git(root, &["update-ref", name, tree], None)
         .await
         .map(|_| ())
 }
 
 /// Delete `name`, if it still exists.
 async fn drop_keep(root: &Path, name: &str) -> std::io::Result<()> {
-    run_git(root, &["update-ref", "-d", name], None)
+    scm::run_git(root, &["update-ref", "-d", name], None)
         .await
         .map(|_| ())
-}
-
-/// Run git in `dir`, optionally against an alternate index, and return
-/// stdout. A non-zero exit is an error carrying git's stderr.
-async fn run_git(
-    dir: &Path,
-    args: &[&str],
-    index_file: Option<&std::ffi::OsStr>,
-) -> std::io::Result<String> {
-    let mut cmd = Command::new("git");
-    cmd.args(args).current_dir(dir);
-    if let Some(index) = index_file {
-        cmd.env("GIT_INDEX_FILE", index);
-    }
-    let out = cmd.output().await?;
-    if !out.status.success() {
-        return Err(std::io::Error::other(format!(
-            "git {} failed: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&out.stderr).trim()
-        )));
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// Walk `workspace` and collect every file's bytes into an in-memory
@@ -422,6 +387,7 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::tempdir;
+    use tokio::process::Command;
 
     async fn git_status(p: &Path) -> String {
         let out = Command::new("git")
