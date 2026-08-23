@@ -515,12 +515,9 @@ impl AgentManager {
         current = fold_vms(
             &stream_ctx.session_state,
             stream_ctx.agent_stream_config.plugin_handlers.as_ref(),
-            Some(current),
+            current,
             |_, registry, lua, current| {
                 Box::pin(async move {
-                    let Some(current) = current else {
-                        return ControlFlow::Break(None);
-                    };
                     match Self::run_transform_context_handlers(
                         stream_ctx,
                         &registry,
@@ -530,7 +527,7 @@ impl AgentManager {
                     )
                     .await
                     {
-                        Ok(messages) => ControlFlow::Continue(Some(messages)),
+                        Ok(messages) => ControlFlow::Continue(messages),
                         Err(()) => ControlFlow::Break(None),
                     }
                 })

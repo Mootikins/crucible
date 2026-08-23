@@ -1191,7 +1191,7 @@ impl AgentManager {
                 Box::pin(async move {
                     Self::run_post_llm_call_handlers(session_id, &registry, &lua, post_llm_event)
                         .await;
-                    ControlFlow::Continue(())
+                    ControlFlow::<(), ()>::Continue(())
                 })
             },
         )

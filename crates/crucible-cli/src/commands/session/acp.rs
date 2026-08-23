@@ -505,6 +505,23 @@ pub(super) mod rpc {
         Ok(())
     }
 
+    /// The agent `cru session configure` sends. The provider is explicit
+    /// here, so the agent must not borrow the config default's endpoint or
+    /// key (same rule as `session.create`).
+    pub(super) fn configured_agent(
+        config: &CliConfig,
+        provider: BackendType,
+        model: &str,
+        endpoint: Option<String>,
+    ) -> crucible_core::session::SessionAgent {
+        let mut agent = crucible_core::session::SessionAgent::internal_from_config(config);
+        agent.provider_key = Some(provider.to_string());
+        agent.provider = provider;
+        agent.model = model.to_string();
+        agent.endpoint = endpoint;
+        agent
+    }
+
     pub(crate) async fn configure(
         client: &DaemonClient,
         config: &CliConfig,
@@ -514,14 +531,7 @@ pub(super) mod rpc {
         endpoint: Option<String>,
         format: &str,
     ) -> Result<()> {
-        // The provider is explicit here, so the agent must not borrow the
-        // config default's endpoint or key (same rule as `session.create`).
-        let mut agent = crucible_core::session::SessionAgent::internal_from_config(config);
-        agent.provider_key = Some(provider.to_string());
-        agent.provider = provider;
-        agent.model = model.to_string();
-        agent.endpoint = endpoint.clone();
-
+        let agent = configured_agent(config, provider, model, endpoint.clone());
         client.session_configure_agent(session_id, &agent).await?;
 
         if format == "json" {
@@ -657,7 +667,39 @@ pub(super) mod rpc {
 
 #[cfg(test)]
 mod tests {
+    use super::rpc::configured_agent;
     use super::{agent_type_for, annotate_unknown_agent, wants_bare_id};
+    use crate::config::CliConfig;
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
+
+    /// `cru session configure` names a provider, so the agent it sends must
+    /// not borrow the config default provider's endpoint or key.
+    #[test]
+    fn configure_drops_the_config_default_endpoint_and_key() {
+        let local = LlmProviderConfig::builder(BackendType::Ollama)
+            .endpoint("http://ollama.test:11434")
+            .model("config-model")
+            .build();
+        let config = CliConfig {
+            llm: LlmConfig {
+                default: Some("local".to_string()),
+                providers: [("local".to_string(), local)].into_iter().collect(),
+                models: Default::default(),
+            },
+            ..Default::default()
+        };
+
+        let agent = configured_agent(&config, BackendType::OpenAI, "gpt", None);
+        assert_eq!(agent.agent_type, "internal");
+        assert_eq!(agent.provider, BackendType::OpenAI);
+        assert_eq!(agent.provider_key.as_deref(), Some("openai"));
+        assert_eq!(agent.model, "gpt");
+        assert_eq!(agent.endpoint, None);
+
+        let endpoint = Some("http://proxy.test".to_string());
+        let agent = configured_agent(&config, BackendType::OpenAI, "gpt", endpoint.clone());
+        assert_eq!(agent.endpoint, endpoint);
+    }
 
     /// `--agent` names a card, which is what `cru agents list` shows. It named
     /// an ACP profile until the two were split, which is why a card was

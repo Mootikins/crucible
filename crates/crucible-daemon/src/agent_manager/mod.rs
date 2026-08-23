@@ -403,7 +403,7 @@ pub struct AgentManager {
     /// Plugin `crucible.on` handler registry + the plugin `Lua` handle.
     /// Bound at daemon startup alongside `lua_validators`. Empty in tests and
     /// isolated managers, where plugin hooks simply don't fire.
-    plugin_handlers: std::sync::OnceLock<(Arc<LuaScriptHandlerRegistry>, Arc<Lua>)>,
+    plugin_handlers: std::sync::OnceLock<PluginHandlers>,
     /// Plugin isolation claims, bound at daemon startup alongside the handlers.
     isolation: std::sync::OnceLock<crucible_lua::IsolationRegistry>,
 
@@ -582,7 +582,7 @@ impl AgentManager {
 
     /// Snapshot of the plugin hook registry for the stream loop. `None` when
     /// no plugin loader has bound one.
-    pub(crate) fn plugin_handlers(&self) -> Option<(Arc<LuaScriptHandlerRegistry>, Arc<Lua>)> {
+    pub(crate) fn plugin_handlers(&self) -> Option<PluginHandlers> {
         self.plugin_handlers
             .get()
             .map(|(r, l)| (Arc::clone(r), Arc::clone(l)))
@@ -1395,6 +1395,7 @@ pub(crate) use stream_config::{AgentStreamConfig, TurnEnvironment};
 pub(crate) mod title;
 pub mod tool_tracking;
 pub(crate) mod vm_pass;
+pub(crate) use vm_pass::PluginHandlers;
 
 #[cfg(test)]
 mod tests;

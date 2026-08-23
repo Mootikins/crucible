@@ -544,3 +544,109 @@ pub(crate) fn resolve_kiln_classification_for_create(
     let workspace_path = workspace.cloned().unwrap_or_else(|| kiln.to_path_buf());
     crate::trust_resolution::resolve_kiln_classification(&workspace_path, kiln)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::build_default_internal_agent;
+    use crate::rpc_client::SessionCreateRequest;
+    use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
+
+    /// A config whose default provider is `local`, an Ollama at a custom
+    /// endpoint with its own model.
+    fn llm_with_default() -> Option<LlmConfig> {
+        let provider = LlmProviderConfig::builder(BackendType::Ollama)
+            .endpoint("http://ollama.test:11434")
+            .model("config-model")
+            .build();
+        Some(LlmConfig {
+            default: Some("local".to_string()),
+            providers: [("local".to_string(), provider)].into_iter().collect(),
+            models: Default::default(),
+        })
+    }
+
+    fn build(params: SessionCreateRequest) -> crucible_core::session::SessionAgent {
+        build_default_internal_agent(&params, &llm_with_default(), None).unwrap()
+    }
+
+    /// No request fields: the config default provider supplies everything.
+    #[test]
+    fn an_empty_request_takes_the_config_default_provider() {
+        let agent = build(SessionCreateRequest::default());
+        assert_eq!(agent.provider, BackendType::Ollama);
+        assert_eq!(agent.provider_key.as_deref(), Some("local"));
+        assert_eq!(agent.model, "config-model");
+        assert_eq!(agent.endpoint.as_deref(), Some("http://ollama.test:11434"));
+    }
+
+    /// A model alone replaces the model; the provider, key and endpoint stay.
+    #[test]
+    fn a_model_override_keeps_the_config_provider() {
+        let agent = build(SessionCreateRequest {
+            model: Some("request-model".to_string()),
+            ..Default::default()
+        });
+        assert_eq!(agent.model, "request-model");
+        assert_eq!(agent.provider_key.as_deref(), Some("local"));
+        assert_eq!(agent.endpoint.as_deref(), Some("http://ollama.test:11434"));
+    }
+
+    /// Without a provider, an endpoint or key override lands on the config
+    /// provider; the other field keeps its config value.
+    #[test]
+    fn endpoint_and_key_override_the_config_provider_fields() {
+        let agent = build(SessionCreateRequest {
+            endpoint: Some("http://other.test".to_string()),
+            ..Default::default()
+        });
+        assert_eq!(agent.endpoint.as_deref(), Some("http://other.test"));
+        assert_eq!(agent.provider_key.as_deref(), Some("local"));
+
+        let agent = build(SessionCreateRequest {
+            provider_key: Some("named".to_string()),
+            ..Default::default()
+        });
+        assert_eq!(agent.provider_key.as_deref(), Some("named"));
+        assert_eq!(agent.endpoint.as_deref(), Some("http://ollama.test:11434"));
+    }
+
+    /// An explicit provider does not borrow the config default's endpoint or
+    /// key: the endpoint is the request's (or none), and the key falls back to
+    /// the provider name.
+    #[test]
+    fn an_explicit_provider_drops_the_config_endpoint_and_key() {
+        let agent = build(SessionCreateRequest {
+            provider: Some("openai".to_string()),
+            model: Some("gpt".to_string()),
+            ..Default::default()
+        });
+        assert_eq!(agent.provider, BackendType::OpenAI);
+        assert_eq!(agent.provider_key.as_deref(), Some("openai"));
+        assert_eq!(agent.model, "gpt");
+        assert_eq!(agent.endpoint, None);
+
+        let agent = build(SessionCreateRequest {
+            provider: Some("openai".to_string()),
+            provider_key: Some("work".to_string()),
+            endpoint: Some("http://proxy.test".to_string()),
+            ..Default::default()
+        });
+        assert_eq!(agent.provider_key.as_deref(), Some("work"));
+        assert_eq!(agent.endpoint.as_deref(), Some("http://proxy.test"));
+    }
+
+    /// An unknown provider name is the caller's error, not a silent default.
+    #[test]
+    fn an_unknown_provider_is_refused() {
+        let err = build_default_internal_agent(
+            &SessionCreateRequest {
+                provider: Some("no-such-provider".to_string()),
+                ..Default::default()
+            },
+            &llm_with_default(),
+            None,
+        )
+        .unwrap_err();
+        assert!(err.starts_with("Invalid provider"), "{err}");
+    }
+}
