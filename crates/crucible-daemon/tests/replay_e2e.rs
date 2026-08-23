@@ -55,29 +55,22 @@ async fn collect_replay_events(
         let mut synthetic_seq = 1_u64;
 
         loop {
-            let raw = event_rx
+            let mut event = event_rx
                 .recv()
                 .await
                 .expect("Event stream closed before replay_complete");
 
-            if raw.session_id != replay_session_id {
+            if event.session_id != replay_session_id {
                 continue;
             }
 
-            let seq = raw.data.get("seq").and_then(Value::as_u64).or_else(|| {
+            event.msg_type = "replay_event".to_string();
+            event.timestamp = None;
+            event.seq = event.data.get("seq").and_then(Value::as_u64).or_else(|| {
                 let next = synthetic_seq;
                 synthetic_seq += 1;
                 Some(next)
             });
-
-            let event = SessionEventMessage {
-                msg_type: "replay_event".to_string(),
-                session_id: raw.session_id,
-                event: raw.event,
-                data: raw.data,
-                timestamp: None,
-                seq,
-            };
 
             let done = event.event == "replay_complete";
             events.push(event);

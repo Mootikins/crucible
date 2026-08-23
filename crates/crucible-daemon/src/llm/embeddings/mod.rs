@@ -35,7 +35,7 @@ pub use crucible_core::enrichment::EmbeddingProvider;
 pub use error::{EmbeddingError, EmbeddingResult};
 #[cfg(feature = "fastembed")]
 pub use fastembed::FastEmbedProvider;
-pub use mock::MockEmbeddingProvider;
+pub use mock::FixtureEmbeddingProvider;
 pub use ollama::OllamaProvider;
 pub use openai::OpenAIProvider;
 pub use provider::EmbeddingResponse;
@@ -73,7 +73,7 @@ pub async fn create_provider(
         )),
         BackendType::Mock => {
             let dimensions = config.dimensions().unwrap_or(768) as usize;
-            let provider = mock::MockEmbeddingProvider::with_dimensions(dimensions);
+            let provider = mock::FixtureEmbeddingProvider::with_dimensions(dimensions);
             Ok(Arc::new(provider))
         }
         _ => Err(EmbeddingError::ConfigError(format!(

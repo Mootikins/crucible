@@ -349,9 +349,6 @@ impl Drop for TestDaemon {
     }
 }
 
-#[allow(unused_imports)]
-pub use crucible_daemon::test_support::{MockEmbeddingProvider, MockKnowledgeRepository};
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -76,15 +76,7 @@ pub(crate) fn baseline() -> Vec<PathBuf> {
     if let Ok(runtime) = std::env::var("CRUCIBLE_RUNTIME") {
         trees.push(PathBuf::from(runtime));
     }
-    if let Ok(plugin_path) = std::env::var("CRUCIBLE_PLUGIN_PATH") {
-        let sep = if cfg!(windows) { ';' } else { ':' };
-        trees.extend(
-            plugin_path
-                .split(sep)
-                .filter(|p| !p.is_empty())
-                .map(PathBuf::from),
-        );
-    }
+    trees.extend(crucible_core::paths::env_plugin_paths());
     // Both spellings: the env var relocates the file, and `dirs::config_dir()`
     // is still where `agents/`, `skills/` and `plugins/` are looked for.
     let config_file = crucible_core::config::CliAppConfig::default_config_path();

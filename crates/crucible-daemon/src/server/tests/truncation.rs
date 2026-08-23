@@ -1,14 +1,16 @@
 // --- Golden tests for UTF-8–safe truncation logic ---
 //
-// These capture the current behavior of the truncation pattern used in
-// `handle_grep_request` (the `floor_char_boundary(100)` call). The helper
-// below mirrors that inline logic so we can test it in isolation.
+// These capture the behavior of the truncation in `handle_grep_request`
+// (`floor_char_boundary(100)` plus `...`). The helper below composes the same
+// cut from `crucible_core::text::truncate_bytes` so we can test it in isolation.
 
 /// Mirror of the inline truncation logic in `handle_grep_request`.
 fn truncate_utf8_safe(line: &str, max_bytes: usize) -> String {
     if line.len() > max_bytes {
-        let end = line.floor_char_boundary(max_bytes);
-        format!("{}...", &line[..end])
+        format!(
+            "{}...",
+            crucible_core::text::truncate_bytes(line, max_bytes)
+        )
     } else {
         line.to_string()
     }

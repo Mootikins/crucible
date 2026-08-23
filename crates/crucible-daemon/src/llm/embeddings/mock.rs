@@ -1,20 +1,23 @@
-//! Mock embedding provider for testing
+//! Fixture embedding provider: deterministic vectors, no network.
+//!
+//! `crate::test_support::MockEmbeddingProvider` is the configurable test
+//! double. This one backs `BackendType::Mock` at runtime.
 
 use async_trait::async_trait;
 use crucible_core::enrichment::EmbeddingProvider;
 use std::collections::HashMap;
 
-/// Mock embedding provider for testing
+/// Fixture embedding provider.
 ///
 /// Returns deterministic embeddings based on text hash, useful for unit tests
 /// without requiring external services.
-pub struct MockEmbeddingProvider {
+pub struct FixtureEmbeddingProvider {
     dimensions: usize,
     model_name: String,
     cache: std::sync::Mutex<HashMap<String, Vec<f32>>>,
 }
 
-impl MockEmbeddingProvider {
+impl FixtureEmbeddingProvider {
     /// Create a new mock provider with default dimensions (768)
     pub fn new() -> Self {
         Self {
@@ -68,14 +71,14 @@ impl MockEmbeddingProvider {
     }
 }
 
-impl Default for MockEmbeddingProvider {
+impl Default for FixtureEmbeddingProvider {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[async_trait]
-impl EmbeddingProvider for MockEmbeddingProvider {
+impl EmbeddingProvider for FixtureEmbeddingProvider {
     async fn embed(&self, text: &str) -> anyhow::Result<Vec<f32>> {
         Ok(self.generate_embedding(text))
     }
@@ -111,7 +114,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mock_provider_basic() {
-        let provider = MockEmbeddingProvider::new();
+        let provider = FixtureEmbeddingProvider::new();
         let embedding = provider.embed("test text").await.unwrap();
 
         assert_eq!(embedding.len(), 768);
@@ -119,7 +122,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mock_provider_custom_dimensions() {
-        let provider = MockEmbeddingProvider::with_dimensions(512);
+        let provider = FixtureEmbeddingProvider::with_dimensions(512);
         let embedding = provider.embed("test text").await.unwrap();
 
         assert_eq!(embedding.len(), 512);
@@ -127,7 +130,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mock_provider_deterministic() {
-        let provider = MockEmbeddingProvider::new();
+        let provider = FixtureEmbeddingProvider::new();
         let text = "deterministic test";
 
         let result1 = provider.embed(text).await.unwrap();
@@ -138,7 +141,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mock_provider_different_texts() {
-        let provider = MockEmbeddingProvider::new();
+        let provider = FixtureEmbeddingProvider::new();
 
         let result1 = provider.embed("text1").await.unwrap();
         let result2 = provider.embed("text2").await.unwrap();
@@ -148,7 +151,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mock_provider_batch() {
-        let provider = MockEmbeddingProvider::new();
+        let provider = FixtureEmbeddingProvider::new();
         let texts: Vec<&str> = vec!["text1", "text2", "text3"];
 
         let results = provider.embed_batch(&texts).await.unwrap();
