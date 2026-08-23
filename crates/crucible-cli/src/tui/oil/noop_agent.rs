@@ -71,6 +71,10 @@ impl AgentHandle for NoopAgentHandle {
         Ok(())
     }
 
+    async fn clear_history(&mut self) -> ChatResult<()> {
+        Ok(())
+    }
+
     fn get_mode_id(&self) -> &str {
         "normal"
     }

@@ -798,6 +798,9 @@ async fn child_tool_calls_are_dispatched_by_the_scheduler() {
         async fn set_mode_str(&mut self, _: &str) -> crucible_core::traits::chat::ChatResult<()> {
             Ok(())
         }
+        async fn clear_history(&mut self) -> crucible_core::traits::chat::ChatResult<()> {
+            Ok(())
+        }
     }
 
     let temp = TempDir::new().unwrap();
@@ -1024,6 +1027,9 @@ async fn card_tool_policy_deny_blocks_child_tool_call() {
             "normal"
         }
         async fn set_mode_str(&mut self, _: &str) -> crucible_core::traits::chat::ChatResult<()> {
+            Ok(())
+        }
+        async fn clear_history(&mut self) -> crucible_core::traits::chat::ChatResult<()> {
             Ok(())
         }
     }

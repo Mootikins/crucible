@@ -38,6 +38,10 @@ impl AgentHandle for KnobRecordingAgent {
     async fn send_message_fire_and_forget(&mut self, _message: String) -> ChatResult<()> {
         Ok(())
     }
+
+    async fn clear_history(&mut self) -> ChatResult<()> {
+        Ok(())
+    }
     fn get_mode_id(&self) -> &str {
         "normal"
     }
@@ -255,6 +259,10 @@ impl AgentHandle for ModeRejectingAgent {
     async fn send_message_fire_and_forget(&mut self, _message: String) -> ChatResult<()> {
         Ok(())
     }
+
+    async fn clear_history(&mut self) -> ChatResult<()> {
+        Ok(())
+    }
     fn get_mode_id(&self) -> &str {
         "normal"
     }
@@ -319,6 +327,9 @@ crucible_core::impl_noop_agent!(ModeListingAgent);
 #[async_trait::async_trait]
 impl AgentHandle for ModeListingAgent {
     async fn send_message_fire_and_forget(&mut self, _message: String) -> ChatResult<()> {
+        Ok(())
+    }
+    async fn clear_history(&mut self) -> ChatResult<()> {
         Ok(())
     }
     fn get_mode_id(&self) -> &str {

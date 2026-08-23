@@ -144,6 +144,10 @@ impl AgentHandle for OneToolAgent {
     ) -> crucible_core::traits::chat::ChatResult<()> {
         Ok(())
     }
+
+    async fn clear_history(&mut self) -> crucible_core::traits::chat::ChatResult<()> {
+        Ok(())
+    }
     async fn set_mode_str(&mut self, _: &str) -> crucible_core::traits::chat::ChatResult<()> {
         Ok(())
     }

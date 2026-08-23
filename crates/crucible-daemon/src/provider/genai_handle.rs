@@ -1468,6 +1468,12 @@ impl AgentHandle for GenaiAgentHandle {
         Ok(())
     }
 
+    /// The daemon session owns the transcript (`owns_history: false`),
+    /// so this handle holds nothing to clear. `Ok(())` is the true answer.
+    async fn clear_history(&mut self) -> ChatResult<()> {
+        Ok(())
+    }
+
     fn get_modes(&self) -> Option<&SessionModeState> {
         Some(&self.mode_state)
     }
@@ -1503,7 +1509,12 @@ impl AgentHandle for GenaiAgentHandle {
 }
 
 /// The knobs the genai handle does not hold return the empty answer.
-/// The daemon session holds them; see `DaemonAgentHandle`.
+///
+/// `max_iterations`, `execution_timeout` and `precognition` belong to the
+/// session's `AgentConfig`, not to the handle: the daemon turn loop in
+/// `agent_manager/messaging/send.rs` reads them from the config before it
+/// calls the handle. A value stored here would never reach that loop, so
+/// the handle refuses the setter. `DaemonAgentHandle` answers them by RPC.
 #[async_trait]
 impl SessionKnobs for GenaiAgentHandle {
     async fn switch_model(&mut self, model_id: &str) -> ChatResult<()> {
@@ -1523,12 +1534,15 @@ impl SessionKnobs for GenaiAgentHandle {
         Vec::new()
     }
 
-    async fn set_thinking_budget(&mut self, _budget: i64) -> ChatResult<()> {
-        Err(ChatError::NotSupported("set_thinking_budget".into()))
+    /// `build_chat_options` reads this field on every request, so the
+    /// knob answers from the same field.
+    async fn set_thinking_budget(&mut self, budget: i64) -> ChatResult<()> {
+        self.thinking_budget = Some(budget);
+        Ok(())
     }
 
     fn get_thinking_budget(&self) -> Option<i64> {
-        None
+        self.thinking_budget
     }
 
     async fn set_system_prompt(&mut self, _prompt: &str) -> ChatResult<()> {
@@ -2267,6 +2281,29 @@ mod tests {
         vec![TurnEvent::Done {
             stop_reason: StopReason::EndTurn,
         }]
+    }
+
+    /// The session reads the budget back through `SessionKnobs`, so the
+    /// knob answers from the field the turn reads.
+    #[tokio::test]
+    async fn thinking_budget_knob_answers_from_the_field() {
+        let config = LlmProviderConfig::builder(BackendType::OpenAI)
+            .model("gpt-4o-mini")
+            .build();
+        let chat_client = ChatClient::new(&config);
+        let client = chat_client.inner().clone();
+        let model = chat_client
+            .model_iden("gpt-4o-mini")
+            .unwrap_or_else(|| ModelIden::new(genai::adapter::AdapterKind::OpenAI, "gpt-4o-mini"));
+
+        let mut handle = GenaiAgentHandle::new(client, model, "system", Vec::new(), Some(1024));
+        assert_eq!(SessionKnobs::get_thinking_budget(&handle), Some(1024));
+
+        SessionKnobs::set_thinking_budget(&mut handle, 2048)
+            .await
+            .expect("the genai handle holds the budget");
+        assert_eq!(handle.thinking_budget, Some(2048));
+        assert_eq!(SessionKnobs::get_thinking_budget(&handle), Some(2048));
     }
 
     #[test]

@@ -522,13 +522,13 @@ pub trait AgentHandle: crate::turn::Agent + SessionKnobs + Send + Sync {
         self.set_mode_str(mode_id).await
     }
 
-    /// Clear conversation history
+    /// Clear the conversation history.
     ///
-    /// Resets the agent's conversation context, removing all previous messages.
-    /// UI state should be cleared separately.
-    async fn clear_history(&mut self) -> ChatResult<()> {
-        Ok(())
-    }
+    /// Resets the agent's conversation context. The caller clears the UI
+    /// state separately. Required: a silent `Ok(())` default let a handle
+    /// that owns its history report a clear it never did. A handle that
+    /// cannot clear returns `ChatError::NotSupported`.
+    async fn clear_history(&mut self) -> ChatResult<()>;
 
     /// Undo up to `count` turns. Returns one summary per turn removed.
     ///

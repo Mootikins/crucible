@@ -40,6 +40,10 @@ impl AgentHandle for CountingAgent {
         Ok(())
     }
 
+    async fn clear_history(&mut self) -> ChatResult<()> {
+        Ok(())
+    }
+
     fn get_mode_id(&self) -> &str {
         "normal"
     }

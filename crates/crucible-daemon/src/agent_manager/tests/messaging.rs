@@ -748,6 +748,10 @@ impl AgentHandle for ScriptedHandle {
     async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
         Ok(())
     }
+
+    async fn clear_history(&mut self) -> ChatResult<()> {
+        Ok(())
+    }
     fn get_mode_id(&self) -> &str {
         "normal"
     }

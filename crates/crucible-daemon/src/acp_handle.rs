@@ -333,6 +333,12 @@ impl AgentHandle for AcpAgentHandle {
 
 /// The ACP agent runs its own model loop. The handle caches the three
 /// knobs the ACP wire can carry; the rest return the empty answer.
+///
+/// `max_iterations`, `execution_timeout` and `precognition` belong to the
+/// session's `AgentConfig`: the daemon turn loop reads them from the config
+/// before it calls the handle, and the ACP wire has no field for them. A
+/// value stored here would reach nothing, so the handle refuses the setter.
+/// `DaemonAgentHandle` answers them by RPC.
 #[async_trait]
 impl SessionKnobs for AcpAgentHandle {
     async fn set_temperature(&mut self, temperature: f64) -> ChatResult<()> {
