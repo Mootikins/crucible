@@ -455,13 +455,13 @@ fn acp_delegated_turn_frame() {
 // whole gate unreachable. The modal therefore shows a coarse category where an
 // internally-run tool shows its real name.
 //
-// These tests pin that, deliberately. **The upgrade path is schema 1.6.0's
-// `unstable_tool_call_name`**, which would replace the derivation outright at
-// the cost of moving `agent-client-protocol` 0.10 → 2.0 and opting into a
-// field its own docs call removable. When that lands, these tests are the
-// thing that should change — read `acp_tool_name`'s doc comment, then update
-// the expected name here. Failing after that upgrade is the intended outcome,
-// not a regression.
+// These tests pin that, deliberately. **The upgrade path is a wire name
+// field in a future schema release.** The SDK 2.0 upgrade (ACP item W0)
+// pinned schema 1.5.0, and that line carries no tool-name field in `v1` or
+// `v2`. When a release adds one, these tests are the thing that should
+// change — read `acp_tool_name`'s doc comment, then update the expected
+// name here. Failure after that upgrade is the intended outcome, not a
+// regression.
 // ---------------------------------------------------------------------------
 
 // There is deliberately no on-disk fixture here any more. `synthesize_diffs`
@@ -488,9 +488,9 @@ fn an_acp_permission_modal_names_the_tool_kind_not_the_tool() {
     let _ = open_tool_permission(&mut story, "req-1", "edit", edit_args());
 
     let frame = story.fresh_screen();
-    // Pinned, not endorsed: see the C3 comment above. `unstable_tool_call_name`
-    // (schema 1.6.0) is what would make this read `edit_file` — changing this
-    // literal is the deliberate signal that the upgrade happened.
+    // Pinned, not endorsed: see the C3 comment above. A wire name field in a
+    // future schema is what would make this read `edit_file` — a change to
+    // this literal is the deliberate signal that the upgrade happened.
     assert!(
         frame.contains(r#"edit (path="main.rs""#),
         "the ACP permission modal stopped showing the kind-derived name:\n{frame}"

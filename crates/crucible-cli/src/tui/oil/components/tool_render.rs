@@ -395,8 +395,8 @@ pub(crate) fn format_elapsed(duration: Duration) -> String {
 ///
 /// The one synonym the arms below list — `Find` for glob — is read off that
 /// same recording rather than guessed. ACP has no tool name on the wire, so
-/// there is no closed set here and never will be until schema 1.6.0's
-/// `unstable_tool_call_name` lands; see `acp_tool_name`
+/// there is no closed set here; the pinned schema (1.5.0) carries no
+/// tool-name field in `v1` or `v2`. See `acp_tool_name`
 /// (`agent_manager/messaging/permission.rs`), which is the other place paying
 /// for the same missing field. Keying on ACP's `kind` instead would not close
 /// it either: `Glob` and `Grep` are both `ToolKind::Search`, so the two arms

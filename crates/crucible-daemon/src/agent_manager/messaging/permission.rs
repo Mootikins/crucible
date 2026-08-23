@@ -27,10 +27,11 @@ use crate::agent_manager::vm_pass::fold_vms;
 /// something the daemon itself knows. An ACP tool matches rules and is
 /// otherwise asked about.
 ///
-/// Schema 1.6.0 adds an `unstable_tool_call_name` field that would replace
-/// this outright. Reaching it means upgrading `agent-client-protocol` 0.10 →
-/// 2.0 and opting into a field its own docs call removable, so this is the
-/// one place to change when that lands.
+/// The old schema line offered `unstable_tool_call_name`, a wire name that
+/// would replace this outright. The SDK 2.0 upgrade (ACP item W0) moved the
+/// workspace to schema 1.5.0, and that line carries no tool-name field in
+/// `v1` or `v2` and no such feature. When a schema release adds a wire name,
+/// this is the one place to change.
 fn acp_tool_name(fields: &agent_client_protocol::schema::v1::ToolCallUpdateFields) -> String {
     use agent_client_protocol::schema::v1::ToolKind;
     match fields.kind {
