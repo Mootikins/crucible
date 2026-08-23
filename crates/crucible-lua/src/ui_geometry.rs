@@ -214,12 +214,15 @@ pub fn register_ui_namespace(lua: &Lua, crucible: &Table) -> Result<(), crate::e
 // Wire
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// A preset border crosses as its `BorderStyle` name, so the wire and the
+/// Lua theme share one vocabulary. `border_from_wire` still reads the old
+/// oil spellings (`single`, `heavy`).
 fn border_to_wire(b: Border) -> Json {
     match b {
-        Border::Single => json!("single"),
-        Border::Double => json!("double"),
-        Border::Rounded => json!("rounded"),
-        Border::Heavy => json!("heavy"),
+        Border::Single => json!(BorderStyle::Sharp.name()),
+        Border::Double => json!(BorderStyle::Double.name()),
+        Border::Rounded => json!(BorderStyle::Rounded.name()),
+        Border::Heavy => json!(BorderStyle::Thick.name()),
         // A custom set crosses as its eight cells; an absent edge is "".
         Border::Custom(c) => {
             let cell = |o: Option<char>| o.map(String::from).unwrap_or_default();
@@ -505,6 +508,25 @@ mod tests {
             }"#,
         );
         assert_eq!(geometry_from_wire(&geometry_to_wire(&g)), g);
+    }
+
+    /// The wire names a preset border with the `BorderStyle` name, the same
+    /// vocabulary a theme author writes in Lua. The old oil spellings stay
+    /// readable, so a daemon and a client of different ages still agree.
+    #[test]
+    fn preset_borders_cross_the_wire_as_theme_style_names() {
+        assert_eq!(border_to_wire(Border::Single), json!("sharp"));
+        assert_eq!(border_to_wire(Border::Heavy), json!("thick"));
+        assert_eq!(border_to_wire(Border::Rounded), json!("rounded"));
+        assert_eq!(border_to_wire(Border::Double), json!("double"));
+        for (name, border) in [
+            ("sharp", Border::Single),
+            ("single", Border::Single),
+            ("thick", Border::Heavy),
+            ("heavy", Border::Heavy),
+        ] {
+            assert_eq!(border_from_wire(&json!(name)), Some(border), "{name}");
+        }
     }
 
     #[test]

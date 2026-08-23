@@ -939,9 +939,22 @@ impl ThemeSpinnerStyle {
 }
 
 impl BorderStyle {
+    /// The canonical name, the one the geometry wire emits. `from_name`
+    /// reads it back.
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Rounded => "rounded",
+            Self::Sharp => "sharp",
+            Self::Double => "double",
+            Self::Thick => "thick",
+            Self::Ascii => "ascii",
+            Self::Hidden => "hidden",
+        }
+    }
+
     /// The `single`, `heavy` and `none` aliases are the oil spellings, which
-    /// the geometry wire emits; the theme accepts them so one vocabulary
-    /// serves both surfaces.
+    /// the geometry wire emitted before the names unified; the theme still
+    /// accepts them so an older peer stays readable.
     pub(crate) fn from_name(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "rounded" => Some(Self::Rounded),
@@ -1181,6 +1194,20 @@ mod tests {
         assert_eq!(ThemeSpinnerStyle::Ascii.frames().len(), 4);
         assert_eq!(ThemeSpinnerStyle::Ascii.frames(), &['-', '\\', '|', '/']);
         assert!(ThemeSpinnerStyle::None.frames().is_empty());
+    }
+
+    #[test]
+    fn every_border_style_reads_its_own_name_back() {
+        for style in [
+            BorderStyle::Rounded,
+            BorderStyle::Sharp,
+            BorderStyle::Double,
+            BorderStyle::Thick,
+            BorderStyle::Ascii,
+            BorderStyle::Hidden,
+        ] {
+            assert_eq!(BorderStyle::from_name(style.name()), Some(style));
+        }
     }
 
     #[test]
