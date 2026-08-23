@@ -72,6 +72,36 @@ Two follow-ons that the batches applied under the Method rules: B2 removed
 `PerformanceStats`, `QueueStats` and their readers once `get_status` went; B5
 removed three `Server` fields that lost their last reader with `ServerContext`.
 
+## 1b. Tier 3 result, 2026-08-22
+
+Tier 3 ran after Tier 2, one commit per entry, `2a07d01e4` to `7fcd3b9f4`.
+57 of the 66 entries landed, each commit subject carrying its plan id
+(`git log --oneline 2a07d01e4^..HEAD | grep 'plan T3-'`). Net change under
+`crates/`: 342 files, +6,695 and −13,714 lines. `just ci` passed at the end.
+[[Gaps]] section 6 maps the commits to the gap rows they closed.
+
+The nine entries with no commit:
+
+| Entry | Why |
+|---|---|
+| B23 | The plan said keep; `InputNode` versus `LayoutContent::Input` is documented design |
+| C11 | Deferred by design: each TUI pair changes visible output and needs a snapshot review |
+| C15, C18 | Covered by T3-B7 |
+| C17 | Deferred by design: `PermissionHook` and `RuntimeHandler` differ in first-match semantics |
+| C19 | Deferred by design: under `crucible-web/src/routes/` or on the SSE wire; a web session owns it |
+| C25 | Covered by T3-B17 |
+| C26 | Covered by Tier 1 B4 |
+| C29 | Deferred: the `acp/mod.rs` re-exports are a Tier 4 check first |
+
+Entries whose outcome differs from the recommendation: B2 replaced the trait
+with a concrete `SecretsFile` store and deleted the keyring store, instead of
+an enum; B4 replaced `PermissionGate`, `Undoable`, `MarkdownParser`, `App`
+and `InputStyle` with concrete types and left `FrameRenderer`; B7 took option
+(a) and left (b) open; B18 kept `idle_timeout_secs` and
+`lazy_agent_selection` as reserved; C9 produced [[Bash Permission Layers]]
+and no merge. The agents recorded 160 follow-up notes; section 5a holds them
+after deduplication.
+
 ## 2. Tier 1 — safe mechanical, this session
 
 Actions: `delete` removes the item. `narrow` changes visibility. `merge-into X` keeps X and deletes the other copy. `call X` replaces an inline body with a call to X.
@@ -955,36 +985,116 @@ Different behaviour, not a copy: `discover_env_providers` vs `detect_providers_i
 
 Near-duplicate, kept on purpose: five frontmatter splitters (Tier 3 C14) · `SerializableMetadata` (adds a serde tag) · inline-metadata regex compiled five times (performance item in Actual.md section 9, not a duplicate) · five `CallToolResult` conversions (Tier 3 C6).
 
-## 6. Extension seams after consolidation
+## 5a. Tier 5 — follow-ups from Tier 3
 
-"Today" lists the files a contributor touches at `7053bcfe7`. "After Tier 3" lists the files once the named entries land.
+The Tier 3 agents noted 160 follow-ups in their journals. This section keeps
+one line per distinct item, grouped by crate. The tag in brackets names the
+entry that found it. None of these is committed. Doc-only notes are in the
+last group.
+
+### crucible-core
+
+- `traits/chat.rs`: `clear_history` still defaults to `Ok(())`; make it required. `GenaiAgentHandle` holds a `thinking_budget` field but its `SessionKnobs` answers `NotSupported`; `Genai` and `Acp` handles answer empty for `max_iterations`, `execution_timeout` and precognition because the daemon session owns them. [A1]
+- `storage/traits.rs`: the `StorageClient` doc names `DirectStorageClient` and `crucible-rpc`, which do not exist; `MockStorageClient` under `test-utils` has no caller. [A4, A6]
+- `types/hashing.rs`: `FileHashInfo`, `BlockHashInfo`, `HashAlgorithm` and the `FileHash` alias have no callers outside re-exports; delete the file (Gaps G53). [B14]
+- `types/acp.rs`: `ToolCallInfo` is still re-exported from `acp/streaming.rs`; `FileDiff` is live in `TurnEvent::ToolCall`, so re-check B11's premise before deleting the family; `test_tool_definition_from_traits` belongs in `traits/tools.rs`. [B10, B11]
+- `events/session_event/`: `MessageReceived` has one producer, the CLI `EventRing` push; `identifier`, `priority`, `category`, `estimate_tokens`, `payload`, `EventCategory` and the manual `Deserialize` have no production reader; `ScriptingEvent` names seven events with no `SessionEvent` variant; B7 option (b), scripting as a projection of the wire enum, stays open. [B7]
+- `events/emitter.rs`: the `Event` doc says the type is `SessionEvent` from `crucible-lua`; verify against `DaemonEventBridge`. The trait doc example is not a doctest. [B5]
+- `parser/extensions.rs`: replace the u8 `priority` with variant order and delete the sort; `BasicMarkdownItExtension::parse` uses `eprintln!` on a markdown-it panic. `ParserCapabilities::supports_all` and `ParserRequirements` have no production caller. `ASTBlockType::HorizontalRule` may have no producer. [B1, B16]
+- `parser/types/parsed_note.rs`: `NoteContent` still carries the six list fields with serde; `ParsedNote::legacy` and several `with_*` and `has_*` helpers look unused. [B15]
+- `config/credentials.rs`: `CredentialSource::Store` displays as "file" (printed by `cru auth`); `resolve_copilot_oauth_token` builds its own `SecretsFile` and reads the real config dir in tests. [B2]
+- `config/components/backend.rs`: `DEFAULT_ANTHROPIC_MODEL` is `claude-3-5-sonnet-20241022`, older than the value the wizard wrote before; enrichment `MockConfig::default_model` disagrees with the table; `default_max_concurrent` is the one property still in a `match`. `ProviderInfo` versus `DetectedProvider` and `discover_env_providers` versus `detect_providers_inner` still duplicate the credential scan. [C3]
+- `config/components/discovery.rs`: `DiscoveryPathsConfig` and `TypeDiscoveryConfig` under `[discovery]` were not checked for readers. [B18]
+- `config/patterns.rs:289`: `PatternStore::matches_bash` matches a prefix on the whole command and does not split chained statements, so a saved `git ` allows `git log; curl evil`. Needs a failing test first. [C9]
+- `config/cli_app.rs`: the `agent_directories` example could say the daemon honours it. [C7]
+- `text.rs`: daemon `background/types.rs::truncate` and CLI `commands/session/helpers.rs::truncate` cap with ASCII `...`; they can move to `truncate_chars` once the `…` output change is accepted. [C1]
+- `Cargo.toml`: `rust-version = 1.75` is stale; the tree uses `LazyLock`. [C28]
+
+### crucible-daemon
+
+- `tools/mcp_server.rs:695`, `tool_dispatch.rs:553`: a job cancel over MCP or RPC does not check session ownership; if cross-session cancel must be denied, the gate belongs in the caller. [A9]
+- `agent_manager/messaging/permission.rs`: the perm-id, oneshot, `PendingPermission`, `insert_permission` sequence is written twice plus a test helper; a `SessionSlot::register_permission` would fold them. A `User` scope grant from the daemon path is not persisted (only `Project`). `load_sync` and `save_sync` still block inside the async gate (Gaps G18). [A8, C9]
+- `server/lua.rs:38`, `session_lifecycle.rs:206`: replace the `NoopSessionRpc` alias with `UnsupportedSessionRpc`. Lua `session:set_variable` and `get_variable` now have no store at all; give them daemon storage or document them as unsupported. [A2, A5]
+- `rpc_client/storage.rs`: `DaemonNoteStore::get_by_hash` and `content_hash` scan `list`; `NoteRecordDto` builds `ParsedNote` with placeholder spans and the `get_note_by_name` reply has no `wikilinks` key, so the client always sees an empty list; a `pub use` of `FtsResult` from `rpc_client` would spare clients the `storage::sqlite` path. [A4, B12, B15]
+- `tools/mcp_gateway.rs`: nothing detects a mid-session disconnect (a failed `call_tool` leaves `Connected`), so `auto_reconnect` retries only startup failures. `crucible-cli/src/tui/oil/chat_runner/runner.rs` builds a second throwaway gateway for TUI status. [A10]
+- `tools/extended_mcp_server.rs`: `tool_count` counts `delegate_session` while `list_tools` filters it without a delegation context. `mcp_server.rs` `McpServerManager::start` hardcodes `EmptyEmbeddingProvider`. [A11]
+- `tools/notes/`: `read_metadata` and `list_notes` always parse frontmatter from disk; an indexed path should come from the SQLite store, not an optional field. [A12]
+- `acp/tools.rs`: the test `PermissionedToolBridge` double mirrors no production type. `acp_handle.rs` discards the formatted content from `send_prompt_with_callback`, so `StreamingState::formatted_output` may serve only `streaming_chat.rs` tests. The `StreamingChunk` to `TurnEvent` translation is still a stateful loop; a total `From` needs the client to emit the resolved name on `ToolEnd`. [B8, B11]
+- `tool_dispatch.rs`: `DISCOVERY_TOOL_NAMES` is still a hand list (a test ties it to the definitions); `DiscoverToolsParams.source` is a free `String`, a `ToolSourceFilter` enum would make the schema and handler agree; `ToolSchema` versus `ToolDefinition` and the three conversions wait on a `ToolRef` owner. `a_provider_that_never_lists_tools_does_not_hang_has_tool` failed once under parallel load. [C6, B16]
+- `watch/`: `WatchConfig.debounce` is set by two callers and read by no backend; `DebounceConfig::with_max_batch_size` has no caller; `Backend::unwatch`, `active_watches`, `capabilities` are test-only; `EditorWatchState` wraps one `PathBuf`; `PollingWatcher::start_polling` holds a dead snapshot; `NotifyWatcher::unwatch` removes by path while the others remove by id; `watch/mod.rs` keeps a module-level `#![allow(clippy::ptr_arg)]`. [B3, C23, C24]
+- `server/mod.rs:106`: `Server` keeps its own clones of `subscription_manager` and `event_tx` beside `rpc_context`; `RpcContext::new` takes 16 arguments under an allow. [B21]
+- `acp/client/types.rs`: `ClientConfig` lacks `#[serde(default)]`; add it, then delete `max_retries` and shorten 20 test literals. `SqliteConfig` derives serde with no loader. [B19]
+- `llm/embeddings/ollama.rs`: `test_list_models_response_deserialization` parses into `Value` with a stale comment; parse into the shared struct. [B25]
+- `scm.rs`: `clone_repo` spawns git itself to keep the last 10 stderr lines; four test-only `git(...)` helpers could share `test_support::git`. The rest of C14 (frontmatter splitters, markdown walkers, `cosine_similarity`, `copy_dir`) waits on a parser `split_frontmatter`. [C14]
+- `session_bridge.rs`, `rpc_client/`: `DaemonClient::review_comment` takes a `Value` and merges `session_id` itself; `Range` has no `Serialize`. [C27]
+- `agent_manager/vm_pass.rs`: `apply_transform_context_handlers` carries an `Option` accumulator with an unreachable `None` arm; the `Vm` label is read by two of nine sites; two structs spell the tuple instead of `PluginHandlers`. [C28]
+- `server/session/create.rs`: `build_default_internal_agent` has no test that pins the override order; `cru session configure` has no test. [C5]
+- `test_support.rs`: `tests/common/mod.rs` re-exports the canonical mocks and could go; `llm/embeddings/mock.rs::MockEmbeddingProvider` shares the name with the `test_support` one. `server/tests/truncation.rs::truncate_utf8_safe` re-implements `truncate_bytes`. [C10, C1]
+- `tests/replay_e2e.rs:73` rebuilds a `SessionEventMessage` to set `msg_type`; mutate in place. [B9]
+- `runtime_defaults.rs`, `execution_roots.rs`: could read `crucible_core::paths::env_plugin_paths` directly. [C8]
+- No RPC lists agent cards; `agents.list_cards` in `rpc/dispatch.rs` with a pinned JSON test would let `cru agents list` use the daemon. [C7]
+- Existing `0o600` assertions in `credentials.rs`, `api_key.rs`, `session.rs` and `webhook/tests.rs` now test the shared helper through each caller; they could thin. [C16]
+
+### crucible-cli
+
+- `commands/chat/`: no test covers `ChatMode::from_flags` or the `--replay` exclusivity; `cru chat -q --plan` does not apply plan mode (needs `--mode` plumbing); `--record` with a piped stdin query is silently dropped. [C12]
+- `tui/oil/chat_app/command_handling.rs`: the slash-command arms are a fifth hand-kept set; no test proves every `ReplCommand` dispatches (the match has a wildcard arm); `suggest_command` still takes `&[&str]`; the `parse_bool` error says "Use true/false"; line 760 gets y/n with no test. [C20, C21]
+- `tui/oil/chat_app/shell.rs`: the toast path branches on `PermissionScope::User`; `write_permission_rule` owns the real path. [B13]
+- `commands/session/acp.rs`: raw output uses the key `event_type` while the wire key is `event`. [B9]
+- `factories/agent.rs:164`, `trust_resolution.rs:157`: full `SessionAgent` literals for the ACP path. [C5]
+- `kiln_validate::expand_tilde` shares the core name; rename to `expand_tilde_home`. `collect_agent_directories` reads `dirs::config_dir()` at call time; a `CardRoots` built once would make its tests hermetic. [C2, C7]
+- `commands/doctor.rs` builds the Ollama `/api/tags` URL and does not parse the reply. [B25]
+- `tui/oil/mod.rs` re-exports the ungated `crucible_oil::runtime::TestRuntime`. `main.rs:273` uses `OpenOptions` for a non-credential file. `ThemeDecorations.border_style` has no consumer. [A6, C16, C4]
+
+### crucible-lua
+
+- `ui.rs`, `tools_api.rs`: `register_ui_module_with_api` and `register_tools_module_with_api` keep the stub-then-overwrite pattern with two hand lists; apply the B24 constant plus gate. The older `sessions_module_registers_in_namespace` test is redundant. [B24]
+- `session_defaults.rs`: `SessionDefaultsRpc` delegates `get_model` and `switch_model` to the unsupported backing; a hook that picks a model needs a `model` field on `SessionDefaultValues`. [A2]
+- `sessions/register.rs:839`: no Lua-side test pins the serde error texts for a missing `path`, `body` or `line_start`. [C27]
+- `theme_wire::border_style_name` and `ui_geometry::border_to_wire` emit different names for one border (sharp versus single, thick versus heavy); unifying changes a wire payload. [C4]
+- `manifest.rs:290`, `lifecycle/mod.rs:103`: doc comments describe the old path copies as history and could name `crucible_core::paths`. `fs.rs:82` uses `OpenOptions` for a non-credential file. [C8, C16]
+
+### crucible-web and crucible-oil
+
+- `crucible-web/src/events.rs`: `ChatEvent::SessionEvent` carries `event_type` in web JSON; a rename needs a pinned test. Its dev-dependency on `crucible-daemon` now pulls `test-utils` from daemon and core. [B9, A7]
+- `crucible-oil/src/utils.rs::truncate_to_chars` and `render_helpers.rs::truncate_with_ellipsis` duplicate the char cap; oil has no core dependency. `taffy_layout.rs` `LayoutEngine` keeps an unused `usize` context type. `TestRuntime` is ungated. [C1, C22, A6]
+
+### Docs and this plan
+
+- Stale references after Tier 3: `ContentHasher`, `FileHash`, `SyntaxExtension`, `FileWatcher`, `WatcherFactory`, `serde_md`, `resolve_registration_root`, `KILN_BACKED_TOOLS`, `BUILTIN_TOOLS`, `ComputedLayout`, `SessionCommand` in [[Actual]], [[Gaps]], [[Type Flows]] and `Product.md` (`start_reconnect_loop` has call sites now; `source: index` no longer exists). `7fcd3b9f4` fixed the analysis docs; Gaps.md section 6 records the closed rows.
+- This plan: the Tier 1 batch labels B20 and B22 collide with Band B entries B20 and B22; section 1a row B22 and section 4 C2 mean the Tier 1 batch. C10 cites `agent_manager/tests/mod.rs:242`, which no longer exists. Line numbers for `types/acp.rs` in B10 and B11 are stale. Section 5.1 row `LayoutEngine::compute`, `ComputedLayout` is resolved.
+- `docs/Help/Config/storage.md` and `acp.md` describe the two kept fields as unread but do not use the word "reserved"; `Product.md:1106` on `cru init` writing `[storage] backend` is a separate cleanup.
+
+## 6. Extension seams now
+
+"Before" lists the files a contributor touched at `7053bcfe7`. "Now" lists the files at `7fcd3b9f4`, after Tier 1 to Tier 3 landed. Every path in a "Now" line exists at that commit.
 
 ### Add a tool
 
-Today: `tools/surface.rs` (`BuiltinTool` + `ToolSurface`, gated) · `tools/workspace_defs.rs` or `tools/notes/` · `tool_dispatch.rs` (`is_core_tool_name`, executor arm) · `tools/mcp_server.rs` (`KILN_BACKED_TOOLS`) · `tools/extended_mcp_server.rs` (`discovery_tools`) · `provider/genai_handle.rs` (`bridge_tool_defs`) · `crucible-cli/src/commands/tools.rs` (`BUILTIN_TOOLS`) · `agent_manager/messaging/permission.rs` (file-tool list x2) · `runtime/defaults/init.lua` if the permission mode must know it.
-After Tier 1 B12, B13 and Tier 3 C6: `tools/surface.rs` (variant, surface, `needs_kiln`) · the tool module · `tool_dispatch.rs` (one executor arm) · `init.lua` if needed. The compiler lists every `match` that must grow.
+Before: `tools/surface.rs` (`BuiltinTool` + `ToolSurface`, gated) · `tools/workspace_defs.rs` or `tools/notes/` · `tool_dispatch.rs` (`is_core_tool_name`, executor arm) · `tools/mcp_server.rs` (`KILN_BACKED_TOOLS`) · `tools/extended_mcp_server.rs` (`discovery_tools`) · `provider/genai_handle.rs` (`bridge_tool_defs`) · `crucible-cli/src/commands/tools.rs` (`BUILTIN_TOOLS`) · `agent_manager/messaging/permission.rs` (file-tool list x2) · `runtime/defaults/init.lua` if the permission mode must know it.
+Now (Tier 1 B12, B13; Tier 3 C6): `crates/crucible-daemon/src/tools/surface.rs` (variant, surface, the kiln predicate) · the tool module under `crates/crucible-daemon/src/tools/` · `crates/crucible-daemon/src/tool_dispatch.rs` (one executor arm; `DISCOVERY_TOOL_NAMES` is still a hand list, see section 5a) · `runtime/defaults/init.lua` if a mode must know it. `KILN_BACKED_TOOLS` and the CLI `BUILTIN_TOOLS` are gone. The compiler lists every `match` that must grow.
 
 ### Add a provider
 
-Today: `crucible-core/src/config/components/backend.rs` (`BackendType`) · `components/defaults.rs` · `components/llm.rs` · `components/chat.rs` · `components/enrichment.rs` (one struct per provider) · `crucible-daemon/src/agent_factory.rs` · `provider/model_listing.rs` · `agent_manager/providers.rs` · `crucible-cli/src/provider_detect.rs` · `commands/wizard.rs` · `commands/init.rs` · `crucible-daemon/src/llm/embeddings/<provider>.rs`.
-After Tier 3 C3 and B25: `backend.rs` (variant plus one `ProviderDefaults` row) · `agent_factory.rs` (one client constructor arm) · `llm/embeddings/<provider>.rs` if it embeds. Wizard, init, detection and model listing read the row.
+Before: `crucible-core/src/config/components/backend.rs` (`BackendType`) · `components/defaults.rs` · `components/llm.rs` · `components/chat.rs` · `components/enrichment.rs` (one struct per provider) · `crucible-daemon/src/agent_factory.rs` · `provider/model_listing.rs` · `agent_manager/providers.rs` · `crucible-cli/src/provider_detect.rs` · `commands/wizard.rs` · `commands/init.rs` · `crucible-daemon/src/llm/embeddings/<provider>.rs`.
+Now (Tier 3 C3, B25): `crates/crucible-core/src/config/components/backend.rs` (variant plus one table row with endpoint, default model, label and env var) · `crates/crucible-daemon/src/agent_factory.rs` (one client constructor arm) · `crates/crucible-daemon/src/llm/embeddings/` if it embeds. Wizard, init and model listing read the row. Detection still has two copies (`provider_detect.rs`, `discover_env_providers`; section 5a).
 
 ### Add a client
 
-Today: `crucible-core/src/protocol/rpc/mod.rs` (`SessionEventMessage`) · `crucible-daemon/src/rpc_client/client/types.rs` (second `SessionEvent`) · `rpc_client/agent/convert.rs` (prefix strip) · `crucible-core/src/traits/chat.rs` (`AgentHandle`, 41 defaulted knobs a client can silently skip) · `crucible-web/src/events.rs` (`ChatEvent`, own prefix copy) · `crucible-lua/src/handlers/conversion.rs`.
-After Tier 3 A1, B9 and Tier 1 B24: `protocol/rpc/mod.rs` (read only) · `traits/chat.rs` (`AgentHandle` + `SessionKnobs`, all required) · one projection module for the client's own render type. A client that omits a knob does not compile.
+Before: `crucible-core/src/protocol/rpc/mod.rs` (`SessionEventMessage`) · `crucible-daemon/src/rpc_client/client/types.rs` (second `SessionEvent`) · `rpc_client/agent/convert.rs` (prefix strip) · `crucible-core/src/traits/chat.rs` (`AgentHandle`, 41 defaulted knobs a client can silently skip) · `crucible-web/src/events.rs` (`ChatEvent`, own prefix copy) · `crucible-lua/src/handlers/conversion.rs`.
+Now (Tier 3 A1, B9; Tier 1 B24): `crates/crucible-core/src/protocol/rpc/mod.rs` (read only) · `crates/crucible-core/src/traits/chat.rs` (`AgentHandle` plus `SessionKnobs`, all required) · one projection module for the client's own render type. The second `SessionEvent` is gone; `crates/crucible-web/src/events.rs` still holds `ChatEvent`. A client that omits a knob does not compile.
 
 ### Add a hook stage
 
-Today: `crucible-lua/src/handlers/hook_name.rs` (`StageId`, gated by `EnumIter`) · `crucible-daemon/src/agent_manager/messaging/tool_call.rs` or `send.rs` (the call site, and the gate order) · `handlers/registry.rs` (`execute_runtime_handler`) · `handlers/before_execute.rs` (`execute_runtime_json_handler`, copy) · `tool_hooks.rs` (`resolve_display_*`, copy per hook) · `runtime/defaults/init.lua` (if a default mode reacts) · `docs/Help/Extending/`.
-After Tier 1 B12, B23: `hook_name.rs` (variant) · one call site in `messaging/` · one generic `resolve_hints` call · `init.lua` if needed · docs. The gate order in `tool_call.rs` stays the single place that decides `cancel` vs `handled`.
+Before: `crucible-lua/src/handlers/hook_name.rs` (`StageId`, gated by `EnumIter`) · `crucible-daemon/src/agent_manager/messaging/tool_call.rs` or `send.rs` (the call site, and the gate order) · `handlers/registry.rs` (`execute_runtime_handler`) · `handlers/before_execute.rs` (`execute_runtime_json_handler`, copy) · `tool_hooks.rs` (`resolve_display_*`, copy per hook) · `runtime/defaults/init.lua` (if a default mode reacts) · `docs/Help/Extending/`.
+Now (Tier 1 B12, B23; Tier 3 C28): `crates/crucible-lua/src/handlers/hook_name.rs` (variant) · one call site in `crates/crucible-daemon/src/agent_manager/messaging/` · one `fold_vms` pass in `crates/crucible-daemon/src/agent_manager/vm_pass.rs` · `runtime/defaults/init.lua` if needed · `docs/Help/Extending/`. The gate order in `crates/crucible-daemon/src/agent_manager/messaging/tool_call.rs` stays the single place that decides `cancel` versus `handled`.
 
 ### Add a storage backend
 
-Today: `crucible-core/src/storage/note_store.rs` (`NoteStore`, 5 defaulted link methods) · `storage/property_store.rs` (`PropertyStore`) · `traits/knowledge.rs` (`KnowledgeRepository`, 1 default) · `crucible-daemon/src/storage/sqlite/` (`adapters.rs`, `repository.rs` with the Scope match x3, `property_store.rs` with two impls) · `storage/sqlite/link_index.rs` · `storage/mod.rs` re-exports · `crucible-core/src/storage/traits.rs` (`StorageBackend`, dead).
-After Tier 1 B4, B17 and Tier 3 A4: `note_store.rs` (all methods required) · `property_store.rs` · `knowledge.rs` · one `storage/<backend>/` directory with one `impl` per trait · `adapters.rs` (one constructor arm). A backend that omits link queries does not compile.
+Before: `crucible-core/src/storage/note_store.rs` (`NoteStore`, 5 defaulted link methods) · `storage/property_store.rs` (`PropertyStore`) · `traits/knowledge.rs` (`KnowledgeRepository`, 1 default) · `crucible-daemon/src/storage/sqlite/` (`adapters.rs`, `repository.rs` with the Scope match x3, `property_store.rs` with two impls) · `storage/sqlite/link_index.rs` · `storage/mod.rs` re-exports · `crucible-core/src/storage/traits.rs` (`StorageBackend`, dead).
+Now (Tier 1 B4, B17; Tier 3 A4): `crates/crucible-core/src/storage/note_store.rs` (all methods required) · `crates/crucible-core/src/storage/property_store.rs` · `crates/crucible-core/src/traits/knowledge.rs` · one new directory beside `crates/crucible-daemon/src/storage/sqlite/` with one `impl` per trait · `crates/crucible-daemon/src/storage/sqlite/adapters.rs` (one constructor arm). `StorageBackend` and `ContentHasher` are gone. A backend that omits link queries does not compile.
 
 ### Add an RPC method
 
-Today: `crucible-daemon/src/rpc/dispatch.rs` (`rpc_methods!` row, gated; dispatch arm) · `server/<area>.rs` (handler; hand-spelled `json!` reply) · `rpc_helpers.rs` · `rpc_client/client/<area>.rs` (client wrapper; request type, often a fresh `{session_id}` struct) · `rpc_client/mod.rs` (re-export) · `crucible-web/src/services/daemon.rs` (`ReconnectingDaemon` wrapper) · `crucible-lua/src/sessions/` (`DaemonSessionApi`, defaulted) · `rpc/missing_session_contract.rs` if the method takes a session.
-After Tier 1 B6 and Tier 3 A3, B21: `rpc/dispatch.rs` (row + arm) · one handler in `server/` taking `RpcContext` · `rpc_client/client/<area>.rs` using `SessionIdRequest` · `ReconnectingDaemon` if the web needs it · `DaemonSessionApi` (required, so Lua cannot miss it). The reply-shape problem (Actual.md section 9, "hand-spelled `json!`") is outside this plan.
+Before: `crucible-daemon/src/rpc/dispatch.rs` (`rpc_methods!` row, gated; dispatch arm) · `server/<area>.rs` (handler; hand-spelled `json!` reply) · `rpc_helpers.rs` · `rpc_client/client/<area>.rs` (client wrapper; request type, often a fresh `{session_id}` struct) · `rpc_client/mod.rs` (re-export) · `crucible-web/src/services/daemon.rs` (`ReconnectingDaemon` wrapper) · `crucible-lua/src/sessions/` (`DaemonSessionApi`, defaulted) · `rpc/missing_session_contract.rs` if the method takes a session.
+Now (Tier 1 B6; Tier 3 A3, B21): `crates/crucible-daemon/src/rpc/dispatch.rs` (row plus arm) · one handler under `crates/crucible-daemon/src/server/` that takes `RpcContext` (`crates/crucible-daemon/src/rpc/context.rs`; `ServerContext` is gone) · `crates/crucible-daemon/src/rpc_client/client/` using `SessionIdRequest` · `crates/crucible-web/src/services/daemon.rs` if the web needs it · `crates/crucible-lua/src/sessions/mod.rs` (`DaemonSessionApi`, required, so Lua cannot miss it). The reply-shape problem (Actual.md section 9, "hand-spelled `json!`") is outside this plan.

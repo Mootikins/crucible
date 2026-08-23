@@ -30,6 +30,15 @@ workspace, one `cru` binary, a headless daemon with JSON-RPC 2.0 over a Unix
 socket, thin TUI and web clients, Lua and Fennel scripting, SQLite on the daemon
 side, and the ACP and MCP protocols.
 
+The clean room had one input class: feature documents. Neither draft read a
+threat model, because the product documents carry none. As a result the drafts
+derived every closed set from features alone. Section 8 shows the cost. The
+drafts sized `ToolSurface`, `StageId` and `EventName` for the features, and
+the code sizes them for the attacks: an unclassified tool, an isolated
+session, a deleted file. A clean room needs the threat model as an input.
+[[Filesystem Containment]] is that input now. Section 7a restates its
+invariants and names the closed-set members each one requires.
+
 ## 2. Feature inventory
 
 Each line names one user-facing feature and its source document. Source tags:
@@ -319,6 +328,45 @@ entry but no shipped proof.
 | F230 | Workflows: markdown DAGs, parallel steps, gates, resume from a snapshot; `cru workflow` | P |
 | F231 | Remote access: API key, tunnels *(planned)* | P |
 | F232 | Documentation site | P |
+
+## 2a. Features found in code, absent from the product docs
+
+The clean room could list only what the product documents name. The code
+carries surfaces that [[Actual]] sections 3 and 5 found live, with a
+registration the daemon runs at start. This table lists each one. The third
+column says whether `Product.md` names the feature. A `no` row is a product
+gap, not an expectation gap: the feature exists, and no document promised it.
+Rows marked `yes` are in section 2 already; they appear here because the lead
+review named them as suspects, and the check found them covered.
+
+| Feature | Surface that exposes it | In Product.md |
+|---|---|---|
+| Lua webhook handlers: `webhook:received` from `POST /api/webhook/:name` and the `webhook.receive` RPC | `crates/crucible-web/src/routes/webhook.rs:47`; `crates/crucible-daemon/src/rpc/dispatch.rs:234`; `crates/crucible-lua/src/handlers/hook_name.rs:60` | yes (F194) |
+| Webhook secret minting and HMAC verification | `crates/crucible-daemon/src/webhook/mod.rs:359`; `crates/crucible-daemon/src/webhook/mod.rs:256` | yes, as `webhook.receive`; the secret file is not named |
+| `cru.http` client | `crates/crucible-lua/src/http.rs:47`; registered at `crates/crucible-lua/src/executor.rs:290` | yes (F186) |
+| `cru.sessions.*`, 28 names over `DaemonSessionApi` | `crates/crucible-lua/src/sessions/register.rs:154`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:572` | yes (F102) |
+| `cru.schedule` interval callbacks | `crates/crucible-daemon/src/daemon_plugins/mod.rs:212` | yes (F193) |
+| `cru.ratelimit` | `crates/crucible-lua/src/ratelimit.rs:117`; registered at `crates/crucible-lua/src/executor.rs:293` | yes (F179) |
+| MCP gateway: upstream servers with prefixed names, reconnect loop, gateway tools on the served MCP surface | `crates/crucible-daemon/src/tools/mcp_gateway.rs:486`; `crates/crucible-daemon/src/tools/extended_mcp_server.rs:123` | yes (F210); the wiring landed in Tier 3 A10 and A11 |
+| Auto-title plugin over the `session_title` publication channel | `crates/crucible-daemon/src/agent_manager/title.rs:42` | yes (F59) |
+| Publications: `crucible.publish(key, value)` stored by the daemon and served by `plugin.publications` | `crates/crucible-lua/src/publications.rs:100`; `crates/crucible-daemon/src/daemon_plugins/mod.rs:966`; `crates/crucible-daemon/src/server/plugins.rs:156` | no; one sentence mentions a plugin that publishes `session_title` |
+| Plugin options: `crucible.options{}` declared once, served by `plugin.options`, `plugin.option_get`, `plugin.option_set`, `plugin.option_execute` | `crates/crucible-lua/src/options.rs:380`; `crates/crucible-daemon/src/daemon_plugins/mod.rs:973`; `crates/crucible-daemon/src/server/plugins.rs:187` | no |
+| Provider auth hooks: `crucible.on_provider_auth(fn)` | `crates/crucible-lua/src/auth_plugin.rs:9`; registered at `crates/crucible-lua/src/executor.rs:259` | no |
+| `crucible.notify`, `crucible.notify_once`, `crucible.messages.*` | `crates/crucible-lua/src/notify.rs:30`; registered at `crates/crucible-lua/src/executor.rs:260` | no; F134 names toasts, not the Lua call. The queue reaches no client (G122) |
+| Isolation claim: `crucible.require_isolation{}` | `crates/crucible-lua/src/isolation.rs:208`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:240` | partly; F177 names the `oci` plugin, not the API |
+| Plugin status slots: `crucible.set_status{}`, `crucible.clear_status` | `crates/crucible-lua/src/plugin_status.rs:118`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:253` | yes (F105) |
+| Statusline expressions pushed from the daemon | `crates/crucible-lua/src/statusline_exprs.rs:190`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:361` | yes (F117) |
+| `cru.context.attach` registry | `crates/crucible-lua/src/context_attach.rs:171`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:350` | yes (F45) |
+| `cru.ws` WebSocket client | `crates/crucible-lua/src/ws.rs:187`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:199` | yes, in the module list only |
+| `cru.oq` multi-format parse and jq-style query | `crates/crucible-lua/src/json_query.rs:284`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:204` | yes, in the module list only |
+| `cru.shell` with a plugin shell policy | `crates/crucible-lua/src/shell.rs:366`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:202` | yes, in the module list only |
+| Session lifecycle hooks `crucible.on_session_start`, `crucible.on_session_end` | `crates/crucible-lua/src/hooks.rs:34`; registered at `crates/crucible-lua/src/executor.rs:258` | yes |
+| Review comments and rebase: `review.comment`, `review.resolve_comment`, `review.rebase` | `crates/crucible-daemon/src/rpc/dispatch.rs:181`; `crates/crucible-daemon/src/server/session/review/mod.rs:371` | no; F154 names `list_hunks` and `set_state` only |
+| `session.export_to_file`: a transcript written to a caller path under write protection | `crates/crucible-daemon/src/rpc/dispatch.rs:172`; `crates/crucible-daemon/src/server/observe.rs:295` | no; F76 names `session.export` |
+| Plugin RPC management: `plugin.install`, `plugin.remove`, `plugin.run_command` | `crates/crucible-daemon/src/rpc/dispatch.rs:194` | partly; `cru plugin add` is named, the RPC names are not |
+
+Section 2 should gain one row per `no` or `partly` line. Section 9 should
+gain "a plugin option" and "a publication" as extension points.
 
 ## 3. Domain entities
 
@@ -1382,6 +1430,123 @@ fixtures.
 The planned `crucible-telegram` and `crucible-matrix` crates should not be
 crates. They are Lua plugins over `cru.service` and `cru.http`, as the Discord
 plugin is.
+
+## 7a. Security invariants
+
+[[Filesystem Containment]] and [[Actual]] section 3.1 state the invariants the
+code enforces. The clean room did not derive them, because no product document
+states them. Each invariant below names the closed-set members it requires. A
+closed set that lacks the member cannot carry the invariant, so the member is
+not optional.
+
+**I1. Roots are a default-deny allowlist.** A session holds a set of allowed
+roots. A path outside every root is refused. A denied root survives only as a
+carve-out inside an allowed root. The judge reads a path once into a lexical
+form and a canonical form, and asks both. Inside by name but outside when
+resolved is `SymlinkEscape`, not a silent refusal.
+(`crates/crucible-daemon/src/tools/containment.rs:152`,
+`crates/crucible-daemon/src/tools/containment.rs:272`,
+`crates/crucible-daemon/src/tools/path_resolution.rs:174`.)
+Requires: `Containment` with a distinct `SymlinkEscape` outcome
+(`crates/crucible-daemon/src/tools/containment.rs:89`); `RootSet` with
+`Ambient` and `Rooted`; seam S18 carries a path through `FsScope` only
+(`crates/crucible-daemon/src/tools/fs_scope.rs:162`). Section 4.4 should say
+"allowlist", not "capability handle over a deny list".
+
+**I2. A read proof and a write proof are distinct types.** `FsScope::resolve`
+returns `ContainedPath`; `FsScope::resolve_for_write` returns `WritablePath`.
+Neither has a public constructor or a `From<PathBuf>`. A signature that takes
+one carries a compiler-checked proof that containment ran.
+(`crates/crucible-daemon/src/tools/fs_scope.rs:92`,
+`crates/crucible-daemon/src/tools/fs_scope.rs:130`,
+`crates/crucible-daemon/src/tools/fs_scope.rs:273`.)
+Requires: no `From<ContainedPath> for WritablePath`; `grep resolve_for_write`
+enumerates the write surface. `bash` is outside this layer
+(`crates/crucible-daemon/src/tools/fs_scope.rs:64`); the invariant covers the
+file tools, not the session.
+
+**I3. An unclassified tool surface is refused.** `BuiltinTool::surface` is one
+exhaustive table. A name with no row is `ToolSurface::Unknown`. The isolation
+gate refuses `Unknown` as it refuses `Host`.
+(`crates/crucible-daemon/src/tools/surface.rs:220`,
+`crates/crucible-core/src/traits/tools.rs:56`,
+`crates/crucible-daemon/src/agent_manager/messaging/isolation_gate.rs:16`.)
+Requires: `ToolSurface` is `Host`, `Daemon`, `Unknown`, and not the `Daemon`,
+`Mcp`, `Both` of section 8.1; MCP exposure is a second predicate (G8). The
+isolation stage is a member of the gate order. `IsolationRegistry` and
+`crucible.require_isolation` (`crates/crucible-lua/src/isolation.rs:208`) are
+the Lua side; the `oci` plugin is the one caller.
+
+**I4. `handled` returns before the permission gate.** A `pre_tool_call`
+handler that returns `{ handled = true, result = … }` ends the call before
+the permission gate runs. Only the statement order in `tool_call.rs` prevents
+a plugin from escalating through it.
+(`crates/crucible-daemon/src/agent_manager/messaging/tool_call.rs:289`.)
+Requires: the gate order is fixed and documented: plan-mode bar, active-tool
+set, card policy, review gate, `pre_tool_call` hooks, isolation gate,
+permission gate, dispatch. `PreToolCall` stays a `StageId` with a reply
+(`cancel`, `transform`, `handled`); `cancel` is safe, `handled` and
+`transform` are capability-grade. Section 5 rule 3 and section 9.3 already
+say this; section 8.2 should mark `Handled` as the one return a mode may
+refuse.
+
+**I5. The socket is per uid and 0700.** The daemon binds under
+`$CRUCIBLE_SOCKET`, else `$XDG_RUNTIME_DIR`, else `<tmpdir>/crucible-<uid>/`.
+The directory is created `0700`; a directory with a foreign owner is refused.
+The accept loop checks the peer uid before it dispatches.
+(`crates/crucible-core/src/protocol/lifecycle.rs:61`,
+`crates/crucible-daemon/src/server/socket_privacy.rs:63`,
+`crates/crucible-daemon/src/server/socket_privacy.rs:95`,
+`crates/crucible-daemon/src/server/core/mod.rs:86`.)
+Requires: `SocketDirRefusal` as a closed set of refusal reasons; seam S42
+includes the uid check, not only the version check; section 6.1 should say
+the RPC surface is unauthenticated and therefore owner-only.
+
+**I6. A destructive sink asserts canonical equality.** `remove_session_dir`
+canonicalizes the root and the target and refuses unless the target equals
+the expected session directory. "Beneath a root" is not enough for
+`remove_dir_all`. `session.export_to_file` resolves the caller path through
+write protection before it writes.
+(`crates/crucible-daemon/src/session_manager.rs:120`,
+`crates/crucible-daemon/src/server/observe.rs:295`.)
+Requires: `SessionId` is a validated newtype with `parse`
+(`crates/crucible-core/src/session/types/id.rs:76`), never a raw string that
+reaches `Path::join`; section 3.8 should say so.
+
+**I7. A protected set denies writes no allow rule re-opens.** `PROTECTED_DIRS`
+names the trees the daemon or a login session later executes. The loaders and
+the protected set read one list of execution roots.
+(`crates/crucible-daemon/src/tools/protected.rs:104`,
+`crates/crucible-daemon/src/tools/protected.rs:184`,
+`crates/crucible-daemon/src/execution_roots.rs:155`.)
+Requires: `Roots` carries a `protected` member beside `allowed`, `denied`
+and `carved` (`crates/crucible-daemon/src/tools/containment.rs:179`);
+`Protection` is its own reason type; section 4.4 and 8.7 should list the
+protected set as a layer that precedes every allow.
+
+**I8. A plugin sees a delete.** The watcher emits three file events. A plugin
+that keeps an index must see `FileDeleted` and `FileMoved`, or it serves stale
+paths. (`crates/crucible-lua/src/handlers/hook_name.rs:48`,
+`crates/crucible-lua/src/handlers/hook_name.rs:50`.)
+Requires: `EventName` holds `FileChanged`, `FileDeleted`, `FileMoved`, four
+`Note*` and `WebhookReceived`, not the `SessionCreated` and `SessionEnded` of
+section 8.3 (G81). Session start and end are lifecycle hooks that may refuse a
+session before a turn exists (G40).
+
+**I9. A webhook is authenticated before it broadcasts.** The web route
+verifies the HMAC and the timestamp, then calls `webhook.receive`, which only
+broadcasts. (`crates/crucible-daemon/src/webhook/mod.rs:256`,
+`crates/crucible-daemon/src/rpc/dispatch.rs:1792`.)
+Requires: `WebhookReceived` is an `EventName` whose handlers can only
+`cancel`; no stage reply exists for it.
+
+Summary of the closed-set members these invariants require:
+`ToolSurface::Unknown` (I3); the isolation gate as a fixed position in the
+gate order (I3, I4); `Containment::SymlinkEscape` (I1); `WritablePath` apart
+from `ContainedPath` (I2); `Roots.protected` (I7); `EventName::FileDeleted`
+and `EventName::FileMoved` (I8); `SocketDirRefusal` (I5); `SessionId::parse`
+(I6). Sections 8.1, 8.3 and 8.7 stand corrected by this section; the
+disagreements D4 and D20 in section 10 are settled the code's way.
 
 ## 8. Closed sets
 

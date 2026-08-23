@@ -27,16 +27,24 @@ with `docs/`.
 
 ## 2. Gap table
 
+Verdicts: `code-wrong` (the code should move), `expectation-wrong` (the clean
+room guessed wrong and had no reason to guess right), `expectation-incomplete`
+(the clean room lacked an input, usually a security invariant from
+[[Filesystem Containment]] or a live surface the product docs do not name;
+Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
+`not-built`, and `closed` (a Tier 1 to 3 commit removed the difference; section
+6 names the commit).
+
 | id | area | expected | actual | verdict | cost |
 |---|---|---|---|---|---|
 | G1 | scope | One `CapabilityHandle` is the only path door (4.4) | `FsScope` is the door, but the `Component::Normal` whitelist loop is written six times (`server/fs/mod.rs:160,387,460`, `server/session/review/mod.rs:605`, `server/note_refactor.rs:232`, `crucible-core/src/canvas/containment.rs:215`) | code-wrong | M |
 | G2 | scope | `PermissionEngine` returns `GateDecision` with the deciding `Layer`; it never prompts (4.12, 8.7) | `PermissionDecision` is `Allow`, `Deny`, `Ask` with no layer (`permissions/types.rs:98`); the prompt runs inside `messaging/permission.rs`; a second door `PermissionGate` exists as `Arc<dyn>` with one impl (`permission_bridge.rs:19`) | code-wrong | M |
-| G3 | scope | One project `PatternStore` for saved allows (3.2) | Three bash allowlists and two deny lists in one module (`patterns.rs:57`, `security.rs:56,163`, `hardcoded.rs:21`) | code-wrong | M |
+| G3 | scope | One project `PatternStore` for saved allows (3.2) | Three bash allowlists and two deny lists in one module (`patterns.rs:57`, `security.rs:56,163`, `hardcoded.rs:21`); the layers have different override semantics, so T3-C9 documented the order in [[Bash Permission Layers]] instead of a merge | both-acceptable | - |
 | G4 | scope | One `PermDecision` enum `AllowOnce`, `AllowSession`, `AllowProject`, `Deny` (3.15, D13) | Two `PermissionScope` enums with one name (`interaction/permission.rs:20` has `Once`, `Session`; `permissions/types.rs:5` has `Project`, `User`); the TUI maps one to the other by hand (`crucible-cli/src/tui/oil/chat_app/shell.rs:113-121`) | code-wrong | S |
 | G5 | scope | The Lua permission hook has a 1 s budget (9.4) | `execute_permission_hooks_with_timeout` has no timeout; it discards a late result (`messaging/permission.rs:1108`) | code-wrong | S |
 | G6 | scope | Permission requests are serialized per session (3.15) | `PermissionSerializer` serializes ACP prompts (`messaging/permission.rs:76`); the internal path is serial because tools dispatch one at a time (`messaging/tool_call.rs:647`) | both-acceptable | - |
 | G7 | scope | No hand list beside `BuiltinTool` (9.1) | Six hand lists re-spell subsets: `is_core_tool_name` (`tool_dispatch.rs:181`), `KILN_BACKED_TOOLS` (`tools/mcp_server.rs:126`), `DISCOVERY_TOOL_NAMES` (`tool_dispatch.rs:30`), `PLAN_TOOL_NAMES` (`tools/tool_modes.rs:17`), `is_write_tool_name` (`provider/genai_handle.rs:103`), CLI `BUILTIN_TOOLS` (`crucible-cli/src/commands/tools.rs:34`) | code-wrong | M |
-| G8 | scope | `ToolSurface` is `Daemon`, `Mcp`, `Both`: which wire serves the tool (8.1) | `ToolSurface` is `Host`, `Daemon`, `Unknown`: what an isolated session may run (`crucible-core/src/traits/tools.rs:56`) | expectation-wrong | - |
+| G8 | scope | `ToolSurface` is `Daemon`, `Mcp`, `Both`: which wire serves the tool (8.1) | `ToolSurface` is `Host`, `Daemon`, `Unknown`: what an isolated session may run (`crucible-core/src/traits/tools.rs:56`) | expectation-incomplete | - |
 | G9 | scope | MCP exposure derives from the enum (8.1, 6.4) | MCP exposure is the hand list `KILN_BACKED_TOOLS` (`tools/mcp_server.rs:126`) | code-wrong | S |
 | G10 | scope | Twenty-four built-in tools, with `InvokeTool` (8.1, D20) | Twenty-three variants (`tools/surface.rs:60`); `invoke_tool` lives in `DISCOVERY_TOOL_NAMES` (`tool_dispatch.rs:30`), not in the enum | code-wrong | S |
 | G11 | scope | Plan-mode and safe-tool classes derive from the enum (8.1) | `PLAN_TOOL_NAMES` (`tools/tool_modes.rs:17`) and `is_write_tool_name` (`genai_handle.rs:103`) are hand lists | code-wrong | S |
@@ -68,7 +76,7 @@ with `docs/`.
 | G37 | session | `Workspace { path, kind }` with `Scratch(SessionId)` (3.3, D16) | `Session.workspace` is a path (`session/types/session.rs:31`) | both-acceptable | - |
 | G38 | session | `fire_stage` is one operation (S12) | The session-VM-then-plugin-VM loop is hand-written eleven times (`tool_call.rs:358-393`, `permission.rs:331-365,502-533`, `stream.rs:1181-1199,1250-1279`, `tool_hooks.rs`, `precognition/mod.rs:159-175,253-274`) | code-wrong | M |
 | G39 | session | One payload per stage name (8.2) | `post_llm_call` is emitted with two payloads (`stream.rs:1152` wire, `stream.rs:1173` Lua) | code-wrong | S |
-| G40 | session | `StageId` has `SessionStart`, `TurnStart`, `ValidateOutput`, `SessionEnd`, `PermissionRequest`, `Compact` (8.2, D3) | The 11 stages are `PreToolCall`, `ToolResult`, `PreLlmCall`, `PostLlmCall`, `TransformContext`, `PrecognitionSelect`, `PrecognitionFormat`, `TurnComplete`, `ToolBeforeExecute`, `ToolDisplayStart`, `ToolDisplayComplete` (`crucible-lua/src/handlers/hook_name.rs:119`); session start and end are `SessionLifecycle`; permission hooks and validators have their own registries | expectation-wrong | - |
+| G40 | session | `StageId` has `SessionStart`, `TurnStart`, `ValidateOutput`, `SessionEnd`, `PermissionRequest`, `Compact` (8.2, D3) | The 11 stages are `PreToolCall`, `ToolResult`, `PreLlmCall`, `PostLlmCall`, `TransformContext`, `PrecognitionSelect`, `PrecognitionFormat`, `TurnComplete`, `ToolBeforeExecute`, `ToolDisplayStart`, `ToolDisplayComplete` (`crucible-lua/src/handlers/hook_name.rs:119`); session start and end are `SessionLifecycle`; permission hooks and validators have their own registries | expectation-incomplete | - |
 | G41 | session | A `Compact` stage lets Lua replace compaction (D24) | No compact stage; `session.compact` exists as an RPC only (`rpc/dispatch.rs:115`) | not-built | - |
 | G42 | session | `session.fork` copies the agent record (3.9) | `fork_session` builds a second storage and copies no agent config (`session_bridge.rs:395`) | code-wrong | S |
 | G43 | session | One JSON projection of `Session` (6.1) | Three hand-built projections differ on `title` (`session_bridge.rs:89,100,118`) | code-wrong | S |
@@ -109,7 +117,7 @@ with `docs/`.
 | G78 | events | Event groups are a closed set with a gate (8) | `Group::of` is a hand-maintained 70-name match; drift surfaces as `UnknownEvent` (`protocol/session_events/mod.rs:133`) | code-wrong | S |
 | G79 | events | One persist predicate (3.13, 4.18) | `should_persist` decodes, then `server/core/mod.rs:465-474` matches names by string again | code-wrong | S |
 | G80 | events | `ScriptingEvent` holds `segment_complete`, `mode_changed`, `title_changed` (8.4, D5) | The ten are `MessageReceived`, `TextDelta`, `AgentThinking`, `AgentResponded`, `ToolCalled`, `ToolCompleted`, `SessionEnded`, `InteractionRequested`, `InteractionCompleted`, `PrecognitionComplete` (`events/session_event/mod.rs:75`) | expectation-wrong | - |
-| G81 | events | `EventName` ends with `SessionCreated`, `SessionEnded` (8.3, D4) | The eight are `FileChanged`, `FileDeleted`, `FileMoved`, four `Note*`, `WebhookReceived` (`hook_name.rs:44`) | expectation-wrong | - |
+| G81 | events | `EventName` ends with `SessionCreated`, `SessionEnded` (8.3, D4) | The eight are `FileChanged`, `FileDeleted`, `FileMoved`, four `Note*`, `WebhookReceived` (`hook_name.rs:44`) | expectation-incomplete | - |
 | G82 | events | `InteractionResponse::Acknowledged` answers `Show` (3.15) | `Show` has no response variant (`crucible-core/src/interaction/types.rs:479`) | code-wrong | S |
 | G83 | events | `Popup` and `Panel` share one item type (3.15) | `PopupEntry` and `PanelItem` are field-identical (`types/popup.rs:16`, `interaction/types.rs:135`) | code-wrong | S |
 | G84 | events | One `InteractionBroker` pending table (4.13) | `PendingPermission` and `PendingInteraction` are separate with two inline 300 s timeouts (`agent_manager/mod.rs:288`, `interaction.rs:25`, `permission.rs:166,937`) | code-wrong | S |
@@ -138,7 +146,7 @@ with `docs/`.
 | G107 | wire | One request-id counter per ACP client (4.19) | One process-global `REQUEST_ID` (`acp/client/mod.rs:28`); timeout arithmetic is split across three files | code-wrong | S |
 | G108 | wire | `Recorder` reads its config once (4.19) | `Recorder::from_env` reads env on every `with_name` (`acp/client/recording.rs:71,81`); a test calls `std::env::remove_var` | code-wrong | S |
 | G109 | wire | MCP never advertises workspace tools (6.4) | `CrucibleMcpServer::get_info` lists workspace tools the router does not serve (`tools/mcp_server.rs:714`) | code-wrong | S |
-| G110 | wire | One `McpGateway` built at bind from `[mcp]` (4.21) | The gateway half of `ExtendedMcpServer` and `start_reconnect_loop` have no callers (`extended_mcp_server.rs:126`, `mcp_gateway.rs:499`); both bind sites pass no MCP config | not-built | - |
+| G110 | wire | One `McpGateway` built at bind from `[mcp]` (4.21) | T3-A10 (`358dd41d2`) starts the reconnect loop at daemon run; T3-A11 (`33703918c`) attaches the gateway to the served MCP surface (`crates/crucible-daemon/src/tools/extended_mcp_server.rs:123`, `crates/crucible-daemon/src/tools/mcp_gateway.rs:486`) | closed | - |
 | G111 | wire | `rmcp` types map once to `ToolDefinition` and `ToolOutcome` (6.4) | Five copies of `CallToolResult -> Value`; three of `ToolDefinition -> rmcp::Tool`; three of the reverse (`tool_dispatch.rs:80,423`, `workspace.rs:564`, `gateway_executor.rs:52`, `extended_mcp_server.rs:405,421`) | code-wrong | S |
 | G112 | wire | `discover_tools` reports `source` from `ToolSource` (4.11) | `discovery_tools()` advertises `["builtin","lua"]` while the classifier never returns `"lua"` (`extended_mcp_server.rs:172`, `tool_discovery.rs:76`) | code-wrong | S |
 | G113 | wire | The client parses `SessionEventMessage` once (6.5) | `rpc_client/client/types.rs:10 SessionEvent` duplicates it and drops `seq` and `timestamp`; the CLI copies one into the other (`chat_runner/runner.rs:168-179`) | code-wrong | S |
@@ -150,7 +158,7 @@ with `docs/`.
 | G119 | lua | `spec.handlers` registers hooks (F172) | `PluginSpec.handlers` is parsed and never dispatched (`daemon_plugins/mod.rs:741`) | not-built | - |
 | G120 | lua | `Capability` is one closed set with one decoder (8) | `parse_capability` hand-duplicates serde and omits `intercept_tools`, so a spec-table grant is dropped (`lifecycle/spec.rs:31`, `discovery.rs:267`) | code-wrong | S |
 | G121 | lua | Modes exist in Lua only; no Rust copy of the names (8.6) | `BuiltinMode` (`crucible-core/src/types/mode.rs:85`), `BUILTIN_MODE_NAMES` (`tools/tool_modes.rs:37`), `default_internal_modes` (`mode.rs:273`) restate the three names | code-wrong | S |
-| G122 | lua | `crucible.notify` reaches a client (F134) | It appends to a queue only tests drain (`notify.rs:78,110`) while `docs/Help/Lua/Language Basics.md:74` documents it | not-built | - |
+| G122 | lua | `crucible.notify` reaches a client (F134) | `crucible.notify` is a live Lua surface (`crates/crucible-lua/src/notify.rs:30`, registered at `crates/crucible-lua/src/executor.rs:260`); the queue reaches no client (`notify.rs:78`); Expected 2a lists it | expectation-incomplete | - |
 | G123 | lua | `cru.oil` nodes render somewhere (open 15) | `LuaNode` is built and nothing in the CLI consumes it (`crucible-lua/src/oil.rs:138`) | not-built | - |
 | G124 | crates | `crucible-lua` and `crucible-oil` depend on `core` only (7, D19) | `crucible-lua` imports `crucible_oil::style` and node builders (Actual 4) | code-wrong | M |
 | G125 | lua | One colour codec (3.29) | Four parsers across `theme.rs`, `theme_wire.rs`, `hl_lua.rs`; `ThemeLayout` and `UiLayout` are twins; `ThemeIcons`, `ThemeSpinnerStyle`, `BorderStyle`, `StatusBarPosition` are parsed and read by no renderer | code-wrong | S |
@@ -226,10 +234,12 @@ with `Layer` an enum. The prompt moves to `ToolDispatch`. `PermissionGate`
 disappears; `DaemonPermissionGate` becomes a free function. First step: add the
 `layer` field and return it from the engine; leave the prompt where it is.
 
-**G3.** Target: one `PatternStore` per project for saved allows; `ShellPolicy`
-keeps only the deny prefixes. First step: make
-`PatternStore.bash_commands.allowed_prefixes` the only allow list and route
-`ShellPolicy.whitelist` reads through it.
+**G3.** Moved to `both-acceptable` on 2026-08-22. T3-C9 found that the three
+allow lists have different override semantics and documented the order in
+[[Bash Permission Layers]] instead of a merge. One defect stays open from that
+pass: `PatternStore::matches_bash` matches a prefix on the whole command and
+does not split chained statements
+(`crates/crucible-core/src/config/patterns.rs:289`).
 
 **G4.** Target: one `PermDecision` enum in `crucible-core/src/interaction/`.
 First step: delete `permissions/types.rs:5 PermissionScope` and make the engine
@@ -542,11 +552,9 @@ prompt; one `expand_tilde` in `crucible-core/src/config/`. First step: yield
 
 ### 3.2 `expectation-wrong`
 
-**G8.** The clean room used `ToolSurface` for "which wire serves this tool".
-The code needs a different closed set: "what may run in an isolated session".
-`Host`, `Daemon`, `Unknown` answer the isolation question that the `oci`
-plugin asks. MCP exposure is a second axis. Expected.md section 8.1 should name
-two enums: `ToolSurface` for isolation and a second predicate for MCP serving.
+Five rows remain here after the re-check of 2026-08-22: G23, G80, G118, G155
+and G158. In each the clean room had the inputs and picked a shape the code
+does not need. No security invariant explains the difference.
 
 **G23.** The clean room folded two contracts into one trait. The runtime needs
 `Agent::turn -> Stream<TurnEvent>` so the stream loop owns the tool round. The
@@ -555,27 +563,11 @@ runtime. The two traits are not the same seam. Expected.md section 4.9 should
 keep `Agent` as the runtime contract and shrink `AgentHandle` to the
 client contract.
 
-**G40.** The clean room made the permission hook, output validation and session
-start and end into turn-loop stages. In the code the permission hook is a
-separate synchronous registry with its own budget; validators register by name;
-session start and end are lifecycle hooks that can refuse a session before a
-turn exists. The code also has stages the clean room did not see:
-`PreLlmCall`, `PostLlmCall`, `PrecognitionFormat`, `ToolBeforeExecute`,
-`ToolDisplayStart`, `ToolDisplayComplete`. Expected.md section 8.2 should list
-the eleven real stages and move `PermissionRequest`, `ValidateOutput`,
-`SessionStart` and `SessionEnd` to their own registries.
-
 **G80.** D5 picked the ten `ScriptingEvent` names from the docs. The set is
 defined by what the scripting vocabulary and the transport vocabulary share in
 code. `segment_complete`, `mode_changed` and `title_changed` are transport-only.
 Expected.md section 8.4 should copy the ten names from
 `crucible-core/src/events/session_event/mod.rs:75`.
-
-**G81.** D4 added `session_created` and `session_ended` as broadcast events. The
-code has `FileDeleted` and `FileMoved` instead, because the watcher emits three
-file events and a plugin must see a delete to keep an index. Session start and
-end are lifecycle hooks (G40), not broadcasts. Expected.md section 8.3 should
-list the eight real names.
 
 **G118.** D7 wanted a `RuntimePath(PathBuf)` variant so a `runtimepath` entry
 carries its own provenance. The code resolves every `runtimepath` entry and
@@ -592,10 +584,51 @@ runs before any daemon exists, so it must detect providers in-process. The
 constraint is "no daemon yet". The fix is one shared detection function in
 `crucible-core`, not a daemon call.
 
+### 3.2a `expectation-incomplete`
+
+Three of the eight rows first filed as `expectation-wrong` moved here on
+2026-08-22. In each the clean room lacked an input, not judgement: the product
+documents carry no threat model, and Expected.md section 7a now states the
+invariants. Two `not-built` rows also moved here because the code has a live
+surface the product documents do not name (Expected.md section 2a).
+
+**G8.** The clean room used `ToolSurface` for "which wire serves this tool".
+The code needs "what may run in an isolated session": `Host`, `Daemon`,
+`Unknown`, and the isolation gate refuses `Unknown` as it refuses `Host`.
+That is invariant I3 (an unclassified tool surface is refused). MCP exposure
+is a second axis; since T3-C6 it derives from `BuiltinTool` too
+(`crates/crucible-daemon/src/tools/surface.rs:220`). Expected.md section 8.1
+should name two predicates.
+
+**G40.** The clean room made the permission hook, output validation and
+session start and end into turn-loop stages. The code keeps the permission
+hook in its own synchronous registry with a budget, and session start and end
+as lifecycle hooks that can refuse a session before a turn exists. Invariant
+I4 (gate order; `handled` returns before the permission gate) needs the
+permission hook outside the stage list, and invariant I8 needs session start
+as a refusal point. The six stages the clean room did not see (`PreLlmCall`,
+`PostLlmCall`, `PrecognitionFormat`, `ToolBeforeExecute`, `ToolDisplayStart`,
+`ToolDisplayComplete`) are plain omissions. Expected.md section 8.2 should
+list the eleven real stages.
+
+**G81.** D4 added `session_created` and `session_ended` as broadcast events.
+The code has `FileDeleted` and `FileMoved` instead, because a plugin that
+keeps an index must see a delete (invariant I8). Session start and end are
+lifecycle hooks (G40). Expected.md section 8.3 should list the eight real
+names.
+
+**G122.** `crucible.notify`, `crucible.notify_once` and `crucible.messages.*`
+are registered on every VM (`crates/crucible-lua/src/executor.rs:260`). The
+product documents name toasts (F134) but not the Lua call, so the clean room
+had no row for it. The sink is still missing: the queue reaches no client
+(`crates/crucible-lua/src/notify.rs:78`). The code-side fix stays open.
+
+**G110.** Closed; see section 6.
+
 ### 3.3 `both-acceptable`
 
-G6, G27, G37, G49, G51, G56, G75, G89, G95, G106, G142, G151 and G177 are
-legitimate alternatives. The table says why in each row. Two need a note.
+G3, G6, G27, G37, G49, G51, G56, G75, G89, G95, G106, G142, G151 and G177 are
+legitimate alternatives. G3 moved here on 2026-08-22 (section 3.1). The table says why in each row. Two need a note.
 G95: the RPC spellings differ from the product docs in about fifteen names;
 the code's names are the contract clients use today, so the docs should move.
 G142: `Core` and `Crucible` split what the clean room called `Builtin`; the
@@ -603,12 +636,16 @@ split costs nothing and lets a badge rule change later.
 
 ### 3.4 `not-built`
 
-G26, G41, G54, G57, G110, G119, G122, G123, G136, G137, G149, G157, G160, G164,
+G26, G41, G54, G57, G119, G123, G136, G137, G149, G157, G160, G164,
 G170 to G176. Seven of these are marked *(planned)* in Expected.md already
-(G26, G54, G57, G170 to G175). Six are documented as shipped and have no
-working code: G110 (the MCP gateway is never wired), G119 (`spec.handlers`),
-G122 (`crucible.notify`), G136 and G137 (web plugin surfaces), G164 (storage
-maintenance). Those six are the ones to fix or to remove from the docs.
+(G26, G54, G57, G170 to G175). Four are documented as shipped and have no
+working code: G119 (`spec.handlers`), G136 and G137 (web plugin surfaces),
+G164 (storage maintenance). Those four are the ones to fix or to remove from
+the docs. G110 closed when T3-A10 and T3-A11 wired the gateway; G122 moved to
+`expectation-incomplete` (section 3.2a). G123 stays here: `cru.oil` is
+registered (`crates/crucible-lua/src/oil.rs:191`) and `Product.md` lists it,
+but no client renders a `LuaNode`, and the product entry itself asks whether
+to wire it or withdraw it.
 
 ## 4. Patterns
 
@@ -651,11 +688,16 @@ maintenance). Those six are the ones to fix or to remove from the docs.
    `events/markdown/`, two `serde_md`, `hashing/`, `processing/`,
    `model_discovery.rs`, two watcher stubs, `cru.oil`, `crucible.notify`,
    `spec.handlers`, the MCP gateway half. Rows: G29, G53, G66, G73, G74, G87,
-   G110, G119, G122, G123, G153.
+   G110, G119, G122, G123, G153. Re-checked 2026-08-22 against Expected.md
+   section 2a: G110 and G122 were real features with a live surface, not
+   machinery; the rest stand. Section 6 lists which rows the consolidation
+   closed.
 9. **The clean room under-counted the live sets.** `StageId`, `EventName`,
    `ScriptingEvent`, `BackendType` and `ToolSurface` all differ from the docs.
    In each case the code's set answers a question the docs did not ask (isolation,
-   file deletes, custom endpoints). Rows: G8, G40, G80, G81, G155.
+   file deletes, custom endpoints). Rows: G8, G40, G80, G81, G155. Where the
+   question is a security invariant (G8, G40, G81) the verdict is now
+   `expectation-incomplete`; Expected.md section 7a states the invariant.
 
 ## 5. Agreements worth keeping
 
@@ -725,3 +767,61 @@ break them.
   (`precognition/mod.rs:556`; Expected 4.15).
 - **`WorkspaceSnapshot` gives turn-level undo** (`workspace_snapshot.rs:123`;
   Expected 3.11). G35 changes the shape, not the seam.
+
+## 6. Status after consolidation, 2026-08-22
+
+Tier 1, Tier 2 and Tier 3 of [[Consolidation Plan]] landed in `b31aa0b00`
+to `7fcd3b9f4` (`git log --oneline 4cc9cf2af..HEAD`, 88 commits). This
+section matches the commit subjects, which carry the plan id, to the gap rows.
+"Closed" means the difference the row names no longer exists. "Part" means the
+commit removed some of it; the row stays open for the rest. Rows this section
+does not name are unchanged.
+
+| Row | Plan entry | Commit | Status |
+|---|---|---|---|
+| G2 | T3-B4 | `0e194bb53` | part: `PermissionGate` is a concrete type; the prompt still runs inside `messaging/permission.rs` and `PermissionDecision` has no layer |
+| G4 | T3-B13 | `28be1a511` | closed: `TryFrom` between the two scopes replaces the hand map |
+| G7 | T3-C6 | `11ca718e2` | part: `KILN_BACKED_TOOLS` and the CLI `BUILTIN_TOOLS` derive from `BuiltinTool`; `DISCOVERY_TOOL_NAMES`, `PLAN_TOOL_NAMES` and `is_write_tool_name` stay |
+| G9 | T3-C6 | `11ca718e2` | closed |
+| G21 | T3-B11 | `c8394afe8` | part: the ACP `SessionConfig` is gone; the knobs stay on `SessionAgent` |
+| G22 | T3-A1 | `0fbef4943` | closed: `AgentHandle` plus `SessionKnobs`, all required |
+| G35 | T3-C14 | `1cdddfd63` | part: one `run_git`; the snapshot shape is unchanged |
+| G36 | T3-B4 | `0e194bb53` | part: `Undoable` is gone; the client constants remain |
+| G44 | T3-C5 | `b4e2fcf37` | closed for the daemon; the CLI ACP literals at `crucible-cli/src/factories/agent.rs` stay |
+| G48 | T3-B8 | `d429a886d` | part: the non-callback path is deleted; `StreamingChunk` still translates to `TurnEvent` in a stateful loop |
+| G53 | B17, T3-B6, T3-B14 | `6c6e8608a`, `1d5461468`, `e67ec3e7e` | closed: `hashing/` and `ContentHasher` deleted; `FileHash` is an alias of `BlockHash` |
+| G62 | T3-A4, T3-B5 | `44da8714e`, `cdbb6b440` | closed: the `NoteStore`, `KnowledgeRepository`, `EmbeddingProvider`, `EventHandler`, `StorageClient` and `EventEmitter` methods are required |
+| G64 | T3-A12 | `76b944d94` | closed: the `note_store` branch is deleted |
+| G66 | T3-B3, T3-C23, T3-C24 | `fbe49077c`, `c9973d969`, `ef3f26663` | part: one `Backend` enum with a capability table; `DebounceConfig` reaches `Debouncer`; the polling and editor backends are still stubs |
+| G69 | T3-B1 | `61e7a1d67` | closed: `Extension` is one enum |
+| G70 | T3-B4 | `0e194bb53` | closed |
+| G73 | B17 | `6c6e8608a` | closed: `processing/` and `change_detection.rs` deleted |
+| G77 | T3-B7 | `2b4a0c71f` | part: 42 dead scripting variants and 5 dead `LogEvent` variants deleted; six enums remain |
+| G87 | B18, T3-B17 | `c8bdacacc`, `5638b2be1` | part: `events/markdown/` and both `serde_md` serializers deleted; `EventRing` stays |
+| G88 | T3-B5 | `cdbb6b440` | closed for the trait; the `EmitOutcome.cancelled` dead branch stays |
+| G98 | T3-B21 | `37e4a8b8d` | closed |
+| G110 | T3-A10, T3-A11 | `358dd41d2`, `33703918c` | closed |
+| G113 | T3-B9 | `6a8080880` | closed: the client reads `SessionEventMessage` |
+| G114 | T3-B12 | `bb5b39591` | part: `FtsResult` is the one text-search shape; the DTO offsets stay |
+| G116 | T3-A3 | `81eb69ca3` | closed |
+| G117 | T3-A2 | `1d60a80ed` | closed |
+| G125 | T3-C4 | `9434cc15d` | part: one set of colour parsers; `BorderStyle` maps onto oil; the unread theme fields stay |
+| G127 | T3-B24 | `80d003052` | part: `cru.sessions` from one list with a set-equality test; `cru.kiln` still twice |
+| G132 | T3-C8 | `f36093d2b` | closed: `crucible_core::paths` |
+| G134 | T3-A5 | `ca9473cf4` | closed |
+| G144 | T3-C20 | `bcf424dd3` | closed: one `ReplCommand` table |
+| G145 | B24, T3-C1 | `62839af8b`, `c07a2b7fc` | part: `crucible_core::text` holds the truncate helpers; oil keeps its own |
+| G148 | B20, T3-C21 | `2a2f9e4cd`, `8b259b03e` | part: `parse_bool` no longer panics; the overlay defaults stay strings |
+| G152 | T3-C13 | `7fbc9f481` | part: `From` impls; the three types stay |
+| G153 | T2-B3, T3-C22 | `5fb48681d`, `2d01c51d3` | part: dead strategies and `ComputedLayout` deleted; `template/node_spec.rs` stays |
+| G156 | T3-C3, T3-B25 | `420472f32`, `9fb6b8849` | part: one `BackendType` table for defaults and one Ollama tags shape; `ChatConfig` and `LlmProviderConfig` still repeat knobs |
+| G159 | T3-B2 | `782d6f664` | closed: the trait and the keyring store are gone |
+| G163 | T3-B18, T3-B19 | `728d2641f`, `2385cee7a` | part: `DiscoveryConfig`, `ResolveMode`, `pool_size` deleted; the enrichment pipeline fields stay |
+| G165 | T3-A6, T3-A7 | `0ce9742d4`, `bed420580` | closed: the helpers sit behind `test-utils` |
+| G169 | T3-B3, T3-B4 | `fbe49077c`, `0e194bb53` | closed: none of the five is a trait now |
+| G180 | T3-C2 | `3011f8e02` | closed: one `expand_tilde` in `crucible_core::config` |
+
+Not touched by design: C11, C17, C19 and C29 were deferred, so G125's
+`ThemeLayout` twin, the web policy rows (G17) and the `PermissionHook` versus
+`RuntimeHandler` pair are unchanged. The follow-ups the Tier 3 agents noted
+are in [[Consolidation Plan]] section "Tier 5".
