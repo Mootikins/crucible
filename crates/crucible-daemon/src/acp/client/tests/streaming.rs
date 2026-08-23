@@ -437,7 +437,7 @@ fn failed_tool_error_surfaces_content_block_text() {
     let raw = json!([
         {"type": "text", "text": "MCP error -32602: File not found: Concepts/Target.md"}
     ]);
-    let err = CrucibleAcpClient::extract_tool_error(Some(ToolCallStatus::Failed), Some(&raw));
+    let err = CrucibleAcpClient::extract_tool_error(Some(ToolCallStatus::Failed), Some(&raw), &[]);
     assert_eq!(
         err.as_deref(),
         Some("MCP error -32602: File not found: Concepts/Target.md")
@@ -453,7 +453,7 @@ fn failed_tool_error_prefers_explicit_error_field() {
         "error": "explicit reason",
         "content": [{"type": "text", "text": "secondary text"}]
     });
-    let err = CrucibleAcpClient::extract_tool_error(Some(ToolCallStatus::Failed), Some(&raw));
+    let err = CrucibleAcpClient::extract_tool_error(Some(ToolCallStatus::Failed), Some(&raw), &[]);
     assert_eq!(err.as_deref(), Some("explicit reason"));
 }
 
@@ -468,7 +468,8 @@ fn failed_tool_error_without_detail_falls_back_to_generic() {
         Some(json!([])),
         Some(json!([{"type": "image"}])),
     ] {
-        let err = CrucibleAcpClient::extract_tool_error(Some(ToolCallStatus::Failed), raw.as_ref());
+        let err =
+            CrucibleAcpClient::extract_tool_error(Some(ToolCallStatus::Failed), raw.as_ref(), &[]);
         assert_eq!(err.as_deref(), Some("Tool call failed"), "raw={raw:?}");
     }
 }
@@ -482,7 +483,7 @@ fn failed_tool_error_text_is_sanitized_and_capped() {
 
     let hostile = format!("bad\x1b[31m\r{}", "x".repeat(4096));
     let raw = json!([{"type": "text", "text": hostile}]);
-    let err = CrucibleAcpClient::extract_tool_error(Some(ToolCallStatus::Failed), Some(&raw))
+    let err = CrucibleAcpClient::extract_tool_error(Some(ToolCallStatus::Failed), Some(&raw), &[])
         .expect("failed status must yield an error");
     assert!(
         !err.contains('\x1b'),
@@ -582,4 +583,113 @@ fn tool_call_update_with_unchanged_raw_input_does_not_emit_args_update() {
             .any(|c| matches!(c, StreamingChunk::ToolArgsUpdate { .. })),
         "unchanged rawInput must not re-emit, got: {chunks:?}"
     );
+}
+
+/// Hermes sends `rawOutput: null` for most tools and puts the result text in
+/// `content` blocks. A completed update with no `rawOutput` must read the
+/// text blocks as the result. Diff blocks are not text.
+#[test]
+fn completed_update_without_raw_output_reads_content_text() {
+    let mut client = make_client();
+    let mut state = StreamingState::default();
+    let chunks = capture_apply(
+        &mut client,
+        &mut state,
+        json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "tc-1",
+                "title": "read_file",
+                "kind": "read",
+                "status": "completed",
+                "rawOutput": null,
+                "content": [
+                    {"type": "content", "content": {"type": "text", "text": "line one"}},
+                    {"type": "diff", "path": "/tmp/a.rs", "oldText": "a", "newText": "b"},
+                    {"type": "content", "content": {"type": "text", "text": "line two"}}
+                ]
+            }
+        }),
+    );
+    let end = chunks
+        .iter()
+        .find_map(|c| match c {
+            StreamingChunk::ToolEnd { result, error, .. } => Some((result.clone(), error.clone())),
+            _ => None,
+        })
+        .expect("completed update must emit ToolEnd");
+    assert_eq!(end, (Some("line one\nline two".to_string()), None));
+}
+
+/// A failed update with no `rawOutput` must read the reason from the
+/// content text, not collapse to the generic label.
+#[test]
+fn failed_update_without_raw_output_reads_content_text() {
+    let mut client = make_client();
+    let mut state = StreamingState::default();
+    let chunks = capture_apply(
+        &mut client,
+        &mut state,
+        json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "tc-1",
+                "title": "terminal",
+                "kind": "execute",
+                "status": "failed",
+                "rawOutput": null,
+                "content": [
+                    {"type": "content", "content": {"type": "text", "text": "Error executing tool 'terminal': exit 2"}}
+                ]
+            }
+        }),
+    );
+    let end = chunks
+        .iter()
+        .find_map(|c| match c {
+            StreamingChunk::ToolEnd { result, error, .. } => Some((result.clone(), error.clone())),
+            _ => None,
+        })
+        .expect("failed update must emit ToolEnd");
+    assert_eq!(
+        end,
+        (
+            Some("Error executing tool 'terminal': exit 2".to_string()),
+            Some("Error executing tool 'terminal': exit 2".to_string())
+        )
+    );
+}
+
+/// When both exist, `rawOutput` is the result and content is ignored.
+#[test]
+fn raw_output_wins_over_content_when_both_exist() {
+    let mut client = make_client();
+    let mut state = StreamingState::default();
+    let chunks = capture_apply(
+        &mut client,
+        &mut state,
+        json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "tc-1",
+                "title": "search",
+                "status": "completed",
+                "rawOutput": {"hits": 3},
+                "content": [
+                    {"type": "content", "content": {"type": "text", "text": "3 hits"}}
+                ]
+            }
+        }),
+    );
+    let result = chunks
+        .iter()
+        .find_map(|c| match c {
+            StreamingChunk::ToolEnd { result, .. } => Some(result.clone()),
+            _ => None,
+        })
+        .expect("completed update must emit ToolEnd");
+    assert_eq!(result.as_deref(), Some(r#"{"hits":3}"#));
 }

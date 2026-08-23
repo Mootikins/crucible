@@ -200,9 +200,14 @@ impl ToolCallTable {
             fields.status,
             Some(ToolCallStatus::Completed | ToolCallStatus::Failed)
         );
+        let content = fields.content.as_deref().unwrap_or_default();
         let completion = completed.then(|| HeldResult {
-            result: CrucibleAcpClient::extract_tool_result(fields.raw_output.as_ref()),
-            error: CrucibleAcpClient::extract_tool_error(fields.status, fields.raw_output.as_ref()),
+            result: CrucibleAcpClient::extract_tool_result(fields.raw_output.as_ref(), content),
+            error: CrucibleAcpClient::extract_tool_error(
+                fields.status,
+                fields.raw_output.as_ref(),
+                content,
+            ),
         });
 
         let held_count = self.held_count();
