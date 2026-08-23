@@ -177,7 +177,8 @@ impl CrucibleMcpServer {
     ) -> Self {
         let kiln_path_buf = PathBuf::from(&kiln_path);
         Self {
-            note_tools: NoteTools::new(kiln_path.clone()).with_containment(containment.clone()),
+            note_tools: NoteTools::new(kiln_path.clone(), knowledge_repo.clone())
+                .with_containment(containment.clone()),
             search_tools: SearchTools::new(kiln_path.clone(), knowledge_repo, embedding_provider)
                 .with_containment(containment.clone()),
             kiln_tools: KilnTools::new(kiln_path).with_containment(containment),

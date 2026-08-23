@@ -1,8 +1,8 @@
 //! Path-traversal and symlink-escape tests for `NoteTools`.
 
 use super::super::{
-    CreateNoteParams, DeleteNoteParams, ListNotesParams, NoteTools, ReadMetadataParams,
-    ReadNoteParams, UpdateNoteParams,
+    CreateNoteParams, DeleteNoteParams, ListNotesParams, ReadMetadataParams, ReadNoteParams,
+    UpdateNoteParams,
 };
 use super::create_name_resolution_kiln;
 use rmcp::handler::server::wrapper::Parameters;
@@ -11,7 +11,7 @@ use tempfile::TempDir;
 #[tokio::test]
 async fn test_read_note_rejects_parent_traversal_input() {
     let kiln = create_name_resolution_kiln();
-    let note_tools = NoteTools::new(kiln.path().to_string_lossy().to_string());
+    let note_tools = super::unindexed(kiln.path().to_string_lossy().to_string());
 
     let result = note_tools
         .read_note(Parameters(ReadNoteParams {
@@ -30,7 +30,7 @@ async fn test_read_note_rejects_parent_traversal_input() {
 async fn test_create_note_path_traversal_parent_dir() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
 
     let result = note_tools
         .create_note(Parameters(CreateNoteParams {
@@ -53,7 +53,7 @@ async fn test_create_note_path_traversal_parent_dir() {
 async fn test_create_note_path_traversal_absolute() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
 
     let result = note_tools
         .create_note(Parameters(CreateNoteParams {
@@ -76,7 +76,7 @@ async fn test_create_note_path_traversal_absolute() {
 async fn test_read_note_path_traversal() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
 
     let result = note_tools
         .read_note(Parameters(ReadNoteParams {
@@ -93,7 +93,7 @@ async fn test_read_note_path_traversal() {
 async fn test_update_note_path_traversal() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
 
     let result = note_tools
         .update_note(Parameters(UpdateNoteParams {
@@ -110,7 +110,7 @@ async fn test_update_note_path_traversal() {
 async fn test_delete_note_path_traversal() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
 
     let result = note_tools
         .delete_note(Parameters(DeleteNoteParams {
@@ -125,7 +125,7 @@ async fn test_delete_note_path_traversal() {
 async fn test_list_notes_path_traversal() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
 
     let result = note_tools
         .list_notes(Parameters(ListNotesParams {
@@ -142,7 +142,7 @@ async fn test_list_notes_path_traversal() {
 async fn test_list_notes_null_string_folder_treated_as_none() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
 
     // LLMs sometimes send "null" as a string instead of omitting the field
     let result = note_tools
@@ -164,7 +164,7 @@ async fn test_list_notes_null_string_folder_treated_as_none() {
 async fn test_read_metadata_path_traversal() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
 
     let result = note_tools
         .read_metadata(Parameters(ReadMetadataParams {
@@ -182,7 +182,7 @@ async fn test_symlink_escape_blocked() {
 
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path.clone());
+    let note_tools = super::unindexed(kiln_path.clone());
 
     // Create a directory outside the kiln
     let outside_dir = TempDir::new().unwrap();
@@ -211,7 +211,7 @@ async fn test_symlink_escape_blocked() {
 async fn test_valid_nested_path_allowed() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
 
     // Create nested directory
     std::fs::create_dir_all(temp_dir.path().join("projects/rust")).unwrap();
@@ -239,7 +239,7 @@ async fn test_valid_nested_path_allowed() {
 #[tokio::test]
 async fn create_note_refuses_a_protected_directory() {
     let temp_dir = TempDir::new().unwrap();
-    let note_tools = NoteTools::new(temp_dir.path().to_string_lossy().to_string());
+    let note_tools = super::unindexed(temp_dir.path().to_string_lossy().to_string());
 
     for path in [
         ".git/hooks/post-checkout",
@@ -278,7 +278,7 @@ async fn create_note_refuses_to_author_anything_but_a_note() {
     let temp_dir = TempDir::new().unwrap();
     std::fs::create_dir_all(temp_dir.path().join("plugins/evil")).unwrap();
     std::fs::create_dir_all(temp_dir.path().join("hooks")).unwrap();
-    let note_tools = NoteTools::new(temp_dir.path().to_string_lossy().to_string());
+    let note_tools = super::unindexed(temp_dir.path().to_string_lossy().to_string());
 
     for path in [
         "plugins/evil/init.lua",
@@ -317,7 +317,7 @@ async fn update_and_delete_note_refuse_a_file_that_is_not_a_note() {
     let temp_dir = TempDir::new().unwrap();
     let victim = temp_dir.path().join("init.lua");
     std::fs::write(&victim, "-- the real plugin\n").unwrap();
-    let note_tools = NoteTools::new(temp_dir.path().to_string_lossy().to_string());
+    let note_tools = super::unindexed(temp_dir.path().to_string_lossy().to_string());
 
     let err = note_tools
         .update_note(Parameters(UpdateNoteParams {
@@ -356,7 +356,7 @@ async fn a_symlink_cannot_launder_a_non_note_extension() {
     std::fs::write(&real, "-- the real plugin\n").unwrap();
     std::os::unix::fs::symlink(&real, temp_dir.path().join("innocent.md")).unwrap();
 
-    let note_tools = NoteTools::new(temp_dir.path().to_string_lossy().to_string());
+    let note_tools = super::unindexed(temp_dir.path().to_string_lossy().to_string());
     let err = note_tools
         .create_note(Parameters(CreateNoteParams {
             path: "innocent.md".to_string(),
@@ -378,7 +378,7 @@ async fn a_symlink_cannot_launder_a_non_note_extension() {
 #[tokio::test]
 async fn create_note_still_writes_notes() {
     let temp_dir = TempDir::new().unwrap();
-    let note_tools = NoteTools::new(temp_dir.path().to_string_lossy().to_string());
+    let note_tools = super::unindexed(temp_dir.path().to_string_lossy().to_string());
 
     for (path, expected) in [
         ("plain.md", "plain.md"),

@@ -13,7 +13,7 @@ fn test_note_tools_creation() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
     assert_eq!(note_tools.scope().anchor(), temp_dir.path());
 }
 
@@ -22,7 +22,7 @@ async fn test_create_note() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
 
     let result = note_tools
         .create_note(Parameters(CreateNoteParams {
@@ -51,7 +51,7 @@ async fn test_create_and_read_note() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
     let content = "# Test Note\n\nThis is a test note.";
 
     // Create note
@@ -92,7 +92,7 @@ async fn test_read_nonexistent_note() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
 
     let result = note_tools
         .read_note(Parameters(ReadNoteParams {
@@ -109,7 +109,7 @@ async fn test_create_note_without_md_suffix() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
-    let note_tools = NoteTools::new(kiln_path.clone());
+    let note_tools = super::unindexed(kiln_path.clone());
 
     let result = note_tools
         .create_note(Parameters(CreateNoteParams {
@@ -136,7 +136,7 @@ async fn test_read_note_without_md_suffix() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
-    let note_tools = NoteTools::new(kiln_path.clone());
+    let note_tools = super::unindexed(kiln_path.clone());
     let note_path = temp_dir.path().join("wikilink.md");
     std::fs::write(&note_path, "content").unwrap();
 
@@ -163,7 +163,7 @@ async fn test_read_note_without_md_suffix() {
 #[tokio::test]
 async fn test_read_note_resolves_subdirectory_note_by_name() {
     let kiln = create_name_resolution_kiln();
-    let note_tools = NoteTools::new(kiln.path().to_string_lossy().to_string());
+    let note_tools = super::unindexed(kiln.path().to_string_lossy().to_string());
 
     let result = note_tools
         .read_note(Parameters(ReadNoteParams {
@@ -187,7 +187,7 @@ async fn test_read_note_resolves_subdirectory_note_by_name() {
 #[tokio::test]
 async fn test_read_note_with_explicit_subdirectory_path() {
     let kiln = create_name_resolution_kiln();
-    let note_tools = NoteTools::new(kiln.path().to_string_lossy().to_string());
+    let note_tools = super::unindexed(kiln.path().to_string_lossy().to_string());
 
     let result = note_tools
         .read_note(Parameters(ReadNoteParams {
@@ -203,7 +203,7 @@ async fn test_read_note_with_explicit_subdirectory_path() {
 #[tokio::test]
 async fn test_read_note_resolves_root_note_by_name() {
     let kiln = create_name_resolution_kiln();
-    let note_tools = NoteTools::new(kiln.path().to_string_lossy().to_string());
+    let note_tools = super::unindexed(kiln.path().to_string_lossy().to_string());
 
     let result = note_tools
         .read_note(Parameters(ReadNoteParams {
@@ -224,7 +224,7 @@ async fn test_read_note_resolves_root_note_by_name() {
 #[tokio::test]
 async fn test_read_note_reports_clear_not_found_for_name_lookup() {
     let kiln = create_name_resolution_kiln();
-    let note_tools = NoteTools::new(kiln.path().to_string_lossy().to_string());
+    let note_tools = super::unindexed(kiln.path().to_string_lossy().to_string());
 
     let result = note_tools
         .read_note(Parameters(ReadNoteParams {
@@ -242,7 +242,7 @@ async fn test_read_note_reports_clear_not_found_for_name_lookup() {
 #[tokio::test]
 async fn test_read_note_resolves_subdirectory_note_by_name_with_md_suffix() {
     let kiln = create_name_resolution_kiln();
-    let note_tools = NoteTools::new(kiln.path().to_string_lossy().to_string());
+    let note_tools = super::unindexed(kiln.path().to_string_lossy().to_string());
 
     let result = note_tools
         .read_note(Parameters(ReadNoteParams {
@@ -260,7 +260,7 @@ async fn test_update_note() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
     let initial_content = "# Initial Content";
     let updated_content = "# Updated Content\n\nWith more text.";
 
@@ -315,7 +315,7 @@ async fn test_update_nonexistent_note() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
 
     let result = note_tools
         .update_note(Parameters(UpdateNoteParams {
@@ -332,7 +332,7 @@ async fn test_delete_note() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
 
     // Create note first
     note_tools
@@ -378,7 +378,7 @@ async fn test_delete_note() {
 async fn test_read_metadata_with_frontmatter() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
 
     // Create note with frontmatter
     let content = "---\ntitle: Test Note\ntags: [test, important]\nstatus: draft\n---\n\n# Test Note\n\nSome content here.";
@@ -421,7 +421,7 @@ async fn test_read_metadata_with_frontmatter() {
 async fn test_read_metadata_without_frontmatter() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
 
     // Create note without frontmatter
     let content = "# Test Note\n\nJust content, no frontmatter.";
@@ -460,7 +460,7 @@ async fn test_read_metadata_without_frontmatter() {
 async fn test_read_note_line_range_full() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
 
     let content = "line 1\nline 2\nline 3\nline 4\nline 5";
     note_tools
@@ -496,7 +496,7 @@ async fn test_read_note_line_range_full() {
 async fn test_read_note_first_n_lines() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
 
     let content = "line 1\nline 2\nline 3\nline 4\nline 5";
     note_tools
@@ -532,7 +532,7 @@ async fn test_read_note_first_n_lines() {
 async fn test_read_note_line_range() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
 
     let content = "line 1\nline 2\nline 3\nline 4\nline 5";
     note_tools
@@ -568,7 +568,7 @@ async fn test_read_note_line_range() {
 async fn test_read_note_from_start_line() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
 
     let content = "line 1\nline 2\nline 3\nline 4\nline 5";
     note_tools
@@ -604,7 +604,7 @@ async fn test_read_note_from_start_line() {
 async fn test_create_note_with_frontmatter() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path.clone());
+    let note_tools = super::unindexed(kiln_path.clone());
 
     let frontmatter = serde_json::json!({
         "title": "Test Note",
@@ -645,7 +645,7 @@ async fn test_create_note_with_frontmatter() {
 async fn test_create_note_without_frontmatter() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path.clone());
+    let note_tools = super::unindexed(kiln_path.clone());
 
     let result = note_tools
         .create_note(Parameters(CreateNoteParams {
@@ -674,7 +674,7 @@ async fn test_create_note_without_frontmatter() {
 async fn test_update_note_content_only() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path.clone());
+    let note_tools = super::unindexed(kiln_path.clone());
 
     // Create initial note with frontmatter
     let initial_frontmatter = serde_json::json!({
@@ -722,7 +722,7 @@ async fn test_update_note_content_only() {
 async fn test_update_note_frontmatter_only() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path.clone());
+    let note_tools = super::unindexed(kiln_path.clone());
 
     // Create initial note
     note_tools
@@ -770,7 +770,7 @@ async fn test_update_note_frontmatter_only() {
 async fn test_update_note_both_content_and_frontmatter() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path.clone());
+    let note_tools = super::unindexed(kiln_path.clone());
 
     // Create initial note
     note_tools
@@ -816,7 +816,7 @@ async fn test_update_note_both_content_and_frontmatter() {
 async fn test_update_note_remove_frontmatter() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path.clone());
+    let note_tools = super::unindexed(kiln_path.clone());
 
     // Create note with frontmatter
     note_tools
@@ -858,7 +858,7 @@ fn test_tool_router_creation() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
-    let _note_tools = NoteTools::new(kiln_path);
+    let _note_tools = super::unindexed(kiln_path);
 
     // This should compile and not panic - the tool_router macro generates the router
     let _router = NoteTools::tool_router();

@@ -7,11 +7,9 @@ use super::NoteTools;
 use rmcp::model::CallToolResult;
 
 impl NoteTools {
-    /// List notes from the filesystem.
-    ///
-    /// The function is async because the tool router calls it as a future,
-    /// although the filesystem operations are synchronous.
-    #[allow(clippy::unused_async)]
+    /// Walk the folder on disk, then answer each file from the index when it
+    /// has a row and from its bytes when it does not. The walk is the thing
+    /// that is contained, so the index never names a file the walk skipped.
     pub(super) async fn list_notes_via_filesystem(
         &self,
         search_path: &ContainedPath,
@@ -51,10 +49,28 @@ impl NoteTools {
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|d| d.as_secs());
 
+            let relative = self.scope().relativize(&path);
+            if let Some(row) = self.indexed(relative).await {
+                let mut note_json = serde_json::json!({
+                    "path": relative.to_string_lossy(),
+                    "title": row.title,
+                    "modified": super::indexed_modified(&row),
+                    "source": "index"
+                });
+                if include_frontmatter {
+                    note_json["frontmatter"] = super::indexed_frontmatter(&row);
+                    note_json["tags_count"] = serde_json::json!(row.tags.len());
+                    note_json["links_count"] = serde_json::json!(row.links_to.len());
+                }
+                notes.push(note_json);
+                continue;
+            }
+
             let mut note_json = serde_json::json!({
-                "path": self.scope().relativize(&path).to_string_lossy(),
+                "path": relative.to_string_lossy(),
                 "size": metadata.as_ref().map_or(0, std::fs::Metadata::len),
-                "modified": modified
+                "modified": modified,
+                "source": "disk"
             });
 
             if include_frontmatter {

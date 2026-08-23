@@ -151,6 +151,16 @@ impl KnowledgeRepository for DaemonStorageClient {
         }
     }
 
+    /// No RPC carries an index row with its properties, and no client-side
+    /// caller reads one: the tools that do live in the daemon. `None` is the
+    /// honest answer, not a stub.
+    async fn get_note_by_path(
+        &self,
+        _path: &str,
+    ) -> CoreResult<Option<crucible_core::storage::note_store::NoteRecord>> {
+        Ok(None)
+    }
+
     async fn list_notes(&self, path_filter: Option<&str>) -> CoreResult<Vec<NoteInfo>> {
         // Use the backend-agnostic list_notes RPC method
         let results = self

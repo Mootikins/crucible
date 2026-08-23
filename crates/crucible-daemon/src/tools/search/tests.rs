@@ -31,6 +31,13 @@ impl KnowledgeRepository for OneHitRepository {
     ) -> crucible_core::Result<Option<crucible_core::parser::ParsedNote>> {
         Ok(None)
     }
+    async fn get_note_by_path(
+        &self,
+        _path: &str,
+    ) -> crucible_core::Result<Option<crucible_core::storage::note_store::NoteRecord>> {
+        Ok(None)
+    }
+
     async fn list_notes(
         &self,
         _path: Option<&str>,

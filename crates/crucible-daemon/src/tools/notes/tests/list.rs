@@ -1,6 +1,6 @@
 //! List-operation tests for `NoteTools`.
 
-use super::super::{CreateNoteParams, ListNotesParams, NoteTools};
+use super::super::{CreateNoteParams, ListNotesParams};
 use rmcp::handler::server::wrapper::Parameters;
 use tempfile::TempDir;
 
@@ -9,7 +9,7 @@ async fn test_list_notes_empty() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
-    let note_tools = NoteTools::new(kiln_path.clone());
+    let note_tools = super::unindexed(kiln_path.clone());
 
     let result = note_tools
         .list_notes(Parameters(ListNotesParams {
@@ -35,7 +35,7 @@ async fn test_list_notes_with_files() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
 
     // Create some test files
     note_tools
@@ -93,7 +93,7 @@ async fn test_list_notes_with_files() {
 async fn test_list_notes_with_frontmatter() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
 
     // Create notes with frontmatter
     note_tools
@@ -144,7 +144,7 @@ async fn test_list_notes_with_frontmatter() {
 async fn test_list_notes_non_recursive() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
 
     // Create root note
     note_tools
@@ -190,7 +190,7 @@ async fn test_list_notes_non_recursive() {
 async fn test_list_notes_filters_by_folder() {
     let temp_dir = TempDir::new().unwrap();
     let kiln_path = temp_dir.path().to_string_lossy().to_string();
-    let note_tools = NoteTools::new(kiln_path);
+    let note_tools = super::unindexed(kiln_path);
 
     std::fs::create_dir(temp_dir.path().join("projects")).unwrap();
     for path in ["root.md", "projects/rust.md", "projects/python.md"] {

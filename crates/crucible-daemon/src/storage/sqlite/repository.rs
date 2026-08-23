@@ -122,6 +122,19 @@ impl KnowledgeRepository for SqliteKnowledgeRepository {
         }
     }
 
+    async fn get_note_by_path(
+        &self,
+        path: &str,
+    ) -> CrucibleResult<Option<crucible_core::storage::note_store::NoteRecord>> {
+        use crucible_core::storage::NoteStore;
+
+        let authority = scope_for(self.kiln_path.as_deref());
+        self.store
+            .get(path, &authority)
+            .await
+            .map_err(|e| CrucibleError::DatabaseError(format!("Failed to get note: {}", e)))
+    }
+
     async fn list_notes(&self, path: Option<&str>) -> CrucibleResult<Vec<NoteInfo>> {
         use crucible_core::storage::NoteStore;
 
@@ -302,6 +315,17 @@ mod tests {
 
         let note = repo.get_note_by_name("PYTHON").await.unwrap();
         assert!(note.is_some());
+    }
+
+    #[tokio::test]
+    async fn get_note_by_path_matches_the_whole_path_only() {
+        let (repo, _store) = setup_test_repo().await;
+
+        let row = repo.get_note_by_path("notes/rust.md").await.unwrap();
+        assert_eq!(row.unwrap().title, "Rust Programming");
+
+        assert!(repo.get_note_by_path("rust.md").await.unwrap().is_none());
+        assert!(repo.get_note_by_path("notes/rust").await.unwrap().is_none());
     }
 
     #[tokio::test]

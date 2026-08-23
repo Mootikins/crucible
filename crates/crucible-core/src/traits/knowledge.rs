@@ -18,6 +18,7 @@
 //!
 //! - **`KnowledgeRepository`** - Semantic note operations
 //!   - `get_note_by_name()` - Retrieve parsed notes by name/wikilink
+//!   - `get_note_by_path()` - Read one index row by exact path
 //!   - `list_notes()` - Browse notes with filtering
 //!   - `search_vectors()` - Semantic search with embeddings
 //!
@@ -98,6 +99,14 @@ impl From<crate::storage::note_store::NoteRecord> for NoteInfo {
 pub trait KnowledgeRepository: Send + Sync {
     /// Retrieve a note by its name or wikilink target
     async fn get_note_by_name(&self, name: &str) -> Result<Option<ParsedNote>>;
+
+    /// The index row for one kiln-relative path, exactly as the indexer
+    /// stored it. `None` means the index has no row, so the caller reads the
+    /// file instead. Unlike [`Self::get_note_by_name`] this is an exact match.
+    async fn get_note_by_path(
+        &self,
+        path: &str,
+    ) -> Result<Option<crate::storage::note_store::NoteRecord>>;
 
     /// List notes, optionally filtered by a directory path
     async fn list_notes(&self, path: Option<&str>) -> Result<Vec<NoteInfo>>;

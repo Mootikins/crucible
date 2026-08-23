@@ -1,7 +1,10 @@
 //! Note CRUD operations tools
 //!
-//! This module provides simple filesystem-based note CRUD tools. The
-//! filesystem is the source of truth; every tool reads it directly.
+//! The filesystem is the source of truth: every write, and every read of a
+//! note's content, goes to disk. The two metadata reads (`read_metadata`,
+//! `list_notes`) answer from the kiln's index when the index has a row for the
+//! note, and from disk when it does not. An index row for a file that is gone
+//! is stale, so the file has to exist either way.
 
 #![allow(missing_docs)]
 
@@ -20,6 +23,8 @@ use helpers::{
     extract_content_without_frontmatter, resolve_note_write, serialize_frontmatter_to_yaml,
 };
 
+use crucible_core::storage::note_store::NoteRecord;
+use crucible_core::traits::KnowledgeRepository;
 /// How a note name becomes a note path, and the rule that says the result has
 /// to be a note — re-exported for the other note-writing sink in this crate
 /// (`acp::tools::ToolExecutor`), which had its own hand-rolled copy of the
@@ -27,6 +32,7 @@ use helpers::{
 pub(crate) use helpers::{ensure_md_suffix, reject_non_note};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{model::CallToolResult, tool, tool_router};
+use std::sync::Arc;
 
 pub use params::{
     CreateNoteParams, DeleteNoteParams, ListNotesParams, ReadMetadataParams, ReadNoteParams,
@@ -42,14 +48,32 @@ pub struct NoteTools {
     /// to the session's root set. Holding a `String` here is what let
     /// `read_note` hand over a transcript `read_file` refused.
     scope: FsScope,
+    /// The kiln's index. Required, not optional: a session without a kiln
+    /// gets a repository that knows no notes, and every read goes to disk.
+    index: Arc<dyn KnowledgeRepository>,
 }
 
 impl NoteTools {
     #[allow(missing_docs)]
     #[must_use]
-    pub fn new(kiln_path: String) -> Self {
+    pub fn new(kiln_path: String, index: Arc<dyn KnowledgeRepository>) -> Self {
         Self {
             scope: FsScope::kiln(kiln_path, RootSet::Ambient),
+            index,
+        }
+    }
+
+    /// The index row for a kiln-relative path, or `None` when the index has
+    /// none. An index that fails to answer is the same as an index with no
+    /// row: the file is the source of truth, and disk still answers.
+    pub(super) async fn indexed(&self, relative: &std::path::Path) -> Option<NoteRecord> {
+        let key = relative.to_string_lossy();
+        match self.index.get_note_by_path(&key).await {
+            Ok(row) => row,
+            Err(e) => {
+                tracing::debug!(path = %key, error = %e, "index lookup failed; reading disk");
+                None
+            }
         }
     }
 
@@ -198,12 +222,28 @@ impl NoteTools {
         // Security: Validate path to prevent traversal attacks
         let full_path = self.scope.resolve(&path)?;
 
-        // Fallback: read from filesystem
         if !full_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(
                 format!("File not found: {path}"),
                 None,
             ));
+        }
+
+        if let Some(row) = self
+            .indexed(self.scope.relativize(full_path.as_path()))
+            .await
+        {
+            return json_success(serde_json::json!({
+                "path": path,
+                "frontmatter": indexed_frontmatter(&row),
+                "stats": {
+                    "links_count": row.links_to.len(),
+                    "tags_count": row.tags.len(),
+                    "has_embedding": row.has_embedding(),
+                },
+                "modified": indexed_modified(&row),
+                "source": "index"
+            }));
         }
 
         let content =
@@ -240,7 +280,8 @@ impl NoteTools {
                 "line_count": line_count,
                 "heading_count": heading_count,
             },
-            "modified": modified
+            "modified": modified,
+            "source": "disk"
         }))
     }
 
@@ -382,4 +423,25 @@ impl NoteTools {
         )
         .await
     }
+}
+
+/// The frontmatter an index row stands for: the stored properties, with the
+/// title and tags the indexer lifted out of them put back.
+pub(super) fn indexed_frontmatter(row: &NoteRecord) -> serde_json::Value {
+    let mut frontmatter = serde_json::json!({
+        "title": row.title,
+        "tags": row.tags,
+    });
+    if let Some(obj) = frontmatter.as_object_mut() {
+        for (k, v) in &row.properties {
+            obj.insert(k.clone(), v.clone());
+        }
+    }
+    frontmatter
+}
+
+/// The row's update time as Unix seconds, in the same unit the disk path
+/// reports `mtime`.
+pub(super) fn indexed_modified(row: &NoteRecord) -> Option<u64> {
+    row.updated_at.timestamp().try_into().ok()
 }
