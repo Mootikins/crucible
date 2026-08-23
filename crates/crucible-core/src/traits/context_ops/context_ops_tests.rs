@@ -119,3 +119,21 @@ fn range_requires_start_and_end_for_indices() {
         "got: {err}"
     );
 }
+
+#[test]
+fn range_serializes_to_the_tagged_shape_it_reads() {
+    let to = |r: Range| serde_json::to_value(r).unwrap();
+    assert_eq!(to(Range::All), serde_json::json!({"type": "all"}));
+    assert_eq!(
+        to(Range::Last(3)),
+        serde_json::json!({"type": "last", "n": 3})
+    );
+    assert_eq!(
+        to(Range::First(2)),
+        serde_json::json!({"type": "first", "n": 2})
+    );
+    assert_eq!(
+        to(Range::Indices(1..4)),
+        serde_json::json!({"type": "indices", "start": 1, "end": 4})
+    );
+}

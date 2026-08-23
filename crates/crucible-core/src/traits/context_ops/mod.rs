@@ -149,12 +149,13 @@ pub enum Position {
 
 /// Range specification for context operations
 ///
-/// Deserializes from the JSON shapes the Lua `remove_messages` binding sends:
+/// Serializes to, and deserializes from, the JSON shapes the Lua
+/// `remove_messages` binding sends:
 /// * `{ "type": "all" }`
 /// * `{ "type": "last" | "first", "n": N }`
 /// * `{ "type": "indices", "start": S, "end": E }` (half-open `[S, E)`)
-#[derive(Debug, Clone, Deserialize)]
-#[serde(from = "RangeWire")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(from = "RangeWire", into = "RangeWire")]
 pub enum Range {
     /// All messages
     All,
@@ -168,13 +169,27 @@ pub enum Range {
 
 /// The tagged wire form of [`Range`]. serde cannot tag a newtype variant
 /// that wraps a primitive, so the `n` field lives on a struct variant here.
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 enum RangeWire {
     All,
     Last { n: usize },
     First { n: usize },
     Indices { start: usize, end: usize },
+}
+
+impl From<Range> for RangeWire {
+    fn from(range: Range) -> Self {
+        match range {
+            Range::All => RangeWire::All,
+            Range::Last(n) => RangeWire::Last { n },
+            Range::First(n) => RangeWire::First { n },
+            Range::Indices(r) => RangeWire::Indices {
+                start: r.start,
+                end: r.end,
+            },
+        }
+    }
 }
 
 impl From<RangeWire> for Range {

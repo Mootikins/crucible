@@ -19,7 +19,7 @@
 //! transcript; only `review.list_hunks` is idempotent enough to retry.
 
 use anyhow::Result;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::session::SessionIdRequest;
 use super::DaemonClient;
@@ -35,10 +35,9 @@ pub struct ReviewSetStateRequest {
 
 /// Request for `review.comment`.
 ///
-/// The client's own `review_comment` still takes the comment as a `Value` and
-/// merges `session_id` into it — its callers (the web review route, the Lua
-/// bridge) hand it one already built. The struct is here because it is what
-/// the handler reads, so the field names have one home instead of three.
+/// This is what the handler reads, and what [`DaemonClient::review_comment`]
+/// sends, so the field names have one home. The Lua bridge reads its spec
+/// into this struct too.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ReviewCommentRequest {
     pub session_id: String,
@@ -131,23 +130,12 @@ impl DaemonClient {
 
     /// `review.comment` — anchor a comment to a line range.
     ///
-    /// `comment` is a params object the caller already validated and
-    /// serialized. [`ReviewCommentRequest`] is what the daemon deserializes it
-    /// into, so that struct — not a second copy of the field names here — is
-    /// where the shape is stated.
-    ///
-    /// `session_id` is written last and therefore wins: the session under
-    /// review is the one the caller named out of band, never one smuggled in
-    /// the payload.
-    pub async fn review_comment(&self, session_id: &str, comment: Value) -> Result<Value> {
-        let mut params = comment;
-        match params.as_object_mut() {
-            Some(object) => {
-                object.insert("session_id".to_string(), json!(session_id));
-            }
-            None => params = json!({ "session_id": session_id }),
-        }
-        self.call_once("review.comment", params).await
+    /// The caller names the session in `request.session_id`. The web route
+    /// fills it from the URL path, so a `session_id` in a request body never
+    /// reaches here.
+    pub async fn review_comment(&self, request: ReviewCommentRequest) -> Result<Value> {
+        self.call_once("review.comment", serde_json::to_value(request)?)
+            .await
     }
 
     /// `review.resolve_comment` — mark a comment answered.

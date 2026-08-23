@@ -23,6 +23,7 @@
 //! green light with no bulb. Only `review_list_hunks` may retry.
 
 use super::daemon::ReconnectingDaemon;
+use crucible_daemon::rpc_client::ReviewCommentRequest;
 
 impl ReconnectingDaemon {
     /// The composed diff plus its comments, forwarded as the daemon shaped it.
@@ -69,19 +70,16 @@ impl ReconnectingDaemon {
         .await
     }
 
-    /// `comment` is a params object the route already validated; its optional
-    /// fields must reach the daemon absent rather than null so its own
-    /// defaults apply.
+    /// The route builds the request, so its `session_id` is the one from the
+    /// URL path. The optional fields reach the daemon absent rather than null,
+    /// so the daemon's own defaults apply.
     pub async fn review_comment(
         &self,
-        session_id: &str,
-        comment: serde_json::Value,
+        request: ReviewCommentRequest,
     ) -> anyhow::Result<serde_json::Value> {
-        let session_id = session_id.to_string();
         self.call_once(move |daemon| {
-            let session_id = session_id.clone();
-            let comment = comment.clone();
-            Box::pin(async move { daemon.review_comment(&session_id, comment).await })
+            let request = request.clone();
+            Box::pin(async move { daemon.review_comment(request).await })
         })
         .await
     }

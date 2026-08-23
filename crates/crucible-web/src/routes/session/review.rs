@@ -21,7 +21,8 @@ use axum::{
     extract::{Path, State},
     Json,
 };
-use serde::{Deserialize, Serialize};
+use crucible_daemon::rpc_client::ReviewCommentRequest;
+use serde::Deserialize;
 
 /// `POST /review/state` — accept, reject, or requeue one hunk.
 #[derive(Debug, Deserialize)]
@@ -35,10 +36,11 @@ pub(super) struct SetStateRequest {
 
 /// `POST /review/comment` — anchor a comment to a line range.
 ///
-/// Re-serialized rather than forwarded as raw JSON so the session under review
-/// can only ever be the one in the path: a `session_id` in the body is an
-/// unknown field here and is dropped before the params object is built.
-#[derive(Debug, Deserialize, Serialize)]
+/// Read into a typed body rather than forwarded as raw JSON, so the session
+/// under review can only ever be the one in the path: a `session_id` in the
+/// body is an unknown field here. The handler copies the fields into a
+/// `ReviewCommentRequest` with the path's session id.
+#[derive(Debug, Deserialize)]
 pub(super) struct CommentRequest {
     /// Absolute, or relative to the session's tracked root.
     path: String,
@@ -104,13 +106,16 @@ pub(super) async fn comment(
     Path(id): Path<String>,
     Json(req): Json<CommentRequest>,
 ) -> Result<Json<serde_json::Value>, WebError> {
-    let params = serde_json::to_value(&req)
-        .map_err(|e| WebError::Validation(format!("Invalid comment: {e}")))?;
-    let result = state
-        .daemon
-        .review_comment(&id, params)
-        .await
-        .daemon_err()?;
+    let request = ReviewCommentRequest {
+        session_id: id,
+        path: req.path,
+        body: req.body,
+        line_start: req.line_start,
+        line_end: req.line_end,
+        root: req.root,
+        author: req.author,
+    };
+    let result = state.daemon.review_comment(request).await.daemon_err()?;
     Ok(Json(result))
 }
 
