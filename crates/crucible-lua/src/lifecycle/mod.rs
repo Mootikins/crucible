@@ -96,18 +96,15 @@ impl PluginManager {
     }
 
     /// Search paths for a standalone `PluginManager`: env override, then the
-    /// user's plugin directory.
+    /// user's plugin directory. Both come from `crucible_core::paths`
+    /// (`env_plugin_paths`, `user_plugins_dir`), which the daemon's
+    /// `daemon_plugin_paths` reads too, so the two lists cannot diverge.
     ///
-    /// **A kiln's `plugins/` is deliberately not here.** It used to be, which
-    /// made this a second, divergent copy of the daemon's path list
-    /// (`daemon_plugin_paths`: env → user → runtime, versus env → user → kiln
-    /// here) — and because `initialize` loads what it discovers, every
-    /// `session.create` executed the `init.lua` of every plugin in the kiln
-    /// it was opening. That is `git clone` → arbitrary code execution in the
-    /// daemon, the exact thing `docs/Help/Extending/Creating Plugins.md` says
-    /// does not happen. It also bought nothing: `discover_plugins_for_kiln`
-    /// drops this manager immediately, so the tools and handlers those plugins
-    /// registered went into a VM nobody kept.
+    /// **A kiln's `plugins/` is deliberately not here.** `initialize` loads
+    /// what it discovers, so a kiln entry would execute the `init.lua` of
+    /// every plugin in a kiln on `session.create`. That is `git clone` to
+    /// arbitrary code execution in the daemon, the exact thing
+    /// `docs/Help/Extending/Creating Plugins.md` says does not happen.
     ///
     /// A kiln's plugins load by putting the kiln on `runtimepath`, which is
     /// the one path list and is the user's own config saying so.

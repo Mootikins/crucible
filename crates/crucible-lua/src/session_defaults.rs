@@ -60,6 +60,11 @@ pub struct SessionDefaultValues {
     /// it lives here rather than only on `SessionAgent`: the hook runs before
     /// the agent is built, so it is choosing what the agent starts as.
     pub mode: Option<String>,
+    /// Model the agent starts with. Only an `on_session_start` hook sets it,
+    /// through `session.model`. It is not a `cru.defaults` key: a global
+    /// model would silently replace the one the caller named on the command
+    /// line, while a hook is a deliberate per-session choice.
+    pub model: Option<String>,
 }
 
 /// Shared handle to the daemon's session defaults.
@@ -268,16 +273,17 @@ impl SessionConfigRpc for SessionDefaultsRpc {
         Ok(())
     }
 
-    // A session default has no agent yet, so the knobs below have no store
-    // to land in. They answer like the unsupported backing does.
     fn get_model(&self) -> Option<String> {
-        UnsupportedSessionRpc.get_model()
+        self.store.get().model
     }
 
     fn switch_model(&self, model: &str) -> Result<(), String> {
-        UnsupportedSessionRpc.switch_model(model)
+        self.store.update(|v| v.model = Some(model.to_string()));
+        Ok(())
     }
 
+    // A session default has no agent yet, so there is no provider to list
+    // models from. This answers like the unsupported backing does.
     fn list_models(&self) -> Vec<String> {
         UnsupportedSessionRpc.list_models()
     }
@@ -508,5 +514,19 @@ mod session_start_hook_tests {
             Some("after the mode line")
         );
         assert_eq!(rpc.get_mode(), "plan", "and reads back");
+    }
+
+    /// A hook picks the model the agent starts with. `session.model = "x"`
+    /// lands in the scoped store, so `apply_session_defaults` sees it.
+    #[test]
+    fn switching_the_model_stores_it_as_a_session_default() {
+        let store = SessionDefaults::new();
+        let rpc = SessionDefaultsRpc::new(store.clone());
+
+        rpc.switch_model("claude-sonnet-4")
+            .expect("model is a session default");
+
+        assert_eq!(store.get().model.as_deref(), Some("claude-sonnet-4"));
+        assert_eq!(rpc.get_model().as_deref(), Some("claude-sonnet-4"));
     }
 }

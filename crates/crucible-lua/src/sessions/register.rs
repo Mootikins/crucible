@@ -1,7 +1,7 @@
 use super::DaemonSessionApi;
 use crate::error::LuaError;
-use crate::lua_util::register_in_namespaces;
-use mlua::{Lua, LuaSerdeExt, Table, Value};
+use crate::lua_util::{gate_module_keys, register_in_namespaces};
+use mlua::{Lua, LuaSerdeExt, Value};
 use std::sync::Arc;
 
 /// Every function in `cru.sessions`, in registration order.
@@ -61,25 +61,6 @@ pub fn register_sessions_module(lua: &Lua) -> Result<(), LuaError> {
     register_in_namespaces(lua, "sessions", sessions)?;
 
     Ok(())
-}
-
-/// Compare the keys of a registered table against [`SESSION_FN_NAMES`].
-///
-/// Returns the names that only one side has.
-fn key_set_difference(sessions: &Table) -> Result<Vec<String>, LuaError> {
-    let mut diff = Vec::new();
-    for name in SESSION_FN_NAMES {
-        if !sessions.contains_key(*name)? {
-            diff.push(format!("missing {name}"));
-        }
-    }
-    for pair in sessions.pairs::<String, Value>() {
-        let (key, _) = pair?;
-        if !SESSION_FN_NAMES.contains(&key.as_str()) {
-            diff.push(format!("unlisted {key}"));
-        }
-    }
-    Ok(diff)
 }
 
 /// Fields that name or override the session's agent.
@@ -868,13 +849,7 @@ pub fn register_sessions_module_with_api(
         })?;
     sessions.set("review_resolve_comment", review_resolve_fn)?;
 
-    let diff = key_set_difference(&sessions)?;
-    if !diff.is_empty() {
-        return Err(LuaError::Runtime(format!(
-            "cru.sessions daemon functions disagree with SESSION_FN_NAMES: {}",
-            diff.join(", ")
-        )));
-    }
+    gate_module_keys("sessions", &sessions, SESSION_FN_NAMES)?;
 
     register_in_namespaces(lua, "sessions", sessions)?;
 

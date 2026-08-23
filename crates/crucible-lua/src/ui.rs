@@ -30,9 +30,9 @@
 //! Plugins must handle it; it is the common case on a headless daemon.
 
 use crate::error::LuaError;
-use crate::lua_util::register_in_namespaces;
+use crate::lua_util::{gate_module_keys, register_in_namespaces};
 use crate::sessions::DaemonSessionApi;
-use mlua::{Lua, LuaSerdeExt, Table, Value};
+use mlua::{Lua, LuaSerdeExt, Value};
 use std::sync::Arc;
 
 /// Default seconds to wait for an answer.
@@ -111,11 +111,10 @@ pub fn register_ui_module_with_api(
     lua: &Lua,
     api: Arc<dyn DaemonSessionApi>,
 ) -> Result<(), LuaError> {
-    register_ui_module(lua)?;
-
-    let globals = lua.globals();
-    let cru: Table = globals.get("cru")?;
-    let ui: Table = cru.get("ui")?;
+    // Build a fresh table. The gate at the end compares its keys against
+    // INTERACTION_KINDS, so a kind with no daemon-backed body cannot hide
+    // behind a stub.
+    let ui = lua.create_table()?;
 
     for kind in INTERACTION_KINDS {
         let kind = *kind;
@@ -142,6 +141,9 @@ pub fn register_ui_module_with_api(
         })?;
         ui.set(kind, f)?;
     }
+
+    gate_module_keys("ui", &ui, INTERACTION_KINDS)?;
+    register_in_namespaces(lua, "ui", ui)?;
 
     Ok(())
 }

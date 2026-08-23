@@ -405,7 +405,7 @@ A **knowledge-grounded agent runtime**. Agents that draw from a knowledge graph 
 ### Lua Session API
 
 - [x] **Scripted Agent Control (session VM)** `P0` — Lua control of `thinking_budget` and `mode` from the TUI's session VM · `crucible-lua`, `crucible-cli`
-  - **Gets you:** setting the thinking budget changes the provider's reasoning effort, and setting the mode changes which tools the agent can see — including on a cached live handle. `session.model` is a getter only (assignment raises "model is read-only"; use `:model`). Daemon getters read a local cache.
+  - **Gets you:** setting the thinking budget changes the provider's reasoning effort, and setting the mode changes which tools the agent can see — including on a cached live handle. `session.model = "x"` calls `switch_model` on the bound backing; in an `on_session_start` hook it picks the model the agent starts with (`on_session_start_can_pick_the_model`). Daemon getters read a local cache.
   - **Proof:** `crates/crucible-daemon/src/provider/genai_handle.rs`:993-999 (thinking budget becomes `ReasoningEffort::Budget` on the outgoing request); `crates/crucible-daemon/src/agent_manager/tests/models/mode.rs`::set_mode_applies_to_cached_live_handle, `::set_mode_emits_mode_changed_event`
 - [-] **Scripted Agent Control (daemon plugin VM)** `P0` — the same `cru.get_session()` surface from a daemon-side plugin · `crucible-lua`, `crucible-daemon`
   - **Gets you:** a visible error. Setters now raise `"<field>: not supported on this session"` instead of reporting success and changing nothing; getters still return defaults, so `s.mode` reads `"chat"` — a mode id not in the registry.

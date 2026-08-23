@@ -253,12 +253,12 @@ fn is_valid_version(version: &str) -> bool {
 
 /// Where a plugin was discovered from, ordered by priority (highest first).
 ///
-/// There is no `Kiln` variant. There was, documented as
-/// `KILN/.crucible/plugins/` or `KILN/plugins/`, and nothing ever produced it:
-/// `daemon_plugin_paths` emits only these three. The kiln-relative loading that
-/// did exist ran through `PluginManager::with_standard_paths`, which built its
-/// own path list and tagged nothing. Plugins are user-scoped; a kiln's tree is
-/// opted into via `runtimepath`, which makes it `Runtime` like any other.
+/// There is no `Kiln` variant. The daemon's `daemon_plugin_paths` emits only
+/// these three, and `PluginManager::with_standard_paths` reads the first two
+/// from `crucible_core::paths` (`env_plugin_paths`, `user_plugins_dir`), so
+/// the two path lists share one definition. Plugins are user-scoped; a kiln's
+/// tree is opted into via `runtimepath`, which makes it `Runtime` like any
+/// other.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PluginSource {
     /// `CRUCIBLE_PLUGIN_PATH` env var

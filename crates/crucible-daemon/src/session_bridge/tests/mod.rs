@@ -6,6 +6,7 @@ use crate::session_manager::SessionManager;
 use crate::test_support::temp_session_manager;
 mod create;
 mod lifecycle;
+mod review;
 
 use crucible_core::config::{BackendType, LlmConfig};
 use crucible_core::session::{OutputValidation, SessionAgent, SessionType};

@@ -340,6 +340,38 @@ async fn on_session_start_fires_and_can_set_this_sessions_values() {
     assert_eq!(agent.temperature, Some(0.25));
 }
 
+/// A hook can choose the model the agent starts with. The hook runs after
+/// the caller named a model, so its choice replaces that one.
+#[tokio::test]
+async fn on_session_start_can_pick_the_model() {
+    let tmp = TempDir::new().unwrap();
+    let lua_dir = tmp.path().join(".crucible/lua");
+    std::fs::create_dir_all(&lua_dir).unwrap();
+    std::fs::write(
+        lua_dir.join("init.lua"),
+        r#"cru.on_session_start(function(session)
+             session.model = "hook-picked-model"
+           end)"#,
+    )
+    .unwrap();
+
+    let session_manager = temp_session_manager();
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            vec![kiln_name("kiln")],
+            Some(tmp.path().to_path_buf()),
+            None,
+        )
+        .await
+        .unwrap();
+    let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
+
+    let agent = configured_agent(&agent_manager, &session_manager, &session.id, bare_agent()).await;
+
+    assert_eq!(agent.model, "hook-picked-model");
+}
+
 /// The hook reads the INHERITED value before overriding it — the Neovim
 /// pattern where a `FileType` autocmd sees the global option and sets the
 /// buffer-local one. Without seeding, `session.system_prompt` would be nil

@@ -7,7 +7,7 @@
 //! s.temperature = 0.7
 //! s.max_tokens = 4096
 //! s.thinking_budget = 1024
-//! print(s.model)  -- read-only
+//! s.model = "claude-sonnet-4"  -- in an on_session_start hook
 //! ```
 //!
 //! ## Design Notes
@@ -293,8 +293,12 @@ impl UserData for Session {
         methods.add_meta_method(
             MetaMethod::NewIndex,
             |lua, this, (key, val): (String, Value)| match key.as_str() {
-                "id" | "model" | "workspace" | "isolation" => {
+                "id" | "workspace" | "isolation" => {
                     Err(mlua::Error::runtime(format!("{} is read-only", key)))
+                }
+                "model" => {
+                    let model: String = lua.unpack(val)?;
+                    this.with_rpc(|r| r.switch_model(&model))
                 }
                 "temperature" => {
                     let temp: f64 = lua.unpack(val)?;
@@ -565,19 +569,25 @@ pub mod tests {
         assert!((temp - 0.3).abs() < 0.001);
     }
 
+    /// `session.model = "x"` is how a hook picks the model; it lands in
+    /// `switch_model` and reads back.
     #[test]
-    fn test_model_is_read_only() {
+    fn assigning_model_switches_it() {
         let (lua, mgr) = TestLuaBuilder::new().build_with_current_session();
 
         let session = Session::new("s1".to_string());
         session.bind(Box::new(MockRpc::new()));
         mgr.set_current(session);
 
-        let result: mlua::Result<()> = lua
-            .load("crucible.get_session().model = 'new-model'")
-            .exec();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("read-only"));
+        let model: String = lua
+            .load(
+                r#"local s = crucible.get_session()
+                   s.model = "new-model"
+                   return s.model"#,
+            )
+            .eval()
+            .unwrap();
+        assert_eq!(model, "new-model");
     }
 
     #[test]

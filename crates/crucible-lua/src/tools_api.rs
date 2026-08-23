@@ -76,7 +76,7 @@
 //! an error there rather than narrowing half of it.
 
 use crate::error::LuaError;
-use crate::lua_util::register_in_namespaces;
+use crate::lua_util::{gate_module_keys, register_in_namespaces};
 use mlua::{Lua, LuaSerdeExt, Table, Value};
 use std::future::Future;
 use std::pin::Pin;
@@ -141,6 +141,34 @@ pub trait DaemonToolsApi: Send + Sync + 'static {
     fn get_active_tools(&self, session: String) -> Result<Option<Vec<String>>, String>;
 }
 
+/// How a `cru.tools` function runs.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum CallStyle {
+    /// The function awaits the daemon.
+    Async,
+    /// The function reads or writes a registry; it never awaits.
+    Sync,
+}
+
+/// Every function in `cru.tools`, in registration order, with its call style.
+///
+/// The stub path and the daemon-backed path both read this list, so a new
+/// tools function cannot land in one path only: the stub loop registers every
+/// name here, and [`register_tools_module_with_api`] refuses a table whose key
+/// set differs from it.
+const TOOL_FNS: &[(&str, CallStyle)] = &[
+    ("call", CallStyle::Async),
+    ("list", CallStyle::Async),
+    ("batch", CallStyle::Async),
+    ("set_active", CallStyle::Sync),
+    ("get_active", CallStyle::Sync),
+];
+
+/// The names in [`TOOL_FNS`], for the key gate and the tests.
+pub(crate) fn tool_fn_names() -> Vec<&'static str> {
+    TOOL_FNS.iter().map(|(name, _)| *name).collect()
+}
+
 /// Register the tools module with stub functions.
 ///
 /// Creates the `cru.tools` and `crucible.tools` namespaces with functions
@@ -149,35 +177,27 @@ pub trait DaemonToolsApi: Send + Sync + 'static {
 pub fn register_tools_module(lua: &Lua) -> Result<(), LuaError> {
     let tools = lua.create_table()?;
 
-    // Helper: all stubs return (nil, error_string)
-    macro_rules! stub_async {
-        ($name:expr, $lua:expr, $tools:expr, $args:ty) => {
-            let f = $lua.create_async_function(|lua, _args: $args| async move {
-                let err = lua.create_string("no daemon connected")?;
-                Ok((Value::Nil, Value::String(err)))
-            })?;
-            $tools.set($name, f)?;
-        };
+    // A stub ignores its arguments, so one shape serves every name. The call
+    // style still matches the real function, so a plugin sees the same
+    // contract with or without a daemon.
+    for (name, style) in TOOL_FNS {
+        match style {
+            CallStyle::Async => {
+                let f = lua.create_async_function(|lua, _args: mlua::MultiValue| async move {
+                    let err = lua.create_string("no daemon connected")?;
+                    Ok((Value::Nil, Value::String(err)))
+                })?;
+                tools.set(*name, f)?;
+            }
+            CallStyle::Sync => {
+                let f = lua.create_function(|lua: &Lua, _args: mlua::MultiValue| {
+                    let err = lua.create_string("no daemon connected")?;
+                    Ok((Value::Nil, Value::String(err)))
+                })?;
+                tools.set(*name, f)?;
+            }
+        }
     }
-
-    stub_async!("call", lua, tools, (String, mlua::Value, mlua::Value));
-    stub_async!("list", lua, tools, ());
-    stub_async!("batch", lua, tools, (mlua::Value, mlua::Value));
-
-    // `set_active`/`get_active` are synchronous — they read and write a
-    // registry rather than executing anything — so their stubs are too.
-    macro_rules! stub_sync {
-        ($name:expr, $lua:expr, $tools:expr, $args:ty) => {
-            let f = $lua.create_function(|lua: &Lua, _args: $args| {
-                let err = lua.create_string("no daemon connected")?;
-                Ok((Value::Nil, Value::String(err)))
-            })?;
-            $tools.set($name, f)?;
-        };
-    }
-
-    stub_sync!("set_active", lua, tools, (String, mlua::Value));
-    stub_sync!("get_active", lua, tools, String);
 
     register_in_namespaces(lua, "tools", tools)?;
 
@@ -192,13 +212,10 @@ pub fn register_tools_module_with_api(
     lua: &Lua,
     api: Arc<dyn DaemonToolsApi>,
 ) -> Result<(), LuaError> {
-    // First register stubs to create the table structure
-    register_tools_module(lua)?;
-
-    // Now get the table and replace stubs with real implementations
-    let globals = lua.globals();
-    let cru: Table = globals.get("cru")?;
-    let tools: Table = cru.get("tools")?;
+    // Build a fresh table. The gate at the end compares its keys against
+    // TOOL_FNS, so a name with no daemon-backed body cannot hide behind a
+    // stub.
+    let tools = lua.create_table()?;
 
     // call(tool_name, args_table[, opts]) -> (result, nil) or (nil, err)
     //
@@ -445,6 +462,9 @@ pub fn register_tools_module_with_api(
         )?;
     tools.set("get_active", get_active_fn)?;
 
+    gate_module_keys("tools", &tools, &tool_fn_names())?;
+    register_in_namespaces(lua, "tools", tools)?;
+
     Ok(())
 }
 
@@ -453,26 +473,36 @@ mod tests {
     use super::*;
     use crate::test_support::TestLuaBuilder;
 
+    fn sorted_keys(table: &Table) -> Vec<String> {
+        let mut keys: Vec<String> = table
+            .pairs::<String, Value>()
+            .map(|pair| pair.expect("string key").0)
+            .collect();
+        keys.sort();
+        keys
+    }
+
+    fn module_keys(lua: &Lua, namespace: &str) -> Vec<String> {
+        let ns: Table = lua.globals().get(namespace).expect("namespace exists");
+        sorted_keys(&ns.get::<Table>("tools").expect("tools module exists"))
+    }
+
+    /// The stub table and the daemon-backed table expose the same function
+    /// names, under `cru` and under `crucible`, and both match `TOOL_FNS`.
     #[test]
-    fn tools_module_registers_in_namespace() {
-        let lua = TestLuaBuilder::new().with_tools().build();
+    fn stub_and_daemon_tables_expose_the_same_functions() {
+        let stub = TestLuaBuilder::new().with_tools().build();
+        let real = TestLuaBuilder::new()
+            .with_tools_api(Arc::new(super::api_tests::MockToolsApi::new()))
+            .build();
 
-        let cru: Table = lua.globals().get("cru").expect("cru should exist");
-        let tools: Table = cru.get("tools").expect("cru.tools should exist");
+        let mut listed: Vec<String> = tool_fn_names().iter().map(|s| s.to_string()).collect();
+        listed.sort();
 
-        assert!(tools.contains_key("call").unwrap());
-        assert!(tools.contains_key("list").unwrap());
-        assert!(tools.contains_key("batch").unwrap());
-        assert!(tools.contains_key("set_active").unwrap());
-        assert!(tools.contains_key("get_active").unwrap());
-
-        // Also registered under crucible.*
-        let crucible: Table = lua
-            .globals()
-            .get("crucible")
-            .expect("crucible should exist");
-        let tools2: Table = crucible.get("tools").expect("crucible.tools should exist");
-        assert!(tools2.contains_key("call").unwrap());
+        assert_eq!(module_keys(&stub, "cru"), listed);
+        assert_eq!(module_keys(&stub, "crucible"), listed);
+        assert_eq!(module_keys(&real, "cru"), listed);
+        assert_eq!(module_keys(&real, "crucible"), listed);
     }
 
     #[tokio::test]
@@ -564,7 +594,7 @@ mod api_tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// Mock implementation of DaemonToolsApi for testing.
-    struct MockToolsApi {
+    pub(super) struct MockToolsApi {
         call_count: AtomicUsize,
         /// What each call stated as its session, in call order.
         sessions: std::sync::Mutex<Vec<Option<String>>>,
@@ -573,7 +603,7 @@ mod api_tests {
     }
 
     impl MockToolsApi {
-        fn new() -> Self {
+        pub(super) fn new() -> Self {
             Self {
                 call_count: AtomicUsize::new(0),
                 sessions: std::sync::Mutex::new(Vec::new()),

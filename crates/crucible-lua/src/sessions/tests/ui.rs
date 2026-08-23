@@ -35,6 +35,33 @@ async fn every_interaction_kind_is_a_callable_function() {
     }
 }
 
+fn sorted_ui_keys(lua: &Lua, namespace: &str) -> Vec<String> {
+    let ns: mlua::Table = lua.globals().get(namespace).expect("namespace exists");
+    let ui: mlua::Table = ns.get("ui").expect("ui module exists");
+    let mut keys: Vec<String> = ui
+        .pairs::<String, mlua::Value>()
+        .map(|pair| pair.expect("string key").0)
+        .collect();
+    keys.sort();
+    keys
+}
+
+/// The stub table and the daemon-backed table expose the same function
+/// names, under `cru` and under `crucible`, and both match `INTERACTION_KINDS`.
+#[test]
+fn stub_and_daemon_tables_expose_the_same_functions() {
+    let stub = TestLuaBuilder::new().with_ui().build();
+    let real = lua_with(Arc::new(MockDaemonApi::new()));
+
+    let mut listed: Vec<String> = INTERACTION_KINDS.iter().map(|s| s.to_string()).collect();
+    listed.sort();
+
+    assert_eq!(sorted_ui_keys(&stub, "cru"), listed);
+    assert_eq!(sorted_ui_keys(&stub, "crucible"), listed);
+    assert_eq!(sorted_ui_keys(&real, "cru"), listed);
+    assert_eq!(sorted_ui_keys(&real, "crucible"), listed);
+}
+
 #[tokio::test]
 async fn each_call_stamps_its_own_kind_on_the_request() {
     for kind in INTERACTION_KINDS {
