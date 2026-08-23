@@ -16,16 +16,40 @@ mod dispatch {
         Arc::new(WorkspaceTools::new(std::path::PathBuf::from("/tmp")))
     }
 
-    /// `DISCOVERY_TOOL_NAMES` routes a call; `discovery_tool_definitions`
-    /// advertises it. A name in one and not the other is a tool the model can
-    /// see and not call, or call and not see.
+    /// The advertised `source` enum is the handler's `ToolSourceFilter`, not a
+    /// second list. A value the schema offers deserializes; nothing else does.
     #[test]
-    fn discovery_names_match_the_definitions() {
-        let advertised: Vec<String> = discovery_tool_definitions()
-            .into_iter()
-            .map(|d| d.name)
-            .collect();
-        assert_eq!(advertised, DISCOVERY_TOOL_NAMES);
+    fn discovery_schema_source_enum_is_the_handler_type() {
+        let defs = discovery_tool_definitions();
+        let discover = defs
+            .iter()
+            .find(|d| d.name == "discover_tools")
+            .expect("discover_tools advertised");
+        let advertised = discover.parameters.as_ref().expect("schema")["properties"]["source"]
+            ["enum"]
+            .as_array()
+            .expect("source enum")
+            .clone();
+        assert_eq!(
+            advertised,
+            json!(["builtin", "just", "upstream"])
+                .as_array()
+                .unwrap()
+                .clone()
+        );
+        for value in advertised {
+            serde_json::from_value::<ToolSourceFilter>(value).expect("schema value parses");
+        }
+        assert!(serde_json::from_value::<ToolSourceFilter>(json!("plugin")).is_err());
+    }
+
+    /// The routed names are the advertised names, by construction.
+    #[test]
+    fn discovery_names_are_the_definitions() {
+        for def in discovery_tool_definitions() {
+            assert!(is_discovery_tool(&def.name), "{} not routed", def.name);
+        }
+        assert!(!is_discovery_tool("invoke_tool"));
     }
 
     fn test_dispatcher() -> DaemonToolDispatcher {

@@ -82,6 +82,6 @@ pub use mcp_server::{CrucibleMcpServer, DelegationContext};
 pub use notes::NoteTools;
 pub use search::SearchTools;
 pub use tool_discovery::{
-    DiscoverToolsParams, GetToolSchemaParams, ToolDiscovery, ToolInfo, ToolSchema,
+    DiscoverToolsParams, GetToolSchemaParams, ToolDiscovery, ToolInfo, ToolSchema, ToolSourceFilter,
 };
 pub use workspace::WorkspaceTools;

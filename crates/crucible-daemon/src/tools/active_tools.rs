@@ -79,7 +79,7 @@ use std::sync::Arc;
 /// `the_exempt_set_is_exactly_the_bridge_the_provider_attaches` below is what
 /// catches a fourth bridge tool being added without this list moving.
 fn is_bridge_tool(name: &str) -> bool {
-    name == "invoke_tool" || crate::tool_dispatch::DISCOVERY_TOOL_NAMES.contains(&name)
+    name == "invoke_tool" || crate::tool_dispatch::is_discovery_tool(name)
 }
 
 /// Explicit tool sets, keyed by session id.

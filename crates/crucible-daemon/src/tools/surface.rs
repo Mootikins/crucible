@@ -353,11 +353,7 @@ pub(crate) fn advertised_builtin_names() -> BTreeSet<String> {
         // The progressive-disclosure bridge belongs to no executor —
         // `DaemonToolDispatcher` answers it out of its own catalog — so nothing
         // above lists it.
-        .chain(
-            crate::tool_dispatch::DISCOVERY_TOOL_NAMES
-                .iter()
-                .map(|n| (*n).to_string()),
-        )
+        .chain(crate::tool_dispatch::DISCOVERY_TOOL_NAMES.iter().cloned())
         .collect()
 }
 

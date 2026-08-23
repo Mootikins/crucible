@@ -21,13 +21,30 @@ use crate::tools::notes::{
     UpdateNoteParams,
 };
 use crate::tools::search::{GrepNotesParams, PropertySearchParams, SemanticSearchParams};
-use crate::tools::tool_discovery::{DiscoverToolsParams, GetToolSchemaParams, ToolDiscovery};
+use crate::tools::tool_discovery::{
+    DiscoverToolsParams, GetToolSchemaParams, ToolDiscovery, ToolSourceFilter,
+};
 
 /// Names of the progressive-disclosure discovery tools handled directly by
 /// the dispatcher (not routed to a provider). `invoke_tool` is intentionally
 /// absent: it is unwrapped to its inner tool upstream in
 /// `handle_tool_call_in_stream` and never reaches dispatch.
-pub(crate) const DISCOVERY_TOOL_NAMES: &[&str] = &["discover_tools", "get_tool_schema"];
+///
+/// Derived from `discovery_tool_definitions`, so a tool the dispatcher
+/// advertises is a tool it routes. A hand list here once had to be kept in
+/// step by a test.
+pub(crate) static DISCOVERY_TOOL_NAMES: std::sync::LazyLock<Vec<String>> =
+    std::sync::LazyLock::new(|| {
+        discovery_tool_definitions()
+            .into_iter()
+            .map(|d| d.name)
+            .collect()
+    });
+
+/// True when the dispatcher answers `name` itself, out of its own catalog.
+pub(crate) fn is_discovery_tool(name: &str) -> bool {
+    DISCOVERY_TOOL_NAMES.iter().any(|n| n == name)
+}
 
 /// The one definition of the two discovery tools.
 ///
@@ -54,7 +71,7 @@ pub(crate) fn discovery_tool_definitions() -> Vec<ToolDefinition> {
                     },
                     "source": {
                         "type": "string",
-                        "enum": ["builtin", "just", "upstream"],
+                        "enum": ToolSourceFilter::wire_names(),
                         "description": "Filter by tool source"
                     },
                     "limit": {
@@ -704,7 +721,7 @@ impl ToolDispatcher for DaemonToolDispatcher {
     }
 
     fn has_tool(&self, name: &str) -> bool {
-        if DISCOVERY_TOOL_NAMES.contains(&name) {
+        if is_discovery_tool(name) {
             return true;
         }
 
@@ -738,7 +755,7 @@ impl ToolDispatcher for DaemonToolDispatcher {
         // session — the agent could not even ask what tools exist. Classified
         // in the same table as everything else rather than answered `Daemon`
         // here, so the exhaustiveness check covers it too.
-        if DISCOVERY_TOOL_NAMES.contains(&name) {
+        if is_discovery_tool(name) {
             return crate::tools::surface::classify(name);
         }
 

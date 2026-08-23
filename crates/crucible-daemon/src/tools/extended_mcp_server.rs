@@ -419,11 +419,7 @@ fn handle_discovery_tool(
     match name {
         "discover_tools" => {
             let params: DiscoverToolsParams =
-                serde_json::from_value(arguments).unwrap_or(DiscoverToolsParams {
-                    query: None,
-                    source: None,
-                    limit: 50,
-                });
+                serde_json::from_value(arguments).mcp_invalid("Invalid params")?;
             discovery.discover_tools(&params)
         }
         "get_tool_schema" => {
