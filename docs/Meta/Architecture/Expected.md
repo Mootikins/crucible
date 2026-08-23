@@ -295,7 +295,7 @@ entry but no shipped proof.
 | F202 | Agent discovery for `opencode`, `claude`, `gemini`, `codex`, `cursor`; `[acp.agents.*]` with `extends` | P, R |
 | F203 | ACP permission gate through the session policy; no handler means deny | P |
 | F204 | ACP streaming with diff handling; cancel closes the transport | P |
-| F205 | ACP model switching `session/set_model` | P |
+| F205 | ACP model switching `session/set_config_option` | P |
 | F206 | ACP recording and replay `CRUCIBLE_ACP_RECORD_DIR` | P |
 | F207 | ACP agent mode `cru acp` for editors | P, R |
 | F208 | MCP server `cru mcp`: note, search, kiln, delegation and job tools | P, R |
