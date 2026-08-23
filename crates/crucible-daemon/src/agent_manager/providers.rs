@@ -1,4 +1,5 @@
 use super::*;
+use crucible_core::config::ollama_endpoint_from_env;
 
 // `ProviderInfo` now lives in `crucible-core` so session-setup event
 // consumers (the CLI/TUI) can depend on it without pulling in the daemon.
@@ -164,39 +165,12 @@ fn format_provider_name(
             return trimmed.to_string();
         }
     }
-    let type_label = provider_type_label(provider_type);
+    let type_label = provider_type.label();
     if key.eq_ignore_ascii_case(provider_type.as_str()) {
         type_label.to_string()
     } else {
         format!("{type_label} ({key})")
     }
-}
-
-fn provider_type_label(provider_type: BackendType) -> &'static str {
-    match provider_type {
-        BackendType::Ollama => "Ollama",
-        BackendType::OpenAI => "OpenAI",
-        BackendType::Anthropic => "Anthropic",
-        BackendType::Cohere => "Cohere",
-        BackendType::VertexAI => "VertexAI",
-        BackendType::GitHubCopilot => "GitHub Copilot",
-        BackendType::OpenRouter => "OpenRouter",
-        BackendType::ZAI => "Z.AI",
-        BackendType::Custom => "Custom",
-        BackendType::FastEmbed => "FastEmbed",
-        BackendType::Burn => "Burn",
-        BackendType::Mock => "Mock",
-    }
-}
-
-fn ollama_endpoint_from_env() -> Option<String> {
-    std::env::var("OLLAMA_HOST").ok().map(|host| {
-        if host.starts_with("http://") || host.starts_with("https://") {
-            host
-        } else {
-            format!("http://{host}")
-        }
-    })
 }
 
 #[cfg(test)]

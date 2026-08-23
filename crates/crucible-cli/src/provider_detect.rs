@@ -11,7 +11,9 @@
 //! `crucible_daemon::agent_manager::context_length::fetch_model_context_length`.
 
 use crucible_core::config::credentials::{env_var_for_provider, CredentialSource, SecretsFile};
-use crucible_core::config::{BackendType, ChatConfig, DEFAULT_OLLAMA_ENDPOINT};
+use crucible_core::config::{
+    ollama_endpoint_from_env, BackendType, ChatConfig, DEFAULT_OLLAMA_ENDPOINT,
+};
 
 /// A detected provider with availability info
 #[derive(Debug, Clone)]
@@ -22,21 +24,6 @@ pub struct DetectedProvider {
     pub reason: String,
     pub default_model: Option<String>,
     pub source: Option<CredentialSource>,
-}
-
-/// Get the Ollama endpoint from OLLAMA_HOST env var or default
-pub fn ollama_endpoint() -> String {
-    std::env::var("OLLAMA_HOST")
-        .ok()
-        .map(|host| {
-            // OLLAMA_HOST can be just "host:port" or a full URL
-            if host.starts_with("http://") || host.starts_with("https://") {
-                host
-            } else {
-                format!("http://{}", host)
-            }
-        })
-        .unwrap_or_else(|| DEFAULT_OLLAMA_ENDPOINT.to_string())
 }
 
 /// Whether a credential for `provider` exists, and where it came from.
@@ -98,7 +85,7 @@ fn detect_providers_inner(
         let provider_type = backend.as_str();
         if let Some(src) = has_api_key_with_source_in(store, provider_type) {
             providers.push(DetectedProvider {
-                name: keyed_backend_display_name(backend).to_string(),
+                name: backend.label().to_string(),
                 provider_type: provider_type.to_string(),
                 available: true,
                 reason: format!("API key found ({})", src),
@@ -112,18 +99,16 @@ fn detect_providers_inner(
     }
 
     // Ollama is always offered: it is the no-credential path. `available` is
-    // an assumption unless the caller asked for a probe. `OLLAMA_HOST=""`
-    // counts as unset — the daemon's env discovery filters empty values, and
-    // the two must agree or an empty export produces the endpoint "http://".
-    let ollama_host_set = std::env::var("OLLAMA_HOST").is_ok_and(|v| !v.trim().is_empty());
-    let endpoint = if ollama_host_set {
-        ollama_endpoint()
-    } else {
+    // an assumption unless the caller asked for a probe. The shared helper
+    // treats `OLLAMA_HOST=""` as unset, so the CLI and the daemon agree.
+    let env_endpoint = ollama_endpoint_from_env();
+    let ollama_host_set = env_endpoint.is_some();
+    let endpoint = env_endpoint.unwrap_or_else(|| {
         config
             .endpoint
             .clone()
             .unwrap_or_else(|| DEFAULT_OLLAMA_ENDPOINT.to_string())
-    };
+    });
     let mut reason = if ollama_host_set {
         format!("OLLAMA_HOST={}", endpoint)
     } else if config.endpoint.is_some() {
@@ -157,16 +142,6 @@ fn detect_providers_inner(
     providers.sort_by_key(|p| (p.source.is_none(), !p.available));
 
     providers
-}
-
-fn keyed_backend_display_name(backend: BackendType) -> &'static str {
-    match backend {
-        BackendType::Anthropic => "Anthropic",
-        BackendType::OpenAI => "OpenAI",
-        BackendType::OpenRouter => "OpenRouter",
-        BackendType::ZAI => "Z.AI",
-        _ => backend.as_str(),
-    }
 }
 
 /// Whether anything is listening at an `http(s)://host:port` endpoint.
@@ -504,36 +479,5 @@ mod tests {
             .unwrap();
 
         assert!(ollama.available);
-    }
-
-    #[test]
-    #[serial]
-    fn test_ollama_endpoint_default() {
-        let _guard = EnvVarGuard::remove("OLLAMA_HOST");
-        assert_eq!(ollama_endpoint(), "http://localhost:11434");
-    }
-
-    #[test]
-    #[serial]
-    fn test_ollama_endpoint_custom_host_port() {
-        let _guard = EnvVarGuard::set("OLLAMA_HOST", "myhost:11435".to_string());
-        assert_eq!(ollama_endpoint(), "http://myhost:11435");
-    }
-
-    #[test]
-    #[serial]
-    fn test_ollama_endpoint_full_url() {
-        let _guard = EnvVarGuard::set("OLLAMA_HOST", "http://custom-ollama.local:8080".to_string());
-        assert_eq!(ollama_endpoint(), "http://custom-ollama.local:8080");
-    }
-
-    #[test]
-    #[serial]
-    fn test_ollama_endpoint_https() {
-        let _guard = EnvVarGuard::set(
-            "OLLAMA_HOST",
-            "https://secure-ollama.example.com".to_string(),
-        );
-        assert_eq!(ollama_endpoint(), "https://secure-ollama.example.com");
     }
 }

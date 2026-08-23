@@ -61,6 +61,8 @@ struct BackendMetadata {
     requires_api_key: bool,
     api_key_env_var: Option<&'static str>,
     as_str: &'static str,
+    /// The name the CLI and the daemon show to a person.
+    label: &'static str,
     default_endpoint: Option<&'static str>,
     default_embedding_model: Option<&'static str>,
     default_chat_model: Option<&'static str>,
@@ -75,6 +77,7 @@ impl BackendType {
         requires_api_key: false,
         api_key_env_var: None,
         as_str: "ollama",
+        label: "Ollama",
         default_endpoint: Some(super::defaults::DEFAULT_OLLAMA_ENDPOINT),
         default_embedding_model: Some("nomic-embed-text"),
         default_chat_model: Some(super::defaults::DEFAULT_CHAT_MODEL),
@@ -88,6 +91,7 @@ impl BackendType {
         requires_api_key: true,
         api_key_env_var: Some("OPENAI_API_KEY"),
         as_str: "openai",
+        label: "OpenAI",
         default_endpoint: Some(super::defaults::DEFAULT_OPENAI_ENDPOINT),
         default_embedding_model: Some("text-embedding-3-small"),
         default_chat_model: Some(super::defaults::DEFAULT_OPENAI_MODEL),
@@ -101,6 +105,7 @@ impl BackendType {
         requires_api_key: true,
         api_key_env_var: Some("ANTHROPIC_API_KEY"),
         as_str: "anthropic",
+        label: "Anthropic",
         default_endpoint: Some(super::defaults::DEFAULT_ANTHROPIC_ENDPOINT),
         default_embedding_model: None,
         default_chat_model: Some(super::defaults::DEFAULT_ANTHROPIC_MODEL),
@@ -114,6 +119,7 @@ impl BackendType {
         requires_api_key: true,
         api_key_env_var: Some("COHERE_API_KEY"),
         as_str: "cohere",
+        label: "Cohere",
         default_endpoint: Some("https://api.cohere.ai/v1"),
         default_embedding_model: Some("embed-english-v3.0"),
         default_chat_model: Some("command-r-plus"),
@@ -127,7 +133,8 @@ impl BackendType {
         requires_api_key: true,
         api_key_env_var: Some("GOOGLE_API_KEY"),
         as_str: "vertexai",
-        default_endpoint: Some("https://aiplatform.googleapis.com"),
+        label: "VertexAI",
+        default_endpoint: Some("https://aiplatform.googleapis.com/v1"),
         default_embedding_model: Some("textembedding-gecko@003"),
         default_chat_model: Some("gemini-1.5-pro"),
     };
@@ -140,6 +147,7 @@ impl BackendType {
         requires_api_key: false,
         api_key_env_var: None,
         as_str: "fastembed",
+        label: "FastEmbed",
         default_endpoint: None,
         default_embedding_model: Some("BAAI/bge-small-en-v1.5"),
         default_chat_model: None,
@@ -153,6 +161,7 @@ impl BackendType {
         requires_api_key: false,
         api_key_env_var: None,
         as_str: "burn",
+        label: "Burn",
         default_endpoint: None,
         default_embedding_model: Some("nomic-embed-text"),
         default_chat_model: None,
@@ -166,6 +175,7 @@ impl BackendType {
         requires_api_key: false,
         api_key_env_var: None,
         as_str: "github-copilot",
+        label: "GitHub Copilot",
         default_endpoint: Some(super::defaults::DEFAULT_GITHUB_COPILOT_ENDPOINT),
         default_embedding_model: None,
         default_chat_model: Some(super::defaults::DEFAULT_GITHUB_COPILOT_MODEL),
@@ -179,6 +189,7 @@ impl BackendType {
         requires_api_key: true,
         api_key_env_var: Some("OPENROUTER_API_KEY"),
         as_str: "openrouter",
+        label: "OpenRouter",
         default_endpoint: Some(super::defaults::DEFAULT_OPENROUTER_ENDPOINT),
         default_embedding_model: None,
         default_chat_model: Some(super::defaults::DEFAULT_OPENROUTER_MODEL),
@@ -192,6 +203,7 @@ impl BackendType {
         requires_api_key: true,
         api_key_env_var: Some("GLM_AUTH_TOKEN"),
         as_str: "zai",
+        label: "Z.AI",
         default_endpoint: Some(super::defaults::DEFAULT_ZAI_ENDPOINT),
         default_embedding_model: None,
         default_chat_model: Some(super::defaults::DEFAULT_ZAI_MODEL),
@@ -205,6 +217,7 @@ impl BackendType {
         requires_api_key: false,
         api_key_env_var: None,
         as_str: "custom",
+        label: "Custom",
         default_endpoint: None,
         default_embedding_model: None,
         default_chat_model: None,
@@ -218,6 +231,7 @@ impl BackendType {
         requires_api_key: false,
         api_key_env_var: None,
         as_str: "mock",
+        label: "Mock",
         default_endpoint: None,
         default_embedding_model: Some("mock-embed-model"),
         default_chat_model: Some("mock-chat-model"),
@@ -268,6 +282,13 @@ impl BackendType {
     /// Get the backend type as a string
     pub fn as_str(&self) -> &'static str {
         self.metadata().as_str
+    }
+
+    /// The name to show a person for this backend.
+    ///
+    /// `as_str` is the config key; this is the display form.
+    pub fn label(&self) -> &'static str {
+        self.metadata().label
     }
 
     /// Get the default endpoint for this backend
@@ -330,6 +351,25 @@ impl BackendType {
             BackendType::Mock,
         ]
     }
+}
+
+/// The Ollama endpoint that `OLLAMA_HOST` names, or `None` when it is unset
+/// or blank.
+///
+/// `OLLAMA_HOST` can be `host:port` or a full URL. The CLI detection and the
+/// daemon discovery both call this, so an empty export cannot produce the
+/// endpoint `http://` in one of them and not the other.
+pub fn ollama_endpoint_from_env() -> Option<String> {
+    std::env::var("OLLAMA_HOST")
+        .ok()
+        .filter(|host| !host.trim().is_empty())
+        .map(|host| {
+            if host.starts_with("http://") || host.starts_with("https://") {
+                host
+            } else {
+                format!("http://{host}")
+            }
+        })
 }
 
 /// The body of an Ollama `GET /api/tags` reply.
@@ -967,7 +1007,7 @@ mod tests {
         );
         assert_eq!(
             BackendType::VertexAI.default_endpoint(),
-            Some("https://aiplatform.googleapis.com")
+            Some("https://aiplatform.googleapis.com/v1")
         );
         assert_eq!(
             BackendType::GitHubCopilot.default_endpoint(),
@@ -1292,6 +1332,46 @@ mod tests {
             BackendType::Mock,
         ];
         assert_eq!(BackendType::all(), expected);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn ollama_endpoint_from_env_reads_host_port_and_urls() {
+        use crate::test_support::EnvVarGuard;
+        {
+            let _guard = EnvVarGuard::remove("OLLAMA_HOST");
+            assert_eq!(ollama_endpoint_from_env(), None);
+        }
+        {
+            let _guard = EnvVarGuard::set("OLLAMA_HOST", "  ".to_string());
+            assert_eq!(ollama_endpoint_from_env(), None);
+        }
+        {
+            let _guard = EnvVarGuard::set("OLLAMA_HOST", "myhost:11435".to_string());
+            assert_eq!(
+                ollama_endpoint_from_env().as_deref(),
+                Some("http://myhost:11435")
+            );
+        }
+        {
+            let _guard = EnvVarGuard::set(
+                "OLLAMA_HOST",
+                "https://secure-ollama.example.com".to_string(),
+            );
+            assert_eq!(
+                ollama_endpoint_from_env().as_deref(),
+                Some("https://secure-ollama.example.com")
+            );
+        }
+    }
+
+    #[test]
+    fn every_backend_has_a_non_empty_label() {
+        for backend in BackendType::all() {
+            assert!(!backend.label().is_empty(), "{backend:?}");
+        }
+        assert_eq!(BackendType::GitHubCopilot.label(), "GitHub Copilot");
+        assert_eq!(BackendType::ZAI.label(), "Z.AI");
     }
 
     #[test]

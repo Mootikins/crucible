@@ -10,6 +10,7 @@ use std::path::Path;
 use anyhow::Result;
 use colored::Colorize;
 use crucible_core::config::credentials::SecretsFile;
+use crucible_core::config::BackendType;
 
 /// Returns `true` when the global config file does not yet exist.
 pub fn is_first_run(config_path: &Path) -> bool {
@@ -137,13 +138,13 @@ pub fn generate_initial_config(
     embedding_provider: &str,
     default_kiln_path: &str,
 ) -> String {
-    let model = match provider {
-        "anthropic" => "claude-sonnet-4-20250514",
-        "openai" => "gpt-4o",
-        "openrouter" => "anthropic/claude-sonnet-4-20250514",
-        "ollama" => "llama3.2",
-        _ => "default",
-    };
+    // The `BackendType` table is the one place a provider's default model
+    // lives; an unknown provider gets a placeholder the user must edit.
+    let model = provider
+        .parse::<BackendType>()
+        .ok()
+        .and_then(|backend| backend.default_chat_model())
+        .unwrap_or("default");
 
     let mut out = String::new();
 
@@ -207,7 +208,7 @@ mod tests {
         assert_eq!(parsed["kilns"]["default"].as_str().unwrap(), "~/notes");
         assert_eq!(
             parsed["chat"]["model"].as_str().unwrap(),
-            "claude-sonnet-4-20250514"
+            BackendType::Anthropic.default_chat_model().unwrap()
         );
         assert_eq!(parsed["llm"]["default"].as_str().unwrap(), "anthropic");
     }
@@ -233,7 +234,7 @@ mod tests {
         let parsed: toml::Value = toml::from_str(&config).unwrap();
         assert_eq!(
             parsed["chat"]["model"].as_str().unwrap(),
-            "anthropic/claude-sonnet-4-20250514"
+            BackendType::OpenRouter.default_chat_model().unwrap()
         );
         assert_eq!(parsed["llm"]["default"].as_str().unwrap(), "openrouter");
     }

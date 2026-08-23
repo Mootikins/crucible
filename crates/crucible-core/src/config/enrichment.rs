@@ -10,9 +10,29 @@
 //! - **Easy Configuration**: Strongly-typed configuration prevents errors
 //! - **Extensibility**: Easy to add new providers with their specific requirements
 
+use super::BackendType;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
+
+/// The embedding model the `BackendType` table names for an embedding backend.
+///
+/// Each call names a backend whose row has a model, so the `expect` cannot
+/// fire; the test `enrichment_defaults_match_the_backend_table` proves it.
+fn table_embedding_model(backend: BackendType) -> String {
+    backend
+        .default_embedding_model()
+        .expect("embedding backend row has a model")
+        .to_string()
+}
+
+/// The endpoint the `BackendType` table names for a remote backend.
+fn table_endpoint(backend: BackendType) -> String {
+    backend
+        .default_endpoint()
+        .expect("remote backend row has an endpoint")
+        .to_string()
+}
 
 /// Default maximum aggregate character count for precognition context injection.
 pub fn default_max_precognition_chars() -> usize {
@@ -128,11 +148,11 @@ impl std::fmt::Debug for OpenAIConfig {
 
 impl OpenAIConfig {
     fn default_model() -> String {
-        "text-embedding-3-small".to_string()
+        table_embedding_model(BackendType::OpenAI)
     }
 
     fn default_base_url() -> String {
-        "https://api.openai.com/v1".to_string()
+        table_endpoint(BackendType::OpenAI)
     }
 
     fn default_timeout() -> u64 {
@@ -194,11 +214,11 @@ pub struct OllamaConfig {
 
 impl OllamaConfig {
     fn default_model() -> String {
-        "nomic-embed-text".to_string()
+        table_embedding_model(BackendType::Ollama)
     }
 
     fn default_base_url() -> String {
-        "http://localhost:11434".to_string()
+        table_endpoint(BackendType::Ollama)
     }
 
     fn default_timeout() -> u64 {
@@ -253,7 +273,7 @@ pub struct FastEmbedConfig {
 
 impl FastEmbedConfig {
     fn default_model() -> String {
-        "BAAI/bge-small-en-v1.5".to_string()
+        table_embedding_model(BackendType::FastEmbed)
     }
 
     fn default_batch_size() -> u32 {
@@ -309,11 +329,11 @@ pub struct CohereConfig {
 
 impl CohereConfig {
     fn default_model() -> String {
-        "embed-english-v3.0".to_string()
+        table_embedding_model(BackendType::Cohere)
     }
 
     fn default_base_url() -> String {
-        "https://api.cohere.ai/v1".to_string()
+        table_endpoint(BackendType::Cohere)
     }
 
     fn default_timeout() -> u64 {
@@ -375,11 +395,11 @@ pub struct VertexAIConfig {
 
 impl VertexAIConfig {
     fn default_model() -> String {
-        "textembedding-gecko@003".to_string()
+        table_embedding_model(BackendType::VertexAI)
     }
 
     fn default_base_url() -> String {
-        "https://aiplatform.googleapis.com/v1".to_string()
+        table_endpoint(BackendType::VertexAI)
     }
 
     fn default_timeout() -> u64 {
@@ -525,7 +545,7 @@ pub struct BurnEmbedConfig {
 
 impl BurnEmbedConfig {
     fn default_model() -> String {
-        "nomic-embed-text".to_string()
+        table_embedding_model(BackendType::Burn)
     }
 
     /// Get default model directory path.
@@ -1064,6 +1084,26 @@ impl EmbeddingProviderConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn enrichment_defaults_match_the_backend_table() {
+        assert_eq!(OpenAIConfig::default().model, "text-embedding-3-small");
+        assert_eq!(
+            OpenAIConfig::default().base_url,
+            "https://api.openai.com/v1"
+        );
+        assert_eq!(OllamaConfig::default().model, "nomic-embed-text");
+        assert_eq!(OllamaConfig::default().base_url, "http://localhost:11434");
+        assert_eq!(FastEmbedConfig::default().model, "BAAI/bge-small-en-v1.5");
+        assert_eq!(CohereConfig::default().model, "embed-english-v3.0");
+        assert_eq!(CohereConfig::default().base_url, "https://api.cohere.ai/v1");
+        assert_eq!(VertexAIConfig::default().model, "textembedding-gecko@003");
+        assert_eq!(
+            VertexAIConfig::default().base_url,
+            "https://aiplatform.googleapis.com/v1"
+        );
+        assert_eq!(BurnEmbedConfig::default().model, "nomic-embed-text");
+    }
 
     #[test]
     fn test_default_enrichment_config() {

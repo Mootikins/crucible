@@ -10,8 +10,8 @@ use crate::provider_detect::{detect_providers_probed, DetectedProvider};
 use crucible_core::config::components::DataClassification;
 use crucible_core::config::{
     read_kiln_config, read_project_config, register_project_in_config, write_kiln_config,
-    write_project_config, CliAppConfig, KilnAttachment, KilnConfig, KilnMeta, ProjectConfig,
-    SecurityConfig,
+    write_project_config, BackendType, CliAppConfig, KilnAttachment, KilnConfig, KilnMeta,
+    ProjectConfig, SecurityConfig, DEFAULT_CHAT_MODEL,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -447,7 +447,7 @@ fn select_provider_noninteractive(providers: &[DetectedProvider]) -> (String, St
         }
         // Defensive: detection currently always lists Ollama, so this arm
         // only fires if that invariant changes.
-        None => ("ollama".to_string(), "llama3.2".to_string(), false),
+        None => ("ollama".to_string(), DEFAULT_CHAT_MODEL.to_string(), false),
     }
 }
 
@@ -589,13 +589,14 @@ default_model = "{model}"
     )
 }
 
+/// The default chat model for a provider key, from the `BackendType` table.
+/// An unknown key falls back to the Ollama default.
 fn default_model_for(provider: &str) -> &'static str {
-    match provider {
-        "ollama" => "llama3.2",
-        "openai" => "gpt-4o-mini",
-        "anthropic" => "claude-3-5-sonnet-latest",
-        _ => "llama3.2",
-    }
+    provider
+        .parse::<BackendType>()
+        .ok()
+        .and_then(|backend| backend.default_chat_model())
+        .unwrap_or(DEFAULT_CHAT_MODEL)
 }
 
 #[cfg(test)]
@@ -745,10 +746,16 @@ mod tests {
 
     #[test]
     fn test_default_model_for_providers() {
-        assert_eq!(default_model_for("ollama"), "llama3.2");
-        assert_eq!(default_model_for("openai"), "gpt-4o-mini");
-        assert_eq!(default_model_for("anthropic"), "claude-3-5-sonnet-latest");
-        assert_eq!(default_model_for("unknown"), "llama3.2");
+        assert_eq!(default_model_for("ollama"), DEFAULT_CHAT_MODEL);
+        assert_eq!(
+            default_model_for("openai"),
+            BackendType::OpenAI.default_chat_model().unwrap()
+        );
+        assert_eq!(
+            default_model_for("anthropic"),
+            BackendType::Anthropic.default_chat_model().unwrap()
+        );
+        assert_eq!(default_model_for("unknown"), DEFAULT_CHAT_MODEL);
     }
 
     #[test]
