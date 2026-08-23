@@ -14,22 +14,9 @@ pub(super) async fn resume(config: CliConfig, id: String) -> Result<()> {
         anyhow::bail!("Session not found: {}", id);
     }
 
-    crate::commands::chat::execute(crate::commands::chat::ExecuteParams {
-        config,
-        agent_name: None,
-        query: None,
-        read_only: false,
-        no_context: false,
-        context_size: None,
-        provider_key: None,
-        max_context_tokens: 16384,
-        env_overrides: vec![],
+    crate::commands::chat::execute(crate::commands::chat::ChatParams {
         resume_session_id: Some(id),
-        set_overrides: vec![],
-        record: None,
-        replay: None,
-        replay_speed: 1.0,
-        replay_auto_exit: None,
+        ..crate::commands::chat::ChatParams::new(config)
     })
     .await
 }

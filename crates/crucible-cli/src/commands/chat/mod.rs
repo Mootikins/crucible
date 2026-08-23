@@ -17,11 +17,16 @@ use crate::output;
 use crate::status_line::StatusLine;
 use crate::tui::AgentSelection;
 
-/// Parameters for the execute function
-pub struct ExecuteParams {
+/// The flags that every chat run shares, plus the mode that selects the run.
+pub struct ChatParams {
     pub config: CliConfig,
     pub agent_name: Option<String>,
-    pub query: Option<String>,
+    /// The user's `--plan` intent, threaded rather than re-derived.
+    ///
+    /// Read-only-ness is a property of a mode's tools and permissions, which
+    /// the daemon owns — the CLI cannot compute it for a user-defined mode.
+    /// Recovering it from the mode NAME (`mode_id == "plan"`) was a lie that
+    /// only happened to hold while the mode set was fixed.
     pub read_only: bool,
     pub no_context: bool,
     pub context_size: Option<usize>,
@@ -30,75 +35,88 @@ pub struct ExecuteParams {
     pub env_overrides: Vec<String>,
     pub resume_session_id: Option<String>,
     pub set_overrides: Vec<String>,
-    pub record: Option<PathBuf>,
-    pub replay: Option<PathBuf>,
-    pub replay_speed: f64,
-    pub replay_auto_exit: Option<u64>,
+    pub mode: ChatMode,
 }
 
-/// Parameters for the run_interactive_chat function
-pub struct RunInteractiveChatParams {
-    pub config: CliConfig,
-    pub initial_mode: String,
-    /// The user's `--plan` intent, threaded rather than re-derived.
+impl ChatParams {
+    /// The flags of a plain `cru chat` with no arguments.
+    pub fn new(config: CliConfig) -> Self {
+        Self {
+            config,
+            agent_name: None,
+            read_only: false,
+            no_context: false,
+            // No override: the daemon's session default stands.
+            context_size: None,
+            provider_key: None,
+            max_context_tokens: 16384,
+            env_overrides: vec![],
+            resume_session_id: None,
+            set_overrides: vec![],
+            mode: ChatMode::Interactive { record: None },
+        }
+    }
+}
+
+/// Which kind of chat run the flags select.
+pub enum ChatMode {
+    /// The TUI. `record` writes a granular transcript to that path.
+    Interactive { record: Option<PathBuf> },
+    /// One query, one answer, then exit.
+    Oneshot { query: String },
+    /// Play a recorded transcript back. No session is created.
+    Replay {
+        path: PathBuf,
+        speed: f64,
+        auto_exit: Option<u64>,
+    },
+}
+
+impl ChatMode {
+    /// Build the mode from the `cru chat` flags.
     ///
-    /// Read-only-ness is a property of a mode's tools and permissions, which
-    /// the daemon owns — the CLI cannot compute it for a user-defined mode.
-    /// Recovering it from the mode NAME (`mode_id == "plan"`) was a lie that
-    /// only happened to hold while the mode set was fixed.
-    pub read_only: bool,
-    pub agent_name: Option<String>,
-    pub provider_key: Option<String>,
-    pub max_context_tokens: usize,
-    pub parsed_env: std::collections::HashMap<String, String>,
-    pub working_dir: Option<std::path::PathBuf>,
-    pub resume_session_id: Option<String>,
-    pub no_context: bool,
-    pub context_size: Option<usize>,
-    pub set_overrides: Vec<String>,
-    pub record: Option<PathBuf>,
-    pub replay: Option<PathBuf>,
-    pub replay_speed: f64,
-    pub replay_auto_exit: Option<u64>,
+    /// `--replay` excludes a query and `--record`; the flags that need a
+    /// session (`--resume`, `--agent`) are checked in `execute`.
+    pub fn from_flags(
+        query: Option<String>,
+        record: Option<PathBuf>,
+        replay: Option<PathBuf>,
+        replay_speed: f64,
+        replay_auto_exit: Option<u64>,
+    ) -> Result<Self> {
+        match (replay, query) {
+            (Some(path), query) => {
+                if query.is_some() {
+                    anyhow::bail!("--replay cannot be combined with a query argument");
+                }
+                if record.is_some() {
+                    anyhow::bail!("--replay cannot be combined with --record");
+                }
+                Ok(Self::Replay {
+                    path,
+                    speed: replay_speed,
+                    auto_exit: replay_auto_exit,
+                })
+            }
+            (None, Some(query)) => Ok(Self::Oneshot { query }),
+            (None, None) => Ok(Self::Interactive { record }),
+        }
+    }
 }
 
-/// Parameters for the run_oneshot_chat function
-pub struct RunOneshotChatParams {
-    pub config: CliConfig,
-    pub initial_mode: String,
-    /// The user's `--plan` intent, threaded rather than re-derived.
-    ///
-    /// Read-only-ness is a property of a mode's tools and permissions, which
-    /// the daemon owns — the CLI cannot compute it for a user-defined mode.
-    /// Recovering it from the mode NAME (`mode_id == "plan"`) was a lie that
-    /// only happened to hold while the mode set was fixed.
-    pub read_only: bool,
-    pub agent_name: Option<String>,
-    pub provider_key: Option<String>,
-    pub max_context_tokens: usize,
-    pub parsed_env: std::collections::HashMap<String, String>,
-    pub working_dir: Option<std::path::PathBuf>,
-    pub resume_session_id: Option<String>,
-    pub no_context: bool,
-    pub context_size: Option<usize>,
-    pub query_text: String,
-    pub set_overrides: Vec<String>,
-}
-
-pub async fn execute(params: ExecuteParams) -> Result<()> {
+pub async fn execute(mut params: ChatParams) -> Result<()> {
     // Seed the render-time highlighting state (theme + enabled) from config
     // before any frame renders; `:set theme` updates it later.
     crate::formatting::syntax::seed_from_config(&params.config.cli.highlighting);
 
-    if let Some(ref replay_path) = params.replay {
-        if !replay_path.exists() {
-            anyhow::bail!("replay file not found: {}", replay_path.display());
-        }
-        if params.query.is_some() {
-            anyhow::bail!("--replay cannot be combined with a query argument");
-        }
-        if params.record.is_some() {
-            anyhow::bail!("--replay cannot be combined with --record");
+    if let ChatMode::Replay {
+        path,
+        speed,
+        auto_exit,
+    } = &params.mode
+    {
+        if !path.exists() {
+            anyhow::bail!("replay file not found: {}", path.display());
         }
         if params.resume_session_id.is_some() {
             anyhow::bail!("--replay cannot be combined with --resume");
@@ -106,55 +124,24 @@ pub async fn execute(params: ExecuteParams) -> Result<()> {
         if params.agent_name.is_some() {
             anyhow::bail!("--replay cannot be combined with --agent");
         }
-        return run_replay(
-            replay_path.clone(),
-            params.replay_speed,
-            params.replay_auto_exit,
-            &params.config,
-        )
-        .await;
+        return run_replay(path.clone(), *speed, *auto_exit, &params.config).await;
     }
-
-    let ExecuteParams {
-        config,
-        agent_name,
-        query,
-        read_only,
-        no_context,
-        context_size,
-        provider_key,
-        max_context_tokens,
-        env_overrides,
-        resume_session_id,
-        set_overrides,
-        record,
-        replay,
-        replay_speed,
-        replay_auto_exit,
-    } = params;
-    let initial_mode = if read_only { "plan" } else { "normal" };
 
     info!("Starting chat command");
-    info!("Initial mode: {}", initial_mode);
-
-    let parsed_env = parse_env_overrides(&env_overrides);
-    let working_dir = std::env::current_dir().ok();
-
-    let mut config = config;
 
     // If no explicit query but stdin is piped, read query from stdin (oneshot mode)
-    let query = match query {
-        Some(q) => Some(q),
-        None if crate::commands::stdin::stdin_is_piped() => {
-            crate::commands::stdin::read_stdin_message().ok()
+    if let ChatMode::Interactive { .. } = params.mode {
+        if crate::commands::stdin::stdin_is_piped() {
+            if let Ok(query) = crate::commands::stdin::read_stdin_message() {
+                params.mode = ChatMode::Oneshot { query };
+            }
         }
-        None => None,
-    };
-
-    if query.is_none() {
-        ensure_valid_kiln(&mut config).await?;
     }
-    fill_default_model_if_missing(&mut config);
+
+    if let ChatMode::Interactive { .. } = params.mode {
+        ensure_valid_kiln(&mut params.config).await?;
+    }
+    fill_default_model_if_missing(&mut params.config);
 
     // A session on the internal agent can do nothing without a provider.
     // Fail here, with remedies, rather than mid-conversation with a raw
@@ -162,60 +149,27 @@ pub async fn execute(params: ExecuteParams) -> Result<()> {
     // ACP?" must be `resolve_is_acp`, not `agent_name.is_some()`: a user
     // with `[chat] agent_preference = "acp"` runs plain `cru chat` with no
     // LLM provider configured, legitimately. Replay never reaches this
-    // point (it returns before the destructure), and a resumed session's
-    // agent type is stored daemon-side (it may be ACP even without `-a`),
-    // so resume relies on the TUI's empty-list warning instead.
+    // point (it returns above), and a resumed session's agent type is
+    // stored daemon-side (it may be ACP even without `-a`), so resume
+    // relies on the TUI's empty-list warning instead.
     let is_acp = crate::factories::agent::resolve_is_acp(
         None,
-        agent_name.as_deref(),
-        &config.chat.agent_preference,
+        params.agent_name.as_deref(),
+        &params.config.chat.agent_preference,
     );
-    if !is_acp && resume_session_id.is_none() {
+    if !is_acp && params.resume_session_id.is_none() {
         let client = crucible_daemon::DaemonClient::connect_or_start().await?;
-        crate::commands::chat_preflight::ensure_providers_available(&client, &config.kiln_path)
-            .await?;
+        crate::commands::chat_preflight::ensure_providers_available(
+            &client,
+            &params.config.kiln_path,
+        )
+        .await?;
     }
 
-    match query {
-        None => {
-            run_interactive_chat(RunInteractiveChatParams {
-                read_only,
-                config,
-                initial_mode: initial_mode.to_string(),
-                agent_name,
-                provider_key,
-                max_context_tokens,
-                parsed_env,
-                working_dir,
-                resume_session_id,
-                no_context,
-                context_size,
-                set_overrides,
-                record,
-                replay,
-                replay_speed,
-                replay_auto_exit,
-            })
-            .await
-        }
-        Some(query_text) => {
-            run_oneshot_chat(RunOneshotChatParams {
-                read_only,
-                config,
-                initial_mode: initial_mode.to_string(),
-                agent_name,
-                provider_key,
-                max_context_tokens,
-                parsed_env,
-                working_dir,
-                resume_session_id,
-                no_context,
-                context_size,
-                query_text,
-                set_overrides,
-            })
-            .await
-        }
+    match std::mem::replace(&mut params.mode, ChatMode::Interactive { record: None }) {
+        ChatMode::Interactive { record } => run_interactive_chat(params, record).await,
+        ChatMode::Oneshot { query } => run_oneshot_chat(params, query).await,
+        ChatMode::Replay { .. } => unreachable!("replay returns above"),
     }
 }
 
@@ -403,25 +357,24 @@ async fn open_project_kilns_if_matched(
     Ok(())
 }
 
-async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
-    let RunInteractiveChatParams {
-        read_only,
+async fn run_interactive_chat(params: ChatParams, record: Option<PathBuf>) -> Result<()> {
+    let ChatParams {
         config,
-        initial_mode,
         agent_name,
-        provider_key,
-        max_context_tokens,
-        parsed_env,
-        working_dir,
-        resume_session_id,
+        read_only,
         no_context,
         context_size,
+        provider_key,
+        max_context_tokens,
+        env_overrides,
+        resume_session_id,
         set_overrides,
-        record,
-        replay,
-        replay_speed,
-        replay_auto_exit,
+        mode: _,
     } = params;
+    let initial_mode = if read_only { "plan" } else { "normal" };
+    info!("Initial mode: {}", initial_mode);
+    let parsed_env = parse_env_overrides(&env_overrides);
+    let working_dir = std::env::current_dir().ok();
     use crate::chat::bridge::AgentEventBridge;
     use crate::tui::oil::OilChatRunner;
     use crucible_core::events::EventRing;
@@ -444,7 +397,7 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
     let ring = std::sync::Arc::new(EventRing::new(4096));
     let bridge = AgentEventBridge::new(ring);
 
-    let mode: std::sync::Arc<str> = initial_mode.as_str().into();
+    let mode: std::sync::Arc<str> = initial_mode.into();
     let effective_llm = config.effective_llm_provider().ok();
     let model_name = effective_llm
         .as_ref()
@@ -466,10 +419,7 @@ async fn run_interactive_chat(params: RunInteractiveChatParams) -> Result<()> {
         .with_show_thinking(config.chat.show_thinking)
         .with_show_diffs(config.chat.show_diffs)
         .with_agent_name(agent_name)
-        .with_initial_sets(parsed_set_overrides)
-        .with_replay_path(replay)
-        .with_replay_speed(replay_speed)
-        .with_replay_auto_exit(replay_auto_exit);
+        .with_initial_sets(parsed_set_overrides);
 
     info!(
         "Starting oil chat with model: {} (display: {})",
@@ -685,26 +635,25 @@ where
     }
 }
 
-async fn run_oneshot_chat(params: RunOneshotChatParams) -> Result<()> {
-    let RunOneshotChatParams {
-        read_only,
+/// `cru chat -q` runs whatever mode the session already has. To apply
+/// `--plan` here needs `--mode <name>` plumbing (see the mode transport
+/// work); only `read_only` reaches the agent.
+async fn run_oneshot_chat(params: ChatParams, query_text: String) -> Result<()> {
+    let ChatParams {
         config,
-        // NOTE: never applied. `cru chat -q` runs whatever mode the session
-        // already has; this field only ever fed the name-based `is_read_only`
-        // that has just been removed. Applying it needs `--mode <name>`
-        // plumbing (see the mode transport work), not a rename.
-        initial_mode: _initial_mode,
         agent_name,
-        provider_key,
-        max_context_tokens,
-        parsed_env,
-        working_dir,
-        resume_session_id,
+        read_only,
         no_context,
         context_size,
-        query_text,
+        provider_key,
+        max_context_tokens,
+        env_overrides,
+        resume_session_id,
         set_overrides,
+        mode: _,
     } = params;
+    let parsed_env = parse_env_overrides(&env_overrides);
+    let working_dir = std::env::current_dir().ok();
     let mut status = StatusLine::new();
     let default_agent = config.acp.default_agent.clone();
 

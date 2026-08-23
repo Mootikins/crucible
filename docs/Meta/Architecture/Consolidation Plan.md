@@ -794,8 +794,8 @@ For each item: run `rg -nw <name>` over `crates/ runtime/ docs/ scripts/ example
 - [ ] `CliStorageHandle::as_knowledge_repository` `factories/storage.rs:50`
 - [ ] `SyntaxHighlighter::supports_language` `formatting/syntax.rs:178`
 - [ ] `impl Default for McpArgs` `commands/mcp.rs:46`
-- [ ] `RunOneshotChatParams.initial_mode` `commands/chat/mod.rs:68`
-- [ ] `RunInteractiveChatParams.replay`, `.replay_speed`, `.replay_auto_exit` `commands/chat/mod.rs:59`
+- [x] `RunOneshotChatParams.initial_mode` `commands/chat/mod.rs:68` — removed by T3-C12
+- [x] `RunInteractiveChatParams.replay`, `.replay_speed`, `.replay_auto_exit` `commands/chat/mod.rs:59` — removed by T3-C12
 - [ ] `generate_initial_config` `embedding_provider` parameter `commands/wizard.rs:135`
 
 **crucible-lua**

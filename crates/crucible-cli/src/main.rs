@@ -316,10 +316,16 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             replay_speed,
             replay_auto_exit,
         }) => {
-            commands::chat::execute(commands::chat::ExecuteParams {
+            let mode = commands::chat::ChatMode::from_flags(
+                query,
+                record,
+                replay,
+                replay_speed,
+                replay_auto_exit,
+            )?;
+            commands::chat::execute(commands::chat::ChatParams {
                 config,
                 agent_name: acp,
-                query,
                 read_only: plan,
                 no_context,
                 context_size,
@@ -328,10 +334,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
                 env_overrides: env,
                 resume_session_id: resume,
                 set_overrides,
-                record,
-                replay,
-                replay_speed,
-                replay_auto_exit,
+                mode,
             })
             .await?
         }
@@ -476,25 +479,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
 
         None => {
             // Setup already ran before dispatch — see `wants_first_run_setup`.
-            commands::chat::execute(commands::chat::ExecuteParams {
-                config,
-                agent_name: None,
-                query: None,
-                read_only: false,
-                no_context: false,
-                // No override: the daemon's session default stands.
-                context_size: None,
-                provider_key: None,
-                max_context_tokens: 16384,
-                env_overrides: vec![],
-                resume_session_id: None,
-                set_overrides: vec![],
-                record: None,
-                replay: None,
-                replay_speed: 1.0,
-                replay_auto_exit: None,
-            })
-            .await?
+            commands::chat::execute(commands::chat::ChatParams::new(config)).await?
         }
     }
 

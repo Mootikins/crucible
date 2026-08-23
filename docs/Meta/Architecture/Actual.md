@@ -1320,8 +1320,8 @@ already differ.
 `ServerContext` (`server/mod.rs:950`).
 
 **Status snapshots x3.** `StatusBar`, `StatusBarData`, `StatusComponent`
-(section 3.7). **Chat params x3.** `ExecuteParams`, `RunInteractiveChatParams`,
-`RunOneshotChatParams` (`crucible-cli/src/commands/chat/mod.rs:21,40,66`).
+(section 3.7). **Chat params x3.** Resolved: one `ChatParams` plus a `ChatMode` enum
+(`crucible-cli/src/commands/chat/mod.rs`).
 **Lua tool shapes x2.** `LuaTool`/`DiscoveredTool`, `ToolParam`/`DiscoveredParam`.
 **Watch factories x3.** `NotifyFactory`, `PollingFactory`, `EditorFactory`, each
 `struct { capabilities }` with a constant four-method impl.
