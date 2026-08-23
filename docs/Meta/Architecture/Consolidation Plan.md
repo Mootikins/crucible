@@ -717,7 +717,7 @@ Recommend: daemon honours `config.agent_directories`; CLI calls the daemon list 
 Recommend: move the list to `crucible-core::paths` and both read it. Cost: S.
 
 **C9. Three bash allowlists (`BashPatterns.allowed_prefixes`, `PermissionConfig.allow`, `ShellPolicy.whitelist`) run in series; `is_hardcoded_denied` overlaps `ShellPolicy::default_blacklist`.**
-Recommend: document the layer order in `docs/Meta/`; do not merge. The layers have different override semantics. Cost: S (doc).
+Recommend: document the layer order in `docs/Meta/`; do not merge. The layers have different override semantics. Cost: S (doc). Done: [[Bash Permission Layers]].
 
 **C10. `MockEmbeddingProvider` x3, `MockKnowledgeRepository` x3.**
 Recommend: `test_support` copies become canonical; delete `enrichment/service.rs:446` and `multi_kiln_search.rs:109`, `agent_manager/tests/mod.rs:242` after adding scripted results to the canonical ones. `mock.rs:13` stays (production config can select it). Cost: M.

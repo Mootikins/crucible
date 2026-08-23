@@ -18,5 +18,5 @@ Four documents, written on 2026-08-22 at commit `7053bcfe7`.
 To find a seam's owner, read [[Actual]] section 3. To add a tool, provider,
 client, hook stage, storage backend or RPC method, read [[Consolidation Plan]]
 section 6. For the older analyses, see [[Systems]], [[Type Flows]],
-[[Storage Schema]], [[Canvas]], [[Filesystem Containment]],
+[[Storage Schema]], [[Canvas]], [[Filesystem Containment]], [[Bash Permission Layers]],
 [[Workspace and Runtime Targets]] and [[Fennel for Plugins]].
