@@ -81,3 +81,80 @@ async fn test_connect_performs_protocol_handshake() {
     // But it verifies the method exists and attempts the handshake
     let _ = result; // Accept either outcome
 }
+
+/// `set_config_option` writes one `session/set_config_option` frame and
+/// reads the agent's full option list from the reply. The frame is pinned
+/// byte for byte except `id`, which a process-wide counter assigns.
+#[tokio::test]
+async fn set_config_option_writes_the_pinned_frame_and_reads_the_reply() {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    let (client_end, agent_end) = tokio::io::duplex(8192);
+    let (client_read, client_write) = tokio::io::split(client_end);
+    let (agent_read, mut agent_write) = tokio::io::split(agent_end);
+
+    let mut client = CrucibleAcpClient::with_transport(
+        ClientConfig::default(),
+        Box::pin(client_write),
+        Box::pin(BufReader::new(client_read)),
+    );
+
+    let agent = tokio::spawn(async move {
+        let mut lines = BufReader::new(agent_read).lines();
+        let line = lines
+            .next_line()
+            .await
+            .expect("line reads")
+            .expect("a line arrives");
+        let mut frame: serde_json::Value = serde_json::from_str(&line).expect("frame is JSON");
+        let id = frame
+            .as_object_mut()
+            .expect("frame is an object")
+            .remove("id")
+            .expect("frame carries an id");
+        let reply = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": {
+                "configOptions": [{
+                    "id": "model",
+                    "name": "Model",
+                    "category": "model",
+                    "type": "select",
+                    "currentValue": "mock-opus",
+                    "options": [
+                        {"value": "mock-sonnet", "name": "Mock Sonnet"},
+                        {"value": "mock-opus", "name": "Mock Opus"}
+                    ]
+                }]
+            }
+        });
+        agent_write
+            .write_all(format!("{reply}\n").as_bytes())
+            .await
+            .expect("reply writes");
+        frame
+    });
+
+    let response = client
+        .set_config_option("sess-1", "model", "mock-opus")
+        .await
+        .expect("the agent answered");
+    let frame = agent.await.expect("agent task completes");
+
+    assert_eq!(
+        frame,
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "session/set_config_option",
+            "params": {
+                "sessionId": "sess-1",
+                "configId": "model",
+                "value": "mock-opus"
+            }
+        })
+    );
+    let choice = crate::acp::session::ModelChoice::from_config_options(&response.config_options)
+        .expect("the reply lists the model selector");
+    assert_eq!(choice.current, "mock-opus");
+}

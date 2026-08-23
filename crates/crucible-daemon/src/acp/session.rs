@@ -14,7 +14,65 @@
 //! - **Single Responsibility**: Focused on session lifecycle and message exchange
 //! - **Open/Closed**: Extensible through configuration without modification
 
+use agent_client_protocol::schema::v1::{
+    SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOptions,
+};
 use serde::{Deserialize, Serialize};
+
+/// The model selector that an agent advertises in `configOptions`.
+///
+/// ACP Session Config Options replaced the `unstable_session_model` API.
+/// The agent lists its options in the `session/new` reply; the option with
+/// category `model` is the model selector. `config_id` names that option,
+/// and `session/set_config_option` switches it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelChoice {
+    /// The id of the `configOptions` entry that selects the model.
+    pub config_id: String,
+    /// The value id the agent reports as current.
+    pub current: String,
+    /// The value ids the agent accepts, in the order it listed them.
+    pub available: Vec<String>,
+}
+
+impl ModelChoice {
+    /// Find the model selector in an agent's config options.
+    ///
+    /// A selector is a `select` option with category `model`. When no
+    /// option has that category, a `select` option with category
+    /// `model_config` serves instead. Returns `None` when neither exists.
+    pub fn from_config_options(options: &[SessionConfigOption]) -> Option<Self> {
+        let pick = |category: SessionConfigOptionCategory| {
+            options.iter().find_map(|option| {
+                let SessionConfigKind::Select(select) = &option.kind else {
+                    return None;
+                };
+                (option.category.as_ref() == Some(&category)).then(|| Self {
+                    config_id: option.id.to_string(),
+                    current: select.current_value.to_string(),
+                    available: select_values(&select.options),
+                })
+            })
+        };
+        pick(SessionConfigOptionCategory::Model)
+            .or_else(|| pick(SessionConfigOptionCategory::ModelConfig))
+    }
+}
+
+/// The value ids of a select option, flat or grouped, in wire order.
+fn select_values(options: &SessionConfigSelectOptions) -> Vec<String> {
+    match options {
+        SessionConfigSelectOptions::Ungrouped(choices) => {
+            choices.iter().map(|c| c.value.to_string()).collect()
+        }
+        SessionConfigSelectOptions::Grouped(groups) => groups
+            .iter()
+            .flat_map(|g| g.options.iter().map(|c| c.value.to_string()))
+            .collect(),
+        // The enum is `#[non_exhaustive]`; an unknown shape lists nothing.
+        _ => Vec::new(),
+    }
+}
 
 /// ACP transport layer configuration.
 ///
@@ -48,6 +106,9 @@ impl Default for TransportConfig {
 #[derive(Debug)]
 pub struct AcpSession {
     session_id: String,
+    /// The model selector from the agent's `session/new` reply, when it
+    /// advertised one.
+    model: Option<ModelChoice>,
 }
 
 impl AcpSession {
@@ -58,12 +119,26 @@ impl AcpSession {
     /// * `config` - Session configuration
     /// * `session_id` - Unique identifier for this session
     pub fn new(_config: TransportConfig, session_id: String) -> Self {
-        Self { session_id }
+        Self {
+            session_id,
+            model: None,
+        }
+    }
+
+    /// Attach the model selector the agent advertised.
+    pub fn with_model(mut self, model: Option<ModelChoice>) -> Self {
+        self.model = model;
+        self
     }
 
     /// Get the session ID
     pub fn id(&self) -> &str {
         &self.session_id
+    }
+
+    /// The model selector the agent advertised, if any.
+    pub fn model(&self) -> Option<&ModelChoice> {
+        self.model.as_ref()
     }
 }
 
@@ -76,6 +151,78 @@ mod tests {
         let config = TransportConfig::default();
         let session = AcpSession::new(config, "test-session-id".to_string());
         assert_eq!(session.id(), "test-session-id");
+    }
+
+    /// The `session/new` reply that claude-agent-acp writes, reduced to the
+    /// fields this parser reads. The model selector carries category
+    /// `model`; a second option with no category is a thought-level toggle.
+    const SESSION_NEW_WITH_MODEL_SELECTOR: &str = r#"{
+        "sessionId": "sess-1",
+        "configOptions": [
+            {
+                "id": "thinking",
+                "name": "Thinking",
+                "type": "boolean",
+                "currentValue": true
+            },
+            {
+                "id": "model",
+                "name": "Model",
+                "category": "model",
+                "type": "select",
+                "currentValue": "mock-sonnet",
+                "options": [
+                    {"value": "mock-sonnet", "name": "Mock Sonnet"},
+                    {"value": "mock-opus", "name": "Mock Opus"}
+                ]
+            }
+        ]
+    }"#;
+
+    fn config_options(reply: &str) -> Vec<SessionConfigOption> {
+        let reply: agent_client_protocol::schema::v1::NewSessionResponse =
+            serde_json::from_str(reply).expect("reply parses");
+        reply.config_options.unwrap_or_default()
+    }
+
+    #[test]
+    fn model_choice_reads_the_select_option_with_category_model() {
+        let choice =
+            ModelChoice::from_config_options(&config_options(SESSION_NEW_WITH_MODEL_SELECTOR))
+                .expect("the reply advertises a model selector");
+        assert_eq!(
+            choice,
+            ModelChoice {
+                config_id: "model".into(),
+                current: "mock-sonnet".into(),
+                available: vec!["mock-sonnet".into(), "mock-opus".into()],
+            }
+        );
+    }
+
+    #[test]
+    fn model_choice_falls_back_to_category_model_config() {
+        let reply = SESSION_NEW_WITH_MODEL_SELECTOR
+            .replace(r#""category": "model""#, r#""category": "model_config""#);
+        let choice = ModelChoice::from_config_options(&config_options(&reply))
+            .expect("a model_config select serves as the selector");
+        assert_eq!(choice.config_id, "model");
+    }
+
+    #[test]
+    fn model_choice_is_none_without_a_model_category() {
+        let reply = r#"{"sessionId": "sess-1", "configOptions": [
+            {"id": "mode", "name": "Mode", "category": "mode", "type": "select",
+             "currentValue": "ask", "options": [{"value": "ask", "name": "Ask"}]}
+        ]}"#;
+        assert_eq!(
+            ModelChoice::from_config_options(&config_options(reply)),
+            None
+        );
+        assert_eq!(
+            ModelChoice::from_config_options(&config_options(r#"{"sessionId": "sess-1"}"#)),
+            None
+        );
     }
 
     #[test]

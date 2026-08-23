@@ -290,16 +290,15 @@ async fn injected_system_context_reaches_acp_prompt() {
     );
 }
 
-/// Model switching on an ACP agent is off until ACP item W6 reads
-/// `configOptions` from `session/new` and sends `session/set_config_option`.
-/// The SDK 2.0 upgrade removed the `unstable_session_model` API that the old
-/// `session/set_model` path used. This test pins the stub: the handle reports
-/// no model switching, no current model, no model list, and `switch_model`
-/// fails with `NotSupported` even when the agent advertises a `models` list.
+/// Model switching on an ACP agent goes through Session Config Options.
+/// The handle reads the `select` option with category `model` from the
+/// `session/new` reply, reports `model_switching`, exposes the current
+/// model, and `switch_model` sends `session/set_config_option` over the
+/// wire (captured by the mock) without a restart of the agent process.
 #[tokio::test]
-async fn acp_model_switching_is_unsupported_until_config_options() {
+async fn acp_model_switching_sends_set_config_option() {
     let workspace = TempDir::new().expect("temp workspace");
-    let model_capture = workspace.path().join("set_model.txt");
+    let model_capture = workspace.path().join("set_config_option.txt");
     let agent_path = mock_agent_path().to_string_lossy().into_owned();
 
     let mut agent_config = mock_session_agent(&agent_path);
@@ -320,22 +319,78 @@ async fn acp_model_switching_is_unsupported_until_config_options() {
     .expect("ACP handshake failed");
 
     assert!(
-        !Agent::capabilities(&handle).model_switching,
-        "model_switching capability must be false until W6 lands"
+        Agent::capabilities(&handle).model_switching,
+        "model_switching must be on when the agent advertises a model selector"
     );
+    assert_eq!(SessionKnobs::current_model(&handle), Some("mock-sonnet"));
+    assert_eq!(
+        handle.fetch_available_models().await,
+        vec!["mock-sonnet".to_string(), "mock-opus".to_string()]
+    );
+
+    let err = SessionKnobs::switch_model(&mut handle, "mock-haiku")
+        .await
+        .expect_err("an id the agent did not list must fail before the wire");
+    assert!(
+        matches!(err, ChatError::ModeChange(_)),
+        "expected ModeChange, got {err:?}"
+    );
+    assert!(
+        !model_capture.exists(),
+        "a refused id must not reach the agent"
+    );
+
+    SessionKnobs::switch_model(&mut handle, "mock-opus")
+        .await
+        .expect("switch_model succeeds for a listed id");
+    assert_eq!(SessionKnobs::current_model(&handle), Some("mock-opus"));
+
+    let captured = std::fs::read_to_string(&model_capture)
+        .expect("mock should have captured the set_config_option request");
+    assert_eq!(
+        captured.trim(),
+        "model=mock-opus",
+        "the selector id and the model id must reach the agent over the wire"
+    );
+}
+
+/// An agent whose `session/new` reply carries no `configOptions` has no
+/// model selector: no capability, no current model, no list, and
+/// `switch_model` fails with `NotSupported` before the wire.
+#[tokio::test]
+async fn acp_session_new_without_config_options_reports_no_models() {
+    let workspace = TempDir::new().expect("temp workspace");
+    let model_capture = workspace.path().join("set_config_option.txt");
+    let agent_path = mock_agent_path().to_string_lossy().into_owned();
+
+    let mut agent_config = mock_session_agent(&agent_path);
+    agent_config.env_overrides.insert(
+        "CRU_MOCK_MODEL_CAPTURE".to_string(),
+        model_capture.to_string_lossy().into_owned(),
+    );
+
+    let mut handle = timeout(
+        Duration::from_secs(30),
+        AcpAgentHandle::new(mock_handle_params(&agent_config, workspace.path())),
+    )
+    .await
+    .expect("ACP handshake timed out")
+    .expect("ACP handshake failed");
+
+    assert!(!Agent::capabilities(&handle).model_switching);
     assert_eq!(SessionKnobs::current_model(&handle), None);
     assert!(handle.fetch_available_models().await.is_empty());
 
     let err = SessionKnobs::switch_model(&mut handle, "mock-opus")
         .await
-        .expect_err("switch_model must fail on an ACP agent until W6 lands");
+        .expect_err("switch_model must fail without a model selector");
     assert!(
         matches!(err, ChatError::NotSupported(_)),
         "expected NotSupported, got {err:?}"
     );
     assert!(
         !model_capture.exists(),
-        "no session/set_model frame may reach the agent"
+        "no session/set_config_option frame may reach the agent"
     );
 }
 

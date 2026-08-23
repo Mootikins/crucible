@@ -317,11 +317,16 @@ impl CrucibleAcpClient {
             "ACP agent connected with session"
         );
 
-        use crate::acp::session::TransportConfig;
+        use crate::acp::session::{ModelChoice, TransportConfig};
+        let model = session_response
+            .config_options
+            .as_deref()
+            .and_then(ModelChoice::from_config_options);
         Ok(AcpSession::new(
             TransportConfig::default(),
             session_response.session_id.to_string(),
-        ))
+        )
+        .with_model(model))
     }
 
     /// Mark the client as connected.

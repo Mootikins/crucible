@@ -334,29 +334,50 @@ impl MockStdioAgent {
             "initialize" => self.handle_initialize(request),
             "session/new" => self.handle_new_session(request),
             "session/prompt" => self.handle_prompt(request),
-            "session/set_model" => self.handle_set_model(request),
+            "session/set_config_option" => self.handle_set_config_option(request),
             "authenticate" => self.handle_authenticate(request),
             _ => self.error_response(request, -32601, "Method not found"),
         }
     }
 
-    /// Handle `session/set_model`. Captures the requested model id to the file
-    /// named by `CRU_MOCK_MODEL_CAPTURE` (when set) so tests can assert the
-    /// switch reached the agent over the wire.
-    fn handle_set_model(&self, request: &Value) -> Value {
+    /// Handle `session/set_config_option`. Captures `configId=value` to the
+    /// file named by `CRU_MOCK_MODEL_CAPTURE` (when set) so tests can assert
+    /// the switch reached the agent over the wire. The reply lists the model
+    /// selector with the new value as current, as the spec requires.
+    fn handle_set_config_option(&self, request: &Value) -> Value {
+        let params = request.get("params");
+        let config_id = params
+            .and_then(|p| p.get("configId"))
+            .and_then(|m| m.as_str())
+            .unwrap_or_default();
+        let value = params
+            .and_then(|p| p.get("value"))
+            .and_then(|m| m.as_str())
+            .unwrap_or_default();
         if let Ok(path) = env::var("CRU_MOCK_MODEL_CAPTURE") {
-            let model_id = request
-                .get("params")
-                .and_then(|p| p.get("modelId"))
-                .and_then(|m| m.as_str())
-                .unwrap_or_default();
-            let _ = fs::write(path, model_id);
+            let _ = fs::write(path, format!("{config_id}={value}"));
         }
         json!({
             "jsonrpc": "2.0",
             "id": request.get("id"),
-            "result": {}
+            "result": { "configOptions": Self::model_config_options(value) }
         })
+    }
+
+    /// The `configOptions` list the mock advertises: one `select` option
+    /// with category `model`, the shape claude-agent-acp sends.
+    fn model_config_options(current: &str) -> Value {
+        json!([{
+            "id": "model",
+            "name": "Model",
+            "category": "model",
+            "type": "select",
+            "currentValue": current,
+            "options": [
+                {"value": "mock-sonnet", "name": "Mock Sonnet"},
+                {"value": "mock-opus", "name": "Mock Opus"}
+            ]
+        }])
     }
 
     /// Handle initialize request
@@ -432,16 +453,11 @@ impl MockStdioAgent {
         let session_id = format!("mock-session-{}", uuid::Uuid::new_v4());
         self.session_id = Some(session_id.clone());
 
-        // Advertise a model list when asked, mirroring claude-agent-acp's
-        // `unstable_session_model` support (availableModels + currentModelId).
-        let models = if env::var("CRU_MOCK_ADVERTISE_MODELS").is_ok() {
-            json!({
-                "currentModelId": "mock-sonnet",
-                "availableModels": [
-                    {"modelId": "mock-sonnet", "name": "Mock Sonnet"},
-                    {"modelId": "mock-opus", "name": "Mock Opus"}
-                ]
-            })
+        // Advertise a model selector in `configOptions` when asked, the way
+        // claude-agent-acp does. Without the flag the reply carries no
+        // `configOptions` at all.
+        let config_options = if env::var("CRU_MOCK_ADVERTISE_MODELS").is_ok() {
+            Self::model_config_options("mock-sonnet")
         } else {
             Value::Null
         };
@@ -450,7 +466,7 @@ impl MockStdioAgent {
         let response: NewSessionResponse = serde_json::from_value(json!({
             "sessionId": session_id,
             "modes": null,
-            "models": models,
+            "configOptions": config_options,
             "_meta": null
         }))
         .expect("Failed to create NewSessionResponse");

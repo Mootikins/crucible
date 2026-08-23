@@ -147,6 +147,38 @@ impl CrucibleAcpClient {
         Ok(mode_response)
     }
 
+    /// Send `session/set_config_option` to change one session config option.
+    ///
+    /// The model selector is a config option (see `ModelChoice`), so a model
+    /// switch goes through this call. The agent answers with the full list
+    /// of options and their current values.
+    pub async fn set_config_option(
+        &mut self,
+        session_id: impl Into<String>,
+        config_id: impl Into<String>,
+        value: impl Into<agent_client_protocol::schema::v1::SessionConfigOptionValue>,
+    ) -> Result<agent_client_protocol::schema::v1::SetSessionConfigOptionResponse> {
+        use agent_client_protocol::schema::v1::{
+            ClientRequest, SessionConfigId, SessionId, SetSessionConfigOptionRequest,
+        };
+
+        let request = SetSessionConfigOptionRequest::new(
+            SessionId::from(session_id.into()),
+            SessionConfigId::new(config_id.into()),
+            value,
+        );
+
+        let response = self
+            .send_request(ClientRequest::SetSessionConfigOptionRequest(request))
+            .await?;
+
+        let result = response.get("result").ok_or_else(|| {
+            ClientError::Session("Missing result field in set config option response".to_string())
+        })?;
+
+        Ok(serde_json::from_value(result.clone())?)
+    }
+
     /// Build a stdio MCP server configuration pointing to `cru mcp`.
     ///
     /// This is the universal fallback — all ACP agents MUST support stdio transport.

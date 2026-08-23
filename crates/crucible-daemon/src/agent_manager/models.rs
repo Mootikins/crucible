@@ -149,7 +149,7 @@ impl AgentManager {
             .ok_or_else(|| AgentError::NoAgentConfigured(session_id.to_string()))?;
 
         // ACP agents switch the model on the *running* agent process via
-        // session/set_model, preserving conversation history. The provider
+        // session/set_config_option, preserving conversation history. The provider
         // rebuild path below (evict the cached handle + recreate) would
         // restart the external agent and lose its history, so route ACP
         // through the live handle instead.

@@ -23,6 +23,7 @@ use translate::{acp_prompt_text, turn_stop_reason};
 use crate::empty_providers::{EmptyEmbeddingProvider, EmptyKnowledgeRepository};
 
 use crate::acp::client::{CrucibleAcpClient, PermissionRequestHandler};
+use crate::acp::session::ModelChoice;
 use crate::acp::streaming::{channel_callback, StreamingChunk};
 use crate::mcp_host::InProcessMcpHost;
 use crate::tools::DelegationContext;
@@ -69,6 +70,11 @@ pub struct AcpAgentHandle {
     agent_name: String,
     mode_id: String,
     mode_state: SessionModeState,
+    /// The model selector the agent advertised in `configOptions` at
+    /// connect. `None` when the agent exposes no model selector; that turns
+    /// off the `model_switching` capability, `current_model` and
+    /// `fetch_available_models`.
+    model: Option<ModelChoice>,
     session_id: Option<String>,
     cached_temperature: Option<f64>,
     cached_max_tokens: Option<u32>,
@@ -245,6 +251,7 @@ impl AcpAgentHandle {
         info!(session_id = %session_id, "ACP agent connected");
 
         let mode_id = "normal".to_string();
+        let model = session.model().cloned();
 
         Ok(Self {
             client: Arc::new(Mutex::new(Some(client))),
@@ -252,6 +259,7 @@ impl AcpAgentHandle {
             agent_name,
             mode_id,
             mode_state: default_internal_modes(),
+            model,
             session_id: Some(session_id),
             cached_temperature: agent_config.temperature,
             cached_max_tokens: agent_config.max_tokens,
@@ -362,22 +370,65 @@ impl SessionKnobs for AcpAgentHandle {
         self.cached_max_tokens
     }
 
-    // The ACP SDK removed the `unstable_session_model` API. Model selection
-    // returns with ACP item W6, which reads `configOptions` and sends
-    // `session/set_config_option`. Until then an ACP agent has no model
-    // switching.
-    async fn switch_model(&mut self, _model_id: &str) -> ChatResult<()> {
-        Err(ChatError::NotSupported(
-            "model switching on an ACP agent is not supported yet".into(),
-        ))
+    /// Switch the agent's model through `session/set_config_option`.
+    ///
+    /// The agent keeps its history; only the selector value changes. The
+    /// reply lists every option with its current value, so the local
+    /// selector is read from the reply when the agent includes it.
+    async fn switch_model(&mut self, model_id: &str) -> ChatResult<()> {
+        let Some(model) = self.model.as_ref() else {
+            return Err(ChatError::NotSupported(
+                "this ACP agent does not advertise a model selector".into(),
+            ));
+        };
+
+        // Fail fast on an id the agent did not list; the agent would refuse
+        // it, with a less clear message.
+        if !model.available.iter().any(|id| id == model_id) {
+            return Err(ChatError::ModeChange(format!(
+                "model '{model_id}' is not in the agent's advertised model list"
+            )));
+        }
+        let config_id = model.config_id.clone();
+
+        let Some(session_id) = self.session_id.clone() else {
+            return Err(ChatError::NotSupported("ACP agent not connected".into()));
+        };
+
+        let response = {
+            let mut guard = self.client.lock().await;
+            let client = guard.as_mut().ok_or_else(|| {
+                ChatError::AgentUnavailable("ACP client unavailable (busy streaming)".into())
+            })?;
+            client
+                .set_config_option(&session_id, &config_id, model_id)
+                .await
+                .map_err(|e| {
+                    ChatError::ModeChange(format!("ACP agent rejected model '{model_id}': {e}"))
+                })?
+        };
+
+        match ModelChoice::from_config_options(&response.config_options) {
+            Some(choice) => self.model = Some(choice),
+            None => {
+                if let Some(model) = self.model.as_mut() {
+                    model.current = model_id.to_string();
+                }
+            }
+        }
+        info!(model = %model_id, "Switched ACP agent model");
+        Ok(())
     }
 
     fn current_model(&self) -> Option<&str> {
-        None
+        self.model.as_ref().map(|m| m.current.as_str())
     }
 
     async fn fetch_available_models(&mut self) -> Vec<String> {
-        Vec::new()
+        self.model
+            .as_ref()
+            .map(|m| m.available.clone())
+            .unwrap_or_default()
     }
 
     async fn fetch_available_modes(&mut self) -> Vec<String> {
@@ -492,8 +543,8 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
             streaming: true,
             tool_calls: true,
             thinking: true,
-            // Off until ACP item W6 reads `configOptions` from `session/new`.
-            model_switching: false,
+            // Only when the agent advertised a model selector at connect.
+            model_switching: self.model.is_some(),
             usage_reporting: true,
             // Cancelling the turn drops the daemon's stream; the ACP client
             // reacts by sending `session/cancel`, stopping the agent
