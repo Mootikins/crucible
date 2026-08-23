@@ -154,37 +154,14 @@ mod tests {
         agent_name: Option<&str>,
         provider_key: Option<&str>,
     ) -> SessionAgent {
-        SessionAgent {
-            mode: None,
-            agent_type: agent_type.to_string(),
-            agent_name: agent_name.map(|s| s.to_string()),
-            provider_key: provider_key.map(|s| s.to_string()),
-            provider: BackendType::Ollama,
-            model: "test-model".to_string(),
-            system_prompt: "You are a test agent.".to_string(),
-            temperature: None,
-            max_tokens: None,
-            max_context_tokens: None,
-            thinking_budget: None,
-            endpoint: None,
-            env_overrides: HashMap::new(),
-            mcp_servers: Vec::new(),
-            agent_card_name: None,
-            capabilities: None,
-            agent_description: None,
-            delegation_config: None,
-            precognition_enabled: true,
-            precognition_results: 5,
-            max_iterations: None,
-            execution_timeout_secs: None,
-            context_budget: None,
-            context_strategy: Default::default(),
-            context_window: None,
-            output_validation: Default::default(),
-            validation_retries: 3,
-            autocompact_threshold: None,
-            tool_policy: None,
-        }
+        let mut agent = SessionAgent::internal_defaults(None, None);
+        agent.agent_type = agent_type.to_string();
+        agent.agent_name = agent_name.map(|s| s.to_string());
+        agent.provider_key = provider_key.map(|s| s.to_string());
+        agent.provider = BackendType::Ollama;
+        agent.model = "test-model".to_string();
+        agent.system_prompt = "You are a test agent.".to_string();
+        agent
     }
 
     fn write_workspace_config(

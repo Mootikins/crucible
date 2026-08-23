@@ -35,12 +35,15 @@ pub(super) fn resolve_config_path(
 ///
 /// Creates the file and parent directories if they don't exist.
 /// Preserves existing config content. Skips duplicate rules.
+///
+/// Returns the file it wrote to, or would write to for a duplicate, so a
+/// caller can name the path without a second scope match of its own.
 #[cfg(feature = "toml")]
 pub fn write_permission_rule(
     scope: PermissionScope,
     rule: &str,
     config_dir: Option<&Path>,
-) -> Result<(), String> {
+) -> Result<PathBuf, String> {
     let path = resolve_config_path(scope, config_dir)?;
 
     if let Some(parent) = path.parent() {
@@ -77,7 +80,7 @@ pub fn write_permission_rule(
         .ok_or_else(|| "permissions.allow is not an array".to_string())?;
 
     if allow_array.iter().any(|v| v.as_str() == Some(rule)) {
-        return Ok(());
+        return Ok(path);
     }
 
     allow_array.push(toml::Value::String(rule.to_string()));
@@ -88,5 +91,5 @@ pub fn write_permission_rule(
     std::fs::write(&path, output)
         .map_err(|e| format!("Failed to write {}: {e}", path.display()))?;
 
-    Ok(())
+    Ok(path)
 }

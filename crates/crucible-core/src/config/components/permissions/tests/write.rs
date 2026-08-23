@@ -39,6 +39,21 @@ fn permission_mode_display_roundtrip() {
 }
 
 #[test]
+fn write_permission_rule_returns_the_file_it_wrote() {
+    let dir = tempfile::tempdir().unwrap();
+    let project =
+        write_permission_rule(PermissionScope::Project, "read:*", Some(dir.path())).unwrap();
+    assert_eq!(project, dir.path().join("crucible.toml"));
+
+    let user = write_permission_rule(PermissionScope::User, "read:*", Some(dir.path())).unwrap();
+    assert_eq!(user, dir.path().join("config.toml"));
+
+    // A duplicate still names the file it would live in.
+    let again = write_permission_rule(PermissionScope::User, "read:*", Some(dir.path())).unwrap();
+    assert_eq!(again, user);
+}
+
+#[test]
 fn write_permission_rule_creates_new_file() {
     let dir = tempfile::tempdir().unwrap();
     write_permission_rule(

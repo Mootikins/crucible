@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, execute};
-use crucible_core::interaction::{InteractionRequest, InteractionResponse, PermissionScope};
+use crucible_core::interaction::{InteractionRequest, InteractionResponse};
 
 use super::messages::ChatAppMsg;
 use super::OilChatApp;
@@ -114,13 +114,8 @@ impl OilChatApp {
                         match crucible_core::config::components::permissions::write_permission_rule(
                             scope, pattern, None,
                         ) {
-                            Ok(()) => {
-                                let path = if response.scope == PermissionScope::User {
-                                    "~/.config/crucible/config.toml"
-                                } else {
-                                    "crucible.toml"
-                                };
-                                self.notify_toast(format!("Rule saved to {path}"));
+                            Ok(path) => {
+                                self.notify_toast(format!("Rule saved to {}", path.display()));
                             }
                             Err(e) => {
                                 self.notify_toast(format!("Failed to save rule: {e}"));

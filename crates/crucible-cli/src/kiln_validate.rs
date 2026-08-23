@@ -59,11 +59,12 @@ impl ValidationResult {
     }
 }
 
-/// Expand tilde in a path string to the user's home directory.
+/// Expand a leading tilde against the real home directory.
 ///
-/// Delegates to the core expander so the CLI, the daemon and the web server
-/// agree on what `~/vault` means; a second implementation is a second answer.
-pub fn expand_tilde(path: &str) -> PathBuf {
+/// The core `expand_tilde` takes the home as a value; this one reads it from
+/// `dirs::home_dir()`. The name says so, so a reader does not mistake this
+/// for the core function.
+pub fn expand_tilde_home(path: &str) -> PathBuf {
     crucible_core::config::expand_tilde(path, dirs::home_dir().as_deref())
 }
 
@@ -321,8 +322,8 @@ mod tests {
     }
 
     #[test]
-    fn test_expand_tilde() {
-        let expanded = expand_tilde("~/notes");
+    fn expand_tilde_home_uses_the_real_home() {
+        let expanded = expand_tilde_home("~/notes");
         // Should not start with ~ anymore
         assert!(!expanded.to_string_lossy().starts_with('~'));
         // Should end with /notes
@@ -330,8 +331,8 @@ mod tests {
     }
 
     #[test]
-    fn test_expand_tilde_no_tilde() {
-        let expanded = expand_tilde("/absolute/path");
+    fn expand_tilde_home_leaves_an_absolute_path() {
+        let expanded = expand_tilde_home("/absolute/path");
         assert_eq!(expanded, PathBuf::from("/absolute/path"));
     }
 

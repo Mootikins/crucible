@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use tokio::task;
 use tracing::warn;
 
-use crate::kiln_validate::{expand_tilde, validate_kiln_path, ValidationSeverity};
+use crate::kiln_validate::{expand_tilde_home, validate_kiln_path, ValidationSeverity};
 use crate::provider_detect::{detect_providers_probed, DetectedProvider};
 use crucible_core::config::components::DataClassification;
 use crucible_core::config::{
@@ -47,7 +47,7 @@ pub async fn execute(
     global_config_path: &Path,
 ) -> Result<()> {
     let target_path = match path {
-        Some(p) => expand_tilde(&p.to_string_lossy()),
+        Some(p) => expand_tilde_home(&p.to_string_lossy()),
         None => PathBuf::from("."),
     };
 

@@ -342,7 +342,7 @@ async fn open_project_kilns_if_matched(
 
     // Find a project whose expanded path matches cwd
     let matched_project = config.projects.values().find(|project| {
-        let expanded = crate::kiln_validate::expand_tilde(&project.path.to_string_lossy());
+        let expanded = crate::kiln_validate::expand_tilde_home(&project.path.to_string_lossy());
         expanded == cwd
     });
 
@@ -372,7 +372,7 @@ async fn open_project_kilns_if_matched(
                 debug!(kiln = %kiln_name, "Skipping lazy kiln");
                 continue;
             }
-            let path = crate::kiln_validate::expand_tilde(&entry.path().to_string_lossy());
+            let path = crate::kiln_validate::expand_tilde_home(&entry.path().to_string_lossy());
             match client.kiln_open(&path).await {
                 Ok(()) => {
                     info!(kiln = %kiln_name, path = %path.display(), "Opened project kiln");

@@ -113,7 +113,7 @@ pub async fn ensure_valid_kiln(config: &mut CliConfig) -> Result<()> {
         .default("~/crucible".to_string())
         .interact_text()?;
 
-    let expanded = crate::kiln_validate::expand_tilde(path_input.trim());
+    let expanded = crate::kiln_validate::expand_tilde_home(path_input.trim());
 
     if !expanded.exists() {
         std::fs::create_dir_all(&expanded)?;

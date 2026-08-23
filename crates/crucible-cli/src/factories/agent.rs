@@ -11,7 +11,7 @@ use anyhow::Result;
 use tracing::info;
 
 use crucible_core::config::{BackendType, CliAppConfig};
-use crucible_core::session::{OutputValidation, SessionAgent};
+use crucible_core::session::SessionAgent;
 use crucible_core::traits::chat::AgentHandle;
 
 /// Agent type selection
@@ -146,37 +146,18 @@ fn build_acp_session_agent(params: &AgentInitParams, config: &CliAppConfig) -> S
         .and_then(|agent_name| config.acp.agents.get(agent_name))
         .and_then(|profile| profile.delegation.clone());
 
-    SessionAgent {
-        agent_type: "acp".to_string(),
-        agent_name: params.agent_name.clone(),
-        provider_key: None,
-        provider: BackendType::Custom,
-        model: String::new(),
-        system_prompt: String::new(),
-        temperature: None,
-        max_tokens: None,
-        max_context_tokens: None,
-        thinking_budget: None,
-        endpoint: None,
-        env_overrides: params.env_overrides.clone(),
-        mcp_servers: vec![],
-        agent_card_name: None,
-        capabilities: None,
-        agent_description: None,
-        delegation_config,
-        precognition_enabled: true,
-        precognition_results: 5,
-        max_iterations: None,
-        execution_timeout_secs: None,
-        context_budget: None,
-        context_strategy: Default::default(),
-        context_window: None,
-        output_validation: OutputValidation::default(),
-        validation_retries: 3,
-        autocompact_threshold: None,
-        tool_policy: None,
-        mode: None,
-    }
+    // Start from the one default builder, then set what an ACP agent differs
+    // in: no provider of its own, no model, and the profile's delegation.
+    let mut agent = SessionAgent::internal_defaults(None, None);
+    agent.agent_type = "acp".to_string();
+    agent.agent_name = params.agent_name.clone();
+    agent.provider_key = None;
+    agent.provider = BackendType::Custom;
+    agent.model = String::new();
+    agent.endpoint = None;
+    agent.env_overrides = params.env_overrides.clone();
+    agent.delegation_config = delegation_config;
+    agent
 }
 
 /// Create an agent via daemon (auto-starts daemon if needed)

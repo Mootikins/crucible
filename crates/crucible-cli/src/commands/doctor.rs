@@ -7,7 +7,7 @@ use std::time::Duration;
 use crate::config::CliConfig;
 use crate::formatting::TextFormat;
 use crate::output;
-use crucible_core::config::BackendType;
+use crucible_core::config::{BackendType, OllamaTagsResponse};
 use crucible_daemon::rpc_client::DaemonClient;
 
 const PROVIDER_TIMEOUT_SECS: u64 = 2;
@@ -315,7 +315,13 @@ async fn check_providers(config: Option<&CliConfig>) -> Vec<ProviderCheck> {
 
         let (reachable, detail) = match (&client, url) {
             (Some(http), Ok(url)) => match http.get(url.clone()).send().await {
-                Ok(_) => (true, None),
+                Ok(reply) => match reply.text().await {
+                    Ok(body) => match probe_reply(provider.provider_type, &body) {
+                        Ok(()) => (true, None),
+                        Err(err) => (false, Some(err)),
+                    },
+                    Err(err) => (false, Some(err.to_string())),
+                },
                 Err(err) => (false, Some(err.to_string())),
             },
             (None, _) => (false, Some("failed to initialize HTTP client".to_string())),
@@ -346,6 +352,21 @@ fn provider_health_url(backend: BackendType, endpoint: &str) -> std::result::Res
     }
 
     Ok(url)
+}
+
+/// Judge the body a provider probe came back with.
+///
+/// An Ollama probe hits `/api/tags`, so its body must parse into the shared
+/// [`OllamaTagsResponse`]; a proxy or a different service on that port
+/// answers 200 with something else, and that is not a reachable Ollama.
+/// Other backends have no shared reply shape; an answer is enough.
+fn probe_reply(backend: BackendType, body: &str) -> std::result::Result<(), String> {
+    if backend != BackendType::Ollama {
+        return Ok(());
+    }
+    serde_json::from_str::<OllamaTagsResponse>(body)
+        .map(|_| ())
+        .map_err(|e| format!("/api/tags reply is not an Ollama model list: {e}"))
 }
 
 fn is_writable_dir(path: &Path) -> bool {
@@ -387,6 +408,23 @@ pub fn validate_kiln_references(config: &CliConfig) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ollama_probe_accepts_a_tags_body() {
+        let body = r#"{"models":[{"name":"nomic-embed-text:latest","size":1}]}"#;
+        assert_eq!(probe_reply(BackendType::Ollama, body), Ok(()));
+    }
+
+    #[test]
+    fn ollama_probe_rejects_a_body_that_is_not_a_model_list() {
+        let err = probe_reply(BackendType::Ollama, "<html>proxy</html>").unwrap_err();
+        assert!(err.contains("/api/tags"), "{err}");
+    }
+
+    #[test]
+    fn other_backends_accept_any_body() {
+        assert_eq!(probe_reply(BackendType::OpenAI, "<html>"), Ok(()));
+    }
 
     #[test]
     fn test_doctor_check_result_serializes_to_json() {

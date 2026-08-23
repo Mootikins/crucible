@@ -64,15 +64,27 @@ fn load_agent_registry(config: &CliConfig) -> AgentCardRegistry {
 /// only when no daemon answers; `show` and `validate` always read disk,
 /// because `validate` reports per-file errors the daemon does not expose.
 pub fn collect_agent_directories(config: &CliConfig, workspace: &Path) -> Vec<PathBuf> {
-    let roots = CardRoots {
-        config_home: dirs::config_dir(),
+    let roots = card_roots(config, dirs::config_dir(), dirs::home_dir().as_deref());
+    card_directories(&roots, workspace, Some(&config.kiln_path))
+}
+
+/// The roots behind [`collect_agent_directories`], with the config home and
+/// the home directory injected as values. The callers above read them from
+/// `dirs` once; a test passes its own, so it does not see the developer's
+/// real `~/.config/crucible/agents`.
+pub fn card_roots(
+    config: &CliConfig,
+    config_home: Option<PathBuf>,
+    home: Option<&Path>,
+) -> CardRoots {
+    CardRoots {
+        config_home,
         agent_directories: config
             .agent_directories
             .iter()
-            .map(|dir| crate::kiln_validate::expand_tilde(&dir.to_string_lossy()))
+            .map(|dir| crucible_core::config::expand_tilde(&dir.to_string_lossy(), home))
             .collect(),
-    };
-    card_directories(&roots, workspace, Some(&config.kiln_path))
+    }
 }
 
 /// The workspace `cru agents` answers for: the current directory, which is
@@ -586,15 +598,38 @@ You are a test agent.
         assert_eq!(truncate_description(description), description);
     }
 
+    /// The directories for `config` with a fixed config home and home, so
+    /// the test never reads the developer's own.
+    fn hermetic_dirs(config: &CliConfig) -> Vec<PathBuf> {
+        let roots = card_roots(
+            config,
+            Some(PathBuf::from("/cfg")),
+            Some(Path::new("/home/test")),
+        );
+        card_directories(&roots, Path::new("/ws"), Some(&config.kiln_path))
+    }
+
     #[test]
     fn test_collect_agent_directories_includes_defaults() {
         let kiln_path = test_path("test-kiln");
         let config = test_config(kiln_path.clone());
-        let dirs = collect_agent_directories(&config, Path::new("/ws"));
+        let dirs = hermetic_dirs(&config);
 
         // Global default plus the kiln's config dir.
-        assert!(dirs.len() >= 2, "{dirs:?}");
+        assert_eq!(dirs[0], PathBuf::from("/cfg/crucible/agents"), "{dirs:?}");
         assert!(dirs.contains(&kiln_path.join(".crucible/agents")));
+    }
+
+    #[test]
+    fn card_roots_expands_a_tilde_against_the_injected_home() {
+        let mut config = test_config(test_path("test-kiln"));
+        config.agent_directories = vec![PathBuf::from("~/cards")];
+        let roots = card_roots(&config, None, Some(Path::new("/home/test")));
+        assert_eq!(
+            roots.agent_directories,
+            vec![PathBuf::from("/home/test/cards")]
+        );
+        assert_eq!(roots.config_home, None);
     }
 
     /// The CLI's list is the daemon's — the kiln's visible `agents/` is not
@@ -604,7 +639,7 @@ You are a test agent.
     fn test_collect_agent_directories_excludes_the_kilns_visible_tree() {
         let kiln_path = test_path("test-kiln");
         let config = test_config(kiln_path.clone());
-        let dirs = collect_agent_directories(&config, Path::new("/ws"));
+        let dirs = hermetic_dirs(&config);
 
         assert!(
             !dirs.contains(&kiln_path.join("agents")),
@@ -625,7 +660,7 @@ You are a test agent.
             PathBuf::from("./local-agents"),
         ];
 
-        let dirs = collect_agent_directories(&config, Path::new("/ws"));
+        let dirs = hermetic_dirs(&config);
 
         // Should include custom directories
         assert!(dirs.contains(&PathBuf::from("/custom/agents")));
@@ -637,7 +672,7 @@ You are a test agent.
         let kiln_path = test_path("test-kiln");
         let mut config = test_config(kiln_path.clone());
         config.agent_directories = vec![PathBuf::from("/custom/agents")];
-        let dirs = collect_agent_directories(&config, Path::new("/ws"));
+        let dirs = hermetic_dirs(&config);
 
         let custom_idx = dirs
             .iter()
@@ -659,7 +694,7 @@ You are a test agent.
     fn test_collect_agent_directories_ends_with_the_workspace() {
         let kiln_path = test_path("test-kiln");
         let config = test_config(kiln_path);
-        let dirs = collect_agent_directories(&config, Path::new("/ws"));
+        let dirs = hermetic_dirs(&config);
         assert_eq!(dirs.last(), Some(&PathBuf::from("/ws/.crucible/agents")));
     }
 
