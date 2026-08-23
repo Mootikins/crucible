@@ -6,7 +6,7 @@ use crate::style::{
 use taffy::prelude::*;
 
 pub struct LayoutEngine {
-    tree: TaffyTree<usize>,
+    tree: TaffyTree,
 }
 
 impl Default for LayoutEngine {
