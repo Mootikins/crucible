@@ -806,7 +806,43 @@ Recommend: Tier 4 check first.
 
 ## 5. Tier 4 — unverified
 
-### 5.1 Second skeptic pass checklist
+
+### 5.0 Result, 2026-08-23
+
+A second skeptic pass ran over the 70 items with a batch of seven per agent.
+Verdicts: 45 dead (29 delete, 16 narrow to `cfg(test)`), 25 keep. Two
+commits applied the 45: `0f623f215` (crucible-cli) and `3d109b106` (the rest),
+41 files, −1,614 lines. `just ci` passed after.
+
+Items the pass kept, with the reason:
+
+- [narrow-to-cfg(test)] CliStorageHandle::list_notes (crates/crucible-cli/src/factories/storage.rs:32) — Only the integration test file uses it. An integration test under tests/ cannot see a cfg(test) item, so narrowing means: either keep it, or rewrite those tests to call as_daemon_client() / note_store
+- [keep] SyntaxHighlighter::supports_language (crates/crucible-cli/src/formatting/syntax.rs:183) — Live in the markdown code block renderer and the diff view.
+- [keep] PluginManager::error_log (lifecycle/error_log.rs:67) — Already narrowed to test/test-utils. The underlying capture_plugin_error and the log field are production. Nothing to delete unless the tests go.
+- [keep] PluginManager::active_plugins (lifecycle/queries.rs:14) — Already gated to tests. Deleting requires rewriting loading.rs:189 to filter PluginManager::list() by state; low value.
+- [narrow-to-cfg(test)] PluginErrorLog::clear, is_empty (lifecycle/error_log.rs:55) — clear is test-only; narrow it to #[cfg(test)]. Keep is_empty: pub len() without is_empty trips clippy::len_without_is_empty, which just ci lints.
+- [keep] load_plugin_spec_from_source (lifecycle/spec.rs:136) — The claim is wrong. Only the pub(crate) re-export in lifecycle/mod.rs:30 is test-only; it could become #[cfg(test)] but that is trivial.
+- [keep] PluginSpec.handlers, DiscoveredHandler (lifecycle/spec.rs:23) — Handlers are parsed but never dispatched; the daemon warns about this on purpose. The count appears in an RPC response (server/plugins.rs:55), so removal changes a wire payload.
+- [keep] cru.tbl_get, cru.tbl_deep_extend, cru.on_error (lua_stdlib/qol.rs:123) — These are documented public Lua API for user plugins, not internal code. No bundled runtime plugin uses them. cru.on_error is documented as a reserved slot that nothing invokes; deleting it means remo
+- [keep] compile_fennel (fennel.rs:105) — The claim is wrong. The function is the only Fennel compile path for spec extraction and discovery.
+- [keep] McpGatewayManager::upstream_status tools/mcp_gateway.rs:454 (weak: own tests only) — The item is already gone. Nothing to remove. Strike the claim from the plan.
+- [keep-protected-path] RpcMethod::SessionReindex rpc/dispatch.rs:175 (weak; protected path; retired name in METHODS) — Referenced by a handler arm, a CLI test and the changelog. Protected path rpc/dispatch.rs. Removal is a wire change (METHODS list).
+- [keep] PluginManager::eval_runtime (crates/crucible-lua/src/lifecycle/lua_integration.rs:54) — Already test-gated; nothing further to narrow. Tests that use it verify reload and load/unload hooks, not only eval_runtime itself.
+- [keep] PluginManager::enable (crates/crucible-lua/src/lifecycle/loading.rs:216) — Already test-gated; no change needed.
+- [keep] PluginManager::initialize (crates/crucible-lua/src/lifecycle/mod.rs:136) — Method no longer exists; it was replaced by discover_only (lifecycle/mod.rs:128) and load_all (loading.rs:93). Nothing to remove. Optionally reword the four stale doc comments that still reference ini
+- [keep-protected-path] KeepAlive.shell Some path (crucible-web routes/terminal.rs:56) — The field is the test injection seam the doc comment at terminal.rs:49-51 describes; the production const sets None on purpose. Under routes/. Keep.
+- [delete] NodeSpec, spec_to_node, NodeSpecError, NodeAttrs, parse_* (crucible-oil template/node_spec.rs) — Partial. NodeSpec, NodeAttrs, spec_to_node and every parse_* except parse_color/parse_hex_color/parse_rgb_color are dead. NodeSpecError and NodeSpecResult stay because parse_color returns them. Move p
+- [keep] 30 of 38 `InternalSessionEvent` variants — done in Tier 3 B7 — Already done. 38 - 31 = 7 matches the current enum. No further action.
+- [keep] 8 of 14 `SessionEvent` variants — done in Tier 3 B7 — Already done. 14 - 11 = 3 versus 4 present; one variant is `Internal(Box<InternalSessionEvent>)`, the wrapper. No further action.
+- [keep] `SessionState::Compacting` (session/types/enums.rs:89) — Not dead: it is written, parsed and shown. It is a design gap (Gaps.md G24, Product.md 'Session Compaction'), not dead code. Removal changes the `session.list` wire value and needs the G24 plan.
+- [keep] `StopReason::MaxToolDepth` (turn/mod.rs:166) — Never built, so dead by the rule. Gaps.md G28 plans to build it at the depth cap ('code-wrong'). Keep if the G28 fix lands; delete if the team drops G28. Update the translate.rs:78 comment either way.
+- [keep] EventRing read side (get, range, iter, oldest_sequence, newest_sequence, write_sequence, len, is_emp — The claim bundles a live type with dead methods. AgentEventBridge is live: keep. The nine read methods plus the whole overflow/flush API (set_overflow_callback, clear_overflow_callback, set_overflow_b
+- [keep] InputType, TerminalStream (events/session_event/types.rs:113) — The items do not exist in the tree; the claim is stale. Nothing to remove.
+- [keep] SessionEventConfig, NotePayload builders (events/session_event/payloads.rs:31) — The file and the items do not exist; the claim is stale. Nothing to remove.
+- [keep] Format::name (crates/crucible-lua/src/json_query.rs:76) — Live: it is the return value of the Lua `oq.detect(str)` binding.
+- [keep] `LayoutEngine::compute`, `ComputedLayout` `taffy_layout.rs` — Already resolved. Gaps.md G153 records `ComputedLayout` deleted in 5fb48681d/2d01c51d3. Nothing left to remove; the open checkbox in Consolidation Plan.md:889 is stale. Docs Actual.md:1026 and Consoli
+
+### 5.1 Second skeptic pass checklist (done; kept for the record)
 
 For each item: run `rg -nw <name>` over `crates/ runtime/ docs/ scripts/ examples/` for `.rs .lua .fnl .ts .tsx .json .toml .md`. Then open every hit. Record: definition only / test only / production. Items already ruled on elsewhere in this plan are not repeated here.
 
