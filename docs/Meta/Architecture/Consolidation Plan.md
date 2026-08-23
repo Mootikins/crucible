@@ -1106,9 +1106,9 @@ last group.
 ### 5a.0 Result, 2026-08-23
 
 All 38 items ran, one agent each, commits `c9e6ddda1` to `443e1c20c`: 37
-committed, one partial (T5-20: the total `From<StreamingChunk> for TurnEvent`
-needs the ACP client to emit the resolved name on `ToolEnd`; the stateful loop
-in `acp_handle.rs` stays). Decisions applied: cross-session job cancel is
+committed, one partial (T5-20; the ACP client work W1-W4 closed it on
+2026-08-23 — the client emits the resolved name on `ToolEnd`, and the
+stateful loop left `acp_handle.rs`; see the Tier 6 entry). Decisions applied: cross-session job cancel is
 denied; Lua `session:set_variable` has daemon storage; the raw JSON key
 `event_type` is now `event` in the CLI and web surfaces; border names are
 canonical `sharp`/`thick` with the old names accepted on read; the ellipsis is
@@ -1152,7 +1152,7 @@ matches every chained statement. `just ci` and the web unit tests pass.
 - [T5-19] `SqliteKnowledgeRepository::get_note_by_name` is still a substring match that rebuilds a fake frontmatter; callers that want a precise row can move to `get_note_by_path`.
 - [T5-19] The disk path of `read_metadata` counts frontmatter words in `word_count`; the index path has no word count at all. A parser `split_frontmatter` (plan C14) would let both report the body count.
 - [T5-19] The `get_note_by_name` RPC reply carries no `properties`; if a CLI-side reader ever needs an index row, add it to the wire (WIRE item) and implement `DaemonStorageClient::get_note_by_path` for real.
-- [T5-20] Done in ACP W1-W4 (2026-08-23). The per-turn `ToolCallTable` in `acp/client/tool_table.rs` replaced `OrphanedResults`; `StreamingChunk::ToolEnd` carries the name; `acp_handle/translate.rs` has a total `From<StreamingChunk> for TurnEvent`. Deviation: a bare orphaned result is now announced under the placeholder label, as Zed does, instead of dropped.
+- [T5-20] Done in ACP W1-W4 (2026-08-23). The per-turn `ToolCallTable` in `acp/client/tool_table.rs` replaced `OrphanedResults`; `StreamingChunk::ToolEnd` carries the name; `acp_handle/translate.rs` has a total `From<StreamingChunk> for TurnEvent`. Deviation: a bare orphaned result is now announced under the placeholder label, as Zed does, instead of dropped. The same work moved the ACP SDK to `agent-client-protocol` 2.0.0 in the daemon and the CLI; `crucible-core` pins `agent-client-protocol-schema` =1.5.0, the same build the SDK pulls, so the dual schema copy is gone.
 - [T5-20] cargo check -p crucible-lua prints 4 pre-existing warnings on the clean tree (unused imports and dead methods in executor.rs and lifecycle/lua_integration.rs); clippy -D warnings passed, so they are likely cfg-gated, but someone should look.
 - [T5-21] The MCP `tools/list` pin in extended_mcp_server.rs still carries a literal `["builtin","just","upstream"]`; it is a wire pin by design, but the wire shape there is a separate literal from `discovery_tool_definitions()`.
 - [T5-21] `ToolDiscovery::classify_source` classifies by name prefix (`just_`, `gh_`, `mcp_`, `::`), not by the executor that serves the tool; a gateway tool without those prefixes reports as `builtin`.

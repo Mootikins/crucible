@@ -20,7 +20,8 @@ The Agent Client Protocol is an open protocol for AI agent hosting. It defines h
 
 - Full name: Agent Client Protocol (not "Agent Context Protocol")
 - Specification: [agentclientprotocol.com](https://agentclientprotocol.com)
-- Source: [github.com/nichochar/agent-client-protocol](https://github.com/nichochar/agent-client-protocol)
+- Source: [github.com/agentclientprotocol/agent-client-protocol](https://github.com/agentclientprotocol/agent-client-protocol)
+- Crucible uses the `agent-client-protocol` crate, version 2.0.0 (wire schema 1.5.0)
 - Transport: stdio JSON-RPC over newline-delimited messages (same pattern as LSP)
 - Crucible is the **host**. It spawns external agents (Claude Code, OpenCode, Gemini CLI) as subprocesses.
 - The agent binary receives a stdio connection; Crucible drives the session lifecycle.
@@ -58,11 +59,16 @@ The ACP wire protocol is JSON-RPC 2.0 over stdio. The methods that matter in pra
 | `initialize` | client → agent | Version handshake and capability exchange |
 | `session/new` | client → agent | Create a new session (with working directory) |
 | `session/prompt` | client → agent | Send a user prompt; the response ends the turn with a stop reason |
-| `session/load` | client → agent | Resume a previously created session |
+| `session/load` | client → agent | Resume a previously created session, with a replay of its history |
+| `session/resume` | client → agent | Continue an earlier session without a replay of its history |
+| `session/set_config_option` | client → agent | Set one session config option; a model switch uses the `model_config` category |
+| `session/list` | client → agent | List the sessions that the agent stores (Crucible does not send it yet) |
+| `session/delete` | client → agent | Delete one stored session (Crucible does not send it yet) |
 | `session/cancel` | client → agent | Cancel the in-progress turn |
 | `session/close` | client → agent | Close a session and release its resources |
 | `session/update` | agent → client | Streaming notification: message chunks, thought chunks, `tool_call` / `tool_call_update` entries |
 | `session/request_permission` | agent → client | Ask the client to approve a tool call (allow/reject, once/always) |
+| `elicitation/create` | agent → client | Ask the user a free-form question; Crucible refuses it with `-32601` today |
 
 ## Streaming
 
@@ -74,6 +80,15 @@ A prompt turn streams through `session/update` notifications:
 4. The `session/prompt` response returns with a stop reason (`end_turn`, `cancelled`, ...) when the turn completes
 
 The client renders updates in real time (TUI streaming, web SSE, etc.) and can cancel mid-turn with `session/cancel`.
+
+### Tool calls are an upsert
+
+The agent reports tool calls as an upsert keyed by `toolCallId`. The spec sets no order
+between `tool_call` and `tool_call_update`: an update can arrive before its call, and some
+agents send only updates. To model this, Crucible keeps one tool-call table per turn.
+Crucible announces each call once, at the first update that carries a name. At the end of
+the turn, Crucible announces each nameless call under the label "Unnamed tool", and closes
+each call that has no completion with an error that names the stop reason.
 
 ## Permissions
 
@@ -148,6 +163,12 @@ When you run `cru chat -a claude`, Crucible:
 6. **Streams** the conversation through the TUI or web UI
 7. **Routes** all tool calls through Crucible's MCP server, enforcing permissions
 
+After a daemon restart, Crucible sends `session/resume` to continue the agent session;
+when the agent refuses, Crucible falls back to `session/new`. To switch the model, Crucible
+sends `session/set_config_option` with the agent's `model_config` option. At shutdown,
+Crucible sends `session/close` when the agent advertises the capability. A `-32601` reply
+to `session/resume` or `session/close` is not an error.
+
 The agent never touches your kiln directly. Every file read, search, and write goes through Crucible's tool layer, giving you full control over what the agent can access.
 
 ### Precognition Integration
@@ -175,7 +196,7 @@ What the host gets is the ordinary internal Crucible agent, exposed through a di
 
 Because sessions are real daemon sessions, Precognition and kiln tools apply automatically — the host does not need to know anything about Crucible's knowledge graph.
 
-**Not yet wired (v1):** session modes, model listing/switching and forking over ACP, host-side filesystem/terminal capabilities (tools run daemon-side exactly as for internal sessions), and authentication (none advertised). Non-permission interaction primitives (free-form questions, panels) have no ACP analogue and are auto-declined.
+**Not yet wired (v1):** session modes, model listing/switching and forking over ACP, host-side filesystem/terminal capabilities (tools run daemon-side exactly as for internal sessions), and authentication (none advertised). A free-form question maps to ACP `elicitation/create`, which Crucible does not serve yet; panels have no ACP analogue. Crucible auto-declines both.
 
 ### Dogfood: Crucible hosting Crucible
 

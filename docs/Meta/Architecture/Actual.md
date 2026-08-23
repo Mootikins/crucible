@@ -647,7 +647,10 @@ synchronous except `EventEmitter::emit`.
 
 **Owns.** Daemon JSON-RPC; web HTTP, SSE and WS; ACP; MCP. The four share
 `SessionEventMessage` and nothing else. ACP types come from
-`agent_client_protocol`; MCP types from `rmcp`.
+`agent_client_protocol` 2.0.0 (the daemon client uses its `schema::v1`
+module; `crucible-core` pins `agent-client-protocol-schema` =1.5.0, the
+same build the SDK pulls, so the wire types compile once); MCP types
+from `rmcp`.
 
 **Modules.** JSON-RPC: `crucible-daemon/src/rpc/`, `server/`, `rpc_client/`,
 `rpc_helpers.rs`, `protocol/` in core. Web: `crucible-web/src/{routes,
@@ -685,10 +688,14 @@ mcp_client,gateway_executor}.rs`, `mcp_server.rs`, `mcp/`.
 `ShellGateState` (`middleware/auth/shell.rs:99`), `EndpointPolicy`
 (`routes/session/mod.rs:195`), `Assets` (`assets.rs:34`).
 
-**ACP types.** `CrucibleAcpClient` (`acp/client/mod.rs:64`), `ClientConfig`
-(`acp/client/types.rs:8`), `StreamingChunk` (`acp/streaming.rs:23`),
-`AgentInfo` (`acp/discovery.rs:27`), `BUILTIN_AGENTS` (`acp/discovery.rs:52`,
-five profiles), `AcpAgentHandleParams` (`acp_handle.rs:86`), `InProcessMcpHost`
+**ACP types.** `CrucibleAcpClient` (`acp/client/mod.rs:66`), `ClientConfig`
+(`acp/client/types.rs:12`), `StreamingChunk` (`acp/streaming.rs:21`),
+`ToolCallTable` (`acp/client/tool_table.rs:142`, one upsert table per turn
+keyed by tool-call id; it names every `ToolEnd` and flushes at end of turn),
+`ModelChoice` (`acp/session.rs:29`, built from `configOptions` of category
+`model_config`), `AgentInfo` (`acp/discovery.rs:27`), `BUILTIN_AGENTS`
+(`acp/discovery.rs:52`, six profiles), `AcpAgentHandleParams`
+(`acp_handle.rs:85`), `InProcessMcpHost`
 (`mcp_host.rs:63`, binds `127.0.0.1:0` and serves `/mcp`), `Recorder`,
 `ReplayFixture` (`acp/client/recording.rs:58`, `replay.rs:28`),
 `CrucibleAcpAgent` (`crucible-cli/src/commands/acp/agent.rs:50`, the CLI side
@@ -713,7 +720,10 @@ every `/api/*` route except `/health`, `/ready`, `/api/auth/*` sits behind
 error except `scm_clone` and the four `review.*` writes. ACP: child process
 stdio, one global `REQUEST_ID` (`acp/client/mod.rs:28`); `read_response_line`
 uses a 5-minute per-read floor (`acp/client/io.rs:107-112`); unhandled inbound
-requests get `-32601`. MCP: `InProcessMcpHost` URL goes into
+requests get `-32601`; the client sends `session/resume` after a daemon
+restart (fall back: `session/new`), `session/set_config_option` for a model
+switch, and `session/close` at shutdown, and it tolerates a `-32601` reply
+to resume and close. MCP: `InProcessMcpHost` URL goes into
 `NewSessionRequest.mcp_servers`; `build_stdio_mcp_server` resolves `cru` beside
 `current_exe()` (`acp/protocol.rs:185`).
 
@@ -774,8 +784,7 @@ requests get `-32601`. MCP: `InProcessMcpHost` URL goes into
   (`routes/webhook.rs:68`). Dead wrappers: `capabilities`, `note_upsert`,
   `lua_discover_plugins`, `lua_plugin_health`, `session_create`,
   `agents_resolve_profile`.
-- ACP: the built-in agent table is written twice (`acp/discovery.rs:52`,
-  `acp_launch.rs:126`) with no gate. `acp/tools.rs` describes 10 tools,
+- ACP: `acp/tools.rs` describes 10 tools,
   executes 2, and its `ToolDescriptor` (`tools.rs:29`) duplicates core
   `ToolDefinition` (`crucible-core/src/traits/tools.rs:208`). `acp/mock_agent.rs:17`
   has a module-level `#![allow]`. `Recorder::from_env` reads env on every
@@ -784,8 +793,7 @@ requests get `-32601`. MCP: `InProcessMcpHost` URL goes into
   across `acp_launch.rs:63`, `client/io.rs:110`, `client/streaming.rs:194`.
   `acp/mod.rs` exports `StreamHandler`/`StreamConfig` that no production code
   uses; the live API is `StreamingChunk` plus `channel_callback`.
-  `AcpAgentHandle.session_id` is `Option` and never `None`; `ClientConfig.max_retries`
-  is always `None`. `mcp_server.rs:77,113` opens the kiln twice.
+  `AcpAgentHandle.session_id` is `Option` and never `None`. `mcp_server.rs:77,113` opens the kiln twice.
 - MCP: the gateway half of `ExtendedMcpServer` and `McpGatewayManager::start_reconnect_loop`
   have no callers (`extended_mcp_server.rs:126`, `mcp_gateway.rs:499`; since
   plan T3-A10 `server/mod.rs` starts the reconnect loop);
@@ -1132,7 +1140,7 @@ Surprising edges:
 | Permission modes | `runtime/defaults/init.lua` as `BUILTIN_INIT_LUA` (`crucible-lua/src/lib.rs:164`); `ModeRegistry` (`crucible-lua/src/modes.rs:161`); `BuiltinMode` (`crucible-core/src/types/mode.rs:85`); `BUILTIN_MODE_NAMES` (`crucible-daemon/src/tools/tool_modes.rs:37`); `default_internal_modes` (`types/mode.rs:273`) | normal, plan, auto | Lua is the only definition of the rules; `ModeRegistry` has no Rust default and no fallback. `BuiltinMode::Auto` is matched but only built by `from_id`. `is_write_tool_name` (`genai_handle.rs:103`) and `PLAN_TOOL_NAMES` are hand lists that gate plan mode |
 | `InteractionRequest` kinds | `crucible-core/src/interaction/types.rs:380` | 7 | `KINDS` const; `interaction-coverage.test.ts` on the web side; `Show` has no response variant |
 | `Capability` (plugin) | `crucible-lua/src/manifest.rs:80` | 9 | serde derive for `plugin.yaml`; `parse_capability` (`lifecycle/spec.rs:31`) is a second decoder that omits `intercept_tools` |
-| Built-in ACP agents | `crucible-daemon/src/acp/discovery.rs:52`, `acp_launch.rs:126` | 5 | None; the table is written twice |
+| Built-in ACP agents | `crucible-daemon/src/acp/discovery.rs:52` | 6 | One table; `acp_launch.rs` resolves through `builtin_command` (`discovery.rs:111`); `test_default_agent_profiles_include_all_builtin_agents` walks it |
 | `cru.sessions` names | `crucible-lua/src/sessions/register.rs:26-74,187-867` | 28 | None; the stub list and the real list are both string literals |
 | REPL commands | `crucible-cli/src/tui/oil/chat_app/{autocomplete.rs:201,474; command_handling.rs:20,99}` | about 20 | None; four hand-kept lists |
 | `LogEvent` persisted names | `crucible-daemon/src/server/core/mod.rs:465-474` | 2 of 16 | A string match after `should_persist` already decoded the typed payload |
