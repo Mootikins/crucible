@@ -99,6 +99,21 @@ impl Default for TransportConfig {
     }
 }
 
+/// How the connect flow obtained this session.
+///
+/// The handle reads `FellBackToNew` to tell the event stream that the
+/// agent-side history did not survive a daemon restart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResumeDisposition {
+    /// The connect flow opened a fresh session; no resume was requested.
+    NotAttempted,
+    /// The agent answered `session/resume` and kept its history.
+    Resumed,
+    /// The agent answered `session/resume` with `-32601`, so the connect
+    /// flow opened a fresh session. The agent-side history is gone.
+    FellBackToNew,
+}
+
 /// Represents an active session with an agent
 ///
 /// The session handles communication with a connected agent,
@@ -109,6 +124,8 @@ pub struct AcpSession {
     /// The model selector from the agent's `session/new` reply, when it
     /// advertised one.
     model: Option<ModelChoice>,
+    /// How the connect flow obtained this session.
+    resume: ResumeDisposition,
 }
 
 impl AcpSession {
@@ -122,12 +139,19 @@ impl AcpSession {
         Self {
             session_id,
             model: None,
+            resume: ResumeDisposition::NotAttempted,
         }
     }
 
     /// Attach the model selector the agent advertised.
     pub fn with_model(mut self, model: Option<ModelChoice>) -> Self {
         self.model = model;
+        self
+    }
+
+    /// Record how the connect flow obtained this session.
+    pub fn with_resume(mut self, resume: ResumeDisposition) -> Self {
+        self.resume = resume;
         self
     }
 
@@ -139,6 +163,11 @@ impl AcpSession {
     /// The model selector the agent advertised, if any.
     pub fn model(&self) -> Option<&ModelChoice> {
         self.model.as_ref()
+    }
+
+    /// How the connect flow obtained this session.
+    pub fn resume(&self) -> ResumeDisposition {
+        self.resume
     }
 }
 

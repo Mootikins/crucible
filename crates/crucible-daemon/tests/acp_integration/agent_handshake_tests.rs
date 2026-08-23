@@ -147,6 +147,59 @@ async fn a_method_not_found_reply_to_close_is_not_an_error() {
         .expect("a -32601 reply to session/close is tolerated");
 }
 
+// -- session/resume (plan W7, decision d) -----------------------------------
+
+/// With a stored agent session id, the client sends `session/resume` and
+/// keeps that session. No `session/new` crosses the wire.
+#[tokio::test]
+async fn resume_reuses_the_agent_session_when_the_agent_answers_it() {
+    use crucible_daemon::acp::session::ResumeDisposition;
+
+    let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut config = MockStdioAgentConfig::opencode();
+    config.supports_session_resume = true;
+    config.method_log = Some(log.clone());
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
+
+    let session = client
+        .connect_with_best_mcp_resuming(None, Some("mock-session-prior"))
+        .await
+        .expect("resume succeeds");
+
+    assert_eq!(session.id(), "mock-session-prior");
+    assert_eq!(session.resume(), ResumeDisposition::Resumed);
+    let log = log.lock().unwrap();
+    assert!(log.iter().any(|m| m == "session/resume"), "log: {log:?}");
+    assert!(
+        !log.iter().any(|m| m == "session/new"),
+        "a resumed session must not also open a new one, log: {log:?}"
+    );
+}
+
+/// An agent without `session/resume` answers `-32601`. The client falls
+/// back to `session/new` and reports the fallback on the session.
+#[tokio::test]
+async fn resume_falls_back_to_session_new_on_method_not_found() {
+    use crucible_daemon::acp::session::ResumeDisposition;
+
+    let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut config = MockStdioAgentConfig::opencode();
+    config.method_log = Some(log.clone());
+    let (mut client, _handle) = ThreadedMockAgent::spawn_with_client(config);
+
+    let session = client
+        .connect_with_best_mcp_resuming(None, Some("mock-session-prior"))
+        .await
+        .expect("the -32601 reply falls back to session/new");
+
+    assert_ne!(session.id(), "mock-session-prior");
+    assert!(session.id().starts_with("mock-session-"));
+    assert_eq!(session.resume(), ResumeDisposition::FellBackToNew);
+    let log = log.lock().unwrap();
+    assert!(log.iter().any(|m| m == "session/resume"), "log: {log:?}");
+    assert!(log.iter().any(|m| m == "session/new"), "log: {log:?}");
+}
+
 /// When the handle drops, the daemon sends `session/close` before it kills
 /// the agent process. The spawned mock binary records the closed session id.
 #[tokio::test]

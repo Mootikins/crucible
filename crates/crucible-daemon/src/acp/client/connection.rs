@@ -252,8 +252,27 @@ impl CrucibleAcpClient {
     /// * `mcp_url` - Optional URL to an in-process MCP server. If `None` or if
     ///   the agent doesn't support HTTP, falls back to stdio transport.
     pub async fn connect_with_best_mcp(&mut self, mcp_url: Option<&str>) -> Result<AcpSession> {
+        self.connect_with_best_mcp_resuming(mcp_url, None).await
+    }
+
+    /// [`Self::connect_with_best_mcp`], resuming a stored agent session.
+    ///
+    /// With `resume_session_id` set, the flow sends `session/resume` after
+    /// the handshake so the agent keeps its history across a daemon restart.
+    /// The attempt is not gated on `sessionCapabilities.resume`: an agent in
+    /// transition may answer the method without advertising it, and the
+    /// specified fallback signal is the `-32601` reply. On that reply the
+    /// flow opens a fresh session with `session/new` and marks the returned
+    /// session [`ResumeDisposition::FellBackToNew`](crate::acp::session::ResumeDisposition).
+    pub async fn connect_with_best_mcp_resuming(
+        &mut self,
+        mcp_url: Option<&str>,
+        resume_session_id: Option<&str>,
+    ) -> Result<AcpSession> {
+        use crate::acp::session::ResumeDisposition;
         use agent_client_protocol::schema::v1::{
-            InitializeRequest, McpServer, McpServerHttp, NewSessionRequest,
+            InitializeRequest, McpServer, McpServerHttp, NewSessionRequest, ResumeSessionRequest,
+            SessionId,
         };
 
         tracing::debug!(agent = %self.agent_name, mcp_url = ?mcp_url, "Starting capability-aware ACP handshake");
@@ -307,6 +326,38 @@ impl CrucibleAcpClient {
             .or_else(|| std::env::current_dir().ok())
             .unwrap_or_else(|| PathBuf::from("/"));
 
+        use crate::acp::session::{ModelChoice, TransportConfig};
+
+        // 4a. Resume the stored agent session, when the caller has one.
+        // `Ok(None)` is the -32601 answer: fall through to `session/new`.
+        let mut resume = ResumeDisposition::NotAttempted;
+        if let Some(prior_id) = resume_session_id {
+            let resume_request =
+                ResumeSessionRequest::new(SessionId::from(prior_id.to_string()), cwd.clone())
+                    .mcp_servers(vec![crucible_mcp_server.clone()]);
+            match self.resume_session(resume_request).await? {
+                Some(resume_response) => {
+                    self.mark_connected();
+                    tracing::info!(
+                        agent = %self.agent_name,
+                        session_id = %prior_id,
+                        "ACP agent resumed its session"
+                    );
+                    let model = resume_response
+                        .config_options
+                        .as_deref()
+                        .and_then(ModelChoice::from_config_options);
+                    return Ok(
+                        AcpSession::new(TransportConfig::default(), prior_id.to_string())
+                            .with_model(model)
+                            .with_resume(ResumeDisposition::Resumed),
+                    );
+                }
+                None => resume = ResumeDisposition::FellBackToNew,
+            }
+        }
+
+        // 4b. Create session with chosen transport
         let session_request = NewSessionRequest::new(cwd).mcp_servers(vec![crucible_mcp_server]);
         let session_response = self.create_new_session(session_request).await?;
 
@@ -318,7 +369,6 @@ impl CrucibleAcpClient {
             "ACP agent connected with session"
         );
 
-        use crate::acp::session::{ModelChoice, TransportConfig};
         let model = session_response
             .config_options
             .as_deref()
@@ -327,7 +377,8 @@ impl CrucibleAcpClient {
             TransportConfig::default(),
             session_response.session_id.to_string(),
         )
-        .with_model(model))
+        .with_model(model)
+        .with_resume(resume))
     }
 
     /// Mark the client as connected.

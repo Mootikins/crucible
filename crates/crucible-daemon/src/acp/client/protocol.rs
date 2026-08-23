@@ -198,6 +198,35 @@ impl CrucibleAcpClient {
         Ok(serde_json::from_value(result.clone())?)
     }
 
+    /// Send `session/resume` to continue an existing agent session.
+    ///
+    /// Returns `Ok(None)` when the agent answers `-32601`: the agent does
+    /// not speak the method, and the caller falls back to `session/new`.
+    /// Any other error reply is reported to the caller.
+    pub async fn resume_session(
+        &mut self,
+        request: agent_client_protocol::schema::v1::ResumeSessionRequest,
+    ) -> Result<Option<agent_client_protocol::schema::v1::ResumeSessionResponse>> {
+        use agent_client_protocol::schema::v1::ClientRequest;
+
+        let response = self
+            .send_request(ClientRequest::ResumeSessionRequest(request))
+            .await?;
+
+        if is_method_not_found(&response) {
+            tracing::info!(
+                agent = %self.agent_name,
+                "agent has no session/resume; the caller falls back to session/new"
+            );
+            return Ok(None);
+        }
+
+        let result = response
+            .get("result")
+            .ok_or_else(|| ClientError::Session(format!("session/resume failed: {response}")))?;
+        Ok(Some(serde_json::from_value(result.clone())?))
+    }
+
     /// Send `session/close` so the agent frees the session's resources.
     ///
     /// A `-32601` reply is tolerated: an agent without the method (Hermes)
