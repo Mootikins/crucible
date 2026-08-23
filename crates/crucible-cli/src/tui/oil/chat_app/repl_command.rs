@@ -191,12 +191,12 @@ impl ReplCommand {
         Self::ALL.iter().map(|c| c.popup_entry()).collect()
     }
 
-    /// Every name and alias, for typo suggestions.
-    pub(super) fn known_words() -> Vec<&'static str> {
+    /// The command that `word` names, by its name or by an alias.
+    pub(super) fn parse(word: &str) -> Option<ReplCommand> {
         Self::ALL
             .iter()
-            .flat_map(|c| std::iter::once(c.name()).chain(c.aliases().iter().copied()))
-            .collect()
+            .copied()
+            .find(|c| c.name() == word || c.aliases().contains(&word))
     }
 
     /// The body of `:help commands`, one aligned line per command.
@@ -249,18 +249,16 @@ mod tests {
         }
     }
 
+    /// Each word names one command; a name or alias shared by two commands
+    /// would make dispatch depend on table order.
     #[test]
-    fn known_words_hold_every_name_and_alias() {
-        let words = ReplCommand::known_words();
-        for cmd in ReplCommand::iter() {
-            assert!(words.contains(&cmd.name()));
-            for alias in cmd.aliases() {
-                assert!(words.contains(alias));
-            }
-        }
-        let mut dedup = words.clone();
-        dedup.sort_unstable();
-        dedup.dedup();
-        assert_eq!(dedup.len(), words.len(), "duplicate word in the table");
+    fn no_word_names_two_commands() {
+        let mut words: Vec<&str> = ReplCommand::iter()
+            .flat_map(|c| std::iter::once(c.name()).chain(c.aliases().iter().copied()))
+            .collect();
+        let total = words.len();
+        words.sort_unstable();
+        words.dedup();
+        assert_eq!(words.len(), total, "duplicate word in the table");
     }
 }

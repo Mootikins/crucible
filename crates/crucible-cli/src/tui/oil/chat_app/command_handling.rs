@@ -2,6 +2,12 @@
 //!
 //! Contains all command parsing and execution logic:
 //! `:set`, `:model`, `:export`, `:plugins`, `:mcp`, etc.
+//!
+//! `handle_repl_command` matches every [`ReplCommand`] variant. The two
+//! denies below turn a missing arm into a compile error.
+
+#![deny(clippy::wildcard_enum_match_arm)]
+#![deny(clippy::match_wildcard_for_single_variants)]
 
 use std::path::PathBuf;
 
@@ -17,11 +23,16 @@ use super::repl_command::ReplCommand;
 use super::state::{next_mode, DEFAULT_MODE};
 use super::OilChatApp;
 
-/// Suggest the closest known command for a typo.
-fn suggest_command<'a>(input: &str, known: &[&'a str]) -> Option<&'a str> {
+/// Suggest the closest command for a typo. Each name and alias of every
+/// command in `known` is a candidate; the suggestion is the command's name.
+fn suggest_command(input: &str, known: &[ReplCommand]) -> Option<ReplCommand> {
     known
         .iter()
-        .map(|cmd| (*cmd, crucible_core::fuzzy::levenshtein(input, cmd)))
+        .flat_map(|cmd| {
+            std::iter::once(cmd.name())
+                .chain(cmd.aliases().iter().copied())
+                .map(move |word| (*cmd, crucible_core::fuzzy::levenshtein(input, word)))
+        })
         .filter(|(_, dist)| *dist <= 2)
         .min_by_key(|(_, dist)| *dist)
         .map(|(cmd, _)| cmd)
@@ -169,118 +180,86 @@ impl OilChatApp {
     pub(super) fn handle_repl_command(&mut self, cmd: &str) -> Action<ChatAppMsg> {
         let command = &cmd[1..];
 
-        if command == "set" || command.starts_with("set ") {
-            return self.handle_set_command(command);
+        // `:= <expr>` is the `:lua` shorthand; it has no command word.
+        if let Some(code) = command.strip_prefix('=') {
+            return self.eval_lua_repl(Some(code.trim()).filter(|c| !c.is_empty()));
         }
 
-        if command == "config show" || command == "config" {
-            return self.handle_config_show_command();
-        }
+        // The first word names the command; the rest is its argument.
+        let (word, arg) = match command.split_once(char::is_whitespace) {
+            Some((w, rest)) => (w, Some(rest.trim()).filter(|r| !r.is_empty())),
+            None => (command, None),
+        };
 
-        // `:lua <expr>` / `:= <expr>` — Lua escape hatch (evaluated daemon-side
-        // via lua.eval; the default command line never evals implicitly).
-        if command == "lua" {
+        let Some(repl) = ReplCommand::parse(word) else {
+            let mut msg = format!("Unknown REPL command: {}", cmd);
+            if let Some(suggestion) = suggest_command(word, ReplCommand::ALL) {
+                msg.push_str(&format!(" Did you mean :{} ?", suggestion.name()));
+            }
             self.notification_area
-                .add(crucible_core::types::Notification::warning(
-                    "Usage: :lua <expr>  (or := <expr>)".to_string(),
-                ));
+                .add(crucible_core::types::Notification::warning(msg));
             return Action::Continue;
-        }
-        if let Some(code) = command
-            .strip_prefix("lua ")
-            .or_else(|| command.strip_prefix('='))
-        {
-            let code = code.trim();
-            if code.is_empty() {
-                self.notification_area
-                    .add(crucible_core::types::Notification::warning(
-                        "Usage: :lua <expr>  (or := <expr>)".to_string(),
-                    ));
-                return Action::Continue;
-            }
-            return Action::Send(ChatAppMsg::EvalLua(code.to_string()));
-        }
+        };
 
-        match command {
-            "q" | "quit" => Action::Quit,
-            "help" | "h" => self.handle_help_repl(None),
-            _ if command.starts_with("help ") || command.starts_with("h ") => {
-                let topic = command
-                    .strip_prefix("help ")
-                    .or_else(|| command.strip_prefix("h "))
-                    .unwrap_or("")
-                    .trim();
-                self.handle_help_repl(Some(topic))
-            }
-            "messages" | "msgs" | "notifications" => {
+        match repl {
+            ReplCommand::Quit => Action::Quit,
+            ReplCommand::Help => self.handle_help_repl(arg),
+            ReplCommand::Messages => {
                 self.notification_area.toggle();
                 Action::Continue
             }
-            "palette" | "commands" => {
+            ReplCommand::Palette => {
                 self.popup.show = true;
                 self.popup.kind = super::state::AutocompleteKind::Command;
                 self.popup.filter.clear();
                 self.popup.selected = 0;
                 Action::Continue
             }
-            "mcp" => {
+            ReplCommand::Mcp => {
                 self.handle_mcp_command();
                 Action::Continue
             }
-            "pick" => self.open_picker(None),
-            _ if command.starts_with("pick ") => {
-                let source = command
-                    .strip_prefix("pick ")
-                    .expect("starts_with guard")
-                    .trim();
-                self.open_picker(Some(source))
-            }
-            "plugins" => {
+            ReplCommand::Pick => self.open_picker(arg),
+            ReplCommand::Plugins => {
                 self.handle_plugins_command();
                 Action::Continue
             }
-            "model" => self.handle_model_repl(None),
-            _ if command.starts_with("model ") => {
-                let name = command
-                    .strip_prefix("model ")
-                    .expect("starts_with guard")
-                    .trim();
-                self.handle_model_repl(Some(name))
-            }
-            "clear" => Action::Send(ChatAppMsg::ClearHistory),
-            "undo" => Action::Send(ChatAppMsg::Undo(1)),
-            _ if command.starts_with("undo ") => {
-                let count_str = command
-                    .strip_prefix("undo ")
-                    .expect("starts_with guard")
-                    .trim();
-                let count = count_str.parse::<usize>().unwrap_or(1).max(1);
+            ReplCommand::Model => self.handle_model_repl(arg),
+            ReplCommand::Clear => Action::Send(ChatAppMsg::ClearHistory),
+            ReplCommand::Undo => {
+                let count = arg
+                    .and_then(|n| n.parse::<usize>().ok())
+                    .unwrap_or(1)
+                    .max(1);
                 Action::Send(ChatAppMsg::Undo(count))
             }
-            "reload" => self.handle_reload_repl(None),
-            _ if command.starts_with("reload ") => {
-                let name = command
-                    .strip_prefix("reload ")
-                    .expect("starts_with guard")
-                    .trim();
-                self.handle_reload_repl(Some(name))
-            }
-            _ if command.starts_with("export ") => {
-                let path = command
-                    .strip_prefix("export ")
-                    .expect("starts_with guard")
-                    .trim();
-                self.handle_export_command(path)
-            }
-            _ => {
-                // Extract the base command word for suggestion matching
-                let base_cmd = command.split_whitespace().next().unwrap_or(command);
-                let mut msg = format!("Unknown REPL command: {}", cmd);
-                if let Some(suggestion) = suggest_command(base_cmd, &ReplCommand::known_words()) {
-                    msg.push_str(&format!(" Did you mean :{} ?", suggestion));
+            ReplCommand::Reload => self.handle_reload_repl(arg),
+            ReplCommand::Export => match arg {
+                Some(path) => self.handle_export_command(path),
+                None => {
+                    self.notification_area
+                        .add(crucible_core::types::Notification::warning(
+                            "Usage: :export <path>".to_string(),
+                        ));
+                    Action::Continue
                 }
+            },
+            ReplCommand::Set => self.handle_set_command(command),
+            ReplCommand::Config => self.handle_config_show_command(),
+            ReplCommand::Lua => self.eval_lua_repl(arg),
+        }
+    }
+
+    /// `:lua <expr>`: the daemon evaluates the code through `lua.eval`. The
+    /// default command line never evaluates Lua implicitly.
+    fn eval_lua_repl(&mut self, code: Option<&str>) -> Action<ChatAppMsg> {
+        match code {
+            Some(code) => Action::Send(ChatAppMsg::EvalLua(code.to_string())),
+            None => {
                 self.notification_area
-                    .add(crucible_core::types::Notification::warning(msg));
+                    .add(crucible_core::types::Notification::warning(
+                        "Usage: :lua <expr>  (or := <expr>)".to_string(),
+                    ));
                 Action::Continue
             }
         }

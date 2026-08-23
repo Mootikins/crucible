@@ -448,8 +448,12 @@ fn is_daemon_rpc_key(key: &str) -> bool {
 
 /// Parse a boolean option value with the same tokens `ConfigValue` accepts.
 pub(crate) fn parse_bool(value: &str) -> Result<bool, String> {
-    ConfigValue::try_parse_bool(value)
-        .ok_or_else(|| format!("invalid value: '{}'. Use true/false", value))
+    ConfigValue::try_parse_bool(value).ok_or_else(|| {
+        format!(
+            "invalid value: '{}'. Use true/false, yes/no, on/off, y/n or 1/0",
+            value
+        )
+    })
 }
 
 impl SetCommand {

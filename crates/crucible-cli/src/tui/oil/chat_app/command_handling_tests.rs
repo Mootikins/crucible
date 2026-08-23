@@ -11,39 +11,47 @@ use super::*;
 
 #[test]
 fn suggest_command_exact_match() {
-    let known = &["quit", "help", "clear", "model"];
-    assert_eq!(suggest_command("quit", known), Some("quit"));
+    assert_eq!(
+        suggest_command("quit", ReplCommand::ALL),
+        Some(ReplCommand::Quit)
+    );
 }
 
 #[test]
 fn suggest_command_typo_within_distance_2() {
-    let known = &["quit", "help", "clear", "model"];
-    assert_eq!(suggest_command("quiy", known), Some("quit"));
-    assert_eq!(suggest_command("hlep", known), Some("help"));
-    assert_eq!(suggest_command("claer", known), Some("clear"));
+    let known = &[
+        ReplCommand::Quit,
+        ReplCommand::Help,
+        ReplCommand::Clear,
+        ReplCommand::Model,
+    ];
+    assert_eq!(suggest_command("quiy", known), Some(ReplCommand::Quit));
+    assert_eq!(suggest_command("hlep", known), Some(ReplCommand::Help));
+    assert_eq!(suggest_command("claer", known), Some(ReplCommand::Clear));
 }
 
 #[test]
 fn suggest_command_no_match_beyond_distance_2() {
-    let known = &["quit", "help", "clear", "model"];
-    assert_eq!(suggest_command("xyzzy", known), None);
-    assert_eq!(suggest_command("abcdef", known), None);
+    assert_eq!(suggest_command("xyzzy", ReplCommand::ALL), None);
+    assert_eq!(suggest_command("abcdefgh", ReplCommand::ALL), None);
 }
 
+/// An alias is a candidate, but the suggestion names the command.
 #[test]
-fn suggest_command_picks_closest() {
-    let known = &["model", "mode", "models"];
-    // "modl" is distance 1 from both "model" and "mode";
-    // min_by_key returns the first minimum, so "model" wins
-    let result = suggest_command("modl", known);
-    assert!(result.is_some());
+fn suggest_command_matches_an_alias() {
+    assert_eq!(
+        suggest_command("msg", ReplCommand::ALL),
+        Some(ReplCommand::Messages)
+    );
 }
 
 #[test]
 fn suggest_command_empty_input() {
-    let known = &["quit", "help"];
-    // Empty string is distance 4 from "quit" — beyond threshold of 2
-    assert_eq!(suggest_command("", known), None);
+    // Empty string is distance 5 from "clear" — beyond threshold of 2
+    assert_eq!(
+        suggest_command("", &[ReplCommand::Clear, ReplCommand::Model]),
+        None
+    );
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -686,4 +694,68 @@ fn thinking_stays_a_local_display_toggle() {
         matches!(action, Action::Continue),
         "`:set thinking` is display state; it must not emit a daemon-sync message, got {action:?}"
     );
+}
+
+// ════════════════════════════════════════════════════════════════
+// T5-31: exhaustive `ReplCommand` dispatch
+// ════════════════════════════════════════════════════════════════
+
+/// Every variant the compiler knows reaches its own arm. A bare command
+/// name must never fall through to the "Unknown REPL command" branch.
+#[test]
+fn every_repl_command_dispatches_without_unknown_warning() {
+    use strum::IntoEnumIterator;
+    for cmd in ReplCommand::iter() {
+        let mut app = app();
+        let line = format!(":{}", cmd.name());
+        let _ = app.handle_repl_command(&line);
+        let unknown = app
+            .notification_area
+            .history()
+            .iter()
+            .any(|(n, _)| n.message.contains("Unknown REPL command"));
+        assert!(!unknown, "{:?} fell through to the unknown branch", cmd);
+    }
+}
+
+/// An alias resolves to the same variant as the name.
+#[test]
+fn repl_aliases_resolve_to_their_command() {
+    use strum::IntoEnumIterator;
+    for cmd in ReplCommand::iter() {
+        assert_eq!(ReplCommand::parse(cmd.name()), Some(cmd));
+        for alias in cmd.aliases() {
+            assert_eq!(ReplCommand::parse(alias), Some(cmd), "{alias}");
+        }
+    }
+    assert_eq!(ReplCommand::parse("nope"), None);
+}
+
+/// `:set perm.show_diff=y` and `=n` are accepted bool tokens.
+#[test]
+fn perm_set_accepts_y_and_n() {
+    let mut app = app();
+    app.handle_perm_set("perm.show_diff", "n");
+    assert!(!app.permission.perm_show_diff, "n is a valid bool token");
+    app.handle_perm_set("perm.show_diff", "y");
+    assert!(app.permission.perm_show_diff, "y is a valid bool token");
+}
+
+/// A rejected bool value names the tokens the user can type.
+#[test]
+fn perm_set_rejection_lists_accepted_tokens() {
+    let mut app = app();
+    app.handle_perm_set("perm.show_diff", "maybe");
+    let msgs: Vec<String> = app
+        .notification_area
+        .history()
+        .iter()
+        .map(|(n, _)| n.message.clone())
+        .collect();
+    let text = msgs.join("\n");
+    for token in [
+        "true", "false", "yes", "no", "on", "off", "y", "n", "1", "0",
+    ] {
+        assert!(text.contains(token), "missing {token} in: {text}");
+    }
 }
