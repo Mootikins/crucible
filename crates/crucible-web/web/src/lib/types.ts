@@ -562,7 +562,7 @@ interface InteractionRequestedEvent {
 /** A session-level event (state change, etc.) */
 interface SessionEventData {
   type: 'session_event';
-  event_type: string;
+  event: string;
   data: unknown;
 }
 

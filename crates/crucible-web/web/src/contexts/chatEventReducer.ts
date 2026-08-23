@@ -487,7 +487,7 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         // Surfaced rather than logged: a transcript with an invisible hole is
         // permanently and silently wrong, and reloading the session is the only
         // way back — so the user has to be told, and told what to do.
-        if (event.event_type === 'stream_gap') {
+        if (event.event === 'stream_gap') {
           const dropped = (event.data as { dropped?: number } | null)?.dropped;
           deps.setError(
             dropped === undefined
@@ -500,7 +500,7 @@ export function createChatEventReducer(deps: ChatEventReducerDeps) {
         // The daemon echoes user_message over SSE with the turn's canonical
         // message_id — the same id sendMessage keyed its entry on, so dedup
         // is exact. Viewers that attached mid-turn get the prompt from here.
-        if (event.event_type === 'user_message') {
+        if (event.event === 'user_message') {
           // A new user turn begins — drop any frozen-segment state that a
           // prior turn left behind (e.g. one that errored without a clean
           // message_complete) so it can't strip the next turn's final bubble.

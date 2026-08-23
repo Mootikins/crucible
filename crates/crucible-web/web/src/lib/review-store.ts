@@ -375,7 +375,7 @@ function retain(id: string): () => void {
     switch (event.type) {
       case 'session_event': {
         const data = (event.data ?? {}) as Record<string, unknown>;
-        if (event.event_type === 'review_gate') {
+        if (event.event === 'review_gate') {
           setSessions(id, 'gate', {
             blocked: data.blocked === true,
             tool: typeof data.tool === 'string' ? data.tool : '',
@@ -386,7 +386,7 @@ function retain(id: string): () => void {
           void reviewActions.refresh(id);
           return;
         }
-        if (event.event_type === 'review_changed') scheduleRefresh(id);
+        if (event.event === 'review_changed') scheduleRefresh(id);
         return;
       }
       // No event announces "the agent just created hunks" — `review_changed`

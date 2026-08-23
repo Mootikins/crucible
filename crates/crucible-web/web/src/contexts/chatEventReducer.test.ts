@@ -419,7 +419,7 @@ describe('event matrix — covers every ChatEvent variant', () => {
     h.state.messages.push({ id: 'msg_123_temp', role: 'user', content: 'hello there', timestamp: 1 });
     h.reducer({
       type: 'session_event',
-      event_type: 'user_message',
+      event: 'user_message',
       data: { message_id: 'msg-canonical-1', content: 'hello there' },
     });
     const users = h.state.messages.filter((m) => m.role === 'user');
@@ -734,7 +734,7 @@ describe('event matrix — covers every ChatEvent variant', () => {
     const h = createHarness();
     const evt = {
       type: 'session_event',
-      event_type: 'user_message',
+      event: 'user_message',
       data: { message_id: 'msg-turn-9', content: 'the prompt' },
     } as ChatEvent;
     h.reducer(evt);
@@ -857,14 +857,14 @@ describe('event matrix — covers every ChatEvent variant', () => {
 
   it('session_event stream_gap: surfaces the loss with its count', () => {
     const h = createHarness();
-    h.reducer({ type: 'session_event', event_type: 'stream_gap', data: { dropped: 12 } });
+    h.reducer({ type: 'session_event', event: 'stream_gap', data: { dropped: 12 } });
     expect(h.state.error).toContain('12');
     expect(h.state.error).toMatch(/incomplete/i);
   });
 
   it('session_event stream_gap: still surfaces without a count', () => {
     const h = createHarness();
-    h.reducer({ type: 'session_event', event_type: 'stream_gap', data: {} });
+    h.reducer({ type: 'session_event', event: 'stream_gap', data: {} });
     expect(h.state.error).toMatch(/incomplete/i);
   });
 
@@ -873,7 +873,7 @@ describe('event matrix — covers every ChatEvent variant', () => {
     expect(() =>
       h.reducer({
         type: 'session_event',
-        event_type: 'state_changed',
+        event: 'state_changed',
         data: { state: 'paused' },
       }),
     ).not.toThrow();
@@ -945,7 +945,7 @@ const arbChatEvent = (): fc.Arbitrary<ChatEvent> => fc.oneof(
     ),
   }),
   evt('mode_changed', { mode: fc.constantFrom('normal' as const, 'plan' as const, 'auto' as const) }),
-  evt('session_event', { event_type: fc.string(), data: fc.anything() }),
+  evt('session_event', { event: fc.string(), data: fc.anything() }),
 ) as fc.Arbitrary<ChatEvent>;
 
 describe('property: totality', () => {
@@ -1175,7 +1175,7 @@ describe('contract: SSE subscription parity with reducer handlers', () => {
       if (t === 'precognition_result') { minimal.notes_count = 0; minimal.notes = []; }
       if (t === 'mode_changed') minimal.mode = 'normal';
       if (t === 'title_changed') minimal.title = 'A generated title';
-      if (t === 'session_event') { minimal.event_type = 'x'; minimal.data = null; }
+      if (t === 'session_event') { minimal.event = 'x'; minimal.data = null; }
       if (t === 'error') { minimal.code = 'x'; minimal.message = ''; }
       if (t === 'message_complete') { minimal.content = ''; }
       if (t === 'segment_complete') { minimal.message_id = 'placeholder'; minimal.index = 0; minimal.content = ''; }

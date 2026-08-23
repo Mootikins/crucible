@@ -208,7 +208,7 @@ describe('subscription lifecycle', () => {
     listReviewHunks.mockClear();
 
     for (let i = 0; i < 5; i++) {
-      handlers[0]({ type: 'session_event', event_type: 'review_changed', data: {} });
+      handlers[0]({ type: 'session_event', event: 'review_changed', data: {} });
     }
     expect(listReviewHunks).not.toHaveBeenCalled();
     await new Promise((r) => setTimeout(r, REVIEW_REFRESH_DEBOUNCE_MS + 20));
@@ -238,7 +238,7 @@ describe('subscription lifecycle', () => {
 
     handlers[0]({
       type: 'session_event',
-      event_type: 'review_gate',
+      event: 'review_gate',
       data: { blocked: true, tool: 'edit_file', path: '/repo/src/a.rs' },
     });
     expect(reviewStore.session('s1').gate).toEqual({
@@ -249,7 +249,7 @@ describe('subscription lifecycle', () => {
     // Not debounced: a held agent is exactly when the user needs the queue.
     expect(listReviewHunks).toHaveBeenCalledTimes(1);
 
-    handlers[0]({ type: 'session_event', event_type: 'review_gate', data: { blocked: false } });
+    handlers[0]({ type: 'session_event', event: 'review_gate', data: { blocked: false } });
     expect(reviewStore.session('s1').gate?.blocked).toBe(false);
     dispose();
   });

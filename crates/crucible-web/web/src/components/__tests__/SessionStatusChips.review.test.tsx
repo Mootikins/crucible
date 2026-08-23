@@ -124,7 +124,7 @@ describe('SessionStatusChips — waiting on review', () => {
   const gate = (blocked: boolean, extra: Record<string, unknown> = {}) =>
     handlers[0]({
       type: 'session_event',
-      event_type: 'review_gate',
+      event: 'review_gate',
       data: { blocked, tool: 'Edit', path: '/repo/src/a.rs', ...extra },
     });
 

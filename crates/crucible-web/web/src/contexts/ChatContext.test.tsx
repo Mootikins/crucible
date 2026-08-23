@@ -754,7 +754,7 @@ describe('isLoadingHistory', () => {
     await waitFor(() => expect(eventCallback).not.toBeNull());
     eventCallback!({
       type: 'session_event',
-      event_type: 'user_message',
+      event: 'user_message',
       data: { message_id: 'msg-live', content: 'hello' },
     });
     await waitFor(() => expect(screen.getByTestId('msg-count').textContent).toBe('1'));

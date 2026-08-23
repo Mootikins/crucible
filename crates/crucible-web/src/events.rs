@@ -133,7 +133,7 @@ pub enum ChatEvent {
     },
 
     SessionEvent {
-        event_type: String,
+        event: String,
         data: serde_json::Value,
     },
 }
@@ -204,7 +204,7 @@ impl ChatEvent {
         };
 
         let passthrough = || ChatEvent::SessionEvent {
-            event_type: event.event.clone(),
+            event: event.event.clone(),
             data: event.data.clone(),
         };
 
@@ -961,13 +961,24 @@ mod tests {
         }
     }
 
+    /// The browser reads the passthrough under the key `event`, the same
+    /// key the daemon envelope uses. The key `event_type` is gone.
+    #[test]
+    fn a_passthrough_serializes_the_daemon_event_name_under_event() {
+        let event = SessionEventMessage::ended("s1", "complete");
+        let json = serde_json::to_value(ChatEvent::from_daemon_event(&event)).unwrap();
+        assert_eq!(json["type"], "session_event");
+        assert_eq!(json["event"], "ended");
+        assert!(json.get("event_type").is_none(), "{json}");
+    }
+
     /// A clean `ended` is not an error, and the browser still sees the raw
     /// envelope through the passthrough.
     #[test]
     fn a_clean_ended_turn_stays_a_passthrough() {
         let event = SessionEventMessage::ended("s1", "complete");
         match ChatEvent::from_daemon_event(&event) {
-            ChatEvent::SessionEvent { event_type, .. } => assert_eq!(event_type, "ended"),
+            ChatEvent::SessionEvent { event, .. } => assert_eq!(event, "ended"),
             other => panic!("expected passthrough, got {other:?}"),
         }
     }
