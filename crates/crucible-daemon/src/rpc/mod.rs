@@ -11,7 +11,7 @@ mod params;
 pub(crate) mod ui;
 mod workflow_handlers;
 
-pub use context::{DeferredShutdown, RpcContext};
+pub use context::{DeferredShutdown, RpcContext, RpcContextParams};
 #[allow(unused_imports)]
 pub use dispatch::{RpcDispatcher, METHODS};
 #[allow(unused_imports)]

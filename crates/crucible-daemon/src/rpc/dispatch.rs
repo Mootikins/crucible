@@ -1831,7 +1831,7 @@ impl RpcDispatcher {
 mod tests {
     use super::*;
     use crate::protocol::RequestId;
-    use crate::rpc::RpcContext;
+    use crate::rpc::{RpcContext, RpcContextParams};
     use crate::test_support::temp_session_manager;
     use std::sync::Arc;
 
@@ -2696,27 +2696,27 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             card_roots: Default::default(),
         }));
 
-        Arc::new(RpcContext::new(
-            kiln_manager,
-            session_manager,
-            agent_manager,
-            Arc::new(SubscriptionManager::new()),
+        Arc::new(RpcContext::new(RpcContextParams {
+            kiln: kiln_manager,
+            sessions: session_manager,
+            agents: agent_manager,
+            subscriptions: Arc::new(SubscriptionManager::new()),
             event_tx,
             shutdown_tx,
-            Arc::new(ProjectManager::new(projects_path)),
-            Arc::new(DashMap::new()),
-            Arc::new(tokio::sync::Mutex::new(None)),
-            None,
-            Arc::new(McpServerManager::new()),
-            None,
-            std::path::PathBuf::from("/tmp"),
-            Some(crucible_core::config::WorkspaceConfig::default()),
-            Arc::new(crate::kiln_registry::KilnRegistry::empty(
+            project_manager: Arc::new(ProjectManager::new(projects_path)),
+            lua_sessions: Arc::new(DashMap::new()),
+            plugin_loader: Arc::new(tokio::sync::Mutex::new(None)),
+            llm_config: None,
+            mcp_server_manager: Arc::new(McpServerManager::new()),
+            mcp_config: None,
+            data_home: std::path::PathBuf::from("/tmp"),
+            workspace_config: Some(crucible_core::config::WorkspaceConfig::default()),
+            kiln_registry: Arc::new(crate::kiln_registry::KilnRegistry::empty(
                 crate::kiln_registry::KilnRegistryContext::for_daemon(std::path::PathBuf::from(
                     "/tmp",
                 )),
             )),
-        ))
+        }))
     }
 
     /// `scm.clone` rejects non-remote / hostile URLs at the RPC layer before

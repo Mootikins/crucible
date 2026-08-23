@@ -45,7 +45,7 @@ impl Server {
             // `sl.expr("git")` would only update when something else happened
             // to trigger a repaint.
             {
-                let event_tx = self.event_tx.clone();
+                let event_tx = self.rpc_context.event_tx.clone();
                 let agents = self.agent_manager.clone();
                 self.agent_manager
                     .statusline_exprs()
@@ -157,7 +157,7 @@ impl Server {
             // no honest trigger and fell back to polling.
             if let Some((registry, plugin_lua)) = self.agent_manager.plugin_handlers() {
                 crate::server::file_event_hooks::spawn_file_event_hooks(
-                    self.event_tx.subscribe(),
+                    self.rpc_context.event_tx.subscribe(),
                     registry,
                     plugin_lua,
                 );
@@ -167,7 +167,7 @@ impl Server {
             // editing init.lua and reloading take effect without restarting the
             // TUI.
             crate::server::ui_broadcast::broadcast_style_changed(
-                &self.event_tx,
+                &self.rpc_context.event_tx,
                 &self.agent_manager,
                 crate::server::ui_broadcast::GLOBAL,
             );

@@ -14,7 +14,7 @@ use crate::protocol::{
 };
 use crate::recording::RecordingWriter;
 use crate::replay::ReplaySession;
-use crate::rpc::{DeferredShutdown, RpcContext, RpcDispatcher};
+use crate::rpc::{DeferredShutdown, RpcContext, RpcContextParams, RpcDispatcher};
 use crate::rpc_helpers::{optional_param, require_param};
 use crate::session_manager::{KilnFilter, SessionManager};
 use crate::session_storage::{FileSessionStorage, SessionStorage};
@@ -103,13 +103,13 @@ pub struct Server {
     session_manager: Arc<SessionManager>,
     workspace_tools: Arc<WorkspaceTools>,
     agent_manager: Arc<AgentManager>,
-    subscription_manager: Arc<SubscriptionManager>,
     project_manager: Arc<ProjectManager>,
-    event_tx: broadcast::Sender<SessionEventMessage>,
     dispatcher: Arc<RpcDispatcher>,
     /// The same context the dispatcher runs handlers against. Held so plugin
     /// boot can give the Lua session bridge the daemon's real create path
-    /// instead of a second, thinner one.
+    /// instead of a second, thinner one. The event sender and the
+    /// subscription manager live here too; the server reads them from the
+    /// context instead of its own clones.
     rpc_context: Arc<RpcContext>,
     plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
     runtimepath: Vec<std::path::PathBuf>,
@@ -364,23 +364,23 @@ impl Server {
         let lua_sessions = Arc::new(DashMap::new());
         let mcp_server_manager = Arc::new(McpServerManager::new_with_gateway(mcp_gateway.clone()));
 
-        let ctx = Arc::new(RpcContext::new(
-            kiln_manager.clone(),
-            session_manager.clone(),
-            agent_manager.clone(),
-            subscription_manager.clone(),
-            event_tx.clone(),
-            shutdown_tx.clone(),
-            project_manager.clone(),
+        let ctx = Arc::new(RpcContext::new(RpcContextParams {
+            kiln: kiln_manager.clone(),
+            sessions: session_manager.clone(),
+            agents: agent_manager.clone(),
+            subscriptions: subscription_manager,
+            event_tx,
+            shutdown_tx: shutdown_tx.clone(),
+            project_manager: project_manager.clone(),
             lua_sessions,
-            plugin_loader.clone(),
-            params.llm_config.clone(),
+            plugin_loader: plugin_loader.clone(),
+            llm_config: params.llm_config.clone(),
             mcp_server_manager,
-            params.mcp_config.clone(),
-            data_home.clone(),
+            mcp_config: params.mcp_config.clone(),
+            data_home: data_home.clone(),
             workspace_config,
             kiln_registry,
-        ));
+        }));
         // Same instance for both paths: delegated children fire plugin start
         // hooks and get their own isolation claim, and the once-only teardown
         // claim is shared, so a child ended by the delegation watcher and a
@@ -397,9 +397,7 @@ impl Server {
             session_manager,
             workspace_tools,
             agent_manager,
-            subscription_manager,
             project_manager,
-            event_tx,
             dispatcher,
             rpc_context: ctx,
             mcp_gateway,
@@ -433,7 +431,7 @@ impl Server {
     /// Used to send session events to all subscribed clients.
     #[allow(dead_code)] // used in integration tests for event verification
     pub fn event_sender(&self) -> broadcast::Sender<SessionEventMessage> {
-        self.event_tx.clone()
+        self.rpc_context.event_tx.clone()
     }
 
     /// Run the server until shutdown
@@ -462,7 +460,7 @@ impl Server {
         // nothing — silently emptying `kilns` in each `meta.json` it touches.
         let storage = self.session_manager.storage().clone();
         let sm_clone = self.session_manager.clone();
-        let mut persist_rx = self.event_tx.subscribe();
+        let mut persist_rx = self.rpc_context.event_tx.subscribe();
         let persist_cancel = CancellationToken::new();
         let persist_cancel_clone = persist_cancel.clone();
 
@@ -539,7 +537,7 @@ impl Server {
 
         // Spawn file reprocessing task: watches for file_changed events and re-runs pipeline
         let km_reprocess = self.kiln_manager.clone();
-        let mut reprocess_rx = self.event_tx.subscribe();
+        let mut reprocess_rx = self.rpc_context.event_tx.subscribe();
         let reprocess_cancel = CancellationToken::new();
         let reprocess_cancel_clone = reprocess_cancel.clone();
 
@@ -633,7 +631,7 @@ impl Server {
         });
 
         let sweep_session_manager = self.session_manager.clone();
-        let sweep_subscription_manager = self.subscription_manager.clone();
+        let sweep_subscription_manager = self.rpc_context.subscriptions.clone();
         let sweep_agent_manager = self.agent_manager.clone();
         let sweep_cancel = CancellationToken::new();
         let sweep_cancel_clone = sweep_cancel.clone();
@@ -691,7 +689,7 @@ impl Server {
                 let watch = Arc::new(watch);
                 self.agent_manager.set_external_watch(Arc::clone(&watch));
                 let rx = watch.tracker().subscribe();
-                let tx = self.event_tx.clone();
+                let tx = self.rpc_context.event_tx.clone();
                 let cancel = review_watch_cancel.clone();
                 Some((
                     Arc::clone(&watch),
@@ -727,8 +725,8 @@ impl Server {
         // ACP) gets titled sessions without asking for it.
         let title_sm = self.session_manager.clone();
         let title_am = self.agent_manager.clone();
-        let title_event_tx = self.event_tx.clone();
-        let mut title_rx = self.event_tx.subscribe();
+        let title_event_tx = self.rpc_context.event_tx.clone();
+        let mut title_rx = self.rpc_context.event_tx.subscribe();
         let title_cancel = CancellationToken::new();
         let title_cancel_clone = title_cancel.clone();
 
@@ -784,7 +782,7 @@ impl Server {
             let sm = self.session_manager.clone();
             let km = self.kiln_manager.clone();
             let pm = self.project_manager.clone();
-            let tx = self.event_tx.clone();
+            let tx = self.rpc_context.event_tx.clone();
 
             // Kilns to OPEN: already-open kilns + registered project kiln roots.
             // Deliberately NOT ~/.crucible — opening the config dir as a kiln
@@ -843,7 +841,7 @@ impl Server {
                         Ok((stream, _)) => {
                             let dispatcher = self.dispatcher.clone();
                             let authorized_uid = self.authorized_uid;
-                            let event_rx = self.event_tx.subscribe();
+                            let event_rx = self.rpc_context.event_tx.subscribe();
                             tokio::spawn(async move {
                                 if let Err(e) =
                                     handle_client(stream, dispatcher, authorized_uid, event_rx).await

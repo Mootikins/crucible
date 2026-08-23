@@ -101,25 +101,46 @@ pub struct RpcContext {
     pub session_lifecycle: Arc<SessionLifecycle>,
 }
 
+/// Everything `RpcContext::new` needs from its caller. A struct, not a
+/// parameter list, so each value has a name at the call site and the
+/// argument count no longer needs a lint exception.
+pub struct RpcContextParams {
+    pub kiln: Arc<KilnManager>,
+    pub sessions: Arc<SessionManager>,
+    pub agents: Arc<AgentManager>,
+    pub subscriptions: Arc<SubscriptionManager>,
+    pub event_tx: broadcast::Sender<SessionEventMessage>,
+    pub shutdown_tx: broadcast::Sender<()>,
+    pub project_manager: Arc<crate::project_manager::ProjectManager>,
+    pub lua_sessions: Arc<DashMap<String, Arc<Mutex<crate::server::LuaSessionState>>>>,
+    pub plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
+    pub llm_config: Option<LlmConfig>,
+    pub mcp_server_manager: Arc<McpServerManager>,
+    pub mcp_config: Option<McpConfig>,
+    pub data_home: std::path::PathBuf,
+    pub workspace_config: Option<WorkspaceConfig>,
+    pub kiln_registry: Arc<crate::kiln_registry::KilnRegistry>,
+}
+
 impl RpcContext {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        kiln: Arc<KilnManager>,
-        sessions: Arc<SessionManager>,
-        agents: Arc<AgentManager>,
-        subscriptions: Arc<SubscriptionManager>,
-        event_tx: broadcast::Sender<SessionEventMessage>,
-        shutdown_tx: broadcast::Sender<()>,
-        project_manager: Arc<crate::project_manager::ProjectManager>,
-        lua_sessions: Arc<DashMap<String, Arc<Mutex<crate::server::LuaSessionState>>>>,
-        plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
-        llm_config: Option<LlmConfig>,
-        mcp_server_manager: Arc<McpServerManager>,
-        mcp_config: Option<McpConfig>,
-        data_home: std::path::PathBuf,
-        workspace_config: Option<WorkspaceConfig>,
-        kiln_registry: Arc<crate::kiln_registry::KilnRegistry>,
-    ) -> Self {
+    pub fn new(params: RpcContextParams) -> Self {
+        let RpcContextParams {
+            kiln,
+            sessions,
+            agents,
+            subscriptions,
+            event_tx,
+            shutdown_tx,
+            project_manager,
+            lua_sessions,
+            plugin_loader,
+            llm_config,
+            mcp_server_manager,
+            mcp_config,
+            data_home,
+            workspace_config,
+            kiln_registry,
+        } = params;
         let session_lifecycle = SessionLifecycle::new(sessions.clone(), plugin_loader.clone());
         session_lifecycle.bind_agent_manager(&agents);
         Self {
@@ -194,28 +215,28 @@ impl RpcContext {
     ) -> Self {
         let (shutdown_tx, _) = broadcast::channel(1);
         let registry = sessions.kiln_registry().clone();
-        Self::new(
+        Self::new(RpcContextParams {
             kiln,
             sessions,
             agents,
-            Arc::new(SubscriptionManager::new()),
+            subscriptions: Arc::new(SubscriptionManager::new()),
             event_tx,
             shutdown_tx,
             project_manager,
-            Arc::new(DashMap::new()),
+            lua_sessions: Arc::new(DashMap::new()),
             plugin_loader,
             llm_config,
-            Arc::new(McpServerManager::new()),
-            None,
-            data_home.clone(),
-            None,
+            mcp_server_manager: Arc::new(McpServerManager::new()),
+            mcp_config: None,
+            data_home,
+            workspace_config: None,
             // The session manager's own registry, not a second empty one: the
             // handlers resolve caller-supplied names through `ctx`, the storage
             // layer resolves persisted paths through `sessions`, and two
             // registries would be two answers to "which directory is `notes`".
             // A test whose fixture disagreed with itself that way would pass or
             // fail for reasons unrelated to the code under test.
-            registry,
-        )
+            kiln_registry: registry,
+        })
     }
 }
