@@ -1103,6 +1103,91 @@ last group.
 - This plan: done in T5-38. The Tier 1 batches are `T1-B1` to `T1-B24`, so they no longer collide with Band B; the C10 cite names the two copies that exist; section 5.1 marks the `LayoutEngine::compute`, `ComputedLayout` row done. Line numbers for `types/acp.rs` in B10 and B11 are still stale.
 - `docs/Help/Config/storage.md` and `acp.md` describe the two kept fields as unread but do not use the word "reserved"; `Product.md:1106` on `cru init` writing `[storage] backend` is a separate cleanup.
 
+### 5a.0 Result, 2026-08-23
+
+All 38 items ran, one agent each, commits `c9e6ddda1` to `443e1c20c`: 37
+committed, one partial (T5-20: the total `From<StreamingChunk> for TurnEvent`
+needs the ACP client to emit the resolved name on `ToolEnd`; the stateful loop
+in `acp_handle.rs` stays). Decisions applied: cross-session job cancel is
+denied; Lua `session:set_variable` has daemon storage; the raw JSON key
+`event_type` is now `event` in the CLI and web surfaces; border names are
+canonical `sharp`/`thick` with the old names accepted on read; the ellipsis is
+`…`; `DEFAULT_ANTHROPIC_MODEL` is `claude-sonnet-5`. The bash allowlist now
+matches every chained statement. `just ci` and the web unit tests pass.
+
+### 5b. Tier 6 — follow-ups from Tier 5
+
+- [T5-01] The DaemonAgentHandle mirror path for thinking_budget (session.set_thinking_budget RPC to the Genai handle) was not traced end to end; verify the daemon forwards the RPC value into GenaiAgentHandle::set_thinking_budget rather than only into AgentConfig.
+- [T5-02] docs/Meta/Architecture/Gaps.md and Actual.md still cite types/hashing.rs; a docs pass should mark G53 fully closed (file deleted).
+- [T5-02] docs/Meta/Analysis/Systems.md still cites crucible-core/src/hashing/algorithm.rs, which no longer exists.
+- [T5-03] types/mod.rs still re-exports the ACP schema types and traits::tools types at the types:: level; a later pass could check which of those re-export paths have callers.
+- [T5-04] B7 option (b) stays open: make SessionEvent a projection of the wire enum so ScriptingEvent stops naming seven events with no SessionEvent variant.
+- [T5-04] InternalSessionEvent still derives Deserialize; nothing outside tests deserializes it, so a later pass can drop the derive if its serde round-trip test goes too.
+- [T5-05] `ExtensionRegistry::register` is now public API whose order depends on the caller; if a second constructor appears, consider deriving Ord on the inner extension structs and inserting by variant order.
+- [T5-06] ParsedNote::add_block_hash, block_hash_count, get_merkle_root and clear_hash_data have callers in tests only (and get_merkle_root in implementation.rs tests). A later pass can inline them the same way.
+- [T5-07] The daemon still calls SecretsFile::new() (real config dir) in agent_factory.rs; a daemon-level test of the Copilot path would need the store injected one level higher.
+- [T5-08] Decide whether the daemon should pass the SecretsFile to discover_credentials so `cru auth set` keys show in providers.list without a config include.
+- [T5-08] crucible-lua emits 5 unused-import/dead-code warnings under plain `cargo check` (pre-existing, not hit by clippy -D warnings in this gate).
+- [T5-09] The acp.rs and storage.rs tests for lazy_agent_selection and idle_timeout_secs still exist; they test parse only. Remove when someone decides the features.
+- [T5-09] Gaps.md G163 may want the T5-09 commit recorded.
+- [T5-10] `PermissionEngine` (engine.rs) and `PatternStore` both split bash lines but decide differently on unmodellable constructs (engine falls to the configured default; the store returns false). Consider one shared decision point.
+- [T5-11] crates/crucible-daemon/src/tools/mcp_server.rs passes `delegation.result_max_bytes` to a char cap; a multibyte result can exceed the byte budget. Decide whether that field should become a char budget or use `truncate_bytes`.
+- [T5-11] crates/crucible-daemon/src/observe/markdown.rs has its own byte `truncate` without a marker; it could use `text::truncate_bytes`.
+- [T5-12] Install rustup toolchain 1.94 and run cargo check --workspace --all-targets to confirm the declared MSRV builds.
+- [T5-12] Consider a CI job that builds with the declared rust-version so the MSRV does not drift again.
+- [T5-13] get_job_result and list_jobs are not gated the same way: get_job_result returns any job by ID regardless of owner (read-only, but it leaks another session's job output).
+- [T5-13] The ownership check reads the owner then cancels in two steps; a job that finishes between the two steps is harmless but the trait could take session_id to make ownership a spawner-level invariant.
+- [T5-14] `PatternStore::load_sync`/`load_user_sync`/`save_file` still block inside the async tool gate (Gaps G18).
+- [T5-14] The ACP gate (`build_acp_permission_handler`) never persists a Project or User grant; only the internal tool gate does.
+- [T5-14] `PatternStore::whitelists_dir()` reads `dirs::config_dir()` with no injection point, so any test that calls `load_sync`/`store_file` directly touches the real config directory.
+- [T5-15] Give the plugin-loader sessions (session_lifecycle.rs fire_session_start/fire_session_end) access to the slot's SessionVariables so plugin hooks share the same store as user hooks.
+- [T5-15] crates/crucible-lua/src/executor.rs carry two unused imports (`LuaExecutionResult`, `Instant`) under the daemon's feature set; pre-existing, warnings only.
+- [T5-15] docs/Meta/Architecture/Actual.md,855 and docs/Meta/Product.md still mention `NoopSessionRpc`; the Actual/Product doc rewrites are owned by other agents.
+- [T5-16] `links_to` and `wikilinks` now duplicate the same data on the wire; a later WIRE item could drop `links_to` after the web reader moves to `wikilinks`.
+- [T5-16] `links_to` holds raw link targets (for example `target`), not resolved paths; the client DTO builds Wikilink with placeholder offsets and spans.
+- [T5-17] `UpstreamClient::call_tool` keeps the old executor after it marks the upstream Disconnected; `connect()` replaces it on reconnect, but a call in that window still goes to the dead executor.
+- [T5-17] The rmcp `McpError` to `McpError::ServerError` mapping changes the error text seen by tool callers from `Execution error:` to `Server error:`; no reader matched on it, but a user-facing message may look different.
+- [T5-18] No test covers McpServerManager::start's provider wiring, because start spawns a live stdio/SSE transport; a test would need a transport seam.
+- [T5-18] Resolving the embedding provider from enrichment_config is now duplicated in agent_manager/mod.rs, server/kiln.rs, precognition, messaging/send.rs and server/platform.rs; a KilnManager helper could replace the five copies.
+- [T5-19] `SqliteKnowledgeRepository::get_note_by_name` is still a substring match that rebuilds a fake frontmatter; callers that want a precise row can move to `get_note_by_path`.
+- [T5-19] The disk path of `read_metadata` counts frontmatter words in `word_count`; the index path has no word count at all. A parser `split_frontmatter` (plan C14) would let both report the body count.
+- [T5-19] The `get_note_by_name` RPC reply carries no `properties`; if a CLI-side reader ever needs an index row, add it to the wire (WIRE item) and implement `DaemonStorageClient::get_note_by_path` for real.
+- [T5-20] Move the orphan-result deferral (OrphanedResults in acp_handle/translate.rs) into the ACP client so StreamingChunk::ToolEnd can carry the resolved name and the StreamingChunk to TurnEvent translation becomes a total From.
+- [T5-20] cargo check -p crucible-lua prints 4 pre-existing warnings on the clean tree (unused imports and dead methods in executor.rs and lifecycle/lua_integration.rs); clippy -D warnings passed, so they are likely cfg-gated, but someone should look.
+- [T5-20] Consolidation Plan.md section 5a line 1058 still lists T5-20; mark it done with the deviation noted.
+- [T5-21] The MCP `tools/list` pin in extended_mcp_server.rs still carries a literal `["builtin","just","upstream"]`; it is a wire pin by design, but the wire shape there is a separate literal from `discovery_tool_definitions()`.
+- [T5-21] `ToolDiscovery::classify_source` classifies by name prefix (`just_`, `gh_`, `mcp_`, `::`), not by the executor that serves the tool; a gateway tool without those prefixes reports as `builtin`.
+- [T5-22] The polling backend's tick loop still scans nothing (only `watch` scans once); it delivers no change events after the initial scan.
+- [T5-22] The debounce-delay test relies on timing (no event within 250 ms with a 600 ms delay); it is stable locally but a heavily loaded CI could need the margin widened.
+- [T5-23] The cfg(test) helpers RpcContext::for_test and for_test_with_plugin_loader still carry #[allow(clippy::too_many_arguments)]; they could take a small test params struct too.
+- [T5-23] Server still stores kiln_manager, session_manager, agent_manager, project_manager and plugin_loader that rpc_context also holds; the same dedup could apply.
+- [T5-25] review/git.rs `git_stdin` still spawns git itself (needs piped stdin); run_git could grow a stdin option to remove that last copy.
+- [T5-25] cargo check (without clippy) shows 4 pre-existing unused-import/dead-code warnings in crates/crucible-lua/src/executor.rs and lifecycle/lua_integration.rs on HEAD; clippy -D warnings passes, so they are cfg-gated, but they are noise.
+- [T5-26] Nothing serializes `Range` in production yet; the derive exists for the item only.
+- [T5-26] Plan line 1089 (Lua-side test for serde error texts on a missing path/body/line_start) is still open.
+- [T5-27] crucible-lua has 4 pre-existing `cargo check` warnings (executor.rs unused imports, execute_lua and clear_plugin_modules unused) that clippy with -D warnings did not flag at workspace level; check whether a feature gate hides them.
+- [T5-27] A daemon round-trip test for `session.configure_agent` (store then `session.get_*`) still does not exist.
+- [T5-28] execution_roots.rs and daemon_plugins/bootstrap.rs both still carry the CRUCIBLE_RUNTIME read inline; a core helper could own that too.
+- [T5-28] webhook/tests.rs::minted_secrets_file_is_private_to_its_owner tests the tighten path that fs.rs already covers; drop it if the helper is the only writer.
+- [T5-29] crucible-lua emits 4 pre-existing cargo check warnings (unused imports and dead methods in executor.rs, lifecycle/lua_integration.rs); clippy with -D warnings passed so they are cfg-gated, but they predate this change.
+- [T5-29] No out-of-process test in tests/rpc_platform_e2e.rs covers agents.list_cards; the dispatch test covers the handler in-process.
+- [T5-30] Add a `--mode <name>` flag to `cru chat` so user-defined modes are reachable from the command line, then retire `--plan` as a shorthand of it.
+- [T5-30] The `--plan` oneshot apply is covered by pure helper tests only; no test drives a mock AgentHandle to assert `set_mode_str` is called.
+- [T5-31] `:` alone (empty word) suggests `:quit` because the empty string is within distance 2 of alias `q`; consider skipping suggestions for an empty word.
+- [T5-31] `:set` still receives the raw `command` string and re-strips its own `set` prefix in `SetCommand::parse`; could take the argument directly.
+- [T5-32] collect_agent_directories still reads dirs::config_dir()/home_dir() at call time for the three production callers; the hermetic seam is card_roots, not a CardRoots passed down from the command entry.
+- [T5-32] check_providers in doctor.rs has no test that crosses HTTP; probe_reply is unit-tested only.
+- [T5-33] `impl FromLua for BorderStyle` in crucible-lua/src/theme.rs has no caller (it had none before this change); delete it in a cleanup pass.
+- [T5-33] Plan line 1090 (theme_wire::border_style_name vs ui_geometry::border_to_wire name mismatch) is now moot on the theme_wire side; update the plan entry.
+- [T5-34] The plugin-loader session VMs (session_lifecycle.rs) still bind UnsupportedSessionRpc, so session.model = "x" there raises "not supported"; only the on_session_start hook path reaches SessionAgent.
+- [T5-34] SessionDefaultsRpc::list_models still answers like the unsupported backing; a hook cannot enumerate models before picking one.
+- [T5-35] crucible-oil template parsers (template/node_spec.rs, template/html.rs) still only accept the oil spellings `single`/`heavy`; they are a separate vocabulary, not the geometry wire, and were left as-is.
+- [T5-36] The e2e Playwright fixtures were only grepped for event_type (no hits); `just web-test e2e` was not run.
+- [T5-38] Expected.md section 2 still lacks feature rows (F-ids) for the eight code-only features; section 2a now says so.
+- [T5-38] Lua Notifications stays `[-]`: no daemon code drains the crucible.notify queue into a session event (Gaps G122).
+- [T5-38] The TUI `:export` renders events client-side with render_to_markdown instead of calling session.export_to_file, so the write-protection in observe.rs does not cover it.
+- [T5-38] Consolidation Plan line numbers for types/acp.rs in Band B B10 and B11 remain stale (noted in section 5a).
+
 ## 6. Extension seams now
 
 "Before" lists the files a contributor touched at `7053bcfe7`. "Now" lists the files at `7fcd3b9f4`, after Tier 1 to Tier 3 landed. Every path in a "Now" line exists at that commit.
