@@ -200,6 +200,72 @@ async fn resume_falls_back_to_session_new_on_method_not_found() {
     assert!(log.iter().any(|m| m == "session/new"), "log: {log:?}");
 }
 
+/// A handle built with a stored agent session id resumes that session, and
+/// reports the same id back for the daemon to persist again.
+#[tokio::test]
+async fn a_stored_agent_session_id_is_resumed_on_reconnect() {
+    use crucible_core::traits::chat::AgentHandle;
+    use crucible_daemon::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
+
+    let workspace = tempfile::TempDir::new().expect("temp workspace");
+    let agent_path = crate::support::mock_agent_path()
+        .to_string_lossy()
+        .into_owned();
+    let mut agent_config = crate::support::mock_session_agent(&agent_path);
+    agent_config
+        .env_overrides
+        .insert("CRU_MOCK_SESSION_RESUME".into(), "1".into());
+
+    let handle = AcpAgentHandle::new(AcpAgentHandleParams {
+        resume_acp_session_id: Some("mock-session-carried".into()),
+        ..crate::support::mock_handle_params(&agent_config, workspace.path())
+    })
+    .await
+    .expect("ACP handshake succeeds");
+
+    assert_eq!(
+        handle.acp_session_id().as_deref(),
+        Some("mock-session-carried"),
+        "the handle keeps the resumed agent session id"
+    );
+}
+
+/// When the agent answers `session/resume` with `-32601`, the handle falls
+/// back to `session/new` and announces the fallback in the event stream.
+#[tokio::test]
+async fn resume_fallback_is_announced_in_the_event_stream() {
+    use crucible_core::traits::chat::AgentHandle;
+    use crucible_daemon::acp_handle::{AcpAgentHandle, AcpAgentHandleParams};
+
+    let workspace = tempfile::TempDir::new().expect("temp workspace");
+    let agent_path = crate::support::mock_agent_path()
+        .to_string_lossy()
+        .into_owned();
+    // No CRU_MOCK_SESSION_RESUME: the binary answers -32601.
+    let agent_config = crate::support::mock_session_agent(&agent_path);
+
+    let (event_tx, mut event_rx) = tokio::sync::broadcast::channel(16);
+    let handle = AcpAgentHandle::new(AcpAgentHandleParams {
+        resume_acp_session_id: Some("mock-session-stale".into()),
+        event_tx: Some(event_tx),
+        parent_session_id: Some("sess-w7"),
+        ..crate::support::mock_handle_params(&agent_config, workspace.path())
+    })
+    .await
+    .expect("the -32601 reply falls back to session/new");
+
+    let new_id = handle
+        .acp_session_id()
+        .expect("the fallback opened a fresh agent session");
+    assert_ne!(new_id, "mock-session-stale");
+
+    let event = event_rx.try_recv().expect("the fallback was announced");
+    assert_eq!(event.event, "acp_resume_fallback");
+    assert_eq!(event.session_id, "sess-w7");
+    assert_eq!(event.data["requested_session_id"], "mock-session-stale");
+    assert_eq!(event.data["new_session_id"], new_id);
+}
+
 /// When the handle drops, the daemon sends `session/close` before it kills
 /// the agent process. The spawned mock binary records the closed session id.
 #[tokio::test]

@@ -92,6 +92,15 @@ pub struct CreateAgentFromSessionConfigParams<'a> {
     /// set. Only internal agents use it: an ACP agent advertises its own
     /// tools, which the daemon does not assemble.
     pub active_tools: Option<crate::tools::active_tools::ActiveToolSets>,
+    /// The agent session id persisted on the daemon session, for the ACP
+    /// handle to send `session/resume` after a daemon restart. Ignored by
+    /// internal agents.
+    pub resume_acp_session_id: Option<String>,
+    /// Broadcast sender for the session's events, so the ACP handle can
+    /// announce a resume fallback. Ignored by internal agents.
+    pub event_tx: Option<
+        &'a tokio::sync::broadcast::Sender<crucible_core::protocol::rpc::SessionEventMessage>,
+    >,
 }
 
 /// Build a `DelegationContext` for a session's MCP server.
@@ -668,6 +677,8 @@ pub async fn create_agent_from_session_config(
         sandbox_exec,
         containment,
         active_tools,
+        resume_acp_session_id,
+        event_tx,
     } = params;
     if agent_config.agent_type == "acp" {
         let handle = AcpAgentHandle::new(AcpAgentHandleParams {
@@ -685,6 +696,8 @@ pub async fn create_agent_from_session_config(
             permission_handler: acp_permission_handler,
             sandbox_exec,
             containment,
+            resume_acp_session_id,
+            event_tx: event_tx.cloned(),
         })
         .await
         .map_err(|e| AgentFactoryError::AgentBuild(e.to_string()))?;

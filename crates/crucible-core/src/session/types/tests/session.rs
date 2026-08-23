@@ -432,6 +432,46 @@ fn test_session_parent_session_id_omitted_when_none() {
 }
 
 #[test]
+fn old_meta_json_without_acp_session_id_loads_as_none() {
+    // A meta.json written before the field existed must still parse.
+    let old_json = r#"{
+        "id": "chat-2025-01-08T1530-abc123",
+        "session_type": "chat",
+        "kiln": "/home/user/notes",
+        "workspace": "/home/user/notes",
+        "state": "active",
+        "started_at": "2025-01-08T15:30:00Z"
+    }"#;
+
+    let session: Session = serde_json::from_str(old_json).unwrap();
+    assert_eq!(session.acp_session_id, None);
+}
+
+#[test]
+fn acp_session_id_round_trips_through_meta_json() {
+    let kiln = kiln_name("notes");
+    let mut session = Session::new(SessionType::Chat, vec![kiln]);
+    session.acp_session_id = Some("agent-sess-1".to_string());
+
+    let json = serde_json::to_string(&session).unwrap();
+    assert!(json.contains("\"acp_session_id\":\"agent-sess-1\""));
+
+    let parsed: Session = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed.acp_session_id, Some("agent-sess-1".to_string()));
+}
+
+#[test]
+fn acp_session_id_is_omitted_from_meta_json_when_none() {
+    // The wire pin: a session without the id writes the exact JSON it
+    // wrote before the field existed.
+    let kiln = kiln_name("notes");
+    let session = Session::new(SessionType::Chat, vec![kiln]);
+
+    let json = serde_json::to_string(&session).unwrap();
+    assert!(!json.contains("acp_session_id"));
+}
+
+#[test]
 fn test_session_default_no_recording_mode() {
     // Session::new() should have recording_mode: None
     let kiln = kiln_name("notes");

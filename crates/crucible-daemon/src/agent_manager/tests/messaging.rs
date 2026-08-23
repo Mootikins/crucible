@@ -1406,3 +1406,84 @@ async fn at_mention_attaches_the_file_contents_to_the_turn() {
             .collect::<Vec<_>>()
     );
 }
+
+// -- ACP session id persistence (plan W7) -----------------------------------
+
+/// An agent that reports an external (ACP) session id, the way
+/// `AcpAgentHandle` does after connect. The turn itself is a noop: the
+/// persistence under test happens at agent build, before any turn runs.
+struct AcpIdReportingAgent;
+
+crucible_core::impl_noop_agent!(AcpIdReportingAgent);
+crucible_core::impl_unsupported_session_knobs!(AcpIdReportingAgent);
+
+#[async_trait::async_trait]
+impl AgentHandle for AcpIdReportingAgent {
+    async fn send_message_fire_and_forget(&mut self, _: String) -> ChatResult<()> {
+        Ok(())
+    }
+    async fn clear_history(&mut self) -> ChatResult<()> {
+        Ok(())
+    }
+    fn get_mode_id(&self) -> &str {
+        "normal"
+    }
+    async fn set_mode_str(&mut self, _: &str) -> ChatResult<()> {
+        Ok(())
+    }
+    fn acp_session_id(&self) -> Option<String> {
+        Some("agent-sess-1".to_string())
+    }
+}
+
+/// The id an ACP handle reports at build time reaches the persisted
+/// session. A handle built after a daemon restart reads it back and sends
+/// `session/resume`, so the agent keeps its history.
+#[tokio::test]
+async fn the_agents_acp_session_id_is_persisted_for_resume() {
+    use crate::session_storage::FileSessionStorage;
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let storage = Arc::new(FileSessionStorage::new(FileSessionStorage::root_for(
+        tmp.path(),
+    )));
+    let session_manager = Arc::new(SessionManager::with_storage(storage));
+    let session = session_manager
+        .create_session(
+            SessionType::Chat,
+            vec![crate::test_support::kiln_name("kiln")],
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+    let agent_manager = Arc::new(create_test_agent_manager(session_manager.clone()));
+    agent_manager
+        .configure_agent(&session.id, test_agent())
+        .await
+        .unwrap();
+    agent_manager.set_agent_factory_override(Box::new(|_, _| {
+        Box::pin(async { Ok(Box::new(AcpIdReportingAgent) as BoxedAgentHandle) })
+    }));
+
+    let (event_tx, _event_rx) = broadcast::channel(64);
+    let (_message_id, completion) = agent_manager
+        .send_message_notified(&session.id, "hello".to_string(), &event_tx, true, None)
+        .await
+        .expect("send accepted");
+    let _ = completion.await;
+
+    let persisted = session_manager
+        .get_session(&session.id)
+        .and_then(|s| s.acp_session_id);
+    assert_eq!(persisted.as_deref(), Some("agent-sess-1"));
+
+    // The id also survives the round trip through storage, which is what a
+    // daemon restart reads.
+    let reloaded = session_manager
+        .resume_session_from_storage(&session.id)
+        .await
+        .unwrap();
+    assert_eq!(reloaded.acp_session_id.as_deref(), Some("agent-sess-1"));
+}

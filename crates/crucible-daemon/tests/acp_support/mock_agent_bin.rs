@@ -118,5 +118,7 @@ pub fn mock_handle_params<'a>(
         permission_handler: None,
         sandbox_exec: None,
         containment: crucible_daemon::tools::containment::RootSet::Ambient,
+        resume_acp_session_id: None,
+        event_tx: None,
     }
 }

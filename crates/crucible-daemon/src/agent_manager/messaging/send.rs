@@ -654,6 +654,26 @@ impl AgentManager {
             }
         };
 
+        // Persist the ACP agent's own session id. The next handle build —
+        // after an eviction or a daemon restart — reads it back and sends
+        // `session/resume`, so the agent keeps its history. Internal agents
+        // answer `None` and skip this. A changed id (a resume that fell
+        // back to `session/new`) overwrites the stale one.
+        if let Some(acp_id) = agent.acp_session_id() {
+            if let Some(mut session) = self.session_manager.get_session(session_id) {
+                if session.acp_session_id.as_deref() != Some(acp_id.as_str()) {
+                    session.acp_session_id = Some(acp_id);
+                    if let Err(e) = self.session_manager.update_session(&session).await {
+                        tracing::warn!(
+                            session_id = %session_id,
+                            error = %e,
+                            "The ACP session id was not persisted; resume will start fresh"
+                        );
+                    }
+                }
+            }
+        }
+
         // Re-apply the persisted session mode: a mode set before the first
         // message (or after a handle eviction) must still shape this handle's
         // behavior (plan mode filters write tools). Best-effort — an agent
@@ -848,6 +868,13 @@ impl AgentManager {
                     )
                 })
                 .unwrap_or_else(|| crate::tools::containment::RootSet::scoped(vec![], vec![])),
+            // The id a previous handle persisted (see get_or_create_agent).
+            // With it, the ACP connect flow resumes the agent session, so
+            // the agent keeps its history across a daemon restart.
+            resume_acp_session_id: session_for_factory
+                .as_ref()
+                .and_then(|session| session.acp_session_id.clone()),
+            event_tx: Some(event_tx),
         })
         .await?;
 

@@ -248,6 +248,8 @@ fn test_unsupported_agent_type() {
             sandbox_exec: None,
             containment: crate::tools::containment::RootSet::Ambient,
             active_tools: None,
+            resume_acp_session_id: None,
+            event_tx: None,
         })
         .await
     });
@@ -437,6 +439,8 @@ async fn rules_file_contents_reach_the_system_prompt() {
         sandbox_exec: None,
         containment: crate::tools::containment::RootSet::Ambient,
         active_tools: None,
+        resume_acp_session_id: None,
+        event_tx: None,
     })
     .await
     .expect("agent creation should succeed");
@@ -508,6 +512,8 @@ async fn session_generation_and_context_settings_reach_the_agent_handle() {
         sandbox_exec: None,
         containment: crate::tools::containment::RootSet::Ambient,
         active_tools: None,
+        resume_acp_session_id: None,
+        event_tx: None,
     })
     .await
     .expect("agent creation should succeed");
@@ -548,6 +554,8 @@ async fn test_create_ollama_agent() {
         sandbox_exec: None,
         containment: crate::tools::containment::RootSet::Ambient,
         active_tools: None,
+        resume_acp_session_id: None,
+        event_tx: None,
     })
     .await;
     assert!(result.is_ok());
@@ -582,6 +590,8 @@ async fn internal_agent_type_dispatches_to_internal_branch() {
         sandbox_exec: None,
         containment: crate::tools::containment::RootSet::Ambient,
         active_tools: None,
+        resume_acp_session_id: None,
+        event_tx: None,
     })
     .await;
 
@@ -618,6 +628,8 @@ async fn acp_agent_type_dispatches_to_acp_branch() {
         sandbox_exec: None,
         containment: crate::tools::containment::RootSet::Ambient,
         active_tools: None,
+        resume_acp_session_id: None,
+        event_tx: None,
     })
     .await;
 

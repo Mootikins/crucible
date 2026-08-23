@@ -105,6 +105,15 @@ pub struct AcpAgentHandleParams<'a> {
     /// answer to the same root set — a containment rule enforced on one agent
     /// type and not the other is the tool-family split all over again.
     pub containment: crate::tools::containment::RootSet,
+    /// The agent session id an earlier handle persisted on the daemon
+    /// session. `Some` makes the connect flow send `session/resume`, so the
+    /// agent keeps its history across a daemon restart. `None` opens a
+    /// fresh agent session.
+    pub resume_acp_session_id: Option<String>,
+    /// Where connect-time announcements go — today only the resume
+    /// fallback note. `None` drops the announcement; the fallback itself
+    /// still happens.
+    pub event_tx: Option<tokio::sync::broadcast::Sender<crate::protocol::SessionEventMessage>>,
 }
 
 impl AcpAgentHandle {
@@ -140,6 +149,8 @@ impl AcpAgentHandle {
             permission_handler,
             sandbox_exec,
             containment,
+            resume_acp_session_id,
+            event_tx,
         } = params;
 
         let agent_name = agent_config
@@ -220,7 +231,11 @@ impl AcpAgentHandle {
             mcp_url = ?mcp_url,
             "Selecting MCP transport for ACP agent"
         );
-        let (session, mcp_host) = match client.connect_with_best_mcp(mcp_url.as_deref()).await {
+        let resume_id = resume_acp_session_id.as_deref();
+        let (session, mcp_host) = match client
+            .connect_with_best_mcp_resuming(mcp_url.as_deref(), resume_id)
+            .await
+        {
             Ok(s) => (s, mcp_host),
             Err(e) if mcp_host.is_some() => {
                 // HTTP MCP transport failed (e.g. agent rejects `type: "http"` at
@@ -238,7 +253,7 @@ impl AcpAgentHandle {
                     retry_client = retry_client.with_permission_handler(handler.clone());
                 }
                 let session = retry_client
-                    .connect_with_best_mcp(None)
+                    .connect_with_best_mcp_resuming(None, resume_id)
                     .await
                     .map_err(|e| AcpHandleError::Connection(e.to_string()))?;
                 client = retry_client;
@@ -249,6 +264,36 @@ impl AcpAgentHandle {
 
         let session_id = session.id().to_string();
         info!(session_id = %session_id, "ACP agent connected");
+
+        // The agent answered session/resume with -32601, so its side of the
+        // conversation restarted from nothing. Say so in the event stream —
+        // a silent fallback would look like an agent that remembers and
+        // does not (plan W7, decision d).
+        if session.resume() == crate::acp::session::ResumeDisposition::FellBackToNew {
+            warn!(
+                agent = %agent_name,
+                requested = ?resume_acp_session_id,
+                session_id = %session_id,
+                "session/resume unsupported; started a fresh agent session"
+            );
+            if let (Some(tx), Some(daemon_session_id)) = (event_tx.as_ref(), parent_session_id) {
+                let _ = tx.send(
+                    crate::protocol::SessionEventMessage::new(
+                        daemon_session_id,
+                        "acp_resume_fallback",
+                        serde_json::json!({
+                            "agent": agent_name,
+                            "requested_session_id": resume_acp_session_id,
+                            "new_session_id": session_id,
+                            "reason": "the agent does not support session/resume; \
+                                       a new agent session started without the \
+                                       previous agent-side history",
+                        }),
+                    )
+                    .with_timestamp(),
+                );
+            }
+        }
 
         let mode_id = "normal".to_string();
         let model = session.model().cloned();
@@ -279,6 +324,12 @@ impl AgentHandle for AcpAgentHandle {
 
     fn get_mode_id(&self) -> &str {
         &self.mode_id
+    }
+
+    /// The agent's own session id, for the daemon to persist. A handle
+    /// built after a daemon restart resumes it (`session/resume`).
+    fn acp_session_id(&self) -> Option<String> {
+        self.session_id.clone()
     }
 
     async fn set_mode_str(&mut self, mode_id: &str) -> ChatResult<()> {

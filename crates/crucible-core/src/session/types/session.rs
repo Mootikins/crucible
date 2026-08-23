@@ -105,6 +105,16 @@ pub struct Session {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<SessionAgent>,
 
+    /// The external (ACP) agent's own session id, once its handle connected.
+    ///
+    /// Persisted so a handle built after a daemon restart can send
+    /// `session/resume` and keep the agent-side history. `None` for internal
+    /// agents, and for an ACP session that never connected. The daemon
+    /// rewrites it when a resume falls back to `session/new`, because the
+    /// agent then names a fresh session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acp_session_id: Option<String>,
+
     /// Recording mode for this session (coarse or granular)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recording_mode: Option<RecordingMode>,
@@ -215,6 +225,7 @@ impl Session {
             parent_session_id: None,
             title: None,
             agent: None,
+            acp_session_id: None,
             recording_mode: None,
             notifications: crate::types::NotificationQueue::new(),
             archived: false,

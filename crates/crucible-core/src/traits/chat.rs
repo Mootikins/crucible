@@ -522,6 +522,16 @@ pub trait AgentHandle: crate::turn::Agent + SessionKnobs + Send + Sync {
         self.set_mode_str(mode_id).await
     }
 
+    /// The external (ACP) agent's own session id, when this handle fronts
+    /// one.
+    ///
+    /// The daemon persists the id on the session, so a handle built after
+    /// a restart can send `session/resume`. The `None` default is a true
+    /// answer, not a stub: an internal agent has no external session.
+    fn acp_session_id(&self) -> Option<String> {
+        None
+    }
+
     /// Clear the conversation history.
     ///
     /// Resets the agent's conversation context. The caller clears the UI
@@ -785,6 +795,12 @@ impl AgentHandle for Box<dyn AgentHandle + Send + Sync> {
 
     async fn clear_history(&mut self) -> ChatResult<()> {
         (**self).clear_history().await
+    }
+
+    // Forwarded, not defaulted: without this line the box answers the
+    // trait default `None` for every inner handle, ACP ones included.
+    fn acp_session_id(&self) -> Option<String> {
+        (**self).acp_session_id()
     }
 
     async fn undo(&mut self, count: usize) -> ChatResult<Vec<crate::types::UndoSummary>> {
