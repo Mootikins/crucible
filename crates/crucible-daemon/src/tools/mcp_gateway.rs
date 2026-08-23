@@ -2,11 +2,11 @@
 
 use super::mcp_client::{create_stdio_executor_with_env, RmcpExecutor};
 use crucible_core::config::mcp::{McpConfig, TransportType, UpstreamServerConfig};
-use crucible_core::traits::mcp::{McpToolInfo, ToolCallResult};
+use crucible_core::traits::mcp::{McpError, McpToolInfo, ToolCallResult};
 use crucible_core::utils::glob_match;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::time::Instant;
@@ -72,7 +72,9 @@ pub struct UpstreamClient {
     pub config: UpstreamServerConfig,
     executor: Option<RmcpExecutor>,
     tools: Vec<McpToolInfo>,
-    state: ConnectionState,
+    /// Behind a mutex so a failed call can mark the upstream through `&self`;
+    /// every caller holds the gateway behind a read lock during the call.
+    state: Mutex<ConnectionState>,
 }
 
 impl UpstreamClient {
@@ -85,8 +87,25 @@ impl UpstreamClient {
             config,
             executor: None,
             tools: Vec::new(),
-            state: ConnectionState::Disconnected,
+            state: Mutex::new(ConnectionState::Disconnected),
         }
+    }
+
+    fn set_state(&self, state: ConnectionState) {
+        *self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = state;
+    }
+
+    /// A client that already holds a live `executor`, for a test that
+    /// drives the connection in-process.
+    #[cfg(test)]
+    pub(crate) fn new_connected(config: UpstreamServerConfig, executor: RmcpExecutor) -> Self {
+        let mut client = Self::new(config);
+        client.executor = Some(executor);
+        client.set_state(ConnectionState::Connected);
+        client
     }
 
     /// Connect to the upstream server and discover available tools.
@@ -120,11 +139,11 @@ impl UpstreamClient {
                             self.tools.len()
                         );
                         self.executor = Some(executor);
-                        self.state = ConnectionState::Connected;
+                        self.set_state(ConnectionState::Connected);
                         Ok(())
                     }
                     Err(e) => {
-                        self.state = ConnectionState::Error;
+                        self.set_state(ConnectionState::Error);
                         Err(GatewayError::ConnectionFailed(format!(
                             "{}: {}",
                             self.name, e
@@ -133,7 +152,7 @@ impl UpstreamClient {
                 }
             }
             TransportType::Sse { url, .. } => {
-                self.state = ConnectionState::Error;
+                self.set_state(ConnectionState::Error);
                 Err(GatewayError::ConnectionFailed(format!(
                     "{}: SSE transport not yet implemented (url: {})",
                     self.name, url
@@ -172,7 +191,10 @@ impl UpstreamClient {
     /// Get the current connection state.
     #[must_use]
     pub fn state(&self) -> ConnectionState {
-        self.state
+        *self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Call a tool on this upstream.
@@ -190,17 +212,36 @@ impl UpstreamClient {
 
         let timeout_duration = Duration::from_secs(self.config.timeout_secs);
 
-        tokio::time::timeout(timeout_duration, executor.call_tool(tool_name, args))
+        let outcome = tokio::time::timeout(timeout_duration, executor.call_tool(tool_name, args))
             .await
-            .map_err(|_| GatewayError::Timeout(tool_name.to_string(), self.config.timeout_secs))?
-            .map_err(|e| GatewayError::ToolCallFailed(e.to_string()))
+            .map_err(|_| GatewayError::Timeout(tool_name.to_string(), self.config.timeout_secs));
+
+        // A server that answers with an error is still connected. One that
+        // does not answer, or whose pipe is gone, is not: mark it so the
+        // reconnect loop restarts it.
+        let lost = matches!(
+            &outcome,
+            Err(GatewayError::Timeout(..))
+                | Ok(Err(McpError::Transport(_)
+                    | McpError::Connection(_)
+                    | McpError::NotConnected))
+        );
+        if lost {
+            warn!(
+                "Upstream '{}' did not answer '{}'; marking it disconnected",
+                self.name, tool_name
+            );
+            self.set_state(ConnectionState::Disconnected);
+        }
+
+        outcome?.map_err(|e| GatewayError::ToolCallFailed(e.to_string()))
     }
 
     /// Disconnect from the upstream server.
     pub fn disconnect(&mut self) {
         self.executor = None;
         self.tools.clear();
-        self.state = ConnectionState::Disconnected;
+        self.set_state(ConnectionState::Disconnected);
     }
 }
 
@@ -595,6 +636,165 @@ impl McpGatewayManager {
     }
 }
 
+/// A failed call on a live upstream must make `upstreams_needing_reconnect`
+/// name it, so the reconnect loop restarts the server. A JSON-RPC error
+/// from a server that still answers is not a lost connection.
+#[cfg(test)]
+mod call_failure_tests {
+    use super::*;
+    use crate::tools::mcp_client::RmcpExecutor;
+    use rmcp::handler::server::ServerHandler;
+    use rmcp::model::{
+        CallToolRequestParams, CallToolResult, ListToolsResult, PaginatedRequestParams, ServerInfo,
+        Tool,
+    };
+    use rmcp::service::{RequestContext, RoleServer, RunningService, ServiceExt};
+    use std::future::Future;
+    use std::sync::Arc;
+
+    /// How the in-process server answers `tools/call`.
+    #[derive(Clone, Copy)]
+    enum Answer {
+        /// Reply with a JSON-RPC error.
+        Error,
+        /// Never reply.
+        Hang,
+    }
+
+    #[derive(Clone)]
+    struct OneToolServer(Answer);
+
+    impl ServerHandler for OneToolServer {
+        fn get_info(&self) -> ServerInfo {
+            crate::tools::helpers::make_server_info("one tool that fails")
+        }
+
+        fn list_tools(
+            &self,
+            _request: Option<PaginatedRequestParams>,
+            _context: RequestContext<RoleServer>,
+        ) -> impl Future<Output = Result<ListToolsResult, rmcp::ErrorData>> + Send + '_ {
+            let schema = serde_json::json!({"type": "object"});
+            let tool = Tool::new(
+                "ping",
+                "ping",
+                Arc::new(schema.as_object().cloned().unwrap()),
+            );
+            async move { Ok(ListToolsResult::with_all_items(vec![tool])) }
+        }
+
+        fn call_tool(
+            &self,
+            _request: CallToolRequestParams,
+            _context: RequestContext<RoleServer>,
+        ) -> impl Future<Output = Result<CallToolResult, rmcp::ErrorData>> + Send + '_ {
+            let answer = self.0;
+            async move {
+                match answer {
+                    Answer::Error => Err(rmcp::ErrorData::invalid_params("bad args", None)),
+                    Answer::Hang => std::future::pending().await,
+                }
+            }
+        }
+    }
+
+    /// Connect an `UpstreamClient` to an in-process server over a duplex pipe.
+    async fn connected_upstream(
+        answer: Answer,
+        timeout_secs: u64,
+    ) -> (UpstreamClient, RunningService<RoleServer, OneToolServer>) {
+        let (client_side, server_side) = tokio::io::duplex(65_536);
+        let (client_read, client_write) = tokio::io::split(client_side);
+        let (server_read, server_write) = tokio::io::split(server_side);
+        // Both sides must run the handshake at once; the server waits for
+        // `initialize` before its `serve` returns.
+        let (server, service) = tokio::join!(
+            OneToolServer(answer).serve((server_read, server_write)),
+            ().serve((client_read, client_write)),
+        );
+        let server = server.expect("server starts");
+        let service = service.expect("client connects");
+        let executor = RmcpExecutor::from_service(service)
+            .await
+            .expect("tools listed");
+        let config = UpstreamServerConfig {
+            name: "up".to_string(),
+            prefix: "up_".to_string(),
+            transport: TransportType::Stdio {
+                command: "echo".to_string(),
+                args: vec![],
+                env: HashMap::new(),
+            },
+            allowed_tools: None,
+            blocked_tools: None,
+            auto_reconnect: true,
+            timeout_secs,
+        };
+        (UpstreamClient::new_connected(config, executor), server)
+    }
+
+    fn manager_with(client: UpstreamClient) -> McpGatewayManager {
+        let mut manager = McpGatewayManager::new();
+        manager.upstreams.insert(client.name.clone(), client);
+        manager
+    }
+
+    #[tokio::test]
+    async fn a_closed_transport_marks_the_upstream_disconnected() {
+        let (client, server) = connected_upstream(Answer::Error, 5).await;
+        server.cancel().await.expect("server stops");
+        let manager = manager_with(client);
+        assert!(manager.upstreams_needing_reconnect().is_empty());
+
+        let err = manager.upstreams["up"]
+            .call_tool("ping", serde_json::json!({}))
+            .await
+            .expect_err("the server is gone");
+        assert!(matches!(err, GatewayError::ToolCallFailed(_)), "{err}");
+
+        assert_eq!(
+            manager.upstreams["up"].state(),
+            ConnectionState::Disconnected
+        );
+        assert_eq!(
+            manager.upstreams_needing_reconnect(),
+            vec!["up".to_string()]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_timed_out_call_marks_the_upstream_disconnected() {
+        let (client, _server) = connected_upstream(Answer::Hang, 1).await;
+        let manager = manager_with(client);
+
+        let err = manager.upstreams["up"]
+            .call_tool("ping", serde_json::json!({}))
+            .await
+            .expect_err("the server never answers");
+        assert!(matches!(err, GatewayError::Timeout(_, 1)), "{err}");
+
+        assert_eq!(
+            manager.upstreams_needing_reconnect(),
+            vec!["up".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_server_error_reply_keeps_the_upstream_connected() {
+        let (client, _server) = connected_upstream(Answer::Error, 5).await;
+        let manager = manager_with(client);
+
+        let err = manager.upstreams["up"]
+            .call_tool("ping", serde_json::json!({}))
+            .await
+            .expect_err("the server refuses the call");
+        assert!(matches!(err, GatewayError::ToolCallFailed(_)), "{err}");
+
+        assert_eq!(manager.upstreams["up"].state(), ConnectionState::Connected);
+        assert!(manager.upstreams_needing_reconnect().is_empty());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -770,7 +970,7 @@ mod tests {
             upstream_tool("read_", "note"),
             upstream_tool("read_", "toc"),
         ];
-        client.state = ConnectionState::Connected;
+        client.set_state(ConnectionState::Connected);
 
         let err = manager
             .index_upstream(client)
@@ -795,7 +995,7 @@ mod tests {
         let mut manager = McpGatewayManager::new();
         let mut client = UpstreamClient::new(test_config("docs", "docs_"));
         client.tools = vec![upstream_tool("docs_", "note")];
-        client.state = ConnectionState::Connected;
+        client.set_state(ConnectionState::Connected);
 
         manager.index_upstream(client).expect("no collision");
         assert!(manager.has_tool("docs_note"));
@@ -841,7 +1041,7 @@ mod tests {
 
         let state = |gw: &McpGatewayManager| gw.upstreams["broken"].state();
         let reset = |gw: &mut McpGatewayManager| {
-            gw.upstreams.get_mut("broken").unwrap().state = ConnectionState::Disconnected;
+            gw.upstreams["broken"].set_state(ConnectionState::Disconnected);
         };
 
         // First poll: one attempt, which fails. The wait is now one poll.
@@ -913,23 +1113,23 @@ mod tests {
 
         let mut config1 = test_config("disconnected_auto", "d1_");
         config1.auto_reconnect = true;
-        let mut client1 = UpstreamClient::new(config1);
-        client1.state = ConnectionState::Disconnected;
+        let client1 = UpstreamClient::new(config1);
+        client1.set_state(ConnectionState::Disconnected);
 
         let mut config2 = test_config("error_auto", "e1_");
         config2.auto_reconnect = true;
-        let mut client2 = UpstreamClient::new(config2);
-        client2.state = ConnectionState::Error;
+        let client2 = UpstreamClient::new(config2);
+        client2.set_state(ConnectionState::Error);
 
         let mut config3 = test_config("connected_auto", "c1_");
         config3.auto_reconnect = true;
-        let mut client3 = UpstreamClient::new(config3);
-        client3.state = ConnectionState::Connected;
+        let client3 = UpstreamClient::new(config3);
+        client3.set_state(ConnectionState::Connected);
 
         let mut config4 = test_config("disconnected_no_auto", "d2_");
         config4.auto_reconnect = false;
-        let mut client4 = UpstreamClient::new(config4);
-        client4.state = ConnectionState::Disconnected;
+        let client4 = UpstreamClient::new(config4);
+        client4.set_state(ConnectionState::Disconnected);
 
         manager
             .upstreams
@@ -953,8 +1153,8 @@ mod tests {
         let mut manager = McpGatewayManager::new();
 
         let config = test_config("test_upstream", "t_");
-        let mut client = UpstreamClient::new(config);
-        client.state = ConnectionState::Connected;
+        let client = UpstreamClient::new(config);
+        client.set_state(ConnectionState::Connected);
 
         manager
             .upstreams

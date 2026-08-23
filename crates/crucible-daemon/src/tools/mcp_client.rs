@@ -95,7 +95,14 @@ impl RmcpExecutor {
                 req
             })
             .await
-            .map_err(|e| McpError::Execution(e.to_string()))?;
+            .map_err(|e| match e {
+                // The server answered; the connection is fine.
+                rmcp::service::ServiceError::McpError(inner) => {
+                    McpError::ServerError(inner.to_string())
+                }
+                // Nothing came back, or the pipe is gone.
+                other => McpError::Transport(other.to_string()),
+            })?;
 
         let content = result.content.into_iter().map(convert_content).collect();
 
