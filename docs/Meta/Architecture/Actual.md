@@ -99,7 +99,8 @@ execute.
 Free functions: `session_containment` (`agent_manager/scope.rs:74`),
 `session_tool_root` (`scope.rs:108`), `refuse_forbidden_scope`
 (`kiln_registry.rs:74`), `forbidden_root_reason` and `resolve_registration_root`
-(`project_manager.rs:45,68`), `execution_roots::{record,baseline,all}`,
+(`project_manager.rs:45,68`; plan T3-C2 replaced the latter with
+`crucible_core::config::expand_tilde`), `execution_roots::{record,baseline,all}`,
 `requires_permission_gate` (`messaging/gate_decision.rs:341`).
 
 **Traits.** `PermissionGate` (`crucible-core/src/traits/permission_gate.rs:13`):
@@ -135,7 +136,8 @@ before the permission gate; only statement order protects it.
   (`tools/tool_modes.rs:17`), `is_write_tool_name`
   (`provider/genai_handle.rs:103`), and the CLI `BUILTIN_TOOLS`
   (`crucible-cli/src/commands/tools.rs:34`), which already disagrees with the
-  table.
+  table. Plan T3-C6 deleted `is_core_tool_name`, `KILN_BACKED_TOOLS` and
+  `BUILTIN_TOOLS`; the three other lists stay.
 - The file-tool name list is written twice in `messaging/permission.rs:1073,1098`
   and a third, different list is `is_file_tool` in
   `crucible-core/src/config/components/permissions/engine.rs:193`.
@@ -358,7 +360,7 @@ them.
 | `BlockHash` | `crucible-core/src/parser/types/block_hash.rs:12` | 32-byte newtype; `NoteRecord.content_hash` |
 | `ASTBlock`, `ASTBlockType` | `crucible-core/src/parser/types/ast.rs:83,12` | Semantic blocks when `BlockProcessingConfig.enabled` (default false) |
 | `BlockExtractor`, `SimpleBlockHasher` | `block_extractor.rs:130`, `block_hasher.rs:16` | Blocks, BLAKE3 hashes, Merkle root |
-| `ExtensionRegistry` | `crucible-core/src/parser/extensions.rs:94` | Ordered `Arc<dyn SyntaxExtension>` |
+| `ExtensionRegistry` | `crucible-core/src/parser/extensions.rs:94` | Ordered `Arc<dyn SyntaxExtension>`; one `Extension` enum after plan T3-B1 |
 | `TaskFile`, `TaskGraph` | `crucible-core/src/parser/types/task.rs:116,267` | TASKS.md view |
 | `WorkflowDoc`, `WorkflowStep`, `Gate` | `crucible-core/src/parser/types/workflow.rs:25,61,128` | `type: workflow` view |
 | `KilnFileKind` | `crucible-core/src/kiln.rs:22` | Note, Canvas, PlainText, Asset; the single file-kind predicate |
@@ -399,16 +401,18 @@ and are still true.
 
 **Traits.** `MarkdownParser` (`parser/traits.rs:17`, 4 required, 1 impl, `dyn`
 at `note_pipeline.rs:59`). `SyntaxExtension` (`parser/extensions.rs:18`, 5
-required, 4 defaulted, 8 impls all in one crate). `NoteStore`
+required, 4 defaulted, 8 impls all in one crate; the `Extension` enum since
+plan T3-B1). `NoteStore`
 (`storage/note_store.rs:443`, 7 required, 5 defaulted, 2 production impls).
 `PropertyStore` (`storage/property_store.rs:15`, 5 required, 2 production
 impls). `KnowledgeRepository` (`traits/knowledge.rs:78`, 2 required, 1
 defaulted, 3 production impls). `EmbeddingProvider`
 (`enrichment/embedding.rs:36`, 6 required, 2 defaulted, 5 production impls).
 `ContentHasher` (`storage/traits.rs:17`, 3 required, 1 defaulted, 2 impls with
-zero callers). `HashingAlgorithm` (`hashing/algorithm.rs:48`, 3 required, 4
-defaulted, zero callers). `FileWatcher`, `WatcherFactory`, `EventHandler`
-(`watch/traits.rs:10,316`, `watch/backends/mod.rs:20`).
+zero callers; deleted in plan T3-B6). `HashingAlgorithm` (`hashing/algorithm.rs:48`, 3 required, 4
+defaulted, zero callers; deleted in plan T1-B17). `FileWatcher`, `WatcherFactory`, `EventHandler`
+(`watch/traits.rs:10,316`, `watch/backends/mod.rs:20`; plan T3-B3 replaced the
+first two with the `Backend` enum).
 
 **Enters and leaves.** `MarkdownParser::parse_content` takes a string and a
 source path (async via `async_trait`, no I/O). `NoteStore::upsert` returns
@@ -442,7 +446,8 @@ kiln-search system message tagged `PRECOGNITION_TAG`
   `crucible-daemon/src/rpc/workflow_handlers.rs:583`, plus
   `tools/utils.rs:31` and `tools/notes/helpers.rs:91`.
 - `Arc<dyn MarkdownParser>` has one impl (`note_pipeline.rs:59`). All eight
-  `SyntaxExtension` impls live in one crate; only `BasicMarkdownItExtension`
+  `SyntaxExtension` impls live in one crate (one `Extension` enum since plan
+  T3-B1); only `BasicMarkdownItExtension`
   can be disabled, through the dead `disabled()` (`basic_markdown_it.rs:40`).
   `process_content` blocks on a Tokio handle inside a trait default with zero
   callers (`extensions.rs:59`).
@@ -467,7 +472,7 @@ kiln-search system message tagged `PRECOGNITION_TAG`
   `gguf` and `shellexpand` into the daemon.
 - Watch: three backends exist and one runs (`polling_backend.rs:100-116`,
   `editor_backend.rs:119-149` are stubs); `FileWatcher` and `WatcherFactory`
-  are `dyn` with one real impl. `WatchConfig.debounce`, `handler_config`,
+  are `dyn` with one real impl (the `Backend` enum since plan T3-B3). `WatchConfig.debounce`, `handler_config`,
   `mode`, `HandlerConfig` and `WatchManagerConfig.{max_concurrent_handlers,
   enable_monitoring}` are never read; `kiln_manager.rs:1073` and
   `external_changes.rs:504` pass `DebounceConfig` values no backend sees.
@@ -586,7 +591,8 @@ synchronous except `EventEmitter::emit`.
   renderer is `crucible-daemon/src/observe/markdown.rs`. The daemon also
   carries a second renderer, `observe/serde_md.rs` (687 lines), which copies
   `crucible-core/src/serde_md/serializer.rs` in full; the core copy has zero
-  callers and the daemon copy has no production caller.
+  callers and the daemon copy has no production caller. Plan T3-B17 deleted
+  both copies.
 - `EventRing` is write-only: one push at
   `crucible-cli/src/tui/oil/chat_runner/actions.rs:562`, no read. Its
   `unsafe impl Send/Sync` at `ring.rs:408-409` is redundant.
@@ -781,7 +787,8 @@ requests get `-32601`. MCP: `InProcessMcpHost` URL goes into
   `AcpAgentHandle.session_id` is `Option` and never `None`; `ClientConfig.max_retries`
   is always `None`. `mcp_server.rs:77,113` opens the kiln twice.
 - MCP: the gateway half of `ExtendedMcpServer` and `McpGatewayManager::start_reconnect_loop`
-  have no callers (`extended_mcp_server.rs:126`, `mcp_gateway.rs:499`);
+  have no callers (`extended_mcp_server.rs:126`, `mcp_gateway.rs:499`; since
+  plan T3-A10 `server/mod.rs` starts the reconnect loop);
   `surface.rs:292` documents an ordering that cannot occur.
   `ExtendedMcpServer::new` is `async` with no await and never `Err`
   (`extended_mcp_server.rs:78`). `discovery_tools()` advertises
@@ -874,7 +881,8 @@ methods plus `ui.config` and `ui.set_theme`; the daemon stores opaque JSON.
   (`sessions/mod.rs:288-458`).
 - `SessionCommand`, `ChannelSessionRpc` and the CLI `handle_session_command`
   (`crucible-cli/src/tui/oil/chat_runner/commands.rs:15-114`) form a dead
-  cross-crate path; `with_session_command_receiver` has no caller.
+  cross-crate path; `with_session_command_receiver` has no caller. Plan T3-A5
+  deleted the path.
 - `parse_capability` (`lifecycle/spec.rs:31`) hand-duplicates the serde
   `Deserialize` of `Capability` and omits `intercept_tools`, so a spec-table
   grant is dropped with a warning (`discovery.rs:267`).
@@ -1023,7 +1031,8 @@ sync; `process_action` runs side effects, then `on_message`, then recurses;
   `cells_to_string` (`cell_grid.rs:239`, `overlay.rs:87`), `popup_item`
   (`popup_node.rs:50`, `components/popup.rs:149`), `PopupItemNode`/`PopupItem`
   (`popup_node.rs:37`, `layout/types.rs:204`), `InputNode`/`LayoutContent::Input`,
-  `ComputedLayout`/`Rect`, two OSC parsers (`ansi.rs:62`, `cell_grid.rs:105`).
+  `ComputedLayout`/`Rect` (`ComputedLayout` deleted in plan T3-C22), two OSC
+  parsers (`ansi.rs:62`, `cell_grid.rs:105`).
 - Three status structs cloned per frame (`status_bar.rs:155-166`,
   `status_component.rs:82-96`). Four copies of the `RwLock<Option<&'static T>>`
   store. `RenderStyle::Viewport` and `::Natural` compute identical widths
@@ -1074,10 +1083,10 @@ never yields `TurnEvent::ToolResult` while `AcpAgentHandle` does
 | `crucible-daemon` | `crucible-core` | 24 files import `events`, 33 import `protocol`; `session` 171 import lines, `turn` 146, `types` 59; every storage, tool, chat and config trait and type listed in section 3 |
 | `crucible-daemon` | `crucible-lua` | `LuaExecutor`, `PluginManager`, `PluginSpec`, every `register_*` function, all registries, `DaemonSessionApi`, `DaemonToolsApi`, `SessionConfigRpc`, `StageId`, `EventName`, `ModeRegistry`, `ToolSelector`, `IsolationRegistry`, `SandboxExec`, `BUILTIN_INIT_LUA`, `StubGenerator`, theme and statusline modules for `ui.config` |
 | `crucible-web` | `crucible-core` | `CliAppConfig`, `WebConfig`, `KilnName`, `read_project_config`, `ProjectFileAccess`, `SessionEventPayload` and groups, `InteractionResponse`, `SessionAgent`, `NoteRecord`, `SessionModes`, `Project`, `Canvas` and containment, `is_note_file`, `EXCLUDED_DIRS`, `PrecognitionNoteInfo`, `ChatError`, `TokenUsage` |
-| `crucible-web` | `crucible-daemon` | `DaemonClient`, `SessionEvent`, `DaemonCapabilities`, `Lua*Request/Response`, `GrepSearchResponse`, `ScmCloneResponse`, `SessionCreateParams`, `SessionAgentSpec`, `GrepSearchRequest`, `agent_manager::providers::ProviderInfo`, `subscription::WILDCARD_SESSION`, `server::plugins::OptionAction`, `webhook::*`, `project_manager::{forbidden_root_reason, resolve_registration_root}` |
+| `crucible-web` | `crucible-daemon` | `DaemonClient`, `SessionEvent`, `DaemonCapabilities`, `Lua*Request/Response`, `GrepSearchResponse`, `ScmCloneResponse`, `SessionCreateParams`, `SessionAgentSpec`, `GrepSearchRequest`, `agent_manager::providers::ProviderInfo`, `subscription::WILDCARD_SESSION`, `server::plugins::OptionAction`, `webhook::*`, `project_manager::{forbidden_root_reason, resolve_registration_root}` (the latter gone after plan T3-C2) |
 | `crucible-cli` | `crucible-core` | config loaders and writers, credentials, parser types (`TaskFile`, `TaskGraph`, `WorkflowDoc`, `extract_frontmatter`), `AgentCardRegistry`, `AgentCardLoader`, `EventRing`, `SessionEvent`, `AgentHandle`, `Agent`, `StorageClient`, `NoteStore`, `KnowledgeRepository`, interaction types, `types::*` (72 import lines), `recording::*`, `FuzzyMatcher`, `bundled_docs`, `runtime_roots` |
-| `crucible-cli` | `crucible-daemon` | `DaemonClient` (25+ files), `SessionEvent` (31), `SessionCreateParams` (38), `DaemonAgentHandle`, `DaemonStorageClient`, `DaemonNoteStore`, `Server`, `BindWithPluginConfigParams`, `split_plugins_config`, `plugin_ops::{install, remove}`, `BootstrapOutcome`, `KilnRegistry`, `KilnRegistryContext`, `forbidden_root_reason`, `resolve_registration_root`, `FileSessionStorage::root_for`, `parse_session_log`, `load_events`, `render_to_markdown`, `LogEvent`, `copilot::{CopilotAuth, CopilotError}`, `webhook::{default_secrets_path, mint_secret}`, `subscription::WILDCARD_SESSION`, `acp::streaming::humanize_tool_title`, `lifecycle::*` |
-| `crucible-cli` | `crucible-lua` | `theme::ThemeConfig`, `hl`, `hl_lua`, `ui_geometry`, `statusline_items`, `theme_wire`, `SessionCommand`, `statusline_items::Region` |
+| `crucible-cli` | `crucible-daemon` | `DaemonClient` (25+ files), `SessionEvent` (31), `SessionCreateParams` (38), `DaemonAgentHandle`, `DaemonStorageClient`, `DaemonNoteStore`, `Server`, `BindWithPluginConfigParams`, `split_plugins_config`, `plugin_ops::{install, remove}`, `BootstrapOutcome`, `KilnRegistry`, `KilnRegistryContext`, `forbidden_root_reason`, `resolve_registration_root` (gone after plan T3-C2), `FileSessionStorage::root_for`, `parse_session_log`, `load_events`, `render_to_markdown`, `LogEvent`, `copilot::{CopilotAuth, CopilotError}`, `webhook::{default_secrets_path, mint_secret}`, `subscription::WILDCARD_SESSION`, `acp::streaming::humanize_tool_title`, `lifecycle::*` |
+| `crucible-cli` | `crucible-lua` | `theme::ThemeConfig`, `hl`, `hl_lua`, `ui_geometry`, `statusline_items`, `theme_wire`, `SessionCommand` (gone after plan T3-A5), `statusline_items::Region` |
 | `crucible-cli` | `crucible-oil` | node builders, `style`, `ansi`, `render`, `focus`, `terminal`, `planning`, `runtime`, `components`, `viewport`, `layout`, `truncate_to_chars`, `truncate_to_width`, `composite_overlays`, spinner frames |
 | `crucible-cli` | `crucible-web` | behind feature `web`: `start_server`, `middleware::auth::{api_key_path, generate_and_persist_key, resolve_api_key, local_names}`, `HostPolicy` |
 
@@ -1147,17 +1156,17 @@ Surprising edges:
 | `StorageClient` | `crucible-core/src/traits/storage_client.rs:27` | 1 + gated mock | 1 / 1 | no | single-impl; method always errors |
 | `EventEmitter` | `crucible-core/src/events/emitter.rs:293` | 1 + noop + mock | 1 / 2 | yes | single-impl |
 | `MarkdownParser` | `crucible-core/src/parser/traits.rs:17` | 1 + 0 | 4 / 0 | yes | single-impl |
-| `SyntaxExtension` | `crucible-core/src/parser/extensions.rs:18` | 8 + 1 | 5 / 4 | yes | enum-candidate |
+| `SyntaxExtension` | `crucible-core/src/parser/extensions.rs:18` | 8 + 1 | 5 / 4 | yes | enum-candidate; `Extension` enum since plan T3-B1 |
 | `HashingAlgorithm` | `crucible-core/src/hashing/algorithm.rs:48` | 2 + 0 | 3 / 4 | no | dead |
-| `ContentHasher` | `crucible-core/src/storage/traits.rs:17` | 2 + 1 | 3 / 1 | no | impls dead |
+| `ContentHasher` | `crucible-core/src/storage/traits.rs:17` | 2 + 1 | 3 / 1 | no | impls dead; deleted in plan T3-B6 |
 | `ChangeDetectionStore` | `crucible-core/src/processing/change_detection.rs:112` | 1 + 0 | 4 / 0 | no | dead |
 | `CredentialStore` | `crucible-core/src/config/credentials.rs:87` | 3 (one feature-gated) | 4 / 0 | yes | enum-candidate |
 | `StorageResultExt` | `crucible-core/src/storage/error_ext.rs:6` | blanket | 1 / 0 | no | keep |
 | `DelegationSpawner` | `crucible-daemon/src/delegation.rs:65` | 1 + 5 | 5 / 0 | yes | single-impl; test double |
 | `SessionStorage` | `crucible-daemon/src/session_storage.rs:34` | 1 + 6 | 8 / 0 | yes | keep |
 | `ToolDispatcher` | `crucible-daemon/src/tool_dispatch.rs:99` | 1 + 1 | 4 / 0 | yes | single-impl; test double |
-| `FileWatcher` | `crucible-daemon/src/watch/traits.rs:10` | 3 (2 stubs) | 7 / 0 | yes | enum-candidate |
-| `WatcherFactory` | `crucible-daemon/src/watch/backends/mod.rs:20` | 3 | 4 / 0 | yes | enum-candidate |
+| `FileWatcher` | `crucible-daemon/src/watch/traits.rs:10` | 3 (2 stubs) | 7 / 0 | yes | enum-candidate; `Backend` enum since plan T3-B3 |
+| `WatcherFactory` | `crucible-daemon/src/watch/backends/mod.rs:20` | 3 | 4 / 0 | yes | enum-candidate; `Backend` enum since plan T3-B3 |
 | `EventHandler` | `crucible-daemon/src/watch/traits.rs:316` | 3 | 2 / 2 | yes | keep, make required |
 | `SqliteResultExt` | `crucible-daemon/src/storage/sqlite/error_ext.rs:6` | blanket | 1 / 0 | no | keep |
 | `McpResultExt` | `crucible-daemon/src/tools/helpers.rs:27` | blanket | 3 / 0 | no | keep |
@@ -1190,7 +1199,7 @@ Traits that break the rules:
   `StorageClient`, `ChangeDetectionStore`, `HashingAlgorithm`.
 - Trait where an enum would do: `SyntaxExtension` (8 impls in one crate),
   `CredentialStore` (3 impls in one file, one never compiled), `FileWatcher`,
-  `WatcherFactory`.
+  `WatcherFactory`. Plans T3-B1, T3-B2 and T3-B3 replaced all four with enums.
 
 ## 7. Type families with many copies
 
@@ -1273,7 +1282,7 @@ Canonical: `LlmProviderConfig` (64 references).
 (`Serializer`, `SeqSerializer:210`, `MapSerializer:277`, `StructSerializer:307`;
 zero callers) and `crucible-daemon/src/observe/serde_md.rs:43,216,283,313`
 (`LogEventSerializer`; no production caller). Neither is canonical; the live
-renderer is `observe/markdown.rs:31`.
+renderer is `observe/markdown.rs:31`. Plan T3-B17 deleted both serializers.
 
 **`SessionAgent` literals x3.** `SessionAgent::internal_from_config`
 (`crucible-core/src/session/types/agent.rs:335`, canonical),
@@ -1293,7 +1302,8 @@ canonical, sent by the daemon) vs `DetectedProvider`
 `llm/embeddings/ollama.rs:43-51`, field-identical.
 
 **Hash newtypes.** `BlockHash` (`parser/types/block_hash.rs:12`, canonical) and
-`FileHash` (`types/hashing.rs:25`), same fields and methods.
+`FileHash` (`types/hashing.rs:25`), same fields and methods. Plan T3-B14 made
+`FileHash` an alias; plan T5-02 deleted `types/hashing.rs`.
 
 **Popup rows.** `PopupEntry` (`crucible-core/src/types/popup.rs:16`) and
 `PanelItem` (`crucible-core/src/interaction/types.rs:135`), field-identical;
@@ -1314,7 +1324,8 @@ already differ.
 **Tilde expanders.** `project_manager.rs:68 resolve_registration_root`
 (canonical), `scm.rs:156`, `scm.rs:221`, `daemon_plugins/bootstrap.rs:113`,
 `kiln_manager.rs:1199`, `crucible-cli/src/commands/agents.rs:91`,
-`crucible-cli/src/kiln_validate.rs expand_tilde`.
+`crucible-cli/src/kiln_validate.rs expand_tilde`. Plan T3-C2 replaced them
+with one `crucible_core::config::expand_tilde` (`config/tilde.rs:13`).
 
 **Contexts.** `RpcContext` (`rpc/context.rs:60`, canonical) and
 `ServerContext` (`server/mod.rs:950`).

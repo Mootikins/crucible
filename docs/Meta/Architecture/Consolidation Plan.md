@@ -56,20 +56,20 @@ Skipped items, with the reason, now live in Tier 3 or Tier 4:
 
 | Batch | Item | Why | Now |
 |---|---|---|---|
-| B3 | `with_debounce` calls at `external_changes.rs`, `kiln_manager.rs` | Those are `WatchConfig::with_debounce`, a live method; the plan conflated two methods | dropped |
-| B5 | `impl Default` for `ClientId`, `SubscriptionManager` | clippy `new_without_default`; `ClientId::new` draws from a counter, so a derived Default changes behaviour | Tier 3 |
-| B7 | `KILN_BACKED_TOOLS` | deferred by the plan | Tier 3 |
-| B11 | `SessionManager::remove_session` | live test callers in two test modules | Tier 4 |
-| B11 | `KilnRegistry::iter` | live caller `server/session/list.rs:109`; the grep missed it | dropped |
-| B13 | `Component::Normal` loop in `core/canvas/containment.rs` | different crate from the daemon helper | Tier 3 |
-| B18 | `ModelCapability`, `UnifiedModelInfo`, `McpTransportConfig` | carry `serde` attributes; rule 2 | Tier 3 |
-| B22 | `kiln_validate::is_temp_directory` | not a duplicate; `starts_with` flags subdirectories, and a test depends on it | dropped |
-| B23 | `parse_capability` → serde | behaviour differs (case fold, nine names) | Tier 3 |
+| T1-B3 | `with_debounce` calls at `external_changes.rs`, `kiln_manager.rs` | Those are `WatchConfig::with_debounce`, a live method; the plan conflated two methods | dropped |
+| T1-B5 | `impl Default` for `ClientId`, `SubscriptionManager` | clippy `new_without_default`; `ClientId::new` draws from a counter, so a derived Default changes behaviour | Tier 3 |
+| T1-B7 | `KILN_BACKED_TOOLS` | deferred by the plan | Tier 3 |
+| T1-B11 | `SessionManager::remove_session` | live test callers in two test modules | Tier 4 |
+| T1-B11 | `KilnRegistry::iter` | live caller `server/session/list.rs:109`; the grep missed it | dropped |
+| T1-B13 | `Component::Normal` loop in `core/canvas/containment.rs` | different crate from the daemon helper | Tier 3 |
+| T1-B18 | `ModelCapability`, `UnifiedModelInfo`, `McpTransportConfig` | carry `serde` attributes; rule 2 | Tier 3 |
+| T1-B22 | `kiln_validate::is_temp_directory` | not a duplicate; `starts_with` flags subdirectories, and a test depends on it | dropped |
+| T1-B23 | `parse_capability` → serde | behaviour differs (case fold, nine names) | Tier 3 |
 | T2-B1 | `resolve_path` parameter | B22 removed the function | done |
 | T2-B3 | `InputArea::with_popup` | B24 removed it | done |
 
-Two follow-ons that the batches applied under the Method rules: B2 removed
-`PerformanceStats`, `QueueStats` and their readers once `get_status` went; B5
+Two follow-ons that the batches applied under the Method rules: T1-B2 removed
+`PerformanceStats`, `QueueStats` and their readers once `get_status` went; T1-B5
 removed three `Server` fields that lost their last reader with `ServerContext`.
 
 ## 1b. Tier 3 result, 2026-08-22
@@ -90,7 +90,7 @@ The nine entries with no commit:
 | C17 | Deferred by design: `PermissionHook` and `RuntimeHandler` differ in first-match semantics |
 | C19 | Deferred by design: under `crucible-web/src/routes/` or on the SSE wire; a web session owns it |
 | C25 | Covered by T3-B17 |
-| C26 | Covered by Tier 1 B4 |
+| C26 | Covered by T1-B4 |
 | C29 | Deferred: the `acp/mod.rs` re-exports are a Tier 4 check first |
 
 Entries whose outcome differs from the recommendation: B2 replaced the trait
@@ -106,7 +106,9 @@ after deduplication.
 
 Actions: `delete` removes the item. `narrow` changes visibility. `merge-into X` keeps X and deletes the other copy. `call X` replaces an inline body with a call to X.
 
-### B1 — crucible-daemon, `watch/` builders
+The batch labels are `T1-B1` to `T1-B24`. The commit subjects from 2026-08-22 carry the older `plan Bn` form; Band B in section 4 uses `B1` to `B25` for different entries.
+
+### T1-B1 — crucible-daemon, `watch/` builders
 
 Files: `crates/crucible-daemon/src/watch/traits.rs`, `watch/manager.rs`, `watch/backends/factory.rs`, `crates/crucible-daemon/tests/watch_notify_filter_tests.rs`.
 
@@ -127,7 +129,7 @@ Files: `crates/crucible-daemon/src/watch/traits.rs`, `watch/manager.rs`, `watch/
 | `WatcherRequirements::with_max_latency` | `watch/backends/factory.rs:284` | delete |
 | `WatcherRequirements::with_resource_priority` | `watch/backends/factory.rs:290` | delete |
 
-### B2 — crucible-daemon, `watch/` manager, monitor, factory
+### T1-B2 — crucible-daemon, `watch/` manager, monitor, factory
 
 Files: `watch/manager.rs`, `watch/utils/monitor.rs`, `watch/backends/factory.rs`, `watch/backends/mod.rs`, `watch/mod.rs`.
 
@@ -149,7 +151,7 @@ Files: `watch/manager.rs`, `watch/utils/monitor.rs`, `watch/backends/factory.rs`
 | `default_backend` | `backends/mod.rs:111` | delete |
 | `watch::prelude` | `watch/mod.rs:86-92` | delete the module |
 
-### B3 — crucible-daemon, `watch/` backends, handlers, events
+### T1-B3 — crucible-daemon, `watch/` backends, handlers, events
 
 Files: `watch/backends/notify_backend.rs`, `watch/backends/polling_backend.rs`, `watch/backends/editor_backend.rs`, `watch/handlers/indexing.rs`, `watch/handlers/composite.rs`, `watch/handlers/mod.rs`, `watch/events.rs`, `watch/mod.rs`, `watch/external_changes.rs`, `kiln_manager.rs`.
 
@@ -167,7 +169,7 @@ Files: `watch/backends/notify_backend.rs`, `watch/backends/polling_backend.rs`, 
 | `FileEventKind::affects_content`, `is_removal`; `FileEvent::file_name` | `events.rs:93` | delete with their tests at `events.rs:312` |
 | `EventFilter::exclude_extension`, `include_dir`, `with_size_limits`, `with_custom_filter` | `events.rs` | delete |
 
-### B4 — crucible-daemon, `storage/sqlite/`
+### T1-B4 — crucible-daemon, `storage/sqlite/`
 
 Files: `storage/sqlite/connection.rs`, `config.rs`, `fts.rs`, `repository.rs`, `adapters.rs`, `mod.rs`, `property_store.rs`, `schema/tests.rs`, `kiln_manager/tests/mod.rs`.
 
@@ -185,7 +187,7 @@ Files: `storage/sqlite/connection.rs`, `config.rs`, `fts.rs`, `repository.rs`, `
 | `SqlitePropertyStore` | `property_store.rs:223`, `mod.rs:54` | merge-into `impl PropertyStore for SqliteNoteStore` (`:235-280`); rewrite `schema/tests.rs:150`, `:165` against `SqliteNoteStore` |
 | `repository.rs` Scope match x3 | `repository.rs:71`, `:123`, `:169` | call one private `fn scope_for(kiln_path: Option<&Path>) -> Scope` |
 
-### B5 — crucible-daemon, `server/` and `subscription.rs`
+### T1-B5 — crucible-daemon, `server/` and `subscription.rs`
 
 Files: `server/bind.rs`, `server/mod.rs`, `server/core/mod.rs`, `server/lua_plugin_suite.rs`, `server/plugins.rs`, `server/session/review/mod.rs`, `server/fs/mod.rs`, `server/session/mod.rs`, `rpc_helpers.rs`, `subscription.rs`, `crates/crucible-cli/src/main.rs`, `crates/crucible-cli/src/commands/daemon.rs`, `daemon_plugins/mod.rs`, `tests/isolation_param.rs`.
 
@@ -205,7 +207,7 @@ Files: `server/bind.rs`, `server/mod.rs`, `server/core/mod.rs`, `server/lua_plug
 | `impl Default for ClientId`, `SubscriptionManager` | `subscription.rs:37`, `:207` | delete; if clippy `new_without_default` fires, derive `Default` and delete `new()` instead |
 | `sweep_review_refs` pass-through | `server/core/mod.rs:556` | delete; `server/mod.rs:691` calls `crate::review::sweep_review_refs` directly |
 
-### B6 — crucible-daemon, `rpc_client/`
+### T1-B6 — crucible-daemon, `rpc_client/`
 
 Files: `rpc_client/client/agent.rs`, `storage.rs`, `lua.rs`, `session.rs`, `workflow.rs`, `rpc_client/mod.rs`, `rpc/workflow_handlers.rs`.
 
@@ -221,7 +223,7 @@ Files: `rpc_client/client/agent.rs`, `storage.rs`, `lua.rs`, `session.rs`, `work
 | local `Params { session_id }` | `rpc/workflow_handlers.rs:164-167` | merge-into `SessionIdRequest` |
 | `extract_yaml_frontmatter` | `rpc/workflow_handlers.rs:583` and `crucible-cli/src/commands/workflow.rs:365` | merge-into one `pub fn` in `crucible-core/src/parser/types/workflow.rs` next to `body_start_offset`; keep the body as is, do not swap it for `extract_frontmatter` (that is Tier 3) |
 
-### B7 — crucible-daemon, `tools/` and `mcp/`
+### T1-B7 — crucible-daemon, `tools/` and `mcp/`
 
 Files: `tools/mcp_client.rs`, `tools/mcp_gateway.rs`, `tools/extended_mcp_server.rs`, `tools/mcp_server.rs`, `mcp/config.rs`, `agent_factory.rs`, `acp_handle.rs`, `tools/mcp_server/tests.rs`, `tests/acp_integration*`.
 
@@ -239,7 +241,7 @@ Files: `tools/mcp_client.rs`, `tools/mcp_gateway.rs`, `tools/extended_mcp_server
 | `DelegationContext.depth`, `.data_classification` | `mcp_server.rs:77`, `:82` | delete the fields; edit the writers at `agent_factory.rs:123`, `:128`, `acp_handle.rs:173`, `:178`, `mcp_server/tests.rs:128` and the three integration tests |
 | `KILN_BACKED_TOOLS` names | `mcp_server.rs:126` | no change in this batch; see Tier 3 |
 
-### B8 — crucible-daemon, `acp/`
+### T1-B8 — crucible-daemon, `acp/`
 
 Files: `acp/mock_agent.rs`, `acp/client/mod.rs`, `acp/tracing_utils.rs`, `acp/discovery.rs`, `acp/mod.rs`, `acp_launch.rs`, `acp/tools.rs`.
 
@@ -252,7 +254,7 @@ Files: `acp/mock_agent.rs`, `acp/client/mod.rs`, `acp/tracing_utils.rs`, `acp/di
 | `known` agent table | `acp_launch.rs:126-132` | call `BUILTIN_AGENTS` (`discovery.rs:52`) |
 | `ToolDescriptor` | `acp/tools.rs:29` | merge-into `crucible_core::ToolDefinition`; map `category: String` to `Some(category)` and `input_schema` to `parameters`; keep `ToolRegistry` and `discover_tools` (integration tests use them) |
 
-### B9 — crucible-daemon, `llm/` and `provider/`
+### T1-B9 — crucible-daemon, `llm/` and `provider/`
 
 Files: `llm/embeddings/mock.rs`, `llm/embeddings/provider.rs`, `llm/embeddings/error.rs`, `llm/embeddings/mod.rs`, `llm/mod.rs`, `provider/copilot.rs`, `provider/model_listing.rs`.
 
@@ -271,7 +273,7 @@ Files: `llm/embeddings/mock.rs`, `llm/embeddings/provider.rs`, `llm/embeddings/e
 | `EmbeddingError::{CircuitBreakerOpen, ModelDiscoveryNotSupported, ModelNotFound, InvalidModelMetadata, InferenceFailed}` | `error.rs:52-81`, `:127-135` | delete the variants and their `is_retryable` arms |
 | `anthropic::parse_models_response` vs `openai_compat::parse_models_response` | `model_listing.rs:56-78`, `:148-181` | merge-into one `parse_models_response` that reads `data[] \| models[]` with `id \| name`; the anthropic shape is a subset |
 
-### B10 — crucible-daemon, skills, enrichment, pipeline, workflow, observe
+### T1-B10 — crucible-daemon, skills, enrichment, pipeline, workflow, observe
 
 Files: `skills/types.rs`, `skills/error.rs`, `skills/test_utils.rs`, `skills/mod.rs`, `enrichment/service.rs`, `pipeline/note_pipeline.rs`, `workflow_registry.rs`, `observe/events.rs`, `observe/session.rs`, `lib.rs`.
 
@@ -290,7 +292,7 @@ Files: `skills/types.rs`, `skills/error.rs`, `skills/test_utils.rs`, `skills/mod
 | `LogEvent::summary_with_count` | `observe/events.rs:373` | delete |
 | `observe::list_sessions` | `observe/session.rs:49`, `:254-355`, `lib.rs:112` | delete with its module tests and the re-export |
 
-### B11 — crucible-daemon, session, scm, agent_manager, kiln, platform, bootstrap
+### T1-B11 — crucible-daemon, session, scm, agent_manager, kiln, platform, bootstrap
 
 Files: `session_manager.rs`, `session_manager/tests.rs`, `scm.rs`, `agent_manager/mod.rs`, `agent_manager/messaging/send.rs`, `agent_manager/tests/*`, `agent_manager/models.rs`, `kiln_registry.rs`, `kiln_manager.rs`, `server/platform.rs`, `daemon_plugins/bootstrap.rs`, `project_manager.rs`, `session_bridge.rs`, `server/session/models.rs`, `server/session/messaging.rs`.
 
@@ -312,7 +314,7 @@ Files: `session_manager.rs`, `session_manager/tests.rs`, `scm.rs`, `agent_manage
 | skills discovery block x3 | `server/platform.rs:55-62`, `:105-112`, `:148-155` | call one `async fn discover_skills(kiln_path)` |
 | `bootstrap::expand_tilde`, `kiln_manager::expand_tilde_path`, `scm.rs:156`, `scm.rs:221` tilde copies | `bootstrap.rs:113`, `kiln_manager.rs:1199`, `scm.rs:158-167`, `:229-238` | call `project_manager::resolve_registration_root` (`project_manager.rs:68`); make it `pub(crate)` |
 
-### B12 — crucible-daemon, `agent_manager/messaging/`
+### T1-B12 — crucible-daemon, `agent_manager/messaging/`
 
 Files: `agent_manager/messaging/permission.rs`, `tool_call.rs`, `stream.rs`, `tool_hooks.rs`, `crucible-core/src/traits/chat.rs`.
 
@@ -324,7 +326,7 @@ Files: `agent_manager/messaging/permission.rs`, `tool_call.rs`, `stream.rs`, `to
 | inline `deny_tool_call` body | `tool_call.rs:485-506` | call `deny_tool_call` (`:23`) |
 | `resolve_display_start_hints` vs `resolve_display_complete_hints` | `tool_hooks.rs:22-71`, `:73-122` | call one generic `fn resolve_hints<E, H>(hook, event) -> H` |
 
-### B13 — crucible-daemon, server path and review helpers; tool listing
+### T1-B13 — crucible-daemon, server path and review helpers; tool listing
 
 Files: `server/fs/mod.rs`, `server/session/review/mod.rs`, `server/note_refactor.rs`, `server/canvas/containment.rs`, `tools/workspace.rs`, `tool_dispatch.rs`, `tools/gateway_executor.rs`, `replay.rs`, `crucible-cli/src/tui/oil/local_replay.rs`.
 
@@ -336,7 +338,7 @@ Files: `server/fs/mod.rs`, `server/session/review/mod.rs`, `server/note_refactor
 | `is_core_tool_name` | `tool_dispatch.rs:181-186` | call `BuiltinTool::parse(name).map(\|t\| t.surface() == ToolSurface::Host)` |
 | `is_keypress_event` | `replay.rs:199`, `crucible-cli/src/tui/oil/local_replay.rs:62-65` | make the daemon fn `pub`; the CLI calls it |
 
-### B14 — crucible-core, `parser/types/` accessors
+### T1-B14 — crucible-core, `parser/types/` accessors
 
 Files: `parser/types/callout.rs`, `parsed_note.rs`, `frontmatter.rs`, `content.rs`, `ast.rs`, `blocks.rs`, `parser/blockquotes.rs`, `parser/basic_markdown_it.rs`, `parser/block_hasher.rs`.
 
@@ -354,7 +356,7 @@ Files: `parser/types/callout.rs`, `parsed_note.rs`, `frontmatter.rs`, `content.r
 | `supports_blockquotes` | `blockquotes.rs:163` | delete |
 | `BasicMarkdownItExtension::disabled` | `basic_markdown_it.rs:40` | delete (feature `markdown-it-parser`) |
 
-### B15 — crucible-core, `parser/` lists, links, extensions, traits
+### T1-B15 — crucible-core, `parser/` lists, links, extensions, traits
 
 Files: `parser/types/lists.rs`, `links.rs`, `parser/extensions.rs`, `parser/traits.rs`, `parser/implementation.rs`, `parser/block_extractor.rs`, `parser/mod.rs`.
 
@@ -370,7 +372,7 @@ Files: `parser/types/lists.rs`, `links.rs`, `parser/extensions.rs`, `parser/trai
 | `ParserCapabilities::full` vs `CrucibleParser::capabilities` | `traits.rs:54-73`, `implementation.rs:493-512` | `capabilities()` calls `ParserCapabilities::full()` then sets `max_file_size` |
 | `ExtractionType` | `block_extractor.rs:827-840` | merge-into `ASTBlockType`; delete the private enum and its `#[allow(dead_code)]` |
 
-### B16 — crucible-core, `types/`
+### T1-B16 — crucible-core, `types/`
 
 Files: `types/undo_tree.rs`, `types/undo.rs`, `types/database.rs`, `types/tool_ref.rs`, `types/mode.rs`, `types/notification.rs`, `types/acp.rs`, `types/popup.rs`, `types/mod.rs`, `turn/mod.rs`, `lib.rs`, `interaction/types.rs`.
 
@@ -390,7 +392,7 @@ Files: `types/undo_tree.rs`, `types/undo.rs`, `types/database.rs`, `types/tool_r
 | `SharedAgent` | `turn/mod.rs:424` | delete |
 | `PopupEntry` vs `PanelItem` | `types/popup.rs:16`, `interaction/types.rs:135` | merge-into `PopupEntry`; `pub type PanelItem = PopupEntry` in `interaction/types.rs` (same serde shape) |
 
-### B17 — crucible-core, dead modules
+### T1-B17 — crucible-core, dead modules
 
 Files: `content_category.rs`, `note.rs`, `properties.rs`, `processing/` (whole directory), `hashing/` (whole directory), `storage/traits.rs`, `test_support/mocks/storage.rs`, `test_support/mocks/mod.rs`, `test_support/MOCKS.md`, `lib.rs`, `types/mod.rs`, `storage/mod.rs`.
 
@@ -405,7 +407,7 @@ Files: `content_category.rs`, `note.rs`, `properties.rs`, `processing/` (whole d
 | `MockStorage`, `MockStorageStats` | `test_support/mocks/storage.rs:68`, `mocks/mod.rs:24-40` | delete |
 | `hash_computation` | `storage/error.rs:97` | delete |
 
-### B18 — crucible-core, events, enrichment, traits, config, project, serde_md, test_support
+### T1-B18 — crucible-core, events, enrichment, traits, config, project, serde_md, test_support
 
 Files: `events/markdown/` (whole directory), `events/session_event/display.rs`, `events/session_event/mod.rs`, `events/session_event/payloads.rs`, `events/ring.rs`, `enrichment/embedding.rs`, `enrichment/types.rs`, `enrichment/mod.rs`, `traits/context_ops/mod.rs`, `traits/provider.rs`, `traits/mcp.rs`, `traits/tools.rs`, `traits/mod.rs`, `workflow/engine.rs`, `project/types.rs`, `config/enrichment.rs`, `config/components/llm.rs`, `config/config/cli_app.rs`, `config/credentials.rs`, `config/value_source.rs`, `serde_md/serializer.rs`, `test_support/mod.rs`, `test_support/fixtures.rs`.
 
@@ -432,7 +434,7 @@ Files: `events/markdown/` (whole directory), `events/session_event/display.rs`, 
 | `Serializer::into_output` | `serde_md/serializer.rs:33` | delete |
 | `create_kiln_with_files`, `create_basic_kiln` (pub copies) | `test_support/mod.rs:34`, `:56` | merge-into `fixtures.rs:188`, `:75`; make those `pub` and re-export |
 
-### B19 — crucible-cli, `chat_runner/`, `chat_app/`, runner, composer
+### T1-B19 — crucible-cli, `chat_runner/`, `chat_app/`, runner, composer
 
 Files: `tui/oil/chat_runner/mod.rs`, `chat_runner/runner.rs`, `chat_app/state.rs`, `chat_app/mod.rs`, `chat_app/popup_state.rs`, `chat_app/message_handlers.rs`, `chat_app/model_state.rs`, `chat_app/autocomplete.rs`, `chat_app/command_handling.rs`, `tui/oil/runner.rs`, `tui/oil/composer.rs`, `tui/oil/mod.rs`, `tui/mod.rs`, `tui/oil/utils/width.rs`, `tui/oil/utils/mod.rs`, `commands/chat/mod.rs`.
 
@@ -451,7 +453,7 @@ Files: `tui/oil/chat_runner/mod.rs`, `chat_runner/runner.rs`, `chat_app/state.rs
 | `AutocompleteKind::Command` two-entry palette | `autocomplete.rs:181-187` | call `known_slash_commands` (`commands/chat/mod.rs:929`) |
 | `levenshtein` | `command_handling.rs:44-58` | merge-into one `pub fn levenshtein(&str, &str)` in `crucible-core`; `crucible-lua/src/handlers/crucible_on.rs:12-25` calls it too (char-indexed version wins) |
 
-### B20 — crucible-cli, `tui/oil/config/`
+### T1-B20 — crucible-cli, `tui/oil/config/`
 
 Files: `tui/oil/config/overlay.rs`, `presets.rs`, `value.rs`, `shortcuts.rs`, `stack.rs`.
 
@@ -466,7 +468,7 @@ Files: `tui/oil/config/overlay.rs`, `presets.rs`, `value.rs`, `shortcuts.rs`, `s
 | `ShortcutRegistry::is_virtual`, `target_path` | `shortcuts.rs:208`, `:281-298` | delete with tests |
 | `ConfigStack::current_source`, `base`, `modification_count`, `reset` | `stack.rs:149`, tests `:210-385` | delete with tests |
 
-### B21 — crucible-cli, components, theme, viewport cache, status bar
+### T1-B21 — crucible-cli, components, theme, viewport cache, status bar
 
 Files: `tui/oil/component.rs`, `viewport_cache.rs`, `components/interaction_modal/mod.rs`, `components/shell_modal.rs`, `components/thinking_component.rs`, `components/status_bar.rs`, `components/status_items.rs`, `components/notification_component.rs`, `components/input_component.rs`, `theme/global.rs`, `theme/groups.rs`, `theme/geometry.rs`, `theme/bars.rs`, `theme/exprs.rs`, `theme/mod.rs`, `markdown/mod.rs`.
 
@@ -486,7 +488,7 @@ Files: `tui/oil/component.rs`, `viewport_cache.rs`, `components/interaction_moda
 | `NotificationEntry::kind_label` | `notification_component.rs:38-44` | call `NotificationToastKind::label` (`status_bar.rs:25`) |
 | `RenderStyle::Natural` | `markdown/mod.rs:64-133` | merge-into `RenderStyle::Viewport`; the two carry the same data and compute the same widths; keep a `natural()` constructor if tests call it |
 
-### B22 — crucible-cli, commands and utils
+### T1-B22 — crucible-cli, commands and utils
 
 Files: `commands/plugin/list.rs`, `commands/plugin/update.rs`, `commands/plugin/plugin_ops.rs`, `commands/agents.rs`, `kiln_discover.rs`, `kiln_validate.rs`, `main.rs`, `cli/mod.rs`, `tui/oil/utils/truncate.rs`, `tui/oil/utils/mod.rs`, `config/config/cli_app.rs` (core), `commands/session/acp.rs`.
 
@@ -500,7 +502,7 @@ Files: `commands/plugin/list.rs`, `commands/plugin/update.rs`, `commands/plugin/
 | `resolved_kiln_path` inline match | `cli_app.rs:853-858` | call `KilnEntry::path()` (`registry.rs:40`) |
 | `acp.rs` send loop vs replay loop | `commands/session/acp.rs:440-606`, `:650-820` | call one `fn print_event(event) -> Option<Ended>`; the `ended` arm differs, keep it in the callers |
 
-### B23 — crucible-lua
+### T1-B23 — crucible-lua
 
 Files: `theme_wire.rs`, `hl_lua.rs`, `theme.rs`, `fs.rs`, `http.rs`, `handlers/before_execute.rs`, `handlers/registry.rs`, `lifecycle/spec.rs`, `manifest.rs`, `shell.rs`.
 
@@ -514,7 +516,7 @@ Files: `theme_wire.rs`, `hl_lua.rs`, `theme.rs`, `fs.rs`, `http.rs`, `handlers/b
 | `parse_capability` | `lifecycle/spec.rs:31-44` | call `serde_json::from_value::<Capability>` (`manifest.rs:78` derives it with the same aliases) |
 | `exec_command` vs `spawn_command` setup | `shell.rs:159-185`, `:289-312` | call one `fn prepare_command(policy, cmd, args, opts) -> Result<Command>` |
 
-### B24 — crucible-oil and crucible-web (non-route)
+### T1-B24 — crucible-oil and crucible-web (non-route)
 
 Files: `crucible-oil/src/cell_grid.rs`, `overlay.rs`, `popup_node.rs`, `layout/types.rs`, `components/popup.rs`, `components/input_area.rs`, `components/mod.rs`, `lib.rs`, `node.rs`, `taffy_layout.rs`, `crucible-web/src/events.rs`, `crucible-daemon/src/rpc_client/agent/convert.rs`.
 
@@ -553,7 +555,7 @@ Files: `config.rs`, `commands/session/io.rs`, `commands/session/export.rs`, `com
 |---|---|---|
 | `EmbeddingConfigSection` alias | `config.rs:21` | delete |
 | `format_events_markdown` `_include_timestamps` parameter | `commands/session/io.rs:53` | the flag is a no-op; either implement it or delete the parameter and the `--timestamps` pass at `export.rs:35`. Report which. |
-| `resolve_path` `_config_dir` parameter | `commands/agents.rs:91` | delete (B22 also touches this fn; do B22 first) |
+| `resolve_path` `_config_dir` parameter | `commands/agents.rs:91` | delete (T1-B22 also touches this fn; do T1-B22 first) |
 | `run_watch_mode` `_verbose` parameter | `commands/process.rs:247` | delete |
 
 ### T2-B2 — crucible-lua
@@ -584,7 +586,7 @@ Files: `proptest_strategies.rs`, `style.rs`, `cell_grid.rs`, `planning.rs`, `ter
 | `FrameSnapshot::screen_with_overlays` | `planning.rs:81` | delete |
 | `Terminal::show_cursor_at` | `terminal.rs:311` | delete |
 | `Terminal::with_alternate_screen` and the `use_alternate_screen` field | `terminal.rs:168` | delete both; the field is always false |
-| `InputArea::with_popup` | `components/input_area.rs:57` | delete (B24 deletes `InputArea`; do B24 first) |
+| `InputArea::with_popup` | `components/input_area.rs:57` | delete (T1-B24 deletes `InputArea`; do T1-B24 first) |
 
 ## 4. Tier 3 — needs a decision
 
@@ -657,12 +659,12 @@ Recommend: replace each `dyn` with the concrete type; keep the trait only where 
 **B5. `EventEmitter` (1 impl + noop + mock; 2 defaulted).** `crucible-core/src/events/emitter.rs:293`.
 Recommend: make `emit_recursive` and `is_available` required; keep the trait because `MockEventEmitter` is a real double. Payoff: small. Cost: S.
 
-**B6. `ContentHasher`, `HashingAlgorithm`, `ChangeDetectionStore`.** B17 deletes `hashing/` and `processing/`. `ContentHasher` (`storage/traits.rs:17`) remains with dead impls.
-Recommend: delete `ContentHasher` too once B17 lands and `rg ContentHasher` shows only the trait. Cost: S.
+**B6. `ContentHasher`, `HashingAlgorithm`, `ChangeDetectionStore`.** T1-B17 deletes `hashing/` and `processing/`. `ContentHasher` (`storage/traits.rs:17`) remains with dead impls.
+Recommend: delete `ContentHasher` too once T1-B17 lands and `rg ContentHasher` shows only the trait. Cost: S.
 
 **B7. Session event parallel enums.** `SessionEventMessage` (wire, canonical), `TurnPayload` and seven groups (`protocol/session_events/`), `SessionEvent` + `InternalSessionEvent` (scripting, 12 of 52 variants live), `LogEvent` (5 of 16 written), `rpc_client/client/types.rs:10 SessionEvent`, web `ChatEvent` (6 dead variants). Families from the duplicate audit: `PostLlmCall` x2, `SessionEnded` vs `Ended`, `Delegation*` x2, `BashTask*` vs `BashJob*`, `Interaction*` x2, `Subagent*` x2, file/note variants vs `SystemPayload`.
 Options: (a) delete the 40 dead scripting variants and the 11 dead `LogEvent` variants; keep the rest; (b) make the scripting enum a projection of the wire enum (`From<SessionEventMessage>`); (c) leave.
-Recommend (a) now, (b) as a follow-up after B18 removes the markdown transcript format. Payoff: a new event is one wire variant plus one projection arm, not five enums. Risk: Lua handlers read the scripting names (`handlers/conversion.rs`); a deleted variant that a script matches fails silently at runtime. Grep `runtime/` for each name before deletion. Cost: L.
+Recommend (a) now, (b) as a follow-up after T1-B18 removes the markdown transcript format. Payoff: a new event is one wire variant plus one projection arm, not five enums. Risk: Lua handlers read the scripting names (`handlers/conversion.rs`); a deleted variant that a script matches fails silently at runtime. Grep `runtime/` for each name before deletion. Cost: L.
 Result, 2026-08-22: (a) landed. Removed 11 `SessionEvent` and 31 `InternalSessionEvent` variants, and the types only they carried (`SessionEventConfig`, `NotePayload`, `events::ToolCall`, `EntityType`, `InputType`, `TerminalStream`, `ToolProvider`). `LogEvent` had 11 live variants, not 5: `wire_to_log_event` yields `Thinking`, and the daemon writes `Subagent*`. Removed the 5 with no writer (`Permission`, `Summary`, `Bash*`) and `PermissionOutcome`. `runtime/` matched none of the names. (b) stays open.
 
 **B8. `StreamingChunk` vs `TurnEvent`.** `acp/streaming.rs:23`, `turn/mod.rs:41`.
@@ -705,7 +707,7 @@ Recommend: delete `pool_size` (nobody loads the struct from a file); keep `max_r
 **B20. `ExternalChangeTracker::tracked_roots`** (tests observe through it).
 Recommend: keep as `#[cfg(test)] pub(crate)`. Cost: S.
 
-**B21. `ServerContext` vs `RpcContext`.** After B5 deletes the dead fields, `ServerContext` holds four fields that `RpcContext` also holds.
+**B21. `ServerContext` vs `RpcContext`.** After T1-B5 deletes the dead fields, `ServerContext` holds four fields that `RpcContext` also holds.
 Recommend: delete `ServerContext`; `server/core/mod.rs` reads `RpcContext`. Payoff: one context for a new RPC handler. Cost: S.
 
 **B22. `StreamContext` rebuilt field by field although it derives `Clone`** (`stream.rs:1098`).
@@ -725,13 +727,13 @@ Recommend: move the two structs to `crucible-core/src/config/components/backend.
 **C1. Truncate helpers (nine) plus oil/CLI `truncate_to_*`.** Three distinct behaviours (byte cap, char cap with ellipsis, width cap). 
 Recommend: one `crucible-core::text` module with `truncate_chars(s, n, ellipsis: bool)` and `truncate_bytes`; oil keeps `truncate_to_width` (needs `unicode-width`). Replace the core copies (`workflow/stdlib.rs:74`, `session_event/helpers.rs:97`, `internal.rs:704 trunc`) first; they are mechanical. The daemon `observe/markdown.rs:353` copy passes `max_len 0` through; decide whether that is a bug. Cost: M.
 
-**C2. Tilde expanders (seven).** B11 and B22 collapse them to `resolve_registration_root` and `expand_tilde`. Remaining decision: one `pub fn expand_tilde` in `crucible-core::config` that both crates call. Cost: S after B11/B22.
+**C2. Tilde expanders (seven).** T1-B11 and T1-B22 collapse them to `resolve_registration_root` and `expand_tilde`. Remaining decision: one `pub fn expand_tilde` in `crucible-core::config` that both crates call. Cost: S after T1-B11/T1-B22.
 
 **C3. Provider knobs: `ChatConfig` vs `LlmProviderConfig`; five enrichment provider configs; `BackendType` vs `defaults.rs` endpoints; VertexAI disagreement; three provider-to-model tables (`wizard.rs:135`, `init.rs:385`, `DEFAULT_CHAT_MODEL`); `ollama_endpoint` x2; `provider_type_label` vs `keyed_backend_display_name`; `ProviderInfo` vs `DetectedProvider`; `discover_env_providers` vs `detect_providers_inner`.**
 Options: (a) one `ProviderDefaults` table in `crucible-core/src/config/components/backend.rs` keyed by `BackendType` (endpoint, default model, label, env var) that config, wizard, init, model listing and detection all read; (b) leave.
 Recommend (a). Payoff: a new provider is one row; today it is eight edits across three crates. Risk: the VertexAI endpoint must be decided (`backend.rs:130` vs `enrichment.rs:382`); wizard defaults for anthropic and openai change to match `DEFAULT_CHAT_MODEL`. Cost: L.
 
-**C4. Theme colour parsers.** B23 collapses two exact pairs. `parse_adaptive_color` vs `color_from_lua` and `adaptive_from_wire` vs `color_from_wire` differ in the String arm (palette names).
+**C4. Theme colour parsers.** T1-B23 collapses two exact pairs. `parse_adaptive_color` vs `color_from_lua` and `adaptive_from_wire` vs `color_from_wire` differ in the String arm (palette names).
 Recommend: share the Integer/Table/Object arms through one helper; keep two String arms. `BorderStyle` vs `ui_geometry::border_from_name` vs oil `Border`: map `BorderStyle` onto oil `Border` and delete `border_from_name` once `Ascii` has an oil mapping. Cost: M.
 
 **C5. `SessionAgent` literals x3** (`agent.rs:335` canonical, `create.rs:454`, `acp.rs:527`).
@@ -750,7 +752,7 @@ Recommend: move the list to `crucible-core::paths` and both read it. Cost: S.
 Recommend: document the layer order in `docs/Meta/`; do not merge. The layers have different override semantics. Cost: S (doc). Done: [[Bash Permission Layers]].
 
 **C10. `MockEmbeddingProvider` x3, `MockKnowledgeRepository` x3.**
-Recommend: `test_support` copies become canonical; delete `enrichment/service.rs:446` and `multi_kiln_search.rs:109`, `agent_manager/tests/mod.rs:242` after adding scripted results to the canonical ones. `mock.rs:13` stays (production config can select it). Cost: M.
+Recommend: `test_support` copies become canonical; delete `enrichment/service.rs:446` and `multi_kiln_search.rs:109` after adding scripted results to the canonical ones. (The third copy, once at `agent_manager/tests/mod.rs:242`, is already gone; `rg -w MockEmbeddingProvider` finds only `test_support.rs:101` and `llm/embeddings/mock.rs`.) `mock.rs:13` stays (production config can select it). Cost: M.
 
 **C11. `StatusBar` / `StatusComponent` / per-frame clones; `ShellHistoryItem` vs `CachedShellExecution`; `prettify_tool_args` vs `format_tool_args`; `table::wrap_text` vs `wrap_words`; `CellGrid::blit_line` vs `parse_line_to_cells`; `ansi.rs skip_until_st_or_bel` vs the OSC skip.** All change visible TUI output or lifetimes.
 Recommend: defer; each needs a snapshot review. Cost: M each.
@@ -793,7 +795,7 @@ Recommend: pass `DebounceConfig` into `Debouncer::new`; delete `debounce_delay`.
 
 **C25. `observe/markdown.rs render_to_markdown` vs `serde_md::to_string`.** Covered by B17.
 
-**C26. `SqlitePropertyStore`** is in B4 (duplicate audit found it safe; the dead-code skeptic wanted the test rewrite named). The rewrite is in B4.
+**C26. `SqlitePropertyStore`** is in T1-B4 (duplicate audit found it safe; the dead-code skeptic wanted the test rewrite named). The rewrite is in T1-B4.
 
 **C27. `session_bridge.rs CommentSpec::parse` vs `ReviewCommentRequest`; `parse_range` vs `context_ops::Range`.**
 Recommend: derive `Deserialize` on `Range` with `serde(tag = "type")` and delete `parse_range`; `CommentSpec` becomes `ReviewCommentRequest` with `#[serde(default)]` on author. Cost: S.
@@ -922,7 +924,7 @@ For each item: run `rg -nw <name>` over `crates/ runtime/ docs/ scripts/ example
 - [ ] `Terminal::cursor_style` `terminal.rs:173`
 - [ ] `bounded`, `bounded_head` `bounded.rs:43`
 - [ ] `NodeSpec`, `spec_to_node`, `NodeSpecError`, `NodeAttrs`, `parse_*` `template/node_spec.rs:7`
-- [ ] `LayoutEngine::compute`, `ComputedLayout` `taffy_layout.rs:40`
+- [x] `LayoutEngine::compute`, `ComputedLayout` `taffy_layout.rs:40` — `ComputedLayout` removed by T2-B3 and T3-C22; `LayoutEngine` stays (section 5a)
 - [ ] `CellGrid::blit_string`, `to_lines`, `get`, `set` `cell_grid.rs:175`
 - [ ] `PopupOverlay::move_selection_up_wrap`, `move_selection_down_wrap`, `selected_label` `components/popup.rs:100`
 - [ ] `InputNode::placeholder`, `focused`; `TextNode::{fg, bg, bold, dim}` `node.rs:510`
@@ -938,7 +940,7 @@ For each item: run `rg -nw <name>` over `crates/ runtime/ docs/ scripts/ example
 - `ClientId::as_u64` — own tests.
 - `DeferredShutdown::subscribe` — dispatch and core tests.
 - `RpcMethod::SessionReindex` — retired name kept in `METHODS` on purpose.
-- `FtsIndex::is_empty` — kiln_manager tests (now merged in B4).
+- `FtsIndex::is_empty` — kiln_manager tests (now merged in T1-B4).
 - `handle_lua_discover_plugins` `kiln_path` — serde field on a wire type.
 - `InProcessMcpHost::{address, shutdown}` — acp integration tests.
 - `llm/model_discovery.rs` — `examples/llm_discover_models.rs`.
@@ -951,7 +953,7 @@ For each item: run `rg -nw <name>` over `crates/ runtime/ docs/ scripts/ example
 - `ParsedNote::legacy`, block-hash helpers — test modules.
 - `MockAgent` / `MockAgentConfig` — own tests under `test-utils`.
 - `StreamConfig`, `StreamHandler` — `concurrent_sessions.rs`.
-- `ToolDescriptor`, `ToolRegistry`, `discover_tools`, `AcpToolExecutor` — `acp_integration_e2e.rs` (shape merge in B8).
+- `ToolDescriptor`, `ToolRegistry`, `discover_tools`, `AcpToolExecutor` — `acp_integration_e2e.rs` (shape merge in T1-B8).
 - `discover_agent`, `discover_agent_uncached` — CLI and tests.
 - `resolve_agent_from_config` — own tests.
 - `reset_agent_cache` — own and integration tests.
@@ -1098,7 +1100,7 @@ last group.
 ### Docs and this plan
 
 - Stale references after Tier 3: `ContentHasher`, `FileHash`, `SyntaxExtension`, `FileWatcher`, `WatcherFactory`, `serde_md`, `resolve_registration_root`, `KILN_BACKED_TOOLS`, `BUILTIN_TOOLS`, `ComputedLayout`, `SessionCommand` in [[Actual]], [[Gaps]], [[Type Flows]] and `Product.md` (`start_reconnect_loop` has call sites now; `source: index` no longer exists). `7fcd3b9f4` fixed the analysis docs; Gaps.md section 6 records the closed rows.
-- This plan: the Tier 1 batch labels B20 and B22 collide with Band B entries B20 and B22; section 1a row B22 and section 4 C2 mean the Tier 1 batch. C10 cites `agent_manager/tests/mod.rs:242`, which no longer exists. Line numbers for `types/acp.rs` in B10 and B11 are stale. Section 5.1 row `LayoutEngine::compute`, `ComputedLayout` is resolved.
+- This plan: done in T5-38. The Tier 1 batches are `T1-B1` to `T1-B24`, so they no longer collide with Band B; the C10 cite names the two copies that exist; section 5.1 marks the `LayoutEngine::compute`, `ComputedLayout` row done. Line numbers for `types/acp.rs` in B10 and B11 are still stale.
 - `docs/Help/Config/storage.md` and `acp.md` describe the two kept fields as unread but do not use the word "reserved"; `Product.md:1106` on `cru init` writing `[storage] backend` is a separate cleanup.
 
 ## 6. Extension seams now
@@ -1108,7 +1110,7 @@ last group.
 ### Add a tool
 
 Before: `tools/surface.rs` (`BuiltinTool` + `ToolSurface`, gated) · `tools/workspace_defs.rs` or `tools/notes/` · `tool_dispatch.rs` (`is_core_tool_name`, executor arm) · `tools/mcp_server.rs` (`KILN_BACKED_TOOLS`) · `tools/extended_mcp_server.rs` (`discovery_tools`) · `provider/genai_handle.rs` (`bridge_tool_defs`) · `crucible-cli/src/commands/tools.rs` (`BUILTIN_TOOLS`) · `agent_manager/messaging/permission.rs` (file-tool list x2) · `runtime/defaults/init.lua` if the permission mode must know it.
-Now (Tier 1 B12, B13; Tier 3 C6): `crates/crucible-daemon/src/tools/surface.rs` (variant, surface, the kiln predicate) · the tool module under `crates/crucible-daemon/src/tools/` · `crates/crucible-daemon/src/tool_dispatch.rs` (one executor arm; `DISCOVERY_TOOL_NAMES` is still a hand list, see section 5a) · `runtime/defaults/init.lua` if a mode must know it. `KILN_BACKED_TOOLS` and the CLI `BUILTIN_TOOLS` are gone. The compiler lists every `match` that must grow.
+Now (Tier 1 T1-B12, T1-B13; Tier 3 C6): `crates/crucible-daemon/src/tools/surface.rs` (variant, surface, the kiln predicate) · the tool module under `crates/crucible-daemon/src/tools/` · `crates/crucible-daemon/src/tool_dispatch.rs` (one executor arm; `DISCOVERY_TOOL_NAMES` is still a hand list, see section 5a) · `runtime/defaults/init.lua` if a mode must know it. `KILN_BACKED_TOOLS` and the CLI `BUILTIN_TOOLS` are gone. The compiler lists every `match` that must grow.
 
 ### Add a provider
 
@@ -1118,19 +1120,19 @@ Now (Tier 3 C3, B25): `crates/crucible-core/src/config/components/backend.rs` (v
 ### Add a client
 
 Before: `crucible-core/src/protocol/rpc/mod.rs` (`SessionEventMessage`) · `crucible-daemon/src/rpc_client/client/types.rs` (second `SessionEvent`) · `rpc_client/agent/convert.rs` (prefix strip) · `crucible-core/src/traits/chat.rs` (`AgentHandle`, 41 defaulted knobs a client can silently skip) · `crucible-web/src/events.rs` (`ChatEvent`, own prefix copy) · `crucible-lua/src/handlers/conversion.rs`.
-Now (Tier 3 A1, B9; Tier 1 B24): `crates/crucible-core/src/protocol/rpc/mod.rs` (read only) · `crates/crucible-core/src/traits/chat.rs` (`AgentHandle` plus `SessionKnobs`, all required) · one projection module for the client's own render type. The second `SessionEvent` is gone; `crates/crucible-web/src/events.rs` still holds `ChatEvent`. A client that omits a knob does not compile.
+Now (Tier 3 A1, B9; Tier 1 T1-B24): `crates/crucible-core/src/protocol/rpc/mod.rs` (read only) · `crates/crucible-core/src/traits/chat.rs` (`AgentHandle` plus `SessionKnobs`, all required) · one projection module for the client's own render type. The second `SessionEvent` is gone; `crates/crucible-web/src/events.rs` still holds `ChatEvent`. A client that omits a knob does not compile.
 
 ### Add a hook stage
 
 Before: `crucible-lua/src/handlers/hook_name.rs` (`StageId`, gated by `EnumIter`) · `crucible-daemon/src/agent_manager/messaging/tool_call.rs` or `send.rs` (the call site, and the gate order) · `handlers/registry.rs` (`execute_runtime_handler`) · `handlers/before_execute.rs` (`execute_runtime_json_handler`, copy) · `tool_hooks.rs` (`resolve_display_*`, copy per hook) · `runtime/defaults/init.lua` (if a default mode reacts) · `docs/Help/Extending/`.
-Now (Tier 1 B12, B23; Tier 3 C28): `crates/crucible-lua/src/handlers/hook_name.rs` (variant) · one call site in `crates/crucible-daemon/src/agent_manager/messaging/` · one `fold_vms` pass in `crates/crucible-daemon/src/agent_manager/vm_pass.rs` · `runtime/defaults/init.lua` if needed · `docs/Help/Extending/`. The gate order in `crates/crucible-daemon/src/agent_manager/messaging/tool_call.rs` stays the single place that decides `cancel` versus `handled`.
+Now (Tier 1 T1-B12, T1-B23; Tier 3 C28): `crates/crucible-lua/src/handlers/hook_name.rs` (variant) · one call site in `crates/crucible-daemon/src/agent_manager/messaging/` · one `fold_vms` pass in `crates/crucible-daemon/src/agent_manager/vm_pass.rs` · `runtime/defaults/init.lua` if needed · `docs/Help/Extending/`. The gate order in `crates/crucible-daemon/src/agent_manager/messaging/tool_call.rs` stays the single place that decides `cancel` versus `handled`.
 
 ### Add a storage backend
 
 Before: `crucible-core/src/storage/note_store.rs` (`NoteStore`, 5 defaulted link methods) · `storage/property_store.rs` (`PropertyStore`) · `traits/knowledge.rs` (`KnowledgeRepository`, 1 default) · `crucible-daemon/src/storage/sqlite/` (`adapters.rs`, `repository.rs` with the Scope match x3, `property_store.rs` with two impls) · `storage/sqlite/link_index.rs` · `storage/mod.rs` re-exports · `crucible-core/src/storage/traits.rs` (`StorageBackend`, dead).
-Now (Tier 1 B4, B17; Tier 3 A4): `crates/crucible-core/src/storage/note_store.rs` (all methods required) · `crates/crucible-core/src/storage/property_store.rs` · `crates/crucible-core/src/traits/knowledge.rs` · one new directory beside `crates/crucible-daemon/src/storage/sqlite/` with one `impl` per trait · `crates/crucible-daemon/src/storage/sqlite/adapters.rs` (one constructor arm). `StorageBackend` and `ContentHasher` are gone. A backend that omits link queries does not compile.
+Now (Tier 1 T1-B4, T1-B17; Tier 3 A4): `crates/crucible-core/src/storage/note_store.rs` (all methods required) · `crates/crucible-core/src/storage/property_store.rs` · `crates/crucible-core/src/traits/knowledge.rs` · one new directory beside `crates/crucible-daemon/src/storage/sqlite/` with one `impl` per trait · `crates/crucible-daemon/src/storage/sqlite/adapters.rs` (one constructor arm). `StorageBackend` and `ContentHasher` are gone. A backend that omits link queries does not compile.
 
 ### Add an RPC method
 
 Before: `crucible-daemon/src/rpc/dispatch.rs` (`rpc_methods!` row, gated; dispatch arm) · `server/<area>.rs` (handler; hand-spelled `json!` reply) · `rpc_helpers.rs` · `rpc_client/client/<area>.rs` (client wrapper; request type, often a fresh `{session_id}` struct) · `rpc_client/mod.rs` (re-export) · `crucible-web/src/services/daemon.rs` (`ReconnectingDaemon` wrapper) · `crucible-lua/src/sessions/` (`DaemonSessionApi`, defaulted) · `rpc/missing_session_contract.rs` if the method takes a session.
-Now (Tier 1 B6; Tier 3 A3, B21): `crates/crucible-daemon/src/rpc/dispatch.rs` (row plus arm) · one handler under `crates/crucible-daemon/src/server/` that takes `RpcContext` (`crates/crucible-daemon/src/rpc/context.rs`; `ServerContext` is gone) · `crates/crucible-daemon/src/rpc_client/client/` using `SessionIdRequest` · `crates/crucible-web/src/services/daemon.rs` if the web needs it · `crates/crucible-lua/src/sessions/mod.rs` (`DaemonSessionApi`, required, so Lua cannot miss it). The reply-shape problem (Actual.md section 9, "hand-spelled `json!`") is outside this plan.
+Now (Tier 1 T1-B6; Tier 3 A3, B21): `crates/crucible-daemon/src/rpc/dispatch.rs` (row plus arm) · one handler under `crates/crucible-daemon/src/server/` that takes `RpcContext` (`crates/crucible-daemon/src/rpc/context.rs`; `ServerContext` is gone) · `crates/crucible-daemon/src/rpc_client/client/` using `SessionIdRequest` · `crates/crucible-web/src/services/daemon.rs` if the web needs it · `crates/crucible-lua/src/sessions/mod.rs` (`DaemonSessionApi`, required, so Lua cannot miss it). The reply-shape problem (Actual.md section 9, "hand-spelled `json!`") is outside this plan.

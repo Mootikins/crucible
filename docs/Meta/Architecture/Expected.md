@@ -349,11 +349,11 @@ review named them as suspects, and the check found them covered.
 | `cru.ratelimit` | `crates/crucible-lua/src/ratelimit.rs:117`; registered at `crates/crucible-lua/src/executor.rs:293` | yes (F179) |
 | MCP gateway: upstream servers with prefixed names, reconnect loop, gateway tools on the served MCP surface | `crates/crucible-daemon/src/tools/mcp_gateway.rs:486`; `crates/crucible-daemon/src/tools/extended_mcp_server.rs:123` | yes (F210); the wiring landed in Tier 3 A10 and A11 |
 | Auto-title plugin over the `session_title` publication channel | `crates/crucible-daemon/src/agent_manager/title.rs:42` | yes (F59) |
-| Publications: `crucible.publish(key, value)` stored by the daemon and served by `plugin.publications` | `crates/crucible-lua/src/publications.rs:100`; `crates/crucible-daemon/src/daemon_plugins/mod.rs:966`; `crates/crucible-daemon/src/server/plugins.rs:156` | no; one sentence mentions a plugin that publishes `session_title` |
-| Plugin options: `crucible.options{}` declared once, served by `plugin.options`, `plugin.option_get`, `plugin.option_set`, `plugin.option_execute` | `crates/crucible-lua/src/options.rs:380`; `crates/crucible-daemon/src/daemon_plugins/mod.rs:973`; `crates/crucible-daemon/src/server/plugins.rs:187` | no |
-| Provider auth hooks: `crucible.on_provider_auth(fn)` | `crates/crucible-lua/src/auth_plugin.rs:9`; registered at `crates/crucible-lua/src/executor.rs:259` | no |
-| `crucible.notify`, `crucible.notify_once`, `crucible.messages.*` | `crates/crucible-lua/src/notify.rs:30`; registered at `crates/crucible-lua/src/executor.rs:260` | no; F134 names toasts, not the Lua call. The queue reaches no client (G122) |
-| Isolation claim: `crucible.require_isolation{}` | `crates/crucible-lua/src/isolation.rs:208`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:240` | partly; F177 names the `oci` plugin, not the API |
+| Publications: `crucible.publish(key, value)` stored by the daemon and served by `plugin.publications` | `crates/crucible-lua/src/publications.rs:100`; `crates/crucible-daemon/src/daemon_plugins/mod.rs:966`; `crates/crucible-daemon/src/server/plugins.rs:156` | yes, since 2026-08-23 (Plugin Publications) |
+| Plugin options: `crucible.options{}` declared once, served by `plugin.options`, `plugin.option_get`, `plugin.option_set`, `plugin.option_execute` | `crates/crucible-lua/src/options.rs:380`; `crates/crucible-daemon/src/daemon_plugins/mod.rs:973`; `crates/crucible-daemon/src/server/plugins.rs:187` | yes, since 2026-08-23 (Plugin Options) |
+| Provider auth hooks: `crucible.on_provider_auth(fn)` | `crates/crucible-lua/src/auth_plugin.rs:9`; registered at `crates/crucible-lua/src/executor.rs:259` | yes, since 2026-08-23 (Provider Auth Hooks) |
+| `crucible.notify`, `crucible.notify_once`, `crucible.messages.*` | `crates/crucible-lua/src/notify.rs:30`; registered at `crates/crucible-lua/src/executor.rs:260` | yes, since 2026-08-23 (Lua Notifications, `[-]`). The queue reaches no client (G122) |
+| Isolation claim: `crucible.require_isolation{}` | `crates/crucible-lua/src/isolation.rs:208`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:240` | yes, since 2026-08-23 (Isolation Claims) |
 | Plugin status slots: `crucible.set_status{}`, `crucible.clear_status` | `crates/crucible-lua/src/plugin_status.rs:118`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:253` | yes (F105) |
 | Statusline expressions pushed from the daemon | `crates/crucible-lua/src/statusline_exprs.rs:190`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:361` | yes (F117) |
 | `cru.context.attach` registry | `crates/crucible-lua/src/context_attach.rs:171`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:350` | yes (F45) |
@@ -361,11 +361,11 @@ review named them as suspects, and the check found them covered.
 | `cru.oq` multi-format parse and jq-style query | `crates/crucible-lua/src/json_query.rs:284`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:204` | yes, in the module list only |
 | `cru.shell` with a plugin shell policy | `crates/crucible-lua/src/shell.rs:366`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:202` | yes, in the module list only |
 | Session lifecycle hooks `crucible.on_session_start`, `crucible.on_session_end` | `crates/crucible-lua/src/hooks.rs:34`; registered at `crates/crucible-lua/src/executor.rs:258` | yes |
-| Review comments and rebase: `review.comment`, `review.resolve_comment`, `review.rebase` | `crates/crucible-daemon/src/rpc/dispatch.rs:181`; `crates/crucible-daemon/src/server/session/review/mod.rs:371` | no; F154 names `list_hunks` and `set_state` only |
-| `session.export_to_file`: a transcript written to a caller path under write protection | `crates/crucible-daemon/src/rpc/dispatch.rs:172`; `crates/crucible-daemon/src/server/observe.rs:295` | no; F76 names `session.export` |
-| Plugin RPC management: `plugin.install`, `plugin.remove`, `plugin.run_command` | `crates/crucible-daemon/src/rpc/dispatch.rs:194` | partly; `cru plugin add` is named, the RPC names are not |
+| Review comments and rebase: `review.comment`, `review.resolve_comment`, `review.rebase` | `crates/crucible-daemon/src/rpc/dispatch.rs:181`; `crates/crucible-daemon/src/server/session/review/mod.rs:371` | yes, since 2026-08-23 (Review Comments and Rebase) |
+| `session.export_to_file`: a transcript written to a caller path under write protection | `crates/crucible-daemon/src/rpc/dispatch.rs:172`; `crates/crucible-daemon/src/server/observe.rs:295` | yes, since 2026-08-23 (Session Export to a Path) |
+| Plugin RPC management: `plugin.install`, `plugin.remove`, `plugin.run_command` | `crates/crucible-daemon/src/rpc/dispatch.rs:194` | yes, since 2026-08-23 (Plugin Install names the RPCs) |
 
-Section 2 should gain one row per `no` or `partly` line. Section 9 should
+`Product.md` gained one row per former `no` or `partly` line on 2026-08-23 (plan T5-38); section 2 of this document still lacks them. Section 9 should
 gain "a plugin option" and "a publication" as extension points.
 
 ## 3. Domain entities

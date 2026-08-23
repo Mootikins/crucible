@@ -252,7 +252,8 @@ at `messaging/permission.rs:1108`, then delete the elapsed-time check.
 `surface()`, `served_over_mcp()`, `plan_mode_allowed()`, `is_write()`,
 `is_discovery()`. First step: add `InvokeTool` to the enum, then replace
 `DISCOVERY_TOOL_NAMES` with a match; repeat one list per commit. Delete the
-CLI `BUILTIN_TOOLS` and read `discover_tools` over RPC instead.
+CLI `BUILTIN_TOOLS` and read `discover_tools` over RPC instead. Status: plan
+T3-C6 deleted `KILN_BACKED_TOOLS` and `BUILTIN_TOOLS` (section 6).
 
 **G12.** Target: the CLI calls `kiln.list` and `kiln.open`; only the daemon
 holds a `KilnRegistry`. First step: make `KilnRegistryContext::for_daemon` take
@@ -366,7 +367,8 @@ copies. First step: delete the six top-level fields and fix the DTO at
 `rpc_client/storage.rs:86` to fill `content`.
 
 **G53.** Target: one `ContentHash` newtype; `hashing/` deleted. First step:
-alias `FileHash = BlockHash`, then delete `hashing/`.
+alias `FileHash = BlockHash`, then delete `hashing/`. Status: done; plan T5-02
+also deleted `types/hashing.rs` and the `FileHash` alias (section 6).
 
 **G55.** Target: one `split_frontmatter(text) -> (Option<Frontmatter>, &str)`
 in `crucible-core/src/parser/`. First step: make `implementation.rs:241` the
@@ -397,7 +399,8 @@ rows; then delete `DaemonNoteStore`.
 **G66, G67.** Target: `enum WatchBackend { Notify }`, one debounce, a config
 the manager reads. First step: delete the polling and editor stubs and the
 `FileWatcher` and `WatcherFactory` traits; then remove one of the two debounce
-layers.
+layers. Status: plan T3-B3 replaced the two traits with the `Backend` enum
+(section 6).
 
 **G68, G70.** Target: `fn parse(text) -> ParsedNote`, sync, no trait. First
 step: drop `async_trait` from `MarkdownParser` and make `NotePipeline` hold
@@ -405,7 +408,7 @@ step: drop `async_trait` from `MarkdownParser` and make `NotePipeline` hold
 
 **G69.** Target: `enum Extension` with eight variants and one `fn run`. First
 step: replace `ExtensionRegistry: Vec<Arc<dyn SyntaxExtension>>` with
-`Vec<Extension>`.
+`Vec<Extension>`. Status: done in plan T3-B1 (section 6).
 
 **G72.** Target: `fs.read`, `fs.write`, `canvas.get`, `canvas.put`,
 `note.resolve` RPC rows. First step: add `fs.write` and route
@@ -781,7 +784,7 @@ does not name are unchanged.
 |---|---|---|---|
 | G2 | T3-B4 | `0e194bb53` | part: `PermissionGate` is a concrete type; the prompt still runs inside `messaging/permission.rs` and `PermissionDecision` has no layer |
 | G4 | T3-B13 | `28be1a511` | closed: `TryFrom` between the two scopes replaces the hand map |
-| G7 | T3-C6 | `11ca718e2` | part: `KILN_BACKED_TOOLS` and the CLI `BUILTIN_TOOLS` derive from `BuiltinTool`; `DISCOVERY_TOOL_NAMES`, `PLAN_TOOL_NAMES` and `is_write_tool_name` stay |
+| G7 | T3-C6 | `11ca718e2` | part: `KILN_BACKED_TOOLS` and the CLI `BUILTIN_TOOLS` are deleted (`BuiltinTool::needs_kiln`, `BuiltinTool::ALL`); `DISCOVERY_TOOL_NAMES`, `PLAN_TOOL_NAMES` and `is_write_tool_name` stay |
 | G9 | T3-C6 | `11ca718e2` | closed |
 | G21 | T3-B11 | `c8394afe8` | part: the ACP `SessionConfig` is gone; the knobs stay on `SessionAgent` |
 | G22 | T3-A1 | `0fbef4943` | closed: `AgentHandle` plus `SessionKnobs`, all required |
@@ -789,15 +792,15 @@ does not name are unchanged.
 | G36 | T3-B4 | `0e194bb53` | part: `Undoable` is gone; the client constants remain |
 | G44 | T3-C5 | `b4e2fcf37` | closed for the daemon; the CLI ACP literals at `crucible-cli/src/factories/agent.rs` stay |
 | G48 | T3-B8 | `d429a886d` | part: the non-callback path is deleted; `StreamingChunk` still translates to `TurnEvent` in a stateful loop |
-| G53 | B17, T3-B6, T3-B14 | `6c6e8608a`, `1d5461468`, `e67ec3e7e` | closed: `hashing/` and `ContentHasher` deleted; `FileHash` is an alias of `BlockHash` |
+| G53 | T1-B17, T3-B6, T3-B14, T5-02 | `6c6e8608a`, `1d5461468`, `e67ec3e7e`, `757f73ed1` | closed: `hashing/`, `ContentHasher` and `types/hashing.rs` deleted; `BlockHash` is the one hash newtype |
 | G62 | T3-A4, T3-B5 | `44da8714e`, `cdbb6b440` | closed: the `NoteStore`, `KnowledgeRepository`, `EmbeddingProvider`, `EventHandler`, `StorageClient` and `EventEmitter` methods are required |
 | G64 | T3-A12 | `76b944d94` | closed: the `note_store` branch is deleted |
 | G66 | T3-B3, T3-C23, T3-C24 | `fbe49077c`, `c9973d969`, `ef3f26663` | part: one `Backend` enum with a capability table; `DebounceConfig` reaches `Debouncer`; the polling and editor backends are still stubs |
 | G69 | T3-B1 | `61e7a1d67` | closed: `Extension` is one enum |
 | G70 | T3-B4 | `0e194bb53` | closed |
-| G73 | B17 | `6c6e8608a` | closed: `processing/` and `change_detection.rs` deleted |
+| G73 | T1-B17 | `6c6e8608a` | closed: `processing/` and `change_detection.rs` deleted |
 | G77 | T3-B7 | `2b4a0c71f` | part: 42 dead scripting variants and 5 dead `LogEvent` variants deleted; six enums remain |
-| G87 | B18, T3-B17 | `c8bdacacc`, `5638b2be1` | part: `events/markdown/` and both `serde_md` serializers deleted; `EventRing` stays |
+| G87 | T1-B18, T3-B17 | `c8bdacacc`, `5638b2be1` | part: `events/markdown/` and both `serde_md` serializers deleted; `EventRing` stays |
 | G88 | T3-B5 | `cdbb6b440` | closed for the trait; the `EmitOutcome.cancelled` dead branch stays |
 | G98 | T3-B21 | `37e4a8b8d` | closed |
 | G110 | T3-A10, T3-A11 | `358dd41d2`, `33703918c` | closed |
@@ -810,8 +813,8 @@ does not name are unchanged.
 | G132 | T3-C8 | `f36093d2b` | closed: `crucible_core::paths` |
 | G134 | T3-A5 | `ca9473cf4` | closed |
 | G144 | T3-C20 | `bcf424dd3` | closed: one `ReplCommand` table |
-| G145 | B24, T3-C1 | `62839af8b`, `c07a2b7fc` | part: `crucible_core::text` holds the truncate helpers; oil keeps its own |
-| G148 | B20, T3-C21 | `2a2f9e4cd`, `8b259b03e` | part: `parse_bool` no longer panics; the overlay defaults stay strings |
+| G145 | T1-B24, T3-C1 | `62839af8b`, `c07a2b7fc` | part: `crucible_core::text` holds the truncate helpers; oil keeps its own |
+| G148 | T1-B20, T3-C21 | `2a2f9e4cd`, `8b259b03e` | part: `parse_bool` no longer panics; the overlay defaults stay strings |
 | G152 | T3-C13 | `7fbc9f481` | part: `From` impls; the three types stay |
 | G153 | T2-B3, T3-C22 | `5fb48681d`, `2d01c51d3` | part: dead strategies and `ComputedLayout` deleted; `template/node_spec.rs` stays |
 | G156 | T3-C3, T3-B25 | `420472f32`, `9fb6b8849` | part: one `BackendType` table for defaults and one Ollama tags shape; `ChatConfig` and `LlmProviderConfig` still repeat knobs |
