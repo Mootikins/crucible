@@ -86,7 +86,6 @@ Register projects (code repositories, workspaces) and bind them to kilns. The da
 [projects.crucible]
 path = "~/crucible"
 kilns = ["docs", "vault"]     # Kiln names from [kilns] section
-default_kiln = "vault"        # Primary kiln for this project
 
 [projects.website]
 path = "~/website"
@@ -97,7 +96,6 @@ kilns = ["vault"]
 |-------|------|---------|-------------|
 | `path` | string | required | Filesystem path to the project root |
 | `kilns` | list | `[]` | Named kilns this project uses (resolved from `[kilns]`) |
-| `default_kiln` | string | first in list | Which kiln is primary for sessions in this project |
 
 Projects are registered automatically by `cru init` when run inside a project directory, or manually by editing the config file.
 

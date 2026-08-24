@@ -156,7 +156,6 @@ docs = "~/crucible/docs"
 [projects.crucible]
 path = "~/crucible"
 kilns = ["docs", "vault"]
-default_kiln = "vault"
 ```
 
 See [[Configuration#Migrating from `kiln_path` to `[kilns]`]] if you have an existing `kiln_path` setup.

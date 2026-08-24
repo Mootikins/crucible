@@ -76,14 +76,12 @@ shared = "~/shared-knowledge"
 [projects.myproject]
 path = "~/projects/myproject"
 kilns = ["docs", "shared"]
-default_kiln = "docs"
 ```
 
 | Field | Type | Description |
 |---|---|---|
 | `path` | path | Project root directory |
 | `kilns` | list | Named kilns from `[kilns]` that this project uses |
-| `default_kiln` | string | Kiln a session in this project attaches by default. Not a storage location — transcripts live under `~/.crucible/sessions/` regardless |
 
 ### Kiln Attachment Fields
 
