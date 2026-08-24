@@ -26,18 +26,17 @@ fn test_plugin_template_init_lua_is_syntactically_valid() {
 
     let lua = mlua::Lua::new();
     // The template registers its lifecycle hook by CALLING
-    // `crucible.on_session_start` at load, which is the only registration the
+    // `cru.on_session_start` at load, which is the only registration the
     // loader honours — so evaluating it needs that global. A bare `Lua::new()`
-    // has no `crucible` table; the daemon's executor always does.
-    let crucible = lua.create_table().expect("crucible table");
-    crucible
-        .set(
-            "on_session_start",
-            lua.create_function(|_, _: mlua::Function| Ok(()))
-                .expect("stub"),
-        )
-        .expect("stub on_session_start");
-    lua.globals().set("crucible", crucible).expect("set global");
+    // has no `cru` table; the daemon's executor always does.
+    let cru = lua.create_table().expect("cru table");
+    cru.set(
+        "on_session_start",
+        lua.create_function(|_, _: mlua::Function| Ok(()))
+            .expect("stub"),
+    )
+    .expect("stub on_session_start");
+    lua.globals().set("cru", cru).expect("set global");
 
     let result = lua.load(&substituted).eval::<mlua::Value>();
 
@@ -73,7 +72,7 @@ fn test_plugin_template_uses_only_live_constructs() {
         );
     }
     assert!(
-        template_lua.contains("crucible.on_session_start("),
+        template_lua.contains("cru.on_session_start("),
         "the hook must be registered by calling the api, not by a `hooks` field"
     );
     assert!(

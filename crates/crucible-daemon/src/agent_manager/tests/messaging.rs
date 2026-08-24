@@ -310,7 +310,7 @@ async fn tool_result_handlers_patch_acp_pass_through_results() {
 
     h.load_lua(
         r#"
-        crucible.on("tool_result", function(ctx, event)
+        cru.on("tool_result", function(ctx, event)
             return {
                 result = "redacted<" .. tostring(event.args.file_path) .. ">"
             }
@@ -487,14 +487,14 @@ async fn display_hook_lua_tool_enriches_tool_call_metadata() {
 
     h.load_lua(
         r#"
-        crucible.on("tool:display_start", function(ctx, event)
+        cru.on("tool:display_start", function(ctx, event)
             return {
                 label = "Custom " .. event.name,
                 detail = "LuaStart"
             }
         end)
 
-        crucible.on("tool:display_complete", function(ctx, event)
+        cru.on("tool:display_complete", function(ctx, event)
             return {
                 summary = "Summary " .. event.name
             }
@@ -1210,10 +1210,10 @@ async fn attached_context_reaches_the_agent_within_the_same_turn() {
         r#"
         -- No real tool executor in this harness; `handled` supplies the
         -- result. tool_result still fires over it, which is the point.
-        crucible.on("pre_tool_call", function(ctx, event)
+        cru.on("pre_tool_call", function(ctx, event)
             return { handled = true, result = "file contents" }
         end)
-        crucible.on("tool_result", function(ctx, event)
+        cru.on("tool_result", function(ctx, event)
             cru.context.attach(ctx.session_id, "SENTINEL-ATTACHED-KNOWLEDGE",
                                { key = "k1" })
         end)
@@ -1271,10 +1271,10 @@ async fn repeated_triggers_attach_once_per_key() {
     let mut h = ReactorTestHarness::new().await;
     h.load_lua(
         r#"
-        crucible.on("pre_tool_call", function(ctx, event)
+        cru.on("pre_tool_call", function(ctx, event)
             return { handled = true, result = "file contents" }
         end)
-        crucible.on("tool_result", function(ctx, event)
+        cru.on("tool_result", function(ctx, event)
             cru.context.attach(ctx.session_id, "CPP-NOTES", { key = "filetype:cpp" })
         end)
     "#,

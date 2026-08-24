@@ -19,32 +19,37 @@ local clear_status_calls = {}
 local publications = {}      -- key -> published value
 local declared_options       -- the settings tree the plugin declared
 
-crucible = crucible or {}
-crucible.on = function(event, opts, fn)
+cru.on = function(event, opts, fn)
   expect.equals("pre_tool_call", event)
   hooks[opts.pattern] = { fn = fn, opts = opts }
 end
-crucible.on_session_start = function(fn, opts)
+cru.on_session_start = function(fn, opts)
   lifecycle.start = { fn = fn, opts = opts or {} }
 end
-crucible.on_session_end = function(fn)
+cru.on_session_end = function(fn)
   lifecycle.end_fn = fn
 end
-crucible.require_isolation = function(opts)
-  table.insert(isolation_calls, opts)
-end
-crucible.set_status = function(opts)
-  table.insert(status_calls, opts)
-end
-crucible.clear_status = function(opts)
-  table.insert(clear_status_calls, opts)
-end
-crucible.publish = function(key, value)
-  publications[key] = value
-end
-crucible.options = function(tree)
-  declared_options = tree
-end
+-- The runner VM has no cru.isolation or cru.plugin (the daemon registers
+-- them), so the stub creates the tables whole.
+cru.isolation = {
+  require = function(opts)
+    table.insert(isolation_calls, opts)
+  end,
+}
+cru.plugin = {
+  set_status = function(opts)
+    table.insert(status_calls, opts)
+  end,
+  clear_status = function(opts)
+    table.insert(clear_status_calls, opts)
+  end,
+  publish = function(key, value)
+    publications[key] = value
+  end,
+  options = function(tree)
+    declared_options = tree
+  end,
+}
 
 -- Scripted shell. Responders are keyed by "<cmd> <first-arg>" (then "<cmd>"),
 -- and every call is logged so tests can assert on the exact argv.

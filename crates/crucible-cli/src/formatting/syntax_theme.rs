@@ -91,7 +91,7 @@ impl SyntaxColors {
     ///
     /// The mapping is conventional rather than arbitrary — green strings, dim
     /// comments, accent keywords is what most themes do — but it is a guess, so
-    /// `crucible.syntax.setup{}` can override any slot.
+    /// `cru.syntax.setup{}` can override any slot.
     pub fn derived_from(theme: &crucible_lua::theme::ThemeConfig) -> Self {
         let c = |a| theme.resolve_color(a);
         Self {

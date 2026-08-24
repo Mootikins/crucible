@@ -26,7 +26,7 @@ impl Server {
             // validators. Bind once; `set_lua_validators` is idempotent.
             self.agent_manager
                 .set_lua_validators(loader.validator_registry(), loader.plugin_lua());
-            // Same pairing for `crucible.on` hooks — without this bind,
+            // Same pairing for `cru.on` hooks — without this bind,
             // plugins register handlers into a registry the stream loop
             // never reads.
             self.agent_manager
@@ -124,9 +124,9 @@ impl Server {
                 }
             }
 
-            // Register `crucible.colorscheme` / `crucible.statusline` on the PLUGIN VM
+            // Register `cru.colorscheme` / `cru.statusline` on the PLUGIN VM
             // before user init.lua runs — this is the VM that evaluates it.
-            // Without this they are nil there, so `crucible.colorscheme.setup{...}`
+            // Without this they are nil there, so `cru.colorscheme.setup{...}`
             // errors and the user's theme never parses. Registration only; the
             // init.lua evaluation is `eval_user_init` below, and doing both here
             // would evaluate it twice.

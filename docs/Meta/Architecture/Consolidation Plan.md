@@ -1183,7 +1183,7 @@ matches every chained statement. `just ci` and the web unit tests pass.
 - [T5-35] crucible-oil template parsers (template/node_spec.rs, template/html.rs) still only accept the oil spellings `single`/`heavy`; they are a separate vocabulary, not the geometry wire, and were left as-is.
 - [T5-36] The e2e Playwright fixtures were only grepped for event_type (no hits); `just web-test e2e` was not run.
 - [T5-38] Expected.md section 2 still lacks feature rows (F-ids) for the eight code-only features; section 2a now says so.
-- [T5-38] Lua Notifications stays `[-]`: no daemon code drains the crucible.notify queue into a session event (Gaps G122).
+- [T5-38] Lua Notifications stays `[-]`: no daemon code drains the cru.log.notify queue into a session event (Gaps G122).
 - [T5-38] The TUI `:export` renders events client-side with render_to_markdown instead of calling session.export_to_file, so the write-protection in observe.rs does not cover it.
 - [T5-38] Consolidation Plan line numbers for types/acp.rs in Band B B10 and B11 remain stale (noted in section 5a).
 

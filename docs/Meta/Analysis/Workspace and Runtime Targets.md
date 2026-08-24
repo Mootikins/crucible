@@ -32,7 +32,7 @@ settings are the interesting ones.
 | Axis | Question | Providers | Mechanism |
 |------|----------|-----------|-----------|
 | **Workspace** | Where do the files live? | `worktree` (later: clone, remote folder) | The provider rewrites the workspace path before the daemon creates the session |
-| **Runtime** | Where does the process run? | `oci` (later: `ssh`) | `crucible.require_isolation` + `SandboxExec` |
+| **Runtime** | Where does the process run? | `oci` (later: `ssh`) | `cru.isolation.require` + `SandboxExec` |
 
 ```
   main    × host             ordinary session
@@ -62,10 +62,10 @@ provider wins. A list of prefixes could express it later; see the end of this no
 
 A plugin needs two things. Both channels already exist.
 
-**Declare the provider** with `crucible.publish`:
+**Declare the provider** with `cru.plugin.publish`:
 
 ```lua
-crucible.publish("targets", {
+cru.plugin.publish("targets", {
   axis            = "workspace",        -- or "runtime"
   label           = "Worktree",
   targets_command = "worktree.targets", -- enumerated on demand
@@ -118,7 +118,7 @@ registered at the old path. An ACP agent would already point at the old path.
 So resolution runs first, in `DaemonDispatch::resolve_workspace_target`
 (`rpc/dispatch.rs:1293`). It is a resolution step, not a new hook list. The provider
 names a `resolve_command` beside its `targets_command`. The daemon calls it through
-`plugin.run_command`. A second hook registry would gain nothing: `crucible.on(...)`
+`plugin.run_command`. A second hook registry would gain nothing: `cru.on(...)`
 broadcasts to every listener, but exactly one provider must answer a target that names
 it.
 
@@ -156,7 +156,7 @@ No `runtime/plugins/ssh/` exists. This section is the proposal.
 `SandboxExec` nearly fits:
 
 ```lua
-crucible.require_isolation{
+cru.isolation.require{
   session     = session.id,
   plugin      = "ssh",
   exec_prefix = { "ssh", "-T", host },

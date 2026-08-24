@@ -25,7 +25,7 @@ The internal agent provides:
 - **Task tracking** - ACP-style task lists as working memory
 - **Explicit search** - Use `/search` to inject context when needed
 - **Precognition** - automatic kiln retrieval before each turn (tunable via the `precognition_select`/`precognition_format` hooks)
-- **Lua hooks** - the fourteen `crucible.on()` events plus session lifecycle hooks — see [[Help/Extending/Event Hooks]]
+- **Lua hooks** - the fourteen `cru.on()` events plus session lifecycle hooks — see [[Help/Extending/Event Hooks]]
 - **Compaction** - `/compact` summarizes and continues in a new file
 
 ## Memory Architecture
@@ -266,8 +266,8 @@ contract.
 
 | Event | Description |
 |-------|-------------|
-| `crucible.on_session_start(fn)` | Session beginning (can refuse the session) |
-| `crucible.on_session_end(fn)` | Session closing |
+| `cru.on_session_start(fn)` | Session beginning (can refuse the session) |
+| `cru.on_session_end(fn)` | Session closing |
 | `pre_llm_call` | Before the LLM call — transform the prompt |
 | `transform_context` | Before the LLM call — rewrite the message list |
 | `turn:complete` | After the assistant response, can inject a follow-up |
@@ -281,7 +281,7 @@ contract.
 -- `pre_llm_call` hands the handler `{ prompt, model }` and a returned
 -- `{ prompt = ... }` replaces it. Returning `{ cancel = true }` cancels the
 -- turn outright.
-crucible.on("pre_llm_call", { priority = 100 }, function(ctx, event)
+cru.on("pre_llm_call", { priority = 100 }, function(ctx, event)
     local recent = cru.kiln.search({
         modified_after = os.time() - 86400  -- 24 hours
     })

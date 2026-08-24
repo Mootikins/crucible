@@ -377,7 +377,7 @@ impl AgentManager {
         )
         .await;
 
-        // A crucible.on Cancel cancels the TURN — same as the reactor path
+        // A cru.on Cancel cancels the TURN — same as the reactor path
         // above and transform_context. It used to merely stop the handler
         // chain and send the prompt anyway.
         if cancelled {

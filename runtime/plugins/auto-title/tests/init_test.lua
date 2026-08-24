@@ -5,12 +5,14 @@
 -- fail if the plugin stops publishing its channel, stops declaring its
 -- command, or stops sanitizing what the model answered.
 
+-- The runner VM has no cru.plugin (the daemon registers it); tests stub into it.
+cru.plugin = cru.plugin or {}
 local publications = {}
 local completions = {}
 local next_answer = { "  A perfectly good title  " }
 
 crucible = crucible or {}
-crucible.publish = function(key, value) publications[key] = value end
+cru.plugin.publish = function(key, value) publications[key] = value end
 
 cru = cru or {}
 cru.log = function() end
@@ -48,7 +50,7 @@ describe("declaration", function()
   end)
 
   -- Publishing belongs to loading the plugin, not to configuring it: setup()
-  -- runs again from the user's init.lua, where `crucible.publish` is bound to
+  -- runs again from the user's init.lua, where `cru.plugin.publish` is bound to
   -- another plugin's name.
   it("publishes without setup() being called", function()
     fresh()

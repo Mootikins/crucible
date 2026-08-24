@@ -9,17 +9,19 @@
 --- flood, count the replies", so the reply count is asserted here literally
 --- rather than inferred from the refusal.
 
+-- The runner VM has no cru.plugin (the daemon registers it); tests stub into it.
+cru.plugin = cru.plugin or {}
 local quota = require("quota")
 
--- `config.get` reads `crucible.config.get("discord." .. key)` inside a pcall,
--- and the test VM has no `crucible.config` at all — so the table is created and
+-- `config.get` reads `cru.plugin.config.get("discord." .. key)` inside a pcall,
+-- and the test VM has no `cru.plugin.config` at all — so the table is created and
 -- then restored, exactly as `routing_test.lua` does.
 local function with_config(tbl, fn)
     crucible = crucible or {}
-    local had_config = crucible.config
-    crucible.config = { get = function(key) return tbl[key] end }
+    local had_config = cru.plugin.config
+    cru.plugin.config = { get = function(key) return tbl[key] end }
     local ok, err = pcall(fn)
-    crucible.config = had_config
+    cru.plugin.config = had_config
     if not ok then error(err) end
 end
 

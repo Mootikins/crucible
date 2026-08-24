@@ -14,7 +14,7 @@ aliases:
 
 # Lua Runtime API
 
-This page documents the `cru.*` Lua API available to plugins running inside the Crucible daemon. Modules are registered under both the `cru` and `crucible` namespaces, with two caveats: the UI-config namespaces (`crucible.colorscheme`, `crucible.ui`, `crucible.statusline`, ...) exist only under `crucible`, and `cru.config.get` / `crucible.config.get` are **different functions** (see [[Help/Lua/Configuration]]). Some modules (like `http`, `oq`, `fs`, `graph`) are also available as standalone globals for backwards compatibility.
+This page documents the `cru.*` Lua API available to plugins running inside the Crucible daemon. `cru` is the one Lua global; every module hangs off it. Note that `cru.config.get` (the app-config store) and `cru.plugin.config.get` (the plugin's own `[plugins.*]` TOML section) are **different functions** (see [[Help/Lua/Configuration]]).
 
 For TUI-specific Lua APIs (Oil rendering primitives), see [[Help/Plugins/Oil Lua API]].
 
@@ -598,7 +598,7 @@ cru.tools.set_active(ctx.session_id, {})                          -- offer nothi
 cru.tools.set_active(ctx.session_id, nil)                         -- back to automatic
 ```
 
-`names` is an array of glob patterns — the same language a mode's `tools` selector and `crucible.on`'s `pattern` speak (`*`, `?`, `[a-z]`, `{a,b}`). `nil` clears the set. An empty table is **not** a clear: it is a set that names nothing, so the session offers no tools. It must be an *array*: a map (`{ read_file = true }`) or a table with a gap in its indices is an error, not an empty set.
+`names` is an array of glob patterns — the same language a mode's `tools` selector and `cru.on`'s `pattern` speak (`*`, `?`, `[a-z]`, `{a,b}`). `nil` clears the set. An empty table is **not** a clear: it is a set that names nothing, so the session offers no tools. It must be an *array*: a map (`{ read_file = true }`) or a table with a gap in its indices is an error, not an empty set.
 
 The set survives until it is cleared or the session ends. It is **not persisted** — it lives in the running daemon, so a daemon restart drops it and a resumed session comes back with its automatic tool list. Re-apply it from a `session:start` hook if it has to outlive the daemon.
 
@@ -680,7 +680,7 @@ The request goes to every client attached to the session, and the first answer w
 
 ## Conversation Context
 
-The `cru.context` module manipulates a session's conversation context. All daemon-backed functions take an explicit `session_id` and return `(result, nil)` or `(nil, error_string)`; until the daemon wires the session API they are stubs returning `(nil, "no daemon connected")`. `estimate_tokens` is pure and always works. `cru.context.attach` is also registered on the per-session VMs, so `crucible.on` handlers can call it regardless of which VM they run in.
+The `cru.context` module manipulates a session's conversation context. All daemon-backed functions take an explicit `session_id` and return `(result, nil)` or `(nil, error_string)`; until the daemon wires the session API they are stubs returning `(nil, "no daemon connected")`. `estimate_tokens` is pure and always works. `cru.context.attach` is also registered on the per-session VMs, so `cru.on` handlers can call it regardless of which VM they run in.
 
 ### cru.context.estimate_tokens(text)
 
@@ -712,7 +712,7 @@ Remove messages. `range` is one of `{ type = "all" }`, `{ type = "last"|"first",
 Queue retrieved content for the session's **next LLM call**. Context only: attachments never reach the conversation tree or the session log — one turn's context, then gone.
 
 ```lua
-crucible.on("tool_result", { pattern = "read_file" }, function(ctx, event)
+cru.on("tool_result", { pattern = "read_file" }, function(ctx, event)
   local ft = event.args.path:match("%.(%w+)$")
   if not ft then return end
   local notes = cru.kiln.search("conventions for " .. ft)
@@ -951,7 +951,7 @@ Validates `name`, `desc`, `start` (required) and `stop`, `health` (optional), th
 If `spec.config` is a schema table, values are resolved **at define time**, per key. All three steps use the **service's `name`**, not the plugin's — name the service after the plugin if you want them to line up:
 
 1. keys marked `secret = true`: the env var `CRUCIBLE_<NAME>_<KEY>` (service name and key uppercased, non-alphanumerics replaced with `_` — `name = "gateway"` reads `CRUCIBLE_GATEWAY_*`)
-2. `crucible.config.get("<name>.<key>")` — the `[plugins.<name>]` section of config.toml
+2. `cru.plugin.config.get("<name>.<key>")` — the `[plugins.<name>]` section of config.toml
 3. the schema's `default`
 
 The resolved table is stored on the internal registry entry only — nothing passes it to `start`, and no accessor exposes it. A start function that needs the values must resolve them itself (the `web-search` plugin's `ws_config.lua` does exactly this, matching the env-var convention).
@@ -969,15 +969,15 @@ Calls the service's `stop` function (errors logged, not raised), marks it not ru
 
 ## Session Status
 
-### crucible.set_status(opts) / crucible.clear_status(opts)
+### cru.plugin.set_status(opts) / cru.plugin.clear_status(opts)
 
-A durable, session-scoped status slot in the UI — unlike `crucible.notify`,
+A durable, session-scoped status slot in the UI — unlike `cru.log.notify`,
 which is transient and easily missed. Slots are keyed, so the TUI and web
 render any plugin's slots generically; the `oci` plugin uses one to show
 whether a session is sandboxed.
 
 ```lua
-crucible.set_status{
+cru.plugin.set_status{
   session = session.id,      -- required
   key     = "oci",           -- required; one slot per key per session
   text    = "sandboxed: alpine:latest",  -- required; keep it short
@@ -985,7 +985,7 @@ crucible.set_status{
   progress = 0.4,            -- optional: fraction 0..1, or `true` for a spinner
 }
 
-crucible.clear_status{ session = session.id, key = "oci" }
+cru.plugin.clear_status{ session = session.id, key = "oci" }
 ```
 
 `progress = true` means indeterminate work (render a spinner); a number is a
@@ -995,7 +995,7 @@ fraction complete, clamped to 0..1. Omit it for a state that is not work
 
 ## Publications
 
-### crucible.publish(key, value)
+### cru.plugin.publish(key, value)
 
 Publish data about the plugin itself for clients to render — not
 session-scoped (that's what status slots are for). The daemon stores the
@@ -1003,7 +1003,7 @@ value verbatim as JSON and every client reads the same answer, keyed by
 publication name and attributed to the publishing plugin.
 
 ```lua
-crucible.publish("isolation", {
+cru.plugin.publish("isolation", {
   available = true,
   profiles  = { "rust", "throwaway" },
 })
@@ -1028,7 +1028,7 @@ truncation fallback in place.
 
 ## Options
 
-### crucible.options(tree)
+### cru.plugin.options(tree)
 
 Declare a settings tree that every frontend renders in its own idiom — the
 settings pane in the TUI, a form on the web. The shape follows Ace3's
@@ -1036,7 +1036,7 @@ AceConfig options tables: nested `group` nodes whose `args` hold typed leaves,
 with `get`/`set` accessors called when a value is read or written.
 
 ```lua
-crucible.options{
+cru.plugin.options{
   type = "group",
   args = {
     image = {
@@ -1119,7 +1119,7 @@ A tool or command declared without a `fn` is not registered — declaring one th
 
 ## Kiln access and the `vault` name
 
-The kiln API is `cru.kiln` / `crucible.kiln` — there is no `cru.vault` table. The old "vault" name survives in exactly one Lua-facing place: a plugin manifest may declare `capabilities: [vault]`, which parses as the `kiln` capability. (The Rust registration functions are still named `register_vault_module*`; that is internal naming only.)
+The kiln API is `cru.kiln` / `cru.kiln` — there is no `cru.vault` table. The old "vault" name survives in exactly one Lua-facing place: a plugin manifest may declare `capabilities: [vault]`, which parses as the `kiln` capability. (The Rust registration functions are still named `register_vault_module*`; that is internal naming only.)
 
 ## Session-VM-only: cru.defaults and cru.modes
 

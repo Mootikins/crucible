@@ -119,7 +119,7 @@ impl AgentManager {
             permission_hooks.clone(),
             permission_functions.clone(),
         ) {
-            error!(session_id = %session_id, error = %e, "Failed to register crucible.permissions API");
+            error!(session_id = %session_id, error = %e, "Failed to register cru.permissions API");
         }
 
         // Every session VM writes to the SAME store, so a default set by any

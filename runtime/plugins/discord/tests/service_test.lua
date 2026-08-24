@@ -7,26 +7,28 @@
 --- Case three is the other half: a guard that never dials is just as broken, and
 --- it is the likelier way this regresses.
 
+-- The runner VM has no cru.plugin (the daemon registers it); tests stub into it.
+cru.plugin = cru.plugin or {}
 local plugin = require("discord")
 local service_fn = plugin.services.gateway.fn
 
---- Invoke the gateway service with `crucible.config` answering from `cfg`, and
+--- Invoke the gateway service with `cru.plugin.config` answering from `cfg`, and
 --- report whether it reached `cru.ws.connect`.
 ---
---- `config.get` reads `crucible.config.get("discord." .. key)` inside a pcall,
+--- `config.get` reads `cru.plugin.config.get("discord." .. key)` inside a pcall,
 --- so the suite stubs that lookup rather than the plugin's own accessor. The
---- test VM has no `crucible.config`, hence the table is created and restored.
+--- test VM has no `cru.plugin.config`, hence the table is created and restored.
 --- `os.getenv` is stubbed away too: `config.get_token` falls back to
 --- DISCORD_BOT_TOKEN, and a developer who has one exported must not turn the
 --- no-token case green.
 local function dialed_with(cfg)
     crucible = crucible or {}
-    local had_config = crucible.config
+    local had_config = cru.plugin.config
     local had_ws = cru.ws
     local had_getenv = os.getenv
     local dialed = false
 
-    crucible.config = { get = function(key) return cfg[key] end }
+    cru.plugin.config = { get = function(key) return cfg[key] end }
     os.getenv = function() return nil end
     cru.ws = {
         connect = function()
@@ -42,7 +44,7 @@ local function dialed_with(cfg)
 
     cru.ws = had_ws
     os.getenv = had_getenv
-    crucible.config = had_config
+    cru.plugin.config = had_config
     return dialed
 end
 

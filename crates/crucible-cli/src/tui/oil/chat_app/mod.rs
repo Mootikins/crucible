@@ -480,7 +480,7 @@ impl OilChatApp {
         };
 
         let mode = ComponentInputMode::from_content(self.input.content());
-        // `crucible.ui.setup{ popup = { max_visible = N } }` overrides how many
+        // `cru.geometry.setup{ popup = { max_visible = N } }` overrides how many
         // rows show before scrolling; unset keeps the built-in.
         let max_visible = crate::tui::oil::theme::geometry::active()
             .popup

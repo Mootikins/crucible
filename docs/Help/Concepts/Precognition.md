@@ -81,7 +81,7 @@ Plugins can reshape Precognition through two event seams:
 - `precognition_select` — runs after retrieval, before injection. A handler sees the retrieved notes and chooses which to keep (filter, reorder, cap).
 - `precognition_format` — controls how the selected notes are rendered into the injected context block, replacing the default formatting.
 
-Register handlers with `crucible.on("precognition_select", ...)` / `crucible.on("precognition_format", ...)`. See [[Help/Extending/Event Hooks]] for handler signatures and semantics.
+Register handlers with `cru.on("precognition_select", ...)` / `cru.on("precognition_format", ...)`. See [[Help/Extending/Event Hooks]] for handler signatures and semantics.
 
 Both seams name the kiln a note came from as `note.kiln` — the key of its
 `[kilns]` entry, not its directory. A handler can tell one corpus from another

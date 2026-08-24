@@ -5,23 +5,25 @@
 --- a misconfigured daemon used to answer every message in a channel with the
 --- same failure for the full session TTL, instead of once.
 
+-- The runner VM has no cru.plugin (the daemon registers it); tests stub into it.
+cru.plugin = cru.plugin or {}
 local sessions = require("sessions")
 
---- `config.get` reads `crucible.config.get("discord." .. key)` inside a pcall,
---- and the test VM has no `crucible.config` — same shape as `routing_test`.
+--- `config.get` reads `cru.plugin.config.get("discord." .. key)` inside a pcall,
+--- and the test VM has no `cru.plugin.config` — same shape as `routing_test`.
 --- `cru.sessions` is stubbed for the same reason: the plugin VM has the real
 --- bridge, the test VM has nothing.
 local function with_env(cfg, session_api, fn)
     crucible = crucible or {}
-    local had_config = crucible.config
+    local had_config = cru.plugin.config
     local had_sessions = cru.sessions
-    crucible.config = { get = function(key) return cfg[key] end }
+    cru.plugin.config = { get = function(key) return cfg[key] end }
     cru.sessions = session_api
 
     local ok, err = pcall(fn)
 
     cru.sessions = had_sessions
-    crucible.config = had_config
+    cru.plugin.config = had_config
     if not ok then error(err) end
 end
 

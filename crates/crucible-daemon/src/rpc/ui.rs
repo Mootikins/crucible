@@ -1,6 +1,6 @@
 //! `ui.config` — delivers Lua-defined UI configuration to an attached client.
 //!
-//! This is the transport that makes `crucible.colorscheme.setup()` and
+//! This is the transport that makes `cru.colorscheme.setup()` and
 //! `runtime/themes/*.lua` real. Before it existed, both parsed correctly into a
 //! process-global inside `crucible-lua` that only a *same-process* reader could
 //! see — so in the normal split (TUI process ↔ daemon process) the TUI read its

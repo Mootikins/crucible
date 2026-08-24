@@ -369,7 +369,7 @@ Two further limits worth knowing:
 
 `POST /api/webhook/{name}` turns a request into a `webhook:received` event, which reaches
 both subscribed clients and any Lua handler registered for it —
-`crucible.on("webhook:received", { pattern = "ci" }, fn)`, see
+`cru.on("webhook:received", { pattern = "ci" }, fn)`, see
 [[Help/Extending/Event Hooks]]. It sits inside the bearer-auth layer, but that layer waves
 loopback callers through — so on the machine running `cru web`, any page you visit could
 otherwise reach it cross-origin with no credential. Every delivery therefore carries its own

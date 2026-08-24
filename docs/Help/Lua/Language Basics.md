@@ -25,7 +25,7 @@ Lua is one of the most widely-used scripting languages, with simple syntax that'
 
 ## The `cru` Namespace
 
-All built-in modules are accessible under the `cru` namespace (canonical). The `crucible` namespace mirrors most of it as a backwards-compatible alias. Standalone globals like `http`, `fs`, `shell`, `oq`, `paths`, and `graph` also still work.
+All built-in modules are accessible under the `cru` namespace — the one Lua global. Standalone globals like `http`, `fs`, `shell`, `oq`, `paths`, and `graph` also still work.
 
 ```lua
 -- Canonical access
@@ -37,14 +37,14 @@ cru.json.encode(tbl)
 cru.json.decode(str)
 
 -- Aliases (still work)
-crucible.log("info", "message")   -- crucible.* alias
+cru.log("info", "message")   -- crucible.* alias
 http.get(url)                     -- standalone global
 ```
 
 > [!warning] One known divergence: `config`
 > `cru.config.get(key)` reads a single **top-level** app-config value (the
 > merged `config.toml` + `cru.config.set()` state, no dotted paths), while
-> `crucible.config.get("plugin.key")` — registered on the daemon's plugin VM —
+> `cru.plugin.config.get("plugin.key")` — registered on the daemon's plugin VM —
 > does dotted-key descent into `[plugins.*]` config. Same name, different
 > semantics; pick by what you're reading, not by namespace habit.
 
@@ -89,8 +89,8 @@ cru.fs.write("kiln://notes/.crucible/proposals/idea.md", body)
 | `cru.storage` | Plugin-scoped key-value store: `set(entity, key, val)`, `get(entity, key)`, `list(entity)`, `find(key, val)`, `delete(entity, key)` |
 | `cru.schedule` | Interval tasks: `cru.schedule({every=N}, fn)` returns handle; `cru.schedule.cancel(handle)` |
 | `cru.tools` | Tool registry: `get_tools()`, `run(name, args)` |
-| `crucible.notify` | Notifications: `notify(msg, level?, opts?)`, `notify_once(msg)` |
-| `crucible.messages` | Notification panel: `toggle()`, `show()`, `hide()`, `clear()` |
+| `cru.log.notify` | Notifications: `notify(msg, level?, opts?)`, `notify_once(msg)` |
+| `cru.log.messages` | Notification panel: `toggle()`, `show()`, `hide()`, `clear()` |
 | `cru.oil` | UI building: `text()`, `col()`, `row()`, `spacer()`, `maybe()`, `match_state()` |
 | `cru.errors` | Plugin error log: `recent(n?)` returns recent errors |
 

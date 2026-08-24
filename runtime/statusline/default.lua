@@ -9,7 +9,7 @@
 -- this file without changing `builtin_default()` in `statusline_items.rs` is a
 -- build failure rather than a silent divergence.
 
-local sl = crucible.statusline
+local sl = cru.statusline
 
 return {
   -- A region is an ordered list and position is the arrangement, so the input

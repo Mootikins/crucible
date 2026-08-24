@@ -49,7 +49,7 @@ fn stamp_envelope(
 /// a handler sees one flat table. Pinned by `handlers::tests::conversion`.
 ///
 /// This is the single projection: [`session_event_to_lua`] (script handlers
-/// via `crucible.on`) is built from this JSON, so the two live handler paths
+/// via `cru.on`) is built from this JSON, so the two live handler paths
 /// cannot drift apart — they used to, presenting `"ToolCalled"` to one and
 /// `"tool_called"` to the other for the same event.
 pub(crate) fn session_event_to_flat_json(event: &SessionEvent) -> JsonValue {

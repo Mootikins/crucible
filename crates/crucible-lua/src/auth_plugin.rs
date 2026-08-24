@@ -235,9 +235,9 @@ mod tests {
 
     fn setup() -> Lua {
         let lua = Lua::new();
-        let crucible = lua.create_table().unwrap();
-        register_auth_module(&lua, &crucible).unwrap();
-        lua.globals().set("crucible", crucible).unwrap();
+        let cru = lua.create_table().unwrap();
+        register_auth_module(&lua, &cru).unwrap();
+        lua.globals().set("cru", cru).unwrap();
         lua
     }
 
@@ -250,7 +250,7 @@ mod tests {
                 .unwrap(),
         }
         lua.load(format!(
-            r#"crucible.on_provider_auth(function(ctx) return {{ headers = {{ ["X-Who"] = "{header}" }} }} end)"#
+            r#"cru.on_provider_auth(function(ctx) return {{ headers = {{ ["X-Who"] = "{header}" }} }} end)"#
         ))
         .exec()
         .unwrap();

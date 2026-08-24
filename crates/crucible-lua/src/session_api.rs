@@ -3,7 +3,7 @@
 //! Provides typed session objects with property-style access:
 //!
 //! ```lua
-//! local s = crucible.get_session()
+//! local s = cru.get_session()
 //! s.temperature = 0.7
 //! s.max_tokens = 4096
 //! s.thinking_budget = 1024
@@ -19,7 +19,7 @@
 //! access patterns. Explicit session objects avoid implicit state.
 //!
 //! **Future considerations:**
-//! - `crucible.get_session(id)` for cross-session access
+//! - `cru.get_session(id)` for cross-session access
 //! - Session multiplexing for parallel agent orchestration
 //!
 //! ## Disabled Features
@@ -531,7 +531,7 @@ pub mod tests {
         session.bind(Box::new(MockRpc::new()));
         mgr.set_current(session);
 
-        let id: String = lua.load("return crucible.get_session().id").eval().unwrap();
+        let id: String = lua.load("return cru.get_session().id").eval().unwrap();
         assert_eq!(id, "test-123");
     }
 
@@ -544,7 +544,7 @@ pub mod tests {
         mgr.set_current(session);
 
         let temp: f64 = lua
-            .load("return crucible.get_session().temperature")
+            .load("return cru.get_session().temperature")
             .eval()
             .unwrap();
         assert!((temp - 0.7).abs() < 0.001);
@@ -558,12 +558,12 @@ pub mod tests {
         session.bind(Box::new(MockRpc::new()));
         mgr.set_current(session);
 
-        lua.load("local s = crucible.get_session(); s.temperature = 0.3")
+        lua.load("local s = cru.get_session(); s.temperature = 0.3")
             .exec()
             .unwrap();
 
         let temp: f64 = lua
-            .load("return crucible.get_session().temperature")
+            .load("return cru.get_session().temperature")
             .eval()
             .unwrap();
         assert!((temp - 0.3).abs() < 0.001);
@@ -581,7 +581,7 @@ pub mod tests {
 
         let model: String = lua
             .load(
-                r#"local s = crucible.get_session()
+                r#"local s = cru.get_session()
                    s.model = "new-model"
                    return s.model"#,
             )
@@ -594,7 +594,7 @@ pub mod tests {
     fn test_no_session_error() {
         let (lua, _mgr) = TestLuaBuilder::new().build_with_current_session();
 
-        let result: mlua::Result<String> = lua.load("return crucible.get_session().id").eval();
+        let result: mlua::Result<String> = lua.load("return cru.get_session().id").eval();
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -610,7 +610,7 @@ pub mod tests {
         session.bind(Box::new(MockRpc::new()));
         mgr.set_current(session);
 
-        let result: mlua::Result<()> = lua.load("crucible.get_session().temperature = 3.0").exec();
+        let result: mlua::Result<()> = lua.load("cru.get_session().temperature = 3.0").exec();
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("0.0-2.0"));
     }
@@ -623,12 +623,12 @@ pub mod tests {
         session.bind(Box::new(MockRpc::new()));
         mgr.set_current(session);
 
-        lua.load("crucible.get_session():set_variable('key', 'value')")
+        lua.load("cru.get_session():set_variable('key', 'value')")
             .exec()
             .unwrap();
 
         let result: String = lua
-            .load("return crucible.get_session():get_variable('key')")
+            .load("return cru.get_session():get_variable('key')")
             .eval()
             .unwrap();
         assert_eq!(result, "value");
@@ -642,12 +642,12 @@ pub mod tests {
         session.bind(Box::new(MockRpc::new()));
         mgr.set_current(session);
 
-        lua.load("crucible.get_session():set_variable('config', {nested = true, count = 42})")
+        lua.load("cru.get_session():set_variable('config', {nested = true, count = 42})")
             .exec()
             .unwrap();
 
         let result: mlua::Table = lua
-            .load("return crucible.get_session():get_variable('config')")
+            .load("return cru.get_session():get_variable('config')")
             .eval()
             .unwrap();
         let nested: bool = result.get("nested").unwrap();
@@ -665,7 +665,7 @@ pub mod tests {
         mgr.set_current(session);
 
         let result: mlua::Value = lua
-            .load("return crucible.get_session():get_variable('nonexistent')")
+            .load("return cru.get_session():get_variable('nonexistent')")
             .eval()
             .unwrap();
         assert!(result.is_nil());
@@ -680,7 +680,7 @@ pub mod tests {
         mgr.set_current(session);
 
         let result: mlua::Result<()> = lua
-            .load("crucible.get_session():set_variable('fn', function() end)")
+            .load("cru.get_session():set_variable('fn', function() end)")
             .exec();
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
@@ -696,7 +696,7 @@ pub mod tests {
         mgr.set_current(session);
 
         let prompt: String = lua
-            .load("return crucible.get_session().system_prompt")
+            .load("return cru.get_session().system_prompt")
             .eval()
             .unwrap();
         assert_eq!(prompt, crucible_core::prompts::DEFAULT_SYSTEM_PROMPT);
@@ -710,12 +710,12 @@ pub mod tests {
         session.bind(Box::new(MockRpc::new()));
         mgr.set_current(session);
 
-        lua.load("local s = crucible.get_session(); s.system_prompt = 'custom prompt'")
+        lua.load("local s = cru.get_session(); s.system_prompt = 'custom prompt'")
             .exec()
             .unwrap();
 
         let prompt: String = lua
-            .load("return crucible.get_session().system_prompt")
+            .load("return cru.get_session().system_prompt")
             .eval()
             .unwrap();
         assert_eq!(prompt, "custom prompt");
@@ -729,12 +729,12 @@ pub mod tests {
         session.bind(Box::new(MockRpc::new()));
         mgr.set_current(session);
 
-        lua.load("crucible.get_session():mark_first_message_sent()")
+        lua.load("cru.get_session():mark_first_message_sent()")
             .exec()
             .unwrap();
 
         let result: mlua::Result<()> = lua
-            .load("crucible.get_session().system_prompt = 'new prompt'")
+            .load("cru.get_session().system_prompt = 'new prompt'")
             .exec();
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();

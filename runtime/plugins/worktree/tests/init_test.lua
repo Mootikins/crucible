@@ -6,12 +6,14 @@
 -- shelling out differently — including the argv, which is where a branch name
 -- containing a space or a `;` would otherwise become two arguments.
 
+-- The runner VM has no cru.plugin (the daemon registers it); tests stub into it.
+cru.plugin = cru.plugin or {}
 local publications = {}
 local declared_options
 
 crucible = crucible or {}
-crucible.publish = function(key, value) publications[key] = value end
-crucible.options = function(tree) declared_options = tree end
+cru.plugin.publish = function(key, value) publications[key] = value end
+cru.plugin.options = function(tree) declared_options = tree end
 
 -- Scripted git. Responders are keyed by the first two argv words after the
 -- `-C <dir>` pair, which is what actually distinguishes the calls; every call

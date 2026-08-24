@@ -39,7 +39,7 @@ pub use types::{FileChangeKind, NoteChangeType};
 /// The ten scripting names the transport vocabulary also has a payload for.
 ///
 /// Both vocabularies name these events, and they spell them differently:
-/// `crucible.on("tool_called")` and the web's `tool_call` SSE frame are the
+/// `cru.on("tool_called")` and the web's `tool_call` SSE frame are the
 /// same event. Nothing said so before, so a plugin author reading the SSE
 /// stream learned the wrong name.
 ///

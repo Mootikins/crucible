@@ -137,7 +137,7 @@ end, { priority = 1000 })
 --
 -- `cru.defaults.x` is the value a NEW session starts from; `session.x` is
 -- that session's own value. (The pair Neovim spells `vim.o` / `vim.bo`. It is
--- not called `crucible.o` because `vim.o` doubles as an alias for the current
+-- not called `cru.o` because `vim.o` doubles as an alias for the current
 -- buffer, and the daemon multiplexes sessions — there is no current one.)
 --
 -- An agent card's own system_prompt wins: defaults only fill fields that were

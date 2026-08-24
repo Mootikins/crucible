@@ -165,7 +165,7 @@ async fn remove_plugin_with_purge_query_returns_200() {
 
 /// The settings tree reaches the browser unchanged.
 ///
-/// The whole point of `crucible.options` is that a plugin declares its
+/// The whole point of `cru.plugin.options` is that a plugin declares its
 /// settings once and every frontend renders them. If this layer reshapes a
 /// tree — flattening it, dropping a field it does not recognise — the web pane
 /// stops being a projection of the plugin's declaration and becomes a second

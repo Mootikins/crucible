@@ -341,7 +341,7 @@ end
 -- Plugin Spec
 -- ============================================================================
 
-crucible.on_session_end(function(session)
+cru.on_session_end(function(session)
     local ok, err = pcall(M.run, session)
     if not ok then
         cru.log("error", "reflection: handler error: " .. tostring(err))
@@ -377,7 +377,7 @@ local plugin = {
 -- would otherwise fill `package.loaded`. The documented
 -- `require("reflection").setup{...}` from a user's init.lua would then load a
 -- SECOND copy of this file: with its own upvalues, and re-running every
--- body-level `crucible.on_*` call in it — so the `on_session_end` handler at :326 would be
+-- body-level `cru.on_*` call in it — so the `on_session_end` handler at :326 would be
 -- registered twice and fire twice per event. Registering the spec here makes
 -- that `require` answer with this table instead.
 --

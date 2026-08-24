@@ -262,7 +262,7 @@ impl TurnPayload {
     ///
     /// The transport and scripting vocabularies are disjoint by design (see the
     /// parent module), and they spell ten of the same events differently.
-    /// `crucible.on("tool_called")` and the web's `tool_call` SSE frame are the
+    /// `cru.on("tool_called")` and the web's `tool_call` SSE frame are the
     /// same event; nothing said so before, so a plugin author reading the SSE
     /// stream learned the wrong name.
     ///

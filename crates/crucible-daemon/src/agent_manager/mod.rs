@@ -402,7 +402,7 @@ pub struct AgentManager {
     /// it empty and `OutputValidation::Lua` surfaces as a validation
     /// failure with a clear reason instead of panicking.
     lua_validators: std::sync::OnceLock<(Arc<LuaValidatorRegistry>, Arc<Lua>)>,
-    /// Plugin `crucible.on` handler registry + the plugin `Lua` handle.
+    /// Plugin `cru.on` handler registry + the plugin `Lua` handle.
     /// Bound at daemon startup alongside `lua_validators`. Empty in tests and
     /// isolated managers, where plugin hooks simply don't fire.
     plugin_handlers: std::sync::OnceLock<PluginHandlers>,
@@ -428,7 +428,7 @@ pub struct AgentManager {
     /// session's slow start. The registry updates in place on reload, so a
     /// cached `Arc` never goes stale.
     plugin_tool_registry: std::sync::OnceLock<Arc<crate::plugin_tools::PluginRegistry>>,
-    /// What plugins published about themselves (`crucible.publish`), bound at
+    /// What plugins published about themselves (`cru.plugin.publish`), bound at
     /// daemon startup beside the registry above.
     ///
     /// Read off a `OnceLock` rather than the loader mutex for the same reason
@@ -584,7 +584,7 @@ impl AgentManager {
             .map(|(r, l)| (Arc::clone(r), Arc::clone(l)))
     }
 
-    /// Bind the plugin loader's `crucible.on` registry + `Lua` handle, so
+    /// Bind the plugin loader's `cru.on` registry + `Lua` handle, so
     /// hooks registered by plugins reach the stream loop. Without this,
     /// plugins can register handlers that never fire. Idempotent.
     pub fn set_plugin_handlers(&self, registry: Arc<LuaScriptHandlerRegistry>, lua: Arc<Lua>) {

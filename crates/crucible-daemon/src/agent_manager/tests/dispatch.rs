@@ -17,7 +17,7 @@ mod event_dispatch {
             .lua
             .load(
                 r#"
-            crucible.on("turn:complete", function(ctx, event)
+            cru.on("turn:complete", function(ctx, event)
                 return nil
             end)
         "#,
@@ -53,11 +53,11 @@ mod event_dispatch {
             .load(
                 r#"
             execution_order = {}
-            crucible.on("turn:complete", function(ctx, event)
+            cru.on("turn:complete", function(ctx, event)
                 table.insert(execution_order, "first")
                 return nil
             end)
-            crucible.on("turn:complete", function(ctx, event)
+            cru.on("turn:complete", function(ctx, event)
                 table.insert(execution_order, "second")
                 return nil
             end)
@@ -98,11 +98,11 @@ mod event_dispatch {
             .load(
                 r#"
             execution_order = {}
-            crucible.on("turn:complete", function(ctx, event)
+            cru.on("turn:complete", function(ctx, event)
                 table.insert(execution_order, "first")
                 error("intentional error")
             end)
-            crucible.on("turn:complete", function(ctx, event)
+            cru.on("turn:complete", function(ctx, event)
                 table.insert(execution_order, "second")
                 return nil
             end)
@@ -142,7 +142,7 @@ mod event_dispatch {
                 .lua
                 .load(
                     r#"
-                crucible.on("turn:complete", function(ctx, event)
+                cru.on("turn:complete", function(ctx, event)
                     return nil
                 end)
             "#,
@@ -157,10 +157,10 @@ mod event_dispatch {
                 .lua
                 .load(
                     r#"
-                crucible.on("turn:complete", function(ctx, event)
+                cru.on("turn:complete", function(ctx, event)
                     return nil
                 end)
-                crucible.on("turn:complete", function(ctx, event)
+                cru.on("turn:complete", function(ctx, event)
                     return nil
                 end)
             "#,
@@ -193,7 +193,7 @@ mod event_dispatch {
                 r#"
             received_session_id = nil
             received_message_id = nil
-            crucible.on("turn:complete", function(ctx, event)
+            cru.on("turn:complete", function(ctx, event)
                 received_session_id = event.session_id
                 received_message_id = event.message_id
                 return nil
@@ -235,7 +235,7 @@ mod event_dispatch {
             .lua
             .load(
                 r#"
-            crucible.on("turn:complete", function(ctx, event)
+            cru.on("turn:complete", function(ctx, event)
                 return { cancel = true, reason = "test cancel" }
             end)
         "#,
@@ -277,7 +277,7 @@ mod event_dispatch {
                 .lua
                 .load(
                     r#"
-                crucible.on("turn:complete", function(ctx, event)
+                cru.on("turn:complete", function(ctx, event)
                     return { inject = { content = "Continue working" } }
                 end)
             "#,
@@ -328,7 +328,7 @@ mod event_dispatch {
         plugin_lua
             .load(
                 r#"
-            crucible.on("turn:complete", function(ctx, event)
+            cru.on("turn:complete", function(ctx, event)
                 return { inject = { content = "from the plugin VM: " .. ctx.session_id } }
             end)
         "#,
@@ -370,7 +370,7 @@ mod event_dispatch {
                 .lua
                 .load(
                     r#"
-                crucible.on("turn:complete", function(ctx, event)
+                cru.on("turn:complete", function(ctx, event)
                     return { inject = { content = "session inject" } }
                 end)
             "#,
@@ -390,7 +390,7 @@ mod event_dispatch {
         plugin_lua
             .load(
                 r#"
-            crucible.on("turn:complete", function(ctx, event)
+            cru.on("turn:complete", function(ctx, event)
                 return { inject = { content = "plugin inject" } }
             end)
         "#,
@@ -426,10 +426,10 @@ mod event_dispatch {
                 .lua
                 .load(
                     r#"
-                crucible.on("turn:complete", function(ctx, event)
+                cru.on("turn:complete", function(ctx, event)
                     return { inject = { content = "First injection" } }
                 end)
-                crucible.on("turn:complete", function(ctx, event)
+                cru.on("turn:complete", function(ctx, event)
                     return { inject = { content = "Second injection" } }
                 end)
             "#,
@@ -467,7 +467,7 @@ mod event_dispatch {
                 .lua
                 .load(
                     r#"
-                crucible.on("turn:complete", function(ctx, event)
+                cru.on("turn:complete", function(ctx, event)
                     return { inject = { content = "Suffix content", position = "user_suffix" } }
                 end)
             "#,
@@ -507,7 +507,7 @@ mod event_dispatch {
                 .load(
                     r#"
                 received_continuation = nil
-                crucible.on("turn:complete", function(ctx, event)
+                cru.on("turn:complete", function(ctx, event)
                     received_continuation = event.is_continuation
                     if event.is_continuation then
                         return nil  -- Skip injection on continuation
@@ -563,7 +563,7 @@ mod event_dispatch {
                 .lua
                 .load(
                     r#"
-                crucible.on("turn:complete", function(ctx, event)
+                cru.on("turn:complete", function(ctx, event)
                     return nil
                 end)
             "#,

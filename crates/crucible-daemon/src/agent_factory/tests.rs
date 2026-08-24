@@ -661,12 +661,12 @@ fn lua_auth_headers_override_config_when_authorization_present() {
 
     let lua = Lua::new();
     let globals = lua.globals();
-    let crucible = lua.create_table().unwrap();
-    globals.set("crucible", crucible.clone()).unwrap();
-    crucible_lua::auth_plugin::register_auth_module(&lua, &crucible).unwrap();
+    let cru = lua.create_table().unwrap();
+    globals.set("cru", cru.clone()).unwrap();
+    crucible_lua::auth_plugin::register_auth_module(&lua, &cru).unwrap();
     lua.load(
         r#"
-        crucible.on_provider_auth(function(ctx)
+        cru.on_provider_auth(function(ctx)
             if ctx.provider == "openai" then
                 return {
                     headers = {
@@ -701,12 +701,12 @@ fn lua_auth_none_keeps_config_fallback() {
 
     let lua = Lua::new();
     let globals = lua.globals();
-    let crucible = lua.create_table().unwrap();
-    globals.set("crucible", crucible.clone()).unwrap();
-    crucible_lua::auth_plugin::register_auth_module(&lua, &crucible).unwrap();
+    let cru = lua.create_table().unwrap();
+    globals.set("cru", cru.clone()).unwrap();
+    crucible_lua::auth_plugin::register_auth_module(&lua, &cru).unwrap();
     lua.load(
         r#"
-        crucible.on_provider_auth(function(_ctx)
+        cru.on_provider_auth(function(_ctx)
             return nil
         end)
         "#,

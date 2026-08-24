@@ -187,14 +187,14 @@ return {
 
     -- Declares the provider, not the targets. What this plugin *is* is stable;
     -- what it offers is not, so the list is fetched through `targets_command`.
-    crucible.publish("targets", {
+    cru.plugin.publish("targets", {
       axis = "workspace",
       label = "Worktree",
       targets_command = "worktree.targets",
       resolve_command = "worktree.resolve",
     })
 
-    crucible.options{
+    cru.plugin.options{
       type = "group",
       name = "Worktrees",
       get = function(info) return config[info.option] end,

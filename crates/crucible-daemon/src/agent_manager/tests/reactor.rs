@@ -11,7 +11,7 @@ async fn runtime_dispatch_pre_llm_call_transforms_prompt() {
             .lua
             .load(
                 r#"
-            crucible.on("pre_llm_call", function(ctx, event)
+            cru.on("pre_llm_call", function(ctx, event)
                 return { prompt = event.prompt .. " [modified]" }
             end)
         "#,
@@ -40,7 +40,7 @@ async fn runtime_dispatch_pre_tool_call_cancels_execution() {
             .lua
             .load(
                 r#"
-            crucible.on("pre_tool_call", function(ctx, event)
+            cru.on("pre_tool_call", function(ctx, event)
                 return { cancel = true, reason = "blocked" }
             end)
         "#,
@@ -101,7 +101,7 @@ async fn runtime_dispatch_pre_tool_call_handler_error_blocks_execution() {
             .lua
             .load(
                 r#"
-            crucible.on("pre_tool_call", function(ctx, event)
+            cru.on("pre_tool_call", function(ctx, event)
                 error("handler exploded")
             end)
         "#,
@@ -148,7 +148,7 @@ async fn runtime_dispatch_post_llm_call_fires_handler() {
             .load(
                 r#"
             post_llm_runtime_fired = false
-            crucible.on("post_llm_call", function(ctx, event)
+            cru.on("post_llm_call", function(ctx, event)
                 post_llm_runtime_fired = true
                 return { cancel = true, reason = "ignored" }
             end)
@@ -213,7 +213,7 @@ async fn runtime_transform_context_appends_system_message() {
             .lua
             .load(
                 r#"
-            crucible.on("transform_context", function(ctx, event)
+            cru.on("transform_context", function(ctx, event)
                 local msgs = event.messages
                 table.insert(msgs, {
                     role = "system",
@@ -263,7 +263,7 @@ async fn runtime_pre_tool_handled_with_terminate_ends_turn() {
             .lua
             .load(
                 r#"
-            crucible.on("pre_tool_call", function(ctx, event)
+            cru.on("pre_tool_call", function(ctx, event)
                 return { handled = true, result = "final answer", terminate = true }
             end)
         "#,
@@ -315,7 +315,7 @@ async fn runtime_pre_tool_terminate_mixed_batch_does_not_end() {
             .lua
             .load(
                 r#"
-            crucible.on("pre_tool_call", function(ctx, event)
+            cru.on("pre_tool_call", function(ctx, event)
                 local tool = event.tool
                 if tool == "submit_final" then
                     return { handled = true, result = "done", terminate = true }
@@ -375,12 +375,12 @@ async fn runtime_pre_tool_terminate_mixed_batch_does_not_end() {
 /// suite above registers handlers directly into the per-session VM, which
 /// proves the dispatcher works but never that a plugin can reach it. Plugins
 /// load into `DaemonPluginLoader`'s VM — a third, disjoint Lua state — where
-/// `crucible.on` was simply absent, so `oci` (the reference interception
+/// `cru.on` was simply absent, so `oci` (the reference interception
 /// plugin) raised at load and was downgraded to a `warn!`.
 ///
 /// Deliberately drives a real `DaemonPluginLoader` rather than a hand-rolled
 /// registry, so it covers both halves: that the plugin runtime exposes
-/// `crucible.on`, and that what it registers reaches tool dispatch.
+/// `cru.on`, and that what it registers reaches tool dispatch.
 #[tokio::test]
 async fn plugin_registered_pre_tool_call_handler_intercepts_tool() {
     use crate::daemon_plugins::DaemonPluginLoader;
@@ -392,13 +392,13 @@ async fn plugin_registered_pre_tool_call_handler_intercepts_tool() {
     plugin_lua
         .load(
             r#"
-        crucible.on("pre_tool_call", { pattern = "write" }, function(ctx, event)
+        cru.on("pre_tool_call", { pattern = "write" }, function(ctx, event)
             return { handled = true, result = "intercepted by plugin" }
         end)
     "#,
         )
         .exec()
-        .expect("plugin must be able to call crucible.on");
+        .expect("plugin must be able to call cru.on");
 
     h.set_plugin_handlers(loader.plugin_handlers(), plugin_lua);
 
@@ -440,7 +440,7 @@ async fn plugin_pre_tool_call_transform_rewrites_arguments() {
     plugin_lua
         .load(
             r#"
-        crucible.on("pre_tool_call", { pattern = "read_file" }, function(ctx, event)
+        cru.on("pre_tool_call", { pattern = "read_file" }, function(ctx, event)
             return { args = { path = "rewritten-" .. event.args.path } }
         end)
     "#,
@@ -508,10 +508,10 @@ async fn plugin_tool_result_handler_patches_a_handled_result() {
     plugin_lua
         .load(
             r#"
-        crucible.on("pre_tool_call", { pattern = "write" }, function(ctx, event)
+        cru.on("pre_tool_call", { pattern = "write" }, function(ctx, event)
             return { handled = true, result = "token=SECRET ok" }
         end)
-        crucible.on("tool_result", { pattern = "write" }, function(ctx, event)
+        cru.on("tool_result", { pattern = "write" }, function(ctx, event)
             return { result = event.result:gsub("token=%S+", "token=[REDACTED]") }
         end)
     "#,
@@ -663,7 +663,7 @@ async fn a_card_denied_tool_is_not_executable_through_a_pre_tool_call_handler() 
     plugin_lua
         .load(
             r#"
-        crucible.on("pre_tool_call", { pattern = "bash", priority = -100 }, function(ctx, event)
+        cru.on("pre_tool_call", { pattern = "bash", priority = -100 }, function(ctx, event)
             return { handled = true, result = "uid=0(root) gid=0(root)" }
         end)
     "#,
@@ -790,7 +790,7 @@ async fn a_plugin_without_the_capability_cannot_rewrite_tool_arguments() {
         -- `intercept_tools` (lifecycle/discovery.rs).
         cru._current_plugin = "grabby"
         cru._current_plugin_may_intercept = false
-        crucible.on("pre_tool_call", { pattern = "read_file" }, function(ctx, event)
+        cru.on("pre_tool_call", { pattern = "read_file" }, function(ctx, event)
             return { args = { path = "rewritten-" .. event.args.path } }
         end)
     "#,

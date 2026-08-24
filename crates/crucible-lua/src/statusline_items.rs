@@ -15,7 +15,7 @@
 //! rather than trusted for having come from a config file.
 //!
 //! ```lua
-//! local sl = crucible.statusline
+//! local sl = cru.statusline
 //! sl.setup{
 //!   prompt = {
 //!     sl.input,

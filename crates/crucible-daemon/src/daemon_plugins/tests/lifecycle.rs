@@ -79,7 +79,7 @@ fn remember_specs_never_merges_anonymous_specs() {
 }
 
 /// A plugin that fails in the daemon VM must end up fully inert, not
-/// half-alive: `setup()` runs *after* init.lua's top-level `crucible.on`
+/// half-alive: `setup()` runs *after* init.lua's top-level `cru.on`
 /// calls have already registered handlers, and `pre_tool_call` fails closed —
 /// a stale handler from a dead plugin can deny every tool call in every
 /// session while `plugin.reload` reports success.
@@ -91,8 +91,8 @@ async fn a_plugin_whose_setup_raises_ends_inert_and_the_load_reports_failure() {
     std::fs::write(
         dir.join("init.lua"),
         r#"
-        crucible.on("pre_tool_call", function() return { cancel = true, reason = "stale" } end)
-        crucible.options{
+        cru.on("pre_tool_call", function() return { cancel = true, reason = "stale" } end)
+        cru.plugin.options{
             type = "group", name = "Halfdead",
             get = function() return true end,
             set = function() end,
@@ -168,7 +168,7 @@ async fn a_top_level_raise_does_not_swallow_later_registrations() {
 
     // User-shaped registration: no loading marker, so it belongs to no plugin.
     let lua = loader.plugin_lua();
-    lua.load(r#"crucible.on("pre_tool_call", function() _G.user_handler_ran = true end)"#)
+    lua.load(r#"cru.on("pre_tool_call", function() _G.user_handler_ran = true end)"#)
         .exec()
         .expect("user registration");
 
@@ -216,7 +216,7 @@ async fn re_executing_a_plugin_fires_its_session_hooks_exactly_once() {
     std::fs::write(
         dir.join("init.lua"),
         r#"
-        crucible.on_session_start(function(s)
+        cru.on_session_start(function(s)
             _G.start_count = (_G.start_count or 0) + 1
         end)
         return { name = "hooker", version = "0.1.0" }
@@ -330,7 +330,7 @@ async fn removing_then_reinstalling_a_plugin_registers_its_tools_again() {
     std::fs::write(
         dir.join("init.lua"),
         r#"
-        crucible.on("pre_tool_call", function() return nil end)
+        cru.on("pre_tool_call", function() return nil end)
         return {
             name = "comeback",
             version = "0.1.0",
@@ -408,7 +408,7 @@ async fn a_setup_registered_handler_is_owned_so_reload_does_not_duplicate_it() {
             name = "setupper",
             version = "0.1.0",
             setup = function()
-                crucible.on("pre_tool_call", function() return nil end)
+                cru.on("pre_tool_call", function() return nil end)
             end,
         }
     "#,
@@ -450,7 +450,7 @@ async fn a_reload_that_fails_in_the_manager_leaves_the_plugin_inert_and_errored(
     let dir = tmp.path().join("brittle");
     std::fs::create_dir_all(&dir).unwrap();
     let good = r#"
-        crucible.on("turn:complete", function() end)
+        cru.on("turn:complete", function() end)
         return {
             name = "brittle",
             version = "0.1.0",
@@ -503,7 +503,7 @@ async fn a_reload_that_fails_in_the_manager_leaves_the_plugin_inert_and_errored(
 
 /// Auth hooks ride the same owner-tag contract as session hooks: executing a
 /// plugin twice (= one reload) leaves exactly one copy of its
-/// `crucible.on_provider_auth` registration. They were the one hook family
+/// `cru.on_provider_auth` registration. They were the one hook family
 /// left untagged — one copy accumulated per reload, forever.
 #[tokio::test]
 async fn re_executing_a_plugin_does_not_duplicate_its_provider_auth_hooks() {
@@ -513,7 +513,7 @@ async fn re_executing_a_plugin_does_not_duplicate_its_provider_auth_hooks() {
     std::fs::write(
         dir.join("init.lua"),
         r#"
-        crucible.on_provider_auth(function(ctx) return nil end)
+        cru.on_provider_auth(function(ctx) return nil end)
         return { name = "author", version = "0.1.0" }
     "#,
     )

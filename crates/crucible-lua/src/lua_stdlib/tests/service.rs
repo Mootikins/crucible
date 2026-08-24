@@ -85,11 +85,11 @@ fn test_service_stop() {
 #[test]
 fn test_service_config_resolution() {
     let lua = TestLuaBuilder::new().with_stdlib().build();
-    // Mock crucible.config.get to return nil (no config file)
+    // Mock cru.plugin.config.get to return nil (no config file)
     lua.load(
         r#"
-            crucible = crucible or {}
-            crucible.config = { get = function() return nil end }
+            cru.plugin = cru.plugin or {}
+            cru.plugin.config = { get = function() return nil end }
             "#,
     )
     .exec()

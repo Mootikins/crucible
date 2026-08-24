@@ -1,6 +1,6 @@
 //! Lua configuration loader
 //!
-//! Loads `init.lua` from the config directory and provides the `crucible.include()` function.
+//! Loads `init.lua` from the config directory and provides the `cru.include()` function.
 //!
 //! ## Config Locations
 //!
@@ -12,15 +12,15 @@
 //! ```lua
 //! -- ~/.config/crucible/init.lua
 //!
-//! -- Built-in modules are under crucible.*
-//! crucible.statusline.setup({
-//!     left = { crucible.statusline.mode() },
-//!     center = { crucible.statusline.model() },
-//!     right = { crucible.statusline.context() },
+//! -- Built-in modules are under cru.*
+//! cru.statusline.setup({
+//!     left = { cru.statusline.mode() },
+//!     center = { cru.statusline.model() },
+//!     right = { cru.statusline.context() },
 //! })
 //!
 //! -- Include other config files
-//! crucible.include("keymaps.lua")  -- loads ~/.config/crucible/keymaps.lua
+//! cru.include("keymaps.lua")  -- loads ~/.config/crucible/keymaps.lua
 //! ```
 
 use crate::error::LuaError;
@@ -37,14 +37,14 @@ const DEFAULT_THEME_LUA: &str = include_str!("../../../runtime/themes/default.lu
 #[derive(Debug, Default)]
 pub struct ConfigState {
     pub theme: Option<ThemeConfig>,
-    /// Highlight groups authored via `crucible.hl.set/link`. Open namespace —
+    /// Highlight groups authored via `cru.hl.set/link`. Open namespace —
     /// plugins name their own — so it is a map, not a fixed struct.
     pub hl: crate::hl::HlRegistry,
     /// Per-surface geometry from `cru.geometry.setup{}`.
     pub ui: Option<crate::ui_geometry::UiGeometry>,
     /// Screen layout authored as ordered region lists.
     pub layout: Option<crate::statusline_items::Layout>,
-    /// Code-highlighting config from `crucible.syntax.setup{}`.
+    /// Code-highlighting config from `cru.syntax.setup{}`.
     pub syntax: Option<serde_json::Value>,
     /// Daemon/app config values set via cru.config.set() or seeded from TOML.
     /// Stored as JSON for easy extraction by Rust callers.
@@ -58,7 +58,7 @@ fn get_config() -> &'static Arc<RwLock<ConfigState>> {
     CONFIG.get_or_init(|| Arc::new(RwLock::new(ConfigState::default())))
 }
 
-/// Get the current theme configuration (if set via crucible.colorscheme.setup())
+/// Get the current theme configuration (if set via cru.colorscheme.setup())
 pub fn get_theme_config() -> Option<ThemeConfig> {
     get_config().read().ok()?.theme.clone()
 }
@@ -71,7 +71,7 @@ fn set_theme_config(config: ThemeConfig) {
 }
 
 /// Install a theme from outside the Lua evaluation path (the `ui.set_theme`
-/// RPC). Same store `crucible.colorscheme.setup{}` writes, so a switch and a config
+/// RPC). Same store `cru.colorscheme.setup{}` writes, so a switch and a config
 /// reload cannot disagree.
 pub fn set_theme_config_public(config: ThemeConfig) {
     set_theme_config(config);
@@ -458,7 +458,7 @@ impl ConfigLoader {
     /// Load configuration into a Lua state
     ///
     /// This:
-    /// 1. Registers crucible.* modules
+    /// 1. Registers cru.* modules
     /// 2. Loads init.lua from config_dir (if exists)
     /// 3. Loads init.lua from kiln_config_dir (if exists, as override)
     pub fn load(&self, lua: &Lua) -> Result<(), LuaError> {
@@ -514,9 +514,9 @@ mod tests {
 
     fn create_test_lua() -> Lua {
         let lua = Lua::new();
-        // Set up minimal crucible table (normally done by executor)
-        let crucible = lua.create_table().unwrap();
-        lua.globals().set("crucible", crucible).unwrap();
+        // Set up a minimal cru table (normally done by executor)
+        let cru = lua.create_table().unwrap();
+        lua.globals().set("cru", cru).unwrap();
         lua
     }
 
@@ -558,7 +558,7 @@ mod tests {
 
         lua.load(
             r#"
-            local sl = crucible.statusline
+            local sl = cru.statusline
             sl.setup({
                 prompt = {
                     sl.input,
@@ -587,15 +587,15 @@ mod tests {
         let config_dir = tmp.path().to_path_buf();
 
         // Create a file to include
-        std::fs::write(config_dir.join("extra.lua"), "crucible.included = true").unwrap();
+        std::fs::write(config_dir.join("extra.lua"), "cru.included = true").unwrap();
 
         let lua = create_test_lua();
-        let crucible: Table = lua.globals().get("crucible").unwrap();
-        register_include(&lua, &crucible, config_dir).unwrap();
+        let cru: Table = lua.globals().get("cru").unwrap();
+        register_include(&lua, &cru, config_dir).unwrap();
 
-        lua.load(r#"crucible.include("extra.lua")"#).exec().unwrap();
+        lua.load(r#"cru.include("extra.lua")"#).exec().unwrap();
 
-        let included: bool = lua.load("return crucible.included").eval().unwrap();
+        let included: bool = lua.load("return cru.included").eval().unwrap();
         assert!(included);
     }
 
@@ -605,10 +605,10 @@ mod tests {
         let config_dir = tmp.path().to_path_buf();
 
         let lua = create_test_lua();
-        let crucible: Table = lua.globals().get("crucible").unwrap();
-        register_include(&lua, &crucible, config_dir).unwrap();
+        let cru: Table = lua.globals().get("cru").unwrap();
+        register_include(&lua, &cru, config_dir).unwrap();
 
-        let result = lua.load(r#"crucible.include("nonexistent.lua")"#).exec();
+        let result = lua.load(r#"cru.include("nonexistent.lua")"#).exec();
         assert!(result.is_err());
     }
 
@@ -631,8 +631,8 @@ mod tests {
         std::fs::write(
             tmp.path().join("init.lua"),
             r#"
-            crucible.statusline.setup({
-                prompt = { crucible.statusline.input, { crucible.statusline.mode } },
+            cru.statusline.setup({
+                prompt = { cru.statusline.input, { cru.statusline.mode } },
             })
         "#,
         )
@@ -677,12 +677,12 @@ mod tests {
         reset_config();
 
         let lua = create_test_lua();
-        let crucible: Table = lua.globals().get("crucible").unwrap();
-        register_theme_namespace(&lua, &crucible).unwrap();
+        let cru: Table = lua.globals().get("cru").unwrap();
+        register_theme_namespace(&lua, &cru).unwrap();
 
         lua.load(
             r##"
-            crucible.colorscheme.setup({
+            cru.colorscheme.setup({
                 colors = { error = "#ff0000" },
                 name = "custom",
             })
@@ -866,13 +866,13 @@ mod tests {
         reset_config();
 
         let lua = create_test_lua();
-        let crucible: Table = lua.globals().get("crucible").unwrap();
-        register_theme_namespace(&lua, &crucible).unwrap();
+        let cru: Table = lua.globals().get("cru").unwrap();
+        register_theme_namespace(&lua, &cru).unwrap();
 
         // Setup with an invalid color — should not panic, should use default for that field
         lua.load(
             r#"
-            crucible.colorscheme.setup({
+            cru.colorscheme.setup({
                 colors = { error = "not_a_valid_color_xyz" },
             })
         "#,

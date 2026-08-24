@@ -20,7 +20,7 @@ impl InputMode {
         theme::groups::bg_or(group, t.resolve_color(fallback))
     }
 
-    /// The prompt glyph, themed if `crucible.ui.setup{ prompt = ... }` set one.
+    /// The prompt glyph, themed if `cru.geometry.setup{ prompt = ... }` set one.
     ///
     /// Stays `&'static str`: the geometry store leaks on install, so a themed
     /// glyph borrows from it for the life of the process — no allocation per

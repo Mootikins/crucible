@@ -235,7 +235,7 @@ mod precognition_format_hook_tests {
             .lua
             .load(
                 r###"
-                crucible.on("precognition_format", function(ctx, event)
+                cru.on("precognition_format", function(ctx, event)
                     return "## Custom Format\n" .. event.user_message .. "\n" .. event.results[1].title
                 end)
             "###,
@@ -311,7 +311,7 @@ mod precognition_format_hook_tests {
             .lua
             .load(
                 r###"
-                crucible.on("precognition_format", function(ctx, event)
+                cru.on("precognition_format", function(ctx, event)
                     local note = event.results[1]
                     return string.format(
                         "kiln=%s kiln_path=%s",
@@ -354,7 +354,7 @@ mod precognition_format_hook_tests {
             .lua
             .load(
                 r###"
-                crucible.on("precognition_format", function(ctx, event)
+                cru.on("precognition_format", function(ctx, event)
                     return "kiln=" .. tostring(event.results[1].kiln)
                 end)
             "###,
@@ -530,7 +530,7 @@ mod precognition_select_hook_tests {
     /// byte-based, so the naive port silently disagrees on any non-ASCII
     /// snippet and can slice a UTF-8 sequence in half.
     const LUA_EQUAL_SPLIT_CAP: &str = r#"
-        crucible.on("precognition_select", function(ctx, event)
+        cru.on("precognition_select", function(ctx, event)
             local total = 0
             for _, r in ipairs(event.results) do
                 total = total + utf8.len(r.snippet)
@@ -564,7 +564,7 @@ mod precognition_select_hook_tests {
             .lua
             .load(
                 r#"
-                crucible.on("precognition_select", function(ctx, event)
+                cru.on("precognition_select", function(ctx, event)
                     return { { index = 3 }, { index = 1 } }
                 end)
             "#,
@@ -586,7 +586,7 @@ mod precognition_select_hook_tests {
             .lua
             .load(
                 r#"
-                crucible.on("precognition_select", function(ctx, event)
+                cru.on("precognition_select", function(ctx, event)
                     return { { index = 1, snippet = "rewritten" } }
                 end)
             "#,
@@ -609,7 +609,7 @@ mod precognition_select_hook_tests {
             .lua
             .load(
                 r#"
-                crucible.on("precognition_select", function(ctx, event)
+                cru.on("precognition_select", function(ctx, event)
                     -- Assert the payload contract from inside Lua: picking by
                     -- these fields is the whole point of the seam.
                     if event.char_budget ~= 3000 then return {} end
@@ -636,7 +636,7 @@ mod precognition_select_hook_tests {
             .lua
             .load(
                 r#"
-                crucible.on("precognition_select", function(ctx, event)
+                cru.on("precognition_select", function(ctx, event)
                     return {}
                 end)
             "#,
@@ -658,7 +658,7 @@ mod precognition_select_hook_tests {
             .lua
             .load(
                 r#"
-                crucible.on("precognition_select", function(ctx, event)
+                cru.on("precognition_select", function(ctx, event)
                     error("boom")
                 end)
             "#,
@@ -678,7 +678,7 @@ mod precognition_select_hook_tests {
             .lua
             .load(
                 r#"
-                crucible.on("precognition_select", function(ctx, event)
+                cru.on("precognition_select", function(ctx, event)
                     return { oops = "not a selection" }
                 end)
             "#,
@@ -710,7 +710,7 @@ mod precognition_select_hook_tests {
             .lua
             .load(
                 r###"
-                crucible.on("precognition_select", function(ctx, event)
+                cru.on("precognition_select", function(ctx, event)
                     local note = event.results[1]
                     return { {
                         index = 1,
@@ -786,7 +786,7 @@ mod precognition_select_hook_tests {
             .lua
             .load(
                 r#"
-                crucible.on("precognition_select", function(ctx, event)
+                cru.on("precognition_select", function(ctx, event)
                     return { { index = 99 }, { index = 0 }, { nope = 1 } }
                 end)
             "#,

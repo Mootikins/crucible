@@ -51,7 +51,7 @@ async fn test_init_lua_hook_sets_temperature() {
 
     // Create a test kiln with init.lua that sets temperature
     let init_lua = r#"
-crucible.on_session_start(function(session)
+cru.on_session_start(function(session)
     session.temperature = 0.3
 end)
 "#;

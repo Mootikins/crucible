@@ -14,27 +14,27 @@ aliases:
 
 # Event Hooks
 
-Event hooks let you react to things happening in a Crucible session — tool calls, session startup, tool output display. Register a Lua function with `crucible.on()` and it runs when the matching event fires.
+Event hooks let you react to things happening in a Crucible session — tool calls, session startup, tool output display. Register a Lua function with `cru.on()` and it runs when the matching event fires.
 
 ## Basic Example
 
 ```lua
 -- Log every tool call
-crucible.on("pre_tool_call", function(ctx, event)
+cru.on("pre_tool_call", function(ctx, event)
   cru.log("info", "Tool called: " .. event.tool)
 end)
 ```
 
 Place this in your plugin's `init.lua` or in a `.lua` file in a loaded plugins directory. Crucible registers the handler on plugin load.
 
-## The `crucible.on()` API
+## The `cru.on()` API
 
 ```lua
 -- Simple form (no options):
-crucible.on(event_type, handler)
+cru.on(event_type, handler)
 
 -- With options:
-crucible.on(event_type, { pattern = "...", priority = 50 }, handler)
+cru.on(event_type, { pattern = "...", priority = 50 }, handler)
 ```
 
 | Argument | Type | Description |
@@ -55,9 +55,7 @@ name for a delivery — never the event name. An event with no identifier is
 listed as such in the table below; a handler that sets `pattern` on one of
 those is filtering on something that does not exist and never matches.
 
-`cru.on` is the same function — registered on both namespaces, so
-`cru.on("pre_tool_call", fn)` and `crucible.on("pre_tool_call", fn)` are
-interchangeable.
+`cru.on` is the one registration function.
 
 ## Two Registries, One Order
 
@@ -77,7 +75,7 @@ decision, not a patch.
 
 ## Event Types
 
-The complete set, and it is closed: `crucible.on` raises on a name that is not
+The complete set, and it is closed: `cru.on` raises on a name that is not
 here. Two Rust enums hold it — `StageId` for the eleven turn-loop stages,
 `EventName` for the eight daemon events
 (`crucible-lua/src/handlers/hook_name.rs`) — and
@@ -129,12 +127,12 @@ Everything since is colon-namespaced.
 ### Note lifecycle
 
 ```lua
-crucible.on("note:created", function(ctx, event)
+cru.on("note:created", function(ctx, event)
   cru.log("info", "new note: " .. event.path)
 end)
 
 -- Only the daily notes:
-crucible.on("note:modified", { pattern = "Daily/*" }, function(ctx, event)
+cru.on("note:modified", { pattern = "Daily/*" }, function(ctx, event)
   rebuild_digest(event.path)
 end)
 ```
@@ -171,7 +169,7 @@ Three things to know about when they fire:
 ### `webhook:received`
 
 ```lua
-crucible.on("webhook:received", { pattern = "ci" }, function(ctx, event)
+cru.on("webhook:received", { pattern = "ci" }, function(ctx, event)
   local payload = cru.json.decode(event.body)
   cru.log("info", "CI said " .. tostring(payload.status))
 end)
@@ -220,7 +218,7 @@ receive it** — including results a `pre_tool_call` handler produced via
 patch:
 
 ```lua
-crucible.on("tool_result", { pattern = "bash" }, function(ctx, event)
+cru.on("tool_result", { pattern = "bash" }, function(ctx, event)
   return { result = event.result:gsub("token=%S+", "token=[REDACTED]") }
 end)
 ```
@@ -248,7 +246,7 @@ system message. Handlers choose **which** notes reach the agent, in what order,
 and how the snippet character budget is spent across them.
 
 ```lua
-crucible.on("precognition_select", function(ctx, event)
+cru.on("precognition_select", function(ctx, event)
   -- Keep only strong matches, best first. To restrict to one corpus, compare
   -- `note.kiln` — a session's kilns are a flat set with no primary.
   local picked = {}
@@ -354,7 +352,7 @@ The handler's return value controls what happens next:
 Return `nil` or no value. The event continues unchanged.
 
 ```lua
-crucible.on("pre_tool_call", function(ctx, event)
+cru.on("pre_tool_call", function(ctx, event)
   cru.log("info", "Observing: " .. event.tool)
 end)
 ```
@@ -364,7 +362,7 @@ end)
 Return a table with modified fields. The event continues with the new values.
 
 ```lua
-crucible.on("pre_llm_call", function(ctx, event)
+cru.on("pre_llm_call", function(ctx, event)
   return { prompt = event.prompt .. " (be concise)" }
 end)
 ```
@@ -382,7 +380,7 @@ end)
 Return `{ cancel = true, reason = "why" }`. The tool call is aborted and the reason surfaces to the agent as an error.
 
 ```lua
-crucible.on("pre_tool_call", { pattern = "*delete*", priority = 5 }, function(ctx, event)
+cru.on("pre_tool_call", { pattern = "*delete*", priority = 5 }, function(ctx, event)
   return { cancel = true, reason = "Deletes are blocked in this session" }
 end)
 ```
@@ -392,7 +390,7 @@ end)
 Return `{ handled = true, result = ... }`. Default tool execution is skipped and your `result` becomes the tool result. Used by plugins that fully replace tool behavior — e.g. the `oci` plugin runs shell commands inside containers instead of on the host.
 
 ```lua
-crucible.on("pre_tool_call", { pattern = "bash", priority = 10 }, function(ctx, event)
+cru.on("pre_tool_call", { pattern = "bash", priority = 10 }, function(ctx, event)
   local output = run_in_container(event.args.command)
   return { handled = true, result = output }
 end)
@@ -408,20 +406,20 @@ Return `{ inject = { content = "...", position = "user_prefix" } }` to prepend/a
 
 ## Lifecycle Hooks
 
-Two named hooks for session lifecycle. These are separate from `crucible.on()`.
+Two named hooks for session lifecycle. These are separate from `cru.on()`.
 
-Like `crucible.on()` handlers, lifecycle hooks registered during a plugin's
+Like `cru.on()` handlers, lifecycle hooks registered during a plugin's
 load (its `init.lua` or `setup()`) belong to that plugin: reloading the plugin
 clears its hooks before re-running it, so a reload never leaves a second copy
 firing. Hooks registered outside a plugin load — your own `init.lua`, or a
 session VM — are unowned and are never cleared by any plugin's reload.
 
-### `crucible.on_session_start(fn, opts?)`
+### `cru.on_session_start(fn, opts?)`
 
 Fires once when a session begins. Use for per-session setup (starting containers, opening connections, seeding state).
 
 ```lua
-crucible.on_session_start(function(session)
+cru.on_session_start(function(session)
   cru.log("info", "Session started: " .. session.id)
 end)
 ```
@@ -437,7 +435,7 @@ run without — the `oci` plugin marks its container-acquisition hook required
 so a failed sandbox never silently falls back to the host.
 
 ```lua
-crucible.on_session_start(function(session)
+cru.on_session_start(function(session)
   acquire_container(session)   -- raising here aborts session creation
 end, { required = true })
 ```
@@ -452,12 +450,12 @@ APIs, they fail open per hook, and `required` is not honoured there —
 session refusal stays with the plugin loader, where isolation claims live.
 
 
-### `crucible.on_session_end(fn)`
+### `cru.on_session_end(fn)`
 
 Fires when a session ends. Use for cleanup (stopping containers, closing files).
 
 ```lua
-crucible.on_session_end(function(session)
+cru.on_session_end(function(session)
   cleanup(session.id)
 end)
 ```
@@ -468,7 +466,7 @@ end)
 The permission layer can be driven from Lua. Register a callback that decides whether a tool call needs a prompt:
 
 ```lua
-crucible.permissions.on_request(function(request)
+cru.permissions.on_request(function(request)
   if request.tool_name == "read_file" then
     return { allow = true }          -- auto-allow
   end
@@ -500,9 +498,9 @@ Return:
 The `pattern` option uses glob syntax against the event's identifier. For `pre_tool_call`, the identifier is the tool name:
 
 ```lua
-crucible.on("pre_tool_call", { pattern = "*" },           fn)  -- all tools
-crucible.on("pre_tool_call", { pattern = "gh_*" },        fn)  -- GitHub tools
-crucible.on("pre_tool_call", { pattern = "just_test*" },  fn)  -- just test recipes
+cru.on("pre_tool_call", { pattern = "*" },           fn)  -- all tools
+cru.on("pre_tool_call", { pattern = "gh_*" },        fn)  -- GitHub tools
+cru.on("pre_tool_call", { pattern = "just_test*" },  fn)  -- just test recipes
 ```
 
 Each event decides what its identifier is; the table in **Event Types** above
@@ -510,8 +508,8 @@ lists them. For the note events it is the note path, so the same glob syntax
 narrows a handler to one folder:
 
 ```lua
-crucible.on("note:modified", { pattern = "Daily/*" },  fn)  -- daily notes only
-crucible.on("webhook:received", { pattern = "ci" },    fn)  -- one webhook
+cru.on("note:modified", { pattern = "Daily/*" },  fn)  -- daily notes only
+cru.on("webhook:received", { pattern = "ci" },    fn)  -- one webhook
 ```
 
 ## Priority Guide
@@ -538,7 +536,7 @@ The `runtime/plugins/oci/init.lua` plugin is the canonical reference for product
 2. **Use specific patterns.** A `pattern = "*"` handler runs for every tool call; narrow it if possible.
 3. **Return explicitly.** If you want pass-through, `return` with no value. If you transform, return the modified event. Don't accidentally return a truthy value that Crucible interprets as a transform.
 4. **Handle errors gracefully.** Check fields with `event.tool and event.tool:find(...)` rather than assuming shape.
-5. **Register once.** Calls to `crucible.on()` accumulate; register at plugin load, not inside another handler.
+5. **Register once.** Calls to `cru.on()` accumulate; register at plugin load, not inside another handler.
 
 ## See Also
 

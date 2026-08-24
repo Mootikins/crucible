@@ -271,7 +271,7 @@ The decision is `requires_permission_gate` in
 ### The plugin isolation gate
 
 A plugin that sandboxes a session — the `oci` plugin and its container, see
-[[Help/Extending/Container Isolation]] — calls `crucible.require_isolation` at
+[[Help/Extending/Container Isolation]] — calls `cru.isolation.require` at
 session start. From then on the session is **default-deny for host execution**:
 a tool call that no `pre_tool_call` handler took over is refused before the
 chain runs, because executing it would run wherever the daemon runs — outside

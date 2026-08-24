@@ -18,7 +18,7 @@ tags:
 >
 > The plugin system Crucible ships is **Lua/Fennel**: plugins are directories
 > with an `init.lua` returning a spec table (tools, commands, services), hooks
-> register via `crucible.on()`, and manifest capabilities are informational
+> register via `cru.on()`, and manifest capabilities are informational
 > rather than sandbox-enforced. See [[Help/Extending/Creating Plugins]] and
 > [[Help/Extending/Plugin Manifest]] for the real system, and
 > [[Help/Extending/Event Hooks]] for the real event set.
@@ -32,8 +32,8 @@ so in Lua form:
 | Studied here | What shipped instead |
 |---|---|
 | `trait Plugin` with `on_load`/`on_unload` | Spec-table `on_load`/`on_unload` functions in `init.lua` |
-| `CrucibleEvent` enum, pre/post pairs | The closed set of fourteen `crucible.on()` hook names |
-| Priority-ordered `EventSubscription` | `crucible.on(..., { priority = N })`, ascending order |
+| `CrucibleEvent` enum, pre/post pairs | The closed set of fourteen `cru.on()` hook names |
+| Priority-ordered `EventSubscription` | `cru.on(..., { priority = N })`, ascending order |
 | Lifecycle-aware registration with auto-cleanup | Plugin reload clears the plugin's handlers, tools, and services |
 | VSCode-style contribution points | The spec table (`tools`, `commands`, `services`) |
 | WASM sandbox with granted capabilities | Not built — one shared Lua VM; manifest `capabilities` are documentation only |

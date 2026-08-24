@@ -113,7 +113,7 @@ text comes out of a note, so whoever can write a `type: workflow`
 note into the kiln chooses it — an agent with `create_note` included.
 
 **Isolation.** A validation command runs `bash` on the host. If a
-plugin claimed isolation over the session (`crucible.require_isolation`,
+plugin claimed isolation over the session (`cru.isolation.require`,
 as the `oci` plugin does), the command is refused: the sandbox the
 session runs under holds for the assessment too, not only for the
 agent's own tool calls. Add the command's tool name to that plugin's

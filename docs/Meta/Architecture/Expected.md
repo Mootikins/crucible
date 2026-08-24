@@ -175,7 +175,7 @@ entry but no shipped proof.
 | F102 | Lua session primitives `cru.sessions.{messages, inject, fork, collect_subagents, subscribe, create}` | P |
 | F103 | `cru.ui.{ask, ask_batch, edit, show, permission, popup, panel}` open a modal and await | P |
 | F104 | Session event handlers: `turn:complete` can inject a follow-up message | P |
-| F105 | Plugin-published session status `crucible.set_status{}` | P |
+| F105 | Plugin-published session status `cru.plugin.set_status{}` | P |
 | F106 | Scripted agent control: `session.thinking_budget`, `session.mode`, `temperature`, `max_tokens` | P |
 
 ### 2.6 TUI
@@ -258,7 +258,7 @@ entry but no shipped proof.
 | F170 | Lua 5.4 runtime; Fennel compiles to Lua | P, R, PL |
 | F171 | Plugin system: discovery on a search path, `plugin.yaml` manifest or bare `init.lua`, lifecycle, hot reload | P, R |
 | F172 | Plugin spec table: `tools`, `commands`, `handlers`, `setup(cfg)` | P, R |
-| F173 | Event hooks `crucible.on(name, opts, handler)` with `pattern` and `priority` | P, R, PL |
+| F173 | Event hooks `cru.on(name, opts, handler)` with `pattern` and `priority` | P, R, PL |
 | F174 | Note lifecycle events `note:created`, `note:modified`, `note:deleted`, `note:renamed` | P, PL |
 | F175 | `FileChanged` workspace hook | P, T |
 | F176 | `pre_tool_call` can cancel, transform or handle; `tool_result` can patch | P, R |
@@ -349,18 +349,18 @@ review named them as suspects, and the check found them covered.
 | `cru.ratelimit` | `crates/crucible-lua/src/ratelimit.rs:117`; registered at `crates/crucible-lua/src/executor.rs:293` | yes (F179) |
 | MCP gateway: upstream servers with prefixed names, reconnect loop, gateway tools on the served MCP surface | `crates/crucible-daemon/src/tools/mcp_gateway.rs:486`; `crates/crucible-daemon/src/tools/extended_mcp_server.rs:123` | yes (F210); the wiring landed in Tier 3 A10 and A11 |
 | Auto-title plugin over the `session_title` publication channel | `crates/crucible-daemon/src/agent_manager/title.rs:42` | yes (F59) |
-| Publications: `crucible.publish(key, value)` stored by the daemon and served by `plugin.publications` | `crates/crucible-lua/src/publications.rs:100`; `crates/crucible-daemon/src/daemon_plugins/mod.rs:966`; `crates/crucible-daemon/src/server/plugins.rs:156` | yes, since 2026-08-23 (Plugin Publications) |
-| Plugin options: `crucible.options{}` declared once, served by `plugin.options`, `plugin.option_get`, `plugin.option_set`, `plugin.option_execute` | `crates/crucible-lua/src/options.rs:380`; `crates/crucible-daemon/src/daemon_plugins/mod.rs:973`; `crates/crucible-daemon/src/server/plugins.rs:187` | yes, since 2026-08-23 (Plugin Options) |
-| Provider auth hooks: `crucible.on_provider_auth(fn)` | `crates/crucible-lua/src/auth_plugin.rs:9`; registered at `crates/crucible-lua/src/executor.rs:259` | yes, since 2026-08-23 (Provider Auth Hooks) |
-| `crucible.notify`, `crucible.notify_once`, `crucible.messages.*` | `crates/crucible-lua/src/notify.rs:30`; registered at `crates/crucible-lua/src/executor.rs:260` | yes, since 2026-08-23 (Lua Notifications, `[-]`). The queue reaches no client (G122) |
-| Isolation claim: `crucible.require_isolation{}` | `crates/crucible-lua/src/isolation.rs:208`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:240` | yes, since 2026-08-23 (Isolation Claims) |
-| Plugin status slots: `crucible.set_status{}`, `crucible.clear_status` | `crates/crucible-lua/src/plugin_status.rs:118`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:253` | yes (F105) |
+| Publications: `cru.plugin.publish(key, value)` stored by the daemon and served by `plugin.publications` | `crates/crucible-lua/src/publications.rs:100`; `crates/crucible-daemon/src/daemon_plugins/mod.rs:966`; `crates/crucible-daemon/src/server/plugins.rs:156` | yes, since 2026-08-23 (Plugin Publications) |
+| Plugin options: `cru.plugin.options{}` declared once, served by `plugin.options`, `plugin.option_get`, `plugin.option_set`, `plugin.option_execute` | `crates/crucible-lua/src/options.rs:380`; `crates/crucible-daemon/src/daemon_plugins/mod.rs:973`; `crates/crucible-daemon/src/server/plugins.rs:187` | yes, since 2026-08-23 (Plugin Options) |
+| Provider auth hooks: `cru.on_provider_auth(fn)` | `crates/crucible-lua/src/auth_plugin.rs:9`; registered at `crates/crucible-lua/src/executor.rs:259` | yes, since 2026-08-23 (Provider Auth Hooks) |
+| `cru.log.notify`, `cru.log.notify_once`, `cru.log.messages.*` | `crates/crucible-lua/src/notify.rs:30`; registered at `crates/crucible-lua/src/executor.rs:260` | yes, since 2026-08-23 (Lua Notifications, `[-]`). The queue reaches no client (G122) |
+| Isolation claim: `cru.isolation.require{}` | `crates/crucible-lua/src/isolation.rs:208`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:240` | yes, since 2026-08-23 (Isolation Claims) |
+| Plugin status slots: `cru.plugin.set_status{}`, `cru.plugin.clear_status` | `crates/crucible-lua/src/plugin_status.rs:118`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:253` | yes (F105) |
 | Statusline expressions pushed from the daemon | `crates/crucible-lua/src/statusline_exprs.rs:190`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:361` | yes (F117) |
 | `cru.context.attach` registry | `crates/crucible-lua/src/context_attach.rs:171`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:350` | yes (F45) |
 | `cru.ws` WebSocket client | `crates/crucible-lua/src/ws.rs:187`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:199` | yes, in the module list only |
 | `cru.oq` multi-format parse and jq-style query | `crates/crucible-lua/src/json_query.rs:284`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:204` | yes, in the module list only |
 | `cru.shell` with a plugin shell policy | `crates/crucible-lua/src/shell.rs:366`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:202` | yes, in the module list only |
-| Session lifecycle hooks `crucible.on_session_start`, `crucible.on_session_end` | `crates/crucible-lua/src/hooks.rs:34`; registered at `crates/crucible-lua/src/executor.rs:258` | yes |
+| Session lifecycle hooks `cru.on_session_start`, `cru.on_session_end` | `crates/crucible-lua/src/hooks.rs:34`; registered at `crates/crucible-lua/src/executor.rs:258` | yes |
 | Review comments and rebase: `review.comment`, `review.resolve_comment`, `review.rebase` | `crates/crucible-daemon/src/rpc/dispatch.rs:181`; `crates/crucible-daemon/src/server/session/review/mod.rs:371` | yes, since 2026-08-23 (Review Comments and Rebase) |
 | `session.export_to_file`: a transcript written to a caller path under write protection | `crates/crucible-daemon/src/rpc/dispatch.rs:172`; `crates/crucible-daemon/src/server/observe.rs:295` | yes, since 2026-08-23 (Session Export to a Path) |
 | Plugin RPC management: `plugin.install`, `plugin.remove`, `plugin.run_command` | `crates/crucible-daemon/src/rpc/dispatch.rs:194` | yes, since 2026-08-23 (Plugin Install names the RPCs) |
@@ -1474,7 +1474,7 @@ gate refuses `Unknown` as it refuses `Host`.
 Requires: `ToolSurface` is `Host`, `Daemon`, `Unknown`, and not the `Daemon`,
 `Mcp`, `Both` of section 8.1; MCP exposure is a second predicate (G8). The
 isolation stage is a member of the gate order. `IsolationRegistry` and
-`crucible.require_isolation` (`crates/crucible-lua/src/isolation.rs:208`) are
+`cru.isolation.require` (`crates/crucible-lua/src/isolation.rs:208`) are
 the Lua side; the `oci` plugin is the one caller.
 
 **I4. `handled` returns before the permission gate.** A `pre_tool_call`
@@ -1764,7 +1764,7 @@ under progressive disclosure. Kiln and workspace tools are not.
 
 ### 9.3 A hook
 
-Call `crucible.on(name, { pattern, priority }, handler)`. `name` must be a
+Call `cru.on(name, { pattern, priority }, handler)`. `name` must be a
 `StageId` spelling or an `EventName` spelling. Any other name is an error at
 registration. The handler receives `(ctx, event)` and returns the contract for
 that stage. The host removes a plugin's registrations at unload. The stub
@@ -1859,8 +1859,8 @@ RPC), not widgets. Lua does not reach the browser.
 
 ### 9.16 A theme
 
-Call `crucible.colorscheme.setup{}`, `crucible.hl.set|link`,
-`crucible.ui.setup{}` and `sl.setup{}` in `init.lua` or `themes/*.lua`. The
+Call `cru.colorscheme.setup{}`, `cru.hl.set|link`,
+`cru.geometry.setup{}` and `sl.setup{}` in `init.lua` or `themes/*.lua`. The
 plugin host projects them to `UiConfig` and pushes `UiStyleChanged`.
 
 ### 9.17 A new RPC method
@@ -1880,7 +1880,7 @@ route. Assert the value on the outgoing `ChatOptions`, not on a getter.
 
 Add a `StageId` or `EventName` variant. Add the dispatch site in the turn loop
 (stage) or in the emitter (event). Add the Lua spelling to the one name table.
-`crucible.on` validates the name against the enum, not against a list.
+`cru.on` validates the name against the enum, not against a list.
 
 ## 10. Disagreements
 

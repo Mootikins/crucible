@@ -473,7 +473,7 @@ impl ReactorTestHarness {
     }
 
     /// Load and execute a Lua snippet in this session's Lua VM (for tests
-    /// that register `crucible.on(...)` display hooks).
+    /// that register `cru.on(...)` display hooks).
     async fn load_lua(&self, script: &str) {
         let session_state = self
             .agent_manager
@@ -496,7 +496,7 @@ impl ReactorTestHarness {
         self.agent_manager.set_isolation(registry);
     }
 
-    /// Bind a plugin `crucible.on` registry, as the daemon does at startup.
+    /// Bind a plugin `cru.on` registry, as the daemon does at startup.
     fn set_plugin_handlers(
         &self,
         registry: Arc<crucible_lua::LuaScriptHandlerRegistry>,

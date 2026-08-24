@@ -156,7 +156,7 @@ impl ContextAttachRegistry {
 /// Register `cru.context.attach(session_id, content, opts?)`.
 ///
 /// ```lua
-/// crucible.on("tool_result", { pattern = "read_file" }, function(ctx, event)
+/// cru.on("tool_result", { pattern = "read_file" }, function(ctx, event)
 ///   local ft = event.args.path:match("%.(%w+)$")
 ///   if not ft then return end
 ///   local notes = cru.kiln.search("conventions for " .. ft)

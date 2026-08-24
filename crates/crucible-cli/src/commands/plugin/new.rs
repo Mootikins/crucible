@@ -151,7 +151,7 @@ mod tests {
             "a `hooks` table is silently ignored by the spec parser"
         );
         assert!(
-            rendered.contains("crucible.on_session_start("),
+            rendered.contains("cru.on_session_start("),
             "the template should show the registration that actually works"
         );
         // Anchored, for the same reason as above: the template names these

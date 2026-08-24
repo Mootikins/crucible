@@ -194,8 +194,8 @@ async fn isolation_registry(
 /// A plugin that sandboxes every session it is told about, like `oci` does
 /// once `[plugins.oci]` names an image.
 const CLAIMS_ISOLATION: &str = r#"
-crucible.on_session_start(function(session)
-  crucible.require_isolation{ session = session.id, plugin = "sandbox" }
+cru.on_session_start(function(session)
+  cru.isolation.require{ session = session.id, plugin = "sandbox" }
 end, { required = true })
 return { name = "sandbox", version = "0.1.0", description = "test isolation claimer" }
 "#;
@@ -203,7 +203,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
 /// A plugin whose sandbox cannot be established — `oci` when the image build
 /// fails or the runtime is missing.
 const FAILS_TO_SANDBOX: &str = r#"
-crucible.on_session_start(function(session)
+cru.on_session_start(function(session)
   error("sandbox: container start failed")
 end, { required = true })
 return { name = "sandbox", version = "0.1.0", description = "test isolation claimer" }

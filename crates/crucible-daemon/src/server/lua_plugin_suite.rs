@@ -464,7 +464,7 @@ mod shipped_plugin_tests {
     /// → `lua.load(source).eval_async()`), never through `require`. So a
     /// documented `require("<plugin>").setup{…}` in a user's `init.lua` loads a
     /// SECOND copy of the file: new upvalues, and every body-level
-    /// `crucible.on_*` call runs again. The handler is then registered twice
+    /// `cru.on_*` call runs again. The handler is then registered twice
     /// and fires twice per event — for `reflection` that is two forked
     /// cheap-model reviews and two sets of staged proposals per session end.
     ///

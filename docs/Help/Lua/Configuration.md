@@ -22,10 +22,10 @@ require("reflection").setup({
 })
 
 -- Colours
-crucible.colorscheme.setup({ colors = { primary = "term4" } })
+cru.colorscheme.setup({ colors = { primary = "term4" } })
 
 -- Statusline: a row below the input
-local sl = crucible.statusline
+local sl = cru.statusline
 sl.setup({
   prompt = {
     sl.input,
@@ -97,24 +97,19 @@ rule and a hook for one that depends on the arguments — see
 
 ## Built-in Modules
 
-Runtime APIs live under `cru`; configuration lives under `crucible`. The two are
-not aliases of each other, and one pair in particular is easy to mix up:
+Every API lives under the one global, `cru`. One pair is easy to mix up:
 
-| Call | Namespace | When |
+| Call | Kind | When |
 |---|---|---|
-| `crucible.statusline.setup{}` | config | once, defining the bars |
+| `cru.statusline.setup{}` | config | once, defining the bars |
 | `cru.statusline.set(session, key, value)` | runtime | any time, supplying a value |
-
-The UI-config namespaces — `crucible.colorscheme`, `crucible.hl`,
-`crucible.ui`, `crucible.statusline`, `crucible.syntax` — exist only under
-`crucible`, because they describe what the UI *is* rather than doing something.
 
 ```lua
 -- Runtime namespace
 cru.log(level, msg)  -- Logging (debug, info, warn, error)
 cru.json.encode(tbl) -- Convert table to JSON string
 cru.json.decode(str) -- Parse JSON string to table
-crucible.include     -- Load another config file (crucible only — no cru.include)
+cru.include(path)    -- Load another config file
 
 -- Also available via cru.*
 cru.http             -- HTTP requests (GET, POST, PUT, etc.)
@@ -137,28 +132,28 @@ cru.spawn(fn)        -- Spawn async task (daemon context only, requires send fea
 -- Daemon-side modules (available when running as a plugin in the daemon)
 cru.sessions         -- Session management: create, get, list, send_message, subscribe, etc.
 
--- UI configuration (crucible only — no cru equivalent)
-crucible.colorscheme -- colour palette
-crucible.hl          -- highlight groups (set, link)
-crucible.ui          -- surface geometry, prompt glyphs, layout
-crucible.statusline  -- statusline bars and item vocabulary
-crucible.syntax      -- code highlighting
+-- UI configuration
+cru.colorscheme      -- colour palette
+cru.hl               -- highlight groups (set, link)
+cru.geometry         -- surface geometry, prompt glyphs, layout
+cru.statusline       -- statusline bars and item vocabulary
+cru.syntax           -- code highlighting
 
 -- Runtime statusline values (cru only — the counterpart to the config above)
 cru.statusline.set   -- push a value for `sl.expr("key")`
 cru.statusline.clear -- drop one
 
 -- Legacy aliases (still work)
-crucible.log         -- same as cru.log
-crucible.json_encode -- same as cru.json.encode
-crucible.json_decode -- same as cru.json.decode
+cru.log         -- same as cru.log
+cru.json.encode -- same as cru.json.encode
+cru.json.decode -- same as cru.json.decode
 -- Standalone globals: http, fs, shell, oq, paths, graph (backwards-compat)
 ```
 
-> [!warning] `cru.config` and `crucible.config` are not the same function
+> [!warning] `cru.config` and `cru.plugin.config` are not the same function
 > `cru.config.get(key)` reads one **top-level** value of the merged app config
 > (`config.toml` seeded, `cru.config.set{}` overlaid) and takes no dotted
-> paths. On the daemon's plugin VM, `crucible.config.get("plugin.key")` walks
+> paths. On the daemon's plugin VM, `cru.plugin.config.get("plugin.key")` walks
 > dotted keys into `[plugins.*]` config. This is a known trap — check which
 > one you mean before reaching for either.
 
@@ -176,7 +171,7 @@ of the user's config, and a plugin is told which kilns a session reaches by
 `precognition_select` / `precognition_format` result. Publishing the
 directories here would be a side door around that. Your own
 `[plugins.<name>]` keys are untouched; the rule is about top-level keys only,
-so `crucible.config.get("myplugin.kilns")` still works exactly as before.
+so `cru.plugin.config.get("myplugin.kilns")` still works exactly as before.
 
 The `config.set` RPC refuses the same seven, and reports them in a `rejected`
 list. Changing where kilns live is a config-file edit (`cru kiln register`),
@@ -191,7 +186,7 @@ a region entry is either a **row** (a table of items) or, in `prompt`, the
 arrangement; there is no anchor and no ordering field:
 
 ```lua
-local sl = crucible.statusline
+local sl = cru.statusline
 
 sl.setup({
   prompt = {
@@ -244,7 +239,7 @@ and `"mode:<name>"` for any declared mode.
 ```lua
 sl.setup({ prompt = { sl.input, { sl.mode, sl.align, sl.expr("git") } } })
 
-crucible.on("FileChanged", function(ctx)
+cru.on("FileChanged", function(ctx)
   local out = cru.shell.exec("git status -b --porcelain")
   cru.statusline.set(ctx.session_id, "git", parse_branch(out))
 end)
@@ -262,25 +257,25 @@ See [[Extending/Scripted UI]] for colours, surfaces and borders.
 
 -- Colours. `term4` is the terminal's slot 4 — whatever the user put there —
 -- rather than a claim that it looks blue.
-crucible.colorscheme.setup({
+cru.colorscheme.setup({
   name   = "mine",
   colors = { primary = "term4", success = "term2", text_dim = "bright_black" },
 })
 
-crucible.hl.set("StatusMode", { fg = "black", bg = "mode_normal", bold = true })
+cru.hl.set("StatusMode", { fg = "black", bg = "mode_normal", bold = true })
 
 -- Surfaces
-crucible.ui.setup({
+cru.geometry.setup({
   popup  = { border = "rounded", padding = 1, max_visible = 10 },
   prompt = { normal = { glyph = "❯ " } },
   layout = { status_bar = "bottom", message_spacing = 1 },
 })
 
 -- Code blocks follow the colours above
-crucible.syntax.setup({ theme = "derived" })
+cru.syntax.setup({ theme = "derived" })
 
 -- Statusline: input first, one row below it
-local sl = crucible.statusline
+local sl = cru.statusline
 sl.setup({
   prompt = {
     sl.input,

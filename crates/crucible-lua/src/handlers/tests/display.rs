@@ -19,7 +19,7 @@ async fn lua_display_start_hook_returns_label_and_detail() {
 
     lua.load(
         r#"
-        crucible.on("tool:display_start", function(ctx, event)
+        cru.on("tool:display_start", function(ctx, event)
             return {
                 label = "Custom " .. event.name,
                 -- Prove ctx.session_id reaches display handlers.
@@ -64,7 +64,7 @@ async fn lua_display_complete_hook_returns_summary() {
 
     lua.load(
         r#"
-        crucible.on("tool:display_complete", function(ctx, event)
+        cru.on("tool:display_complete", function(ctx, event)
             return {
                 summary = "Result for " .. event.name
             }

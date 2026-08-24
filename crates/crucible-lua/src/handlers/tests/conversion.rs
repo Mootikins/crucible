@@ -99,7 +99,7 @@ fn sample_events() -> Vec<SessionEvent> {
     ]
 }
 
-/// Both live handler paths — script handlers (`crucible.on` via
+/// Both live handler paths — script handlers (`cru.on` via
 /// `session_event_to_lua`) and file handlers (`core_handler` via
 /// `session_event_to_flat_json`) — must present ONE contract. They used to
 /// disagree for every non-Custom variant: `"ToolCalled"` on one path,

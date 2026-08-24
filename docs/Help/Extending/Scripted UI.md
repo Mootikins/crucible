@@ -34,9 +34,9 @@ statusline layout.
 
 | Name | Covers |
 |---|---|
-| `crucible.colorscheme` | the colour palette, and what highlight groups resolve against |
-| `crucible.ui` | surface geometry, prompt glyphs, layout |
-| `crucible.syntax` | code highlighting inside fenced blocks |
+| `cru.colorscheme` | the colour palette, and what highlight groups resolve against |
+| `cru.geometry` | surface geometry, prompt glyphs, layout |
+| `cru.syntax` | code highlighting inside fenced blocks |
 
 ## Colorscheme
 
@@ -44,7 +44,7 @@ A colorscheme is a palette. Define one inline, or drop a file in
 `~/.config/crucible/themes/` and switch with `ui.set_theme`.
 
 ```lua
-crucible.colorscheme.setup{
+cru.colorscheme.setup{
   name = "my-theme",
   is_dark = true,
   colors = {
@@ -83,8 +83,8 @@ terminal a client is attached to, so the client resolves them.
 Groups are an open namespace: define your own, and link one to another.
 
 ```lua
-crucible.hl.set("StatusMode", { fg = "black", bg = "mode_normal", bold = true })
-crucible.hl.link("PopupSelected", "Visual")
+cru.hl.set("StatusMode", { fg = "black", bg = "mode_normal", bold = true })
+cru.hl.link("PopupSelected", "Visual")
 ```
 
 A colour is a literal, an adaptive pair, or a **palette reference** — the name of
@@ -99,7 +99,7 @@ beat the target, so you can say "like `Visual`, but red".
 Geometry is a closed set — the renderer has to know how to draw each surface.
 
 ```lua
-crucible.ui.setup{
+cru.geometry.setup{
   popup  = { border = "rounded", padding = 1, max_visible = 10 },
   modal  = { border = "double", padding = 1 },
   drawer = { border = { "", "▀", "", "", "", "▄", "", "" } },
@@ -137,7 +137,7 @@ By default code blocks derive their colours from the colorscheme, so a fenced
 block does not clash with the chat around it:
 
 ```lua
-crucible.syntax.setup{
+cru.syntax.setup{
   theme  = "derived",        -- the default; or any syntect theme by name
   colors = {                 -- override individual scopes
     keyword = "#c678dd",
@@ -164,7 +164,7 @@ The screen is three ordered lists. Position in a list is the arrangement, and
 the input is an element like any other:
 
 ```lua
-local sl = crucible.statusline
+local sl = cru.statusline
 
 sl.setup{
   prompt = {
@@ -220,7 +220,7 @@ Anything the daemon has to compute — a git branch, a queue depth — is an
 expression. Place it in a bar, then supply it from a handler:
 
 ```lua
-local sl = crucible.statusline
+local sl = cru.statusline
 
 sl.setup{
   prompt = {
@@ -229,7 +229,7 @@ sl.setup{
   },
 }
 
-crucible.on("FileChanged", function(ctx)
+cru.on("FileChanged", function(ctx)
   local out = cru.shell.exec("git status -b --porcelain")
   cru.statusline.set(ctx.session_id, "git", parse_branch(out))
 end)

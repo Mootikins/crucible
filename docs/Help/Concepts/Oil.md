@@ -38,8 +38,8 @@ Every frame of the Crucible TUI is built by composing an Oil tree top-down: chat
 
 Plugins can participate in two ways:
 
-1. **Status bar customization** — `crucible.statusline.setup{}` composes the rows around the input from Lua items (badges, expressions, conditionals), with daemon-computed values pushed via `sl.expr`.
-2. **Theming** — `crucible.colorscheme.setup{}`, `crucible.hl.set/link`, and `crucible.ui.setup{}` restyle colors, highlight groups, and per-surface geometry without restarting.
+1. **Status bar customization** — `cru.statusline.setup{}` composes the rows around the input from Lua items (badges, expressions, conditionals), with daemon-computed values pushed via `sl.expr`.
+2. **Theming** — `cru.colorscheme.setup{}`, `cru.hl.set/link`, and `cru.geometry.setup{}` restyle colors, highlight groups, and per-surface geometry without restarting.
 
 ## Relation to `crucible-oil` (the crate)
 

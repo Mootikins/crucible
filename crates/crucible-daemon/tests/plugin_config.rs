@@ -3,7 +3,7 @@
 //! Two mechanisms have to agree for plugin config to work:
 //!
 //! 1. `[plugins.<name>]` from config.toml reaches the plugin runtime as
-//!    `crucible.config.get("<name>.<key>")`, and is handed to the plugin's
+//!    `cru.plugin.config.get("<name>.<key>")`, and is handed to the plugin's
 //!    `setup()` function at load time.
 //! 2. The plugin's own config module resolves in a defined order (Lua beats
 //!    TOML): `setup()` → explicit TOML → declared defaults → caller fallback.
@@ -27,7 +27,7 @@ fn plugins_root() -> PathBuf {
 }
 
 /// Load a shipped plugin's `lua/config.lua` with a stand-in for the daemon's
-/// `crucible.config.get("<plugin>.<key>")` backed by `toml`.
+/// `cru.plugin.config.get("<plugin>.<key>")` backed by `toml`.
 fn shipped_config_module(plugin: &str, toml: serde_json::Value) -> (mlua::Lua, mlua::Table) {
     use mlua::LuaSerdeExt;
 
@@ -380,7 +380,7 @@ async fn toml_config_resolves_via_crucible_config_get() {
 
     assert_eq!(
         loader
-            .eval(r#"=crucible.config.get("cfgprobe.greeting")"#)
+            .eval(r#"=cru.plugin.config.get("cfgprobe.greeting")"#)
             .await
             .unwrap(),
         "hi"
@@ -389,21 +389,21 @@ async fn toml_config_resolves_via_crucible_config_get() {
     // so nested TOML tables were unreachable past one level.
     assert_eq!(
         loader
-            .eval(r#"=crucible.config.get("cfgprobe.nested.deep")"#)
+            .eval(r#"=cru.plugin.config.get("cfgprobe.nested.deep")"#)
             .await
             .unwrap(),
         "found"
     );
     assert_eq!(
         loader
-            .eval(r#"=crucible.config.get("cfgprobe.count")"#)
+            .eval(r#"=cru.plugin.config.get("cfgprobe.count")"#)
             .await
             .unwrap(),
         "7"
     );
     assert_eq!(
         loader
-            .eval(r#"=crucible.config.get("cfgprobe.missing")"#)
+            .eval(r#"=cru.plugin.config.get("cfgprobe.missing")"#)
             .await
             .unwrap(),
         "nil"
@@ -538,7 +538,7 @@ async fn user_init_lua_overrides_one_auto_title_key_and_keeps_the_rest() {
 
 /// Configuring the plugin must not publish the channel a second time.
 ///
-/// `crucible.publish` is bound to whichever plugin the loader executed last, so
+/// `cru.plugin.publish` is bound to whichever plugin the loader executed last, so
 /// a `setup{}` that published would file the title provider under someone
 /// else's name — the daemon then warns about two titlers and picks by name, so
 /// editing the prompt could change who generates the title. Publishing belongs
@@ -565,7 +565,7 @@ async fn configuring_auto_title_does_not_republish_the_channel() {
     // instead would depend on which plugin the loader happened to execute last
     // — a republish under `auto-title`'s own name overwrites and hides itself.
     loader
-        .eval("__published = {}; crucible.publish = function(key) __published[#__published + 1] = key end")
+        .eval("__published = {}; cru.plugin.publish = function(key) __published[#__published + 1] = key end")
         .await
         .unwrap();
 

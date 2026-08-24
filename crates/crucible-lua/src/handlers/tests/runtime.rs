@@ -20,7 +20,7 @@ fn runtime_handler_stores_function_reference() {
         function test_handler(event)
             return event
         end
-        crucible.on("pre_tool_call", test_handler)
+        cru.on("pre_tool_call", test_handler)
     "#;
     lua.load(handler_code).eval::<()>().unwrap();
 
@@ -378,7 +378,7 @@ fn pattern_filtering_supports_glob() {
 #[tokio::test]
 async fn todo_enforcer_pattern_integration() {
     // This test demonstrates the full FSM handler pattern:
-    // 1. Register handler with crucible.on("turn:complete", fn)
+    // 1. Register handler with cru.on("turn:complete", fn)
     // 2. Handler checks event for incomplete todos pattern
     // 3. Handler returns {inject={content="Continue..."}} if pattern found
     // 4. Verify result is ScriptHandlerResult::Inject
@@ -386,7 +386,7 @@ async fn todo_enforcer_pattern_integration() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
-    // Step 1: Register the crucible.on API
+    // Step 1: Register the cru.on API
     register_crucible_on_api(
         &lua,
         registry.runtime_handlers.clone(),
@@ -394,10 +394,10 @@ async fn todo_enforcer_pattern_integration() {
     )
     .unwrap();
 
-    // Step 2: Register todo enforcer handler via crucible.on
+    // Step 2: Register todo enforcer handler via cru.on
     lua.load(
         r#"
-        crucible.on("turn:complete", function(ctx, event)
+        cru.on("turn:complete", function(ctx, event)
             -- Check if response contains incomplete todos
             local response = event.response or ""
             if response:find("%[ %]") then  -- Finds "[ ]" pattern
@@ -487,8 +487,8 @@ fn a_cleared_plugins_names_are_not_reused_by_the_next_registration() {
         .unwrap();
     lua.load(
         r#"
-        crucible.on("turn:complete", function() end)
-        crucible.on("turn:complete", function() end)
+        cru.on("turn:complete", function() end)
+        cru.on("turn:complete", function() end)
     "#,
     )
     .exec()
@@ -497,7 +497,7 @@ fn a_cleared_plugins_names_are_not_reused_by_the_next_registration() {
     lua.globals()
         .set("__crucible_loading_plugin__", "beta")
         .unwrap();
-    lua.load(r#"crucible.on("pre_tool_call", function() end)"#)
+    lua.load(r#"cru.on("pre_tool_call", function() end)"#)
         .exec()
         .unwrap();
 
@@ -515,8 +515,8 @@ fn a_cleared_plugins_names_are_not_reused_by_the_next_registration() {
         .unwrap();
     lua.load(
         r#"
-        crucible.on("turn:complete", function() end)
-        crucible.on("turn:complete", function() end)
+        cru.on("turn:complete", function() end)
+        cru.on("turn:complete", function() end)
     "#,
     )
     .exec()
@@ -568,7 +568,7 @@ fn registering_over_a_live_handler_name_is_an_error_not_an_overwrite() {
         .insert("runtime_handler_0".to_string(), key);
 
     let err = lua
-        .load(r#"crucible.on("turn:complete", function() end)"#)
+        .load(r#"cru.on("turn:complete", function() end)"#)
         .exec()
         .expect_err("a name collision must fail the registration");
     assert!(
@@ -639,7 +639,7 @@ async fn an_unregistered_handler_has_no_opinion_instead_of_failing_closed() {
     lua.globals()
         .set("__crucible_loading_plugin__", "alpha")
         .unwrap();
-    lua.load(r#"crucible.on("pre_tool_call", function() return { cancel = true } end)"#)
+    lua.load(r#"cru.on("pre_tool_call", function() return { cancel = true } end)"#)
         .exec()
         .unwrap();
     let stale_name = registry.runtime_handlers_for("pre_tool_call", None)[0]

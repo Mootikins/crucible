@@ -8,7 +8,7 @@
 ---   0. `$CRUCIBLE_WEB_SEARCH_<KEY>` — declared secrets only.
 ---   1. values passed to `setup({...})` — last call wins per key.
 ---   2. `[plugins.web-search]` in config.toml, via
----      `crucible.config.get("web-search.<key>")`.
+---      `cru.plugin.config.get("web-search.<key>")`.
 ---   3. the `defaults` table below.
 ---   4. the caller's `fallback` argument, for keys this module does not declare.
 ---
@@ -71,7 +71,7 @@ local function from_env(key)
 end
 
 --- Read `[plugins.web-search].<key>`. Returns nil when unset and also when
---- `crucible.config` is absent — the plugin test runner has no daemon behind
+--- `cru.plugin.config` is absent — the plugin test runner has no daemon behind
 --- it, and the spec-extraction sandbox stubs `crucible` with a metatable
 --- (hence rawget, which sees through neither).
 local function from_toml(key)

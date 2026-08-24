@@ -669,7 +669,7 @@ async fn test_transform_context_handler_dropping_precog_triggers_reprepend() {
     // missing tag and re-prepend the system message before the agent
     // sees it.
     let lua = r#"
-        crucible.on("transform_context", function(ctx, event)
+        cru.on("transform_context", function(ctx, event)
             -- Rebuild without the precog system message (losing its tag)
             local out = {}
             for _, m in ipairs(event.messages) do
@@ -712,7 +712,7 @@ async fn test_transform_context_handler_mutating_precog_does_not_duplicate() {
     // should NOT fire. Result: exactly one precog-tagged message, with
     // the mutated content.
     let lua = r#"
-        crucible.on("transform_context", function(ctx, event)
+        cru.on("transform_context", function(ctx, event)
             for _, m in ipairs(event.messages) do
                 if m.metadata and m.metadata.tags then
                     for _, tag in ipairs(m.metadata.tags) do
@@ -763,7 +763,7 @@ async fn test_precognition_select_handler_reaches_the_agent() {
     // the call site in `compute_precognition_message` were never wired — that
     // is exactly how the plugin-hook gap shipped undetected before.
     let lua = r#"
-        crucible.on("precognition_select", function(ctx, event)
+        cru.on("precognition_select", function(ctx, event)
             return { { index = 1, snippet = "SENTINEL-SELECTED-SNIPPET" } }
         end)
     "#;

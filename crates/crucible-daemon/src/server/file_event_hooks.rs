@@ -63,10 +63,10 @@ pub fn spawn_file_event_hooks(
 
             // `runtime_handlers_for`, not `handlers_for`: the two are
             // different halves of the registry and only one of them is
-            // written to. `crucible.on(...)` records into `runtime_handlers`;
+            // written to. `cru.on(...)` records into `runtime_handlers`;
             // `handlers` was the annotation-discovered vec, which nothing
             // populates any more. Reading the wrong half is why a
-            // `crucible.on("FileChanged", ...)` handler had never once fired —
+            // `cru.on("FileChanged", ...)` handler had never once fired —
             // registered fine, matched nothing, silently.
             //
             // The identifier is what `opts.pattern` globs against: the note
@@ -136,12 +136,12 @@ mod tests {
         SessionEventMessage::new("system", event, data)
     }
 
-    /// Register one `crucible.on` handler, put `sent` on the bus, and return
+    /// Register one `cru.on` handler, put `sent` on the bus, and return
     /// the global the handler set — or `None` if it never ran.
     ///
     /// Drives the real spawn. Everything short of this tests the translation
     /// and stops there, which is exactly how the dispatch stayed broken: the
-    /// registry has two disjoint halves, `crucible.on` writes one and this
+    /// registry has two disjoint halves, `cru.on` writes one and this
     /// module used to read the other.
     ///
     /// A caller expecting `None` must use [`dispatch_expecting_silence`]
@@ -173,7 +173,7 @@ mod tests {
     /// already processed and dropped.
     async fn dispatch_expecting_silence(hook: &str, body: &str, sent: SessionEventMessage) {
         let (lua, tx) = spawn_with_handler(hook, body);
-        lua.load("barrier = nil\ncrucible.on(\"webhook:received\", function() barrier = true end)")
+        lua.load("barrier = nil\ncru.on(\"webhook:received\", function() barrier = true end)")
             .exec()
             .expect("register barrier handler");
 
@@ -199,7 +199,7 @@ mod tests {
         panic!("the barrier event never dispatched, so the test proved nothing");
     }
 
-    /// A Lua VM with `crucible.on` registered, one handler loaded, and the
+    /// A Lua VM with `cru.on` registered, one handler loaded, and the
     /// dispatch task running against a fresh bus.
     fn spawn_with_handler(
         hook: &str,
@@ -212,9 +212,9 @@ mod tests {
             registry.runtime_handlers(),
             registry.handler_functions(),
         )
-        .expect("register crucible.on");
+        .expect("register cru.on");
 
-        lua.load(format!("fired = nil\ncrucible.on(\"{hook}\", {body})"))
+        lua.load(format!("fired = nil\ncru.on(\"{hook}\", {body})"))
             .exec()
             .expect("register handler");
 
@@ -223,7 +223,7 @@ mod tests {
         (lua, tx)
     }
 
-    /// A handler registered with `crucible.on` actually fires on a file event.
+    /// A handler registered with `cru.on` actually fires on a file event.
     #[tokio::test]
     async fn a_crucible_on_handler_fires_for_a_file_event() {
         let fired = dispatch(
@@ -238,7 +238,7 @@ mod tests {
         assert_eq!(
             fired.as_deref(),
             Some("/w/a.md"),
-            "a crucible.on(\"FileChanged\") handler never ran"
+            "a cru.on(\"FileChanged\") handler never ran"
         );
     }
 
@@ -262,7 +262,7 @@ mod tests {
         assert_eq!(
             fired.as_deref(),
             Some("note:created Daily/2026-08-18.md"),
-            "a crucible.on(\"note:created\") handler never ran"
+            "a cru.on(\"note:created\") handler never ran"
         );
     }
 
@@ -286,7 +286,7 @@ mod tests {
         assert_eq!(
             fired.as_deref(),
             Some(r#"ci {"event":"push"}"#),
-            "a crucible.on(\"webhook:received\") handler never ran"
+            "a cru.on(\"webhook:received\") handler never ran"
         );
     }
 

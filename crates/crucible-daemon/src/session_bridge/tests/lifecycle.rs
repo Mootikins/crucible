@@ -67,7 +67,7 @@ async fn a_plugin_creating_a_session_from_on_session_end_does_not_deadlock() {
     loader
         .eval(
             r#"
-            crucible.on_session_end(function(_session)
+            cru.on_session_end(function(_session)
                 local aux, err = cru.sessions.create({ type = "chat" })
                 if err or not aux then
                     _G.hook_error = "create: " .. tostring(err)

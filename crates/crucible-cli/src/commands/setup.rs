@@ -175,16 +175,16 @@ const TEMPLATE_INIT_LUA: &str = r#"-- Crucible user configuration
 
 -- Colours. "term4" is the terminal's own slot 4 — whatever you configured
 -- there — rather than a claim that it looks blue.
--- crucible.colorscheme.setup({ colors = { primary = "term4" } })
+-- cru.colorscheme.setup({ colors = { primary = "term4" } })
 
 -- Surfaces
--- crucible.ui.setup({
+-- cru.geometry.setup({
 --   popup  = { border = "rounded", padding = 1 },
 --   prompt = { normal = { glyph = "> " } },
 -- })
 
 -- Statusline: each region is an ordered list; the input is an element
--- local sl = crucible.statusline
+-- local sl = cru.statusline
 -- sl.setup({
 --   prompt = {
 --     sl.input,

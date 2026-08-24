@@ -7,7 +7,7 @@
 -- 4. Cleans up the container on session end
 --
 -- The daemon knows nothing about containers — every container decision is made
--- here, through generic crucible.on() hooks with pattern matching and the
+-- here, through generic cru.on() hooks with pattern matching and the
 -- Handled result convention.
 
 local container = require("container")
@@ -74,7 +74,7 @@ end
 --- this side — the daemon only fills the hole, and never learns that the
 --- operand is a container.
 local function claim_isolation(session_id, exempt, runtime, name, target)
-  crucible.require_isolation{
+  cru.isolation.require{
     session = session_id, plugin = "oci", exempt = exempt,
     exec_prefix = { runtime, "exec", "-i", "-w", target },
     exec_env_flag = "-e",
@@ -483,7 +483,7 @@ end
 -- daemon's lifetime. Each handler resolves its own session via ctx.session_id
 -- and no-ops when that session has no container.
 for tool_name, handler_fn in pairs(TOOL_HANDLERS) do
-  crucible.on("pre_tool_call", { pattern = tool_name, priority = 10 }, handler_fn)
+  cru.on("pre_tool_call", { pattern = tool_name, priority = 10 }, handler_fn)
 end
 
 --- `required = true`: a failure here refuses the session.
@@ -493,7 +493,7 @@ end
 --- tool on the host — so "sandbox broken" and "sandbox working" were
 --- indistinguishable from the outside. Refusing makes "session exists" imply
 --- "session is sandboxed".
-crucible.on_session_start(function(session)
+cru.on_session_start(function(session)
   local cfg = resolve_config(session)
   -- Not configured is not a failure: no [plugins.oci] image means the user
   -- never asked for isolation, and every session would otherwise be refused.
@@ -547,7 +547,7 @@ crucible.on_session_start(function(session)
     end
     register(session.id, workspace)
     claim_isolation(session.id, cfg.exempt, shared.runtime, shared.name, shared.target)
-    crucible.set_status{
+    cru.plugin.set_status{
       session = session.id, key = "oci", plugin = "oci",
       text = string.format("sandboxed: %s (%s)", cfg.image, shared.runtime), level = "info",
     }
@@ -570,7 +570,7 @@ crucible.on_session_start(function(session)
     -- container it produced. Adopting rather than reimplementing is the whole
     -- reason the CLI is reached for: `features` and the lifecycle commands are
     -- exactly the parts an approximation would get subtly wrong.
-    crucible.set_status{
+    cru.plugin.set_status{
       session = session.id, key = "oci", plugin = "oci",
       text = "devcontainer up", level = "info",
     }
@@ -599,7 +599,7 @@ crucible.on_session_start(function(session)
     cfg.target = outcome.remoteWorkspaceFolder or cfg.target
   else
     if cfg.dockerfile and cfg.dockerfile ~= "" then
-      crucible.set_status{
+      cru.plugin.set_status{
         session = session.id, key = "oci", plugin = "oci",
         text = "building " .. cfg.image, level = "info",
       }
@@ -608,7 +608,7 @@ crucible.on_session_start(function(session)
         -- there is no total to count against, so the slot reports what step it
         -- is on and spins rather than inventing a fraction.
         on_progress = function(line)
-          crucible.set_status{
+          cru.plugin.set_status{
             session = session.id, key = "oci", plugin = "oci",
             text = "building " .. cfg.image .. ": " .. line,
             level = "info", progress = true,
@@ -627,7 +627,7 @@ crucible.on_session_start(function(session)
       end
     end
 
-    crucible.set_status{
+    cru.plugin.set_status{
       session = session.id, key = "oci", plugin = "oci",
       text = "starting " .. cfg.image, level = "info",
     }
@@ -692,17 +692,17 @@ crucible.on_session_start(function(session)
     end
   end
 
-  crucible.set_status{
+  cru.plugin.set_status{
     session = session.id, key = "oci", plugin = "oci", text = text, level = level,
   }
   cru.log("info", "oci: container started " .. name .. " (" .. cfg.image .. ")")
 end, { required = true })
 
-crucible.on_session_end(function(session)
+cru.on_session_end(function(session)
   local workspace = sessions[session.id]
   if not workspace then return end
   sessions[session.id] = nil
-  crucible.clear_status{ session = session.id, key = "oci" }
+  cru.plugin.clear_status{ session = session.id, key = "oci" }
 
   local active = containers[workspace]
   if not active then return end
@@ -780,7 +780,7 @@ local plugin = {
     -- idiom. `values` and `desc` are functions where the answer depends on
     -- this box rather than on this file — the reason the tree is read live
     -- instead of converted at load.
-    crucible.options{
+    cru.plugin.options{
       type = "group",
       name = "Container isolation",
       get = function(info) return config[info.option] end,
@@ -845,7 +845,7 @@ local plugin = {
     -- is now said; the `available` flag existed because the old channel had no
     -- way not to answer.
     if config.image ~= nil or config.profiles ~= nil or config.devcontainer == true then
-      crucible.publish("targets", {
+      cru.plugin.publish("targets", {
         axis = "runtime",
         label = "Container",
         targets_command = "oci.targets",
@@ -860,7 +860,7 @@ local plugin = {
 -- would otherwise fill `package.loaded`. The documented
 -- `require("oci").setup{...}` from a user's init.lua would then load a
 -- SECOND copy of this file: with its own upvalues, and re-running every
--- body-level `crucible.on_*` call in it — so the `on_session_start` and `on_session_end` handlers at :496 and :701 would be
+-- body-level `cru.on_*` call in it — so the `on_session_start` and `on_session_end` handlers at :496 and :701 would be
 -- registered twice and fire twice per event. Registering the spec here makes
 -- that `require` answer with this table instead.
 --

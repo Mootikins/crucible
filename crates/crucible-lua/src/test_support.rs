@@ -218,15 +218,12 @@ impl TestLuaBuilder {
         (self.lua, cru)
     }
 
-    /// Build with the hooks module, returning (Lua, crucible_table).
+    /// Build with the hooks module, returning (Lua, cru_table).
     pub fn build_with_hooks(self) -> (Lua, Table) {
-        let crucible = self.lua.create_table().unwrap();
-        self.lua
-            .globals()
-            .set("crucible", crucible.clone())
-            .unwrap();
-        register_hooks_module(&self.lua, &crucible).unwrap();
-        (self.lua, crucible)
+        let cru = self.lua.create_table().unwrap();
+        self.lua.globals().set("cru", cru.clone()).unwrap();
+        register_hooks_module(&self.lua, &cru).unwrap();
+        (self.lua, cru)
     }
 
     /// Build with the current-session holder, returning (Lua, CurrentSession).

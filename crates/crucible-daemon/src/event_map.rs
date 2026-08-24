@@ -24,7 +24,7 @@
 //! | Column | Meaning |
 //! |---|---|
 //! | `wire` | `SessionEventMessage.event` — the name on the daemon's broadcast bus, which clients also see |
-//! | `hook` | the name `crucible.on(...)` registers against, and the `type` field the handler reads off the event |
+//! | `hook` | the name `cru.on(...)` registers against, and the `type` field the handler reads off the event |
 //! | `identifier` | the `data` key `opts.pattern` globs against, when the event has one |
 //!
 //! `wire` and `hook` differ only for the file events, whose hook names are
@@ -87,7 +87,7 @@ pub const WEBHOOK_RECEIVED_EVENT: &str = EventName::WebhookReceived.as_str();
 pub struct EventRow {
     /// `SessionEventMessage.event`.
     pub wire: &'static str,
-    /// The name `crucible.on` registers against.
+    /// The name `cru.on` registers against.
     ///
     /// Typed, not a `&str`: these are broadcast events, and giving them the
     /// same type as an interception stage is how `Cancel` came to mean two
@@ -292,7 +292,7 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
 
-    /// Run one decoded event through a real `crucible.on` handler and hand back
+    /// Run one decoded event through a real `cru.on` handler and hand back
     /// the table the handler saw, with the VM that owns it.
     ///
     /// The `Arc<Lua>` comes back deliberately: an `mlua::Table` is a handle
@@ -312,9 +312,9 @@ mod tests {
             registry.runtime_handlers(),
             registry.handler_functions(),
         )
-        .expect("register crucible.on");
+        .expect("register cru.on");
         lua.load(format!(
-            "seen = nil\ncrucible.on(\"{}\", function(ctx, event) seen = event end)",
+            "seen = nil\ncru.on(\"{}\", function(ctx, event) seen = event end)",
             hooked.hook
         ))
         .exec()
@@ -433,7 +433,7 @@ mod tests {
         }
     }
 
-    /// Every event `crucible.on` accepts has a row here.
+    /// Every event `cru.on` accepts has a row here.
     ///
     /// The other direction is now the compiler's: `EventRow.hook` is an
     /// [`EventName`], so a row naming something unregisterable does not exist.
@@ -525,11 +525,11 @@ mod tests {
             registry.runtime_handlers(),
             registry.handler_functions(),
         )
-        .expect("register crucible.on");
+        .expect("register cru.on");
         lua.load(
             r#"
-            crucible.on("note:modified", { pattern = "Daily/*" }, function() end)
-            crucible.on("note:modified", { pattern = "Meta/*" }, function() end)
+            cru.on("note:modified", { pattern = "Daily/*" }, function() end)
+            cru.on("note:modified", { pattern = "Meta/*" }, function() end)
             "#,
         )
         .exec()

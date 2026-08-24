@@ -31,7 +31,7 @@ fn daemon_plugin_loader_creates_successfully() {
 /// documented to call must be registered *here* — registering it on the
 /// other two is invisible to plugins.
 ///
-/// `crucible.on` was missing for exactly this reason: it was registered on
+/// `cru.on` was missing for exactly this reason: it was registered on
 /// the other two VMs, so every hook-registering plugin (`oci`, the
 /// reference interception plugin) raised "attempt to call a nil value" at
 /// load and was silently downgraded to a `warn!`.
@@ -40,11 +40,7 @@ fn plugin_runtime_exposes_the_documented_api_surface() {
     let loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     let lua = loader.plugin_lua();
 
-    for symbol in [
-        "crucible.on",
-        "crucible.on_session_start",
-        "crucible.on_session_end",
-    ] {
+    for symbol in ["cru.on", "cru.on_session_start", "cru.on_session_end"] {
         let is_function: bool = lua
             .load(format!("return type({symbol}) == 'function'"))
             .eval()
@@ -60,9 +56,9 @@ fn plugin_runtime_exposes_the_documented_api_surface() {
 
 /// Session lifecycle hooks registered by a plugin must fire.
 ///
-/// `oci` — the reference interception plugin — registers its `crucible.on`
+/// `oci` — the reference interception plugin — registers its `cru.on`
 /// handlers *inside* `on_session_start` (`init.lua:261,306`). Making
-/// `crucible.on` callable is not enough on its own: if nothing fires the
+/// `cru.on` callable is not enough on its own: if nothing fires the
 /// plugin runtime's lifecycle hooks, that registration never runs.
 ///
 /// `fire_session_start_hooks` was only ever called at `server/lua.rs:34`,
@@ -79,8 +75,8 @@ async fn plugin_session_lifecycle_hooks_fire() {
             r#"
         start_fired = false
         end_fired = false
-        crucible.on_session_start(function(s) start_fired = true end)
-        crucible.on_session_end(function(s) end_fired = true end)
+        cru.on_session_start(function(s) start_fired = true end)
+        cru.on_session_end(function(s) end_fired = true end)
     "#,
         )
         .exec()
@@ -125,7 +121,7 @@ async fn a_lifecycle_hook_can_call_async_apis() {
         .load(
             r#"
         async_ok = false
-        crucible.on_session_start(function(s)
+        cru.on_session_start(function(s)
             -- cru.timer.sleep is async; under a synchronous call this
             -- either raises or never resumes.
             cru.timer.sleep(1)
@@ -168,7 +164,7 @@ async fn a_lifecycle_hook_sees_the_session_workspace() {
             r#"
         seen_workspace = nil
         readonly_enforced = false
-        crucible.on_session_start(function(s)
+        cru.on_session_start(function(s)
             seen_workspace = s.workspace
             readonly_enforced = not pcall(function() s.workspace = "/hijacked" end)
         end)
@@ -219,7 +215,7 @@ async fn only_required_start_hooks_can_refuse_a_session() {
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
         .plugin_lua()
-        .load(r#"crucible.on_session_start(function(s) error("ordinary boom") end)"#)
+        .load(r#"cru.on_session_start(function(s) error("ordinary boom") end)"#)
         .exec()
         .unwrap();
     let session = Session::new("s1".to_string());
@@ -233,9 +229,7 @@ async fn only_required_start_hooks_can_refuse_a_session() {
     let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
     loader
         .plugin_lua()
-        .load(
-            r#"crucible.on_session_start(function(s) error("gate boom") end, { required = true })"#,
-        )
+        .load(r#"cru.on_session_start(function(s) error("gate boom") end, { required = true })"#)
         .exec()
         .unwrap();
     let session = Session::new("s2".to_string());
@@ -268,7 +262,7 @@ async fn reloading_a_plugin_replaces_its_handlers() {
     std::fs::write(
         dir.join("init.lua"),
         r#"
-        crucible.on("pre_tool_call", { pattern = "bash" }, function(ctx, event) end)
+        cru.on("pre_tool_call", { pattern = "bash" }, function(ctx, event) end)
         return { name = "reloadable", version = "0.1.0" }
     "#,
     )
@@ -320,8 +314,8 @@ async fn reloading_one_plugin_leaves_another_plugins_handler_bound_to_its_own_fu
     std::fs::write(
         alpha.join("init.lua"),
         r#"
-        crucible.on("turn:complete", function() return { handled = true, result = "alpha" } end)
-        crucible.on("turn:complete", function() return { handled = true, result = "alpha" } end)
+        cru.on("turn:complete", function() return { handled = true, result = "alpha" } end)
+        cru.on("turn:complete", function() return { handled = true, result = "alpha" } end)
         return { name = "alpha", version = "0.1.0" }
     "#,
     )
@@ -332,7 +326,7 @@ async fn reloading_one_plugin_leaves_another_plugins_handler_bound_to_its_own_fu
     std::fs::write(
         beta.join("init.lua"),
         r#"
-        crucible.on("pre_tool_call", { pattern = "bash" }, function()
+        cru.on("pre_tool_call", { pattern = "bash" }, function()
             return { handled = true, result = "beta" }
         end)
         return { name = "beta", version = "0.1.0" }
@@ -397,8 +391,8 @@ async fn reloading_a_plugin_leaves_a_user_init_handler_bound_to_its_own_function
     std::fs::write(
         alpha.join("init.lua"),
         r#"
-        crucible.on("turn:complete", function() return { handled = true, result = "alpha" } end)
-        crucible.on("turn:complete", function() return { handled = true, result = "alpha" } end)
+        cru.on("turn:complete", function() return { handled = true, result = "alpha" } end)
+        cru.on("turn:complete", function() return { handled = true, result = "alpha" } end)
         return { name = "alpha", version = "0.1.0" }
     "#,
     )
@@ -408,7 +402,7 @@ async fn reloading_a_plugin_leaves_a_user_init_handler_bound_to_its_own_function
     std::fs::write(
         &user_init,
         r#"
-        crucible.on("pre_tool_call", { pattern = "bash" }, function()
+        cru.on("pre_tool_call", { pattern = "bash" }, function()
             return { handled = true, result = "user" }
         end)
     "#,

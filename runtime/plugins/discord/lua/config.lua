@@ -11,7 +11,7 @@ local cached_token = nil
 --- Get a config value with default fallback
 function M.get(key, default)
     local ok, val = pcall(function()
-        return crucible.config.get("discord." .. key)
+        return cru.plugin.config.get("discord." .. key)
     end)
     if ok and val ~= nil then return val end
     return default

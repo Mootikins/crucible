@@ -1283,7 +1283,7 @@ impl RpcDispatcher {
         let resp = crate::server::session::handle_session_create(req.clone(), &self.ctx).await;
         let mapped = map_server_resp(resp);
 
-        // Plugins register their `crucible.on` handlers inside
+        // Plugins register their `cru.on` handlers inside
         // `on_session_start` (oci does), so these hooks have to fire on the
         // plugin runtime — not just the per-call `lua.init_session` executor,
         // which was the only place firing them.
@@ -2261,8 +2261,8 @@ mod tests {
     /// not — which is exactly the difference between sandboxed and not.
     async fn test_context_claiming_isolation(dir: &std::path::Path) -> Arc<RpcContext> {
         const CLAIMS_ISOLATION: &str = r#"
-crucible.on_session_start(function(session)
-  crucible.require_isolation{ session = session.id, plugin = "sandbox" }
+cru.on_session_start(function(session)
+  cru.isolation.require{ session = session.id, plugin = "sandbox" }
 end, { required = true })
 return { name = "sandbox", version = "0.1.0", description = "test isolation claimer" }
 "#;
@@ -2636,7 +2636,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             .load(
                 r#"
                 _G.test_end_hook_count = 0
-                crucible.on_session_end(function(_session)
+                cru.on_session_end(function(_session)
                     _G.test_end_hook_count = _G.test_end_hook_count + 1
                 end)
                 "#,

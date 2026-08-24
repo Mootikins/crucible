@@ -1,11 +1,11 @@
 //! Hook registration system for Crucible Lua API
 //!
-//! Provides `crucible.on_session_start(fn)` and `crucible.on_session_end(fn)`
-//! for registering lifecycle hooks. (`crucible.on_tools_registered` existed
+//! Provides `cru.on_session_start(fn)` and `cru.on_session_end(fn)`
+//! for registering lifecycle hooks. (`cru.on_tools_registered` existed
 //! here for months without a single fire site anywhere in the daemon —
 //! registered, synced, stored, never called. Deleted rather than documented.)
 //!
-//! Tool execution hooks use the RuntimeHandler system via `crucible.on("tool:before_execute", fn)`.
+//! Tool execution hooks use the RuntimeHandler system via `cru.on("tool:before_execute", fn)`.
 //! See `handlers.rs` for details.
 //!
 //! Hooks are owner-tagged: registration reads `__crucible_loading_plugin__`
@@ -27,13 +27,13 @@ use mlua::{Function, Lua, Result as LuaResult, Table};
 /// # Example
 ///
 /// ```lua
-/// crucible.on_session_start(function(session)
+/// cru.on_session_start(function(session)
 ///     session.temperature = 0.5
 /// end)
 /// ```
 pub fn register_hooks_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
-    // `crucible.on_session_start(fn)` — a failure is logged and the session
-    // continues. `crucible.on_session_start(fn, { required = true })` — a
+    // `cru.on_session_start(fn)` — a failure is logged and the session
+    // continues. `cru.on_session_start(fn, { required = true })` — a
     // failure refuses the session.
     //
     // Opt-in deliberately. A hook that owns an isolation boundary (`oci` and
@@ -110,7 +110,7 @@ pub fn register_hooks_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
 
     crucible.set("on_session_end", on_session_end)?;
 
-    // Tool execution hooks use the RuntimeHandler system via crucible.on("tool:before_execute", fn).
+    // Tool execution hooks use the RuntimeHandler system via cru.on("tool:before_execute", fn).
     // See handlers.rs for execute_tool_before_execute_hooks().
 
     Ok(())
@@ -280,18 +280,18 @@ mod tests {
     #[test]
     fn test_register_hooks_module() {
         let lua = Lua::new();
-        let crucible = lua.create_table().unwrap();
+        let cru = lua.create_table().unwrap();
 
-        register_hooks_module(&lua, &crucible).unwrap();
+        register_hooks_module(&lua, &cru).unwrap();
 
-        let _func: Function = crucible.get("on_session_start").unwrap();
+        let _func: Function = cru.get("on_session_start").unwrap();
     }
 
     #[test]
     fn test_on_session_start_stores_function() {
         let (lua, _) = TestLuaBuilder::new().build_with_hooks();
 
-        lua.load(r#"crucible.on_session_start(function(s) end)"#)
+        lua.load(r#"cru.on_session_start(function(s) end)"#)
             .exec()
             .unwrap();
 
@@ -306,9 +306,9 @@ mod tests {
 
         lua.load(
             r#"
-            crucible.on_session_start(function(s) end)
-            crucible.on_session_start(function(s) end)
-            crucible.on_session_start(function(s) end)
+            cru.on_session_start(function(s) end)
+            cru.on_session_start(function(s) end)
+            cru.on_session_start(function(s) end)
         "#,
         )
         .exec()
@@ -325,8 +325,8 @@ mod tests {
 
         lua.load(
             r#"
-            crucible.on_session_start(function(s) end)
-            crucible.on_session_end(function(e) end)
+            cru.on_session_start(function(s) end)
+            cru.on_session_end(function(e) end)
         "#,
         )
         .exec()
@@ -340,7 +340,7 @@ mod tests {
     fn test_on_session_end_stores_function() {
         let (lua, _) = TestLuaBuilder::new().build_with_hooks();
 
-        lua.load(r#"crucible.on_session_end(function(s) end)"#)
+        lua.load(r#"cru.on_session_end(function(s) end)"#)
             .exec()
             .unwrap();
 
@@ -354,9 +354,9 @@ mod tests {
 
         lua.load(
             r#"
-            crucible.on_session_end(function(s) end)
-            crucible.on_session_end(function(s) end)
-            crucible.on_session_end(function(s) end)
+            cru.on_session_end(function(s) end)
+            cru.on_session_end(function(s) end)
+            cru.on_session_end(function(s) end)
         "#,
         )
         .exec()
@@ -377,7 +377,7 @@ mod tests {
         lua.globals()
             .set("__crucible_loading_plugin__", "alpha")
             .unwrap();
-        lua.load(r#"crucible.on_session_start(function(s) end, { required = true })"#)
+        lua.load(r#"cru.on_session_start(function(s) end, { required = true })"#)
             .exec()
             .unwrap();
         lua.globals()
@@ -385,8 +385,8 @@ mod tests {
             .unwrap();
         lua.load(
             r#"
-            crucible.on_session_start(function(s) end)
-            crucible.on_session_end(function(s) end)
+            cru.on_session_start(function(s) end)
+            cru.on_session_end(function(s) end)
         "#,
         )
         .exec()
@@ -395,7 +395,7 @@ mod tests {
             .set("__crucible_loading_plugin__", mlua::Value::Nil)
             .unwrap();
         // Unowned hook — user init.lua shape. Must survive every clear.
-        lua.load(r#"crucible.on_session_end(function(s) end)"#)
+        lua.load(r#"cru.on_session_end(function(s) end)"#)
             .exec()
             .unwrap();
 
@@ -424,9 +424,9 @@ mod tests {
 
         lua.load(
             r#"
-            crucible.on_session_start(function(s) end)
-            crucible.on_session_end(function(s) end)
-            crucible.on_session_end(function(s) end)
+            cru.on_session_start(function(s) end)
+            cru.on_session_end(function(s) end)
+            cru.on_session_end(function(s) end)
         "#,
         )
         .exec()

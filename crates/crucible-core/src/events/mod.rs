@@ -20,7 +20,7 @@
 //! It never ran anything. Outside its own tests nothing implemented `Handler`
 //! and nothing called `register`, so every `emit` returned
 //! `Completed { handler_count: 0 }` and its cancel and fail-closed arms were
-//! unreachable. Session-scoped extension is `crucible.on` in the Lua registry;
+//! unreachable. Session-scoped extension is `cru.on` in the Lua registry;
 //! that is the path with production handlers, and the tests that looked like
 //! Reactor coverage were Lua tests standing beside it.
 //!

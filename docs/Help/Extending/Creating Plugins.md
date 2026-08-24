@@ -288,24 +288,24 @@ is rejected, not shadowed.
 
 ## Providing Hooks
 
-Register handlers with `crucible.on()` at the top level of your `init.lua` —
+Register handlers with `cru.on()` at the top level of your `init.lua` —
 registration happens once at plugin load, and each handler resolves its
 session via `ctx.session_id`:
 
 ```lua
 -- Log all tool calls
-crucible.on("pre_tool_call", function(ctx, event)
+cru.on("pre_tool_call", function(ctx, event)
     cru.log("info", "Tool called: " .. event.tool)
 end)
 
 -- Block dangerous operations
-crucible.on("pre_tool_call", { pattern = "*delete*", priority = 5 }, function(ctx, event)
+cru.on("pre_tool_call", { pattern = "*delete*", priority = 5 }, function(ctx, event)
     return { cancel = true, reason = "Deletes are blocked" }
 end)
 ```
 
 (`@handler` doc-comment annotations and the spec-table `handlers` field
-appear in older material; neither is dispatched for plugins — `crucible.on`
+appear in older material; neither is dispatched for plugins — `cru.on`
 is the contract. Declaring spec-table handlers logs a warning at load.)
 
 See [[Help/Extending/Event Hooks]] for event types, return values, and patterns.
@@ -395,7 +395,7 @@ return {
 reload runs `on_unload` for the old generation, then `on_load` for the new.
 Both are called with no arguments; an error in either is logged (and recorded
 in the plugin's error log) but does not abort the load or unload. For
-per-*session* work, use `crucible.on_session_start` / `on_session_end`
+per-*session* work, use `cru.on_session_start` / `on_session_end`
 instead — see [[Help/Extending/Event Hooks]].
 
 ## Shell Commands

@@ -126,7 +126,7 @@ pub struct DaemonPluginLoader {
     /// a `RegistryKey` into this map; the agent stream loop dispatches
     /// validations by name without re-entering Lua's globals table.
     validator_registry: Arc<LuaValidatorRegistry>,
-    /// Handlers registered by plugins via `crucible.on(event, opts, fn)`.
+    /// Handlers registered by plugins via `cru.on(event, opts, fn)`.
     ///
     /// Paired with [`Self::plugin_lua`] the same way `validator_registry` is:
     /// the handler bodies are `RegistryKey`s into *this* loader's Lua state,
@@ -136,7 +136,7 @@ pub struct DaemonPluginLoader {
     handler_registry: Arc<LuaScriptHandlerRegistry>,
     /// `[plugins.*]` sections from config.toml, keyed by plugin name.
     ///
-    /// Also exposed to Lua as `crucible.config.get("<plugin>.<key>")`; kept
+    /// Also exposed to Lua as `cru.plugin.config.get("<plugin>.<key>")`; kept
     /// here so each plugin's section can be handed to its `setup()` at load.
     plugin_config: HashMap<String, serde_json::Value>,
     /// Spec-declared tools and commands paired with their live `mlua::Function`
@@ -226,7 +226,7 @@ impl DaemonPluginLoader {
         register_context_validators(lua, Arc::clone(&validator_registry))
             .map_err(|e| anyhow::anyhow!("context validators: {e}"))?;
 
-        // `crucible.on` must exist on *this* VM. Registering it only on the
+        // `cru.on` must exist on *this* VM. Registering it only on the
         // per-session and `lua.init_session` runtimes left it nil for plugins,
         // so every hook-registering plugin raised at load and was downgraded
         // to a warning. Covered by
@@ -258,7 +258,7 @@ impl DaemonPluginLoader {
 
         let handler_registry = Arc::new(LuaScriptHandlerRegistry::new());
         reg(
-            "crucible.on",
+            "cru.on",
             register_crucible_on_api(
                 lua,
                 handler_registry.runtime_handlers(),
@@ -323,7 +323,7 @@ impl DaemonPluginLoader {
         self.option_store_dir.as_deref()
     }
 
-    /// Handlers registered by plugins via `crucible.on`.
+    /// Handlers registered by plugins via `cru.on`.
     ///
     /// Hand this to `AgentManager` together with [`Self::plugin_lua`] — the
     /// handler bodies are registry keys into that specific Lua state, so
@@ -386,12 +386,12 @@ impl DaemonPluginLoader {
             .map_err(|e| anyhow::anyhow!("statusline module: {e}"))
     }
 
-    /// Fire `crucible.on_session_start` hooks registered by plugins.
+    /// Fire `cru.on_session_start` hooks registered by plugins.
     ///
     /// Syncs first: hooks live in Lua globals until pulled into the executor's
     /// list, and plugins register them at load — long before any session
     /// exists. Without this the plugin runtime's lifecycle hooks never ran at
-    /// all, so a plugin that registers its `crucible.on` handlers inside
+    /// all, so a plugin that registers its `cru.on` handlers inside
     /// `on_session_start` (as `oci` does) never registered anything.
     ///
     /// A raising hook propagates — the caller must refuse the session. A plugin
@@ -412,7 +412,7 @@ impl DaemonPluginLoader {
             .map_err(|e| anyhow::anyhow!("fire session_start hooks: {e}"))
     }
 
-    /// Fire `crucible.on_session_end` hooks registered by plugins.
+    /// Fire `cru.on_session_end` hooks registered by plugins.
     /// See [`Self::fire_session_start`] for why this syncs first.
     ///
     /// Teardown failures are reported but must not block the session ending —
@@ -756,13 +756,13 @@ end
                         );
                     }
                     // Spec-table handlers are parsed for discovery display but
-                    // NEVER dispatched — `crucible.on` at load is the working
+                    // NEVER dispatched — `cru.on` at load is the working
                     // API. Say so loudly instead of letting the declaration
                     // look registered.
                     if !spec.handlers.is_empty() {
                         warn!(
                             "Plugin '{}' declares {} spec-table handler(s), which are not \
-                             dispatched; register them with crucible.on(...) in init.lua instead",
+                             dispatched; register them with cru.on(...) in init.lua instead",
                             name,
                             spec.handlers.len(),
                         );
@@ -858,7 +858,7 @@ end
     /// "not Active" must imply "nothing of this plugin's is registered or
     /// running". Execute failures used to `mark_error` and still return
     /// `Ok(spec)`, so `reload_plugin` reported success while the previous
-    /// generation's `crucible.on` handlers stayed live — and `pre_tool_call`
+    /// generation's `cru.on` handlers stayed live — and `pre_tool_call`
     /// fails closed, so one stale handler could deny every tool call in every
     /// session.
     async fn load_plugin_spec(&mut self, name: &str) -> anyhow::Result<PluginSpec> {
@@ -1027,7 +1027,7 @@ end
         // Drop this plugin's previously-registered handlers and session hooks,
         // and mark it as the loading plugin so anything it registers now is
         // attributed to it. Without both halves a reload appends a second copy
-        // of every `crucible.on` handler and every session hook — stale
+        // of every `cru.on` handler and every session hook — stale
         // handlers keep firing against dead state (and `pre_tool_call` fails
         // closed, denying every tool call in every session), while a doubled
         // `on_session_start` runs oci's container setup twice per session.

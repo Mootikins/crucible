@@ -16,7 +16,7 @@ aliases:
 The bundled `oci` plugin runs the agent's workspace tools — `bash`, `read_file`,
 `write_file`, `edit_file`, `glob`, `grep` — inside a container instead of on the
 host. It is also the reference implementation for [[Help/Extending/Event Hooks]]:
-everything it does is built on `crucible.on("pre_tool_call", …)` and the
+everything it does is built on `cru.on("pre_tool_call", …)` and the
 lifecycle hooks, with no container-specific Rust.
 
 ## Enabling it
@@ -407,7 +407,7 @@ answer, and the plugin supplies a different one: an **exec prefix**, the argv
 that runs a command inside the sandbox.
 
 ```lua
-crucible.require_isolation{
+cru.isolation.require{
   session = session.id,
   plugin  = "oci",
   exec_prefix   = { "podman", "exec", "-i", "-w", "/workspace" },

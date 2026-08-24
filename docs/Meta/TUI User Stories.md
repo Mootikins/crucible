@@ -101,7 +101,7 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 **Tests:** T2 styled snapshots at widths 50/80/120 (partially exists), markdown_fuzz_tests.
 
 ### US-205: Context usage + statusline
-**As a user**, the status bar shows mode, model, token usage (used/total), and cache hit rate; Lua `crucible.statusline.setup()` reorders it.
+**As a user**, the status bar shows mode, model, token usage (used/total), and cache hit rate; Lua `cru.statusline.setup()` reorders it.
 **Acceptance:** usage updates after each `message_complete`; Lua config drives layout with builtin fallback; overflow degrades gracefully at narrow widths (badges stay intact, model/toast spans elide with `…`, sections never overlap).
 **Tests:** T1 (statusline config), T2 (status_bar width snapshots at 40/50/80/120; narrow-width graceful degradation shipped 2026-07-10 via oil row flex-shrink + `no_shrink` badges).
 
@@ -232,7 +232,7 @@ Until a GAP meets all three, leave it marked GAP with a one-line note on what bl
 
 ### US-905: Theme the TUI from Lua
 **As a user**, colours, per-surface geometry and prompt glyphs come from my `init.lua` (or a `themes/*.lua` file), and a change takes effect without restarting.
-**Acceptance:** `crucible.colorscheme.setup{}` reaches the renderer in split-process mode (not only `--standalone`); `crucible.hl.set/link` restyle named groups, with palette references re-resolving when the palette changes; `crucible.ui.setup{}` sets popup/modal/drawer/toast/prompt geometry, and a surface the theme does not name keeps its built-in; a daemon that is unreachable leaves a correct, compiled-in-themed screen rather than a blank one; a re-sent `ui.config` replaces the active theme and repaints.
+**Acceptance:** `cru.colorscheme.setup{}` reaches the renderer in split-process mode (not only `--standalone`); `cru.hl.set/link` restyle named groups, with palette references re-resolving when the palette changes; `cru.geometry.setup{}` sets popup/modal/drawer/toast/prompt geometry, and a surface the theme does not name keeps its built-in; a daemon that is unreachable leaves a correct, compiled-in-themed screen rather than a blank one; a re-sent `ui.config` replaces the active theme and repaints.
 **Tests:** T1 wire round-trips + group resolution/linking/cycles in `crucible-lua` (`theme_wire.rs`, `hl.rs`, `hl_lua.rs`, `ui_geometry.rs`); T2 store swap + surface application in `tui/oil/theme/{global,groups,geometry,remote}.rs` and `components/input_area.rs`; T3 delivery over real RPC in `crucible-daemon/tests/rpc_ui_config_e2e.rs` — RED-verify that suite by unwiring the handler, not the parser.
 
 ### US-906: Build a statusline

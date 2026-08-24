@@ -1,4 +1,4 @@
-//! Tests for the `crucible.on` half of `LuaScriptHandlerRegistry`.
+//! Tests for the `cru.on` half of `LuaScriptHandlerRegistry`.
 //!
 //! The other half — a `Vec<LuaScriptHandler>` filled by annotation discovery —
 //! is gone, and so are the tests that drove `add`/`handlers_for`/`iter`/`len`
@@ -18,12 +18,12 @@ fn test_crucible_on_api_registration() {
 
     register_crucible_on_api(&lua, handlers.clone(), functions.clone()).unwrap();
 
-    // Verify crucible.on exists. The name has to be a real hook: `crucible.on`
+    // Verify cru.on exists. The name has to be a real hook: `cru.on`
     // now validates against `HOOK_NAMES`, because a name nothing dispatches
     // registered happily and then never fired.
     lua.load(
         r#"
-        crucible.on("pre_tool_call", function(event)
+        cru.on("pre_tool_call", function(event)
             return event
         end)
     "#,
@@ -37,7 +37,7 @@ fn test_crucible_on_api_registration() {
     assert_eq!(guard[0].event_type, "pre_tool_call");
 }
 
-/// The bug: `crucible.on("pre_toolcall", …)` registered, logged at `debug!`, and
+/// The bug: `cru.on("pre_toolcall", …)` registered, logged at `debug!`, and
 /// never fired. The registry compares `event_type` with `==`, so nothing about a
 /// misspelt name was recoverable at dispatch time.
 #[test]
@@ -48,7 +48,7 @@ fn crucible_on_rejects_a_hook_name_nothing_dispatches() {
     register_crucible_on_api(&lua, handlers.clone(), functions.clone()).unwrap();
 
     let err = lua
-        .load(r#"crucible.on("pre_toolcall", function(event) return event end)"#)
+        .load(r#"cru.on("pre_toolcall", function(event) return event end)"#)
         .exec()
         .expect_err("a misspelt hook name must not register");
     let msg = err.to_string();
@@ -74,7 +74,7 @@ fn crucible_on_with_opts_table_sets_pattern_and_priority() {
 
     lua.load(
         r#"
-        crucible.on("pre_tool_call", { pattern = "bash", priority = 10 }, function(ctx, event)
+        cru.on("pre_tool_call", { pattern = "bash", priority = 10 }, function(ctx, event)
             return nil
         end)
     "#,
@@ -106,7 +106,7 @@ fn crucible_on_backward_compat_no_opts() {
 
     lua.load(
         r#"
-        crucible.on("turn:complete", function(ctx, event)
+        cru.on("turn:complete", function(ctx, event)
             return nil
         end)
     "#,

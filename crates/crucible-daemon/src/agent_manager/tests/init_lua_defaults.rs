@@ -3,9 +3,9 @@
 //! hand-built `Lua`.
 //!
 //! Why that distinction matters: the previous default system prompt was
-//! written as a `crucible.on_session_start` hook, but that API is registered
+//! written as a `cru.on_session_start` hook, but that API is registered
 //! only by `LuaExecutor` — never on the daemon's session VM. The guard
-//! `if type(crucible.on_session_start) == "function"` was therefore always
+//! `if type(cru.on_session_start) == "function"` was therefore always
 //! false and the prompt silently never applied, while `init_lua.rs`'s
 //! "loads without error" test stayed green throughout. These tests assert the
 //! effect, so a default that registers against a missing API fails loudly.

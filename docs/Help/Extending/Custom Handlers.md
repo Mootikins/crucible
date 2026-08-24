@@ -110,7 +110,7 @@ Lua handlers are scripts that process events without requiring Rust compilation.
 
 ### Location
 
-Handlers live in plugins, and register with `crucible.on` at load:
+Handlers live in plugins, and register with `cru.on` at load:
 
 ```
 ~/.config/crucible/plugins/      # your plugins
@@ -128,7 +128,7 @@ fourteen events and the cancel / handled / transform contract, and
 ```lua
 -- ~/.config/crucible/plugins/my-plugin.lua
 
-crucible.on("pre_tool_call", { pattern = "*", priority = 100 }, function(ctx, event)
+cru.on("pre_tool_call", { pattern = "*", priority = 100 }, function(ctx, event)
     cru.log("info", "Tool called: " .. tostring(event.tool))
 end)
 
@@ -149,7 +149,7 @@ fields sit alongside it at the top level. There is no `event.payload` envelope
 and no `event.identifier`.
 
 ```lua
-crucible.on("pre_tool_call", { pattern = "*", priority = 100 }, function(ctx, event)
+cru.on("pre_tool_call", { pattern = "*", priority = 100 }, function(ctx, event)
     cru.log("info", string.format(
         "session %s called %s", tostring(ctx.session_id), tostring(event.tool)))
 end)
@@ -164,7 +164,7 @@ Return a directive table; do not mutate `event`. Lua-side mutation is ignored
 because the return value is what chains to the next handler.
 
 ```lua
-crucible.on("pre_tool_call", { pattern = "*", priority = 5 }, function(ctx, event)
+cru.on("pre_tool_call", { pattern = "*", priority = 5 }, function(ctx, event)
     local path = event.args and event.args.file_path or ""
     if string.find(path, "%.secret") then
         cru.log("warn", "Blocked access to secret file")
@@ -188,7 +188,7 @@ them by returning a patch. Each handler sees the previous one's output.
 
 ```lua
 -- Redact secrets from what the model sees.
-crucible.on("tool_result", { pattern = "bash" }, function(ctx, event)
+cru.on("tool_result", { pattern = "bash" }, function(ctx, event)
     return { result = event.result:gsub("token=%S+", "token=[REDACTED]") }
 end)
 ```
@@ -309,7 +309,7 @@ async fn handle(&self, event: &SessionEvent) -> Result<()> {
 ## Handler Lifecycle
 
 1. **Registration**: Rust handlers are registered on a `HandlerRegistry`; Lua
-   handlers register via `crucible.on` when their plugin loads
+   handlers register via `cru.on` when their plugin loads
 2. **Execution**: Handlers execute in priority order when events are emitted
 3. **Cascade**: Handlers can emit new events, triggering further handlers
 4. **Shutdown**: Handlers are dropped when the EventBus is dropped

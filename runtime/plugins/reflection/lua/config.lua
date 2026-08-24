@@ -6,7 +6,7 @@
 --- which runs after plugins load, overrides it):
 ---   1. values passed to `setup({...})` — last call wins per key.
 ---   2. `[plugins.reflection]` in config.toml, read through
----      `crucible.config.get("reflection.<key>")` — covers keys read before
+---      `cru.plugin.config.get("reflection.<key>")` — covers keys read before
 ---      any setup() call lands. Note this is NOT `cru.config[...]` —
 ---      `cru.config` is the *app* config store and holds only `get`/`set`
 ---      functions; it is not indexable by plugin name.
@@ -51,7 +51,7 @@ function M.init(cfg)
 end
 
 --- Read `[plugins.reflection].<key>`. Returns nil when unset, and also when
---- `crucible.config` is absent — the plugin test runner has no daemon behind
+--- `cru.plugin.config` is absent — the plugin test runner has no daemon behind
 --- it, and the spec-extraction sandbox stubs `crucible` with a metatable
 --- (hence rawget, which sees through neither).
 local function from_toml(key)

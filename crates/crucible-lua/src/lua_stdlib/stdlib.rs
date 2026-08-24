@@ -259,7 +259,7 @@ do
                 -- Fall back to plugin config
                 if val == nil then
                     local ok, cfg_val = pcall(function()
-                        return crucible.config.get(name .. "." .. key)
+                        return cru.plugin.config.get(name .. "." .. key)
                     end)
                     if ok and cfg_val ~= nil then val = cfg_val end
                 end

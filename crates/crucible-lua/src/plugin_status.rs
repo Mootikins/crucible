@@ -1,7 +1,7 @@
 //! Per-session status published by plugins.
 //!
 //! `cru.plugin.set_status{...}` gives a plugin a durable, session-scoped slot in
-//! the UI. Before this, a plugin could only call `crucible.notify` — transient,
+//! the UI. Before this, a plugin could only call `cru.log.notify` — transient,
 //! easily missed, and gone by the time it matters.
 //!
 //! That gap is why container isolation was unverifiable from the UI: a session

@@ -836,11 +836,11 @@ plugin_boot,plugin_install}.rs`, `rpc/ui.rs`, `runtime/`.
 | `PluginManager` | `crucible-lua/src/lifecycle/mod.rs:31` | Discovers, loads, reloads, enables plugins |
 | `PluginSpec` | `crucible-lua/src/lifecycle/spec.rs:16` | Parsed spec table an `init.lua` returns |
 | `PluginManifest`, `Capability`, `PluginState`, `PluginSource` | `crucible-lua/src/manifest.rs:48,80,325,295` | `plugin.yaml` model |
-| `LuaScriptHandlerRegistry`, `RuntimeHandler` | `crucible-lua/src/handlers/registry.rs:32,48` | `crucible.on` registrations |
+| `LuaScriptHandlerRegistry`, `RuntimeHandler` | `crucible-lua/src/handlers/registry.rs:32,48` | `cru.on` registrations |
 | `StageId`, `EventName`, `HookName` | `crucible-lua/src/handlers/hook_name.rs:119,44,193` | 11 stages, 8 events, union for validation |
 | `ScriptHandlerResult` | `crucible-lua/src/handlers/script_handler.rs:15` | Transform, PassThrough, Cancel, Inject, Handled |
 | `EventOutcome` | `crucible-lua/src/handlers/script_handler.rs:110` | Observed or StopChain for broadcast events |
-| `PermissionHook`, `PermissionRequest`, `PermissionHookResult` | `crucible-lua/src/handlers/permission.rs:48,25,14` | `crucible.permissions.on_request` |
+| `PermissionHook`, `PermissionRequest`, `PermissionHookResult` | `crucible-lua/src/handlers/permission.rs:48,25,14` | `cru.permissions.on_request` |
 | `ToolBeforeExecuteEvent`, `ToolDisplayStartHints`, `ToolDisplayCompleteHints` | `handlers/before_execute.rs:12`, `display_hooks.rs:18,42` | Tool hook payloads |
 | `DaemonSessionApi` | `crucible-lua/src/sessions/mod.rs:103` | `cru.sessions.*` contract; the daemon implements it |
 | `DaemonSessionBridge` | `crucible-daemon/src/session_bridge.rs:23` | The one production `DaemonSessionApi` |
@@ -848,7 +848,7 @@ plugin_boot,plugin_install}.rs`, `rpc/ui.rs`, `runtime/`.
 | `SessionConfigRpc`, `Session`, `CurrentSession` | `crucible-lua/src/session_api.rs:67,297,489` | Lua `session` userdata and its knob contract |
 | `SessionDefaults`, `SessionDefaultValues`, `SessionDefaultsRpc` | `crucible-lua/src/session_defaults.rs:70,52,199` | `cru.defaults` |
 | `ModeRegistry`, `ModeDefinition`, `ModePermissions`, `ModeStance`, `ToolSelector` | `crucible-lua/src/modes.rs:161,149,132,42,77` | `cru.modes`; permission modes live here |
-| `IsolationRegistry` | `crucible-lua/src/isolation.rs:122` | `crucible.require_isolation` |
+| `IsolationRegistry` | `crucible-lua/src/isolation.rs:122` | `cru.isolation.require` |
 | `StatusRegistry`, `PublicationRegistry`, `ContextAttachRegistry`, `OptionsRegistry`, `StatuslineExprRegistry`, `LuaValidatorRegistry` | `plugin_status.rs:54`, `publications.rs:33`, `context_attach.rs:74`, `options.rs:65`, `statusline_exprs.rs:68`, `context.rs:187` | Daemon-read registries behind `Arc<Mutex>` |
 | `ThemeConfig`, `ThemeColors` | `crucible-lua/src/theme.rs:407,23` | Theme schema; 45 `AdaptiveColor` slots |
 | `Layout`, `StatusItem`, `Region`, `Element` | `crucible-lua/src/statusline_items.rs:171,111,52,160` | Closed statusline vocabulary |
@@ -909,7 +909,7 @@ methods plus `ui.config` and `ui.set_theme`; the daemon stores opaque JSON.
 - `ThemeLayout` and `UiLayout` are twins (`theme.rs:375`, `ui_geometry.rs:56`);
   `ThemeIcons`, `ThemeSpinnerStyle`, `BorderStyle`, `StatusBarPosition` are
   parsed and serialized but no renderer reads them.
-- `crucible.notify` appends to a queue only tests drain (`notify.rs:78,110,241,262`)
+- `cru.log.notify` appends to a queue only tests drain (`notify.rs:78,110,241,262`)
   while `docs/Help/Lua/Language Basics.md:74` documents it.
 - `cru.defaults.mode` is stored but never exposed to Lua
   (`session_defaults.rs:92-175`).
@@ -945,7 +945,7 @@ Still true from the older notes: Fennel compiles and runs in the daemon VM
 (`shipped.rs::a_fennel_plugin_executes_in_the_daemon_vm`); `StubGenerator`
 emits Lua stubs only; the `targets` channel plus `resolve_command` is the
 end-to-end publication pattern (`workspace_targets.rs`); the web shows plugin
-commands only as a count and has no renderer for `crucible.set_status` slots.
+commands only as a count and has no renderer for `cru.plugin.set_status` slots.
 
 ### 3.7 Render
 

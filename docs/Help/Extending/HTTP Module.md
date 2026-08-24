@@ -71,9 +71,9 @@ Use HTTP in handlers to fetch external data:
 
 ```lua
 -- Handler that enriches tool calls with external data.
--- Handlers register with `crucible.on` at load time; `pattern` globs the
+-- Handlers register with `cru.on` at load time; `pattern` globs the
 -- tool name. Handlers may call async APIs like `cru.http` directly.
-crucible.on("pre_tool_call", { pattern = "fetch_prices", priority = 10 }, function(ctx, event)
+cru.on("pre_tool_call", { pattern = "fetch_prices", priority = 10 }, function(ctx, event)
     local response = cru.http.get("https://api.prices.com/latest")
     if not response.ok then
         -- Cancel blocks the call with an error; `pre_tool_call` is the only

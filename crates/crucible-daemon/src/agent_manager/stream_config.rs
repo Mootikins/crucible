@@ -50,7 +50,7 @@ pub(crate) struct AgentStreamConfig {
     /// Plugin runtime `Lua` handle used to call into validator functions.
     /// Paired with `lua_validators`; both are `Some` together or both `None`.
     pub(crate) plugin_lua: Option<Arc<Lua>>,
-    /// Hooks registered by plugins via `crucible.on`, with the `Lua` state
+    /// Hooks registered by plugins via `cru.on`, with the `Lua` state
     /// their bodies live in. Separate from the per-session registry: plugins
     /// load once into the loader's VM, and a `RegistryKey` is only valid
     /// against the state that created it.

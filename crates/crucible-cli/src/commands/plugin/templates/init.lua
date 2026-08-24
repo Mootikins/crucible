@@ -24,10 +24,10 @@ end
 --- field in the spec table below would be silently ignored: the recognised
 --- fields are name, version, tools, commands, handlers, views and setup.
 ---
---- `crucible.on(event, opts, handler)` is the other half of this — it takes one
+--- `cru.on(event, opts, handler)` is the other half of this — it takes one
 --- of eleven event names (`pre_tool_call`, `tool_result`, …) and can cancel or
 --- replace a tool call. See docs/Help/Extending/Event Hooks.md.
-crucible.on_session_start(function(session)
+cru.on_session_start(function(session)
     cru.log("info", "{{name}} plugin loaded for session: " .. session.id)
 end)
 

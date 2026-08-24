@@ -1,7 +1,7 @@
 //! The note lifecycle events the kiln manager puts on the broadcast bus.
 //!
 //! The note store has always returned `NoteCreated`/`NoteModified`/`NoteDeleted`
-//! and the pipeline has always dropped them, so `crucible.on("note:created", …)`
+//! and the pipeline has always dropped them, so `cru.on("note:created", …)`
 //! had nothing to fire on. These assert the manager broadcasts them under the
 //! names `crate::event_map` declares — and that the bulk indexer stays quiet
 //! for the files it indexes, while the reconciliation sweep in front of it does

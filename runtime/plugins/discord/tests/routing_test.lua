@@ -5,18 +5,20 @@
 --- unconditionally *above* the `respond_to` check — so no configuration value
 --- closed it. These tests exist so that cannot come back silently.
 
+-- The runner VM has no cru.plugin (the daemon registers it); tests stub into it.
+cru.plugin = cru.plugin or {}
 local routing = require("routing")
 
--- `config.get` reads `crucible.config.get("discord." .. key)` inside a pcall,
+-- `config.get` reads `cru.plugin.config.get("discord." .. key)` inside a pcall,
 -- so the suite stubs that lookup rather than the plugin's own accessor — the
 -- key-prefixing and the default-on-missing behaviour stay under test. The test
--- VM has no `crucible.config`, hence the table is created and then restored.
+-- VM has no `cru.plugin.config`, hence the table is created and then restored.
 local function with_config(tbl, fn)
     crucible = crucible or {}
-    local had_config = crucible.config
-    crucible.config = { get = function(key) return tbl[key] end }
+    local had_config = cru.plugin.config
+    cru.plugin.config = { get = function(key) return tbl[key] end }
     local ok, err = pcall(fn)
-    crucible.config = had_config
+    cru.plugin.config = had_config
     if not ok then error(err) end
 end
 

@@ -49,7 +49,7 @@ fn deny_tool_call(
     ))
 }
 
-/// Run every `crucible.on("pre_tool_call", …)` handler in one registry.
+/// Run every `cru.on("pre_tool_call", …)` handler in one registry.
 ///
 /// `Some` short-circuits the call — a handler cancelled, took it over, or
 /// raised. `None` means every handler observed (possibly rewriting `args`),
@@ -99,7 +99,7 @@ async fn run_pre_tool_call_handlers(
                     stream_ctx,
                     call_id,
                     tool_name,
-                    format!("Tool blocked by crucible.on handler: {}", reason),
+                    format!("Tool blocked by cru.on handler: {}", reason),
                 );
             }
             Ok(crucible_lua::ScriptHandlerResult::Handled { result, terminate })

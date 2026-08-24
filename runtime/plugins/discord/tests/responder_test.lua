@@ -7,25 +7,27 @@
 --- DM instead, and only that account's reply resolves it; the requester is
 --- told their request is waiting and nothing else.
 
+-- The runner VM has no cru.plugin (the daemon registers it); tests stub into it.
+cru.plugin = cru.plugin or {}
 local responder = require("responder")
 local api = require("api")
 
 --- Run `fn` with config, the session bridge, the clock and the REST surface
 --- under the test's control, restoring all of them however `fn` ends.
 ---
---- `crucible.config` and `cru.sessions` are absent in the test VM. `api` is
+--- `cru.plugin.config` and `cru.sessions` are absent in the test VM. `api` is
 --- stubbed by replacing fields on the module table, because `responder`
 --- captured that table at load and it is what the stub has to reach.
 local function with_env(cfg, env, fn)
     crucible = crucible or {}
-    local had_config = crucible.config
+    local had_config = cru.plugin.config
     local had_sessions = cru.sessions
     local had_timer = cru.timer
     local had_send = api.send_message
     local had_typing = api.trigger_typing
     local had_dm = api.create_dm_channel
 
-    crucible.config = { get = function(key) return cfg[key] end }
+    cru.plugin.config = { get = function(key) return cfg[key] end }
     cru.sessions = env.sessions
     -- A fixed clock keeps the typing refresh out of the way; `sleep` is where
     -- the test stands in for the reply arriving over the gateway.
@@ -42,7 +44,7 @@ local function with_env(cfg, env, fn)
     api.send_message = had_send
     cru.timer = had_timer
     cru.sessions = had_sessions
-    crucible.config = had_config
+    cru.plugin.config = had_config
     if not ok then error(err) end
 end
 

@@ -16,7 +16,7 @@ fn test_permission_hook_registration() {
 
     lua.load(
         r#"
-        crucible.permissions.on_request(function(request)
+        cru.permissions.on_request(function(request)
             return {allow=true}
         end)
     "#,
@@ -42,7 +42,7 @@ fn test_permission_hook_returns_allow() {
 
     lua.load(
         r#"
-        crucible.permissions.on_request(function(request)
+        cru.permissions.on_request(function(request)
             if request.tool_name == "bash" then
                 return {allow=true}
             end
@@ -79,7 +79,7 @@ fn test_permission_hook_returns_deny() {
 
     lua.load(
         r#"
-        crucible.permissions.on_request(function(request)
+        cru.permissions.on_request(function(request)
             if request.tool_name == "delete" then
                 return {deny=true}
             end
@@ -116,7 +116,7 @@ fn test_permission_hook_returns_nil_for_prompt() {
 
     lua.load(
         r#"
-        crucible.permissions.on_request(function(request)
+        cru.permissions.on_request(function(request)
             return nil  -- Show normal prompt
         end)
     "#,
@@ -170,7 +170,7 @@ fn test_permission_hook_receives_args() {
 
     lua.load(
         r#"
-        crucible.permissions.on_request(function(request)
+        cru.permissions.on_request(function(request)
             if request.args.command and string.match(request.args.command, "^npm ") then
                 return {allow=true}
             end
@@ -207,7 +207,7 @@ fn test_permission_hook_receives_file_path() {
 
     lua.load(
         r#"
-        crucible.permissions.on_request(function(request)
+        cru.permissions.on_request(function(request)
             if request.file_path and string.match(request.file_path, "%.test%.") then
                 return {allow=true}
             end
@@ -244,10 +244,10 @@ fn test_permission_hook_first_decision_wins() {
 
     lua.load(
         r#"
-        crucible.permissions.on_request(function(request)
+        cru.permissions.on_request(function(request)
             return {allow=true}  -- First hook allows
         end)
-        crucible.permissions.on_request(function(request)
+        cru.permissions.on_request(function(request)
             return {deny=true}  -- Second hook denies (should not be reached)
         end)
     "#,
@@ -271,7 +271,7 @@ fn test_permission_hook_first_decision_wins() {
     assert_eq!(result.unwrap(), PermissionHookResult::Allow);
 }
 
-/// Registration-time filtering, the option `crucible.on` already had.
+/// Registration-time filtering, the option `cru.on` already had.
 /// Without it every policy hook opens with `if request.tool_name == "bash"`.
 #[test]
 fn a_pattern_scopes_a_hook_to_matching_tools() {
@@ -281,7 +281,7 @@ fn a_pattern_scopes_a_hook_to_matching_tools() {
     register_permission_hook_api(&lua, hooks.clone(), functions.clone()).unwrap();
 
     lua.load(
-        r#"crucible.permissions.on_request(function(request)
+        r#"cru.permissions.on_request(function(request)
              return { deny = true }
            end, { pattern = "bash" })"#,
     )
@@ -323,7 +323,7 @@ fn a_pattern_uses_the_same_glob_syntax_as_crucible_on() {
     register_permission_hook_api(&lua, hooks.clone(), functions.clone()).unwrap();
 
     lua.load(
-        r#"crucible.permissions.on_request(function(request)
+        r#"cru.permissions.on_request(function(request)
              return { deny = true }
            end, { pattern = "{bash,edit}" })"#,
     )

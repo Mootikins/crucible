@@ -169,11 +169,11 @@ Crucible follows a "scriptable surfaces, not a scripted runtime" model. Lua owns
 
 | Surface | How |
 |---------|-----|
-| Colour palette | `crucible.colorscheme.setup()` — semantic colours, terminal slots, adaptive pairs |
-| Highlight groups | `crucible.hl.set/link` — open, linkable namespace |
-| Surface geometry | `crucible.ui.setup()` — borders, padding, prompt glyphs, layout |
-| Statusline layout | `crucible.statusline.setup()` — item trees, multiple bars, anchors |
-| Code highlighting | `crucible.syntax.setup()` — derived from the colorscheme by default |
+| Colour palette | `cru.colorscheme.setup()` — semantic colours, terminal slots, adaptive pairs |
+| Highlight groups | `cru.hl.set/link` — open, linkable namespace |
+| Surface geometry | `cru.geometry.setup()` — borders, padding, prompt glyphs, layout |
+| Statusline layout | `cru.statusline.setup()` — item trees, multiple bars, anchors |
+| Code highlighting | `cru.syntax.setup()` — derived from the colorscheme by default |
 | Keybinding remaps | *(not implemented)* — user-defined key to action mapping |
 | Event handlers | Hooks on session events (turn complete, tool call, etc.) |
 

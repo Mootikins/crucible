@@ -10,7 +10,7 @@
 //! `parse_commands` and `parse_views` had no callers on any live path, and the
 //! one route that did reach `parse_handlers` — a per-session scan of a kiln's
 //! `handlers/` directory — was a weaker duplicate of what a plugin already does
-//! with `crucible.on`. A plugin is the single import mechanism; these are the
+//! with `cru.on`. A plugin is the single import mechanism; these are the
 //! shapes its declarations land in.
 
 use crate::types::{LuaTool, ToolParam};

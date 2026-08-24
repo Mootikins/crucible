@@ -158,7 +158,7 @@ Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 | G119 | lua | `spec.handlers` registers hooks (F172) | `PluginSpec.handlers` is parsed and never dispatched (`daemon_plugins/mod.rs:741`) | not-built | - |
 | G120 | lua | `Capability` is one closed set with one decoder (8) | `parse_capability` hand-duplicates serde and omits `intercept_tools`, so a spec-table grant is dropped (`lifecycle/spec.rs:31`, `discovery.rs:267`) | code-wrong | S |
 | G121 | lua | Modes exist in Lua only; no Rust copy of the names (8.6) | `BuiltinMode` (`crucible-core/src/types/mode.rs:85`), `BUILTIN_MODE_NAMES` (`tools/tool_modes.rs:37`), `default_internal_modes` (`mode.rs:273`) restate the three names | code-wrong | S |
-| G122 | lua | `crucible.notify` reaches a client (F134) | `crucible.notify` is a live Lua surface (`crates/crucible-lua/src/notify.rs:30`, registered at `crates/crucible-lua/src/executor.rs:260`); the queue reaches no client (`notify.rs:78`); Expected 2a lists it | expectation-incomplete | - |
+| G122 | lua | `cru.log.notify` reaches a client (F134) | `cru.log.notify` is a live Lua surface (`crates/crucible-lua/src/notify.rs:30`, registered at `crates/crucible-lua/src/executor.rs:260`); the queue reaches no client (`notify.rs:78`); Expected 2a lists it | expectation-incomplete | - |
 | G123 | lua | `cru.oil` nodes render somewhere (open 15) | `LuaNode` is built and nothing in the CLI consumes it (`crucible-lua/src/oil.rs:138`) | not-built | - |
 | G124 | crates | `crucible-lua` and `crucible-oil` depend on `core` only (7, D19) | `crucible-lua` imports `crucible_oil::style` and node builders (Actual 4) | code-wrong | M |
 | G125 | lua | One colour codec (3.29) | Four parsers across `theme.rs`, `theme_wire.rs`, `hl_lua.rs`; `ThemeLayout` and `UiLayout` are twins; `ThemeIcons`, `ThemeSpinnerStyle`, `BorderStyle`, `StatusBarPosition` are parsed and read by no renderer | code-wrong | S |
@@ -173,7 +173,7 @@ Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 | G134 | lua | No dead cross-crate path (4.17) | `SessionCommand`, `ChannelSessionRpc` and the CLI `handle_session_command` form a dead path; `with_session_command_receiver` has no caller | code-wrong | S |
 | G135 | lua | One Lua tool shape (9.2) | `LuaTool`/`DiscoveredTool` and `ToolParam`/`DiscoveredParam` duplicate; `execute_tool`, `execute_file`, `execute_source` have no caller | code-wrong | S |
 | G136 | lua | Plugin commands reach the web palette (9.13) | The web shows plugin commands as a count only | not-built | - |
-| G137 | lua | `crucible.set_status` renders in both clients (F105) | The web has no renderer for status slots | not-built | - |
+| G137 | lua | `cru.plugin.set_status` renders in both clients (F105) | The web has no renderer for status slots | not-built | - |
 | G138 | lua | `StubGenerator::verify` uses a temp dir the caller gives (tests) | It writes under `std::env::temp_dir()` (`stubs.rs:82`) | code-wrong | S |
 | G139 | render | Pure display state local; everything else in the daemon (4.27) | The `config/` overlay engine (about 2,500 lines), `:set` semantics, help text and `parse_config_scalar` live in the CLI; `chat_app/shell.rs:123` writes a permission rule to a config file | code-wrong | L |
 | G140 | render | `session.export` renders on the daemon (4.7) | `ExportSession` loads events and renders markdown in-process (`chat_runner/actions.rs:784-827`) | code-wrong | S |
@@ -620,7 +620,7 @@ keeps an index must see a delete (invariant I8). Session start and end are
 lifecycle hooks (G40). Expected.md section 8.3 should list the eight real
 names.
 
-**G122.** `crucible.notify`, `crucible.notify_once` and `crucible.messages.*`
+**G122.** `cru.log.notify`, `cru.log.notify_once` and `cru.log.messages.*`
 are registered on every VM (`crates/crucible-lua/src/executor.rs:260`). The
 product documents name toasts (F134) but not the Lua call, so the clean room
 had no row for it. The sink is still missing: the queue reaches no client
@@ -689,7 +689,7 @@ to wire it or withdraw it.
    G147, G166.
 8. **Machinery with no consumer.** 40 scripting event variants, `EventRing`,
    `events/markdown/`, two `serde_md`, `hashing/`, `processing/`,
-   `model_discovery.rs`, two watcher stubs, `cru.oil`, `crucible.notify`,
+   `model_discovery.rs`, two watcher stubs, `cru.oil`, `cru.log.notify`,
    `spec.handlers`, the MCP gateway half. Rows: G29, G53, G66, G73, G74, G87,
    G110, G119, G122, G123, G153. Re-checked 2026-08-22 against Expected.md
    section 2a: G110 and G122 were real features with a live surface, not
@@ -718,7 +718,7 @@ break them.
   from the running system (`tools/surface.rs:46-60`; Expected 8).
 - **`RpcMethod` and `METHODS` come from one `rpc_methods!` table** with a
   contract test (`rpc/dispatch.rs:54,79`; Expected 8.5, 9.17).
-- **`StageId` and `EventName` are two types with two contracts.** `crucible.on`
+- **`StageId` and `EventName` are two types with two contracts.** `cru.on`
   validates against the enum through `HookName` (`hook_name.rs:193`; Expected
   3.21, 9.3). A stage result decides the next step; an event reads only `cancel`.
 - **Modes live in Lua only.** `BUILTIN_INIT_LUA` is the one definition of the

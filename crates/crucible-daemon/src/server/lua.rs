@@ -51,7 +51,7 @@ pub(crate) async fn handle_lua_init_session(
         registry.runtime_handlers(),
         registry.handler_functions(),
     ) {
-        warn!(session_id = %session_id, error = %e, "Failed to register crucible.on API");
+        warn!(session_id = %session_id, error = %e, "Failed to register cru.on API");
     }
 
     lua_sessions.insert(

@@ -74,13 +74,13 @@ end
 -- than a value is what lets the daemon call back into Lua per session.
 --
 -- Here in the body rather than in setup(): setup() is the user's entry point
--- and runs again from their init.lua, where `crucible.publish` is bound to
+-- and runs again from their init.lua, where `cru.plugin.publish` is bound to
 -- whichever plugin the loader executed last. A second publication under
 -- someone else's name would make two plugins claim `session_title` — the
 -- daemon then warns and picks by name, so configuring the prompt could change
 -- who generates the title. The body runs once per load, with the binding the
 -- loader set for this plugin.
-crucible.publish(CHANNEL, { command = COMMAND })
+cru.plugin.publish(CHANNEL, { command = COMMAND })
 
 local plugin = {
   name = NAME,

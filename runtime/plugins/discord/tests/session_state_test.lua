@@ -11,6 +11,8 @@
 --- DM lives 24 hours and is the conversation somebody expects to still be
 --- there tomorrow.
 
+-- The runner VM has no cru.plugin (the daemon registers it); tests stub into it.
+cru.plugin = cru.plugin or {}
 local sessions = require("sessions")
 
 local STATE_FILE = "/state/discord/sessions.json"
@@ -38,15 +40,15 @@ local function recording_api(prefix)
     }
 end
 
---- `crucible.config`, `cru.sessions` and `cru.paths` are all absent from the
+--- `cru.plugin.config`, `cru.sessions` and `cru.paths` are all absent from the
 --- plugin test VM — the daemon registers them, the bare executor the test
 --- runner builds does not. `cru.fs` *is* present, as the harness's in-memory
 --- mock, so every round trip below is a real `fs.write` followed by a real
 --- `fs.read` rather than a stub agreeing with itself.
 local function with_env(cfg, session_api, fn)
     crucible = crucible or {}
-    local had_config, had_sessions, had_paths = crucible.config, cru.sessions, cru.paths
-    crucible.config = { get = function(key) return cfg[key] end }
+    local had_config, had_sessions, had_paths = cru.plugin.config, cru.sessions, cru.paths
+    cru.plugin.config = { get = function(key) return cfg[key] end }
     cru.sessions = session_api
     cru.paths = {
         state = function(plugin) return "/state/" .. plugin end,
@@ -57,7 +59,7 @@ local function with_env(cfg, session_api, fn)
 
     cru.paths = had_paths
     cru.sessions = had_sessions
-    crucible.config = had_config
+    cru.plugin.config = had_config
     if not ok then error(err) end
 end
 
@@ -221,12 +223,12 @@ describe("DM session persistence", function()
         local calls, api = recording_api("cold")
         local ok, err = pcall(function()
             crucible = crucible or {}
-            local had_config, had_sessions = crucible.config, cru.sessions
-            crucible.config = { get = function(key) return configured()[key] end }
+            local had_config, had_sessions = cru.plugin.config, cru.sessions
+            cru.plugin.config = { get = function(key) return configured()[key] end }
             cru.sessions = api
             local id = sessions.get_or_create("dm-no-paths", nil, "u-4")
             cru.sessions = had_sessions
-            crucible.config = had_config
+            cru.plugin.config = had_config
             expect.truthy(id)
             expect.equals(1, #calls.created)
         end)

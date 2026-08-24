@@ -207,7 +207,7 @@ impl LuaExecutor {
 
     /// Load user configuration from init.lua
     ///
-    /// This registers crucible.statusline and other config modules,
+    /// This registers cru.statusline and other config modules,
     /// then loads init.lua from the config directory if it exists.
     pub fn load_config(&self, kiln_path: Option<&Path>) -> Result<(), LuaError> {
         use crate::config::ConfigLoader;
@@ -461,7 +461,7 @@ mod tests {
 
         let source = r#"
             function handler(args)
-                crucible.log("info", "Hello from Lua!")
+                cru.log("info", "Hello from Lua!")
                 return { logged = true }
             end
         "#;
@@ -480,8 +480,8 @@ mod tests {
 
         let source = r#"
             function handler(args)
-                local encoded = crucible.json_encode(args)
-                local decoded = crucible.json_decode(encoded)
+                local encoded = cru.json.encode(args)
+                local decoded = cru.json.decode(encoded)
                 return decoded
             end
         "#;
@@ -528,7 +528,7 @@ mod tests {
             .lua()
             .load(
                 r#"
-            crucible.on_session_start(function(s) end)
+            cru.on_session_start(function(s) end)
         "#,
             )
             .exec()
@@ -547,7 +547,7 @@ mod tests {
             .load(
                 r#"
             test_called = false
-            crucible.on_session_start(function(s) 
+            cru.on_session_start(function(s) 
                 test_called = true
             end)
         "#,
@@ -569,7 +569,7 @@ mod tests {
         let mut executor = LuaExecutor::new().unwrap();
         executor
             .lua()
-            .load(r#"crucible.on_session_end(function(s) end)"#)
+            .load(r#"cru.on_session_end(function(s) end)"#)
             .exec()
             .unwrap();
         executor.sync_session_end_hooks().unwrap();
@@ -586,7 +586,7 @@ mod tests {
             .load(
                 r#"
             test_end_called = false
-            crucible.on_session_end(function(s)
+            cru.on_session_end(function(s)
                 test_end_called = true
             end)
         "#,

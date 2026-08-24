@@ -15,7 +15,7 @@ local config = require("config")
 --- under the test's control, restoring all four afterwards.
 ---
 --- `config.get_token` is stubbed on the module table rather than through
---- `crucible.config`, because the real one *caches* the first token it resolves
+--- `cru.plugin.config`, because the real one *caches* the first token it resolves
 --- and that cache would outlive this file — the suite shares one Lua VM, and
 --- `service_test` asserts on the un-cached, no-token path.
 local function with_gateway_env(env, fn)

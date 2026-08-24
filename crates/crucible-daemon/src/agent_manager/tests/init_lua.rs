@@ -4,9 +4,9 @@ use crate::test_support::temp_session_manager;
 /// Fast syntax + API gate: the shipped defaults must load against exactly the
 /// surface the daemon session VM registers, and no more.
 ///
-/// The old version of this test registered ONLY `crucible.on` and passed for
+/// The old version of this test registered ONLY `cru.on` and passed for
 /// the entire life of a default that was guarded behind
-/// `type(crucible.on_session_start) == "function"` and therefore never ran.
+/// `type(cru.on_session_start) == "function"` and therefore never ran.
 /// Those guards are gone — a shipped default that reaches for a missing API is
 /// now a load error, which is what makes this test meaningful. Keep the
 /// registrations here in sync with `get_or_create_session_state`; behavioural
@@ -76,7 +76,7 @@ async fn init_lua_user_override_loads_in_session() {
 }
 
 /// `session.isolation` must read the same in a user's `cru.on_session_start`
-/// as in a plugin's `crucible.on_session_start`.
+/// as in a plugin's `cru.on_session_start`.
 ///
 /// The forwarding into the per-session VM was written but never exercised, so
 /// the field could have silently read `nil` here while working for plugins —

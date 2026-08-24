@@ -102,7 +102,7 @@ The status bar layout is configurable via Lua — see [[Help/Lua/Configuration]]
 ```lua
 cru.modes.review = {
   -- Which tools the agent can see at all. Globs use the same syntax as
-  -- `crucible.on`'s `pattern`.
+  -- `cru.on`'s `pattern`.
   tools = { "read_*", "grep", "glob", "bash" },
 
   -- What to do with the tools it can see. A bare string is a stance;

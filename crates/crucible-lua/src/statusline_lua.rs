@@ -1,4 +1,4 @@
-//! `crucible.statusline` — the Lua surface for item trees.
+//! `cru.statusline` — the Lua surface for item trees.
 //!
 //! Items are userdata so three things read naturally in one vocabulary:
 //!
@@ -92,7 +92,7 @@ fn items_from_table(table: &Table) -> Vec<StatusItem> {
         .collect()
 }
 
-/// Register `crucible.statusline`'s item vocabulary and `setup`.
+/// Register `cru.statusline`'s item vocabulary and `setup`.
 pub fn register_statusline_items(lua: &Lua, statusline: &Table) -> Result<(), LuaError> {
     // Bare item values.
     for (name, item) in [
@@ -228,11 +228,11 @@ pub fn layout_from_setup_table(config: &Table) -> Layout {
 /// two agree.
 pub fn default_layout_from_lua() -> Result<Layout, LuaError> {
     let lua = Lua::new();
-    let crucible = lua.create_table()?;
+    let cru = lua.create_table()?;
     let statusline = lua.create_table()?;
     register_statusline_items(&lua, &statusline)?;
-    crucible.set("statusline", statusline)?;
-    lua.globals().set("crucible", crucible)?;
+    cru.set("statusline", statusline)?;
+    lua.globals().set("cru", cru)?;
 
     let table: Table = lua.load(DEFAULT_STATUSLINE_LUA).eval()?;
     Ok(layout_from_setup_table(&table))
@@ -244,11 +244,11 @@ mod tests {
 
     fn lua_with_statusline() -> Lua {
         let lua = Lua::new();
-        let crucible = lua.create_table().unwrap();
         let sl = lua.create_table().unwrap();
         register_statusline_items(&lua, &sl).unwrap();
-        crucible.set("statusline", sl).unwrap();
-        lua.globals().set("crucible", crucible).unwrap();
+        let cru = lua.create_table().unwrap();
+        cru.set("statusline", sl).unwrap();
+        lua.globals().set("cru", cru).unwrap();
         lua
     }
 
@@ -274,7 +274,7 @@ mod tests {
     #[test]
     fn the_prompt_region_keeps_the_order_it_was_written_in() {
         let layout = bars(
-            r#"local sl = crucible.statusline
+            r#"local sl = cru.statusline
                return { prompt = { { sl.context }, sl.input, { sl.mode } } }"#,
         );
 
@@ -293,7 +293,7 @@ mod tests {
     #[test]
     fn a_region_holds_several_rows_without_an_order_field() {
         let layout = bars(
-            r#"local sl = crucible.statusline
+            r#"local sl = cru.statusline
                return { prompt = { sl.input, { sl.mode }, { sl.context }, { sl.cache } } }"#,
         );
 
@@ -304,7 +304,7 @@ mod tests {
     #[test]
     fn a_region_the_config_omits_keeps_the_builtin() {
         let layout = bars(
-            r#"local sl = crucible.statusline
+            r#"local sl = cru.statusline
                return { top = { { sl.mode } } }"#,
         );
 
@@ -320,7 +320,7 @@ mod tests {
     #[test]
     fn a_bare_item_is_a_row_of_one() {
         let layout = bars(
-            r#"local sl = crucible.statusline
+            r#"local sl = cru.statusline
                return { top = { sl.mode } }"#,
         );
         assert_eq!(layout.top, vec![Element::Row(vec![StatusItem::Mode])]);
@@ -329,7 +329,7 @@ mod tests {
     #[test]
     fn a_bare_item_needs_no_call() {
         let b = bars(
-            r#"local sl = crucible.statusline
+            r#"local sl = cru.statusline
                return { prompt = { { sl.mode, sl.context } } }"#,
         );
         assert_eq!(first_row(&b), &vec![StatusItem::Mode, StatusItem::Context]);
@@ -338,7 +338,7 @@ mod tests {
     #[test]
     fn strings_in_a_row_are_literal_text() {
         let b = bars(
-            r#"local sl = crucible.statusline
+            r#"local sl = cru.statusline
                return { prompt = { { sl.mode, " | ", sl.context } } }"#,
         );
         assert_eq!(
@@ -354,7 +354,7 @@ mod tests {
     #[test]
     fn calling_an_item_configures_it() {
         let b = bars(
-            r#"local sl = crucible.statusline
+            r#"local sl = cru.statusline
                return { prompt = { { sl.model{ max = 12, fallback = "none" } } } }"#,
         );
         assert_eq!(
@@ -369,7 +369,7 @@ mod tests {
     #[test]
     fn hl_wraps_an_item_without_changing_it() {
         let b = bars(
-            r#"local sl = crucible.statusline
+            r#"local sl = cru.statusline
                return { prompt = { { sl.mode:hl("StatusMode") } } }"#,
         );
         assert_eq!(
@@ -384,7 +384,7 @@ mod tests {
     #[test]
     fn any_expresses_the_notification_else_context_fallback() {
         let b = bars(
-            r#"local sl = crucible.statusline
+            r#"local sl = cru.statusline
                return { prompt = { { sl.any(sl.notification, sl.context) } } }"#,
         );
         assert_eq!(
@@ -399,7 +399,7 @@ mod tests {
     #[test]
     fn when_guards_an_item_on_a_tui_local_condition() {
         let b = bars(
-            r#"local sl = crucible.statusline
+            r#"local sl = cru.statusline
                return { prompt = { { sl.when("streaming", sl.cache) } } }"#,
         );
         assert_eq!(
@@ -414,7 +414,7 @@ mod tests {
     #[test]
     fn expr_items_carry_only_their_key() {
         let b = bars(
-            r#"local sl = crucible.statusline
+            r#"local sl = cru.statusline
                return { prompt = { { sl.expr("git") } } }"#,
         );
         assert_eq!(first_row(&b), &vec![StatusItem::Expr { key: "git".into() }]);
@@ -423,7 +423,7 @@ mod tests {
     #[test]
     fn spacer_is_an_alias_for_align() {
         let b = bars(
-            r#"local sl = crucible.statusline
+            r#"local sl = cru.statusline
                return { prompt = { { sl.mode, sl.align, sl.context } } }"#,
         );
         assert_eq!(first_row(&b)[1], StatusItem::Align);
@@ -432,7 +432,7 @@ mod tests {
     #[test]
     fn a_non_renderable_value_is_dropped_rather_than_failing_the_row() {
         let b = bars(
-            r#"local sl = crucible.statusline
+            r#"local sl = cru.statusline
                return { prompt = { { sl.mode, 42, sl.context } } }"#,
         );
         assert_eq!(first_row(&b), &vec![StatusItem::Mode, StatusItem::Context]);
@@ -452,7 +452,7 @@ mod tests {
     #[test]
     fn the_input_marker_parses_as_the_input_element() {
         let b = bars(
-            r#"local sl = crucible.statusline
+            r#"local sl = cru.statusline
                return { prompt = { sl.input } }"#,
         );
         assert_eq!(b.prompt, vec![Element::Input]);
