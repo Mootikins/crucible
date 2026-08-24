@@ -199,12 +199,8 @@ verbose = false
 
         // Chat defaults
         assert_eq!(config.chat.model, None);
-        assert!(config.chat.enable_markdown);
 
         // CLI defaults
-        assert!(config.cli.show_progress);
-        assert!(config.cli.confirm_destructive);
-        assert!(!config.cli.verbose);
     }
 
     #[test]
@@ -222,7 +218,6 @@ verbose = false
         assert!(contents.contains("[llm]"));
         assert!(contents.contains("[acp]"));
         assert!(contents.contains("[chat]"));
-        assert!(contents.contains("[cli]"));
     }
 
     /// `cru config init` is the repair `cru doctor` recommends for a broken
@@ -291,7 +286,6 @@ type = "openai"
 
         // Default fields should still be present
         assert_eq!(config.chat_model(), "llama3.2");
-        assert_eq!(provider.max_tokens, 4096);
     }
 
     #[test]

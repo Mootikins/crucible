@@ -22,9 +22,6 @@ pub enum AgentPreference {
 pub struct ChatConfig {
     /// Default chat model (can be overridden by agents)
     pub model: Option<String>,
-    /// Enable markdown rendering
-    #[serde(default = "default_true")]
-    pub enable_markdown: bool,
     /// Default agent type preference (acp or internal)
     #[serde(default)]
     pub agent_preference: AgentPreference,
@@ -34,8 +31,6 @@ pub struct ChatConfig {
     pub temperature: Option<f32>,
     /// Maximum tokens to generate
     pub max_tokens: Option<u32>,
-    /// API timeout in seconds
-    pub timeout_secs: Option<u64>,
     /// Show thinking/reasoning tokens from models that support it
     ///
     /// When enabled, thinking tokens are streamed in a quote block below the
@@ -56,12 +51,10 @@ impl Default for ChatConfig {
     fn default() -> Self {
         Self {
             model: None,
-            enable_markdown: true,
             agent_preference: AgentPreference::default(),
             endpoint: None,
             temperature: None,
             max_tokens: None,
-            timeout_secs: None,
             show_thinking: false,
             show_diffs: true,
         }
@@ -86,12 +79,6 @@ impl ChatConfig {
     pub fn max_tokens(&self) -> u32 {
         self.max_tokens
             .unwrap_or(super::defaults::DEFAULT_CHAT_MAX_TOKENS)
-    }
-
-    /// Get timeout in seconds, using default if not specified
-    pub fn timeout_secs(&self) -> u64 {
-        self.timeout_secs
-            .unwrap_or(super::defaults::DEFAULT_TIMEOUT_SECS)
     }
 }
 

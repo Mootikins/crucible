@@ -15,7 +15,6 @@ pub fn register_project_in_config(
     name: &str,
     project_path: &std::path::Path,
     kilns: &[&str],
-    default_kiln: Option<&str>,
 ) -> anyhow::Result<()> {
     let mut config: CliAppConfig = if config_path.exists() {
         let contents = std::fs::read_to_string(config_path)?;
@@ -29,7 +28,6 @@ pub fn register_project_in_config(
         crate::config::config::registry::ProjectEntry {
             path: project_path.to_path_buf(),
             kilns: kilns.iter().map(|s| s.to_string()).collect(),
-            default_kiln: default_kiln.map(|s| s.to_string()),
         },
     );
 
@@ -270,23 +268,12 @@ mod tests {
         )
         .unwrap();
 
-        register_project_in_config(
-            &config_path,
-            "myproject",
-            tmp.path(),
-            &["vault"],
-            Some("vault"),
-        )
-        .unwrap();
+        register_project_in_config(&config_path, "myproject", tmp.path(), &["vault"]).unwrap();
 
         let contents = std::fs::read_to_string(&config_path).unwrap();
         let config: CliAppConfig = toml::from_str(&contents).unwrap();
         assert_eq!(config.projects.len(), 1);
         assert_eq!(config.projects["myproject"].kilns, vec!["vault"]);
-        assert_eq!(
-            config.projects["myproject"].default_kiln.as_deref(),
-            Some("vault")
-        );
         assert_eq!(config.projects["myproject"].path, tmp.path().to_path_buf());
     }
 
@@ -496,7 +483,7 @@ mod tests {
         register_kiln_entry_in_config(&config_path, "notes", &notes, true).unwrap();
         // The serde round-trip writer is the one that erases what it does not
         // model, so run it over the file before reading the marker back.
-        register_project_in_config(&config_path, "proj", tmp.path(), &["notes"], None).unwrap();
+        register_project_in_config(&config_path, "proj", tmp.path(), &["notes"]).unwrap();
 
         let config: CliAppConfig =
             toml::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
@@ -596,14 +583,13 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let config_path = tmp.path().join("subdir").join("config.toml");
 
-        register_project_in_config(&config_path, "newproj", tmp.path(), &[], None).unwrap();
+        register_project_in_config(&config_path, "newproj", tmp.path(), &[]).unwrap();
 
         let contents = std::fs::read_to_string(&config_path).unwrap();
         let config: CliAppConfig = toml::from_str(&contents).unwrap();
         assert_eq!(config.projects.len(), 1);
         assert!(config.projects.contains_key("newproj"));
         assert!(config.projects["newproj"].kilns.is_empty());
-        assert!(config.projects["newproj"].default_kiln.is_none());
     }
 
     #[test]
@@ -612,15 +598,9 @@ mod tests {
         let config_path = tmp.path().join("config.toml");
         std::fs::write(&config_path, "kiln_path = \"~/vault\"\n").unwrap();
 
-        register_project_in_config(&config_path, "proj1", tmp.path(), &["vault"], None).unwrap();
-        register_project_in_config(
-            &config_path,
-            "proj2",
-            &tmp.path().join("other"),
-            &["docs"],
-            Some("docs"),
-        )
-        .unwrap();
+        register_project_in_config(&config_path, "proj1", tmp.path(), &["vault"]).unwrap();
+        register_project_in_config(&config_path, "proj2", &tmp.path().join("other"), &["docs"])
+            .unwrap();
 
         let contents = std::fs::read_to_string(&config_path).unwrap();
         let config: CliAppConfig = toml::from_str(&contents).unwrap();

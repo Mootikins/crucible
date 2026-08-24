@@ -418,23 +418,6 @@ fn test_config_max_tokens_boundary_values() {
     assert_eq!(config.chat.max_tokens(), 2048);
 }
 
-#[test]
-fn test_config_timeout_boundary_values() {
-    let mut config = create_agent_factory_test_config();
-
-    // Short timeout
-    config.chat.timeout_secs = Some(1);
-    assert_eq!(config.chat.timeout_secs(), 1);
-
-    // Long timeout (1 hour)
-    config.chat.timeout_secs = Some(3600);
-    assert_eq!(config.chat.timeout_secs(), 3600);
-
-    // Default
-    config.chat.timeout_secs = None;
-    assert_eq!(config.chat.timeout_secs(), 120);
-}
-
 // ============================================================================
 // API Key Configuration Tests
 // ============================================================================

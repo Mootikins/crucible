@@ -221,9 +221,9 @@ async fn run_kiln_init(
 async fn run_project_init(target_path: &Path, force: bool, yes: bool) -> Result<()> {
     let crucible_dir = target_path.join(".crucible");
 
-    let (name, kilns, default_kiln) = if yes {
+    let (name, kilns) = if yes {
         let dir_name = dir_name_or_default(target_path);
-        (dir_name, vec![], None)
+        (dir_name, vec![])
     } else {
         prompt_project_init(target_path)?
     };
@@ -237,10 +237,8 @@ async fn run_project_init(target_path: &Path, force: bool, yes: bool) -> Result<
         }
         fs::create_dir_all(&crucible_dir)?;
 
+        let _ = name_clone;
         let project_config = ProjectConfig {
-            project: Some(crucible_core::config::ProjectMeta {
-                name: Some(name_clone),
-            }),
             kilns: kilns_clone
                 .iter()
                 .map(|k| KilnAttachment {
@@ -264,13 +262,7 @@ async fn run_project_init(target_path: &Path, force: bool, yes: bool) -> Result<
         std::fs::canonicalize(&target_for_display).unwrap_or(target_for_display.clone());
     let config_path = CliAppConfig::default_config_path();
     let kiln_refs: Vec<&str> = kilns.iter().map(|s| s.as_str()).collect();
-    match register_project_in_config(
-        &config_path,
-        &name,
-        &absolute_path,
-        &kiln_refs,
-        default_kiln.as_deref(),
-    ) {
+    match register_project_in_config(&config_path, &name, &absolute_path, &kiln_refs) {
         Ok(()) => {
             println!("  {} Registered in global config", "\u{2713}".green());
         }
@@ -292,10 +284,6 @@ async fn run_project_init(target_path: &Path, force: bool, yes: bool) -> Result<
     if !kilns.is_empty() {
         println!("  Kilns: {}", kilns.join(", ").cyan());
     }
-    if let Some(dk) = &default_kiln {
-        println!("  Default kiln: {}", dk.cyan());
-    }
-
     Ok(())
 }
 
@@ -347,8 +335,8 @@ fn prompt_kiln_init(path: &Path) -> Result<(String, DataClassification)> {
     Ok((name, classification))
 }
 
-fn prompt_project_init(path: &Path) -> Result<(String, Vec<String>, Option<String>)> {
-    use dialoguer::{theme::ColorfulTheme, Input, MultiSelect, Select};
+fn prompt_project_init(path: &Path) -> Result<(String, Vec<String>)> {
+    use dialoguer::{theme::ColorfulTheme, Input, MultiSelect};
 
     let theme = ColorfulTheme::default();
     let default_name = dir_name_or_default(path);
@@ -381,20 +369,7 @@ fn prompt_project_init(path: &Path) -> Result<(String, Vec<String>, Option<Strin
         selections.iter().map(|&i| kiln_names[i].clone()).collect()
     };
 
-    let default_kiln = if selected_kilns.len() > 1 {
-        let idx = Select::with_theme(&theme)
-            .with_prompt("Default kiln")
-            .items(&selected_kilns)
-            .default(0)
-            .interact()?;
-        Some(selected_kilns[idx].clone())
-    } else if selected_kilns.len() == 1 {
-        Some(selected_kilns[0].clone())
-    } else {
-        None
-    };
-
-    Ok((name, selected_kilns, default_kiln))
+    Ok((name, selected_kilns))
 }
 
 // --- Existing helpers (kept) ---
@@ -529,7 +504,6 @@ fn write_kiln_and_project_config(
         config
     } else {
         ProjectConfig {
-            project: None,
             kilns: vec![],
             security: SecurityConfig::default(),
         }

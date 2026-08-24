@@ -10,7 +10,6 @@ pub mod defaults;
 pub mod llm;
 pub mod mcp;
 pub mod permissions;
-pub mod storage;
 
 pub mod backend;
 pub mod trust;
@@ -33,7 +32,6 @@ pub use permissions::{
     parse_rule, CompiledPermissions, ParsedRule, PermissionConfig, PermissionDecision,
     PermissionEngine, PermissionMatcher, PermissionMode,
 };
-pub use storage::StorageConfig;
 
 pub use backend::{ollama_endpoint_from_env, BackendType, OllamaModelTag, OllamaTagsResponse};
 pub use trust::{DataClassification, TrustLevel};

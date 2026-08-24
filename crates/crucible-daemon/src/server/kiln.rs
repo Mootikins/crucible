@@ -197,7 +197,6 @@ pub(crate) async fn handle_kiln_set_classification(
         None => {
             // Create default ProjectConfig with a single kiln at "."
             ProjectConfig {
-                project: None,
                 kilns: vec![crucible_core::config::KilnAttachment {
                     path: ".".into(),
                     name: None,

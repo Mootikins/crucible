@@ -9,14 +9,9 @@ const TRACKED_FIELDS: &[(&str, &str)] = &[
     ("llm.default", "LLM"),
     ("acp.default_agent", "ACP"),
     ("chat.model", "Chat"),
-    ("chat.enable_markdown", "Chat"),
     ("chat.endpoint", "Chat"),
     ("chat.temperature", "Chat"),
     ("chat.max_tokens", "Chat"),
-    ("chat.timeout_secs", "Chat"),
-    ("cli.show_progress", "CLI"),
-    ("cli.confirm_destructive", "CLI"),
-    ("cli.verbose", "CLI"),
     ("logging.level", "Logging"),
 ];
 
@@ -58,7 +53,7 @@ pub const LOCATION_CONFIG_KEYS: [&str; 7] = [
 /// This list has no consumer of its own. It exists so that adding a field to
 /// `CliAppConfig` forces a decision about which kind it is, instead of
 /// defaulting to "not a location" by silence.
-pub const SETTINGS_CONFIG_KEYS: [&str; 16] = [
+pub const SETTINGS_CONFIG_KEYS: [&str; 15] = [
     "acp",
     "chat",
     "cli",
@@ -72,14 +67,12 @@ pub const SETTINGS_CONFIG_KEYS: [&str; 16] = [
     "plugins",
     "schedules",
     "server",
-    "storage",
     "web",
     "workspace",
 ];
 
 use crate::config::components::{
     AcpConfig, ChatConfig, CliConfig, ContextConfig, LlmConfig, McpConfig, PermissionConfig,
-    StorageConfig,
 };
 use crate::config::EnrichmentConfig;
 use serde::{Deserialize, Serialize};
@@ -165,10 +158,6 @@ pub struct CliAppConfig {
     /// Context configuration (rules files, etc.)
     #[serde(default)]
     pub context: Option<ContextConfig>,
-
-    /// Storage configuration (embedded vs daemon mode)
-    #[serde(default)]
-    pub storage: Option<StorageConfig>,
 
     /// MCP server configuration (upstream servers, gateway settings)
     #[serde(default)]
@@ -268,7 +257,6 @@ impl Default for CliAppConfig {
             cli: CliConfig::default(),
             logging: None,
             context: None,
-            storage: None,
             mcp: None,
             permissions: None,
             schedules: Vec::new(),
@@ -477,12 +465,6 @@ impl CliAppConfig {
         info!("  session_kiln: {:?}", self.session_kiln);
         info!("  llm.default: {:?}", self.llm.default);
         info!("  acp.default_agent: {:?}", self.acp.default_agent);
-        info!("  cli.show_progress: {}", self.cli.show_progress);
-        info!(
-            "  cli.confirm_destructive: {}",
-            self.cli.confirm_destructive
-        );
-        info!("  cli.verbose: {}", self.cli.verbose);
     }
 
     /// Get database path (always derived from kiln path)
@@ -588,14 +570,9 @@ impl CliAppConfig {
             "llm.default" => self.llm.default.as_ref().map(|v| json!(v)),
             "acp.default_agent" => self.acp.default_agent.as_ref().map(|v| json!(v)),
             "chat.model" => self.chat.model.as_ref().map(|v| json!(v)),
-            "chat.enable_markdown" => Some(json!(self.chat.enable_markdown)),
             "chat.endpoint" => self.chat.endpoint.as_ref().map(|v| json!(v)),
             "chat.temperature" => self.chat.temperature.map(|v| json!(v)),
             "chat.max_tokens" => self.chat.max_tokens.map(|v| json!(v)),
-            "chat.timeout_secs" => self.chat.timeout_secs.map(|v| json!(v)),
-            "cli.show_progress" => Some(json!(self.cli.show_progress)),
-            "cli.confirm_destructive" => Some(json!(self.cli.confirm_destructive)),
-            "cli.verbose" => Some(json!(self.cli.verbose)),
             "logging.level" => self.logging.as_ref().map(|l| json!(l.level)),
             _ => None,
         }
@@ -716,13 +693,6 @@ endpoint = "http://localhost:11434"
 # Chat configuration
 [chat]
 # model = "claude-sonnet-4-5"   # unset means "use the provider default"
-enable_markdown = true
-
-# CLI configuration
-[cli]
-show_progress = true
-confirm_destructive = true
-verbose = false
 
 # Logging configuration (optional)
 # If not set, defaults to "off" unless --verbose or --log-level is specified
@@ -786,15 +756,11 @@ verbose = false
 
     /// Get the effective LLM provider for chat.
     pub fn effective_llm_provider(&self) -> Result<EffectiveLlmConfig, ConfigError> {
-        if let Some((key, provider)) = self.llm.default_provider() {
+        if let Some((_, provider)) = self.llm.default_provider() {
             return Ok(EffectiveLlmConfig {
-                key: key.clone(),
                 provider_type: provider.provider_type,
                 endpoint: provider.endpoint(),
                 model: provider.model(),
-                temperature: provider.temperature(),
-                max_tokens: provider.max_tokens(),
-                timeout_secs: provider.timeout_secs(),
                 api_key: provider.api_key(),
             });
         }
@@ -1009,7 +975,6 @@ mod tests {
         config.chat.endpoint = Some("http://localhost:11434".into());
         config.chat.temperature = Some(0.7);
         config.chat.max_tokens = Some(2048);
-        config.chat.timeout_secs = Some(30);
         config
     }
 

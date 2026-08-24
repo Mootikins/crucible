@@ -112,9 +112,6 @@ async fn show_global_status(
                 println!();
                 output::header("Configuration");
                 println!("  Database Path: {}", config.database_path().display());
-                if let Some(storage_config) = &config.storage {
-                    println!("  Idle Timeout: {}s", storage_config.idle_timeout_secs);
-                }
             }
         }
     }

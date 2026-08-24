@@ -475,7 +475,6 @@ mod tests {
             ProjectEntry {
                 path: PathBuf::from("/tmp/test"),
                 kilns: vec!["nonexistent".to_string()],
-                default_kiln: Some("nonexistent".to_string()),
             },
         );
         let warnings = validate_kiln_references(&config);
@@ -497,7 +496,6 @@ mod tests {
             ProjectEntry {
                 path: PathBuf::from("/tmp/myproject"),
                 kilns: vec!["vault".to_string()],
-                default_kiln: Some("vault".to_string()),
             },
         );
         let warnings = validate_kiln_references(&config);

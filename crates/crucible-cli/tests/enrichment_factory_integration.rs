@@ -5,11 +5,11 @@ use crucible_core::config::{BackendType, CliAppConfig, LlmProviderConfig};
 fn cache_key_from_llm(config: &CliAppConfig) -> String {
     if let Ok(provider) = config.effective_llm_provider() {
         format!(
-            "{:?}|{}|{}|{}",
-            provider.provider_type, provider.model, provider.endpoint, provider.max_tokens
+            "{:?}|{}|{}",
+            provider.provider_type, provider.model, provider.endpoint
         )
     } else {
-        "none|default|default|0".to_string()
+        "none|default|default".to_string()
     }
 }
 
@@ -95,7 +95,6 @@ fn test_cache_key_ollama_provider() {
     assert!(key.contains("Ollama"));
     assert!(key.contains("nomic-embed-text"));
     assert!(key.contains("localhost:11434"));
-    assert!(key.contains("50"));
 }
 
 #[test]
@@ -172,32 +171,6 @@ fn test_api_url_configuration() {
 }
 
 #[test]
-fn test_cache_key_max_tokens_sensitivity() {
-    let mut config1 = CliAppConfig::default();
-    let mut config2 = CliAppConfig::default();
-
-    set_default_provider(
-        &mut config1,
-        "local",
-        LlmProviderConfig::builder(BackendType::Ollama)
-            .max_tokens(16)
-            .build(),
-    );
-    set_default_provider(
-        &mut config2,
-        "local",
-        LlmProviderConfig::builder(BackendType::Ollama)
-            .max_tokens(32)
-            .build(),
-    );
-
-    let key1 = cache_key_from_llm(&config1);
-    let key2 = cache_key_from_llm(&config2);
-
-    assert_ne!(key1, key2);
-}
-
-#[test]
 fn test_cache_key_format() {
     let mut config = CliAppConfig::default();
     set_default_provider(
@@ -213,11 +186,10 @@ fn test_cache_key_format() {
     let key = cache_key_from_llm(&config);
 
     let parts: Vec<&str> = key.split('|').collect();
-    assert_eq!(parts.len(), 4);
+    assert_eq!(parts.len(), 3);
     assert!(parts[0].contains("Ollama"));
     assert_eq!(parts[1], "model");
     assert_eq!(parts[2], "http://url");
-    assert_eq!(parts[3], "42");
 }
 
 #[test]

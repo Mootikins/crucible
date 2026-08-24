@@ -12,7 +12,7 @@
 use anyhow::{bail, Result};
 use crucible_cli::commands::process;
 use crucible_cli::config::CliConfig;
-use crucible_core::config::{AcpConfig, BackendType, LlmConfig, LlmProviderConfig, StorageConfig};
+use crucible_core::config::{AcpConfig, BackendType, LlmConfig, LlmProviderConfig};
 use crucible_core::test_support::fixtures::{create_kiln, KilnFixture};
 use crucible_core::test_support::EnvVarGuard;
 use crucible_daemon::rpc_client::lifecycle;
@@ -80,9 +80,6 @@ fn create_process_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfi
             ..Default::default()
         },
         llm: llm_config,
-        storage: Some(StorageConfig {
-            idle_timeout_secs: 300,
-        }),
         ..Default::default()
     }
 }

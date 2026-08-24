@@ -8,29 +8,12 @@ use std::path::Path;
 /// Top-level project configuration stored in `.crucible/project.toml`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectConfig {
-    /// Optional project metadata section.
-    #[serde(default)]
-    pub project: Option<ProjectMeta>,
     /// Attached kilns for this project.
     #[serde(default)]
     pub kilns: Vec<KilnAttachment>,
     /// Project-level security policy.
     #[serde(default)]
     pub security: SecurityConfig,
-}
-
-impl ProjectConfig {
-    /// Get the project name, flattening both Option layers.
-    pub fn project_name(&self) -> Option<&str> {
-        self.project.as_ref().and_then(|p| p.name.as_deref())
-    }
-}
-
-/// Optional project metadata.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ProjectMeta {
-    /// Optional project display name.
-    pub name: Option<String>,
 }
 
 /// Read project configuration from `.crucible/project.toml` with workspace fallback.
@@ -57,6 +40,8 @@ mod tests {
 
     #[test]
     fn project_config_parses_from_new_format() {
+        // `[project]` is a removed section. Old project.toml files still
+        // contain it, so the load must ignore it instead of an error.
         let toml = r#"
 [project]
 name = "Test"
@@ -66,10 +51,6 @@ path = "."
 "#;
 
         let config: ProjectConfig = toml::from_str(toml).expect("Failed to parse project config");
-        assert_eq!(
-            config.project.and_then(|p| p.name),
-            Some("Test".to_string())
-        );
         assert_eq!(config.kilns.len(), 1);
     }
 
@@ -88,7 +69,6 @@ blacklist = ["rm -rf"]
 "#;
 
         let config: ProjectConfig = toml::from_str(toml).expect("Failed to parse workspace format");
-        assert_eq!(config.project, None);
         assert_eq!(config.kilns.len(), 1);
         assert_eq!(config.kilns[0].data_classification, None);
         assert_eq!(config.security.shell.whitelist, vec!["git".to_string()]);
@@ -98,9 +78,6 @@ blacklist = ["rm -rf"]
     #[test]
     fn project_config_roundtrip() {
         let config = ProjectConfig {
-            project: Some(ProjectMeta {
-                name: Some("Project Name".to_string()),
-            }),
             kilns: vec![KilnAttachment {
                 path: "./knowledge".into(),
                 name: Some("Knowledge".to_string()),
@@ -126,7 +103,6 @@ blacklist = ["rm -rf"]
         let toml = "";
         let config: ProjectConfig = toml::from_str(toml).expect("Failed to parse minimal config");
 
-        assert_eq!(config.project, None);
         assert!(config.kilns.is_empty());
         assert!(config.security.shell.whitelist.is_empty());
         assert!(config.security.shell.blacklist.is_empty());
@@ -156,19 +132,19 @@ blacklist = ["rm -rf"]
 
         fs::write(
             crucible_dir.join("project.toml"),
-            "[project]\nname = \"New Project\"\n",
+            "[[kilns]]\npath = \"from-project\"\n",
         )
         .expect("Failed to write project.toml");
         fs::write(
             crucible_dir.join("workspace.toml"),
-            "[workspace]\nname = \"Old Workspace\"\n",
+            "[[kilns]]\npath = \"from-workspace\"\n",
         )
         .expect("Failed to write workspace.toml");
 
         let config = read_project_config(temp.path()).expect("Expected project config");
         assert_eq!(
-            config.project.and_then(|p| p.name),
-            Some("New Project".to_string())
+            config.kilns[0].path,
+            std::path::PathBuf::from("from-project")
         );
     }
 
@@ -185,7 +161,6 @@ blacklist = ["rm -rf"]
         .expect("Failed to write workspace.toml");
 
         let config = read_project_config(temp.path()).expect("Expected fallback project config");
-        assert_eq!(config.project, None);
         assert_eq!(config.kilns.len(), 1);
     }
 }

@@ -97,9 +97,6 @@ pub struct ProjectEntry {
     /// Named kilns this project uses (resolved from `[kilns]` section).
     #[serde(default)]
     pub kilns: Vec<String>,
-    /// Which kiln is primary (session storage, tool default).
-    #[serde(default)]
-    pub default_kiln: Option<String>,
 }
 
 #[cfg(test)]
@@ -129,6 +126,8 @@ lazy = true
 
     #[test]
     fn project_entry_deserializes() {
+        // `default_kiln` is a removed key. Old config files still contain
+        // it, so the load must ignore it instead of an error.
         let toml_str = r#"
 [crucible]
 path = "~/crucible"
@@ -140,7 +139,6 @@ default_kiln = "vault"
         let entry = &map["crucible"];
         assert_eq!(entry.path, PathBuf::from("~/crucible"));
         assert_eq!(entry.kilns, vec!["docs", "vault"]);
-        assert_eq!(entry.default_kiln.as_deref(), Some("vault"));
     }
 
     #[test]

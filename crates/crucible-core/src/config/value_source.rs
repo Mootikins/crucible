@@ -102,39 +102,6 @@ impl ValueSourceMap {
             .map(|(k, _)| k.as_str())
             .collect()
     }
-
-    /// Convert to a serializable map (for JSON output with sources)
-    pub fn to_serializable<T>(
-        &self,
-        get_value: impl Fn(&str) -> Option<T>,
-    ) -> HashMap<String, ValueInfo<T>> {
-        self.values
-            .iter()
-            .filter_map(|(path, source)| {
-                get_value(path).map(|value| {
-                    (
-                        path.clone(),
-                        ValueInfo {
-                            value,
-                            source: source.detail(),
-                            source_short: source.short().to_string(),
-                        },
-                    )
-                })
-            })
-            .collect()
-    }
-}
-
-/// Information about a value for serialization
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct ValueInfo<T> {
-    /// The actual value
-    pub value: T,
-    /// Detailed source description
-    pub source: String,
-    /// Short source description
-    pub source_short: String,
 }
 
 #[cfg(test)]
@@ -291,33 +258,5 @@ mod tests {
         let mut paths = map.values_from_source(&file_src);
         paths.sort();
         assert_eq!(paths, vec!["a.b", "e.f"]);
-    }
-
-    #[test]
-    fn map_to_serializable() {
-        let mut map = ValueSourceMap::new();
-        map.set(
-            "kiln_path",
-            ValueSource::File {
-                path: Some("/home/user/.config/crucible/config.toml".to_string()),
-            },
-        );
-        map.set("chat.model", ValueSource::Default);
-
-        let serializable = map.to_serializable(|path| match path {
-            "kiln_path" => Some("~/notes".to_string()),
-            "chat.model" => Some("gpt-4o".to_string()),
-            _ => None,
-        });
-
-        let kiln_info = serializable.get("kiln_path").expect("kiln_path missing");
-        assert_eq!(kiln_info.value, "~/notes");
-        assert!(kiln_info.source.contains("file"));
-        assert_eq!(kiln_info.source_short, "file");
-
-        let chat_info = serializable.get("chat.model").expect("chat.model missing");
-        assert_eq!(chat_info.value, "gpt-4o");
-        assert!(chat_info.source.contains("default"));
-        assert_eq!(chat_info.source_short, "default");
     }
 }

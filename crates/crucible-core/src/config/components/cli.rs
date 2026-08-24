@@ -5,17 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::config::serde_helpers::default_true;
 
 /// CLI configuration for terminal display and behavior.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CliConfig {
-    /// Show progress bars for long operations.
-    #[serde(default = "default_true")]
-    pub show_progress: bool,
-    /// Confirm destructive operations.
-    #[serde(default = "default_true")]
-    pub confirm_destructive: bool,
-    /// Verbose logging.
-    #[serde(default)]
-    pub verbose: bool,
     /// Syntax highlighting configuration.
     #[serde(default)]
     pub highlighting: HighlightingConfig,
@@ -34,17 +25,6 @@ pub struct HighlightingConfig {
 
 fn default_theme() -> String {
     "base16-ocean.dark".to_string()
-}
-
-impl Default for CliConfig {
-    fn default() -> Self {
-        Self {
-            show_progress: true,
-            confirm_destructive: true,
-            verbose: false,
-            highlighting: HighlightingConfig::default(),
-        }
-    }
 }
 
 impl Default for HighlightingConfig {

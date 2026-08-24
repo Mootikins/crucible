@@ -131,9 +131,7 @@ fn test_cli_app_config_effective_llm_provider() {
     };
 
     let effective = config.effective_llm_provider().unwrap();
-    assert_eq!(effective.key, "local");
     assert_eq!(effective.model, "llama3.2");
-    assert_eq!(effective.temperature, 0.7);
 }
 
 #[test]

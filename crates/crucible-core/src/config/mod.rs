@@ -59,7 +59,7 @@ pub use components::{
     CliConfig, CompiledPermissions, ContextConfig, DataClassification, DelegationConfig,
     HighlightingConfig, LlmConfig, LlmProviderConfig, McpConfig, OllamaModelTag,
     OllamaTagsResponse, PermissionConfig, PermissionDecision, PermissionEngine, PermissionMode,
-    StorageConfig, TransportType, TrustLevel, UpstreamServerConfig,
+    TransportType, TrustLevel, UpstreamServerConfig,
 };
 pub use config::registry::{resolve_kiln_entries, KilnEntry, ProjectEntry};
 // Its own line rather than folded into the block below: this is the
@@ -91,8 +91,8 @@ pub use kiln_config::{read_kiln_config, write_kiln_config, KilnConfig, KilnMeta}
 pub use patterns::{
     BashPatterns, FilePatterns, PatternError, PatternResult, PatternStore, ToolPatterns,
 };
-pub use project_config::{read_project_config, write_project_config, ProjectConfig, ProjectMeta};
+pub use project_config::{read_project_config, write_project_config, ProjectConfig};
 pub use security::{ProjectFileAccess, ShellPolicy};
 pub use tilde::expand_tilde;
-pub use value_source::{ValueInfo, ValueSource, ValueSourceMap};
+pub use value_source::{ValueSource, ValueSourceMap};
 pub use workspace::{KilnAttachment, SecurityConfig};

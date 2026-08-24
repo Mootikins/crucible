@@ -306,12 +306,8 @@ fn test_default_config_values() {
 
     // Chat defaults
     assert_eq!(config.chat.model, None);
-    assert!(config.chat.enable_markdown);
 
     // CLI defaults
-    assert!(config.cli.show_progress);
-    assert!(config.cli.confirm_destructive);
-    assert!(!config.cli.verbose);
 }
 
 // ============================================================================
@@ -333,7 +329,6 @@ fn test_create_example_config() {
     assert!(contents.contains("[llm]"));
     assert!(contents.contains("[acp]"));
     assert!(contents.contains("[chat]"));
-    assert!(contents.contains("[cli]"));
 }
 
 #[test]

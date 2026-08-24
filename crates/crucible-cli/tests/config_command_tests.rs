@@ -483,12 +483,10 @@ fn test_config_show_preserves_order() {
     let kiln_pos = stdout.find("kiln_path").unwrap();
     let acp_pos = stdout.find("[acp]").unwrap();
     let chat_pos = stdout.find("[chat]").unwrap();
-    let cli_pos = stdout.find("[cli]").unwrap();
 
     // Basic order check (not strict, just reasonable)
     assert!(kiln_pos < acp_pos);
     assert!(acp_pos < chat_pos);
-    assert!(chat_pos < cli_pos);
 }
 
 // ============================================================================

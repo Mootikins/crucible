@@ -8,7 +8,6 @@
 use anyhow::{bail, Result};
 use crucible_cli::config::CliConfig;
 use crucible_cli::factories::get_storage;
-use crucible_core::config::StorageConfig;
 use crucible_core::test_support::EnvVarGuard;
 use crucible_daemon::rpc_client::lifecycle;
 use crucible_daemon::Server;
@@ -97,16 +96,10 @@ impl TestServer {
 
 /// Create a test config (daemon mode is always used)
 fn create_daemon_config(kiln_path: PathBuf) -> CliConfig {
-    let mut config = CliConfig {
+    CliConfig {
         kiln_path,
         ..Default::default()
-    };
-
-    // StorageConfig only has idle_timeout_secs now — daemon is always used
-    config.storage = Some(StorageConfig {
-        idle_timeout_secs: 300,
-    });
-    config
+    }
 }
 
 /// Test that get_storage connects to running daemon in daemon mode
@@ -185,15 +178,10 @@ async fn test_get_storage_fails_when_no_daemon() {
     );
 
     let kiln_dir = tempfile::tempdir().expect("Failed to create kiln dir");
-    let mut config = CliConfig {
+    let config = CliConfig {
         kiln_path: kiln_dir.path().to_path_buf(),
         ..Default::default()
     };
-
-    // Short timeout so test doesn't hang
-    config.storage = Some(crucible_core::config::StorageConfig {
-        idle_timeout_secs: 1,
-    });
 
     // This should either:
     // 1. Spawn cru daemon serve and connect (if binary available)
