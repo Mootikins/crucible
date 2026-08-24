@@ -1,7 +1,7 @@
 //! Tests for [`super::DaemonToolDispatcher`].
 //!
 //! Split out of `tool_dispatch.rs` to keep that file inside the 1000-line module
-//! budget enforced by `no_new_oversized_modules`.
+//! budget that a size gate enforced until 2026-08-24.
 
 mod dispatch {
     use super::super::*;

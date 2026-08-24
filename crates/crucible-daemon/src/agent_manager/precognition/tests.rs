@@ -2,7 +2,7 @@
 //! `precognition_format` seam, and the `precognition_select` seam.
 //!
 //! Split out of `mod.rs` to stay under the 1000-line module budget
-//! enforced by `no_new_oversized_modules`.
+//! that a size gate enforced until 2026-08-24.
 
 use super::*;
 

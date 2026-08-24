@@ -1,7 +1,7 @@
 //! Tests for the RPC envelope and its typed event constructors.
 //!
 //! Split out of `mod.rs` to keep both inside the 1000-line module budget
-//! enforced by `no_new_oversized_modules`.
+//! that a size gate enforced until 2026-08-24.
 
 use super::*;
 use chrono::Utc;

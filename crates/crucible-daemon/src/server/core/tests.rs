@@ -2,7 +2,7 @@
 //! marker, the write timeout, and the panic boundary.
 //!
 //! Split out of `core/mod.rs` to keep that file inside the 1000-line module
-//! budget `no_new_oversized_modules` enforces. Every module below was written
+//! budget a size gate enforced until 2026-08-24. Every module below was written
 //! against a socket pair rather than a live daemon, which is what makes the
 //! hazards — a lagged receiver, a peer that stops draining, a parked handler —
 //! reachable without timing guesses.

@@ -2,7 +2,7 @@
 //! running against.
 //!
 //! Split out of `tests/mod.rs` to stay under the 1000-line module budget
-//! enforced by `no_new_oversized_modules`.
+//! that a size gate enforced until 2026-08-24.
 
 use super::*;
 use crate::storage::sqlite::{SqliteConfig, SqliteNoteStore, SqlitePool};

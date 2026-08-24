@@ -1,7 +1,7 @@
 //! `GET /api/sessions/search` kiln-scope parsing.
 //!
 //! Split out of `tests.rs` to stay under the 1000-line module budget enforced
-//! by `no_new_oversized_modules`.
+//! by a size gate removed on 2026-08-24.
 
 /// A `kiln` the registry could never have issued is refused, not dropped.
 ///

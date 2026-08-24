@@ -1405,9 +1405,9 @@ Production items that only tests use:
 
 - `Server::run` is about 500 lines with four inline task bodies
   (`crucible-daemon/src/server/mod.rs:452-945`).
-- `review/mod.rs` is 999 lines against a 1000-line budget.
-- `genai_handle.rs` is about 3,200 lines on the grandfathered ledger
-  (`crucible-daemon/tests/architecture_tests.rs:718`).
+- `review/mod.rs` is 999 lines. The size gate that made that number matter was
+  removed on 2026-08-24.
+- `genai_handle.rs` is about 3,200 lines.
 - Every daemon handler returns hand-spelled `serde_json::json!`; results have no
   shared type (`daemon-server-a` record).
 - `AcpAgentHandle::turn` keeps the client out of its `Arc<Mutex<Option>>` after

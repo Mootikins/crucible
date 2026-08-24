@@ -1,7 +1,7 @@
 //! The nine `session.{set,get}_*` config knobs the web could not reach.
 //!
 //! Split from `daemon.rs` along the same seam as `daemon_review` and
-//! `daemon_plugins`: `daemon.rs` is 1431 lines and in `SIZE_LEDGER`, which only
+//! `daemon_plugins`: `daemon.rs` is 1431 lines, which the size gate removed on 2026-08-24 only
 //! shrinks, so eighteen more wrappers had to land somewhere else.
 //!
 //! Every one of these is the same six lines — clone the session id, name the RPC

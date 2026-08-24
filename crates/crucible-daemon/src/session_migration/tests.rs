@@ -1,5 +1,5 @@
 //! Tests for [`super`] — split out to keep the parent under the
-//! 1000-line module budget (`no_new_oversized_modules`).
+//! 1000-line module budget a size gate enforced until 2026-08-24.
 
 use super::*;
 use crate::session_storage::{FileSessionStorage, SessionStorage};

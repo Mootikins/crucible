@@ -369,8 +369,8 @@ fn the_cli_does_not_build_its_own_context_block() {
 // ungated axis, and it is a different failure (a route that does not exist at
 // all, rather than a field name that disagrees).
 //
-// The ledger below is SHRINK-ONLY, following SIZE_LEDGER: a NEW knob is not in
-// it and so fails immediately.
+// The ledger below is SHRINK-ONLY: a NEW knob is not in it and so fails
+// immediately.
 // ===========================================================================
 
 fn captures(re: &str, hay: &str) -> BTreeSet<String> {
