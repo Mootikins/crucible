@@ -122,6 +122,7 @@ async fn test_plugin_test_roundtrip() {
     let tests_source = fs::read_to_string(tests_path).unwrap();
 
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
     let lua = executor.lua();
 
     configure_package_path(lua, &plugin_dir);
@@ -149,6 +150,7 @@ async fn test_plugin_test_roundtrip() {
 #[tokio::test]
 async fn test_plugin_test_with_mocks() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 function handler(args)
@@ -189,6 +191,7 @@ end
 #[test]
 fn test_plugin_test_failure_reporting() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
     let lua = executor.lua();
 
     lua.load(
@@ -237,6 +240,7 @@ return {
 
     let health_source = fs::read_to_string(plugin_dir.join("health.lua")).unwrap();
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
     let lua = executor.lua();
 
     let health_module: mlua::Table = lua.load(&health_source).eval().unwrap();
@@ -299,6 +303,7 @@ fn test_fennel_test_execution() {
     fs::write(&fennel_test_path, fennel_source).unwrap();
 
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
     let lua = executor.lua();
 
     lua.load("test_mocks.setup()")
@@ -342,6 +347,7 @@ fn test_scaffold_template_validity() {
     let plugin_dir = temp.path().join(plugin_name);
 
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
     let lua = executor.lua();
     configure_package_path(lua, &plugin_dir);
     lua.load("test_mocks.setup()")

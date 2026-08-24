@@ -6,6 +6,7 @@ use serde_json::json;
 #[tokio::test]
 async fn test_cru_tbl_deep_extend_force() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 function handler(args)
@@ -39,6 +40,7 @@ end
 #[tokio::test]
 async fn test_cru_tbl_deep_extend_keep() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 function handler(args)
@@ -72,6 +74,7 @@ end
 #[tokio::test]
 async fn test_cru_tbl_deep_extend_multiple_tables() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 function handler(args)
@@ -104,6 +107,7 @@ end
 #[tokio::test]
 async fn test_cru_tbl_get_simple() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 function handler(args)
@@ -132,6 +136,7 @@ end
 #[tokio::test]
 async fn test_cru_tbl_get_nested() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 function handler(args)
@@ -160,6 +165,7 @@ end
 #[tokio::test]
 async fn test_cru_tbl_get_non_table_intermediate() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 function handler(args)

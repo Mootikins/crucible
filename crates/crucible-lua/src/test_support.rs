@@ -113,6 +113,7 @@ impl TestLuaBuilder {
             .exec()
             .unwrap();
         register_lua_stdlib(&self.lua).unwrap();
+        crate::register_test_harness(&self.lua).unwrap();
         self
     }
 

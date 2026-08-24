@@ -24,9 +24,21 @@ use test_runner::LUA_TEST_RUNNER;
 ///
 /// Must be called after `setup_globals` creates the `cru` table and after
 /// `register_timer_module` (since `cru.retry` depends on `cru.timer.sleep`).
-pub fn register_lua_stdlib(lua: &Lua) -> Result<()> {
+/// Register the plugin test harness: `describe`, `it`, `run_tests` and the
+/// busted-style `assert` table.
+///
+/// Only a VM that RUNS plugin tests gets these. They used to load in every
+/// VM, which put `describe`/`it`/`run_tests` in front of every plugin and
+/// replaced the global `assert` with a callable table — so `type(assert)`
+/// read "table" in production, and a script that captured `assert` got a
+/// harness object instead of the language's own function.
+pub fn register_test_harness(lua: &Lua) -> Result<()> {
     lua.load(LUA_TEST_RUNNER).set_name("test_runner").exec()?;
     lua.load(LUA_TEST_MOCKS).set_name("test_mocks").exec()?;
+    Ok(())
+}
+
+pub fn register_lua_stdlib(lua: &Lua) -> Result<()> {
     lua.load(LUA_STDLIB).exec()?;
 
     let cru = lua.globals().get::<mlua::Table>("cru")?;

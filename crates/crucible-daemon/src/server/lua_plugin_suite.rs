@@ -47,6 +47,11 @@ pub(crate) async fn handle_lua_run_plugin_tests(req: Request) -> Response {
         Ok(e) => e,
         Err(e) => return internal_error(req.id, e),
     };
+    // This VM runs plugin tests, so it gets `describe`, `it`, `run_tests` and
+    // the harness `assert`. No other VM does.
+    if let Err(e) = executor.install_test_harness() {
+        return internal_error(req.id, anyhow::Error::from(e));
+    }
 
     // Mirror the runtime plugin loader's package.path EXACTLY. The loader
     // gives a plugin `<plugins_parent>/?.lua`, `<plugins_parent>/?/init.lua`

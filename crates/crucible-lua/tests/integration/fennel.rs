@@ -12,6 +12,7 @@ use serde_json::json;
 #[test]
 fn test_fennel_compile_via_lua_global() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
     let lua = executor.lua();
 
     let has_fennel: bool = lua
@@ -52,6 +53,7 @@ fn test_fennel_compile_via_lua_global() {
 #[test]
 fn test_fennel_test_runner_integration() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
     let lua = executor.lua();
 
     lua.load("test_mocks.setup()")
@@ -99,6 +101,7 @@ fn test_fennel_test_runner_integration() {
 async fn test_fennel_tool_execution() {
     // Note: This requires fennel.lua to be present in vendor/
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 (fn handler [args]
@@ -124,6 +127,7 @@ async fn test_fennel_tool_execution() {
 async fn test_fennel_contracts_basic() {
     // Test Steel-style contracts in Fennel
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     // Inline contract predicates and wrap function for testing
     let source = r#"
@@ -209,6 +213,7 @@ async fn test_fennel_contracts_basic() {
 async fn test_fennel_contracts_preserves() {
     // Test that preserved fields are checked
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 ;; Contract with preserves checking
@@ -300,6 +305,7 @@ async fn test_fennel_contracts_preserves() {
 #[tokio::test]
 async fn test_deftool_schema_generation() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     // Define a tool using deftool macro with schema
     let source = r#"
@@ -396,6 +402,7 @@ async fn test_deftool_schema_generation() {
 #[tokio::test]
 async fn test_deftool_contract_validation() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 (global __tool_schemas__ {})
@@ -464,6 +471,7 @@ async fn test_deftool_contract_validation() {
 #[tokio::test]
 async fn test_fennel_oil_basic_components() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 ;; Test Oil component wrappers directly (inline since require isn't set up)
@@ -527,6 +535,7 @@ async fn test_fennel_oil_basic_components() {
 #[tokio::test]
 async fn test_fennel_oil_component_factory() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 ;; Test component factory
@@ -563,6 +572,7 @@ async fn test_fennel_oil_component_factory() {
 #[tokio::test]
 async fn test_fennel_oil_each_iteration() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 (global handler (fn [args]

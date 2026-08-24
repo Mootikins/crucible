@@ -38,9 +38,14 @@ pub struct LuaExecutor {
 impl LuaExecutor {
     /// Create a new Lua executor
     pub fn new() -> Result<Self, LuaError> {
-        // Fennel requires both PACKAGE (for require/modules) and DEBUG (for stack traces)
-        // DEBUG is not in ALL_SAFE, so we use unsafe_new_with for Fennel support.
-        // This is safe because we're running controlled Fennel code, not arbitrary C modules.
+        // Fennel needs PACKAGE (require/modules) and DEBUG (stack traces).
+        // DEBUG is not in ALL_SAFE, so the VM is built with unsafe_new_with.
+        //
+        // That constructor skips mlua's own `disable_c_modules`, which is the
+        // only thing that keeps `package.loadlib` and the two C searchers out
+        // of reach. This VM runs every plugin, not just Fennel we shipped, so
+        // `disable_c_modules_after_unsafe_new` below puts them back out of
+        // reach. Without it a plugin loads a `.so` and leaves Lua entirely.
         #[cfg(feature = "fennel")]
         let lua = unsafe {
             Lua::unsafe_new_with(StdLib::ALL_SAFE | StdLib::DEBUG, LuaOptions::default())
@@ -48,6 +53,9 @@ impl LuaExecutor {
 
         #[cfg(not(feature = "fennel"))]
         let lua = Lua::new();
+
+        #[cfg(feature = "fennel")]
+        disable_c_modules_after_unsafe_new(&lua)?;
 
         // Set up safe globals and Crucible API
         Self::setup_globals(&lua)?;
@@ -297,6 +305,14 @@ end
         crate::lua_stdlib::register_lua_stdlib(lua)?;
 
         Ok(())
+    }
+
+    /// Install the plugin test harness in this executor's VM.
+    ///
+    /// Only the plugin test runner calls this. A production VM must not carry
+    /// `describe`, `it`, `run_tests`, or the harness `assert` table.
+    pub fn install_test_harness(&self) -> Result<(), LuaError> {
+        crate::lua_stdlib::register_test_harness(&self.lua).map_err(LuaError::from)
     }
 
     /// Compile Fennel source to Lua with this executor's compiler.
@@ -691,5 +707,102 @@ mod tests {
             result,
             "Both http and fs modules should be available in production"
         );
+    }
+}
+
+/// Put `package.loadlib` and the C searchers out of reach.
+///
+/// `Lua::new_with` does this itself; `unsafe_new_with` does not, and Fennel
+/// forces the unsafe constructor because it needs the DEBUG library. This is
+/// the same work mlua does in safe mode: replace `loadlib`, replace the third
+/// searcher, drop the fourth (the all-in-one C loader).
+#[cfg(feature = "fennel")]
+fn disable_c_modules_after_unsafe_new(lua: &Lua) -> Result<(), LuaError> {
+    let package: mlua::Table = lua.globals().get("package")?;
+    package.set(
+        "loadlib",
+        lua.create_function(|_, ()| -> mlua::Result<()> {
+            Err(mlua::Error::runtime(
+                "package.loadlib is disabled: a plugin may not load a C module",
+            ))
+        })?,
+    )?;
+    let searchers: mlua::Table = package.get("searchers")?;
+    let refuse = lua.create_function(|_, ()| Ok("\n\tC modules are disabled"))?;
+    searchers.raw_set(3, refuse)?;
+    if searchers.raw_len() >= 4 {
+        searchers.raw_remove(4)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod vm_safety_tests {
+    use super::*;
+
+    /// A plugin must not reach a C module. The VM is built with
+    /// `unsafe_new_with` for Fennel's DEBUG library, which skips mlua's own
+    /// safety pass, so the pass is redone by hand.
+    #[test]
+    fn a_script_cannot_load_a_c_module() {
+        let executor = LuaExecutor::new().expect("executor");
+        let err = executor
+            .lua()
+            .load("return package.loadlib('/tmp/x.so', 'luaopen_x')")
+            .exec()
+            .expect_err("package.loadlib must refuse");
+        assert!(
+            err.to_string().contains("disabled"),
+            "expected a refusal, got {err}"
+        );
+
+        let searcher_msg: String = executor
+            .lua()
+            .load("return package.searchers[3]()")
+            .eval()
+            .expect("the third searcher answers");
+        assert!(
+            searcher_msg.contains("C modules are disabled"),
+            "expected the C searcher to refuse, got {searcher_msg:?}"
+        );
+    }
+
+    /// The language's own `assert` is a function. The plugin test harness
+    /// replaces it with a callable table, so the harness must not load in a
+    /// VM that runs plugins or user config.
+    #[test]
+    fn a_production_vm_keeps_the_language_assert() {
+        let executor = LuaExecutor::new().expect("executor");
+        let kind: String = executor
+            .lua()
+            .load("return type(assert)")
+            .eval()
+            .expect("assert exists");
+        assert_eq!(
+            kind, "function",
+            "the harness assert leaked into a plugin VM"
+        );
+
+        for absent in ["describe", "it", "run_tests", "before_each"] {
+            let kind: String = executor
+                .lua()
+                .load(format!("return type({absent})"))
+                .eval()
+                .expect("type() answers");
+            assert_eq!(kind, "nil", "the test harness leaked `{absent}`");
+        }
+    }
+
+    /// The harness is still available where it belongs.
+    #[test]
+    fn a_test_vm_gets_the_harness() {
+        let executor = LuaExecutor::new().expect("executor");
+        executor.install_test_harness().expect("harness installs");
+        let kind: String = executor
+            .lua()
+            .load("return type(describe)")
+            .eval()
+            .expect("type() answers");
+        assert_eq!(kind, "function");
     }
 }

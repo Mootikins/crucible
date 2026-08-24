@@ -10,6 +10,7 @@ use serde_json::json;
 #[tokio::test]
 async fn test_health_collect_ok_and_warn() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 function handler(args)
@@ -51,6 +52,7 @@ end
 #[tokio::test]
 async fn test_health_error_makes_unhealthy() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 function handler(args)

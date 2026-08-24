@@ -130,7 +130,7 @@ pub use json_query::{
     detect_format, encode_to_format, json_to_lua, lua_to_json, parse_auto, parse_with_format,
     register_oq_module, Format,
 };
-pub use lua_stdlib::register_lua_stdlib;
+pub use lua_stdlib::{register_lua_stdlib, register_test_harness};
 pub use oil::{register_oil_module, LuaNode};
 pub use paths::{register_paths_module, PathsContext};
 pub use ratelimit::register_ratelimit_module;

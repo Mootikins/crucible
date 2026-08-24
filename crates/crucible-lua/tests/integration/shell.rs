@@ -9,6 +9,7 @@ use serde_json::json;
 #[tokio::test]
 async fn test_lua_shell_module_registration() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     // Verify shell module can be registered
     register_shell_module(executor.lua(), PluginShellPolicy::permissive()).unwrap();
@@ -38,6 +39,7 @@ end
 #[tokio::test]
 async fn test_lua_shell_policy_blocks_dangerous_commands() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     // Use default policy which blocks rm, sudo, etc.
     register_shell_module(executor.lua(), PluginShellPolicy::default()).unwrap();

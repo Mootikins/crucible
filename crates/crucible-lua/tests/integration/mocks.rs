@@ -6,6 +6,7 @@ use serde_json::json;
 #[tokio::test]
 async fn test_cru_on_error_initialization() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 function handler(args)
@@ -37,6 +38,7 @@ end
 #[tokio::test]
 async fn test_mock_globals_exist() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 function handler(args)
@@ -66,6 +68,7 @@ end
 #[tokio::test]
 async fn test_mock_kiln_returns_configured_fixtures() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 function handler(args)
@@ -126,6 +129,7 @@ end
 #[tokio::test]
 async fn test_mock_http_records_requests_and_returns_responses() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 function handler(args)
@@ -194,6 +198,7 @@ end
 #[tokio::test]
 async fn test_mock_reset_clears_call_history_and_fixtures() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 function handler(args)

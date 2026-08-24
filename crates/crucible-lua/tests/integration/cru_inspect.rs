@@ -6,6 +6,7 @@ use serde_json::json;
 #[tokio::test]
 async fn test_cru_inspect_simple_values() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 function handler(args)
@@ -38,6 +39,7 @@ end
 #[tokio::test]
 async fn test_cru_inspect_tables() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 function handler(args)
@@ -69,6 +71,7 @@ end
 #[tokio::test]
 async fn test_cru_inspect_cycle_detection() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 function handler(args)
@@ -97,6 +100,7 @@ end
 #[tokio::test]
 async fn test_cru_inspect_depth_limit() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 function handler(args)
@@ -128,6 +132,7 @@ end
 #[tokio::test]
 async fn test_cru_inspect_global_alias() {
     let executor = LuaExecutor::new().unwrap();
+    executor.install_test_harness().unwrap();
 
     let source = r#"
 function handler(args)
