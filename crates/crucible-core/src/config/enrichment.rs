@@ -71,20 +71,8 @@ pub enum EmbeddingProviderConfig {
     /// FastEmbed (local) embedding provider
     FastEmbed(FastEmbedConfig),
 
-    /// Cohere embedding provider
-    Cohere(CohereConfig),
-
-    /// Google Vertex AI embedding provider
-    VertexAI(VertexAIConfig),
-
-    /// Custom HTTP-based embedding provider
-    Custom(CustomConfig),
-
     /// Mock provider for testing
     Mock(MockConfig),
-
-    /// Burn ML framework embedding provider (local, GPU-accelerated)
-    Burn(BurnEmbedConfig),
 }
 
 impl Default for EmbeddingProviderConfig {
@@ -296,195 +284,6 @@ impl Default for FastEmbedConfig {
     }
 }
 
-/// Cohere embedding provider configuration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct CohereConfig {
-    /// API key for Cohere
-    pub api_key: String,
-
-    /// Model to use
-    #[serde(default = "CohereConfig::default_model")]
-    pub model: String,
-
-    /// Base URL for API
-    #[serde(default = "CohereConfig::default_base_url")]
-    pub base_url: String,
-
-    /// Request timeout in seconds
-    #[serde(default = "CohereConfig::default_timeout")]
-    pub timeout_seconds: u64,
-
-    /// Number of retry attempts
-    #[serde(default = "CohereConfig::default_retries")]
-    pub retry_attempts: u32,
-
-    /// Input type: search_document, search_query, classification, clustering
-    #[serde(default = "CohereConfig::default_input_type")]
-    pub input_type: String,
-
-    /// Custom HTTP headers
-    #[serde(default)]
-    pub headers: HashMap<String, String>,
-}
-
-impl CohereConfig {
-    fn default_model() -> String {
-        table_embedding_model(BackendType::Cohere)
-    }
-
-    fn default_base_url() -> String {
-        table_endpoint(BackendType::Cohere)
-    }
-
-    fn default_timeout() -> u64 {
-        30
-    }
-
-    fn default_retries() -> u32 {
-        3
-    }
-
-    fn default_input_type() -> String {
-        "search_document".to_string()
-    }
-}
-
-impl Default for CohereConfig {
-    fn default() -> Self {
-        Self {
-            api_key: String::new(),
-            model: Self::default_model(),
-            base_url: Self::default_base_url(),
-            timeout_seconds: Self::default_timeout(),
-            retry_attempts: Self::default_retries(),
-            input_type: Self::default_input_type(),
-            headers: HashMap::new(),
-        }
-    }
-}
-
-/// Google Vertex AI embedding provider configuration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct VertexAIConfig {
-    /// GCP project ID
-    pub project_id: String,
-
-    /// Model to use
-    #[serde(default = "VertexAIConfig::default_model")]
-    pub model: String,
-
-    /// Base URL for API
-    #[serde(default = "VertexAIConfig::default_base_url")]
-    pub base_url: String,
-
-    /// Request timeout in seconds
-    #[serde(default = "VertexAIConfig::default_timeout")]
-    pub timeout_seconds: u64,
-
-    /// Number of retry attempts
-    #[serde(default = "VertexAIConfig::default_retries")]
-    pub retry_attempts: u32,
-
-    /// Service account credentials JSON path
-    pub credentials_path: Option<String>,
-
-    /// Custom HTTP headers
-    #[serde(default)]
-    pub headers: HashMap<String, String>,
-}
-
-impl VertexAIConfig {
-    fn default_model() -> String {
-        table_embedding_model(BackendType::VertexAI)
-    }
-
-    fn default_base_url() -> String {
-        table_endpoint(BackendType::VertexAI)
-    }
-
-    fn default_timeout() -> u64 {
-        30
-    }
-
-    fn default_retries() -> u32 {
-        3
-    }
-}
-
-impl Default for VertexAIConfig {
-    fn default() -> Self {
-        Self {
-            project_id: String::new(),
-            model: Self::default_model(),
-            base_url: Self::default_base_url(),
-            timeout_seconds: Self::default_timeout(),
-            retry_attempts: Self::default_retries(),
-            credentials_path: None,
-            headers: HashMap::new(),
-        }
-    }
-}
-
-/// Custom HTTP-based embedding provider configuration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct CustomConfig {
-    /// Base URL for the custom embedding API
-    pub base_url: String,
-
-    /// API key (if required)
-    pub api_key: Option<String>,
-
-    /// Model name
-    pub model: String,
-
-    /// Request timeout in seconds
-    #[serde(default = "CustomConfig::default_timeout")]
-    pub timeout_seconds: u64,
-
-    /// Number of retry attempts
-    #[serde(default = "CustomConfig::default_retries")]
-    pub retry_attempts: u32,
-
-    /// Expected embedding dimensions
-    pub dimensions: u32,
-
-    /// Custom HTTP headers
-    #[serde(default)]
-    pub headers: HashMap<String, String>,
-
-    /// Request template (JSON)
-    pub request_template: Option<String>,
-
-    /// Response path (JSONPath) to extract embeddings
-    pub response_path: Option<String>,
-}
-
-impl CustomConfig {
-    fn default_timeout() -> u64 {
-        30
-    }
-
-    fn default_retries() -> u32 {
-        3
-    }
-}
-
-impl Default for CustomConfig {
-    fn default() -> Self {
-        Self {
-            base_url: String::new(),
-            api_key: None,
-            model: String::new(),
-            timeout_seconds: Self::default_timeout(),
-            retry_attempts: Self::default_retries(),
-            dimensions: 768,
-            headers: HashMap::new(),
-            request_template: None,
-            response_path: None,
-        }
-    }
-}
-
 /// Mock embedding provider for testing
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MockConfig {
@@ -513,93 +312,6 @@ impl Default for MockConfig {
             model: Self::default_model(),
             dimensions: Self::default_dimensions(),
         }
-    }
-}
-
-/// Burn ML framework embedding provider configuration
-///
-/// This provider uses the Burn framework for GPU-accelerated inference
-/// with support for Vulkan, ROCm, and CPU backends.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct BurnEmbedConfig {
-    /// Model name or path
-    #[serde(default = "BurnEmbedConfig::default_model")]
-    pub model: String,
-
-    /// Backend configuration (auto-detect, vulkan, rocm, or cpu)
-    #[serde(default)]
-    pub backend: BurnBackendConfig,
-
-    /// Base directory for model discovery (default: ~/models)
-    #[serde(default = "BurnEmbedConfig::default_model_dir")]
-    pub model_dir: String,
-
-    /// Additional model search paths (appended to model_dir subdirectories)
-    #[serde(default)]
-    pub model_search_paths: Vec<String>,
-
-    /// Expected embedding dimensions (0 = auto-detect from model)
-    #[serde(default)]
-    pub dimensions: u32,
-}
-
-impl BurnEmbedConfig {
-    fn default_model() -> String {
-        table_embedding_model(BackendType::Burn)
-    }
-
-    /// Get default model directory path.
-    pub fn default_model_dir() -> String {
-        dirs::home_dir()
-            .unwrap_or_default()
-            .join("models")
-            .to_string_lossy()
-            .to_string()
-    }
-}
-
-impl Default for BurnEmbedConfig {
-    fn default() -> Self {
-        Self {
-            model: Self::default_model(),
-            backend: BurnBackendConfig::default(),
-            model_dir: Self::default_model_dir(),
-            model_search_paths: Vec::new(),
-            dimensions: 0, // Auto-detect
-        }
-    }
-}
-
-/// Backend configuration for Burn provider
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum BurnBackendConfig {
-    /// Auto-detect the best available backend
-    #[default]
-    Auto,
-    /// Use Vulkan backend with specified device ID
-    Vulkan {
-        #[serde(default)]
-        #[allow(missing_docs)]
-        device_id: usize,
-    },
-    /// Use ROCm backend with specified device ID
-    Rocm {
-        #[serde(default)]
-        #[allow(missing_docs)]
-        device_id: usize,
-    },
-    /// Use CPU backend with specified thread count
-    Cpu {
-        #[serde(default = "BurnBackendConfig::default_num_threads")]
-        #[allow(missing_docs)]
-        num_threads: usize,
-    },
-}
-
-impl BurnBackendConfig {
-    fn default_num_threads() -> usize {
-        num_cpus::get()
     }
 }
 
@@ -742,11 +454,7 @@ impl EmbeddingProviderConfig {
             Self::OpenAI(c) => c.timeout_seconds,
             Self::Ollama(c) => c.timeout_seconds,
             Self::FastEmbed(_) => 30, // FastEmbed is local, no timeout
-            Self::Cohere(c) => c.timeout_seconds,
-            Self::VertexAI(c) => c.timeout_seconds,
-            Self::Custom(c) => c.timeout_seconds,
             Self::Mock(_) => 1,
-            Self::Burn(_) => 60, // GPU inference may need more time for first load
         };
         Duration::from_secs(seconds)
     }
@@ -757,11 +465,7 @@ impl EmbeddingProviderConfig {
             Self::OpenAI(c) => c.retry_attempts,
             Self::Ollama(c) => c.retry_attempts,
             Self::FastEmbed(_) => 0, // Local processing doesn't need retries
-            Self::Cohere(c) => c.retry_attempts,
-            Self::VertexAI(c) => c.retry_attempts,
-            Self::Custom(c) => c.retry_attempts,
             Self::Mock(_) => 0,
-            Self::Burn(_) => 0, // Local GPU processing doesn't need retries
         }
     }
 
@@ -771,11 +475,7 @@ impl EmbeddingProviderConfig {
             Self::OpenAI(c) => &c.model,
             Self::Ollama(c) => &c.model,
             Self::FastEmbed(c) => &c.model,
-            Self::Cohere(c) => &c.model,
-            Self::VertexAI(c) => &c.model,
-            Self::Custom(c) => &c.model,
             Self::Mock(c) => &c.model,
-            Self::Burn(c) => &c.model,
         }
     }
 
@@ -790,11 +490,7 @@ impl EmbeddingProviderConfig {
             Self::OpenAI(_) => super::components::BackendType::OpenAI,
             Self::Ollama(_) => super::components::BackendType::Ollama,
             Self::FastEmbed(_) => super::components::BackendType::FastEmbed,
-            Self::Cohere(_) => super::components::BackendType::Cohere,
-            Self::VertexAI(_) => super::components::BackendType::VertexAI,
-            Self::Custom(_) => super::components::BackendType::Custom,
             Self::Mock(_) => super::components::BackendType::Mock,
-            Self::Burn(_) => super::components::BackendType::Burn,
         }
     }
 
@@ -802,8 +498,6 @@ impl EmbeddingProviderConfig {
     pub fn api_key(&self) -> Option<&str> {
         match self {
             Self::OpenAI(c) => Some(&c.api_key),
-            Self::Cohere(c) => Some(&c.api_key),
-            Self::Custom(c) => c.api_key.as_deref(),
             _ => None,
         }
     }
@@ -813,10 +507,7 @@ impl EmbeddingProviderConfig {
         match self {
             Self::OpenAI(c) => Some(&c.base_url),
             Self::Ollama(c) => Some(&c.base_url),
-            Self::Cohere(c) => Some(&c.base_url),
-            Self::VertexAI(c) => Some(&c.base_url),
-            Self::Custom(c) => Some(&c.base_url),
-            Self::FastEmbed(_) | Self::Mock(_) | Self::Burn(_) => None,
+            Self::FastEmbed(_) | Self::Mock(_) => None,
         }
     }
 
@@ -833,11 +524,7 @@ impl EmbeddingProviderConfig {
             Self::OpenAI(c) => c.timeout_seconds,
             Self::Ollama(c) => c.timeout_seconds,
             Self::FastEmbed(_) => 30,
-            Self::Cohere(c) => c.timeout_seconds,
-            Self::VertexAI(c) => c.timeout_seconds,
-            Self::Custom(c) => c.timeout_seconds,
             Self::Mock(_) => 1,
-            Self::Burn(_) => 60,
         }
     }
 
@@ -847,18 +534,7 @@ impl EmbeddingProviderConfig {
             Self::OpenAI(c) => Some(c.dimensions),
             Self::Ollama(c) => Some(c.dimensions),
             Self::FastEmbed(c) => Some(c.dimensions),
-            Self::Cohere(_) => None,   // Cohere dimensions vary by model
-            Self::VertexAI(_) => None, // VertexAI dimensions vary by model
-            Self::Custom(c) => Some(c.dimensions),
             Self::Mock(c) => Some(c.dimensions),
-            Self::Burn(c) => {
-                // 0 means auto-detect, return None
-                if c.dimensions == 0 {
-                    None
-                } else {
-                    Some(c.dimensions)
-                }
-            }
         }
     }
 
@@ -871,11 +547,7 @@ impl EmbeddingProviderConfig {
             Self::Ollama(c) => c.batch_size as usize,
             Self::FastEmbed(c) => c.batch_size as usize,
             Self::OpenAI(_) => 100, // OpenAI supports up to 2048 inputs
-            Self::Cohere(_) => 96,  // Cohere has a 96 text limit
-            Self::Custom(_) => 1,   // Conservative default for custom providers
             Self::Mock(_) => 100,   // Mock can handle any batch size
-            Self::Burn(_) => 32,    // GPU batch processing
-            Self::VertexAI(_) => 5, // VertexAI has lower limits
         }
     }
 
@@ -887,13 +559,7 @@ impl EmbeddingProviderConfig {
     pub fn cache_dir(&self) -> Option<std::path::PathBuf> {
         match self {
             Self::FastEmbed(c) => c.cache_dir.as_ref().map(std::path::PathBuf::from),
-            Self::Ollama(_)
-            | Self::OpenAI(_)
-            | Self::Cohere(_)
-            | Self::Custom(_)
-            | Self::Mock(_)
-            | Self::Burn(_)
-            | Self::VertexAI(_) => None,
+            Self::Ollama(_) | Self::OpenAI(_) | Self::Mock(_) => None,
         }
     }
 
@@ -975,109 +641,11 @@ impl EmbeddingProviderConfig {
                     });
                 }
             }
-            Self::Cohere(c) => {
-                if c.api_key.is_empty() {
-                    return Err(ConfigValidationError::MissingField {
-                        field: "api_key".to_string(),
-                    });
-                }
-                if c.model.is_empty() {
-                    return Err(ConfigValidationError::MissingField {
-                        field: "model".to_string(),
-                    });
-                }
-                // Validate base URL format
-                if !c.base_url.starts_with("http://") && !c.base_url.starts_with("https://") {
-                    return Err(ConfigValidationError::InvalidValue {
-                        field: "base_url".to_string(),
-                        reason: "must start with http:// or https://".to_string(),
-                    });
-                }
-                // Validate timeout
-                if c.timeout_seconds == 0 || c.timeout_seconds > 300 {
-                    return Err(ConfigValidationError::InvalidValue {
-                        field: "timeout_seconds".to_string(),
-                        reason: "must be between 1 and 300 seconds".to_string(),
-                    });
-                }
-            }
-            Self::VertexAI(c) => {
-                if c.project_id.is_empty() {
-                    return Err(ConfigValidationError::MissingField {
-                        field: "project_id".to_string(),
-                    });
-                }
-                if c.model.is_empty() {
-                    return Err(ConfigValidationError::MissingField {
-                        field: "model".to_string(),
-                    });
-                }
-            }
-            Self::Custom(c) => {
-                if c.base_url.is_empty() {
-                    return Err(ConfigValidationError::MissingField {
-                        field: "base_url".to_string(),
-                    });
-                }
-                // Validate base URL format
-                if !c.base_url.starts_with("http://") && !c.base_url.starts_with("https://") {
-                    return Err(ConfigValidationError::InvalidValue {
-                        field: "base_url".to_string(),
-                        reason: "must start with http:// or https://".to_string(),
-                    });
-                }
-                if c.model.is_empty() {
-                    return Err(ConfigValidationError::MissingField {
-                        field: "model".to_string(),
-                    });
-                }
-                if c.dimensions == 0 {
-                    return Err(ConfigValidationError::InvalidValue {
-                        field: "dimensions".to_string(),
-                        reason: "must be greater than 0".to_string(),
-                    });
-                }
-                // Validate timeout
-                if c.timeout_seconds == 0 || c.timeout_seconds > 300 {
-                    return Err(ConfigValidationError::InvalidValue {
-                        field: "timeout_seconds".to_string(),
-                        reason: "must be between 1 and 300 seconds".to_string(),
-                    });
-                }
-            }
             Self::Mock(_) => {
                 // Mock provider has no validation requirements
             }
-            Self::Burn(c) => {
-                if c.model.is_empty() {
-                    return Err(ConfigValidationError::MissingField {
-                        field: "model".to_string(),
-                    });
-                }
-                // Note: model_search_paths and dimensions can be empty/0 (use defaults/auto-detect)
-            }
         }
         Ok(())
-    }
-
-    /// Create a Burn provider configuration with defaults
-    ///
-    /// # Arguments
-    /// * `model` - Optional model name (defaults to "nomic-embed-text")
-    /// * `backend` - Optional backend configuration (defaults to Auto)
-    /// * `search_paths` - Optional model search paths (defaults to ~/models, etc.)
-    pub fn burn(
-        model: Option<String>,
-        backend: Option<BurnBackendConfig>,
-        search_paths: Option<Vec<String>>,
-    ) -> Self {
-        Self::Burn(BurnEmbedConfig {
-            model: model.unwrap_or_else(BurnEmbedConfig::default_model),
-            backend: backend.unwrap_or_default(),
-            model_dir: BurnEmbedConfig::default_model_dir(),
-            model_search_paths: search_paths.unwrap_or_default(),
-            dimensions: 0, // Auto-detect
-        })
     }
 }
 
@@ -1095,14 +663,25 @@ mod tests {
         assert_eq!(OllamaConfig::default().model, "nomic-embed-text");
         assert_eq!(OllamaConfig::default().base_url, "http://localhost:11434");
         assert_eq!(FastEmbedConfig::default().model, "BAAI/bge-small-en-v1.5");
-        assert_eq!(CohereConfig::default().model, "embed-english-v3.0");
-        assert_eq!(CohereConfig::default().base_url, "https://api.cohere.ai/v1");
-        assert_eq!(VertexAIConfig::default().model, "textembedding-gecko@003");
-        assert_eq!(
-            VertexAIConfig::default().base_url,
-            "https://aiplatform.googleapis.com/v1"
-        );
-        assert_eq!(BurnEmbedConfig::default().model, "nomic-embed-text");
+    }
+
+    #[test]
+    fn removed_provider_type_fails_at_load_and_names_the_supported_types() {
+        // The factory builds only these provider types. A config that names
+        // a removed type must fail when the file loads, not at first use.
+        let err = toml::from_str::<EmbeddingProviderConfig>(
+            r#"
+type = "cohere"
+api_key = "x"
+"#,
+        )
+        .expect_err("a removed provider type must not load");
+
+        let message = err.to_string();
+        assert!(message.contains("unknown variant"), "{message}");
+        for supported in ["openai", "ollama", "fastembed", "mock"] {
+            assert!(message.contains(supported), "{message}");
+        }
     }
 
     #[test]

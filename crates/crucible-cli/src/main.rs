@@ -142,28 +142,12 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
         let (plugin_sections, plugin_watch) =
             crucible_daemon::daemon_plugins::split_plugins_config(&config.plugins);
         let server = crucible_daemon::Server::bind_with_plugin_config(
-            crucible_daemon::BindWithPluginConfigParams {
-                path: sock.clone(),
-                mcp_config: None,
-                plugin_config: plugin_sections.clone(),
-                runtimepath: config.runtimepath.clone(),
+            crucible_daemon::BindWithPluginConfigParams::from_app_config(
+                sock.clone(),
+                &config,
+                plugin_sections.clone(),
                 plugin_watch,
-                auto_archive_hours: config.server.as_ref().and_then(|s| s.auto_archive_hours),
-                llm_config: Some(config.llm.clone()),
-                enrichment_config: config.enrichment.as_ref().map(|e| e.provider.clone()),
-                max_precognition_chars: config
-                    .enrichment
-                    .as_ref()
-                    .map(|e| e.pipeline.max_precognition_chars)
-                    .unwrap_or_else(crucible_core::config::default_max_precognition_chars),
-                acp_config: Some(config.acp.clone()),
-                context_config: config.context.clone(),
-                permission_config: None,
-                schedules: config.schedules.clone(),
-                app_config: serde_json::to_value(&config).ok(),
-                data_home: config.data_home.clone(),
-                config_home: None,
-            },
+            ),
         )
         .await?;
         info!("Standalone daemon listening on {:?}", sock);

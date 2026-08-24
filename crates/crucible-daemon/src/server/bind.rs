@@ -41,6 +41,47 @@ pub struct BindWithPluginConfigParams {
     pub config_home: Option<std::path::PathBuf>,
 }
 
+impl BindWithPluginConfigParams {
+    /// Every daemon knob the loaded app config decides, in one place.
+    ///
+    /// Two call sites build these params: `cru daemon serve` and the
+    /// standalone daemon in `main.rs`. They were literal-by-literal copies and
+    /// they drifted: the standalone one passed `None` for `permission_config`,
+    /// so `cru --standalone` ran with none of the user's permission rules, and
+    /// BOTH passed `None` for `mcp_config`, so the MCP gateway never started
+    /// outside a test. A caller now names only what the config cannot decide:
+    /// the socket, the split plugin sections and the watch flag.
+    pub fn from_app_config(
+        path: std::path::PathBuf,
+        config: &crucible_core::config::CliAppConfig,
+        plugin_config: std::collections::HashMap<String, serde_json::Value>,
+        plugin_watch: bool,
+    ) -> Self {
+        Self {
+            path,
+            mcp_config: config.mcp.clone(),
+            plugin_config,
+            runtimepath: config.runtimepath.clone(),
+            plugin_watch,
+            auto_archive_hours: config.server.as_ref().and_then(|s| s.auto_archive_hours),
+            llm_config: Some(config.llm.clone()),
+            enrichment_config: config.enrichment.as_ref().map(|e| e.provider.clone()),
+            max_precognition_chars: config
+                .enrichment
+                .as_ref()
+                .map(|e| e.pipeline.max_precognition_chars)
+                .unwrap_or_else(crucible_core::config::default_max_precognition_chars),
+            acp_config: Some(config.acp.clone()),
+            context_config: config.context.clone(),
+            permission_config: config.permissions.clone(),
+            schedules: config.schedules.clone(),
+            app_config: serde_json::to_value(config).ok(),
+            data_home: config.data_home.clone(),
+            config_home: None,
+        }
+    }
+}
+
 impl Default for BindWithPluginConfigParams {
     /// Every field off/absent, so a constructor spells out only what it
     /// changes. Not derived: `max_precognition_chars` defaults to the config

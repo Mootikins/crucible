@@ -68,9 +68,6 @@ pub async fn create_provider(
         BackendType::FastEmbed => Err(EmbeddingError::ConfigError(
             "FastEmbed provider requires the 'fastembed' feature to be enabled".to_string(),
         )),
-        BackendType::Burn => Err(EmbeddingError::ConfigError(
-            "Burn provider is no longer included in crucible-daemon::llm".to_string(),
-        )),
         BackendType::Mock => {
             let dimensions = config.dimensions().unwrap_or(768) as usize;
             let provider = mock::FixtureEmbeddingProvider::with_dimensions(dimensions);

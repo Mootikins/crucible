@@ -83,9 +83,8 @@ pub use credentials::{
     DiscoveredCredential, ProviderSecrets, SecretsFile, SecretsFileContent,
 };
 pub use enrichment::{
-    default_max_precognition_chars, BurnBackendConfig, BurnEmbedConfig, CohereConfig, CustomConfig,
-    EmbeddingProviderConfig, EnrichmentConfig, FastEmbedConfig, MockConfig, OllamaConfig,
-    OpenAIConfig, PipelineConfig, VertexAIConfig,
+    default_max_precognition_chars, EmbeddingProviderConfig, EnrichmentConfig, FastEmbedConfig,
+    MockConfig, OllamaConfig, OpenAIConfig, PipelineConfig,
 };
 pub use includes::{process_file_references, IncludeError};
 pub use kiln_config::{read_kiln_config, write_kiln_config, KilnConfig, KilnMeta};

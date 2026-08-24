@@ -11,6 +11,6 @@ pub use embedding::EmbeddingProvider;
 pub use types::{BlockEmbedding, EnrichedNote, EnrichmentMetadata};
 
 pub use crate::config::{
-    CohereConfig, CustomConfig, EmbeddingProviderConfig, EnrichmentConfig, FastEmbedConfig,
-    MockConfig, OllamaConfig, OpenAIConfig, PipelineConfig, VertexAIConfig,
+    EmbeddingProviderConfig, EnrichmentConfig, FastEmbedConfig, MockConfig, OllamaConfig,
+    OpenAIConfig, PipelineConfig,
 };
