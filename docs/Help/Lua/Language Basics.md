@@ -56,13 +56,31 @@ http.get(url)                     -- standalone global
 | `cru.json` | `encode(table)`, `decode(string)`, and `array(table)` (mark a table as a JSON list so an empty one encodes as `[]`, not `{}`) |
 | `cru.http` | HTTP client: `get`, `post`, `put`, `patch`, `delete`, `request` |
 | `cru.ws` | WebSocket client: `connect(url, opts?)` returning a connection object |
-| `cru.fs` | Filesystem operations |
+| `cru.fs` | Filesystem operations; paths can use the `kiln://` scheme (below) |
 | `cru.shell` | Shell command execution |
 | `cru.oq` | Data query/transform: `parse`, `json`, `yaml`, `toml`, `toon`, `query`, `format` |
 | `cru.paths` | Path utilities |
 | `cru.kiln` | Kiln access |
 | `cru.graph` | Knowledge graph queries |
 | `cru.sessions` | Daemon session management (create, send messages, subscribe to events) |
+
+### Kiln-Addressed Paths
+
+Every `cru.fs` function also accepts `kiln://<name>/<relative>` beside a
+plain path. The daemon resolves the kiln NAME through its registry and the
+resolved directory never reaches Lua — a plugin addresses a kiln it knows by
+name (for example from a session's `kilns` array) without a filesystem
+location crossing the boundary. Containment is enforced centrally: the
+relative part must be plain components (`..`, `.` and absolute parts are
+refused), and a path that resolves out of the kiln root through a symlink is
+refused. In a runtime with no kiln registry, a `kiln://` path raises a
+clear error.
+
+```lua
+cru.fs.mkdir("kiln://notes/.crucible/proposals")
+cru.fs.write("kiln://notes/.crucible/proposals/idea.md", body)
+```
+
 
 ### Plugin & Agent Modules
 

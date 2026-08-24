@@ -235,7 +235,11 @@ impl Server {
         info!(kilns = kiln_registry.len(), "Kiln registry built");
 
         let plugin_loader = Arc::new(Mutex::new(
-            match DaemonPluginLoader::new(params.plugin_config.clone()) {
+            match DaemonPluginLoader::new(params.plugin_config.clone()).and_then(|loader| {
+                // `kiln://<name>/…` paths in `cru.fs` resolve through the
+                // registry inside the daemon; the directory never reaches Lua.
+                loader.with_kiln_path_resolver(kiln_registry.clone())
+            }) {
                 Ok(loader) => {
                     info!("Daemon plugin loader initialized");
                     // Persisted settings-pane values live under the same root,

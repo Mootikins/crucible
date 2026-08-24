@@ -119,7 +119,7 @@ pub use error::{format_lua_error, LuaError};
 pub use executor::LuaExecutor;
 #[cfg(feature = "fennel")]
 pub use fennel::FennelCompiler;
-pub use fs::register_fs_module;
+pub use fs::{register_fs_module, register_fs_module_with_resolver, KilnPathResolver};
 pub use graph::{register_graph_module, register_graph_module_with_store_scoped};
 pub use hooks::{
     clear_plugin_hooks, get_session_end_hooks, get_session_start_hooks,
