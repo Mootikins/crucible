@@ -164,6 +164,18 @@ fn query_selects_oneshot() {
     }
 }
 
+/// A query runs one turn and exits, so there is no session for a recording
+/// to cover. The argument form must refuse it the way the piped form does.
+#[test]
+fn record_with_a_query_argument_is_refused() {
+    let err = flags(Some("hello"), Some("out.jsonl"), None).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("--record needs an interactive terminal"),
+        "{err}"
+    );
+}
+
 #[test]
 fn replay_flag_carries_its_path_speed_and_auto_exit() {
     match flags(None, None, Some("in.jsonl")).unwrap() {

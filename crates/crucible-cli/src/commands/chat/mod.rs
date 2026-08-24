@@ -99,6 +99,11 @@ impl ChatMode {
                     auto_exit: replay_auto_exit,
                 })
             }
+            (None, Some(_)) if record.is_some() => {
+                // A query, given here or piped, runs one turn and exits.
+                // There is no session for a recording to cover.
+                anyhow::bail!("--record needs an interactive terminal; a query runs oneshot")
+            }
             (None, Some(query)) => Ok(Self::Oneshot { query }),
             (None, None) => Ok(Self::Interactive { record }),
         }
@@ -188,7 +193,7 @@ fn apply_piped_query(
     };
     match (record, read_piped()) {
         (Some(_), Some(_)) => {
-            anyhow::bail!("--record needs an interactive terminal; a piped query runs oneshot")
+            anyhow::bail!("--record needs an interactive terminal; a query runs oneshot")
         }
         (None, Some(query)) => Ok(ChatMode::Oneshot { query }),
         (record, None) => Ok(ChatMode::Interactive { record }),
