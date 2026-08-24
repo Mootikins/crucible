@@ -198,7 +198,7 @@ fn replay_rejects_record() {
 #[test]
 fn piped_query_turns_interactive_into_oneshot() {
     let mode = ChatMode::Interactive { record: None };
-    match apply_piped_query(mode, Some("from stdin".to_string())).unwrap() {
+    match apply_piped_query(mode, || Some("from stdin".to_string())).unwrap() {
         ChatMode::Oneshot { query } => assert_eq!(query, "from stdin"),
         _ => panic!("expected Oneshot"),
     }
@@ -211,7 +211,7 @@ fn piped_query_with_record_is_an_error_not_a_silent_drop() {
     let mode = ChatMode::Interactive {
         record: Some(PathBuf::from("out.jsonl")),
     };
-    let err = apply_piped_query(mode, Some("from stdin".to_string())).unwrap_err();
+    let err = apply_piped_query(mode, || Some("from stdin".to_string())).unwrap_err();
     assert!(err.to_string().contains("--record"), "got {err}");
 }
 
@@ -221,7 +221,7 @@ fn no_piped_query_leaves_the_mode_alone() {
         record: Some(PathBuf::from("out.jsonl")),
     };
     assert!(matches!(
-        apply_piped_query(mode, None).unwrap(),
+        apply_piped_query(mode, || None).unwrap(),
         ChatMode::Interactive { record: Some(_) }
     ));
 }
@@ -231,7 +231,22 @@ fn explicit_query_ignores_a_piped_query() {
     let mode = ChatMode::Oneshot {
         query: "explicit".to_string(),
     };
-    match apply_piped_query(mode, Some("piped".to_string())).unwrap() {
+    match apply_piped_query(mode, || Some("piped".to_string())).unwrap() {
+        ChatMode::Oneshot { query } => assert_eq!(query, "explicit"),
+        _ => panic!("expected Oneshot"),
+    }
+}
+
+#[test]
+fn explicit_query_does_not_read_stdin() {
+    // `cru chat "a"` under a shell `while read` loop must leave the rest
+    // of the pipe to the next iteration. A supervisor that holds the
+    // stdin pipe open must not block the run.
+    let mode = ChatMode::Oneshot {
+        query: "explicit".to_string(),
+    };
+    let result = apply_piped_query(mode, || panic!("stdin was read"));
+    match result.unwrap() {
         ChatMode::Oneshot { query } => assert_eq!(query, "explicit"),
         _ => panic!("expected Oneshot"),
     }

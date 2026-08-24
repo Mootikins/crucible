@@ -131,12 +131,11 @@ pub async fn execute(mut params: ChatParams) -> Result<()> {
     info!("Starting chat command");
 
     // A piped stdin is a query: the TUI becomes a oneshot run.
-    let piped_query = if crate::commands::stdin::stdin_is_piped() {
-        crate::commands::stdin::read_stdin_message().ok()
-    } else {
-        None
-    };
-    params.mode = apply_piped_query(params.mode, piped_query)?;
+    params.mode = apply_piped_query(params.mode, || {
+        crate::commands::stdin::stdin_is_piped()
+            .then(crate::commands::stdin::read_stdin_message)
+            .and_then(Result::ok)
+    })?;
 
     if let ChatMode::Interactive { .. } = params.mode {
         ensure_valid_kiln(&mut params.config).await?;
@@ -175,16 +174,24 @@ pub async fn execute(mut params: ChatParams) -> Result<()> {
 
 /// Fold a piped stdin query into the mode.
 ///
-/// Only the TUI reads stdin as a query. A oneshot run has no TUI to
-/// record, so `--record` with a piped query is an error; before this
-/// check the recording path vanished without a word.
-fn apply_piped_query(mode: ChatMode, piped_query: Option<String>) -> Result<ChatMode> {
-    match (mode, piped_query) {
-        (ChatMode::Interactive { record: Some(_) }, Some(_)) => {
+/// Only the TUI reads stdin as a query. An explicit query never calls
+/// `read_piped`: the read would drain a pipe that a shell loop shares,
+/// or block on a pipe that a supervisor holds open. A oneshot run has
+/// no TUI to record, so `--record` with a piped query is an error;
+/// before this check the recording path vanished without a word.
+fn apply_piped_query(
+    mode: ChatMode,
+    read_piped: impl FnOnce() -> Option<String>,
+) -> Result<ChatMode> {
+    let ChatMode::Interactive { record } = mode else {
+        return Ok(mode);
+    };
+    match (record, read_piped()) {
+        (Some(_), Some(_)) => {
             anyhow::bail!("--record needs an interactive terminal; a piped query runs oneshot")
         }
-        (ChatMode::Interactive { record: None }, Some(query)) => Ok(ChatMode::Oneshot { query }),
-        (mode, _) => Ok(mode),
+        (None, Some(query)) => Ok(ChatMode::Oneshot { query }),
+        (record, None) => Ok(ChatMode::Interactive { record }),
     }
 }
 
