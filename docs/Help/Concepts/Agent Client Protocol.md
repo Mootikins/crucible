@@ -106,8 +106,8 @@ When Crucible spawns an agent subprocess, it performs a version handshake via `i
 
 Timeouts and limits under `[acp]` in `config.toml`:
 
-- `streaming_timeout_minutes` (default 15) — how long a streaming turn may go without completing before it is cut off. This is the one that is actually enforced.
-- `session_timeout_minutes` (default 30) and `max_message_size_mb` (default 25) — parsed and stored, but **currently unread**: no code path enforces them. Treat them as reserved.
+- `streaming_timeout_minutes` (default 15) — how long a streaming turn may go without completing before it is cut off.
+- The removed fields `session_timeout_minutes` and `max_message_size_mb` still load without an error; the values are ignored.
 
 ### Error Handling
 

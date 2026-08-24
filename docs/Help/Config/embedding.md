@@ -26,7 +26,7 @@ The `[enrichment]` section has two sub-tables, both optional:
 | Sub-table | Purpose |
 |---|---|
 | `[enrichment.provider]` | Which embedding backend to use + its settings |
-| `[enrichment.pipeline]` | Pipeline tuning — parsed, but currently only `max_precognition_chars` is read (see below) |
+| `[enrichment.pipeline]` | Pipeline tuning — one knob, `max_precognition_chars` (see below) |
 
 Omitting the whole `[enrichment]` section is meaningful, though: the daemon then skips
 embedding generation, and semantic search returns nothing.
@@ -35,9 +35,9 @@ embedding generation, and semantic search returns nothing.
 
 Select a provider by setting `type = "..."`. Each type has its own fields.
 
-**Supported at runtime:** `fastembed`, `ollama`, `openai`, and `mock`. The other types
-below (`cohere`, `vertexai`, `custom`, `burn`) still parse, but the daemon refuses to
-create a provider for them — see each entry.
+**Supported:** `fastembed`, `ollama`, `openai`, and `mock`. The types `cohere`,
+`vertexai`, `custom` and `burn` were removed: a config that names one fails at
+load with an error that lists the supported types.
 
 ### FastEmbed (default, local)
 
@@ -48,14 +48,12 @@ Fast local embeddings with no API key needed:
 type = "fastembed"
 model = "BAAI/bge-small-en-v1.5"   # default
 batch_size = 32
-dimensions = 384
 # cache_dir = "/path/to/cache"     # optional
 ```
 
-`model`, `batch_size` and `cache_dir` are all read. `dimensions` is accepted and not
-checked — the real vector dimension comes from the model itself, so a mismatched value
-here is ignored rather than rejected. `num_threads` was removed: `fastembed` exposes no
-thread-count option to pass it to.
+`model`, `batch_size` and `cache_dir` are all read. The real vector dimension comes
+from the model itself. The removed knobs `dimensions` and `num_threads` still load
+without an error; the values are ignored.
 
 **Advantages:** no API key, offline, free, fast for batch processing.
 
@@ -81,56 +79,16 @@ type = "openai"
 api_key = "{env:OPENAI_API_KEY}"           # required
 model = "text-embedding-3-small"
 # base_url = "https://api.openai.com/v1"   # optional
-# dimensions = 1536                        # optional
 ```
 
-### Cohere — parses, not supported at runtime
+The model name decides the vector dimension. The removed knobs `dimensions`,
+`retry_attempts` and `headers` still load without an error; the values are ignored.
 
-```toml
-[enrichment.provider]
-type = "cohere"
-api_key = "{env:COHERE_API_KEY}"           # required
-model = "embed-english-v3.0"
-```
+### Removed types: cohere, vertexai, custom, burn
 
-The config shape parses, but the daemon has no Cohere embedding backend — creating the
-provider fails with "Unsupported provider type".
-
-### Vertex AI — parses, not supported at runtime
-
-```toml
-[enrichment.provider]
-type = "vertexai"
-project_id = "my-gcp-project"              # required
-model = "text-embedding-004"
-```
-
-Same status as Cohere: parses, but the daemon cannot create a Vertex AI embedding
-provider.
-
-### Burn — removed
-
-```toml
-[enrichment.provider]
-type = "burn"
-```
-
-The Burn backend has been removed from the daemon. The config still parses, but creating
-the provider hard-errors with "Burn provider is no longer included in
-crucible-daemon::llm". Use `fastembed` for local embeddings.
-
-### Custom — parses, not supported at runtime
-
-```toml
-[enrichment.provider]
-type = "custom"
-base_url = "http://your-service/embed"     # required
-model = "my-embedding-model"               # required
-dimensions = 768                           # required
-```
-
-Intended for HTTP-based providers that aren't first-class, but no runtime backend exists
-yet — creating the provider fails with "Unsupported provider type".
+These types had a config shape and no backend. The configs are deleted. A config
+that names one now fails at load; the error lists the supported types. For local
+embeddings, use `fastembed`.
 
 ### Mock
 
@@ -143,14 +101,11 @@ Returns deterministic stub vectors. Used by tests and local dev.
 
 ## `[enrichment.pipeline]`
 
-The pipeline table has `max_precognition_chars`, `worker_count`, `batch_size` and
-`timeout_ms`.
-
-**Only `max_precognition_chars` changes behaviour** (default 3000 — the aggregate
-character budget for precognition context snippets). The other three are range-checked
-by `validate()` and then unused. `max_queue_size`, `retry_attempts`, `retry_delay_ms`,
-`circuit_breaker_threshold` and `circuit_breaker_timeout_ms` were removed: nothing read
-them at all.
+The pipeline table has one knob: `max_precognition_chars` (default 3000 — the
+aggregate character budget for precognition context snippets). The removed knobs
+(`worker_count`, `batch_size`, `timeout_ms`, `max_queue_size`, `retry_attempts`,
+`retry_delay_ms`, `circuit_breaker_threshold`, `circuit_breaker_timeout_ms`) still
+load without an error; the values are ignored.
 
 ```toml
 [enrichment.pipeline]

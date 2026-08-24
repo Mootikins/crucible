@@ -20,14 +20,9 @@ Data is stored in:
 
 ## Configuration
 
-```toml
-[storage]
-idle_timeout_secs = 300   # default: 300
-```
-
-`idle_timeout_secs` is **reserved**. The daemon does not implement an idle shutdown.
-The only reader is `cru status`, which shows the value. The value has no effect on the
-daemon lifetime.
+The `[storage]` section was removed. Its one field, `idle_timeout_secs`, had no
+effect: the daemon does not implement an idle shutdown. A config file that still
+contains a `[storage]` section loads without an error; the daemon ignores it.
 
 ## Daemon Socket
 

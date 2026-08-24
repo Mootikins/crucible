@@ -545,9 +545,6 @@ pub fn generate_config_with_provider(provider: &str, model: &str) -> String {
         r#"# Crucible kiln configuration
 # See https://github.com/Mootikins/crucible for options
 
-[storage]
-backend = "sqlite"
-
 [chat]
 model = "{model}"
 endpoint = "{endpoint}"

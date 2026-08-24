@@ -127,21 +127,18 @@ timeout_secs = 120
 # fails to load. See Help/Config/embedding.md for every provider's fields.
 
 [enrichment.provider]
-type = "fastembed"                    # working: fastembed | ollama | openai | mock.
-                                      # cohere/vertexai/custom parse but have no
-                                      # runtime backend; burn is removed (hard-errors).
+type = "fastembed"                    # fastembed | ollama | openai | mock.
+                                      # cohere/vertexai/custom/burn were removed:
+                                      # a config that names one fails at load.
 model = "BAAI/bge-small-en-v1.5"
 # For fastembed, `model`, `cache_dir` and `batch_size` are all read. The vector
-# dimension comes from the model, so `dimensions` is accepted and not checked
-# against it. `num_threads` was removed: fastembed exposes no thread knob.
+# dimension comes from the model. The `dimensions`, `retry_attempts` and
+# `headers` knobs were removed: no provider read them.
 
-# Pipeline tuning.
+# Pipeline tuning. `worker_count`, `batch_size` and `timeout_ms` were removed:
+# nothing read them.
 [enrichment.pipeline]
 max_precognition_chars = 3000         # char budget for precognition snippets
-# Validated but not acted on — they bound `validate()` and nothing else:
-# worker_count = 8                    # default: num_cpus
-# batch_size = 16
-# timeout_ms = 30000
 
 # =============================================================================
 # [chat] - Chat defaults
@@ -150,7 +147,6 @@ max_precognition_chars = 3000         # char budget for precognition snippets
 # here — a `provider` key in this section is REJECTED.
 
 [chat]
-enable_markdown = true
 show_thinking = false
 show_diffs = true
 agent_preference = "crucible"         # "crucible" (default) or "acp"
@@ -158,7 +154,6 @@ agent_preference = "crucible"         # "crucible" (default) or "acp"
 # endpoint = "http://localhost:11434"
 # temperature = 0.7
 # max_tokens = 2048
-# timeout_secs = 120
 
 # =============================================================================
 # [acp] - External agents over the Agent Client Protocol
@@ -169,11 +164,6 @@ agent_preference = "crucible"         # "crucible" (default) or "acp"
 [acp]
 streaming_timeout_minutes = 15        # time allowed for one complete response
 # default_agent = "claude"            # omit to auto-discover
-# Parsed but currently unread — no code path acts on them:
-# enable_discovery = true
-# session_timeout_minutes = 30
-# max_message_size_mb = 25
-# lazy_agent_selection = true
 
 # [acp.agents.my-claude]
 # extends = "claude"
@@ -182,18 +172,11 @@ streaming_timeout_minutes = 15        # time allowed for one complete response
 # =============================================================================
 # [cli] - CLI behaviour
 # =============================================================================
-# Only [cli.highlighting] is wired up. show_progress, confirm_destructive, and
-# verbose parse but are currently unread (verbosity comes from the -v flag).
+# Verbosity comes from the -v flag, not from config.
 
 [cli.highlighting]
 enabled = true
 theme = "base16-ocean.dark"
-
-# Parsed but currently unread:
-# [cli]
-# show_progress = true
-# confirm_destructive = true
-# verbose = false
 
 # =============================================================================
 # [context] - Project rules files
@@ -205,18 +188,12 @@ theme = "base16-ocean.dark"
 # rules_files = ["AGENTS.md", "CLAUDE.md", ".rules", ".github/copilot-instructions.md"]
 
 # =============================================================================
-# [storage] - Daemon storage
+# Storage
 # =============================================================================
 # SQLite lives at <kiln>/.crucible/crucible-sqlite.db and holds everything,
 # embeddings included (a leftover crucible-vectors.lance/ directory from older
-# versions is unused and safe to delete). Old `storage.mode` values are
-# accepted and ignored.
-#
-# idle_timeout_secs parses and is displayed by `cru status`, but the daemon
-# does not implement idle auto-shutdown — setting it has no effect today.
-
-# [storage]
-# idle_timeout_secs = 300
+# versions is unused and safe to delete). The `[storage]` section was removed;
+# an old config that still contains one loads, and the daemon ignores it.
 
 # =============================================================================
 # [permissions] - Tool access control

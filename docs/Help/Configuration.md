@@ -112,8 +112,6 @@ Controls the chat interface and LLM settings for internal agents.
 | `endpoint` | string | provider default | Custom API endpoint URL |
 | `temperature` | float | `0.7` | Generation temperature (0.0-2.0) |
 | `max_tokens` | int | `2048` | Maximum tokens to generate |
-| `timeout_secs` | int | `120` | API timeout in seconds |
-| `enable_markdown` | bool | `true` | Enable markdown rendering |
 | `show_thinking` | bool | `false` | Show extended thinking/reasoning blocks in chat output |
 | `show_diffs` | bool | `true` | Render diff bodies under edit/write tool calls |
 
@@ -129,9 +127,9 @@ Controls how text embeddings are generated for semantic search.
 type = "fastembed"
 ```
 
-**Provider types with working backends:** `fastembed` (default, local CPU), `ollama`,
-`openai`, `mock`. The types `cohere`, `vertexai`, and `custom` parse but are not
-supported at runtime, and `burn` has been removed (creating it hard-errors). Each type
+**Provider types:** `fastembed` (default, local CPU), `ollama`, `openai`, `mock`.
+The types `cohere`, `vertexai`, `custom` and `burn` were removed: a config that
+names one fails at load with an error that lists the supported types. Each type
 has its own fields — see [[Help/Config/embedding|Embedding Configuration]].
 
 Without an `[enrichment]` section the daemon skips embedding generation entirely.
@@ -159,13 +157,9 @@ rules_files = ["AGENTS.md", "CLAUDE.md", ".rules", ".cursorrules"]
 
 ### [cli] - CLI Behavior
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `show_progress` | bool | `true` | **Currently unread** — no code path consults it |
-| `confirm_destructive` | bool | `true` | **Currently unread** — no code path consults it |
-| `verbose` | bool | `false` | **Currently unread** — verbosity comes from the `-v` CLI flag |
-
-The one `[cli]` feature that is wired up is syntax highlighting:
+The removed fields `show_progress`, `confirm_destructive` and `verbose` still
+load without an error; the values are ignored. Verbosity comes from the `-v`
+CLI flag. The one `[cli]` feature is syntax highlighting:
 
 #### [cli.highlighting]
 
@@ -286,7 +280,7 @@ levels.
 |---------|---------------|-----------|
 | `[acp]`, `[acp.agents.*]` | External agents over ACP | [[Help/Config/acp|ACP Configuration]] |
 | `[permissions]` | Tool allow/deny/ask rules | [[Help/Config/permissions|Permission Configuration]] |
-| `[storage]` | Daemon storage settings | [[Help/Config/storage|Storage Configuration]] |
+| `[storage]` | Removed — the daemon is the only backend; an old section loads and is ignored | [[Help/Config/storage|Storage Configuration]] |
 | `[web]` | Browser UI served by `cru web` | [[Help/Config/web|Web UI Configuration]] |
 | `[workspace]` | The default workspace directory the daemon scans, and the `scm.clone` destination | `docs/Config.toml` |
 | `[server]` | `auto_archive_hours`, and nothing else. `host`/`port` and the TLS keys were removed — the daemon binds a Unix socket and the web address is `[web]` | `docs/Config.toml` |

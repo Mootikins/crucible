@@ -20,17 +20,7 @@ provider = "fastembed"  # fastembed, openai, anthropic
 # Agent Client Protocol configuration
 [acp]
 # default_agent = "claude"  # optional, auto-discovers if not set
-# enable_discovery = true    # optional
-# session_timeout_minutes = 30  # optional
-# max_message_size_mb = 25     # optional
 
 # Chat configuration
 [chat]
 # model = "llama3.2"     # optional, uses agent default if not set
-# enable_markdown = true  # optional
-
-# CLI configuration
-[cli]
-# show_progress = true         # optional
-# confirm_destructive = true  # optional
-# verbose = false              # optional

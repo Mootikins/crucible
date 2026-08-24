@@ -397,9 +397,6 @@ Session behavior is configured through the `[chat]` section in `~/.config/crucib
 # Default chat model (can be overridden per session)
 # model = "llama3.2"
 
-# Enable markdown rendering in terminal output
-enable_markdown = true
-
 # Show thinking/reasoning tokens from models that support it
 # show_thinking = false
 ```

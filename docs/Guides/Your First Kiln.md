@@ -81,9 +81,6 @@ my-kiln = "/home/user/Documents/my-kiln"
 
 [enrichment.provider]
 type = "fastembed"
-
-[cli]
-show_progress = true
 EOF
 ```
 

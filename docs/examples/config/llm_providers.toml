@@ -65,10 +65,6 @@ default_model = "GLM-4.7"
 temperature = 0.7
 max_tokens = 4096
 
-# Chat-specific settings (unchanged from previous version)
-[chat]
-enable_markdown = true
-
 # Backwards Compatibility Notes:
 #
 # If you don't configure [llm] section, the system will fall back
@@ -76,12 +72,9 @@ enable_markdown = true
 #
 # [chat]
 # model = "llama3.2"
-# provider = "ollama"
 # endpoint = "http://localhost:11434"
 # temperature = 0.7
 # max_tokens = 2048
-# timeout_secs = 120
-# enable_markdown = true
 #
 # This ensures existing configurations continue to work without changes.
 

@@ -31,9 +31,6 @@ Applied when you run `cru chat` without `--acp` or `--provider`.
 # Override the default model (otherwise inherited from the default provider)
 model = "llama3.2"
 
-# Render markdown in responses (default true)
-enable_markdown = true
-
 # Prefer external ACP agents or Crucible's built-in agent
 # Values: "acp" or "crucible" (default)
 agent_preference = "crucible"
@@ -44,7 +41,6 @@ agent_preference = "crucible"
 # Generation controls (optional)
 # temperature = 0.7
 # max_tokens = 4096
-# timeout_secs = 120
 
 # Stream thinking/reasoning tokens below the spinner
 show_thinking = false
@@ -76,9 +72,9 @@ default_agent = "opencode"  # or "claude", "gemini", "codex", "cursor", "hermes"
 streaming_timeout_minutes = 15
 ```
 
-`[acp]` also parses `lazy_agent_selection`, `enable_discovery`,
-`session_timeout_minutes`, and `max_message_size_mb`, but those four fields are
-**currently unread** — no code path acts on them. See [[Help/Config/acp]].
+The removed fields `lazy_agent_selection`, `enable_discovery`,
+`session_timeout_minutes` and `max_message_size_mb` still load without an
+error; the values are ignored. See [[Help/Config/acp]].
 
 ### Custom ACP Agent Profiles
 
