@@ -136,11 +136,35 @@ fn detect_providers_inner(
     // Rank credential-backed providers ahead of the assumed local default,
     // and reachable ones ahead of dead ones. `cru init -y` picks from the
     // front, so without this a user whose only credential is
-    // ANTHROPIC_API_KEY got an Ollama kiln. Stable sort preserves the
-    // `BackendType::all()` order within each group.
-    providers.sort_by_key(|p| (p.source.is_none(), !p.available));
+    // ANTHROPIC_API_KEY got an Ollama kiln. Inside a group, the init
+    // preference order decides, because `BackendType::all()` lists OpenAI
+    // before Anthropic.
+    providers.sort_by_key(|p| {
+        (
+            p.source.is_none(),
+            !p.available,
+            init_preference(&p.provider_type),
+        )
+    });
 
     providers
+}
+
+/// The order `cru init` prefers keyed backends in. Backends that are not in
+/// the list rank after all listed ones, in `BackendType::all()` order.
+const INIT_PREFERENCE: &[BackendType] = &[
+    BackendType::Anthropic,
+    BackendType::OpenAI,
+    BackendType::OpenRouter,
+    BackendType::ZAI,
+];
+
+fn init_preference(provider_type: &str) -> usize {
+    provider_type
+        .parse::<BackendType>()
+        .ok()
+        .and_then(|backend| INIT_PREFERENCE.iter().position(|&b| b == backend))
+        .unwrap_or(INIT_PREFERENCE.len())
 }
 
 /// Whether anything is listening at an `http(s)://host:port` endpoint.
@@ -237,6 +261,23 @@ mod tests {
         assert!(!detected.is_empty());
         assert_eq!(detected[0].provider_type, "ollama");
         assert!(detected[0].reason().contains("config provider=ollama"));
+    }
+
+    /// `cru init -y` picks `providers[0]`. When more than one key is set,
+    /// the pick must follow the init preference order, not the order of
+    /// `BackendType::all()`, which puts OpenAI before Anthropic.
+    #[test]
+    #[serial]
+    fn anthropic_outranks_openai_when_both_keys_are_set() {
+        let _openai = EnvVarGuard::set("OPENAI_API_KEY", "sk-test".to_string());
+        let _anthropic = EnvVarGuard::set("ANTHROPIC_API_KEY", "sk-ant-test".to_string());
+
+        let detected = detect_isolated(&ChatConfig::default(), false);
+
+        assert_eq!(
+            detected[0].provider_type, "anthropic",
+            "Anthropic must rank first when both keys are set: {detected:#?}"
+        );
     }
 
     #[test]
