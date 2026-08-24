@@ -1188,7 +1188,7 @@ pub enum ChatError { RateLimited { retry_after: Option<Duration> }, Auth, Networ
 
 - Responsibility: Crucible as an ACP client. Spawn, handshake, prompt, stream, permissions, model switch, cancel, recording and replay.
 - Owns: `AcpProfile`, the child process, the agent's remote session id, `AcpRecording`.
-- Operations: `discover()`, `spawn(profile, env) -> AcpHandle` where `AcpHandle: AgentHandle`; `session/new`, `session/prompt`, `session/cancel`, `session/set_model`, `session/set_mode`; handle `session/request_permission` through InteractionBroker and PermissionEngine; map `session/update` frames to `SessionEvent` with `ToolSource::Acp(profile)`.
+- Operations: `discover()`, `spawn(profile, env) -> AcpHandle` where `AcpHandle: AgentHandle`; `session/new`, `session/prompt`, `session/cancel`, `session/set_config_option` (the model selector the agent lists in `configOptions`), `session/set_mode`; handle `session/request_permission` through InteractionBroker and PermissionEngine; map `session/update` frames to `SessionEvent` with `ToolSource::Acp(profile)`.
 - Transport for Crucible's tools to the agent: in-process MCP over HTTP/SSE when the agent supports it, else stdio.
 - The ACP wire types come from the `agent_client_protocol` crate. They never leave this subsystem.
 - Must never know: the internal provider path, SQLite, kiln internals, the TUI. It reaches tools only through the in-process MCP host.
@@ -1365,8 +1365,8 @@ Nothing else.
 ### 6.3 ACP
 
 Crucible as host: sends `initialize` with no filesystem capabilities,
-`session/new`, `session/prompt`, `session/cancel`, `session/set_model`,
-`session/set_mode`. Receives `session/update` (text, thought, `tool_call`,
+`session/new`, `session/prompt`, `session/cancel`, `session/set_config_option`
+(for the model selector the agent lists in `configOptions`), `session/set_mode`. Receives `session/update` (text, thought, `tool_call`,
 `tool_call_update` with diffs) and `session/request_permission`. Sends the
 precognition block as a tagged system content item. Serves MCP to the agent.
 
