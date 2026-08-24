@@ -306,6 +306,43 @@ async fn handle(&self, event: &SessionEvent) -> Result<()> {
 }
 ```
 
+## The Time Budget
+
+Every handler call has a wall-clock budget. A handler that runs longer is
+stopped, and the stage decides what that means: `pre_tool_call` denies the tool
+call, every other stage logs the failure and carries on.
+
+| Class | Budget |
+|-------|--------|
+| Turn-loop stages and daemon events | 30 s |
+| `on_session_start`, `on_session_end` | 120 s |
+| Permission hooks (`cru.permissions.on_request`) | 1 s |
+
+To ask for a different budget, give the registration a `timeout_ms`:
+
+```lua
+cru.on("pre_tool_call", { pattern = "bash", timeout_ms = 120000 }, function(ctx, event)
+    -- a handler that legitimately runs long says so
+end)
+```
+
+Two mechanisms enforce the budget, because one is not enough. A handler that
+waits — it sleeps, it calls `cru.http`, it runs a shell command — is cancelled
+at the point it waits. A handler that never waits, such as `while true do end`,
+is stopped by the Lua VM itself, which checks the clock every 10 000
+instructions. The permission path is synchronous and has no wait point at all,
+so only the second mechanism applies there.
+
+Two cases stay outside the budget:
+
+1. A handler blocked inside a C call. The VM checks the clock between Lua
+   instructions, so a call that blocks in native code is not interrupted until
+   it returns.
+2. A handler that catches the error. The budget arrives as an ordinary Lua
+   error, so a body wrapped in `pcall` can swallow it. The error is raised
+   again after the next 10 000 instructions, so the handler makes almost no
+   progress, but it does not stop.
+
 ## Handler Lifecycle
 
 1. **Registration**: Rust handlers are registered on a `HandlerRegistry`; Lua

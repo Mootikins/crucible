@@ -239,6 +239,7 @@ fn runtime_handlers_for_returns_matching_handlers() {
             pattern: None,
             plugin: None,
             may_intercept: true,
+            timeout_ms: None,
         });
         handlers.push(RuntimeHandler {
             event_type: "pre_tool_call".to_string(),
@@ -247,6 +248,7 @@ fn runtime_handlers_for_returns_matching_handlers() {
             pattern: None,
             plugin: None,
             may_intercept: true,
+            timeout_ms: None,
         });
         handlers.push(RuntimeHandler {
             event_type: "turn:complete".to_string(),
@@ -255,6 +257,7 @@ fn runtime_handlers_for_returns_matching_handlers() {
             pattern: None,
             plugin: None,
             may_intercept: true,
+            timeout_ms: None,
         });
     }
 
@@ -284,6 +287,7 @@ fn runtime_handlers_for_returns_sorted_by_priority() {
             pattern: None,
             plugin: None,
             may_intercept: true,
+            timeout_ms: None,
         });
         handlers.push(RuntimeHandler {
             event_type: "turn:complete".to_string(),
@@ -292,6 +296,7 @@ fn runtime_handlers_for_returns_sorted_by_priority() {
             pattern: None,
             plugin: None,
             may_intercept: true,
+            timeout_ms: None,
         });
         handlers.push(RuntimeHandler {
             event_type: "turn:complete".to_string(),
@@ -300,6 +305,7 @@ fn runtime_handlers_for_returns_sorted_by_priority() {
             pattern: None,
             plugin: None,
             may_intercept: true,
+            timeout_ms: None,
         });
     }
 
@@ -325,6 +331,7 @@ fn pattern_filtering_matches_exact_tool_name() {
             pattern: Some("bash".to_string()),
             plugin: None,
             may_intercept: true,
+            timeout_ms: None,
         });
         handlers.push(RuntimeHandler {
             event_type: "pre_tool_call".to_string(),
@@ -333,6 +340,7 @@ fn pattern_filtering_matches_exact_tool_name() {
             pattern: None,
             plugin: None,
             may_intercept: true,
+            timeout_ms: None,
         });
     }
 
@@ -365,6 +373,7 @@ fn pattern_filtering_supports_glob() {
             pattern: Some("read_*".to_string()),
             plugin: None,
             may_intercept: true,
+            timeout_ms: None,
         });
     }
 

@@ -1,3 +1,4 @@
+mod budget;
 mod conversion;
 mod display;
 mod interpret;

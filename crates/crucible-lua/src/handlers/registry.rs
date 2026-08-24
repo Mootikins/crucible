@@ -68,6 +68,9 @@ pub struct RuntimeHandler {
     /// permission gate. Handlers registered outside a plugin load — a user's
     /// own `init.lua` — are trusted, having the same authority as the config.
     pub may_intercept: bool,
+    /// What the registration asked for with `{ timeout_ms = … }`, in
+    /// milliseconds. `None` takes the budget of the name it registered for.
+    pub timeout_ms: Option<u64>,
 }
 
 impl LuaScriptHandlerRegistry {
@@ -215,17 +218,23 @@ impl LuaScriptHandlerRegistry {
         // deferred call keeps the identity registration fixed, so a handler
         // that calls `cru.storage` from a later turn still reaches its own
         // plugin's namespace and holds no more authority than its plugin does.
-        let context = {
+        let (context, event_type, timeout_ms) = {
             let handlers = self
                 .runtime_handlers
                 .lock()
                 .expect("runtime_handlers: poisoned while executing Lua handler function");
-            handlers.iter().find(|h| h.name == name).and_then(|h| {
-                h.plugin
-                    .as_ref()
-                    .map(|plugin| (plugin.clone(), h.may_intercept))
-            })
+            match handlers.iter().find(|h| h.name == name) {
+                Some(h) => (
+                    h.plugin
+                        .as_ref()
+                        .map(|plugin| (plugin.clone(), h.may_intercept)),
+                    h.event_type.clone(),
+                    h.timeout_ms,
+                ),
+                None => (None, String::new(), None),
+            }
         };
+        let budget = super::hook_name::budget_for(&event_type, timeout_ms);
 
         // Get the handler Function while holding the lock, then drop it before await
         let handler: Function = {
@@ -259,7 +268,25 @@ impl LuaScriptHandlerRegistry {
                 },
             ),
         );
-        let call = handler.call_async::<Value>((ctx_table, payload)).await;
+        // Two mechanisms, because one is not enough. The tokio timeout ends a
+        // handler that AWAITS — a sleep, an http call, a shell command — by
+        // cancelling the future at an await point. It cannot end
+        // `while true do end`, which never yields and never gives the runtime
+        // back; the VM deadline does that, from inside Lua's own instruction
+        // hook. Neither covers the other's case.
+        let call = {
+            let _budget =
+                crate::handler_budget::enter(lua, budget, format!("the `{event_type}` handler"));
+            match tokio::time::timeout(budget, handler.call_async::<Value>((ctx_table, payload)))
+                .await
+            {
+                Ok(call) => call,
+                Err(_elapsed) => Err(mlua::Error::runtime(format!(
+                    "the `{event_type}` handler exceeded its {} ms time budget and was cancelled",
+                    budget.as_millis()
+                ))),
+            }
+        };
         // Restored before the `?`: a context left behind by a raising handler
         // would attribute the next registration to the wrong plugin.
         crate::plugin_context::set_plugin_context(lua, previous);

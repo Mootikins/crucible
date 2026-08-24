@@ -742,7 +742,7 @@ impl AgentManager {
             .get(&stream_ctx.session_mode)
             .map(|m| m.permissions);
 
-        let hook_result = Self::execute_permission_hooks_with_timeout(
+        let hook_result = Self::run_permission_hooks(
             &stream_ctx.session_state,
             &tool_call.name,
             args,
@@ -1103,7 +1103,18 @@ impl AgentManager {
         Ok(())
     }
 
-    pub(super) async fn execute_permission_hooks_with_timeout(
+    /// Ask this session's Lua permission hooks.
+    ///
+    /// The 1 s budget lives in `crucible_lua::handler_budget` now, enforced by
+    /// the VM's instruction hook from inside the running Lua. What was here
+    /// before was a stopwatch: it read `Instant::elapsed()` AFTER the
+    /// synchronous call returned and discarded a late answer. It interrupted
+    /// nothing — a hook running `while true do end` held this thread and never
+    /// returned, so the elapsed check was never reached and the whole
+    /// permission request hung. The deadline is a strict upgrade at the same
+    /// 1 s: it stops the hook mid-execution and this returns `Prompt`, which
+    /// is what the stopwatch meant to do.
+    pub(super) async fn run_permission_hooks(
         session_state: &Arc<Mutex<SessionEventState>>,
         tool_name: &str,
         args: &serde_json::Value,
@@ -1139,20 +1150,7 @@ impl AgentManager {
             return PermissionHookResult::Prompt;
         }
 
-        let start = std::time::Instant::now();
-        let timeout = std::time::Duration::from_secs(1);
-
         let result = execute_permission_hooks(&state.lua, &hooks_guard, &functions_guard, &request);
-
-        if start.elapsed() > timeout {
-            warn!(
-                session_id = %session_id,
-                tool = %tool_name,
-                elapsed_ms = start.elapsed().as_millis(),
-                "Permission hook exceeded 1 second timeout"
-            );
-            return PermissionHookResult::Prompt;
-        }
 
         match result {
             Ok(hook_result) => hook_result,

@@ -37,7 +37,7 @@ async fn session_with_defaults() -> (TempDir, Arc<AgentManager>, String) {
 }
 
 /// Run the session VM's registered permission hooks the same way
-/// `execute_permission_hooks_with_timeout` does.
+/// `AgentManager::run_permission_hooks` does.
 async fn run_permission_hooks(
     agent_manager: &AgentManager,
     session_id: &str,

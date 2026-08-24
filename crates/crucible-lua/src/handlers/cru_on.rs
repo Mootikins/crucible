@@ -89,10 +89,10 @@ pub fn register_cru_on_api(
 
         validate_hook_name(&event_type)?;
 
-        let (pattern, priority, handler) = match &args_vec[1] {
+        let (pattern, priority, timeout_ms, handler) = match &args_vec[1] {
             Value::Function(f) => {
                 // cru.on(event_type, handler) — backward compatible
-                (None, 100i64, f.clone())
+                (None, 100i64, None, f.clone())
             }
             Value::Table(opts) => {
                 // cru.on(event_type, opts, handler)
@@ -111,7 +111,11 @@ pub fn register_cru_on_api(
                 };
                 let pattern: Option<String> = opts.get("pattern").ok();
                 let priority: i64 = opts.get("priority").unwrap_or(100);
-                (pattern, priority, handler)
+                // A handler that legitimately runs long — a container build,
+                // a large model call — says so here. Absent, the name it
+                // registers for decides. See `handler_budget`.
+                let timeout_ms: Option<u64> = opts.get("timeout_ms").ok();
+                (pattern, priority, timeout_ms, handler)
             }
             _ => {
                 return Err(mlua::Error::RuntimeError(
@@ -176,6 +180,7 @@ pub fn register_cru_on_api(
             // a Lua global with `.unwrap_or(true)`, so it failed OPEN for
             // every daemon-loaded plugin and was forgeable besides.
             may_intercept: context.is_none_or(|c| c.may_intercept),
+            timeout_ms,
         });
         func_guard.insert(name.clone(), key);
 

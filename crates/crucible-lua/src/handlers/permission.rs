@@ -155,6 +155,19 @@ pub fn register_permission_hook_api(
 ///
 /// Note: deliberately sync (not async). Permission decisions must be fast and cannot
 /// call async APIs. The MutexGuards from the caller are not Send across await points.
+///
+/// # The time budget
+///
+/// Being synchronous is exactly why a `tokio::time::timeout` around this call
+/// is inert: there is no await point at which a future could be cancelled. The
+/// budget is the VM deadline instead, which interrupts the running Lua from
+/// inside the instruction hook. It covers the whole loop, so one hook cannot
+/// spend the budget of the hooks after it and the caller still gets an answer
+/// within [`PERMISSION_BUDGET`](crate::handler_budget::PERMISSION_BUDGET).
+///
+/// The daemon used to measure the elapsed time AFTER this returned and discard
+/// a late answer. That interrupted nothing: a hook running `while true do end`
+/// held the thread and the permission request never came back at all.
 pub fn execute_permission_hooks(
     lua: &Lua,
     hooks: &[PermissionHook],
@@ -188,6 +201,12 @@ pub fn execute_permission_hooks(
         })
         .collect();
     ordered.sort_by_key(|h| h.priority);
+
+    let _budget = crate::handler_budget::enter(
+        lua,
+        crate::handler_budget::PERMISSION_BUDGET,
+        "the permission hook",
+    );
 
     for hook in ordered {
         let key = match functions.get(&hook.name) {

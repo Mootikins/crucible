@@ -75,6 +75,11 @@ impl std::fmt::Debug for PluginManager {
 impl PluginManager {
     pub fn new() -> Self {
         let lua = Lua::new();
+        // Installed before any plugin runs: the handler budgets are enforced
+        // from inside this VM hook. See `crate::handler_budget`.
+        if let Err(error) = crate::handler_budget::install_deadline_hook(&lua) {
+            warn!("Failed to install the Lua time budget hook: {}", error);
+        }
         let error_log = Arc::new(Mutex::new(PluginErrorLog::new(100)));
         lua.set_app_data(Arc::clone(&error_log));
         if let Err(error) = spec::setup_spec_sandbox(&lua) {

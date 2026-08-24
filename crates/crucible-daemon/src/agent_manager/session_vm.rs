@@ -102,6 +102,12 @@ impl AgentManager {
 
     fn build_session_state(&self, session_id: &str) -> Arc<Mutex<SessionEventState>> {
         let lua = Lua::new();
+        // The handler and permission-hook budgets are enforced from inside this
+        // VM hook, so it goes on before any Lua runs — the defaults file below
+        // included. See `crucible_lua::handler_budget`.
+        if let Err(e) = crucible_lua::install_deadline_hook(&lua) {
+            error!(session_id = %session_id, error = %e, "Failed to install the Lua time budget hook");
+        }
         let registry = LuaScriptHandlerRegistry::new();
         let permission_hooks = Arc::new(StdMutex::new(Vec::new()));
         let permission_functions = Arc::new(StdMutex::new(HashMap::new()));

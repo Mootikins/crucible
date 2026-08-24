@@ -106,6 +106,47 @@ async fn plugin_session_lifecycle_hooks_fire() {
     assert!(ended, "plugin on_session_end hook did not fire");
 }
 
+/// A slow `on_session_start` hook still completes.
+///
+/// The lifecycle budget is 120 s, not the 30 s a turn-loop stage gets, and the
+/// reason is `oci`: it pulls container images in `on_session_start`. A budget
+/// short enough to be pleasant for a turn-loop stage would refuse every
+/// session a shipped plugin sandboxes.
+#[tokio::test]
+async fn a_slow_session_start_hook_completes_under_the_lifecycle_budget() {
+    use crucible_lua::{Session, UnsupportedSessionRpc};
+
+    assert!(
+        crucible_lua::LIFECYCLE_BUDGET > crucible_lua::TURN_STAGE_BUDGET,
+        "a lifecycle hook may take longer than a turn-loop stage"
+    );
+
+    let mut loader = DaemonPluginLoader::new(HashMap::new()).expect("loader");
+    loader
+        .plugin_lua()
+        .load(
+            r#"
+        slow_ok = false
+        cru.on_session_start(function(s)
+            cru.timer.sleep(1.2)
+            slow_ok = true
+        end)
+    "#,
+        )
+        .exec()
+        .expect("register hook");
+
+    let session = Session::new("slow-start".to_string());
+    session.bind(Box::new(UnsupportedSessionRpc));
+    loader
+        .fire_session_start(&session)
+        .await
+        .expect("a slow hook must not fail the session");
+
+    let ok: bool = loader.plugin_lua().load("return slow_ok").eval().unwrap();
+    assert!(ok, "a hook slower than a turn-loop stage was cut short");
+}
+
 /// A lifecycle hook must be able to call the async `cru.*` APIs.
 ///
 /// `cru.shell.exec`, `cru.http.*` and `cru.timer.sleep` are all

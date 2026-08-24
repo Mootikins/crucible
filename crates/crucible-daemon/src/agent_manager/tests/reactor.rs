@@ -1204,3 +1204,151 @@ mod gate_ordering {
         assert_intercepted("the permission gate", &first.data["result"]);
     }
 }
+
+/// The handler time budget, at the turn loop.
+///
+/// No handler call had a budget: `handler.call_async` ran bare, and the
+/// permission path had a stopwatch that read the elapsed time AFTER a
+/// synchronous call returned. A handler that never returned was therefore
+/// unbounded on both paths — `while true do end` held the worker thread, and
+/// every other plugin queued behind it.
+///
+/// Each test here registers a handler that overruns and asserts what the turn
+/// does about it. The bound on every wait is what makes them tests: without
+/// the budget the turn never produces the event they wait for.
+mod handler_budget {
+    use super::*;
+    use crate::daemon_plugins::DaemonPluginLoader;
+
+    /// A `pre_tool_call` handler that overruns denies the call.
+    ///
+    /// `pre_tool_call` is the one stage that fails CLOSED: nothing downstream
+    /// re-checks a handler that was supposed to answer, so admitting the tool
+    /// because the handler stalled would silently downgrade a sandboxed call
+    /// to a host call.
+    #[tokio::test]
+    async fn a_pre_tool_call_handler_over_its_budget_denies_the_tool() {
+        let mut h = ReactorTestHarness::new().await;
+
+        let loader = DaemonPluginLoader::new(std::collections::HashMap::new()).expect("loader");
+        let plugin_lua = loader.plugin_lua();
+        plugin_lua
+            .load(
+                r#"
+                cru.on("pre_tool_call", { pattern = "get_kiln_info", timeout_ms = 200 },
+                    function(ctx, event)
+                        cru.timer.sleep(30)
+                    end)
+                "#,
+            )
+            .exec()
+            .expect("register handler");
+        h.set_plugin_handlers(loader.plugin_handlers(), plugin_lua);
+
+        h.inject_streaming_agent(vec![
+            script::tool_call("call-stalled", "get_kiln_info", serde_json::json!({})),
+            script::text("done"),
+            script::done(),
+        ]);
+
+        h.send("run tool").await;
+        let tool_result = h.wait_for("tool_result").await;
+        h.wait_for("message_complete").await;
+
+        let error = tool_result.data["result"]["error"]
+            .as_str()
+            .unwrap_or_default();
+        assert!(
+            error.contains("time budget"),
+            "a stalled pre_tool_call handler must deny the call, got: {:?}",
+            tool_result.data["result"]
+        );
+    }
+
+    /// A stage that fails OPEN carries on: the turn completes, and the handler
+    /// that overran changed nothing.
+    ///
+    /// One broken plugin must not be able to end a session — which is exactly
+    /// what an unbounded handler did, by never returning at all. The handler
+    /// spins rather than sleeps, so this is the VM deadline and not the tokio
+    /// timeout: a session VM offers no async API to await on, and a spinning
+    /// handler is the case a timeout cannot reach anyway.
+    #[tokio::test]
+    async fn a_pre_llm_call_handler_over_its_budget_leaves_the_turn_running() {
+        let mut h = ReactorTestHarness::new().await;
+
+        h.load_lua(
+            r#"
+            cru.on("pre_llm_call", { timeout_ms = 300 }, function(ctx, event)
+                while true do end
+            end)
+            "#,
+        )
+        .await;
+
+        let (received_prompt, _) =
+            h.inject_capturing_agent(ReactorTestHarness::default_ok_events());
+
+        let started = std::time::Instant::now();
+        h.send("hello").await;
+        h.wait_for("message_complete").await;
+        let elapsed = started.elapsed();
+
+        let prompt = received_prompt.lock().unwrap();
+        assert_eq!(
+            prompt.as_deref(),
+            Some("hello"),
+            "a stalled pre_llm_call handler must not stop the turn"
+        );
+        // Both halves matter. Under the budget the handler really ran and was
+        // really interrupted; without the lower bound this test would pass
+        // just as well against a handler that never registered.
+        assert!(
+            elapsed >= std::time::Duration::from_millis(250),
+            "the handler did not run: {elapsed:?}"
+        );
+        assert!(
+            elapsed < std::time::Duration::from_secs(10),
+            "the handler was not interrupted: {elapsed:?}"
+        );
+    }
+
+    /// A permission hook that never yields must not hang the request.
+    ///
+    /// The synchronous path, and the reason a tokio timeout is not enough on
+    /// its own: `execute_permission_hooks` has no await point, so there is
+    /// nothing for a timeout to cancel. The deadline stops the hook from
+    /// inside the VM; the caller then falls back to prompting, which is what
+    /// the discarded stopwatch meant to do.
+    ///
+    /// The bound is the test. Before the deadline landed, this spun forever
+    /// and no event of any kind arrived.
+    #[tokio::test]
+    async fn a_spinning_permission_hook_still_lets_the_request_proceed() {
+        let mut h = ReactorTestHarness::new().await;
+
+        h.load_lua(
+            r#"
+            cru.permissions.on_request(function(request)
+                while true do end
+            end, { priority = 1 })
+            "#,
+        )
+        .await;
+
+        h.inject_streaming_agent(vec![
+            script::tool_call("call-perm", "bash", serde_json::json!({ "command": "id" })),
+            script::text("done"),
+            script::done(),
+        ]);
+
+        h.send("run tool").await;
+        let first = h
+            .wait_for_first_of(&["interaction_requested", "tool_result"])
+            .await;
+        assert_eq!(
+            first.event, "interaction_requested",
+            "a spinning permission hook must fall back to the prompt, got: {first:?}"
+        );
+    }
+}

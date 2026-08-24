@@ -31,6 +31,10 @@
 #![deny(clippy::wildcard_enum_match_arm)]
 #![deny(clippy::match_wildcard_for_single_variants)]
 
+use std::time::Duration;
+
+use crate::handler_budget::TURN_STAGE_BUDGET;
+
 /// A daemon broadcast event a Lua handler can observe.
 ///
 /// **Fan-out with no reply.** The event already happened and was already put on
@@ -93,6 +97,24 @@ impl EventName {
             Self::NoteDeleted => "note:deleted",
             Self::NoteRenamed => "note:renamed",
             Self::WebhookReceived => "webhook:received",
+        }
+    }
+
+    /// How long one handler at this event may run.
+    ///
+    /// **No wildcard arm, ever** — same reason as [`Self::as_str`]. A new
+    /// event must name its budget rather than inherit one.
+    #[must_use]
+    pub const fn budget(self) -> Duration {
+        match self {
+            Self::FileChanged
+            | Self::FileDeleted
+            | Self::FileMoved
+            | Self::NoteCreated
+            | Self::NoteModified
+            | Self::NoteDeleted
+            | Self::NoteRenamed
+            | Self::WebhookReceived => TURN_STAGE_BUDGET,
         }
     }
 
@@ -177,6 +199,31 @@ impl StageId {
         }
     }
 
+    /// How long one handler at this stage may run.
+    ///
+    /// **No wildcard arm, ever** — same reason as [`Self::as_str`]. A new
+    /// stage must name its budget rather than inherit one.
+    ///
+    /// Every stage carries the turn loop's own dispatch timeout today. They
+    /// are written out one by one so that a stage which needs a different
+    /// number can have one without a second table to keep in step.
+    #[must_use]
+    pub const fn budget(self) -> Duration {
+        match self {
+            Self::PreToolCall
+            | Self::ToolResult
+            | Self::PreLlmCall
+            | Self::PostLlmCall
+            | Self::TransformContext
+            | Self::PrecognitionSelect
+            | Self::PrecognitionFormat
+            | Self::TurnComplete
+            | Self::ToolBeforeExecute
+            | Self::ToolDisplayStart
+            | Self::ToolDisplayComplete => TURN_STAGE_BUDGET,
+        }
+    }
+
     /// The variant for a registered name, or `None` when nothing dispatches it.
     #[must_use]
     pub fn parse(name: &str) -> Option<Self> {
@@ -204,6 +251,15 @@ impl HookName {
         match self {
             Self::Event(e) => e.as_str(),
             Self::Stage(s) => s.as_str(),
+        }
+    }
+
+    /// How long one handler registered under this name may run.
+    #[must_use]
+    pub const fn budget(self) -> Duration {
+        match self {
+            Self::Event(e) => e.budget(),
+            Self::Stage(s) => s.budget(),
         }
     }
 
@@ -244,6 +300,20 @@ impl std::fmt::Display for StageId {
 impl std::fmt::Display for HookName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
+    }
+}
+
+/// How long a handler registered for `name` may run, honouring the `timeout_ms`
+/// the registration asked for.
+///
+/// An unparseable name cannot register (`cru.on` refuses it), so the fallback
+/// only covers a dispatch site that invents a name; it takes the stage budget
+/// rather than no budget at all.
+#[must_use]
+pub fn budget_for(name: &str, timeout_ms: Option<u64>) -> Duration {
+    match timeout_ms {
+        Some(ms) => Duration::from_millis(ms),
+        None => HookName::parse(name).map_or(TURN_STAGE_BUDGET, HookName::budget),
     }
 }
 

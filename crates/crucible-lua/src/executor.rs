@@ -57,6 +57,10 @@ impl LuaExecutor {
         #[cfg(feature = "fennel")]
         disable_c_modules_after_unsafe_new(&lua)?;
 
+        // Every handler budget is enforced from inside this hook, so it has to
+        // be installed before any plugin code can run. See `handler_budget`.
+        crate::handler_budget::install_deadline_hook(&lua)?;
+
         // Set up safe globals and Crucible API
         Self::setup_globals(&lua)?;
 
@@ -145,7 +149,10 @@ impl LuaExecutor {
                 .unwrap_or(false);
             match self.lua.registry_value::<Function>(key) {
                 Ok(func) => {
-                    if let Err(e) = func.call_async::<()>(session.clone()).await {
+                    if let Err(e) = self
+                        .call_lifecycle_hook(&func, session, "session_start")
+                        .await
+                    {
                         tracing::error!(required, "Session start hook failed: {}", e);
                         if required {
                             failures.push(e.to_string());
@@ -174,6 +181,29 @@ impl LuaExecutor {
         }
     }
 
+    /// Run one lifecycle hook under the lifecycle time budget.
+    ///
+    /// 120 s, not the 30 s a turn-loop stage gets: `oci` pulls container images
+    /// in `on_session_start`, and a short default would break a shipped plugin.
+    /// Both mechanisms apply, for the reason `handler_budget` gives — the
+    /// timeout ends a hook that awaits, the VM deadline ends one that spins.
+    async fn call_lifecycle_hook(
+        &self,
+        func: &Function,
+        session: &Session,
+        what: &str,
+    ) -> mlua::Result<()> {
+        let budget = crate::handler_budget::LIFECYCLE_BUDGET;
+        let _guard = crate::handler_budget::enter(&self.lua, budget, format!("the `{what}` hook"));
+        match tokio::time::timeout(budget, func.call_async::<()>(session.clone())).await {
+            Ok(call) => call,
+            Err(_elapsed) => Err(mlua::Error::runtime(format!(
+                "the `{what}` hook exceeded its {} ms time budget and was cancelled",
+                budget.as_millis()
+            ))),
+        }
+    }
+
     /// Sync session end hooks from Lua environment
     pub fn sync_session_end_hooks(&mut self) -> Result<(), LuaError> {
         use crate::hooks::get_session_end_hooks;
@@ -193,7 +223,10 @@ impl LuaExecutor {
         for key in &self.on_session_end_hooks {
             match self.lua.registry_value::<Function>(key) {
                 Ok(func) => {
-                    if let Err(e) = func.call_async::<()>(session.clone()).await {
+                    if let Err(e) = self
+                        .call_lifecycle_hook(&func, session, "session_end")
+                        .await
+                    {
                         tracing::error!("Session end hook failed: {}", e);
                     }
                 }
