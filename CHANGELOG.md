@@ -14,10 +14,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   (`crucible-core/src/processing/`, `hashing/`, `content_category.rs`,
   `note.rs`, `properties.rs`), plus exact duplicates merged into one
   definition (`extract_yaml_frontmatter`, `truncate_to_width`, the theme
-  render slots, `SessionIdRequest`). No wire type changed. The audit and the
-  remaining work are in `docs/Meta/Architecture/`.
+  render slots, `SessionIdRequest`). The audit and the remaining work are in
+  `docs/Meta/Architecture/`. The wire changes that followed are listed under
+  Changed below.
+- **The `keyring` feature and `KeyringStore` are gone.** Nothing enabled the
+  feature. `SecretsFile` is the one credential store; `AutoStore` and the
+  `CredentialStore` trait went with it.
+- **The `[discovery]` config section is ignored.** No code read it. An old
+  config with the section still loads.
+- **Scripting event variants nothing produced are gone.** Forty
+  `SessionEvent`/`InternalSessionEvent` variants and eleven `LogEvent`
+  variants had no producer. A Lua handler that matched one of those names
+  never fired before and does not fire now.
 
 ### Added
+- **`kiln://<name>/<path>` addressing in `cru.fs`.** Plugin Lua can read and
+  write kiln-relative files without learning the kiln's absolute path. The
+  daemon resolves the name through the registry and refuses `..`, absolute
+  parts, and any symlinked directory that leaves the kiln. A plain runtime
+  without a registry refuses the scheme. The reflection plugin uses it to
+  stage proposals and is pure Lua again.
+- **`session:set_variable` / `session:get_variable` have a store.** The
+  daemon keeps the map on the session and persists it in `meta.json`, so a
+  value set in one hook reads back after resume.
+- **`agents.list_cards` RPC.** `cru agents list` asks a running daemon for the
+  cards it resolves for the workspace, and reads disk only when no daemon
+  answers.
+- **ACP: `session/resume`, `session/close`, model switching through
+  `configOptions`.** The daemon persists the agent's own session id and
+  resumes it after a restart; an agent that answers `-32601` gets
+  `session/new` and the client sees an `acp_resume_fallback` event.
+  `session/close` is sent when the agent advertises it. Model selection reads
+  `configOptions` and sends `session/set_config_option`; the legacy
+  `session/set_model` path is gone.
+- **Hermes is a built-in ACP agent** (`cru chat --acp hermes`), with a
+  recorded fixture and a help entry.
+- **MCP gateway reconnect and gateway tools on the served surface.**
+  `auto_reconnect` now starts a loop with doubling backoff; upstream tools
+  appear on `cru mcp` under their prefixed names.
+
 - **`[workspace] discover` registers the checkouts under `root_dir`.** With
   `discover = true` the daemon registers every git repository that is a DIRECT
   child of `root_dir` when it starts, so the web root picker lists them with no
@@ -166,6 +201,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   worth holding a task open for the provider's own timeout.
 
 ### Fixed
+- **A saved bash allow-rule matches each chained statement.** A rule for
+  `git ` allowed `git log; curl evil`. Every statement joined by `;`, `&&`,
+  `||`, `|`, `&` or a newline must match, and a line with `$(...)`,
+  backticks or `<(...)` does not match. Saved rules that relied on the prefix
+  match now prompt again.
+- **A session cannot cancel another session's background job.** The MCP tool
+  and the RPC path check the owner; an unknown or foreign id returns the same
+  `invalid_params` error.
+- **A `User`-scope permission grant is persisted** to
+  `whitelists.d/user.toml`, created `0600`. Only `Project` was written
+  before.
+- **The reflection plugin runs.** It read `info.kiln`; the bridge sends
+  `kilns`, so no proposal was ever staged.
+- **`get_note_by_name` carries `wikilinks`**, which the client DTO reads;
+  every note came back with no links.
+- **`WatchConfig.debounce` reaches the notify backend.** It was set and never
+  read.
+- **Held ACP tool results are accounted, logged and marked.** A held result
+  released mid-turn refunds its bytes; a result still held when the turn
+  errors or times out is logged; a refused replacement leaves a drop marker.
+
 - **`cru chat "<query>"` re-embedded the whole kiln before it answered.**
   `NoteRecord::content_hash` is documented as "BLAKE3 content hash (32 bytes)
   for change detection", and the plain-text and canvas paths filled it — but the
