@@ -1,6 +1,6 @@
 use super::DaemonSessionApi;
 use crate::error::LuaError;
-use crate::lua_util::{gate_module_keys, register_in_namespaces};
+use crate::lua_util::{gate_module_keys, register_module};
 use mlua::{Lua, LuaSerdeExt, Value};
 use std::sync::Arc;
 
@@ -58,7 +58,7 @@ pub fn register_sessions_module(lua: &Lua) -> Result<(), LuaError> {
         sessions.set(*name, f)?;
     }
 
-    register_in_namespaces(lua, "sessions", sessions)?;
+    register_module(lua, "sessions", sessions)?;
 
     Ok(())
 }
@@ -851,7 +851,7 @@ pub fn register_sessions_module_with_api(
 
     gate_module_keys("sessions", &sessions, SESSION_FN_NAMES)?;
 
-    register_in_namespaces(lua, "sessions", sessions)?;
+    register_module(lua, "sessions", sessions)?;
 
     Ok(())
 }

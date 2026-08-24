@@ -27,7 +27,7 @@ use crucible_core::session::{ContextStrategy, OutputValidation, SessionAgent};
 use crucible_core::traits::chat::{AgentHandle, ChatError, SessionKnobs};
 use crucible_core::traits::tools::ToolExecutor;
 use crucible_lua::{
-    execute_permission_hooks, register_crucible_on_api, register_permission_hook_api,
+    execute_permission_hooks, register_cru_on_api, register_permission_hook_api,
     LuaScriptHandlerRegistry, LuaValidatorRegistry, PermissionHook, PermissionHookResult,
     PermissionRequest,
 };

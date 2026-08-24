@@ -1,7 +1,7 @@
 //! Handler execution for Lua scripts.
 //!
 //! The bridge between daemon events and Lua. A handler is registered at load
-//! by calling [`register_crucible_on_api`]'s `crucible.on(event, opts, fn)` —
+//! by calling [`register_cru_on_api`]'s `crucible.on(event, opts, fn)` —
 //! there is no filesystem scan and no doc-comment form. An `AnnotationParser`
 //! that discovered handlers from `-- @handler` comments used to exist; it was
 //! a second, weaker loader for something a plugin already does, and a
@@ -38,7 +38,7 @@
 
 mod before_execute;
 mod conversion;
-mod crucible_on;
+mod cru_on;
 mod display_hooks;
 mod hook_name;
 mod permission;
@@ -52,7 +52,7 @@ pub use before_execute::{
     execute_tool_before_execute_hooks, ToolBeforeExecuteEvent, ToolBeforeExecuteResult,
     TOOL_BEFORE_EXECUTE_EVENT,
 };
-pub use crucible_on::register_crucible_on_api;
+pub use cru_on::register_cru_on_api;
 pub use display_hooks::{
     execute_tool_display_complete_hooks, execute_tool_display_start_hooks,
     ToolDisplayCompleteEvent, ToolDisplayCompleteHints, ToolDisplayStartEvent,

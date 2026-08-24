@@ -20,8 +20,8 @@ pub fn get_or_create_module(lua: &Lua, name: &str) -> LuaResult<Table> {
     })
 }
 
-pub fn register_in_namespaces(lua: &Lua, module_name: &str, module: Table) -> LuaResult<()> {
-    get_or_create_namespace(lua, "crucible")?.set(module_name, module.clone())?;
+/// Register a module table on the `cru` global — the one Lua namespace.
+pub fn register_module(lua: &Lua, module_name: &str, module: Table) -> LuaResult<()> {
     get_or_create_namespace(lua, "cru")?.set(module_name, module)?;
     Ok(())
 }

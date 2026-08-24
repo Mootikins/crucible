@@ -309,7 +309,7 @@ mod event_dispatch {
     /// handler got documented silence.
     #[tokio::test]
     async fn plugin_vm_turn_complete_handler_fires_and_injects() {
-        use crucible_lua::{register_crucible_on_api, LuaScriptHandlerRegistry};
+        use crucible_lua::{register_cru_on_api, LuaScriptHandlerRegistry};
 
         let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
@@ -319,7 +319,7 @@ mod event_dispatch {
         // daemon's plugin loader — NOT the session VM.
         let plugin_lua = Arc::new(mlua::Lua::new());
         let plugin_registry = Arc::new(LuaScriptHandlerRegistry::new());
-        register_crucible_on_api(
+        register_cru_on_api(
             &plugin_lua,
             plugin_registry.runtime_handlers(),
             plugin_registry.handler_functions(),
@@ -359,7 +359,7 @@ mod event_dispatch {
     /// rule that lets plugin transforms see session transforms' output.
     #[tokio::test]
     async fn plugin_inject_overrides_session_inject() {
-        use crucible_lua::{register_crucible_on_api, LuaScriptHandlerRegistry};
+        use crucible_lua::{register_cru_on_api, LuaScriptHandlerRegistry};
 
         let session_manager = temp_session_manager();
         let agent_manager = create_test_agent_manager(session_manager);
@@ -381,7 +381,7 @@ mod event_dispatch {
 
         let plugin_lua = Arc::new(mlua::Lua::new());
         let plugin_registry = Arc::new(LuaScriptHandlerRegistry::new());
-        register_crucible_on_api(
+        register_cru_on_api(
             &plugin_lua,
             plugin_registry.runtime_handlers(),
             plugin_registry.handler_functions(),

@@ -117,9 +117,7 @@ pub fn register_publish_module(
         registry.set(&plugin, &key, json);
         Ok(())
     })?;
-    crate::lua_util::get_or_create_module(lua, "plugin")?.set("publish", publish.clone())?;
-    // Transitional alias until the `crucible` global is deleted.
-    crate::lua_util::get_or_create_namespace(lua, "crucible")?.set("publish", publish)?;
+    crate::lua_util::get_or_create_module(lua, "plugin")?.set("publish", publish)?;
     Ok(())
 }
 

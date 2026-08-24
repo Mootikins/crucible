@@ -76,7 +76,7 @@
 //! an error there rather than narrowing half of it.
 
 use crate::error::LuaError;
-use crate::lua_util::{gate_module_keys, register_in_namespaces};
+use crate::lua_util::{gate_module_keys, register_module};
 use mlua::{Lua, LuaSerdeExt, Table, Value};
 use std::future::Future;
 use std::pin::Pin;
@@ -171,7 +171,7 @@ pub(crate) fn tool_fn_names() -> Vec<&'static str> {
 
 /// Register the tools module with stub functions.
 ///
-/// Creates the `cru.tools` and `crucible.tools` namespaces with functions
+/// Creates the `cru.tools` namespace with functions
 /// that return `(nil, "no daemon connected")`. Call [`register_tools_module_with_api`]
 /// to replace stubs with real daemon-backed implementations.
 pub fn register_tools_module(lua: &Lua) -> Result<(), LuaError> {
@@ -199,7 +199,7 @@ pub fn register_tools_module(lua: &Lua) -> Result<(), LuaError> {
         }
     }
 
-    register_in_namespaces(lua, "tools", tools)?;
+    register_module(lua, "tools", tools)?;
 
     Ok(())
 }
@@ -463,7 +463,7 @@ pub fn register_tools_module_with_api(
     tools.set("get_active", get_active_fn)?;
 
     gate_module_keys("tools", &tools, &tool_fn_names())?;
-    register_in_namespaces(lua, "tools", tools)?;
+    register_module(lua, "tools", tools)?;
 
     Ok(())
 }
@@ -488,7 +488,7 @@ mod tests {
     }
 
     /// The stub table and the daemon-backed table expose the same function
-    /// names, under `cru` and under `crucible`, and both match `TOOL_FNS`.
+    /// names under `cru`, and both match `TOOL_FNS`.
     #[test]
     fn stub_and_daemon_tables_expose_the_same_functions() {
         let stub = TestLuaBuilder::new().with_tools().build();
@@ -500,9 +500,7 @@ mod tests {
         listed.sort();
 
         assert_eq!(module_keys(&stub, "cru"), listed);
-        assert_eq!(module_keys(&stub, "crucible"), listed);
         assert_eq!(module_keys(&real, "cru"), listed);
-        assert_eq!(module_keys(&real, "crucible"), listed);
     }
 
     #[tokio::test]

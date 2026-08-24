@@ -1,5 +1,5 @@
 use crate::handlers::{
-    register_crucible_on_api, LuaScriptHandlerRegistry, RuntimeHandler, ScriptHandlerResult,
+    register_cru_on_api, LuaScriptHandlerRegistry, RuntimeHandler, ScriptHandlerResult,
 };
 use crucible_core::events::SessionEvent;
 use mlua::{Function, Lua};
@@ -9,7 +9,7 @@ fn runtime_handler_stores_function_reference() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
-    register_crucible_on_api(
+    register_cru_on_api(
         &lua,
         registry.runtime_handlers.clone(),
         registry.handler_functions.clone(),
@@ -387,7 +387,7 @@ async fn todo_enforcer_pattern_integration() {
     let registry = LuaScriptHandlerRegistry::new();
 
     // Step 1: Register the cru.on API
-    register_crucible_on_api(
+    register_cru_on_api(
         &lua,
         registry.runtime_handlers.clone(),
         registry.handler_functions.clone(),
@@ -474,7 +474,7 @@ fn a_cleared_plugins_names_are_not_reused_by_the_next_registration() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
-    register_crucible_on_api(
+    register_cru_on_api(
         &lua,
         registry.runtime_handlers(),
         registry.handler_functions(),
@@ -551,7 +551,7 @@ fn a_cleared_plugins_names_are_not_reused_by_the_next_registration() {
 fn registering_over_a_live_handler_name_is_an_error_not_an_overwrite() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
-    register_crucible_on_api(
+    register_cru_on_api(
         &lua,
         registry.runtime_handlers(),
         registry.handler_functions(),
@@ -629,7 +629,7 @@ async fn returning_the_event_with_a_cancel_payload_key_is_not_a_cancellation() {
 async fn an_unregistered_handler_has_no_opinion_instead_of_failing_closed() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
-    register_crucible_on_api(
+    register_cru_on_api(
         &lua,
         registry.runtime_handlers.clone(),
         registry.handler_functions.clone(),
@@ -669,7 +669,7 @@ async fn an_unregistered_handler_has_no_opinion_instead_of_failing_closed() {
 async fn an_unregistered_json_handler_has_no_opinion_instead_of_failing_closed() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
-    register_crucible_on_api(
+    register_cru_on_api(
         &lua,
         registry.runtime_handlers.clone(),
         registry.handler_functions.clone(),

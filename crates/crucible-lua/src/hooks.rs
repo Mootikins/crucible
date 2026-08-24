@@ -18,7 +18,7 @@
 
 use mlua::{Function, Lua, Result as LuaResult, Table};
 
-/// Register the hooks module on the crucible table
+/// Register the lifecycle hooks on the given `cru` table
 ///
 /// This function is called during executor initialization to set up hook registration.
 /// Hooks are stored in a Lua table that the executor can access via `get_session_start_hooks()`

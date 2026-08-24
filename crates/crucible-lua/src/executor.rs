@@ -266,26 +266,6 @@ end
         crate::auth_plugin::register_auth_module(lua, &cru_ns)?;
         crate::notify::register_notify_module(lua, &cru_ns)?;
 
-        // Transitional `crucible` aliases, until the global is deleted. The
-        // flat `json_encode`/`json_decode` pair exists ONLY here: `cru` has
-        // the structured `cru.json.encode`/`decode` below.
-        let crucible = lua.create_table()?;
-        for name in [
-            "log",
-            "on_session_start",
-            "on_session_end",
-            "on_provider_auth",
-        ] {
-            crucible.set(name, cru_ns.get::<mlua::Value>(name)?)?;
-        }
-        let log_table: mlua::Table = cru_ns.get("log")?;
-        for name in ["notify", "notify_once", "messages"] {
-            crucible.set(name, log_table.get::<mlua::Value>(name)?)?;
-        }
-        crucible.set("json_encode", json_encode.clone())?;
-        crucible.set("json_decode", json_decode.clone())?;
-        globals.set("crucible", crucible)?;
-
         let json_table = lua.create_table()?;
         json_table.set("encode", json_encode)?;
         json_table.set("decode", json_decode)?;

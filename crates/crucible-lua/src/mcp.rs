@@ -57,7 +57,7 @@ pub fn register_mcp_module_stub(lua: &Lua) -> Result<(), LuaError> {
     )?;
 
     lua.globals().set("mcp", mcp.clone())?;
-    crate::lua_util::register_in_namespaces(lua, "mcp", mcp)?;
+    crate::lua_util::register_module(lua, "mcp", mcp)?;
 
     Ok(())
 }

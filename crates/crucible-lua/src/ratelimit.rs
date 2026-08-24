@@ -113,7 +113,7 @@ impl UserData for LuaRateLimiter {
     }
 }
 
-/// Register the ratelimit module under `cru.ratelimit` and `crucible.ratelimit`.
+/// Register the ratelimit module under `cru.ratelimit`.
 pub fn register_ratelimit_module(lua: &Lua) -> Result<()> {
     let ratelimit = lua.create_table()?;
 
@@ -144,7 +144,7 @@ pub fn register_ratelimit_module(lua: &Lua) -> Result<()> {
         })?,
     )?;
 
-    crate::lua_util::register_in_namespaces(lua, "ratelimit", ratelimit)?;
+    crate::lua_util::register_module(lua, "ratelimit", ratelimit)?;
     Ok(())
 }
 
@@ -161,10 +161,6 @@ mod tests {
         let cru: Table = lua.globals().get("cru").unwrap();
         let rl: Table = cru.get("ratelimit").unwrap();
         assert!(rl.get::<Function>("new").is_ok());
-
-        let crucible_ns: Table = lua.globals().get("crucible").unwrap();
-        let rl2: Table = crucible_ns.get("ratelimit").unwrap();
-        assert!(rl2.get::<Function>("new").is_ok());
     }
 
     #[tokio::test]

@@ -23,13 +23,13 @@
 //! ```
 
 use crate::error::LuaError;
-use crate::lua_util::{get_or_create_namespace, register_in_namespaces};
+use crate::lua_util::{get_or_create_namespace, register_module};
 use crate::sessions::DaemonSessionApi;
 use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Table, Value};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-/// Register `cru.context` / `crucible.context` with stub functions.
+/// Register `cru.context` with stub functions.
 ///
 /// Same shape as the real module — every async function returns
 /// `(nil, "no daemon connected")`, `estimate_tokens` works fully (it's a
@@ -61,11 +61,11 @@ pub fn register_context_module_stub(lua: &Lua) -> Result<(), LuaError> {
     stub_async!("messages", (String, Value));
     stub_async!("remove", (String, Value));
 
-    register_in_namespaces(lua, "context", context)?;
+    register_module(lua, "context", context)?;
     Ok(())
 }
 
-/// Register `cru.context` / `crucible.context` with daemon-backed implementations.
+/// Register `cru.context` with daemon-backed implementations.
 pub fn register_context_module(lua: &Lua, api: Arc<dyn DaemonSessionApi>) -> Result<(), LuaError> {
     let context = lua.create_table()?;
 
@@ -166,7 +166,7 @@ pub fn register_context_module(lua: &Lua, api: Arc<dyn DaemonSessionApi>) -> Res
         })?;
     context.set("remove", remove_fn)?;
 
-    register_in_namespaces(lua, "context", context)?;
+    register_module(lua, "context", context)?;
 
     Ok(())
 }
@@ -278,25 +278,17 @@ pub fn register_context_validators(
 /// Look up `cru.context`, creating the namespace + sub-table if absent.
 ///
 /// Mirrors the access pattern in `register_context_module` so calls in
-/// either order produce the same end state. Both `cru.context` and
-/// `crucible.context` are aliased to the same table — we ensure both.
+/// either order produce the same end state.
 fn ensure_cru_context_table(lua: &Lua) -> mlua::Result<Table> {
     let cru = get_or_create_namespace(lua, "cru")?;
-    let crucible = get_or_create_namespace(lua, "crucible")?;
     let context: Table = match cru.get::<Value>("context")? {
         Value::Table(t) => t,
         _ => {
             let t = lua.create_table()?;
             cru.set("context", t.clone())?;
-            crucible.set("context", t.clone())?;
             t
         }
     };
-    // Ensure crucible.context aliases the same table even when cru.context
-    // existed first via `register_context_module` (which already mirrors it).
-    if !matches!(crucible.get::<Value>("context")?, Value::Table(_)) {
-        crucible.set("context", context.clone())?;
-    }
     Ok(context)
 }
 
@@ -601,7 +593,7 @@ mod tests {
             .eval()
             .unwrap();
         let crucible_ok: bool = lua
-            .load(r#"return type(crucible.context.estimate_tokens) == "function""#)
+            .load(r#"return type(cru.context.estimate_tokens) == "function""#)
             .eval()
             .unwrap();
         assert!(cru_ok);
@@ -752,7 +744,7 @@ mod tests {
                 r#"
                 return type(cru.context.estimate_tokens) == "function"
                    and type(cru.context.register_validator) == "function"
-                   and type(crucible.context.register_validator) == "function"
+                   and type(cru.context.register_validator) == "function"
                 "#,
             )
             .eval()

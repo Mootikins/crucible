@@ -5,7 +5,7 @@
 //! against it. Nothing wrote to that vec once the annotation loader was
 //! removed, so those cases asserted on a structure production never populated.
 
-use crate::handlers::{register_crucible_on_api, LuaScriptHandlerRegistry};
+use crate::handlers::{register_cru_on_api, LuaScriptHandlerRegistry};
 use mlua::Lua;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -16,7 +16,7 @@ fn test_crucible_on_api_registration() {
     let handlers = Arc::new(Mutex::new(Vec::new()));
     let functions = Arc::new(Mutex::new(HashMap::new()));
 
-    register_crucible_on_api(&lua, handlers.clone(), functions.clone()).unwrap();
+    register_cru_on_api(&lua, handlers.clone(), functions.clone()).unwrap();
 
     // Verify cru.on exists. The name has to be a real hook: `cru.on`
     // now validates against `HOOK_NAMES`, because a name nothing dispatches
@@ -45,7 +45,7 @@ fn crucible_on_rejects_a_hook_name_nothing_dispatches() {
     let lua = Lua::new();
     let handlers = Arc::new(Mutex::new(Vec::new()));
     let functions = Arc::new(Mutex::new(HashMap::new()));
-    register_crucible_on_api(&lua, handlers.clone(), functions.clone()).unwrap();
+    register_cru_on_api(&lua, handlers.clone(), functions.clone()).unwrap();
 
     let err = lua
         .load(r#"cru.on("pre_toolcall", function(event) return event end)"#)
@@ -65,7 +65,7 @@ fn crucible_on_with_opts_table_sets_pattern_and_priority() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
-    register_crucible_on_api(
+    register_cru_on_api(
         &lua,
         registry.runtime_handlers(),
         registry.handler_functions(),
@@ -97,7 +97,7 @@ fn crucible_on_backward_compat_no_opts() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
-    register_crucible_on_api(
+    register_cru_on_api(
         &lua,
         registry.runtime_handlers(),
         registry.handler_functions(),

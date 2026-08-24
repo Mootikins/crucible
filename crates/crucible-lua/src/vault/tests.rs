@@ -22,19 +22,6 @@ mod stub_tests {
         assert!(kiln.contains_key("neighbors").unwrap());
     }
 
-    #[test]
-    fn test_kiln_also_registered_as_crucible() {
-        let lua = TestLuaBuilder::new().with_vault().build();
-
-        let crucible: Table = lua
-            .globals()
-            .get("crucible")
-            .expect("crucible should exist");
-        let kiln: Table = crucible.get("kiln").expect("crucible.kiln should exist");
-
-        assert!(kiln.contains_key("list").unwrap());
-    }
-
     #[tokio::test]
     async fn test_kiln_list_stub_returns_empty() {
         let lua = TestLuaBuilder::new().with_vault().build();

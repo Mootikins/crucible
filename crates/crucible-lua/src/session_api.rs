@@ -403,22 +403,20 @@ pub fn register_session_module(lua: &Lua) -> Result<CurrentSession, LuaError> {
     let manager = CurrentSession::new();
     let globals = lua.globals();
 
-    for name in ["crucible", "cru"] {
-        let table: mlua::Table = globals.get(name).or_else(|_| {
-            let t = lua.create_table()?;
-            globals.set(name, t.clone())?;
-            Ok::<_, mlua::Error>(t)
-        })?;
+    let table: mlua::Table = globals.get("cru").or_else(|_| {
+        let t = lua.create_table()?;
+        globals.set("cru", t.clone())?;
+        Ok::<_, mlua::Error>(t)
+    })?;
 
-        let mgr = manager.clone();
-        table.set(
-            "get_session",
-            lua.create_function(move |_, ()| {
-                mgr.get_current()
-                    .ok_or_else(|| mlua::Error::runtime("No active session"))
-            })?,
-        )?;
-    }
+    let mgr = manager.clone();
+    table.set(
+        "get_session",
+        lua.create_function(move |_, ()| {
+            mgr.get_current()
+                .ok_or_else(|| mlua::Error::runtime("No active session"))
+        })?,
+    )?;
 
     Ok(manager)
 }

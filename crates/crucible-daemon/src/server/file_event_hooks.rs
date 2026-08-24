@@ -207,7 +207,7 @@ mod tests {
     ) -> (Arc<mlua::Lua>, broadcast::Sender<SessionEventMessage>) {
         let lua = Arc::new(mlua::Lua::new());
         let registry = Arc::new(LuaScriptHandlerRegistry::new());
-        crucible_lua::register_crucible_on_api(
+        crucible_lua::register_cru_on_api(
             &lua,
             registry.runtime_handlers(),
             registry.handler_functions(),

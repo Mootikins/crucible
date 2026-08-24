@@ -17,7 +17,7 @@
 use mlua::{Function, Lua, Result, Value};
 use std::time::Duration;
 
-/// Register the timer module under `cru.timer` and `crucible.timer`.
+/// Register the timer module under `cru.timer`.
 ///
 /// Functions:
 /// - `timer.sleep(seconds)` — async sleep, yields the coroutine
@@ -70,7 +70,7 @@ pub fn register_timer_module(lua: &Lua) -> Result<()> {
         })?,
     )?;
 
-    crate::lua_util::register_in_namespaces(lua, "timer", timer)?;
+    crate::lua_util::register_module(lua, "timer", timer)?;
 
     // cru.spawn(fn) — spawn an async Lua function as an independent task.
     // The function runs concurrently with the caller (fire-and-forget).
@@ -90,9 +90,6 @@ pub fn register_timer_module(lua: &Lua) -> Result<()> {
         let globals = lua.globals();
         let cru: mlua::Table = globals.get("cru")?;
         cru.set("spawn", spawn_fn)?;
-        if let Ok(crucible) = globals.get::<mlua::Table>("crucible") {
-            crucible.set("spawn", cru.get::<mlua::Value>("spawn")?)?;
-        }
     }
 
     Ok(())
@@ -112,10 +109,6 @@ mod tests {
         let timer: Table = cru.get("timer").unwrap();
         assert!(timer.get::<Function>("sleep").is_ok());
         assert!(timer.get::<Function>("timeout").is_ok());
-
-        let crucible_ns: Table = lua.globals().get("crucible").unwrap();
-        let timer2: Table = crucible_ns.get("timer").unwrap();
-        assert!(timer2.get::<Function>("sleep").is_ok());
     }
 
     #[tokio::test]

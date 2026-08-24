@@ -394,9 +394,7 @@ pub fn register_options_module(
         registry.set_tree(&plugin, lua.clone(), tree);
         Ok(())
     })?;
-    crate::lua_util::get_or_create_module(lua, "plugin")?.set("options", options.clone())?;
-    // Transitional alias until the `crucible` global is deleted.
-    crate::lua_util::get_or_create_namespace(lua, "crucible")?.set("options", options)?;
+    crate::lua_util::get_or_create_module(lua, "plugin")?.set("options", options)?;
     Ok(())
 }
 

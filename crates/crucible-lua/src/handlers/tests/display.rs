@@ -1,7 +1,7 @@
 use crate::handlers::{
-    execute_tool_display_complete_hooks, execute_tool_display_start_hooks,
-    register_crucible_on_api, LuaScriptHandlerRegistry, ToolDisplayCompleteEvent,
-    ToolDisplayCompleteHints, ToolDisplayStartEvent, ToolDisplayStartHints,
+    execute_tool_display_complete_hooks, execute_tool_display_start_hooks, register_cru_on_api,
+    LuaScriptHandlerRegistry, ToolDisplayCompleteEvent, ToolDisplayCompleteHints,
+    ToolDisplayStartEvent, ToolDisplayStartHints,
 };
 use mlua::Lua;
 
@@ -10,7 +10,7 @@ async fn lua_display_start_hook_returns_label_and_detail() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
-    register_crucible_on_api(
+    register_cru_on_api(
         &lua,
         registry.runtime_handlers.clone(),
         registry.handler_functions.clone(),
@@ -55,7 +55,7 @@ async fn lua_display_complete_hook_returns_summary() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
-    register_crucible_on_api(
+    register_cru_on_api(
         &lua,
         registry.runtime_handlers.clone(),
         registry.handler_functions.clone(),

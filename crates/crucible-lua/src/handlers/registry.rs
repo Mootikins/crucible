@@ -19,7 +19,7 @@ use super::script_handler::{interpret_handler_result, ScriptHandlerResult};
 ///
 /// ```rust,ignore
 /// // Registration happens from Lua, via the api this registry backs.
-/// register_crucible_on_api(&lua, registry.runtime_handlers(), registry.handler_functions())?;
+/// register_cru_on_api(&lua, registry.runtime_handlers(), registry.handler_functions())?;
 ///
 /// // Dispatch: select by event name, then execute each match.
 /// for handler in registry.runtime_handlers_for("tool_result", Some(tool_name)) {
@@ -33,7 +33,7 @@ pub struct LuaScriptHandlerRegistry {
     /// Runtime-registered handlers (via crucible.on())
     ///
     /// This Vec shrinks: `clear_plugin_handlers` drops a reloaded plugin's
-    /// entries. Handler names must therefore come from `crucible_on.rs`'s
+    /// entries. Handler names must therefore come from `cru_on.rs`'s
     /// monotonic allocator and never from this length — see the comment there.
     pub(super) runtime_handlers: Arc<Mutex<Vec<RuntimeHandler>>>,
     /// Stored Lua function references (handler_name -> RegistryKey)

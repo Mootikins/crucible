@@ -217,7 +217,7 @@ pub fn register_ws_module(lua: &Lua) -> Result<()> {
         })?,
     )?;
 
-    crate::lua_util::register_in_namespaces(lua, "ws", ws_table)?;
+    crate::lua_util::register_module(lua, "ws", ws_table)?;
     Ok(())
 }
 
@@ -234,10 +234,6 @@ mod tests {
         let cru: Table = lua.globals().get("cru").unwrap();
         let ws: Table = cru.get("ws").unwrap();
         assert!(ws.get::<Function>("connect").is_ok());
-
-        let crucible_ns: Table = lua.globals().get("crucible").unwrap();
-        let ws2: Table = crucible_ns.get("ws").unwrap();
-        assert!(ws2.get::<Function>("connect").is_ok());
     }
 
     #[tokio::test]

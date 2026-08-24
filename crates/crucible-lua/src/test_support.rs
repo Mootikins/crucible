@@ -21,7 +21,7 @@ use crate::{
 /// Builder for constructing Lua test environments with specific module registrations.
 ///
 /// Each `with_*` method registers the corresponding module, setting up any required
-/// globals (cru/crucible tables) automatically.
+/// globals (the cru table) automatically.
 ///
 /// # Examples
 ///
@@ -48,37 +48,26 @@ impl TestLuaBuilder {
         }
     }
 
-    fn ensure_crucible_table(&self) {
-        let globals = self.lua.globals();
-        if !globals.contains_key("crucible").unwrap() {
-            globals
-                .set("crucible", self.lua.create_table().unwrap())
-                .unwrap();
-        }
-    }
-
     /// Register the oil module (cru.oil).
-    /// Sets up: crucible global table.
+    /// Sets up: cru global table.
     pub fn with_oil(self) -> Self {
-        self.ensure_crucible_table();
+        self.ensure_cru_table();
         register_oil_module(&self.lua).expect("Should register oil module");
         self
     }
 
     /// Register the vault module (cru.kiln).
-    /// Sets up: cru + crucible global tables.
+    /// Sets up: cru global table.
     pub fn with_vault(self) -> Self {
         self.ensure_cru_table();
-        self.ensure_crucible_table();
         register_vault_module(&self.lua).expect("Should register vault module");
         self
     }
 
     /// Register the vault module with a NoteStore backend.
-    /// Sets up: cru + crucible global tables.
+    /// Sets up: cru global table.
     pub fn with_vault_store(self, store: Arc<dyn NoteStore>) -> Self {
         self.ensure_cru_table();
-        self.ensure_crucible_table();
         register_vault_module_with_store(&self.lua, store).expect("Should register vault module");
         self
     }
@@ -94,7 +83,6 @@ impl TestLuaBuilder {
         authority: crucible_core::storage::Scope,
     ) -> Self {
         self.ensure_cru_table();
-        self.ensure_crucible_table();
         register_vault_module_with_store_scoped(&self.lua, store, authority)
             .expect("Should register scoped vault module");
         self
@@ -124,56 +112,50 @@ impl TestLuaBuilder {
     }
 
     /// Register the sessions module (cru.sessions).
-    /// Sets up: cru + crucible global tables.
+    /// Sets up: cru global table.
     pub fn with_sessions(self) -> Self {
         self.ensure_cru_table();
-        self.ensure_crucible_table();
         register_sessions_module(&self.lua).expect("Should register sessions module");
         self
     }
 
     /// Register the sessions module with a DaemonSessionApi backend.
-    /// Sets up: cru + crucible global tables.
+    /// Sets up: cru global table.
     pub fn with_sessions_api(self, api: Arc<dyn DaemonSessionApi>) -> Self {
         self.ensure_cru_table();
-        self.ensure_crucible_table();
         register_sessions_module_with_api(&self.lua, api)
             .expect("Should register sessions with API");
         self
     }
 
     /// Register the ui module (cru.ui) with stubs.
-    /// Sets up: cru + crucible global tables.
+    /// Sets up: cru global table.
     pub fn with_ui(self) -> Self {
         self.ensure_cru_table();
-        self.ensure_crucible_table();
         register_ui_module(&self.lua).expect("Should register ui module");
         self
     }
 
     /// Register the ui module with a DaemonSessionApi backend.
-    /// Sets up: cru + crucible global tables.
+    /// Sets up: cru global table.
     pub fn with_ui_api(self, api: Arc<dyn DaemonSessionApi>) -> Self {
         self.ensure_cru_table();
-        self.ensure_crucible_table();
         register_ui_module_with_api(&self.lua, api).expect("Should register ui with API");
         self
     }
 
     /// Register the storage module (cru.storage) with stubs.
-    /// Sets up: cru + crucible global tables.
+    /// Sets up: cru global table.
     pub fn with_storage(self) -> Self {
         self.ensure_cru_table();
-        self.ensure_crucible_table();
         register_storage_module(&self.lua).expect("Should register storage module");
         self
     }
 
     /// Register the storage module with a PropertyStore backend.
-    /// Sets up: cru + crucible global tables.
+    /// Sets up: cru global table.
     pub fn with_storage_store(self, store: Arc<dyn PropertyStore>) -> Self {
         self.ensure_cru_table();
-        self.ensure_crucible_table();
         register_storage_module(&self.lua).expect("Should register storage stubs");
         register_storage_module_with_store(&self.lua, store)
             .expect("Should register storage with store");
@@ -187,19 +169,17 @@ impl TestLuaBuilder {
     }
 
     /// Register the tools module (cru.tools).
-    /// Sets up: cru + crucible global tables.
+    /// Sets up: cru global table.
     pub fn with_tools(self) -> Self {
         self.ensure_cru_table();
-        self.ensure_crucible_table();
         register_tools_module(&self.lua).expect("Should register tools module");
         self
     }
 
     /// Register the tools module with a DaemonToolsApi backend.
-    /// Sets up: cru + crucible global tables.
+    /// Sets up: cru global table.
     pub fn with_tools_api(self, api: Arc<dyn DaemonToolsApi>) -> Self {
         self.ensure_cru_table();
-        self.ensure_crucible_table();
         register_tools_module_with_api(&self.lua, api).expect("Should register tools with API");
         self
     }
@@ -227,9 +207,8 @@ impl TestLuaBuilder {
     }
 
     /// Build with the current-session holder, returning (Lua, CurrentSession).
-    /// Sets up: crucible + cru global tables.
+    /// Sets up: cru global table.
     pub fn build_with_current_session(self) -> (Lua, CurrentSession) {
-        self.ensure_crucible_table();
         self.ensure_cru_table();
         let mgr = register_session_module(&self.lua).unwrap();
         (self.lua, mgr)

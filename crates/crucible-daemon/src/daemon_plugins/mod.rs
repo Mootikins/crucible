@@ -24,7 +24,7 @@ use crucible_core::storage::NoteStore;
 use crucible_core::storage::PropertyStore;
 use crucible_lua::{
     register_context_attach, register_context_module, register_context_validators,
-    register_crucible_on_api, register_graph_module, register_isolation_module, register_oq_module,
+    register_cru_on_api, register_graph_module, register_isolation_module, register_oq_module,
     register_paths_module, register_publish_module, register_schedule_module,
     register_sessions_module, register_sessions_module_with_api, register_shell_module,
     register_status_module, register_storage_module, register_storage_module_with_store,
@@ -259,7 +259,7 @@ impl DaemonPluginLoader {
         let handler_registry = Arc::new(LuaScriptHandlerRegistry::new());
         reg(
             "cru.on",
-            register_crucible_on_api(
+            register_cru_on_api(
                 lua,
                 handler_registry.runtime_handlers(),
                 handler_registry.handler_functions(),
@@ -504,11 +504,7 @@ impl DaemonPluginLoader {
         config_table.set("get", get_fn)?;
 
         let plugin = crucible_lua::lua_util::get_or_create_module(lua, "plugin")?;
-        plugin.set("config", config_table.clone())?;
-        // Transitional alias until the `crucible` global is deleted.
-        let globals = lua.globals();
-        let crucible: mlua::Table = globals.get("crucible")?;
-        crucible.set("config", config_table)?;
+        plugin.set("config", config_table)?;
 
         Ok(())
     }

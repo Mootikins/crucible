@@ -87,7 +87,7 @@ pub fn register_http_module(lua: &Lua) -> Result<()> {
     )?;
 
     lua.globals().set("http", http.clone())?;
-    crate::lua_util::register_in_namespaces(lua, "http", http)?;
+    crate::lua_util::register_module(lua, "http", http)?;
     Ok(())
 }
 

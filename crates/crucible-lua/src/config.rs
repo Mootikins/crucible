@@ -375,24 +375,16 @@ pub fn get_syntax_config() -> Option<serde_json::Value> {
 /// user's theme never even parses.
 pub fn register_ui_namespaces(lua: &Lua) -> Result<(), LuaError> {
     let cru = crate::lua_util::get_or_create_namespace(lua, "cru")?;
-    // Transitional: the `crucible` global still exists for old configs.
-    let crucible = crate::lua_util::get_or_create_namespace(lua, "crucible")?;
 
     register_statusline_namespace(lua, &cru)?;
     register_theme_namespace(lua, &cru)?;
     crate::hl_lua::register_hl_namespace(lua, &cru)?;
     crate::ui_geometry::register_geometry_namespace(lua, &cru)?;
     register_syntax_namespace(lua, &cru)?;
-    // Transitional aliases until the `crucible` global is deleted.
-    for name in ["colorscheme", "hl", "syntax"] {
-        crucible.set(name, cru.get::<Value>(name)?)?;
-    }
     // Item vocabulary hangs off the same `cru.statusline` table the runtime
-    // `set`/`clear` functions live on — statusline is one module, so the two
-    // globals see one table.
+    // `set`/`clear` functions live on — statusline is one module.
     if let Ok(sl) = cru.get::<Table>("statusline") {
         crate::statusline_lua::register_statusline_items(lua, &sl)?;
-        crucible.set("statusline", sl)?;
     }
 
     // Embedded defaults, seeded only when nothing is installed yet. User
@@ -464,11 +456,9 @@ impl ConfigLoader {
     pub fn load(&self, lua: &Lua) -> Result<(), LuaError> {
         register_ui_namespaces(lua)?;
 
-        // Register cru.include(), with a transitional `crucible` alias.
+        // Register cru.include()
         let cru = crate::lua_util::get_or_create_namespace(lua, "cru")?;
         register_include(lua, &cru, self.config_dir.clone())?;
-        let crucible = crate::lua_util::get_or_create_namespace(lua, "crucible")?;
-        crucible.set("include", cru.get::<Value>("include")?)?;
 
         // Load global init.lua
         let global_init = self.config_dir.join("init.lua");

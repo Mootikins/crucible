@@ -3,7 +3,7 @@
 //! Provides `cru.oil.*` functions for constructing UI nodes from Lua scripts.
 
 use crate::error::LuaError;
-use crate::lua_util::register_in_namespaces;
+use crate::lua_util::register_module;
 use crucible_oil::template::html_to_node;
 use crucible_oil::{
     badge, bullet_list, divider, fragment, horizontal_rule, if_else, key_value, numbered_list,
@@ -465,7 +465,7 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
     })?;
     oil.set("scrollback", scrollback_fn)?;
 
-    register_in_namespaces(lua, "oil", oil)?;
+    register_module(lua, "oil", oil)?;
 
     Ok(())
 }

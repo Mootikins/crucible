@@ -1,4 +1,4 @@
-use mlua::{Lua, RegistryKey, Result as LuaResult, Table, Value};
+use mlua::{Lua, RegistryKey, Result as LuaResult, Value};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -24,39 +24,30 @@ fn validate_hook_name(event_type: &str) -> Result<(), mlua::Error> {
         .min_by_key(|n| levenshtein(n, event_type))
         .filter(|n| levenshtein(n, event_type) <= 3);
     Err(mlua::Error::RuntimeError(match suggestion {
-        Some(s) => format!("crucible.on: unknown event `{event_type}` — did you mean `{s}`?"),
+        Some(s) => format!("cru.on: unknown event `{event_type}` — did you mean `{s}`?"),
         None => format!(
-            "crucible.on: unknown event `{event_type}`. Valid: {}",
+            "cru.on: unknown event `{event_type}`. Valid: {}",
             hook_names().collect::<Vec<_>>().join(", ")
         ),
     }))
 }
 
-/// Register the crucible.on() API for runtime handler registration
+/// Register the cru.on() API for runtime handler registration
 ///
 /// Supports two calling conventions:
 ///
 /// ```lua
 /// -- Simple (backward compatible):
-/// crucible.on("pre_tool_call", function(ctx, event) ... end)
+/// cru.on("pre_tool_call", function(ctx, event) ... end)
 ///
 /// -- With options (pattern + priority):
-/// crucible.on("pre_tool_call", { pattern = "bash", priority = 50 }, function(ctx, event) ... end)
+/// cru.on("pre_tool_call", { pattern = "bash", priority = 50 }, function(ctx, event) ... end)
 /// ```
-pub fn register_crucible_on_api(
+pub fn register_cru_on_api(
     lua: &Lua,
     runtime_handlers: Arc<Mutex<Vec<RuntimeHandler>>>,
     handler_functions: Arc<Mutex<HashMap<String, RegistryKey>>>,
 ) -> LuaResult<()> {
-    let crucible: Table = match lua.globals().get("crucible") {
-        Ok(t) => t,
-        Err(_) => {
-            let t = lua.create_table()?;
-            lua.globals().set("crucible", t.clone())?;
-            t
-        }
-    };
-
     let handlers = runtime_handlers.clone();
     let functions = handler_functions.clone();
 
@@ -83,7 +74,7 @@ pub fn register_crucible_on_api(
         let args_vec: Vec<Value> = args.into_vec();
         if args_vec.len() < 2 {
             return Err(mlua::Error::RuntimeError(
-                "crucible.on requires at least 2 arguments: (event_type, handler) or (event_type, opts, handler)".into(),
+                "cru.on requires at least 2 arguments: (event_type, handler) or (event_type, opts, handler)".into(),
             ));
         }
 
@@ -91,7 +82,7 @@ pub fn register_crucible_on_api(
             Value::String(s) => s.to_str()?.to_string(),
             _ => {
                 return Err(mlua::Error::RuntimeError(
-                    "crucible.on: first argument must be a string (event type)".into(),
+                    "cru.on: first argument must be a string (event type)".into(),
                 ))
             }
         };
@@ -100,21 +91,21 @@ pub fn register_crucible_on_api(
 
         let (pattern, priority, handler) = match &args_vec[1] {
             Value::Function(f) => {
-                // crucible.on(event_type, handler) — backward compatible
+                // cru.on(event_type, handler) — backward compatible
                 (None, 100i64, f.clone())
             }
             Value::Table(opts) => {
-                // crucible.on(event_type, opts, handler)
+                // cru.on(event_type, opts, handler)
                 if args_vec.len() < 3 {
                     return Err(mlua::Error::RuntimeError(
-                        "crucible.on: when second argument is a table, third argument must be the handler function".into(),
+                        "cru.on: when second argument is a table, third argument must be the handler function".into(),
                     ));
                 }
                 let handler = match &args_vec[2] {
                     Value::Function(f) => f.clone(),
                     _ => {
                         return Err(mlua::Error::RuntimeError(
-                            "crucible.on: third argument must be a function".into(),
+                            "cru.on: third argument must be a function".into(),
                         ))
                     }
                 };
@@ -124,7 +115,7 @@ pub fn register_crucible_on_api(
             }
             _ => {
                 return Err(mlua::Error::RuntimeError(
-                    "crucible.on: second argument must be a function or options table".into(),
+                    "cru.on: second argument must be a function or options table".into(),
                 ))
             }
         };
@@ -199,9 +190,6 @@ pub fn register_crucible_on_api(
         Ok(())
     })?;
 
-    // Both namespaces, per `lua_util::register_in_namespaces`. Shipped scripts
-    // are written against `cru.*`; `crucible.*` stays for existing configs.
-    crucible.set("on", on_fn.clone())?;
     crate::lua_util::get_or_create_namespace(lua, "cru")?.set("on", on_fn)?;
     Ok(())
 }
@@ -224,7 +212,7 @@ mod tests {
         }
     }
 
-    /// The bug this closes: `crucible.on("pre_toolcall", …)` registered happily,
+    /// The bug this closes: `cru.on("pre_toolcall", …)` registered happily,
     /// logged at `debug`, and never fired.
     #[test]
     fn a_misspelt_hook_name_is_rejected_with_a_suggestion() {

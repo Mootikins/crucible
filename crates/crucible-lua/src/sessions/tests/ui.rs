@@ -57,9 +57,7 @@ fn stub_and_daemon_tables_expose_the_same_functions() {
     listed.sort();
 
     assert_eq!(sorted_ui_keys(&stub, "cru"), listed);
-    assert_eq!(sorted_ui_keys(&stub, "crucible"), listed);
     assert_eq!(sorted_ui_keys(&real, "cru"), listed);
-    assert_eq!(sorted_ui_keys(&real, "crucible"), listed);
 }
 
 #[tokio::test]
@@ -190,16 +188,16 @@ async fn a_stub_vm_reports_no_daemon() {
     assert_eq!(err, "no daemon connected");
 }
 
-/// `crucible.*` is the long-form alias of `cru.*`; a module registered on one
-/// and not the other is the bug `register_in_namespaces` exists to prevent.
+/// `cru` is the one Lua global. A script that still indexes `crucible` must
+/// fail loudly with "attempt to index a nil value", not reach a stale alias.
 #[tokio::test]
-async fn ui_is_registered_on_both_namespaces() {
+async fn the_crucible_global_does_not_exist() {
     let api = Arc::new(MockDaemonApi::new());
     let lua = lua_with(api);
-    let same: bool = lua
-        .load(r#"return cru.ui.ask == crucible.ui.ask"#)
+    let is_nil: bool = lua
+        .load(r#"return crucible == nil"#)
         .eval_async()
         .await
         .unwrap();
-    assert!(same, "cru.ui and crucible.ui must be the same table");
+    assert!(is_nil, "the crucible global must not exist");
 }

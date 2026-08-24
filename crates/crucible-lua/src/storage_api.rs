@@ -28,7 +28,7 @@
 //! The plugin name is read from `cru._current_plugin` at call time.
 
 use crate::error::LuaError;
-use crate::lua_util::register_in_namespaces;
+use crate::lua_util::register_module;
 use crucible_core::storage::PropertyStore;
 use mlua::{Lua, Table, Value};
 use std::sync::Arc;
@@ -68,7 +68,7 @@ pub fn register_storage_module(lua: &Lua) -> Result<(), LuaError> {
         })?;
     storage.set("delete", delete_stub)?;
 
-    register_in_namespaces(lua, "storage", storage)?;
+    register_module(lua, "storage", storage)?;
     Ok(())
 }
 
@@ -192,21 +192,6 @@ mod tests {
         assert!(storage.contains_key("list").unwrap());
         assert!(storage.contains_key("find").unwrap());
         assert!(storage.contains_key("delete").unwrap());
-    }
-
-    #[test]
-    fn storage_also_registered_as_crucible() {
-        let lua = TestLuaBuilder::new().with_storage().build();
-
-        let crucible: Table = lua
-            .globals()
-            .get("crucible")
-            .expect("crucible should exist");
-        let storage: Table = crucible
-            .get("storage")
-            .expect("crucible.storage should exist");
-
-        assert!(storage.contains_key("set").unwrap());
     }
 
     #[tokio::test]

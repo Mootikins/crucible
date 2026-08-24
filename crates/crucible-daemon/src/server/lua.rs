@@ -46,7 +46,7 @@ pub(crate) async fn handle_lua_init_session(
     }
 
     let registry = LuaScriptHandlerRegistry::new();
-    if let Err(e) = register_crucible_on_api(
+    if let Err(e) = register_cru_on_api(
         executor.lua(),
         registry.runtime_handlers(),
         registry.handler_functions(),

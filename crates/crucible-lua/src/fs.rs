@@ -338,7 +338,7 @@ fn register_fs(lua: &Lua, resolver: Option<KilnPathResolver>) -> Result<(), LuaE
 
     // Register fs module globally
     lua.globals().set("fs", fs_table.clone())?;
-    crate::lua_util::register_in_namespaces(lua, "fs", fs_table)?;
+    crate::lua_util::register_module(lua, "fs", fs_table)?;
 
     Ok(())
 }

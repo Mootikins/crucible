@@ -50,17 +50,17 @@ pub struct PermissionHook {
     pub name: String,
     /// Only consult this hook for tool names matching this glob.
     ///
-    /// Same option name and same matcher as `crucible.on`
+    /// Same option name and same matcher as `cru.on`
     /// (`crucible_core::utils::glob_match`), so `pattern` means one thing
     /// across both hooks. `None` means every tool.
     pub pattern: Option<String>,
-    /// Lower runs first, matching `crucible.on`'s `priority` option.
+    /// Lower runs first, matching `cru.on`'s `priority` option.
     ///
     /// This exists because the gate is first-match-wins: without it, ordering
     /// is registration order, the shipped defaults load before any user file,
     /// and a user hook could never override a built-in decision. Shipped
     /// defaults register at [`SHIPPED_DEFAULT_PRIORITY`] so user hooks — which
-    /// take the same default as `crucible.on`, 100 — precede them.
+    /// take the same default as `cru.on`, 100 — precede them.
     pub priority: i64,
 }
 
@@ -68,15 +68,15 @@ pub struct PermissionHook {
 /// default of 100, so anything a user or plugin registers is consulted first.
 pub const SHIPPED_DEFAULT_PRIORITY: i64 = 1000;
 
-/// Register the crucible.permissions.on_request() API for permission hooks
+/// Register the cru.permissions.on_request() API for permission hooks
 ///
 /// This allows Lua scripts to register callbacks that fire before permission prompts:
 ///
 /// ```lua
 /// -- Filter at registration instead of `if request.tool_name == "bash"`:
-/// crucible.permissions.on_request(function(request) ... end, { pattern = "bash" })
+/// cru.permissions.on_request(function(request) ... end, { pattern = "bash" })
 ///
-/// crucible.permissions.on_request(function(request)
+/// cru.permissions.on_request(function(request)
 ///     -- request.tool_name, request.args, request.file_path, request.mode
 ///     if request.mode == "auto" then
 ///         return {allow=true}  -- Auto mode approves everything
@@ -92,23 +92,7 @@ pub fn register_permission_hook_api(
     permission_hooks: Arc<Mutex<Vec<PermissionHook>>>,
     permission_functions: Arc<Mutex<HashMap<String, RegistryKey>>>,
 ) -> LuaResult<()> {
-    let crucible: Table = match lua.globals().get("crucible") {
-        Ok(t) => t,
-        Err(_) => {
-            let t = lua.create_table()?;
-            lua.globals().set("crucible", t.clone())?;
-            t
-        }
-    };
-
-    let permissions: Table = match crucible.get("permissions") {
-        Ok(t) => t,
-        Err(_) => {
-            let t = lua.create_table()?;
-            crucible.set("permissions", t.clone())?;
-            t
-        }
-    };
+    let permissions = crate::lua_util::get_or_create_module(lua, "permissions")?;
 
     let hooks = permission_hooks.clone();
     let functions = permission_functions.clone();
@@ -150,10 +134,6 @@ pub fn register_permission_hook_api(
         })?;
 
     permissions.set("on_request", on_request_fn)?;
-    // Shipped scripts are written against `cru.*`; `crucible.*` stays for
-    // existing configs. Same table, so a hook registered through either name
-    // lands in the same list.
-    crate::lua_util::get_or_create_namespace(lua, "cru")?.set("permissions", permissions)?;
     Ok(())
 }
 

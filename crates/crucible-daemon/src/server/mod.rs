@@ -27,7 +27,7 @@ use crucible_core::config::{DataClassification, LlmConfig, TrustLevel};
 use crucible_core::session::RecordingMode;
 use crucible_lua::stubs::StubGenerator;
 use crucible_lua::{
-    register_crucible_on_api, LuaExecutor, LuaScriptHandlerRegistry, PluginManager,
+    register_cru_on_api, LuaExecutor, LuaScriptHandlerRegistry, PluginManager,
     Session as LuaSession,
 };
 use dashmap::DashMap;

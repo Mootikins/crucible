@@ -120,7 +120,7 @@ pub fn register_graph_module(lua: &Lua) -> Result<(), LuaError> {
     // stubs advertised a `cru.graph` that was nil at runtime — the stub named
     // the API this should always have had.
     lua.globals().set("graph", graph.clone())?;
-    crate::lua_util::register_in_namespaces(lua, "graph", graph)?;
+    crate::lua_util::register_module(lua, "graph", graph)?;
 
     Ok(())
 }

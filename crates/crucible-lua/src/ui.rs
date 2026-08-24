@@ -30,7 +30,7 @@
 //! Plugins must handle it; it is the common case on a headless daemon.
 
 use crate::error::LuaError;
-use crate::lua_util::{gate_module_keys, register_in_namespaces};
+use crate::lua_util::{gate_module_keys, register_module};
 use crate::sessions::DaemonSessionApi;
 use mlua::{Lua, LuaSerdeExt, Value};
 use std::sync::Arc;
@@ -102,7 +102,7 @@ pub fn register_ui_module(lua: &Lua) -> Result<(), LuaError> {
         })?;
         ui.set(*kind, f)?;
     }
-    register_in_namespaces(lua, "ui", ui)?;
+    register_module(lua, "ui", ui)?;
     Ok(())
 }
 
@@ -143,7 +143,7 @@ pub fn register_ui_module_with_api(
     }
 
     gate_module_keys("ui", &ui, INTERACTION_KINDS)?;
-    register_in_namespaces(lua, "ui", ui)?;
+    register_module(lua, "ui", ui)?;
 
     Ok(())
 }

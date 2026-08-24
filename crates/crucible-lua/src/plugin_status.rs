@@ -152,10 +152,7 @@ pub fn register_status_module(lua: &Lua, registry: StatusRegistry) -> LuaResult<
         Ok(())
     })?;
     let plugin = crate::lua_util::get_or_create_module(lua, "plugin")?;
-    // Transitional aliases until the `crucible` global is deleted.
-    let crucible = crate::lua_util::get_or_create_namespace(lua, "crucible")?;
-    plugin.set("set_status", set_status.clone())?;
-    crucible.set("set_status", set_status)?;
+    plugin.set("set_status", set_status)?;
 
     let clear_registry = registry;
     let clear_status = lua.create_function(move |_, opts: Table| {
@@ -168,8 +165,7 @@ pub fn register_status_module(lua: &Lua, registry: StatusRegistry) -> LuaResult<
         clear_registry.clear(&session, &key);
         Ok(())
     })?;
-    plugin.set("clear_status", clear_status.clone())?;
-    crucible.set("clear_status", clear_status)?;
+    plugin.set("clear_status", clear_status)?;
     Ok(())
 }
 

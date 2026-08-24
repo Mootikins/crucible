@@ -51,7 +51,7 @@
 //! kiln A never sees a path from kiln B.
 
 use crate::error::LuaError;
-use crate::lua_util::register_in_namespaces;
+use crate::lua_util::register_module;
 use crucible_core::storage::{NoteStore, Scope, StorageError, StorageResult};
 use mlua::{Lua, LuaSerdeExt, Table, Value};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -104,7 +104,7 @@ pub fn register_vault_module(lua: &Lua) -> Result<(), LuaError> {
         })?;
     vault.set("neighbors", neighbors_stub)?;
 
-    register_in_namespaces(lua, "kiln", vault)?;
+    register_module(lua, "kiln", vault)?;
 
     Ok(())
 }

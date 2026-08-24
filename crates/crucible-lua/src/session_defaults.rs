@@ -315,17 +315,9 @@ impl SessionConfigRpc for SessionDefaultsRpc {
     fn clear_messages(&self) {}
 }
 
-/// Register `cru.defaults` (and the `crucible.defaults` alias) on `lua`.
-///
-/// Both namespaces, per [`crate::lua_util::register_in_namespaces`]. Shipped
-/// scripts are written against `cru.*`; `crucible.*` stays for existing
-/// configs. The same store backs both, so it does not matter which name a
-/// file uses.
+/// Register `cru.defaults` on `lua`.
 pub fn register_session_defaults(lua: &Lua, defaults: SessionDefaults) -> LuaResult<()> {
-    for namespace in ["cru", "crucible"] {
-        crate::lua_util::get_or_create_namespace(lua, namespace)?
-            .set("defaults", defaults.clone())?;
-    }
+    crate::lua_util::get_or_create_namespace(lua, "cru")?.set("defaults", defaults)?;
     Ok(())
 }
 

@@ -298,15 +298,6 @@ function test_mocks.setup(overrides)
     http = cru.http
     fs = cru.fs
     paths = cru.paths
-    if crucible then
-        crucible.kiln = cru.kiln
-        crucible.graph = cru.graph
-        crucible.http = cru.http
-        crucible.fs = cru.fs
-        crucible.paths = cru.paths
-        crucible.session = cru.session
-        crucible.sessions = cru.sessions
-    end
 end
 
 function test_mocks.reset()

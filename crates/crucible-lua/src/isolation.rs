@@ -266,11 +266,7 @@ pub fn register_isolation_module(lua: &Lua, registry: IsolationRegistry) -> LuaR
         );
         Ok(())
     })?;
-    crate::lua_util::get_or_create_module(lua, "isolation")?
-        .set("require", require_isolation.clone())?;
-    // Transitional alias until the `crucible` global is deleted.
-    crate::lua_util::get_or_create_namespace(lua, "crucible")?
-        .set("require_isolation", require_isolation)?;
+    crate::lua_util::get_or_create_module(lua, "isolation")?.set("require", require_isolation)?;
     Ok(())
 }
 

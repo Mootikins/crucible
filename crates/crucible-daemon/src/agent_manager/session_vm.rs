@@ -106,7 +106,7 @@ impl AgentManager {
         let permission_hooks = Arc::new(StdMutex::new(Vec::new()));
         let permission_functions = Arc::new(StdMutex::new(HashMap::new()));
 
-        if let Err(e) = register_crucible_on_api(
+        if let Err(e) = register_cru_on_api(
             &lua,
             registry.runtime_handlers(),
             registry.handler_functions(),
@@ -137,16 +137,14 @@ impl AgentManager {
         // `LuaExecutor` until now, which is why the API was nil here — the
         // shipped defaults AND `cru setup`'s user template both advertised it
         // while it silently did nothing on this VM.
-        for namespace in ["cru", "crucible"] {
-            match crucible_lua::lua_util::get_or_create_namespace(&lua, namespace) {
-                Ok(table) => {
-                    if let Err(e) = crucible_lua::register_hooks_module(&lua, &table) {
-                        error!(session_id = %session_id, namespace, error = %e, "Failed to register lifecycle hooks API");
-                    }
+        match crucible_lua::lua_util::get_or_create_namespace(&lua, "cru") {
+            Ok(table) => {
+                if let Err(e) = crucible_lua::register_hooks_module(&lua, &table) {
+                    error!(session_id = %session_id, error = %e, "Failed to register lifecycle hooks API");
                 }
-                Err(e) => {
-                    error!(session_id = %session_id, namespace, error = %e, "Failed to create Lua namespace");
-                }
+            }
+            Err(e) => {
+                error!(session_id = %session_id, error = %e, "Failed to create Lua namespace");
             }
         }
 

@@ -16,12 +16,12 @@ fn init_lua_builtin_loads_against_the_session_vm_surface() {
     let lua = Lua::new();
     let registry = LuaScriptHandlerRegistry::new();
 
-    register_crucible_on_api(
+    register_cru_on_api(
         &lua,
         registry.runtime_handlers(),
         registry.handler_functions(),
     )
-    .expect("register_crucible_on_api failed");
+    .expect("register_cru_on_api failed");
     register_permission_hook_api(
         &lua,
         Arc::new(StdMutex::new(Vec::new())),

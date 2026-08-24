@@ -186,7 +186,7 @@ pub fn register_schedule_module(lua: &Lua) -> LuaResult<()> {
     meta.set("__call", schedule_fn)?;
     schedule_table.set_metatable(Some(meta))?;
 
-    crate::lua_util::register_in_namespaces(lua, "schedule", schedule_table)?;
+    crate::lua_util::register_module(lua, "schedule", schedule_table)?;
 
     Ok(())
 }
@@ -210,7 +210,7 @@ pub fn register_schedule_module(lua: &Lua) -> LuaResult<()> {
     meta.set("__call", err_fn)?;
     schedule_table.set_metatable(Some(meta))?;
 
-    crate::lua_util::register_in_namespaces(lua, "schedule", schedule_table)?;
+    crate::lua_util::register_module(lua, "schedule", schedule_table)?;
 
     Ok(())
 }
@@ -221,10 +221,9 @@ mod tests {
     use mlua::Lua;
 
     #[test]
-    fn schedule_module_registers_in_namespaces() {
+    fn schedule_module_registers_on_cru() {
         let lua = Lua::new();
         crate::lua_util::get_or_create_namespace(&lua, "cru").unwrap();
-        crate::lua_util::get_or_create_namespace(&lua, "crucible").unwrap();
         register_schedule_module(&lua).unwrap();
 
         let has_cru: bool = lua
@@ -232,12 +231,6 @@ mod tests {
             .eval()
             .unwrap();
         assert!(has_cru, "cru.schedule should be a table");
-
-        let has_crucible: bool = lua
-            .load(r#"return type(crucible.schedule) == "table""#)
-            .eval()
-            .unwrap();
-        assert!(has_crucible, "crucible.schedule should be a table");
 
         let has_cancel: bool = lua
             .load(r#"return type(cru.schedule.cancel) == "function""#)
@@ -250,7 +243,6 @@ mod tests {
     fn cancel_nonexistent_handle_returns_false() {
         let lua = Lua::new();
         crate::lua_util::get_or_create_namespace(&lua, "cru").unwrap();
-        crate::lua_util::get_or_create_namespace(&lua, "crucible").unwrap();
         register_schedule_module(&lua).unwrap();
 
         let result: bool = lua
@@ -265,7 +257,6 @@ mod tests {
     async fn schedule_rejects_non_positive_interval() {
         let lua = Lua::new();
         crate::lua_util::get_or_create_namespace(&lua, "cru").unwrap();
-        crate::lua_util::get_or_create_namespace(&lua, "crucible").unwrap();
         register_schedule_module(&lua).unwrap();
 
         let result = lua
@@ -286,7 +277,6 @@ mod tests {
     async fn schedule_runs_and_can_be_cancelled() {
         let lua = Lua::new();
         crate::lua_util::get_or_create_namespace(&lua, "cru").unwrap();
-        crate::lua_util::get_or_create_namespace(&lua, "crucible").unwrap();
         register_schedule_module(&lua).unwrap();
 
         // Set up a counter that the callback increments
@@ -337,7 +327,6 @@ mod tests {
     async fn schedule_accepts_table_spec() {
         let lua = Lua::new();
         crate::lua_util::get_or_create_namespace(&lua, "cru").unwrap();
-        crate::lua_util::get_or_create_namespace(&lua, "crucible").unwrap();
         register_schedule_module(&lua).unwrap();
 
         lua.load("_table_spec_ran = false").exec().unwrap();

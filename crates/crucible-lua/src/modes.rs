@@ -339,11 +339,9 @@ impl UserData for ModeRegistry {
     }
 }
 
-/// Register `cru.modes` (and the `crucible.modes` alias) on `lua`.
+/// Register `cru.modes` on `lua`.
 pub fn register_modes(lua: &Lua, registry: ModeRegistry) -> LuaResult<()> {
-    for namespace in ["cru", "crucible"] {
-        crate::lua_util::get_or_create_namespace(lua, namespace)?.set("modes", registry.clone())?;
-    }
+    crate::lua_util::get_or_create_namespace(lua, "cru")?.set("modes", registry)?;
     Ok(())
 }
 

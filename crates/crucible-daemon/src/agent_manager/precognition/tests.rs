@@ -212,12 +212,12 @@ mod precognition_format_hook_tests {
         let lua = mlua::Lua::new();
         let registry = crucible_lua::LuaScriptHandlerRegistry::new();
 
-        register_crucible_on_api(
+        register_cru_on_api(
             &lua,
             registry.runtime_handlers(),
             registry.handler_functions(),
         )
-        .expect("register_crucible_on_api should succeed");
+        .expect("register_cru_on_api should succeed");
 
         SessionEventState {
             lua,
@@ -472,12 +472,12 @@ mod precognition_select_hook_tests {
     fn make_session_event_state() -> SessionEventState {
         let lua = mlua::Lua::new();
         let registry = crucible_lua::LuaScriptHandlerRegistry::new();
-        register_crucible_on_api(
+        register_cru_on_api(
             &lua,
             registry.runtime_handlers(),
             registry.handler_functions(),
         )
-        .expect("register_crucible_on_api should succeed");
+        .expect("register_cru_on_api should succeed");
 
         SessionEventState {
             lua,

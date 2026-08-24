@@ -39,7 +39,7 @@ pub fn register_auth_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
         // the list, and a length-derived name would then collide with one a
         // surviving hook still holds in `__crucible_auth_hooks__` — dispatch
         // is by name, so the collision rebinds the survivor to the new
-        // function (the same defect `crucible_on.rs` documents at length).
+        // function (the same defect `cru_on.rs` documents at length).
         let seq: u64 = globals
             .get::<Option<u64>>("__crucible_auth_hook_seq__")
             .ok()
