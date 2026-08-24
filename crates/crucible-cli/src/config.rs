@@ -196,9 +196,6 @@ verbose = false
 
         // ACP defaults
         assert_eq!(config.acp.default_agent, None);
-        assert!(config.acp.enable_discovery);
-        assert_eq!(config.acp.session_timeout_minutes, 30);
-        assert_eq!(config.acp.max_message_size_mb, 25);
 
         // Chat defaults
         assert_eq!(config.chat.model, None);

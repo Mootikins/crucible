@@ -8,9 +8,6 @@ const TRACKED_FIELDS: &[(&str, &str)] = &[
     ("session_kiln", "Top-level"),
     ("llm.default", "LLM"),
     ("acp.default_agent", "ACP"),
-    ("acp.enable_discovery", "ACP"),
-    ("acp.session_timeout_minutes", "ACP"),
-    ("acp.max_message_size_mb", "ACP"),
     ("chat.model", "Chat"),
     ("chat.enable_markdown", "Chat"),
     ("chat.endpoint", "Chat"),
@@ -480,11 +477,6 @@ impl CliAppConfig {
         info!("  session_kiln: {:?}", self.session_kiln);
         info!("  llm.default: {:?}", self.llm.default);
         info!("  acp.default_agent: {:?}", self.acp.default_agent);
-        info!("  acp.enable_discovery: {}", self.acp.enable_discovery);
-        info!(
-            "  acp.session_timeout_minutes: {}",
-            self.acp.session_timeout_minutes
-        );
         info!("  cli.show_progress: {}", self.cli.show_progress);
         info!(
             "  cli.confirm_destructive: {}",
@@ -595,9 +587,6 @@ impl CliAppConfig {
                 .map(|p| json!(p.to_string_lossy())),
             "llm.default" => self.llm.default.as_ref().map(|v| json!(v)),
             "acp.default_agent" => self.acp.default_agent.as_ref().map(|v| json!(v)),
-            "acp.enable_discovery" => Some(json!(self.acp.enable_discovery)),
-            "acp.session_timeout_minutes" => Some(json!(self.acp.session_timeout_minutes)),
-            "acp.max_message_size_mb" => Some(json!(self.acp.max_message_size_mb)),
             "chat.model" => self.chat.model.as_ref().map(|v| json!(v)),
             "chat.enable_markdown" => Some(json!(self.chat.enable_markdown)),
             "chat.endpoint" => self.chat.endpoint.as_ref().map(|v| json!(v)),
@@ -723,9 +712,6 @@ endpoint = "http://localhost:11434"
 # ACP (Agent Client Protocol) configuration
 [acp]
 # default_agent = "claude"   # unset means "no default"; TOML has no null
-enable_discovery = true
-session_timeout_minutes = 30
-max_message_size_mb = 25
 
 # Chat configuration
 [chat]

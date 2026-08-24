@@ -23,10 +23,6 @@ at). Every field has a default, so `[acp]` is optional.
 |-------|------|---------|-------------|
 | `default_agent` | string | *(unset)* | Profile to use when `--acp` is omitted. Unset means auto-discover the first available agent. |
 | `streaming_timeout_minutes` | integer | `15` | Time allowed for one complete response |
-| `enable_discovery` | bool | `true` | **Currently unread** — agents are discovered unconditionally |
-| `session_timeout_minutes` | integer | `30` | **Currently unread** — no idle-drop is wired to it |
-| `max_message_size_mb` | integer | `25` | **Currently unread** — no size check is wired to it |
-| `lazy_agent_selection` | bool | `true` | **Reserved** — no code reads it; the value has no effect |
 
 ```toml
 [acp]
@@ -34,9 +30,9 @@ default_agent = "claude"
 streaming_timeout_minutes = 15
 ```
 
-Of the scalar fields, `default_agent` and `streaming_timeout_minutes` are the two with
-behavior behind them. The other four parse and round-trip through `cru config`, but no
-code path reads them today.
+Earlier versions also parsed `enable_discovery`, `session_timeout_minutes`,
+`max_message_size_mb` and `lazy_agent_selection`. No code read them, so they are removed.
+A config file that still contains them loads without an error; the values are ignored.
 
 `streaming_timeout_minutes` defaults to 15 rather than something tighter because reasoning
 models routinely go quiet for minutes at a time mid-turn.

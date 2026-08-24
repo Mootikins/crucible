@@ -4,22 +4,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::config::components::permissions::PermissionConfig;
-use crate::config::serde_helpers::default_true;
 
 /// ACP configuration - practical settings for agent communication
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AcpConfig {
     /// Default agent to use (opencode, claude, gemini, or custom profile name)
     pub default_agent: Option<String>,
-    /// Enable agent discovery
-    #[serde(default = "default_true")]
-    pub enable_discovery: bool,
-    /// Session timeout in minutes
-    #[serde(default = "default_session_timeout")]
-    pub session_timeout_minutes: u64,
-    /// Maximum message size in MB (prevents oversized requests)
-    #[serde(default = "default_max_message_size")]
-    pub max_message_size_mb: usize,
     /// Streaming response timeout in minutes (time for complete LLM response)
     /// Default is 15 minutes to accommodate complex reasoning tasks
     #[serde(default = "default_streaming_timeout")]
@@ -27,11 +17,6 @@ pub struct AcpConfig {
     /// Custom agent profiles with environment variable overrides
     #[serde(default)]
     pub agents: HashMap<String, AgentProfile>,
-    /// Reserved. The config parses this field, but no code reads it.
-    /// The intended meaning: show a splash to pick the agent before the
-    /// session creates it. Keep the field until someone decides the feature.
-    #[serde(default = "default_true")]
-    pub lazy_agent_selection: bool,
 }
 
 /// Delegation configuration for an ACP agent
@@ -108,12 +93,6 @@ pub struct AgentProfile {
     pub permissions: Option<PermissionConfig>,
 }
 
-fn default_session_timeout() -> u64 {
-    30
-}
-fn default_max_message_size() -> usize {
-    25
-}
 fn default_streaming_timeout() -> u64 {
     15
 }
@@ -122,12 +101,8 @@ impl Default for AcpConfig {
     fn default() -> Self {
         Self {
             default_agent: None, // Auto-discover first available
-            enable_discovery: true,
-            session_timeout_minutes: 30,
-            max_message_size_mb: 25,
             streaming_timeout_minutes: 15,
             agents: HashMap::new(),
-            lazy_agent_selection: true, // Show splash by default
         }
     }
 }
@@ -204,6 +179,22 @@ mod tests {
     }
 
     #[test]
+    fn config_with_removed_acp_knobs_still_loads() {
+        // Users can have the removed keys in an old config file. The load
+        // must ignore them instead of an error.
+        let toml = r#"
+            default_agent = "claude"
+            enable_discovery = true
+            session_timeout_minutes = 45
+            max_message_size_mb = 25
+            lazy_agent_selection = false
+        "#;
+
+        let config: AcpConfig = toml::from_str(toml).expect("removed keys must not break the load");
+        assert_eq!(config.default_agent, Some("claude".to_string()));
+    }
+
+    #[test]
     fn test_acp_config_default_has_empty_agents() {
         let config = AcpConfig::default();
         assert!(config.agents.is_empty());
@@ -216,37 +207,6 @@ mod tests {
         assert!(profile.command.is_none());
         assert!(profile.args.is_none());
         assert!(profile.env.is_empty());
-    }
-
-    // =============================================================================
-    // Lazy Agent Selection Config Tests (TDD - RED phase)
-    // =============================================================================
-
-    #[test]
-    fn test_lazy_agent_selection_defaults_to_true() {
-        // By default, agent selection should be lazy (show splash, create agent after)
-        let config = AcpConfig::default();
-        assert!(config.lazy_agent_selection);
-    }
-
-    #[test]
-    fn test_lazy_agent_selection_can_be_disabled() {
-        let toml = r#"
-            lazy_agent_selection = false
-        "#;
-
-        let config: AcpConfig = toml::from_str(toml).expect("should parse");
-        assert!(!config.lazy_agent_selection);
-    }
-
-    #[test]
-    fn test_lazy_agent_selection_explicit_true() {
-        let toml = r#"
-            lazy_agent_selection = true
-        "#;
-
-        let config: AcpConfig = toml::from_str(toml).expect("should parse");
-        assert!(config.lazy_agent_selection);
     }
 
     // =============================================================================
