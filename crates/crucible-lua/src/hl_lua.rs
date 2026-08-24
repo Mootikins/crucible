@@ -1,8 +1,8 @@
-//! `crucible.hl` — the Lua surface for highlight groups, and their wire form.
+//! `cru.hl` — the Lua surface for highlight groups, and their wire form.
 //!
 //! ```lua
-//! crucible.hl.set("StatusMode", { fg = "black", bg = "mode_normal", bold = true })
-//! crucible.hl.link("PopupSelected", "Visual")
+//! cru.hl.set("StatusMode", { fg = "black", bg = "mode_normal", bold = true })
+//! cru.hl.link("PopupSelected", "Visual")
 //! ```
 //!
 //! Split from [`crate::hl`] so the resolution logic stays free of mlua and can
@@ -35,18 +35,18 @@ fn group_from_lua(table: &Table) -> HlGroup {
     }
 }
 
-/// Register `crucible.hl` on an existing `crucible` table.
-pub fn register_hl_namespace(lua: &Lua, crucible: &Table) -> Result<(), LuaError> {
+/// Register `cru.hl` on an existing `cru` table.
+pub fn register_hl_namespace(lua: &Lua, cru: &Table) -> Result<(), LuaError> {
     let hl = lua.create_table()?;
 
-    // crucible.hl.set(name, spec)
+    // cru.hl.set(name, spec)
     let set_fn = lua.create_function(|_, (name, spec): (String, Table)| {
         crate::config::set_hl_group(name, group_from_lua(&spec));
         Ok(())
     })?;
     hl.set("set", set_fn)?;
 
-    // crucible.hl.link(from, to) — sugar for set(from, { link = to })
+    // cru.hl.link(from, to) — sugar for set(from, { link = to })
     let link_fn = lua.create_function(|_, (from, to): (String, String)| {
         crate::config::set_hl_group(
             from,
@@ -59,7 +59,7 @@ pub fn register_hl_namespace(lua: &Lua, crucible: &Table) -> Result<(), LuaError
     })?;
     hl.set("link", link_fn)?;
 
-    crucible.set("hl", hl)?;
+    cru.set("hl", hl)?;
     Ok(())
 }
 
@@ -155,16 +155,16 @@ mod tests {
 
     fn lua_with_hl() -> Lua {
         let lua = Lua::new();
-        let crucible = lua.create_table().unwrap();
-        lua.globals().set("crucible", crucible.clone()).unwrap();
-        register_hl_namespace(&lua, &crucible).unwrap();
+        let cru = lua.create_table().unwrap();
+        lua.globals().set("cru", cru.clone()).unwrap();
+        register_hl_namespace(&lua, &cru).unwrap();
         lua
     }
 
     #[test]
     fn set_defines_a_group_reachable_from_the_store() {
         let lua = lua_with_hl();
-        lua.load(r#"crucible.hl.set("Mode", { fg = "black", bg = "mode_normal", bold = true })"#)
+        lua.load(r#"cru.hl.set("Mode", { fg = "black", bg = "mode_normal", bold = true })"#)
             .exec()
             .unwrap();
 
@@ -177,7 +177,7 @@ mod tests {
     #[test]
     fn link_is_sugar_for_a_link_only_group() {
         let lua = lua_with_hl();
-        lua.load(r#"crucible.hl.link("PopupSel", "Visual")"#)
+        lua.load(r#"cru.hl.link("PopupSel", "Visual")"#)
             .exec()
             .unwrap();
 
@@ -191,7 +191,7 @@ mod tests {
     #[test]
     fn adaptive_colours_survive_the_lua_table_form() {
         let lua = lua_with_hl();
-        lua.load(r#"crucible.hl.set("T", { fg = { dark = "white", light = "black" } })"#)
+        lua.load(r#"cru.hl.set("T", { fg = { dark = "white", light = "black" } })"#)
             .exec()
             .unwrap();
 
@@ -210,7 +210,7 @@ mod tests {
     #[test]
     fn palette_index_forms_match_the_theme_parser() {
         let lua = lua_with_hl();
-        lua.load(r#"crucible.hl.set("I", { fg = 4, bg = { idx = 12 } })"#)
+        lua.load(r#"cru.hl.set("I", { fg = 4, bg = { idx = 12 } })"#)
             .exec()
             .unwrap();
 

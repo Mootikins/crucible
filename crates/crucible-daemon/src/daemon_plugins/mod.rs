@@ -231,38 +231,28 @@ impl DaemonPluginLoader {
         // so every hook-registering plugin raised at load and was downgraded
         // to a warning. Covered by
         // `plugin_runtime_exposes_the_documented_api_surface`.
-        // `crucible.require_isolation` — a plugin sandboxing the session
+        // `cru.isolation.require` — a plugin sandboxing the session
         // declares it here so the dispatcher can default-deny anything the
         // plugin did not handle.
         let isolation = IsolationRegistry::new();
         reg(
             "isolation",
-            register_isolation_module(
-                lua,
-                &lua.globals().get::<mlua::Table>("crucible")?,
-                isolation.clone(),
-            ),
+            register_isolation_module(lua, isolation.clone()),
         )?;
 
-        // `crucible.set_status` — a durable, session-scoped UI slot. Without
-        // it a plugin could only emit transient notifications, so a session's
-        // isolation state was unverifiable from the UI.
+        // `cru.plugin.set_status` — a durable, session-scoped UI slot.
+        // Without it a plugin could only emit transient notifications, so a
+        // session's isolation state was unverifiable from the UI.
         let status = StatusRegistry::new();
-        reg(
-            "status",
-            register_status_module(
-                lua,
-                &lua.globals().get::<mlua::Table>("crucible")?,
-                status.clone(),
-            ),
-        )?;
+        reg("status", register_status_module(lua, status.clone()))?;
 
-        // `crucible.publish` — what a plugin states about itself, for clients
-        // to render. Rebound per plugin at execute time so the publishing
-        // plugin is recorded by the loader rather than claimed by the caller.
+        // `cru.plugin.publish` — what a plugin states about itself, for
+        // clients to render. Rebound per plugin at execute time so the
+        // publishing plugin is recorded by the loader rather than claimed by
+        // the caller.
         let publications = PublicationRegistry::new();
 
-        // `crucible.options` — one declaration, rendered by every frontend.
+        // `cru.plugin.options` — one declaration, rendered by every frontend.
         // Bound per plugin at execute time for the same reason `publish` is.
         let options = OptionsRegistry::new();
 
@@ -986,7 +976,7 @@ end
             .to_string_lossy()
             .replace('\\', "\\\\")
             .replace('"', "\\\"");
-        // Rebind `crucible.publish` to THIS plugin before its body runs.
+        // Rebind `cru.plugin.publish` to THIS plugin before its body runs.
         //
         // One Lua VM serves every plugin, so a single global binding would
         // attribute whatever it stored to whichever plugin the closure happened
@@ -994,19 +984,9 @@ end
         // plugin publish under another's name — attribution nothing could
         // trust. The loader knows who it is about to execute; it says so.
         self.publications.release_plugin(name);
-        register_publish_module(
-            lua,
-            &lua.globals().get::<mlua::Table>("crucible")?,
-            self.publications.clone(),
-            name.to_string(),
-        )?;
+        register_publish_module(lua, self.publications.clone(), name.to_string())?;
         self.options.release_plugin(name);
-        crucible_lua::register_options_module(
-            lua,
-            &lua.globals().get::<mlua::Table>("crucible")?,
-            self.options.clone(),
-            name.to_string(),
-        )?;
+        crucible_lua::register_options_module(lua, self.options.clone(), name.to_string())?;
 
         let setup_code = format!(
             r#"

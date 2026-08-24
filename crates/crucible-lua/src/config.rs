@@ -260,16 +260,16 @@ pub fn register_statusline_namespace(lua: &Lua, cru: &Table) -> Result<(), LuaEr
     Ok(())
 }
 
-/// Register `crucible.colorscheme` — the colour palette.
+/// Register `cru.colorscheme` — the colour palette.
 ///
 /// Named for what it is. "Theme" had come to mean three different things: this
 /// palette, the surface geometry in `cru.geometry`, and the syntect theme used
 /// for code highlighting. `colorscheme` is also the word Neovim uses for
 /// exactly this — the thing highlight groups resolve against.
-pub fn register_theme_namespace(lua: &Lua, crucible: &Table) -> Result<(), LuaError> {
+pub fn register_theme_namespace(lua: &Lua, cru: &Table) -> Result<(), LuaError> {
     let theme = lua.create_table()?;
 
-    // crucible.colorscheme.setup(config) — parses and stores the theme config
+    // cru.colorscheme.setup(config) — parses and stores the theme config
     let setup_fn = lua.create_function(|lua, config: Table| {
         let theme_config = crate::theme::parse_theme_from_table(lua, &config);
         debug!("Theme config parsed successfully: {}", theme_config.name);
@@ -278,7 +278,7 @@ pub fn register_theme_namespace(lua: &Lua, crucible: &Table) -> Result<(), LuaEr
     })?;
     theme.set("setup", setup_fn)?;
 
-    crucible.set("colorscheme", theme)?;
+    cru.set("colorscheme", theme)?;
     Ok(())
 }
 
@@ -306,8 +306,8 @@ pub fn list_available_themes(config_dir: &Path) -> Vec<String> {
     names
 }
 
-/// Register the crucible.include() function
-fn register_include(lua: &Lua, crucible: &Table, config_dir: PathBuf) -> Result<(), LuaError> {
+/// Register the cru.include() function
+fn register_include(lua: &Lua, ns: &Table, config_dir: PathBuf) -> Result<(), LuaError> {
     let include_fn = lua.create_function(move |lua, path: String| {
         let full_path = config_dir.join(&path);
 
@@ -328,17 +328,17 @@ fn register_include(lua: &Lua, crucible: &Table, config_dir: PathBuf) -> Result<
             .exec()
     })?;
 
-    crucible.set("include", include_fn)?;
+    ns.set("include", include_fn)?;
     Ok(())
 }
 
-/// Register `crucible.syntax` — code-highlighting colours.
+/// Register `cru.syntax` — code-highlighting colours.
 ///
-/// Separate from `crucible.colorscheme` because it addresses grammar scopes
+/// Separate from `cru.colorscheme` because it addresses grammar scopes
 /// rather than UI slots, and separate from `cru.geometry` because it is colour,
 /// not geometry. `theme = "name"` picks a syntect theme by name; `colors = {}`
 /// overrides individual scopes on top of whatever the colorscheme derives.
-pub fn register_syntax_namespace(lua: &Lua, crucible: &Table) -> Result<(), LuaError> {
+pub fn register_syntax_namespace(lua: &Lua, cru: &Table) -> Result<(), LuaError> {
     let syntax = lua.create_table()?;
     let setup_fn = lua.create_function(|lua, config: Table| {
         let json: serde_json::Value = lua
@@ -350,7 +350,7 @@ pub fn register_syntax_namespace(lua: &Lua, crucible: &Table) -> Result<(), LuaE
         Ok(())
     })?;
     syntax.set("setup", setup_fn)?;
-    crucible.set("syntax", syntax)?;
+    cru.set("syntax", syntax)?;
     Ok(())
 }
 
@@ -359,7 +359,7 @@ pub fn get_syntax_config() -> Option<serde_json::Value> {
     get_config().read().ok()?.syntax.clone()
 }
 
-/// Register the UI-config namespaces (`crucible.statusline`, `crucible.colorscheme`)
+/// Register the UI-config namespaces (`cru.statusline`, `cru.colorscheme`)
 /// and seed the embedded defaults into the config store.
 ///
 /// Split out of [`ConfigLoader::load`] because the daemon's **plugin VM** needs
@@ -369,9 +369,9 @@ pub fn get_syntax_config() -> Option<serde_json::Value> {
 /// TOML). Calling the whole of `load` there would evaluate `init.lua` twice and
 /// double-register every hook in it.
 ///
-/// Without this on the plugin VM, `crucible.colorscheme` and `crucible.statusline` are
+/// Without this on the plugin VM, `cru.colorscheme` and `cru.statusline` are
 /// **nil in the VM that actually runs the user's init.lua**, so
-/// `crucible.colorscheme.setup{...}` fails with "attempt to index a nil value" and the
+/// `cru.colorscheme.setup{...}` fails with "attempt to index a nil value" and the
 /// user's theme never even parses.
 pub fn register_ui_namespaces(lua: &Lua) -> Result<(), LuaError> {
     let cru = crate::lua_util::get_or_create_namespace(lua, "cru")?;
@@ -379,10 +379,14 @@ pub fn register_ui_namespaces(lua: &Lua) -> Result<(), LuaError> {
     let crucible = crate::lua_util::get_or_create_namespace(lua, "crucible")?;
 
     register_statusline_namespace(lua, &cru)?;
-    register_theme_namespace(lua, &crucible)?;
-    crate::hl_lua::register_hl_namespace(lua, &crucible)?;
+    register_theme_namespace(lua, &cru)?;
+    crate::hl_lua::register_hl_namespace(lua, &cru)?;
     crate::ui_geometry::register_geometry_namespace(lua, &cru)?;
-    register_syntax_namespace(lua, &crucible)?;
+    register_syntax_namespace(lua, &cru)?;
+    // Transitional aliases until the `crucible` global is deleted.
+    for name in ["colorscheme", "hl", "syntax"] {
+        crucible.set(name, cru.get::<Value>(name)?)?;
+    }
     // Item vocabulary hangs off the same `cru.statusline` table the runtime
     // `set`/`clear` functions live on — statusline is one module, so the two
     // globals see one table.
@@ -460,11 +464,11 @@ impl ConfigLoader {
     pub fn load(&self, lua: &Lua) -> Result<(), LuaError> {
         register_ui_namespaces(lua)?;
 
-        let globals = lua.globals();
-        let crucible: Table = globals.get("crucible")?;
-
-        // Register crucible.include()
-        register_include(lua, &crucible, self.config_dir.clone())?;
+        // Register cru.include(), with a transitional `crucible` alias.
+        let cru = crate::lua_util::get_or_create_namespace(lua, "cru")?;
+        register_include(lua, &cru, self.config_dir.clone())?;
+        let crucible = crate::lua_util::get_or_create_namespace(lua, "crucible")?;
+        crucible.set("include", cru.get::<Value>("include")?)?;
 
         // Load global init.lua
         let global_init = self.config_dir.join("init.lua");

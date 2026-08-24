@@ -237,10 +237,11 @@ end
         )
         .exec()?;
 
-        // Create crucible namespace
-        let crucible = lua.create_table()?;
+        let cru_ns: mlua::Table = globals.get("cru")?;
 
-        // crucible.log(level, message)
+        // cru.log(level, message) — the base function.
+        // `register_notify_module` wraps it into the callable log table that
+        // carries `levels`, `notify`, `notify_once` and `messages`.
         let log_fn = lua.create_function(|_, (level, msg): (String, String)| {
             match level.as_str() {
                 "debug" => tracing::debug!("{}", msg),
@@ -251,33 +252,43 @@ end
             }
             Ok(())
         })?;
-        crucible.set("log", log_fn)?;
+        cru_ns.set("log", log_fn)?;
 
-        // crucible.json_encode(value) -> string
         let json_encode = lua.create_function(|_lua, value: Value| {
             serde_json::to_string(&value).map_err(mlua::Error::external)
         })?;
-        crucible.set("json_encode", json_encode)?;
-
-        // crucible.json_decode(string) -> value
         let json_decode = lua.create_function(|lua, s: String| {
             let json: JsonValue = serde_json::from_str(&s).map_err(mlua::Error::external)?;
             lua.to_value(&json)
         })?;
-        crucible.set("json_decode", json_decode)?;
 
-        register_hooks_module(lua, &crucible)?;
-        crate::auth_plugin::register_auth_module(lua, &crucible)?;
-        crate::notify::register_notify_module(lua, &crucible)?;
+        register_hooks_module(lua, &cru_ns)?;
+        crate::auth_plugin::register_auth_module(lua, &cru_ns)?;
+        crate::notify::register_notify_module(lua, &cru_ns)?;
 
-        globals.set("crucible", crucible.clone())?;
+        // Transitional `crucible` aliases, until the global is deleted. The
+        // flat `json_encode`/`json_decode` pair exists ONLY here: `cru` has
+        // the structured `cru.json.encode`/`decode` below.
+        let crucible = lua.create_table()?;
+        for name in [
+            "log",
+            "on_session_start",
+            "on_session_end",
+            "on_provider_auth",
+        ] {
+            crucible.set(name, cru_ns.get::<mlua::Value>(name)?)?;
+        }
+        let log_table: mlua::Table = cru_ns.get("log")?;
+        for name in ["notify", "notify_once", "messages"] {
+            crucible.set(name, log_table.get::<mlua::Value>(name)?)?;
+        }
+        crucible.set("json_encode", json_encode.clone())?;
+        crucible.set("json_decode", json_decode.clone())?;
+        globals.set("crucible", crucible)?;
 
-        // Add cru.log and cru.json aliases for concise access
-        let cru_ns: mlua::Table = globals.get("cru")?;
-        cru_ns.set("log", crucible.get::<mlua::Value>("log")?)?;
         let json_table = lua.create_table()?;
-        json_table.set("encode", crucible.get::<mlua::Value>("json_encode")?)?;
-        json_table.set("decode", crucible.get::<mlua::Value>("json_decode")?)?;
+        json_table.set("encode", json_encode)?;
+        json_table.set("decode", json_decode)?;
         // `cru.json.array(t)` — mark a table as a JSON list. Lua cannot tell an
         // empty list from an empty map, and the encoder resolves that as a map,
         // so an unmarked empty list reaches a consumer as `{}` while a

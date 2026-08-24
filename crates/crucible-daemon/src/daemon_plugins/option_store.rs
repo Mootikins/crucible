@@ -1,4 +1,4 @@
-//! Durable values for settings changed through `crucible.options`.
+//! Durable values for settings changed through `cru.plugin.options`.
 //!
 //! `plugin.option_set` calls the plugin's own Lua setter, which writes wherever
 //! that plugin keeps its state — in memory. Nothing outlived the daemon, so a
@@ -121,15 +121,12 @@ mod tests {
     /// mirroring how a real plugin keeps its config.
     fn registry() -> (Lua, OptionsRegistry) {
         let lua = Lua::new();
-        let crucible = lua.create_table().unwrap();
         let reg = OptionsRegistry::new();
-        crucible_lua::register_options_module(&lua, &crucible, reg.clone(), "oci".to_string())
-            .unwrap();
-        lua.globals().set("crucible", crucible).unwrap();
+        crucible_lua::register_options_module(&lua, reg.clone(), "oci".to_string()).unwrap();
         lua.load(
             r#"
             state = { image = "alpine" }
-            crucible.options{
+            cru.plugin.options{
               type = "group",
               get = function(info) return state[info.option] end,
               set = function(info, v) state[info.option] = v end,
@@ -256,7 +253,7 @@ mod wiring_tests {
             dir.join("init.lua"),
             r#"
             _G.optplug_state = { image = "alpine" }
-            crucible.options{
+            cru.plugin.options{
               type = "group",
               get = function(info) return _G.optplug_state[info.option] end,
               set = function(info, v) _G.optplug_state[info.option] = v end,

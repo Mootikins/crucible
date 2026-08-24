@@ -1,24 +1,26 @@
 //! Notification API for Crucible Lua plugins
 //!
-//! Provides `crucible.notify()` and `crucible.notify_once()` following Neovim patterns.
+//! Provides `cru.log.notify()` and `cru.log.notify_once()` following Neovim
+//! patterns. They live on the `cru.log` table: a notification is a message
+//! with a level, and `cru.log.levels` is next to it.
 //!
 //! ```lua
 //! -- Simple notification (toast, auto-dismisses)
-//! crucible.notify("Session saved")
+//! cru.log.notify("Session saved")
 //!
 //! -- With log level
-//! crucible.notify("Connection failed", crucible.log.levels.ERROR)
+//! cru.log.notify("Connection failed", cru.log.levels.ERROR)
 //!
 //! -- With options
-//! crucible.notify("Indexing...", crucible.log.levels.INFO, {
+//! cru.log.notify("Indexing...", cru.log.levels.INFO, {
 //!     progress = { current = 45, total = 100 }
 //! })
 //!
 //! -- Warning (persists until dismissed)
-//! crucible.notify("Context at 85%", crucible.log.levels.WARN)
+//! cru.log.notify("Context at 85%", cru.log.levels.WARN)
 //!
 //! -- Show only once per message
-//! crucible.notify_once("Deprecated API", crucible.log.levels.WARN)
+//! cru.log.notify_once("Deprecated API", cru.log.levels.WARN)
 //! ```
 
 use crucible_core::types::{Notification, NotificationKind};
@@ -27,16 +29,19 @@ use mlua::{Lua, Result as LuaResult, Table, Value};
 const NOTIFICATIONS_KEY: &str = "__crucible_notifications__";
 const NOTIFIED_ONCE_KEY: &str = "__crucible_notified_once__";
 
-pub fn register_notify_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
-    register_log_levels(lua, crucible)?;
-    register_notify_function(lua, crucible)?;
-    register_notify_once_function(lua, crucible)?;
-    register_messages_module(lua, crucible)?;
+pub fn register_notify_module(lua: &Lua, cru: &Table) -> LuaResult<()> {
+    register_log_levels(lua, cru)?;
+    // `notify`, `notify_once` and `messages` hang off the `cru.log` table the
+    // call above just built.
+    let log_table: Table = cru.get("log")?;
+    register_notify_function(lua, &log_table)?;
+    register_notify_once_function(lua, &log_table)?;
+    register_messages_module(lua, &log_table)?;
     Ok(())
 }
 
-fn register_log_levels(lua: &Lua, crucible: &Table) -> LuaResult<()> {
-    let log_fn: Option<mlua::Function> = crucible.get("log").ok();
+fn register_log_levels(lua: &Lua, cru: &Table) -> LuaResult<()> {
+    let log_fn: Option<mlua::Function> = cru.get("log").ok();
 
     let log_table = lua.create_table()?;
 
@@ -70,12 +75,12 @@ fn register_log_levels(lua: &Lua, crucible: &Table) -> LuaResult<()> {
         log_table.set_metatable(Some(metatable))?;
     }
 
-    crucible.set("log", log_table)?;
+    cru.set("log", log_table)?;
 
     Ok(())
 }
 
-fn register_notify_function(lua: &Lua, crucible: &Table) -> LuaResult<()> {
+fn register_notify_function(lua: &Lua, log: &Table) -> LuaResult<()> {
     let notify_fn = lua.create_function(|lua, args: mlua::Variadic<Value>| {
         let msg = match args.first() {
             Some(Value::String(s)) => s.to_str()?.to_string(),
@@ -103,11 +108,11 @@ fn register_notify_function(lua: &Lua, crucible: &Table) -> LuaResult<()> {
         Ok(())
     })?;
 
-    crucible.set("notify", notify_fn)?;
+    log.set("notify", notify_fn)?;
     Ok(())
 }
 
-fn register_notify_once_function(lua: &Lua, crucible: &Table) -> LuaResult<()> {
+fn register_notify_once_function(lua: &Lua, log: &Table) -> LuaResult<()> {
     let notify_once_fn = lua.create_function(|lua, args: mlua::Variadic<Value>| {
         let msg = match args.first() {
             Some(Value::String(s)) => s.to_str()?.to_string(),
@@ -148,11 +153,11 @@ fn register_notify_once_function(lua: &Lua, crucible: &Table) -> LuaResult<()> {
         Ok(true)
     })?;
 
-    crucible.set("notify_once", notify_once_fn)?;
+    log.set("notify_once", notify_once_fn)?;
     Ok(())
 }
 
-fn register_messages_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
+fn register_messages_module(lua: &Lua, log: &Table) -> LuaResult<()> {
     let messages = lua.create_table()?;
 
     let toggle_fn = lua.create_function(|lua, ()| set_messages_action(lua, "toggle"))?;
@@ -167,7 +172,7 @@ fn register_messages_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
     let clear_fn = lua.create_function(|lua, ()| set_messages_action(lua, "clear"))?;
     messages.set("clear", clear_fn)?;
 
-    crucible.set("messages", messages)?;
+    log.set("messages", messages)?;
     Ok(())
 }
 
@@ -297,9 +302,7 @@ mod tests {
     fn notify_queues_toast() {
         let (lua, _) = TestLuaBuilder::new().build_with_notify();
 
-        lua.load(r#"crucible.notify("Hello world")"#)
-            .exec()
-            .unwrap();
+        lua.load(r#"cru.log.notify("Hello world")"#).exec().unwrap();
 
         let notifications = get_pending_notifications(&lua).unwrap();
         assert_eq!(notifications.len(), 1);
@@ -311,7 +314,7 @@ mod tests {
     fn notify_with_level_creates_warning() {
         let (lua, _) = TestLuaBuilder::new().build_with_notify();
 
-        lua.load(r#"crucible.notify("Danger!", crucible.log.levels.WARN)"#)
+        lua.load(r#"cru.log.notify("Danger!", cru.log.levels.WARN)"#)
             .exec()
             .unwrap();
 
@@ -325,7 +328,7 @@ mod tests {
         let (lua, _) = TestLuaBuilder::new().build_with_notify();
 
         lua.load(
-            r#"crucible.notify("Indexing...", crucible.log.levels.INFO, { progress = { current = 45, total = 100 } })"#,
+            r#"cru.log.notify("Indexing...", cru.log.levels.INFO, { progress = { current = 45, total = 100 } })"#,
         )
         .exec()
         .unwrap();
@@ -347,9 +350,9 @@ mod tests {
 
         lua.load(
             r#"
-            crucible.notify_once("Only once")
-            crucible.notify_once("Only once")
-            crucible.notify_once("Only once")
+            cru.log.notify_once("Only once")
+            cru.log.notify_once("Only once")
+            cru.log.notify_once("Only once")
         "#,
         )
         .exec()
@@ -364,11 +367,11 @@ mod tests {
         let (lua, _) = TestLuaBuilder::new().build_with_notify();
 
         let first: bool = lua
-            .load(r#"return crucible.notify_once("Test")"#)
+            .load(r#"return cru.log.notify_once("Test")"#)
             .eval()
             .unwrap();
         let second: bool = lua
-            .load(r#"return crucible.notify_once("Test")"#)
+            .load(r#"return cru.log.notify_once("Test")"#)
             .eval()
             .unwrap();
 
@@ -380,18 +383,9 @@ mod tests {
     fn log_levels_available() {
         let (lua, _) = TestLuaBuilder::new().build_with_notify();
 
-        let info: i32 = lua
-            .load(r#"return crucible.log.levels.INFO"#)
-            .eval()
-            .unwrap();
-        let warn: i32 = lua
-            .load(r#"return crucible.log.levels.WARN"#)
-            .eval()
-            .unwrap();
-        let error: i32 = lua
-            .load(r#"return crucible.log.levels.ERROR"#)
-            .eval()
-            .unwrap();
+        let info: i32 = lua.load(r#"return cru.log.levels.INFO"#).eval().unwrap();
+        let warn: i32 = lua.load(r#"return cru.log.levels.WARN"#).eval().unwrap();
+        let error: i32 = lua.load(r#"return cru.log.levels.ERROR"#).eval().unwrap();
 
         assert_eq!(info, 2);
         assert_eq!(warn, 3);
@@ -402,7 +396,7 @@ mod tests {
     fn messages_toggle() {
         let (lua, _) = TestLuaBuilder::new().build_with_notify();
 
-        lua.load(r#"crucible.messages.toggle()"#).exec().unwrap();
+        lua.load(r#"cru.log.messages.toggle()"#).exec().unwrap();
 
         let action = get_messages_action(&lua).unwrap();
         assert_eq!(action, Some("toggle".to_string()));
@@ -415,13 +409,13 @@ mod tests {
     fn messages_show_hide_clear() {
         let (lua, _) = TestLuaBuilder::new().build_with_notify();
 
-        lua.load(r#"crucible.messages.show()"#).exec().unwrap();
+        lua.load(r#"cru.log.messages.show()"#).exec().unwrap();
         assert_eq!(get_messages_action(&lua).unwrap(), Some("show".to_string()));
 
-        lua.load(r#"crucible.messages.hide()"#).exec().unwrap();
+        lua.load(r#"cru.log.messages.hide()"#).exec().unwrap();
         assert_eq!(get_messages_action(&lua).unwrap(), Some("hide".to_string()));
 
-        lua.load(r#"crucible.messages.clear()"#).exec().unwrap();
+        lua.load(r#"cru.log.messages.clear()"#).exec().unwrap();
         assert_eq!(
             get_messages_action(&lua).unwrap(),
             Some("clear".to_string())
@@ -432,8 +426,8 @@ mod tests {
     fn pending_notifications_cleared_after_retrieval() {
         let (lua, _) = TestLuaBuilder::new().build_with_notify();
 
-        lua.load(r#"crucible.notify("First")"#).exec().unwrap();
-        lua.load(r#"crucible.notify("Second")"#).exec().unwrap();
+        lua.load(r#"cru.log.notify("First")"#).exec().unwrap();
+        lua.load(r#"cru.log.notify("Second")"#).exec().unwrap();
 
         let first_batch = get_pending_notifications(&lua).unwrap();
         assert_eq!(first_batch.len(), 2);

@@ -1,6 +1,6 @@
 //! Data a plugin publishes for clients to render.
 //!
-//! `crucible.publish("<key>", value)` is the generic contribution channel: a
+//! `cru.plugin.publish("<key>", value)` is the generic contribution channel: a
 //! plugin states something about itself once, the daemon stores it verbatim,
 //! and every client — TUI, web, anything later — reads the same answer.
 //!
@@ -20,7 +20,7 @@
 //! Unlike [`crate::plugin_status`] these are not session-scoped. A status slot
 //! describes one live session; a publication describes the plugin.
 
-use mlua::{Lua, LuaSerdeExt, Result as LuaResult, Table};
+use mlua::{Lua, LuaSerdeExt, Result as LuaResult};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -86,10 +86,10 @@ impl PublicationRegistry {
     }
 }
 
-/// Register `crucible.publish`.
+/// Register `cru.plugin.publish`.
 ///
 /// ```lua
-/// crucible.publish("isolation", {
+/// cru.plugin.publish("isolation", {
 ///   available = true,
 ///   profiles  = { "rust", "throwaway" },
 /// })
@@ -99,26 +99,27 @@ impl PublicationRegistry {
 /// someone else as the author of its data would make attribution worthless.
 pub fn register_publish_module(
     lua: &Lua,
-    crucible: &Table,
     registry: PublicationRegistry,
     plugin: String,
 ) -> LuaResult<()> {
     let publish = lua.create_function(move |lua, (key, value): (String, mlua::Value)| {
         if key.is_empty() {
             return Err(mlua::Error::runtime(
-                "crucible.publish: a key is required, e.g. crucible.publish(\"isolation\", {…})",
+                "cru.plugin.publish: a key is required, e.g. cru.plugin.publish(\"isolation\", {…})",
             ));
         }
         let json: serde_json::Value = lua.from_value(value).map_err(|e| {
             mlua::Error::runtime(format!(
-                "crucible.publish: '{key}' must be JSON-encodable data, not a function or \
+                "cru.plugin.publish: '{key}' must be JSON-encodable data, not a function or \
                  userdata: {e}"
             ))
         })?;
         registry.set(&plugin, &key, json);
         Ok(())
     })?;
-    crucible.set("publish", publish)?;
+    crate::lua_util::get_or_create_module(lua, "plugin")?.set("publish", publish.clone())?;
+    // Transitional alias until the `crucible` global is deleted.
+    crate::lua_util::get_or_create_namespace(lua, "crucible")?.set("publish", publish)?;
     Ok(())
 }
 
@@ -129,9 +130,7 @@ mod tests {
 
     fn lua_with_publish(registry: PublicationRegistry, plugin: &str) -> Lua {
         let lua = Lua::new();
-        let crucible = lua.create_table().unwrap();
-        register_publish_module(&lua, &crucible, registry, plugin.to_string()).unwrap();
-        lua.globals().set("crucible", crucible).unwrap();
+        register_publish_module(&lua, registry, plugin.to_string()).unwrap();
         lua
     }
 
@@ -139,7 +138,7 @@ mod tests {
     fn a_plugin_publishes_a_value_clients_can_read_back() {
         let reg = PublicationRegistry::new();
         let lua = lua_with_publish(reg.clone(), "oci");
-        lua.load(r#"crucible.publish("isolation", { available = true, profiles = { "rust" } })"#)
+        lua.load(r#"cru.plugin.publish("isolation", { available = true, profiles = { "rust" } })"#)
             .exec()
             .unwrap();
 
@@ -156,7 +155,7 @@ mod tests {
     fn an_unknown_key_round_trips_unchanged() {
         let reg = PublicationRegistry::new();
         let lua = lua_with_publish(reg.clone(), "somebody");
-        lua.load(r#"crucible.publish("weather", { sky = "blue", temp = 21 })"#)
+        lua.load(r#"cru.plugin.publish("weather", { sky = "blue", temp = 21 })"#)
             .exec()
             .unwrap();
 
@@ -169,11 +168,11 @@ mod tests {
     fn two_plugins_answering_one_key_are_both_kept_and_attributed() {
         let reg = PublicationRegistry::new();
         lua_with_publish(reg.clone(), "oci")
-            .load(r#"crucible.publish("isolation", { available = true })"#)
+            .load(r#"cru.plugin.publish("isolation", { available = true })"#)
             .exec()
             .unwrap();
         lua_with_publish(reg.clone(), "firecracker")
-            .load(r#"crucible.publish("isolation", { available = false })"#)
+            .load(r#"cru.plugin.publish("isolation", { available = false })"#)
             .exec()
             .unwrap();
 
@@ -187,10 +186,10 @@ mod tests {
     fn republishing_replaces_that_plugins_previous_answer() {
         let reg = PublicationRegistry::new();
         let lua = lua_with_publish(reg.clone(), "oci");
-        lua.load(r#"crucible.publish("isolation", { available = false })"#)
+        lua.load(r#"cru.plugin.publish("isolation", { available = false })"#)
             .exec()
             .unwrap();
-        lua.load(r#"crucible.publish("isolation", { available = true })"#)
+        lua.load(r#"cru.plugin.publish("isolation", { available = true })"#)
             .exec()
             .unwrap();
 
@@ -222,7 +221,7 @@ mod tests {
         let reg = PublicationRegistry::new();
         let lua = lua_with_publish(reg.clone(), "oci");
         assert!(lua
-            .load(r#"crucible.publish("", { a = 1 })"#)
+            .load(r#"cru.plugin.publish("", { a = 1 })"#)
             .exec()
             .is_err());
     }
@@ -232,7 +231,7 @@ mod tests {
         let reg = PublicationRegistry::new();
         let lua = lua_with_publish(reg.clone(), "oci");
         let err = lua
-            .load(r#"crucible.publish("isolation", function() end)"#)
+            .load(r#"cru.plugin.publish("isolation", function() end)"#)
             .exec()
             .unwrap_err()
             .to_string();

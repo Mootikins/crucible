@@ -1,6 +1,6 @@
 //! Per-session status published by plugins.
 //!
-//! `crucible.set_status{...}` gives a plugin a durable, session-scoped slot in
+//! `cru.plugin.set_status{...}` gives a plugin a durable, session-scoped slot in
 //! the UI. Before this, a plugin could only call `crucible.notify` — transient,
 //! easily missed, and gone by the time it matters.
 //!
@@ -105,32 +105,28 @@ impl StatusRegistry {
     }
 }
 
-/// Register `crucible.set_status` / `crucible.clear_status`.
+/// Register `cru.plugin.set_status` / `cru.plugin.clear_status`.
 ///
 /// ```lua
-/// crucible.set_status{
+/// cru.plugin.set_status{
 ///   session = session.id,
 ///   key     = "oci",
 ///   text    = "sandboxed: alpine:latest",
 ///   level   = "info",       -- info | warn | error
 /// }
 /// ```
-pub fn register_status_module(
-    lua: &Lua,
-    crucible: &Table,
-    registry: StatusRegistry,
-) -> LuaResult<()> {
+pub fn register_status_module(lua: &Lua, registry: StatusRegistry) -> LuaResult<()> {
     let set_registry = registry.clone();
     let set_status = lua.create_function(move |_, opts: Table| {
         let session: String = opts.get("session").map_err(|_| {
-            mlua::Error::runtime("crucible.set_status: `session` is required (use session.id)")
+            mlua::Error::runtime("cru.plugin.set_status: `session` is required (use session.id)")
         })?;
         let key: String = opts
             .get("key")
-            .map_err(|_| mlua::Error::runtime("crucible.set_status: `key` is required"))?;
+            .map_err(|_| mlua::Error::runtime("cru.plugin.set_status: `key` is required"))?;
         let text: String = opts
             .get("text")
-            .map_err(|_| mlua::Error::runtime("crucible.set_status: `text` is required"))?;
+            .map_err(|_| mlua::Error::runtime("cru.plugin.set_status: `text` is required"))?;
         let plugin: String = opts.get("plugin").unwrap_or_else(|_| "unknown".to_string());
         let level: String = opts.get("level").unwrap_or_else(|_| "info".to_string());
         // `progress = true` is indeterminate; a number is a fraction. Out of
@@ -155,19 +151,24 @@ pub fn register_status_module(
         );
         Ok(())
     })?;
+    let plugin = crate::lua_util::get_or_create_module(lua, "plugin")?;
+    // Transitional aliases until the `crucible` global is deleted.
+    let crucible = crate::lua_util::get_or_create_namespace(lua, "crucible")?;
+    plugin.set("set_status", set_status.clone())?;
     crucible.set("set_status", set_status)?;
 
     let clear_registry = registry;
     let clear_status = lua.create_function(move |_, opts: Table| {
         let session: String = opts
             .get("session")
-            .map_err(|_| mlua::Error::runtime("crucible.clear_status: `session` is required"))?;
+            .map_err(|_| mlua::Error::runtime("cru.plugin.clear_status: `session` is required"))?;
         let key: String = opts
             .get("key")
-            .map_err(|_| mlua::Error::runtime("crucible.clear_status: `key` is required"))?;
+            .map_err(|_| mlua::Error::runtime("cru.plugin.clear_status: `key` is required"))?;
         clear_registry.clear(&session, &key);
         Ok(())
     })?;
+    plugin.set("clear_status", clear_status.clone())?;
     crucible.set("clear_status", clear_status)?;
     Ok(())
 }
@@ -187,9 +188,7 @@ mod tests {
 
     fn lua_with_status(reg: StatusRegistry) -> Lua {
         let lua = Lua::new();
-        let crucible = lua.create_table().unwrap();
-        register_status_module(&lua, &crucible, reg).unwrap();
-        lua.globals().set("crucible", crucible).unwrap();
+        register_status_module(&lua, reg).unwrap();
         lua
     }
 
@@ -202,14 +201,14 @@ mod tests {
         let lua = lua_with_status(reg.clone());
 
         lua.load(
-            r#"crucible.set_status{ session="s1", key="build", text="building", progress=true }"#,
+            r#"cru.plugin.set_status{ session="s1", key="build", text="building", progress=true }"#,
         )
         .exec()
         .unwrap();
         assert_eq!(reg.get("s1")[0].1.progress, Some(Progress::Indeterminate));
 
         lua.load(
-            r#"crucible.set_status{ session="s1", key="build", text="pulling", progress=0.25 }"#,
+            r#"cru.plugin.set_status{ session="s1", key="build", text="pulling", progress=0.25 }"#,
         )
         .exec()
         .unwrap();
@@ -221,7 +220,7 @@ mod tests {
     fn a_slot_without_progress_reports_none() {
         let reg = StatusRegistry::new();
         let lua = lua_with_status(reg.clone());
-        lua.load(r#"crucible.set_status{ session="s1", key="oci", text="sandboxed: alpine" }"#)
+        lua.load(r#"cru.plugin.set_status{ session="s1", key="oci", text="sandboxed: alpine" }"#)
             .exec()
             .unwrap();
         assert_eq!(reg.get("s1")[0].1.progress, None);
@@ -233,12 +232,12 @@ mod tests {
     fn an_out_of_range_fraction_is_clamped_rather_than_refused() {
         let reg = StatusRegistry::new();
         let lua = lua_with_status(reg.clone());
-        lua.load(r#"crucible.set_status{ session="s1", key="k", text="t", progress=4.2 }"#)
+        lua.load(r#"cru.plugin.set_status{ session="s1", key="k", text="t", progress=4.2 }"#)
             .exec()
             .unwrap();
         assert_eq!(reg.get("s1")[0].1.progress, Some(Progress::Fraction(1.0)));
 
-        lua.load(r#"crucible.set_status{ session="s1", key="k", text="t", progress=-1 }"#)
+        lua.load(r#"cru.plugin.set_status{ session="s1", key="k", text="t", progress=-1 }"#)
             .exec()
             .unwrap();
         assert_eq!(reg.get("s1")[0].1.progress, Some(Progress::Fraction(0.0)));

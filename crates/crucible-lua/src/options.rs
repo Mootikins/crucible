@@ -14,7 +14,7 @@
 //! [Ace3's AceConfig-3.0]: https://www.wowace.com/projects/ace3/pages/ace-config-3-0-options-tables
 //!
 //! ```lua
-//! crucible.options{
+//! cru.plugin.options{
 //!   type = "group",
 //!   args = {
 //!     image = {
@@ -372,14 +372,13 @@ fn json_to_lua(lua: &Lua, value: &serde_json::Value) -> Result<Value, String> {
         .map_err(|e| format!("value is not representable in Lua: {e}"))
 }
 
-/// Register `crucible.options`.
+/// Register `cru.plugin.options`.
 ///
 /// `plugin` comes from the loader, not the caller, for the same reason
-/// `crucible.publish` takes it that way: a plugin declaring settings under
+/// `cru.plugin.publish` takes it that way: a plugin declaring settings under
 /// another's name would make the whole tree untrustworthy.
 pub fn register_options_module(
     lua: &Lua,
-    crucible: &Table,
     registry: OptionsRegistry,
     plugin: String,
 ) -> LuaResult<()> {
@@ -389,13 +388,15 @@ pub fn register_options_module(
         // no `args` at all was accepted and registered.
         if !matches!(tree.get::<Value>("args"), Ok(Value::Table(_))) {
             return Err(mlua::Error::runtime(
-                "crucible.options: the root must be a group with an `args` table",
+                "cru.plugin.options: the root must be a group with an `args` table",
             ));
         }
         registry.set_tree(&plugin, lua.clone(), tree);
         Ok(())
     })?;
-    crucible.set("options", options)?;
+    crate::lua_util::get_or_create_module(lua, "plugin")?.set("options", options.clone())?;
+    // Transitional alias until the `crucible` global is deleted.
+    crate::lua_util::get_or_create_namespace(lua, "crucible")?.set("options", options)?;
     Ok(())
 }
 
@@ -405,17 +406,15 @@ mod tests {
 
     fn registry_with(src: &str) -> (Lua, OptionsRegistry) {
         let lua = Lua::new();
-        let crucible = lua.create_table().unwrap();
         let reg = OptionsRegistry::new();
-        register_options_module(&lua, &crucible, reg.clone(), "oci".to_string()).unwrap();
-        lua.globals().set("crucible", crucible).unwrap();
+        register_options_module(&lua, reg.clone(), "oci".to_string()).unwrap();
         lua.load(src).exec().unwrap();
         (lua, reg)
     }
 
     const SIMPLE: &str = r#"
         state = { image = "alpine", verbose = false }
-        crucible.options{
+        cru.plugin.options{
           type = "group", name = "OCI",
           get = function(info) return state[info.option] end,
           set = function(info, v) state[info.option] = v end,
@@ -462,7 +461,7 @@ mod tests {
         let (lua, reg) = registry_with(
             r#"
             installed = { "podman" }
-            crucible.options{
+            cru.plugin.options{
               type = "group",
               args = {
                 runtime = {
@@ -489,7 +488,7 @@ mod tests {
         let (lua, reg) = registry_with(
             r#"
             pressed = 0
-            crucible.options{
+            cru.plugin.options{
               type = "group",
               args = { rebuild = { type = "execute", name = "Rebuild",
                                    func = function() pressed = pressed + 1 end } },
@@ -507,7 +506,7 @@ mod tests {
     fn children_render_in_declared_order_with_negatives_last() {
         let (_lua, reg) = registry_with(
             r#"
-            crucible.options{
+            cru.plugin.options{
               type = "group",
               args = {
                 z_last  = { type = "input", name = "Last",  order = -1 },
@@ -533,7 +532,7 @@ mod tests {
     fn a_node_can_hide_itself_from_one_frontend_only() {
         let (_lua, reg) = registry_with(
             r#"
-            crucible.options{
+            cru.plugin.options{
               type = "group",
               args = { colours = { type = "toggle", name = "Colours", tuiHidden = true } },
             }
@@ -552,7 +551,7 @@ mod tests {
         let (_lua, reg) = registry_with(
             r#"
             state = { locked = "x" }
-            crucible.options{
+            cru.plugin.options{
               type = "group",
               get = function(info) return state[info.option] end,
               set = function(info, v) state[info.option] = v end,
@@ -581,7 +580,7 @@ mod tests {
     fn array_choices_keep_their_declared_order_and_hash_choices_are_sorted() {
         let (_lua, reg) = registry_with(
             r#"
-            crucible.options{
+            cru.plugin.options{
               type = "group",
               args = {
                 runtime = { type = "select", name = "Runtime", order = 1,
@@ -614,13 +613,11 @@ mod tests {
     #[test]
     fn a_root_without_an_args_table_is_refused() {
         let lua = Lua::new();
-        let crucible = lua.create_table().unwrap();
         let reg = OptionsRegistry::new();
-        register_options_module(&lua, &crucible, reg.clone(), "oci".to_string()).unwrap();
-        lua.globals().set("crucible", crucible).unwrap();
+        register_options_module(&lua, reg.clone(), "oci".to_string()).unwrap();
 
         let err = lua
-            .load(r#"crucible.options{ type = "group", name = "X" }"#)
+            .load(r#"cru.plugin.options{ type = "group", name = "X" }"#)
             .exec()
             .expect_err("a root with no args table must be refused");
         assert!(err.to_string().contains("args"), "{err}");

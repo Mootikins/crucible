@@ -51,9 +51,12 @@ pub(super) fn parse_capability(s: &str) -> Option<Capability> {
 pub(super) fn setup_spec_sandbox(lua: &Lua) -> Result<(), mlua::Error> {
     lua.load(
         r#"
--- Stub require: return an empty table that tolerates any method call
+-- Stub require: return an empty table that tolerates any method call.
+-- Indexing returns another callable stub, so nested names like
+-- cru.plugin.options{...} survive to any depth; the old stub returned a
+-- plain function, which broke on the second index.
 local stub_mt = {}
-stub_mt.__index = function() return function() return setmetatable({}, stub_mt) end end
+stub_mt.__index = function() return setmetatable({}, stub_mt) end
 stub_mt.__call = function() return setmetatable({}, stub_mt) end
 
 local _real_require = require

@@ -1,7 +1,7 @@
 //! Session isolation claimed by a plugin.
 //!
 //! A plugin that sandboxes tool execution (`oci` and its container) calls
-//! `crucible.require_isolation{...}` during `on_session_start`. From then on
+//! `cru.isolation.require{...}` during `on_session_start`. From then on
 //! the daemon refuses any host-touching tool the plugin did not handle.
 //!
 //! This exists because interception was previously an *allowlist*: the plugin
@@ -193,28 +193,22 @@ impl IsolationRegistry {
     }
 }
 
-/// Register `crucible.require_isolation` on the plugin runtime.
+/// Register `cru.isolation.require` on the plugin runtime.
 ///
 /// ```lua
-/// crucible.on_session_start(function(session)
+/// cru.on_session_start(function(session)
 ///   start_container(session)
-///   crucible.require_isolation{
+///   cru.isolation.require{
 ///     session = session.id,
 ///     plugin  = "oci",
 ///     exempt  = { "read_note", "semantic_search" },
 ///   }
 /// end, { required = true })
 /// ```
-pub fn register_isolation_module(
-    lua: &Lua,
-    crucible: &Table,
-    registry: IsolationRegistry,
-) -> LuaResult<()> {
+pub fn register_isolation_module(lua: &Lua, registry: IsolationRegistry) -> LuaResult<()> {
     let require_isolation = lua.create_function(move |_, opts: Table| {
         let session: String = opts.get("session").map_err(|_| {
-            mlua::Error::runtime(
-                "crucible.require_isolation: `session` is required (use session.id)",
-            )
+            mlua::Error::runtime("cru.isolation.require: `session` is required (use session.id)")
         })?;
         let plugin: String = opts.get("plugin").unwrap_or_else(|_| "unknown".to_string());
         let exempt: HashSet<String> = opts
@@ -272,7 +266,11 @@ pub fn register_isolation_module(
         );
         Ok(())
     })?;
-    crucible.set("require_isolation", require_isolation)?;
+    crate::lua_util::get_or_create_module(lua, "isolation")?
+        .set("require", require_isolation.clone())?;
+    // Transitional alias until the `crucible` global is deleted.
+    crate::lua_util::get_or_create_namespace(lua, "crucible")?
+        .set("require_isolation", require_isolation)?;
     Ok(())
 }
 
@@ -296,13 +294,11 @@ mod tests {
     #[test]
     fn a_claims_exec_fields_survive_the_lua_boundary() {
         let lua = Lua::new();
-        let crucible = lua.create_table().unwrap();
         let reg = IsolationRegistry::new();
-        register_isolation_module(&lua, &crucible, reg.clone()).unwrap();
-        lua.globals().set("crucible", crucible).unwrap();
+        register_isolation_module(&lua, reg.clone()).unwrap();
 
         lua.load(
-            r#"crucible.require_isolation{
+            r#"cru.isolation.require{
                  session = "s1", plugin = "oci",
                  exec_prefix = { "podman", "exec", "-i" },
                  exec_env_flag = "-e",
@@ -324,13 +320,11 @@ mod tests {
     #[test]
     fn a_launcher_with_no_env_flag_can_still_pass_variables_inline() {
         let lua = Lua::new();
-        let crucible = lua.create_table().unwrap();
         let reg = IsolationRegistry::new();
-        register_isolation_module(&lua, &crucible, reg.clone()).unwrap();
-        lua.globals().set("crucible", crucible).unwrap();
+        register_isolation_module(&lua, reg.clone()).unwrap();
 
         lua.load(
-            r#"crucible.require_isolation{
+            r#"cru.isolation.require{
                  session = "s1", plugin = "ssh",
                  exec_prefix = { "ssh", "-T", "build-box", "env" },
                  exec_env_inline = true,

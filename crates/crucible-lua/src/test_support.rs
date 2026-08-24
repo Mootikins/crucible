@@ -212,15 +212,10 @@ impl TestLuaBuilder {
     /// Build with the notify module, returning (Lua, crucible_table).
     /// Sets up: crucible table with log subtable.
     pub fn build_with_notify(self) -> (Lua, Table) {
-        let crucible = self.lua.create_table().unwrap();
-        let log_table = self.lua.create_table().unwrap();
-        crucible.set("log", log_table).unwrap();
-        register_notify_module(&self.lua, &crucible).unwrap();
-        self.lua
-            .globals()
-            .set("crucible", crucible.clone())
-            .unwrap();
-        (self.lua, crucible)
+        let cru = self.lua.create_table().unwrap();
+        register_notify_module(&self.lua, &cru).unwrap();
+        self.lua.globals().set("cru", cru.clone()).unwrap();
+        (self.lua, cru)
     }
 
     /// Build with the hooks module, returning (Lua, crucible_table).
