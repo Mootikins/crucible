@@ -30,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   refuses — a symlink into `~/.config`, or a dotfiles repo holding `.ssh`.
 
 ### Changed
+- **`cru session send --raw` and `replay --raw` emit `event_type` again,
+  beside `event`.** The rename to `event` dropped the old key with no
+  deprecation window, which broke readers of the old shape in one release.
+  Both keys carry the same value for one deprecation release. Read `event`;
+  `event_type` goes away in 0.30.
 - **`[scm]` is now `[workspace]`, and its two keys are renamed.**
   `projects_dir` -> `root_dir`, `session_workspace_dir` -> `session_scratch_dir`.
   The section named a git integration but held two directories, and

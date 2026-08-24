@@ -107,10 +107,15 @@ async fn is_known_acp_profile(client: &DaemonClient, name: &str) -> bool {
 /// The `--raw` line for one session event. The keys match the wire message
 /// (`SessionEventMessage`), so a reader of `cru session send --raw` and a
 /// reader of the RPC stream parse the same shape.
+///
+/// `event_type` is the pre-rename spelling of `event`. It stays for one
+/// deprecation release, so a reader of the old key gets one release to
+/// move. Remove it in 0.30.
 fn raw_event_json(event: &crucible_daemon::rpc_client::SessionEvent) -> serde_json::Value {
     serde_json::json!({
         "session_id": event.session_id,
         "event": event.event,
+        "event_type": event.event,
         "data": event.data,
     })
 }
@@ -813,9 +818,11 @@ mod tests {
     }
 
     /// `--raw` output keys the event name as `event`, the same key the wire
-    /// message uses. The old key `event_type` must not come back.
+    /// message uses. The old key `event_type` stays beside it for one
+    /// deprecation release, so a reader of the old key gets one release to
+    /// move. Drop the `event_type` assertions in 0.30.
     #[test]
-    fn raw_output_uses_the_wire_key_event() {
+    fn raw_output_uses_the_wire_key_event_and_keeps_the_old_key_one_release() {
         let event = crucible_daemon::rpc_client::SessionEvent::new(
             "s1",
             "text_delta",
@@ -827,9 +834,10 @@ mod tests {
             serde_json::json!({
                 "session_id": "s1",
                 "event": "text_delta",
+                "event_type": "text_delta",
                 "data": { "content": "hi" },
             })
         );
-        assert!(line.get("event_type").is_none());
+        assert_eq!(line.get("event"), line.get("event_type"));
     }
 }

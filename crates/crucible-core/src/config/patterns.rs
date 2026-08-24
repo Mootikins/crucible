@@ -173,15 +173,10 @@ impl PatternStore {
     /// ```
     pub async fn save(&self, project_path: &str) -> PatternResult<()> {
         let file_path = Self::pattern_file_path(project_path);
-
-        // Ensure parent directory exists
-        if let Some(parent) = file_path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-
-        let content = toml::to_string_pretty(self)?;
-        tokio::fs::write(&file_path, content).await?;
-        Ok(())
+        let store = self.clone();
+        tokio::task::spawn_blocking(move || store.save_file(&file_path))
+            .await
+            .map_err(std::io::Error::other)?
     }
 
     /// Save patterns synchronously (for non-async contexts)
@@ -190,13 +185,12 @@ impl PatternStore {
     }
 
     /// Write this store to one file. Creates the parent directory.
+    ///
+    /// The store holds permission whitelists, so the file is written with
+    /// mode `0o600` through [`crate::fs::write_private`].
     pub fn save_file(&self, file_path: &Path) -> PatternResult<()> {
-        if let Some(parent) = file_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
         let content = toml::to_string_pretty(self)?;
-        std::fs::write(file_path, content)?;
+        crate::fs::write_private(file_path, content.as_bytes())?;
         Ok(())
     }
 
@@ -765,6 +759,23 @@ always_allow = ["read_note", "grep_notes"]
         store.save_file(&file).unwrap();
 
         assert_eq!(PatternStore::load_file(&file).unwrap(), store);
+    }
+
+    /// The store holds permission whitelists. `fs::write` follows the umask,
+    /// which can leave the file readable by the group or by the world.
+    #[cfg(unix)]
+    #[test]
+    fn save_file_writes_the_store_only_owner_readable() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp_dir = TempDir::new().unwrap();
+        let file = PatternStore::user_file_in(&temp_dir.path().join("whitelists.d"));
+        let mut store = PatternStore::new();
+        store.add_bash_pattern("cargo ").unwrap();
+
+        store.save_file(&file).unwrap();
+
+        let mode = std::fs::metadata(&file).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "the whitelist file must be private");
     }
 
     #[test]
