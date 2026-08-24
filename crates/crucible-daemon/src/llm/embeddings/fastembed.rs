@@ -604,7 +604,6 @@ mod tests {
             model: "bge-small-en-v1.5".to_string(),
             cache_dir: Some("/models/cache".to_string()),
             batch_size: 7,
-            dimensions: 384,
         });
 
         let provider = FastEmbedProvider::new(config).expect("a known model builds");

@@ -12,7 +12,6 @@
 
 use super::BackendType;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::time::Duration;
 
 /// The embedding model the `BackendType` table names for an embedding backend.
@@ -99,18 +98,6 @@ pub struct OpenAIConfig {
     /// Request timeout in seconds
     #[serde(default = "OpenAIConfig::default_timeout")]
     pub timeout_seconds: u64,
-
-    /// Number of retry attempts
-    #[serde(default = "OpenAIConfig::default_retries")]
-    pub retry_attempts: u32,
-
-    /// Expected embedding dimensions
-    #[serde(default = "OpenAIConfig::default_dimensions")]
-    pub dimensions: u32,
-
-    /// Custom HTTP headers
-    #[serde(default)]
-    pub headers: HashMap<String, String>,
 }
 
 impl std::fmt::Debug for OpenAIConfig {
@@ -127,9 +114,6 @@ impl std::fmt::Debug for OpenAIConfig {
             .field("model", &self.model)
             .field("base_url", &self.base_url)
             .field("timeout_seconds", &self.timeout_seconds)
-            .field("retry_attempts", &self.retry_attempts)
-            .field("dimensions", &self.dimensions)
-            .field("headers", &self.headers)
             .finish()
     }
 }
@@ -146,14 +130,6 @@ impl OpenAIConfig {
     fn default_timeout() -> u64 {
         30
     }
-
-    fn default_retries() -> u32 {
-        3
-    }
-
-    fn default_dimensions() -> u32 {
-        1536
-    }
 }
 
 impl Default for OpenAIConfig {
@@ -163,9 +139,6 @@ impl Default for OpenAIConfig {
             model: Self::default_model(),
             base_url: Self::default_base_url(),
             timeout_seconds: Self::default_timeout(),
-            retry_attempts: Self::default_retries(),
-            dimensions: Self::default_dimensions(),
-            headers: HashMap::new(),
         }
     }
 }
@@ -188,10 +161,6 @@ pub struct OllamaConfig {
     /// Number of retry attempts
     #[serde(default = "OllamaConfig::default_retries")]
     pub retry_attempts: u32,
-
-    /// Expected embedding dimensions
-    #[serde(default = "OllamaConfig::default_dimensions")]
-    pub dimensions: u32,
 
     /// Batch size for embedding requests (uses /api/embed endpoint)
     /// Set to 1 for legacy single-request mode (/api/embeddings)
@@ -217,10 +186,6 @@ impl OllamaConfig {
         3
     }
 
-    fn default_dimensions() -> u32 {
-        768
-    }
-
     fn default_batch_size() -> u32 {
         50 // Good balance of throughput vs memory; ~7x faster than single requests
     }
@@ -233,7 +198,6 @@ impl Default for OllamaConfig {
             base_url: Self::default_base_url(),
             timeout_seconds: Self::default_timeout(),
             retry_attempts: Self::default_retries(),
-            dimensions: Self::default_dimensions(),
             batch_size: Self::default_batch_size(),
         }
     }
@@ -253,10 +217,6 @@ pub struct FastEmbedConfig {
     /// Batch size for processing
     #[serde(default = "FastEmbedConfig::default_batch_size")]
     pub batch_size: u32,
-
-    /// Expected embedding dimensions
-    #[serde(default = "FastEmbedConfig::default_dimensions")]
-    pub dimensions: u32,
 }
 
 impl FastEmbedConfig {
@@ -267,10 +227,6 @@ impl FastEmbedConfig {
     fn default_batch_size() -> u32 {
         32
     }
-
-    fn default_dimensions() -> u32 {
-        384
-    }
 }
 
 impl Default for FastEmbedConfig {
@@ -279,7 +235,6 @@ impl Default for FastEmbedConfig {
             model: Self::default_model(),
             cache_dir: None,
             batch_size: Self::default_batch_size(),
-            dimensions: Self::default_dimensions(),
         }
     }
 }
@@ -318,71 +273,14 @@ impl Default for MockConfig {
 /// Pipeline configuration for enrichment operations
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PipelineConfig {
-    /// Number of parallel worker threads
-    #[serde(default = "PipelineConfig::default_worker_count")]
-    pub worker_count: usize,
-
-    /// Batch size for processing documents
-    #[serde(default = "PipelineConfig::default_batch_size")]
-    pub batch_size: usize,
-
-    /// Operation timeout in milliseconds
-    #[serde(default = "PipelineConfig::default_timeout_ms")]
-    pub timeout_ms: u64,
-
     /// Maximum aggregate character count for precognition context snippets (default: 3000).
     #[serde(default = "default_max_precognition_chars")]
     pub max_precognition_chars: usize,
 }
 
-impl PipelineConfig {
-    fn default_worker_count() -> usize {
-        num_cpus::get()
-    }
-
-    fn default_batch_size() -> usize {
-        16
-    }
-
-    fn default_timeout_ms() -> u64 {
-        30000
-    }
-
-    /// Create configuration optimized for throughput
-    pub fn optimize_for_throughput() -> Self {
-        Self {
-            worker_count: num_cpus::get() * 2,
-            batch_size: 64,
-            ..Default::default()
-        }
-    }
-
-    /// Create configuration optimized for latency
-    pub fn optimize_for_latency() -> Self {
-        Self {
-            worker_count: num_cpus::get(),
-            batch_size: 4,
-            timeout_ms: 5000,
-            ..Default::default()
-        }
-    }
-
-    /// Create configuration optimized for resource usage
-    pub fn optimize_for_resources() -> Self {
-        Self {
-            worker_count: 1,
-            batch_size: 8,
-            ..Default::default()
-        }
-    }
-}
-
 impl Default for PipelineConfig {
     fn default() -> Self {
         Self {
-            worker_count: Self::default_worker_count(),
-            batch_size: Self::default_batch_size(),
-            timeout_ms: Self::default_timeout_ms(),
             max_precognition_chars: default_max_precognition_chars(),
         }
     }
@@ -401,7 +299,6 @@ impl EmbeddingProviderConfig {
             base_url: endpoint.unwrap_or_else(OllamaConfig::default_base_url),
             timeout_seconds: OllamaConfig::default_timeout(),
             retry_attempts: OllamaConfig::default_retries(),
-            dimensions: OllamaConfig::default_dimensions(),
             batch_size: OllamaConfig::default_batch_size(),
         })
     }
@@ -417,9 +314,6 @@ impl EmbeddingProviderConfig {
             model: model.unwrap_or_else(OpenAIConfig::default_model),
             base_url: OpenAIConfig::default_base_url(),
             timeout_seconds: OpenAIConfig::default_timeout(),
-            retry_attempts: OpenAIConfig::default_retries(),
-            dimensions: OpenAIConfig::default_dimensions(),
-            headers: HashMap::new(),
         })
     }
 
@@ -433,7 +327,6 @@ impl EmbeddingProviderConfig {
             model: model.unwrap_or_else(FastEmbedConfig::default_model),
             cache_dir,
             batch_size: FastEmbedConfig::default_batch_size(),
-            dimensions: FastEmbedConfig::default_dimensions(),
         })
     }
 
@@ -460,12 +353,12 @@ impl EmbeddingProviderConfig {
     }
 
     /// Get the number of retry attempts
+    ///
+    /// Only the Ollama provider reads a retry count from its config.
     pub fn retry_attempts(&self) -> u32 {
         match self {
-            Self::OpenAI(c) => c.retry_attempts,
             Self::Ollama(c) => c.retry_attempts,
-            Self::FastEmbed(_) => 0, // Local processing doesn't need retries
-            Self::Mock(_) => 0,
+            Self::OpenAI(_) | Self::FastEmbed(_) | Self::Mock(_) => 0,
         }
     }
 
@@ -529,12 +422,13 @@ impl EmbeddingProviderConfig {
     }
 
     /// Get the expected embedding dimensions
+    ///
+    /// The real providers derive dimensions from the model name, so only
+    /// the Mock provider carries a configured value.
     pub fn dimensions(&self) -> Option<u32> {
         match self {
-            Self::OpenAI(c) => Some(c.dimensions),
-            Self::Ollama(c) => Some(c.dimensions),
-            Self::FastEmbed(c) => Some(c.dimensions),
             Self::Mock(c) => Some(c.dimensions),
+            Self::OpenAI(_) | Self::Ollama(_) | Self::FastEmbed(_) => None,
         }
     }
 
@@ -685,13 +579,41 @@ api_key = "x"
     }
 
     #[test]
+    fn config_with_removed_provider_knobs_still_loads() {
+        // Users can have the removed keys in an old config file. The load
+        // must ignore them instead of an error.
+        #[derive(Deserialize)]
+        struct Wrapper {
+            enrichment: EnrichmentConfig,
+        }
+
+        let wrapper: Wrapper = toml::from_str(
+            r#"
+[enrichment.provider]
+type = "ollama"
+model = "nomic-embed-text"
+dimensions = 768
+retry_attempts = 3
+
+[enrichment.pipeline]
+worker_count = 4
+batch_size = 16
+timeout_ms = 30000
+"#,
+        )
+        .expect("a config with removed keys must load");
+
+        assert_eq!(wrapper.enrichment.provider.model(), "nomic-embed-text");
+    }
+
+    #[test]
     fn test_default_enrichment_config() {
         let config = EnrichmentConfig::default();
         assert!(matches!(
             config.provider,
             EmbeddingProviderConfig::FastEmbed(_)
         ));
-        assert_eq!(config.pipeline.batch_size, 16);
+        assert_eq!(config.pipeline, PipelineConfig::default());
     }
 
     #[test]
@@ -726,12 +648,12 @@ model = "nomic-embed-text"
         let wrapper: Wrapper = toml::from_str(
             r#"
 [enrichment.pipeline]
-batch_size = 42
+max_precognition_chars = 42
 "#,
         )
         .expect("[enrichment.pipeline] alone must load");
 
-        assert_eq!(wrapper.enrichment.pipeline.batch_size, 42);
+        assert_eq!(wrapper.enrichment.pipeline.max_precognition_chars, 42);
         assert_eq!(
             wrapper.enrichment.provider,
             EmbeddingProviderConfig::default()
@@ -743,7 +665,6 @@ batch_size = 42
         let config = OpenAIConfig::default();
         assert_eq!(config.model, "text-embedding-3-small");
         assert_eq!(config.base_url, "https://api.openai.com/v1");
-        assert_eq!(config.dimensions, 1536);
     }
 
     #[test]
@@ -751,14 +672,12 @@ batch_size = 42
         let config = OllamaConfig::default();
         assert_eq!(config.model, "nomic-embed-text");
         assert_eq!(config.base_url, "http://localhost:11434");
-        assert_eq!(config.dimensions, 768);
     }
 
     #[test]
     fn test_fastembed_config_defaults() {
         let config = FastEmbedConfig::default();
         assert_eq!(config.model, "BAAI/bge-small-en-v1.5");
-        assert_eq!(config.dimensions, 384);
         assert_eq!(config.batch_size, 32);
     }
 
@@ -778,19 +697,6 @@ batch_size = 42
     }
 
     #[test]
-    fn test_pipeline_optimization_presets() {
-        let throughput = PipelineConfig::optimize_for_throughput();
-        assert_eq!(throughput.batch_size, 64);
-
-        let latency = PipelineConfig::optimize_for_latency();
-        assert_eq!(latency.batch_size, 4);
-        assert_eq!(latency.timeout_ms, 5000);
-
-        let resources = PipelineConfig::optimize_for_resources();
-        assert_eq!(resources.worker_count, 1);
-    }
-
-    #[test]
     fn test_pipeline_default_max_precognition_chars() {
         let pipeline = PipelineConfig::default();
         assert_eq!(pipeline.max_precognition_chars, 3000);
@@ -800,7 +706,7 @@ batch_size = 42
     fn test_helper_methods() {
         let config = EmbeddingProviderConfig::OpenAI(OpenAIConfig::default());
         assert_eq!(config.model(), "text-embedding-3-small");
-        assert_eq!(config.dimensions(), Some(1536));
-        assert_eq!(config.retry_attempts(), 3);
+        assert_eq!(config.dimensions(), None);
+        assert_eq!(config.retry_attempts(), 0);
     }
 }
