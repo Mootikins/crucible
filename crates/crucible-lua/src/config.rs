@@ -182,11 +182,24 @@ pub fn merge_app_config(overlay: serde_json::Value) {
 
 /// Register `cru.config.set(table)` and `cru.config.get(key)` on the cru namespace.
 ///
-/// - `set(table)`: Deep-merges the table into app_config (TOML values as base, Lua overrides)
+/// - `set(table)`: merges the table into app_config, one TOP-LEVEL key at a
+///   time (TOML values as base, Lua overrides)
 /// - `get(key)`: Returns a single top-level value from app_config
 ///
 /// This is the bridge between TOML and Lua config. TOML seeds values first,
 /// then Lua's init.lua can override any field via `cru.config.set()`.
+///
+/// The merge REPLACES a top-level key; it does not descend. A call that sets
+/// `chat = { show_thinking = true }` drops every other `chat` key back to its
+/// default, silently. A caller must therefore restate each sibling. This
+/// comment said "deep-merges" for as long as the function has existed, which
+/// is why the behaviour surprised its callers.
+///
+/// See `thoughts/2026-08-24-lua-versus-toml-config.md`: the agreed target is a
+/// deep merge for tables, a wholesale replace for arrays and scalars, and an
+/// explicit way to replace a whole table. Removal is why the escape is
+/// required — under a deep merge alone, a smaller `llm.providers` table can
+/// never drop a provider.
 pub fn register_app_config_api(lua: &Lua, cru_table: &Table) -> Result<(), LuaError> {
     let config_table = lua.create_table()?;
 
