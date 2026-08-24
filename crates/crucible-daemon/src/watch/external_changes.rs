@@ -75,7 +75,12 @@ const DEBOUNCE: Duration = Duration::from_millis(300);
 /// notification and not attribution — `is_external()` is
 /// `tool_call_ids.is_empty()`, decided by the ledger, whatever the watcher
 /// saw. Under-suppressing costs a feedback loop.
-const SUPPRESSION_LINGER: Duration = Duration::from_millis(600);
+///
+/// The delivery path holds a write for two debounce stages, not one: the
+/// notify backend waits [`DEBOUNCE`], then the manager's own debouncer waits
+/// [`DEBOUNCE`] again. Each stage adds up to a quarter of its window in tick
+/// slack. The linger therefore covers two stages plus slack.
+const SUPPRESSION_LINGER: Duration = Duration::from_millis(2 * DEBOUNCE.as_millis() as u64 + 200);
 
 /// A worktree change no capture bracket owned.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -929,7 +934,10 @@ mod tests {
         let tracker = tracker_over(&root);
 
         drop(tracker.capture("s1"));
-        tokio::time::advance(DEBOUNCE).await;
+        // Both stages of the delivery path, each with its tick slack: the
+        // notify backend, then the manager's debouncer.
+        tokio::time::advance(DEBOUNCE + DEBOUNCE / 4).await;
+        tokio::time::advance(DEBOUNCE + DEBOUNCE / 4).await;
 
         assert_eq!(
             tracker.observe(Path::new("/repo/src/main.rs")),
