@@ -12,49 +12,49 @@ local truncate_lines = remap.truncate_lines
 
 describe("remap.remap_path", function()
   it("remaps absolute host path to container path", function()
-    assert.equals(
+    expect.equals(
       "/workspace/src/main.rs",
       remap_path("/home/user/project", "/home/user/project/src/main.rs", "/workspace")
     )
   end)
 
   it("remaps relative path under the mount target", function()
-    assert.equals(
+    expect.equals(
       "/workspace/src/main.rs",
       remap_path("/home/user/project", "src/main.rs", "/workspace")
     )
   end)
 
   it("passes through absolute paths outside workspace", function()
-    assert.equals(
+    expect.equals(
       "/etc/passwd",
       remap_path("/home/user/project", "/etc/passwd", "/workspace")
     )
   end)
 
   it("remaps workspace root itself", function()
-    assert.equals(
+    expect.equals(
       "/workspace",
       remap_path("/home/user/project", "/home/user/project", "/workspace")
     )
   end)
 
   it("remaps workspace root with trailing slash", function()
-    assert.equals(
+    expect.equals(
       "/workspace",
       remap_path("/home/user/project", "/home/user/project/", "/workspace")
     )
   end)
 
   it("returns the mount target for nil path", function()
-    assert.equals(
+    expect.equals(
       "/workspace",
       remap_path("/home/user/project", nil, "/workspace")
     )
   end)
 
   it("handles nested subdirectories", function()
-    assert.equals(
+    expect.equals(
       "/workspace/a/b/c/deep.txt",
       remap_path("/home/user/project", "/home/user/project/a/b/c/deep.txt", "/workspace")
     )
@@ -69,30 +69,30 @@ describe("remap.remap_path with a non-default mount target", function()
   local target = "/workspaces/project"
 
   it("remaps an absolute host path under the resolved target", function()
-    assert.equals(
+    expect.equals(
       "/workspaces/project/src/main.rs",
       remap_path(ws, ws .. "/src/main.rs", target)
     )
   end)
 
   it("remaps a relative path under the resolved target", function()
-    assert.equals(
+    expect.equals(
       "/workspaces/project/src/main.rs",
       remap_path(ws, "src/main.rs", target)
     )
   end)
 
   it("remaps the workspace root to the resolved target", function()
-    assert.equals(target, remap_path(ws, ws, target))
-    assert.equals(target, remap_path(ws, ws .. "/", target))
+    expect.equals(target, remap_path(ws, ws, target))
+    expect.equals(target, remap_path(ws, ws .. "/", target))
   end)
 
   it("returns the resolved target for nil path", function()
-    assert.equals(target, remap_path(ws, nil, target))
+    expect.equals(target, remap_path(ws, nil, target))
   end)
 
   it("still passes through paths outside the workspace untouched", function()
-    assert.equals("/etc/passwd", remap_path(ws, "/etc/passwd", target))
+    expect.equals("/etc/passwd", remap_path(ws, "/etc/passwd", target))
   end)
 end)
 
@@ -100,11 +100,11 @@ end)
 -- agree or every remapped path names a directory the container does not have.
 describe("remap.DEFAULT_TARGET", function()
   it("is /workspace", function()
-    assert.equals("/workspace", remap.DEFAULT_TARGET)
+    expect.equals("/workspace", remap.DEFAULT_TARGET)
   end)
 
   it("is what remap_path uses when no target is resolved", function()
-    assert.equals(
+    expect.equals(
       "/workspace/src/main.rs",
       remap_path("/home/user/project", "src/main.rs")
     )
@@ -113,22 +113,22 @@ end)
 
 describe("remap.sq (shell quote)", function()
   it("escapes single quotes", function()
-    assert.equals("it'\\''s", sq("it's"))
+    expect.equals("it'\\''s", sq("it's"))
   end)
 
   it("leaves clean strings unchanged", function()
-    assert.equals("hello", sq("hello"))
+    expect.equals("hello", sq("hello"))
   end)
 end)
 
 describe("remap.truncate_lines", function()
   it("keeps everything under the limit with a count footer", function()
     local out = truncate_lines({ "a", "b" }, 10, "files")
-    assert.equals("a\nb\n\n[2 files]", out)
+    expect.equals("a\nb\n\n[2 files]", out)
   end)
 
   it("truncates over the limit and says so", function()
     local out = truncate_lines({ "a", "b", "c" }, 2, "matches")
-    assert.equals("a\nb\n\n[2 matches, truncated at 2]", out)
+    expect.equals("a\nb\n\n[2 matches, truncated at 2]", out)
   end)
 end)

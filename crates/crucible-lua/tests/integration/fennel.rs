@@ -64,9 +64,9 @@ fn test_fennel_test_runner_integration() {
     let fennel_test_source = r#"
 (describe "fennel basics" (fn []
   (it "arithmetic works" (fn []
-    (assert.equal 2 (+ 1 1))))
+    (expect.equal 2 (+ 1 1))))
   (it "string concatenation works" (fn []
-    (assert.equal "hello world" (.. "hello" " " "world"))))))
+    (expect.equal "hello world" (.. "hello" " " "world"))))))
 "#;
 
     let compiled: String = lua

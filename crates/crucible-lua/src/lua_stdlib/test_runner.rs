@@ -24,12 +24,13 @@ local test_state = {
     },
 }
 
-local _original_assert = assert
-local assert = setmetatable({}, {
-    __call = function(_, ...)
-        return _original_assert(...)
-    end,
-})
+-- Assertions live on `expect`, never on `assert`.
+--
+-- A test harness that shadows `assert` changes the meaning of a name the
+-- language defines, so a script reads differently inside a test than outside
+-- it. `assert` stays the language's own function here; `expect` carries the
+-- harness matchers.
+local expect = {}
 
 local function format_value(val)
     if type(val) == "string" then
@@ -41,7 +42,7 @@ local function format_value(val)
     end
 end
 
-function assert.equal(expected, actual)
+function expect.equal(expected, actual)
     if expected ~= actual then
         error(string.format(
             "Expected: %s\nActual: %s",
@@ -51,7 +52,7 @@ function assert.equal(expected, actual)
     end
 end
 
-function assert.deep_equal(expected, actual)
+function expect.deep_equal(expected, actual)
     local function deep_eq(a, b, seen)
         seen = seen or {}
         if type(a) == "table" and type(b) == "table" then
@@ -88,58 +89,58 @@ function assert.deep_equal(expected, actual)
     end
 end
 
-function assert.truthy(val)
+function expect.truthy(val)
     if not val then
         error(string.format("Expected truthy value, got: %s", format_value(val)), 2)
     end
 end
 
-function assert.falsy(val)
+function expect.falsy(val)
     if val then
         error(string.format("Expected falsy value, got: %s", format_value(val)), 2)
     end
 end
 
-function assert.is_nil(val)
+function expect.is_nil(val)
     if val ~= nil then
         error(string.format("Expected nil, got: %s", format_value(val)), 2)
     end
 end
 
-function assert.is_not_nil(val)
+function expect.is_not_nil(val)
     if val == nil then
         error("Expected a non-nil value, got: nil", 2)
     end
 end
 
 -- `oci`'s suite spells it `equals`; alias rather than rewrite every call site.
-assert.equals = assert.equal
+expect.equals = expect.equal
 
-function assert.is_string(val)
+function expect.is_string(val)
     if type(val) ~= "string" then
         error(string.format("Expected string, got: %s", type(val)), 2)
     end
 end
 
-function assert.is_number(val)
+function expect.is_number(val)
     if type(val) ~= "number" then
         error(string.format("Expected number, got: %s", type(val)), 2)
     end
 end
 
-function assert.is_table(val)
+function expect.is_table(val)
     if type(val) ~= "table" then
         error(string.format("Expected table, got: %s", type(val)), 2)
     end
 end
 
-function assert.is_function(val)
+function expect.is_function(val)
     if type(val) ~= "function" then
         error(string.format("Expected function, got: %s", type(val)), 2)
     end
 end
 
-function assert.has_error(fn, expected_msg)
+function expect.has_error(fn, expected_msg)
     local ok, err = pcall(fn)
     if ok then
         error("Expected function to raise an error, but it succeeded", 2)
@@ -318,6 +319,6 @@ _G.it = it
 _G.pending = pending
 _G.before_each = before_each
 _G.after_each = after_each
-_G.assert = assert
+_G.expect = expect
 _G.run_tests = run_tests
 "#;

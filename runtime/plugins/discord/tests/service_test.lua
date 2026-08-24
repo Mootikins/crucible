@@ -48,19 +48,19 @@ end
 
 describe("gateway service", function()
     it("does not dial when auto_connect is unset", function()
-        assert.equals(false, dialed_with({}))
+        expect.equals(false, dialed_with({}))
     end)
 
     it("does not dial when auto_connect is false", function()
-        assert.equals(false, dialed_with({ ["discord.auto_connect"] = false }))
+        expect.equals(false, dialed_with({ ["discord.auto_connect"] = false }))
     end)
 
     it("does not dial when auto_connect is true but no token is configured", function()
-        assert.equals(false, dialed_with({ ["discord.auto_connect"] = true }))
+        expect.equals(false, dialed_with({ ["discord.auto_connect"] = true }))
     end)
 
     it("dials when auto_connect is true and a token is configured", function()
-        assert.equals(true, dialed_with({
+        expect.equals(true, dialed_with({
             ["discord.auto_connect"] = true,
             ["discord.bot_token"] = "test-token",
         }))
@@ -74,7 +74,7 @@ end)
 --- change.
 describe("mode and the guild allowlist", function()
     it("refuses to dial a personal bot that lists guilds", function()
-        assert.equals(false, dialed_with({
+        expect.equals(false, dialed_with({
             ["discord.auto_connect"] = true,
             ["discord.bot_token"] = "test-token",
             ["discord.allowed_guilds"] = { "g1" },
@@ -82,7 +82,7 @@ describe("mode and the guild allowlist", function()
     end)
 
     it("dials once the same config declares itself a server bot", function()
-        assert.equals(true, dialed_with({
+        expect.equals(true, dialed_with({
             ["discord.auto_connect"] = true,
             ["discord.bot_token"] = "test-token",
             ["discord.allowed_guilds"] = { "g1" },
@@ -91,7 +91,7 @@ describe("mode and the guild allowlist", function()
     end)
 
     it("dials a personal bot with no guilds listed", function()
-        assert.equals(true, dialed_with({
+        expect.equals(true, dialed_with({
             ["discord.auto_connect"] = true,
             ["discord.bot_token"] = "test-token",
             ["discord.allowed_users"] = { "u1" },

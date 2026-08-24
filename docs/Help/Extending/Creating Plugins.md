@@ -541,7 +541,7 @@ describe("tasks_list", function()
 
     it("returns empty list when no tasks exist", function()
         local result = plugin.tools.tasks_list.fn({ file = "nonexistent.md" })
-        assert.equal(0, result.count)
+        expect.equal(0, result.count)
     end)
 
     it("filters completed tasks when show_completed is false", function()
@@ -549,7 +549,7 @@ describe("tasks_list", function()
             file = "TASKS.md",
             show_completed = false,
         })
-        assert.equal("table", type(result.tasks))
+        expect.equal("table", type(result.tasks))
     end)
 end)
 ```
@@ -573,11 +573,11 @@ The test runner provides a rich assertion library. **Expected value comes
 first** — failures report `Expected: <first>` / `Actual: <second>`:
 
 ```lua
-assert.equal(expected, actual)       -- Strict equality (==); alias: assert.equals
-assert.deep_equal(expected, actual)  -- Deep table comparison
-assert.truthy(value)                 -- Not nil and not false
-assert.falsy(value)                  -- nil or false
-assert.has_error(function()          -- Expects the function to throw
+expect.equal(expected, actual)       -- Strict equality (==); alias: expect.equals
+expect.deep_equal(expected, actual)  -- Deep table comparison
+expect.truthy(value)                 -- Not nil and not false
+expect.falsy(value)                  -- nil or false
+expect.has_error(function()          -- Expects the function to throw
     error("boom")
 end)
 ```
@@ -625,8 +625,8 @@ After a test runs, you can inspect what the mocks recorded:
 it("calls search with the right query", function()
     plugin.tools.my_search.fn({ query = "rust" })
     local calls = test_mocks.get_calls("kiln", "search")
-    assert.equal(1, #calls)
-    assert.equal("rust", calls[1][1])
+    expect.equal(1, #calls)
+    expect.equal("rust", calls[1][1])
 end)
 ```
 

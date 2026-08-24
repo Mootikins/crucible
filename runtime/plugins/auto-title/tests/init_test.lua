@@ -43,8 +43,8 @@ end
 describe("declaration", function()
   it("publishes the session_title channel with its command", function()
     fresh()
-    assert.truthy(publications["session_title"])
-    assert.equals("auto-title.generate", publications["session_title"].command)
+    expect.truthy(publications["session_title"])
+    expect.equals("auto-title.generate", publications["session_title"].command)
   end)
 
   -- Publishing belongs to loading the plugin, not to configuring it: setup()
@@ -52,17 +52,17 @@ describe("declaration", function()
   -- another plugin's name.
   it("publishes without setup() being called", function()
     fresh()
-    assert.truthy(publications["session_title"])
+    expect.truthy(publications["session_title"])
 
     publications = {}
     plugin.setup({ clip = 100 })
-    assert.is_nil(publications["session_title"])
+    expect.is_nil(publications["session_title"])
   end)
 
   it("declares the command it published", function()
     fresh()
-    assert.truthy(plugin.commands["auto-title.generate"])
-    assert.equals("function", type(plugin.commands["auto-title.generate"].fn))
+    expect.truthy(plugin.commands["auto-title.generate"])
+    expect.equals("function", type(plugin.commands["auto-title.generate"].fn))
   end)
 
   -- The user's init.lua reaches this plugin by `require("auto-title")`. The
@@ -70,8 +70,8 @@ describe("declaration", function()
   -- that require would build a second, unrelated copy.
   it("registers itself in package.loaded so require() finds this copy", function()
     fresh()
-    assert.equals(plugin, package.loaded["auto-title"])
-    assert.equals(plugin, require("auto-title"))
+    expect.equals(plugin, package.loaded["auto-title"])
+    expect.equals(plugin, require("auto-title"))
   end)
 end)
 
@@ -86,11 +86,11 @@ describe("auto-title.generate", function()
       assistant = "sure, where does it break?",
     })
 
-    assert.equals("Fixing the auth flow", result.title)
-    assert.equals(1, #completions)
-    assert.equals("chat-1", completions[1].session_id)
-    assert.truthy(completions[1].opts.system:find("3 to 7 words", 1, true))
-    assert.equals(
+    expect.equals("Fixing the auth flow", result.title)
+    expect.equals(1, #completions)
+    expect.equals("chat-1", completions[1].session_id)
+    expect.truthy(completions[1].opts.system:find("3 to 7 words", 1, true))
+    expect.equals(
       "User: help me fix the auth flow\n\nAssistant: sure, where does it break?",
       completions[1].opts.prompt
     )
@@ -103,9 +103,9 @@ describe("auto-title.generate", function()
 
     plugin.commands["auto-title.generate"].fn({ session_id = "chat-2", user = "abcdefgh" })
 
-    assert.equals("Name it.", completions[1].opts.system)
-    assert.equals("User: abcd", completions[1].opts.prompt)
-    assert.equals(7, completions[1].opts.timeout)
+    expect.equals("Name it.", completions[1].opts.system)
+    expect.equals("User: abcd", completions[1].opts.prompt)
+    expect.equals(7, completions[1].opts.timeout)
   end)
 
   -- Merged, not replaced: setting one key from init.lua must not drop the
@@ -117,8 +117,8 @@ describe("auto-title.generate", function()
 
     plugin.commands["auto-title.generate"].fn({ session_id = "chat-3", user = "abcdefgh" })
 
-    assert.equals("User: abcd", completions[1].opts.prompt)
-    assert.equals(9, completions[1].opts.timeout)
+    expect.equals("User: abcd", completions[1].opts.prompt)
+    expect.equals(9, completions[1].opts.timeout)
   end)
 
   -- Order-independence, asserted rather than hoped for: a case that configures
@@ -130,9 +130,9 @@ describe("auto-title.generate", function()
     fresh()
     plugin.commands["auto-title.generate"].fn({ session_id = "chat-6", user = "abcdefgh" })
 
-    assert.truthy(completions[1].opts.system:find("3 to 7 words", 1, true))
-    assert.equals("User: abcdefgh", completions[1].opts.prompt)
-    assert.is_nil(completions[1].opts.timeout)
+    expect.truthy(completions[1].opts.system:find("3 to 7 words", 1, true))
+    expect.equals("User: abcdefgh", completions[1].opts.prompt)
+    expect.is_nil(completions[1].opts.timeout)
   end)
 
   -- Raising is what puts the daemon on its truncation fallback. Answering with
@@ -141,16 +141,16 @@ describe("auto-title.generate", function()
   it("raises when the completion fails", function()
     fresh()
     next_answer = { nil, "no API key" }
-    assert.has_error(function()
+    expect.has_error(function()
       plugin.commands["auto-title.generate"].fn({ session_id = "chat-4", user = "hi" })
     end)
   end)
 
   it("raises when there is no user message", function()
     fresh()
-    assert.has_error(function()
+    expect.has_error(function()
       plugin.commands["auto-title.generate"].fn({ session_id = "chat-5" })
     end)
-    assert.equals(0, #completions)
+    expect.equals(0, #completions)
   end)
 end)

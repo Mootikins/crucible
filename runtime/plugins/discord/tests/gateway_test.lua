@@ -99,15 +99,15 @@ describe("gateway intents", function()
 
     it("asks for GUILD_MESSAGES, or the bot is deaf in every server", function()
         local intents = identify_intents()
-        assert.equals(true, intents ~= nil)
-        assert.equals(true, has_bit(intents, BIT.GUILD_MESSAGES))
+        expect.equals(true, intents ~= nil)
+        expect.equals(true, has_bit(intents, BIT.GUILD_MESSAGES))
     end)
 
     it("asks for the other three the plugin documents", function()
         local intents = identify_intents()
-        assert.equals(true, has_bit(intents, BIT.GUILDS))
-        assert.equals(true, has_bit(intents, BIT.DIRECT_MESSAGES))
-        assert.equals(true, has_bit(intents, BIT.MESSAGE_CONTENT))
+        expect.equals(true, has_bit(intents, BIT.GUILDS))
+        expect.equals(true, has_bit(intents, BIT.DIRECT_MESSAGES))
+        expect.equals(true, has_bit(intents, BIT.MESSAGE_CONTENT))
     end)
 end)
 
@@ -142,8 +142,8 @@ describe("gateway reconnection", function()
             pcall(gateway.connect)
         end)
 
-        assert.equals(3, dials)
-        assert.equals(true, connected_after_ready)
+        expect.equals(3, dials)
+        expect.equals(true, connected_after_ready)
     end)
 
     it("drops a socket whose heartbeat went unacknowledged", function()
@@ -186,9 +186,9 @@ describe("gateway reconnection", function()
 
         -- Three receives, not four: the second unacked heartbeat ends the
         -- connection at the top of the loop, before the socket is read again.
-        assert.equals(3, receives)
-        assert.equals(2, dials)
-        assert.equals(false, connected_on_redial)
+        expect.equals(3, receives)
+        expect.equals(2, dials)
+        expect.equals(false, connected_on_redial)
     end)
 end)
 
@@ -249,8 +249,8 @@ describe("gateway state across connections", function()
             pcall(gateway.connect)
         end)
 
-        assert.equals(2, dials)
-        assert.equals(true, live_receives > 2)
+        expect.equals(2, dials)
+        expect.equals(true, live_receives > 2)
     end)
 
     -- Only `READY` set `is_connected`, but a socket that resumes gets
@@ -305,7 +305,7 @@ describe("gateway state across connections", function()
             pcall(gateway.connect)
         end)
 
-        assert.equals(true, connected_after_resume)
+        expect.equals(true, connected_after_resume)
     end)
 
     -- `M.disconnect` reset its state inside `if ws then`, but the case that
@@ -335,7 +335,7 @@ describe("gateway state across connections", function()
             pcall(gateway.connect)
         end)
 
-        assert.equals(false, gateway.is_connected())
+        expect.equals(false, gateway.is_connected())
     end)
 end)
 
@@ -382,8 +382,8 @@ describe("gateway retry budget", function()
             pcall(gateway.connect)
         end)
 
-        assert.equals(15, dials)
-        assert.equals(true, sockets_seen > 11)
+        expect.equals(15, dials)
+        expect.equals(true, sockets_seen > 11)
     end)
 
     -- The other half: a gateway that never answers must still give up, or the
@@ -402,6 +402,6 @@ describe("gateway retry budget", function()
         end)
 
         -- One budget's worth of attempts, then out — not an endless loop.
-        assert.equals(11, dials)
+        expect.equals(11, dials)
     end)
 end)

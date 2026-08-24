@@ -198,7 +198,7 @@ fn test_plugin_test_failure_reporting() {
         r#"
 describe("failure-suite", function()
     it("should report assertion details", function()
-        assert.equal(1, 2)
+        expect.equal(1, 2)
     end)
 end)
 "#,
@@ -299,7 +299,7 @@ fn test_plugin_reload_picks_up_changes() {
 fn test_fennel_test_execution() {
     let temp = TempDir::new().unwrap();
     let fennel_test_path = temp.path().join("fennel_test.fnl");
-    let fennel_source = "(describe \"fennel\" (fn [] (it \"works\" (fn [] (assert.equal 1 1)))))";
+    let fennel_source = "(describe \"fennel\" (fn [] (it \"works\" (fn [] (expect.equal 1 1)))))";
     fs::write(&fennel_test_path, fennel_source).unwrap();
 
     let executor = LuaExecutor::new().unwrap();
@@ -355,7 +355,7 @@ fn test_scaffold_template_validity() {
         .exec()
         .unwrap();
     lua.load(
-        "assert.is_not_nil = function(val) if val == nil then error('Expected non-nil value', 2) end end",
+        "expect.is_not_nil = function(val) if val == nil then error('Expected non-nil value', 2) end end",
     )
     .exec()
     .unwrap();

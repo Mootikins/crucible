@@ -31,25 +31,25 @@ end
 describe("should_respond", function()
     it("ignores a DM from an unlisted user", function()
         with_config({}, function()
-            assert.equals(false, routing.should_respond(dm_from("stranger")))
+            expect.equals(false, routing.should_respond(dm_from("stranger")))
         end)
     end)
 
     it("answers a DM from a listed user", function()
         with_config({ ["discord.allowed_users"] = { "friend" } }, function()
-            assert.equals(true, routing.should_respond(dm_from("friend")))
+            expect.equals(true, routing.should_respond(dm_from("friend")))
         end)
     end)
 
     it("still ignores a DM from a user who is not on a non-empty list", function()
         with_config({ ["discord.allowed_users"] = { "friend" } }, function()
-            assert.equals(false, routing.should_respond(dm_from("stranger")))
+            expect.equals(false, routing.should_respond(dm_from("stranger")))
         end)
     end)
 
     it("ignores a guild message when the guild is unlisted", function()
         with_config({ ["discord.respond_to"] = "all" }, function()
-            assert.equals(false, routing.should_respond(guild_message("g1")))
+            expect.equals(false, routing.should_respond(guild_message("g1")))
         end)
     end)
 
@@ -58,7 +58,7 @@ describe("should_respond", function()
             ["discord.allowed_guilds"] = { "g1" },
             ["discord.respond_to"] = "all",
         }, function()
-            assert.equals(true, routing.should_respond(guild_message("g1")))
+            expect.equals(true, routing.should_respond(guild_message("g1")))
         end)
     end)
 
@@ -66,13 +66,13 @@ describe("should_respond", function()
     -- often enough that a numeric allowlist entry must still match.
     it("matches a numeric allowlist entry against a string id", function()
         with_config({ ["discord.allowed_users"] = { 12345 } }, function()
-            assert.equals(true, routing.should_respond(dm_from("12345")))
+            expect.equals(true, routing.should_respond(dm_from("12345")))
         end)
     end)
 
     it("never answers another bot, listed or not", function()
         with_config({ ["discord.allowed_users"] = { "botty" } }, function()
-            assert.equals(false, routing.should_respond({
+            expect.equals(false, routing.should_respond({
                 content = "hello",
                 author = { id = "botty", bot = true },
             }))
@@ -97,25 +97,25 @@ describe("should_respond guild matching", function()
 
     it("answers a plain @mention under the default respond_to", function()
         with_config(ALLOWED, function()
-            assert.equals(true, routing.should_respond(guild_msg("hey <@botid> hi"), BOT))
+            expect.equals(true, routing.should_respond(guild_msg("hey <@botid> hi"), BOT))
         end)
     end)
 
     it("answers the nickname form of a mention", function()
         with_config(ALLOWED, function()
-            assert.equals(true, routing.should_respond(guild_msg("<@!botid> hi"), BOT))
+            expect.equals(true, routing.should_respond(guild_msg("<@!botid> hi"), BOT))
         end)
     end)
 
     it("ignores a guild message that mentions nobody", function()
         with_config(ALLOWED, function()
-            assert.equals(false, routing.should_respond(guild_msg("just chatting"), BOT))
+            expect.equals(false, routing.should_respond(guild_msg("just chatting"), BOT))
         end)
     end)
 
     it("ignores a mention of somebody else", function()
         with_config(ALLOWED, function()
-            assert.equals(false, routing.should_respond(guild_msg("<@someoneelse> hi"), BOT))
+            expect.equals(false, routing.should_respond(guild_msg("<@someoneelse> hi"), BOT))
         end)
     end)
 
@@ -124,8 +124,8 @@ describe("should_respond guild matching", function()
                       ["discord.respond_to"] = "prefix",
                       ["discord.command_prefix"] = "!" }
         with_config(cfg, function()
-            assert.equals(true, routing.should_respond(guild_msg("!ask something"), BOT))
-            assert.equals(false, routing.should_respond(guild_msg("no prefix here"), BOT))
+            expect.equals(true, routing.should_respond(guild_msg("!ask something"), BOT))
+            expect.equals(false, routing.should_respond(guild_msg("no prefix here"), BOT))
         end)
     end)
 
@@ -136,7 +136,7 @@ describe("should_respond guild matching", function()
                       ["discord.respond_to"] = "prefix",
                       ["discord.command_prefix"] = "!" }
         with_config(cfg, function()
-            assert.equals(false, routing.should_respond(guild_msg("<@botid> hi"), BOT))
+            expect.equals(false, routing.should_respond(guild_msg("<@botid> hi"), BOT))
         end)
     end)
 end)

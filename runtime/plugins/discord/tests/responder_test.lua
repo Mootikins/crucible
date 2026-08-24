@@ -122,24 +122,24 @@ describe("delegated approval", function()
             responder.respond("chat-1", "room-9", "write it", "msg-1", "requester-7", true)
         end)
 
-        assert.deep_equal({ "approver-1" }, dm_for)
+        expect.deep_equal({ "approver-1" }, dm_for)
 
         -- The prompt goes to the approver's DM, and the room the request came
         -- from is told only that it is waiting.
-        assert.equals("dm-approver", sent[1].channel)
-        assert.truthy(is_prompt(sent[1]))
-        assert.truthy(sent[1].text:find("write_file", 1, true))
+        expect.equals("dm-approver", sent[1].channel)
+        expect.truthy(is_prompt(sent[1]))
+        expect.truthy(sent[1].text:find("write_file", 1, true))
         -- Whose request it is, and from where: an approver cannot authorize a
         -- tool call they are not told the requester for.
-        assert.truthy(sent[1].text:find("requester-7", 1, true))
-        assert.truthy(sent[1].text:find("room-9", 1, true))
-        assert.equals("room-9", sent[2].channel)
-        assert.falsy(is_prompt(sent[2]))
+        expect.truthy(sent[1].text:find("requester-7", 1, true))
+        expect.truthy(sent[1].text:find("room-9", 1, true))
+        expect.equals("room-9", sent[2].channel)
+        expect.falsy(is_prompt(sent[2]))
 
-        assert.equals(true, resolved)
-        assert.equals(1, #answers)
-        assert.equals("req-1", answers[1].request_id)
-        assert.equals(true, answers[1].reply.allowed)
+        expect.equals(true, resolved)
+        expect.equals(1, #answers)
+        expect.equals("req-1", answers[1].request_id)
+        expect.equals(true, answers[1].reply.allowed)
     end)
 
     it("ignores the requester's own y and denies when the approver stays quiet", function()
@@ -166,19 +166,19 @@ describe("delegated approval", function()
             responder.respond("chat-1", "room-9", "write it", "msg-1", "requester-7", true)
         end)
 
-        assert.equals(false, attempt)
+        expect.equals(false, attempt)
         -- The outstanding prompt is keyed by the channel it was shown in,
         -- which is the approver's DM and not the room.
-        assert.is_not_nil(keys)
-        assert.is_nil(keys.room)
-        assert.is_not_nil(keys.dm)
-        assert.equals(1, #answers)
-        assert.equals(false, answers[1].reply.allowed)
+        expect.is_not_nil(keys)
+        expect.is_nil(keys.room)
+        expect.is_not_nil(keys.dm)
+        expect.equals(1, #answers)
+        expect.equals(false, answers[1].reply.allowed)
 
         -- The timeout is reported to whoever asked, not to the approver.
         local last = sent[#sent]
-        assert.equals("room-9", last.channel)
-        assert.truthy(last.text:find("No answer", 1, true))
+        expect.equals("room-9", last.channel)
+        expect.truthy(last.text:find("No answer", 1, true))
     end)
 
     -- Falling back to the requester would be a fallback to the weaker rule the
@@ -199,10 +199,10 @@ describe("delegated approval", function()
         end)
 
         for _, entry in ipairs(sent) do
-            assert.falsy(is_prompt(entry))
+            expect.falsy(is_prompt(entry))
         end
-        assert.equals(1, #answers)
-        assert.equals(false, answers[1].reply.allowed)
+        expect.equals(1, #answers)
+        expect.equals(false, answers[1].reply.allowed)
     end
 
     it("denies without prompting when the approver's DM is refused", function()
@@ -233,12 +233,12 @@ describe("delegated approval", function()
 
         -- The turn is answered rather than abandoned: a raise here used to
         -- escape `respond`, leaving the daemon's request outstanding forever.
-        assert.equals(1, #answers)
-        assert.equals(false, answers[1].reply.allowed)
-        assert.equals("room-9", sent[1].channel)
+        expect.equals(1, #answers)
+        expect.equals(false, answers[1].reply.allowed)
+        expect.equals("room-9", sent[1].channel)
         -- And the slot it reserved is released, or that channel could never
         -- carry another prompt.
-        assert.is_nil(responder.pending_replies["dm-approver"])
+        expect.is_nil(responder.pending_replies["dm-approver"])
     end)
 end)
 
@@ -270,16 +270,16 @@ describe("one prompt at a time", function()
             responder.respond("chat-1", "room-9", "write it", "msg-1", "requester-7", true)
         end)
 
-        assert.equals(1, prompts_to(sent, "dm-approver"))
-        assert.equals(true, resolved)
+        expect.equals(1, prompts_to(sent, "dm-approver"))
+        expect.equals(true, resolved)
 
         -- The one "y" resolves the one prompt it was shown for, and nothing
         -- else. The refused request is denied, in its own room.
-        assert.equals(2, #answers)
-        assert.equals("req-second", answers[1].request_id)
-        assert.equals(false, answers[1].reply.allowed)
-        assert.equals("req-1", answers[2].request_id)
-        assert.equals(true, answers[2].reply.allowed)
+        expect.equals(2, #answers)
+        expect.equals("req-second", answers[1].request_id)
+        expect.equals(false, answers[1].reply.allowed)
+        expect.equals("req-1", answers[2].request_id)
+        expect.equals(true, answers[2].reply.allowed)
     end)
 
     it("refuses a second request while a room already holds a self-approval prompt", function()
@@ -303,14 +303,14 @@ describe("one prompt at a time", function()
             responder.respond("chat-1", "room-9", "write it", "msg-1", "requester-7", true)
         end)
 
-        assert.equals(1, prompts_to(sent, "room-9"))
-        assert.equals(true, resolved)
+        expect.equals(1, prompts_to(sent, "room-9"))
+        expect.equals(true, resolved)
 
-        assert.equals(2, #answers)
-        assert.equals("req-second", answers[1].request_id)
-        assert.equals(false, answers[1].reply.allowed)
-        assert.equals("req-1", answers[2].request_id)
-        assert.equals(true, answers[2].reply.allowed)
+        expect.equals(2, #answers)
+        expect.equals("req-second", answers[1].request_id)
+        expect.equals(false, answers[1].reply.allowed)
+        expect.equals("req-1", answers[2].request_id)
+        expect.equals(true, answers[2].reply.allowed)
     end)
 end)
 
@@ -333,11 +333,11 @@ describe("self approval", function()
             responder.respond("chat-1", "room-9", "write it", "msg-1", "requester-7", true)
         end)
 
-        assert.equals("room-9", sent[1].channel)
-        assert.truthy(is_prompt(sent[1]))
-        assert.equals(1, #answers)
-        assert.equals(false, answers[1].reply.allowed)
-        assert.equals("not that file", answers[1].reply.reason)
+        expect.equals("room-9", sent[1].channel)
+        expect.truthy(is_prompt(sent[1]))
+        expect.equals(1, #answers)
+        expect.equals(false, answers[1].reply.allowed)
+        expect.equals("not that file", answers[1].reply.reason)
     end)
 
     it("does not let a bystander answer for the requester", function()
@@ -356,8 +356,8 @@ describe("self approval", function()
             responder.respond("chat-1", "room-9", "write it", "msg-1", "requester-7", true)
         end)
 
-        assert.equals(false, attempt)
-        assert.equals(false, answers[1].reply.allowed)
+        expect.equals(false, attempt)
+        expect.equals(false, answers[1].reply.allowed)
     end)
 end)
 
@@ -384,9 +384,9 @@ describe("responder error disclosure", function()
             responder.respond("chat-1", "room-9", "hi", "msg-1", "user-1", false)
         end)
 
-        assert.equals(1, #sent)
-        assert.equals(nil, sent[1].text:find(SECRET, 1, true))
-        assert.equals(nil, sent[1].text:find("transcript", 1, true))
+        expect.equals(1, #sent)
+        expect.equals(nil, sent[1].text:find(SECRET, 1, true))
+        expect.equals(nil, sent[1].text:find("transcript", 1, true))
     end)
 
     it("still tells the user something went wrong", function()
@@ -398,7 +398,7 @@ describe("responder error disclosure", function()
             responder.respond("chat-1", "room-9", "hi", "msg-1", "user-1", false)
         end)
 
-        assert.equals(true, #sent[1].text > 0)
+        expect.equals(true, #sent[1].text > 0)
     end)
 
     it("keeps the concurrent-request message, which is normal operation", function()
@@ -410,6 +410,6 @@ describe("responder error disclosure", function()
             responder.respond("chat-1", "room-9", "hi", "msg-1", "user-1", false)
         end)
 
-        assert.equals(true, sent[1].text:find("previous message", 1, true) ~= nil)
+        expect.equals(true, sent[1].text:find("previous message", 1, true) ~= nil)
     end)
 end)

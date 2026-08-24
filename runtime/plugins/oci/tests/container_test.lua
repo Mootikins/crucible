@@ -55,41 +55,41 @@ end
 describe("container.detect", function()
   it("prefers podman when nothing is configured", function()
     with_path({ "podman", "docker", "nerdctl" }, function()
-      assert.equals("podman", container.detect(nil))
+      expect.equals("podman", container.detect(nil))
     end)
   end)
 
   it("falls through to docker when podman is absent", function()
     with_path({ "docker", "nerdctl" }, function()
-      assert.equals("docker", container.detect(nil))
+      expect.equals("docker", container.detect(nil))
     end)
   end)
 
   it("falls through to nerdctl when neither podman nor docker is present", function()
     with_path({ "nerdctl" }, function()
-      assert.equals("nerdctl", container.detect(nil))
+      expect.equals("nerdctl", container.detect(nil))
     end)
   end)
 
   it("honours a configured runtime over the probe order", function()
     with_path({ "podman", "docker" }, function()
-      assert.equals("docker", container.detect("docker"))
+      expect.equals("docker", container.detect("docker"))
     end)
   end)
 
   it("reports a configured runtime that is not installed rather than substituting one", function()
     with_path({ "podman" }, function()
       local runtime, err = container.detect("docker")
-      assert.is_nil(runtime)
-      assert.truthy(err:find("docker", 1, true))
+      expect.is_nil(runtime)
+      expect.truthy(err:find("docker", 1, true))
     end)
   end)
 
   it("reports when no runtime is available at all", function()
     with_path({}, function()
       local runtime, err = container.detect(nil)
-      assert.is_nil(runtime)
-      assert.truthy(err:find("no container runtime", 1, true))
+      expect.is_nil(runtime)
+      expect.truthy(err:find("no container runtime", 1, true))
     end)
   end)
 end)
@@ -109,10 +109,10 @@ describe("container.run_args", function()
   it("mounts the workspace at /workspace when no target is resolved", function()
     local args = base_args()
     local i = index_of(args, "/home/user/project:/workspace:rw,z")
-    assert.is_not_nil(i)
-    assert.equals("-v", args[i - 1])
+    expect.is_not_nil(i)
+    expect.equals("-v", args[i - 1])
     local w = index_of(args, "-w")
-    assert.equals("/workspace", args[w + 1])
+    expect.equals("/workspace", args[w + 1])
   end)
 
   -- A devcontainer's workspaceFolder is typically /workspaces/<name>. The bind
@@ -122,42 +122,42 @@ describe("container.run_args", function()
   it("mounts and works in the resolved target", function()
     local args = base_args({ target = "/workspaces/project" })
     local i = index_of(args, "/home/user/project:/workspaces/project:rw,z")
-    assert.is_not_nil(i, "the bind mount must follow the resolved target")
-    assert.equals("-v", args[i - 1])
+    expect.is_not_nil(i, "the bind mount must follow the resolved target")
+    expect.equals("-v", args[i - 1])
 
     local w = index_of(args, "-w")
-    assert.equals("/workspaces/project", args[w + 1])
-    assert.is_nil(index_of(args, "/workspace"), "no /workspace left behind")
+    expect.equals("/workspaces/project", args[w + 1])
+    expect.is_nil(index_of(args, "/workspace"), "no /workspace left behind")
   end)
 
   it("labels the container with its session so orphans are identifiable", function()
     local args = base_args()
-    assert.is_not_nil(index_of(args, "crucible.session=s1"))
-    assert.is_not_nil(index_of(args, "crucible=true"))
+    expect.is_not_nil(index_of(args, "crucible.session=s1"))
+    expect.is_not_nil(index_of(args, "crucible=true"))
   end)
 
   it("keeps no-new-privileges on", function()
     local args = base_args()
-    assert.is_not_nil(index_of(args, "no-new-privileges"))
+    expect.is_not_nil(index_of(args, "no-new-privileges"))
   end)
 
   it("omits --userns when none is resolved", function()
     local args = base_args()
     for _, v in ipairs(args) do
-      assert.falsy(v:find("^%-%-userns"))
+      expect.falsy(v:find("^%-%-userns"))
     end
   end)
 
   it("passes a resolved userns through", function()
     local args = base_args({ userns = "keep-id" })
-    assert.is_not_nil(index_of(args, "--userns=keep-id"))
+    expect.is_not_nil(index_of(args, "--userns=keep-id"))
   end)
 
   it("ends with the image and the sidecar command", function()
     local args = base_args()
-    assert.equals("infinity", args[#args])
-    assert.equals("sleep", args[#args - 1])
-    assert.equals("alpine:latest", args[#args - 2])
+    expect.equals("infinity", args[#args])
+    expect.equals("sleep", args[#args - 1])
+    expect.equals("alpine:latest", args[#args - 2])
   end)
 
   it("appends extra mounts and env", function()
@@ -165,8 +165,8 @@ describe("container.run_args", function()
       mounts = { "/cache:/cache:ro" },
       env = { FOO = "bar" },
     })
-    assert.is_not_nil(index_of(args, "/cache:/cache:ro"))
-    assert.is_not_nil(index_of(args, "FOO=bar"))
+    expect.is_not_nil(index_of(args, "/cache:/cache:ro"))
+    expect.is_not_nil(index_of(args, "FOO=bar"))
   end)
 
   -- A devcontainer's `runArgs` is raw runtime argv. It has to land before the
@@ -174,9 +174,9 @@ describe("container.run_args", function()
   it("splices run_args in before the image", function()
     local args = base_args({ run_args = { "--cap-add", "SYS_PTRACE" } })
     local i = index_of(args, "--cap-add")
-    assert.is_not_nil(i)
-    assert.equals("SYS_PTRACE", args[i + 1])
-    assert.truthy(i < index_of(args, "alpine:latest"), "run_args must precede the image")
+    expect.is_not_nil(i)
+    expect.equals("SYS_PTRACE", args[i + 1])
+    expect.truthy(i < index_of(args, "alpine:latest"), "run_args must precede the image")
   end)
 
   -- A devcontainer's `remoteUser`. Distinct from the uid-mapping pin, which
@@ -184,8 +184,8 @@ describe("container.run_args", function()
   it("runs as a resolved user", function()
     local args = base_args({ user = "vscode" })
     local i = index_of(args, "--user")
-    assert.is_not_nil(i)
-    assert.equals("vscode", args[i + 1])
+    expect.is_not_nil(i)
+    expect.equals("vscode", args[i + 1])
   end)
 
   -- The measured pairing wins when both are present: keep-id maps the *host*
@@ -194,8 +194,8 @@ describe("container.run_args", function()
   it("prefers the mapped host uid over a resolved user", function()
     local args = base_args({ user = "vscode", userns = "keep-id", run_as_uid = "1000", run_as_gid = "1000" })
     local i = index_of(args, "--user")
-    assert.equals("1000:1000", args[i + 1])
-    assert.is_nil(index_of(args, "vscode"))
+    expect.equals("1000:1000", args[i + 1])
+    expect.is_nil(index_of(args, "vscode"))
   end)
 end)
 
@@ -220,14 +220,14 @@ describe("container timeouts", function()
   it("defaults the start timeout to 300 seconds", function()
     with_exec(function(calls)
       container.run("podman", run_opts)
-      assert.equals(300, calls[1].opts.timeout)
+      expect.equals(300, calls[1].opts.timeout)
     end)
   end)
 
   it("honours a configured start timeout", function()
     with_exec(function(calls)
       container.run("podman", with_extra(run_opts, { start_timeout = 60 }))
-      assert.equals(60, calls[1].opts.timeout)
+      expect.equals(60, calls[1].opts.timeout)
     end)
   end)
 
@@ -236,7 +236,7 @@ describe("container timeouts", function()
       container.build("podman", {
         image = "alpine:latest", dockerfile = "Dockerfile", context = "/home/user/project",
       })
-      assert.equals(900, calls[1].opts.timeout)
+      expect.equals(900, calls[1].opts.timeout)
     end)
   end)
 
@@ -246,7 +246,7 @@ describe("container timeouts", function()
         image = "alpine:latest", dockerfile = "Dockerfile", context = "/home/user/project",
         build_timeout = 1800,
       })
-      assert.equals(1800, calls[1].opts.timeout)
+      expect.equals(1800, calls[1].opts.timeout)
     end)
   end)
 end)
@@ -262,9 +262,9 @@ describe("container.build args", function()
       })
       local args = calls[1].args
       local i = index_of(args, "--build-arg")
-      assert.is_not_nil(i)
-      assert.equals("VARIANT=1.83", args[i + 1])
-      assert.equals("/ws/.devcontainer", args[#args], "the context stays last")
+      expect.is_not_nil(i)
+      expect.equals("VARIANT=1.83", args[i + 1])
+      expect.equals("/ws/.devcontainer", args[#args], "the context stays last")
     end)
   end)
 end)
@@ -298,10 +298,10 @@ describe("container.git_common_dir", function()
 
   it("reports the main repo's git dir for a linked worktree", function()
     with_git("/home/user/project/.git\n", true, function(calls)
-      assert.equals("/home/user/project/.git",
+      expect.equals("/home/user/project/.git",
         container.git_common_dir("/home/user/worktrees/feat"))
       -- Absolute, because the value becomes a bind-mount source.
-      assert.is_not_nil(index_of(calls[1].args, "--path-format=absolute"))
+      expect.is_not_nil(index_of(calls[1].args, "--path-format=absolute"))
     end)
   end)
 
@@ -309,7 +309,7 @@ describe("container.git_common_dir", function()
   -- it would be a redundant second mount of a directory the container has.
   it("reports nothing when the git dir is already inside the workspace", function()
     with_git("/home/user/project/.git\n", true, function()
-      assert.is_nil(container.git_common_dir("/home/user/project"))
+      expect.is_nil(container.git_common_dir("/home/user/project"))
     end)
   end)
 
@@ -317,20 +317,20 @@ describe("container.git_common_dir", function()
   -- inside /home/user/project.
   it("does not mistake a sibling path for one inside the workspace", function()
     with_git("/home/user/project-other/.git\n", true, function()
-      assert.equals("/home/user/project-other/.git",
+      expect.equals("/home/user/project-other/.git",
         container.git_common_dir("/home/user/project"))
     end)
   end)
 
   it("reports nothing outside a repository", function()
     with_git("", false, function()
-      assert.is_nil(container.git_common_dir("/tmp/scratch"))
+      expect.is_nil(container.git_common_dir("/tmp/scratch"))
     end)
   end)
 
   it("reports nothing for an unset workspace", function()
-    assert.is_nil(container.git_common_dir(nil))
-    assert.is_nil(container.git_common_dir(""))
+    expect.is_nil(container.git_common_dir(nil))
+    expect.is_nil(container.git_common_dir(""))
   end)
 end)
 
@@ -351,10 +351,10 @@ describe("container.run_args with a worktree", function()
     -- this mount.
     local i = index_of(args, "type=bind,source=/home/user/project/.git,"
       .. "destination=/home/user/project/.git,relabel=shared")
-    assert.is_not_nil(i, "the main git dir must be mounted at its own path")
-    assert.equals("--mount", args[i - 1])
+    expect.is_not_nil(i, "the main git dir must be mounted at its own path")
+    expect.equals("--mount", args[i - 1])
     -- ...and the workspace mount is still there.
-    assert.is_not_nil(index_of(args, "/home/user/worktrees/feat:/workspace:rw,z"))
+    expect.is_not_nil(index_of(args, "/home/user/worktrees/feat:/workspace:rw,z"))
   end)
 
   -- `relabel=` is podman's; docker and nerdctl reject it outright, so a spec
@@ -367,7 +367,7 @@ describe("container.run_args with a worktree", function()
       image = "alpine:latest",
       git_common_dir = "/home/user/project/.git",
     }, "docker")
-    assert.is_not_nil(index_of(args, "type=bind,source=/home/user/project/.git,"
+    expect.is_not_nil(index_of(args, "type=bind,source=/home/user/project/.git,"
       .. "destination=/home/user/project/.git"))
   end)
 
@@ -382,7 +382,7 @@ describe("container.run_args with a worktree", function()
     for _, v in ipairs(args) do
       if v == "-v" or v == "--mount" then mounts = mounts + 1 end
     end
-    assert.equals(1, mounts, "only the workspace is mounted when git needs nothing extra")
+    expect.equals(1, mounts, "only the workspace is mounted when git needs nothing extra")
   end)
 end)
 
@@ -410,24 +410,24 @@ describe("container.git_works", function()
 
   it("reports success without a second probe when git resolves", function()
     with_probes(true, true, function(calls)
-      assert.equals(true, container.git_works("podman", "c1", "/workspace"))
-      assert.equals(1, #calls, "the extra exec only runs on the failure path")
+      expect.equals(true, container.git_works("podman", "c1", "/workspace"))
+      expect.equals(1, #calls, "the extra exec only runs on the failure path")
     end)
   end)
 
   it("distinguishes an image with no git from a lost mount", function()
     with_probes(false, false, function()
       local ok, reason = container.git_works("podman", "c1", "/workspace")
-      assert.falsy(ok)
-      assert.equals("no-git", reason)
+      expect.falsy(ok)
+      expect.equals("no-git", reason)
     end)
   end)
 
   it("reports an unresolvable repository when git is installed", function()
     with_probes(false, true, function()
       local ok, reason = container.git_works("podman", "c1", "/workspace")
-      assert.falsy(ok)
-      assert.equals("unresolved", reason)
+      expect.falsy(ok)
+      expect.equals("unresolved", reason)
     end)
   end)
 end)

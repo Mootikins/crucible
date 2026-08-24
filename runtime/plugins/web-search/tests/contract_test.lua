@@ -80,7 +80,7 @@ local function keys_of(t)
     return out
 end
 
---- assert.truthy discards a second argument, so a validation failure would
+--- expect.truthy discards a second argument, so a validation failure would
 --- report "expected truthy" and swallow the reason. Surface the reason.
 local function assert_valid(payload, label)
     local ok, err = contract.validate(payload)
@@ -100,35 +100,35 @@ describe("web-search contract", function()
         })
 
         it("normalises to a valid payload", function()
-            assert.is_not_nil(payload)
+            expect.is_not_nil(payload)
             assert_valid(payload, "searxng")
         end)
 
         it("keeps only the five contract fields out of SearXNG's 23", function()
-            assert.deep_equal(
+            expect.deep_equal(
                 { "engines", "score", "snippet", "title", "url" },
                 keys_of(payload.results[1])
             )
         end)
 
         it("carries cross-engine agreement, which single-provider APIs cannot", function()
-            assert.equal(2.67, payload.results[1].score)
-            assert.deep_equal({ "duckduckgo", "google" }, payload.results[1].engines)
+            expect.equal(2.67, payload.results[1].score)
+            expect.deep_equal({ "duckduckgo", "google" }, payload.results[1].engines)
         end)
 
         it("reports unresponsive engines as degraded names", function()
-            assert.deep_equal({ "brave", "startpage" }, payload.degraded)
+            expect.deep_equal({ "brave", "startpage" }, payload.degraded)
         end)
 
         it("still returns results when engines were unresponsive", function()
-            assert.truthy(#payload.results >= 3)
+            expect.truthy(#payload.results >= 3)
         end)
 
         it("collapses whitespace out of snippets", function()
             local forum = payload.results[4]
-            assert.truthy(forum.snippet:find("does. Is there a crate", 1, true))
-            assert.falsy(forum.snippet:find("\n", 1, true))
-            assert.falsy(forum.snippet:find("\t", 1, true))
+            expect.truthy(forum.snippet:find("does. Is there a crate", 1, true))
+            expect.falsy(forum.snippet:find("\n", 1, true))
+            expect.falsy(forum.snippet:find("\t", 1, true))
         end)
     end)
 
@@ -141,20 +141,20 @@ describe("web-search contract", function()
 
         it("normalises the JSON-RPC envelope's inner payload", function()
             assert_valid(payload, "exa")
-            assert.equal("Prompt caching with Claude", payload.results[2].title)
+            expect.equal("Prompt caching with Claude", payload.results[2].title)
         end)
 
         it("reads the snippet from Exa's `text` key", function()
-            assert.truthy(payload.results[1].snippet:find("Prompt caching lets you reuse", 1, true))
+            expect.truthy(payload.results[1].snippet:find("Prompt caching lets you reuse", 1, true))
         end)
 
         it("omits score and engines", function()
-            assert.deep_equal({ "snippet", "title", "url" }, keys_of(payload.results[1]))
+            expect.deep_equal({ "snippet", "title", "url" }, keys_of(payload.results[1]))
         end)
 
         it("still reports degraded, as an empty table", function()
-            assert.is_not_nil(payload.degraded)
-            assert.equal(0, #payload.degraded)
+            expect.is_not_nil(payload.degraded)
+            expect.equal(0, #payload.degraded)
         end)
     end)
 
@@ -167,21 +167,21 @@ describe("web-search contract", function()
 
         it("normalises the scraped lite page", function()
             assert_valid(payload, "ddg")
-            assert.equal(4, #payload.results)
+            expect.equal(4, #payload.results)
         end)
 
         it("drops sponsored rows before the contract sees them", function()
             for _, r in ipairs(payload.results) do
-                assert.falsy(r.url:find("example%-ads"))
+                expect.falsy(r.url:find("example%-ads"))
             end
         end)
 
         it("unwraps the /l/?uddg= redirect", function()
-            assert.equal("https://www.anthropic.com/news/prompt-caching", payload.results[2].url)
+            expect.equal("https://www.anthropic.com/news/prompt-caching", payload.results[2].url)
         end)
 
         it("still reports degraded, as an empty table", function()
-            assert.deep_equal({}, payload.degraded)
+            expect.deep_equal({}, payload.degraded)
         end)
     end)
 
@@ -199,23 +199,23 @@ describe("web-search contract", function()
 
         it("has the same top-level keys whichever provider answered", function()
             for name, p in pairs(payloads) do
-                assert.deep_equal({ "degraded", "provider", "query", "results" }, keys_of(p))
-                assert.is_string(name)
+                expect.deep_equal({ "degraded", "provider", "query", "results" }, keys_of(p))
+                expect.is_string(name)
             end
         end)
 
         it("names its provider in the payload", function()
             for name, p in pairs(payloads) do
-                assert.equal(name, p.provider)
+                expect.equal(name, p.provider)
             end
         end)
 
         it("gives every result the same required fields", function()
             for _, p in pairs(payloads) do
                 for _, r in ipairs(p.results) do
-                    assert.is_string(r.title)
-                    assert.is_string(r.url)
-                    assert.is_string(r.snippet)
+                    expect.is_string(r.title)
+                    expect.is_string(r.url)
+                    expect.is_string(r.snippet)
                 end
             end
         end)
@@ -236,8 +236,8 @@ describe("web-search contract", function()
                 results = rows,
             })
             local long = payload.results[2]
-            assert.truthy(#long.snippet <= contract.MAX_SNIPPET)
-            assert.equal("...", long.snippet:sub(-3))
+            expect.truthy(#long.snippet <= contract.MAX_SNIPPET)
+            expect.equal("...", long.snippet:sub(-3))
         end)
 
         it("never truncates through a UTF-8 codepoint", function()
@@ -247,14 +247,14 @@ describe("web-search contract", function()
                 results = { { title = "t", url = "https://x.test", snippet = string.rep("é", 400) } },
             })
             local s = payload.results[1].snippet
-            assert.truthy(#s <= contract.MAX_SNIPPET)
+            expect.truthy(#s <= contract.MAX_SNIPPET)
             -- Every source character is the two-byte "é", so the kept text must
             -- consist of nothing but whole "é"s. A cut between a lead byte and
             -- its continuation would leave a stray byte behind — invalid UTF-8,
             -- which breaks JSON encoding downstream.
             local body = s:sub(1, #s - 3)
-            assert.equal("...", s:sub(-3))
-            assert.equal("", (body:gsub("\u{00E9}", "")))
+            expect.equal("...", s:sub(-3))
+            expect.equal("", (body:gsub("\u{00E9}", "")))
         end)
 
         it("keeps the serialised payload inside the spill budget", function()
@@ -272,11 +272,11 @@ describe("web-search contract", function()
                 results = rows,
                 max_results = contract.MAX_RESULTS,
             })
-            assert.truthy(contract.encoded_size(payload) <= contract.MAX_PAYLOAD_BYTES)
+            expect.truthy(contract.encoded_size(payload) <= contract.MAX_PAYLOAD_BYTES)
             -- The byte cap, not max_results, is the real bound: 25 × 300 chars
             -- cannot fit, so asking for the maximum returns fewer.
-            assert.truthy(#payload.results < contract.MAX_RESULTS)
-            assert.truthy(#payload.results > 1)
+            expect.truthy(#payload.results < contract.MAX_RESULTS)
+            expect.truthy(#payload.results > 1)
         end)
 
         it("never trims the result list to empty", function()
@@ -296,12 +296,12 @@ describe("web-search contract", function()
             -- is truncated or not, and keeping it spilled the whole payload to
             -- a file. The loss is stated in `degraded` so an empty result list
             -- cannot be misread as "no matches".
-            assert.equal(0, #payload.results)
-            assert.equal(1, #payload.degraded)
+            expect.equal(0, #payload.results)
+            expect.equal(1, #payload.degraded)
             -- A short label, not a sentence: `degraded` is comma-joined into
             -- the one-line display summary beside engine names like "brave".
-            assert.truthy(payload.degraded[1]:find("url-too-long", 1, true))
-            assert.truthy(contract.encoded_size(payload) <= contract.MAX_PAYLOAD_BYTES)
+            expect.truthy(payload.degraded[1]:find("url-too-long", 1, true))
+            expect.truthy(contract.encoded_size(payload) <= contract.MAX_PAYLOAD_BYTES)
         end)
 
         it("defaults to 8 results and clamps a caller's request", function()
@@ -309,8 +309,8 @@ describe("web-search contract", function()
             for i = 1, 40 do
                 rows[i] = { title = "t" .. i, url = "https://x.test/" .. i, snippet = "s" }
             end
-            assert.equal(8, #contract.normalise({ query = "q", provider = "p", results = rows }).results)
-            assert.equal(
+            expect.equal(8, #contract.normalise({ query = "q", provider = "p", results = rows }).results)
+            expect.equal(
                 contract.MAX_RESULTS,
                 #contract.normalise({
                     query = "q",
@@ -319,7 +319,7 @@ describe("web-search contract", function()
                     max_results = 999,
                 }).results
             )
-            assert.equal(
+            expect.equal(
                 1,
                 #contract.normalise({ query = "q", provider = "p", results = rows, max_results = 0 }).results
             )
@@ -329,8 +329,8 @@ describe("web-search contract", function()
     describe("normalise", function()
         it("always emits degraded, even with no degraded input", function()
             local payload = contract.normalise({ query = "q", provider = "p", results = {} })
-            assert.is_table(payload.degraded)
-            assert.equal(0, #payload.degraded)
+            expect.is_table(payload.degraded)
+            expect.equal(0, #payload.degraded)
         end)
 
         it("accepts degraded as bare names as well as name/reason pairs", function()
@@ -346,7 +346,7 @@ describe("web-search contract", function()
                 results = {},
                 degraded = { "brave" },
             })
-            assert.deep_equal(pairs_form.degraded, names_form.degraded)
+            expect.deep_equal(pairs_form.degraded, names_form.degraded)
         end)
 
         it("drops hits with no url or no title", function()
@@ -359,8 +359,8 @@ describe("web-search contract", function()
                     { url = "https://y.test", snippet = "s" },
                 },
             })
-            assert.equal(1, #payload.results)
-            assert.equal("keep", payload.results[1].title)
+            expect.equal(1, #payload.results)
+            expect.equal("keep", payload.results[1].title)
         end)
 
         it("gives a missing snippet an empty string rather than a hole", function()
@@ -369,16 +369,16 @@ describe("web-search contract", function()
                 provider = "p",
                 results = { { title = "t", url = "https://x.test" } },
             })
-            assert.equal("", payload.results[1].snippet)
+            expect.equal("", payload.results[1].snippet)
         end)
 
         it("rejects a call with no query or no provider", function()
             local ok, err = contract.normalise({ provider = "p", results = {} })
-            assert.is_nil(ok)
-            assert.truthy(err:find("query"))
+            expect.is_nil(ok)
+            expect.truthy(err:find("query"))
             ok, err = contract.normalise({ query = "q", results = {} })
-            assert.is_nil(ok)
-            assert.truthy(err:find("provider"))
+            expect.is_nil(ok)
+            expect.truthy(err:find("provider"))
         end)
     end)
 
@@ -393,39 +393,39 @@ describe("web-search contract", function()
         end
 
         it("accepts the minimal valid payload", function()
-            assert.truthy(contract.validate(base()))
+            expect.truthy(contract.validate(base()))
         end)
 
         it("rejects an absent degraded, because absence must not be a signal", function()
             local p = base()
             p.degraded = nil
             local ok, err = contract.validate(p)
-            assert.falsy(ok)
-            assert.truthy(err:find("degraded"))
+            expect.falsy(ok)
+            expect.truthy(err:find("degraded"))
         end)
 
         it("rejects a field a provider tried to smuggle through", function()
             local p = base()
             p.results[1].thumbnail = "https://x.test/thumb.png"
             local ok, err = contract.validate(p)
-            assert.falsy(ok)
-            assert.truthy(err:find("unknown key"))
+            expect.falsy(ok)
+            expect.truthy(err:find("unknown key"))
         end)
 
         it("rejects an extra top-level key", function()
             local p = base()
             p.number_of_results = 29
             local ok, err = contract.validate(p)
-            assert.falsy(ok)
-            assert.truthy(err:find("unknown payload key"))
+            expect.falsy(ok)
+            expect.truthy(err:find("unknown payload key"))
         end)
 
         it("rejects an over-long snippet", function()
             local p = base()
             p.results[1].snippet = string.rep("x", contract.MAX_SNIPPET + 1)
             local ok, err = contract.validate(p)
-            assert.falsy(ok)
-            assert.truthy(err:find("snippet"))
+            expect.falsy(ok)
+            expect.truthy(err:find("snippet"))
         end)
 
         it("rejects a payload over the spill budget", function()
@@ -438,25 +438,25 @@ describe("web-search contract", function()
                 }
             end
             local ok, err = contract.validate(p)
-            assert.falsy(ok)
-            assert.truthy(err:find("cap is"))
+            expect.falsy(ok)
+            expect.truthy(err:find("cap is"))
         end)
 
         it("rejects a non-string degraded entry", function()
             local p = base()
             p.degraded = { { "brave", "Too many requests" } }
             local ok, err = contract.validate(p)
-            assert.falsy(ok)
-            assert.truthy(err:find("degraded"))
+            expect.falsy(ok)
+            expect.truthy(err:find("degraded"))
         end)
 
         it("rejects a non-numeric score and an empty engines list", function()
             local p = base()
             p.results[1].score = "2.67"
-            assert.falsy(contract.validate(p))
+            expect.falsy(contract.validate(p))
             p.results[1].score = nil
             p.results[1].engines = {}
-            assert.falsy(contract.validate(p))
+            expect.falsy(contract.validate(p))
         end)
     end)
 end)

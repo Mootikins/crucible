@@ -92,28 +92,28 @@ describe("the plugin's declaration", function()
   it("publishes itself on the workspace axis, not the runtime one", function()
     plugin.setup({})
     local decl = publications["targets"]
-    assert.truthy(decl)
+    expect.truthy(decl)
     -- The whole reason the axes are separate: on the runtime axis this would
     -- be offered as isolation, and a branch name sent down that channel is a
     -- hard error inside oci.
-    assert.equals("workspace", decl.axis)
-    assert.equals("worktree.targets", decl.targets_command)
-    assert.equals("worktree.resolve", decl.resolve_command)
+    expect.equals("workspace", decl.axis)
+    expect.equals("worktree.targets", decl.targets_command)
+    expect.equals("worktree.resolve", decl.resolve_command)
   end)
 
   it("declares both commands it published the names of", function()
-    assert.truthy(plugin.commands["worktree.targets"])
-    assert.truthy(plugin.commands["worktree.resolve"])
+    expect.truthy(plugin.commands["worktree.targets"])
+    expect.truthy(plugin.commands["worktree.resolve"])
   end)
 
   it("never claims isolation — that is the other axis", function()
-    assert.equals(nil, publications["isolation"])
+    expect.equals(nil, publications["isolation"])
   end)
 
   it("declares its template setting", function()
     plugin.setup({})
-    assert.truthy(declared_options)
-    assert.truthy(declared_options.args.template)
+    expect.truthy(declared_options)
+    expect.truthy(declared_options.args.template)
   end)
 end)
 
@@ -121,9 +121,9 @@ describe("worktree.targets", function()
   it("offers every branch, current first", function()
     a_repo()
     local result = targets({ workspace = "/repo" })
-    assert.equals("master", result.targets[1].value)
-    assert.equals("current", result.targets[1].hint)
-    assert.equals("feat/x", result.targets[2].value)
+    expect.equals("master", result.targets[1].value)
+    expect.equals("current", result.targets[1].hint)
+    expect.equals("feat/x", result.targets[2].value)
   end)
 
   -- Plenty of projects are not repositories. The chip offering nothing is the
@@ -132,12 +132,12 @@ describe("worktree.targets", function()
     a_repo()
     responders["rev-parse --show-toplevel"] = { success = false, stderr = "not a git repository" }
     local result = targets({ workspace = "/not-a-repo" })
-    assert.equals(0, #result.targets)
+    expect.equals(0, #result.targets)
   end)
 
   it("offers nothing rather than raising when given no workspace", function()
     a_repo()
-    assert.equals(0, #targets({}).targets)
+    expect.equals(0, #targets({}).targets)
   end)
 end)
 
@@ -146,38 +146,38 @@ describe("worktree.resolve", function()
     a_repo()
     -- git refuses two worktrees on one branch, so reusing is the only answer
     -- that works — and it is what the parallel-agents flow depends on.
-    assert.equals("/repo/tree/feat/x", resolve({ workspace = "/repo", target = "feat/x" }).path)
-    assert.equals(nil, worktree_add_argv())
+    expect.equals("/repo/tree/feat/x", resolve({ workspace = "/repo", target = "feat/x" }).path)
+    expect.equals(nil, worktree_add_argv())
   end)
 
   it("creates a worktree for a local branch that has none", function()
     a_repo()
     responders["for-each-ref refs/heads"] = { success = true, stdout = "master\nfeat/x\nzebra\n" }
     local result = resolve({ workspace = "/repo", target = "zebra" })
-    assert.equals("/repo/tree/zebra", result.path)
+    expect.equals("/repo/tree/zebra", result.path)
 
     local argv = worktree_add_argv()
-    assert.truthy(argv)
+    expect.truthy(argv)
     -- Checked out, not created: `-b` on an existing branch fails.
-    assert.equals(nil, index_of(argv, "-b"))
-    assert.equals("zebra", argv[#argv])
+    expect.equals(nil, index_of(argv, "-b"))
+    expect.equals("zebra", argv[#argv])
   end)
 
   it("creates the branch too when nothing has it yet", function()
     a_repo()
     local result = resolve({ workspace = "/repo", target = "brand-new" })
-    assert.equals("/repo/tree/brand-new", result.path)
+    expect.equals("/repo/tree/brand-new", result.path)
 
     local argv = worktree_add_argv()
-    assert.truthy(index_of(argv, "-b"), "a branch that does not exist has to be created")
-    assert.equals("brand-new", argv[index_of(argv, "-b") + 1])
+    expect.truthy(index_of(argv, "-b"), "a branch that does not exist has to be created")
+    expect.equals("brand-new", argv[index_of(argv, "-b") + 1])
   end)
 
   it("returns an existing destination without touching git", function()
     a_repo()
     existing_paths["/repo/tree/zebra"] = true
-    assert.equals("/repo/tree/zebra", resolve({ workspace = "/repo", target = "zebra" }).path)
-    assert.equals(nil, worktree_add_argv())
+    expect.equals("/repo/tree/zebra", resolve({ workspace = "/repo", target = "zebra" }).path)
+    expect.equals(nil, worktree_add_argv())
   end)
 
   -- Fail-closed. Resolution runs before session.create, so raising refuses the
@@ -186,32 +186,32 @@ describe("worktree.resolve", function()
   it("refuses a branch name that would be read as a flag", function()
     a_repo()
     local ok, err = pcall(resolve, { workspace = "/repo", target = "-b" })
-    assert.falsy(ok)
-    assert.truthy(tostring(err):find("-b", 1, true))
+    expect.falsy(ok)
+    expect.truthy(tostring(err):find("-b", 1, true))
   end)
 
   it("refuses a name git itself rejects", function()
     a_repo()
     responders["check-ref-format --branch"] = { success = false, stderr = "bad ref" }
-    assert.falsy(pcall(resolve, { workspace = "/repo", target = "has space" }))
+    expect.falsy(pcall(resolve, { workspace = "/repo", target = "has space" }))
   end)
 
   it("refuses a project that is not a repository", function()
     a_repo()
     responders["rev-parse --show-toplevel"] = { success = false, stderr = "not a git repository" }
-    assert.falsy(pcall(resolve, { workspace = "/nope", target = "main" }))
+    expect.falsy(pcall(resolve, { workspace = "/nope", target = "main" }))
   end)
 
   it("refuses when git could not create the worktree", function()
     a_repo()
     responders["worktree add"] = { success = false, stderr = "fatal: destination busy" }
-    assert.falsy(pcall(resolve, { workspace = "/repo", target = "brand-new" }))
+    expect.falsy(pcall(resolve, { workspace = "/repo", target = "brand-new" }))
   end)
 
   it("refuses when no branch was named", function()
     a_repo()
-    assert.falsy(pcall(resolve, { workspace = "/repo", target = "" }))
-    assert.falsy(pcall(resolve, { workspace = "/repo" }))
+    expect.falsy(pcall(resolve, { workspace = "/repo", target = "" }))
+    expect.falsy(pcall(resolve, { workspace = "/repo" }))
   end)
 
   -- A branch name can arrive from a remote, so it is attacker-adjacent. Passed
@@ -222,13 +222,13 @@ describe("worktree.resolve", function()
     responders["for-each-ref refs/heads"] = { success = true, stdout = "master\nfix; rm -rf /\n" }
     resolve({ workspace = "/repo", target = "fix; rm -rf /" })
     local argv = worktree_add_argv()
-    assert.truthy(index_of(argv, "fix; rm -rf /"), "the name must survive as a single argv entry")
+    expect.truthy(index_of(argv, "fix; rm -rf /"), "the name must survive as a single argv entry")
   end)
 
   it("honours a configured worktree location", function()
     a_repo()
     plugin.setup({ template = "/scratch/{branch}" })
-    assert.equals("/scratch/brand-new", resolve({ workspace = "/repo", target = "brand-new" }).path)
+    expect.equals("/scratch/brand-new", resolve({ workspace = "/repo", target = "brand-new" }).path)
     plugin.setup({})
   end)
 end)

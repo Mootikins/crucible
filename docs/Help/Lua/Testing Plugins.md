@@ -29,12 +29,12 @@ describe("my-plugin", function()
 
   it("greets by name", function()
     local result = plugin.tools.greet.fn({ name = "Alice" })
-    assert.equal("Hello, Alice!", result.message)
+    expect.equal("Hello, Alice!", result.message)
   end)
 
   it("rejects missing name", function()
     local result = plugin.tools.greet.fn({})
-    assert.truthy(result.error)
+    expect.truthy(result.error)
   end)
 end)
 ```
@@ -47,17 +47,17 @@ backwards.
 
 ```lua
 assert(condition, "message")            -- basic
-assert.equal(expected, actual)          -- value equality (alias: assert.equals)
-assert.deep_equal(expected, actual)     -- recursive table equality
-assert.truthy(value)                    -- not nil/false
-assert.falsy(value)                     -- nil or false
-assert.is_nil(value)                    -- nil check
-assert.is_not_nil(value)                -- not nil
-assert.is_string(value)                 -- type checks
-assert.is_number(value)
-assert.is_table(value)
-assert.is_function(value)
-assert.has_error(fn, substring?)        -- expect an error, optionally matching
+expect.equal(expected, actual)          -- value equality (alias: expect.equals)
+expect.deep_equal(expected, actual)     -- recursive table equality
+expect.truthy(value)                    -- not nil/false
+expect.falsy(value)                     -- nil or false
+expect.is_nil(value)                    -- nil check
+expect.is_not_nil(value)                -- not nil
+expect.is_string(value)                 -- type checks
+expect.is_number(value)
+expect.is_table(value)
+expect.is_function(value)
+expect.has_error(fn, substring?)        -- expect an error, optionally matching
 ```
 
 ## Test Lifecycle
@@ -166,7 +166,7 @@ Inspect what was called on any mock:
 
 ```lua
 local calls = test_mocks.get_calls("kiln", "search")
-assert.equal(1, #calls)
+expect.equal(1, #calls)
 local id_calls = test_mocks.get_calls("sessions", "create")
 ```
 
@@ -182,7 +182,7 @@ local result = plugin.tools.search_kiln.fn({
   kiln = "docs",
   query = "spacing",
 })
-assert.truthy(result.error)  -- no daemon, so session create fails
+expect.truthy(result.error)  -- no daemon, so session create fails
 ```
 
 ## See Also

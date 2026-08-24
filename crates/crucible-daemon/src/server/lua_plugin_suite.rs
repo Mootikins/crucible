@@ -639,7 +639,7 @@ mod plugin_test_diagnostics_tests {
             tmp.path().join("arith_test.fnl"),
             "(describe \"fennel math\" (fn []\n\
                (it \"adds two numbers\" (fn []\n\
-                 (assert.equal 2 (+ 1 1))))))\n",
+                 (expect.equal 2 (+ 1 1))))))\n",
         )
         .unwrap();
 
@@ -685,7 +685,7 @@ mod plugin_test_diagnostics_tests {
             tmp.path().join("arithmetic_test.lua"),
             "describe('math', function()\n\
                it('adds two numbers', function()\n\
-                 assert.equal(3, 1 + 1)\n\
+                 expect.equal(3, 1 + 1)\n\
                end)\n\
              end)\n",
         )
@@ -728,7 +728,7 @@ mod plugin_test_diagnostics_tests {
             tmp.path().join("nested_test.lua"),
             "describe('outer', function()\n\
                describe('inner', function()\n\
-                 it('fails', function() assert.truthy(false) end)\n\
+                 it('fails', function() expect.truthy(false) end)\n\
                end)\n\
              end)\n",
         )

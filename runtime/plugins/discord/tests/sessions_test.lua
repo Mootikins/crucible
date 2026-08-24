@@ -73,9 +73,9 @@ describe("get_or_create", function()
         local calls, api = recording_api()
         with_env({}, api, function()
             local id, err = sessions.get_or_create("chan-no-kiln", "g1")
-            assert.is_nil(id)
-            assert.truthy(err)
-            assert.equals(0, #calls.created)
+            expect.is_nil(id)
+            expect.truthy(err)
+            expect.equals(0, #calls.created)
         end)
     end)
 
@@ -91,10 +91,10 @@ describe("get_or_create", function()
             ["discord.model"] = "m",
         }, api, function()
             local id = sessions.get_or_create("chan-kiln", "g1")
-            assert.equals("chat-1", id)
-            assert.equals(1, #calls.created)
-            assert.deep_equal({ "notes" }, calls.created[1].kilns)
-            assert.is_nil(calls.created[1].kiln)
+            expect.equals("chat-1", id)
+            expect.equals(1, #calls.created)
+            expect.deep_equal({ "notes" }, calls.created[1].kilns)
+            expect.is_nil(calls.created[1].kiln)
         end)
     end)
 
@@ -109,8 +109,8 @@ describe("get_or_create", function()
             sessions.get_or_create("chan-read-kilns", "g1")
         end)
 
-        assert.equals(1, #calls.created)
-        assert.deep_equal({ "notes", "reference" }, calls.created[1].kilns)
+        expect.equals(1, #calls.created)
+        expect.deep_equal({ "notes", "reference" }, calls.created[1].kilns)
     end)
 
     -- A session whose agent could not be configured used to be cached anyway,
@@ -124,14 +124,14 @@ describe("get_or_create", function()
             ["discord.model"] = "m",
         }, api, function()
             local id, err = sessions.get_or_create("chan-bad-agent", "g1")
-            assert.is_nil(id)
-            assert.truthy(err)
-            assert.equals(1, #calls.ended)
+            expect.is_nil(id)
+            expect.truthy(err)
+            expect.equals(1, #calls.ended)
 
             -- The failure was not cached: a second message tries again rather
             -- than returning the dead id.
             sessions.get_or_create("chan-bad-agent", "g1")
-            assert.equals(2, #calls.created)
+            expect.equals(2, #calls.created)
         end)
     end)
 
@@ -140,9 +140,9 @@ describe("get_or_create", function()
         local calls, api = recording_api()
         with_env({ ["discord.kiln"] = "notes" }, api, function()
             local id, err = sessions.get_or_create("chan-no-provider", "g1")
-            assert.is_nil(id)
-            assert.truthy(err)
-            assert.equals(1, #calls.ended)
+            expect.is_nil(id)
+            expect.truthy(err)
+            expect.equals(1, #calls.ended)
         end)
     end)
 end)
@@ -171,12 +171,12 @@ describe("agent cards", function()
     it("names the card at create and does not reconfigure afterwards", function()
         with_card(nil, function(calls)
             local id = sessions.get_or_create("chan-card", "g1", "u1")
-            assert.equals("chat-1", id)
-            assert.equals("researcher", calls.created[1].agent_card)
-            assert.equals("p", calls.created[1].provider)
-            assert.equals("m", calls.created[1].model)
+            expect.equals("chat-1", id)
+            expect.equals("researcher", calls.created[1].agent_card)
+            expect.equals("p", calls.created[1].provider)
+            expect.equals("m", calls.created[1].model)
             -- The whole point: nothing overwrites the card afterwards.
-            assert.equals(0, calls.configured)
+            expect.equals(0, calls.configured)
         end)
     end)
 
@@ -187,14 +187,14 @@ describe("agent cards", function()
         with_card({ ["discord.access"] = { ["user:writer"] = "write" } }, function(calls)
             sessions.get_or_create("dm-card-writer", nil, "writer")
             local policy = calls.created[1].tool_policy
-            assert.equals("allow", policy.write_file)
-            assert.equals("allow", policy.read_file)
+            expect.equals("allow", policy.write_file)
+            expect.equals("allow", policy.read_file)
         end)
         with_card(nil, function(calls)
             sessions.get_or_create("dm-card-reader", nil, "reader")
             local policy = calls.created[1].tool_policy
-            assert.is_nil(policy.write_file)
-            assert.equals("allow", policy.read_file)
+            expect.is_nil(policy.write_file)
+            expect.equals("allow", policy.read_file)
         end)
     end)
 
@@ -203,15 +203,15 @@ describe("agent cards", function()
     it("refuses a card alongside agent_name or an acp agent_type", function()
         with_card({ ["discord.agent_name"] = "claude" }, function(calls)
             local id, err = sessions.get_or_create("chan-card-and-name", "g1")
-            assert.is_nil(id)
-            assert.truthy(err)
-            assert.equals(0, #calls.created)
+            expect.is_nil(id)
+            expect.truthy(err)
+            expect.equals(0, #calls.created)
         end)
         with_card({ ["discord.agent_type"] = "acp" }, function(calls)
             local id, err = sessions.get_or_create("chan-card-and-acp", "g1")
-            assert.is_nil(id)
-            assert.truthy(err)
-            assert.equals(0, #calls.created)
+            expect.is_nil(id)
+            expect.truthy(err)
+            expect.equals(0, #calls.created)
         end)
     end)
 end)
@@ -233,8 +233,8 @@ describe("agent_name", function()
         }, api, function()
             sessions.get_or_create("chan-acp", "g1", "u1")
         end)
-        assert.equals("acp", seen.agent_type)
-        assert.equals("claude", seen.agent_name)
+        expect.equals("acp", seen.agent_type)
+        expect.equals("claude", seen.agent_name)
     end)
 
     it("is refused on an internal agent", function()
@@ -246,10 +246,10 @@ describe("agent_name", function()
             ["discord.agent_name"] = "researcher",
         }, api, function()
             local id, err = sessions.get_or_create("chan-internal-name", "g1")
-            assert.is_nil(id)
-            assert.truthy(err)
+            expect.is_nil(id)
+            expect.truthy(err)
             -- Refused, not cached: the session it created is ended again.
-            assert.equals(1, #calls.ended)
+            expect.equals(1, #calls.ended)
         end)
     end)
 end)
@@ -268,15 +268,15 @@ describe("access tiers", function()
     end
 
     it("defaults to read when nothing is configured", function()
-        assert.equals("read", tier_with(nil, "g1", "u1"))
+        expect.equals("read", tier_with(nil, "g1", "u1"))
     end)
 
     it("gives a named account its tier in a DM", function()
-        assert.equals("write", tier_with({ ["user:u1"] = "write" }, nil, "u1"))
+        expect.equals("write", tier_with({ ["user:u1"] = "write" }, nil, "u1"))
     end)
 
     it("gives a named guild its tier", function()
-        assert.equals("write", tier_with({ ["guild:g1"] = "write" }, "g1", "u1"))
+        expect.equals("write", tier_with({ ["guild:g1"] = "write" }, "g1", "u1"))
     end)
 
     -- The sender's own grant beats the guild's. This is the reverse of the
@@ -286,15 +286,15 @@ describe("access tiers", function()
     -- unnamed, not a ceiling on the named.
     it("prefers the sender's own tier over the guild's", function()
         local access = { ["guild:g1"] = "read", ["user:u1"] = "write" }
-        assert.equals("write", tier_with(access, "g1", "u1"))
+        expect.equals("write", tier_with(access, "g1", "u1"))
     end)
 
     it("honours an explicit default", function()
-        assert.equals("write", tier_with({ default = "write" }, "g9", "u9"))
+        expect.equals("write", tier_with({ default = "write" }, "g9", "u9"))
     end)
 
     it("falls back to read on an unknown tier name", function()
-        assert.equals("read", tier_with({ ["user:u1"] = "superuser" }, nil, "u1"))
+        expect.equals("read", tier_with({ ["user:u1"] = "superuser" }, nil, "u1"))
     end)
 
     it("gives a write tier the write tools and a read tier only reads", function()
@@ -315,11 +315,11 @@ describe("access tiers", function()
             sessions.get_or_create("dm-reader", nil, "reader")
         end)
 
-        assert.equals("allow", seen[1].write_file)
-        assert.equals("allow", seen[1].read_file)
-        assert.is_nil(seen[2].write_file)
-        assert.equals("allow", seen[2].read_file)
-        assert.equals(2, #calls.created)
+        expect.equals("allow", seen[1].write_file)
+        expect.equals("allow", seen[1].read_file)
+        expect.is_nil(seen[2].write_file)
+        expect.equals("allow", seen[2].read_file)
+        expect.equals(2, #calls.created)
     end)
 end)
 
@@ -337,7 +337,7 @@ describe("role grants", function()
     end
 
     it("gives a member the tier their role names", function()
-        assert.equals("write",
+        expect.equals("write",
             tier_with({ ["role:r-mod"] = "write" }, "g1", "u1", { "r-mod" }))
     end)
 
@@ -345,12 +345,12 @@ describe("role grants", function()
     -- one aimed at a group it happens to be in.
     it("prefers the sender's own tier over their role's", function()
         local access = { ["user:u1"] = "write", ["role:r-mod"] = "read" }
-        assert.equals("write", tier_with(access, "g1", "u1", { "r-mod" }))
+        expect.equals("write", tier_with(access, "g1", "u1", { "r-mod" }))
     end)
 
     it("prefers a role's tier over the guild's", function()
         local access = { ["guild:g1"] = "read", ["role:r-mod"] = "write" }
-        assert.equals("write", tier_with(access, "g1", "u1", { "r-mod" }))
+        expect.equals("write", tier_with(access, "g1", "u1", { "r-mod" }))
     end)
 
     -- Two granting roles on one member need a deterministic winner. The access
@@ -358,25 +358,25 @@ describe("role grants", function()
     -- list is the only ordering either side of the comparison actually has.
     it("takes the first of the member's roles that names a tier", function()
         local access = { ["role:r-a"] = "read", ["role:r-b"] = "write" }
-        assert.equals("write", tier_with(access, "g1", "u1", { "r-b", "r-a" }))
-        assert.equals("read", tier_with(access, "g1", "u1", { "r-a", "r-b" }))
+        expect.equals("write", tier_with(access, "g1", "u1", { "r-b", "r-a" }))
+        expect.equals("read", tier_with(access, "g1", "u1", { "r-a", "r-b" }))
     end)
 
     it("skips roles that name no tier rather than stopping at them", function()
         local access = { ["role:r-mod"] = "write" }
-        assert.equals("write",
+        expect.equals("write",
             tier_with(access, "g1", "u1", { "r-none", "r-other", "r-mod" }))
     end)
 
     -- A DM carries no `member`, so there are no roles to read; and a role id is
     -- guild-scoped, so one carried in from elsewhere must not grant here.
     it("ignores roles in a DM", function()
-        assert.equals("read",
+        expect.equals("read",
             tier_with({ ["role:r-mod"] = "write" }, nil, "u1", { "r-mod" }))
     end)
 
     it("falls back to read on an unknown tier name from a role", function()
-        assert.equals("read",
+        expect.equals("read",
             tier_with({ ["role:r-mod"] = "superuser" }, "g1", "u1", { "r-mod" }))
     end)
 
@@ -395,8 +395,8 @@ describe("role grants", function()
             sessions.get_or_create("chan-roles", "g1", "u-mod", { roles = { "r-mod" } })
         end)
 
-        assert.equals("allow", seen.write_file)
-        assert.equals("allow", seen.read_file)
+        expect.equals("allow", seen.write_file)
+        expect.equals("allow", seen.read_file)
     end)
 end)
 
@@ -417,39 +417,39 @@ describe("the ask tier", function()
     end
 
     it("is handed out in a DM", function()
-        assert.equals("ask", tier_with({ ["user:u1"] = "ask" }, nil, "u1"))
+        expect.equals("ask", tier_with({ ["user:u1"] = "ask" }, nil, "u1"))
     end)
 
     -- No `approvers`, so the requester answers their own prompt. A `guild:` or
     -- `default` grant names no one — the principal it describes is "anyone in
     -- the room", which is also who could then answer.
     it("is refused when the grant named the room rather than a person", function()
-        assert.equals("read", tier_with({ ["guild:g1"] = "ask" }, "g1", "u1"))
-        assert.equals("read", tier_with({ default = "ask" }, "g1", "u1"))
-        assert.equals("read", tier_with({ default = "ask" }, nil, "u1"))
+        expect.equals("read", tier_with({ ["guild:g1"] = "ask" }, "g1", "u1"))
+        expect.equals("read", tier_with({ default = "ask" }, "g1", "u1"))
+        expect.equals("read", tier_with({ default = "ask" }, nil, "u1"))
     end)
 
     -- Being in a guild is no longer the disqualifier: a `user:` or `role:`
     -- grant names an account, and per-sender sessions mean the prompt belongs
     -- to that account alone.
     it("survives in a guild when a user or role key named the sender", function()
-        assert.equals("ask", tier_with({ ["user:u1"] = "ask" }, "g1", "u1"))
-        assert.equals("ask", tier_with({ ["role:r1"] = "ask" }, "g1", "u1", { roles = { "r1" } }))
+        expect.equals("ask", tier_with({ ["user:u1"] = "ask" }, "g1", "u1"))
+        expect.equals("ask", tier_with({ ["role:r1"] = "ask" }, "g1", "u1", { roles = { "r1" } }))
     end)
 
     -- With an approver configured the requester is not the one answering, so
     -- where the request came from stops mattering at all.
     it("is handed out on a room-wide grant once an approver is configured", function()
-        assert.equals("ask",
+        expect.equals("ask",
             tier_with({ ["guild:g1"] = "ask" }, "g1", "u1", { approvers = { "a1" } }))
-        assert.equals("ask",
+        expect.equals("ask",
             tier_with({ default = "ask" }, "g1", "u1", { approvers = { "a1" } }))
     end)
 
     it("marks only the ask tier as needing a live answer", function()
-        assert.equals(true, sessions.tier_is_interactive("ask"))
-        assert.equals(false, sessions.tier_is_interactive("write"))
-        assert.equals(false, sessions.tier_is_interactive("read"))
+        expect.equals(true, sessions.tier_is_interactive("ask"))
+        expect.equals(false, sessions.tier_is_interactive("write"))
+        expect.equals(false, sessions.tier_is_interactive("read"))
     end)
 
     it("asks for the write tools and still allows reads outright", function()
@@ -465,12 +465,12 @@ describe("the ask tier", function()
             sessions.get_or_create("dm-asker", nil, "asker")
         end)
 
-        assert.equals("ask", seen.write_file)
-        assert.equals("ask", seen.create_note)
+        expect.equals("ask", seen.write_file)
+        expect.equals("ask", seen.create_note)
         -- Reads stay `allow`: prompting for every grep would make the tier
         -- unusable, and reads are what the read tier already grants freely.
-        assert.equals("allow", seen.read_file)
-        assert.equals("allow", seen.grep)
+        expect.equals("allow", seen.read_file)
+        expect.equals("allow", seen.grep)
     end)
 end)
 
@@ -493,10 +493,10 @@ describe("per-sender keying", function()
         with_env(chat_cfg(), api, function()
             local alice = sessions.get_or_create("chan-two", "g1", "alice")
             local bob = sessions.get_or_create("chan-two", "g1", "bob")
-            assert.truthy(alice)
-            assert.truthy(bob)
-            assert.falsy(alice == bob)
-            assert.equals(2, #calls.created)
+            expect.truthy(alice)
+            expect.truthy(bob)
+            expect.falsy(alice == bob)
+            expect.equals(2, #calls.created)
         end)
     end)
 
@@ -505,8 +505,8 @@ describe("per-sender keying", function()
         with_env(chat_cfg(), api, function()
             local first = sessions.get_or_create("chan-same", "g1", "alice")
             local second = sessions.get_or_create("chan-same", "g1", "alice")
-            assert.equals(first, second)
-            assert.equals(1, #calls.created)
+            expect.equals(first, second)
+            expect.equals(1, #calls.created)
         end)
     end)
 
@@ -517,8 +517,8 @@ describe("per-sender keying", function()
         with_env(chat_cfg(), api, function()
             local first = sessions.get_or_create("dm-solo", nil, "solo")
             local second = sessions.get_or_create("dm-solo", nil, "solo")
-            assert.equals(first, second)
-            assert.equals(1, #calls.created)
+            expect.equals(first, second)
+            expect.equals(1, #calls.created)
         end)
     end)
 
@@ -529,7 +529,7 @@ describe("per-sender keying", function()
             sessions.get_or_create("chan-count", "g1", "alice")
             sessions.get_or_create("chan-count", "g1", "bob")
         end)
-        assert.equals(before + 2, sessions.active_count())
+        expect.equals(before + 2, sessions.active_count())
     end)
 end)
 
@@ -568,8 +568,8 @@ describe("reply-chain continuity", function()
         with_env(chat_cfg(), api, function()
             local alice = turn("chan-chain", "g1", "alice", "m1", nil, "bot1")
             local bob = turn("chan-chain", "g1", "bob", "m2", "bot1", nil)
-            assert.equals(alice, bob)
-            assert.equals(1, #calls.created)
+            expect.equals(alice, bob)
+            expect.equals(1, #calls.created)
         end)
     end)
 
@@ -581,8 +581,8 @@ describe("reply-chain continuity", function()
             local alice = turn("chan-chain2", "g1", "alice", "m1", nil, "bot1")
             turn("chan-chain2", "g1", "bob", "m2", "bot1", "bot2")
             local carol = turn("chan-chain2", "g1", "carol", "m3", "bot2", nil)
-            assert.equals(alice, carol)
-            assert.equals(1, #calls.created)
+            expect.equals(alice, carol)
+            expect.equals(1, #calls.created)
         end)
     end)
 
@@ -596,10 +596,10 @@ describe("reply-chain continuity", function()
         with_env(chat_cfg(), api, function()
             local alice = turn("chan-warm", "g1", "alice", "warm-m1", nil, "warm-bot1")
             local again = turn("chan-warm", "g1", "alice", "warm-m2", nil, "warm-bot2")
-            assert.equals(alice, again)
+            expect.equals(alice, again)
             local bob = turn("chan-warm", "g1", "bob", "warm-m3", "warm-bot2", nil)
-            assert.equals(alice, bob)
-            assert.equals(1, #calls.created)
+            expect.equals(alice, bob)
+            expect.equals(1, #calls.created)
         end)
     end)
 
@@ -616,9 +616,9 @@ describe("reply-chain continuity", function()
                 bob = turn("chan-cold", "g1", "bob", "cold-m2", "cold-bot1", nil)
             end)
         end)
-        assert.truthy(alice)
-        assert.falsy(alice == bob)
-        assert.equals(2, #calls.created)
+        expect.truthy(alice)
+        expect.falsy(alice == bob)
+        expect.equals(2, #calls.created)
     end)
 
     -- A session that has been ended and replaced must not be reachable through
@@ -636,14 +636,14 @@ describe("reply-chain continuity", function()
                 bob = turn("chan-dead", "g1", "bob", "dead-m3", "dead-bot1", nil)
             end)
         end)
-        assert.falsy(alice == alice2)
-        assert.falsy(bob == alice)
-        assert.falsy(bob == alice2)
-        assert.equals(3, #calls.created)
+        expect.falsy(alice == alice2)
+        expect.falsy(bob == alice)
+        expect.falsy(bob == alice2)
+        expect.equals(3, #calls.created)
 
         local ended = {}
         for _, id in ipairs(calls.ended) do ended[id] = true end
-        assert.truthy(ended[alice])
+        expect.truthy(ended[alice])
     end)
 
     -- A turn whose answer never arrived must not stay pending forever: the
@@ -663,9 +663,9 @@ describe("reply-chain continuity", function()
                     { message_id = "late-m2", reply_to = "late-bot" })
             end)
         end)
-        assert.truthy(alice)
-        assert.falsy(alice == bob)
-        assert.equals(2, #calls.created)
+        expect.truthy(alice)
+        expect.falsy(alice == bob)
+        expect.equals(2, #calls.created)
     end)
 
     -- The reply must not hand the replier the tier the session was built with.
@@ -678,10 +678,10 @@ describe("reply-chain continuity", function()
         with_env(cfg, api, function()
             local writer = turn("chan-tier", "g1", "writer", "m1", nil, "bot1")
             local reader = turn("chan-tier", "g1", "reader", "m2", "bot1", nil)
-            assert.truthy(writer)
-            assert.truthy(reader)
-            assert.falsy(writer == reader)
-            assert.equals(2, #calls.created)
+            expect.truthy(writer)
+            expect.truthy(reader)
+            expect.falsy(writer == reader)
+            expect.equals(2, #calls.created)
         end)
     end)
 
@@ -692,8 +692,8 @@ describe("reply-chain continuity", function()
         with_env(chat_cfg(), api, function()
             local own = turn("chan-unknown", "g1", "alice", "m1", nil, nil)
             local replied = turn("chan-unknown", "g1", "alice", "m2", "bot-from-before-the-restart", nil)
-            assert.equals(own, replied)
-            assert.equals(1, #calls.created)
+            expect.equals(own, replied)
+            expect.equals(1, #calls.created)
         end)
     end)
 
@@ -707,9 +707,9 @@ describe("reply-chain continuity", function()
             sessions.note_bot_message("bot-orphan2", "never-dispatched")
             local bob = turn("chan-noref", "g1", "bob", "m2", "bot-orphan", nil)
             local bob2 = turn("chan-noref", "g1", "bob", "m3", "bot-orphan2", nil)
-            assert.falsy(alice == bob)
-            assert.equals(bob, bob2)
-            assert.equals(2, #calls.created)
+            expect.falsy(alice == bob)
+            expect.equals(bob, bob2)
+            expect.equals(2, #calls.created)
         end)
     end)
 end)
@@ -737,10 +737,10 @@ describe("cleanup_stale", function()
 
         local ended = {}
         for _, id in ipairs(calls.ended) do ended[id] = true end
-        assert.falsy(alice == bob)
-        assert.truthy(ended[alice])
-        assert.truthy(ended[bob])
-        assert.equals(0, sessions.active_count())
+        expect.falsy(alice == bob)
+        expect.truthy(ended[alice])
+        expect.truthy(ended[bob])
+        expect.equals(0, sessions.active_count())
     end)
 
     -- The sweep has to take the routing index with it. A DM is where that shows:
@@ -767,9 +767,9 @@ describe("cleanup_stale", function()
 
         local ended = {}
         for _, id in ipairs(calls.ended) do ended[id] = true end
-        assert.truthy(ended[before])
-        assert.falsy(before == after)
-        assert.equals(2, #calls.created)
+        expect.truthy(ended[before])
+        expect.falsy(before == after)
+        expect.equals(2, #calls.created)
     end)
 end)
 
@@ -796,8 +796,8 @@ describe("the session workspace invariant", function()
             sessions.get_or_create("chan-workspace", "g1", "u1", {})
         end)
 
-        assert.equals(1, #calls.created)
-        assert.is_nil(
+        expect.equals(1, #calls.created)
+        expect.is_nil(
             calls.created[1].workspace,
             "a Discord session must take the daemon's private scratch workspace, " ..
             "not a caller-chosen one"
@@ -835,8 +835,8 @@ describe("deployment mode", function()
         with_env(cfg({ ["discord.mode"] = "server" }), api, function()
             local alice = turn("chan-srv", "g1", "alice", "srv-m1", nil, "srv-bot1")
             local bob = turn("chan-srv", "g1", "bob", "srv-m2", "srv-bot1", nil)
-            assert.equals(true, alice ~= bob)
-            assert.equals(2, #calls.created)
+            expect.equals(true, alice ~= bob)
+            expect.equals(2, #calls.created)
         end)
     end)
 
@@ -845,8 +845,8 @@ describe("deployment mode", function()
         with_env(cfg({ ["discord.mode"] = "server" }), api, function()
             local first = turn("chan-own", "g1", "alice", "own-m1", nil, "own-bot1")
             local again = turn("chan-own", "g1", "alice", "own-m2", "own-bot1", nil)
-            assert.equals(first, again)
-            assert.equals(1, #calls.created)
+            expect.equals(first, again)
+            expect.equals(1, #calls.created)
         end)
     end)
 
@@ -858,8 +858,8 @@ describe("deployment mode", function()
         }), api, function()
             local alice = turn("chan-share", "g1", "alice", "shr-m1", nil, "shr-bot1")
             local bob = turn("chan-share", "g1", "bob", "shr-m2", "shr-bot1", nil)
-            assert.equals(alice, bob)
-            assert.equals(1, #calls.created)
+            expect.equals(alice, bob)
+            expect.equals(1, #calls.created)
         end)
     end)
 
@@ -873,7 +873,7 @@ describe("deployment mode", function()
             ["discord.mode"] = "server",
             ["discord.access"] = { ["user:alice"] = "ask" },
         }), api, function()
-            assert.equals("read", sessions.access_tier("g1", "alice", nil))
+            expect.equals("read", sessions.access_tier("g1", "alice", nil))
         end)
     end)
 
@@ -884,14 +884,14 @@ describe("deployment mode", function()
             ["discord.access"] = { ["user:alice"] = "ask" },
             ["discord.approvers"] = { "carol" },
         }), api, function()
-            assert.equals("ask", sessions.access_tier("g1", "alice", nil))
+            expect.equals("ask", sessions.access_tier("g1", "alice", nil))
         end)
     end)
 
     it("personal mode leaves self-approval alone -- you are both parties", function()
         local _, api = recording_api()
         with_env(cfg({ ["discord.access"] = { ["user:alice"] = "ask" } }), api, function()
-            assert.equals("ask", sessions.access_tier(nil, "alice", nil))
+            expect.equals("ask", sessions.access_tier(nil, "alice", nil))
         end)
     end)
 
@@ -899,7 +899,7 @@ describe("deployment mode", function()
         local _, api = recording_api()
         with_env(cfg({ ["discord.mode"] = "sever" }), api, function()
             local ok = pcall(function() return sessions.access_tier(nil, "alice", nil) end)
-            assert.equals(false, ok)
+            expect.equals(false, ok)
         end)
     end)
 end)

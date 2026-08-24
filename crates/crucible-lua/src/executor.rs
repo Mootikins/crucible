@@ -804,5 +804,20 @@ mod vm_safety_tests {
             .eval()
             .expect("type() answers");
         assert_eq!(kind, "function");
+
+        // Even here `assert` is the language's own function. Matchers live on
+        // `expect`, so a script reads the same inside a test and outside one.
+        let assert_kind: String = executor
+            .lua()
+            .load("return type(assert)")
+            .eval()
+            .expect("assert exists");
+        assert_eq!(assert_kind, "function", "the harness shadowed assert");
+        let expect_kind: String = executor
+            .lua()
+            .load("return type(expect)")
+            .eval()
+            .expect("expect exists");
+        assert_eq!(expect_kind, "table");
     }
 }

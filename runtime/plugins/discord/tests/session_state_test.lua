@@ -95,19 +95,19 @@ describe("DM session persistence", function()
         local calls, api = recording_api("round-trip")
         with_env(configured(), api, function()
             local id = sessions.get_or_create("dm-round-trip", nil, "u-1")
-            assert.truthy(id)
-            assert.equals(1, #calls.created)
+            expect.truthy(id)
+            expect.equals(1, #calls.created)
 
-            assert.truthy(cru.fs.exists(STATE_FILE))
+            expect.truthy(cru.fs.exists(STATE_FILE))
 
             local restored = sessions.load_from(STATE_FILE)
             local found
             for _, entry in pairs(restored) do
                 if entry.session_id == id then found = entry end
             end
-            assert.is_not_nil(found)
-            assert.equals("read", found.tier)
-            assert.is_nil(found.guild_id)
+            expect.is_not_nil(found)
+            expect.equals("read", found.tier)
+            expect.is_nil(found.guild_id)
         end)
     end)
 
@@ -118,10 +118,10 @@ describe("DM session persistence", function()
         local _, api = recording_api("channel")
         with_env(configured(), api, function()
             local id = sessions.get_or_create("chan-not-persisted", "guild-1", "u-2")
-            assert.equals("channel-1", id)
+            expect.equals("channel-1", id)
 
             for _, entry in pairs(sessions.load_from(STATE_FILE)) do
-                assert.falsy(entry.session_id == id)
+                expect.falsy(entry.session_id == id)
             end
         end)
     end)
@@ -130,7 +130,7 @@ describe("DM session persistence", function()
     -- later message reuses, instead of paying for a new session.
     it("reuses a restored session rather than creating another", function()
         local key = harvest_key()
-        assert.equals("dm-harvest\0u-harvest", key)
+        expect.equals("dm-harvest\0u-harvest", key)
 
         local calls, api = recording_api("cold")
         with_env(configured(), api, function()
@@ -147,8 +147,8 @@ describe("DM session persistence", function()
             sessions.restore()
 
             local id = sessions.get_or_create("dm-cold", nil, "u-cold")
-            assert.equals("survivor-1", id)
-            assert.equals(0, #calls.created)
+            expect.equals("survivor-1", id)
+            expect.equals(0, #calls.created)
         end)
     end)
 
@@ -168,7 +168,7 @@ describe("DM session persistence", function()
                 },
             })
 
-            assert.is_nil(sessions.load_from(STATE_FILE)[key])
+            expect.is_nil(sessions.load_from(STATE_FILE)[key])
         end)
     end)
 
@@ -183,7 +183,7 @@ describe("DM session persistence", function()
             for k, entry in pairs(sessions.load_from(STATE_FILE)) do
                 if entry.session_id == id then key = k end
             end
-            assert.is_not_nil(key)
+            expect.is_not_nil(key)
             local created_at = sessions.load_from(STATE_FILE)[key].last_active
 
             -- `sessions.lua` reads `os.time()` at each use, so moving the clock
@@ -191,12 +191,12 @@ describe("DM session persistence", function()
             local real_time = os.time
             os.time = function() return real_time() + 3600 end
             local ok, err = pcall(function()
-                assert.equals(id, sessions.get_or_create("dm-bump", nil, "u-bump"))
+                expect.equals(id, sessions.get_or_create("dm-bump", nil, "u-bump"))
             end)
             os.time = real_time
             if not ok then error(err) end
 
-            assert.equals(created_at + 3600, sessions.load_from(STATE_FILE)[key].last_active)
+            expect.equals(created_at + 3600, sessions.load_from(STATE_FILE)[key].last_active)
         end)
     end)
 
@@ -206,10 +206,10 @@ describe("DM session persistence", function()
         local _, api = recording_api("misc")
         with_env(configured(), api, function()
             cru.fs.write(STATE_FILE, "{not json")
-            assert.deep_equal({}, sessions.load_from(STATE_FILE))
+            expect.deep_equal({}, sessions.load_from(STATE_FILE))
 
             local id = sessions.get_or_create("dm-after-corrupt", nil, "u-3")
-            assert.truthy(id)
+            expect.truthy(id)
         end)
     end)
 
@@ -227,8 +227,8 @@ describe("DM session persistence", function()
             local id = sessions.get_or_create("dm-no-paths", nil, "u-4")
             cru.sessions = had_sessions
             crucible.config = had_config
-            assert.truthy(id)
-            assert.equals(1, #calls.created)
+            expect.truthy(id)
+            expect.equals(1, #calls.created)
         end)
         cru.paths = had_paths
         if not ok then error(err) end

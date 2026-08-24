@@ -69,33 +69,33 @@ describe("review", function()
     describe("review_list_hunks", function()
         it("requires a session_id", function()
             local result = plugin.tools.review_list_hunks.fn({})
-            assert.equal(result.error, "session_id is required")
-            assert.equal(#calls, 0)
+            expect.equal(result.error, "session_id is required")
+            expect.equal(#calls, 0)
         end)
 
         it("passes the session id straight through", function()
             stub({ review_list_hunks = function() return {} end })
             plugin.tools.review_list_hunks.fn({ session_id = SESSION })
-            assert.equal(calls[1].name, "review_list_hunks")
-            assert.equal(calls[1].args[1], SESSION)
+            expect.equal(calls[1].name, "review_list_hunks")
+            expect.equal(calls[1].args[1], SESSION)
         end)
 
         it("surfaces an error from the daemon", function()
             stub({ review_list_hunks = function() return nil, "no such session" end })
             local result = plugin.tools.review_list_hunks.fn({ session_id = SESSION })
-            assert.equal(result.error, "no such session")
+            expect.equal(result.error, "no such session")
         end)
 
         it("projects the fields a reviewer needs", function()
             stub({ review_list_hunks = function() return { hunk() } end })
             local row = plugin.tools.review_list_hunks.fn({ session_id = SESSION }).hunks[1]
-            assert.equal(row.id, "h1")
-            assert.equal(row.path, "src/main.rs")
-            assert.equal(row.root, "/repo")
-            assert.equal(row.state, "unreviewed")
-            assert.equal(row.before, "old")
-            assert.equal(row.after, "new")
-            assert.deep_equal(row.tool_call_ids, { "tc-1" })
+            expect.equal(row.id, "h1")
+            expect.equal(row.path, "src/main.rs")
+            expect.equal(row.root, "/repo")
+            expect.equal(row.state, "unreviewed")
+            expect.equal(row.before, "old")
+            expect.equal(row.after, "new")
+            expect.deep_equal(row.tool_call_ids, { "tc-1" })
         end)
 
         it("truncates a hunk body rather than blowing the context window", function()
@@ -106,16 +106,16 @@ describe("review", function()
                 end,
             })
             local row = plugin.tools.review_list_hunks.fn({ session_id = SESSION }).hunks[1]
-            assert.truthy(#row.before < 5000)
-            assert.truthy(row.before:find("truncated", 1, true))
-            assert.truthy(row.after:find("truncated", 1, true))
+            expect.truthy(#row.before < 5000)
+            expect.truthy(row.before:find("truncated", 1, true))
+            expect.truthy(row.after:find("truncated", 1, true))
         end)
 
         it("leaves a body at the limit untouched", function()
             local exact = string.rep("x", 2000)
             stub({ review_list_hunks = function() return { hunk({ before_content = exact }) } end })
             local row = plugin.tools.review_list_hunks.fn({ session_id = SESSION }).hunks[1]
-            assert.equal(row.before, exact)
+            expect.equal(row.before, exact)
         end)
 
         it("renders a nil body as an empty string", function()
@@ -127,14 +127,14 @@ describe("review", function()
                 end,
             })
             local row = plugin.tools.review_list_hunks.fn({ session_id = SESSION }).hunks[1]
-            assert.equal(row.before, "")
-            assert.equal(row.after, "")
+            expect.equal(row.before, "")
+            expect.equal(row.after, "")
         end)
 
         it("marks a hunk with no tool calls as external", function()
             stub({ review_list_hunks = function() return { hunk({ tool_call_ids = {} }) } end })
             local row = plugin.tools.review_list_hunks.fn({ session_id = SESSION }).hunks[1]
-            assert.equal(row.external, true)
+            expect.equal(row.external, true)
         end)
 
         it("marks a hunk with nil tool calls as external", function()
@@ -145,13 +145,13 @@ describe("review", function()
                 end,
             })
             local row = plugin.tools.review_list_hunks.fn({ session_id = SESSION }).hunks[1]
-            assert.equal(row.external, true)
+            expect.equal(row.external, true)
         end)
 
         it("does not mark an agent-authored hunk external", function()
             stub({ review_list_hunks = function() return { hunk() } end })
             local row = plugin.tools.review_list_hunks.fn({ session_id = SESSION }).hunks[1]
-            assert.equal(row.external, false)
+            expect.equal(row.external, false)
         end)
 
         it("surfaces reapplied, and defaults it to false", function()
@@ -161,8 +161,8 @@ describe("review", function()
                 end,
             })
             local rows = plugin.tools.review_list_hunks.fn({ session_id = SESSION }).hunks
-            assert.equal(rows[1].reapplied, true)
-            assert.equal(rows[2].reapplied, false)
+            expect.equal(rows[1].reapplied, true)
+            expect.equal(rows[2].reapplied, false)
         end)
 
         it("counts unreviewed hunks, excluding external ones", function()
@@ -178,28 +178,28 @@ describe("review", function()
                 end,
             })
             local result = plugin.tools.review_list_hunks.fn({ session_id = SESSION })
-            assert.equal(result.count, 3)
-            assert.equal(result.unreviewed, 1)
+            expect.equal(result.count, 3)
+            expect.equal(result.unreviewed, 1)
         end)
 
         it("reports an empty diff as zero, not as an error", function()
             stub({ review_list_hunks = function() return {} end })
             local result = plugin.tools.review_list_hunks.fn({ session_id = SESSION })
-            assert.equal(result.count, 0)
-            assert.equal(result.unreviewed, 0)
-            assert.deep_equal(result.hunks, {})
+            expect.equal(result.count, 0)
+            expect.equal(result.unreviewed, 0)
+            expect.deep_equal(result.hunks, {})
         end)
     end)
 
     describe("review_set_state", function()
         it("requires a session_id", function()
             local result = plugin.tools.review_set_state.fn({ hunk_id = "h1", state = "accepted" })
-            assert.equal(result.error, "session_id is required")
+            expect.equal(result.error, "session_id is required")
         end)
 
         it("requires a hunk_id", function()
             local result = plugin.tools.review_set_state.fn({ session_id = SESSION, state = "accepted" })
-            assert.equal(result.error, "hunk_id is required")
+            expect.equal(result.error, "hunk_id is required")
         end)
 
         it("accepts each of the three valid states", function()
@@ -210,7 +210,7 @@ describe("review", function()
                     hunk_id = "h1",
                     state = state,
                 })
-                assert.equal(result.state, state)
+                expect.equal(result.state, state)
             end
         end)
 
@@ -222,15 +222,15 @@ describe("review", function()
                     hunk_id = "h1",
                     state = state,
                 })
-                assert.truthy(result.error)
-                assert.equal(#calls, 0)
+                expect.truthy(result.error)
+                expect.equal(#calls, 0)
             end
         end)
 
         it("rejects a missing state", function()
             local result = plugin.tools.review_set_state.fn({ session_id = SESSION, hunk_id = "h1" })
-            assert.truthy(result.error)
-            assert.equal(#calls, 0)
+            expect.truthy(result.error)
+            expect.equal(#calls, 0)
         end)
 
         it("passes session, hunk and state down in order", function()
@@ -240,9 +240,9 @@ describe("review", function()
                 hunk_id = "h9",
                 state = "rejected",
             })
-            assert.equal(calls[1].args[1], SESSION)
-            assert.equal(calls[1].args[2], "h9")
-            assert.equal(calls[1].args[3], "rejected")
+            expect.equal(calls[1].args[1], SESSION)
+            expect.equal(calls[1].args[2], "h9")
+            expect.equal(calls[1].args[3], "rejected")
         end)
 
         it("surfaces a refusal from the daemon", function()
@@ -256,7 +256,7 @@ describe("review", function()
                 hunk_id = "h1",
                 state = "rejected",
             })
-            assert.equal(result.error, "external hunks cannot be rejected")
+            expect.equal(result.error, "external hunks cannot be rejected")
         end)
     end)
 
@@ -279,51 +279,51 @@ describe("review", function()
                 local a = args()
                 a[missing] = nil
                 local result = plugin.tools.review_comment.fn(a)
-                assert.truthy(result.error, missing .. " should be required")
-                assert.truthy(result.error:find(missing, 1, true))
+                expect.truthy(result.error, missing .. " should be required")
+                expect.truthy(result.error:find(missing, 1, true))
             end
         end)
 
         it("returns the new comment id, unresolved", function()
             stub({ review_comment = function() return { id = "c7", path = "src/main.rs" } end })
             local result = plugin.tools.review_comment.fn(args())
-            assert.equal(result.comment_id, "c7")
-            assert.equal(result.path, "src/main.rs")
-            assert.equal(result.resolved, false)
+            expect.equal(result.comment_id, "c7")
+            expect.equal(result.path, "src/main.rs")
+            expect.equal(result.resolved, false)
         end)
 
         it("attributes the comment to the agent", function()
             stub({ review_comment = function() return { id = "c7" } end })
             plugin.tools.review_comment.fn(args())
-            assert.equal(calls[1].args[2].author, "agent")
+            expect.equal(calls[1].args[2].author, "agent")
         end)
 
         it("passes the line range through, including an absent end", function()
             stub({ review_comment = function() return { id = "c7" } end })
             plugin.tools.review_comment.fn(args({ line_start = 3, line_end = 9 }))
-            assert.equal(calls[1].args[2].line_start, 3)
-            assert.equal(calls[1].args[2].line_end, 9)
+            expect.equal(calls[1].args[2].line_start, 3)
+            expect.equal(calls[1].args[2].line_end, 9)
 
             stub({ review_comment = function() return { id = "c8" } end })
             plugin.tools.review_comment.fn(args({ line_start = 3 }))
-            assert.equal(calls[1].args[2].line_end, nil)
+            expect.equal(calls[1].args[2].line_end, nil)
         end)
 
         it("surfaces an error from the daemon", function()
             stub({ review_comment = function() return nil, "no such path" end })
-            assert.equal(plugin.tools.review_comment.fn(args()).error, "no such path")
+            expect.equal(plugin.tools.review_comment.fn(args()).error, "no such path")
         end)
     end)
 
     describe("review_resolve_comment", function()
         it("requires a session_id", function()
             local result = plugin.tools.review_resolve_comment.fn({ comment_id = "c1" })
-            assert.equal(result.error, "session_id is required")
+            expect.equal(result.error, "session_id is required")
         end)
 
         it("requires a comment_id", function()
             local result = plugin.tools.review_resolve_comment.fn({ session_id = SESSION })
-            assert.equal(result.error, "comment_id is required")
+            expect.equal(result.error, "comment_id is required")
         end)
 
         it("reports the comment resolved", function()
@@ -332,8 +332,8 @@ describe("review", function()
                 session_id = SESSION,
                 comment_id = "c1",
             })
-            assert.equal(result.comment_id, "c1")
-            assert.equal(result.resolved, true)
+            expect.equal(result.comment_id, "c1")
+            expect.equal(result.resolved, true)
         end)
 
         it("surfaces a refusal from the daemon", function()
@@ -342,20 +342,20 @@ describe("review", function()
                 session_id = SESSION,
                 comment_id = "c1",
             })
-            assert.equal(result.error, "already resolved")
+            expect.equal(result.error, "already resolved")
         end)
     end)
 
     describe("plugin metadata", function()
         it("exports the correct name", function()
-            assert.equal(plugin.name, "review")
+            expect.equal(plugin.name, "review")
         end)
 
         it("exports every review operation as a tool", function()
-            assert.truthy(plugin.tools.review_list_hunks)
-            assert.truthy(plugin.tools.review_set_state)
-            assert.truthy(plugin.tools.review_comment)
-            assert.truthy(plugin.tools.review_resolve_comment)
+            expect.truthy(plugin.tools.review_list_hunks)
+            expect.truthy(plugin.tools.review_set_state)
+            expect.truthy(plugin.tools.review_comment)
+            expect.truthy(plugin.tools.review_resolve_comment)
         end)
 
         it("takes the reviewed session explicitly on every tool", function()
@@ -366,7 +366,7 @@ describe("review", function()
                         has_session = true
                     end
                 end
-                assert.truthy(has_session, name .. " must take session_id")
+                expect.truthy(has_session, name .. " must take session_id")
             end
         end)
     end)

@@ -56,8 +56,8 @@ end
 describe("web-search plugin", function()
     describe("the tool declaration", function()
         it("is named web_search, the name the permission gate matches on", function()
-            assert.is_not_nil(plugin.tools.web_search)
-            assert.is_function(plugin.tools.web_search.fn)
+            expect.is_not_nil(plugin.tools.web_search)
+            expect.is_function(plugin.tools.web_search.fn)
         end)
 
         it("declares query required and max_results/provider optional", function()
@@ -65,9 +65,9 @@ describe("web-search plugin", function()
             for _, p in ipairs(plugin.tools.web_search.params) do
                 params[p.name] = p
             end
-            assert.falsy(params.query.optional)
-            assert.truthy(params.max_results.optional)
-            assert.truthy(params.provider.optional)
+            expect.falsy(params.query.optional)
+            expect.truthy(params.max_results.optional)
+            expect.truthy(params.provider.optional)
         end)
 
         it("declares the network capability it uses", function()
@@ -75,7 +75,7 @@ describe("web-search plugin", function()
             for _, c in ipairs(plugin.capabilities) do
                 caps[c] = true
             end
-            assert.truthy(caps.network)
+            expect.truthy(caps.network)
         end)
     end)
 
@@ -83,19 +83,19 @@ describe("web-search plugin", function()
         it("rejects a missing query rather than searching for nothing", function()
             configure()
             local result = search({})
-            assert.truthy(result.error)
-            assert.truthy(result.error:find("query", 1, true))
+            expect.truthy(result.error)
+            expect.truthy(result.error:find("query", 1, true))
         end)
 
         it("rejects a whitespace-only query", function()
             configure()
-            assert.truthy(search({ query = "   " }).error)
+            expect.truthy(search({ query = "   " }).error)
         end)
 
         it("clamps max_results to the contract ceiling", function()
             configure_with({ providers = { "ddg" } }, ddg.ENDPOINT, ddg_ok())
             local result = search({ query = QUERY, max_results = 999 })
-            assert.truthy(#result.results <= 25)
+            expect.truthy(#result.results <= 25)
         end)
     end)
 
@@ -104,8 +104,8 @@ describe("web-search plugin", function()
             configure_with({ providers = { "searxng", "ddg" } }, ddg.ENDPOINT, ddg_ok())
             local result = search({ query = QUERY })
 
-            assert.equal("ddg", result.provider)
-            assert.equal(0, #test_mocks.get_calls("http", "get"))
+            expect.equal("ddg", result.provider)
+            expect.equal(0, #test_mocks.get_calls("http", "get"))
         end)
 
         it("returns the first success and never calls the rest", function()
@@ -116,8 +116,8 @@ describe("web-search plugin", function()
             )
             local result = search({ query = QUERY })
 
-            assert.equal("searxng", result.provider)
-            assert.equal(0, #test_mocks.get_calls("http", "post"))
+            expect.equal("searxng", result.provider)
+            expect.equal(0, #test_mocks.get_calls("http", "post"))
         end)
 
         it("falls through to the next provider when one fails", function()
@@ -130,8 +130,8 @@ describe("web-search plugin", function()
             )
             local result = search({ query = QUERY })
 
-            assert.equal("ddg", result.provider)
-            assert.equal(1, #test_mocks.get_calls("http", "get"))
+            expect.equal("ddg", result.provider)
+            expect.equal(1, #test_mocks.get_calls("http", "get"))
         end)
 
         it("honours the configured order", function()
@@ -140,16 +140,16 @@ describe("web-search plugin", function()
                 ddg.ENDPOINT,
                 ddg_ok()
             )
-            assert.equal("ddg", search({ query = QUERY }).provider)
+            expect.equal("ddg", search({ query = QUERY }).provider)
         end)
 
         it("treats an empty provider list as search being disabled", function()
             configure({ providers = {} })
             local result = search({ query = QUERY })
 
-            assert.truthy(result.error)
-            assert.truthy(result.error:find("disabled", 1, true))
-            assert.equal(0, #test_mocks.get_calls("http", "post"))
+            expect.truthy(result.error)
+            expect.truthy(result.error:find("disabled", 1, true))
+            expect.equal(0, #test_mocks.get_calls("http", "post"))
         end)
     end)
 
@@ -162,8 +162,8 @@ describe("web-search plugin", function()
             )
             local result = search({ query = QUERY, provider = "ddg" })
 
-            assert.equal("ddg", result.provider)
-            assert.equal(0, #test_mocks.get_calls("http", "get"))
+            expect.equal("ddg", result.provider)
+            expect.equal(0, #test_mocks.get_calls("http", "get"))
         end)
 
         it("refuses a provider the user has not enabled", function()
@@ -173,9 +173,9 @@ describe("web-search plugin", function()
             configure({ providers = { "ddg" } })
             local result = search({ query = QUERY, provider = "exa" })
 
-            assert.truthy(result.error)
-            assert.truthy(result.error:find("not in the configured chain", 1, true))
-            assert.equal(0, #test_mocks.get_calls("http", "post"))
+            expect.truthy(result.error)
+            expect.truthy(result.error:find("not in the configured chain", 1, true))
+            expect.equal(0, #test_mocks.get_calls("http", "post"))
         end)
     end)
 
@@ -184,43 +184,43 @@ describe("web-search plugin", function()
             configure({ providers = { "searxng", "ddg" } })
             local result = search({ query = QUERY })
 
-            assert.truthy(result.error)
+            expect.truthy(result.error)
             -- Both halves matter: a skip and a real failure are different
             -- problems with different fixes, and a model told only "search
             -- failed" retries instead of reporting either.
-            assert.truthy(result.error:find("searxng", 1, true))
-            assert.truthy(result.error:find("searxng_url", 1, true))
-            assert.truthy(result.error:find("ddg", 1, true))
-            assert.truthy(result.error:find("skipped", 1, true))
-            assert.truthy(result.error:find("failed", 1, true))
+            expect.truthy(result.error:find("searxng", 1, true))
+            expect.truthy(result.error:find("searxng_url", 1, true))
+            expect.truthy(result.error:find("ddg", 1, true))
+            expect.truthy(result.error:find("skipped", 1, true))
+            expect.truthy(result.error:find("failed", 1, true))
         end)
 
         it("quotes the query back so a retry loop is visible in the transcript", function()
             configure({ providers = { "ddg" } })
-            assert.truthy(search({ query = QUERY }).error:find(QUERY, 1, true))
+            expect.truthy(search({ query = QUERY }).error:find(QUERY, 1, true))
         end)
 
         it("lists the providers it tried in a structured field", function()
             configure({ providers = { "searxng", "ddg" } })
             local result = search({ query = QUERY })
 
-            assert.deep_equal({ "searxng", "ddg" }, result.tried)
+            expect.deep_equal({ "searxng", "ddg" }, result.tried)
         end)
 
         it("reports a provider name this plugin does not ship", function()
             configure({ providers = { "gogle" } })
             local result = search({ query = QUERY })
 
-            assert.truthy(result.error:find("gogle", 1, true))
-            assert.truthy(result.error:find("not a provider this plugin ships", 1, true))
+            expect.truthy(result.error:find("gogle", 1, true))
+            expect.truthy(result.error:find("not a provider this plugin ships", 1, true))
         end)
 
         it("does not raise, so the error keeps its shape instead of a traceback", function()
             configure({ providers = { "ddg" } })
             local ok, result = pcall(search, { query = QUERY })
 
-            assert.truthy(ok)
-            assert.is_string(result.error)
+            expect.truthy(ok)
+            expect.is_string(result.error)
         end)
     end)
 
@@ -233,10 +233,10 @@ describe("web-search plugin", function()
             )
             local result = search({ query = QUERY })
 
-            assert.is_string(result.query)
-            assert.equal("searxng", result.provider)
-            assert.is_table(result.results)
-            assert.is_table(result.degraded)
+            expect.is_string(result.query)
+            expect.equal("searxng", result.provider)
+            expect.is_table(result.results)
+            expect.is_table(result.degraded)
         end)
 
         it("carries degraded engines through from the provider", function()
@@ -245,7 +245,7 @@ describe("web-search plugin", function()
                 SEARXNG_URL,
                 searxng_ok()
             )
-            assert.truthy(#search({ query = QUERY }).degraded > 0)
+            expect.truthy(#search({ query = QUERY }).degraded > 0)
         end)
     end)
 
@@ -256,7 +256,7 @@ describe("web-search plugin", function()
             plugin.setup({ providers = { "searxng" } })
             respond(SEARXNG_URL, searxng_ok())
 
-            assert.equal("searxng", search({ query = QUERY }).provider)
+            expect.equal("searxng", search({ query = QUERY }).provider)
         end)
 
         it("accepts an empty table, which is what an absent TOML section is", function()
@@ -271,8 +271,8 @@ describe("web-search plugin", function()
             -- insufficient. It stays one word away in config, not on by
             -- default.
             local result = search({ query = QUERY })
-            assert.truthy(result.error, "no configured provider can answer")
-            assert.truthy(result.error:find("searxng", 1, true))
+            expect.truthy(result.error, "no configured provider can answer")
+            expect.truthy(result.error:find("searxng", 1, true))
         end)
     end)
 
@@ -302,8 +302,8 @@ describe("web-search plugin", function()
             )
             local result = search({ query = QUERY })
 
-            assert.equal("ddg", result.provider)
-            assert.equal("Context-aware caching proxy.", result.results[1].snippet)
+            expect.equal("ddg", result.provider)
+            expect.equal("Context-aware caching proxy.", result.results[1].snippet)
         end)
     end)
 
@@ -334,8 +334,8 @@ describe("web-search plugin", function()
                 result = search({ query = QUERY })
             end)
 
-            assert.truthy(result.error, "the chain must report, not hang")
-            assert.truthy(
+            expect.truthy(result.error, "the chain must report, not hang")
+            expect.truthy(
                 result.error:find("budget", 1, true),
                 "the failure must say the budget ran out: " .. tostring(result.error)
             )
@@ -350,8 +350,8 @@ describe("web-search plugin", function()
 
             -- The whole point: this text is what the model reads instead of a
             -- bare "timed out", so it has to survive the case that produced it.
-            assert.truthy(result.error:find("searxng", 1, true))
-            assert.truthy(result.error:find("ddg", 1, true))
+            expect.truthy(result.error:find("searxng", 1, true))
+            expect.truthy(result.error:find("ddg", 1, true))
         end)
 
         it("leaves a fast chain untouched", function()
@@ -362,8 +362,8 @@ describe("web-search plugin", function()
             with_clock(1, function()
                 result = search({ query = QUERY })
             end)
-            assert.is_nil(result.error)
-            assert.equal("searxng", result.provider)
+            expect.is_nil(result.error)
+            expect.equal("searxng", result.provider)
         end)
     end)
 
@@ -375,7 +375,7 @@ describe("web-search plugin", function()
         -- `clear_plugin_handlers` could never reap.
         it("returns the same module rather than re-running the file", function()
             local again = require("web-search")
-            assert.equal(plugin, again, "require must hit package.loaded, not re-execute")
+            expect.equal(plugin, again, "require must hit package.loaded, not re-execute")
         end)
 
         -- There is no global sentinel guarding the hook: one was tried and it
@@ -391,7 +391,7 @@ describe("web-search plugin", function()
                 results = { {}, {}, {} },
                 degraded = { "brave", "startpage" },
             })
-            assert.equal("searxng · 3 results · brave, startpage unavailable", summary)
+            expect.equal("searxng · 3 results · brave, startpage unavailable", summary)
         end)
 
         it("omits the degraded clause when nothing degraded", function()
@@ -400,7 +400,7 @@ describe("web-search plugin", function()
                 results = { {} },
                 degraded = {},
             })
-            assert.equal("ddg · 1 result", summary)
+            expect.equal("ddg · 1 result", summary)
         end)
 
         it("caps a long degraded list with a count", function()
@@ -409,11 +409,11 @@ describe("web-search plugin", function()
                 results = {},
                 degraded = { "a", "b", "c", "d", "e" },
             })
-            assert.equal("searxng · 0 results · a, b, c +2 unavailable", summary)
+            expect.equal("searxng · 0 results · a, b, c +2 unavailable", summary)
         end)
 
         it("summarises a total failure from the providers it tried", function()
-            assert.equal(
+            expect.equal(
                 "no results · searxng, ddg failed",
                 plugin.summarise({ error = "…", tried = { "searxng", "ddg" } })
             )
@@ -422,8 +422,8 @@ describe("web-search plugin", function()
         it("leaves a result it does not recognise alone", function()
             -- Returning nil is what makes the hook pass through; a summary
             -- invented here would mislabel another tool's output.
-            assert.is_nil(plugin.summarise({ some = "other tool" }))
-            assert.is_nil(plugin.summarise("not a table"))
+            expect.is_nil(plugin.summarise({ some = "other tool" }))
+            expect.is_nil(plugin.summarise("not a table"))
         end)
     end)
 end)

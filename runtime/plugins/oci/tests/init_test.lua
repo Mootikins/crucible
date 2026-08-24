@@ -21,7 +21,7 @@ local declared_options       -- the settings tree the plugin declared
 
 crucible = crucible or {}
 crucible.on = function(event, opts, fn)
-  assert.equals("pre_tool_call", event)
+  expect.equals("pre_tool_call", event)
   hooks[opts.pattern] = { fn = fn, opts = opts }
 end
 crucible.on_session_start = function(fn, opts)
@@ -138,21 +138,21 @@ end
 
 describe("oci plugin load", function()
   it("returns its spec", function()
-    assert.equals("oci", spec.name)
-    assert.is_function(spec.setup)
+    expect.equals("oci", spec.name)
+    expect.is_function(spec.setup)
   end)
 
   it("registers every workspace tool handler at load, not per session", function()
     for _, tool in ipairs({ "bash", "read_file", "write_file", "edit_file", "glob", "grep" }) do
-      assert.is_not_nil(hooks[tool], "no pre_tool_call handler for " .. tool)
-      assert.equals(10, hooks[tool].opts.priority)
+      expect.is_not_nil(hooks[tool], "no pre_tool_call handler for " .. tool)
+      expect.equals(10, hooks[tool].opts.priority)
     end
   end)
 
   it("marks its session-start hook required so a broken sandbox refuses the session", function()
-    assert.is_not_nil(lifecycle.start)
-    assert.truthy(lifecycle.start.opts.required)
-    assert.is_not_nil(lifecycle.end_fn)
+    expect.is_not_nil(lifecycle.start)
+    expect.truthy(lifecycle.start.opts.required)
+    expect.is_not_nil(lifecycle.end_fn)
   end)
 end)
 
@@ -170,8 +170,8 @@ describe("oci session lifecycle", function()
   it("does nothing when no image is configured", function()
     spec.setup(nil)
     start_session("s-unconfigured")
-    assert.equals(0, #exec_log, "an unconfigured plugin must not touch the runtime")
-    assert.equals(0, #isolation_calls)
+    expect.equals(0, #exec_log, "an unconfigured plugin must not touch the runtime")
+    expect.equals(0, #isolation_calls)
   end)
 
   it("starts a container, claims isolation, and publishes status", function()
@@ -179,40 +179,40 @@ describe("oci session lifecycle", function()
     start_session("s1", "/home/user/s1-project")
 
     local run = exec_call("run")
-    assert.is_not_nil(run, "expected a container run")
-    assert.equals("podman", run.cmd)
-    assert.is_not_nil(index_of(run.args, "crucible-s1"))
-    assert.is_not_nil(index_of(run.args, "/home/user/s1-project:/workspace:rw,z"))
+    expect.is_not_nil(run, "expected a container run")
+    expect.equals("podman", run.cmd)
+    expect.is_not_nil(index_of(run.args, "crucible-s1"))
+    expect.is_not_nil(index_of(run.args, "/home/user/s1-project:/workspace:rw,z"))
 
-    assert.equals(1, #isolation_calls)
-    assert.equals("s1", isolation_calls[1].session)
-    assert.equals("oci", isolation_calls[1].plugin)
-    assert.equals("read_note", isolation_calls[1].exempt[1])
+    expect.equals(1, #isolation_calls)
+    expect.equals("s1", isolation_calls[1].session)
+    expect.equals("oci", isolation_calls[1].plugin)
+    expect.equals("read_note", isolation_calls[1].exempt[1])
 
     -- The argv that launches a process INTO the sandbox. Without it the
     -- daemon refuses to pair this claim with an external (ACP) agent, because
     -- that agent would run its own tools on the host.
     local prefix = isolation_calls[1].exec_prefix
-    assert.is_not_nil(prefix, "the claim must offer a way into the container")
-    assert.equals("podman", prefix[1])
-    assert.equals("exec", prefix[2])
-    assert.equals("-i", prefix[3], "the agent speaks JSON-RPC over stdin")
-    assert.equals("-w", prefix[4])
-    assert.equals("/workspace", prefix[5])
+    expect.is_not_nil(prefix, "the claim must offer a way into the container")
+    expect.equals("podman", prefix[1])
+    expect.equals("exec", prefix[2])
+    expect.equals("-i", prefix[3], "the agent speaks JSON-RPC over stdin")
+    expect.equals("-w", prefix[4])
+    expect.equals("/workspace", prefix[5])
 
     -- The container name is held back so the daemon can insert the agent's
     -- configured environment first: `exec crucible-s1 -e KEY=v agent` would
     -- pass the flag to the agent, not to the runtime.
-    assert.equals(5, #prefix, "the container name must not be part of the prefix")
-    assert.equals("-e", isolation_calls[1].exec_env_flag,
+    expect.equals(5, #prefix, "the container name must not be part of the prefix")
+    expect.equals("-e", isolation_calls[1].exec_env_flag,
       "without a flag the daemon has no way to deliver an API key into the container")
-    assert.equals("crucible-s1", isolation_calls[1].exec_suffix[1])
+    expect.equals("crucible-s1", isolation_calls[1].exec_suffix[1])
 
     local last = status_calls[#status_calls]
-    assert.is_not_nil(last)
-    assert.equals("oci", last.key)
-    assert.truthy(last.text:find("sandboxed", 1, true))
-    assert.truthy(last.text:find("alpine:latest", 1, true))
+    expect.is_not_nil(last)
+    expect.equals("oci", last.key)
+    expect.truthy(last.text:find("sandboxed", 1, true))
+    expect.truthy(last.text:find("alpine:latest", 1, true))
   end)
 
   it("maps the host uid when the image runs as non-root", function()
@@ -223,10 +223,10 @@ describe("oci session lifecycle", function()
     start_session("s-nonroot")
 
     local run = exec_call("run")
-    assert.is_not_nil(index_of(run.args, "--userns=keep-id"))
+    expect.is_not_nil(index_of(run.args, "--userns=keep-id"))
     local user_flag = index_of(run.args, "--user")
-    assert.is_not_nil(user_flag, "keep-id without --user does not fix workspace writes")
-    assert.equals("1000:1000", run.args[user_flag + 1])
+    expect.is_not_nil(user_flag, "keep-id without --user does not fix workspace writes")
+    expect.equals("1000:1000", run.args[user_flag + 1])
   end)
 
   it("leaves uid mapping off for a root image", function()
@@ -236,7 +236,7 @@ describe("oci session lifecycle", function()
 
     local run = exec_call("run")
     for _, v in ipairs(run.args) do
-      assert.falsy(v:find("^%-%-userns"))
+      expect.falsy(v:find("^%-%-userns"))
     end
   end)
 
@@ -244,24 +244,24 @@ describe("oci session lifecycle", function()
     spec.setup({ image = "alpine:latest" })
     responders["podman run"] = { success = false, exit_code = 125, stdout = "", stderr = "boom" }
     local ok, err = pcall(start_session, "s-fail")
-    assert.falsy(ok, "a session whose sandbox did not start must be refused")
-    assert.truthy(tostring(err):find("container start failed", 1, true))
-    assert.equals(0, #isolation_calls, "no isolation claim for a container that never started")
+    expect.falsy(ok, "a session whose sandbox did not start must be refused")
+    expect.truthy(tostring(err):find("container start failed", 1, true))
+    expect.equals(0, #isolation_calls, "no isolation claim for a container that never started")
   end)
 
   it("raises when no runtime exists rather than running unsandboxed", function()
     spec.setup({ image = "alpine:latest" })
     available = {}
     local ok, err = pcall(start_session, "s-noruntime")
-    assert.falsy(ok)
-    assert.truthy(tostring(err):find("no container runtime", 1, true))
+    expect.falsy(ok)
+    expect.truthy(tostring(err):find("no container runtime", 1, true))
   end)
 
   it("raises when the session has no workspace to isolate", function()
     spec.setup({ image = "alpine:latest" })
     local ok, err = pcall(lifecycle.start.fn, { id = "s-nows", workspace = "" })
-    assert.falsy(ok)
-    assert.truthy(tostring(err):find("no workspace", 1, true))
+    expect.falsy(ok)
+    expect.truthy(tostring(err):find("no workspace", 1, true))
   end)
 
   it("stops and removes the container and clears status on session end", function()
@@ -272,17 +272,17 @@ describe("oci session lifecycle", function()
     lifecycle.end_fn({ id = "s-end" })
     local stop = exec_call("stop")
     local rm = exec_call("rm")
-    assert.is_not_nil(stop)
-    assert.is_not_nil(index_of(stop.args, "crucible-s-end"))
-    assert.is_not_nil(rm)
-    assert.is_not_nil(index_of(rm.args, "crucible-s-end"))
-    assert.equals(1, #clear_status_calls)
-    assert.equals("oci", clear_status_calls[1].key)
+    expect.is_not_nil(stop)
+    expect.is_not_nil(index_of(stop.args, "crucible-s-end"))
+    expect.is_not_nil(rm)
+    expect.is_not_nil(index_of(rm.args, "crucible-s-end"))
+    expect.equals(1, #clear_status_calls)
+    expect.equals("oci", clear_status_calls[1].key)
   end)
 
   it("ignores session end for a session it never started", function()
     lifecycle.end_fn({ id = "s-stranger" })
-    assert.equals(0, #exec_log)
+    expect.equals(0, #exec_log)
   end)
 end)
 
@@ -329,12 +329,12 @@ describe("oci container sharing", function()
     exec_log = {}
     start_session("s-child", ws)
 
-    assert.equals(0, count_calls("run"), "a shared workspace must not pay a second cold start")
+    expect.equals(0, count_calls("run"), "a shared workspace must not pay a second cold start")
     -- Claimed all the same: sharing a container is not sharing a claim, and an
     -- unclaimed session is an unsandboxed one.
     local last_claim = isolation_calls[#isolation_calls]
-    assert.equals("s-child", last_claim.session)
-    assert.equals("oci", last_claim.plugin)
+    expect.equals("s-child", last_claim.session)
+    expect.equals("oci", last_claim.plugin)
   end)
 
   it("routes the second session's tools into the shared container", function()
@@ -346,7 +346,7 @@ describe("oci container sharing", function()
     responders["podman exec"] = { success = true, exit_code = 0, stdout = "hi\n", stderr = "" }
     hooks.bash.fn({ session_id = "s-child" }, { tool = "bash", args = { command = "echo hi" } })
     local call = exec_call("exec")
-    assert.is_not_nil(index_of(call.args, "crucible-s-parent"),
+    expect.is_not_nil(index_of(call.args, "crucible-s-parent"),
       "the child's tools must run in the container its workspace resolved to")
   end)
 
@@ -356,9 +356,9 @@ describe("oci container sharing", function()
     exec_log = {}
     start_session("s-b", ws_b)
 
-    assert.equals(1, count_calls("run"), "a different workspace is a different sandbox")
+    expect.equals(1, count_calls("run"), "a different workspace is a different sandbox")
     local run = exec_call("run")
-    assert.is_not_nil(index_of(run.args, ws_b .. ":/workspace:rw,z"))
+    expect.is_not_nil(index_of(run.args, ws_b .. ":/workspace:rw,z"))
   end)
 
   it("keeps a shared container alive until its last session ends", function()
@@ -368,16 +368,16 @@ describe("oci container sharing", function()
     exec_log = {}
 
     lifecycle.end_fn({ id = "s-child" })
-    assert.equals(0, count_calls("rm"),
+    expect.equals(0, count_calls("rm"),
       "a parent's container must outlive its children")
     -- ...but the child's own status slot goes with it.
-    assert.equals(1, #clear_status_calls)
-    assert.equals("s-child", clear_status_calls[1].session)
+    expect.equals(1, #clear_status_calls)
+    expect.equals("s-child", clear_status_calls[1].session)
 
     lifecycle.end_fn({ id = "s-parent" })
     local rm = exec_call("rm")
-    assert.is_not_nil(rm)
-    assert.is_not_nil(index_of(rm.args, "crucible-s-parent"))
+    expect.is_not_nil(rm)
+    expect.is_not_nil(index_of(rm.args, "crucible-s-parent"))
   end)
 
   -- `on_session_start` fires on create, resume AND resume_from_storage, and a
@@ -394,8 +394,8 @@ describe("oci container sharing", function()
     lifecycle.end_fn({ id = "s-resumed" })
 
     local rm = exec_call("rm")
-    assert.is_not_nil(rm, "a re-fired start hook left the container referenced forever")
-    assert.is_not_nil(index_of(rm.args, "crucible-s-resumed"))
+    expect.is_not_nil(rm, "a re-fired start hook left the container referenced forever")
+    expect.is_not_nil(index_of(rm.args, "crucible-s-resumed"))
   end)
 
   -- ...and the second start must not be mistaken for a second session, which
@@ -408,10 +408,10 @@ describe("oci container sharing", function()
     exec_log = {}
 
     lifecycle.end_fn({ id = "s-one" })
-    assert.equals(0, count_calls("rm"), "s-two is still in the container")
+    expect.equals(0, count_calls("rm"), "s-two is still in the container")
 
     lifecycle.end_fn({ id = "s-two" })
-    assert.is_not_nil(exec_call("rm"))
+    expect.is_not_nil(exec_call("rm"))
   end)
 
   it("refuses a session whose shared container is gone rather than running on the host", function()
@@ -420,8 +420,8 @@ describe("oci container sharing", function()
     responders["podman inspect"] = { success = true, exit_code = 0, stdout = "false\n", stderr = "" }
 
     local ok, err = pcall(start_session, "s-child", ws)
-    assert.falsy(ok, "a dead sandbox must refuse the session, not silently start a fresh one")
-    assert.truthy(tostring(err):find("no longer running", 1, true))
+    expect.falsy(ok, "a dead sandbox must refuse the session, not silently start a fresh one")
+    expect.truthy(tostring(err):find("no longer running", 1, true))
   end)
 end)
 
@@ -441,8 +441,8 @@ describe("oci per-session isolation", function()
   --- keepalive command, so match on presence rather than position.
   local function assert_ran_image(image)
     local run = exec_call("run")
-    assert.is_not_nil(run, "expected a container run")
-    assert.is_not_nil(index_of(run.args, image),
+    expect.is_not_nil(run, "expected a container run")
+    expect.is_not_nil(index_of(run.args, image),
       "container was not started from " .. image)
   end
 
@@ -474,9 +474,9 @@ describe("oci per-session isolation", function()
   -- short-circuiting is a container the caller said no to.
   it("starts no container at all when isolation is false", function()
     start_isolated_session("iso-false", false, fresh_ws())
-    assert.equals(0, #exec_log,
+    expect.equals(0, #exec_log,
       "an opted-out session must not touch the runtime even though the project configures one")
-    assert.equals(0, #isolation_calls,
+    expect.equals(0, #isolation_calls,
       "no claim either: an opted-out session runs on the host, and default-deny would strand it")
   end)
 
@@ -494,9 +494,9 @@ describe("oci per-session isolation", function()
   -- same rule that makes a failed container start refuse the session.
   it("refuses a session naming an isolation profile that does not exist", function()
     local ok, err = pcall(start_isolated_session, "iso-unknown", "nope", fresh_ws())
-    assert.falsy(ok, "an unknown profile must not fall back to the default image")
-    assert.truthy(tostring(err):find("nope", 1, true))
-    assert.equals(0, #exec_log)
+    expect.falsy(ok, "an unknown profile must not fall back to the default image")
+    expect.truthy(tostring(err):find("nope", 1, true))
+    expect.equals(0, #exec_log)
   end)
 
   -- The addressed form the runtime chip sends now that more than one plugin
@@ -517,22 +517,22 @@ describe("oci per-session isolation", function()
   it("ignores a target addressed to another plugin instead of refusing", function()
     local ok = pcall(start_isolated_session, "iso-elsewhere",
       { plugin = "ssh", target = "build-box" }, fresh_ws())
-    assert.truthy(ok, "a target for another provider must not fail this one")
-    assert.equals(0, #exec_log, "and must not start a container either")
-    assert.equals(0, #isolation_calls, "nor claim isolation it is not providing")
+    expect.truthy(ok, "a target for another provider must not fail this one")
+    expect.equals(0, #exec_log, "and must not start a container either")
+    expect.equals(0, #isolation_calls, "nor claim isolation it is not providing")
   end)
 
   it("still refuses a profile it does not have when the target is addressed here", function()
     local ok, err = pcall(start_isolated_session, "iso-addressed-unknown",
       { plugin = "oci", target = "nope" }, fresh_ws())
-    assert.falsy(ok)
-    assert.truthy(tostring(err):find("nope", 1, true))
+    expect.falsy(ok)
+    expect.truthy(tostring(err):find("nope", 1, true))
   end)
 
   it("refuses an isolation table that names no image", function()
     local ok, err = pcall(start_isolated_session, "iso-imageless", { env = { A = "1" } }, fresh_ws())
-    assert.falsy(ok)
-    assert.truthy(tostring(err):find("no image", 1, true))
+    expect.falsy(ok)
+    expect.truthy(tostring(err):find("no image", 1, true))
   end)
 
   -- `true` is "isolate me" without naming how. With a default it means the
@@ -546,8 +546,8 @@ describe("oci per-session isolation", function()
   it("refuses true when nothing is configured to isolate with", function()
     spec.setup({})
     local ok, err = pcall(start_isolated_session, "iso-true-unconfigured", true, fresh_ws())
-    assert.falsy(ok)
-    assert.truthy(tostring(err):find("asked to be isolated", 1, true))
+    expect.falsy(ok)
+    expect.truthy(tostring(err):find("asked to be isolated", 1, true))
   end)
 
   -- `runtime` describes the box, not the image. A profile that omits it must
@@ -555,14 +555,14 @@ describe("oci per-session isolation", function()
   it("inherits runtime and exempt from the top-level config into a profile", function()
     available = { podman = true, docker = true }
     start_isolated_session("iso-inherit", "heavy", fresh_ws())
-    assert.equals("podman", exec_call("run").cmd)
-    assert.equals("read_note", isolation_calls[#isolation_calls].exempt[1])
+    expect.equals("podman", exec_call("run").cmd)
+    expect.equals("read_note", isolation_calls[#isolation_calls].exempt[1])
   end)
 
   it("lets a profile override the runtime it inherits", function()
     available = { podman = true, docker = true }
     start_isolated_session("iso-override-rt", "other_runtime", fresh_ws())
-    assert.equals("docker", exec_call("run").cmd)
+    expect.equals("docker", exec_call("run").cmd)
   end)
 
   -- One container per workspace is the sharing rule; it cannot also hand a
@@ -573,9 +573,9 @@ describe("oci per-session isolation", function()
     start_isolated_session("iso-owner", nil, ws)
 
     local ok, err = pcall(start_isolated_session, "iso-intruder", "heavy", ws)
-    assert.falsy(ok, "joining would silently give this session an image it did not ask for")
-    assert.truthy(tostring(err):find("heavy:latest", 1, true))
-    assert.truthy(tostring(err):find("alpine:latest", 1, true))
+    expect.falsy(ok, "joining would silently give this session an image it did not ask for")
+    expect.truthy(tostring(err):find("heavy:latest", 1, true))
+    expect.truthy(tostring(err):find("alpine:latest", 1, true))
   end)
 end)
 
@@ -608,9 +608,9 @@ describe("oci mount target", function()
     start_session("s-target-default", ws)
 
     local run = exec_call("run")
-    assert.is_not_nil(index_of(run.args, ws .. ":/workspace:rw,z"))
+    expect.is_not_nil(index_of(run.args, ws .. ":/workspace:rw,z"))
     local w = index_of(run.args, "-w")
-    assert.equals("/workspace", run.args[w + 1])
+    expect.equals("/workspace", run.args[w + 1])
   end)
 
   it("mounts and works in a configured workspace_folder", function()
@@ -619,9 +619,9 @@ describe("oci mount target", function()
     start_session("s-target-cfg", ws)
 
     local run = exec_call("run")
-    assert.is_not_nil(index_of(run.args, ws .. ":/workspaces/app:rw,z"))
+    expect.is_not_nil(index_of(run.args, ws .. ":/workspaces/app:rw,z"))
     local w = index_of(run.args, "-w")
-    assert.equals("/workspaces/app", run.args[w + 1])
+    expect.equals("/workspaces/app", run.args[w + 1])
   end)
 
   it("lets a profile choose its own workspace_folder", function()
@@ -633,7 +633,7 @@ describe("oci mount target", function()
     start_isolated_session("s-target-profile", "dev", ws)
 
     local run = exec_call("run")
-    assert.is_not_nil(index_of(run.args, ws .. ":/src:rw,z"))
+    expect.is_not_nil(index_of(run.args, ws .. ":/src:rw,z"))
   end)
 
   it("runs bash in the resolved target, not /workspace", function()
@@ -647,8 +647,8 @@ describe("oci mount target", function()
 
     local call = exec_call("exec")
     local w = index_of(call.args, "-w")
-    assert.is_not_nil(w)
-    assert.equals("/workspaces/app", call.args[w + 1])
+    expect.is_not_nil(w)
+    expect.equals("/workspaces/app", call.args[w + 1])
   end)
 
   it("remaps tool paths under the resolved target", function()
@@ -665,8 +665,8 @@ describe("oci mount target", function()
 
     local call = exec_call("exec")
     local script = call.args[index_of(call.args, "sh") + 2]
-    assert.truthy(script:find("/workspaces/app/src/main.rs", 1, true))
-    assert.falsy(script:find("/workspace/", 1, true))
+    expect.truthy(script:find("/workspaces/app/src/main.rs", 1, true))
+    expect.falsy(script:find("/workspace/", 1, true))
   end)
 
   it("searches from the resolved target when glob and grep are given no path", function()
@@ -677,12 +677,12 @@ describe("oci mount target", function()
 
     hooks.glob.fn({ session_id = "s-target-search" }, { tool = "glob", args = { pattern = "*.rs" } })
     local glob_script = exec_call("exec").args[index_of(exec_call("exec").args, "sh") + 2]
-    assert.truthy(glob_script:find("'/workspaces/app'", 1, true))
+    expect.truthy(glob_script:find("'/workspaces/app'", 1, true))
 
     exec_log = {}
     hooks.grep.fn({ session_id = "s-target-search" }, { tool = "grep", args = { pattern = "todo" } })
     local grep_script = exec_call("exec").args[index_of(exec_call("exec").args, "sh") + 2]
-    assert.truthy(grep_script:find("'/workspaces/app'", 1, true))
+    expect.truthy(grep_script:find("'/workspaces/app'", 1, true))
   end)
 
   -- Same rule as the image check: one container per workspace means a session
@@ -699,9 +699,9 @@ describe("oci mount target", function()
     start_session("s-target-owner", ws)
 
     local ok, err = pcall(start_isolated_session, "s-target-intruder", "elsewhere", ws)
-    assert.falsy(ok)
-    assert.truthy(tostring(err):find("/elsewhere", 1, true))
-    assert.truthy(tostring(err):find("/workspace", 1, true))
+    expect.falsy(ok)
+    expect.truthy(tostring(err):find("/elsewhere", 1, true))
+    expect.truthy(tostring(err):find("/workspace", 1, true))
   end)
 end)
 
@@ -727,20 +727,20 @@ describe("oci configured timeouts", function()
   it("passes a configured start_timeout to the run", function()
     spec.setup({ image = "alpine:latest", start_timeout = 60 })
     start_session("s-start-timeout", fresh_ws())
-    assert.equals(60, exec_call("run").opts.timeout)
+    expect.equals(60, exec_call("run").opts.timeout)
   end)
 
   it("passes a configured build_timeout to the build", function()
     spec.setup({ image = "alpine:latest", dockerfile = "Dockerfile", build_timeout = 1800 })
     start_session("s-build-timeout", fresh_ws())
-    assert.equals(1800, exec_call("build").opts.timeout)
+    expect.equals(1800, exec_call("build").opts.timeout)
   end)
 
   it("falls back to the documented defaults when neither is configured", function()
     spec.setup({ image = "alpine:latest", dockerfile = "Dockerfile" })
     start_session("s-default-timeouts", fresh_ws())
-    assert.equals(900, exec_call("build").opts.timeout)
-    assert.equals(300, exec_call("run").opts.timeout)
+    expect.equals(900, exec_call("build").opts.timeout)
+    expect.equals(300, exec_call("run").opts.timeout)
   end)
 end)
 
@@ -795,7 +795,7 @@ describe("oci devcontainer resolution", function()
 
   local function index_run(needle)
     local run = exec_call("run")
-    assert.is_not_nil(run, "expected a container run")
+    expect.is_not_nil(run, "expected a container run")
     return index_of(run.args, needle), run
   end
 
@@ -825,7 +825,7 @@ describe("oci devcontainer resolution", function()
     local ws = fresh_ws()
     with_devcontainer(ws, '{ "image": "dc:latest" }')
     start_session("dc-unasked", ws)
-    assert.equals(0, #exec_log, "an unconfigured project must not containerize itself")
+    expect.equals(0, #exec_log, "an unconfigured project must not containerize itself")
   end)
 
   it("uses the devcontainer when the project opts in", function()
@@ -833,7 +833,7 @@ describe("oci devcontainer resolution", function()
     local ws = fresh_ws()
     with_devcontainer(ws, '{ "image": "dc:latest" }')
     start_session("dc-optin", ws)
-    assert.is_not_nil(index_run("dc:latest"))
+    expect.is_not_nil(index_run("dc:latest"))
   end)
 
   -- The design's order: the devcontainer is the project's environment, so it
@@ -843,8 +843,8 @@ describe("oci devcontainer resolution", function()
     local ws = fresh_ws()
     with_devcontainer(ws, '{ "image": "dc:latest" }')
     start_session("dc-wins", ws)
-    assert.is_not_nil(index_run("dc:latest"))
-    assert.is_nil(index_run("alpine:latest"))
+    expect.is_not_nil(index_run("dc:latest"))
+    expect.is_nil(index_run("alpine:latest"))
   end)
 
   -- ...but not an explicit session param, which is first in the order.
@@ -853,7 +853,7 @@ describe("oci devcontainer resolution", function()
     local ws = fresh_ws()
     with_devcontainer(ws, '{ "image": "dc:latest" }')
     start_isolated_session("dc-inline", { image = "inline:latest" }, ws)
-    assert.is_not_nil(index_run("inline:latest"))
+    expect.is_not_nil(index_run("inline:latest"))
   end)
 
   it("is not read at all when the session opted out", function()
@@ -861,7 +861,7 @@ describe("oci devcontainer resolution", function()
     local ws = fresh_ws()
     with_devcontainer(ws, '{ "image": "dc:latest" }')
     start_isolated_session("dc-optout", false, ws)
-    assert.equals(0, #exec_log)
+    expect.equals(0, #exec_log)
   end)
 
   it("can be switched off so the profile wins", function()
@@ -869,7 +869,7 @@ describe("oci devcontainer resolution", function()
     local ws = fresh_ws()
     with_devcontainer(ws, '{ "image": "dc:latest" }')
     start_session("dc-off", ws)
-    assert.is_not_nil(index_run("alpine:latest"))
+    expect.is_not_nil(index_run("alpine:latest"))
   end)
 
   -- The devcontainer default is /workspaces/<name>, not the plugin's
@@ -882,8 +882,8 @@ describe("oci devcontainer resolution", function()
     start_session("dc-target", ws)
 
     local i, run = index_run(ws .. ":/src:rw,z")
-    assert.is_not_nil(i, "the bind mount must follow the devcontainer's workspaceFolder")
-    assert.equals("/src", run.args[index_of(run.args, "-w") + 1])
+    expect.is_not_nil(i, "the bind mount must follow the devcontainer's workspaceFolder")
+    expect.equals("/src", run.args[index_of(run.args, "-w") + 1])
   end)
 
   it("defaults the mount to /workspaces/<name> as the devcontainer spec does", function()
@@ -891,7 +891,7 @@ describe("oci devcontainer resolution", function()
     local ws = fresh_ws()
     with_devcontainer(ws, '{ "image": "dc:latest" }')
     start_session("dc-default-target", ws)
-    assert.is_not_nil(index_run(ws .. ":/workspaces/" .. ws:match("[^/]+$") .. ":rw,z"))
+    expect.is_not_nil(index_run(ws .. ":/workspaces/" .. ws:match("[^/]+$") .. ":rw,z"))
   end)
 
   -- Refused by default, because the agent can commit the file that asks for
@@ -902,9 +902,9 @@ describe("oci devcontainer resolution", function()
     with_devcontainer(ws, '{ "image": "dc:latest", "runArgs": ["--privileged"] }')
 
     local ok, err = pcall(start_session, "dc-runargs-denied", ws)
-    assert.falsy(ok, "a devcontainer reaching the host must not start a session")
-    assert.truthy(tostring(err):find("devcontainer_host_access", 1, true), tostring(err))
-    assert.is_nil(exec_call("run"), "and nothing may have been started")
+    expect.falsy(ok, "a devcontainer reaching the host must not start a session")
+    expect.truthy(tostring(err):find("devcontainer_host_access", 1, true), tostring(err))
+    expect.is_nil(exec_call("run"), "and nothing may have been started")
   end)
 
   it("passes runArgs and remoteUser through to the run when host access is allowed", function()
@@ -917,9 +917,9 @@ describe("oci devcontainer resolution", function()
     start_session("dc-runargs", ws)
 
     local i, run = index_run("--cap-add")
-    assert.is_not_nil(i)
-    assert.equals("SYS_PTRACE", run.args[i + 1])
-    assert.equals("vscode", run.args[index_of(run.args, "--user") + 1])
+    expect.is_not_nil(i)
+    expect.equals("SYS_PTRACE", run.args[i + 1])
+    expect.equals("vscode", run.args[index_of(run.args, "--user") + 1])
   end)
 
   it("builds from build.dockerfile with the devcontainer directory as context", function()
@@ -929,9 +929,9 @@ describe("oci devcontainer resolution", function()
     start_session("dc-build", ws)
 
     local build = exec_call("build")
-    assert.is_not_nil(build, "a devcontainer naming a Dockerfile must build it")
-    assert.is_not_nil(index_of(build.args, ws .. "/.devcontainer/Dockerfile"))
-    assert.is_not_nil(index_of(build.args, ws .. "/.devcontainer"))
+    expect.is_not_nil(build, "a devcontainer naming a Dockerfile must build it")
+    expect.is_not_nil(index_of(build.args, ws .. "/.devcontainer/Dockerfile"))
+    expect.is_not_nil(index_of(build.args, ws .. "/.devcontainer"))
   end)
 
   -- The refusal the whole feature turns on: an environment the plugin cannot
@@ -942,11 +942,11 @@ describe("oci devcontainer resolution", function()
     with_devcontainer(ws, '{ "image": "dc:latest", "postCreateCommand": "make" }')
 
     local ok, err = pcall(start_session, "dc-lifecycle", ws)
-    assert.falsy(ok, "a devcontainer needing the CLI must refuse, not fall back to the profile")
-    assert.truthy(tostring(err):find("postCreateCommand", 1, true))
+    expect.falsy(ok, "a devcontainer needing the CLI must refuse, not fall back to the profile")
+    expect.truthy(tostring(err):find("postCreateCommand", 1, true))
     -- Nothing may be *started* from a config that could not be honoured.
     for _, call in ipairs(exec_log) do
-      assert.equals("git", call.cmd,
+      expect.equals("git", call.cmd,
         "a config that could not be honoured reached the container runtime")
     end
   end)
@@ -971,21 +971,21 @@ describe("oci devcontainer resolution", function()
     for _, c in ipairs(status_calls) do
       if c.progress then progressed[#progressed + 1] = c.text end
     end
-    assert.truthy(#progressed >= 3,
+    expect.truthy(#progressed >= 3,
       "each build step must reach the status slot; got " .. #progressed)
-    assert.truthy(progressed[1]:find("STEP 1/3", 1, true), progressed[1])
-    assert.truthy(progressed[#progressed]:find("STEP 3/3", 1, true), progressed[#progressed])
+    expect.truthy(progressed[1]:find("STEP 1/3", 1, true), progressed[1])
+    expect.truthy(progressed[#progressed]:find("STEP 3/3", 1, true), progressed[#progressed])
 
     -- A build has no total to count against, so it spins rather than showing
     -- an invented fraction.
     for _, c in ipairs(status_calls) do
-      if c.progress then assert.equals(true, c.progress) end
+      if c.progress then expect.equals(true, c.progress) end
     end
 
     -- ...and the terminal slot is the sandbox state, with no progress on it.
     local final = status_calls[#status_calls]
-    assert.truthy(final.text:find("sandboxed", 1, true), final.text)
-    assert.is_nil(final.progress, "a finished build must not leave a live bar")
+    expect.truthy(final.text:find("sandboxed", 1, true), final.text)
+    expect.is_nil(final.progress, "a finished build must not leave a live bar")
   end)
 
   -- HEAD is what runs, but a human who just edited the file and saw nothing
@@ -999,8 +999,8 @@ describe("oci devcontainer resolution", function()
     start_session("dc-clean", ws)
 
     local final = status_calls[#status_calls]
-    assert.is_nil(final.text:lower():find("uncommitted", 1, true))
-    assert.equals("info", final.level)
+    expect.is_nil(final.text:lower():find("uncommitted", 1, true))
+    expect.equals("info", final.level)
   end)
 
   -- With @devcontainers/cli present the environment is built by the tool that
@@ -1016,20 +1016,20 @@ describe("oci devcontainer resolution", function()
     }
     start_session("dc-cli", ws)
 
-    assert.is_nil(exec_call("run"), "the CLI creates the container, not the plugin")
+    expect.is_nil(exec_call("run"), "the CLI creates the container, not the plugin")
     local up = exec_call("up")
-    assert.is_not_nil(up)
-    assert.equals("devcontainer", up.cmd)
-    assert.is_not_nil(index_of(up.args, ws))
-    assert.equals(1, #isolation_calls, "an adopted container is still a claimed sandbox")
+    expect.is_not_nil(up)
+    expect.equals("devcontainer", up.cmd)
+    expect.is_not_nil(index_of(up.args, ws))
+    expect.equals(1, #isolation_calls, "an adopted container is still a claimed sandbox")
 
     -- Tools route into the container the CLI reported, at the folder it reported.
     exec_log = {}
     responders["podman exec"] = { success = true, exit_code = 0, stdout = "hi\n", stderr = "" }
     hooks.bash.fn({ session_id = "dc-cli" }, { tool = "bash", args = { command = "echo hi" } })
     local call = exec_call("exec")
-    assert.is_not_nil(index_of(call.args, "dc-abc"))
-    assert.equals("/workspaces/app", call.args[index_of(call.args, "-w") + 1])
+    expect.is_not_nil(index_of(call.args, "dc-abc"))
+    expect.equals("/workspaces/app", call.args[index_of(call.args, "-w") + 1])
   end)
 
   it("refuses the session when devcontainer up fails", function()
@@ -1041,9 +1041,9 @@ describe("oci devcontainer resolution", function()
     }
 
     local ok, err = pcall(start_session, "dc-cli-fail", ws)
-    assert.falsy(ok)
-    assert.truthy(tostring(err):find("devcontainer up", 1, true))
-    assert.equals(0, #isolation_calls)
+    expect.falsy(ok)
+    expect.truthy(tostring(err):find("devcontainer up", 1, true))
+    expect.equals(0, #isolation_calls)
   end)
 end)
 
@@ -1068,14 +1068,14 @@ describe("oci tool interception", function()
     responders["podman exec"] = { success = true, exit_code = 0, stdout = "hi\n", stderr = "" }
     local res = hooks.bash.fn({ session_id = "s-tools" }, { tool = "bash", args = { command = "echo hi" } })
 
-    assert.truthy(res.handled)
-    assert.equals("hi\n", res.result.result)
+    expect.truthy(res.handled)
+    expect.equals("hi\n", res.result.result)
 
     local call = exec_call("exec")
-    assert.is_not_nil(index_of(call.args, "crucible-s-tools"))
+    expect.is_not_nil(index_of(call.args, "crucible-s-tools"))
     local sh = index_of(call.args, "sh")
-    assert.equals("-c", call.args[sh + 1])
-    assert.equals("echo hi", call.args[sh + 2])
+    expect.equals("-c", call.args[sh + 1])
+    expect.equals("echo hi", call.args[sh + 2])
   end)
 
   it("remaps read_file paths into /workspace", function()
@@ -1084,25 +1084,25 @@ describe("oci tool interception", function()
       { session_id = "s-tools" },
       { tool = "read_file", args = { path = "/home/user/project/src/main.rs" } }
     )
-    assert.truthy(res.handled)
+    expect.truthy(res.handled)
 
     local call = exec_call("exec")
     local sh = index_of(call.args, "sh")
     local script = call.args[sh + 2]
-    assert.truthy(script:find("/workspace/src/main.rs", 1, true))
-    assert.falsy(script:find("/home/user/project", 1, true))
+    expect.truthy(script:find("/workspace/src/main.rs", 1, true))
+    expect.falsy(script:find("/home/user/project", 1, true))
   end)
 
   it("does not intercept for a session with no container", function()
     local res = hooks.bash.fn({ session_id = "s-other" }, { tool = "bash", args = { command = "echo hi" } })
-    assert.is_nil(res, "a handler must no-op for sessions it does not sandbox")
-    assert.equals(0, #exec_log)
+    expect.is_nil(res, "a handler must no-op for sessions it does not sandbox")
+    expect.equals(0, #exec_log)
   end)
 
   it("does not intercept when the call has no session context", function()
     local res = hooks.bash.fn({}, { tool = "bash", args = { command = "echo hi" } })
-    assert.is_nil(res)
-    assert.equals(0, #exec_log)
+    expect.is_nil(res)
+    expect.equals(0, #exec_log)
   end)
 end)
 
@@ -1125,20 +1125,20 @@ describe("oci declares its settings", function()
 
   it("declares a settings tree at setup", function()
     spec.setup({ image = "alpine:latest" })
-    assert.is_not_nil(declared_options, "no options declared; nothing to render")
-    assert.equals("group", declared_options.type)
-    assert.is_not_nil(declared_options.args.image)
-    assert.is_not_nil(declared_options.args.runtime)
+    expect.is_not_nil(declared_options, "no options declared; nothing to render")
+    expect.equals("group", declared_options.type)
+    expect.is_not_nil(declared_options.args.image)
+    expect.is_not_nil(declared_options.args.runtime)
   end)
 
   -- One accessor at the root serves every leaf, routed by `info.option`.
   it("reads and writes config through the inherited accessors", function()
     spec.setup({ image = "alpine:latest" })
     local info = { option = "image" }
-    assert.equals("alpine:latest", declared_options.get(info))
+    expect.equals("alpine:latest", declared_options.get(info))
 
     declared_options.set(info, "debian:trixie")
-    assert.equals("debian:trixie", declared_options.get(info))
+    expect.equals("debian:trixie", declared_options.get(info))
   end)
 
   -- The reason `values` is a function: it describes this box, not this file.
@@ -1146,11 +1146,11 @@ describe("oci declares its settings", function()
     spec.setup({ image = "alpine:latest" })
     available = { podman = true }
     local only_podman = declared_options.args.runtime.values()
-    assert.equals(1, #only_podman)
-    assert.equals("podman", only_podman[1])
+    expect.equals(1, #only_podman)
+    expect.equals("podman", only_podman[1])
 
     available = { podman = true, docker = true }
-    assert.equals(2, #declared_options.args.runtime.values(),
+    expect.equals(2, #declared_options.args.runtime.values(),
       "a runtime installed after load must appear without a reload")
   end)
 
@@ -1158,10 +1158,10 @@ describe("oci declares its settings", function()
   it("offers orphan cleanup as a button that runs", function()
     spec.setup({ image = "alpine:latest" })
     local cleanup = declared_options.args.cleanup
-    assert.equals("execute", cleanup.type)
+    expect.equals("execute", cleanup.type)
     exec_log = {}
     cleanup.func({})
-    assert.truthy(#exec_log > 0, "the button must actually do something")
+    expect.truthy(#exec_log > 0, "the button must actually do something")
   end)
 end)
 
@@ -1174,11 +1174,11 @@ describe("oci publishes what it offers", function()
   it("declares itself on the runtime axis, not the workspace one", function()
     spec.setup({ image = "alpine:latest" })
     local decl = publications.targets
-    assert.truthy(decl, "nothing published; clients have nothing to render")
+    expect.truthy(decl, "nothing published; clients have nothing to render")
     -- Where the process runs. Which worktree it runs *against* is the other
     -- axis, answered by another plugin, and the two compose.
-    assert.equals("runtime", decl.axis)
-    assert.equals("oci.targets", decl.targets_command)
+    expect.equals("runtime", decl.axis)
+    expect.equals("oci.targets", decl.targets_command)
   end)
 
   -- A runtime provider is asked for targets, never asked to resolve a
@@ -1186,17 +1186,17 @@ describe("oci publishes what it offers", function()
   -- resolve_command here would be an offer to answer the wrong question.
   it("names no resolve_command", function()
     spec.setup({ image = "alpine:latest" })
-    assert.is_nil(publications.targets.resolve_command)
+    expect.is_nil(publications.targets.resolve_command)
   end)
 
   it("declares itself when only named profiles are configured", function()
     spec.setup({ profiles = { rust = { image = "rust:1-bookworm" } } })
-    assert.truthy(publications.targets)
+    expect.truthy(publications.targets)
   end)
 
   it("declares itself when the project's devcontainer is opted into", function()
     spec.setup({ devcontainer = true })
-    assert.truthy(publications.targets)
+    expect.truthy(publications.targets)
   end)
 
   -- A runtime says *how* to run a container, not that there is one to run.
@@ -1204,9 +1204,9 @@ describe("oci publishes what it offers", function()
   -- not declare itself contributes no menu entry.
   it("publishes nothing when nothing is configured to run", function()
     spec.setup({ runtime = "podman" })
-    assert.is_nil(publications.targets)
+    expect.is_nil(publications.targets)
     spec.setup(nil)
-    assert.is_nil(publications.targets)
+    expect.is_nil(publications.targets)
   end)
 end)
 
@@ -1226,9 +1226,9 @@ describe("oci.targets", function()
       },
     })
     local rows = targets({}).targets
-    assert.equals(2, #rows)
-    assert.equals("rust", rows[1].value)
-    assert.equals("throwaway", rows[2].value)
+    expect.equals(2, #rows)
+    expect.equals("rust", rows[1].value)
+    expect.equals("throwaway", rows[2].value)
   end)
 
   -- The documented config is a bare image with no profiles table. Gating the
@@ -1237,9 +1237,9 @@ describe("oci.targets", function()
   it("offers an unnamed default for a bare image", function()
     spec.setup({ image = "alpine:latest" })
     local rows = targets({}).targets
-    assert.equals(1, #rows)
-    assert.equals("", rows[1].value)
-    assert.equals("alpine:latest", rows[1].hint)
+    expect.equals(1, #rows)
+    expect.equals("", rows[1].value)
+    expect.equals("alpine:latest", rows[1].hint)
   end)
 
   -- The devcontainer and the configured image are not a choice: they are the
@@ -1260,13 +1260,13 @@ describe("oci.targets", function()
     for _, row in ipairs(rows) do
       if row.value == "" then defaults = defaults + 1 end
     end
-    assert.equals(1, defaults, "one unnamed row, whatever it resolves to")
-    assert.equals("this project's devcontainer", rows[1].hint)
+    expect.equals(1, defaults, "one unnamed row, whatever it resolves to")
+    expect.equals("this project's devcontainer", rows[1].hint)
   end)
 
   it("offers nothing when nothing is configured", function()
     spec.setup({ runtime = "podman" })
-    assert.equals(0, #targets({}).targets)
+    expect.equals(0, #targets({}).targets)
   end)
 end)
 
@@ -1359,8 +1359,8 @@ describe("oci with a worktree workspace", function()
     start_session("s-wt", "/home/user/worktrees/feat")
 
     local run = exec_call("run")
-    assert.is_not_nil(run)
-    assert.is_not_nil(index_of(run.args, "type=bind,source=/home/user/project/.git,"
+    expect.is_not_nil(run)
+    expect.is_not_nil(index_of(run.args, "type=bind,source=/home/user/project/.git,"
       .. "destination=/home/user/project/.git,relabel=shared"),
       "a worktree session must mount the main repo's git dir")
   end)
@@ -1372,7 +1372,7 @@ describe("oci with a worktree workspace", function()
     start_session("s-plain", "/home/user/plain")
 
     local run = exec_call("run")
-    assert.is_nil(index_of(run.args, "--mount"),
+    expect.is_nil(index_of(run.args, "--mount"),
       "an ordinary checkout already has its git dir inside the workspace mount")
   end)
 
@@ -1385,8 +1385,8 @@ describe("oci with a worktree workspace", function()
     start_session("s-wt-broken", "/home/user/worktrees/broken")
 
     local last = status_calls[#status_calls]
-    assert.equals("warn", last.level)
-    assert.truthy(last.text:find("cannot resolve the repository", 1, true), last.text)
+    expect.equals("warn", last.level)
+    expect.truthy(last.text:find("cannot resolve the repository", 1, true), last.text)
   end)
 
   -- A slim base image with no git at all fails the same rev-parse. Blaming the
@@ -1397,9 +1397,9 @@ describe("oci with a worktree workspace", function()
     start_session("s-wt-nogit", "/home/user/worktrees/nogit")
 
     local last = status_calls[#status_calls]
-    assert.equals("warn", last.level)
-    assert.truthy(last.text:find("image has no git", 1, true), last.text)
-    assert.is_nil(last.text:find("mount failed", 1, true),
+    expect.equals("warn", last.level)
+    expect.truthy(last.text:find("image has no git", 1, true), last.text)
+    expect.is_nil(last.text:find("mount failed", 1, true),
       "a missing binary is not a mount failure")
   end)
 
@@ -1412,10 +1412,10 @@ describe("oci with a worktree workspace", function()
     start_session("s-wt-cli", ws)
 
     local up = exec_call("up")
-    assert.is_not_nil(up)
+    expect.is_not_nil(up)
     local i = index_of(up.args, "--mount")
-    assert.is_not_nil(i, "a worktree built by the CLI still needs the main repo mounted")
-    assert.equals("type=bind,source=/home/user/project/.git,"
+    expect.is_not_nil(i, "a worktree built by the CLI still needs the main repo mounted")
+    expect.equals("type=bind,source=/home/user/project/.git,"
       .. "target=/home/user/project/.git", up.args[i + 1])
   end)
 
@@ -1426,7 +1426,7 @@ describe("oci with a worktree workspace", function()
     start_session("s-wt-cli-broken", ws)
 
     local last = status_calls[#status_calls]
-    assert.equals("warn", last.level)
-    assert.truthy(last.text:find("cannot resolve the repository", 1, true), last.text)
+    expect.equals("warn", last.level)
+    expect.truthy(last.text:find("cannot resolve the repository", 1, true), last.text)
   end)
 end)
