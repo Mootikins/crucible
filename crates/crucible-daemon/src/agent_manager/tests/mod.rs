@@ -362,6 +362,27 @@ async fn next_event_or_skip(
     .unwrap_or_else(|_| panic!("timed out waiting for {event_name}"))
 }
 
+/// The first event whose name is one of `event_names`.
+async fn first_event_of(
+    event_rx: &mut broadcast::Receiver<SessionEventMessage>,
+    event_names: &[&str],
+) -> SessionEventMessage {
+    timeout(Duration::from_secs(5), async {
+        loop {
+            match event_rx.recv().await {
+                Ok(event) if event_names.contains(&event.event.as_str()) => return event,
+                Ok(_) => continue,
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(err) => {
+                    panic!("event channel closed while waiting for {event_names:?}: {err}")
+                }
+            }
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("timed out waiting for any of {event_names:?}"))
+}
+
 async fn assert_no_event_until_message_complete(
     event_rx: &mut broadcast::Receiver<SessionEventMessage>,
     event_name: &str,
@@ -521,6 +542,15 @@ impl ReactorTestHarness {
 
     async fn wait_for(&mut self, event_name: &str) -> SessionEventMessage {
         next_event_or_skip(&mut self.event_rx, event_name).await
+    }
+
+    /// Wait for whichever of `event_names` arrives FIRST.
+    ///
+    /// For an ordering assertion the arrival order is the fact under test, so
+    /// two `wait_for` calls cannot express it: the second one skips whatever
+    /// the first one walked past. The caller asserts which name it got.
+    async fn wait_for_first_of(&mut self, event_names: &[&str]) -> SessionEventMessage {
+        first_event_of(&mut self.event_rx, event_names).await
     }
 
     #[allow(dead_code)]
