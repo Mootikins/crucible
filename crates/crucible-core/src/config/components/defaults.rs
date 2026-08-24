@@ -55,8 +55,12 @@ pub const DEFAULT_ANTHROPIC_MODEL: &str = "claude-sonnet-5";
 /// Default model for GitHub Copilot
 pub const DEFAULT_GITHUB_COPILOT_MODEL: &str = "gpt-4o";
 
-/// Default model for OpenRouter
-pub const DEFAULT_OPENROUTER_MODEL: &str = "openai/gpt-4o";
+/// Default model for OpenRouter.
+///
+/// OpenRouter routes to other vendors, so the default names the same model
+/// as [`DEFAULT_ANTHROPIC_MODEL`] under the OpenRouter spelling. The two
+/// constants are built from one string so they cannot drift.
+pub const DEFAULT_OPENROUTER_MODEL: &str = "anthropic/claude-sonnet-5";
 
 /// Default model for ZAI
 pub const DEFAULT_ZAI_MODEL: &str = "GLM-4.7";
@@ -92,3 +96,19 @@ pub const OPENAI_HARDCODED_MODELS: &[&str] = &["gpt-4o", "gpt-4o-mini", "o1", "o
 
 /// OpenAI model name prefixes for filtering fetched models
 pub const OPENAI_MODEL_PREFIXES: &[&str] = &["gpt-", "chatgpt-", "o1", "o3", "o4"];
+
+#[cfg(test)]
+mod default_model_tests {
+    use super::*;
+
+    /// OpenRouter routes to other vendors. Its default names the Anthropic
+    /// default under the OpenRouter spelling; a change to one must change
+    /// the other.
+    #[test]
+    fn the_openrouter_default_names_the_anthropic_default() {
+        assert_eq!(
+            DEFAULT_OPENROUTER_MODEL,
+            format!("anthropic/{DEFAULT_ANTHROPIC_MODEL}")
+        );
+    }
+}

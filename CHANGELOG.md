@@ -206,6 +206,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `||`, `|`, `&` or a newline must match, and a line with `$(...)`,
   backticks or `<(...)` does not match. Saved rules that relied on the prefix
   match now prompt again.
+- **`cru chat --record out.jsonl "query"` errors** instead of exiting without
+  writing the recording. The piped form already errored.
 - **A session cannot cancel another session's background job.** The MCP tool
   and the RPC path check the owner; an unknown or foreign id returns the same
   `invalid_params` error.
@@ -218,6 +220,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   every note came back with no links.
 - **`WatchConfig.debounce` reaches the notify backend.** It was set and never
   read.
+- **Concurrent permission grants no longer lose a write.** Two sessions that
+  granted at the same time overwrote each other's entry in the store.
+- **A daemon write is not recorded as a user edit.** The write-suppression
+  window was shorter than the two debounce stages that deliver the event.
 - **Held ACP tool results are accounted, logged and marked.** A held result
   released mid-turn refunds its bytes; a result still held when the turn
   errors or times out is logged; a refused replacement leaves a drop marker.

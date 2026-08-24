@@ -694,7 +694,7 @@ mod tests {
         );
         assert_eq!(
             BackendType::OpenRouter.default_chat_model(),
-            Some("openai/gpt-4o")
+            Some("anthropic/claude-sonnet-5")
         );
         assert_eq!(BackendType::ZAI.default_chat_model(), Some("GLM-4.7"));
     }
