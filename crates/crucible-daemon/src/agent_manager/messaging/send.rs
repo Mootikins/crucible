@@ -358,6 +358,7 @@ impl AgentManager {
             session_state: self.get_or_create_session_state(session_id),
             workspace_path: tool_root.clone(),
             session_dir: session.storage_path(self.session_manager.sessions_root()),
+            whitelists_dir: self.whitelists_dir(),
             agent_stream_config: {
                 let (lua_validators, plugin_lua) = match self.lua_validators() {
                     Some((r, l)) => (Some(r), Some(l)),

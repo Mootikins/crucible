@@ -199,6 +199,14 @@ impl crucible_core::traits::chat::AgentHandle for BashCallingAgent {
 async fn bash_calling_rig(
     event_tx: broadcast::Sender<SessionEventMessage>,
 ) -> (TempDir, DaemonSessionBridge, String) {
+    bash_calling_rig_with_card_roots(event_tx, Default::default()).await
+}
+
+/// As [`bash_calling_rig`], with the config home the whitelist gate reads.
+async fn bash_calling_rig_with_card_roots(
+    event_tx: broadcast::Sender<SessionEventMessage>,
+    card_roots: crate::agent_cards::CardRoots,
+) -> (TempDir, DaemonSessionBridge, String) {
     let tmp = TempDir::new().unwrap();
     let workspace = tmp.path().to_path_buf();
     let session_manager = temp_session_manager();
@@ -212,7 +220,7 @@ async fn bash_calling_rig(
         context_config: None,
         permission_config: None,
         plugin_loader: None,
-        card_roots: Default::default(),
+        card_roots,
     }));
     agent_manager.set_agent_factory_override(Box::new(|_, _| {
         Box::pin(async {
@@ -274,6 +282,49 @@ async fn a_collected_plugin_turn_errors_on_a_gated_tool_instead_of_prompting() {
             } if tool == "bash"
         )),
         "the gated bash call must come back as a tool error, got: {parts:?}"
+    );
+}
+
+/// The user whitelist lives under the config home the daemon was bound with.
+/// A gate that reads `dirs::config_dir()` instead would see the developer's
+/// real `~/.config/crucible/whitelists.d/user.toml` in every test.
+#[tokio::test]
+async fn the_gate_reads_the_user_whitelist_under_the_injected_config_home() {
+    let config_home = TempDir::new().unwrap();
+    let whitelists_dir = config_home.path().join("crucible").join("whitelists.d");
+    std::fs::create_dir_all(&whitelists_dir).unwrap();
+    std::fs::write(
+        whitelists_dir.join("user.toml"),
+        "[bash_commands]\nallowed_prefixes = [\"rm\"]\n",
+    )
+    .unwrap();
+    let card_roots = crate::agent_cards::CardRoots {
+        config_home: Some(config_home.path().to_path_buf()),
+        agent_directories: Vec::new(),
+    };
+    let (event_tx, _keep_open) = broadcast::channel(256);
+    let (_tmp, bridge, session_id) = bash_calling_rig_with_card_roots(event_tx, card_roots).await;
+
+    let mut rx = bridge
+        .send_and_collect(session_id, "go".to_string(), Some(5.0), None, false)
+        .await
+        .unwrap();
+
+    let mut parts = Vec::new();
+    while let Ok(Some(part)) = tokio::time::timeout(Duration::from_secs(30), rx.recv()).await {
+        parts.push(part);
+    }
+
+    assert!(
+        parts.iter().any(|p| matches!(
+            p,
+            ResponsePart::ToolResult {
+                tool,
+                is_error: false,
+                ..
+            } if tool == "bash"
+        )),
+        "the whitelisted bash call must run without a prompt, got: {parts:?}"
     );
 }
 

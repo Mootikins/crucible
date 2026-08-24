@@ -135,9 +135,15 @@ impl PatternStore {
         Self::load_file(&Self::pattern_file_path(project_path))
     }
 
-    /// Load the user-wide store, the one a `User` scope grant writes to.
-    pub fn load_user_sync() -> PatternResult<Self> {
-        Self::load_file(&Self::user_file_in(&Self::whitelists_dir()))
+    /// Load the user-wide store under `dir`, the one a `User` scope grant
+    /// writes to. The directory is injected, never read from the environment.
+    pub fn load_user_sync_in(dir: &Path) -> PatternResult<Self> {
+        Self::load_file(&Self::user_file_in(dir))
+    }
+
+    /// [`Self::load_sync`] with the directory injected.
+    pub fn load_sync_in(dir: &Path, project_path: &str) -> PatternResult<Self> {
+        Self::load_file(&Self::project_file_in(dir, project_path))
     }
 
     /// Load one store file. A missing file is an empty store.
@@ -410,10 +416,12 @@ impl PatternStore {
     /// Get the path to the whitelists.d directory
     pub fn whitelists_dir() -> PathBuf {
         // SAFETY: dirs::config_dir() fallback ensures we always have a valid path
-        dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from(".config"))
-            .join("crucible")
-            .join("whitelists.d")
+        Self::whitelists_dir_in(&dirs::config_dir().unwrap_or_else(|| PathBuf::from(".config")))
+    }
+
+    /// The whitelists.d directory under the config home `config_home`.
+    pub fn whitelists_dir_in(config_home: &Path) -> PathBuf {
+        config_home.join("crucible").join("whitelists.d")
     }
 
     /// Generate a project hash from the project path
@@ -445,13 +453,8 @@ impl PatternStore {
         dir.join("user.toml")
     }
 
-    /// The file a grant at `scope` persists to, under the default directory.
-    /// `Once` and `Session` grants are not persisted.
-    pub fn store_file(scope: PermissionScope, project_path: &str) -> Option<PathBuf> {
-        Self::store_file_in(&Self::whitelists_dir(), scope, project_path)
-    }
-
-    /// [`Self::store_file`] with the directory injected, for tests.
+    /// The file a grant at `scope` persists to under `dir`. `Once` and
+    /// `Session` grants are not persisted.
     pub fn store_file_in(
         dir: &Path,
         scope: PermissionScope,

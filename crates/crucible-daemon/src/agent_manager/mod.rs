@@ -294,6 +294,11 @@ struct StreamContext {
     session_state: Arc<Mutex<SessionEventState>>,
     workspace_path: PathBuf,
     session_dir: PathBuf,
+    /// The `whitelists.d` directory the permission gate reads saved grants
+    /// from. Derived from the config home the daemon was bound with, never
+    /// from `dirs::config_dir()`, so a test daemon does not see the
+    /// developer's real user whitelist. `None` means "no persisted grants".
+    whitelists_dir: Option<PathBuf>,
     agent_stream_config: AgentStreamConfig,
     tool_dispatcher: Arc<dyn ToolDispatcher>,
     /// Explicit CLI-level permission override (e.g. `--permissions allow`).
@@ -542,6 +547,15 @@ impl AgentManager {
     /// The agent-card roots this daemon was bound with.
     pub fn card_roots(&self) -> &crate::agent_cards::CardRoots {
         &self.card_roots
+    }
+
+    /// The `whitelists.d` directory under the bound config home. The card
+    /// roots carry that home, so the whitelist hangs off the same value.
+    pub fn whitelists_dir(&self) -> Option<PathBuf> {
+        self.card_roots
+            .config_home
+            .as_deref()
+            .map(crucible_core::config::PatternStore::whitelists_dir_in)
     }
 
     /// Test-support: install an agent-factory override (first call wins).

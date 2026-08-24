@@ -1107,6 +1107,7 @@ impl AgentManager {
                 session_state: stream_ctx.session_state.clone(),
                 workspace_path: stream_ctx.workspace_path.clone(),
                 session_dir: stream_ctx.session_dir.clone(),
+                whitelists_dir: stream_ctx.whitelists_dir.clone(),
                 agent_stream_config: stream_ctx.agent_stream_config.clone(),
                 tool_dispatcher: stream_ctx.tool_dispatcher.clone(),
                 permission_override: stream_ctx.permission_override,

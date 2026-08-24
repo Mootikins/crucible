@@ -1137,9 +1137,9 @@ matches every chained statement. `just ci` and the web unit tests pass.
 - [T5-12] Consider a CI job that builds with the declared rust-version so the MSRV does not drift again.
 - [T5-13] get_job_result and list_jobs are not gated the same way: get_job_result returns any job by ID regardless of owner (read-only, but it leaks another session's job output).
 - [T5-13] The ownership check reads the owner then cancels in two steps; a job that finishes between the two steps is harmless but the trait could take session_id to make ownership a spawner-level invariant.
-- [T5-14] `PatternStore::load_sync`/`load_user_sync`/`save_file` still block inside the async tool gate (Gaps G18).
+- [T5-14] `PatternStore::load_sync_in`/`load_user_sync_in`/`save_file` still block inside the async tool gate (Gaps G18).
 - [T5-14] The ACP gate (`build_acp_permission_handler`) never persists a Project or User grant; only the internal tool gate does.
-- [T5-14] `PatternStore::whitelists_dir()` reads `dirs::config_dir()` with no injection point, so any test that calls `load_sync`/`store_file` directly touches the real config directory.
+- [T5-14] Resolved: the tool gate reads `StreamContext::whitelists_dir`, which the daemon derives from the injected config home. `PatternStore::whitelists_dir()` still reads `dirs::config_dir()` for a caller with no injected home.
 - [T5-15] Give the plugin-loader sessions (session_lifecycle.rs fire_session_start/fire_session_end) access to the slot's SessionVariables so plugin hooks share the same store as user hooks.
 - [T5-15] crates/crucible-lua/src/executor.rs carry two unused imports (`LuaExecutionResult`, `Instant`) under the daemon's feature set; pre-existing, warnings only.
 - [T5-15] docs/Meta/Architecture/Actual.md,855 and docs/Meta/Product.md still mention `NoopSessionRpc`; the Actual/Product doc rewrites are owned by other agents.

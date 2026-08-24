@@ -714,10 +714,14 @@ impl AgentManager {
         }
 
         let project_path = stream_ctx.workspace_path.to_string_lossy();
-        // A grant at either persisted scope skips the prompt.
-        let pattern_store = PatternStore::load_sync(&project_path)
-            .unwrap_or_default()
-            .merge(&PatternStore::load_user_sync().unwrap_or_default());
+        // A grant at either persisted scope skips the prompt. Both stores
+        // live under the injected directory, so a test never reads a real one.
+        let pattern_store = match stream_ctx.whitelists_dir.as_deref() {
+            Some(dir) => PatternStore::load_sync_in(dir, &project_path)
+                .unwrap_or_default()
+                .merge(&PatternStore::load_user_sync_in(dir).unwrap_or_default()),
+            None => PatternStore::default(),
+        };
         let pattern_matched = Self::check_pattern_match(&tool_call.name, args, &pattern_store);
 
         if pattern_matched {
@@ -939,7 +943,13 @@ impl AgentManager {
                             if response.allowed {
                                 if let Some(ref pattern) = response.pattern {
                                     if let Some(file) =
-                                        PatternStore::store_file(response.scope, &project_path)
+                                        stream_ctx.whitelists_dir.as_deref().and_then(|dir| {
+                                            PatternStore::store_file_in(
+                                                dir,
+                                                response.scope,
+                                                &project_path,
+                                            )
+                                        })
                                     {
                                         if let Err(e) =
                                             Self::store_pattern_to(&file, &tool_call.name, pattern)
@@ -1066,7 +1076,7 @@ impl AgentManager {
     }
 
     /// Add `pattern` to the store at `file`, which a `Project` or `User`
-    /// grant resolves through [`PatternStore::store_file`].
+    /// grant resolves through [`PatternStore::store_file_in`].
     pub(in crate::agent_manager) fn store_pattern_to(
         file: &std::path::Path,
         tool_name: &str,
