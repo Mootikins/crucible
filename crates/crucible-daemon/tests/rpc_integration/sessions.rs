@@ -186,7 +186,6 @@ async fn test_session_configure_agent() {
         env_overrides: std::collections::HashMap::new(),
         mcp_servers: vec![],
         agent_card_name: None,
-        capabilities: None,
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,

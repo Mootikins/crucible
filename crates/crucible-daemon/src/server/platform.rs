@@ -305,7 +305,6 @@ mod tests {
             args: None,
             env: std::collections::HashMap::new(),
             description: None,
-            capabilities: None,
             delegation: None,
             permissions: None,
         }

@@ -108,7 +108,6 @@ fn make_test_agent(context_budget: Option<usize>) -> SessionAgent {
         env_overrides: HashMap::new(),
         mcp_servers: Vec::new(),
         agent_card_name: None,
-        capabilities: None,
         agent_description: None,
         delegation_config: None,
         precognition_enabled: false,

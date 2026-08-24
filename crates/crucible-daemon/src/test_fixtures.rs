@@ -39,7 +39,6 @@ pub(crate) fn build_llm_config_with_trust(
             default_model: None,
             temperature: None,
             max_tokens: None,
-            timeout_secs: None,
             api_key: None,
             available_models: None,
             trust_level,

@@ -71,9 +71,6 @@ pub(crate) fn resolve_agent_profile(
     if let Some(description) = &profile.description {
         resolved.description = Some(description.clone());
     }
-    if let Some(capabilities) = &profile.capabilities {
-        resolved.capabilities = Some(capabilities.clone());
-    }
     if let Some(delegation) = &profile.delegation {
         resolved.delegation = Some(delegation.clone());
     }

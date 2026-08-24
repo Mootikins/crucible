@@ -44,7 +44,6 @@ Each provider lives under `[llm.providers.NAME]` where `NAME` is whatever label 
 | `api_key` | string | no | API key, or `{env:VAR_NAME}` to read from environment |
 | `temperature` | float | no | Randomness 0.0–2.0 (default: 0.7) |
 | `max_tokens` | integer | no | Max response tokens (default: 4096) |
-| `timeout_secs` | integer | no | Request timeout in seconds (default: 120) |
 | `available_models` | list | no | Models to advertise for this provider (otherwise discovered dynamically) |
 | `trust_level` | string | no | Override the backend's default trust level — see [[Help/Concepts/Trust and Classification]] |
 | `name` | string | no | Custom display name shown in model lists/UI |

@@ -166,7 +166,6 @@ fn test_output_validation_serde_roundtrip() {
         env_overrides: HashMap::new(),
         mcp_servers: Vec::new(),
         agent_card_name: None,
-        capabilities: None,
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,

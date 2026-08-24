@@ -70,10 +70,6 @@ pub struct SessionAgent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_card_name: Option<String>,
 
-    /// List of capabilities this agent provides (from ACP agent profile)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub capabilities: Option<Vec<String>>,
-
     /// Human-readable description of this agent (from ACP agent profile)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_description: Option<String>,
@@ -170,7 +166,6 @@ impl SessionAgent {
             env_overrides: profile.env.clone(),
             mcp_servers: Vec::new(),
             agent_card_name: None,
-            capabilities: profile.capabilities.clone(),
             agent_description: profile.description.clone(),
             delegation_config: profile.delegation.clone(),
             precognition_enabled: true,
@@ -296,7 +291,6 @@ impl SessionAgent {
                 card.mcp_servers.clone()
             },
             agent_card_name: Some(card.name.clone()),
-            capabilities: None,
             agent_description: Some(card.description.clone()),
             delegation_config: base.delegation_config.clone(),
             precognition_enabled: base.precognition_enabled,
@@ -391,7 +385,6 @@ impl SessionAgent {
             env_overrides: HashMap::new(),
             mcp_servers,
             agent_card_name: None,
-            capabilities: None,
             agent_description: None,
             delegation_config: None,
             precognition_enabled: true,

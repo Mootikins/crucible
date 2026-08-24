@@ -113,7 +113,6 @@ fn test_cli_app_config_effective_llm_provider() {
             default_model: Some("llama3.2".to_string()),
             temperature: Some(0.7),
             max_tokens: None,
-            timeout_secs: None,
             api_key: None,
             available_models: None,
             trust_level: None,

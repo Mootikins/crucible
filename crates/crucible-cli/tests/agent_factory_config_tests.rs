@@ -87,7 +87,6 @@ fn test_llm_config_with_single_ollama_provider() {
             default_model: Some("llama3.2".to_string()),
             temperature: Some(0.7),
             max_tokens: Some(4096),
-            timeout_secs: Some(120),
             api_key: None,
             available_models: None,
             trust_level: None,
@@ -119,7 +118,6 @@ fn test_llm_config_with_multiple_providers() {
             default_model: Some("llama3.2".to_string()),
             temperature: None,
             max_tokens: None,
-            timeout_secs: None,
             api_key: None,
             available_models: None,
             trust_level: None,
@@ -135,7 +133,6 @@ fn test_llm_config_with_multiple_providers() {
             default_model: Some("gpt-4o".to_string()),
             temperature: Some(0.5),
             max_tokens: Some(8192),
-            timeout_secs: Some(300),
             api_key: Some("OPENAI_API_KEY".to_string()),
             available_models: None,
             trust_level: None,
@@ -180,7 +177,6 @@ fn test_llm_config_invalid_default_provider() {
             default_model: None,
             temperature: None,
             max_tokens: None,
-            timeout_secs: None,
             api_key: None,
             available_models: None,
             trust_level: None,
@@ -207,7 +203,6 @@ fn test_provider_type_ollama_defaults() {
         default_model: None,
         temperature: None,
         max_tokens: None,
-        timeout_secs: None,
         api_key: None,
         available_models: None,
         trust_level: None,
@@ -218,7 +213,6 @@ fn test_provider_type_ollama_defaults() {
     assert_eq!(provider.model(), "llama3.2");
     assert_eq!(provider.temperature(), 0.7);
     assert_eq!(provider.max_tokens(), 4096);
-    assert_eq!(provider.timeout_secs(), 120);
 }
 
 #[test]
@@ -229,7 +223,6 @@ fn test_provider_type_openai_defaults() {
         default_model: None,
         temperature: None,
         max_tokens: None,
-        timeout_secs: None,
         api_key: None,
         available_models: None,
         trust_level: None,
@@ -240,7 +233,6 @@ fn test_provider_type_openai_defaults() {
     assert_eq!(provider.model(), "gpt-4o");
     assert_eq!(provider.temperature(), 0.7);
     assert_eq!(provider.max_tokens(), 4096);
-    assert_eq!(provider.timeout_secs(), 120);
 }
 
 #[test]
@@ -251,7 +243,6 @@ fn test_provider_type_anthropic_defaults() {
         default_model: None,
         temperature: None,
         max_tokens: None,
-        timeout_secs: None,
         api_key: None,
         available_models: None,
         trust_level: None,
@@ -262,7 +253,6 @@ fn test_provider_type_anthropic_defaults() {
     assert_eq!(provider.model(), "claude-sonnet-5");
     assert_eq!(provider.temperature(), 0.7);
     assert_eq!(provider.max_tokens(), 4096);
-    assert_eq!(provider.timeout_secs(), 120);
 }
 
 #[test]
@@ -273,7 +263,6 @@ fn test_provider_custom_overrides() {
         default_model: Some("llama3.1:70b".to_string()),
         temperature: Some(0.9),
         max_tokens: Some(8192),
-        timeout_secs: Some(300),
         api_key: None,
         available_models: None,
         trust_level: None,
@@ -284,7 +273,6 @@ fn test_provider_custom_overrides() {
     assert_eq!(provider.model(), "llama3.1:70b");
     assert_eq!(provider.temperature(), 0.9);
     assert_eq!(provider.max_tokens(), 8192);
-    assert_eq!(provider.timeout_secs(), 300);
 }
 
 // ============================================================================
@@ -324,7 +312,6 @@ fn test_model_name_from_named_provider() {
             default_model: Some("custom-provider-model".to_string()),
             temperature: None,
             max_tokens: None,
-            timeout_secs: None,
             api_key: None,
             available_models: None,
             trust_level: None,
@@ -431,7 +418,6 @@ fn test_provider_api_key_direct_value() {
         default_model: None,
         temperature: None,
         max_tokens: None,
-        timeout_secs: None,
         api_key: Some("sk-test-key-12345".to_string()),
         available_models: None,
         trust_level: None,
@@ -449,7 +435,6 @@ fn test_provider_no_api_key_configured() {
         default_model: None,
         temperature: None,
         max_tokens: None,
-        timeout_secs: None,
         api_key: None,
         available_models: None,
         trust_level: None,
@@ -475,7 +460,6 @@ fn test_realistic_ollama_config() {
             default_model: Some("llama3.2:latest".to_string()),
             temperature: Some(0.7),
             max_tokens: Some(4096),
-            timeout_secs: Some(120),
             api_key: None,
             available_models: None,
             trust_level: None,
@@ -503,7 +487,6 @@ fn test_realistic_openai_config() {
             default_model: Some("gpt-4o".to_string()),
             temperature: Some(0.5),
             max_tokens: Some(8192),
-            timeout_secs: Some(300),
             api_key: Some("OPENAI_API_KEY".to_string()),
             available_models: None,
             trust_level: None,
@@ -535,7 +518,6 @@ fn test_realistic_multi_provider_config() {
             default_model: Some("llama3.2".to_string()),
             temperature: Some(0.7),
             max_tokens: Some(4096),
-            timeout_secs: Some(120),
             api_key: None,
             available_models: None,
             trust_level: None,
@@ -552,7 +534,6 @@ fn test_realistic_multi_provider_config() {
             default_model: Some("gpt-4o".to_string()),
             temperature: Some(0.5),
             max_tokens: Some(8192),
-            timeout_secs: Some(300),
             api_key: Some("OPENAI_API_KEY".to_string()),
             available_models: None,
             trust_level: None,
@@ -569,7 +550,6 @@ fn test_realistic_multi_provider_config() {
             default_model: Some("claude-3-5-sonnet-20241022".to_string()),
             temperature: Some(0.7),
             max_tokens: Some(4096),
-            timeout_secs: Some(300),
             api_key: Some("ANTHROPIC_API_KEY".to_string()),
             available_models: None,
             trust_level: None,

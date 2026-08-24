@@ -78,9 +78,6 @@ pub struct AgentProfile {
     /// Human-readable description of this agent profile
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    /// List of capabilities this agent provides
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub capabilities: Option<Vec<String>>,
     /// Delegation configuration for this agent
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delegation: Option<DelegationConfig>,
@@ -232,27 +229,22 @@ mod tests {
         );
     }
 
+    /// The key went with the unread config fields. An existing config that
+    /// still names it must load, or an upgrade would break the user's daemon.
     #[test]
-    fn test_agent_profile_with_capabilities() {
+    fn a_profile_with_the_removed_capabilities_key_still_loads() {
         let toml = r#"
             [agents.capable-agent]
             capabilities = ["search", "write", "execute"]
             extends = "opencode"
         "#;
 
-        let config: AcpConfig = toml::from_str(toml).expect("should parse");
+        let config: AcpConfig = toml::from_str(toml).expect("an old config still parses");
         let profile = config
             .agents
             .get("capable-agent")
             .expect("should have profile");
-        assert_eq!(
-            profile.capabilities,
-            Some(vec![
-                "search".to_string(),
-                "write".to_string(),
-                "execute".to_string()
-            ])
-        );
+        assert_eq!(profile.extends.as_deref(), Some("opencode"));
     }
 
     #[test]
@@ -327,7 +319,6 @@ mod tests {
             .expect("should have profile");
 
         assert!(profile.description.is_none());
-        assert!(profile.capabilities.is_none());
         assert!(profile.delegation.is_none());
     }
 
@@ -365,7 +356,6 @@ mod tests {
         );
         // Verify new fields are None
         assert!(opencode_local.description.is_none());
-        assert!(opencode_local.capabilities.is_none());
         assert!(opencode_local.delegation.is_none());
 
         let claude_proxy = config
@@ -379,7 +369,6 @@ mod tests {
         );
         // Verify new fields are None
         assert!(claude_proxy.description.is_none());
-        assert!(claude_proxy.capabilities.is_none());
         assert!(claude_proxy.delegation.is_none());
     }
 

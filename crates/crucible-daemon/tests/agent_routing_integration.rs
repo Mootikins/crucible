@@ -49,7 +49,6 @@ fn make_session_agent(
         env_overrides: HashMap::new(),
         mcp_servers: vec![],
         agent_card_name: None,
-        capabilities: None,
         agent_description: None,
         delegation_config: None,
         precognition_enabled: false,

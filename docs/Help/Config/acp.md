@@ -49,7 +49,6 @@ defines its own command. The profile name is what you pass to `cru chat -a <name
 | `args` | array of string | *(from `extends`)* | Arguments passed to the command |
 | `env` | table | `{}` | Environment variables for the agent process |
 | `description` | string | *(unset)* | Human-readable label |
-| `capabilities` | array of string | *(unset)* | Informational only — merged into the resolved profile but never enforced or acted on |
 | `delegation` | table | *(unset)* | See the delegation sub-table below |
 | `permissions` | table | *(unset)* | Per-agent override of the global `[permissions]` |
 

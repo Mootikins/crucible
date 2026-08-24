@@ -22,7 +22,6 @@ fn test_session_agent_serialization() {
         env_overrides: HashMap::new(),
         mcp_servers: vec!["filesystem".to_string()],
         agent_card_name: Some("default".to_string()),
-        capabilities: None,
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
@@ -72,7 +71,6 @@ fn test_session_agent_typed_provider_serialization() {
         env_overrides: HashMap::new(),
         mcp_servers: Vec::new(),
         agent_card_name: None,
-        capabilities: None,
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
@@ -125,7 +123,6 @@ fn test_session_agent_typed_provider_round_trip() {
         env_overrides: HashMap::new(),
         mcp_servers: Vec::new(),
         agent_card_name: None,
-        capabilities: None,
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
@@ -171,7 +168,6 @@ fn test_session_agent_with_capabilities() {
         env_overrides: HashMap::new(),
         mcp_servers: Vec::new(),
         agent_card_name: None,
-        capabilities: Some(vec!["search".to_string(), "write".to_string()]),
         agent_description: None,
         delegation_config: None,
         precognition_enabled: true,
@@ -189,14 +185,8 @@ fn test_session_agent_with_capabilities() {
     };
 
     let json = serde_json::to_string(&agent).unwrap();
-    assert!(json.contains("\"capabilities\""));
-    assert!(json.contains("\"search\""));
-
     let parsed: SessionAgent = serde_json::from_str(&json).unwrap();
-    assert_eq!(
-        parsed.capabilities,
-        Some(vec!["search".to_string(), "write".to_string()])
-    );
+    assert_eq!(parsed.agent_type, agent.agent_type);
 }
 
 #[test]
@@ -217,7 +207,6 @@ fn test_session_agent_with_agent_description() {
         env_overrides: HashMap::new(),
         mcp_servers: Vec::new(),
         agent_card_name: None,
-        capabilities: None,
         agent_description: Some("Claude AI assistant".to_string()),
         delegation_config: None,
         precognition_enabled: true,
@@ -274,7 +263,6 @@ fn test_session_agent_with_delegation_config() {
         env_overrides: HashMap::new(),
         mcp_servers: Vec::new(),
         agent_card_name: None,
-        capabilities: None,
         agent_description: None,
         delegation_config: Some(delegation),
         precognition_enabled: true,
@@ -321,7 +309,6 @@ fn test_session_agent_backward_compat_without_new_fields() {
     let agent: SessionAgent = serde_json::from_str(old_json).unwrap();
     assert_eq!(agent.model, "llama3.2");
     assert_eq!(agent.temperature, Some(0.7));
-    assert!(agent.capabilities.is_none());
     assert!(agent.agent_description.is_none());
     assert!(agent.delegation_config.is_none());
 }
@@ -359,11 +346,6 @@ fn test_session_agent_round_trip_with_all_fields() {
         },
         mcp_servers: vec!["filesystem".to_string(), "web".to_string()],
         agent_card_name: Some("full-card".to_string()),
-        capabilities: Some(vec![
-            "search".to_string(),
-            "write".to_string(),
-            "execute".to_string(),
-        ]),
         agent_description: Some("A full-featured agent".to_string()),
         delegation_config: Some(delegation),
         precognition_enabled: true,
@@ -386,7 +368,6 @@ fn test_session_agent_round_trip_with_all_fields() {
     assert_eq!(parsed.agent_type, original.agent_type);
     assert_eq!(parsed.agent_name, original.agent_name);
     assert_eq!(parsed.model, original.model);
-    assert_eq!(parsed.capabilities, original.capabilities);
     assert_eq!(parsed.agent_description, original.agent_description);
     assert!(parsed.delegation_config.is_some());
     let parsed_delegation = parsed.delegation_config.unwrap();
@@ -409,7 +390,6 @@ fn test_session_agent_from_profile_basic() {
             map
         },
         description: Some("Claude via profile".to_string()),
-        capabilities: Some(vec!["chat".to_string(), "reasoning".to_string()]),
         delegation: None,
         permissions: None,
     };
@@ -423,10 +403,6 @@ fn test_session_agent_from_profile_basic() {
     assert_eq!(
         agent.agent_description,
         Some("Claude via profile".to_string())
-    );
-    assert_eq!(
-        agent.capabilities,
-        Some(vec!["chat".to_string(), "reasoning".to_string()])
     );
     // env vars should be in env_overrides, not inherited from parent
     assert_eq!(
@@ -451,7 +427,6 @@ fn test_session_agent_from_profile_env_isolation() {
             map
         },
         description: None,
-        capabilities: None,
         delegation: None,
         permissions: None,
     };
@@ -490,7 +465,6 @@ fn test_session_agent_from_profile_with_delegation() {
         args: None,
         env: HashMap::new(),
         description: Some("Delegating agent".to_string()),
-        capabilities: Some(vec!["delegate".to_string()]),
         delegation: Some(delegation),
         permissions: None,
     };

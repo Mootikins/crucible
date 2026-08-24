@@ -127,7 +127,6 @@ pub fn default_agent_profiles() -> HashMap<String, AgentProfile> {
                     args: Some(agent.args.iter().map(|s| s.to_string()).collect()),
                     env: HashMap::new(),
                     description: Some(agent.description.to_string()),
-                    capabilities: None,
                     delegation: None,
                     permissions: None,
                 },
@@ -456,9 +455,6 @@ fn resolve_profile(
     if let Some(description) = &profile.description {
         resolved.description = Some(description.clone());
     }
-    if let Some(capabilities) = &profile.capabilities {
-        resolved.capabilities = Some(capabilities.clone());
-    }
     if let Some(delegation) = &profile.delegation {
         resolved.delegation = Some(delegation.clone());
     }
@@ -638,7 +634,6 @@ mod tests {
                 args: None,
                 env,
                 description: None,
-                capabilities: None,
                 delegation: None,
                 permissions: None,
             },
@@ -676,7 +671,6 @@ mod tests {
                 args: Some(vec!["--mode".to_string(), "acp".to_string()]),
                 env: HashMap::new(),
                 description: None,
-                capabilities: None,
                 delegation: None,
                 permissions: None,
             },
@@ -760,7 +754,6 @@ mod tests {
                 args: None,
                 env: HashMap::new(),
                 description: None,
-                capabilities: None,
                 delegation: None,
                 permissions: None,
             },
@@ -787,7 +780,6 @@ mod tests {
                 args: None,
                 env: HashMap::new(),
                 description: None,
-                capabilities: None,
                 delegation: None,
                 permissions: None,
             },
@@ -828,7 +820,6 @@ mod tests {
                 args: Some(vec!["--version".to_string()]),
                 env: HashMap::new(),
                 description: Some("Overridden".to_string()),
-                capabilities: None,
                 delegation: None,
                 permissions: None,
             },
@@ -859,7 +850,6 @@ mod tests {
                 args: Some(vec!["--version".to_string()]),
                 env: HashMap::new(),
                 description: Some("Cargo-backed profile".to_string()),
-                capabilities: None,
                 delegation: None,
                 permissions: None,
             },

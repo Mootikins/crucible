@@ -23,9 +23,6 @@ pub struct LlmProviderConfig {
     /// Maximum tokens to generate
     pub max_tokens: Option<u32>,
 
-    /// API timeout in seconds
-    pub timeout_secs: Option<u64>,
-
     /// API key for this provider (use `{env:VAR}` syntax for env vars)
     pub api_key: Option<String>,
 
@@ -75,12 +72,6 @@ impl LlmProviderConfig {
             .unwrap_or(super::defaults::DEFAULT_PROVIDER_MAX_TOKENS)
     }
 
-    /// Get timeout in seconds (default 120)
-    pub fn timeout_secs(&self) -> u64 {
-        self.timeout_secs
-            .unwrap_or(super::defaults::DEFAULT_TIMEOUT_SECS)
-    }
-
     /// Get the API key (already resolved if `{env:VAR}` was used)
     pub fn api_key(&self) -> Option<String> {
         self.api_key.clone()
@@ -114,7 +105,6 @@ pub struct LlmProviderConfigBuilder {
     default_model: Option<String>,
     temperature: Option<f32>,
     max_tokens: Option<u32>,
-    timeout_secs: Option<u64>,
     api_key: Option<String>,
     available_models: Option<Vec<String>>,
     trust_level: Option<super::trust::TrustLevel>,
@@ -130,7 +120,6 @@ impl LlmProviderConfigBuilder {
             default_model: None,
             temperature: None,
             max_tokens: None,
-            timeout_secs: None,
             api_key: None,
             available_models: None,
             trust_level: None,
@@ -159,12 +148,6 @@ impl LlmProviderConfigBuilder {
     /// Set max tokens
     pub fn max_tokens(mut self, tokens: u32) -> Self {
         self.max_tokens = Some(tokens);
-        self
-    }
-
-    /// Set timeout in seconds
-    pub fn timeout_secs(mut self, secs: u64) -> Self {
-        self.timeout_secs = Some(secs);
         self
     }
 
@@ -219,7 +202,6 @@ impl LlmProviderConfigBuilder {
             default_model: self.default_model,
             temperature: self.temperature,
             max_tokens: self.max_tokens,
-            timeout_secs: self.timeout_secs,
             api_key: self.api_key,
             available_models: self.available_models,
             trust_level: self.trust_level,
@@ -308,7 +290,6 @@ mod tests {
         assert_eq!(ollama.model(), "llama3.2");
         assert_eq!(ollama.temperature(), 0.7);
         assert_eq!(ollama.max_tokens(), 4096);
-        assert_eq!(ollama.timeout_secs(), 120);
 
         let openai = LlmProviderConfig::builder(BackendType::OpenAI).build();
 
@@ -356,14 +337,12 @@ mod tests {
             .model("llama3.1:70b")
             .temperature(0.9)
             .max_tokens(8192)
-            .timeout_secs(300)
             .build();
 
         assert_eq!(config.endpoint(), "http://192.168.1.100:11434");
         assert_eq!(config.model(), "llama3.1:70b");
         assert_eq!(config.temperature(), 0.9);
         assert_eq!(config.max_tokens(), 8192);
-        assert_eq!(config.timeout_secs(), 300);
     }
 
     #[test]
