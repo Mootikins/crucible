@@ -677,15 +677,20 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
             // Capture usage now while we still own the client; stream code
             // parsed it from the ACP PromptResponse and stashed it there.
             let usage = owned_client.take_last_usage();
+            // Capture the model choice a mid-turn `config_option_update`
+            // parked on the client, so `current_model` reports the switch.
+            let model_update = owned_client.take_model_update();
 
             {
                 let mut guard = client_arc.lock().await;
                 *guard = Some(owned_client);
             }
 
-            let _ = result_tx.send(result.map(|(summary, response)| (summary, response, usage)));
+            let _ = result_tx
+                .send(result.map(|(summary, response)| (summary, response, usage, model_update)));
         });
 
+        let model_slot = &mut self.model;
         let body = stream! {
             // The client already decided everything the stream needs to know:
             // every `ToolEnd` follows a `ToolStart` for its id and carries the
@@ -697,7 +702,10 @@ impl crucible_core::turn::Agent for AcpAgentHandle {
             }
 
             match result_rx.await {
-                Ok(Ok((summary, response, usage))) => {
+                Ok(Ok((summary, response, usage, model_update))) => {
+                    if let Some(choice) = model_update {
+                        *model_slot = Some(choice);
+                    }
                     debug!(
                         produced_content = summary.produced_content,
                         announced_any = summary.announced_any,

@@ -474,6 +474,20 @@ impl CrucibleAcpClient {
                     });
                 }
             }
+            // The agent switched a config option mid-turn. The one option
+            // Crucible tracks is the model selector; `from_config_options`
+            // finds it in the full set the update carries. The choice is
+            // parked on the client, because the handle that owns the
+            // `current_model` answer cannot be reached from the read loop —
+            // it drains the value with `take_model_update()` after the turn.
+            SessionUpdate::ConfigOptionUpdate(update) => {
+                if let Some(choice) =
+                    crate::acp::session::ModelChoice::from_config_options(&update.config_options)
+                {
+                    tracing::info!(model = %choice.current, "ACP agent reported a model change");
+                    self.model_update = Some(choice);
+                }
+            }
             other => {
                 tracing::debug!("Ignoring session update: {:?}", other);
             }

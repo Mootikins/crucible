@@ -29,6 +29,7 @@ end
             })
     }
 
+    #[cfg(any(test, feature = "test-utils"))]
     pub(super) fn clear_plugin_modules(&self, plugin_name: &str) -> LifecycleResult<()> {
         self.lua
             .load(format!(

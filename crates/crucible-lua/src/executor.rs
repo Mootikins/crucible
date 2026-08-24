@@ -11,10 +11,12 @@ use crate::hooks::register_hooks_module;
 use crate::http::register_http_module;
 use crate::oil::register_oil_module;
 use crate::session_api::{register_session_module, CurrentSession, Session};
+#[cfg(any(test, feature = "test-utils"))]
 use crate::types::LuaExecutionResult;
 use mlua::{Function, Lua, LuaOptions, LuaSerdeExt, RegistryKey, StdLib, Value};
 use serde_json::Value as JsonValue;
 use std::path::Path;
+#[cfg(any(test, feature = "test-utils"))]
 use std::time::Instant;
 
 /// Lua script executor
@@ -374,6 +376,7 @@ end
     }
 
     /// Execute Lua source and call the main/handler function
+    #[cfg(any(test, feature = "test-utils"))]
     fn execute_lua(&self, source: &str, args: JsonValue) -> Result<JsonValue, LuaError> {
         // Load and execute the chunk (defines functions)
         self.lua.load(source).exec()?;

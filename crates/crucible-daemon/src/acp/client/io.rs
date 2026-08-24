@@ -166,7 +166,11 @@ impl CrucibleAcpClient {
     ) -> Result<serde_json::Value> {
         use serde_json::json;
 
-        // Determine method name and params from ClientRequest
+        // The SDK implements `JsonRpcMessage::method()` on this enum
+        // (agent-client-protocol-2.0.0, src/schema/enum_impls.rs). We keep
+        // this table because the two disagree on one arm: for
+        // `ExtMethodRequest` the accessor returns the inner method name,
+        // and this table sends the literal "ext". The tests pin this wire.
         let (method, params) = match &request {
             agent_client_protocol::schema::v1::ClientRequest::InitializeRequest(req) => {
                 ("initialize", serde_json::to_value(req)?)

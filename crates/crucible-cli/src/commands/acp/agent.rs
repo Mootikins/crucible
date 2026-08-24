@@ -75,6 +75,8 @@ impl CrucibleAcpAgent {
     /// Every ACP method maps to one handler. The prompt handler spawns the
     /// turn as a connection task, because a turn waits on the daemon for a
     /// long time and the dispatch loop must stay free to read `session/cancel`.
+    /// The session handlers spawn for the same reason: each one makes a
+    /// daemon RPC, and an inline await on it would block the dispatch loop.
     pub async fn serve(
         self: Arc<Self>,
         transport: impl ConnectTo<Agent> + 'static,
@@ -110,8 +112,14 @@ impl CrucibleAcpAgent {
                     let agent = agent.clone();
                     async move |req: NewSessionRequest,
                                 responder: Responder<NewSessionResponse>,
-                                _cx| {
-                        responder.respond(agent.new_session(req).await?)
+                                cx: HostConnection| {
+                        let agent = agent.clone();
+                        cx.spawn(async move {
+                            match agent.new_session(req).await {
+                                Ok(response) => responder.respond(response),
+                                Err(error) => responder.respond_with_error(error),
+                            }
+                        })
                     }
                 },
                 on_receive_request!(),
@@ -121,8 +129,14 @@ impl CrucibleAcpAgent {
                     let agent = agent.clone();
                     async move |req: LoadSessionRequest,
                                 responder: Responder<LoadSessionResponse>,
-                                _cx| {
-                        responder.respond(agent.load_session(req).await?)
+                                cx: HostConnection| {
+                        let agent = agent.clone();
+                        cx.spawn(async move {
+                            match agent.load_session(req).await {
+                                Ok(response) => responder.respond(response),
+                                Err(error) => responder.respond_with_error(error),
+                            }
+                        })
                     }
                 },
                 on_receive_request!(),
@@ -132,8 +146,14 @@ impl CrucibleAcpAgent {
                     let agent = agent.clone();
                     async move |req: CloseSessionRequest,
                                 responder: Responder<CloseSessionResponse>,
-                                _cx| {
-                        responder.respond(agent.close_session(req).await?)
+                                cx: HostConnection| {
+                        let agent = agent.clone();
+                        cx.spawn(async move {
+                            match agent.close_session(req).await {
+                                Ok(response) => responder.respond(response),
+                                Err(error) => responder.respond_with_error(error),
+                            }
+                        })
                     }
                 },
                 on_receive_request!(),

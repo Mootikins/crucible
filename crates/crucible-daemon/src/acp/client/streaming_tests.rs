@@ -328,3 +328,47 @@ fn streaming_callback_returning_true_leaves_state_running() {
         "an active receiver must not trigger cancellation"
     );
 }
+
+/// A `config_option_update` that arrives mid-stream must move the model
+/// choice. The handle drains it after the turn, so `current_model` then
+/// reports the model the agent switched to.
+#[test]
+fn config_option_update_mid_stream_updates_the_model_choice() {
+    use agent_client_protocol::schema::v1::SessionNotification;
+
+    let mut client = test_client();
+    let mut state = StreamingState::default();
+    let mut cb: StreamingCallback = Box::new(|_chunk| true);
+
+    let notification: SessionNotification = serde_json::from_value(serde_json::json!({
+        "sessionId": "s1",
+        "update": {
+            "sessionUpdate": "config_option_update",
+            "configOptions": [
+                {
+                    "id": "model",
+                    "name": "Model",
+                    "category": "model",
+                    "type": "select",
+                    "currentValue": "mock-opus",
+                    "options": [
+                        {"value": "mock-sonnet", "name": "Mock Sonnet"},
+                        {"value": "mock-opus", "name": "Mock Opus"}
+                    ]
+                }
+            ]
+        }
+    }))
+    .expect("valid config_option_update notification");
+
+    client.apply_session_update_with_callback(notification, &mut state, &mut cb);
+
+    let choice = client
+        .take_model_update()
+        .expect("the update must yield a model choice");
+    assert_eq!(choice.current, "mock-opus");
+    assert_eq!(
+        choice.available,
+        vec!["mock-sonnet".to_string(), "mock-opus".to_string()]
+    );
+}

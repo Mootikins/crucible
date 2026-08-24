@@ -21,7 +21,6 @@ use serde::{Deserialize, Serialize};
 
 /// The model selector that an agent advertises in `configOptions`.
 ///
-/// ACP Session Config Options replaced the `unstable_session_model` API.
 /// The agent lists its options in the `session/new` reply; the option with
 /// category `model` is the model selector. `config_id` names that option,
 /// and `session/set_config_option` switches it.

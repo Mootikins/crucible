@@ -95,6 +95,10 @@ pub struct CrucibleAcpClient {
     /// field (read from raw JSON — see `client/usage.rs`). Consumed via
     /// `take_last_usage()`.
     pub(super) last_usage: Option<crucible_core::traits::llm::TokenUsage>,
+    /// The model choice from the most recent `config_option_update`
+    /// notification. The agent sends one when the model changes mid-turn.
+    /// Consumed via `take_model_update()`.
+    pub(super) model_update: Option<crate::acp::session::ModelChoice>,
 }
 
 // Manual Debug implementation since Child doesn't implement Debug
@@ -115,6 +119,7 @@ impl std::fmt::Debug for CrucibleAcpClient {
             .field("session_close_supported", &self.session_close_supported)
             .field("recorder", &self.recorder)
             .field("last_usage", &self.last_usage.is_some())
+            .field("model_update", &self.model_update.is_some())
             .finish()
     }
 }
@@ -158,6 +163,7 @@ impl CrucibleAcpClient {
             session_close_supported: false,
             recorder,
             last_usage: None,
+            model_update: None,
         }
     }
 
@@ -166,6 +172,12 @@ impl CrucibleAcpClient {
     /// value has already been taken.
     pub fn take_last_usage(&mut self) -> Option<crucible_core::traits::llm::TokenUsage> {
         self.last_usage.take()
+    }
+
+    /// Take the model choice from the most recent `config_option_update`.
+    /// Returns `None` when no update arrived or the value was already taken.
+    pub fn take_model_update(&mut self) -> Option<crate::acp::session::ModelChoice> {
+        self.model_update.take()
     }
 
     pub fn with_permission_handler(mut self, handler: PermissionRequestHandler) -> Self {
