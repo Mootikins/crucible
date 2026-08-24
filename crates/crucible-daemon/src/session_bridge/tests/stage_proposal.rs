@@ -71,3 +71,30 @@ async fn stage_proposal_resolves_the_kiln_name_and_stays_in_the_staging_dir() {
         .expect_err("no kiln, no staging directory");
     assert!(err.contains("kiln"), "unhelpful refusal: {err}");
 }
+
+/// A `.crucible/proposals` that is really a symlink must not carry the
+/// write outside the kiln. The filename check cannot see it: the name is
+/// clean, and the directory is the part that lies. Bash is outside
+/// `FsScope`, so an agent can plant the link; the canonicalize check in
+/// `stage_proposal` is what refuses it.
+#[cfg(unix)]
+#[tokio::test]
+async fn stage_proposal_refuses_a_symlinked_proposals_directory() {
+    let kiln = TempDir::new().unwrap();
+    let outside = TempDir::new().unwrap();
+    std::fs::create_dir_all(kiln.path().join(".crucible")).unwrap();
+    std::os::unix::fs::symlink(outside.path(), kiln.path().join(".crucible/proposals")).unwrap();
+
+    let (session_manager, bridge) = stage_rig(kiln.path());
+    let session = session_manager
+        .create_session(SessionType::Chat, vec![kiln_name("kiln")], None, None)
+        .await
+        .unwrap();
+
+    let err = bridge
+        .stage_proposal(session.id.to_string(), "n.md".into(), "x".into())
+        .await
+        .expect_err("a symlinked proposals directory must be refused");
+    assert!(err.contains("outside the kiln"), "unhelpful refusal: {err}");
+    assert!(!outside.path().join("n.md").exists());
+}

@@ -893,11 +893,28 @@ impl DaemonSessionApi for DaemonSessionBridge {
                 .next()
                 .ok_or_else(|| format!("kiln '{kiln}' is not registered"))?;
             let dir = root.join(".crucible").join("proposals");
-            let file = dir.join(&filename);
+            let file_name = filename.clone();
             tokio::task::spawn_blocking(move || -> Result<(), String> {
                 std::fs::create_dir_all(&dir)
                     .map_err(|e| format!("could not create the proposals directory: {e}"))?;
-                std::fs::write(&file, content)
+                // The filename check confines the relative part; this
+                // confines the directory. Bash runs outside `FsScope`, so an
+                // agent can replace `.crucible` or `proposals` with a
+                // symlink, and the write would then land outside the kiln.
+                // Canonicalize after creation, and require the resolved
+                // directory to stay under the resolved kiln root — the same
+                // invariant the destructive sinks hold.
+                let canon_root = std::fs::canonicalize(&root)
+                    .map_err(|e| format!("could not resolve the kiln root: {e}"))?;
+                let canon_dir = std::fs::canonicalize(&dir)
+                    .map_err(|e| format!("could not resolve the proposals directory: {e}"))?;
+                if !canon_dir.starts_with(&canon_root) {
+                    return Err(
+                        "the proposals directory resolves outside the kiln; the write is refused"
+                            .to_string(),
+                    );
+                }
+                std::fs::write(canon_dir.join(&file_name), content)
                     .map_err(|e| format!("could not write the proposal: {e}"))
             })
             .await
