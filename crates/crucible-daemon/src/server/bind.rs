@@ -59,11 +59,11 @@ impl BindWithPluginConfigParams {
     ) -> Self {
         Self {
             path,
-            mcp_config: config.mcp.clone(),
+            mcp_config: Some(config.mcp.clone()),
             plugin_config,
             runtimepath: config.runtimepath.clone(),
             plugin_watch,
-            auto_archive_hours: config.server.as_ref().and_then(|s| s.auto_archive_hours),
+            auto_archive_hours: Some(config.server.auto_archive_hours),
             llm_config: Some(config.llm.clone()),
             enrichment_config: config.enrichment.as_ref().map(|e| e.provider.clone()),
             max_precognition_chars: config
@@ -72,7 +72,7 @@ impl BindWithPluginConfigParams {
                 .map(|e| e.pipeline.max_precognition_chars)
                 .unwrap_or_else(crucible_core::config::default_max_precognition_chars),
             acp_config: Some(config.acp.clone()),
-            context_config: config.context.clone(),
+            context_config: Some(config.context.clone()),
             permission_config: config.permissions.clone(),
             schedules: config.schedules.clone(),
             app_config: serde_json::to_value(config).ok(),

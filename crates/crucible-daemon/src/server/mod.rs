@@ -351,9 +351,7 @@ impl Server {
         // `~/Projects` rather than an injected root.
         if workspace_config.as_ref().is_some_and(|c| c.discover) {
             let workspace_root_dir = crate::scm::resolve_workspace_root_dir(
-                workspace_config
-                    .as_ref()
-                    .and_then(|c| c.root_dir.as_deref()),
+                workspace_config.as_ref().map(|c| c.root_dir.as_str()),
                 dirs::home_dir().as_deref(),
             );
             let discovered = project_manager.discover_repos_in(&workspace_root_dir);

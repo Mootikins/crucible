@@ -1733,7 +1733,7 @@ impl RpcDispatcher {
             .ctx
             .workspace_config
             .as_ref()
-            .and_then(|w| w.root_dir.as_deref());
+            .map(|w| w.root_dir.as_str());
         let resp = crate::server::plugins::handle_scm_clone(
             req.clone(),
             &self.ctx.project_manager,

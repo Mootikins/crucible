@@ -332,7 +332,7 @@ impl SessionAgent {
     /// all get identical provider/model/temperature/MCP defaults. The
     /// `[chat]` values fill the gaps only when no default provider exists.
     pub fn internal_from_config(config: &crate::config::CliAppConfig) -> Self {
-        let mut agent = Self::internal_defaults(Some(&config.llm), config.mcp.as_ref());
+        let mut agent = Self::internal_defaults(Some(&config.llm), Some(&config.mcp));
         if config.llm.default_provider().is_none() {
             if let Some(model) = config.chat.model.clone() {
                 agent.model = model;

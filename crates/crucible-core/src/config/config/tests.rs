@@ -70,7 +70,7 @@ kiln_path = "{}"
 #[test]
 fn test_server_config_default_sets_auto_archive_hours() {
     let server = ServerConfig::default();
-    assert_eq!(server.auto_archive_hours, Some(72));
+    assert_eq!(server.auto_archive_hours, 72);
 }
 
 #[test]
@@ -82,7 +82,7 @@ auto_archive_hours = 24
     )
     .unwrap();
 
-    assert_eq!(parsed.auto_archive_hours, Some(24));
+    assert_eq!(parsed.auto_archive_hours, 24);
 }
 
 /// A retired `[server]` key fails loudly and names itself.

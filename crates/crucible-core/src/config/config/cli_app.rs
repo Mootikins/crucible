@@ -157,11 +157,11 @@ pub struct CliAppConfig {
 
     /// Context configuration (rules files, etc.)
     #[serde(default)]
-    pub context: Option<ContextConfig>,
+    pub context: ContextConfig,
 
     /// MCP server configuration (upstream servers, gateway settings)
     #[serde(default)]
-    pub mcp: Option<McpConfig>,
+    pub mcp: McpConfig,
 
     /// Permission configuration for tool access control.
     #[serde(default)]
@@ -204,7 +204,7 @@ pub struct CliAppConfig {
 
     /// Server configuration (daemon settings, auto-archive, etc.)
     #[serde(default)]
-    pub server: Option<super::server::ServerConfig>,
+    pub server: super::server::ServerConfig,
 
     /// Workspace directories — the default workspace directory the daemon
     /// scans and `scm.clone` writes into, plus the scratch-workspace base.
@@ -256,14 +256,14 @@ impl Default for CliAppConfig {
             enrichment: None,
             cli: CliConfig::default(),
             logging: None,
-            context: None,
-            mcp: None,
+            context: ContextConfig::default(),
+            mcp: McpConfig::default(),
             permissions: None,
             schedules: Vec::new(),
             runtimepath: Vec::new(),
             plugins: HashMap::new(),
             web: None,
-            server: None,
+            server: super::server::ServerConfig::default(),
             workspace: None,
             source_map: None,
         }

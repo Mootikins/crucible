@@ -24,14 +24,18 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub struct ServerConfig {
     /// Auto-archive threshold in hours for inactive sessions.
-    #[serde(default)]
-    pub auto_archive_hours: Option<u64>,
+    #[serde(default = "default_auto_archive_hours")]
+    pub auto_archive_hours: u64,
+}
+
+fn default_auto_archive_hours() -> u64 {
+    72
 }
 
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            auto_archive_hours: Some(72),
+            auto_archive_hours: default_auto_archive_hours(),
         }
     }
 }
@@ -122,13 +126,13 @@ impl Default for WebConfig {
 }
 
 /// Workspace directories — where checkouts live.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceConfig {
     /// The default workspace directory: where `scm.clone` puts a cloned
     /// repository, and the directory `discover` scans. A leading `~/` expands
     /// to the home directory. Default: "~/Projects".
-    #[serde(default)]
-    pub root_dir: Option<String>,
+    #[serde(default = "default_root_dir")]
+    pub root_dir: String,
     /// Register every git repository that is a DIRECT child of `root_dir` when
     /// the daemon starts, so the web root picker lists them without a manual
     /// `project.register` for each.
@@ -158,6 +162,20 @@ pub struct WorkspaceConfig {
     /// `session_dir` under the daemon data root, and no config key names it.
     #[serde(default)]
     pub session_scratch_dir: Option<String>,
+}
+
+fn default_root_dir() -> String {
+    "~/Projects".to_string()
+}
+
+impl Default for WorkspaceConfig {
+    fn default() -> Self {
+        Self {
+            root_dir: default_root_dir(),
+            discover: false,
+            session_scratch_dir: None,
+        }
+    }
 }
 
 /// Logging configuration.
