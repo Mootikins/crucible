@@ -140,15 +140,6 @@ impl DaemonSessionApi for MockDaemonApi {
         unimplemented!()
     }
 
-    fn stage_proposal(
-        &self,
-        _: String,
-        _: String,
-        _: String,
-    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
-        unimplemented!()
-    }
-
     /// Answers with the prompt it was given, so a test can assert what
     /// crossed the boundary without a provider behind it.
     fn complete(

@@ -39,7 +39,6 @@ pub(crate) const SESSION_FN_NAMES: &[&str] = &[
     "review_set_state",
     "review_comment",
     "review_resolve_comment",
-    "stage_proposal",
 ];
 
 /// Register the sessions module with stub functions.
@@ -849,24 +848,6 @@ pub fn register_sessions_module_with_api(
             }
         })?;
     sessions.set("review_resolve_comment", review_resolve_fn)?;
-
-    // stage_proposal(session_id, filename, content) -> (filename, nil) | (nil, err)
-    let a = Arc::clone(&api);
-    let stage_proposal_fn = lua.create_async_function(
-        move |lua, (session_id, filename, content): (String, String, String)| {
-            let a = Arc::clone(&a);
-            async move {
-                match a.stage_proposal(session_id, filename, content).await {
-                    Ok(name) => Ok((Value::String(lua.create_string(&name)?), Value::Nil)),
-                    Err(e) => {
-                        let err = lua.create_string(&e)?;
-                        Ok((Value::Nil, Value::String(err)))
-                    }
-                }
-            }
-        },
-    )?;
-    sessions.set("stage_proposal", stage_proposal_fn)?;
 
     gate_module_keys("sessions", &sessions, SESSION_FN_NAMES)?;
 
