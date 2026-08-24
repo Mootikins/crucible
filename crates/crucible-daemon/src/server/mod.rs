@@ -116,6 +116,9 @@ pub struct Server {
     plugin_watch: bool,
     auto_archive_hours: Option<u64>,
     schedules: Vec<crucible_core::config::ScheduleEntry>,
+    /// Resolved config home (see `BindWithPluginConfigParams::config_home`).
+    /// `None` when the platform has no config directory.
+    config_home: Option<std::path::PathBuf>,
     /// Resolved daemon data root (see `BindWithPluginConfigParams::data_home`);
     /// `run()`'s open-kilns/archive-sweep read this instead of `crucible_home()`.
     data_home: std::path::PathBuf,
@@ -216,8 +219,20 @@ impl Server {
         // Same treatment for the agent-card roots: the global card directory
         // and the config's `agent_directories`, resolved once here so
         // handlers read a value instead of the environment.
+        // The config home the daemon was HANDED. Everything that WRITES under
+        // it must read this, not the environment.
+        //
+        // The environment answers only when nothing was injected at all. A
+        // test that injects a data home but no config home must not reach the
+        // developer's own `~/.config`: that is how the stub writer edited it
+        // on every in-process daemon boot.
+        let config_home = params
+            .config_home
+            .clone()
+            .or_else(|| params.data_home.is_none().then(dirs::config_dir).flatten());
+
         let card_roots = crate::agent_cards::CardRoots::from_app_config(
-            params.config_home.clone().or_else(dirs::config_dir),
+            config_home.clone(),
             params.app_config.as_ref(),
             dirs::home_dir().as_deref(),
         );
@@ -411,6 +426,7 @@ impl Server {
             auto_archive_hours: params.auto_archive_hours,
             schedules: params.schedules,
             data_home,
+            config_home,
             socket_lock,
             authorized_uid: daemon_uid(),
         })

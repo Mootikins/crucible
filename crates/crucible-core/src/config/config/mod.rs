@@ -53,5 +53,14 @@ pub fn crucible_home() -> std::path::PathBuf {
 /// `.luarc.json`. A scaffold pointing at a directory nothing writes is the
 /// same as pointing nowhere.
 pub fn lua_stubs_dir() -> Option<std::path::PathBuf> {
-    dirs::config_dir().map(|d| d.join("crucible").join("luals"))
+    dirs::config_dir().map(lua_stubs_dir_in)
+}
+
+/// [`lua_stubs_dir`] under the config home `config_home`.
+///
+/// The daemon writes stubs on every start, so it must resolve them from the
+/// config home it was HANDED. A daemon that read the environment wrote into
+/// the developer's own `~/.config` from an in-process test.
+pub fn lua_stubs_dir_in(config_home: impl AsRef<std::path::Path>) -> std::path::PathBuf {
+    config_home.as_ref().join("crucible").join("luals")
 }

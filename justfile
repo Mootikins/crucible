@@ -427,6 +427,10 @@ web-build pwa="on":
 # Args pass through: `just web-test e2e cross-zone-dnd.spec.ts --project=chromium`.
 #
 # Web tests: e2e (default) | unit | live | stories | hero
+# Prove the test suite writes nothing under the developer's own directories
+test-hermetic tier="quick":
+    @scripts/check-test-hermeticity.sh {{tier}}
+
 web-test tier="e2e" *args:
     #!/usr/bin/env bash
     set -euo pipefail

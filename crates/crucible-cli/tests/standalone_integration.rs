@@ -17,6 +17,22 @@ fn cru() -> Command {
     Command::cargo_bin("cru").unwrap()
 }
 
+/// A `cru` command whose homes point inside `dir`.
+///
+/// A spawned `cru` resolves its data home and its config home from the
+/// environment. Without this the child writes into the developer's own
+/// `~/.crucible` and `~/.config/crucible` — the daemon regenerated its Lua
+/// stubs there on every run of this file. Child-scoped env only: never
+/// `set_var`.
+fn cru_in(dir: &Path) -> Command {
+    let mut cmd = cru();
+    cmd.env("CRUCIBLE_HOME", dir.join("crucible-home"))
+        .env("XDG_CONFIG_HOME", dir.join("xdg-config"))
+        .env("XDG_DATA_HOME", dir.join("xdg-data"))
+        .env("XDG_CACHE_HOME", dir.join("xdg-cache"));
+    cmd
+}
+
 /// Write a minimal config.toml for tests.
 fn write_config(dir: &Path) -> std::path::PathBuf {
     let kiln_path = dir.join("kiln");
@@ -37,7 +53,8 @@ fn write_config(dir: &Path) -> std::path::PathBuf {
 fn standalone_flag_is_accepted_by_parser() {
     // `cru --standalone --help` should succeed (help exits with error code, but flag is parsed)
     // We test that the flag doesn't cause an "unexpected argument" error
-    let output = cru()
+    let temp = tempfile::tempdir().expect("create temp dir");
+    let output = cru_in(temp.path())
         .args(["--standalone", "daemon", "--help"])
         .output()
         .expect("failed to run cru");
@@ -66,7 +83,7 @@ fn standalone_daemon_status_works_without_external_daemon() {
     // Use a unique socket path to avoid conflicts with any running daemon
     let unique_socket = temp.path().join("test-standalone.sock");
 
-    let output = cru()
+    let output = cru_in(temp.path())
         .args(["--standalone", "--config"])
         .arg(&config_path)
         .arg("daemon")
@@ -107,7 +124,7 @@ fn standalone_uses_isolated_socket_not_shared_daemon() {
 
     // Without --standalone, this would fail (no daemon at that socket)
     // With --standalone, it should succeed (creates its own in-process daemon)
-    let output = cru()
+    let output = cru_in(temp.path())
         .args(["--standalone", "--config"])
         .arg(&config_path)
         .arg("daemon")
@@ -138,7 +155,7 @@ fn standalone_creates_crucible_directory_for_persistence() {
     let unique_socket = temp.path().join("standalone-persist.sock");
 
     // Run a simple command in standalone mode
-    let output = cru()
+    let output = cru_in(temp.path())
         .args(["--standalone", "--config"])
         .arg(&config_path)
         .arg("daemon")
@@ -175,7 +192,7 @@ fn standalone_flag_is_global_works_before_subcommands() {
     let unique_socket = temp.path().join("global-flag-test.sock");
 
     // --standalone before subcommand
-    let output = cru()
+    let output = cru_in(temp.path())
         .arg("--standalone")
         .arg("--config")
         .arg(&config_path)

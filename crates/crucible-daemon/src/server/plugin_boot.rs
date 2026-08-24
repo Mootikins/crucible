@@ -178,8 +178,14 @@ impl Server {
             // multitasking without external coordination.
             crate::server::plugins::spawn_plugin_services(loader);
 
-            // Auto-generate LuaCATS stubs for IDE support
-            if let Some(stubs_dir) = crucible_core::config::lua_stubs_dir() {
+            // Auto-generate LuaCATS stubs for IDE support, under the config
+            // home the daemon was handed. Reading the environment here wrote
+            // into the developer's own `~/.config` from an in-process test.
+            if let Some(stubs_dir) = self
+                .config_home
+                .as_ref()
+                .map(crucible_core::config::lua_stubs_dir_in)
+            {
                 match loader.generate_stubs(&stubs_dir) {
                     Ok(()) => debug!("Generated LuaCATS stubs at {}", stubs_dir.display()),
                     Err(e) => debug!("LuaCATS stub generation skipped: {}", e),
