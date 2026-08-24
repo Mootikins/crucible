@@ -251,7 +251,6 @@ async fn test_list_models_all_chat_backends_with_explicit_models() {
         "openai-main/gpt-4o",
         "anthropic-main/claude-sonnet-4-20250514",
         "cohere-main/command-r-plus",
-        "vertex-main/gemini-1.5-pro",
         "copilot-main/gpt-4o",
         "openrouter-main/openai/gpt-4o",
         "zai-main/GLM-4.7",
@@ -265,6 +264,14 @@ async fn test_list_models_all_chat_backends_with_explicit_models() {
             models
         );
     }
+
+    // VertexAI serves embeddings only. No chat adapter maps to it, so a turn
+    // that picked one of its models could not run. It must not be offered,
+    // even with explicit models in the config.
+    assert!(
+        !models.iter().any(|m| m.starts_with("vertex-main/")),
+        "a model that cannot run a turn was offered: {models:?}"
+    );
 }
 
 #[tokio::test]

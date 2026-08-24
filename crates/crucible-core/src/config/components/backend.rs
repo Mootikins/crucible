@@ -149,7 +149,10 @@ impl BackendType {
 
     const VERTEX_AI_METADATA: BackendMetadata = BackendMetadata {
         supports_embeddings: true,
-        supports_chat: true,
+        // Embeddings only. No chat adapter maps to this backend, so a config
+        // that names it for chat cannot run a turn. See the daemon test
+        // `every_chat_backend_has_an_adapter`.
+        supports_chat: false,
         is_local: false,
         default_trust_level: TrustLevel::Cloud,
         requires_api_key: true,
@@ -158,7 +161,7 @@ impl BackendType {
         label: "VertexAI",
         default_endpoint: Some("https://aiplatform.googleapis.com/v1"),
         default_embedding_model: Some("textembedding-gecko@003"),
-        default_chat_model: Some("gemini-1.5-pro"),
+        default_chat_model: None,
         default_max_concurrent: MaxConcurrent::Fixed(8),
     };
 
@@ -930,7 +933,8 @@ mod tests {
         assert!(BackendType::Ollama.supports_chat());
         assert!(BackendType::OpenAI.supports_chat());
         assert!(BackendType::Cohere.supports_chat());
-        assert!(BackendType::VertexAI.supports_chat());
+        // VertexAI serves embeddings only; no chat adapter maps to it.
+        assert!(!BackendType::VertexAI.supports_chat());
 
         // Chat-only backends
         assert!(BackendType::Anthropic.supports_chat());
@@ -1107,10 +1111,7 @@ mod tests {
             BackendType::Cohere.default_chat_model(),
             Some("command-r-plus")
         );
-        assert_eq!(
-            BackendType::VertexAI.default_chat_model(),
-            Some("gemini-1.5-pro")
-        );
+        assert_eq!(BackendType::VertexAI.default_chat_model(), None);
 
         // Chat-only backends
         assert_eq!(

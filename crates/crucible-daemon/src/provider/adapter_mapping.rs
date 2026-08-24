@@ -201,6 +201,20 @@ impl ChatClient {
 
 #[cfg(test)]
 mod tests {
+
+    /// A backend the config offers for chat must have an adapter. Without
+    /// this, `cru init` can write a provider that no turn can run.
+    #[test]
+    fn every_chat_backend_has_an_adapter() {
+        for backend in BackendType::all() {
+            if backend.supports_chat() {
+                assert!(
+                    backend_to_adapter(backend).is_some(),
+                    "{backend:?} says it supports chat but maps to no adapter"
+                );
+            }
+        }
+    }
     use super::*;
 
     // ========================================================================
