@@ -32,6 +32,8 @@ tokio = { workspace = true, features = ["full", "tracing"] }
 rand = { workspace = true }
 
 # ACP schema types for mode/command definitions
+# Pinned by agent-client-protocol 2.0.0, which requires =1.5.0. The 1.6.0
+# release adds only the unstable_tool_call_name builders, which we do not use.
 agent-client-protocol-schema = "=1.5.0"
 
 # Markdown parsing
