@@ -116,9 +116,6 @@ pub struct Server {
     plugin_watch: bool,
     auto_archive_hours: Option<u64>,
     schedules: Vec<crucible_core::config::ScheduleEntry>,
-    /// Resolved config home (see `BindWithPluginConfigParams::config_home`).
-    /// `None` when the platform has no config directory.
-    config_home: Option<std::path::PathBuf>,
     /// Resolved daemon data root (see `BindWithPluginConfigParams::data_home`);
     /// `run()`'s open-kilns/archive-sweep read this instead of `crucible_home()`.
     data_home: std::path::PathBuf,
@@ -426,7 +423,6 @@ impl Server {
             auto_archive_hours: params.auto_archive_hours,
             schedules: params.schedules,
             data_home,
-            config_home,
             socket_lock,
             authorized_uid: daemon_uid(),
         })
