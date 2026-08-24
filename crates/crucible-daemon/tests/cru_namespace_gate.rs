@@ -19,15 +19,17 @@ fn plugin_vm() -> DaemonPluginLoader {
     loader
 }
 
-/// Top-level keys on the live `cru` table. Underscore-prefixed keys are
-/// loader-internal markers (`_current_plugin`, `_current_plugin_may_intercept`),
-/// not API, and are excluded by the same rule `namespace.rs` documents.
+/// Every top-level key on the live `cru` table.
+///
+/// No exemption by prefix. The two loader-internal markers that used to earn
+/// one (`_current_plugin`, `_current_plugin_may_intercept`) were forgeable
+/// authority globals and now live in Rust-side app data, so any key here is
+/// API and must have a variant.
 fn live_names(loader: &DaemonPluginLoader) -> BTreeSet<String> {
     let lua = loader.plugin_lua();
     let cru: mlua::Table = lua.globals().get("cru").expect("cru global");
     cru.pairs::<String, mlua::Value>()
         .filter_map(|pair| pair.ok().map(|(name, _)| name))
-        .filter(|name| !name.starts_with('_'))
         .collect()
 }
 

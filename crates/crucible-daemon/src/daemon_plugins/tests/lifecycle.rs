@@ -1,6 +1,6 @@
 //! Load/reload lifecycle bookkeeping: `loaded_specs` merging, the inert
-//! contract for failed plugins, and `__crucible_loading_plugin__`
-//! attribution across every exit path of `execute_plugin`.
+//! contract for failed plugins, and plugin-context attribution across every
+//! exit path of `execute_plugin`.
 use super::super::*;
 
 /// A second `load_plugins` call must merge into `loaded_specs`, not replace
@@ -138,8 +138,8 @@ async fn a_plugin_whose_setup_raises_ends_inert_and_the_load_reports_failure() {
     assert!(loader.reload_plugin("halfdead").await.is_err());
 }
 
-/// `__crucible_loading_plugin__` must be cleared on EVERY exit from
-/// `execute_plugin`. A top-level raise used to leave it set, so everything
+/// The plugin context must be restored on EVERY exit from `execute_plugin`.
+/// A top-level raise used to leave it set, so everything
 /// registered next — including the user's init.lua, which runs after all
 /// plugins — was attributed to the dead plugin, and a later reload of that
 /// plugin deleted the user's handlers.
@@ -150,7 +150,7 @@ async fn a_top_level_raise_does_not_swallow_later_registrations() {
     std::fs::create_dir_all(&dir).unwrap();
     // `crucible.no_such_api` is a permissive stub in the discovery sandbox but
     // nil in the daemon VM, so the raise happens exactly where the bug lives:
-    // inside `execute_plugin`, after the loading marker is set.
+    // inside `execute_plugin`, after the plugin context is entered.
     std::fs::write(
         dir.join("init.lua"),
         r#"
@@ -166,7 +166,7 @@ async fn a_top_level_raise_does_not_swallow_later_registrations() {
         .await
         .expect("load_plugins is fail-open per plugin");
 
-    // User-shaped registration: no loading marker, so it belongs to no plugin.
+    // User-shaped registration: no plugin context, so it belongs to no plugin.
     let lua = loader.plugin_lua();
     lua.load(r#"cru.on("pre_tool_call", function() _G.user_handler_ran = true end)"#)
         .exec()
@@ -393,7 +393,7 @@ async fn removing_then_reinstalling_a_plugin_registers_its_tools_again() {
 }
 
 /// The inverse: a handler registered inside `setup()` IS owned by the plugin.
-/// `setup()` used to run after the loading marker was cleared, so its
+/// `setup()` used to run after the plugin context was restored, so its
 /// registrations were unowned — reload could not remove them and appended
 /// another copy per reload.
 #[tokio::test]

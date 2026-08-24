@@ -8,13 +8,13 @@
 //! Tool execution hooks use the RuntimeHandler system via `cru.on("tool:before_execute", fn)`.
 //! See `handlers.rs` for details.
 //!
-//! Hooks are owner-tagged: registration reads `__crucible_loading_plugin__`
-//! (set by the daemon plugin loader around each plugin's execution) so that
+//! Hooks are owner-tagged: registration reads the VM's plugin context (set by
+//! the daemon plugin loader around each plugin's execution) so that
 //! [`clear_plugin_hooks`] can remove exactly one plugin's hooks on its reload,
 //! leaving unowned registrations — the user's `init.lua` — untouched.
-//! Per-session VMs (`agent_manager/session_vm.rs`) never set the loading
-//! marker, so all their hooks are unowned by construction; `clear_plugin_hooks`
-//! is never called against a session VM and no change is needed there.
+//! Per-session VMs (`agent_manager/session_vm.rs`) never set a plugin context,
+//! so all their hooks are unowned by construction; `clear_plugin_hooks` is
+//! never called against a session VM and no change is needed there.
 
 use mlua::{Function, Lua, Result as LuaResult, Table};
 
@@ -119,13 +119,16 @@ pub fn register_hooks_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
 /// The plugin currently being loaded, or `false` when none is (user init.lua,
 /// session VMs). `false` rather than nil because the owner slots live in Lua
 /// array tables, and a nil mid-sequence truncates `raw_len`.
+///
+/// The name comes from the VM's plugin context — Rust-side app data — so a
+/// plugin cannot register a hook under another plugin's name.
 fn plugin_owner(lua: &Lua) -> mlua::Value {
-    match lua
-        .globals()
-        .get::<Option<mlua::LuaString>>("__crucible_loading_plugin__")
-    {
-        Ok(Some(name)) => mlua::Value::String(name),
-        _ => mlua::Value::Boolean(false),
+    match crate::plugin_context::current_plugin_name(lua) {
+        Some(name) => lua
+            .create_string(&name)
+            .map(mlua::Value::String)
+            .unwrap_or(mlua::Value::Boolean(false)),
+        None => mlua::Value::Boolean(false),
     }
 }
 
@@ -374,15 +377,11 @@ mod tests {
     fn clearing_a_plugins_hooks_removes_only_that_plugins_and_keeps_flags_aligned() {
         let (lua, _) = TestLuaBuilder::new().build_with_hooks();
 
-        lua.globals()
-            .set("__crucible_loading_plugin__", "alpha")
-            .unwrap();
+        crate::plugin_context::enter_plugin(&lua, "alpha", false);
         lua.load(r#"cru.on_session_start(function(s) end, { required = true })"#)
             .exec()
             .unwrap();
-        lua.globals()
-            .set("__crucible_loading_plugin__", "beta")
-            .unwrap();
+        crate::plugin_context::enter_plugin(&lua, "beta", false);
         lua.load(
             r#"
             cru.on_session_start(function(s) end)
@@ -391,9 +390,7 @@ mod tests {
         )
         .exec()
         .unwrap();
-        lua.globals()
-            .set("__crucible_loading_plugin__", mlua::Value::Nil)
-            .unwrap();
+        crate::plugin_context::set_plugin_context(&lua, None);
         // Unowned hook — user init.lua shape. Must survive every clear.
         lua.load(r#"cru.on_session_end(function(s) end)"#)
             .exec()

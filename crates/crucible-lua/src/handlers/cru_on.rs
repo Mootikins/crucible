@@ -125,12 +125,11 @@ pub fn register_cru_on_api(
             .map_err(|e| mlua::Error::RuntimeError(format!("Failed to lock handlers: {}", e)))?;
 
         // Set by the loader around a plugin's execution so handlers can be
-        // attributed and later dropped on reload.
-        let plugin: Option<String> = lua
-            .globals()
-            .get::<Option<String>>("__crucible_loading_plugin__")
-            .ok()
-            .flatten();
+        // attributed and later dropped on reload. Rust-side app data, not a
+        // Lua global: a plugin must not be able to name another plugin as the
+        // owner, nor grant itself the interception right read just below.
+        let context = crate::plugin_context::current_plugin_context(lua);
+        let plugin: Option<String> = context.as_ref().map(|c| c.name.clone());
 
         // `Relaxed` suffices: the handlers mutex taken above brackets the whole
         // allocate-push-insert sequence, so it supplies the ordering.
@@ -172,14 +171,11 @@ pub fn register_cru_on_api(
             pattern: pattern.clone(),
             plugin: plugin.clone(),
             // Absent means "not loading a plugin" — a user's own init.lua,
-            // which carries the operator's own authority.
-            may_intercept: lua
-                .globals()
-                .get::<mlua::Table>("cru")
-                .and_then(|c| c.get::<Option<bool>>("_current_plugin_may_intercept"))
-                .ok()
-                .flatten()
-                .unwrap_or(true),
+            // which carries the operator's own authority. A LOADING plugin
+            // holds only what its installation granted: the gate used to read
+            // a Lua global with `.unwrap_or(true)`, so it failed OPEN for
+            // every daemon-loaded plugin and was forgeable besides.
+            may_intercept: context.is_none_or(|c| c.may_intercept),
         });
         func_guard.insert(name.clone(), key);
 

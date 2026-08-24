@@ -262,25 +262,14 @@ impl PluginManager {
 
         self.configure_plugin_package_path(&plugin_dir)?;
 
-        if let Err(error) = self
-            .lua
-            .load(format!("cru._current_plugin = {:?}", name))
-            .exec()
-        {
-            warn!("Failed to set cru._current_plugin for {}: {}", name, error);
-        }
+        // Both markers ride ONE context, in Rust-side app data. As Lua globals
+        // they were forgeable: a plugin assigned itself another plugin's
+        // storage namespace, or the interception right, in one line.
+        //
         // Stamped at LOAD, read at registration: whether a handler may take a
         // tool call over is a property of the plugin the operator installed,
         // not of the call it later intercepts.
-        if let Err(error) = self
-            .lua
-            .load(format!(
-                "cru._current_plugin_may_intercept = {may_intercept}"
-            ))
-            .exec()
-        {
-            warn!("Failed to set intercept capability for {}: {}", name, error);
-        }
+        let previous = crate::plugin_context::enter_plugin(&self.lua, name, may_intercept);
 
         let load_result = (|| -> LifecycleResult<()> {
             let source = std::fs::read_to_string(&main_path).map_err(LifecycleError::Io)?;
@@ -342,13 +331,9 @@ impl PluginManager {
             Ok(())
         })();
 
-        if let Err(error) = self
-            .lua
-            .load("cru._current_plugin = nil; cru._current_plugin_may_intercept = nil")
-            .exec()
-        {
-            warn!("Failed to clear cru._current_plugin: {}", error);
-        }
+        // Restored on every exit path, error paths included: a context left
+        // behind attributes whatever loads next to the wrong plugin.
+        crate::plugin_context::set_plugin_context(&self.lua, previous);
 
         load_result
     }

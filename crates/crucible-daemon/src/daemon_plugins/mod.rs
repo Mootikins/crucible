@@ -1002,8 +1002,8 @@ end
         // second one to load silently gets the first one's module.
         self.clear_plugin_lua_cache(&lua_dir)?;
 
-        // Read (and for `.fnl`, compile) the source BEFORE the loading marker
-        // is set, so a read/compile failure cannot leave the marker behind.
+        // Read (and for `.fnl`, compile) the source BEFORE the plugin context
+        // is entered, so a read/compile failure cannot leave it behind.
         //
         // A `.fnl` main is compiled first. The discovery pass in `crucible-lua`
         // already did this for its throwaway sandbox VM, so a Fennel plugin
@@ -1030,11 +1030,17 @@ end
         self.handler_registry.clear_plugin_handlers(name);
         crucible_lua::clear_plugin_hooks(lua, name)
             .map_err(|e| anyhow::anyhow!("clear session hooks for '{name}': {e}"))?;
-        lua.globals().set("__crucible_loading_plugin__", name)?;
+        // The plugin context carries BOTH authority markers: the name every
+        // `cru.storage` call is scoped to, and whether this plugin may replace
+        // a tool call's execution. The grant comes from the manifest the
+        // operator installed. This VM used to stamp neither — daemon-side
+        // `cru.storage` errored, and the interception gate read a Lua global
+        // with `.unwrap_or(true)`, so it failed OPEN for every plugin here.
+        let previous = crucible_lua::enter_plugin(lua, name, self.plugin_may_intercept(name));
 
         // Execute init.lua with eval_async — captures return value AND enables
-        // async Lua. Results are captured, not `?`-ed: the marker clear below
-        // must run on every exit path.
+        // async Lua. Results are captured, not `?`-ed: the context restore
+        // below must run on every exit path.
         let eval_result: mlua::Result<mlua::Value> = lua
             .load(&source)
             .set_name(init_path.to_string_lossy().as_ref())
@@ -1053,20 +1059,33 @@ end
             Ok(_) => Ok(PluginExports::default()),
         };
 
-        // The marker is cleared UNCONDITIONALLY, after setup: setup-registered
+        // The context is restored UNCONDITIONALLY, after setup: setup-registered
         // handlers belong to the plugin — they must be cleared on its reload —
-        // and a marker that survives a raise misattributes whatever loads next,
+        // and a context that survives a raise misattributes whatever loads next,
         // up to and including the user's init.lua (which runs after all
         // plugins; reloading the dead plugin would then delete the user's
         // handlers). Anything registered after this point (e.g. from a
         // lifecycle hook at session start) is not attributable to a load, so
         // it is left unowned rather than mis-attributed.
-        lua.globals()
-            .set("__crucible_loading_plugin__", mlua::Value::Nil)?;
+        crucible_lua::set_plugin_context(lua, previous);
 
         let exports = executed?;
         info!("Executed plugin in daemon runtime: {}", init_path.display());
         Ok(exports)
+    }
+
+    /// Whether this plugin's installation granted it the right to take a tool
+    /// call over (`intercept_tools` in its manifest).
+    ///
+    /// An unknown plugin gets `false`. Interception fabricates a result the
+    /// model reads as the tool's own, and it returns BEFORE the permission
+    /// gate, so an unanswerable question must answer "no".
+    fn plugin_may_intercept(&self, name: &str) -> bool {
+        self.plugin_manager.get(name).is_some_and(|plugin| {
+            plugin
+                .manifest
+                .has_capability(crucible_lua::manifest::Capability::InterceptTools)
+        })
     }
 
     /// Hand `[plugins.<name>]` to the plugin's `setup(cfg)`, if it declares one.

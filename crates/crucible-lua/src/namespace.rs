@@ -8,9 +8,11 @@
 //! in both directions — the `tools/surface.rs` pattern applied to the
 //! namespace itself.
 //!
-//! Names with a leading underscore (`cru._current_plugin`,
-//! `cru._current_plugin_may_intercept`) are loader-internal markers, not API,
-//! and are deliberately not variants; the gate skips them by prefix.
+//! The set is now complete: nothing hangs a loader-internal marker off `cru`.
+//! The two that used to (`cru._current_plugin` and
+//! `cru._current_plugin_may_intercept`) were forgeable authority markers and
+//! live in Rust-side app data — see [`crate::plugin_context`]. The gate
+//! therefore compares EVERY live key, with no prefix exemption.
 
 #![deny(clippy::wildcard_enum_match_arm)]
 #![deny(clippy::match_wildcard_for_single_variants)]

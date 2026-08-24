@@ -70,6 +70,7 @@ pub mod notify;
 mod oil;
 pub mod options;
 mod paths;
+pub mod plugin_context;
 pub mod plugin_status;
 pub mod publications;
 mod ratelimit;
@@ -134,6 +135,10 @@ pub use json_query::{
 pub use lua_stdlib::{register_lua_stdlib, register_test_harness};
 pub use oil::{register_oil_module, LuaNode};
 pub use paths::{register_paths_module, PathsContext};
+pub use plugin_context::{
+    current_may_intercept, current_plugin_context, current_plugin_name, enter_plugin,
+    set_plugin_context, PluginContext,
+};
 pub use ratelimit::register_ratelimit_module;
 pub use schedule::register_schedule_module;
 pub use schema::{discovered_params_to_json_schema, generate_input_schema};

@@ -26,10 +26,9 @@ pub fn register_auth_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
         let owners: Table = hooks_table
             .get("on_provider_auth_owners")
             .unwrap_or_else(|_| lua.create_table().unwrap());
-        let owner = globals
-            .get::<Option<mlua::LuaString>>("__crucible_loading_plugin__")
-            .ok()
-            .flatten();
+        // The VM's plugin context, not a Lua global: a plugin must not be
+        // able to register an auth hook under another plugin's name.
+        let owner = crate::plugin_context::current_plugin_name(lua);
 
         let auth_hook_functions: Table = globals
             .get("__crucible_auth_hooks__")
@@ -51,7 +50,7 @@ pub fn register_auth_module(lua: &Lua, crucible: &Table) -> LuaResult<()> {
         let len = provider_auth_hooks.raw_len();
         provider_auth_hooks.raw_set(len + 1, hook_name.as_str())?;
         match owner {
-            Some(ref o) => owners.raw_set(len + 1, o)?,
+            Some(ref o) => owners.raw_set(len + 1, o.as_str())?,
             None => owners.raw_set(len + 1, false)?,
         }
         auth_hook_functions.set(hook_name.as_str(), key)?;
@@ -243,11 +242,12 @@ mod tests {
 
     fn register(lua: &Lua, owner: Option<&str>, header: &str) {
         match owner {
-            Some(o) => lua.globals().set("__crucible_loading_plugin__", o).unwrap(),
-            None => lua
-                .globals()
-                .set("__crucible_loading_plugin__", mlua::Value::Nil)
-                .unwrap(),
+            Some(o) => {
+                crate::plugin_context::enter_plugin(lua, o, false);
+            }
+            None => {
+                crate::plugin_context::set_plugin_context(lua, None);
+            }
         }
         lua.load(format!(
             r#"cru.on_provider_auth(function(ctx) return {{ headers = {{ ["X-Who"] = "{header}" }} }} end)"#

@@ -211,6 +211,22 @@ impl LuaScriptHandlerRegistry {
         payload: Value,
         session_id: Option<&str>,
     ) -> LuaResult<ScriptHandlerResult> {
+        // The owner and the grant recorded when the handler registered. A
+        // deferred call keeps the identity registration fixed, so a handler
+        // that calls `cru.storage` from a later turn still reaches its own
+        // plugin's namespace and holds no more authority than its plugin does.
+        let context = {
+            let handlers = self
+                .runtime_handlers
+                .lock()
+                .expect("runtime_handlers: poisoned while executing Lua handler function");
+            handlers.iter().find(|h| h.name == name).and_then(|h| {
+                h.plugin
+                    .as_ref()
+                    .map(|plugin| (plugin.clone(), h.may_intercept))
+            })
+        };
+
         // Get the handler Function while holding the lock, then drop it before await
         let handler: Function = {
             let handler_functions = self
@@ -234,9 +250,21 @@ impl LuaScriptHandlerRegistry {
             ctx_table.set("session_id", id)?;
         }
 
-        let result: Value = handler.call_async((ctx_table, payload)).await?;
+        let previous = crate::plugin_context::set_plugin_context(
+            lua,
+            context.map(
+                |(name, may_intercept)| crate::plugin_context::PluginContext {
+                    name,
+                    may_intercept,
+                },
+            ),
+        );
+        let call = handler.call_async::<Value>((ctx_table, payload)).await;
+        // Restored before the `?`: a context left behind by a raising handler
+        // would attribute the next registration to the wrong plugin.
+        crate::plugin_context::set_plugin_context(lua, previous);
 
-        interpret_handler_result(&result)
+        interpret_handler_result(&call?)
     }
 }
 

@@ -11,6 +11,7 @@ use super::*;
 mod active_kiln;
 mod install;
 mod lifecycle;
+mod plugin_context;
 mod services;
 mod shipped;
 

@@ -25,7 +25,8 @@
 //! ## Namespacing
 //!
 //! All operations are automatically scoped to `namespace = "plugin:{plugin_name}"`.
-//! The plugin name is read from `cru._current_plugin` at call time.
+//! The plugin name comes from the VM's plugin context at call time — Rust-side
+//! app data the loader and the handler dispatcher bracket, out of Lua's reach.
 
 use crate::error::LuaError;
 use crate::lua_util::register_module;
@@ -72,13 +73,15 @@ pub fn register_storage_module(lua: &Lua) -> Result<(), LuaError> {
     Ok(())
 }
 
-/// Read the current plugin namespace from `cru._current_plugin`.
+/// Read the current plugin namespace from the VM's plugin context.
 ///
-/// Returns `Err` if no plugin context is set (e.g., calling from outside a plugin).
+/// Returns `Err` when no plugin runs — a call from the user's own `init.lua`,
+/// which owns no plugin namespace. The context lives in Rust-side app data, so
+/// one plugin can no longer name another plugin's namespace
+/// (see [`crate::plugin_context`]).
 fn get_plugin_namespace(lua: &Lua) -> Result<String, mlua::Error> {
-    let cru: Table = lua.globals().get("cru")?;
-    let plugin_name: String = cru.get("_current_plugin").map_err(|_| {
-        mlua::Error::runtime("cru.storage requires a plugin context (cru._current_plugin not set)")
+    let plugin_name = crate::plugin_context::current_plugin_name(lua).ok_or_else(|| {
+        mlua::Error::runtime("cru.storage requires a plugin context (no plugin is running)")
     })?;
     Ok(format!("plugin:{}", plugin_name))
 }
@@ -90,7 +93,7 @@ fn storage_err<T>(result: crucible_core::storage::StorageResult<T>) -> Result<T,
 
 /// Upgrade the storage module with a real PropertyStore backend.
 ///
-/// The plugin namespace is determined dynamically from `cru._current_plugin`
+/// The plugin namespace is determined dynamically from the VM's plugin context
 /// at call time, so this only needs to be called once (not per-plugin).
 pub fn register_storage_module_with_store(
     lua: &Lua,
@@ -346,10 +349,15 @@ mod store_tests {
     fn setup_lua_with_store() -> mlua::Lua {
         let store: Arc<dyn PropertyStore> = Arc::new(MockPropertyStore::new());
         let lua = TestLuaBuilder::new().with_storage_store(store).build();
-        // Set the plugin context so namespace resolution works
-        lua.load(r#"cru._current_plugin = "test-plugin""#)
-            .exec()
-            .unwrap();
+        // Set the plugin context so namespace resolution works. Lua cannot do
+        // this: the context is Rust-side app data, which is the point.
+        crate::plugin_context::set_plugin_context(
+            &lua,
+            Some(crate::plugin_context::PluginContext {
+                name: "test-plugin".to_string(),
+                may_intercept: false,
+            }),
+        );
         lua
     }
 
@@ -455,7 +463,7 @@ mod store_tests {
     async fn no_plugin_context_gives_error() {
         let store: Arc<dyn PropertyStore> = Arc::new(MockPropertyStore::new());
         let lua = TestLuaBuilder::new().with_storage_store(store).build();
-        // Deliberately NOT setting cru._current_plugin
+        // Deliberately NOT setting a plugin context
 
         let result: Result<Value, _> = lua
             .load(r#"return cru.storage.get("e1", "k")"#)
@@ -464,9 +472,58 @@ mod store_tests {
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(
-            err_msg.contains("_current_plugin"),
-            "Error should mention _current_plugin: {}",
+            err_msg.contains("plugin context"),
+            "Error should mention the plugin context: {}",
             err_msg
+        );
+    }
+
+    /// A plugin cannot take another plugin's storage namespace.
+    ///
+    /// The namespace used to come from `cru._current_plugin`, an ordinary
+    /// writable global read at call time, so one assignment gave a plugin
+    /// every other plugin's storage. The assignment is inert now: it writes a
+    /// Lua global nothing reads.
+    #[tokio::test]
+    async fn a_plugin_cannot_forge_another_plugins_storage_namespace() {
+        let store: Arc<dyn PropertyStore> = Arc::new(MockPropertyStore::new());
+        let lua = TestLuaBuilder::new()
+            .with_storage_store(Arc::clone(&store))
+            .build();
+        crate::plugin_context::set_plugin_context(
+            &lua,
+            Some(crate::plugin_context::PluginContext {
+                name: "alpha".to_string(),
+                may_intercept: false,
+            }),
+        );
+
+        lua.load(
+            r#"
+            cru._current_plugin = "beta"
+            cru.storage.set("e1", "k", "written-by-alpha")
+            "#,
+        )
+        .exec_async()
+        .await
+        .expect("the write succeeds");
+
+        // Assert the namespace, not an error: the write must land in alpha's.
+        assert_eq!(
+            store
+                .property_get("e1", "plugin:alpha", "k")
+                .await
+                .expect("read alpha"),
+            Some("written-by-alpha".to_string()),
+            "the write must land in the running plugin's namespace"
+        );
+        assert_eq!(
+            store
+                .property_get("e1", "plugin:beta", "k")
+                .await
+                .expect("read beta"),
+            None,
+            "a forged `cru._current_plugin` must not reach another plugin's namespace"
         );
     }
 }
