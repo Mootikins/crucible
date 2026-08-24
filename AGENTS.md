@@ -74,6 +74,7 @@ which is what the compiler knows.
 - **Project** — where work output goes. Registered directory (git root or invocation dir). `.crucible/project.toml`.
 - **Kiln** — where knowledge goes. `.crucible/kiln.toml`. A session *attaches* kilns (flat set, no primary); it is not *stored* in one — transcripts live under the daemon data root regardless.
 - **Workspace** — an instance of a project directory (root, or a worktree). Runtime concept, no config file. Do NOT rename correct existing uses (`session.workspace`, `WorkspaceTools`, Lua `paths.workspace()`).
+- **Review vs proposal** — a *review* disposes the agent's file edits (the composed diff in `review/`); a *proposal* disposes a suggested knowledge note (`KILN/.crucible/proposals/`, `cru proposals`). Never use one for the other.
 
 ### Type ownership
 
