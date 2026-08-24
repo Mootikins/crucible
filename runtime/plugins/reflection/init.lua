@@ -198,21 +198,35 @@ local function collect_text(iter)
     return table.concat(parts, "")
 end
 
---- Write staged proposals to KILN/.crucible/proposals/ via cru.fs. We write the
---- files directly (not via the create_note tool) precisely because the staging
---- area must NOT be indexed — create_note targets the kiln index.
+--- One plain file name: alphanumeric first character, then [%w._-], at
+--- most 128 bytes. The daemon refuses traversal in kiln:// paths too; this
+--- keeps the plugin honest on its own, and a leading dot cannot hide a
+--- proposal or spell "..".
+function M.safe_filename(name)
+    return type(name) == "string"
+        and #name <= 128
+        and name:match("^%w[%w._-]*$") ~= nil
+end
+
+--- Write staged proposals to KILN/.crucible/proposals/ via cru.fs, through
+--- kiln:// paths: `kiln` is the kiln's NAME, and the daemon resolves it to a
+--- directory inside cru.fs — no kiln path ever reaches this plugin. We write
+--- the files directly (not via the create_note tool) precisely because the
+--- staging area must NOT be indexed — create_note targets the kiln index.
 function M.stage_proposals(kiln, session_id, proposals)
-    local dir = kiln .. "/.crucible/proposals"
+    local dir = "kiln://" .. kiln .. "/.crucible/proposals"
     cru.fs.mkdir(dir)
     local written = {}
     local max = config.get("max_proposals", 5)
     for i, proposal in ipairs(proposals) do
         if i > max then break end
         if type(proposal) == "table" and proposal.title and proposal.body then
-            local id = M.proposal_id(proposal, i)
-            local path = dir .. "/" .. id .. ".md"
-            cru.fs.write(path, M.render_proposal(proposal, session_id, nil))
-            written[#written + 1] = path
+            local filename = M.proposal_id(proposal, i) .. ".md"
+            if M.safe_filename(filename) then
+                local path = dir .. "/" .. filename
+                cru.fs.write(path, M.render_proposal(proposal, session_id, nil))
+                written[#written + 1] = path
+            end
         end
     end
     return written
@@ -245,8 +259,11 @@ function M.run(session)
         return
     end
 
+    -- The bridge sends kiln NAMES in a `kilns` array (session_bridge.rs).
+    -- The first name is our staging target; cru.fs resolves it.
     local info = cru.sessions.get(session_id)
-    local kiln = info and info.kiln
+    local kilns = info and info.kilns
+    local kiln = kilns and kilns[1]
     if not kiln then
         cru.log("debug", "reflection: session has no kiln; skipping")
         return
@@ -316,7 +333,8 @@ function M.run(session)
 
     local written = M.stage_proposals(kiln, session_id, proposals)
     cru.log("info", string.format(
-        "reflection: staged %d proposal(s) in %s/.crucible/proposals/", #written, kiln))
+        "reflection: staged %d proposal(s) in the '%s' kiln's .crucible/proposals/",
+        #written, kiln))
 end
 
 -- ============================================================================
@@ -346,6 +364,7 @@ local plugin = {
     render_proposal = M.render_proposal,
     proposal_id = M.proposal_id,
     stage_proposals = M.stage_proposals,
+    safe_filename = M.safe_filename,
 
     setup = function(cfg)
         if cfg then

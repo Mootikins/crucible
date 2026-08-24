@@ -132,6 +132,55 @@ describe("reflection", function()
     end)
   end)
 
+  describe("safe_filename", function()
+    it("accepts a plain slug", function()
+      assert.truthy(plugin.safe_filename("hello-world-1.md"))
+    end)
+
+    it("refuses traversal and hidden spellings", function()
+      assert.falsy(plugin.safe_filename("../evil.md"))
+      assert.falsy(plugin.safe_filename(".hidden.md"))
+      assert.falsy(plugin.safe_filename("a/b.md"))
+      assert.falsy(plugin.safe_filename(""))
+    end)
+  end)
+
+  describe("run", function()
+    before_each(function()
+      -- The real bridge shape: `get_session` sends kiln NAMES in a `kilns`
+      -- array, never a `kiln` path (session_bridge.rs).
+      test_mocks.setup({
+        sessions = {
+          info = { id = "chat-1", session_type = "chat", state = "ended", kilns = { "notes" } },
+          messages = {
+            { role = "user", content = "question" },
+            { role = "assistant", content = "answer" },
+          },
+          response_parts = {
+            { type = "text", content = '[{"title":"T","body":"B"}]' },
+          },
+        },
+      })
+      plugin.setup({ model = "test-model", min_turns = 1 })
+    end)
+
+    after_each(function()
+      test_mocks.reset()
+    end)
+
+    it("stages a proposal through a kiln:// path", function()
+      plugin.run({ id = "chat-1" })
+
+      local mkdirs = test_mocks.get_calls("fs", "mkdir")
+      assert.equal("kiln://notes/.crucible/proposals", mkdirs[1] and mkdirs[1][1])
+      local writes = test_mocks.get_calls("fs", "write")
+      assert.equal(1, #writes)
+      assert.truthy(writes[1][1]:find("^kiln://notes/%.crucible/proposals/"))
+      assert.truthy(writes[1][1]:find("%.md$"))
+      assert.truthy(writes[1][2]:find("source: reflection"))
+    end)
+  end)
+
   describe("setup", function()
     it("accepts a config table", function()
       plugin.setup({ model = "test-model", min_turns = 1 })
