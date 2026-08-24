@@ -20,7 +20,13 @@ local function default_fixtures()
         -- daemon happened to be started.
         paths = { kiln = "/mock/kiln", workspace = "/mock/workspace", session = false, state = "/mock/state" },
         session = { temperature = 0.7, max_tokens = nil, model = "mock-model", mode = "act", thinking_budget = nil },
-        sessions = { info = { kiln = "/mock/kiln" }, messages = {}, response_parts = {} },
+        -- `info` mirrors the bridge's `get_session` payload: kiln NAMES in a
+        -- `kilns` array, never kiln paths (see session_bridge.rs).
+        sessions = {
+            info = { id = "mock-session", session_type = "chat", state = "active", kilns = { "mock-kiln" } },
+            messages = {},
+            response_parts = {},
+        },
     }
 end
 
@@ -268,6 +274,12 @@ local function create_sessions_mock(fixtures)
         end,
         end_session = function(id)
             record_call("sessions", "end_session", id)
+        end,
+        -- The daemon resolves the session's kiln internally and returns only
+        -- the filename, so the mock does the same.
+        stage_proposal = function(id, filename, content)
+            record_call("sessions", "stage_proposal", id, filename, content)
+            return filename, nil
         end,
     }
 end

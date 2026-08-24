@@ -132,6 +132,40 @@ describe("reflection", function()
     end)
   end)
 
+  describe("run", function()
+    before_each(function()
+      -- The real bridge shape: `get_session` sends kiln NAMES in a `kilns`
+      -- array, never a `kiln` path (session_bridge.rs).
+      test_mocks.setup({
+        sessions = {
+          info = { id = "chat-1", session_type = "chat", state = "ended", kilns = { "notes" } },
+          messages = {
+            { role = "user", content = "question" },
+            { role = "assistant", content = "answer" },
+          },
+          response_parts = {
+            { type = "text", content = '[{"title":"T","body":"B"}]' },
+          },
+        },
+      })
+      plugin.setup({ model = "test-model", min_turns = 1 })
+    end)
+
+    after_each(function()
+      test_mocks.reset()
+    end)
+
+    it("stages a proposal for a session whose kilns array names a kiln", function()
+      plugin.run({ id = "chat-1" })
+
+      local staged = test_mocks.get_calls("sessions", "stage_proposal")
+      assert.equal(1, #staged)
+      assert.equal("chat-1", staged[1][1])
+      assert.truthy(staged[1][2]:find("%.md$"))
+      assert.truthy(staged[1][3]:find("source: reflection"))
+    end)
+  end)
+
   describe("setup", function()
     it("accepts a config table", function()
       plugin.setup({ model = "test-model", min_turns = 1 })

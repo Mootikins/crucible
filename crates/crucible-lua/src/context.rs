@@ -392,6 +392,15 @@ mod tests {
             unimplemented!()
         }
 
+        fn stage_proposal(
+            &self,
+            _: String,
+            _: String,
+            _: String,
+        ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
+            unimplemented!()
+        }
+
         fn request_interaction(
             &self,
             _: String,

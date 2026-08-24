@@ -857,6 +857,73 @@ impl DaemonSessionApi for DaemonSessionBridge {
             .map_err(|e| e.to_string())
         })
     }
+
+    /// Stage one proposal file in the session's first kiln.
+    ///
+    /// The kiln name resolves to its directory here, inside the daemon, and
+    /// only the filename goes back to Lua. Handing the directory to the
+    /// plugin instead would reopen the disclosure that removing
+    /// `cru.kiln.active_path` and the `LOCATION_CONFIG_KEYS` closed: a
+    /// plugin learns which kilns a session reaches by NAME only.
+    ///
+    /// The file lands in `<kiln>/.crucible/proposals/`, which the kiln index
+    /// does not read — that is the reflection plugin's documented design:
+    /// a human reviews every proposal before it can enter the graph. The
+    /// filename check keeps the write inside that one directory; `.crucible`
+    /// is otherwise agent-write-protected (see `tools/protected.rs`), and a
+    /// bridge that let a name traverse out of it would hand plugin callers
+    /// what that module refuses agents.
+    fn stage_proposal(
+        &self,
+        session_id: String,
+        filename: String,
+        content: String,
+    ) -> BoxFut<String> {
+        bridge_async!(self.session_manager, |sm| async move {
+            validate_proposal_filename(&filename)?;
+            let session = sm
+                .get_session(&session_id)
+                .ok_or_else(|| format!("session not found: {session_id}"))?;
+            let Some(kiln) = session.kilns.first() else {
+                return Err("session has no kiln".to_string());
+            };
+            let root = sm
+                .kiln_paths(std::slice::from_ref(kiln))
+                .into_iter()
+                .next()
+                .ok_or_else(|| format!("kiln '{kiln}' is not registered"))?;
+            let dir = root.join(".crucible").join("proposals");
+            let file = dir.join(&filename);
+            tokio::task::spawn_blocking(move || -> Result<(), String> {
+                std::fs::create_dir_all(&dir)
+                    .map_err(|e| format!("could not create the proposals directory: {e}"))?;
+                std::fs::write(&file, content)
+                    .map_err(|e| format!("could not write the proposal: {e}"))
+            })
+            .await
+            .map_err(|e| format!("proposal write task failed: {e}"))??;
+            Ok(filename)
+        })
+    }
+}
+
+/// Refuse anything but one plain file name.
+///
+/// The name arrives from plugin Lua. A separator or a `..` would place the
+/// file outside `.crucible/proposals/`, and a leading dot would hide it or
+/// spell `..` itself. An allowlist, not a denylist: anything outside
+/// `[A-Za-z0-9._-]` is refused, so both separator spellings and every
+/// encoding fall out without being enumerated.
+fn validate_proposal_filename(name: &str) -> Result<(), String> {
+    let charset_ok = name
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'_' || b == b'-');
+    if name.is_empty() || name.len() > 128 || name.starts_with('.') || !charset_ok {
+        return Err(format!(
+            "invalid proposal filename {name:?}: one plain name from [A-Za-z0-9._-],              no leading dot, at most 128 bytes"
+        ));
+    }
+    Ok(())
 }
 
 /// Read a `cru.sessions.review_comment` spec as the wire request the RPC

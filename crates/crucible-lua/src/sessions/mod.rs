@@ -429,4 +429,19 @@ pub trait DaemonSessionApi: Send + Sync + 'static {
                 + Send,
         >,
     >;
+
+    /// Stage one proposal file in the session's first kiln.
+    ///
+    /// The daemon resolves the kiln name to its directory internally and
+    /// writes `<kiln>/.crucible/proposals/<filename>`. Only the filename
+    /// comes back, so no kiln path crosses into Lua — the same rule that
+    /// keeps kiln directories out of `cru.config` and out of
+    /// `cru.sessions.get`. `filename` must be one plain file name; the
+    /// daemon refuses separators, a leading dot, and `..`.
+    fn stage_proposal(
+        &self,
+        session_id: String,
+        filename: String,
+        content: String,
+    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>>;
 }
