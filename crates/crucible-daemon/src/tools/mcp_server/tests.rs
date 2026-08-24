@@ -25,6 +25,8 @@ struct MockBackgroundSpawner;
 #[derive(Default)]
 struct MockDelegationSpawner {
     spawn_calls: AtomicUsize,
+    /// The child output `await_delegation` returns; `None` returns `done`.
+    output: Option<String>,
 }
 
 #[async_trait::async_trait]
@@ -56,7 +58,8 @@ impl crate::delegation::DelegationSpawner for MockDelegationSpawner {
         );
         info.id = delegation_id.to_string();
         info.mark_completed();
-        Ok(JobResult::success(info, "done".to_string()))
+        let output = self.output.clone().unwrap_or_else(|| "done".to_string());
+        Ok(JobResult::success(info, output))
     }
 
     fn list_delegations(&self, _parent_session_id: &str) -> Vec<JobInfo> {
@@ -384,6 +387,50 @@ async fn test_delegate_session_spawns_background_subagent() {
 
     assert!(result.is_ok());
     assert_eq!(spawner.spawn_calls.load(Ordering::SeqCst), 1);
+}
+
+/// `result_max_bytes` is a byte budget. A multibyte result must not exceed
+/// it, so the cap counts encoded bytes, not glyphs.
+#[tokio::test]
+async fn delegate_session_result_fits_the_configured_byte_budget() {
+    let temp = TempDir::new().unwrap();
+    let spawner = Arc::new(MockDelegationSpawner {
+        spawn_calls: AtomicUsize::new(0),
+        output: Some("\u{4e2d}".repeat(1000)),
+    });
+    let server = CrucibleMcpServer::new_with_delegation(
+        temp.path().to_str().unwrap().to_string(),
+        Arc::new(MockKnowledgeRepository::new()) as Arc<dyn KnowledgeRepository>,
+        Arc::new(MockEmbeddingProvider::new()) as Arc<dyn EmbeddingProvider>,
+        Some(DelegationContext {
+            delegation_spawner: spawner,
+            result_max_bytes: 1000,
+            ..Default::default()
+        }),
+    );
+
+    let call_result = server
+        .delegate_session(Parameters(DelegateSessionParams {
+            prompt: "do work".to_string(),
+            description: None,
+            target: None,
+            background: None,
+        }))
+        .await
+        .unwrap();
+
+    let raw = call_result.content[0].as_text().expect("text content");
+    let value: serde_json::Value = serde_json::from_str(&raw.text).unwrap();
+    let result = value["result"].as_str().unwrap();
+    assert!(
+        result.len() <= 1000,
+        "result is {} bytes, over the 1000-byte budget",
+        result.len()
+    );
+    assert!(
+        result.ends_with('\u{2026}'),
+        "a cut result ends with an ellipsis"
+    );
 }
 
 #[test]

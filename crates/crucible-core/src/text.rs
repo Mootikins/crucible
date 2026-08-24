@@ -79,6 +79,19 @@ pub fn truncate_bytes(s: &str, max_len: usize) -> &str {
     &s[..end]
 }
 
+/// Cut `s` to at most `max_bytes` bytes, and mark a cut with `…`.
+///
+/// The three bytes of `…` count against the budget, so a cut result fits
+/// `max_bytes`. A budget under three bytes returns `…` alone.
+pub fn truncate_bytes_marked(s: &str, max_bytes: usize) -> String {
+    const ELLIPSIS: &str = "\u{2026}";
+    if s.len() <= max_bytes {
+        return s.to_string();
+    }
+    let head = truncate_bytes(s, max_bytes.saturating_sub(ELLIPSIS.len()));
+    format!("{head}{ELLIPSIS}")
+}
+
 /// Cut `s` to at most `max_chars` characters.
 ///
 /// A char cap serves a label a person reads, where the cost is the count of
@@ -166,6 +179,17 @@ mod tests {
         let cut = truncate_bytes("hello\u{00e9}world", 6);
         assert_eq!(cut, "hello");
         assert!(cut.len() <= 6);
+    }
+
+    #[test]
+    fn truncate_bytes_marked_fits_the_budget_with_its_ellipsis() {
+        assert_eq!(truncate_bytes_marked("hello", 5), "hello");
+        assert_eq!(truncate_bytes_marked("hello world", 8), "hello\u{2026}");
+        let cjk = "\u{4e2d}".repeat(10);
+        let cut = truncate_bytes_marked(&cjk, 10);
+        assert_eq!(cut, format!("{}\u{2026}", "\u{4e2d}".repeat(2)));
+        assert!(cut.len() <= 10);
+        assert_eq!(truncate_bytes_marked("abc", 2), "\u{2026}");
     }
 
     #[test]
