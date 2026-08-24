@@ -90,7 +90,11 @@ impl Entry {
     }
 
     /// Emit `ToolStart`, and then the held completion when there is one.
-    fn announce(&mut self, out: &mut Vec<StreamingChunk>) {
+    ///
+    /// Returns the held bytes this released. The table must subtract them
+    /// from its total, or the cap refuses later results against bytes that
+    /// already left the table.
+    fn announce(&mut self, out: &mut Vec<StreamingChunk>) -> usize {
         self.announced = true;
         out.push(StreamingChunk::ToolStart {
             name: self.name(),
@@ -98,14 +102,19 @@ impl Entry {
             arguments: self.args.clone(),
             diffs: self.diffs.clone(),
         });
-        if let Some(held) = self.held.take() {
-            self.completions += 1;
-            out.push(StreamingChunk::ToolEnd {
-                id: self.id.clone(),
-                name: self.name(),
-                result: held.result,
-                error: held.error,
-            });
+        match self.held.take() {
+            Some(held) => {
+                let released = held.bytes();
+                self.completions += 1;
+                out.push(StreamingChunk::ToolEnd {
+                    id: self.id.clone(),
+                    name: self.name(),
+                    result: held.result,
+                    error: held.error,
+                });
+                released
+            }
+            None => 0,
         }
     }
 
@@ -186,7 +195,8 @@ impl ToolCallTable {
         if !diffs.is_empty() {
             entry.diffs = diffs;
         }
-        entry.announce(&mut out);
+        let released = entry.announce(&mut out);
+        self.held_bytes -= released;
         out
     }
 
@@ -224,7 +234,7 @@ impl ToolCallTable {
         entry.merge_diffs(diffs, &mut out);
 
         if !entry.announced && entry.title.is_some() {
-            entry.announce(&mut out);
+            held_bytes -= entry.announce(&mut out);
         }
 
         if let Some(completion) = completion {
@@ -271,6 +281,31 @@ impl ToolCallTable {
         out
     }
 
+    /// Warn with each result the turn still holds, and release them all.
+    ///
+    /// Not every turn reaches `flush`: the agent-error return and the
+    /// overall-timeout return drop the table mid-turn. The log is then the
+    /// only place a held payload survives, as on the refusal path in `hold`.
+    /// Returns how many results it reported.
+    fn log_dropped(&mut self) -> usize {
+        let mut dropped = 0;
+        for entry in &mut self.entries {
+            if let Some(held) = entry.held.take() {
+                dropped += 1;
+                tracing::warn!(
+                    tool_id = %entry.id,
+                    result = ?held.result,
+                    error = ?held.error,
+                    "the turn ended before this held ACP tool result was \
+                     announced; dropping it (lost from session.jsonl, \
+                     recordings and Lua handlers)"
+                );
+            }
+        }
+        self.held_bytes = 0;
+        dropped
+    }
+
     /// Whether the turn announced at least one call. After `flush` this is
     /// true for every non-empty table.
     pub(super) fn announced_any(&self) -> bool {
@@ -303,6 +338,15 @@ impl ToolCallTable {
     }
 }
 
+/// The failure returns drop the table without a `flush`. This logs what
+/// they lose. After a `flush` there is nothing held, so a normal turn
+/// logs nothing here.
+impl Drop for ToolCallTable {
+    fn drop(&mut self) {
+        self.log_dropped();
+    }
+}
+
 /// Hold a completion on an unnamed entry, within the caps.
 ///
 /// A later completion for the same entry replaces the earlier one, because
@@ -320,6 +364,7 @@ fn hold(entry: &mut Entry, completion: HeldResult, held_count: usize, held_bytes
             tool_id = %entry.id,
             result = ?completion.result,
             error = ?completion.error,
+            replaced = ?entry.held,
             held = held_count,
             held_bytes = *held_bytes,
             entry_bytes = completion.bytes(),
@@ -328,13 +373,15 @@ fn hold(entry: &mut Entry, completion: HeldResult, held_count: usize, held_bytes
             "ACP held tool results hit their cap; dropping this payload \
              (lost from session.jsonl, recordings and Lua handlers)"
         );
-        if entry.held.is_none() {
-            entry.held = Some(HeldResult {
-                result: None,
-                error: Some(HELD_RESULT_DROPPED.to_string()),
-            });
-            *held_bytes += HELD_RESULT_DROPPED.len();
-        }
+        // The renderers show the last result per call id, so a kept partial
+        // result would read as final. The marker replaces it, and its bytes
+        // come back.
+        *held_bytes -= replaced_bytes;
+        *held_bytes += HELD_RESULT_DROPPED.len();
+        entry.held = Some(HeldResult {
+            result: None,
+            error: Some(HELD_RESULT_DROPPED.to_string()),
+        });
         return;
     }
 
@@ -638,6 +685,66 @@ mod tests {
             4,
             "two entries, each announced once with one result"
         );
+    }
+
+    /// An announcement releases the held bytes it emits. Without the refund
+    /// the cap counts results that already left the table, and a later real
+    /// result is refused against a stale total.
+    #[test]
+    fn an_announcement_gives_the_held_bytes_back() {
+        let mut table = ToolCallTable::default();
+        let big = "x".repeat(MAX_HELD_RESULT_BYTES / 2 + 1);
+
+        table.upsert_update(completed("t1", &big));
+        table.upsert_call(call(json!({"toolCallId": "t1", "title": "late_call"})));
+        table.upsert_update(completed("t2", &big));
+
+        assert_eq!(held_ids(&table), vec!["t2"]);
+    }
+
+    /// A refused replacement removes the earlier partial result. Both
+    /// renderers show the last result per call id, so a kept partial would
+    /// read as final. The marker replaces it, and the partial's bytes come
+    /// back so the next entry is not refused against them.
+    #[test]
+    fn a_refused_replacement_drops_the_partial_and_marks_the_entry() {
+        let mut table = ToolCallTable::default();
+        let big = "x".repeat(MAX_HELD_RESULT_BYTES / 2 + 1);
+
+        table.upsert_update(completed("t1", &big));
+        table.upsert_update(completed("t1", &"x".repeat(MAX_HELD_RESULT_BYTES + 1)));
+        table.upsert_update(completed("t2", &big));
+
+        assert_eq!(held_ids(&table), vec!["t2"]);
+        let flushed = table.flush("end_turn");
+        assert_eq!(
+            shapes(&flushed)[1],
+            format!("end t1 {PLACEHOLDER_TOOL_NAME} None Some({HELD_RESULT_DROPPED:?})")
+        );
+    }
+
+    /// A turn that ends without a `flush` reports each held result once.
+    /// `Drop` calls this, so the agent-error return and the timeout return
+    /// leave a warning per lost payload instead of silence.
+    #[test]
+    fn a_table_dropped_mid_turn_reports_each_held_result_once() {
+        let mut table = ToolCallTable::default();
+        table.upsert_update(completed("t1", "one"));
+        table.upsert_update(completed("t2", "two"));
+
+        assert_eq!(table.log_dropped(), 2);
+        assert_eq!(table.log_dropped(), 0, "a second pass reports nothing");
+    }
+
+    /// A flushed table holds nothing, so the `Drop` of a normal turn is
+    /// silent.
+    #[test]
+    fn a_flushed_table_has_nothing_left_to_report() {
+        let mut table = ToolCallTable::default();
+        table.upsert_update(completed("t1", "one"));
+        table.flush("end_turn");
+
+        assert_eq!(table.log_dropped(), 0);
     }
 
     #[test]
