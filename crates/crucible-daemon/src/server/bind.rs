@@ -164,3 +164,64 @@ impl Server {
         .await
     }
 }
+
+#[cfg(test)]
+mod from_app_config_tests {
+    use super::*;
+    use crucible_core::config::CliAppConfig;
+
+    /// Every section the daemon acts on must reach it. Two hand-written call
+    /// sites drifted: one dropped `[permissions]`, both dropped `[mcp]`. This
+    /// test reads a config that sets each section and proves it arrives.
+    #[test]
+    fn every_configured_section_reaches_the_daemon() {
+        let toml = r#"
+kiln_path = "/tmp/kiln"
+runtimepath = ["/tmp/rp"]
+
+[mcp]
+[[mcp.servers]]
+name = "github"
+transport = { type = "stdio", command = "gh-mcp", args = [] }
+prefix = "gh_"
+
+[permissions]
+mode = "plan"
+
+[acp]
+default_agent = "claude"
+
+[context]
+
+[server]
+auto_archive_hours = 12
+"#;
+        let config: CliAppConfig = toml::from_str(toml).expect("the fixture config loads");
+        let params = BindWithPluginConfigParams::from_app_config(
+            std::path::PathBuf::from("/tmp/sock"),
+            &config,
+            Default::default(),
+            false,
+        );
+
+        let mcp = params.mcp_config.expect("[mcp] reaches the daemon");
+        assert_eq!(mcp.servers.len(), 1, "the upstream server is carried over");
+        assert_eq!(mcp.servers[0].name, "github");
+        assert!(
+            params.permission_config.is_some(),
+            "[permissions] reaches the daemon"
+        );
+        assert!(params.acp_config.is_some(), "[acp] reaches the daemon");
+        assert!(
+            params.context_config.is_some(),
+            "[context] reaches the daemon"
+        );
+        assert_eq!(params.auto_archive_hours, Some(12));
+        assert_eq!(params.runtimepath.len(), 1);
+        assert!(params.llm_config.is_some());
+        assert!(
+            params.app_config.is_some(),
+            "the whole config seeds the Lua store"
+        );
+    }
+}

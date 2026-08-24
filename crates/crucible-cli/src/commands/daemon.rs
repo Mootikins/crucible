@@ -114,14 +114,12 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
         let config = CliConfig::load(config_path.clone(), None, None)?;
         let (plugin_sections, plugin_watch) =
             crucible_daemon::daemon_plugins::split_plugins_config(&config.plugins);
-        let server = Server::bind_with_plugin_config(
-            BindWithPluginConfigParams::from_app_config(
-                sock.clone(),
-                &config,
-                plugin_sections.clone(),
-                plugin_watch,
-            ),
-        )
+        let server = Server::bind_with_plugin_config(BindWithPluginConfigParams::from_app_config(
+            sock.clone(),
+            &config,
+            plugin_sections.clone(),
+            plugin_watch,
+        ))
         .await?;
 
         println!("Daemon listening on {:?}", sock);
