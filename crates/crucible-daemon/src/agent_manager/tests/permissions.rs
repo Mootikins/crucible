@@ -267,6 +267,41 @@ mod pattern_matching_tests {
         .is_none());
     }
 
+    /// Two sessions that grant to the same store at the same time must both
+    /// land. `user.toml` is shared by every session on the machine.
+    #[test]
+    fn concurrent_store_pattern_calls_keep_every_grant() {
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("whitelists.d").join("user.toml");
+        let writers = 8;
+        let rounds = 10;
+
+        for round in 0..rounds {
+            let barrier = Arc::new(std::sync::Barrier::new(writers));
+            let handles: Vec<_> = (0..writers)
+                .map(|i| {
+                    let file = file.clone();
+                    let barrier = barrier.clone();
+                    std::thread::spawn(move || {
+                        barrier.wait();
+                        AgentManager::store_pattern_to(&file, "bash", &format!("tool{round}_{i} "))
+                    })
+                })
+                .collect();
+            for h in handles {
+                h.join().unwrap().unwrap();
+            }
+        }
+
+        let store = PatternStore::load_file(&file).unwrap();
+        for round in 0..rounds {
+            for i in 0..writers {
+                let sample = format!("tool{round}_{i} run");
+                assert!(store.matches_bash(&sample), "grant lost: {sample:?}");
+            }
+        }
+    }
+
     #[test_case("bash", "cargo build", "cargo build --release", true; "store_pattern_adds_bash_pattern")]
     #[test_case("write_file", "src/", "src/main.rs", true; "store_pattern_adds_file_pattern")]
     #[test_case("custom_tool", "custom_tool", "custom_tool", true; "store_pattern_adds_tool_pattern")]

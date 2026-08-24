@@ -1077,11 +1077,20 @@ impl AgentManager {
 
     /// Add `pattern` to the store at `file`, which a `Project` or `User`
     /// grant resolves through [`PatternStore::store_file_in`].
+    ///
+    /// The daemon is the only writer of a store file, so one process-wide
+    /// lock serializes the load, the update and the save. Without it two
+    /// sessions that grant at the same time overwrite each other.
     pub(in crate::agent_manager) fn store_pattern_to(
         file: &std::path::Path,
         tool_name: &str,
         pattern: &str,
     ) -> Result<(), crucible_core::config::PatternError> {
+        static STORE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = STORE_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
         let mut store = PatternStore::load_file(file).unwrap_or_default();
 
         match tool_name {

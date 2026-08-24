@@ -9,31 +9,48 @@ use std::path::Path;
 /// secrets all hold live credentials. One function decides how a credential
 /// file is created, so no caller forgets the mode.
 ///
-/// On unix the file is created with mode `0o600`. When the file already
-/// exists with a looser mode, the function tightens the mode to `0o600`
-/// before it writes the contents. Parent directories are created as needed.
+/// The contents go to a sibling temporary file first. A rename then moves
+/// the file into place, so a reader never sees a truncated file.
+///
+/// On unix the file is created with mode `0o600`. Parent directories are
+/// created as needed.
 pub fn write_private(path: &Path, contents: &[u8]) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(parent)?;
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| std::io::Error::other(format!("{}: no file name", path.display())))?;
+    // The counter keeps two threads of one process apart. The process id
+    // alone is not enough: a concurrent write is the case this guards.
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let mut tmp_name = std::ffi::OsString::from(".");
+    tmp_name.push(file_name);
+    tmp_name.push(format!(".{}.{seq}.tmp", std::process::id()));
+    let tmp = parent.join(tmp_name);
+
+    let result = write_new_private(&tmp, contents).and_then(|()| std::fs::rename(&tmp, path));
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
     }
+    result
+}
+
+fn write_new_private(tmp: &Path, contents: &[u8]) -> std::io::Result<()> {
     #[cfg(unix)]
-    {
-        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-        let mut file = std::fs::OpenOptions::new()
+    let mut file = {
+        use std::os::unix::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
             .mode(0o600)
-            .open(path)?;
-        // `mode()` applies only at creation. Tighten an existing file before
-        // the secret reaches the disk.
-        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
-        file.write_all(contents)
-    }
+            .open(tmp)?
+    };
     #[cfg(not(unix))]
-    {
-        std::fs::File::create(path)?.write_all(contents)
-    }
+    let mut file = std::fs::File::create(tmp)?;
+    file.write_all(contents)?;
+    file.sync_all()
 }
 
 #[cfg(all(test, unix))]
