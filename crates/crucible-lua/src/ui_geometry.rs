@@ -1,4 +1,4 @@
-//! `crucible.ui` — per-surface geometry.
+//! `cru.geometry` — per-surface geometry.
 //!
 //! Deliberately a **closed** set of surfaces, unlike the open highlight-group
 //! namespace in [`crate::hl`]. Geometry has to be drawn by a renderer that knows
@@ -7,7 +7,7 @@
 //! is closed because the renderer is the limit.
 //!
 //! ```lua
-//! crucible.ui.setup{
+//! cru.geometry.setup{
 //!   popup  = { border = "rounded", padding = 1, max_visible = 10 },
 //!   modal  = { border = { "╔","═","╗","║","╝","═","╚","║" }, padding = 1 },
 //!   drawer = { border = { "", "▀", "", "", "", "▄", "", "" } },
@@ -164,7 +164,7 @@ fn prompt_from_lua(table: &Table) -> PromptStyle {
     }
 }
 
-/// Parse a whole `crucible.ui.setup{...}` table.
+/// Parse a whole `cru.geometry.setup{...}` table.
 pub fn geometry_from_lua(config: &Table) -> UiGeometry {
     let surface = |key: &str| {
         config
@@ -198,15 +198,20 @@ pub fn geometry_from_lua(config: &Table) -> UiGeometry {
     }
 }
 
-/// Register `crucible.ui` on an existing `crucible` table.
-pub fn register_ui_namespace(lua: &Lua, crucible: &Table) -> Result<(), crate::error::LuaError> {
-    let ui = lua.create_table()?;
+/// Register `cru.geometry` on an existing `cru` table.
+///
+/// This table was published as `crucible.ui` before, where it overwrote the
+/// session interaction API that `cru.ui` holds. The name `geometry` says what
+/// the table configures, and it ends that collision: `cru.ui` asks, and
+/// `cru.geometry` shapes surfaces.
+pub fn register_geometry_namespace(lua: &Lua, cru: &Table) -> Result<(), crate::error::LuaError> {
+    let geometry = lua.create_table()?;
     let setup_fn = lua.create_function(|_, config: Table| {
         crate::config::set_ui_geometry(geometry_from_lua(&config));
         Ok(())
     })?;
-    ui.set("setup", setup_fn)?;
-    crucible.set("ui", ui)?;
+    geometry.set("setup", setup_fn)?;
+    cru.set("geometry", geometry)?;
     Ok(())
 }
 

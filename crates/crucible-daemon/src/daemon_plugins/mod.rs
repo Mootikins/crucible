@@ -470,10 +470,13 @@ impl DaemonPluginLoader {
         Arc::new(self.executor.lua().clone())
     }
 
-    /// Register plugin config as `crucible.config` in the Lua runtime.
+    /// Register plugin config as `cru.plugin.config` in the Lua runtime.
     ///
-    /// Provides `crucible.config.get("plugin_name.key")` for dotted-key lookup
-    /// from `[plugins.*]` sections in config.toml.
+    /// Provides `cru.plugin.config.get("plugin_name.key")` for dotted-key
+    /// lookup from `[plugins.*]` sections in config.toml. Deliberately NOT
+    /// `cru.config`: that name is the app-config store (`get`/`set`), and a
+    /// plugin's own TOML section is a different thing — the plugin seam owns
+    /// plugin-scoped state.
     fn register_plugin_config(
         lua: &mlua::Lua,
         config: HashMap<String, serde_json::Value>,
@@ -484,11 +487,12 @@ impl DaemonPluginLoader {
         let data = lua.to_value(&config)?;
         config_table.set("_data", data)?;
 
-        // crucible.config.get("namespace.key") -> value
+        // cru.plugin.config.get("namespace.key") -> value
         let get_fn = lua.create_function(|lua, key: String| {
             let globals = lua.globals();
-            let crucible: mlua::Table = globals.get("crucible")?;
-            let config: mlua::Table = crucible.get("config")?;
+            let cru: mlua::Table = globals.get("cru")?;
+            let plugin: mlua::Table = cru.get("plugin")?;
+            let config: mlua::Table = plugin.get("config")?;
             let data: mlua::Value = config.get("_data")?;
 
             let mlua::Value::Table(data_table) = data else {
@@ -509,7 +513,9 @@ impl DaemonPluginLoader {
         })?;
         config_table.set("get", get_fn)?;
 
-        // Register on the crucible global
+        let plugin = crucible_lua::lua_util::get_or_create_module(lua, "plugin")?;
+        plugin.set("config", config_table.clone())?;
+        // Transitional alias until the `crucible` global is deleted.
         let globals = lua.globals();
         let crucible: mlua::Table = globals.get("crucible")?;
         crucible.set("config", config_table)?;

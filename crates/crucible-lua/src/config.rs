@@ -40,7 +40,7 @@ pub struct ConfigState {
     /// Highlight groups authored via `crucible.hl.set/link`. Open namespace —
     /// plugins name their own — so it is a map, not a fixed struct.
     pub hl: crate::hl::HlRegistry,
-    /// Per-surface geometry from `crucible.ui.setup{}`.
+    /// Per-surface geometry from `cru.geometry.setup{}`.
     pub ui: Option<crate::ui_geometry::UiGeometry>,
     /// Screen layout authored as ordered region lists.
     pub layout: Option<crate::statusline_items::Layout>,
@@ -245,18 +245,25 @@ pub fn reset_config() {
     }
 }
 
-/// Register the `crucible.statusline` table. The item vocabulary
+/// Ensure the `cru.statusline` table exists. The item vocabulary
 /// ([`crate::statusline_lua`]) fills it in; this only creates it so both
 /// registrations have somewhere to hang.
-pub fn register_statusline_namespace(lua: &Lua, crucible: &Table) -> Result<(), LuaError> {
-    crucible.set("statusline", lua.create_table()?)?;
+///
+/// Get-or-create, never overwrite: on the daemon VMs
+/// [`crate::statusline_exprs::register_statusline_exprs`] may already have put
+/// `set`/`clear` on the table, and statusline is ONE module — the factories
+/// and the runtime setters share it.
+pub fn register_statusline_namespace(lua: &Lua, cru: &Table) -> Result<(), LuaError> {
+    if cru.get::<Table>("statusline").is_err() {
+        cru.set("statusline", lua.create_table()?)?;
+    }
     Ok(())
 }
 
 /// Register `crucible.colorscheme` — the colour palette.
 ///
 /// Named for what it is. "Theme" had come to mean three different things: this
-/// palette, the surface geometry in `crucible.ui`, and the syntect theme used
+/// palette, the surface geometry in `cru.geometry`, and the syntect theme used
 /// for code highlighting. `colorscheme` is also the word Neovim uses for
 /// exactly this — the thing highlight groups resolve against.
 pub fn register_theme_namespace(lua: &Lua, crucible: &Table) -> Result<(), LuaError> {
@@ -328,7 +335,7 @@ fn register_include(lua: &Lua, crucible: &Table, config_dir: PathBuf) -> Result<
 /// Register `crucible.syntax` — code-highlighting colours.
 ///
 /// Separate from `crucible.colorscheme` because it addresses grammar scopes
-/// rather than UI slots, and separate from `crucible.ui` because it is colour,
+/// rather than UI slots, and separate from `cru.geometry` because it is colour,
 /// not geometry. `theme = "name"` picks a syntect theme by name; `colors = {}`
 /// overrides individual scopes on top of whatever the colorscheme derives.
 pub fn register_syntax_namespace(lua: &Lua, crucible: &Table) -> Result<(), LuaError> {
@@ -367,26 +374,21 @@ pub fn get_syntax_config() -> Option<serde_json::Value> {
 /// `crucible.colorscheme.setup{...}` fails with "attempt to index a nil value" and the
 /// user's theme never even parses.
 pub fn register_ui_namespaces(lua: &Lua) -> Result<(), LuaError> {
-    let globals = lua.globals();
-    // The plugin VM has a `crucible` table already; a bare VM may not.
-    let crucible: Table = match globals.get::<Table>("crucible") {
-        Ok(t) => t,
-        Err(_) => {
-            let t = lua.create_table()?;
-            globals.set("crucible", t.clone())?;
-            t
-        }
-    };
+    let cru = crate::lua_util::get_or_create_namespace(lua, "cru")?;
+    // Transitional: the `crucible` global still exists for old configs.
+    let crucible = crate::lua_util::get_or_create_namespace(lua, "crucible")?;
 
-    register_statusline_namespace(lua, &crucible)?;
+    register_statusline_namespace(lua, &cru)?;
     register_theme_namespace(lua, &crucible)?;
     crate::hl_lua::register_hl_namespace(lua, &crucible)?;
-    crate::ui_geometry::register_ui_namespace(lua, &crucible)?;
+    crate::ui_geometry::register_geometry_namespace(lua, &cru)?;
     register_syntax_namespace(lua, &crucible)?;
-    // Item vocabulary hangs off the same `crucible.statusline` table the
-    // component factories already live on.
-    if let Ok(sl) = crucible.get::<Table>("statusline") {
+    // Item vocabulary hangs off the same `cru.statusline` table the runtime
+    // `set`/`clear` functions live on — statusline is one module, so the two
+    // globals see one table.
+    if let Ok(sl) = cru.get::<Table>("statusline") {
         crate::statusline_lua::register_statusline_items(lua, &sl)?;
+        crucible.set("statusline", sl)?;
     }
 
     // Embedded defaults, seeded only when nothing is installed yet. User
