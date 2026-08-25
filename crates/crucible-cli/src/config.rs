@@ -38,8 +38,27 @@ pub async fn fetch_effective_config(
     // daemon starts: with no daemon, the local evaluation reads the same
     // files the daemon's boot would, so the values agree by construction,
     // and the command's own daemon contact (if it gets that far) spawns one.
+    match fetch_effective_from_daemon(
+        config_file.clone(),
+        embedding_url.clone(),
+        embedding_model.clone(),
+    )
+    .await?
+    {
+        Some(config) => Ok(config),
+        None => local_evaluation(config_file, embedding_url, embedding_model).await,
+    }
+}
+
+/// [`fetch_effective_config`]'s daemon half: `Ok(None)` when no daemon is
+/// running. `cru config show` uses this to say WHICH copy it rendered.
+pub async fn fetch_effective_from_daemon(
+    config_file: Option<std::path::PathBuf>,
+    embedding_url: Option<String>,
+    embedding_model: Option<String>,
+) -> anyhow::Result<Option<CliConfig>> {
     let Some(client) = crate::common::daemon_client_if_running().await else {
-        return local_evaluation(config_file, embedding_url, embedding_model).await;
+        return Ok(None);
     };
     let resp = client
         .call("config.effective", serde_json::json!({}))
@@ -79,8 +98,37 @@ pub async fn fetch_effective_config(
     if resp["kiln_path_is_default"].as_bool() == Some(true) {
         config.kiln_path = CliConfig::default().kiln_path;
     }
+    // The daemon's per-leaf provenance, for `--sources` rendering.
+    if let Ok(provenance) =
+        serde_json::from_value::<crucible_core::config::ProvenanceMap>(resp["provenance"].clone())
+    {
+        config.source_map = Some(provenance);
+    }
     config.apply_embedding_overrides(embedding_url, embedding_model);
-    Ok(config)
+    Ok(Some(config))
+}
+
+/// A `ProvenanceMap` travels the `config.effective` wire intact — the
+/// `--sources` rendering on the client is only as good as this round trip.
+#[cfg(test)]
+mod effective_fetch_tests {
+    #[test]
+    fn a_wire_provenance_round_trips_into_source_map() {
+        let mut provenance = crucible_core::config::ProvenanceMap::new();
+        provenance.set(
+            "chat.model",
+            crucible_core::config::SourceTag::Lua {
+                file: "init.lua".into(),
+                line: Some(3),
+            },
+        );
+        let wire = serde_json::to_value(&provenance).unwrap();
+        let back: crucible_core::config::ProvenanceMap = serde_json::from_value(wire).unwrap();
+        assert_eq!(
+            back.get("chat.model").map(|t| t.detail()),
+            Some("lua (init.lua:3)".to_string())
+        );
+    }
 }
 
 /// One throwaway evaluation for a bootstrap command: seed, evaluate

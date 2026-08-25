@@ -225,7 +225,7 @@ pub async fn evaluate_boot_config_with_paths(
             config_source.display()
         )
     })?;
-    seed_config.source_map = Some(source_map_from_provenance(seed_store.provenance()));
+    seed_config.source_map = Some(seed_store.provenance().clone());
 
     // Step 3: THE plugin VM, and the live module search path: the user
     // module entries first, then the default plugin locations (env path,
@@ -279,11 +279,10 @@ pub async fn evaluate_boot_config_with_paths(
     let full_store = crucible_lua::snapshot_store().expect("the store is live");
     let mut config = match full_store.extract() {
         Ok(mut config) => {
-            // The old `--trace` surface reads `source_map`; project the
-            // store's provenance into it so a value from the TOML seed or a
-            // Lua call site still renders its source. T5.7 replaces this
-            // surface with the provenance map itself.
-            config.source_map = Some(source_map_from_provenance(full_store.provenance()));
+            // The `--sources` surface reads `source_map`, which IS the
+            // store's provenance now — every leaf the boot merged, with its
+            // file:line for Lua call sites.
+            config.source_map = Some(full_store.provenance().clone());
             config
         }
         Err(e) => {
@@ -629,34 +628,6 @@ end
     }
 
     Ok(value)
-}
-
-/// Project the store's per-leaf provenance into the legacy `ValueSourceMap`
-/// the `--trace` rendering still reads. Runtime-only tags (RPC merges, the
-/// state overlay) have no legacy variant and are skipped.
-fn source_map_from_provenance(
-    provenance: &crucible_core::config::ProvenanceMap,
-) -> crucible_core::config::ValueSourceMap {
-    use crucible_core::config::ValueSource;
-    let mut map = crucible_core::config::ValueSourceMap::new();
-    for (path, tag) in provenance.iter() {
-        let source = match tag {
-            SourceTag::Default => ValueSource::Default,
-            SourceTag::Toml(file) => ValueSource::File {
-                path: Some(file.display().to_string()),
-            },
-            SourceTag::Lua { file, line } => ValueSource::File {
-                path: Some(match line {
-                    Some(line) => format!("{file}:{line}"),
-                    None => file.clone(),
-                }),
-            },
-            SourceTag::Cli => ValueSource::Cli,
-            SourceTag::Rpc | SourceTag::Registered | SourceTag::Discovered => continue,
-        };
-        map.set(path, source);
-    }
-    map
 }
 
 /// Replace the daemon-state namespaces with tables that raise on any index.

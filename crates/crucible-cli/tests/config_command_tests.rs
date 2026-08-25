@@ -315,11 +315,11 @@ default_model = "nomic-embed-text"
         .arg("show")
         .arg("--trace");
 
-    // Values from file should show "from: file (...)"
-    // Values not in file should show "from: default"
+    // Values from the TOML seed show "from: toml (...)";
+    // values not in the file show "from: default"
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("# from: file"))
+        .stdout(predicate::str::contains("# from: toml"))
         .stdout(predicate::str::contains("# from: default"))
         .stdout(predicate::str::contains("kiln_path"));
 }

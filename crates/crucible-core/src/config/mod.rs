@@ -47,7 +47,6 @@ mod security;
 pub mod serde_helpers;
 pub mod store;
 mod tilde;
-mod value_source;
 mod workspace;
 
 pub use components::defaults::{
@@ -103,5 +102,4 @@ pub use provenance::{ProvenanceMap, SourceTag};
 pub use security::{ProjectFileAccess, ShellPolicy};
 pub use store::{ConfigStore, LocationPolicy};
 pub use tilde::expand_tilde;
-pub use value_source::{ValueSource, ValueSourceMap};
 pub use workspace::{KilnAttachment, SecurityConfig};

@@ -4,10 +4,12 @@
 //! last wrote it. An array is one leaf: arrays replace wholesale, so
 //! per-element provenance cannot exist.
 
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Where a config value came from.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SourceTag {
     /// The compiled-in default.
     Default,
@@ -65,7 +67,8 @@ impl SourceTag {
 }
 
 /// Dot-joined leaf path → the source that last wrote it.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct ProvenanceMap {
     entries: BTreeMap<String, SourceTag>,
 }

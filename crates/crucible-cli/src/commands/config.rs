@@ -19,6 +19,22 @@ pub async fn execute(
     match cmd {
         ConfigCommands::Init { path, force } => init(path, force).await,
         ConfigCommands::Show { format, sources } => {
+            // Prefer the daemon's copy — it holds the runtime merges and the
+            // live provider table — and SAY which copy rendered. The stderr
+            // line keeps stdout machine-readable.
+            let (config, origin) = match crate::config::fetch_effective_from_daemon(
+                config_path_flag.clone(),
+                None,
+                None,
+            )
+            .await?
+            {
+                Some(daemon_copy) => (daemon_copy, "the daemon's copy"),
+                None => (config, "a local evaluation"),
+            };
+            if sources {
+                eprintln!("# source: {origin}");
+            }
             println!("{}", render(&config, &format, sources)?);
             Ok(())
         }

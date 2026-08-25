@@ -1711,9 +1711,35 @@ impl RpcDispatcher {
             });
         };
         let mut config = config;
+        let mut provenance = crucible_lua::get_app_config_provenance().unwrap_or_default();
         if let Some(object) = config.as_object_mut() {
             if let Some(llm) = self.ctx.llm_config.get() {
                 if let Ok(llm) = serde_json::to_value(llm.as_ref()) {
+                    // A provider the live table holds that the STORE never
+                    // merged came through the state overlay (`llm.json`) —
+                    // registered, and its leaves say so.
+                    let store_has = |name: &str| {
+                        crucible_lua::get_app_config()
+                            .and_then(|store| {
+                                store
+                                    .get("llm")
+                                    .and_then(|l| l.get("providers"))
+                                    .and_then(|p| p.get(name))
+                                    .map(|_| true)
+                            })
+                            .unwrap_or(false)
+                    };
+                    if let Some(providers) = llm.get("providers").and_then(|p| p.as_object()) {
+                        for (name, entry) in providers {
+                            if !store_has(name) {
+                                record_registered_leaves(
+                                    &mut provenance,
+                                    &format!("llm.providers.{name}"),
+                                    entry,
+                                );
+                            }
+                        }
+                    }
                     object.insert("llm".to_string(), llm);
                 }
             }
@@ -1744,6 +1770,7 @@ impl RpcDispatcher {
             "config_root": config_root,
             "boot_hash": self.ctx.boot_hash,
             "kiln_path_is_default": kiln_path_is_default,
+            "provenance": provenance,
         }))
     }
 
@@ -1929,6 +1956,24 @@ impl RpcDispatcher {
 
         Ok(serde_json::json!({ "status": "ok" }))
     }
+}
+
+/// Record `registered` provenance for every leaf under `path` of `value` —
+/// the state overlay's contribution to the effective config.
+fn record_registered_leaves(
+    provenance: &mut crucible_core::config::ProvenanceMap,
+    path: &str,
+    value: &serde_json::Value,
+) {
+    if let serde_json::Value::Object(map) = value {
+        if !map.is_empty() {
+            for (key, child) in map {
+                record_registered_leaves(provenance, &format!("{path}.{key}"), child);
+            }
+            return;
+        }
+    }
+    provenance.set(path, crucible_core::config::SourceTag::Registered);
 }
 
 #[cfg(test)]
