@@ -1035,6 +1035,19 @@ end
 
             // Ownership is keyed by the MODULE name the user required, which
             // is not always the plugin's declared name.
+            //
+            // NOTE(finding): ownership is only DETECTED for loads the boot
+            // searcher claimed (entry-shaped `.lua` requires) — the setup
+            // wrapper is installed at claim time. A load the searcher did
+            // not claim (declared name differing from the directory, a
+            // dotted require of the entry file) whose setup the user called
+            // directly is reused WITHOUT ownership: the default `setup(cfg)`
+            // below runs AFTER the user's call. A setup that only merges
+            // config absorbs that; one with side effects — registering a
+            // hook, starting a timer, spawning anything — runs them twice.
+            // The known structural remedy is observing the call itself (a
+            // require-hook wrapping every plugin-root load, not only claimed
+            // shapes); it was deliberately not built in M5.
             let owner_key = module_name.split('.').next().unwrap_or(&module_name);
             if boot::BootRequireState::user_owns_setup(lua, owner_key) {
                 debug!("Plugin '{name}': init.lua called setup(); the default call is skipped");

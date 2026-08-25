@@ -38,7 +38,16 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   forbidOnly: !!process.env.CI,
-  retries: 0,
+  // Two retries, LIVE tier only — diagnostic, not masking. WS-206 fails
+  // 3-10% of runs on a quiet box (see the NOTE(finding) in
+  // kiln-truth.live.spec.ts), which made every red CI run ambiguous: a real
+  // regression and the flake produced the same top-line result. With
+  // retries, a real never-indexes bug still fails all three attempts and CI
+  // stays red; a transient race passes on a retry and Playwright reports it
+  // as "flaky" — distinct from "passed" — so the signal survives. The unit,
+  // e2e and Rust tiers stay zero-retry: nothing there is eventually
+  // consistent, so a retry would genuinely mask.
+  retries: 2,
   reporter: 'line',
   timeout: 30_000,
   globalSetup: './e2e/live/global-setup.ts',
