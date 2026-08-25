@@ -359,14 +359,18 @@ impl WatchManager {
         let now = std::time::Instant::now();
 
         // Manually check and emit ready events
-        let ready_event = debouncer_guard.check_ready_events(now).await;
+        let ready_events = debouncer_guard.check_ready_events(now).await;
         drop(debouncer_guard);
 
-        if let Some(event) = ready_event {
-            // Queue and process the ready event
+        if !ready_events.is_empty() {
+            // EVERY ready event is queued. Taking only one here is what lost
+            // note writes: the debouncer has already removed them all from its
+            // pending map, so an event dropped at this point is gone.
             {
                 let mut queue = event_queue.lock().await;
-                queue.push(event).await?;
+                for event in ready_events {
+                    queue.push(event).await?;
+                }
             }
 
             // Process the queued events
@@ -387,13 +391,14 @@ impl WatchManager {
         // Debounce event
         {
             let mut debouncer_guard = debouncer.lock().await;
-            if let Some(debounced_event) = debouncer_guard.process_event(event.clone()).await {
-                // Queue the debounced event
-                let mut queue = event_queue.lock().await;
-                queue.push(debounced_event).await?;
-            } else {
-                // Event was debounced (filtered out)
+            let debounced = debouncer_guard.process_event(event.clone()).await;
+            if debounced.is_empty() {
+                // Event is pending in the debouncer; it emits on a later tick.
                 return Ok(());
+            }
+            let mut queue = event_queue.lock().await;
+            for debounced_event in debounced {
+                queue.push(debounced_event).await?;
             }
         }
 

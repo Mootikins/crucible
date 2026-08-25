@@ -46,7 +46,7 @@ impl Debouncer {
     }
 
     /// Process an incoming event.
-    pub async fn process_event(&mut self, event: FileEvent) -> Option<FileEvent> {
+    pub async fn process_event(&mut self, event: FileEvent) -> Vec<FileEvent> {
         trace!("Processing event: {:?}", event.kind);
 
         // Cleanup old events periodically
@@ -58,7 +58,7 @@ impl Debouncer {
         // If debounce delay is zero or very small, emit events immediately
         if self.delay.as_millis() == 0 {
             debug!("Zero delay - emitting event immediately");
-            return Some(event);
+            return vec![event];
         }
 
         let key = if self.deduplicate {
@@ -109,12 +109,23 @@ impl Debouncer {
     }
 
     /// Check for and emit events that are ready to be processed.
-    pub async fn check_ready_events(&mut self, now: Instant) -> Option<FileEvent> {
+    pub async fn check_ready_events(&mut self, now: Instant) -> Vec<FileEvent> {
         self.emit_ready_events(now).await
     }
 
-    /// Emit events that are ready to be processed.
-    async fn emit_ready_events(&mut self, now: Instant) -> Option<FileEvent> {
+    /// Emit every event whose delay has elapsed.
+    ///
+    /// Returns ALL of them. This used to return `Option<FileEvent>` — the
+    /// oldest one — while `retain` below had already removed every ready
+    /// event from `pending_events`. Two events becoming ready in the same
+    /// tick therefore lost one PERMANENTLY: it was gone from the pending map
+    /// and never returned to a caller. `max_batch_size` is 100, so the batch
+    /// arm did not cover it either; the loss window was 2..=100 events.
+    ///
+    /// The symptom was a note that never reached the index, with no error and
+    /// no retry, at a few percent of writes on an idle machine and more under
+    /// load — more concurrent writes mean more events ripening together.
+    async fn emit_ready_events(&mut self, now: Instant) -> Vec<FileEvent> {
         let mut ready_events = Vec::new();
 
         // Find events that are ready to emit
@@ -128,7 +139,7 @@ impl Debouncer {
         });
 
         if ready_events.is_empty() {
-            return None;
+            return Vec::new();
         }
 
         // Sort by emit time to maintain order
@@ -136,10 +147,15 @@ impl Debouncer {
 
         // Batch events if there are many
         if ready_events.len() > self.max_batch_size {
-            self.emit_batched_events(ready_events).await
+            self.emit_batched_events(ready_events)
+                .await
+                .into_iter()
+                .collect()
         } else {
-            // Emit the oldest event
-            Some(ready_events.into_iter().next().unwrap().1.event)
+            ready_events
+                .into_iter()
+                .map(|(_, pending)| pending.event)
+                .collect()
         }
     }
 
@@ -180,5 +196,71 @@ impl Debouncer {
         if removed > 0 {
             debug!("Cleaned up {} old pending events", removed);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::watch::events::FileEventKind;
+    use std::path::PathBuf;
+
+    fn modified(path: &str) -> FileEvent {
+        FileEvent::new(FileEventKind::Modified, PathBuf::from(path))
+    }
+
+    /// Two writes to DIFFERENT files inside one debounce window ripen
+    /// together. Both must come back.
+    ///
+    /// This is the note-never-indexed bug. `emit_ready_events` took every
+    /// ready event out of `pending_events`, then returned only the oldest —
+    /// so the second file's event was gone from the map and never handed to a
+    /// caller. No error, no retry: the note simply never reached the index.
+    #[tokio::test]
+    async fn every_event_ready_in_one_tick_is_emitted() {
+        let mut debouncer = Debouncer::new(DebounceConfig::new(10));
+
+        assert!(debouncer
+            .process_event(modified("/kiln/a.md"))
+            .await
+            .is_empty());
+        assert!(debouncer
+            .process_event(modified("/kiln/b.md"))
+            .await
+            .is_empty());
+
+        // Both delays have elapsed.
+        let ready = debouncer
+            .check_ready_events(Instant::now() + Duration::from_millis(50))
+            .await;
+
+        let mut paths: Vec<String> = ready.iter().map(|e| e.path.display().to_string()).collect();
+        paths.sort();
+        assert_eq!(
+            paths,
+            vec!["/kiln/a.md".to_string(), "/kiln/b.md".to_string()],
+            "every ready event must be emitted; dropping one loses a write forever"
+        );
+    }
+
+    /// Nothing ripe yet means nothing emitted, and the events stay pending
+    /// rather than being consumed.
+    #[tokio::test]
+    async fn an_unripe_event_stays_pending() {
+        let mut debouncer = Debouncer::new(DebounceConfig::new(500));
+
+        assert!(debouncer
+            .process_event(modified("/kiln/a.md"))
+            .await
+            .is_empty());
+        assert!(debouncer
+            .check_ready_events(Instant::now())
+            .await
+            .is_empty());
+
+        let ready = debouncer
+            .check_ready_events(Instant::now() + Duration::from_millis(600))
+            .await;
+        assert_eq!(ready.len(), 1, "the event must survive until it is ripe");
     }
 }
