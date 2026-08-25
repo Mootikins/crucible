@@ -85,3 +85,47 @@ fn every_plugin_vm_namespace_is_stubbed() {
         undocumented.len()
     );
 }
+
+/// `cru.kiln.path` resolves a name against the DAEMON's registry.
+///
+/// The assertion runs against a real registry over a tempdir, not against the
+/// source text of the closure: the point of the seam is that Lua reaches the
+/// registry, and only a live registry proves it does.
+#[test]
+fn cru_kiln_path_resolves_a_registered_name_through_the_registry() {
+    use crucible_daemon::kiln_registry::{KilnRegistry, KilnRegistryContext};
+
+    let tmp = tempfile::TempDir::new().expect("tempdir");
+    let root = tmp.path().join("notes");
+    std::fs::create_dir_all(&root).expect("kiln root");
+
+    let ctx = KilnRegistryContext::new(
+        tmp.path().join("cwd"),
+        Some(tmp.path().join("home")),
+        tmp.path().join("home").join(".crucible"),
+    );
+    let config = serde_json::json!({ "kilns": { "notes": root.to_string_lossy() } });
+    let registry = KilnRegistry::from_app_config(ctx, Some(&config)).expect("registry must build");
+
+    let loader = loader()
+        .with_kiln_path_resolver(std::sync::Arc::new(registry))
+        .expect("kiln path resolver");
+    let lua = loader.plugin_lua();
+
+    let resolved: String = lua
+        .load(r#"return cru.kiln.path("notes", "Inbox/today.md")"#)
+        .eval()
+        .expect("a registered name must resolve");
+    assert_eq!(
+        std::path::Path::new(&resolved),
+        std::fs::canonicalize(&root)
+            .expect("canonical root")
+            .join("Inbox/today.md")
+    );
+
+    let err = lua
+        .load(r#"return cru.kiln.path("absent")"#)
+        .eval::<String>()
+        .expect_err("an unregistered name must be refused");
+    assert!(err.to_string().contains("absent"), "unhelpful: {err}");
+}

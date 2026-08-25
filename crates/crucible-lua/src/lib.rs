@@ -122,7 +122,7 @@ pub use error::{format_lua_error, LuaError};
 pub use executor::LuaExecutor;
 #[cfg(feature = "fennel")]
 pub use fennel::FennelCompiler;
-pub use fs::{register_fs_module, register_fs_module_with_resolver, KilnPathResolver};
+pub use fs::{register_fs_module, register_fs_module_with_resolver};
 pub use graph::{register_graph_module, register_graph_module_with_store_scoped};
 pub use handler_budget::{
     enter as enter_handler_budget, install_deadline_hook, BudgetGuard, LIFECYCLE_BUDGET,
@@ -155,8 +155,8 @@ pub use storage_api::{register_storage_module, register_storage_module_with_stor
 pub use timer::register_timer_module;
 pub use types::{LuaExecutionResult, LuaTool, ToolParam, ToolResult};
 pub use vault::{
-    register_vault_module, register_vault_module_with_store,
-    register_vault_module_with_store_scoped,
+    register_kiln_path_resolver, register_vault_module, register_vault_module_with_store,
+    register_vault_module_with_store_scoped, KilnPathResolver,
 };
 pub use ws::register_ws_module;
 

@@ -7,6 +7,93 @@ mod stub_tests {
     use crate::test_support::TestLuaBuilder;
     use crate::vault::*;
 
+    /// A resolver that knows one kiln, `notes`, rooted at `root`.
+    fn lua_with_kiln(root: &std::path::Path) -> mlua::Lua {
+        let lua = TestLuaBuilder::new().with_vault().build();
+        let root = root.to_path_buf();
+        let resolver: KilnPathResolver = std::sync::Arc::new(move |name: &str| {
+            if name == "notes" {
+                Ok(root.clone())
+            } else {
+                Err(format!("kiln '{name}' is not registered"))
+            }
+        });
+        crate::vault::register_kiln_path_resolver(&lua, resolver).unwrap();
+        lua
+    }
+
+    #[test]
+    fn a_registered_kiln_name_resolves_to_its_root() {
+        let kiln = tempfile::TempDir::new().unwrap();
+        let lua = lua_with_kiln(kiln.path());
+
+        let root: String = lua.load(r#"return cru.kiln.path("notes")"#).eval().unwrap();
+        assert_eq!(
+            std::path::Path::new(&root),
+            std::fs::canonicalize(kiln.path()).unwrap()
+        );
+
+        let nested: String = lua
+            .load(r#"return cru.kiln.path("notes", ".crucible/proposals/p.md")"#)
+            .eval()
+            .unwrap();
+        assert_eq!(
+            std::path::Path::new(&nested),
+            std::fs::canonicalize(kiln.path())
+                .unwrap()
+                .join(".crucible/proposals/p.md")
+        );
+    }
+
+    #[test]
+    fn an_unknown_kiln_name_is_an_error_naming_the_kiln() {
+        let kiln = tempfile::TempDir::new().unwrap();
+        let lua = lua_with_kiln(kiln.path());
+
+        let err = lua
+            .load(r#"return cru.kiln.path("other")"#)
+            .eval::<String>()
+            .expect_err("an unknown name must be refused");
+        assert!(err.to_string().contains("other"), "unhelpful: {err}");
+    }
+
+    /// A bug lint, not a boundary: the relative part comes from the plugin's
+    /// own parts, so `..` there is a mistake to report.
+    #[test]
+    fn a_traversing_relative_part_is_refused() {
+        let kiln = tempfile::TempDir::new().unwrap();
+        let lua = lua_with_kiln(kiln.path());
+
+        for bad in ["../evil.md", "./p.md", "/etc/passwd", "a/../../b"] {
+            match lua
+                .load(format!(r#"return cru.kiln.path("notes", "{bad}")"#))
+                .eval::<String>()
+            {
+                Err(e) => assert!(
+                    e.to_string().contains("plain components"),
+                    "'{bad}' refused for the wrong reason: {e}"
+                ),
+                Ok(resolved) => panic!("'{bad}' must be refused, it resolved to {resolved}"),
+            }
+        }
+    }
+
+    /// Without a resolver the function still exists, and says so, rather than
+    /// being a nil call.
+    #[test]
+    fn a_runtime_with_no_resolver_answers_with_an_error() {
+        let lua = TestLuaBuilder::new().with_vault().build();
+
+        let err = lua
+            .load(r#"return cru.kiln.path("notes")"#)
+            .eval::<String>()
+            .expect_err("no resolver, no kiln paths");
+        assert!(
+            err.to_string().contains("cru.kiln.path"),
+            "the error must name the function: {err}"
+        );
+    }
+
     #[test]
     fn test_register_kiln_module() {
         let lua = TestLuaBuilder::new().with_vault().build();
@@ -20,6 +107,7 @@ mod stub_tests {
         assert!(kiln.contains_key("outlinks").unwrap());
         assert!(kiln.contains_key("backlinks").unwrap());
         assert!(kiln.contains_key("neighbors").unwrap());
+        assert!(kiln.contains_key("path").unwrap());
     }
 
     #[tokio::test]
