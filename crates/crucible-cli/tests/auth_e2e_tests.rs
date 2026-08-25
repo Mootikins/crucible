@@ -318,9 +318,15 @@ fn error_invalid_subcommand_shows_suggestion() {
 #[test]
 #[serial]
 fn error_missing_required_arg_shows_help() {
+    let tmp = tempfile::tempdir().unwrap();
     let mut cmd = Command::cargo_bin("cru").unwrap();
     cmd.arg("session").arg("resume");
     cmd.env_remove("CRU_SESSION");
+    // Pin the daemon socket into the temp dir: on the developer's shared
+    // default socket, a daemon leaked by another test would answer this
+    // process's config fetch and fail it before the argument validation
+    // this test exists to see.
+    cmd.env("CRUCIBLE_SOCKET", tmp.path().join("daemon.sock"));
 
     cmd.assert()
         .failure()
@@ -335,6 +341,7 @@ fn error_conflicting_args_shows_message() {
     std::fs::write(&fake_replay, "").unwrap();
 
     let mut cmd = Command::cargo_bin("cru").unwrap();
+    cmd.env("CRUCIBLE_SOCKET", tmp.path().join("daemon.sock"));
     cmd.arg("chat")
         .arg("--record")
         .arg("recording.jsonl")

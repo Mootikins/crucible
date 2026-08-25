@@ -37,6 +37,7 @@ mod enrichment;
 mod includes;
 mod io_helpers;
 mod kiln_config;
+pub mod lua_emit;
 pub mod merge;
 pub mod overlay;
 mod patterns;
@@ -88,6 +89,7 @@ pub use enrichment::{
 };
 pub use includes::{process_file_references, IncludeError};
 pub use kiln_config::{read_kiln_config, write_kiln_config, KilnConfig, KilnMeta};
+pub use lua_emit::emit_lua_config;
 pub use merge::{deep_merge, REPLACE_MARKER};
 pub use overlay::{
     overlay_layers, overlay_registrations, LayeredOverlay, Overlay, Registration,

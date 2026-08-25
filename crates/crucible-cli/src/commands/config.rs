@@ -11,16 +11,23 @@ use crate::output;
 /// `config` takes the already-resolved config rather than re-loading it: the
 /// resolution in `async_main` is what honours `--config/-C`, the embedding
 /// overrides, and the first-run wizard's rewrite.
-pub async fn execute(config: CliConfig, cmd: ConfigCommands) -> Result<()> {
+pub async fn execute(
+    config: CliConfig,
+    cmd: ConfigCommands,
+    config_path_flag: Option<PathBuf>,
+) -> Result<()> {
     match cmd {
         ConfigCommands::Init { path, force } => init(path, force).await,
         ConfigCommands::Show { format, sources } => {
             println!("{}", render(&config, &format, sources)?);
             Ok(())
         }
+        ConfigCommands::Migrate => migrate::run(config_path_flag),
         ConfigCommands::Dump { format } => dump(format).await,
     }
 }
+
+mod migrate;
 
 /// Initialize a new config file
 async fn init(path: Option<PathBuf>, force: bool) -> Result<()> {

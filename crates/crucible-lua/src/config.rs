@@ -229,6 +229,28 @@ pub fn end_boot_phase() {
     }
 }
 
+/// One throwaway evaluation of a config CHUNK: defaults as layer 0, the
+/// chunk in a fresh executor, extract. The verification half of
+/// `cru config migrate` — the same store-and-evaluate construction as the
+/// daemon's boot, minus the files and the plugin search path.
+pub fn evaluate_config_source(source: &str) -> anyhow::Result<crucible_core::config::CliAppConfig> {
+    begin_boot_store();
+    let defaults = serde_json::to_value(crucible_core::config::CliAppConfig::default())?;
+    merge_app_config_tagged(defaults, SourceTag::Default);
+    let executor = crate::LuaExecutor::new().map_err(|e| anyhow::anyhow!("executor: {e}"))?;
+    executor
+        .lua()
+        .load(source)
+        .exec()
+        .map_err(|e| anyhow::anyhow!("the generated Lua does not evaluate: {e}"))?;
+    let store = snapshot_store().expect("the store was just seeded");
+    let config = store
+        .extract()
+        .map_err(|e| anyhow::anyhow!("the evaluated config does not extract: {e}"))?;
+    end_boot_phase();
+    Ok(config)
+}
+
 /// The hook the daemon installs so a `runtimepath` write during the boot
 /// evaluation extends the module search space INSIDE the `cru.config.set`
 /// call — Neovim's invalidate-and-rebuild, before the call returns, so a

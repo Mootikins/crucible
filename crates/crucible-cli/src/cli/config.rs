@@ -25,6 +25,9 @@ pub enum ConfigCommands {
         sources: bool,
     },
 
+    /// Migrate config.toml into the Lua config (one-time)
+    Migrate,
+
     /// Dump default configuration to stdout (useful for creating example config)
     Dump {
         /// Output format (toml, json)

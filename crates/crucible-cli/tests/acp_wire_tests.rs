@@ -25,6 +25,11 @@ fn spawn_cru_acp(temp: &TempDir) -> std::process::Child {
         .env("CRUCIBLE_HOME", temp.path().join("home"))
         .env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
         .env("CRUCIBLE_LOG_FILE", temp.path().join("acp.log"))
+        // Pin the daemon socket inside the temp dir too: with the developer's
+        // XDG_RUNTIME_DIR inherited, a daemon LEAKED by any other test on the
+        // shared default socket would answer this process's config fetch and
+        // fail it with a root-mismatch refusal before the handshake.
+        .env("CRUCIBLE_SOCKET", temp.path().join("daemon.sock"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
