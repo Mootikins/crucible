@@ -174,7 +174,7 @@ lint what="all":
         cargo clippy --workspace --all-targets -- -D warnings
         cargo clippy -p crucible-oil --all-targets --features serde,test-utils -- -D warnings
     }
-    lint_docs()    { cargo test -p crucible-core --test dev_kiln --test docs_config -- --ignored; }
+    lint_docs()    { cargo test -p crucible-core --test dev_kiln --test docs_config -- --ignored; cargo test -p crucible-lua --test docs_lua_config -- --include-ignored; }
     lint_license() { cargo deny --all-features check licenses; }
     lint_types()   { (cd crates/crucible-web/web && bunx tsc --noEmit -p tsconfig.json); }
     # Import-dead frontend code: unused files, exports and dependencies. Run it
