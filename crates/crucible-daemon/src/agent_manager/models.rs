@@ -6,11 +6,8 @@ impl AgentManager {
     /// Checks `LlmConfig` for configured providers.
     /// Returns `None` if the provider key is not found in either system.
     pub(super) fn resolve_provider_config(&self, provider_key: &str) -> Option<ResolvedProvider> {
-        if let Some(llm_provider) = self
-            .llm_config
-            .as_ref()
-            .and_then(|c| c.providers.get(provider_key))
-        {
+        let table = self.llm_config();
+        if let Some(llm_provider) = table.as_deref().and_then(|c| c.providers.get(provider_key)) {
             debug!(
                 provider_key = %provider_key,
                 source = "llm_config",
@@ -45,7 +42,7 @@ impl AgentManager {
     /// - `"library/llama3:latest"` → `(Some("library"), "llama3:latest")` if "library" is configured
     pub(super) fn parse_provider_model(&self, model_id: &str) -> (Option<String>, String) {
         if let Some((prefix, model_name)) = model_id.split_once('/') {
-            if let Some(ref llm_config) = self.llm_config {
+            if let Some(llm_config) = self.llm_config().as_deref() {
                 if llm_config.providers.contains_key(prefix) {
                     return (Some(prefix.to_string()), model_name.to_string());
                 }
@@ -98,8 +95,10 @@ impl AgentManager {
         kilns: impl Iterator<Item = &'a std::path::PathBuf>,
         new_agent: &SessionAgent,
     ) -> Result<(), AgentError> {
-        let trust =
-            crate::trust_resolution::resolve_provider_trust(new_agent, self.llm_config.as_ref());
+        let trust = crate::trust_resolution::resolve_provider_trust(
+            new_agent,
+            self.llm_config().as_deref(),
+        );
 
         for kiln in kilns {
             let Some(classification) =
@@ -312,8 +311,8 @@ impl AgentManager {
         // that's expected — the user should configure available_models or fix their endpoint.
         if all_models.is_empty()
             && self
-                .llm_config
-                .as_ref()
+                .llm_config()
+                .as_deref()
                 .is_none_or(|c| c.providers.is_empty())
         {
             let (_, agent_config) = self.get_session_with_agent(session_id)?;

@@ -571,7 +571,6 @@ async fn the_lua_bridge_restores_a_resumed_sessions_queue_like_the_handler_does(
             fx.dir.path().join("projects.json"),
         )),
         fx.event_tx.clone(),
-        None,
         fx.dir.path().to_path_buf(),
     )));
     let through_lua = bridge.review_list_hunks(id.to_string()).await.unwrap();

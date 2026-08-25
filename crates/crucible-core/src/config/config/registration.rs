@@ -210,48 +210,6 @@ fn edit_config_in_place(
     Ok(())
 }
 
-/// Persist an LLM provider selection to the global config file.
-///
-/// `cru init` and the setup wizard both ask which provider to use. Writing
-/// that answer only into the kiln directory meant it was never read — the
-/// user's choice was displayed back to them and then ignored.
-///
-/// Registers the provider under `[llm.providers.<name>]` and makes it the
-/// default when no default is set.
-pub fn register_llm_provider_in_config(
-    config_path: &std::path::Path,
-    provider: &str,
-    model: &str,
-) -> anyhow::Result<()> {
-    use crate::config::BackendType;
-
-    // Validate before touching the file: an unknown provider should fail
-    // rather than write a config the loader will reject.
-    let provider_type: BackendType = provider
-        .parse()
-        .map_err(|_| anyhow::anyhow!("unknown provider type: {provider}"))?;
-    let type_str = provider_type.as_str().to_string();
-
-    edit_config_in_place(config_path, |doc| {
-        let llm = ensure_table(doc.as_table_mut(), "llm");
-        if llm.get("default").is_none() {
-            llm.insert("default", toml_edit::value(provider));
-        }
-        let providers = llm
-            .entry("providers")
-            .or_insert_with(|| toml_edit::Item::Table(toml_edit::Table::new()))
-            .as_table_like_mut()
-            .expect("[llm.providers] must be a table");
-        let entry = providers
-            .entry(provider)
-            .or_insert_with(|| toml_edit::Item::Table(toml_edit::Table::new()))
-            .as_table_like_mut()
-            .expect("a provider entry must be a table");
-        entry.insert("type", toml_edit::value(type_str.clone()));
-        entry.insert("default_model", toml_edit::value(model));
-        Ok(())
-    })
-}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -366,56 +324,6 @@ mod tests {
         let parsed: CliAppConfig = toml::from_str(&after).unwrap();
         assert!(parsed.kilns.contains_key("new"));
         assert_eq!(parsed.kiln_path, tmp.path().canonicalize().unwrap());
-    }
-
-    /// Same guarantee for the provider writer.
-    #[test]
-    fn registering_a_provider_preserves_comments_and_does_not_steal_the_default() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let config_path = tmp.path().join("config.toml");
-        std::fs::write(
-            &config_path,
-            "# keep me\n[llm]\ndefault = \"existing\"\n\n\
-             [llm.providers.existing]\ntype = \"ollama\"\n",
-        )
-        .unwrap();
-
-        register_llm_provider_in_config(&config_path, "anthropic", "claude-x").unwrap();
-
-        let after = std::fs::read_to_string(&config_path).unwrap();
-        assert!(
-            after.contains("# keep me"),
-            "comments must survive: {after}"
-        );
-        assert!(
-            after.contains("existing"),
-            "the pre-existing provider must survive: {after}"
-        );
-
-        let parsed: CliAppConfig = toml::from_str(&after).unwrap();
-        assert_eq!(
-            parsed.llm.default.as_deref(),
-            Some("existing"),
-            "an explicit default must not be overwritten"
-        );
-        assert_eq!(
-            parsed.llm.providers["anthropic"].default_model.as_deref(),
-            Some("claude-x")
-        );
-    }
-
-    /// An unknown provider must fail before the file is touched.
-    #[test]
-    fn registering_an_unknown_provider_leaves_the_file_untouched() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let config_path = tmp.path().join("config.toml");
-        std::fs::write(&config_path, "# original\n").unwrap();
-
-        assert!(register_llm_provider_in_config(&config_path, "not-a-provider", "m").is_err());
-        assert_eq!(
-            std::fs::read_to_string(&config_path).unwrap(),
-            "# original\n"
-        );
     }
 
     /// Registering a second kiln must not silently steal the default.

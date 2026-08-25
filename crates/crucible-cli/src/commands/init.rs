@@ -35,11 +35,14 @@ pub fn detect_init_type(path: &Path) -> InitType {
 
 /// Initialize a kiln or project.
 ///
-/// `global_config_path` is where the kiln and provider selection get
-/// registered. It is a parameter rather than a call to
-/// `CliAppConfig::default_config_path()` so in-process tests can point it at a
-/// tempdir: this function writes to the *user's* global config, and a test
-/// that forgets to isolate it silently rewrites the developer's real one.
+/// `global_config_path` is where a PROJECT registration still goes. It is a
+/// parameter rather than a call to `CliAppConfig::default_config_path()` so
+/// in-process tests can point it at a tempdir: that path writes the *user's*
+/// global config, and a test that forgets to isolate it silently rewrites the
+/// developer's real one.
+///
+/// Kiln and provider registrations no longer go there at all — both are state
+/// the daemon owns, and both go over RPC.
 pub async fn execute(
     path: Option<PathBuf>,
     force: bool,
@@ -109,10 +112,8 @@ pub async fn execute(
     };
 
     match resolved_type {
-        InitType::Kiln => {
-            run_kiln_init(&target_path, force, yes, &validation, global_config_path).await
-        }
-        InitType::Project => run_project_init(&target_path, force, yes).await,
+        InitType::Kiln => run_kiln_init(&target_path, force, yes, &validation).await,
+        InitType::Project => run_project_init(&target_path, force, yes, global_config_path).await,
         InitType::Unknown => unreachable!(),
     }
 }
@@ -122,7 +123,6 @@ async fn run_kiln_init(
     force: bool,
     yes: bool,
     validation: &crate::kiln_validate::ValidationResult,
-    global_config_path: &Path,
 ) -> Result<()> {
     let crucible_dir = target_path.join(".crucible");
 
@@ -164,31 +164,80 @@ async fn run_kiln_init(
     })
     .await??;
 
-    // Register the kiln and the chosen provider globally. Without this the
-    // selection above went only into `.crucible/config.toml`, which nothing
-    // reads — so the user picked Anthropic, saw "Provider: anthropic", and
-    // then chatted against whatever the global default happened to be.
-    if let Err(e) = crucible_core::config::register_kiln_in_config(
-        global_config_path,
-        &name,
-        &target_for_display,
-        /* make_default */ false,
-    ) {
-        warn!(
-            "could not register kiln in {}: {e}",
-            global_config_path.display()
-        );
+    // Register the kiln and the chosen provider with the DAEMON. Without this
+    // the selection above went only into `.crucible/config.toml`, which nothing
+    // reads — so the user picked Anthropic, saw "Provider: anthropic", and then
+    // chatted against whatever the global default happened to be.
+    //
+    // Through the daemon rather than the user's config file because both are
+    // state, not preference: `<data_home>/kilns.json` and
+    // `<data_home>/llm.json` have one writer each, and a machine-written entry
+    // inside a hand-edited file is one careless edit from vanishing.
+    //
+    // Not fatal when the daemon is unreachable. The kiln itself is on disk and
+    // usable by then, so aborting would leave the user with a working kiln and
+    // an error; the old config writers were non-fatal for the same reason. What
+    // must not happen is silence — the message below names both registrations
+    // that did not happen and how to make them.
+    let client = match crate::common::daemon_client().await {
+        Ok(client) => Some(client),
+        Err(e) => {
+            warn!("could not reach the daemon to register this kiln: {e}");
+            println!(
+                "  {} The kiln is created, but Crucible could not reach the daemon to register \
+                 it. Run `cru kiln register {} {}` once the daemon is running.",
+                "Note:".yellow(),
+                name.cyan(),
+                target_for_display.display()
+            );
+            None
+        }
+    };
+    if let Some(client) = client.as_ref() {
+        if let Err(e) = client
+            .kiln_register(&name, &target_for_display, /* auto */ false, false)
+            .await
+        {
+            warn!("could not register kiln '{name}': {e}");
+        }
     }
     if provider_usable {
-        if let Err(e) = crucible_core::config::register_llm_provider_in_config(
-            global_config_path,
-            &provider,
-            &model,
-        ) {
-            warn!(
-                "could not save provider selection to {}: {e}",
-                global_config_path.display()
-            );
+        let reply = match client.as_ref() {
+            Some(client) => client
+                .llm_register_provider(&provider, &model, /* make_default */ true)
+                .await
+                .map(Some)
+                .unwrap_or_else(|e| {
+                    warn!("could not save provider selection: {e}");
+                    None
+                }),
+            None => None,
+        };
+        match reply {
+            Some(reply) => {
+                if reply["live"].as_bool().unwrap_or(false) {
+                    println!("  {} Provider selection saved", "\u{2713}".green());
+                } else {
+                    // Never silent. A user told only "saved" believes the next
+                    // `cru chat` uses the provider they just picked, which is
+                    // the exact failure this whole path exists to remove.
+                    let serving = reply["still_serving"]
+                        .as_str()
+                        .unwrap_or("the previous one");
+                    println!(
+                        "  {} Provider selection saved, and it takes effect at the next daemon \
+                         start. Until then Crucible keeps using {}. Run `cru daemon restart` to \
+                         switch now.",
+                        "Note:".yellow(),
+                        serving.cyan()
+                    );
+                }
+            }
+            None => println!(
+                "  {} Provider selection not saved. Re-run `cru init` once the daemon is \
+                 running, or set it in your config.",
+                "Note:".yellow()
+            ),
         }
     } else {
         println!(
@@ -218,7 +267,12 @@ async fn run_kiln_init(
     Ok(())
 }
 
-async fn run_project_init(target_path: &Path, force: bool, yes: bool) -> Result<()> {
+async fn run_project_init(
+    target_path: &Path,
+    force: bool,
+    yes: bool,
+    global_config_path: &Path,
+) -> Result<()> {
     let crucible_dir = target_path.join(".crucible");
 
     let (name, kilns) = if yes {
@@ -260,9 +314,11 @@ async fn run_project_init(target_path: &Path, force: bool, yes: bool) -> Result<
     // Register the project in global config
     let absolute_path =
         std::fs::canonicalize(&target_for_display).unwrap_or(target_for_display.clone());
-    let config_path = CliAppConfig::default_config_path();
+    // The caller's path, not `default_config_path()`: this writes the USER's
+    // global config, and a test that reached the real one would rewrite the
+    // developer's own file.
     let kiln_refs: Vec<&str> = kilns.iter().map(|s| s.as_str()).collect();
-    match register_project_in_config(&config_path, &name, &absolute_path, &kiln_refs) {
+    match register_project_in_config(global_config_path, &name, &absolute_path, &kiln_refs) {
         Ok(()) => {
             println!("  {} Registered in global config", "\u{2713}".green());
         }

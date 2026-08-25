@@ -20,26 +20,15 @@ use tempfile::TempDir;
 /// `data_home` is the test's own tempdir, never `crucible_home()`: a kiln-less
 /// `create` falls back to it, and reading the developer's real `~/.crucible`
 /// is the hermeticity failure that passes on CI and fails locally.
+/// The provider table comes from `agent_manager`, which is why there is no
+/// second parameter for it: the context shares the manager's table rather than
+/// holding a copy, so a fixture that passed a different one would be
+/// describing a state the daemon cannot be in.
 fn bridge_ctx(
     session_manager: Arc<SessionManager>,
     agent_manager: Arc<AgentManager>,
     event_tx: broadcast::Sender<SessionEventMessage>,
     data_home: &std::path::Path,
-) -> Arc<RpcContext> {
-    bridge_ctx_with_llm_config(session_manager, agent_manager, event_tx, data_home, None)
-}
-
-/// As [`bridge_ctx`], with the LLM config the create path reads.
-///
-/// Separate rather than a parameter on every call site because only the create
-/// tests need one: `bridge_configure_agent_refuses_a_provider_the_attached_kiln_does_not_clear`
-/// depends on the absence of a config resolving its provider to Cloud.
-fn bridge_ctx_with_llm_config(
-    session_manager: Arc<SessionManager>,
-    agent_manager: Arc<AgentManager>,
-    event_tx: broadcast::Sender<SessionEventMessage>,
-    data_home: &std::path::Path,
-    llm_config: Option<LlmConfig>,
 ) -> Arc<RpcContext> {
     Arc::new(RpcContext::for_test(
         Arc::new(KilnManager::new()),
@@ -49,7 +38,6 @@ fn bridge_ctx_with_llm_config(
             data_home.join("projects.json"),
         )),
         event_tx,
-        llm_config,
         data_home.to_path_buf(),
     ))
 }

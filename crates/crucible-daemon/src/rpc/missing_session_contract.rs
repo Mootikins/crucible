@@ -94,7 +94,6 @@ fn test_context(data_home: &std::path::Path, kiln: &std::path::Path) -> Arc<RpcC
         agent_manager,
         Arc::new(ProjectManager::new(data_home.join("projects.json"))),
         event_tx,
-        None,
         data_home.to_path_buf(),
     ))
 }

@@ -27,7 +27,6 @@ async fn cloud_provider_confidential_kiln_returns_insufficient_error() {
         am.clone(),
         pm.clone(),
         event_tx.clone(),
-        llm_config.clone(),
         tmp.path().to_path_buf(),
     );
     let response = handle_session_create(request, &ctx).await;
@@ -73,7 +72,6 @@ async fn bridge_create_refuses_a_cloud_provider_on_a_confidential_kiln() {
         am,
         pm,
         event_tx,
-        llm_config,
         tmp.path().to_path_buf(),
     )));
 
@@ -119,7 +117,6 @@ async fn local_provider_confidential_kiln_allows_session_creation() {
         am.clone(),
         pm.clone(),
         event_tx.clone(),
-        llm_config.clone(),
         tmp.path().to_path_buf(),
     );
     let response = handle_session_create(request, &ctx).await;
@@ -155,7 +152,6 @@ async fn cloud_provider_public_or_missing_classification_allows_session_creation
         am.clone(),
         pm.clone(),
         event_tx.clone(),
-        llm_config.clone(),
         tmp.path().to_path_buf(),
     );
     let response = handle_session_create(request, &ctx).await;
@@ -192,7 +188,6 @@ async fn untrusted_provider_internal_kiln_returns_error() {
         am.clone(),
         pm.clone(),
         event_tx.clone(),
-        llm_config.clone(),
         tmp.path().to_path_buf(),
     );
     let response = handle_session_create(request, &ctx).await;
@@ -332,7 +327,6 @@ async fn switching_to_an_untrusted_provider_is_refused_while_a_confidential_kiln
         am.clone(),
         pm.clone(),
         event_tx.clone(),
-        llm_config.clone(),
         tmp.path().to_path_buf(),
     );
     let response =
@@ -436,7 +430,6 @@ async fn switching_providers_is_allowed_when_the_kiln_permits_it() {
         am.clone(),
         pm.clone(),
         event_tx.clone(),
-        llm_config.clone(),
         tmp.path().to_path_buf(),
     );
     let response =
@@ -550,7 +543,6 @@ async fn a_confidential_kiln_anywhere_in_the_set_is_refused_without_creating_a_s
         am.clone(),
         pm.clone(),
         event_tx.clone(),
-        llm_config.clone(),
         tmp.path().to_path_buf(),
     );
 

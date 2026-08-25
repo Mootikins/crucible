@@ -40,6 +40,17 @@ pub struct KilnRegisterRequest {
     pub make_default: bool,
 }
 
+/// Request for `llm.register_provider`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LlmRegisterProviderRequest {
+    /// The provider key, which is also its `BackendType` name.
+    pub provider: String,
+    /// The model to use by default with it.
+    pub model: String,
+    #[serde(default)]
+    pub make_default: bool,
+}
+
 /// Request for `get_note_by_name`.
 ///
 /// `scope` is the request authority — defaults server-side to

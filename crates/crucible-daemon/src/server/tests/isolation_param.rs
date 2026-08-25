@@ -25,15 +25,7 @@ impl Fixture {
         let km = Arc::new(KilnManager::new());
         let (event_tx, _rx) = broadcast::channel(16);
         let am = test_agent_manager(km.clone(), sm.clone(), event_tx.clone(), None);
-        let ctx = RpcContext::for_test(
-            km,
-            sm.clone(),
-            am,
-            pm,
-            event_tx,
-            None,
-            tmp.path().to_path_buf(),
-        );
+        let ctx = RpcContext::for_test(km, sm.clone(), am, pm, event_tx, tmp.path().to_path_buf());
         Self { tmp, sm, ctx }
     }
 

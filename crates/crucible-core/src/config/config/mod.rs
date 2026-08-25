@@ -19,8 +19,7 @@ pub use kiln_name::{InvalidKilnName, KilnName};
 pub use provider::EffectiveLlmConfig;
 #[cfg(feature = "toml")]
 pub use registration::{
-    register_kiln_entry_in_config, register_kiln_in_config, register_llm_provider_in_config,
-    register_project_in_config,
+    register_kiln_entry_in_config, register_kiln_in_config, register_project_in_config,
 };
 pub use server::{LoggingConfig, ServerConfig, WebConfig, WorkspaceConfig};
 pub use types::{

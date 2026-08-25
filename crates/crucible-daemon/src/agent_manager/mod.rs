@@ -388,7 +388,7 @@ pub struct AgentManager {
     delegation_service: Arc<DelegationService>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
     card_roots: crate::agent_cards::CardRoots,
-    llm_config: Option<crucible_core::config::LlmConfig>,
+    llm_config: crate::llm_state::LiveLlmConfig,
     acp_config: Option<AcpConfig>,
     /// `[context]` from the daemon config — which project rules files get
     /// loaded into an agent's system prompt. `None` uses the defaults.
@@ -519,7 +519,7 @@ impl AgentManager {
             background_manager: params.background_manager,
             delegation_service,
             mcp_gateway: params.mcp_gateway,
-            llm_config: params.llm_config,
+            llm_config: crate::llm_state::LiveLlmConfig::new(params.llm_config),
             acp_config: params.acp_config,
             context_config: params.context_config,
             permission_config: params.permission_config,
@@ -1194,9 +1194,29 @@ impl AgentManager {
         &self.delegation_service
     }
 
+    /// The provider table as it stands.
+    ///
+    /// An `Arc` clone, not a borrow: the table can gain a provider while the
+    /// daemon runs (additively — see [`LiveLlmConfig`]), so a reader takes a
+    /// snapshot rather than a reference into a value that may be swapped.
+    ///
+    /// [`LiveLlmConfig`]: crate::llm_state::LiveLlmConfig
+    pub(crate) fn llm_config(&self) -> Option<std::sync::Arc<crucible_core::config::LlmConfig>> {
+        self.llm_config.get()
+    }
+
+    /// The handle itself, so every holder shares ONE table.
+    ///
+    /// `RpcContext` used to be built with its own clone of the config, which
+    /// was harmless while the table was immutable and would be two diverging
+    /// answers the moment it was not.
+    pub(crate) fn llm_handle(&self) -> crate::llm_state::LiveLlmConfig {
+        self.llm_config.clone()
+    }
+
     /// The `[llm.models]` specialty → model table for agent-card resolution.
-    pub(crate) fn specialty_models(&self) -> Option<&HashMap<String, String>> {
-        self.llm_config.as_ref().map(|c| &c.models)
+    pub(crate) fn specialty_models(&self) -> Option<HashMap<String, String>> {
+        self.llm_config().map(|c| c.models.clone())
     }
 
     /// Wait for a mixed set of job ids — delegations (child session ids) and
@@ -1274,7 +1294,7 @@ impl AgentManager {
         &self,
         agent: &SessionAgent,
     ) -> crucible_core::config::TrustLevel {
-        resolve_provider_trust(agent, self.llm_config.as_ref())
+        resolve_provider_trust(agent, self.llm_config().as_deref())
     }
 
     pub fn cleanup_session(&self, session_id: &str) {

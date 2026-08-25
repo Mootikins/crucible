@@ -882,7 +882,6 @@ mod tests {
             agents,
             Arc::new(ProjectManager::new(data_home.join("projects.json"))),
             event_tx,
-            None,
             data_home,
         );
         (ctx, session_id)

@@ -345,7 +345,8 @@ impl AgentManager {
         &self,
         params: ExecuteMultiKilnSearchParams<'_>,
     ) -> Option<Vec<crucible_core::SearchResult>> {
-        let provider_trust = resolve_provider_trust(params.agent_config, self.llm_config.as_ref());
+        let provider_trust =
+            resolve_provider_trust(params.agent_config, self.llm_config().as_deref());
         let kilns_searched = params.sources.len();
 
         match search_across_kilns(

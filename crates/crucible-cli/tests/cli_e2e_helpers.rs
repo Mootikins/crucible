@@ -36,6 +36,7 @@ pub fn toml_escape(path: &Path) -> String {
 /// unpassable under `cargo test` and `cargo nextest`, which capture stdout by
 /// construction. They failed on the shape of the output, never reaching the
 /// behaviour they exist to check.
+#[allow(dead_code)]
 pub fn extract_session_id(stdout: &[u8]) -> String {
     let text = String::from_utf8_lossy(stdout);
 
@@ -178,7 +179,16 @@ impl TestDaemon {
     /// so the daemon resolves its data root to `<temp>/.crucible`.
     #[allow(dead_code)]
     pub fn sessions_root(&self) -> PathBuf {
-        self._temp_dir.path().join(".crucible").join("sessions")
+        self.data_root().join("sessions")
+    }
+
+    /// Where this daemon writes its registries — `kilns.json`, `llm.json`,
+    /// `projects.json`. A test that asserts a registration landed has to read
+    /// the daemon's file, not the user's config: that separation is the whole
+    /// point of those files.
+    #[allow(dead_code)]
+    pub fn data_root(&self) -> PathBuf {
+        self._temp_dir.path().join(".crucible")
     }
 }
 

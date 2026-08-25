@@ -90,6 +90,7 @@ rpc_methods! {
     KilnRegister = "kiln.register",
     KilnRegistryList = "kiln.registry_list",
     KilnForget = "kiln.forget",
+    LlmRegisterProvider = "llm.register_provider",
     SearchVectors = "search_vectors",
     SearchText = "search_text",
     SearchGrep = "search_grep",
@@ -430,6 +431,14 @@ impl RpcDispatcher {
                     &self.ctx.data_home
                 )
             ),
+            RpcMethod::LlmRegisterProvider => forward!(
+                id,
+                crate::server::llm::handle_llm_register_provider(
+                    req.clone(),
+                    &self.ctx.llm_state,
+                    &self.ctx.llm_config
+                )
+            ),
             RpcMethod::KilnForget => forward!(
                 id,
                 crate::server::kiln::handle_kiln_forget(
@@ -686,7 +695,7 @@ impl RpcDispatcher {
                     &self.ctx.sessions,
                     &self.ctx.agents,
                     &self.ctx.kiln,
-                    &self.ctx.llm_config,
+                    &self.ctx.llm_config.get().map(|c| (*c).clone()),
                     &self.ctx.event_tx
                 )
             ),
@@ -708,7 +717,7 @@ impl RpcDispatcher {
                         &self.ctx.sessions,
                         &self.ctx.agents,
                         &self.ctx.project_manager,
-                        &self.ctx.llm_config,
+                        &self.ctx.llm_config.get().map(|c| (*c).clone()),
                         &self.ctx.event_tx
                     )
                 )
@@ -1930,7 +1939,6 @@ mod tests {
             agent_manager,
             Arc::new(ProjectManager::new(data_home.path().join("projects.json"))),
             event_tx,
-            None,
             data_home.path().to_path_buf(),
         ));
         (ctx, data_home)
@@ -2841,7 +2849,6 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             project_manager: Arc::new(ProjectManager::new(data_home.join("projects.json"))),
             lua_sessions: Arc::new(DashMap::new()),
             plugin_loader: Arc::new(tokio::sync::Mutex::new(None)),
-            llm_config: None,
             mcp_server_manager: Arc::new(McpServerManager::new()),
             mcp_config: None,
             data_home: data_home.to_path_buf(),
@@ -2850,6 +2857,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
                 crate::kiln_registry::KilnRegistryContext::for_daemon(data_home.to_path_buf()),
             )),
             kiln_state: Arc::new(crate::kiln_state::KilnStateStore::new(data_home)),
+            llm_state: Arc::new(crate::llm_state::LlmStateStore::new(data_home)),
             config_path: None,
             config_default_kiln: None,
         }))

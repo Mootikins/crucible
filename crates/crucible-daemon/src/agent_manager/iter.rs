@@ -9,7 +9,7 @@ impl AgentManager {
         let mut providers = Vec::new();
         let mut seen_types = HashSet::new();
 
-        if let Some(llm_config) = &self.llm_config {
+        if let Some(llm_config) = self.llm_config().as_deref() {
             for (key, provider_config) in &llm_config.providers {
                 let backend = provider_config.provider_type;
                 if !backend.supports_chat()

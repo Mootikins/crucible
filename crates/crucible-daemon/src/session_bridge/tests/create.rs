@@ -30,12 +30,11 @@ fn create_rig_with_llm_config(
     let agent_manager =
         build_test_agent_manager_with_llm_config(session_manager.clone(), Some(llm_config.clone()));
     let (event_tx, events) = broadcast::channel(256);
-    let bridge = DaemonSessionBridge::new(bridge_ctx_with_llm_config(
+    let bridge = DaemonSessionBridge::new(bridge_ctx(
         session_manager.clone(),
         agent_manager,
         event_tx,
         kiln,
-        Some(llm_config),
     ));
     (session_manager, bridge, events)
 }

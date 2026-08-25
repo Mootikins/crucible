@@ -138,16 +138,29 @@ async fn test_init_force_reinitializes() {
     );
 }
 
-/// `cru init` writes to the user's *global* config. A test that does not
-/// isolate that path rewrites the developer's real `~/.config/crucible/config.toml`
-/// — which is exactly what happened while this feature was being built: a run
-/// of this suite replaced a working config's `kiln_path` and `default_kiln`
-/// with deleted tempdirs and left 13 junk `[kilns]` entries behind.
+/// `cru init` on a kiln writes NOTHING to the user's global config.
 ///
-/// The path is a parameter rather than a global lookup so this cannot recur
-/// silently; this test pins the guarantee.
+/// A PROJECT init still writes there, and a test that does not isolate that
+/// path rewrites the developer's real `~/.config/crucible/config.toml` — which
+/// is exactly what happened while this feature was being built: a run of this
+/// suite replaced a working config's `kiln_path` and `default_kiln` with
+/// deleted tempdirs and left 13 junk `[kilns]` entries behind. The path stays a
+/// parameter rather than a global lookup so that cannot recur silently.
+///
+/// It used to write two things there: a `[kilns]` entry and an
+/// `[llm.providers.*]` selection. Both are state the daemon owns now —
+/// `<data_home>/kilns.json` and `<data_home>/llm.json` — and both go over RPC.
+///
+/// The property this test has always been about is the PATH: whatever `init`
+/// writes, it writes where it was told. That property now has a sharper form,
+/// because the correct number of global-config writes from a kiln init is
+/// zero. A file that appears here means a writer came back.
+///
+/// No daemon is running in this test, which is the other half of what it pins:
+/// `init` must still create the kiln, and must not fall back to editing the
+/// config when it cannot reach the daemon.
 #[tokio::test]
-async fn init_writes_only_to_the_config_path_it_was_given() {
+async fn a_kiln_init_writes_nothing_to_the_global_config() {
     let temp_dir = TempDir::new().unwrap();
     let kiln = temp_dir.path().join("kiln");
     std::fs::create_dir_all(&kiln).unwrap();
@@ -158,31 +171,12 @@ async fn init_writes_only_to_the_config_path_it_was_given() {
         .unwrap();
 
     assert!(
-        global.exists(),
-        "the kiln and provider must be registered in the config path passed in"
+        kiln.join(".crucible").join("config.toml").is_file(),
+        "the kiln itself is still created"
     );
-    // Assert on the parsed value, not the text: the writer may emit either a
-    // `[kilns]` section or an inline table depending on the existing file.
-    let contents = std::fs::read_to_string(&global).unwrap();
-    let parsed: crucible_core::config::CliAppConfig = toml::from_str(&contents).unwrap();
     assert!(
-        !parsed.kilns.is_empty(),
-        "the kiln must be registered in the config path passed in, got:\n{contents}"
-    );
-    // Which provider gets picked depends on the host's env keys, and whether
-    // one is picked at all depends on whether anything ANSWERS: detection
-    // probes now, and `init` deliberately registers nothing when nothing is
-    // usable, because a dead `[llm.providers.*]` entry makes `cru chat`'s
-    // zero-provider guard pass for exactly the user it protects. A runner with
-    // no credentials and no Ollama is that case, so asserting a provider
-    // exists here tested the developer's shell rather than this code — it is
-    // how this test passed locally and failed on CI. What belongs to this test
-    // is the PATH: whatever was registered went to the file it was handed.
-    let registered_in_the_given_path = !parsed.llm.providers.is_empty();
-    let default_provider_set = parsed.llm.default_provider().is_some();
-    assert_eq!(
-        registered_in_the_given_path, default_provider_set,
-        "a registered provider and the default that names it travel together, \
-         and both belong in the config path passed in, got:\n{contents}"
+        !global.exists(),
+        "a kiln init must not write the user's global config; found:\n{}",
+        std::fs::read_to_string(&global).unwrap_or_default()
     );
 }

@@ -61,6 +61,7 @@ use accept::{accept_error_is_transient, ACCEPT_ERROR_BACKOFF};
 pub use bind::BindWithPluginConfigParams;
 use socket_lock::acquire_socket_lock;
 use socket_privacy::{bind_private_listener, prepare_socket_dir};
+pub mod llm;
 pub mod lua;
 pub mod lua_plugin_suite;
 pub mod note_refactor;
@@ -436,13 +437,13 @@ impl Server {
             project_manager: project_manager.clone(),
             lua_sessions,
             plugin_loader: plugin_loader.clone(),
-            llm_config: llm_config.clone(),
             mcp_server_manager,
             mcp_config: params.mcp_config.clone(),
             data_home: data_home.clone(),
             workspace_config,
             kiln_registry,
             kiln_state,
+            llm_state,
             config_path: params.config_path.clone(),
             // The config layer's own answer to "which kiln by default". Read
             // from the config the daemon was HANDED, like every other config

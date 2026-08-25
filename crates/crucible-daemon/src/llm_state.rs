@@ -65,6 +65,41 @@ impl Default for LlmStateFile {
     }
 }
 
+/// What `register_provider` did, and whether the running daemon honours it now.
+///
+/// The distinction is the whole reason this type exists: a caller must be able
+/// to tell the user "you are still chatting against X" when the answer is
+/// deferred. A silent defer is the bug this file was written to remove,
+/// wearing a different hat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectionOutcome {
+    /// The table did not hold this provider key, and the selection claimed no
+    /// default that was already aimed elsewhere. Nothing a live session has
+    /// resolved changes, so the running daemon can take it immediately.
+    Additive,
+    /// The key exists, or `default` already points somewhere else. Applying it
+    /// now would change an entry a live session may have resolved, so it waits
+    /// for the next bind.
+    Deferred,
+}
+
+impl SelectionOutcome {
+    /// The wire spelling.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Additive => "additive",
+            Self::Deferred => "deferred",
+        }
+    }
+
+    /// True when the running daemon may honour this selection now.
+    #[must_use]
+    pub const fn is_live(self) -> bool {
+        matches!(self, Self::Additive)
+    }
+}
+
 /// A provider the config layer out-ranked.
 #[derive(Debug, Clone)]
 pub struct ShadowedProvider {
@@ -101,32 +136,66 @@ impl LlmStateStore {
         self.store.read()
     }
 
-    /// Record a provider choice.
+    /// Record a provider choice, and say whether it can take effect now.
     ///
-    /// Unlike a kiln name, a provider entry IS re-pointable: choosing Ollama
-    /// and later choosing Anthropic is the ordinary thing a user does, and
-    /// nothing persisted refers to a provider the way a session refers to a
-    /// kiln by name. So this overwrites rather than refusing.
+    /// The write always lands. What varies is whether the RUNNING daemon may
+    /// honour it, and the rule is the one the kiln registry already holds:
+    /// **an addition is live, a re-point waits for the next bind.**
+    ///
+    /// Additive means nothing a live session already resolved changes. Seven
+    /// call sites read the provider table on the trust path
+    /// (`resolve_provider_trust`, `check_attach_trust`), so an entry that
+    /// mutates under a session opens a window between the attach check and the
+    /// turn that uses it. Adding a key nothing has resolved opens no such
+    /// window; changing one does.
+    ///
+    /// **`default` counts.** The failure this file exists to remove is a user
+    /// who picks Anthropic and then chats against the old default, so a rule
+    /// that treated the provider entry as additive while leaving `default`
+    /// frozen would reproduce it exactly. An unset `default` is an empty slot,
+    /// so filling it is an addition; re-aiming one that already points
+    /// somewhere is a re-point.
+    ///
+    /// The decision is made INSIDE the store's lock, beside the write it
+    /// governs. A caller that read the file, decided, and then wrote would let
+    /// a second `cru` land between the two steps and report a re-point as
+    /// additive.
     pub fn register_provider(
         &self,
         name: &str,
         provider_type: crucible_core::config::BackendType,
         model: &str,
         make_default: bool,
-    ) -> Result<()> {
+    ) -> Result<SelectionOutcome> {
         let file = self.path().to_path_buf();
         self.store.update(|state| {
             *state = gate_version(std::mem::take(state), &file)?;
+
+            // Decided before the mutation, against the state as it stands.
+            let new_key = !state.providers.contains_key(name);
+            let default_was_unset = state.default.is_none();
+            let claims_default = make_default || default_was_unset;
+            let moves_default = claims_default && state.default.as_deref() != Some(name);
+
             let entry = state
                 .providers
                 .entry(name.to_string())
                 .or_insert_with(|| LlmProviderConfig::builder(provider_type).build());
             entry.provider_type = provider_type;
             entry.default_model = Some(model.to_string());
-            if make_default || state.default.is_none() {
+            if claims_default {
                 state.default = Some(name.to_string());
             }
-            Ok(())
+
+            // Both halves must be additive. A new key whose selection re-aims
+            // an existing default is still a re-point of the thing that decides
+            // which provider a turn uses.
+            let additive = new_key && (!moves_default || default_was_unset);
+            Ok(if additive {
+                SelectionOutcome::Additive
+            } else {
+                SelectionOutcome::Deferred
+            })
         })
     }
 
@@ -174,6 +243,74 @@ impl LlmStateStore {
                 state_type: s.state.1.provider_type.as_str().to_string(),
             })
             .collect()
+    }
+}
+
+/// The provider table the daemon serves, and the only thing allowed to change
+/// it while it runs.
+///
+/// **Additive by construction.** [`Self::add_provider`] can insert a key the
+/// table does not hold and can fill an EMPTY default slot. It cannot do
+/// anything else — not change an entry, not re-aim a default that already
+/// points somewhere. That restriction is not a convenience; it is what makes
+/// the table safe to share.
+///
+/// Seven call sites read this on the trust path (`resolve_provider_trust`,
+/// `check_attach_trust`). A table whose entries could change under a live
+/// session would open a window between the attach check and the turn that uses
+/// it — a TOCTOU on a security-relevant property. Because an addition never
+/// touches what a session already resolved, no such window exists. This is the
+/// same argument that made the kiln registry safe to make live, and it is why
+/// a re-point is NOT accepted here: a re-point does not inherit it.
+///
+/// Readers get an `Arc` clone rather than a guard, so no lock is held across
+/// the work they do with it.
+#[derive(Clone, Default)]
+pub struct LiveLlmConfig(std::sync::Arc<std::sync::RwLock<Option<std::sync::Arc<LlmConfig>>>>);
+
+impl LiveLlmConfig {
+    /// Wrap the table the daemon bound with.
+    #[must_use]
+    pub fn new(config: Option<LlmConfig>) -> Self {
+        Self(std::sync::Arc::new(std::sync::RwLock::new(
+            config.map(std::sync::Arc::new),
+        )))
+    }
+
+    /// The table as it stands. Cheap: one `Arc` clone, no lock held after.
+    #[must_use]
+    pub fn get(&self) -> Option<std::sync::Arc<LlmConfig>> {
+        self.0.read().expect("llm config lock poisoned").clone()
+    }
+
+    /// Add a provider the table does not hold.
+    ///
+    /// Returns `false` and changes nothing when the key already exists, or
+    /// when `claim_default` was asked for against a default that already points
+    /// somewhere else. The caller reports that as a deferral; it must never
+    /// report it as applied.
+    ///
+    /// The check and the swap happen under one write lock, so a concurrent call
+    /// cannot turn a re-point into something reported as additive.
+    pub fn add_provider(&self, name: &str, entry: LlmProviderConfig, claim_default: bool) -> bool {
+        let mut slot = self.0.write().expect("llm config lock poisoned");
+        let current = slot.as_deref().cloned().unwrap_or_default();
+
+        if current.providers.contains_key(name) {
+            return false;
+        }
+        let default_is_unset = current.default.is_none();
+        if claim_default && !default_is_unset {
+            return false;
+        }
+
+        let mut next = current;
+        next.providers.insert(name.to_string(), entry);
+        if claim_default || default_is_unset {
+            next.default = Some(name.to_string());
+        }
+        *slot = Some(std::sync::Arc::new(next));
+        true
     }
 }
 
@@ -240,7 +377,9 @@ mod tests {
 
     /// Unlike a kiln name, a provider IS re-pointable. Choosing Ollama and
     /// later choosing Anthropic is the ordinary thing a user does, and nothing
-    /// persisted refers to a provider the way a session refers to a kiln.
+    /// persisted refers to a provider the way a session refers to a kiln. The
+    /// WRITE always lands; what the outcome decides is whether the running
+    /// daemon may honour it yet.
     #[test]
     fn choosing_a_different_provider_replaces_the_selection() {
         let tmp = TempDir::new().unwrap();
@@ -260,6 +399,115 @@ mod tests {
             2,
             "the old entry stays available; only the default moved"
         );
+    }
+
+    /// First-run `cru init` on a machine with no LLM config. Both halves are
+    /// additive -- a key the table does not hold, and a `default` slot that is
+    /// empty -- so the running daemon can honour it with no restart. This is
+    /// the flow that matters and almost always the real one.
+    #[test]
+    fn the_first_selection_on_an_empty_table_is_additive() {
+        let tmp = TempDir::new().unwrap();
+        let store = LlmStateStore::new(tmp.path());
+
+        let outcome = store
+            .register_provider("anthropic", BackendType::Anthropic, "claude-sonnet", true)
+            .unwrap();
+
+        assert_eq!(outcome, SelectionOutcome::Additive);
+        assert!(outcome.is_live());
+    }
+
+    /// A SECOND provider, added without claiming the default, changes nothing
+    /// a live session resolved: the default still points where it did and the
+    /// new key is one nothing has looked up.
+    #[test]
+    fn adding_a_provider_without_claiming_the_default_is_additive() {
+        let tmp = TempDir::new().unwrap();
+        let store = LlmStateStore::new(tmp.path());
+        store
+            .register_provider("ollama", BackendType::Ollama, "llama3.2", true)
+            .unwrap();
+
+        let outcome = store
+            .register_provider("anthropic", BackendType::Anthropic, "claude-sonnet", false)
+            .unwrap();
+
+        assert_eq!(outcome, SelectionOutcome::Additive);
+        assert_eq!(
+            store.read().unwrap().default.as_deref(),
+            Some("ollama"),
+            "an additive add must not move the default"
+        );
+    }
+
+    /// **The nuance that decides whether the freeze fixes the bug at all.**
+    ///
+    /// Re-running `cru init` to SWITCH providers adds a key the table does not
+    /// hold, so the entry half is additive -- but it re-aims `default`, which
+    /// is the thing that decides which provider a turn actually uses. Calling
+    /// that additive is exactly the original failure: the user picks Anthropic,
+    /// is told it is live, and chats against Ollama.
+    #[test]
+    fn a_new_provider_that_re_aims_an_existing_default_is_deferred() {
+        let tmp = TempDir::new().unwrap();
+        let store = LlmStateStore::new(tmp.path());
+        store
+            .register_provider("ollama", BackendType::Ollama, "llama3.2", true)
+            .unwrap();
+
+        let outcome = store
+            .register_provider("anthropic", BackendType::Anthropic, "claude-sonnet", true)
+            .unwrap();
+
+        assert_eq!(
+            outcome,
+            SelectionOutcome::Deferred,
+            "moving the default is a re-point even when the provider key is new"
+        );
+        assert!(!outcome.is_live());
+    }
+
+    /// Changing the model of a provider the table already holds is a re-point
+    /// of an entry a live session may have resolved.
+    #[test]
+    fn changing_an_existing_providers_model_is_deferred() {
+        let tmp = TempDir::new().unwrap();
+        let store = LlmStateStore::new(tmp.path());
+        store
+            .register_provider("ollama", BackendType::Ollama, "llama3.2", true)
+            .unwrap();
+
+        let outcome = store
+            .register_provider("ollama", BackendType::Ollama, "qwen2.5", false)
+            .unwrap();
+
+        assert_eq!(outcome, SelectionOutcome::Deferred);
+        assert_eq!(
+            store.read().unwrap().providers["ollama"]
+                .default_model
+                .as_deref(),
+            Some("qwen2.5"),
+            "the write lands either way; only the live-ness differs"
+        );
+    }
+
+    /// Recording the SAME selection twice is not a re-point of anything, but
+    /// the key already exists, so it defers. Reporting it as additive would
+    /// mean claiming a live change that did not happen.
+    #[test]
+    fn recording_the_same_selection_twice_defers() {
+        let tmp = TempDir::new().unwrap();
+        let store = LlmStateStore::new(tmp.path());
+        store
+            .register_provider("ollama", BackendType::Ollama, "llama3.2", true)
+            .unwrap();
+
+        let outcome = store
+            .register_provider("ollama", BackendType::Ollama, "llama3.2", true)
+            .unwrap();
+
+        assert_eq!(outcome, SelectionOutcome::Deferred);
     }
 
     /// The whole reason the state layer exists: a provider the config never

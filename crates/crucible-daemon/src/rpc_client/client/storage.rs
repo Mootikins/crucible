@@ -90,6 +90,28 @@ impl DaemonClient {
         .await
     }
 
+    /// Record which LLM provider and model to use.
+    ///
+    /// The daemon owns `<data_home>/llm.json`. The reply's `live` says whether
+    /// the running daemon took the selection now or whether it waits for the
+    /// next start, and `still_serving` names what it keeps using until then.
+    pub async fn llm_register_provider(
+        &self,
+        provider: &str,
+        model: &str,
+        make_default: bool,
+    ) -> Result<serde_json::Value> {
+        self.typed_call(
+            "llm.register_provider",
+            LlmRegisterProviderRequest {
+                provider: provider.to_string(),
+                model: model.to_string(),
+                make_default,
+            },
+        )
+        .await
+    }
+
     /// Every kiln name Crucible knows, with the layer that owns it.
     ///
     /// Not [`Self::kiln_list`], which lists the kilns that happen to be OPEN.

@@ -52,7 +52,6 @@ async fn a_plugin_creating_a_session_from_on_session_end_does_not_deadlock() {
             tmp.path().join("projects.json"),
         )),
         event_tx,
-        Some(bridge_llm_config()),
         tmp.path().to_path_buf(),
         plugin_loader.clone(),
     ));

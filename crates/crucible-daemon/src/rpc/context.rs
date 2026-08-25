@@ -9,7 +9,7 @@ use crate::session_lifecycle::SessionLifecycle;
 use crate::session_manager::SessionManager;
 use crate::subscription::SubscriptionManager;
 use crate::workflow_registry::WorkflowRegistry;
-use crucible_core::config::{LlmConfig, McpConfig, WorkspaceConfig};
+use crucible_core::config::{McpConfig, WorkspaceConfig};
 use dashmap::DashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -68,7 +68,16 @@ pub struct RpcContext {
     pub project_manager: Arc<crate::project_manager::ProjectManager>,
     pub lua_sessions: Arc<DashMap<String, Arc<Mutex<crate::server::LuaSessionState>>>>,
     pub plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
-    pub llm_config: Option<LlmConfig>,
+    /// `<data_home>/llm.json`: the provider selection the daemon recorded.
+    pub llm_state: Arc<crate::llm_state::LlmStateStore>,
+    /// The provider table, shared with `AgentManager` rather than cloned.
+    ///
+    /// One table: it can gain a provider while the daemon runs, and two copies
+    /// would be two answers. See [`LiveLlmConfig`] for why only ADDITIONS are
+    /// allowed to land live.
+    ///
+    /// [`LiveLlmConfig`]: crate::llm_state::LiveLlmConfig
+    pub llm_config: crate::llm_state::LiveLlmConfig,
     pub mcp_server_manager: Arc<McpServerManager>,
     /// Daemon-global MCP config, threaded through because it is authoritative
     /// for WHICH servers exist: `session.create`'s setup task lists a configured
@@ -128,7 +137,6 @@ pub struct RpcContextParams {
     pub project_manager: Arc<crate::project_manager::ProjectManager>,
     pub lua_sessions: Arc<DashMap<String, Arc<Mutex<crate::server::LuaSessionState>>>>,
     pub plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
-    pub llm_config: Option<LlmConfig>,
     pub mcp_server_manager: Arc<McpServerManager>,
     pub mcp_config: Option<McpConfig>,
     pub data_home: std::path::PathBuf,
@@ -137,6 +145,7 @@ pub struct RpcContextParams {
     pub kiln_state: Arc<crate::kiln_state::KilnStateStore>,
     pub config_path: Option<std::path::PathBuf>,
     pub config_default_kiln: Option<String>,
+    pub llm_state: Arc<crate::llm_state::LlmStateStore>,
 }
 
 impl RpcContext {
@@ -151,7 +160,6 @@ impl RpcContext {
             project_manager,
             lua_sessions,
             plugin_loader,
-            llm_config,
             mcp_server_manager,
             mcp_config,
             data_home,
@@ -160,7 +168,11 @@ impl RpcContext {
             kiln_state,
             config_path,
             config_default_kiln,
+            llm_state,
         } = params;
+        // Taken from the agent manager, never built here: one provider table,
+        // shared, so a provider added at runtime is visible to both.
+        let llm_config = agents.llm_handle();
         let session_lifecycle = SessionLifecycle::new(sessions.clone(), plugin_loader.clone());
         session_lifecycle.bind_agent_manager(&agents);
         Self {
@@ -183,6 +195,7 @@ impl RpcContext {
             kiln_state,
             config_path,
             config_default_kiln,
+            llm_state,
             session_lifecycle,
         }
     }
@@ -203,7 +216,6 @@ impl RpcContext {
         agents: Arc<AgentManager>,
         project_manager: Arc<crate::project_manager::ProjectManager>,
         event_tx: broadcast::Sender<SessionEventMessage>,
-        llm_config: Option<LlmConfig>,
         data_home: std::path::PathBuf,
     ) -> Self {
         Self::for_test_with_plugin_loader(
@@ -212,7 +224,6 @@ impl RpcContext {
             agents,
             project_manager,
             event_tx,
-            llm_config,
             data_home,
             Arc::new(Mutex::new(None)),
         )
@@ -232,7 +243,6 @@ impl RpcContext {
         agents: Arc<AgentManager>,
         project_manager: Arc<crate::project_manager::ProjectManager>,
         event_tx: broadcast::Sender<SessionEventMessage>,
-        llm_config: Option<LlmConfig>,
         data_home: std::path::PathBuf,
         plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
     ) -> Self {
@@ -248,10 +258,10 @@ impl RpcContext {
             project_manager,
             lua_sessions: Arc::new(DashMap::new()),
             plugin_loader,
-            llm_config,
             mcp_server_manager: Arc::new(McpServerManager::new()),
             mcp_config: None,
             kiln_state: Arc::new(crate::kiln_state::KilnStateStore::new(&data_home)),
+            llm_state: Arc::new(crate::llm_state::LlmStateStore::new(&data_home)),
             config_path: None,
             config_default_kiln: None,
             data_home,

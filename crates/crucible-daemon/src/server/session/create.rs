@@ -162,8 +162,10 @@ impl RpcContext {
         // is gone with it.
         let isolation = params.isolation.clone();
 
-        let provider_trust_level =
-            resolve_provider_trust_level_for_create(params, &self.llm_config);
+        let provider_trust_level = resolve_provider_trust_level_for_create(
+            params,
+            &self.llm_config.get().map(|c| (*c).clone()),
+        );
         // Every kiln the session will hold, not only the one it was created
         // with. The set is flat, so no member is the one that gets classified
         // — and a confidential kiln arriving alongside the first used to reach
@@ -381,8 +383,11 @@ impl RpcContext {
                 )),
             }
         } else {
-            let base =
-                build_default_internal_agent(params, &self.llm_config, self.mcp_config.as_ref())?;
+            let base = build_default_internal_agent(
+                params,
+                &self.llm_config.get().map(|c| (*c).clone()),
+                self.mcp_config.as_ref(),
+            )?;
             // An agent card (specialized internal agent): card
             // prompt/model/tools layered over the config-derived defaults.
             // Unknown card = error before the session exists, mirroring the ACP
@@ -405,7 +410,7 @@ impl RpcContext {
                 Some(card) => Ok(crucible_core::session::SessionAgent::from_card(
                     card,
                     &base,
-                    self.llm_config.as_ref().map(|c| &c.models),
+                    self.llm_config.get().map(|c| c.models.clone()).as_ref(),
                 )),
                 None => Err(format!(
                     "Unknown agent card: {name}. Available cards: {}",

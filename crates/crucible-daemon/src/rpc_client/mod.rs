@@ -20,9 +20,9 @@ pub use client::workflow::{WorkflowApproveGateRequest, WorkflowStartRequest};
 pub use client::{
     AgentsListCardsRequest, DaemonCapabilities, DaemonClient, FsListDirRequest, FsMoveRequest,
     FsPathRequest, GrepSearchRequest, KilnOpenRequest, KilnRegisterRequest, ListAllModelsRequest,
-    ListProvidersRequest, LuaDiscoverPluginsRequest, LuaDiscoverPluginsResponse,
-    LuaGenerateStubsRequest, LuaGenerateStubsResponse, LuaInitSessionRequest,
-    LuaInitSessionResponse, LuaPluginHealthRequest, LuaPluginHealthResponse,
+    ListProvidersRequest, LlmRegisterProviderRequest, LuaDiscoverPluginsRequest,
+    LuaDiscoverPluginsResponse, LuaGenerateStubsRequest, LuaGenerateStubsResponse,
+    LuaInitSessionRequest, LuaInitSessionResponse, LuaPluginHealthRequest, LuaPluginHealthResponse,
     LuaRegisterCommandsRequest, LuaRunPluginTestsRequest, LuaRunPluginTestsResponse,
     LuaShutdownSessionRequest, LuaShutdownSessionResponse, McpStartRequest, NameRequest,
     NoteRenameRequest, PathRequest, PluginInstallRequest, PluginOptionCallRequest,

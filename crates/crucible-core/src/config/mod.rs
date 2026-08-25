@@ -75,8 +75,7 @@ pub use config::{
 };
 #[cfg(feature = "toml")]
 pub use config::{
-    register_kiln_entry_in_config, register_kiln_in_config, register_llm_provider_in_config,
-    register_project_in_config,
+    register_kiln_entry_in_config, register_kiln_in_config, register_project_in_config,
 };
 pub use config::{LOCATION_CONFIG_KEYS, SETTINGS_CONFIG_KEYS};
 pub use credentials::{

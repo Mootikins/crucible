@@ -390,7 +390,8 @@ impl DelegationSpawner for DelegationService {
                     parent_kilns.first().map(std::path::PathBuf::as_path),
                 );
                 if let Some(card) = cards.get(name) {
-                    SessionAgent::from_card(card, &parent_agent, manager.specialty_models())
+                    let specialty_models = manager.specialty_models();
+                    SessionAgent::from_card(card, &parent_agent, specialty_models.as_ref())
                 } else {
                     let available = manager.build_available_agents();
                     let profile = available.get(name).cloned().ok_or_else(|| {
