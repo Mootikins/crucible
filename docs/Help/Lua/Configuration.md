@@ -48,6 +48,18 @@ Your init.lua runs after the built-in defaults, so you can override anything. Th
 
 That third path is the session's **workspace** — where work happens — not its kiln. The two are often the same directory, which is why this is easy to get wrong; the daemon reads `session.workspace`.
 
+## The Boot Order
+
+The daemon evaluates your `init.lua` exactly once, at boot, **before** it loads plugins — the Neovim model. Your file authors the config (`cru.config.set`, `runtimepath` included), and plugin *activation* runs afterwards against the final result.
+
+- **Any line may set any config key.** The daemon reads the store when the evaluation finishes, so the last write wins.
+- **The module search path is live.** A `runtimepath` entry added on line N serves every `require` after line N — and none before it. The lazy.nvim bootstrap has the same rule: prepend, then require. A failed `require` is never cached, so a retry after the addition succeeds.
+- **`require` is a module load, not membership.** It cannot enable, disable, or activate a plugin. A `require` of a disabled plugin still loads its module, but activation registers none of its hooks or exports.
+- **Daemon-state APIs raise during evaluation.** `cru.kiln.*`, `cru.sessions.*`, and storage-backed calls answer "daemon state is not ready during init.lua evaluation; use a hook" — the kiln registry is built *from* your file's output, so it cannot exist during it. Move such reads into a hook.
+- **No hot reload.** Runtime `config.set` and `plugin.reload` do not re-run the bootstrap; a `runtimepath` change needs `cru daemon restart`.
+- **`require("my.mod")`** resolves from `~/.config/crucible/lua/` everywhere — during boot, in hooks, and in plugins. A module there shadows a same-named plugin module.
+- **`config.toml` is a deprecated seed.** While it exists it loads *under* your `init.lua` (your Lua wins per key). Run `cru config migrate` to move it into Lua.
+
 ## Configuring Plugins
 
 Plugins are configured via `require("name").setup({...})` — the same pattern as Neovim plugins.
@@ -61,7 +73,12 @@ require("reflection").setup({
 })
 ```
 
-Bundled plugins (in `runtime/plugins/`) load with defaults automatically. Your `setup()` call overrides those defaults. To skip a bundled plugin entirely, don't call `require()` for it.
+Plugin configuration has two working forms, and each plugin uses **one**:
+
+- **The direct form** — `require("reflection").setup({...})` at the top of `init.lua`. The call you write *owns* that plugin's setup: activation reuses the same module instance (the file is never evaluated twice) and skips its default `setup(cfg)` call.
+- **The store form** — `cru.config.set({ plugins = { reflection = {...} } })`, or a `[plugins.reflection]` section in a not-yet-migrated `config.toml`. This feeds the default `setup(cfg)` the activation phase calls for every plugin you did not set up directly.
+
+A plugin configured both ways takes the direct call; pick one form per plugin. Bundled plugins (in `runtime/plugins/`) load with their defaults when you configure nothing. To disable one entirely, set `plugins = { <name> = { enabled = false } }`.
 
 See [[Help/Extending/Creating Plugins]] for writing your own plugins.
 
