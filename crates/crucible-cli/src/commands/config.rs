@@ -29,9 +29,41 @@ pub async fn execute(
 
 mod migrate;
 
-/// Initialize a new config file
+/// The example `init.lua` that `cru config init` writes. Every line is a
+/// comment except the empty `cru.config.set` call, so the file evaluates to
+/// pure defaults until the user uncomments something.
+const EXAMPLE_INIT_LUA: &str = r#"-- Crucible configuration.
+-- The daemon evaluates this file once at boot; `cru config show` renders
+-- the effective result. Values deep-merge over the defaults.
+
+cru.config.set({
+    -- Named kilns, and which one commands use by default:
+    -- kilns = { notes = "~/vault/notes" },
+    -- default_kiln = "notes",
+
+    -- Chat settings:
+    -- chat = { model = "claude-sonnet-4-5", show_thinking = true },
+
+    -- Extra plugin/theme/skill directories:
+    -- runtimepath = { "~/crucible-runtime" },
+
+    -- Per-plugin configuration:
+    -- plugins = { reflection = { min_turns = 4 } },
+})
+
+-- Plugins can also be configured directly:
+-- require("reflection").setup({ min_turns = 4 })
+"#;
+
+/// Initialize a new config file: an example `init.lua`.
 async fn init(path: Option<PathBuf>, force: bool) -> Result<()> {
-    let config_path = path.unwrap_or_else(CliConfig::default_config_path);
+    let config_path = path.unwrap_or_else(|| {
+        let toml_path = CliConfig::default_config_path();
+        toml_path
+            .parent()
+            .map(|dir| dir.join("init.lua"))
+            .unwrap_or_else(|| PathBuf::from("init.lua"))
+    });
 
     // Check if file already exists
     if config_path.exists() && !force {
@@ -46,8 +78,10 @@ async fn init(path: Option<PathBuf>, force: bool) -> Result<()> {
         return Ok(());
     }
 
-    // Create the config file
-    CliConfig::create_example(&config_path)?;
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&config_path, EXAMPLE_INIT_LUA)?;
 
     println!(
         "{} Created config file at: {}",
@@ -80,4 +114,22 @@ fn render(config: &CliConfig, format: &str, sources: bool) -> Result<String> {
 async fn dump(format: String) -> Result<()> {
     println!("{}", render(&CliConfig::default(), &format, false)?);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The example must evaluate to pure defaults — a template the boot
+    /// rejects would break the very first `cru` after `config init`.
+    #[test]
+    fn the_example_init_lua_evaluates_to_defaults() {
+        let config = crucible_lua::evaluate_config_source(EXAMPLE_INIT_LUA)
+            .expect("the example must evaluate");
+        assert_eq!(
+            serde_json::to_value(&config).unwrap(),
+            serde_json::to_value(crucible_core::config::CliAppConfig::default()).unwrap(),
+            "every value line in the example must be commented out"
+        );
+    }
 }

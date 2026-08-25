@@ -41,7 +41,7 @@ fn daemon_status_completes_with_no_daemon_and_spawns_none() {
 fn config_init_completes_with_no_daemon_and_spawns_none() {
     let temp = tempfile::tempdir().unwrap();
     let (mut cmd, socket) = hermetic_cru(temp.path());
-    let target = temp.path().join("config.toml");
+    let target = temp.path().join("init.lua");
 
     cmd.args(["config", "init", "--path"])
         .arg(&target)

@@ -3,9 +3,9 @@ use std::path::PathBuf;
 
 #[derive(Subcommand)]
 pub enum ConfigCommands {
-    /// Initialize a new config file
+    /// Initialize a new config file (an example init.lua)
     Init {
-        /// Path for the config file (defaults to ~/.config/crucible/config.toml)
+        /// Path for the config file (defaults to ~/.config/crucible/init.lua)
         #[arg(short, long)]
         path: Option<PathBuf>,
 

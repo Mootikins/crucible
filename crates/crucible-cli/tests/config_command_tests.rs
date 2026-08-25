@@ -43,12 +43,12 @@ fn test_config_init_creates_file() {
     // Verify file was created
     assert!(config_path.exists());
 
-    // Verify file has expected content
+    // The example is Lua now: a commented template around one
+    // `cru.config.set` call.
     let content = fs::read_to_string(&config_path).unwrap();
-    assert!(content.contains("Crucible CLI Configuration"));
-    assert!(content.contains("kiln_path"));
-    assert!(content.contains("[llm]"));
-    assert!(content.contains("[acp]"));
+    assert!(content.contains("Crucible configuration"));
+    assert!(content.contains("cru.config.set"));
+    assert!(content.contains("kilns"));
 }
 
 #[test]
@@ -97,7 +97,7 @@ fn test_config_init_overwrites_with_force() {
     // Verify file was overwritten
     let content = fs::read_to_string(&config_path).unwrap();
     assert!(!content.contains("existing content"));
-    assert!(content.contains("Crucible CLI Configuration"));
+    assert!(content.contains("Crucible configuration"));
 }
 
 #[test]
