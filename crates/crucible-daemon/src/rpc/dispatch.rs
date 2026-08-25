@@ -212,6 +212,8 @@ rpc_methods! {
     ProjectUnregister = "project.unregister",
     ProjectList = "project.list",
     ProjectGet = "project.get",
+    ProjectOpenKilns = "project.open_kilns",
+    ProjectRegistryList = "project.registry_list",
     ScmClone = "scm.clone",
     FsListDir = "fs.list_dir",
     FsMove = "fs.move",
@@ -1006,6 +1008,23 @@ impl RpcDispatcher {
             RpcMethod::ProjectGet => forward!(
                 id,
                 crate::server::plugins::handle_project_get(req.clone(), &self.ctx.project_manager)
+            ),
+            RpcMethod::ProjectRegistryList => forward!(
+                id,
+                crate::server::plugins::handle_project_registry_list(
+                    req.clone(),
+                    &self.ctx.project_manager,
+                    &self.ctx.config_projects
+                )
+            ),
+            RpcMethod::ProjectOpenKilns => forward!(
+                id,
+                crate::server::plugins::handle_project_open_kilns(
+                    req.clone(),
+                    &self.ctx.project_manager,
+                    &self.ctx.kiln,
+                    &self.ctx.kiln_registry
+                )
             ),
             RpcMethod::ScmClone => to_response(id, self.handle_scm_clone(&req).await),
             RpcMethod::FsListDir => forward!(
@@ -2858,6 +2877,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             )),
             kiln_state: Arc::new(crate::kiln_state::KilnStateStore::new(data_home)),
             llm_state: Arc::new(crate::llm_state::LlmStateStore::new(data_home)),
+            config_projects: Vec::new(),
             config_path: None,
             config_default_kiln: None,
         }))

@@ -422,13 +422,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
         }
 
         Some(Commands::Init { path, force, yes }) => {
-            commands::init::execute(
-                path,
-                force,
-                yes,
-                &crucible_core::config::CliAppConfig::default_config_path(),
-            )
-            .await?;
+            commands::init::execute(path, force, yes).await?;
         }
 
         Some(Commands::Session(cmd)) => {

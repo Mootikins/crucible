@@ -70,6 +70,12 @@ pub struct RpcContext {
     pub plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
     /// `<data_home>/llm.json`: the provider selection the daemon recorded.
     pub llm_state: Arc<crate::llm_state::LlmStateStore>,
+    /// The projects the CONFIG layer declares, as `Registration` values.
+    ///
+    /// Normalized at bind rather than carried as a config document, so
+    /// `overlay_layers` does the same work over it that it does over kilns —
+    /// one precedence rule, three registries.
+    pub config_projects: Vec<crucible_core::config::Registration>,
     /// The provider table, shared with `AgentManager` rather than cloned.
     ///
     /// One table: it can gain a provider while the daemon runs, and two copies
@@ -146,6 +152,7 @@ pub struct RpcContextParams {
     pub config_path: Option<std::path::PathBuf>,
     pub config_default_kiln: Option<String>,
     pub llm_state: Arc<crate::llm_state::LlmStateStore>,
+    pub config_projects: Vec<crucible_core::config::Registration>,
 }
 
 impl RpcContext {
@@ -169,6 +176,7 @@ impl RpcContext {
             config_path,
             config_default_kiln,
             llm_state,
+            config_projects,
         } = params;
         // Taken from the agent manager, never built here: one provider table,
         // shared, so a provider added at runtime is visible to both.
@@ -196,6 +204,7 @@ impl RpcContext {
             config_path,
             config_default_kiln,
             llm_state,
+            config_projects,
             session_lifecycle,
         }
     }
@@ -262,6 +271,7 @@ impl RpcContext {
             mcp_config: None,
             kiln_state: Arc::new(crate::kiln_state::KilnStateStore::new(&data_home)),
             llm_state: Arc::new(crate::llm_state::LlmStateStore::new(&data_home)),
+            config_projects: Vec::new(),
             config_path: None,
             config_default_kiln: None,
             data_home,

@@ -4,44 +4,9 @@
 //! *write* the global config file, and [`edit_config_in_place`] is the
 //! contract they share: never destroy what the user hand-wrote.
 
-use super::cli_app::CliAppConfig;
-
-/// Register a project in the global config file.
-///
-/// Reads the existing config (or creates a default), inserts a `ProjectEntry`
-/// under `[projects.<name>]`, and writes the file back with `toml::to_string_pretty`.
-pub fn register_project_in_config(
-    config_path: &std::path::Path,
-    name: &str,
-    project_path: &std::path::Path,
-    kilns: &[&str],
-) -> anyhow::Result<()> {
-    let mut config: CliAppConfig = if config_path.exists() {
-        let contents = std::fs::read_to_string(config_path)?;
-        toml::from_str(&contents)?
-    } else {
-        CliAppConfig::default()
-    };
-
-    config.projects.insert(
-        name.to_string(),
-        crate::config::config::registry::ProjectEntry {
-            path: project_path.to_path_buf(),
-            kilns: kilns.iter().map(|s| s.to_string()).collect(),
-        },
-    );
-
-    let contents = toml::to_string_pretty(&config)?;
-    if let Some(parent) = config_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(config_path, contents)?;
-    Ok(())
-}
-
 /// Persist a kiln path to the global config file.
 ///
-/// The counterpart to [`register_project_in_config`]. Without this, a kiln
+/// Without this, a kiln
 /// the user supplies at a prompt lives only in the in-memory config and the
 /// prompt returns on every subsequent run.
 ///
@@ -213,27 +178,9 @@ fn edit_config_in_place(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::CliAppConfig;
     use std::path::PathBuf;
     use tempfile::TempDir;
-
-    #[test]
-    fn register_project_writes_to_config_file() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let config_path = tmp.path().join("config.toml");
-        std::fs::write(
-            &config_path,
-            "kiln_path = \"~/vault\"\n\n[kilns]\nvault = \"~/vault\"\n",
-        )
-        .unwrap();
-
-        register_project_in_config(&config_path, "myproject", tmp.path(), &["vault"]).unwrap();
-
-        let contents = std::fs::read_to_string(&config_path).unwrap();
-        let config: CliAppConfig = toml::from_str(&contents).unwrap();
-        assert_eq!(config.projects.len(), 1);
-        assert_eq!(config.projects["myproject"].kilns, vec!["vault"]);
-        assert_eq!(config.projects["myproject"].path, tmp.path().to_path_buf());
-    }
 
     /// A kiln the user names at a prompt has to survive the process, or the
     /// prompt fires again on the next run — forever.
@@ -389,9 +336,15 @@ mod tests {
         let notes = tmp.path().join("notes");
 
         register_kiln_entry_in_config(&config_path, "notes", &notes, true).unwrap();
-        // The serde round-trip writer is the one that erases what it does not
-        // model, so run it over the file before reading the marker back.
-        register_project_in_config(&config_path, "proj", tmp.path(), &["notes"]).unwrap();
+        // Driven through the serde round-trip directly. There used to be a
+        // WRITER that round-tripped the whole document through `CliAppConfig`
+        // — `register_project_in_config` — and it was the thing that erased
+        // what the struct does not model. That writer is gone, so the round
+        // trip is spelled here rather than borrowed from it, and the property
+        // it guards is unchanged: a marker Crucible wrote must survive one.
+        let loaded: CliAppConfig =
+            toml::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+        std::fs::write(&config_path, toml::to_string_pretty(&loaded).unwrap()).unwrap();
 
         let config: CliAppConfig =
             toml::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
@@ -484,36 +437,5 @@ mod tests {
         assert!(after.contains("# my careful notes"), "{after}");
         assert!(after.contains("[some_future_section]"), "{after}");
         assert!(after.contains("zai-coding"), "{after}");
-    }
-
-    #[test]
-    fn register_project_creates_config_if_missing() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let config_path = tmp.path().join("subdir").join("config.toml");
-
-        register_project_in_config(&config_path, "newproj", tmp.path(), &[]).unwrap();
-
-        let contents = std::fs::read_to_string(&config_path).unwrap();
-        let config: CliAppConfig = toml::from_str(&contents).unwrap();
-        assert_eq!(config.projects.len(), 1);
-        assert!(config.projects.contains_key("newproj"));
-        assert!(config.projects["newproj"].kilns.is_empty());
-    }
-
-    #[test]
-    fn register_project_preserves_existing_projects() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let config_path = tmp.path().join("config.toml");
-        std::fs::write(&config_path, "kiln_path = \"~/vault\"\n").unwrap();
-
-        register_project_in_config(&config_path, "proj1", tmp.path(), &["vault"]).unwrap();
-        register_project_in_config(&config_path, "proj2", &tmp.path().join("other"), &["docs"])
-            .unwrap();
-
-        let contents = std::fs::read_to_string(&config_path).unwrap();
-        let config: CliAppConfig = toml::from_str(&contents).unwrap();
-        assert_eq!(config.projects.len(), 2);
-        assert!(config.projects.contains_key("proj1"));
-        assert!(config.projects.contains_key("proj2"));
     }
 }

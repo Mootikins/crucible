@@ -462,6 +462,28 @@ notes = "/home/user/notes"
 
 You can also run `cru init` in your kiln directory to register it by name, or `cru init` in a project directory to create a project entry with kiln bindings.
 
+### Where `cru init` writes a registration
+
+`cru init` sends the kiln name and the provider selection to the **daemon**. The daemon
+writes them to `<data_home>/kilns.json` and `<data_home>/llm.json`. It does not write
+them to this config file. A registration is a fact the daemon was told; the config file
+is what you author. See [[Help/CLI/kiln]] for the two layers and which one wins.
+
+If the daemon is not reachable, `cru init` still creates the kiln and says so. It then
+names the command to run later:
+
+```
+Note: The kiln is created, but Crucible could not reach the daemon to register it.
+      Run `cru kiln register notes /home/user/notes` once the daemon is running.
+```
+
+A provider selection takes effect immediately the first time you make one. Changing an
+existing selection takes effect at the next daemon start, because it re-points something
+a running session may already have resolved. `cru init` tells you which happened, and
+names the provider Crucible keeps using until then.
+
+A **project** registration still goes into this config file, under `[projects.*]`.
+
 `CRUCIBLE_KILN` points Crucible at a kiln directly when no `--kiln` flag is given and no ancestor `.crucible/` directory is found.
 
 ## See Also

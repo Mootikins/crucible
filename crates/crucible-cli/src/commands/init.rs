@@ -9,9 +9,9 @@ use crate::kiln_validate::{expand_tilde_home, validate_kiln_path, ValidationSeve
 use crate::provider_detect::{detect_providers_probed, DetectedProvider};
 use crucible_core::config::components::DataClassification;
 use crucible_core::config::{
-    read_kiln_config, read_project_config, register_project_in_config, write_kiln_config,
-    write_project_config, BackendType, CliAppConfig, KilnAttachment, KilnConfig, KilnMeta,
-    ProjectConfig, SecurityConfig, DEFAULT_CHAT_MODEL,
+    read_kiln_config, read_project_config, write_kiln_config, write_project_config, BackendType,
+    CliAppConfig, KilnAttachment, KilnConfig, KilnMeta, ProjectConfig, SecurityConfig,
+    DEFAULT_CHAT_MODEL,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,20 +35,13 @@ pub fn detect_init_type(path: &Path) -> InitType {
 
 /// Initialize a kiln or project.
 ///
-/// `global_config_path` is where a PROJECT registration still goes. It is a
-/// parameter rather than a call to `CliAppConfig::default_config_path()` so
-/// in-process tests can point it at a tempdir: that path writes the *user's*
-/// global config, and a test that forgets to isolate it silently rewrites the
-/// developer's real one.
-///
-/// Kiln and provider registrations no longer go there at all — both are state
-/// the daemon owns, and both go over RPC.
-pub async fn execute(
-    path: Option<PathBuf>,
-    force: bool,
-    yes: bool,
-    global_config_path: &Path,
-) -> Result<()> {
+/// Writes no user config at all. It used to write three things there — a
+/// `[kilns]` entry, an `[llm.providers.*]` selection and a `[projects.*]`
+/// entry — and took the path as a parameter so an in-process test could not
+/// rewrite the developer's real `~/.config/crucible/config.toml`. All three are
+/// state the daemon owns now, and all three go over RPC, so the parameter is
+/// gone with the last writer.
+pub async fn execute(path: Option<PathBuf>, force: bool, yes: bool) -> Result<()> {
     let target_path = match path {
         Some(p) => expand_tilde_home(&p.to_string_lossy()),
         None => PathBuf::from("."),
@@ -113,7 +106,7 @@ pub async fn execute(
 
     match resolved_type {
         InitType::Kiln => run_kiln_init(&target_path, force, yes, &validation).await,
-        InitType::Project => run_project_init(&target_path, force, yes, global_config_path).await,
+        InitType::Project => run_project_init(&target_path, force, yes).await,
         InitType::Unknown => unreachable!(),
     }
 }
@@ -267,12 +260,7 @@ async fn run_kiln_init(
     Ok(())
 }
 
-async fn run_project_init(
-    target_path: &Path,
-    force: bool,
-    yes: bool,
-    global_config_path: &Path,
-) -> Result<()> {
+async fn run_project_init(target_path: &Path, force: bool, yes: bool) -> Result<()> {
     let crucible_dir = target_path.join(".crucible");
 
     let (name, kilns) = if yes {
@@ -311,22 +299,37 @@ async fn run_project_init(
     })
     .await??;
 
-    // Register the project in global config
+    // Register the project with the daemon, which owns `projects.json`.
+    //
+    // The kilns are not passed: `.crucible/project.toml` was just written with
+    // them, and `ProjectManager::register` reads that file. Sending them again
+    // would be a second copy of the same list, free to disagree with the first.
     let absolute_path =
         std::fs::canonicalize(&target_for_display).unwrap_or(target_for_display.clone());
-    // The caller's path, not `default_config_path()`: this writes the USER's
-    // global config, and a test that reached the real one would rewrite the
-    // developer's own file.
-    let kiln_refs: Vec<&str> = kilns.iter().map(|s| s.as_str()).collect();
-    match register_project_in_config(global_config_path, &name, &absolute_path, &kiln_refs) {
-        Ok(()) => {
-            println!("  {} Registered in global config", "\u{2713}".green());
-        }
+    match crate::common::daemon_client().await {
+        Ok(client) => match client.project_register(&absolute_path).await {
+            Ok(project) => {
+                println!(
+                    "  {} Registered project '{}'",
+                    "\u{2713}".green(),
+                    project.name
+                );
+            }
+            Err(e) => {
+                eprintln!(
+                    "{} Could not register the project: {}",
+                    "Warning:".yellow().bold(),
+                    e
+                );
+            }
+        },
         Err(e) => {
-            eprintln!(
-                "{} Could not register project in global config: {}",
-                "Warning:".yellow().bold(),
-                e
+            warn!("could not reach the daemon to register this project: {e}");
+            println!(
+                "  {} The project is created, but Crucible could not reach the daemon to \
+                 register it. Run `cru project register {}` once the daemon is running.",
+                "Note:".yellow(),
+                absolute_path.display()
             );
         }
     }
@@ -808,14 +811,9 @@ mod tests {
     #[tokio::test]
     async fn execute_yes_creates_kiln_by_default() {
         let tmp = TempDir::new().unwrap();
-        execute(
-            Some(tmp.path().to_path_buf()),
-            false,
-            true,
-            &tmp.path().join("global-config.toml"),
-        )
-        .await
-        .unwrap();
+        execute(Some(tmp.path().to_path_buf()), false, true)
+            .await
+            .unwrap();
 
         // Should have created kiln.toml (kiln is the default with --yes)
         assert!(tmp.path().join(".crucible/kiln.toml").exists());
@@ -830,14 +828,9 @@ mod tests {
         fs::write(crucible_dir.join("kiln.toml"), "[kiln]\nname = \"test\"").unwrap();
 
         // Should succeed without error (early return)
-        execute(
-            Some(tmp.path().to_path_buf()),
-            false,
-            true,
-            &tmp.path().join("global-config.toml"),
-        )
-        .await
-        .unwrap();
+        execute(Some(tmp.path().to_path_buf()), false, true)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -852,13 +845,8 @@ mod tests {
         .unwrap();
 
         // Should succeed without error (early return)
-        execute(
-            Some(tmp.path().to_path_buf()),
-            false,
-            true,
-            &tmp.path().join("global-config.toml"),
-        )
-        .await
-        .unwrap();
+        execute(Some(tmp.path().to_path_buf()), false, true)
+            .await
+            .unwrap();
     }
 }

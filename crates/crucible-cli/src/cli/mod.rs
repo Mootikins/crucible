@@ -450,7 +450,7 @@ Examples:
 
     /// Initialize a new kiln or project
     #[command(
-        long_about = "Initialize a directory as a Crucible kiln (knowledge store) or project.\n\nAuto-detects whether the directory is already a kiln or project. For new directories,\nan interactive prompt asks which type to create.\n\nExamples:\n  # Initialize in current directory (interactive)\n  cru init\n\n  # Initialize in specific directory\n  cru init --path ~/my-notes\n\n  # Skip prompts, use defaults (kiln)\n  cru init -y\n\n  # Force overwrite existing config\n  cru init --force",
+        long_about = "Initialize a directory as a Crucible kiln (knowledge store) or project.\n\nAuto-detects whether the directory is already a kiln or project. For new directories,\nan interactive prompt asks which type to create.\n\nThe kiln name and the provider selection are sent to the daemon, which records them in\n<data_home>/kilns.json and <data_home>/llm.json. They are NOT written to your config\nfile. If the daemon cannot be reached, the kiln is still created and the command tells\nyou which `cru kiln register` to run later.\n\nA first provider selection takes effect at once. Changing an existing one takes effect\nat the next daemon start, and the command names what Crucible keeps using until then.\n\nExamples:\n  # Initialize in current directory (interactive)\n  cru init\n\n  # Initialize in specific directory\n  cru init --path ~/my-notes\n\n  # Skip prompts, use defaults (kiln)\n  cru init -y\n\n  # Force overwrite existing config\n  cru init --force",
         visible_alias = "i"
     )]
     Init {

@@ -658,6 +658,20 @@ impl DaemonClient {
         .await
     }
 
+    /// Open the kilns of the project rooted at `path`, if one is registered.
+    ///
+    /// The matching and the opening both happen daemon-side: it is the only
+    /// layer holding both the project registry and the kiln registry.
+    pub async fn project_open_kilns(&self, path: &Path) -> Result<serde_json::Value> {
+        self.typed_call(
+            "project.open_kilns",
+            PathRequest {
+                path: path.to_string_lossy().to_string(),
+            },
+        )
+        .await
+    }
+
     pub async fn project_unregister(&self, path: &Path) -> Result<()> {
         let _: serde_json::Value = self
             .typed_call_with_retry(
@@ -672,6 +686,16 @@ impl DaemonClient {
 
     pub async fn project_list(&self) -> Result<Vec<crucible_core::Project>> {
         self.typed_call_with_retry("project.list", EmptyParams {})
+            .await
+    }
+
+    /// Every project name Crucible knows, with the layer that owns it.
+    ///
+    /// Not [`Self::project_list`], which answers "what is registered". This is
+    /// the two-layer view: `[projects.*]` the user authored beside
+    /// `projects.json` the daemon wrote.
+    pub async fn project_registry_list(&self) -> Result<serde_json::Value> {
+        self.typed_call("project.registry_list", EmptyParams {})
             .await
     }
 

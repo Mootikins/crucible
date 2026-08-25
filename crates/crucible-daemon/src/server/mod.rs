@@ -444,6 +444,28 @@ impl Server {
             kiln_registry,
             kiln_state,
             llm_state,
+            // `[projects.*]` from the config the daemon was handed. Normalized
+            // here so the listing applies the one precedence rule rather than
+            // re-deriving it, and so a user can SEE which layer owns a project
+            // name — the same problem the kiln shadow row exists to solve.
+            config_projects: params
+                .app_config
+                .as_ref()
+                .and_then(|c| c.get("projects"))
+                .and_then(|v| v.as_object())
+                .map(|projects| {
+                    projects
+                        .iter()
+                        .filter_map(|(name, entry)| {
+                            let path = entry.get("path")?.as_str()?;
+                            Some(crucible_core::config::Registration::config(
+                                name.clone(),
+                                std::path::PathBuf::from(path),
+                            ))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
             config_path: params.config_path.clone(),
             // The config layer's own answer to "which kiln by default". Read
             // from the config the daemon was HANDED, like every other config

@@ -373,6 +373,95 @@ pub(crate) async fn handle_project_list(req: Request, pm: &Arc<ProjectManager>) 
     }
 }
 
+/// `project.registry_list`: every project name Crucible knows, and which layer
+/// owns it.
+///
+/// The counterpart to `kiln.registry_list`, and a separate method from
+/// `project.list` for the same reason `kiln.list` stayed separate: `list`
+/// answers "what is registered", three web routes read its array shape, and
+/// bolting a second question onto it would change a reply four callers parse.
+///
+/// The honesty problem is the one the kiln shadow row solves. Two layers hold
+/// project names — `[projects.*]` in the config the user authored, and
+/// `projects.json` the daemon wrote — and a name only one of them owns is
+/// invisible to a user looking in the other place. A config-declared project
+/// the daemon has no registration for gets a row of its own rather than being
+/// omitted.
+pub(crate) async fn handle_project_registry_list(
+    req: Request,
+    pm: &Arc<ProjectManager>,
+    config_projects: &[crucible_core::config::Registration],
+) -> Response {
+    use crucible_core::config::{overlay_layers, Registration, RegistrationOrigin};
+
+    let projects = pm.list();
+    let registered: Vec<Registration> = projects
+        .iter()
+        .map(|p| Registration::registered(p.name.clone(), p.path.clone()))
+        .collect();
+    let merged = overlay_layers(
+        config_projects.to_vec(),
+        registered,
+        |entry| entry.name.clone(),
+        |declared, entry| declared.path == entry.path,
+    );
+
+    // The daemon's own record, by name, so an entry that has one keeps its
+    // kilns and its last-accessed time. A config-only entry has neither, and
+    // saying so is the point of the listing.
+    let by_name: std::collections::BTreeMap<String, crucible_core::Project> =
+        projects.into_iter().map(|p| (p.name.clone(), p)).collect();
+
+    let rows: Vec<serde_json::Value> = merged
+        .effective
+        .into_iter()
+        .map(|entry| {
+            // The daemon's record is used ONLY when it describes the same
+            // directory the winning layer names. On a contested name the
+            // registration lost, so its kilns and its last-accessed time
+            // describe a different project — stamping `origin: config` onto it
+            // would report the config as owning the loser's path.
+            let record = by_name
+                .get(&entry.name)
+                .filter(|project| project.path == entry.path);
+            match record {
+                Some(project) => {
+                    let mut value = serde_json::to_value(project).unwrap_or_default();
+                    if let Some(obj) = value.as_object_mut() {
+                        obj.insert(
+                            "origin".to_string(),
+                            serde_json::Value::String(entry.origin.as_str().to_string()),
+                        );
+                    }
+                    value
+                }
+                None => serde_json::json!({
+                    "name": entry.name,
+                    "path": entry.path.to_string_lossy(),
+                    "kilns": [],
+                    "origin": RegistrationOrigin::Config.as_str(),
+                }),
+            }
+        })
+        .collect();
+
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "projects": rows,
+            "shadowed": merged
+                .shadowed
+                .into_iter()
+                .map(|s| serde_json::json!({
+                    "name": s.name,
+                    "config_path": s.config.path.to_string_lossy(),
+                    "registered_path": s.state.path.to_string_lossy(),
+                }))
+                .collect::<Vec<_>>(),
+        }),
+    )
+}
+
 pub(crate) async fn handle_project_get(req: Request, pm: &Arc<ProjectManager>) -> Response {
     let params = match typed_params::<crate::rpc_client::PathRequest>(&req) {
         Ok(p) => p,
@@ -386,6 +475,95 @@ pub(crate) async fn handle_project_get(req: Request, pm: &Arc<ProjectManager>) -
         },
         None => Response::success(req.id, serde_json::Value::Null),
     }
+}
+
+/// `project.open_kilns`: open the kilns of the project rooted at `path`.
+///
+/// This used to be a loop in `cru chat` that read `[projects.*]` out of the
+/// user's config, matched it against the working directory, and called
+/// `kiln.open` for each name. Every part of that is business logic, and it sat
+/// in a render layer where a web frontend could not reach it: a browser cannot
+/// read the user's config file, so the web UI simply did not open project
+/// kilns at all.
+///
+/// The daemon has both halves — the project registry and the kiln registry —
+/// so it is the only layer that can answer "which kilns does this directory
+/// imply" without duplicating one of them.
+///
+/// A directory that matches no project is not an error. It is the ordinary
+/// case: most directories are not registered projects.
+pub(crate) async fn handle_project_open_kilns(
+    req: Request,
+    pm: &Arc<ProjectManager>,
+    km: &Arc<crate::kiln_manager::KilnManager>,
+    registry: &Arc<crate::kiln_registry::KilnRegistry>,
+) -> Response {
+    let params = match typed_params::<crate::rpc_client::PathRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+
+    let Some(project) = pm.get(Path::new(&params.path)) else {
+        return Response::success(
+            req.id,
+            serde_json::json!({ "matched": false, "opened": [], "skipped": [] }),
+        );
+    };
+
+    let mut opened = Vec::new();
+    let mut skipped = Vec::new();
+    let mut errors = Vec::new();
+
+    for kiln in &project.kilns {
+        // The registry name, resolved from the path the project records. The
+        // project config may also carry a name; the registry's answer wins
+        // because the registry is what every other call answers to.
+        let name = registry
+            .name_for(&kiln.path)
+            .map(|n| n.to_string())
+            .or_else(|| kiln.name.clone());
+
+        // A lazy kiln is one the user asked not to open until a session names
+        // it. Opening it here because a project mentions it is exactly what
+        // `lazy` says not to do.
+        let lazy = name
+            .as_deref()
+            .and_then(|n| crucible_core::config::KilnName::parse(n).ok())
+            .and_then(|n| registry.resolve(&n).registered())
+            .is_some_and(|entry| entry.lazy());
+        if lazy {
+            skipped.push(serde_json::json!({
+                "kiln": name,
+                "reason": "lazy",
+            }));
+            continue;
+        }
+
+        match km.open(&kiln.path).await {
+            Ok(_) => opened.push(serde_json::json!({
+                "kiln": name,
+                "path": kiln.path.to_string_lossy(),
+            })),
+            // One unopenable kiln must not stop the others: a project with a
+            // stale entry should still get the kilns that are there.
+            Err(e) => errors.push(serde_json::json!({
+                "kiln": name,
+                "path": kiln.path.to_string_lossy(),
+                "error": e.to_string(),
+            })),
+        }
+    }
+
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "matched": true,
+            "project": project.name,
+            "opened": opened,
+            "skipped": skipped,
+            "errors": errors,
+        }),
+    )
 }
 
 // --- SCM (git) handlers ---
@@ -850,5 +1028,229 @@ mod plugin_health_visibility_tests {
             }),
             "discovery failure for 'bogus-caps' should be reported: {result:#}"
         );
+    }
+}
+
+#[cfg(test)]
+mod project_open_kilns_tests {
+    use super::*;
+    use crate::kiln_manager::KilnManager;
+    use crate::protocol::RequestId;
+    use tempfile::TempDir;
+
+    fn request(path: &std::path::Path) -> Request {
+        Request {
+            jsonrpc: "2.0".to_string(),
+            id: Some(RequestId::Number(1)),
+            method: "project.open_kilns".to_string(),
+            params: serde_json::json!({ "path": path.to_string_lossy() }),
+        }
+    }
+
+    /// A project directory with one kiln inside it, registered.
+    fn project_with_kiln(
+        tmp: &TempDir,
+    ) -> (Arc<ProjectManager>, std::path::PathBuf, std::path::PathBuf) {
+        let project_dir = tmp.path().join("repo");
+        let kiln_dir = project_dir.join("notes");
+        std::fs::create_dir_all(kiln_dir.join(".crucible")).unwrap();
+        std::fs::create_dir_all(project_dir.join(".crucible")).unwrap();
+        std::fs::write(
+            project_dir.join(".crucible").join("project.toml"),
+            "[project]\nname = \"repo\"\n\n[[kilns]]\npath = \"./notes\"\n",
+        )
+        .unwrap();
+
+        let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
+        let project = pm.register(&project_dir).expect("register the project");
+        (pm, project.path, kiln_dir)
+    }
+
+    /// The daemon opens the project's kilns, and reports them by their REGISTRY
+    /// name — the name every other call answers to.
+    ///
+    /// This used to be a loop in `cru chat` reading `[projects.*]` out of the
+    /// user's config. A browser cannot read that file, so the web UI opened no
+    /// project kilns at all; the daemon is the only layer holding both
+    /// registries.
+    #[tokio::test]
+    async fn a_matched_project_gets_its_kilns_opened_under_their_registry_names() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let (pm, project_path, kiln_dir) = project_with_kiln(&tmp);
+        let km = Arc::new(KilnManager::new());
+        let registry = crate::test_support::kiln_registry(&data_home, &[("notes", &kiln_dir)]);
+
+        let resp = handle_project_open_kilns(request(&project_path), &pm, &km, &registry).await;
+        let data = resp.result.expect("the project matches");
+
+        assert_eq!(data["matched"], true);
+        assert_eq!(data["project"], "repo");
+        let opened = data["opened"].as_array().expect("an array");
+        assert_eq!(opened.len(), 1, "{data}");
+        assert_eq!(
+            opened[0]["kiln"], "notes",
+            "the registry name, not a path or a self-description: {data}"
+        );
+        assert!(
+            km.list().await.iter().any(|(p, _, _)| p == &kiln_dir),
+            "the kiln must actually be open"
+        );
+    }
+
+    /// A directory that is not a registered project is the ordinary case, not
+    /// an error: most directories are not projects.
+    #[tokio::test]
+    async fn an_unmatched_directory_is_not_an_error() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
+        let km = Arc::new(KilnManager::new());
+        let registry = crate::test_support::kiln_registry(&data_home, &[]);
+        let elsewhere = tmp.path().join("not-a-project");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+
+        let resp = handle_project_open_kilns(request(&elsewhere), &pm, &km, &registry).await;
+        let data = resp.result.expect("no match is a success, not an error");
+
+        assert_eq!(data["matched"], false);
+        assert_eq!(data["opened"], serde_json::json!([]));
+        assert!(km.list().await.is_empty(), "nothing may be opened");
+    }
+
+    /// `lazy` means "do not open this until a session names it". A project
+    /// mentioning the kiln is not a session naming it, so a lazy kiln is
+    /// reported skipped rather than opened.
+    #[tokio::test]
+    async fn a_lazy_kiln_is_skipped_rather_than_opened() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let (pm, project_path, kiln_dir) = project_with_kiln(&tmp);
+        let km = Arc::new(KilnManager::new());
+        let registry =
+            crate::test_support::kiln_registry_with_lazy(&data_home, &[("notes", &kiln_dir, true)]);
+
+        let resp = handle_project_open_kilns(request(&project_path), &pm, &km, &registry).await;
+        let data = resp.result.expect("the project matches");
+
+        assert_eq!(data["opened"], serde_json::json!([]), "{data}");
+        let skipped = data["skipped"].as_array().expect("an array");
+        assert_eq!(skipped.len(), 1, "{data}");
+        assert_eq!(skipped[0]["kiln"], "notes");
+        assert_eq!(skipped[0]["reason"], "lazy");
+        assert!(km.list().await.is_empty(), "a lazy kiln must stay closed");
+    }
+}
+
+#[cfg(test)]
+mod project_registry_list_tests {
+    use super::*;
+    use crate::protocol::RequestId;
+    use crucible_core::config::Registration;
+    use tempfile::TempDir;
+
+    fn request() -> Request {
+        Request {
+            jsonrpc: "2.0".to_string(),
+            id: Some(RequestId::Number(1)),
+            method: "project.registry_list".to_string(),
+            params: serde_json::Value::Null,
+        }
+    }
+
+    fn registered_project(tmp: &TempDir, name: &str) -> (Arc<ProjectManager>, std::path::PathBuf) {
+        let dir = tmp.path().join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        let pm = Arc::new(ProjectManager::new(tmp.path().join("projects.json")));
+        let project = pm.register(&dir).expect("register");
+        (pm, project.path)
+    }
+
+    /// A project only the daemon knows, and a project only the config declares.
+    /// Both get a row, and each says which layer owns it.
+    ///
+    /// The config-only row is the one that was invisible: `cru project list`
+    /// read the daemon's registry while `cru chat` matched against the config,
+    /// so an entry in one and not the other could not be seen from either side.
+    #[tokio::test]
+    async fn each_layer_gets_a_row_that_names_it() {
+        let tmp = TempDir::new().unwrap();
+        let (pm, registered_path) = registered_project(&tmp, "from-daemon");
+        let config = vec![Registration::config(
+            "from-config",
+            tmp.path().join("from-config"),
+        )];
+
+        let resp = handle_project_registry_list(request(), &pm, &config).await;
+        let data = resp.result.expect("the listing answers");
+        let rows = data["projects"].as_array().expect("an array");
+
+        let find = |name: &str| {
+            rows.iter()
+                .find(|r| r["name"] == serde_json::json!(name))
+                .unwrap_or_else(|| panic!("no row for {name}: {data}"))
+        };
+        assert_eq!(find("from-daemon")["origin"], "registered");
+        assert_eq!(
+            find("from-daemon")["path"],
+            registered_path.to_string_lossy().as_ref()
+        );
+        assert_eq!(find("from-config")["origin"], "config");
+        assert!(
+            data["shadowed"].as_array().is_some_and(|s| s.is_empty()),
+            "two different names are not a conflict: {data}"
+        );
+    }
+
+    /// One name, two layers, two directories. The config wins and the loser is
+    /// reported — the same rule and the same reporting as a shadowed kiln.
+    #[tokio::test]
+    async fn a_contested_name_reports_the_registration_the_config_out_ranks() {
+        let tmp = TempDir::new().unwrap();
+        let (pm, registered_path) = registered_project(&tmp, "repo");
+        let declared = tmp.path().join("elsewhere").join("repo");
+        let config = vec![Registration::config("repo", declared.clone())];
+
+        let resp = handle_project_registry_list(request(), &pm, &config).await;
+        let data = resp.result.expect("the listing answers");
+
+        let rows = data["projects"].as_array().expect("an array");
+        let row = rows
+            .iter()
+            .find(|r| r["name"] == serde_json::json!("repo"))
+            .unwrap_or_else(|| panic!("no row for repo: {data}"));
+        assert_eq!(row["origin"], "config");
+        assert_eq!(
+            row["path"],
+            declared.to_string_lossy().as_ref(),
+            "the config wins the name: {data}"
+        );
+
+        let shadowed = data["shadowed"].as_array().expect("an array");
+        assert_eq!(shadowed.len(), 1, "{data}");
+        assert_eq!(shadowed[0]["name"], "repo");
+        assert_eq!(
+            shadowed[0]["registered_path"],
+            registered_path.to_string_lossy().as_ref(),
+            "the losing path must be named, or the user cannot act on it"
+        );
+    }
+
+    /// The same project written down twice is not a conflict. There is nothing
+    /// for the user to resolve, so nothing is reported.
+    #[tokio::test]
+    async fn the_same_project_in_both_layers_is_not_a_conflict() {
+        let tmp = TempDir::new().unwrap();
+        let (pm, registered_path) = registered_project(&tmp, "repo");
+        let config = vec![Registration::config("repo", registered_path)];
+
+        let resp = handle_project_registry_list(request(), &pm, &config).await;
+        let data = resp.result.expect("the listing answers");
+
+        assert!(
+            data["shadowed"].as_array().is_some_and(|s| s.is_empty()),
+            "one registration written down twice is not a conflict: {data}"
+        );
+        assert_eq!(data["projects"].as_array().map(Vec::len), Some(1));
     }
 }

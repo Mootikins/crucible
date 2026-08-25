@@ -514,13 +514,31 @@ pub fn kiln_registry(
     data_home: &std::path::Path,
     kilns: &[(&str, &std::path::Path)],
 ) -> std::sync::Arc<crate::kiln_registry::KilnRegistry> {
+    let lazy: Vec<(&str, &std::path::Path, bool)> = kilns
+        .iter()
+        .map(|(name, path)| (*name, *path, false))
+        .collect();
+    kiln_registry_with_lazy(data_home, &lazy)
+}
+
+/// As [`kiln_registry`], with each entry's `lazy` flag.
+///
+/// The table form is what carries `lazy`, so a test that needs one has to
+/// write the entry as a table rather than the string shorthand — same as a
+/// user would.
+pub fn kiln_registry_with_lazy(
+    data_home: &std::path::Path,
+    kilns: &[(&str, &std::path::Path, bool)],
+) -> std::sync::Arc<crate::kiln_registry::KilnRegistry> {
     let entries: serde_json::Map<String, serde_json::Value> = kilns
         .iter()
-        .map(|(name, path)| {
-            (
-                (*name).to_string(),
-                serde_json::Value::String(path.to_string_lossy().into_owned()),
-            )
+        .map(|(name, path, lazy)| {
+            let value = if *lazy {
+                serde_json::json!({ "path": path.to_string_lossy(), "lazy": true })
+            } else {
+                serde_json::Value::String(path.to_string_lossy().into_owned())
+            };
+            ((*name).to_string(), value)
         })
         .collect();
     std::sync::Arc::new(

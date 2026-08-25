@@ -7,14 +7,9 @@ async fn test_init_creates_config_with_provider() {
     let path = temp_dir.path().to_path_buf();
 
     // Run init (non-interactive mode with defaults)
-    crucible_cli::commands::init::execute(
-        Some(path.clone()),
-        false,
-        true,
-        &temp_dir.path().join("global-config.toml"),
-    )
-    .await
-    .unwrap();
+    crucible_cli::commands::init::execute(Some(path.clone()), false, true)
+        .await
+        .unwrap();
 
     // Verify .crucible directory was created
     let crucible_dir = path.join(".crucible");
@@ -45,14 +40,9 @@ async fn test_init_creates_required_directories() {
     let temp_dir = TempDir::new().unwrap();
     let path = temp_dir.path().to_path_buf();
 
-    crucible_cli::commands::init::execute(
-        Some(path.clone()),
-        false,
-        true,
-        &temp_dir.path().join("global-config.toml"),
-    )
-    .await
-    .unwrap();
+    crucible_cli::commands::init::execute(Some(path.clone()), false, true)
+        .await
+        .unwrap();
 
     // Verify required subdirectories
     let crucible_dir = path.join(".crucible");
@@ -72,23 +62,12 @@ async fn test_init_is_idempotent_on_existing_kiln() {
     let path = temp_dir.path().to_path_buf();
 
     // First init should succeed
-    crucible_cli::commands::init::execute(
-        Some(path.clone()),
-        false,
-        true,
-        &temp_dir.path().join("global-config.toml"),
-    )
-    .await
-    .unwrap();
+    crucible_cli::commands::init::execute(Some(path.clone()), false, true)
+        .await
+        .unwrap();
 
     // Second init without force should succeed (idempotent — prints "already exists", returns Ok)
-    let result = crucible_cli::commands::init::execute(
-        Some(path.clone()),
-        false,
-        true,
-        &temp_dir.path().join("global-config.toml"),
-    )
-    .await;
+    let result = crucible_cli::commands::init::execute(Some(path.clone()), false, true).await;
     assert!(
         result.is_ok(),
         "re-init on existing kiln should be idempotent (Ok)"
@@ -108,14 +87,9 @@ async fn test_init_force_reinitializes() {
     let path = temp_dir.path().to_path_buf();
 
     // First init
-    crucible_cli::commands::init::execute(
-        Some(path.clone()),
-        false,
-        true,
-        &temp_dir.path().join("global-config.toml"),
-    )
-    .await
-    .unwrap();
+    crucible_cli::commands::init::execute(Some(path.clone()), false, true)
+        .await
+        .unwrap();
 
     // Create a marker file to verify directory is recreated
     let marker = path.join(".crucible/marker.txt");
@@ -123,14 +97,9 @@ async fn test_init_force_reinitializes() {
     assert!(marker.exists());
 
     // Force reinit should succeed and remove marker
-    crucible_cli::commands::init::execute(
-        Some(path.clone()),
-        true,
-        true,
-        &temp_dir.path().join("global-config.toml"),
-    )
-    .await
-    .unwrap();
+    crucible_cli::commands::init::execute(Some(path.clone()), true, true)
+        .await
+        .unwrap();
 
     assert!(
         !marker.exists(),
@@ -166,7 +135,7 @@ async fn a_kiln_init_writes_nothing_to_the_global_config() {
     std::fs::create_dir_all(&kiln).unwrap();
     let global = temp_dir.path().join("global-config.toml");
 
-    crucible_cli::commands::init::execute(Some(kiln.clone()), false, true, &global)
+    crucible_cli::commands::init::execute(Some(kiln.clone()), false, true)
         .await
         .unwrap();
 

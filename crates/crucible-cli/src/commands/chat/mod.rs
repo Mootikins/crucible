@@ -343,32 +343,21 @@ fn build_initial_sets(
     Ok(sets)
 }
 
-/// If the current working directory matches a registered project, open that
-/// project's kilns via daemon RPC. This ensures multi-kiln projects have all
-/// their knowledge sources available at session start.
-async fn open_project_kilns_if_matched(
-    config: &CliConfig,
-    existing_client: Option<&DaemonClient>,
-) -> Result<()> {
+/// Ask the daemon to open the kilns of the project rooted at the working
+/// directory, if any.
+///
+/// This used to read `[projects.*]` out of the user's config, match it against
+/// the working directory, and call `kiln.open` for each named kiln. Every part
+/// of that is business logic, and it lived here — in a render layer a web
+/// frontend cannot share, because a browser cannot read the user's config file.
+/// The daemon holds both the project registry and the kiln registry, so it is
+/// the only layer that can answer "which kilns does this directory imply"
+/// without duplicating one of them.
+///
+/// A directory that matches no project is the ordinary case and not an error.
+async fn open_project_kilns_if_matched(existing_client: Option<&DaemonClient>) -> Result<()> {
     let cwd = std::env::current_dir()?;
 
-    // Find a project whose expanded path matches cwd
-    let matched_project = config.projects.values().find(|project| {
-        let expanded = crate::kiln_validate::expand_tilde_home(&project.path.to_string_lossy());
-        expanded == cwd
-    });
-
-    let project = match matched_project {
-        Some(p) => p,
-        None => return Ok(()), // No project matches, nothing to do
-    };
-
-    if project.kilns.is_empty() {
-        return Ok(());
-    }
-
-    let registry = config.resolved_kilns();
-    // Reuse existing daemon connection if available, otherwise connect
     let owned_client;
     let client = match existing_client {
         Some(c) => c,
@@ -378,26 +367,31 @@ async fn open_project_kilns_if_matched(
         }
     };
 
-    for kiln_name in &project.kilns {
-        if let Some(entry) = registry.get(kiln_name) {
-            if entry.lazy() {
-                debug!(kiln = %kiln_name, "Skipping lazy kiln");
-                continue;
-            }
-            let path = crate::kiln_validate::expand_tilde_home(&entry.path().to_string_lossy());
-            match client.kiln_open(&path).await {
-                Ok(()) => {
-                    info!(kiln = %kiln_name, path = %path.display(), "Opened project kiln");
-                }
-                Err(e) => {
-                    warn!(kiln = %kiln_name, error = %e, "Failed to open project kiln");
-                }
-            }
-        } else {
-            warn!(kiln = %kiln_name, "Kiln not found in registry");
-        }
+    let reply = client.project_open_kilns(&cwd).await?;
+    if !reply["matched"].as_bool().unwrap_or(false) {
+        return Ok(());
     }
-
+    for opened in reply["opened"].as_array().into_iter().flatten() {
+        info!(
+            kiln = %opened["kiln"].as_str().unwrap_or_default(),
+            path = %opened["path"].as_str().unwrap_or_default(),
+            "Opened project kiln"
+        );
+    }
+    for skipped in reply["skipped"].as_array().into_iter().flatten() {
+        debug!(
+            kiln = %skipped["kiln"].as_str().unwrap_or_default(),
+            reason = %skipped["reason"].as_str().unwrap_or_default(),
+            "Skipped project kiln"
+        );
+    }
+    for failed in reply["errors"].as_array().into_iter().flatten() {
+        warn!(
+            kiln = %failed["kiln"].as_str().unwrap_or_default(),
+            error = %failed["error"].as_str().unwrap_or_default(),
+            "Failed to open project kiln"
+        );
+    }
     Ok(())
 }
 
@@ -516,7 +510,7 @@ async fn run_interactive_chat(params: ChatParams, record: Option<PathBuf>) -> Re
     };
 
     if let Some(client) = lua_client.as_ref() {
-        if let Err(e) = open_project_kilns_if_matched(&config, Some(client)).await {
+        if let Err(e) = open_project_kilns_if_matched(Some(client)).await {
             debug!("Project kiln auto-open skipped: {}", e);
         }
     }
