@@ -105,6 +105,33 @@ fn plugin_of_module(module: &str) -> &str {
     module.split('.').next().unwrap_or(module)
 }
 
+/// The hash of what a boot evaluation reads: `config.toml` (while it
+/// exists) and `init.lua`, under the given config file's directory.
+///
+/// The daemon records it at boot and `config.effective` returns it; a client
+/// that computes a different value over the same root warns "restart to
+/// apply". A missing file hashes as absent, so creating or deleting either
+/// file changes the hash too.
+pub fn boot_input_hash(config_source: &Path) -> String {
+    let config_root = config_source
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let mut hasher = blake3::Hasher::new();
+    for file in [config_source, &config_root.join("init.lua")] {
+        match std::fs::read(file) {
+            Ok(bytes) => {
+                hasher.update(&(bytes.len() as u64).to_le_bytes());
+                hasher.update(&bytes);
+            }
+            Err(_) => {
+                hasher.update(b"absent");
+            }
+        }
+    }
+    hasher.finalize().to_hex().to_string()
+}
+
 /// The result of the boot evaluation: the extracted config and the VM it
 /// was evaluated in, ready to be handed to `Server::bind_with_plugin_config`.
 pub struct BootConfig {
@@ -118,6 +145,8 @@ pub struct BootConfig {
     pub config_source: PathBuf,
     /// Its directory: where `init.lua` lives.
     pub config_root: PathBuf,
+    /// [`boot_input_hash`] over what this evaluation read.
+    pub boot_hash: String,
 }
 
 /// How the boot resolves `runtimepath` entries to plugin directories.
@@ -190,12 +219,13 @@ pub async fn evaluate_boot_config_with_paths(
     // The seed must extract — this is where a malformed config.toml erred
     // under `CliAppConfig::load`, and it still errs here, before any Lua.
     let seed_store = crucible_lua::snapshot_store().expect("the store was just seeded");
-    let seed_config = seed_store.extract().map_err(|e| {
+    let mut seed_config = seed_store.extract().map_err(|e| {
         anyhow::anyhow!(
             "Failed to parse config file {}: {e}. Try: `cru doctor`",
             config_source.display()
         )
     })?;
+    seed_config.source_map = Some(source_map_from_provenance(seed_store.provenance()));
 
     // Step 3: THE plugin VM, and the live module search path: the user
     // module entries first, then the default plugin locations (env path,
@@ -248,7 +278,14 @@ pub async fn evaluate_boot_config_with_paths(
     // evaluation itself.
     let full_store = crucible_lua::snapshot_store().expect("the store is live");
     let mut config = match full_store.extract() {
-        Ok(config) => config,
+        Ok(mut config) => {
+            // The old `--trace` surface reads `source_map`; project the
+            // store's provenance into it so a value from the TOML seed or a
+            // Lua call site still renders its source. T5.7 replaces this
+            // surface with the provenance map itself.
+            config.source_map = Some(source_map_from_provenance(full_store.provenance()));
+            config
+        }
         Err(e) => {
             warn!("init.lua produced a config that does not extract ({e}); continuing on the seed");
             crucible_lua::install_store(seed_store);
@@ -263,11 +300,13 @@ pub async fn evaluate_boot_config_with_paths(
     let (plugin_sections, _watch) = crate::daemon_plugins::split_plugins_config(&config.plugins);
     let loader = loader.with_plugin_config(plugin_sections)?;
 
+    let boot_hash = boot_input_hash(&config_source);
     Ok(BootConfig {
         config,
         loader,
         config_source,
         config_root,
+        boot_hash,
     })
 }
 
@@ -590,6 +629,34 @@ end
     }
 
     Ok(value)
+}
+
+/// Project the store's per-leaf provenance into the legacy `ValueSourceMap`
+/// the `--trace` rendering still reads. Runtime-only tags (RPC merges, the
+/// state overlay) have no legacy variant and are skipped.
+fn source_map_from_provenance(
+    provenance: &crucible_core::config::ProvenanceMap,
+) -> crucible_core::config::ValueSourceMap {
+    use crucible_core::config::ValueSource;
+    let mut map = crucible_core::config::ValueSourceMap::new();
+    for (path, tag) in provenance.iter() {
+        let source = match tag {
+            SourceTag::Default => ValueSource::Default,
+            SourceTag::Toml(file) => ValueSource::File {
+                path: Some(file.display().to_string()),
+            },
+            SourceTag::Lua { file, line } => ValueSource::File {
+                path: Some(match line {
+                    Some(line) => format!("{file}:{line}"),
+                    None => file.clone(),
+                }),
+            },
+            SourceTag::Cli => ValueSource::Cli,
+            SourceTag::Rpc | SourceTag::Registered | SourceTag::Discovered => continue,
+        };
+        map.set(path, source);
+    }
+    map
 }
 
 /// Replace the daemon-state namespaces with tables that raise on any index.

@@ -81,6 +81,9 @@ pub fn write_config(dir: &Path, extra_toml: &str) -> PathBuf {
 /// Isolated daemon fixture with RAII cleanup.
 pub struct TestDaemon {
     pub socket_path: PathBuf,
+    // `common` is compiled into each integration binary separately, so a
+    // helper only some of them use reads as dead code in the others.
+    #[allow(dead_code)]
     pub config_path: PathBuf,
     _temp_dir: tempfile::TempDir,
     process: Child,
@@ -157,8 +160,28 @@ impl TestDaemon {
         );
     }
 
+    /// The hermetic HOME this daemon runs under.
+    #[allow(dead_code)]
+    pub fn home(&self) -> &Path {
+        self._temp_dir.path()
+    }
+
+    /// [`Self::command`] without the `--config` argument, for a test that
+    /// supplies its own (e.g. the root-mismatch refusal).
+    #[allow(dead_code)]
+    pub fn command_without_config(&self) -> Command {
+        let mut cmd = cru();
+        cmd.env_clear();
+        for (k, v) in hermetic_env_pairs(self._temp_dir.path()) {
+            cmd.env(k, v);
+        }
+        cmd.env("CRUCIBLE_SOCKET", &self.socket_path);
+        cmd
+    }
+
     /// Create a `cru` command pre-wired with CRUCIBLE_SOCKET and --config,
     /// in the same hermetic environment as the daemon (no real credentials).
+    #[allow(dead_code)]
     pub fn command(&self) -> Command {
         let mut cmd = cru();
         cmd.env_clear();

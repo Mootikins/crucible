@@ -205,6 +205,7 @@ rpc_methods! {
     LuaEval = "lua.eval",
     ConfigGet = "config.get",
     ConfigSet = "config.set",
+    ConfigEffective = "config.effective",
     UiConfig = "ui.config",
     UiSetTheme = "ui.set_theme",
     ProjectRegister = "project.register",
@@ -906,6 +907,7 @@ impl RpcDispatcher {
             // App-config store (the same store `cru.config.*` reads in Lua)
             RpcMethod::ConfigGet => to_response(id, self.handle_config_get(&req)),
             RpcMethod::ConfigSet => to_response(id, self.handle_config_set(&req)),
+            RpcMethod::ConfigEffective => to_response(id, self.handle_config_effective()),
 
             // Lua-defined UI config (theme now; surfaces and bars follow).
             // Snapshot half of the handshake — see `rpc::ui`.
@@ -1695,6 +1697,40 @@ impl RpcDispatcher {
     /// seeing it. The way to add a kiln is `kiln.register` (`cru kiln
     /// register`) or a config-file edit; both pass the floor, and this
     /// method must not become a third way that does not.
+    /// The daemon's effective config: what the boot evaluation extracted,
+    /// with the LIVE provider table folded in at answer time (a provider
+    /// added through `cru init` while the daemon runs must show). Daemon-
+    /// backed commands fetch this instead of evaluating anything themselves —
+    /// the daemon's copy IS the live truth, and evaluation is heavyweight.
+    fn handle_config_effective(&self) -> RpcResult<serde_json::Value> {
+        let Some(config) = self.ctx.effective_config.clone() else {
+            return Err(RpcError {
+                code: INTERNAL_ERROR,
+                message: "this daemon was bound without an app config".to_string(),
+                data: None,
+            });
+        };
+        let mut config = config;
+        if let Some(object) = config.as_object_mut() {
+            if let Some(llm) = self.ctx.llm_config.get() {
+                if let Ok(llm) = serde_json::to_value(llm.as_ref()) {
+                    object.insert("llm".to_string(), llm);
+                }
+            }
+        }
+        let config_root = self
+            .ctx
+            .config_path
+            .as_ref()
+            .and_then(|p| p.parent())
+            .map(|p| p.display().to_string());
+        Ok(serde_json::json!({
+            "config": config,
+            "config_root": config_root,
+            "boot_hash": self.ctx.boot_hash,
+        }))
+    }
+
     fn handle_config_set(&self, req: &Request) -> RpcResult<serde_json::Value> {
         use crate::rpc::params::parse_params;
         use serde::Deserialize;
@@ -2876,6 +2912,8 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             llm_state: Arc::new(crate::llm_state::LlmStateStore::new(data_home)),
             config_projects: Vec::new(),
             config_path: None,
+            effective_config: None,
+            boot_hash: None,
             config_default_kiln: None,
         }))
     }

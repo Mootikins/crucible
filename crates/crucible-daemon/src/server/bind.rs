@@ -44,6 +44,10 @@ pub struct BindWithPluginConfigParams {
     /// your config" cannot act on it without knowing which file to open.
     /// `None` leaves the refusal naming the layer but not the file.
     pub config_path: Option<std::path::PathBuf>,
+    /// [`crate::daemon_plugins::boot_input_hash`] over what the boot
+    /// evaluation read, when this daemon booted through one. Returned by
+    /// `config.effective` so a client can warn about a stale config.
+    pub boot_hash: Option<String>,
     /// THE plugin VM, when the boot evaluation already built it
     /// (`daemon_plugins::evaluate_boot_config`). The bind then wires this
     /// loader instead of creating one, and it does not re-seed the Lua config
@@ -100,6 +104,7 @@ impl BindWithPluginConfigParams {
             data_home: config.data_home.clone(),
             config_home: None,
             config_path: Some(config_path),
+            boot_hash: None,
             loader: None,
         }
     }
@@ -107,6 +112,12 @@ impl BindWithPluginConfigParams {
     /// Attach the boot evaluation's loader — see the `loader` field.
     pub fn with_loader(mut self, loader: crate::daemon_plugins::DaemonPluginLoader) -> Self {
         self.loader = Some(loader);
+        self
+    }
+
+    /// Record the boot-input hash — see the `boot_hash` field.
+    pub fn with_boot_hash(mut self, hash: String) -> Self {
+        self.boot_hash = Some(hash);
         self
     }
 }
@@ -134,6 +145,7 @@ impl Default for BindWithPluginConfigParams {
             data_home: None,
             config_home: None,
             config_path: None,
+            boot_hash: None,
             loader: None,
         }
     }

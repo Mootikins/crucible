@@ -13,7 +13,10 @@ pub mod boot;
 pub mod bootstrap;
 pub mod option_store;
 
-pub use boot::{evaluate_boot_config, evaluate_boot_config_with_paths, BootConfig, PluginPathsFn};
+pub use boot::{
+    boot_input_hash, evaluate_boot_config, evaluate_boot_config_with_paths, BootConfig,
+    PluginPathsFn,
+};
 pub use bootstrap::{
     bootstrap_plugin_entry, bootstrap_plugins, daemon_plugin_paths, default_daemon_plugin_paths,
     BootstrapOutcome,

@@ -81,52 +81,103 @@ fn wants_first_run_setup(command: &Option<Commands>) -> bool {
     }
 }
 
+/// How a command acquires its config.
+///
+/// `Daemon`: the command talks to the daemon anyway; it fetches the daemon's
+/// `config.effective` — the live truth — instead of evaluating anything.
+/// `Local`: a bootstrap command; it runs one throwaway evaluation in its own
+/// process. `None`: the command reads no config at all.
+enum ConfigNeed {
+    Daemon,
+    Local,
+    None,
+}
+
+/// The classification, exhaustive over `Commands` so a new command cannot
+/// silently fall into "no config" — the compiler forces the decision.
+fn config_need(command: &Option<Commands>) -> ConfigNeed {
+    let Some(command) = command else {
+        // Bare `cru` is chat.
+        return ConfigNeed::Daemon;
+    };
+    match command {
+        // Replay renders a recorded transcript and must stay fully offline:
+        // no daemon contact, not even a config fetch — the local evaluation
+        // reads the same files. Flag validation inside `chat` then fails
+        // fast without a socket in the picture.
+        Commands::Chat {
+            replay: Some(_), ..
+        } => ConfigNeed::Local,
+        Commands::Chat { .. }
+        | Commands::Mcp { .. }
+        | Commands::Acp { .. }
+        | Commands::Process { .. }
+        | Commands::Search { .. }
+        | Commands::Models { .. }
+        | Commands::Storage(_)
+        | Commands::Workflow { .. }
+        | Commands::Skills(_)
+        | Commands::Session(_)
+        | Commands::Plugin(_)
+        | Commands::Install(_) => ConfigNeed::Daemon,
+        // `config init` writes the example file and reads nothing: no
+        // daemon, no VM. The other config subcommands render the effective
+        // config, which takes the local evaluation.
+        Commands::Config(crucible_cli::cli::ConfigCommands::Init { .. }) => ConfigNeed::None,
+        Commands::Stats { .. }
+        | Commands::Config(_)
+        | Commands::Status { .. }
+        | Commands::Agents { .. }
+        | Commands::Tasks { .. }
+        | Commands::Proposals(_)
+        | Commands::Tools(_) => ConfigNeed::Local,
+        Commands::Kiln { .. }
+        | Commands::Project { .. }
+        | Commands::Doctor { .. }
+        | Commands::Daemon(_)
+        | Commands::Lua { .. }
+        | Commands::Init { .. }
+        | Commands::Auth { .. }
+        | Commands::Set { .. }
+        | Commands::Setup { .. }
+        | Commands::Completions { .. } => ConfigNeed::None,
+        #[cfg(feature = "web")]
+        Commands::Web(_) => ConfigNeed::None,
+    }
+}
+
+/// The config-file `logging_level`, for the processes it still governs: the
+/// daemon and the bootstrap commands. Read from the TOML seed only (the
+/// oracle), because logging initializes before any evaluation runs; a
+/// daemon-backed invocation takes flags and environment instead.
+fn seed_logging_level(cli: &Cli, is_server_process: bool) -> Option<String> {
+    let governed = is_server_process || matches!(config_need(&cli.command), ConfigNeed::Local);
+    if !governed {
+        return None;
+    }
+    config::CliConfig::load(cli.config.clone(), None, None)
+        .ok()
+        .and_then(|config| config.logging_level())
+}
+
 async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Result<()> {
     // Install ring as the rustls CryptoProvider before any TLS usage.
     // Both ring and aws-lc-rs are compiled (via transitive deps), so rustls
     // can't auto-detect.
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    let config_result = config::CliConfig::load(
-        cli.config.clone(),
-        cli.embedding_url.clone(),
-        cli.embedding_model.clone(),
-    );
-
-    let config = match (&cli.command, config_result) {
-        (Some(Commands::Doctor { .. }), Err(err)) => {
-            tracing::warn!(
-                "doctor proceeding with default config after load error: {}",
-                err
-            );
-            config::CliConfig::default()
-        }
-        (_, result) => result?,
-    };
-
     // First-run setup runs before dispatch, not inside the bare-`cru` arm.
     // The README's quick start is `cru chat`, which previously skipped setup
     // entirely — the wizard only fired for a bare `cru`.
     //
-    // The reload matters as much as the hoist: the wizard *writes*
-    // config.toml, so a config loaded above is stale the moment it returns.
-    // Without this the user's provider, model and kiln choices did nothing
-    // until the next invocation.
-    let config = if wants_first_run_setup(&cli.command) && std::io::stdin().is_terminal() {
+    // No reload follows: the pre-dispatch config load is gone (T5.3), and
+    // the per-command acquisition below reads whatever the wizard wrote.
+    if wants_first_run_setup(&cli.command) && std::io::stdin().is_terminal() {
         let config_path = crucible_core::config::CliAppConfig::default_config_path();
         if commands::wizard::is_first_run(&config_path) {
             commands::wizard::run_setup_wizard(&config_path)?;
-            config::CliConfig::load(
-                cli.config.clone(),
-                cli.embedding_url.clone(),
-                cli.embedding_model.clone(),
-            )?
-        } else {
-            config
         }
-    } else {
-        config
-    };
+    }
 
     // Forward an explicit --config to an auto-spawned daemon. Without this, a
     // command that cold-starts the daemon (e.g. `cru chat --config X`) would run
@@ -158,6 +209,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
                 plugin_watch,
                 boot.config_source.clone(),
             )
+            .with_boot_hash(boot.boot_hash.clone())
             .with_loader(boot.loader),
         )
         .await?;
@@ -221,7 +273,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
         level.into()
     } else if cli.verbose {
         LevelFilter::DEBUG
-    } else if let Some(config_level) = config.logging_level() {
+    } else if let Some(config_level) = seed_logging_level(&cli, is_server_process) {
         parse_log_level(&config_level).unwrap_or(if uses_stdio || is_server_process {
             LevelFilter::WARN
         } else {
@@ -285,6 +337,29 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             tracing_subscriber::fmt().with_env_filter(env_filter).init();
         }
     }
+
+    // Per-command acquisition (T5.3): a daemon-backed command fetches
+    // `config.effective`; a bootstrap command runs one throwaway evaluation;
+    // the rest load nothing.
+    let config = match config_need(&cli.command) {
+        ConfigNeed::Daemon => {
+            config::fetch_effective_config(
+                cli.config.clone(),
+                cli.embedding_url.clone(),
+                cli.embedding_model.clone(),
+            )
+            .await?
+        }
+        ConfigNeed::Local => {
+            config::local_evaluation(
+                cli.config.clone(),
+                cli.embedding_url.clone(),
+                cli.embedding_model.clone(),
+            )
+            .await?
+        }
+        ConfigNeed::None => config::CliConfig::default(),
+    };
 
     // Log configuration in verbose mode
     if cli.verbose {

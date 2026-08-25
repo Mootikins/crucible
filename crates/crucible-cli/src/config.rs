@@ -17,6 +17,84 @@ pub use crucible_core::config::{
     HighlightingConfig,
 };
 
+/// Fetch the daemon's effective config over `config.effective`.
+///
+/// Daemon-backed commands acquire their config here: the daemon's copy holds
+/// the runtime `config.set` merges and the live provider table, and IS the
+/// live truth — a per-command client evaluation would be both wrong and
+/// expensive (it runs the user's whole runtime file).
+///
+/// Two client-side checks ride along:
+/// - the ROOT-MISMATCH refusal: an invocation whose resolved config root
+///   differs from the daemon's is refused, naming both roots;
+/// - the STALENESS warning: a changed boot-input hash (`init.lua`, plus
+///   `config.toml` while it exists) warns "restart to apply".
+pub async fn fetch_effective_config(
+    config_file: Option<std::path::PathBuf>,
+    embedding_url: Option<String>,
+    embedding_model: Option<String>,
+) -> anyhow::Result<CliConfig> {
+    // Only a RUNNING daemon is asked. Acquisition must never be the reason a
+    // daemon starts: with no daemon, the local evaluation reads the same
+    // files the daemon's boot would, so the values agree by construction,
+    // and the command's own daemon contact (if it gets that far) spawns one.
+    let Some(client) = crate::common::daemon_client_if_running().await else {
+        return local_evaluation(config_file, embedding_url, embedding_model).await;
+    };
+    let resp = client
+        .call("config.effective", serde_json::json!({}))
+        .await?;
+
+    let my_source =
+        config_file.unwrap_or_else(crucible_core::config::CliAppConfig::default_config_path);
+    let my_root = my_source
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(std::path::Path::new("."));
+
+    if let Some(daemon_root) = resp["config_root"].as_str() {
+        if std::path::Path::new(daemon_root) != my_root {
+            anyhow::bail!(
+                "the daemon runs on config root {daemon_root}, but this invocation resolves {}; \
+                 run `cru daemon restart` to move the daemon to this root",
+                my_root.display()
+            );
+        }
+    }
+
+    if let Some(boot_hash) = resp["boot_hash"].as_str() {
+        let current = crucible_daemon::daemon_plugins::boot_input_hash(&my_source);
+        if current != boot_hash {
+            eprintln!(
+                "warning: the config changed since the daemon started; run `cru daemon restart` to apply"
+            );
+        }
+    }
+
+    let mut config: CliConfig = serde_json::from_value(resp["config"].clone())
+        .map_err(|e| anyhow::anyhow!("the daemon's effective config does not parse: {e}"))?;
+    config.apply_embedding_overrides(embedding_url, embedding_model);
+    Ok(config)
+}
+
+/// One throwaway evaluation for a bootstrap command: seed, evaluate
+/// `init.lua` in a fresh executor, read the store, drop. The same
+/// construction as the daemon's boot — one code path — with hooks
+/// registering into a VM nothing ever dispatches on.
+pub async fn local_evaluation(
+    config_file: Option<std::path::PathBuf>,
+    embedding_url: Option<String>,
+    embedding_model: Option<String>,
+) -> anyhow::Result<CliConfig> {
+    let boot = crucible_daemon::daemon_plugins::evaluate_boot_config(
+        config_file,
+        embedding_url,
+        embedding_model,
+    )
+    .await?;
+    Ok(boot.config)
+}
+
 /// Builder for programmatically constructing CliConfig (top-level CLI configuration)
 #[cfg(test)]
 pub struct CliConfigBuilder {

@@ -127,6 +127,7 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
                 plugin_watch,
                 boot.config_source.clone(),
             )
+            .with_boot_hash(boot.boot_hash.clone())
             .with_loader(boot.loader),
         )
         .await?;
