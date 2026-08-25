@@ -306,6 +306,23 @@ pub fn list_available_themes(config_dir: &Path) -> Vec<String> {
     names
 }
 
+/// The global config directory: where `init.lua` lives.
+///
+/// One function, so `cru.paths.config()` and the loader cannot name
+/// different directories.
+///
+/// The directory is the parent of `CliAppConfig::default_config_path()`,
+/// which is the only place that reads `$CRUCIBLE_CONFIG_DIR`. A test that
+/// points that variable at a temporary directory must also move `init.lua`,
+/// or the test writes into the developer's real `~/.config/crucible`.
+pub fn default_config_dir() -> PathBuf {
+    let config_file = crucible_core::config::CliAppConfig::default_config_path();
+    match config_file.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir.to_path_buf(),
+        _ => PathBuf::from("."),
+    }
+}
+
 /// Register the cru.include() function
 fn register_include(lua: &Lua, ns: &Table, config_dir: PathBuf) -> Result<(), LuaError> {
     let include_fn = lua.create_function(move |lua, path: String| {
@@ -438,13 +455,9 @@ impl ConfigLoader {
 
     /// Create a loader using default XDG paths
     pub fn with_defaults(kiln_path: Option<&Path>) -> Self {
-        let config_dir = dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("crucible");
-
         let kiln_config_dir = kiln_path.map(|p| p.join(".crucible"));
 
-        Self::new(config_dir, kiln_config_dir)
+        Self::new(default_config_dir(), kiln_config_dir)
     }
 
     /// Load configuration into a Lua state

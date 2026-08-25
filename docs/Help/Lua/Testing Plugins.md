@@ -118,10 +118,11 @@ end)
 `test_mocks.setup(overrides)` replaces `cru.kiln`, `cru.graph`, `cru.http`, `cru.fs`, `cru.paths`, `cru.session`, and `cru.sessions` with fixture-backed mocks (mirrored onto `crucible.*` and the `http`/`fs`/`paths` globals). Overrides are merged per module key over these defaults:
 
 ```lua
-kiln     = { notes = {}, outlinks = {}, backlinks = {}, neighbors = {} },
+kiln     = { notes = {}, outlinks = {}, backlinks = {}, neighbors = {},
+             roots = {} },
 graph    = { notes = {}, outlinks = {}, backlinks = {}, neighbors = {} },
 http     = { responses = {} },
-fs       = { files = {}, dirs = {} },
+fs       = { files = {}, dirs = {}, real_dirs = false },
 paths    = { kiln = "/mock/kiln", workspace = "/mock/workspace",
              session = false, state = "/mock/state" },
 session  = { temperature = 0.7, max_tokens = nil, model = "mock-model",
@@ -130,6 +131,28 @@ sessions = { info = { kiln = "/mock/kiln" }, messages = {}, response_parts = {} 
 ```
 
 `test_mocks.reset()` restores the defaults and clears recorded calls.
+
+### kiln roots
+
+`cru.kiln.path(name, relative)` answers from `kiln.roots`, which maps a kiln
+NAME to a directory. The mock raises for an unknown name, and for a relative
+part that holds `..`, `.` or a leading `/` — the same two refusals the daemon
+makes. A plugin that passes here therefore cannot fail in production.
+
+```lua
+test_mocks.setup({ kiln = { roots = { notes = "/kilns/notes" } } })
+```
+
+### real directories
+
+`fs.real_dirs` makes the `cru.fs.mkdir` mock create the directory for real, as
+well as recording the call. Turn it on when the code under test writes with
+`io.open`, which needs a directory that exists. It is off by default, so no
+suite touches the disk by accident.
+
+Note that a test file cannot capture the host's `cru.fs` for itself: the runner
+calls `test_mocks.setup()` before it loads any test file, so
+`local real = cru.fs.mkdir` at the top of a suite captures the mock.
 
 ### graph fixture
 

@@ -146,10 +146,22 @@ describe("reflection", function()
   end)
 
   describe("run", function()
+    local kiln_root
+
     before_each(function()
       -- The real bridge shape: `get_session` sends kiln NAMES in a `kilns`
       -- array, never a `kiln` path (session_bridge.rs).
+      --
+      -- `kiln_root` is a REAL directory: the plugin writes with `io.open`, so
+      -- the staging directory has to exist. `real_dirs` makes the `mkdir` mock
+      -- create it instead of only recording the call.
+      kiln_root = os.tmpname()
+      os.remove(kiln_root)
       test_mocks.setup({
+        -- `cru.kiln.path` answers from this table, the way the daemon answers
+        -- from the kiln registry.
+        kiln = { roots = { notes = kiln_root } },
+        fs = { real_dirs = true },
         sessions = {
           info = { id = "chat-1", session_type = "chat", state = "ended", kilns = { "notes" } },
           messages = {
@@ -168,16 +180,52 @@ describe("reflection", function()
       test_mocks.reset()
     end)
 
-    it("stages a proposal through a kiln:// path", function()
+    it("resolves the staging directory from the kiln the session names", function()
       plugin.run({ id = "chat-1" })
 
+      -- The plugin asks for the directory by NAME. It never spells one.
+      local asks = test_mocks.get_calls("kiln", "path")
+      expect.equal(1, #asks)
+      expect.equal("notes", asks[1][1])
+      expect.equal(".crucible/proposals", asks[1][2])
+
+      local staging = kiln_root .. "/.crucible/proposals"
       local mkdirs = test_mocks.get_calls("fs", "mkdir")
-      expect.equal("kiln://notes/.crucible/proposals", mkdirs[1] and mkdirs[1][1])
-      local writes = test_mocks.get_calls("fs", "write")
-      expect.equal(1, #writes)
-      expect.truthy(writes[1][1]:find("^kiln://notes/%.crucible/proposals/"))
-      expect.truthy(writes[1][1]:find("%.md$"))
-      expect.truthy(writes[1][2]:find("source: reflection"))
+      expect.equal(staging, mkdirs[1] and mkdirs[1][1])
+    end)
+
+    it("writes the proposal file into the staging directory", function()
+      local staged = plugin.stage_proposals("notes", "chat-1", {
+        { title = "T", body = "B" },
+      })
+
+      expect.equal(1, #staged)
+      local prefix = kiln_root .. "/.crucible/proposals/"
+      expect.equal(prefix, staged[1]:sub(1, #prefix))
+      expect.truthy(staged[1]:find("%.md$"))
+
+      -- A REAL file, not a mock record: `io.open` has no mock to agree with.
+      local handle = io.open(staged[1], "r")
+      expect.truthy(handle)
+      local body = handle:read("a")
+      handle:close()
+      expect.truthy(body:find("source: reflection"))
+      expect.truthy(body:find("B"))
+    end)
+
+    it("raises when the session names a kiln that is not registered", function()
+      test_mocks.setup({
+        kiln = { roots = {} },
+        sessions = {
+          info = { id = "chat-1", session_type = "chat", state = "ended", kilns = { "gone" } },
+        },
+      })
+
+      local ok = pcall(plugin.stage_proposals, "gone", "chat-1", {
+        { title = "T", body = "B" },
+      })
+      expect.falsy(ok)
+      expect.equal(0, #test_mocks.get_calls("fs", "mkdir"))
     end)
   end)
 

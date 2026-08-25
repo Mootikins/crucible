@@ -47,14 +47,10 @@ use mlua::Table;
 use std::fs;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
+#[cfg(test)]
 use std::sync::Arc;
 
-/// Maps a kiln NAME to its root directory.
-///
-/// The host injects it — the daemon passes a registry-backed closure — so
-/// this crate never learns where kilns live. The error string reaches Lua
-/// as-is: it must name the kiln, never a directory.
-pub type KilnPathResolver = Arc<dyn Fn(&str) -> Result<PathBuf, String> + Send + Sync>;
+pub use crate::vault::KilnPathResolver;
 
 /// The scheme that addresses a kiln by name: `kiln://<name>/<relative>`.
 const KILN_SCHEME: &str = "kiln://";

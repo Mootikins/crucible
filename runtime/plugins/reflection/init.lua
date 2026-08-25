@@ -199,22 +199,28 @@ local function collect_text(iter)
 end
 
 --- One plain file name: alphanumeric first character, then [%w._-], at
---- most 128 bytes. The daemon refuses traversal in kiln:// paths too; this
---- keeps the plugin honest on its own, and a leading dot cannot hide a
---- proposal or spell "..".
+--- most 128 bytes. `cru.kiln.path` refuses traversal in the relative part
+--- too; this keeps the plugin honest on its own, and a leading dot cannot
+--- hide a proposal or spell "..".
 function M.safe_filename(name)
     return type(name) == "string"
         and #name <= 128
         and name:match("^%w[%w._-]*$") ~= nil
 end
 
---- Write staged proposals to KILN/.crucible/proposals/ via cru.fs, through
---- kiln:// paths: `kiln` is the kiln's NAME, and the daemon resolves it to a
---- directory inside cru.fs — no kiln path ever reaches this plugin. We write
---- the files directly (not via the create_note tool) precisely because the
---- staging area must NOT be indexed — create_note targets the kiln index.
+--- Write staged proposals to KILN/.crucible/proposals/.
+---
+--- `kiln` is the kiln's NAME. `cru.kiln.path` turns the name into a directory,
+--- so the plugin asks for the location instead of spelling one. We write the
+--- files directly (not via the create_note tool) precisely because the staging
+--- area must NOT be indexed — create_note targets the kiln index.
+---
+--- `cru.fs.mkdir` makes the directory; `io.open` writes the file. The write
+--- does not go through `cru.fs.write`, which is being removed. `mkdir` stays
+--- on `cru.fs` because Lua has no directory call, and `os.execute("mkdir -p")`
+--- would interpolate a path into a command line.
 function M.stage_proposals(kiln, session_id, proposals)
-    local dir = "kiln://" .. kiln .. "/.crucible/proposals"
+    local dir = cru.kiln.path(kiln, ".crucible/proposals")
     cru.fs.mkdir(dir)
     local written = {}
     local max = config.get("max_proposals", 5)
@@ -224,7 +230,12 @@ function M.stage_proposals(kiln, session_id, proposals)
             local filename = M.proposal_id(proposal, i) .. ".md"
             if M.safe_filename(filename) then
                 local path = dir .. "/" .. filename
-                cru.fs.write(path, M.render_proposal(proposal, session_id, nil))
+                local handle, open_err = io.open(path, "w")
+                if not handle then
+                    error("reflection: cannot write " .. path .. ": " .. tostring(open_err))
+                end
+                handle:write(M.render_proposal(proposal, session_id, nil))
+                handle:close()
                 written[#written + 1] = path
             end
         end
@@ -260,7 +271,7 @@ function M.run(session)
     end
 
     -- The bridge sends kiln NAMES in a `kilns` array (session_bridge.rs).
-    -- The first name is our staging target; cru.fs resolves it.
+    -- The first name is our staging target; cru.kiln.path resolves it.
     local info = cru.sessions.get(session_id)
     local kilns = info and info.kilns
     local kiln = kilns and kilns[1]

@@ -53,6 +53,8 @@ strum = { version = "0.28", features = ["derive"] }
 [dev-dependencies]
 # Tests under `tests/` drive the `PluginManager` test-only API.
 crucible-lua = { path = ".", features = ["test-utils"] }
+# `EnvVarGuard`, for the one test that reads `$CRUCIBLE_CONFIG_DIR` on purpose.
+crucible-core = { path = "../crucible-core", features = ["test-utils"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tempfile = "3"
 proptest = "1"

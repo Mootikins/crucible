@@ -13,7 +13,7 @@ use crate::oil::register_oil_module;
 use crate::session_api::{register_session_module, CurrentSession, Session};
 #[cfg(any(test, feature = "test-utils"))]
 use crate::types::LuaExecutionResult;
-use mlua::{Function, Lua, LuaOptions, LuaSerdeExt, RegistryKey, StdLib, Value};
+use mlua::{Function, Lua, LuaOptions, LuaSerdeExt, RegistryKey, StdLib, Table, Value};
 use serde_json::Value as JsonValue;
 use std::path::Path;
 #[cfg(any(test, feature = "test-utils"))]
@@ -287,8 +287,19 @@ end
         })?;
         cru_ns.set("log", log_fn)?;
 
-        let json_encode = lua.create_function(|_lua, value: Value| {
-            serde_json::to_string(&value).map_err(mlua::Error::external)
+        // `cru.json.encode(value, { pretty = true })` — the pretty form
+        // replaces `oq.json_pretty`, so the option lives beside `encode`
+        // rather than in a second function name.
+        let json_encode = lua.create_function(|_lua, (value, opts): (Value, Option<Table>)| {
+            let pretty = match opts {
+                Some(opts) => opts.get::<Option<bool>>("pretty")?.unwrap_or(false),
+                None => false,
+            };
+            if pretty {
+                serde_json::to_string_pretty(&value).map_err(mlua::Error::external)
+            } else {
+                serde_json::to_string(&value).map_err(mlua::Error::external)
+            }
         })?;
         let json_decode = lua.create_function(|lua, s: String| {
             let json: JsonValue = serde_json::from_str(&s).map_err(mlua::Error::external)?;
@@ -618,6 +629,47 @@ mod tests {
             .eval()
             .unwrap();
         assert!(called);
+    }
+
+    /// The `pretty` option is the replacement for `oq.json_pretty`, so it
+    /// must produce the same text.
+    #[test]
+    fn json_encode_pretty_matches_oq_json_pretty() {
+        let executor = LuaExecutor::new().unwrap();
+        crate::json_query::register_oq_module(executor.lua()).unwrap();
+
+        let (encoded, expected): (String, String) = executor
+            .lua()
+            .load(
+                r#"
+                local value = { name = "Alice", tags = { "a", "b" } }
+                return cru.json.encode(value, { pretty = true }), oq.json_pretty(value)
+                "#,
+            )
+            .eval()
+            .unwrap();
+
+        assert_eq!(encoded, expected);
+        assert!(encoded.contains('\n'), "pretty output must have lines");
+    }
+
+    #[test]
+    fn json_encode_stays_compact_without_the_option() {
+        let executor = LuaExecutor::new().unwrap();
+
+        let (plain, explicit): (String, String) = executor
+            .lua()
+            .load(
+                r#"
+                local value = { name = "Alice" }
+                return cru.json.encode(value), cru.json.encode(value, { pretty = false })
+                "#,
+            )
+            .eval()
+            .unwrap();
+
+        assert_eq!(plain, r#"{"name":"Alice"}"#);
+        assert_eq!(explicit, plain);
     }
 
     #[test]

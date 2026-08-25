@@ -55,7 +55,77 @@ use crate::lua_util::register_module;
 use crucible_core::storage::{NoteStore, Scope, StorageError, StorageResult};
 use mlua::{Lua, LuaSerdeExt, Table, Value};
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
+
+/// Maps a kiln NAME to its root directory.
+///
+/// The host injects it — the daemon passes a registry-backed closure — so
+/// this crate never learns where kilns live. The error string reaches Lua
+/// as-is: it must name the kiln, never a directory.
+///
+/// The kiln is the seam that owns name-to-path resolution. `cru.kiln.path`
+/// is the one Lua surface that crosses it.
+pub type KilnPathResolver = Arc<dyn Fn(&str) -> Result<PathBuf, String> + Send + Sync>;
+
+/// The message a VM with no resolver answers `cru.kiln.path` with.
+const NO_RESOLVER: &str = "cru.kiln.path is not available in this runtime";
+
+/// Join `relative` onto `root`, refusing anything that is not a plain
+/// relative component.
+///
+/// This is a bug lint, not a boundary: a plugin builds the path from parts it
+/// already knows, and `..` there is a mistake to report, not an attack to
+/// contain.
+fn join_relative(root: &Path, name: &str, relative: &str) -> Result<PathBuf, LuaError> {
+    let mut joined = root.to_path_buf();
+    for component in Path::new(relative).components() {
+        match component {
+            Component::Normal(part) => joined.push(part),
+            _ => {
+                return Err(LuaError::Runtime(format!(
+                    "cru.kiln.path('{name}', '{relative}'): the relative part must be \
+                     plain components — no '..', '.' or absolute part"
+                )))
+            }
+        }
+    }
+    Ok(joined)
+}
+
+/// Resolve one kiln name to its canonical root, then join `relative`.
+fn kiln_path(
+    resolver: &KilnPathResolver,
+    name: &str,
+    relative: Option<&str>,
+) -> Result<PathBuf, LuaError> {
+    if name.is_empty() {
+        return Err(LuaError::Runtime(
+            "cru.kiln.path needs a kiln name".to_string(),
+        ));
+    }
+    let root = resolver(name).map_err(LuaError::Runtime)?;
+    let canonical = std::fs::canonicalize(&root)
+        .map_err(|e| LuaError::Runtime(format!("kiln '{name}' is not reachable: {e}")))?;
+    join_relative(&canonical, name, relative.unwrap_or(""))
+}
+
+/// Register `cru.kiln.path(name, relative?)` against a resolver.
+///
+/// Registration replaces the raising stub `register_vault_module` installs,
+/// so a host upgrades once it can map a name to a directory.
+pub fn register_kiln_path_resolver(lua: &Lua, resolver: KilnPathResolver) -> Result<(), LuaError> {
+    let cru: Table = lua.globals().get("cru")?;
+    let vault: Table = cru.get("kiln")?;
+    let path_fn =
+        lua.create_function(move |_lua, (name, relative): (String, Option<String>)| {
+            kiln_path(&resolver, &name, relative.as_deref())
+                .map(|p| p.to_string_lossy().into_owned())
+                .map_err(mlua::Error::external)
+        })?;
+    vault.set("path", path_fn)?;
+    Ok(())
+}
 
 /// Register the kiln module with a Lua state
 ///
@@ -103,6 +173,15 @@ pub fn register_vault_module(lua: &Lua) -> Result<(), LuaError> {
             Ok(Value::Table(table))
         })?;
     vault.set("neighbors", neighbors_stub)?;
+
+    // `cru.kiln.path` exists on every VM so a plugin sees one answer, not a
+    // nil call, when the host cannot resolve names.
+    let path_stub = lua.create_function(|_lua, (_name, _relative): (String, Option<String>)| {
+        Err::<String, _>(mlua::Error::external(LuaError::Runtime(
+            NO_RESOLVER.to_string(),
+        )))
+    })?;
+    vault.set("path", path_stub)?;
 
     register_module(lua, "kiln", vault)?;
 

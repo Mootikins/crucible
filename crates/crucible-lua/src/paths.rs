@@ -155,6 +155,19 @@ pub fn register_paths_module(lua: &Lua, context: PathsContext) -> Result<(), Lua
     })?;
     paths.set("state", state_fn)?;
 
+    // paths.config() -> string
+    //
+    // Where `init.lua` lives. Not derived from `context`: the config root is
+    // the same directory for every VM, and the loader computes it from the
+    // one function this calls.
+    let config_fn = lua.create_function(|lua, ()| {
+        let dir = crate::config::default_config_dir();
+        Ok(Value::String(
+            lua.create_string(dir.to_string_lossy().as_ref())?,
+        ))
+    })?;
+    paths.set("config", config_fn)?;
+
     // paths.join(base, ...) -> string
     // Joins path components
     let join_fn = lua.create_function(|lua, args: mlua::MultiValue| {
@@ -215,6 +228,42 @@ mod tests {
 
         let result: String = lua.load("return paths.workspace()").eval().unwrap();
         assert_eq!(result, "/home/user/projects/myproject");
+    }
+
+    /// `cru.paths.config()` must name the directory the loader reads
+    /// `init.lua` from — one function answers both.
+    #[test]
+    fn config_path_equals_the_loader_config_dir() {
+        let lua = create_lua_with_paths(PathsContext::new());
+
+        let result: String = lua.load("return cru.paths.config()").eval().unwrap();
+        assert_eq!(
+            PathBuf::from(result),
+            crate::config::ConfigLoader::with_defaults(None)
+                .config_dir()
+                .to_path_buf()
+        );
+    }
+
+    /// `$CRUCIBLE_CONFIG_DIR` redirects the config root for test isolation.
+    /// `cru.paths.config()` must follow it, or a test that redirects the
+    /// variable still reads the developer's real `~/.config/crucible`.
+    ///
+    /// This test reads the environment on purpose, which is the one case
+    /// `EnvVarGuard` exists for. nextest gives each test its own process,
+    /// so the guard cannot race a second test.
+    #[test]
+    fn config_path_follows_the_config_dir_env_var() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = crucible_core::test_support::EnvVarGuard::set(
+            "CRUCIBLE_CONFIG_DIR",
+            temp.path().to_string_lossy().into_owned(),
+        );
+
+        let lua = create_lua_with_paths(PathsContext::new());
+
+        let result: String = lua.load("return cru.paths.config()").eval().unwrap();
+        assert_eq!(PathBuf::from(result), temp.path());
     }
 
     #[test]

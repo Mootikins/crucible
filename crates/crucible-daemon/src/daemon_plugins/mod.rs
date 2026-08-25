@@ -311,8 +311,10 @@ impl DaemonPluginLoader {
                 .path()
                 .ok_or_else(|| format!("kiln '{name}' is not registered"))
         });
-        crucible_lua::register_fs_module_with_resolver(self.executor.lua(), resolver)
+        crucible_lua::register_fs_module_with_resolver(self.executor.lua(), resolver.clone())
             .map_err(|e| anyhow::anyhow!("fs module (kiln resolver): {e}"))?;
+        crucible_lua::register_kiln_path_resolver(self.executor.lua(), resolver)
+            .map_err(|e| anyhow::anyhow!("cru.kiln.path (kiln resolver): {e}"))?;
         Ok(self)
     }
 
