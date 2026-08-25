@@ -48,18 +48,33 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: TextFormat) 
         }
     }
 
+    let explicit_override = config_path_override.is_some();
     let config_path = config_path_override.unwrap_or_else(CliConfig::default_config_path);
+    let init_lua_path = config_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("init.lua");
     let mut loaded_config: Option<CliConfig> = None;
 
-    // Check 2: Config
-    if !config_path.exists() {
+    // Check 2: Config. The config is `init.lua`; `config.toml`, where it
+    // still exists, is the deprecated seed under it — so "missing" means
+    // NEITHER file exists, and an init.lua-only setup (the wizard's output)
+    // is found, not broken. The seed keeps its structural parse; init.lua
+    // is judged by the isolated evaluation below.
+    if !config_path.exists() && !init_lua_path.exists() {
         results.push(DoctorCheckResult {
             check_name: "Config".to_string(),
             status: "fail".to_string(),
             message: format!(
                 "Config missing at {}. Try: `cru config init`",
-                display_path(&config_path)
+                display_path(&init_lua_path)
             ),
+        });
+    } else if !config_path.exists() {
+        results.push(DoctorCheckResult {
+            check_name: "Config".to_string(),
+            status: "pass".to_string(),
+            message: format!("Config found at {}", display_path(&init_lua_path)),
         });
     } else {
         match CliConfig::load(Some(config_path.clone()), None, None) {
@@ -81,6 +96,41 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: TextFormat) 
                     ),
                 });
             }
+        }
+    }
+
+    // Check 2b: the isolated config evaluation — the same construction as
+    // the daemon's boot, run in this process, its output only a report (the
+    // one sanctioned dual evaluation). Skipped when there is no config at
+    // all; Check 2 already failed that.
+    if config_path.exists() || init_lua_path.exists() {
+        let daemon_boot_hash = match DaemonClient::connect().await {
+            Ok(client) => client
+                .call("config.effective", serde_json::json!({}))
+                .await
+                .ok()
+                .and_then(|resp| resp["boot_hash"].as_str().map(String::from)),
+            Err(_) => None,
+        };
+        let paths_fn: crucible_daemon::daemon_plugins::PluginPathsFn = std::sync::Arc::new(
+            |rtp: &[PathBuf]| crucible_daemon::daemon_plugins::daemon_plugin_paths(rtp),
+        );
+        // An explicit-but-missing `-C` path must keep failing loudly (the
+        // boot's own oracle rule); the default path passes as `None` so a
+        // missing `config.toml` beside a real `init.lua` is not an error.
+        let eval_source = if config_path.exists() || explicit_override {
+            Some(config_path.clone())
+        } else {
+            None
+        };
+        let (eval_results, evaluated_config) =
+            evaluate_config_check(eval_source, daemon_boot_hash, paths_fn).await;
+        results.extend(eval_results);
+        // The evaluated config is the effective one — the seed plus
+        // whatever init.lua set — so the checks below diagnose what the
+        // daemon would actually run with.
+        if let Some(config) = evaluated_config {
+            loaded_config = Some(config);
         }
     }
 
@@ -310,6 +360,88 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: TextFormat) 
     }
 
     Ok(())
+}
+
+/// The isolated-evaluation check rows, and the effective config when the
+/// evaluation produced one.
+///
+/// Runs `init.lua` through the boot's own construction
+/// (`evaluate_boot_config_with_paths`) so the verdict cannot drift from
+/// what the daemon does — a bare-VM evaluation would report a working
+/// `require("<plugin>")` line as broken. The plugin-path resolution is a
+/// parameter for the same reason it is one on the boot: a test injects
+/// fixture directories instead of reaching the developer's real plugin
+/// dirs.
+///
+/// `daemon_boot_hash` is the running daemon's boot-input hash, when a
+/// daemon answered: a mismatch means the daemon booted on an older config.
+async fn evaluate_config_check(
+    config_file: Option<PathBuf>,
+    daemon_boot_hash: Option<String>,
+    plugin_paths: crucible_daemon::daemon_plugins::PluginPathsFn,
+) -> (Vec<DoctorCheckResult>, Option<CliConfig>) {
+    let mut results = Vec::new();
+    let boot = match crucible_daemon::daemon_plugins::evaluate_boot_config_with_paths(
+        config_file,
+        None,
+        None,
+        plugin_paths,
+    )
+    .await
+    {
+        Ok(boot) => boot,
+        Err(e) => {
+            results.push(DoctorCheckResult {
+                check_name: "Config evaluation".to_string(),
+                status: "fail".to_string(),
+                message: format!("Config does not evaluate: {e}"),
+            });
+            return (results, None);
+        }
+    };
+
+    let init_lua = boot.config_root.join("init.lua");
+    match &boot.eval_error {
+        Some(error) => results.push(DoctorCheckResult {
+            check_name: "Config evaluation".to_string(),
+            status: "fail".to_string(),
+            message: format!(
+                "{} fails in isolated evaluation: {error}. The daemon boots on the seed \
+                 values instead",
+                display_path(&init_lua)
+            ),
+        }),
+        None if init_lua.exists() => results.push(DoctorCheckResult {
+            check_name: "Config evaluation".to_string(),
+            status: "pass".to_string(),
+            message: format!("{} evaluates cleanly", display_path(&init_lua)),
+        }),
+        None => results.push(DoctorCheckResult {
+            check_name: "Config evaluation".to_string(),
+            status: "pass".to_string(),
+            message: "No init.lua; the seed config evaluates cleanly".to_string(),
+        }),
+    }
+
+    if let Some(daemon_hash) = daemon_boot_hash {
+        if daemon_hash == boot.boot_hash {
+            results.push(DoctorCheckResult {
+                check_name: "Config freshness".to_string(),
+                status: "pass".to_string(),
+                message: "The running daemon booted on this config".to_string(),
+            });
+        } else {
+            results.push(DoctorCheckResult {
+                check_name: "Config freshness".to_string(),
+                status: "warn".to_string(),
+                message: "The config changed since the daemon started; run `cru daemon restart` \
+                          to apply"
+                    .to_string(),
+            });
+        }
+    }
+
+    (results, Some(boot.config))
 }
 
 async fn check_providers(config: Option<&CliConfig>) -> Vec<ProviderCheck> {
@@ -569,6 +701,110 @@ mod tests {
         );
 
         assert!(warnings.is_empty(), "{warnings:?}");
+    }
+
+    /// Fixture plugin-path resolution: no directories at all, so the
+    /// evaluation cannot reach the developer's real plugin dirs.
+    fn no_plugin_paths() -> crucible_daemon::daemon_plugins::PluginPathsFn {
+        std::sync::Arc::new(|_: &[std::path::PathBuf]| Vec::new())
+    }
+
+    fn eval_row(results: &[DoctorCheckResult]) -> &DoctorCheckResult {
+        results
+            .iter()
+            .find(|r| r.check_name == "Config evaluation")
+            .expect("an evaluation row")
+    }
+
+    #[tokio::test]
+    async fn a_broken_init_lua_fails_the_evaluation_check_by_name() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("config.toml"), "").unwrap();
+        std::fs::write(tmp.path().join("init.lua"), "this is not lua(").unwrap();
+
+        let (results, config) = evaluate_config_check(
+            Some(tmp.path().join("config.toml")),
+            None,
+            no_plugin_paths(),
+        )
+        .await;
+
+        let row = eval_row(&results);
+        assert_eq!(row.status, "fail");
+        assert!(
+            row.message.contains("init.lua") && row.message.contains("isolated evaluation"),
+            "the failure must name the file and the step: {}",
+            row.message
+        );
+        assert!(
+            config.is_some(),
+            "the fail-open seed config still comes back for the checks below"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_clean_init_lua_passes_and_its_values_reach_the_returned_config() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("config.toml"), "").unwrap();
+        std::fs::write(
+            tmp.path().join("init.lua"),
+            "cru.config.set{ chat = { model = 'from-lua' } }",
+        )
+        .unwrap();
+
+        let (results, config) = evaluate_config_check(
+            Some(tmp.path().join("config.toml")),
+            None,
+            no_plugin_paths(),
+        )
+        .await;
+
+        assert_eq!(eval_row(&results).status, "pass");
+        assert_eq!(
+            config.unwrap().chat.model.as_deref(),
+            Some("from-lua"),
+            "the returned config must be the EVALUATED one, not the seed"
+        );
+    }
+
+    /// The sanctioned dual evaluation: doctor diffs its own hash against
+    /// the running daemon's, and only a mismatch warns.
+    #[tokio::test]
+    async fn the_freshness_row_warns_only_on_a_hash_mismatch() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let config_toml = tmp.path().join("config.toml");
+        std::fs::write(&config_toml, "").unwrap();
+        std::fs::write(tmp.path().join("init.lua"), "-- fine").unwrap();
+        let current = crucible_daemon::daemon_plugins::boot_input_hash(&config_toml);
+
+        let (results, _) = evaluate_config_check(
+            Some(config_toml.clone()),
+            Some(current),
+            no_plugin_paths(),
+        )
+        .await;
+        let fresh = results
+            .iter()
+            .find(|r| r.check_name == "Config freshness")
+            .expect("a freshness row");
+        assert_eq!(fresh.status, "pass");
+
+        let (results, _) = evaluate_config_check(
+            Some(config_toml),
+            Some("stale-hash".to_string()),
+            no_plugin_paths(),
+        )
+        .await;
+        let fresh = results
+            .iter()
+            .find(|r| r.check_name == "Config freshness")
+            .expect("a freshness row");
+        assert_eq!(fresh.status, "warn");
+        assert!(
+            fresh.message.contains("cru daemon restart"),
+            "the warning must name the remedy: {}",
+            fresh.message
+        );
     }
 
     #[test]

@@ -179,6 +179,11 @@ pub struct BootConfig {
     pub config_root: PathBuf,
     /// [`boot_input_hash`] over what this evaluation read.
     pub boot_hash: String,
+    /// The failure the evaluation failed OPEN on, when there was one: the
+    /// `init.lua` error (or budget overrun, or unextractable store) that made
+    /// this config fall back to the seed. The boot only warns; `cru doctor`
+    /// reports it as a check.
+    pub eval_error: Option<String>,
 }
 
 /// How the boot resolves `runtimepath` entries to plugin directories.
@@ -265,7 +270,7 @@ pub async fn evaluate_boot_config_with_paths(
     // entries — membership that exists before any user file runs.
     let mut loader = DaemonPluginLoader::new(HashMap::new())?;
     let seed_rtp: Vec<PathBuf> = seed_config.runtimepath.clone();
-    let eval_failed = {
+    let mut eval_error: Option<String> = {
         let lua = loader.executor().lua();
         let plugin_dirs = plugin_paths(&seed_rtp);
         seed_boot_search_path(lua, &config_root, &plugin_dirs)?;
@@ -297,16 +302,16 @@ pub async fn evaluate_boot_config_with_paths(
         // error line" would depend on WHERE the file failed; the rollback
         // makes a broken config mean exactly what the warning says.
         let init_path = config_root.join("init.lua");
-        let failed = if init_path.exists() {
+        let eval_error = if init_path.exists() {
             let pre_eval = crucible_lua::snapshot_state().expect("the config state is live");
-            let ok = evaluate_init_file(lua, &init_path).await;
-            if !ok {
+            let error = evaluate_init_file(lua, &init_path).await.err();
+            if error.is_some() {
                 crucible_lua::install_state(pre_eval);
             }
-            !ok
+            error
         } else {
             debug!("No init.lua at {}", init_path.display());
-            false
+            None
         };
 
         // Before the phase ends: record every module the evaluation loaded
@@ -316,7 +321,7 @@ pub async fn evaluate_boot_config_with_paths(
         // directory) went through the standard loader unobserved, and
         // without this sweep activation would execute its file a second
         // time — doubling every top-level hook and publish.
-        if !failed {
+        if eval_error.is_none() {
             record_boot_loaded_modules(lua);
         }
 
@@ -328,10 +333,10 @@ pub async fn evaluate_boot_config_with_paths(
             state.active = false;
         }
         BootRequireState::restore_wrapped_setups(lua);
-        failed
+        eval_error
     };
 
-    if eval_failed {
+    if eval_error.is_some() {
         // The VM is part of the rollback. A fresh loader over the restored
         // state is byte-for-byte the no-init.lua boot.
         loader = DaemonPluginLoader::new(HashMap::new())?;
@@ -357,6 +362,8 @@ pub async fn evaluate_boot_config_with_paths(
         }
         Err(e) => {
             warn!("init.lua produced a config that does not extract ({e}); continuing on the seed");
+            eval_error
+                .get_or_insert_with(|| format!("the evaluated config does not extract: {e}"));
             crucible_lua::install_store(seed_store);
             seed_config
         }
@@ -376,17 +383,18 @@ pub async fn evaluate_boot_config_with_paths(
         config_source,
         config_root,
         boot_hash,
+        eval_error,
     })
 }
 
-/// Evaluate one init.lua in the boot VM: guards on, budget armed. Returns
-/// whether the evaluation SUCCEEDED; the caller owns the fail-open rollback.
-async fn evaluate_init_file(lua: &Lua, init_path: &Path) -> bool {
+/// Evaluate one init.lua in the boot VM: guards on, budget armed. `Err`
+/// carries the failure the caller fails open on (and reports).
+async fn evaluate_init_file(lua: &Lua, init_path: &Path) -> Result<(), String> {
     let source = match std::fs::read_to_string(init_path) {
         Ok(source) => source,
         Err(e) => {
             warn!("Failed to read {}: {e}", init_path.display());
-            return false;
+            return Err(format!("failed to read {}: {e}", init_path.display()));
         }
     };
 
@@ -421,14 +429,14 @@ async fn evaluate_init_file(lua: &Lua, init_path: &Path) -> bool {
     match outcome {
         Ok(Ok(_)) => {
             info!("Evaluated user init: {}", init_path.display());
-            true
+            Ok(())
         }
         Ok(Err(e)) => {
             warn!(
                 "User init.lua error ({}): {e}; continuing on the seed",
                 init_path.display()
             );
-            false
+            Err(format!("{e}"))
         }
         Err(_) => {
             warn!(
@@ -436,7 +444,10 @@ async fn evaluate_init_file(lua: &Lua, init_path: &Path) -> bool {
                 BOOT_EVAL_BUDGET.as_secs(),
                 init_path.display()
             );
-            false
+            Err(format!(
+                "the evaluation exceeded its {} s budget",
+                BOOT_EVAL_BUDGET.as_secs()
+            ))
         }
     }
 }
