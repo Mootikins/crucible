@@ -1882,7 +1882,24 @@ mod tests {
         }
     }
 
-    fn test_context() -> Arc<RpcContext> {
+    /// A test context, and the temp directory that is its data root.
+    ///
+    /// The data root is NOT decoration: `RpcContext::for_test` derives the
+    /// kiln state store from it, and that store WRITES — `kilns.json` plus its
+    /// `kilns.json.lock` sidecar. These helpers used to pass the literal
+    /// `/tmp` and `/tmp/projects.json`, so the suite dropped Crucible state
+    /// files into a world-shared directory, where they collide across users
+    /// and across concurrent runs, and where a file left by an earlier run is
+    /// read as this run's state.
+    ///
+    /// The `TempDir` comes back WITH the context instead of living inside the
+    /// helper, because it has to outlive the call and only the caller knows
+    /// how long that is. Returning it makes that unskippable: there is no way
+    /// to get the context without binding the guard, so no future caller can
+    /// quietly point the data root at a shared directory again.
+    type TestContext = (Arc<RpcContext>, tempfile::TempDir);
+
+    fn test_context() -> TestContext {
         test_context_with_kilns(&[])
     }
 
@@ -1892,7 +1909,7 @@ mod tests {
     /// needs a kiln with a particular `kiln.toml` — a classification, say — has
     /// to bind the name to that directory here, or the handler refuses the
     /// request before the behaviour under test ever runs.
-    fn test_context_with_kilns(extra: &[(&str, &std::path::Path)]) -> Arc<RpcContext> {
+    fn test_context_with_kilns(extra: &[(&str, &std::path::Path)]) -> TestContext {
         use crate::agent_manager::{AgentManager, AgentManagerParams};
         use crate::background_manager::BackgroundJobManager;
 
@@ -1917,27 +1934,27 @@ mod tests {
             card_roots: Default::default(),
         }));
 
-        Arc::new(RpcContext::for_test(
+        let data_home = tempfile::tempdir().expect("data home");
+        let ctx = Arc::new(RpcContext::for_test(
             kiln_manager,
             session_manager,
             agent_manager,
-            Arc::new(ProjectManager::new(std::path::PathBuf::from(
-                "/tmp/projects.json",
-            ))),
+            Arc::new(ProjectManager::new(data_home.path().join("projects.json"))),
             event_tx,
             None,
-            std::path::PathBuf::from("/tmp"),
-        ))
+            data_home.path().to_path_buf(),
+        ));
+        (ctx, data_home)
     }
 
     /// Context with a real plugin loader, so tests can plant isolation claims.
-    fn test_context_with_loader() -> Arc<RpcContext> {
-        let ctx = test_context();
+    fn test_context_with_loader() -> TestContext {
+        let (ctx, data_home) = test_context();
         let loader =
             crate::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())
                 .expect("loader");
         *ctx.plugin_loader.try_lock().expect("fresh mutex") = Some(loader);
-        ctx
+        (ctx, data_home)
     }
 
     /// Two concurrent `session.end` requests must fire plugin `on_session_end`
@@ -1955,7 +1972,7 @@ mod tests {
 
         let tempdir = TempDir::new().unwrap();
         let kiln_root = tempdir.path().to_path_buf();
-        let ctx = test_context_with_loader();
+        let (ctx, _data_home) = test_context_with_loader();
 
         let session = ctx
             .sessions
@@ -2015,7 +2032,7 @@ mod tests {
     /// switch, BEFORE the config is applied.
     #[tokio::test]
     async fn switching_an_isolated_session_to_an_external_agent_is_refused() {
-        let ctx = test_context_with_loader();
+        let (ctx, _data_home) = test_context_with_loader();
         {
             let guard = ctx.plugin_loader.lock().await;
             guard.as_ref().unwrap().isolation().claim(
@@ -2054,7 +2071,8 @@ mod tests {
     /// target, or the caller cannot tell this apart from an ordinary failure.
     #[tokio::test]
     async fn a_workspace_target_no_plugin_provides_refuses_the_session() {
-        let dispatcher = RpcDispatcher::new(test_context_with_loader());
+        let (ctx, _data_home) = test_context_with_loader();
+        let dispatcher = RpcDispatcher::new(ctx);
         let req = make_request(
             "session.create",
             serde_json::json!({
@@ -2078,7 +2096,8 @@ mod tests {
     /// step, no new way for create to fail.
     #[tokio::test]
     async fn a_create_without_a_workspace_target_is_not_touched_by_resolution() {
-        let dispatcher = RpcDispatcher::new(test_context_with_loader());
+        let (ctx, _data_home) = test_context_with_loader();
+        let dispatcher = RpcDispatcher::new(ctx);
         let req = make_request(
             "session.create",
             serde_json::json!({ "type": "chat", "workspace": "/repo" }),
@@ -2098,7 +2117,8 @@ mod tests {
     /// the point is it is NOT the isolation refusal).
     #[tokio::test]
     async fn switching_an_unclaimed_session_to_an_external_agent_is_not_blocked_by_isolation() {
-        let dispatcher = RpcDispatcher::new(test_context_with_loader());
+        let (ctx, _data_home) = test_context_with_loader();
+        let dispatcher = RpcDispatcher::new(ctx);
         let req = make_request(
             "session.configure_agent",
             serde_json::json!({
@@ -2136,7 +2156,7 @@ mod tests {
         )
         .unwrap();
 
-        let ctx = test_context_with_kilns(&[("notes", &kiln)]);
+        let (ctx, _data_home) = test_context_with_kilns(&[("notes", &kiln)]);
         let session = ctx
             .sessions
             .create_session(
@@ -2186,7 +2206,7 @@ mod tests {
     /// answer, whichever door the user comes through.
     #[tokio::test]
     async fn switching_to_an_external_agent_the_sandbox_can_launch_is_allowed() {
-        let ctx = test_context_with_loader();
+        let (ctx, _data_home) = test_context_with_loader();
         {
             let guard = ctx.plugin_loader.lock().await;
             guard.as_ref().unwrap().isolation().claim(
@@ -2231,7 +2251,7 @@ mod tests {
     async fn isolation_claim_on_an_external_agent_session_is_unenforceable() {
         use crucible_core::session::{SessionAgent, SessionType};
 
-        let ctx = test_context_with_loader();
+        let (ctx, _data_home) = test_context_with_loader();
         let _kiln = tempfile::tempdir().expect("kiln tempdir");
         let session = ctx
             .sessions
@@ -2292,7 +2312,7 @@ mod tests {
     /// Lets a test observe whether a code path fired plugin start hooks at all:
     /// a session that went through them has a claim, one that skipped them does
     /// not — which is exactly the difference between sandboxed and not.
-    async fn test_context_claiming_isolation(dir: &std::path::Path) -> Arc<RpcContext> {
+    async fn test_context_claiming_isolation(dir: &std::path::Path) -> TestContext {
         const CLAIMS_ISOLATION: &str = r#"
 cru.on_session_start(function(session)
   cru.isolation.require{ session = session.id, plugin = "sandbox" }
@@ -2309,7 +2329,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
         .expect("plugin.yaml");
         std::fs::write(plugin.join("init.lua"), CLAIMS_ISOLATION).expect("init.lua");
 
-        let ctx = test_context();
+        let (ctx, data_home) = test_context();
         let mut loader =
             crate::daemon_plugins::DaemonPluginLoader::new(std::collections::HashMap::new())
                 .expect("loader");
@@ -2318,7 +2338,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             .await
             .expect("load plugins");
         *ctx.plugin_loader.try_lock().expect("fresh mutex") = Some(loader);
-        ctx
+        (ctx, data_home)
     }
 
     /// `session.fork` produces a live session on the parent's workspace, so it
@@ -2336,7 +2356,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
         use crucible_core::session::SessionType;
 
         let tempdir = tempfile::tempdir().expect("tempdir");
-        let ctx = test_context_claiming_isolation(tempdir.path()).await;
+        let (ctx, _data_home) = test_context_claiming_isolation(tempdir.path()).await;
         let kiln = tempdir.path().join("kiln");
         std::fs::create_dir_all(&kiln).expect("kiln");
 
@@ -2475,7 +2495,8 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
         )
         .unwrap();
 
-        let dispatcher = RpcDispatcher::new(test_context());
+        let (ctx, _data_home) = test_context();
+        let dispatcher = RpcDispatcher::new(ctx);
         let req = make_request(
             "agents.list_cards",
             serde_json::json!({ "workspace": workspace.path() }),
@@ -2527,7 +2548,8 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
     #[tokio::test]
     async fn dispatch_agents_list_cards_without_cards_is_empty() {
         let workspace = tempfile::TempDir::new().unwrap();
-        let dispatcher = RpcDispatcher::new(test_context());
+        let (ctx, _data_home) = test_context();
+        let dispatcher = RpcDispatcher::new(ctx);
         let req = make_request(
             "agents.list_cards",
             serde_json::json!({ "workspace": workspace.path(), "kiln_path": null }),
@@ -2539,7 +2561,8 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
 
     #[tokio::test]
     async fn dispatch_config_set_then_get_round_trips() {
-        let dispatcher = RpcDispatcher::new(test_context());
+        let (ctx, _data_home) = test_context();
+        let dispatcher = RpcDispatcher::new(ctx);
 
         let set_req = make_request(
             "config.set",
@@ -2562,7 +2585,8 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
 
     #[tokio::test]
     async fn dispatch_config_get_missing_key_returns_null() {
-        let dispatcher = RpcDispatcher::new(test_context());
+        let (ctx, _data_home) = test_context();
+        let dispatcher = RpcDispatcher::new(ctx);
         let req = make_request(
             "config.get",
             serde_json::json!({ "key": "no.such.key.xyz" }),
@@ -2574,7 +2598,8 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
 
     #[tokio::test]
     async fn dispatch_ping_no_socket() {
-        let dispatcher = RpcDispatcher::new(test_context());
+        let (ctx, _data_home) = test_context();
+        let dispatcher = RpcDispatcher::new(ctx);
         let req = make_request("ping", serde_json::json!({}));
 
         let resp = dispatcher.dispatch(ClientId::new(), req).await;
@@ -2585,7 +2610,8 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
 
     #[tokio::test]
     async fn dispatch_capabilities_returns_methods_list() {
-        let dispatcher = RpcDispatcher::new(test_context());
+        let (ctx, _data_home) = test_context();
+        let dispatcher = RpcDispatcher::new(ctx);
         let req = make_request("daemon.capabilities", serde_json::json!({}));
 
         let resp = dispatcher.dispatch(ClientId::new(), req).await;
@@ -2599,7 +2625,8 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
 
     #[tokio::test]
     async fn dispatch_unknown_method_returns_error() {
-        let dispatcher = RpcDispatcher::new(test_context());
+        let (ctx, _data_home) = test_context();
+        let dispatcher = RpcDispatcher::new(ctx);
         let req = make_request("nonexistent.method", serde_json::json!({}));
 
         let resp = dispatcher.dispatch(ClientId::new(), req).await;
@@ -2611,7 +2638,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
 
     #[tokio::test]
     async fn dispatch_subscribe_tracks_subscription() {
-        let ctx = test_context();
+        let (ctx, _data_home) = test_context();
         let dispatcher = RpcDispatcher::new(ctx);
         let client_id = ClientId::new();
         let req = make_request(
@@ -2647,7 +2674,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
 
         let tempdir = TempDir::new().unwrap();
         let kiln_root = tempdir.path().to_path_buf();
-        let ctx = test_context();
+        let (ctx, _data_home) = test_context();
 
         // Create a real daemon-side session so handle_session_end can find it.
         let session = ctx
@@ -2751,7 +2778,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
     /// the confirmation is on the wire.
     #[tokio::test]
     async fn dispatching_shutdown_confirms_before_it_signals() {
-        let ctx = test_context();
+        let (ctx, _data_home) = test_context();
         let mut signal = ctx.shutdown.subscribe();
         let dispatcher = RpcDispatcher::new(ctx.clone());
 
@@ -2787,7 +2814,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
 
     /// Build a context whose ProjectManager persists to `projects_path`.
     /// Mirrors `test_context` but lets the SCM tests isolate the registry.
-    fn scm_test_context(projects_path: std::path::PathBuf) -> Arc<RpcContext> {
+    fn scm_test_context(data_home: &std::path::Path) -> Arc<RpcContext> {
         use crate::agent_manager::{AgentManager, AgentManagerParams};
         use crate::background_manager::BackgroundJobManager;
         use crate::kiln_manager::KilnManager;
@@ -2822,22 +2849,18 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             subscriptions: Arc::new(SubscriptionManager::new()),
             event_tx,
             shutdown_tx,
-            project_manager: Arc::new(ProjectManager::new(projects_path)),
+            project_manager: Arc::new(ProjectManager::new(data_home.join("projects.json"))),
             lua_sessions: Arc::new(DashMap::new()),
             plugin_loader: Arc::new(tokio::sync::Mutex::new(None)),
             llm_config: None,
             mcp_server_manager: Arc::new(McpServerManager::new()),
             mcp_config: None,
-            data_home: std::path::PathBuf::from("/tmp"),
+            data_home: data_home.to_path_buf(),
             workspace_config: Some(crucible_core::config::WorkspaceConfig::default()),
             kiln_registry: Arc::new(crate::kiln_registry::KilnRegistry::empty(
-                crate::kiln_registry::KilnRegistryContext::for_daemon(std::path::PathBuf::from(
-                    "/tmp",
-                )),
+                crate::kiln_registry::KilnRegistryContext::for_daemon(data_home.to_path_buf()),
             )),
-            kiln_state: Arc::new(crate::kiln_state::KilnStateStore::new(
-                std::path::Path::new("/tmp"),
-            )),
+            kiln_state: Arc::new(crate::kiln_state::KilnStateStore::new(data_home)),
             config_path: None,
             config_default_kiln: None,
         }))
@@ -2849,7 +2872,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
     #[tokio::test]
     async fn dispatch_scm_clone_rejects_bad_urls() {
         let tmp = tempfile::TempDir::new().unwrap();
-        let ctx = scm_test_context(tmp.path().join("projects.json"));
+        let ctx = scm_test_context(tmp.path());
         let dispatcher = RpcDispatcher::new(ctx);
 
         for bad in [
@@ -2884,7 +2907,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
     #[tokio::test]
     async fn config_set_refuses_to_write_kiln_and_project_locations() {
         let tmp = tempfile::TempDir::new().unwrap();
-        let ctx = scm_test_context(tmp.path().join("projects.json"));
+        let ctx = scm_test_context(tmp.path());
         let dispatcher = RpcDispatcher::new(ctx);
 
         let resp = dispatcher
