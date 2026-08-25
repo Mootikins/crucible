@@ -70,15 +70,16 @@ pub fn register_timer_module(lua: &Lua) -> Result<()> {
         })?,
     )?;
 
-    crate::lua_util::register_module(lua, "timer", timer)?;
-
-    // cru.spawn(fn) — spawn an async Lua function as an independent task.
+    // timer.spawn(fn) — spawn an async Lua function as an independent task.
     // The function runs concurrently with the caller (fire-and-forget).
     // This is needed when event handlers (called via pcall) need to perform
     // async operations that require yielding (e.g. subscribe, next_event).
     // Requires the `send` feature (mlua/send) since tokio::spawn needs Send.
+    //
+    // `cru.spawn` is the SAME function object at its old address, so callers
+    // migrate to the timer address before T1.6 removes the root name.
     #[cfg(feature = "send")]
-    {
+    let spawn_fn = {
         let spawn_fn = lua.create_function(|_lua, func: Function| {
             tokio::spawn(async move {
                 if let Err(e) = func.call_async::<()>(()).await {
@@ -87,6 +88,14 @@ pub fn register_timer_module(lua: &Lua) -> Result<()> {
             });
             Ok(())
         })?;
+        timer.set("spawn", spawn_fn.clone())?;
+        spawn_fn
+    };
+
+    crate::lua_util::register_module(lua, "timer", timer)?;
+
+    #[cfg(feature = "send")]
+    {
         let globals = lua.globals();
         let cru: mlua::Table = globals.get("cru")?;
         cru.set("spawn", spawn_fn)?;
@@ -109,6 +118,49 @@ mod tests {
         let timer: Table = cru.get("timer").unwrap();
         assert!(timer.get::<Function>("sleep").is_ok());
         assert!(timer.get::<Function>("timeout").is_ok());
+    }
+
+    /// `cru.timer.spawn` and `cru.spawn` are ONE function object, so a caller
+    /// that migrates to the timer address keeps the behaviour it had.
+    #[cfg(feature = "send")]
+    #[tokio::test]
+    async fn timer_spawn_is_the_same_function_as_cru_spawn() {
+        let lua = Lua::new();
+        lua.load("cru = cru or {}").exec().unwrap();
+        register_timer_module(&lua).unwrap();
+
+        let same: bool = lua
+            .load("return cru.timer.spawn == cru.spawn")
+            .eval()
+            .unwrap();
+        assert!(same, "cru.timer.spawn must be cru.spawn");
+    }
+
+    #[cfg(feature = "send")]
+    #[tokio::test]
+    async fn timer_spawn_runs_the_function() {
+        let lua = Lua::new();
+        lua.load("cru = cru or {}").exec().unwrap();
+        register_timer_module(&lua).unwrap();
+
+        lua.load(
+            r#"
+            ran = false
+            cru.timer.spawn(function() ran = true end)
+            "#,
+        )
+        .exec_async()
+        .await
+        .unwrap();
+
+        // The task is independent, so give the runtime a turn to run it.
+        for _ in 0..50 {
+            if lua.globals().get::<bool>("ran").unwrap() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("the spawned function never ran");
     }
 
     #[tokio::test]
