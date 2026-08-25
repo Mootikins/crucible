@@ -345,14 +345,15 @@ fn merge_from_lua(lua: &Lua, overlay: serde_json::Value) {
     }
 }
 
-/// Register `cru.config.set(table)`, `cru.config.replace(table)` and
-/// `cru.config.get(key)` on the cru namespace.
+/// Register `cru.config.set(table)` and `cru.config.get(key)` on the cru
+/// namespace.
 ///
 /// - `set(table)`: DEEP-merges the table into the store — objects merge key
 ///   by key, arrays and scalars replace, `__replace = true` inside a table
-///   replaces that table wholesale.
-/// - `replace(table)`: sugar over the raw marker — each top-level table value
-///   replaces instead of merging.
+///   replaces that table wholesale. The marker is the ONE replacement
+///   mechanism, spelled the same by hand here, in a TOML seed, and over the
+///   `config.set` RPC; a `cru.config.replace` sugar existed briefly and was
+///   removed as a second spelling of the same thing.
 /// - `get(key)`: returns a single top-level value.
 ///
 /// During the daemon's boot phase the store accepts location keys and a
@@ -376,33 +377,6 @@ pub fn register_app_config_api(lua: &Lua, cru_table: &Table) -> Result<(), LuaEr
         Ok(())
     })?;
     config_table.set("set", set_fn)?;
-
-    // cru.config.replace(table) — the Lua spelling over the raw __replace key:
-    // every top-level table value replaces wholesale instead of merging.
-    let replace_fn = lua.create_function(|lua, table: Table| {
-        let json_val: serde_json::Value = lua
-            .from_value(Value::Table(table))
-            .map_err(mlua::Error::external)?;
-        let json_val = match json_val {
-            serde_json::Value::Object(map) => serde_json::Value::Object(
-                map.into_iter()
-                    .map(|(key, mut value)| {
-                        if let Some(object) = value.as_object_mut() {
-                            object.insert(
-                                crucible_core::config::REPLACE_MARKER.to_string(),
-                                serde_json::Value::Bool(true),
-                            );
-                        }
-                        (key, value)
-                    })
-                    .collect(),
-            ),
-            other => other,
-        };
-        merge_from_lua(lua, json_val);
-        Ok(())
-    })?;
-    config_table.set("replace", replace_fn)?;
 
     // cru.config.get(key) — read a single top-level value
     let get_fn = lua.create_function(|lua, key: String| {

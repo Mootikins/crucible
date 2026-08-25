@@ -81,6 +81,18 @@ test.describe('live kiln truth (WS-201/202/205/206)', () => {
     // on the indexing that follows it. Exposing an index-complete event would
     // let this be deterministic; until then a generous bound is the honest
     // shape. Do not lower it without new measurements.
+    //
+    // NOTE(finding): even the 60s bound fails INTERMITTENTLY on a quiet box,
+    // and the failure is not load: the note never reaches the index at all.
+    // Measured 2026-08-25, 30 serialized runs per commit, nothing else
+    // running: master dd04e1db0 29/30 pass, the M5 boot inversion 28/30,
+    // M5 HEAD 27/30 — Fisher p≈0.30 across the walk, so the rate does not
+    // differ by commit; the failure pre-dates M5. Load amplifies it (it
+    // fired first inside a `just ci` running beside a full nextest sweep).
+    // Mechanism unknown. The open question is whether the daemon emits a
+    // file event at all in the failing case — if no `fs_changed` fires, the
+    // watcher missed the write; if it fires and the index never updates, the
+    // fault is in the debounce or the note pipeline downstream.
     await expect
       .poll(
         async () => {
