@@ -23,7 +23,6 @@ use crate::subscription::ClientId;
 // The app-config keys that name where the daemon acts, classified once beside
 // the struct whose fields they are, so the keys `config.set` refuses and the
 // keys the plugin-visible config store withholds cannot drift apart.
-use crucible_core::config::LOCATION_CONFIG_KEYS;
 use std::sync::Arc;
 
 pub type RpcResult<T> = Result<T, RpcError>;
@@ -1706,18 +1705,15 @@ impl RpcDispatcher {
         }
 
         let params: Params = parse_params(req)?;
-        let mut values = params.values;
-        let rejected: Vec<&str> = LOCATION_CONFIG_KEYS
-            .into_iter()
-            .filter(|key| values.remove(*key).is_some())
-            .collect();
+        // One door-keeping implementation: the store's Withhold policy strips
+        // the location keys and reports them; this handler only relays.
+        let rejected = crucible_lua::merge_app_config(serde_json::Value::Object(params.values));
         if !rejected.is_empty() {
             tracing::warn!(
                 keys = ?rejected,
                 "config.set refused keys that name where the daemon acts; edit the config file instead"
             );
         }
-        crucible_lua::merge_app_config(serde_json::Value::Object(values));
         Ok(serde_json::json!({ "ok": true, "rejected": rejected }))
     }
 

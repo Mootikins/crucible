@@ -9,9 +9,11 @@
 //! ([`DaemonPluginLoader::register_statusline_exprs`]) are still registered:
 //! plugins *build* UI descriptions daemon-side and clients render them.
 
+pub mod boot;
 pub mod bootstrap;
 pub mod option_store;
 
+pub use boot::{evaluate_boot_config, evaluate_boot_config_with_paths, BootConfig, PluginPathsFn};
 pub use bootstrap::{
     bootstrap_plugin_entry, bootstrap_plugins, daemon_plugin_paths, default_daemon_plugin_paths,
     BootstrapOutcome,
@@ -282,6 +284,23 @@ impl DaemonPluginLoader {
             options,
             option_store_dir: None,
         })
+    }
+
+    /// Install the `[plugins.<name>]` sections after construction.
+    ///
+    /// The boot inversion creates the loader BEFORE the config exists — the
+    /// VM must be live for `init.lua` to evaluate in it — so the sections
+    /// arrive from the FINAL store once the evaluation has finished, and the
+    /// `cru.plugin.config` table is re-registered over the empty one the
+    /// constructor installed.
+    pub fn with_plugin_config(
+        mut self,
+        plugin_config: HashMap<String, serde_json::Value>,
+    ) -> anyhow::Result<Self> {
+        Self::register_plugin_config(self.executor.lua(), plugin_config.clone())
+            .map_err(|e| anyhow::anyhow!("config module: {e}"))?;
+        self.plugin_config = plugin_config;
+        Ok(self)
     }
 
     /// Bind the data root persisted plugin options live under.
@@ -708,6 +727,25 @@ end
             }
         }
 
+        // A disabled plugin the user's init.lua `require`d still loaded its
+        // module (as in Neovim) — and its top-level `cru.on` calls registered
+        // under its name through the boot searcher's context stamp. Activation
+        // registers none of a disabled plugin's hooks or exports, so what the
+        // module load registered is cleared here.
+        for name in boot::BootRequireState::required_plugins(self.executor.lua()) {
+            let disabled = self
+                .plugin_manager
+                .get(&name)
+                .is_some_and(|p| p.state == crucible_lua::manifest::PluginState::Disabled);
+            if disabled {
+                self.handler_registry.clear_plugin_handlers(&name);
+                if let Err(e) = crucible_lua::clear_plugin_hooks(self.executor.lua(), &name) {
+                    warn!("clear boot-require hooks for disabled plugin '{name}': {e}");
+                }
+                info!("Plugin '{name}' is disabled; its boot-require registrations were cleared");
+            }
+        }
+
         let loaded = self
             .plugin_manager
             .load_all()
@@ -963,6 +1001,28 @@ end
         init_path: &std::path::Path,
     ) -> anyhow::Result<PluginExports> {
         let lua = self.executor.lua();
+
+        // One module, one setup, per plugin: a plugin whose entry module the
+        // user's init.lua already `require`d is activated FROM that same
+        // `package.loaded` instance — the file is never evaluated a second
+        // time — and a plugin whose `setup` the user called owns its setup:
+        // the default `setup(cfg)` call is skipped for it.
+        if let Some(spec) = self.boot_required_instance(name, init_path)? {
+            // Rebind the attribution modules WITHOUT releasing: the boot
+            // require already ran this plugin's body under its own binding,
+            // and releasing here would wipe what the body published.
+            register_publish_module(lua, self.publications.clone(), name.to_string())?;
+            crucible_lua::register_options_module(lua, self.options.clone(), name.to_string())?;
+
+            if boot::BootRequireState::user_owns_setup(lua, name) {
+                debug!("Plugin '{name}': init.lua called setup(); the default call is skipped");
+            } else {
+                self.call_plugin_setup(name, &spec).await?;
+            }
+            info!("Activated plugin '{name}' from the module instance init.lua required");
+            return Ok(extract_exports(&spec));
+        }
+
         let plugin_dir = init_path
             .parent()
             .ok_or_else(|| anyhow::anyhow!("init path has no parent"))?;
@@ -1075,6 +1135,40 @@ end
         Ok(exports)
     }
 
+    /// The `package.loaded` instance the user's boot `require` created for
+    /// this plugin's entry module, when it exists and was loaded from THIS
+    /// plugin's own entry file (a user `lua/` module that shadows the name
+    /// does not count).
+    fn boot_required_instance(
+        &self,
+        name: &str,
+        init_path: &std::path::Path,
+    ) -> anyhow::Result<Option<mlua::Table>> {
+        let lua = self.executor.lua();
+        let Some(loaded_from) = boot::BootRequireState::module_file(lua, name) else {
+            return Ok(None);
+        };
+        let canonical_init =
+            std::fs::canonicalize(init_path).unwrap_or_else(|_| init_path.to_path_buf());
+        if loaded_from != canonical_init {
+            return Ok(None);
+        }
+        let package: mlua::Table = lua
+            .globals()
+            .get("package")
+            .map_err(|e| anyhow::anyhow!("package table: {e}"))?;
+        let loaded: mlua::Table = package
+            .get("loaded")
+            .map_err(|e| anyhow::anyhow!("package.loaded: {e}"))?;
+        match loaded
+            .get::<mlua::Value>(name)
+            .map_err(|e| anyhow::anyhow!("package.loaded[{name}]: {e}"))?
+        {
+            mlua::Value::Table(table) => Ok(Some(table)),
+            _ => Ok(None),
+        }
+    }
+
     /// Whether this plugin's installation granted it the right to take a tool
     /// call over (`intercept_tools` in its manifest).
     ///
@@ -1116,42 +1210,6 @@ end
 
         debug!("Called setup() for plugin '{}'", name);
         Ok(())
-    }
-
-    /// Evaluate the user's init.lua in the plugin runtime, if one exists.
-    ///
-    /// Runs AFTER plugins load — that ordering is the configuration
-    /// precedence contract: the daemon applies `[plugins.<name>]` TOML as
-    /// each plugin's base config via `setup()` at load, and the user's
-    /// `require("<plugin>").setup{...}` here lands last and wins. Lua beats
-    /// TOML, the Neovim convention (it used to be silently backwards: TOML
-    /// was both base and final word, with no user-Lua entry point at all).
-    ///
-    /// Fail-open: this is user configuration, not a gate — a broken init.lua
-    /// is warned about and the daemon runs with TOML-only config.
-    pub async fn eval_user_init(&self, path: &std::path::Path) {
-        if !path.exists() {
-            return;
-        }
-        let source = match std::fs::read_to_string(path) {
-            Ok(s) => s,
-            Err(e) => {
-                warn!("Failed to read {}: {e}", path.display());
-                return;
-            }
-        };
-        let chunk_name = format!("@{}", path.to_string_lossy());
-        match self
-            .executor
-            .lua()
-            .load(&source)
-            .set_name(chunk_name)
-            .eval_async::<mlua::Value>()
-            .await
-        {
-            Ok(_) => info!("Evaluated user init: {}", path.display()),
-            Err(e) => warn!("User init.lua error ({}): {e}", path.display()),
-        }
     }
 
     /// Reload a plugin: unload registrations, re-execute `init.lua`, and

@@ -333,26 +333,7 @@ impl CliAppConfig {
                 let raw_table: toml::Table =
                     toml::from_str(&contents).map_err(|e| config_parse_error(&config_path, e))?;
 
-                if raw_table.contains_key("embedding") {
-                    return Err(config_parse_error(
-                        &config_path,
-                        "legacy [embedding] is no longer supported. Use [llm.providers.<name>] with [llm].default",
-                    ));
-                }
-                if raw_table.contains_key("providers") {
-                    return Err(config_parse_error(
-                        &config_path,
-                        "legacy [providers] is no longer supported. Use [llm.providers.<name>] with [llm].default",
-                    ));
-                }
-                if let Some(toml::Value::Table(chat)) = raw_table.get("chat") {
-                    if chat.contains_key("provider") {
-                        return Err(config_parse_error(
-                            &config_path,
-                            "chat.provider is no longer supported. Use [llm.providers.<name>] with [llm].default",
-                        ));
-                    }
-                }
+                Self::reject_legacy_keys(&raw_table, &config_path)?;
 
                 let file_fields = Self::detect_present_fields(&raw_table);
                 let mut value = toml::Value::Table(raw_table);
@@ -437,6 +418,95 @@ impl CliAppConfig {
 
         config.source_map = Some(source_map);
         Ok(config)
+    }
+
+    /// The three legacy-key rejections, shared by [`Self::load`] and
+    /// [`Self::load_seed_value`] so the two parse paths cannot drift.
+    #[cfg(feature = "toml")]
+    fn reject_legacy_keys(
+        raw_table: &toml::Table,
+        config_path: &std::path::Path,
+    ) -> anyhow::Result<()> {
+        if raw_table.contains_key("embedding") {
+            return Err(config_parse_error(
+                config_path,
+                "legacy [embedding] is no longer supported. Use [llm.providers.<name>] with [llm].default",
+            ));
+        }
+        if raw_table.contains_key("providers") {
+            return Err(config_parse_error(
+                config_path,
+                "legacy [providers] is no longer supported. Use [llm.providers.<name>] with [llm].default",
+            ));
+        }
+        if let Some(toml::Value::Table(chat)) = raw_table.get("chat") {
+            if chat.contains_key("provider") {
+                return Err(config_parse_error(
+                    config_path,
+                    "chat.provider is no longer supported. Use [llm.providers.<name>] with [llm].default",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Apply the two embedding CLI-flag overrides onto an already-built
+    /// config — the same mutation [`Self::load`] performs, callable by the
+    /// boot path that builds its config through the store instead.
+    pub fn apply_embedding_overrides(
+        &mut self,
+        embedding_url: Option<String>,
+        embedding_model: Option<String>,
+    ) {
+        if let Some(url) = embedding_url {
+            if let Some(default_key) = self.llm.default.clone() {
+                if let Some(provider) = self.llm.providers.get_mut(&default_key) {
+                    provider.endpoint = Some(url);
+                }
+            }
+        }
+        if let Some(model) = embedding_model {
+            if let Some(default_key) = self.llm.default.clone() {
+                if let Some(provider) = self.llm.providers.get_mut(&default_key) {
+                    provider.default_model = Some(model);
+                }
+            }
+        }
+    }
+
+    /// The raw keys `config.toml` sets, as JSON — the deprecated SEED layer
+    /// of the Lua-config boot.
+    ///
+    /// Runs the oracle's own parse path — the legacy-key rejections and the
+    /// include pass, with the same messages — but returns only the file's own
+    /// keys instead of a defaults-filled struct, so the config store can
+    /// merge them as one layer over the defaults layer and keep per-key
+    /// provenance honest.
+    #[cfg(feature = "toml")]
+    pub fn load_seed_value(
+        config_path: &std::path::Path,
+    ) -> Result<serde_json::Value, ConfigError> {
+        Self::load_seed_value_inner(config_path).map_err(ConfigError::from)
+    }
+
+    #[cfg(feature = "toml")]
+    fn load_seed_value_inner(config_path: &std::path::Path) -> anyhow::Result<serde_json::Value> {
+        let contents = std::fs::read_to_string(config_path)
+            .map_err(|e| anyhow::anyhow!("Failed to read config file: {}", e))?;
+        let raw_table: toml::Table =
+            toml::from_str(&contents).map_err(|e| config_parse_error(config_path, e))?;
+        Self::reject_legacy_keys(&raw_table, config_path)?;
+
+        let mut value = toml::Value::Table(raw_table);
+        let base_dir = config_path.parent().unwrap_or(std::path::Path::new("."));
+        if let Err(errors) = crate::config::includes::process_file_references(&mut value, base_dir)
+        {
+            for error in errors {
+                tracing::warn!("Config reference error: {}", error);
+            }
+        }
+
+        serde_json::to_value(value).map_err(|e| config_parse_error(config_path, e))
     }
 
     /// Detect which [`TRACKED_FIELDS`] are present in a TOML table.

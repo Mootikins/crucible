@@ -38,13 +38,13 @@ mod includes;
 mod io_helpers;
 mod kiln_config;
 pub mod merge;
-pub mod provenance;
-pub mod store;
 pub mod overlay;
 mod patterns;
 mod project_config;
+pub mod provenance;
 mod security;
 pub mod serde_helpers;
+pub mod store;
 mod tilde;
 mod value_source;
 mod workspace;
@@ -78,9 +78,6 @@ pub use config::{
     WorkspaceConfig,
 };
 pub use config::{LOCATION_CONFIG_KEYS, SETTINGS_CONFIG_KEYS};
-pub use merge::{deep_merge, REPLACE_MARKER};
-pub use provenance::{ProvenanceMap, SourceTag};
-pub use store::{ConfigStore, LocationPolicy};
 pub use credentials::{
     discover_credentials, resolve_api_key, CredentialError, CredentialResult, CredentialSource,
     DiscoveredCredential, ProviderSecrets, SecretsFile, SecretsFileContent,
@@ -91,6 +88,7 @@ pub use enrichment::{
 };
 pub use includes::{process_file_references, IncludeError};
 pub use kiln_config::{read_kiln_config, write_kiln_config, KilnConfig, KilnMeta};
+pub use merge::{deep_merge, REPLACE_MARKER};
 pub use overlay::{
     overlay_layers, overlay_registrations, LayeredOverlay, Overlay, Registration,
     RegistrationOrigin, Shadowed, ShadowedRegistration,
@@ -99,7 +97,9 @@ pub use patterns::{
     BashPatterns, FilePatterns, PatternError, PatternResult, PatternStore, ToolPatterns,
 };
 pub use project_config::{read_project_config, write_project_config, ProjectConfig};
+pub use provenance::{ProvenanceMap, SourceTag};
 pub use security::{ProjectFileAccess, ShellPolicy};
+pub use store::{ConfigStore, LocationPolicy};
 pub use tilde::expand_tilde;
 pub use value_source::{ValueSource, ValueSourceMap};
 pub use workspace::{KilnAttachment, SecurityConfig};

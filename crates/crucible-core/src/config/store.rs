@@ -230,11 +230,17 @@ mod tests {
         );
 
         assert_eq!(
-            store.provenance().get("chat.show_thinking").map(SourceTag::short),
+            store
+                .provenance()
+                .get("chat.show_thinking")
+                .map(SourceTag::short),
             Some("lua")
         );
         assert_eq!(
-            store.provenance().get("chat.show_diffs").map(SourceTag::short),
+            store
+                .provenance()
+                .get("chat.show_diffs")
+                .map(SourceTag::short),
             Some("toml")
         );
         // The sibling survived the deep merge.

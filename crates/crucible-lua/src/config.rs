@@ -25,10 +25,10 @@
 
 use crate::error::LuaError;
 use crate::theme::ThemeConfig;
-use crucible_core::config::LOCATION_CONFIG_KEYS;
+use crucible_core::config::{ConfigStore, LocationPolicy, SourceTag};
 use mlua::{Lua, LuaSerdeExt, Table, Value};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 use tracing::{debug, info, warn};
 
 const DEFAULT_THEME_LUA: &str = include_str!("../../../runtime/themes/default.lua");
@@ -46,9 +46,10 @@ pub struct ConfigState {
     pub layout: Option<crate::statusline_items::Layout>,
     /// Code-highlighting config from `cru.syntax.setup{}`.
     pub syntax: Option<serde_json::Value>,
-    /// Daemon/app config values set via cru.config.set() or seeded from TOML.
-    /// Stored as JSON for easy extraction by Rust callers.
-    pub app_config: Option<serde_json::Value>,
+    /// The app-config store: one JSON object, per-leaf provenance, and the
+    /// boot-phase flag. Written by `cru.config.set()`, the `config.set` RPC,
+    /// and the daemon's seed; `None` until something seeds it.
+    pub app_config: Option<ConfigStore>,
 }
 
 /// Thread-safe config registry
@@ -117,93 +118,229 @@ pub fn set_ui_geometry(geometry: crate::ui_geometry::UiGeometry) {
     }
 }
 
-/// Get the app config (set via `cru.config.set()` or seeded from TOML).
+/// Get the app config (set via `cru.config.set()` or seeded by the daemon).
 pub fn get_app_config() -> Option<serde_json::Value> {
+    Some(
+        get_config()
+            .read()
+            .ok()?
+            .app_config
+            .as_ref()?
+            .value()
+            .clone(),
+    )
+}
+
+/// Per-leaf provenance for the app config, for `cru config show --sources`.
+pub fn get_app_config_provenance() -> Option<crucible_core::config::ProvenanceMap> {
+    Some(
+        get_config()
+            .read()
+            .ok()?
+            .app_config
+            .as_ref()?
+            .provenance()
+            .clone(),
+    )
+}
+
+/// Seed app config from an already-loaded config value.
+///
+/// Installs a RUNTIME store: the location-naming keys are withheld from the
+/// plugin-visible view (see `LOCATION_CONFIG_KEYS` — a plugin is told which
+/// kilns a session reaches by *name*). The daemon's real boot path does not
+/// come through here; it seeds through [`begin_boot_store`] and merges the
+/// layers itself, so provenance here is deliberately blank-ish: the value
+/// arrives as one opaque layer.
+pub fn seed_app_config(config: serde_json::Value) {
+    if let Ok(mut state) = get_config().write() {
+        let mut store = ConfigStore::runtime();
+        store.merge(config, SourceTag::Default);
+        state.app_config = Some(store);
+    }
+}
+
+/// Deep-merge values into the app config from Rust. Used by the daemon's
+/// `config.set` RPC so the TUI/CLI write into the SAME store `:lua` and
+/// plugins read.
+///
+/// Returns the top-level location keys the store's policy withheld (empty
+/// during the boot phase). One door, one rule: the store decides, and every
+/// writer inherits the decision.
+pub fn merge_app_config(overlay: serde_json::Value) -> Vec<String> {
+    merge_app_config_tagged(overlay, SourceTag::Rpc)
+}
+
+/// [`merge_app_config`] with the caller's own provenance tag.
+pub fn merge_app_config_tagged(overlay: serde_json::Value, tag: SourceTag) -> Vec<String> {
+    match get_config().write() {
+        Ok(mut state) => state
+            .app_config
+            .get_or_insert_with(ConfigStore::runtime)
+            .merge(overlay, tag),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Install a boot-phase store: [`crucible_core::config::LocationPolicy::Accept`],
+/// empty. The daemon calls this before it seeds defaults and `config.toml`
+/// and evaluates `init.lua`; [`end_boot_phase`] flips it to the runtime rules.
+pub fn begin_boot_store() {
+    if let Ok(mut state) = get_config().write() {
+        state.app_config = Some(ConfigStore::for_load());
+    }
+}
+
+/// Whether the store is in the boot phase (location keys accepted).
+pub fn in_boot_phase() -> bool {
+    get_config()
+        .read()
+        .ok()
+        .and_then(|state| {
+            state
+                .app_config
+                .as_ref()
+                .map(|store| store.location_policy() == LocationPolicy::Accept)
+        })
+        .unwrap_or(false)
+}
+
+/// A clone of the whole store — the boot path snapshots the seed before the
+/// evaluation so a failed evaluation can fall back to it.
+pub fn snapshot_store() -> Option<ConfigStore> {
     get_config().read().ok()?.app_config.clone()
 }
 
-/// Drop every [`LOCATION_CONFIG_KEYS`] entry from a config object.
-///
-/// This store is the plugin-visible view of the config — `cru.config.get()`
-/// and the `config.get` RPC both read it, and `config.get` with no key returns
-/// the *whole* object. The keys that name a filesystem location are therefore
-/// withheld from it: a plugin is told which kilns a session reaches by *name*,
-/// and handing it the directories through a side door would make that
-/// pointless.
-///
-/// Applied at every write into the store rather than at the one call site that
-/// seeds it, so the invariant belongs to the store and a future writer
-/// inherits it instead of having to remember it. The classification itself
-/// lives in `crucible-core` beside the struct whose fields it classifies, and
-/// a test there fails if a new `CliAppConfig` field is classified by neither
-/// kind — that, not this function, is what keeps the rule from being a
-/// denylist that misses the next key.
-fn without_location_keys(mut config: serde_json::Value) -> serde_json::Value {
-    if let Some(object) = config.as_object_mut() {
-        for key in LOCATION_CONFIG_KEYS {
-            object.remove(key);
-        }
-    }
-    config
-}
-
-/// Seed app config from TOML values (called before Lua init.lua runs).
-/// Lua's `cru.config.set()` can then override individual fields.
-///
-/// The location-naming keys never make it in; see [`LOCATION_CONFIG_KEYS`].
-pub fn seed_app_config(config: serde_json::Value) {
+/// Install a store wholesale — the fail-open half of [`snapshot_store`].
+pub fn install_store(store: ConfigStore) {
     if let Ok(mut state) = get_config().write() {
-        state.app_config = Some(without_location_keys(config));
+        state.app_config = Some(store);
     }
 }
 
-/// Merge values into app_config from Rust (same top-level-override semantics
-/// as Lua's `cru.config.set`). Used by the daemon's `config.set` RPC so the
-/// TUI/CLI write into the SAME store `:lua` and plugins read.
-///
-/// The location-naming keys are dropped here too; see [`LOCATION_CONFIG_KEYS`].
-pub fn merge_app_config(overlay: serde_json::Value) {
-    let overlay = without_location_keys(overlay);
+/// End the boot phase: location keys are withheld from every later merge and
+/// dropped from the plugin-visible value. The daemon extracts the full config
+/// BEFORE calling this.
+pub fn end_boot_phase() {
     if let Ok(mut state) = get_config().write() {
-        match &mut state.app_config {
-            Some(serde_json::Value::Object(base)) => {
-                if let serde_json::Value::Object(overlay) = overlay {
-                    for (k, v) in overlay {
-                        base.insert(k, v);
-                    }
-                }
-            }
-            _ => {
-                state.app_config = Some(overlay);
-            }
+        if let Some(store) = state.app_config.as_mut() {
+            store.end_boot_phase();
         }
     }
 }
 
-/// Register `cru.config.set(table)` and `cru.config.get(key)` on the cru namespace.
+/// The hook the daemon installs so a `runtimepath` write during the boot
+/// evaluation extends the module search space INSIDE the `cru.config.set`
+/// call — Neovim's invalidate-and-rebuild, before the call returns, so a
+/// `require` on the next line finds the new entry.
+type RuntimepathExtender = Arc<dyn Fn(&Lua, &[String]) + Send + Sync>;
+
+fn runtimepath_extender_slot() -> &'static RwLock<Option<RuntimepathExtender>> {
+    static SLOT: OnceLock<RwLock<Option<RuntimepathExtender>>> = OnceLock::new();
+    SLOT.get_or_init(|| RwLock::new(None))
+}
+
+/// Install (or clear) the runtimepath extender for the boot phase.
+pub fn set_runtimepath_extender(extender: Option<RuntimepathExtender>) {
+    if let Ok(mut slot) = runtimepath_extender_slot().write() {
+        *slot = extender;
+    }
+}
+
+/// The full `runtimepath` array the store currently holds, as strings.
+fn store_runtimepath() -> Vec<String> {
+    get_config()
+        .read()
+        .ok()
+        .and_then(|state| {
+            state.app_config.as_ref().map(|store| {
+                store
+                    .value()
+                    .get("runtimepath")
+                    .and_then(|v| v.as_array())
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|v| v.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            })
+        })
+        .unwrap_or_default()
+}
+
+/// The Lua call site of the frame that invoked the current Rust callback,
+/// for `file:line` provenance.
+fn lua_call_site(lua: &Lua) -> (String, Option<u32>) {
+    lua.inspect_stack(1, |debug| {
+        let source = debug.source();
+        let file = source
+            .short_src
+            .map(|s| s.into_owned())
+            .unwrap_or_else(|| "?".to_string());
+        let line = debug.current_line().and_then(|l| u32::try_from(l).ok());
+        (file, line)
+    })
+    .unwrap_or_else(|| ("?".to_string(), None))
+}
+
+/// One Lua write into the store: tag with the call site, warn per withheld
+/// key, and — during the boot phase — extend the live search space when the
+/// write touched `runtimepath`.
+fn merge_from_lua(lua: &Lua, overlay: serde_json::Value) {
+    let (file, line) = lua_call_site(lua);
+    let touched_runtimepath = overlay
+        .as_object()
+        .is_some_and(|map| map.contains_key("runtimepath"));
+
+    let withheld = merge_app_config_tagged(
+        overlay,
+        SourceTag::Lua {
+            file: file.clone(),
+            line,
+        },
+    );
+    for key in &withheld {
+        warn!(
+            key = %key,
+            call_site = %match line {
+                Some(line) => format!("{file}:{line}"),
+                None => file.clone(),
+            },
+            "location keys freeze at daemon boot; restart the daemon to change this key"
+        );
+    }
+
+    if touched_runtimepath && in_boot_phase() {
+        let extender = runtimepath_extender_slot()
+            .read()
+            .ok()
+            .and_then(|slot| slot.clone());
+        if let Some(extender) = extender {
+            extender(lua, &store_runtimepath());
+        }
+    }
+}
+
+/// Register `cru.config.set(table)`, `cru.config.replace(table)` and
+/// `cru.config.get(key)` on the cru namespace.
 ///
-/// - `set(table)`: merges the table into app_config, one TOP-LEVEL key at a
-///   time (TOML values as base, Lua overrides)
-/// - `get(key)`: Returns a single top-level value from app_config
+/// - `set(table)`: DEEP-merges the table into the store — objects merge key
+///   by key, arrays and scalars replace, `__replace = true` inside a table
+///   replaces that table wholesale.
+/// - `replace(table)`: sugar over the raw marker — each top-level table value
+///   replaces instead of merging.
+/// - `get(key)`: returns a single top-level value.
 ///
-/// This is the bridge between TOML and Lua config. TOML seeds values first,
-/// then Lua's init.lua can override any field via `cru.config.set()`.
-///
-/// The merge REPLACES a top-level key; it does not descend. A call that sets
-/// `chat = { show_thinking = true }` drops every other `chat` key back to its
-/// default, silently. A caller must therefore restate each sibling. This
-/// comment said "deep-merges" for as long as the function has existed, which
-/// is why the behaviour surprised its callers.
-///
-/// See `thoughts/2026-08-24-lua-versus-toml-config.md`: the agreed target is a
-/// deep merge for tables, a wholesale replace for arrays and scalars, and an
-/// explicit way to replace a whole table. Removal is why the escape is
-/// required — under a deep merge alone, a smaller `llm.providers` table can
-/// never drop a provider.
+/// During the daemon's boot phase the store accepts location keys and a
+/// `runtimepath` write extends the live module search space before `set`
+/// returns. After boot, location keys are withheld and reported here with a
+/// warning naming the key and the call site.
 pub fn register_app_config_api(lua: &Lua, cru_table: &Table) -> Result<(), LuaError> {
     let config_table = lua.create_table()?;
 
-    // cru.config.set(table) — merge into app_config.
+    // cru.config.set(table) — deep-merge into the store.
     //
     // Delegates rather than reimplementing the merge. It used to carry its own
     // copy of the same top-level-insert loop, which made it a second door into
@@ -213,10 +350,37 @@ pub fn register_app_config_api(lua: &Lua, cru_table: &Table) -> Result<(), LuaEr
         let json_val: serde_json::Value = lua
             .from_value(Value::Table(table))
             .map_err(mlua::Error::external)?;
-        merge_app_config(json_val);
+        merge_from_lua(lua, json_val);
         Ok(())
     })?;
     config_table.set("set", set_fn)?;
+
+    // cru.config.replace(table) — the Lua spelling over the raw __replace key:
+    // every top-level table value replaces wholesale instead of merging.
+    let replace_fn = lua.create_function(|lua, table: Table| {
+        let json_val: serde_json::Value = lua
+            .from_value(Value::Table(table))
+            .map_err(mlua::Error::external)?;
+        let json_val = match json_val {
+            serde_json::Value::Object(map) => serde_json::Value::Object(
+                map.into_iter()
+                    .map(|(key, mut value)| {
+                        if let Some(object) = value.as_object_mut() {
+                            object.insert(
+                                crucible_core::config::REPLACE_MARKER.to_string(),
+                                serde_json::Value::Bool(true),
+                            );
+                        }
+                        (key, value)
+                    })
+                    .collect(),
+            ),
+            other => other,
+        };
+        merge_from_lua(lua, json_val);
+        Ok(())
+    })?;
+    config_table.set("replace", replace_fn)?;
 
     // cru.config.get(key) — read a single top-level value
     let get_fn = lua.create_function(|lua, key: String| {
@@ -224,7 +388,11 @@ pub fn register_app_config_api(lua: &Lua, cru_table: &Table) -> Result<(), LuaEr
             .read()
             .map_err(|e| mlua::Error::external(format!("config lock: {e}")))?;
 
-        let val = state.app_config.as_ref().and_then(|c| c.get(&key)).cloned();
+        let val = state
+            .app_config
+            .as_ref()
+            .and_then(|store| store.value().get(&key))
+            .cloned();
 
         match val {
             Some(v) => lua.to_value(&v),
@@ -509,6 +677,7 @@ impl ConfigLoader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_core::config::LOCATION_CONFIG_KEYS;
     use std::sync::Mutex;
     use tempfile::TempDir;
 

@@ -90,9 +90,7 @@ pub fn strip_replace_markers(value: Value) -> Value {
                 .map(|(key, value)| (key, strip_replace_markers(value)))
                 .collect(),
         ),
-        Value::Array(items) => {
-            Value::Array(items.into_iter().map(strip_replace_markers).collect())
-        }
+        Value::Array(items) => Value::Array(items.into_iter().map(strip_replace_markers).collect()),
         scalar => scalar,
     }
 }
@@ -126,7 +124,10 @@ mod tests {
             json!({"llm": {"providers": {"a": {"endpoint": "x"}, "b": {"endpoint": "y"}}}}),
             json!({"llm": {"providers": {"__replace": true, "a": {"endpoint": "x"}}}}),
         );
-        assert_eq!(result, json!({"llm": {"providers": {"a": {"endpoint": "x"}}}}));
+        assert_eq!(
+            result,
+            json!({"llm": {"providers": {"a": {"endpoint": "x"}}}})
+        );
     }
 
     #[test]
@@ -152,7 +153,10 @@ mod tests {
 
     #[test]
     fn null_is_a_value_not_a_deletion_marker() {
-        let result = merged(json!({"session_kiln": "notes"}), json!({"session_kiln": null}));
+        let result = merged(
+            json!({"session_kiln": "notes"}),
+            json!({"session_kiln": null}),
+        );
         assert_eq!(result, json!({"session_kiln": null}));
     }
 

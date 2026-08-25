@@ -139,18 +139,26 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
 
     // Standalone mode: start the in-process daemon on the pre-configured socket.
     let _standalone_guard = if let Some(sock) = standalone_sock {
+        // The standalone daemon IS a daemon: it boots through the same
+        // one-VM evaluation as `cru daemon serve`, so its init.lua-authored
+        // config and its plugin VM are the same construction.
+        let boot = crucible_daemon::daemon_plugins::evaluate_boot_config(
+            cli.config.clone(),
+            cli.embedding_url.clone(),
+            cli.embedding_model.clone(),
+        )
+        .await?;
         let (plugin_sections, plugin_watch) =
-            crucible_daemon::daemon_plugins::split_plugins_config(&config.plugins);
+            crucible_daemon::daemon_plugins::split_plugins_config(&boot.config.plugins);
         let server = crucible_daemon::Server::bind_with_plugin_config(
             crucible_daemon::BindWithPluginConfigParams::from_app_config(
                 sock.clone(),
-                &config,
+                &boot.config,
                 plugin_sections.clone(),
                 plugin_watch,
-                cli.config
-                    .clone()
-                    .unwrap_or_else(crucible_core::config::CliAppConfig::default_config_path),
-            ),
+                boot.config_source.clone(),
+            )
+            .with_loader(boot.loader),
         )
         .await?;
         info!("Standalone daemon listening on {:?}", sock);
