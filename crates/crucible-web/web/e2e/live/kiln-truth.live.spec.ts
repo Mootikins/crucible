@@ -44,6 +44,14 @@ test.describe('live kiln truth (WS-201/202/205/206)', () => {
   });
 
   test('WS-206: a note written via the API is the one shared truth', async () => {
+    // This test waits on the indexing pipeline, so it needs more than the
+    // suite's 30s per-test budget (`playwright.live.config.ts`). Without this
+    // the poll below CANNOT reach its own timeout: Playwright kills the test
+    // at 30s first, the wait reports a generic test-timeout instead of the
+    // message the poll carries, and raising the poll budget alone does
+    // nothing at all. 90s = the 60s poll plus room for the PUT and the reads.
+    test.setTimeout(90_000);
+
     const api = await playwrightRequest.newContext({ baseURL: state.baseURL });
     const kiln = state.kilnDir!;
     const content = '# Shared\n\nagent and editor see the same bytes\n';
