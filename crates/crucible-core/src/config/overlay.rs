@@ -144,31 +144,94 @@ pub fn overlay_registrations(
     config: impl IntoIterator<Item = Registration>,
     state: impl IntoIterator<Item = Registration>,
 ) -> Overlay {
-    let config: BTreeMap<String, Registration> = config
+    let merged = overlay_layers(
+        config,
+        state,
+        |entry| entry.name.clone(),
+        |declared, entry| declared.path == entry.path,
+    );
+    Overlay {
+        effective: merged.effective,
+        shadowed: merged
+            .shadowed
+            .into_iter()
+            .map(|s| ShadowedRegistration {
+                name: s.name,
+                config_path: s.config.path,
+                state_path: s.state.path,
+            })
+            .collect(),
+    }
+}
+
+/// A state entry the config layer out-ranks, over any layered type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Shadowed<T> {
+    /// The contested name.
+    pub name: String,
+    /// What the config layer says under that name.
+    pub config: T,
+    /// What the state layer says.
+    pub state: T,
+}
+
+/// The merged view over any layered type, plus what the merge out-ranked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LayeredOverlay<T> {
+    /// The effective entries, in name order.
+    pub effective: Vec<T>,
+    /// State entries a config entry of the same name out-ranked, in name order.
+    pub shadowed: Vec<Shadowed<T>>,
+}
+
+/// The precedence rule itself, over any two named layers.
+///
+/// [`overlay_registrations`] is this function over [`Registration`], and the
+/// generic form exists because Crucible overlays three registries whose entries
+/// are not the same shape: kilns and projects are path-shaped, the LLM provider
+/// table is not, and projects additionally carry the kilns they use. Writing
+/// the rule once and passing in what "same name" and "same value" mean is the
+/// only way all three cannot drift apart.
+///
+/// `name_of` gives the key. `agree` decides whether a state entry that shares a
+/// name with a config entry is a CONFLICT or just the same thing written down
+/// twice — the second case is absorbed silently and reported nowhere, because
+/// there is nothing for the user to resolve.
+#[must_use]
+pub fn overlay_layers<T>(
+    config: impl IntoIterator<Item = T>,
+    state: impl IntoIterator<Item = T>,
+    name_of: impl Fn(&T) -> String,
+    agree: impl Fn(&T, &T) -> bool,
+) -> LayeredOverlay<T>
+where
+    T: Clone,
+{
+    let config: BTreeMap<String, T> = config
         .into_iter()
-        .map(|entry| (entry.name.clone(), entry))
+        .map(|entry| (name_of(&entry), entry))
         .collect();
 
     let mut shadowed = Vec::new();
     let mut effective = config.clone();
 
     for entry in state {
-        match config.get(&entry.name) {
-            // Two spellings of one registration: nothing to choose between.
-            Some(declared) if declared.path == entry.path => {}
-            Some(declared) => shadowed.push(ShadowedRegistration {
-                name: entry.name.clone(),
-                config_path: declared.path.clone(),
-                state_path: entry.path.clone(),
+        let name = name_of(&entry);
+        match config.get(&name) {
+            Some(declared) if agree(declared, &entry) => {}
+            Some(declared) => shadowed.push(Shadowed {
+                name,
+                config: declared.clone(),
+                state: entry,
             }),
             None => {
-                effective.insert(entry.name.clone(), entry);
+                effective.insert(name, entry);
             }
         }
     }
 
     shadowed.sort_by(|a, b| a.name.cmp(&b.name));
-    Overlay {
+    LayeredOverlay {
         effective: effective.into_values().collect(),
         shadowed,
     }

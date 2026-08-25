@@ -264,6 +264,36 @@ impl Server {
         }
         info!(kilns = kiln_registry.len(), "Kiln registry built");
 
+        // The same precedence rule over the provider table. `llm.json` holds
+        // the selection `cru init` and the wizard recorded; the config holds
+        // what the user authored, and the config wins on a provider key.
+        //
+        // Overlaid HERE, at the one point the daemon derives its provider
+        // table from the config it was handed, and before either consumer sees
+        // it. `AgentManager` and `RpcContext` both take a clone of this value,
+        // so a second insertion point would be a second answer.
+        let llm_state = Arc::new(crate::llm_state::LlmStateStore::new(&data_home));
+        let mut llm_config = params.llm_config.clone();
+        if let Some(llm) = llm_config.as_mut() {
+            for shadowed in llm_state.overlay_onto(llm) {
+                warn!(
+                    provider = shadowed.name,
+                    config_type = shadowed.config_type,
+                    recorded_type = shadowed.state_type,
+                    "The config declares this provider, so the recorded selection is not used"
+                );
+            }
+        } else {
+            // No config layer at all: the state layer IS the provider table.
+            // A daemon bound without an app config still has to honour a
+            // selection the user made through `cru init`.
+            let mut empty = crucible_core::config::LlmConfig::default();
+            llm_state.overlay_onto(&mut empty);
+            if !empty.providers.is_empty() {
+                llm_config = Some(empty);
+            }
+        }
+
         let plugin_loader = Arc::new(Mutex::new(
             match DaemonPluginLoader::new(params.plugin_config.clone()).and_then(|loader| {
                 // `kiln://<name>/…` paths in `cru.fs` resolve through the
@@ -342,7 +372,7 @@ impl Server {
                     session_manager: session_manager.clone(),
                     background_manager: Arc::new(BackgroundJobManager::new(event_tx.clone())),
                     mcp_gateway: mcp_gateway.clone(),
-                    llm_config: params.llm_config.clone(),
+                    llm_config: llm_config.clone(),
                     acp_config: params.acp_config.clone(),
                     context_config: params.context_config.clone(),
                     permission_config: params.permission_config.clone(),
@@ -406,7 +436,7 @@ impl Server {
             project_manager: project_manager.clone(),
             lua_sessions,
             plugin_loader: plugin_loader.clone(),
-            llm_config: params.llm_config.clone(),
+            llm_config: llm_config.clone(),
             mcp_server_manager,
             mcp_config: params.mcp_config.clone(),
             data_home: data_home.clone(),

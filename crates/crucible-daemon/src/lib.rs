@@ -49,6 +49,7 @@ pub mod kiln_registry;
 pub mod kiln_state;
 pub mod lifecycle;
 pub mod llm;
+pub mod llm_state;
 pub mod mcp;
 pub mod mcp_host;
 pub mod mcp_server;

@@ -90,7 +90,8 @@ pub use enrichment::{
 pub use includes::{process_file_references, IncludeError};
 pub use kiln_config::{read_kiln_config, write_kiln_config, KilnConfig, KilnMeta};
 pub use overlay::{
-    overlay_registrations, Overlay, Registration, RegistrationOrigin, ShadowedRegistration,
+    overlay_layers, overlay_registrations, LayeredOverlay, Overlay, Registration,
+    RegistrationOrigin, Shadowed, ShadowedRegistration,
 };
 pub use patterns::{
     BashPatterns, FilePatterns, PatternError, PatternResult, PatternStore, ToolPatterns,
