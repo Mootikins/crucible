@@ -58,6 +58,21 @@ test.describe('live kiln truth (WS-201/202/205/206)', () => {
     // daemon's file watcher runs the note through the pipeline (500ms debounce
     // + processing), so the listing is eventually consistent by design. Poll
     // for that contract instead of racing it.
+    //
+    // The budget is 60s, not the 15s it was, and the number is measured rather
+    // than guessed. Indexing takes ~5.7s on an idle box and ~21.6s while a
+    // full `cargo nextest run --workspace` runs beside it. At 15s this test
+    // passed alone and failed 4 times out of 4 inside `just ci`, whose own
+    // tier supplies exactly that load — so its result tracked how busy the
+    // machine was, not whether the note reached the index.
+    //
+    // 60s is ~3x the loaded measurement. There is no completion signal to wait
+    // on instead: the daemon emits `note_created`, but the web layer forwards
+    // only `fs_*` events and drops it (`fs_events.rs`,
+    // `non_file_events_are_ignored`), and `fs_changed` fires on the WRITE, not
+    // on the indexing that follows it. Exposing an index-complete event would
+    // let this be deterministic; until then a generous bound is the honest
+    // shape. Do not lower it without new measurements.
     await expect
       .poll(
         async () => {
@@ -66,7 +81,12 @@ test.describe('live kiln truth (WS-201/202/205/206)', () => {
           const notes = (await notesRes.json()) as { files: Array<{ name: string }> };
           return notes.files.some((f) => f.name === 'Shared');
         },
-        { timeout: 15_000 },
+        {
+          timeout: 60_000,
+          message:
+            'the note never reached the kiln index — the daemon watcher, the 500ms debounce, ' +
+            'or the note pipeline did not complete within 60s',
+        },
       )
       .toBe(true);
 

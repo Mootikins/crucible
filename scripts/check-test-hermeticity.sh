@@ -15,9 +15,17 @@
 # only. `/tmp` is shared by every user on the machine and is not cleaned
 # between runs, so a test that hardcodes `/tmp` instead of a `TempDir` writes
 # state that collides across runs and across users. This half exists because
-# the $HOME half alone reported "OK" for months while `test_context()` in
-# `rpc/dispatch.rs` wrote `/tmp/projects.json` on every run. A gate that
-# passes while its property is violated is worse than no gate.
+# `test_context()` in `rpc/dispatch.rs` once left a `/tmp/projects.json`
+# behind, and later runs read it back as real state.
+#
+# KNOW WHAT THIS PROVES. It observes what a run actually wrote. It cannot see
+# a hardcoded path that the current suite never exercises: the leak above was
+# re-introduced verbatim and this gate still said OK, because no test in the
+# tier writes through that context. A pass means "this run leaked nothing",
+# never "no test can leak". The durable fix for that class is an API that
+# cannot be handed a shared path in the first place -- a helper returning the
+# `TempDir` guard rather than taking a directory argument. This gate catches
+# the leak that fires; the type system has to catch the one that sleeps.
 #
 # Watching all of the temp directory would be useless — every process on the
 # box writes there. So the temp half checks EXACT NAMES: the files the daemon
