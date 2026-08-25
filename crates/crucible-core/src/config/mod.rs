@@ -37,6 +37,9 @@ mod enrichment;
 mod includes;
 mod io_helpers;
 mod kiln_config;
+pub mod merge;
+pub mod provenance;
+pub mod store;
 pub mod overlay;
 mod patterns;
 mod project_config;
@@ -75,6 +78,9 @@ pub use config::{
     WorkspaceConfig,
 };
 pub use config::{LOCATION_CONFIG_KEYS, SETTINGS_CONFIG_KEYS};
+pub use merge::{deep_merge, REPLACE_MARKER};
+pub use provenance::{ProvenanceMap, SourceTag};
+pub use store::{ConfigStore, LocationPolicy};
 pub use credentials::{
     discover_credentials, resolve_api_key, CredentialError, CredentialResult, CredentialSource,
     DiscoveredCredential, ProviderSecrets, SecretsFile, SecretsFileContent,
