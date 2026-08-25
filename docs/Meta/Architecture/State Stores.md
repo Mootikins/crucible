@@ -1,0 +1,72 @@
+---
+title: State Stores
+description: The daemon's machine-written JSON state files, the locked store shape they share, and how state overlays config.
+tags: [meta, architecture, config, state]
+status: as-built
+---
+
+# State Stores
+
+Configuration is what the user authors; state is what the machine records.
+The two used to share `config.toml`, which meant every registration command
+edited a hand-authored file — comment loss under `toml_edit`, machine entries
+one careless edit from vanishing, and "restart the daemon" caveats where a
+value should have served immediately. The split gave each kind of state its
+own JSON file under the daemon data root, with the daemon as the one writer.
+Paths are relative to `crates/`.
+
+## The shared shape
+
+`RegistryStore<T>` (`crucible-daemon/src/registry_store.rs`) is the pattern,
+once: a `<file>.lock` sidecar taken exclusively, read, mutate, atomic
+write-beside-then-rename. The sidecar is the lock because the data file is
+renamed on every write — locking the data file would let two writers hold
+locks on two different inodes. A mutation returning `Err` leaves the file
+untouched, which is what makes a refusal (a name already pointed elsewhere)
+safe: the check and the write cannot be separated by another writer. `T` is
+the whole file; the store replaces, never merges.
+
+Each file carries a `version` field its reader refuses to exceed, rather than
+rewriting an unknown schema through the wrong struct.
+
+## The files
+
+| File | Owner | Holds | Written by |
+|---|---|---|---|
+| `<data_home>/kilns.json` | `crucible-daemon/src/kiln_state.rs` | kiln registrations: canonical path, `auto` marker, timestamp | `kiln.register` RPC (wizard, `cru init`, preflight, `cru kiln register`) |
+| `<data_home>/projects.json` | `crucible-daemon/src/project_manager.rs` | project registrations and kiln bindings | project registration RPCs |
+| `<data_home>/llm.json` | `crucible-daemon/src/llm_state.rs` | the provider selection and default | `llm.register_provider` RPC |
+| `<data_home>/plugin-options.json` | `crucible-daemon/src/daemon_plugins/option_store.rs` | settings-pane values, replayed through each plugin's own setter at boot | the plugin options RPCs |
+
+`data_home` resolves once at bind and is injected in tests; no store reads
+the environment per operation.
+
+## State overlays config
+
+Config-declared entries and registered state meet in one overlay
+(`overlay_registrations`, applied at `crucible-daemon/src/kiln_registry.rs:425`).
+The config layer wins by name; each shadowed state entry is surfaced, not
+swallowed — the shadow row in `cru kiln list`, and a log line at bind. The
+rules this preserves:
+
+- **Registration is additive at runtime.** A registered name serves
+  immediately; no restart, no config edit.
+- **Deleting a config line does not unregister** what the state layer also
+  holds; the survivor shows as `registered`, and `cru kiln forget <name>` /
+  `cru project forget <name>` is the removal. `forget` on a config-declared
+  entry refuses and names the declaring file and line (provenance from the
+  config store).
+- **Never re-point silently.** Registering a known name at a different path
+  is a refusal inside the RPC, under the store lock.
+
+## Plugin declarations
+
+`~/.config/crucible/plugins.toml` (`crucible-daemon/src/plugin_ops.rs`) is
+the remaining mixed file: `cru plugin add/remove`, the `plugin.install` /
+`plugin.remove` RPCs and the web plugin routes all edit it under the same
+sidecar-lock pattern the registry store uses. M6 splits it: user-declared
+plugins move to `init.lua`, machine-installed ones to
+`<data_home>/plugins.installed.json`, and the bootstrap reads the union.
+
+See also [[Config Boot]] for how the config side is produced, and
+[[Storage Schema]] for the session and note storage this note does not cover.
