@@ -86,7 +86,6 @@ pub fn register_http_module(lua: &Lua) -> Result<()> {
         })?,
     )?;
 
-    lua.globals().set("http", http.clone())?;
     crate::lua_util::register_module(lua, "http", http)?;
     Ok(())
 }
@@ -180,7 +179,8 @@ mod tests {
         let lua = Lua::new();
         register_http_module(&lua).unwrap();
 
-        let http: Table = lua.globals().get("http").unwrap();
+        let cru: Table = lua.globals().get("cru").unwrap();
+        let http: Table = cru.get("http").unwrap();
         assert!(http.get::<Function>("get").is_ok());
         assert!(http.get::<Function>("post").is_ok());
         assert!(http.get::<Function>("put").is_ok());

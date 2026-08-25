@@ -53,7 +53,6 @@ mod executor;
 #[cfg(feature = "fennel")]
 mod fennel;
 mod fs;
-mod graph;
 pub mod handler_budget;
 mod handlers;
 mod hooks;
@@ -61,7 +60,6 @@ mod http;
 pub mod isolation;
 mod json_query;
 pub mod lifecycle;
-mod lua_stdlib;
 pub mod lua_util;
 pub mod manifest;
 mod mcp;
@@ -73,6 +71,7 @@ pub mod options;
 mod paths;
 pub mod plugin_context;
 pub mod plugin_status;
+mod prelude;
 pub mod publications;
 mod ratelimit;
 pub mod schedule;
@@ -125,8 +124,7 @@ pub use error::{format_lua_error, LuaError};
 pub use executor::LuaExecutor;
 #[cfg(feature = "fennel")]
 pub use fennel::FennelCompiler;
-pub use fs::{register_fs_module, register_fs_module_with_resolver};
-pub use graph::{register_graph_module, register_graph_module_with_store_scoped};
+pub use fs::register_fs_module;
 pub use handler_budget::{
     enter as enter_handler_budget, install_deadline_hook, BudgetGuard, LIFECYCLE_BUDGET,
     PERMISSION_BUDGET, TURN_STAGE_BUDGET,
@@ -140,13 +138,13 @@ pub use json_query::{
     detect_format, encode_to_format, json_to_lua, lua_to_json, parse_auto, parse_with_format,
     register_oq_module, Format,
 };
-pub use lua_stdlib::{register_lua_stdlib, register_test_harness};
 pub use oil::{register_oil_module, LuaNode};
 pub use paths::{register_paths_module, PathsContext};
 pub use plugin_context::{
     current_may_intercept, current_plugin_context, current_plugin_name, enter_plugin,
     set_plugin_context, PluginContext,
 };
+pub use prelude::{register_prelude, register_test_harness};
 pub use ratelimit::register_ratelimit_module;
 pub use schedule::register_schedule_module;
 pub use schema::{discovered_params_to_json_schema, generate_input_schema};

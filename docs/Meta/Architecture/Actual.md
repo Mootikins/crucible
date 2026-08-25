@@ -37,7 +37,7 @@ file except to count lines for section 2.
 | `crucible-core` | 67.8k | `config/` 15.6k, `parser/` 13.3k, `events/` 7.9k, `session/` 4.3k, `protocol/` 3.7k, `types/` 3.6k, `traits/` 2.5k, `interaction/` 1.9k |
 | `crucible-cli` | 66.5k | `tui/oil/` 44.2k, `commands/` 14.9k, `cli/` 1.7k, `formatting/` 1.4k, `factories/` 0.9k |
 | `crucible-daemon` | 153.8k | `agent_manager/` 28.0k (of which `messaging/` 6.1k), `server/` 20.7k, top-level files 20.2k, `tools/` 15.6k, `acp/` 9.0k, `rpc_client/` 7.4k, `watch/` 6.2k, `storage/` 5.9k, `review/` 5.4k |
-| `crucible-lua` | 35.1k | top-level files 22.0k, `sessions/` 3.7k, `handlers/` 3.5k, `lifecycle/` 3.0k, `lua_stdlib/` 1.9k, `vault/` 1.0k |
+| `crucible-lua` | 35.1k | top-level files 22.0k, `sessions/` 3.7k, `handlers/` 3.5k, `lifecycle/` 3.0k, `prelude/` 1.9k, `vault/` 1.0k |
 | `crucible-oil` | 12.2k | top-level files 8.0k, `layout/` 2.0k, `template/` 1.4k, `components/` 0.8k |
 | `crucible-web` | 18.2k | `routes/` 9.8k, `middleware/` 3.1k, `services/` 2.3k |
 
@@ -822,7 +822,7 @@ permission modes, the priority-1000 deny hook, the default system prompt and
 the precognition formatter. `ModeRegistry` has no Rust default.
 
 **Modules.** `crucible-lua/src/` (26 top-level projection files, the bindings,
-`handlers/`, `lifecycle/`, `lua_stdlib/`, `sessions/`, `vault/`),
+`handlers/`, `lifecycle/`, `prelude/`, `sessions/`, `vault/`),
 `crucible-daemon/src/daemon_plugins/`, `plugin_tools.rs`, `plugin_ops.rs`,
 `runtime_defaults.rs`, `rules_files.rs`, `skills/`, `session_bridge.rs`,
 `tools_bridge.rs`, `agent_manager/session_vm.rs`, `server/{lua,plugins,

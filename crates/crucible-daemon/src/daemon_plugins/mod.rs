@@ -29,15 +29,15 @@ use crucible_core::storage::NoteStore;
 use crucible_core::storage::PropertyStore;
 use crucible_lua::{
     register_context_attach, register_context_module, register_context_validators,
-    register_cru_on_api, register_graph_module, register_isolation_module, register_oq_module,
-    register_paths_module, register_publish_module, register_schedule_module,
-    register_sessions_module, register_sessions_module_with_api, register_shell_module,
-    register_status_module, register_storage_module, register_storage_module_with_store,
-    register_tools_module, register_tools_module_with_api, register_ui_module,
-    register_ui_module_with_api, register_vault_module, register_ws_module, ContextAttachRegistry,
-    DaemonSessionApi, DaemonToolsApi, IsolationRegistry, LuaExecutor, LuaScriptHandlerRegistry,
-    LuaValidatorRegistry, OptionsRegistry, PathsContext, PluginManager, PluginShellPolicy,
-    PluginSource, PluginSpec, PublicationRegistry, StatusRegistry,
+    register_cru_on_api, register_isolation_module, register_oq_module, register_paths_module,
+    register_publish_module, register_schedule_module, register_sessions_module,
+    register_sessions_module_with_api, register_shell_module, register_status_module,
+    register_storage_module, register_storage_module_with_store, register_tools_module,
+    register_tools_module_with_api, register_ui_module, register_ui_module_with_api,
+    register_vault_module, register_ws_module, ContextAttachRegistry, DaemonSessionApi,
+    DaemonToolsApi, IsolationRegistry, LuaExecutor, LuaScriptHandlerRegistry, LuaValidatorRegistry,
+    OptionsRegistry, PathsContext, PluginManager, PluginShellPolicy, PluginSource, PluginSpec,
+    PublicationRegistry, StatusRegistry,
 };
 use mlua::LuaSerdeExt;
 use std::collections::HashMap;
@@ -203,7 +203,7 @@ impl DaemonPluginLoader {
     pub fn new(plugin_config: HashMap<String, serde_json::Value>) -> anyhow::Result<Self> {
         let executor = LuaExecutor::new().map_err(|e| anyhow::anyhow!("LuaExecutor init: {e}"))?;
 
-        // LuaExecutor::new() already registers: http, fs, timer, ratelimit, lua_stdlib.
+        // LuaExecutor::new() already registers: http, fs, timer, ratelimit, the prelude.
         // Register additional daemon-specific modules here.
         let lua = executor.lua();
 
@@ -219,7 +219,6 @@ impl DaemonPluginLoader {
         )?;
         reg("oq", register_oq_module(lua))?;
         reg("paths", register_paths_module(lua, PathsContext::new()))?;
-        reg("graph", register_graph_module(lua))?;
         reg("vault", register_vault_module(lua))?;
         reg("storage", register_storage_module(lua))?;
         reg("sessions", register_sessions_module(lua))?;
@@ -335,14 +334,13 @@ impl DaemonPluginLoader {
         self
     }
 
-    /// Re-register `cru.fs` with a kiln-name resolver, so plugins can
-    /// address `kiln://<name>/<relative>` paths.
+    /// Wire `cru.kiln.path` to the daemon's kiln registry.
     ///
-    /// The resolver runs registry lookups inside the daemon and the resolved
-    /// directory never reaches Lua — a plugin keeps knowing kilns by NAME
-    /// only, the same rule `cru.kiln.active` and `LOCATION_CONFIG_KEYS`
-    /// hold. Containment (no `..`, no absolute part, no symlink out of the
-    /// root) is enforced centrally in `crucible_lua::fs::resolve_path`.
+    /// The resolver runs registry lookups inside the daemon; a plugin asks
+    /// for a kiln by NAME and receives the resolved root only from this one
+    /// API — the same rule `cru.kiln.active` and `LOCATION_CONFIG_KEYS`
+    /// hold. (`kiln://` addressing in `cru.fs` is removed; the fs module
+    /// refuses the scheme permanently.)
     pub fn with_kiln_path_resolver(
         self,
         registry: Arc<crate::kiln_registry::KilnRegistry>,
@@ -354,8 +352,6 @@ impl DaemonPluginLoader {
                 .path()
                 .ok_or_else(|| format!("kiln '{name}' is not registered"))
         });
-        crucible_lua::register_fs_module_with_resolver(self.executor.lua(), resolver.clone())
-            .map_err(|e| anyhow::anyhow!("fs module (kiln resolver): {e}"))?;
         crucible_lua::register_kiln_path_resolver(self.executor.lua(), resolver)
             .map_err(|e| anyhow::anyhow!("cru.kiln.path (kiln resolver): {e}"))?;
         Ok(self)
@@ -576,12 +572,6 @@ impl DaemonPluginLoader {
         let lua = self.executor.lua();
         let authority = crucible_core::storage::Scope::workspace_unchecked(kiln_path);
 
-        crucible_lua::register_graph_module_with_store_scoped(
-            lua,
-            store.clone(),
-            authority.clone(),
-        )
-        .map_err(|e| anyhow::anyhow!("graph upgrade: {e}"))?;
         crucible_lua::register_vault_module_with_store_scoped(lua, store, authority)
             .map_err(|e| anyhow::anyhow!("vault upgrade: {e}"))?;
 

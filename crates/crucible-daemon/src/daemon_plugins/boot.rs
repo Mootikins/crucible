@@ -32,7 +32,7 @@ const BOOT_EVAL_BUDGET: Duration = Duration::from_secs(30);
 /// The `cru.*` namespaces that answer from daemon state. The kiln registry
 /// is built FROM the evaluation's output, so it cannot exist during it — a
 /// top-level read raises and the file moves it into a hook.
-const BOOT_GUARDED_NAMESPACES: [&str; 4] = ["kiln", "sessions", "storage", "graph"];
+const BOOT_GUARDED_NAMESPACES: [&str; 3] = ["kiln", "sessions", "storage"];
 
 /// What the boot `require` machinery learned, stored in the VM's app data.
 ///

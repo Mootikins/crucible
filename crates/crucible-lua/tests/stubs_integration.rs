@@ -50,8 +50,8 @@ fn ci_stubs_verification_generates_fresh_and_validates_content() {
         "Missing cru.kiln class annotation"
     );
     assert!(
-        stubs.contains("---@class cru.graph"),
-        "Missing cru.graph class annotation"
+        !stubs.contains("---@class cru.graph"),
+        "cru.graph is removed and must not be stubbed"
     );
     assert!(
         stubs.contains("---@class cru.http"),

@@ -42,28 +42,72 @@ end
 
 --- Absolute path to the tasks file.
 ---
---- An absolute `file` is taken as given. A relative one hangs off the kiln
---- root, falling back to the workspace and then to the path as written,
---- because `paths.kiln()` raises rather than returning nil when no kiln is
---- mounted (see `paths.rs`).
+--- The root a relative `file` hangs off: the ACTIVE kiln (by name, through
+--- `cru.kiln.path` — the one name-to-path API), else the workspace, else nil.
+local function resolve_root()
+    local active = cru.kiln and cru.kiln.active
+    if type(active) == "string" then
+        local ok, root = pcall(cru.kiln.path, active)
+        if ok and type(root) == "string" and root ~= "" then
+            return root
+        end
+    end
+    local ok, root = pcall(cru.paths.workspace)
+    if ok and type(root) == "string" and root ~= "" then
+        return root
+    end
+    return nil
+end
+
+--- Kiln-root resolution used to be dead in production (the daemon registers
+--- no kiln path on `cru.paths`), so an existing tasks file lives wherever the
+--- daemon's cwd happened to be. Now that the kiln arm is live, reading only
+--- the new location would make that list silently look empty — so say where
+--- the file used to resolve, once, and move NOTHING: never relocate user
+--- data on their behalf.
+local warned_legacy = false
+local function warn_if_legacy_file(resolved, legacy)
+    if warned_legacy then return end
+    local ok, seen = pcall(cru.fs.exists, resolved)
+    if ok and seen then return end
+    ok, seen = pcall(cru.fs.exists, legacy)
+    if not ok or not seen then return end
+    warned_legacy = true
+    cru.log("warn", string.format(
+        "todo-list: tasks now resolve to '%s', but a file exists at the old "
+            .. "cwd-relative location '%s'. Nothing was moved — move the old "
+            .. "file there if it is the one you want.",
+        resolved, legacy))
+end
+
+--- An absolute `file` is taken as given. A relative one hangs off the active
+--- kiln's root, falling back to the workspace and then to the path as written.
 local function tasks_file(args)
     local name = (args and args.file) or config.default_file
     if name:sub(1, 1) == "/" then
         return name
     end
-    for _, accessor in ipairs({ cru.paths.kiln, cru.paths.workspace }) do
-        local ok, root = pcall(accessor)
-        if ok and root and root ~= "" then
-            return cru.paths.join(root, name)
-        end
+    local root = resolve_root()
+    if root then
+        -- `name` is known relative here, so string concat is the join.
+        local path = root .. "/" .. name
+        warn_if_legacy_file(path, name)
+        return path
     end
     return name
 end
 
 --- Every line of the file, or nil if it does not exist.
 local function read_lines(path)
-    local ok, content = pcall(cru.fs.read, path)
-    if not ok or not content then
+    -- A missing file and an unreadable one land the same way: `io.open`
+    -- answers nil, and the caller treats the list as absent.
+    local handle = io.open(path, "r")
+    if not handle then
+        return nil
+    end
+    local content = handle:read("a")
+    handle:close()
+    if type(content) ~= "string" then
         return nil
     end
     local lines = {}
@@ -80,7 +124,16 @@ local function read_lines(path)
 end
 
 local function write_lines(path, lines)
-    return pcall(cru.fs.write, path, table.concat(lines, "\n") .. "\n")
+    local handle, open_err = io.open(path, "w")
+    if not handle then
+        return false, open_err
+    end
+    local wrote, write_err = handle:write(table.concat(lines, "\n") .. "\n")
+    handle:close()
+    if not wrote then
+        return false, write_err
+    end
+    return true
 end
 
 --- Parse tasks out of `lines`, in document order.

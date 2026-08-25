@@ -15,15 +15,32 @@
 cru.plugin = cru.plugin or {}
 local sessions = require("sessions")
 
-local STATE_FILE = "/state/discord/sessions.json"
 local DM_SESSION_TTL = 86400
+
+--- One REAL directory for the whole run, plus the state file inside it.
+---
+--- `sessions.lua` reads and writes with `io.open`, so the file has to exist on
+--- disk — an in-memory table cannot stand in for it. One directory, created on
+--- first use, because the state file outlives each test on purpose: entries
+--- written by an earlier test are exactly the entries a restart would find.
+--- `real_dirs` makes the `cru.fs.mkdir` mock create the directory for real.
+local state_root
+local STATE_FILE
+local function ensure_state_root()
+    if state_root then return end
+    test_mocks.setup({ fs = { real_dirs = true } })
+    state_root = os.tmpname()
+    os.remove(state_root)
+    cru.fs.mkdir(state_root .. "/discord")
+    STATE_FILE = state_root .. "/discord/sessions.json"
+end
 
 --- A session API that records what it was asked to do.
 ---
 --- Ids carry the caller's `prefix` because the state file outlives each test —
---- it is one in-memory mock filesystem for the whole run, which is the point:
---- entries written by an earlier test are exactly the entries a restart would
---- find. Two tests minting "state-1" would make "is this the id I created?"
+--- it is one real file on disk for the whole run, which is the point: entries
+--- written by an earlier test are exactly the entries a restart would find.
+--- Two tests minting "state-1" would make "is this the id I created?"
 --- unanswerable.
 local function recording_api(prefix)
     local calls = { created = {}, configured = 0, ended = {} }
@@ -42,17 +59,17 @@ end
 
 --- `cru.plugin.config`, `cru.sessions` and `cru.paths` are all absent from the
 --- plugin test VM — the daemon registers them, the bare executor the test
---- runner builds does not. `cru.fs` *is* present, as the harness's in-memory
---- mock, so every round trip below is a real `fs.write` followed by a real
---- `fs.read` rather than a stub agreeing with itself.
+--- runner builds does not. The file itself is REAL: every round trip below is
+--- an `io.open` write followed by an `io.open` read on disk, rather than a
+--- stub agreeing with itself.
 local function with_env(cfg, session_api, fn)
+    ensure_state_root()
     crucible = crucible or {}
     local had_config, had_sessions, had_paths = cru.plugin.config, cru.sessions, cru.paths
     cru.plugin.config = { get = function(key) return cfg[key] end }
     cru.sessions = session_api
     cru.paths = {
-        state = function(plugin) return "/state/" .. plugin end,
-        join = function(dir, name) return dir .. "/" .. name end,
+        state = function(plugin) return state_root .. "/" .. plugin end,
     }
 
     local ok, err = pcall(fn)
@@ -100,7 +117,10 @@ describe("DM session persistence", function()
             expect.truthy(id)
             expect.equals(1, #calls.created)
 
-            expect.truthy(cru.fs.exists(STATE_FILE))
+            -- A REAL file, not a mock record: `io.open` has no mock to agree with.
+            local handle = io.open(STATE_FILE, "r")
+            expect.truthy(handle)
+            if handle then handle:close() end
 
             local restored = sessions.load_from(STATE_FILE)
             local found
@@ -207,7 +227,9 @@ describe("DM session persistence", function()
     it("starts empty on an unreadable file rather than raising", function()
         local _, api = recording_api("misc")
         with_env(configured(), api, function()
-            cru.fs.write(STATE_FILE, "{not json")
+            local handle = assert(io.open(STATE_FILE, "w"))
+            handle:write("{not json")
+            handle:close()
             expect.deep_equal({}, sessions.load_from(STATE_FILE))
 
             local id = sessions.get_or_create("dm-after-corrupt", nil, "u-3")

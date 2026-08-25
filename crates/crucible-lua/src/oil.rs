@@ -6,9 +6,9 @@ use crate::error::LuaError;
 use crate::lua_util::register_module;
 use crucible_oil::template::html_to_node;
 use crucible_oil::{
-    badge, bullet_list, divider, fragment, horizontal_rule, if_else, key_value, numbered_list,
-    popup, popup_item, progress_bar, spacer, spinner, styled, text, text_input, when, Border,
-    BoxNode, Direction, Gap, Node, Padding, Style,
+    badge, bullet_list, divider, fragment, if_else, key_value, numbered_list, popup, popup_item,
+    progress_bar, spacer, spinner, styled, text, text_input, when, Border, BoxNode, Direction, Gap,
+    Node, Padding, Style,
 };
 use mlua::{
     FromLua, Function, Lua, MultiValue, Result as LuaResult, Table, UserData, UserDataMethods,
@@ -261,12 +261,11 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
     })?;
     oil.set("when", when_fn)?;
 
-    // cru.oil.either(condition, true_node, false_node) - also aliased as if_else
+    // cru.oil.either(condition, true_node, false_node)
     let either_fn = lua.create_function(|_, (cond, t, f): (bool, LuaNode, LuaNode)| {
         Ok(LuaNode(if_else(cond, t.0, f.0)))
     })?;
-    oil.set("either", either_fn.clone())?;
-    oil.set("if_else", either_fn)?;
+    oil.set("either", either_fn)?;
 
     // cru.oil.each(items, fn)
     let each_fn = lua.create_function(|_, (items, func): (Table, Function)| {
@@ -279,14 +278,6 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
         Ok(LuaNode(fragment(children)))
     })?;
     oil.set("each", each_fn)?;
-
-    // cru.oil.maybe(value, fn) — if value is non-nil, call fn(value); else return Empty
-    // NOTE: checks Value::Nil specifically — false, 0, "" all trigger the callback (NOT treated as nil)
-    let maybe_fn = lua.create_function(|_, (value, func): (Value, Function)| match value {
-        Value::Nil => Ok(LuaNode(Node::Empty)),
-        v => func.call::<LuaNode>(v),
-    })?;
-    oil.set("maybe", maybe_fn)?;
 
     // cru.oil.match_state(state, handlers) — table-driven state dispatch
     // handlers: { state_key = LuaNode|Function|string, _ = default }
@@ -380,10 +371,6 @@ pub fn register_oil_module(lua: &Lua) -> Result<(), LuaError> {
         Ok(LuaNode(divider(char, width.unwrap_or(80))))
     })?;
     oil.set("divider", divider_fn)?;
-
-    // cru.oil.hr()
-    let hr_fn = lua.create_function(|_, ()| Ok(LuaNode(horizontal_rule())))?;
-    oil.set("hr", hr_fn)?;
 
     // cru.oil.progress(value, width?)
     let progress_fn = lua.create_function(|_, (value, width): (f64, Option<u16>)| {
@@ -584,12 +571,14 @@ mod tests {
         assert!(oil.contains_key("spinner").unwrap());
         assert!(oil.contains_key("when").unwrap());
         assert!(oil.contains_key("either").unwrap());
-        assert!(oil.contains_key("if_else").unwrap());
         assert!(oil.contains_key("each").unwrap());
         assert!(oil.contains_key("markup").unwrap());
         assert!(oil.contains_key("component").unwrap());
-        assert!(oil.contains_key("maybe").unwrap());
         assert!(oil.contains_key("match_state").unwrap());
+        // Removed: if_else (use either), hr (use divider), maybe.
+        assert!(!oil.contains_key("if_else").unwrap());
+        assert!(!oil.contains_key("hr").unwrap());
+        assert!(!oil.contains_key("maybe").unwrap());
     }
 
     #[test]
@@ -744,47 +733,6 @@ mod tests {
             assert_eq!(children.len(), 3);
         } else {
             panic!("Expected Fragment node");
-        }
-    }
-
-    #[test]
-    fn test_oil_maybe_with_value() {
-        let lua = TestLuaBuilder::new().with_oil().build();
-        let result: LuaNode = lua
-            .load(r#"return cru.oil.maybe("hello", function(v) return cru.oil.text(v) end)"#)
-            .eval()
-            .unwrap();
-        if let Node::Text(t) = result.0 {
-            assert_eq!(t.content, "hello");
-        } else {
-            panic!("Expected Text node");
-        }
-    }
-
-    #[test]
-    fn test_oil_maybe_with_nil() {
-        let lua = TestLuaBuilder::new().with_oil().build();
-        let result: LuaNode = lua
-            .load(r#"return cru.oil.maybe(nil, function(v) return cru.oil.text("oops") end)"#)
-            .eval()
-            .unwrap();
-        assert!(matches!(result.0, Node::Empty));
-    }
-
-    #[test]
-    fn test_oil_maybe_with_false() {
-        // false is NOT nil — must trigger the callback, not return Empty
-        let lua = TestLuaBuilder::new().with_oil().build();
-        let result: LuaNode = lua
-            .load(
-                r#"return cru.oil.maybe(false, function(v) return cru.oil.text("got false") end)"#,
-            )
-            .eval()
-            .unwrap();
-        if let Node::Text(t) = result.0 {
-            assert_eq!(t.content, "got false");
-        } else {
-            panic!("Expected Text node — false must trigger callback, not return Empty");
         }
     }
 
@@ -1024,33 +972,6 @@ mod tests {
             assert_eq!(b.children.len(), 2);
         } else {
             panic!("Expected Box node from div, got {:?}", result.0);
-        }
-    }
-
-    #[test]
-    fn test_oil_if_else_alias() {
-        let lua = TestLuaBuilder::new().with_oil().build();
-
-        let result_true: LuaNode = lua
-            .load(r#"return cru.oil.if_else(true, cru.oil.text("yes"), cru.oil.text("no"))"#)
-            .eval()
-            .unwrap();
-
-        if let Node::Text(t) = result_true.0 {
-            assert_eq!(t.content, "yes");
-        } else {
-            panic!("Expected Text node");
-        }
-
-        let result_false: LuaNode = lua
-            .load(r#"return cru.oil.if_else(false, cru.oil.text("yes"), cru.oil.text("no"))"#)
-            .eval()
-            .unwrap();
-
-        if let Node::Text(t) = result_false.0 {
-            assert_eq!(t.content, "no");
-        } else {
-            panic!("Expected Text node");
         }
     }
 

@@ -252,23 +252,8 @@ impl LuaExecutor {
     fn setup_globals(lua: &Lua) -> Result<(), LuaError> {
         let globals = lua.globals();
 
-        // Create cru namespace and define fmt function
-        lua.load(
-            r#"
-cru = cru or {}
-function cru.fmt(template, vars)
-    vars = vars or {}
-    return (template:gsub("{(%w+)}", function(key)
-        local val = vars[key]
-        if val ~= nil then
-            return tostring(val)
-        end
-        return "{" .. key .. "}"
-    end))
-end
-"#,
-        )
-        .exec()?;
+        // Create the cru namespace — the one Lua root Crucible owns.
+        lua.load("cru = cru or {}").exec()?;
 
         let cru_ns: mlua::Table = globals.get("cru")?;
 
@@ -337,7 +322,7 @@ end
         register_fs_module(lua)?;
         crate::timer::register_timer_module(lua)?;
         crate::ratelimit::register_ratelimit_module(lua)?;
-        crate::lua_stdlib::register_lua_stdlib(lua)?;
+        crate::prelude::register_prelude(lua)?;
 
         Ok(())
     }
@@ -347,7 +332,7 @@ end
     /// Only the plugin test runner calls this. A production VM must not carry
     /// `describe`, `it`, `run_tests`, or the harness `assert` table.
     pub fn install_test_harness(&self) -> Result<(), LuaError> {
-        crate::lua_stdlib::register_test_harness(&self.lua).map_err(LuaError::from)
+        crate::prelude::register_test_harness(&self.lua).map_err(LuaError::from)
     }
 
     /// Compile Fennel source to Lua with this executor's compiler.
@@ -634,23 +619,22 @@ mod tests {
     /// The `pretty` option is the replacement for `oq.json_pretty`, so it
     /// must produce the same text.
     #[test]
-    fn json_encode_pretty_matches_oq_json_pretty() {
+    fn json_encode_pretty_produces_pretty_json() {
         let executor = LuaExecutor::new().unwrap();
-        crate::json_query::register_oq_module(executor.lua()).unwrap();
 
-        let (encoded, expected): (String, String) = executor
+        let encoded: String = executor
             .lua()
             .load(
                 r#"
-                local value = { name = "Alice", tags = { "a", "b" } }
-                return cru.json.encode(value, { pretty = true }), oq.json_pretty(value)
+                return cru.json.encode({ name = "Alice" }, { pretty = true })
                 "#,
             )
             .eval()
             .unwrap();
 
-        assert_eq!(encoded, expected);
-        assert!(encoded.contains('\n'), "pretty output must have lines");
+        // serde_json::to_string_pretty output, which is what oq.json_pretty
+        // produced before its removal.
+        assert_eq!(encoded, "{\n  \"name\": \"Alice\"\n}");
     }
 
     #[test]
@@ -673,77 +657,12 @@ mod tests {
     }
 
     #[test]
-    fn test_cru_fmt_basic_substitution() {
-        let executor = LuaExecutor::new().unwrap();
-
-        let result: String = executor
-            .lua()
-            .load(r#"return cru.fmt("Hello {name}", {name="world"})"#)
-            .eval()
-            .unwrap();
-
-        assert_eq!(result, "Hello world");
-    }
-
-    #[test]
-    fn test_cru_fmt_missing_key_preserved() {
-        let executor = LuaExecutor::new().unwrap();
-
-        let result: String = executor
-            .lua()
-            .load(r#"return cru.fmt("Missing {key}", {})"#)
-            .eval()
-            .unwrap();
-
-        assert_eq!(result, "Missing {key}");
-    }
-
-    #[test]
-    fn test_cru_fmt_number_conversion() {
-        let executor = LuaExecutor::new().unwrap();
-
-        let result: String = executor
-            .lua()
-            .load(r#"return cru.fmt("Count: {n}", {n=42})"#)
-            .eval()
-            .unwrap();
-
-        assert_eq!(result, "Count: 42");
-    }
-
-    #[test]
-    fn test_cru_fmt_multiple_placeholders() {
-        let executor = LuaExecutor::new().unwrap();
-
-        let result: String = executor
-            .lua()
-            .load(r#"return cru.fmt("{greeting} {name}!", {greeting="Hello", name="Alice"})"#)
-            .eval()
-            .unwrap();
-
-        assert_eq!(result, "Hello Alice!");
-    }
-
-    #[test]
-    fn test_cru_fmt_empty_vars() {
-        let executor = LuaExecutor::new().unwrap();
-
-        let result: String = executor
-            .lua()
-            .load(r#"return cru.fmt("No placeholders", {})"#)
-            .eval()
-            .unwrap();
-
-        assert_eq!(result, "No placeholders");
-    }
-
-    #[test]
     fn test_http_module_available() {
         let executor = LuaExecutor::new().unwrap();
 
         let result: bool = executor
             .lua()
-            .load(r#"return http ~= nil and type(http.get) == "function""#)
+            .load(r#"return type(cru.http.get) == "function""#)
             .eval()
             .unwrap();
 
@@ -756,11 +675,11 @@ mod tests {
 
         let result: bool = executor
             .lua()
-            .load(r#"return fs ~= nil and type(fs.read) == "function""#)
+            .load(r#"return type(cru.fs.exists) == "function""#)
             .eval()
             .unwrap();
 
-        assert!(result, "fs module should be available with read function");
+        assert!(result, "fs module should be available with exists function");
     }
 
     #[test]
@@ -771,8 +690,8 @@ mod tests {
             .lua()
             .load(
                 r#"
-                local has_http = http ~= nil and type(http.get) == "function" and type(http.post) == "function"
-                local has_fs = fs ~= nil and type(fs.read) == "function" and type(fs.write) == "function"
+                local has_http = type(cru.http.get) == "function" and type(cru.http.post) == "function"
+                local has_fs = type(cru.fs.mkdir) == "function" and type(cru.fs.exists) == "function"
                 return has_http and has_fs
             "#,
             )

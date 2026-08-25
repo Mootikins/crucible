@@ -4,9 +4,10 @@
 --- daemon's cwd is wherever it was spawned (`%h` for the systemd unit, the
 --- repo root for a shell-started one), so a relative `Journal/` meant a
 --- different destination for every user and dropped a stray `Journal/` next to
---- whatever directory the daemon happened to start in. Same reason the plugin
---- goes through `cru.fs` rather than `io.open` and `os.execute("mkdir -p")`:
---- the shell form interpolated a config value into a command line unescaped.
+--- whatever directory the daemon happened to start in. Files are read and
+--- written with `io.open`; directories go through `cru.fs.mkdir` rather than
+--- `os.execute("mkdir -p")`, because the shell form interpolated a config
+--- value into a command line unescaped.
 
 local M = {}
 
@@ -37,18 +38,58 @@ end
 --- Where notes live, as an absolute path.
 ---
 --- An absolute `folder` is taken as given — that is how a user puts their
---- journal outside the kiln. A relative one hangs off the kiln root, falling
---- back to the workspace and finally to the cwd, because `paths.kiln()` raises
---- rather than returning nil when no kiln is mounted (see `paths.rs`).
+--- journal outside the kiln. A relative one hangs off the ACTIVE kiln's root
+--- (by name, through `cru.kiln.path` — the one name-to-path API), falling
+--- back to the workspace and finally to the cwd.
+---
+--- Kiln-root resolution used to be dead in production (the daemon registers
+--- no kiln path on `cru.paths`), so an existing journal lives wherever the
+--- daemon's cwd happened to be. Now that the kiln arm is live, reading only
+--- the new location would make that journal silently look empty — so say
+--- where it used to resolve, once, and move NOTHING: never relocate user
+--- data on their behalf.
+local warned_legacy = false
+local function warn_if_legacy_dir(resolved)
+    if warned_legacy then return end
+    local ok, seen = pcall(cru.fs.is_dir, resolved)
+    if ok and seen then return end
+    ok, seen = pcall(cru.fs.is_dir, config.folder)
+    if not ok or not seen then return end
+    warned_legacy = true
+    cru.log("warn", string.format(
+        "daily-notes: notes now resolve to '%s', but a directory exists at "
+            .. "the old cwd-relative location '%s'. Nothing was moved — move "
+            .. "the old directory there if it is the one you want.",
+        resolved, config.folder))
+end
+
+--- The root the journal folder hangs off: the active kiln, else the
+--- workspace, else nil.
+local function resolve_root()
+    local active = cru.kiln and cru.kiln.active
+    if type(active) == "string" then
+        local ok, root = pcall(cru.kiln.path, active)
+        if ok and type(root) == "string" and root ~= "" then
+            return root
+        end
+    end
+    local ok, root = pcall(cru.paths.workspace)
+    if ok and type(root) == "string" and root ~= "" then
+        return root
+    end
+    return nil
+end
+
 local function notes_dir()
     if config.folder:sub(1, 1) == "/" then
         return config.folder
     end
-    for _, accessor in ipairs({ cru.paths.kiln, cru.paths.workspace }) do
-        local ok, root = pcall(accessor)
-        if ok and root and root ~= "" then
-            return cru.paths.join(root, config.folder)
-        end
+    local root = resolve_root()
+    if root then
+        -- `config.folder` is known relative here, so concat is the join.
+        local dir = root .. "/" .. config.folder
+        warn_if_legacy_dir(dir)
+        return dir
     end
     return config.folder
 end
@@ -58,7 +99,7 @@ local function date_string(timestamp)
 end
 
 local function note_path(timestamp)
-    return cru.paths.join(notes_dir(), date_string(timestamp) .. ".md")
+    return notes_dir() .. "/" .. date_string(timestamp) .. ".md"
 end
 
 --- `nil` for a missing or unreadable template, so a bad path degrades to the
@@ -67,10 +108,14 @@ local function read_template()
     if config.template == "" then
         return nil
     end
-    local ok, content = pcall(cru.fs.read, config.template)
-    if not ok then
+    -- A missing template and an unreadable one land the same way: `io.open`
+    -- answers nil, and the built-in body is used.
+    local handle = io.open(config.template, "r")
+    if not handle then
         return nil
     end
+    local content = handle:read("a")
+    handle:close()
     return content
 end
 
@@ -95,7 +140,12 @@ local function create_note(timestamp)
         content = default_body(date_str)
     end
 
-    local wrote, write_err = pcall(cru.fs.write, path, content)
+    local handle, open_err = io.open(path, "w")
+    if not handle then
+        return nil, "Cannot create file: " .. tostring(open_err)
+    end
+    local wrote, write_err = handle:write(content)
+    handle:close()
     if not wrote then
         return nil, "Cannot create file: " .. tostring(write_err)
     end

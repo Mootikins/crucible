@@ -56,7 +56,6 @@ pub fn register_mcp_module_stub(lua: &Lua) -> Result<(), LuaError> {
         lua.create_function(|_, (_server, _tool): (String, String)| Ok(false))?,
     )?;
 
-    lua.globals().set("mcp", mcp.clone())?;
     crate::lua_util::register_module(lua, "mcp", mcp)?;
 
     Ok(())
@@ -73,20 +72,23 @@ mod tests {
         register_mcp_module_stub(&lua).unwrap();
 
         // All operations should work but return empty/error results
-        let tools: Table = lua.load(r#"return mcp.list_tools("any")"#).eval().unwrap();
+        let tools: Table = lua
+            .load(r#"return cru.mcp.list_tools("any")"#)
+            .eval()
+            .unwrap();
         assert_eq!(tools.raw_len(), 0);
 
-        let servers: Table = lua.load(r#"return mcp.servers()"#).eval().unwrap();
+        let servers: Table = lua.load(r#"return cru.mcp.servers()"#).eval().unwrap();
         assert_eq!(servers.raw_len(), 0);
 
         let has: bool = lua
-            .load(r#"return mcp.has_tool("any", "tool")"#)
+            .load(r#"return cru.mcp.has_tool("any", "tool")"#)
             .eval()
             .unwrap();
         assert!(!has);
 
         let result: Table = lua
-            .load(r#"return mcp.call("any", "tool", {})"#)
+            .load(r#"return cru.mcp.call("any", "tool", {})"#)
             .eval()
             .unwrap();
         assert!(!result.get::<bool>("success").unwrap());

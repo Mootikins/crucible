@@ -522,8 +522,6 @@ pub fn register_shell_module(lua: &Lua, policy: PluginShellPolicy) -> Result<(),
     })?;
     shell.set("which", which_fn)?;
 
-    // Register shell module globally
-    lua.globals().set("shell", shell.clone())?;
     crate::lua_util::register_module(lua, "shell", shell)?;
 
     Ok(())

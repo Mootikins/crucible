@@ -22,8 +22,9 @@ local function default_fixtures()
         -- `roots` maps a kiln NAME to a directory, which is the one thing
         -- `cru.kiln.path` does. Empty by default: a test that stages files
         -- names its own directory, so nothing writes to a guessed path.
+        -- `active` mirrors the daemon's `cru.kiln.active` string field: absent
+        -- by default, the way a daemon with no open kiln leaves it nil.
         kiln = { notes = {}, outlinks = {}, backlinks = {}, neighbors = {}, roots = {} },
-        graph = { notes = {}, outlinks = {}, backlinks = {}, neighbors = {} },
         http = { responses = {} },
         -- `real_dirs` makes the `mkdir` mock create the directory for real, as
         -- well as recording the call. A plugin that writes with `io.open`
@@ -31,9 +32,10 @@ local function default_fixtures()
         -- one. Off by default, so no suite touches the disk by accident.
         fs = { files = {}, dirs = {}, real_dirs = false },
         -- Absolute by default: a plugin that resolves its files against the
-        -- kiln has to be testable without the assertion depending on where the
-        -- daemon happened to be started.
-        paths = { kiln = "/mock/kiln", workspace = "/mock/workspace", session = false, state = "/mock/state" },
+        -- workspace has to be testable without the assertion depending on
+        -- where the daemon happened to be started. No `kiln` entry: kiln
+        -- resolution goes through `cru.kiln.path`, in tests as in production.
+        paths = { workspace = "/mock/workspace", session = false, state = "/mock/state" },
         session = { temperature = 0.7, max_tokens = nil, model = "mock-model", mode = "act", thinking_budget = nil },
         -- `info` mirrors the bridge's `get_session` payload: kiln NAMES in a
         -- `kilns` array, never kiln paths (see session_bridge.rs).
@@ -81,6 +83,8 @@ end
 local function create_kiln_mock(fixtures)
     local f = fixtures.kiln
     return {
+        -- A plain string, not a function — the daemon sets it the same way.
+        active = f.active,
         list = function(limit)
             record_call("kiln", "list", limit)
             local notes = f.notes or {}
@@ -123,23 +127,6 @@ local function create_kiln_mock(fixtures)
     }
 end
 
-local function create_graph_mock(fixtures)
-    local f = fixtures.graph
-    return {
-        get_note = function(path)
-            record_call("graph", "get_note", path)
-            for _, note in ipairs(f.notes or {}) do
-                if note.path == path then return deep_copy(note) end
-            end
-            return nil
-        end,
-        get_outlinks = link_lookup("graph", f, "outlinks"),
-        get_backlinks = link_lookup("graph", f, "backlinks"),
-        get_neighbors = link_lookup("graph", f, "neighbors"),
-        search_semantic = note_search("graph", f, "search_semantic", 0.9),
-    }
-end
-
 local function create_http_mock(fixtures)
     local default_resp = { status = 200, body = "", ok = true, headers = {} }
     local function respond(method, url, opts)
@@ -177,6 +164,14 @@ local function create_fs_mock(fixtures)
         exists = function(path)
             record_call("fs", "exists", path)
             return files[path] ~= nil or dirs[path] ~= nil
+        end,
+        is_file = function(path)
+            record_call("fs", "is_file", path)
+            return files[path] ~= nil
+        end,
+        is_dir = function(path)
+            record_call("fs", "is_dir", path)
+            return dirs[path] ~= nil
         end,
         mkdir = function(path)
             record_call("fs", "mkdir", path)
@@ -227,27 +222,12 @@ local function create_paths_mock(fixtures)
         end
     end
     return {
-        kiln = accessor("kiln"),
         workspace = accessor("workspace"),
         session = accessor("session"),
         state = function(plugin)
             record_call("paths", "state", plugin)
             if not f.state then error("state path not configured") end
             return f.state .. "/" .. plugin
-        end,
-        -- Matches PathBuf::push: an absolute component discards what preceded it.
-        join = function(...)
-            local parts = {}
-            for _, part in ipairs({ ... }) do
-                if type(part) == "string" and part ~= "" then
-                    if part:sub(1, 1) == "/" then
-                        parts = { (part:gsub("/+$", "")) }
-                    else
-                        table.insert(parts, (part:gsub("^/+", ""):gsub("/+$", "")))
-                    end
-                end
-            end
-            return (table.concat(parts, "/"))
         end,
     }
 end
@@ -325,15 +305,11 @@ function test_mocks.setup(overrides)
     _calls = {}
     cru = cru or {}
     cru.kiln = create_kiln_mock(_fixtures)
-    cru.graph = create_graph_mock(_fixtures)
     cru.http = create_http_mock(_fixtures)
     cru.fs = create_fs_mock(_fixtures)
     cru.paths = create_paths_mock(_fixtures)
     cru.session = create_session_mock(_fixtures)
     cru.sessions = create_sessions_mock(_fixtures)
-    http = cru.http
-    fs = cru.fs
-    paths = cru.paths
 end
 
 function test_mocks.reset()

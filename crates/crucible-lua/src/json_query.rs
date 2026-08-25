@@ -16,12 +16,10 @@
 //! local obj = oq.parse_as('name: Alice', 'yaml')
 //! local obj = oq.parse_as('name = "Alice"', 'toml')
 //!
-//! -- Encode to different formats
-//! local json_str = oq.json(obj)           -- {"name":"Alice","age":30}
+//! -- Encode to different formats (JSON encoding lives on cru.json.encode)
 //! local yaml_str = oq.yaml(obj)           -- name: Alice\nage: 30
 //! local toml_str = oq.toml(obj)           -- name = "Alice"
 //! local toon_str = oq.toon(obj)           -- name: Alice\nage: 30
-//! local pretty = oq.json_pretty(obj)      -- Pretty-printed JSON
 //!
 //! -- Format conversion
 //! local yaml = oq.convert(obj, 'yaml')
@@ -300,20 +298,6 @@ pub fn register_oq_module(lua: &Lua) -> Result<(), LuaError> {
     })?;
     oq.set("parse_as", parse_as_fn)?;
 
-    // oq.json(table) -> string (compact JSON)
-    let json_fn = lua.create_function(|lua, value: Value| {
-        let json = lua_to_json(lua, value).map_err(mlua::Error::external)?;
-        serde_json::to_string(&json).map_err(mlua::Error::external)
-    })?;
-    oq.set("json", json_fn)?;
-
-    // oq.json_pretty(table) -> string (pretty-printed JSON)
-    let json_pretty_fn = lua.create_function(|lua, value: Value| {
-        let json = lua_to_json(lua, value).map_err(mlua::Error::external)?;
-        serde_json::to_string_pretty(&json).map_err(mlua::Error::external)
-    })?;
-    oq.set("json_pretty", json_pretty_fn)?;
-
     // oq.toon(table) -> string (TOON format)
     let toon_fn = lua.create_function(|lua, value: Value| {
         let json = lua_to_json(lua, value).map_err(mlua::Error::external)?;
@@ -510,39 +494,16 @@ mod tests {
     }
 
     #[test]
-    fn test_oq_json_encoding() {
-        let lua = TestLuaBuilder::new().with_json_query().build();
-        let result: String = lua
-            .load(r#"return oq.json({ name = "Bob", age = 25 })"#)
-            .eval()
-            .unwrap();
-
-        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
-        assert_eq!(parsed["name"], "Bob");
-        assert_eq!(parsed["age"], 25);
-    }
-
-    #[test]
-    fn test_oq_json_pretty() {
-        let lua = TestLuaBuilder::new().with_json_query().build();
-        let result: String = lua
-            .load(r#"return oq.json_pretty({ name = "Alice" })"#)
-            .eval()
-            .unwrap();
-
-        assert!(result.contains('\n'));
-        assert!(result.contains("  ")); // indentation
-    }
-
-    #[test]
     fn test_oq_roundtrip() {
+        // `oq.json`/`oq.json_pretty` are removed (cru.json.encode owns JSON
+        // encoding); the encode->parse roundtrip lives on through yaml.
         let lua = TestLuaBuilder::new().with_json_query().build();
         let result: bool = lua
             .load(
                 r#"
                 local original = { name = "Test", values = { 1, 2, 3 }, nested = { x = 10 } }
-                local encoded = oq.json(original)
-                local decoded = oq.parse(encoded)
+                local encoded = oq.yaml(original)
+                local decoded = oq.parse_as(encoded, "yaml")
                 return decoded.name == "Test" and decoded.nested.x == 10
             "#,
             )
@@ -686,12 +647,14 @@ age: 30
     fn test_oq_null() {
         let lua = TestLuaBuilder::new().with_json_query().build();
         let result: String = lua
-            .load(r#"return oq.json({ value = oq.null })"#)
+            .load(r#"return oq.yaml({ value = oq.null })"#)
             .eval()
             .unwrap();
 
-        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
-        assert!(parsed["value"].is_null());
+        assert!(
+            result.contains("null"),
+            "the null marker must encode as null: {result}"
+        );
     }
 
     // =========================================================================

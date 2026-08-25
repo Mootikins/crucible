@@ -1,141 +1,75 @@
-//! File system module for Lua scripts
+//! File system module for Lua scripts — the reduced surface.
 //!
-//! Provides file system operations with async support.
-//!
-//! ## Usage in Lua
+//! Only what the Lua standard library cannot do (or cannot do safely) lives
+//! here. Files are read and written with `io.open`; this module covers
+//! directories and file-type queries:
 //!
 //! ```lua
-//! -- Read a file
-//! local content = fs.read("input.txt")
-//!
-//! -- Write to a file (creates or overwrites)
-//! fs.write("output.txt", "Hello, world!")
-//!
-//! -- Append to a file
-//! fs.append("log.txt", "New log entry\n")
-//!
 //! -- Create directory (with parents)
-//! fs.mkdir("path/to/new/dir")
+//! cru.fs.mkdir("path/to/new/dir")
 //!
 //! -- Check if path exists
-//! if fs.exists("config.toml") then
+//! if cru.fs.exists("config.toml") then
 //!     -- ...
 //! end
 //!
-//! -- Remove a file or directory
-//! fs.remove("temp.txt")
+//! -- Check file type
+//! if cru.fs.is_file("path") then ... end
+//! if cru.fs.is_dir("path") then ... end
 //!
 //! -- List directory contents
-//! local entries = fs.list("path/to/dir")
+//! local entries = cru.fs.list("path/to/dir")
 //!
 //! -- Copy a file
-//! fs.copy("src.txt", "dest.txt")
+//! cru.fs.copy("src.txt", "dest.txt")
 //!
-//! -- Move/rename a file
-//! fs.rename("old.txt", "new.txt")
-//!
-//! -- Check file type
-//! if fs.is_file("path") then ... end
-//! if fs.is_dir("path") then ... end
+//! -- Remove a directory tree (recursive; for one file, use os.remove)
+//! cru.fs.remove_all("path/to/dir")
 //! ```
+//!
+//! Two guards survive the reduction, because each prevents a SILENT wrong
+//! outcome that a plain removal cannot:
+//!
+//! - `cru.fs.remove` stays registered as a function that always raises,
+//!   naming both replacements. The name's meaning changed (recursive versus
+//!   single-file), so a caller must be told which side it is now on rather
+//!   than handed a nil — a data-loss guard, not a shim.
+//! - Every function refuses the retired `kiln://` scheme. Without that,
+//!   `mkdir("kiln://n/x")` silently creates a garbage `./kiln:/n/x` tree
+//!   under the daemon's cwd, and `exists` answers a well-formed false. Use
+//!   `cru.kiln.path(name, rel)` and plain paths instead.
 
 use crate::error::LuaError;
 use crate::error_ext::LuaResultExt;
 use mlua::Lua;
-#[cfg(test)]
-use mlua::Table;
 use std::fs;
-use std::io::Write;
-use std::path::{Component, Path, PathBuf};
-#[cfg(test)]
-use std::sync::Arc;
+use std::path::Path;
 
-pub use crate::vault::KilnPathResolver;
-
-/// The scheme that addresses a kiln by name: `kiln://<name>/<relative>`.
-const KILN_SCHEME: &str = "kiln://";
-
-/// Resolve one caller-supplied path.
+/// Refuse the retired `kiln://` scheme, permanently.
 ///
-/// A plain path passes through unchanged. A `kiln://` path resolves through
-/// the injected resolver, and containment holds here, once, for every
-/// `cru.fs` function:
-///
-/// - The part after the kiln name must be plain relative components — no
-///   `..`, no `.`, no absolute part.
-/// - The deepest existing ancestor of the result must canonicalize into the
-///   canonicalized kiln root. This refuses a symlinked intermediate
-///   directory, and a dangling symlink at the target.
-///
-/// No error here echoes a resolved directory. The scheme exists so a plugin
-/// addresses a kiln it knows by NAME without learning where it lives; an
-/// error that prints the root would undo that.
-fn resolve_path(path: &str, resolver: Option<&KilnPathResolver>) -> Result<PathBuf, LuaError> {
-    let Some(rest) = path.strip_prefix(KILN_SCHEME) else {
-        return Ok(PathBuf::from(path));
-    };
-    let Some(resolver) = resolver else {
-        return Err(LuaError::Runtime(format!(
-            "'{path}': kiln:// paths are not available in this runtime"
-        )));
-    };
-    let (name, relative) = rest.split_once('/').unwrap_or((rest, ""));
-    if name.is_empty() {
-        return Err(LuaError::Runtime(
-            "a kiln:// path needs a kiln name: kiln://<name>/<relative>".to_string(),
-        ));
+/// A refusal of retired syntax, not a resolver: the scheme used to carry a
+/// kiln name through single-string path arguments, and `cru.kiln.path`
+/// replaced it. Every registered function checks its path arguments here
+/// first, so the scheme can neither resolve nor pass through as a relative
+/// path.
+fn checked(path: &str) -> Result<&Path, mlua::Error> {
+    if path.starts_with("kiln://") {
+        return Err(mlua::Error::external(LuaError::Runtime(format!(
+            "'{path}': kiln:// is removed; use cru.kiln.path(name, rel)"
+        ))));
     }
-    let root = resolver(name).map_err(LuaError::Runtime)?;
-
-    let mut resolved = root.clone();
-    for component in Path::new(relative).components() {
-        match component {
-            Component::Normal(part) => resolved.push(part),
-            _ => {
-                return Err(LuaError::Runtime(format!(
-                    "'{path}': the part after the kiln name must be plain \
-                     relative components — no '..', '.' or absolute part"
-                )));
-            }
-        }
-    }
-
-    let canonical_root = fs::canonicalize(&root)
-        .map_err(|e| LuaError::Runtime(format!("kiln '{name}' is not reachable: {e}")))?;
-    // The deepest ancestor that exists, by lstat. A dangling symlink counts
-    // as existing here, so `canonicalize` fails on it below — the loop must
-    // not step past it, or a write would create the link's target.
-    let mut existing = resolved.as_path();
-    while existing.symlink_metadata().is_err() {
-        match existing.parent() {
-            Some(parent) => existing = parent,
-            None => break,
-        }
-    }
-    let canonical = fs::canonicalize(existing).map_err(|e| {
-        LuaError::Runtime(format!(
-            "'{path}': cannot resolve inside kiln '{name}': {e}"
-        ))
-    })?;
-    if !canonical.starts_with(&canonical_root) {
-        return Err(LuaError::Runtime(format!(
-            "'{path}': resolves outside kiln '{name}'; refused"
-        )));
-    }
-    Ok(resolved)
+    Ok(Path::new(path))
 }
 
-/// Create the parent directory of `path` when it does not exist.
-///
-/// `shown` is the caller's own spelling of the path. Error text uses it
-/// instead of `path`, so a `kiln://` caller never sees the resolved
-/// directory.
-fn ensure_parent(path: &Path, shown: &str) -> Result<(), LuaError> {
+/// Create the parent directory of `dest` when it does not exist, so `copy`
+/// into a new directory keeps working the way it always has.
+fn ensure_parent(path: &Path) -> Result<(), LuaError> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() && !parent.exists() {
             fs::create_dir_all(parent).map_err(|e| {
                 LuaError::Runtime(format!(
-                    "Failed to create parent directory for '{shown}': {e}"
+                    "Failed to create parent directory for '{}': {e}",
+                    path.display()
                 ))
             })?;
         }
@@ -143,197 +77,84 @@ fn ensure_parent(path: &Path, shown: &str) -> Result<(), LuaError> {
     Ok(())
 }
 
-/// Read file contents to string
-fn read_file(path: &Path) -> Result<String, LuaError> {
-    fs::read_to_string(path).lua_runtime()
-}
-
-/// Write content to file (creates or overwrites)
-fn write_file(path: &Path, shown: &str, content: &str) -> Result<(), LuaError> {
-    ensure_parent(path, shown)?;
-
-    fs::write(path, content).lua_runtime()
-}
-
-/// Append content to file (creates if doesn't exist)
-fn append_file(path: &Path, shown: &str, content: &str) -> Result<(), LuaError> {
-    ensure_parent(path, shown)?;
-
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .lua_runtime()?;
-
-    file.write_all(content.as_bytes()).lua_runtime()
-}
-
-/// Create directory and all parent directories
-fn mkdir(path: &Path) -> Result<(), LuaError> {
-    fs::create_dir_all(path).lua_runtime()
-}
-
-/// Remove a file or directory
-fn remove(path: &Path) -> Result<(), LuaError> {
-    if path.is_dir() {
-        fs::remove_dir_all(path).lua_runtime()
-    } else {
-        fs::remove_file(path).lua_runtime()
-    }
-}
-
-/// List directory contents
-fn list_dir(path: &Path) -> Result<Vec<String>, LuaError> {
-    let entries = fs::read_dir(path).lua_runtime()?;
-
-    let mut result = Vec::new();
-    for entry in entries {
-        let entry = entry.lua_runtime()?;
-        if let Some(name) = entry.file_name().to_str() {
-            result.push(name.to_string());
-        }
-    }
-    Ok(result)
-}
-
-/// Copy a file
-fn copy_file(src: &Path, dest: &Path, shown_dest: &str) -> Result<(), LuaError> {
-    ensure_parent(dest, shown_dest)?;
-
-    fs::copy(src, dest).lua_runtime()?;
-    Ok(())
-}
-
-/// Rename/move a file or directory
-fn rename_file(src: &Path, dest: &Path, shown_dest: &str) -> Result<(), LuaError> {
-    ensure_parent(dest, shown_dest)?;
-
-    fs::rename(src, dest).lua_runtime()
-}
-
-/// Register the fs module with no kiln resolver.
-///
-/// `kiln://` paths are refused with a clear error. A host that can map a
-/// kiln name to a directory uses [`register_fs_module_with_resolver`].
+/// Register the fs module.
 pub fn register_fs_module(lua: &Lua) -> Result<(), LuaError> {
-    register_fs(lua, None)
-}
-
-/// Register the fs module with a kiln-name resolver, so every `cru.fs`
-/// function also accepts `kiln://<name>/<relative>` beside plain paths.
-///
-/// Registration replaces an earlier fs table, so a host upgrades the plain
-/// registration once it can resolve names.
-pub fn register_fs_module_with_resolver(
-    lua: &Lua,
-    resolver: KilnPathResolver,
-) -> Result<(), LuaError> {
-    register_fs(lua, Some(resolver))
-}
-
-/// One registration body for both entry points. Every function resolves its
-/// path arguments through [`resolve_path`], so `kiln://` support and its
-/// containment cannot differ between functions.
-fn register_fs(lua: &Lua, resolver: Option<KilnPathResolver>) -> Result<(), LuaError> {
     let fs_table = lua.create_table()?;
 
-    // fs.read(path) -> string
-    let r = resolver.clone();
-    let read_fn = lua.create_function(move |_lua, path: String| {
-        let target = resolve_path(&path, r.as_ref()).map_err(mlua::Error::external)?;
-        read_file(&target).map_err(mlua::Error::external)
-    })?;
-    fs_table.set("read", read_fn)?;
-
-    // fs.write(path, content) -> nil
-    let r = resolver.clone();
-    let write_fn = lua.create_function(move |_lua, (path, content): (String, String)| {
-        let target = resolve_path(&path, r.as_ref()).map_err(mlua::Error::external)?;
-        write_file(&target, &path, &content).map_err(mlua::Error::external)
-    })?;
-    fs_table.set("write", write_fn)?;
-
-    // fs.append(path, content) -> nil
-    let r = resolver.clone();
-    let append_fn = lua.create_function(move |_lua, (path, content): (String, String)| {
-        let target = resolve_path(&path, r.as_ref()).map_err(mlua::Error::external)?;
-        append_file(&target, &path, &content).map_err(mlua::Error::external)
-    })?;
-    fs_table.set("append", append_fn)?;
-
-    // fs.mkdir(path) -> nil
-    let r = resolver.clone();
-    let mkdir_fn = lua.create_function(move |_lua, path: String| {
-        let target = resolve_path(&path, r.as_ref()).map_err(mlua::Error::external)?;
-        mkdir(&target).map_err(mlua::Error::external)
+    // fs.mkdir(path) -> nil — creates parents, like `mkdir -p`.
+    let mkdir_fn = lua.create_function(|_lua, path: String| {
+        let target = checked(&path)?;
+        fs::create_dir_all(target)
+            .lua_runtime()
+            .map_err(mlua::Error::external)
     })?;
     fs_table.set("mkdir", mkdir_fn)?;
 
     // fs.exists(path) -> bool
-    let r = resolver.clone();
-    let exists_fn = lua.create_function(move |_lua, path: String| {
-        let target = resolve_path(&path, r.as_ref()).map_err(mlua::Error::external)?;
-        Ok(target.exists())
-    })?;
+    let exists_fn = lua.create_function(|_lua, path: String| Ok(checked(&path)?.exists()))?;
     fs_table.set("exists", exists_fn)?;
 
     // fs.is_file(path) -> bool
-    let r = resolver.clone();
-    let is_file_fn = lua.create_function(move |_lua, path: String| {
-        let target = resolve_path(&path, r.as_ref()).map_err(mlua::Error::external)?;
-        Ok(target.is_file())
-    })?;
+    let is_file_fn = lua.create_function(|_lua, path: String| Ok(checked(&path)?.is_file()))?;
     fs_table.set("is_file", is_file_fn)?;
 
     // fs.is_dir(path) -> bool
-    let r = resolver.clone();
-    let is_dir_fn = lua.create_function(move |_lua, path: String| {
-        let target = resolve_path(&path, r.as_ref()).map_err(mlua::Error::external)?;
-        Ok(target.is_dir())
-    })?;
+    let is_dir_fn = lua.create_function(|_lua, path: String| Ok(checked(&path)?.is_dir()))?;
     fs_table.set("is_dir", is_dir_fn)?;
 
-    // fs.remove(path) -> nil
-    let r = resolver.clone();
-    let remove_fn = lua.create_function(move |_lua, path: String| {
-        let target = resolve_path(&path, r.as_ref()).map_err(mlua::Error::external)?;
-        remove(&target).map_err(mlua::Error::external)
+    // fs.remove_all(path) -> nil — recursive delete, under a name that says
+    // so. For one file, stdlib `os.remove` is the tool.
+    let remove_all_fn = lua.create_function(|_lua, path: String| {
+        let target = checked(&path)?;
+        fs::remove_dir_all(target)
+            .lua_runtime()
+            .map_err(mlua::Error::external)
+    })?;
+    fs_table.set("remove_all", remove_all_fn)?;
+
+    // fs.remove — the data-loss guard. Always raises: the caller expected
+    // either a recursive delete or a single-file delete, and silently
+    // guessing (or handing back a nil) risks deleting the wrong amount.
+    let remove_fn = lua.create_function(|_lua, _path: String| -> mlua::Result<()> {
+        Err(mlua::Error::external(LuaError::Runtime(
+            "cru.fs.remove is removed: use cru.fs.remove_all (recursive) \
+             or os.remove (single file)"
+                .to_string(),
+        )))
     })?;
     fs_table.set("remove", remove_fn)?;
 
     // fs.list(path) -> table of strings
-    let r = resolver.clone();
-    let list_fn = lua.create_function(move |lua, path: String| {
-        let target = resolve_path(&path, r.as_ref()).map_err(mlua::Error::external)?;
-        let entries = list_dir(&target).map_err(mlua::Error::external)?;
+    let list_fn = lua.create_function(|lua, path: String| {
+        let target = checked(&path)?;
+        let entries = fs::read_dir(target)
+            .lua_runtime()
+            .map_err(mlua::Error::external)?;
         let table = lua.create_table()?;
-        for (i, entry) in entries.into_iter().enumerate() {
-            table.set(i + 1, entry)?; // Lua arrays are 1-indexed
+        let mut i = 0;
+        for entry in entries {
+            let entry = entry.lua_runtime().map_err(mlua::Error::external)?;
+            if let Some(name) = entry.file_name().to_str() {
+                i += 1;
+                table.set(i, name.to_string())?; // Lua arrays are 1-indexed
+            }
         }
         Ok(table)
     })?;
     fs_table.set("list", list_fn)?;
 
-    // fs.copy(src, dest) -> nil
-    let r = resolver.clone();
-    let copy_fn = lua.create_function(move |_lua, (src, dest): (String, String)| {
-        let from = resolve_path(&src, r.as_ref()).map_err(mlua::Error::external)?;
-        let to = resolve_path(&dest, r.as_ref()).map_err(mlua::Error::external)?;
-        copy_file(&from, &to, &dest).map_err(mlua::Error::external)
+    // fs.copy(src, dest) -> nil — creates dest's parent, as it always has.
+    let copy_fn = lua.create_function(|_lua, (src, dest): (String, String)| {
+        let from = checked(&src)?;
+        let to = checked(&dest)?;
+        ensure_parent(to).map_err(mlua::Error::external)?;
+        fs::copy(from, to)
+            .lua_runtime()
+            .map_err(mlua::Error::external)?;
+        Ok(())
     })?;
     fs_table.set("copy", copy_fn)?;
 
-    // fs.rename(src, dest) -> nil
-    let r = resolver.clone();
-    let rename_fn = lua.create_function(move |_lua, (src, dest): (String, String)| {
-        let from = resolve_path(&src, r.as_ref()).map_err(mlua::Error::external)?;
-        let to = resolve_path(&dest, r.as_ref()).map_err(mlua::Error::external)?;
-        rename_file(&from, &to, &dest).map_err(mlua::Error::external)
-    })?;
-    fs_table.set("rename", rename_fn)?;
-
-    // Register fs module globally
-    lua.globals().set("fs", fs_table.clone())?;
     crate::lua_util::register_module(lua, "fs", fs_table)?;
 
     Ok(())
@@ -342,6 +163,7 @@ fn register_fs(lua: &Lua, resolver: Option<KilnPathResolver>) -> Result<(), LuaE
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mlua::Table;
     use tempfile::TempDir;
 
     fn create_lua() -> Lua {
@@ -350,154 +172,94 @@ mod tests {
         lua
     }
 
-    /// A resolver that knows one kiln, `notes`, rooted at `root`.
-    fn create_lua_with_kiln(root: &Path) -> Lua {
-        let lua = Lua::new();
-        let root = root.to_path_buf();
-        let resolver: KilnPathResolver = Arc::new(move |name: &str| {
-            if name == "notes" {
-                Ok(root.clone())
-            } else {
-                Err(format!("kiln '{name}' is not registered"))
-            }
-        });
-        register_fs_module_with_resolver(&lua, resolver).unwrap();
-        lua
+    /// `cru.fs.remove` is a data-loss guard, not a shim. The name's meaning
+    /// changed — `remove_all` is recursive-only, `os.remove` is single-file —
+    /// so a caller is told which side it is now on, never handed a nil and
+    /// never given a delete with the other semantics.
+    #[test]
+    fn removed_remove_raises_naming_both_replacements() {
+        let temp = TempDir::new().unwrap();
+        let victim = temp.path().join("keep.txt");
+        fs::write(&victim, "still here").unwrap();
+
+        let lua = create_lua();
+        let err = lua
+            .load(format!(r#"cru.fs.remove("{}")"#, victim.to_string_lossy()))
+            .exec()
+            .expect_err("cru.fs.remove must always raise");
+        let text = err.to_string();
+        assert!(
+            text.contains("remove_all"),
+            "the error must name the recursive replacement: {text}"
+        );
+        assert!(
+            text.contains("os.remove"),
+            "the error must name the single-file replacement: {text}"
+        );
+        assert!(victim.exists(), "the guard must not delete anything");
     }
 
+    /// `remove_all` is the recursive delete, under a name that says so.
     #[test]
-    fn a_kiln_path_resolves_into_the_kiln_root() {
-        let kiln = TempDir::new().unwrap();
-        let lua = create_lua_with_kiln(kiln.path());
+    fn remove_all_removes_a_directory_tree() {
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path().join("tree");
+        fs::create_dir_all(dir.join("nested")).unwrap();
+        fs::write(dir.join("nested/file.txt"), "x").unwrap();
 
-        let read: String = lua
-            .load(
-                r#"
-                fs.mkdir("kiln://notes/.crucible/proposals")
-                fs.write("kiln://notes/.crucible/proposals/p.md", "proposed")
-                return fs.read("kiln://notes/.crucible/proposals/p.md")
-                "#,
-            )
-            .eval()
-            .unwrap();
-        assert_eq!(read, "proposed");
-        let on_disk = kiln.path().join(".crucible/proposals/p.md");
-        assert_eq!(std::fs::read_to_string(on_disk).unwrap(), "proposed");
+        let lua = create_lua();
+        lua.load(format!(r#"cru.fs.remove_all("{}")"#, dir.to_string_lossy()))
+            .exec()
+            .expect("remove_all must delete a directory tree");
+        assert!(!dir.exists());
     }
 
-    /// Containment is one check in `resolve_path`, so one traversing
-    /// spelling per class is enough: a `..` component, and an absolute
-    /// relative part.
+    /// The `kiln://` scheme is retired syntax, refused by every surviving
+    /// function. Without the guard, `mkdir("kiln://n/x")` silently creates a
+    /// garbage `./kiln:/n/x` tree under the daemon's cwd, and `exists`
+    /// returns a well-formed false.
     #[test]
-    fn a_traversing_kiln_path_is_refused() {
-        let kiln = TempDir::new().unwrap();
-        let lua = create_lua_with_kiln(kiln.path());
+    fn every_surviving_function_refuses_the_kiln_scheme() {
+        let temp = TempDir::new().unwrap();
+        // Run against a tempdir so a FAILING guard cannot litter the repo —
+        // and so the no-garbage assertion below has a directory to itself.
+        let real = temp.path().join("real.txt");
+        fs::write(&real, "x").unwrap();
+        let real = real.to_string_lossy();
 
-        for bad in ["kiln://notes/../evil.md", "kiln://notes//abs.md"] {
-            let err = lua
-                .load(format!(r#"fs.write("{bad}", "x")"#))
-                .exec()
-                .expect_err("a traversing path must be refused");
+        let lua = create_lua();
+        let calls = [
+            r#"return cru.fs.exists("kiln://notes/x")"#.to_string(),
+            r#"return cru.fs.is_file("kiln://notes/x")"#.to_string(),
+            r#"return cru.fs.is_dir("kiln://notes/x")"#.to_string(),
+            r#"return cru.fs.list("kiln://notes/x")"#.to_string(),
+            r#"cru.fs.mkdir("kiln://notes/x")"#.to_string(),
+            r#"cru.fs.remove_all("kiln://notes/x")"#.to_string(),
+            format!(r#"cru.fs.copy("kiln://notes/x", "{real}")"#),
+            format!(r#"cru.fs.copy("{real}", "kiln://notes/x")"#),
+        ];
+        for call in &calls {
+            // `exec` succeeding would mean the scheme resolved silently — the
+            // exact failure the guard exists to prevent.
+            let err = match lua.load(call.as_str()).exec() {
+                Ok(()) => panic!("{call}: the scheme must raise, not resolve"),
+                Err(e) => e,
+            };
             let text = err.to_string();
             assert!(
-                !text.contains(&kiln.path().to_string_lossy().to_string()),
-                "the error must not echo the kiln root: {text}"
+                text.contains("kiln:// is removed"),
+                "{call}: the error must say the scheme is gone: {text}"
+            );
+            assert!(
+                text.contains("cru.kiln.path"),
+                "{call}: the error must name the replacement: {text}"
             );
         }
-        assert!(!kiln.path().parent().unwrap().join("evil.md").exists());
-    }
-
-    /// The name allowlist cannot see a directory that lies. A symlinked
-    /// intermediate directory resolves the write outside the kiln, and the
-    /// canonicalize check is what refuses it.
-    #[cfg(unix)]
-    #[test]
-    fn a_symlinked_directory_inside_the_kiln_is_refused() {
-        let kiln = TempDir::new().unwrap();
-        let outside = TempDir::new().unwrap();
-        std::fs::create_dir_all(kiln.path().join(".crucible")).unwrap();
-        std::os::unix::fs::symlink(outside.path(), kiln.path().join(".crucible/proposals"))
-            .unwrap();
-        let lua = create_lua_with_kiln(kiln.path());
-
-        let err = lua
-            .load(r#"fs.write("kiln://notes/.crucible/proposals/p.md", "x")"#)
-            .exec()
-            .expect_err("a symlinked directory must be refused");
-        let text = err.to_string();
-        assert!(text.contains("outside kiln 'notes'"), "unhelpful: {text}");
+        // And no garbage `kiln:` tree appeared anywhere a resolve would put one.
         assert!(
-            !text.contains(&outside.path().to_string_lossy().to_string()),
-            "the error must not echo the resolved directory: {text}"
+            !temp.path().join("kiln:").exists(),
+            "a kiln:// argument must never become a relative directory"
         );
-        assert!(!outside.path().join("p.md").exists());
-    }
-
-    #[test]
-    fn an_unknown_kiln_name_errors_cleanly() {
-        let kiln = TempDir::new().unwrap();
-        let lua = create_lua_with_kiln(kiln.path());
-
-        let err = lua
-            .load(r#"fs.write("kiln://other/x.md", "x")"#)
-            .exec()
-            .expect_err("an unknown kiln must be refused");
-        assert!(err.to_string().contains("other"), "unhelpful: {err}");
-    }
-
-    /// A runtime with no resolver must refuse the scheme, not treat
-    /// `kiln://…` as a relative directory named `kiln:` under the cwd.
-    #[test]
-    fn a_plain_runtime_refuses_kiln_paths_with_a_clear_error() {
-        let lua = create_lua();
-        let err = lua
-            .load(r#"fs.write("kiln://notes/x.md", "hi")"#)
-            .exec()
-            .expect_err("no resolver, no kiln:// paths");
-        assert!(
-            err.to_string().contains("kiln://"),
-            "the error must name the scheme: {err}"
-        );
-        assert!(!std::path::Path::new("kiln:").exists());
-    }
-
-    #[test]
-    fn test_write_and_read() {
-        let temp = TempDir::new().unwrap();
-        let file_path = temp.path().join("test.txt");
-        let path_str = file_path.to_string_lossy().to_string();
-
-        let lua = create_lua();
-        lua.load(format!(
-            r#"
-            fs.write("{}", "Hello, Lua!")
-            return fs.read("{}")
-            "#,
-            path_str, path_str
-        ))
-        .eval::<String>()
-        .map(|s| assert_eq!(s, "Hello, Lua!"))
-        .unwrap();
-    }
-
-    #[test]
-    fn test_append() {
-        let temp = TempDir::new().unwrap();
-        let file_path = temp.path().join("log.txt");
-        let path_str = file_path.to_string_lossy().to_string();
-
-        let lua = create_lua();
-        lua.load(format!(
-            r#"
-            fs.append("{0}", "Line 1\n")
-            fs.append("{0}", "Line 2\n")
-            return fs.read("{0}")
-            "#,
-            path_str
-        ))
-        .eval::<String>()
-        .map(|s| assert_eq!(s, "Line 1\nLine 2\n"))
-        .unwrap();
     }
 
     #[test]
@@ -510,9 +272,9 @@ mod tests {
         let result: Table = lua
             .load(format!(
                 r#"
-            local before = fs.exists("{0}")
-            fs.mkdir("{0}")
-            local after = fs.exists("{0}")
+            local before = cru.fs.exists("{0}")
+            cru.fs.mkdir("{0}")
+            local after = cru.fs.exists("{0}")
             return {{ before = before, after = after }}
             "#,
                 path_str
@@ -538,10 +300,10 @@ mod tests {
             .load(format!(
                 r#"
             return {{
-                file_is_file = fs.is_file("{}"),
-                file_is_dir = fs.is_dir("{}"),
-                dir_is_file = fs.is_file("{}"),
-                dir_is_dir = fs.is_dir("{}")
+                file_is_file = cru.fs.is_file("{}"),
+                file_is_dir = cru.fs.is_dir("{}"),
+                dir_is_file = cru.fs.is_file("{}"),
+                dir_is_dir = cru.fs.is_dir("{}")
             }}
             "#,
                 file_path.to_string_lossy(),
@@ -559,31 +321,6 @@ mod tests {
     }
 
     #[test]
-    fn test_remove() {
-        let temp = TempDir::new().unwrap();
-        let file_path = temp.path().join("remove_me.txt");
-        fs::write(&file_path, "temp").unwrap();
-        let path_str = file_path.to_string_lossy().to_string();
-
-        let lua = create_lua();
-        let result: Table = lua
-            .load(format!(
-                r#"
-            local before = fs.exists("{0}")
-            fs.remove("{0}")
-            local after = fs.exists("{0}")
-            return {{ before = before, after = after }}
-            "#,
-                path_str
-            ))
-            .eval()
-            .unwrap();
-
-        assert!(result.get::<bool>("before").unwrap());
-        assert!(!result.get::<bool>("after").unwrap());
-    }
-
-    #[test]
     fn test_list() {
         let temp = TempDir::new().unwrap();
         fs::write(temp.path().join("a.txt"), "").unwrap();
@@ -593,7 +330,7 @@ mod tests {
 
         let lua = create_lua();
         let result: Table = lua
-            .load(format!(r#"return fs.list("{}")"#, dir_path))
+            .load(format!(r#"return cru.fs.list("{}")"#, dir_path))
             .eval()
             .unwrap();
 
@@ -613,70 +350,18 @@ mod tests {
     fn test_copy() {
         let temp = TempDir::new().unwrap();
         let src = temp.path().join("src.txt");
-        let dest = temp.path().join("dest.txt");
+        let dest = temp.path().join("into/new/dir/dest.txt");
         fs::write(&src, "original").unwrap();
 
         let lua = create_lua();
-        let content: String = lua
-            .load(format!(
-                r#"
-            fs.copy("{}", "{}")
-            return fs.read("{}")
-            "#,
-                src.to_string_lossy(),
-                dest.to_string_lossy(),
-                dest.to_string_lossy()
-            ))
-            .eval()
-            .unwrap();
+        lua.load(format!(
+            r#"cru.fs.copy("{}", "{}")"#,
+            src.to_string_lossy(),
+            dest.to_string_lossy()
+        ))
+        .exec()
+        .unwrap();
 
-        assert_eq!(content, "original");
-    }
-
-    #[test]
-    fn test_rename() {
-        let temp = TempDir::new().unwrap();
-        let src = temp.path().join("old.txt");
-        let dest = temp.path().join("new.txt");
-        fs::write(&src, "content").unwrap();
-
-        let lua = create_lua();
-        let result: Table = lua
-            .load(format!(
-                r#"
-            fs.rename("{}", "{}")
-            return {{ old = fs.exists("{}"), new = fs.exists("{}") }}
-            "#,
-                src.to_string_lossy(),
-                dest.to_string_lossy(),
-                src.to_string_lossy(),
-                dest.to_string_lossy()
-            ))
-            .eval()
-            .unwrap();
-
-        assert!(!result.get::<bool>("old").unwrap());
-        assert!(result.get::<bool>("new").unwrap());
-    }
-
-    #[test]
-    fn test_write_creates_parent_dirs() {
-        let temp = TempDir::new().unwrap();
-        let file_path = temp.path().join("nested/path/to/file.txt");
-        let path_str = file_path.to_string_lossy().to_string();
-
-        let lua = create_lua();
-        let content: String = lua
-            .load(format!(
-                r#"
-            fs.write("{0}", "nested content")
-            return fs.read("{0}")
-            "#,
-                path_str
-            ))
-            .eval()
-            .unwrap();
-
-        assert_eq!(content, "nested content");
+        assert_eq!(fs::read_to_string(&dest).unwrap(), "original");
     }
 }

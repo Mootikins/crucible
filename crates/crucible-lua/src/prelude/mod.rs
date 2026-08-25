@@ -1,8 +1,9 @@
-//! Pure Lua standard library utilities.
+//! The prelude — Crucible's own pure-Lua additions.
 //!
-//! Provides `cru.retry`, `cru.emitter`, and `cru.check` as embedded Lua source
-//! loaded at executor init time. No new Rust code needed — these are pure Lua
-//! building on the Rust-backed timer module.
+//! Not the Lua standard library: this directory holds what Crucible ADDS to
+//! it. Provides `cru.retry`, `cru.emitter`, and `cru.check` as embedded Lua
+//! source loaded at executor init time. No new Rust code needed — these are
+//! pure Lua building on the Rust-backed timer module.
 
 use crate::lifecycle::{PluginErrorEntry, PluginErrorLog};
 use mlua::{Lua, Result};
@@ -20,7 +21,7 @@ use stdlib::LUA_STDLIB;
 use test_mocks::LUA_TEST_MOCKS;
 use test_runner::LUA_TEST_RUNNER;
 
-/// Register the pure Lua standard library (retry, emitter, check, test_runner, health).
+/// Register the prelude (retry, emitter, check, errors, health, qol).
 ///
 /// Must be called after `setup_globals` creates the `cru` table and after
 /// `register_timer_module` (since `cru.retry` depends on `cru.timer.sleep`).
@@ -38,7 +39,7 @@ pub fn register_test_harness(lua: &Lua) -> Result<()> {
     Ok(())
 }
 
-pub fn register_lua_stdlib(lua: &Lua) -> Result<()> {
+pub fn register_prelude(lua: &Lua) -> Result<()> {
     lua.load(LUA_STDLIB).exec()?;
 
     let cru = lua.globals().get::<mlua::Table>("cru")?;
@@ -93,8 +94,7 @@ pub fn register_lua_stdlib(lua: &Lua) -> Result<()> {
     cru.set("errors", errors_table)?;
 
     lua.load(LUA_QOL).set_name("qol").exec()?;
-    lua.load(LUA_HEALTH).set_name("health").exec()?;
-    lua.load("_G.inspect = cru.inspect").exec()
+    lua.load(LUA_HEALTH).set_name("health").exec()
 }
 
 #[cfg(test)]

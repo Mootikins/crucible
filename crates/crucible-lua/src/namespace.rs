@@ -33,11 +33,9 @@ pub enum CruNamespace {
     Defaults,
     Emitter,
     Errors,
-    Fmt,
     Fs,
     Geometry,
     GetSession,
-    Graph,
     Health,
     Hl,
     Http,
@@ -69,7 +67,6 @@ pub enum CruNamespace {
     Service,
     Sessions,
     Shell,
-    Spawn,
     Statusline,
     Storage,
     Syntax,
@@ -102,11 +99,9 @@ impl CruNamespace {
             | Self::Context
             | Self::Emitter
             | Self::Errors
-            | Self::Fmt
             | Self::Fs
             | Self::Geometry
             | Self::GetSession
-            | Self::Graph
             | Self::Health
             | Self::Hl
             | Self::Http
@@ -129,7 +124,6 @@ impl CruNamespace {
             | Self::Service
             | Self::Sessions
             | Self::Shell
-            | Self::Spawn
             | Self::Statusline
             | Self::Storage
             | Self::Syntax

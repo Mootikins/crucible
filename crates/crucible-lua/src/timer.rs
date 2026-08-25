@@ -75,11 +75,8 @@ pub fn register_timer_module(lua: &Lua) -> Result<()> {
     // This is needed when event handlers (called via pcall) need to perform
     // async operations that require yielding (e.g. subscribe, next_event).
     // Requires the `send` feature (mlua/send) since tokio::spawn needs Send.
-    //
-    // `cru.spawn` is the SAME function object at its old address, so callers
-    // migrate to the timer address before T1.6 removes the root name.
     #[cfg(feature = "send")]
-    let spawn_fn = {
+    {
         let spawn_fn = lua.create_function(|_lua, func: Function| {
             tokio::spawn(async move {
                 if let Err(e) = func.call_async::<()>(()).await {
@@ -88,18 +85,10 @@ pub fn register_timer_module(lua: &Lua) -> Result<()> {
             });
             Ok(())
         })?;
-        timer.set("spawn", spawn_fn.clone())?;
-        spawn_fn
-    };
+        timer.set("spawn", spawn_fn)?;
+    }
 
     crate::lua_util::register_module(lua, "timer", timer)?;
-
-    #[cfg(feature = "send")]
-    {
-        let globals = lua.globals();
-        let cru: mlua::Table = globals.get("cru")?;
-        cru.set("spawn", spawn_fn)?;
-    }
 
     Ok(())
 }
@@ -120,20 +109,21 @@ mod tests {
         assert!(timer.get::<Function>("timeout").is_ok());
     }
 
-    /// `cru.timer.spawn` and `cru.spawn` are ONE function object, so a caller
-    /// that migrates to the timer address keeps the behaviour it had.
+    /// The root alias is gone: `cru.timer.spawn` is spawn's only address.
     #[cfg(feature = "send")]
     #[tokio::test]
-    async fn timer_spawn_is_the_same_function_as_cru_spawn() {
+    async fn spawn_lives_only_at_the_timer_address() {
         let lua = Lua::new();
         lua.load("cru = cru or {}").exec().unwrap();
         register_timer_module(&lua).unwrap();
 
-        let same: bool = lua
-            .load("return cru.timer.spawn == cru.spawn")
+        let root_is_nil: bool = lua.load("return cru.spawn == nil").eval().unwrap();
+        assert!(root_is_nil, "cru.spawn is removed");
+        let timer_has_it: bool = lua
+            .load("return type(cru.timer.spawn) == 'function'")
             .eval()
             .unwrap();
-        assert!(same, "cru.timer.spawn must be cru.spawn");
+        assert!(timer_has_it, "cru.timer.spawn must answer");
     }
 
     #[cfg(feature = "send")]

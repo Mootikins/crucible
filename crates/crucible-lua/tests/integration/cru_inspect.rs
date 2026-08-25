@@ -130,16 +130,15 @@ end
 }
 
 #[tokio::test]
-async fn test_cru_inspect_global_alias() {
+async fn test_cru_inspect_global_alias_is_removed() {
     let executor = LuaExecutor::new().unwrap();
     executor.install_test_harness().unwrap();
 
     let source = r#"
 function handler(args)
-    local result = inspect({x = 1})
     return {
-        has_x = string.find(result, "x") ~= nil,
-        is_string = type(result) == "string",
+        has_x = _G.inspect == nil,
+        is_string = type(cru.inspect({x = 1})) == "string",
     }
 end
 "#;

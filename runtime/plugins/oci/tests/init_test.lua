@@ -753,33 +753,33 @@ end)
 -- init.lua. Resolution is a pure decision, so nothing here needs a runtime
 -- installed — the stubbed shell stands in for one.
 describe("oci devcontainer resolution", function()
-  local ws_seq = 0
+  --- A REAL directory per test: resolution reads devcontainer.json with
+  --- `io.open`, which has no mock to agree with. `real_dirs` makes the
+  --- `cru.fs.mkdir` mock create the directory for real.
   local function fresh_ws()
-    ws_seq = ws_seq + 1
-    return "/home/user/dc" .. ws_seq
+    test_mocks.setup({ fs = { real_dirs = true } })
+    local ws = os.tmpname()
+    os.remove(ws)
+    cru.fs.mkdir(ws)
+    return ws
   end
 
   local saved_fs
 
   --- Put a devcontainer.json at `<ws>/.devcontainer/devcontainer.json`.
   ---
-  --- Restored in after_each: `cru.fs` is the shared harness mock and a stub
-  --- left installed would leak into whatever runs next.
+  --- The file is REAL, under the real directory `fresh_ws` minted.
   --- `head_body` defaults to `body`: the ordinary case is a devcontainer whose
   --- working tree matches what is committed. Pass it to model an edit that has
   --- not been committed, which resolution ignores.
   local function with_devcontainer(ws, body, present, head_body)
     head_body = head_body or body
-    local files = { [ws .. "/.devcontainer/devcontainer.json"] = body }
     local found = { podman = true }
     for _, name in ipairs(present or {}) do found[name] = true end
-    cru.fs = {
-      exists = function(path) return files[path] ~= nil end,
-      read = function(path)
-        if files[path] == nil then error("File not found: " .. path) end
-        return files[path]
-      end,
-    }
+    cru.fs.mkdir(ws .. "/.devcontainer")
+    local handle = assert(io.open(ws .. "/.devcontainer/devcontainer.json", "w"))
+    handle:write(body)
+    handle:close()
     available = found
 
     -- Resolution reads HEAD, not the working tree, so a devcontainer these
@@ -1252,14 +1252,17 @@ describe("oci.targets", function()
   -- rows would present a pick that does not exist — and both would carry the
   -- same empty value.
   it("says the default will be the devcontainer when the project has one", function()
-    local saved = cru.fs
-    cru.fs = {
-      exists = function(path) return path:find("devcontainer%.json") ~= nil end,
-      read = function() return '{ "image": "mcr.microsoft.com/devcontainers/base" }' end,
-    }
+    -- A REAL devcontainer.json: resolution reads it with `io.open`.
+    test_mocks.setup({ fs = { real_dirs = true } })
+    local ws = os.tmpname()
+    os.remove(ws)
+    cru.fs.mkdir(ws .. "/.devcontainer")
+    local handle = assert(io.open(ws .. "/.devcontainer/devcontainer.json", "w"))
+    handle:write('{ "image": "mcr.microsoft.com/devcontainers/base" }')
+    handle:close()
+
     spec.setup({ image = "alpine:latest" })
-    local rows = targets({ workspace = "/repo" }).targets
-    cru.fs = saved
+    local rows = targets({ workspace = ws }).targets
 
     local defaults = 0
     for _, row in ipairs(rows) do
@@ -1328,14 +1331,12 @@ describe("oci with a worktree workspace", function()
     with_git(common, git_ok, git_installed)
     available = { podman = true, devcontainer = true }
     local body = '{ "image": "dc:latest", "postCreateCommand": "make" }'
-    local path = ws .. "/.devcontainer/devcontainer.json"
-    cru.fs = {
-      exists = function(p) return p == path end,
-      read = function(p)
-        if p ~= path then error("File not found: " .. p) end
-        return body
-      end,
-    }
+    -- A REAL file: resolution reads it with `io.open`. `ws` arrives from
+    -- `real_ws`, which already created the directory.
+    cru.fs.mkdir(ws .. "/.devcontainer")
+    local handle = assert(io.open(ws .. "/.devcontainer/devcontainer.json", "w"))
+    handle:write(body)
+    handle:close()
     -- Keyed above the bare "git" responder, so it has to answer the worktree
     -- probe as well as resolution's own calls.
     responders["git -C"] = function(_, args)
@@ -1410,9 +1411,19 @@ describe("oci with a worktree workspace", function()
 
   -- The CLI creates the container, so the mount has to reach it as an argument
   -- rather than through the plugin's own `run`.
+  --- A REAL directory: `with_cli_devcontainer` writes a real devcontainer.json
+  --- under it, because resolution reads the tree with `io.open`.
+  local function real_ws()
+    test_mocks.setup({ fs = { real_dirs = true } })
+    local ws = os.tmpname()
+    os.remove(ws)
+    cru.fs.mkdir(ws)
+    return ws
+  end
+
   it("passes the main repo's git dir to @devcontainers/cli", function()
     spec.setup({ image = "alpine:latest" })
-    local ws = "/home/user/worktrees/cli-ok"
+    local ws = real_ws()
     with_cli_devcontainer(ws, "/home/user/project/.git", true)
     start_session("s-wt-cli", ws)
 
@@ -1426,7 +1437,7 @@ describe("oci with a worktree workspace", function()
 
   it("warns when git does not resolve in a CLI-built container", function()
     spec.setup({ image = "alpine:latest" })
-    local ws = "/home/user/worktrees/cli-broken"
+    local ws = real_ws()
     with_cli_devcontainer(ws, "/home/user/project/.git", false)
     start_session("s-wt-cli-broken", ws)
 

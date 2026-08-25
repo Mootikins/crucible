@@ -92,7 +92,9 @@ end
 --- prerequisite for answering.
 local function state_path()
     local ok, path = pcall(function()
-        return cru.paths.join(cru.paths.state(STATE_PLUGIN), STATE_FILE)
+        -- STATE_FILE is one plain file name, so string concat is the whole
+        -- join; `paths.state` already returns an absolute directory.
+        return cru.paths.state(STATE_PLUGIN) .. "/" .. STATE_FILE
     end)
     if ok and type(path) == "string" then return path end
     return nil
@@ -127,11 +129,20 @@ end
 --- Write the DM sessions of `map` to `path`. Returns whether it landed.
 function M.save_to(path, map)
     if not path then return false end
-    local ok, err = pcall(cru.fs.write, path, encode_dms(map))
-    if not ok then
-        cru.log("warn", "Discord plugin: could not persist sessions: " .. tostring(err))
+    -- `paths.state` creates the directory on demand, so the parent exists by
+    -- the time there is a path at all; `io.open` failing is a real error.
+    local handle, open_err = io.open(path, "w")
+    if not handle then
+        cru.log("warn", "Discord plugin: could not persist sessions: " .. tostring(open_err))
+        return false
     end
-    return ok
+    local wrote, write_err = handle:write(encode_dms(map))
+    handle:close()
+    if not wrote then
+        cru.log("warn", "Discord plugin: could not persist sessions: " .. tostring(write_err))
+        return false
+    end
+    return true
 end
 
 --- Read the DM sessions back from `path`, keyed as the live map keys them.
@@ -140,11 +151,13 @@ end
 --- conversations it held, not the plugin's ability to answer the next message.
 function M.load_from(path)
     if not path then return {} end
-    local exists_ok, exists = pcall(cru.fs.exists, path)
-    if not exists_ok or not exists then return {} end
-
-    local read_ok, raw = pcall(cru.fs.read, path)
-    if not read_ok then return {} end
+    -- A missing file and an unreadable one land the same way: `io.open`
+    -- answers nil, and the plugin starts empty.
+    local handle = io.open(path, "r")
+    if not handle then return {} end
+    local raw = handle:read("a")
+    handle:close()
+    if type(raw) ~= "string" then return {} end
 
     local decode_ok, blob = pcall(cru.json.decode, raw)
     if not decode_ok or type(blob) ~= "table" or type(blob.entries) ~= "table" then
