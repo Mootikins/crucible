@@ -1724,10 +1724,26 @@ impl RpcDispatcher {
             .as_ref()
             .and_then(|p| p.parent())
             .map(|p| p.display().to_string());
+        // `kiln_path` DEFAULTS to the current directory of whichever process
+        // computes it. When nothing configured it, the daemon's value is the
+        // daemon's cwd — meaningless to the client — so the response says so
+        // and the client substitutes its own default. Read off the boot
+        // store's provenance; a daemon handed a config value directly (no
+        // boot) reports false and its value stands.
+        let kiln_path_is_default = self.ctx.boot_hash.is_some()
+            && crucible_lua::get_app_config_provenance()
+                .map(|provenance| {
+                    provenance
+                        .get("kiln_path")
+                        .map(|tag| tag.short() == "default")
+                        .unwrap_or(true)
+                })
+                .unwrap_or(true);
         Ok(serde_json::json!({
             "config": config,
             "config_root": config_root,
             "boot_hash": self.ctx.boot_hash,
+            "kiln_path_is_default": kiln_path_is_default,
         }))
     }
 

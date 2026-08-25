@@ -73,6 +73,12 @@ pub async fn fetch_effective_config(
 
     let mut config: CliConfig = serde_json::from_value(resp["config"].clone())
         .map_err(|e| anyhow::anyhow!("the daemon's effective config does not parse: {e}"))?;
+    // A DEFAULTED kiln_path is the daemon's own cwd — meaningless here. The
+    // default is "the invoking process's directory", so this process
+    // computes its own, exactly as a local load would have.
+    if resp["kiln_path_is_default"].as_bool() == Some(true) {
+        config.kiln_path = CliConfig::default().kiln_path;
+    }
     config.apply_embedding_overrides(embedding_url, embedding_model);
     Ok(config)
 }
