@@ -1180,6 +1180,23 @@ end
     /// top-level hook and publish. Returns the instance and the module name
     /// it was loaded as (whose first segment keys the setup-ownership
     /// record).
+    ///
+    /// NOTE(finding): double EXECUTION is closed here; double SETUP is not.
+    /// The setup-ownership record comes from the boot searcher's wrapper, so
+    /// a load the searcher did not claim — a plugin whose manifest `name:`
+    /// differs from its directory name is the known shape — is invisible to
+    /// it. Activation then still reuses the instance (file identity does not
+    /// depend on the claim), but it cannot tell that the user already called
+    /// `setup`, so it calls the default `setup(cfg)` a second time.
+    ///
+    /// Whether that is harmless depends on the plugin, not on us. A `setup`
+    /// that only merges config is idempotent; one that registers a hook,
+    /// starts a timer, or spawns anything runs those side effects twice, and
+    /// nothing stops an author from writing that.
+    ///
+    /// The structural remedy is a require-hook, so ownership is observed at
+    /// the call rather than inferred from what the searcher claimed. It was
+    /// deliberately not built in M5.
     fn boot_required_instance(
         &self,
         init_path: &std::path::Path,

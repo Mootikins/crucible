@@ -38,7 +38,21 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   forbidOnly: !!process.env.CI,
-  retries: 0,
+  // The live tier is the only one that waits on eventual consistency, and
+  // WS-206 has a measured ~1-3-in-30 failure on a quiet box (see the
+  // NOTE(finding) in kiln-truth.live.spec.ts). Without retries a real
+  // regression and that flake produce the same red, so the gate stops
+  // distinguishing what it exists to distinguish.
+  //
+  // These retries DIAGNOSE rather than mask. A genuine break fails all three
+  // attempts and CI stays red; a transient race passes one. Playwright
+  // reports a retried pass as "flaky", distinct from "passed", so the signal
+  // survives in the run output.
+  //
+  // A "flaky" line for WS-206 is the cue to re-open that finding, not noise
+  // to tune away. No other tier gets retries: nothing else here is eventually
+  // consistent, so a retry elsewhere would genuinely hide a defect.
+  retries: 2,
   reporter: 'line',
   timeout: 30_000,
   globalSetup: './e2e/live/global-setup.ts',
