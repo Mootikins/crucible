@@ -176,7 +176,24 @@ lint what="all":
     }
     lint_docs()    { cargo test -p crucible-core --test dev_kiln --test docs_config -- --ignored; cargo test -p crucible-lua --test docs_lua_config -- --include-ignored; }
     lint_license() { cargo deny --all-features check licenses; }
-    lint_types()   { (cd crates/crucible-web/web && bunx tsc --noEmit -p tsconfig.json); }
+    # The node_modules check is not hygiene, it is a wrong-answer guard. With
+    # an empty node_modules, `bunx` silently falls back to a CACHED tsc from
+    # some other project — 5.9.3 was seen here — which rejects this tsconfig's
+    # `"ignoreDeprecations": "6.0"` as `TS5103: Invalid value`. The error names
+    # a compiler option, so the reader edits tsconfig, and tsconfig is correct.
+    # A fresh `git worktree` has no node_modules (worktrees do not share it),
+    # so this fires exactly when someone is least expecting it.
+    lint_types()   {
+        local web=crates/crucible-web/web
+        if [ ! -d "$web/node_modules/typescript" ]; then
+            echo "ERROR: $web/node_modules is missing or has no typescript."
+            echo "  bunx would fall back to a cached tsc and report a"
+            echo "  misleading TS5103 against a correct tsconfig."
+            echo "  Fix: (cd $web && bun install)"
+            return 1
+        fi
+        (cd "$web" && bunx tsc --noEmit -p tsconfig.json)
+    }
     # Import-dead frontend code: unused files, exports and dependencies. Run it
     # WITHOUT `--production`: that mode drops test files from the graph and then
     # reports three dozen lazy-loaded dependencies as unused, which is noise, not
