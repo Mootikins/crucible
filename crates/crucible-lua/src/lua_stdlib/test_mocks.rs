@@ -3,6 +3,14 @@ local test_mocks = {}
 local _calls = {}
 local _fixtures = {}
 
+--- The host's real `cru.fs.mkdir`, captured while THIS CHUNK loads.
+---
+--- A test file cannot capture it: the runner calls `test_mocks.setup()` before
+--- it loads any test file (`server/lua_plugin_suite.rs`), so a test-file-level
+--- `local real = cru.fs.mkdir` captures the mock. This chunk runs earlier, at
+--- `install_test_harness()`, while the table is still the real one.
+local _host_mkdir = cru and cru.fs and cru.fs.mkdir
+
 local function record_call(module, method, ...)
     if not _calls[module] then _calls[module] = {} end
     if not _calls[module][method] then _calls[module][method] = {} end
@@ -11,10 +19,17 @@ end
 
 local function default_fixtures()
     return {
-        kiln = { notes = {}, outlinks = {}, backlinks = {}, neighbors = {} },
+        -- `roots` maps a kiln NAME to a directory, which is the one thing
+        -- `cru.kiln.path` does. Empty by default: a test that stages files
+        -- names its own directory, so nothing writes to a guessed path.
+        kiln = { notes = {}, outlinks = {}, backlinks = {}, neighbors = {}, roots = {} },
         graph = { notes = {}, outlinks = {}, backlinks = {}, neighbors = {} },
         http = { responses = {} },
-        fs = { files = {}, dirs = {} },
+        -- `real_dirs` makes the `mkdir` mock create the directory for real, as
+        -- well as recording the call. A plugin that writes with `io.open`
+        -- needs a real directory under it; an in-memory `dirs` table is not
+        -- one. Off by default, so no suite touches the disk by accident.
+        fs = { files = {}, dirs = {}, real_dirs = false },
         -- Absolute by default: a plugin that resolves its files against the
         -- kiln has to be testable without the assertion depending on where the
         -- daemon happened to be started.
@@ -83,6 +98,24 @@ local function create_kiln_mock(fixtures)
             end
             return nil
         end,
+        --- Mirrors `crucible-lua/src/vault/mod.rs`: an unknown name and a
+        --- traversing relative part both RAISE, so a plugin cannot pass here
+        --- and fail in production.
+        path = function(name, relative)
+            record_call("kiln", "path", name, relative)
+            local root = (f.roots or {})[name]
+            if not root then error("kiln '" .. tostring(name) .. "' is not registered") end
+            if relative == nil or relative == "" then return root end
+            if type(relative) ~= "string" or relative:sub(1, 1) == "/" then
+                error("cru.kiln.path: the relative part must be plain components")
+            end
+            for part in relative:gmatch("[^/]+") do
+                if part == "." or part == ".." then
+                    error("cru.kiln.path: the relative part must be plain components")
+                end
+            end
+            return root .. "/" .. relative
+        end,
         search = note_search("kiln", f, "search", 1.0),
         outlinks = link_lookup("kiln", f, "outlinks"),
         backlinks = link_lookup("kiln", f, "backlinks"),
@@ -148,6 +181,9 @@ local function create_fs_mock(fixtures)
         mkdir = function(path)
             record_call("fs", "mkdir", path)
             dirs[path] = true
+            if fixtures.fs.real_dirs and _host_mkdir then
+                _host_mkdir(path)
+            end
         end,
         list = function(path)
             record_call("fs", "list", path)
