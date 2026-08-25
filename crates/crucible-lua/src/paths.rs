@@ -245,6 +245,27 @@ mod tests {
         );
     }
 
+    /// `$CRUCIBLE_CONFIG_DIR` redirects the config root for test isolation.
+    /// `cru.paths.config()` must follow it, or a test that redirects the
+    /// variable still reads the developer's real `~/.config/crucible`.
+    ///
+    /// This test reads the environment on purpose, which is the one case
+    /// `EnvVarGuard` exists for. nextest gives each test its own process,
+    /// so the guard cannot race a second test.
+    #[test]
+    fn config_path_follows_the_config_dir_env_var() {
+        let temp = tempfile::tempdir().unwrap();
+        let _guard = crucible_core::test_support::EnvVarGuard::set(
+            "CRUCIBLE_CONFIG_DIR",
+            temp.path().to_string_lossy().into_owned(),
+        );
+
+        let lua = create_lua_with_paths(PathsContext::new());
+
+        let result: String = lua.load("return cru.paths.config()").eval().unwrap();
+        assert_eq!(PathBuf::from(result), temp.path());
+    }
+
     #[test]
     fn test_path_join() {
         let ctx = PathsContext::new().with_kiln(PathBuf::from("/home/user/notes"));
