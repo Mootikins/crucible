@@ -304,7 +304,7 @@ Horizontal rule (same as `divider()` with defaults).
 
 **Example:**
 ```lua
-oil.hr()
+oil.divider()
 ```
 
 ---
@@ -408,7 +408,7 @@ oil.either(is_ready,
 )
 
 -- Also available as if_else
-oil.if_else(has_data,
+oil.either(has_data,
     oil.text(data),
     oil.text("No data", { fg = "yellow" })
 )
@@ -416,23 +416,14 @@ oil.if_else(has_data,
 
 ---
 
-#### `maybe(value, fn)`
+#### Conditional rendering
 
-Render only when a value is present: if `value` is `nil`, returns an empty node; otherwise calls `fn(value)` and returns its node.
+`maybe` is removed; plain Lua says it more directly.
 
-**Parameters:**
-- `value` (any): Value to check
-- `fn` (function): Called with `value` when it is non-nil; must return a Node
-
-**Returns:** Node (empty node when `value` is nil)
-
-Only `nil` short-circuits — `false`, `0`, and `""` all invoke the callback.
-
-**Example:**
 ```lua
-oil.maybe(session.error, function(err)
-    return oil.text(err, { fg = "red" })
-end)
+if session.error then
+    return oil.text(session.error, { fg = "red" })
+end
 ```
 
 ---
@@ -797,7 +788,7 @@ tool_call_display("search", "complete", "Found 5 results")
 local function loading_view(is_loading, error_msg, data)
     return oil.col({ gap = 1 },
         oil.text("Data Viewer", { bold = true }),
-        oil.hr(),
+        oil.divider(),
         
         -- Show spinner while loading
         oil.when(is_loading,

@@ -113,12 +113,14 @@ cru.log("info", string.format("Took %.2fs", elapsed))
 
 ## Async Task Spawning
 
-### cru.spawn(fn)
+### cru.timer.spawn(fn)
 
 Spawn `fn` as an independent async tokio task (fire-and-forget). The function runs concurrently with the caller. Only available in daemon context when the `send` feature is enabled (`mlua/send`).
 
+Formerly `cru.spawn`, which is removed — it lives beside `cru.timer.sleep`, the module that owns yielding.
+
 ```lua
-cru.spawn(function()
+cru.timer.spawn(function()
     cru.timer.sleep(5)
     cru.log("info", "Background task done")
 end)
@@ -1110,9 +1112,10 @@ A tool or command declared without a `fn` is not registered — declaring one th
 
 ## Paths: the state() exception
 
-`cru.paths.kiln()`, `.workspace()`, and `.session()` read the `PathsContext` the module was registered with and **raise** when that path is unconfigured (they do not return `nil`). `cru.paths.state(plugin)` is different: it ignores `PathsContext` entirely and resolves against the daemon's data root at call time — `$CRUCIBLE_HOME`, else `~/.crucible` — returning `<data root>/plugin-state/<plugin>/`, created on demand. One Lua VM serves every plugin, so a state directory baked in at registration would be the same directory for all of them; instead each plugin names itself. Two consequences:
+`cru.paths.workspace()` and `.session()` read the `PathsContext` the module was registered with and **raise** when that path is unconfigured (they do not return `nil`). `cru.paths.state(plugin)` is different: it ignores `PathsContext` entirely and resolves against the daemon's data root at call time — `$CRUCIBLE_HOME`, else `~/.crucible` — returning `<data root>/plugin-state/<plugin>/`, created on demand. One Lua VM serves every plugin, so a state directory baked in at registration would be the same directory for all of them; instead each plugin names itself. Two consequences:
 
-- `paths.state("my-plugin")` works even where `paths.kiln()` raises.
+- `paths.state("my-plugin")` works even where `paths.workspace()` raises.
+- There is no `paths.kiln()`: a kiln is resolved by NAME through `cru.kiln.path(name, relative?)`.
 - Plugin state lives under the global data root, not inside the kiln or workspace.
 
 `plugin` must be a single path component: `""`, `"."`, `".."`, `"a/b"`, and absolute paths are refused.

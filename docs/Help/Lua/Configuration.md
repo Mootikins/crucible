@@ -141,7 +141,6 @@ cru.oq               -- Data query/transform (parse, json, etc.)
 cru.paths            -- Path utilities
 cru.ws               -- WebSocket client
 cru.kiln             -- Kiln access
-cru.graph            -- Knowledge graph queries
 
 -- Utility modules
 cru.timer            -- sleep(secs), timeout(secs, fn), clock()
@@ -149,7 +148,7 @@ cru.ratelimit        -- Rate limiter: new({capacity, interval})
 cru.retry(fn, opts)  -- Exponential backoff retry
 cru.emitter.new()    -- Event emitter (:on, :once, :off, :emit)
 cru.check            -- Argument validation (.string, .number, .boolean, .table, .func, .one_of)
-cru.spawn(fn)        -- Spawn async task (daemon context only, requires send feature)
+cru.timer.spawn(fn)  -- Spawn async task (daemon context only, requires send feature)
 
 -- Daemon-side modules (available when running as a plugin in the daemon)
 cru.sessions         -- Session management: create, get, list, send_message, subscribe, etc.

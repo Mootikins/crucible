@@ -25,20 +25,27 @@ Lua is one of the most widely-used scripting languages, with simple syntax that'
 
 ## The `cru` Namespace
 
-All built-in modules are accessible under the `cru` namespace — the one Lua global. Standalone globals like `http`, `fs`, `shell`, `oq`, `paths`, and `graph` also still work.
+All built-in modules live under the `cru` namespace — the one Lua global.
+There are no standalone globals: `http`, `fs`, `shell`, `paths` and `graph`
+were removed, and referencing one is a nil-index error naming the field.
+
+Crucible adds what Lua lacks and nothing more. Reading and writing files is
+`io`'s job, joining strings is the language's, and formatting is
+`string.format` — so `cru.fs.read`/`write`/`append`/`rename`, `cru.paths.join`
+and `cru.fmt` are gone.
 
 ```lua
 -- Canonical access
 cru.http.get(url)
-cru.fs.read(path)
 cru.shell.exec("git", {"status"})
 cru.log("info", "message")
 cru.json.encode(tbl)
 cru.json.decode(str)
 
--- Aliases (still work)
-cru.log("info", "message")   -- crucible.* alias
-http.get(url)                     -- standalone global
+-- Files are plain Lua
+local f = assert(io.open(path, "r"))
+local body = f:read("a")
+f:close()
 ```
 
 > [!warning] One known divergence: `config`
@@ -56,30 +63,39 @@ http.get(url)                     -- standalone global
 | `cru.json` | `encode(table)`, `decode(string)`, and `array(table)` (mark a table as a JSON list so an empty one encodes as `[]`, not `{}`) |
 | `cru.http` | HTTP client: `get`, `post`, `put`, `patch`, `delete`, `request` |
 | `cru.ws` | WebSocket client: `connect(url, opts?)` returning a connection object |
-| `cru.fs` | Filesystem operations; paths can use the `kiln://` scheme (below) |
+| `cru.fs` | The filesystem gap Lua's `io` does not cover: `exists`, `is_file`, `is_dir`, `list`, `mkdir`, `copy`, `remove_all`. Read and write with `io`. |
 | `cru.shell` | Shell command execution |
-| `cru.oq` | Data query/transform: `parse`, `json`, `yaml`, `toml`, `toon`, `query`, `format` |
-| `cru.paths` | Path utilities |
+| `cru.oq` | Data query/transform: `parse`, `yaml`, `toml`, `toon`, `query`, `format` (JSON is `cru.json`) |
+| `cru.paths` | Directories the host owns: `config`, `workspace`, `session`, `state(plugin)`. Join with `..`. |
 | `cru.kiln` | Kiln access |
-| `cru.graph` | Knowledge graph queries |
 | `cru.sessions` | Daemon session management (create, send messages, subscribe to events) |
 
 ### Kiln-Addressed Paths
 
-Every `cru.fs` function also accepts `kiln://<name>/<relative>` beside a
-plain path. The daemon resolves the kiln NAME through its registry and the
-resolved directory never reaches Lua — a plugin addresses a kiln it knows by
-name (for example from a session's `kilns` array) without a filesystem
-location crossing the boundary. Containment is enforced centrally: the
-relative part must be plain components (`..`, `.` and absolute parts are
-refused), and a path that resolves out of the kiln root through a symlink is
-refused. In a runtime with no kiln registry, a `kiln://` path raises a
-clear error.
+A plugin addresses a kiln by NAME and asks the daemon to resolve it:
+`cru.kiln.path(name, relative?)`. The name comes from something the plugin
+already knows — a session's `kilns` array, or `cru.kiln.active`.
+
+The `kiln://` URL scheme is removed. It never said WHICH kiln registry to
+consult and it collided with plain relative paths, so one function replaced
+it. Every surviving `cru.fs` function refuses a `kiln://` prefix with an
+error naming the replacement, rather than treating it as a relative path and
+silently creating a `./kiln:/...` directory.
 
 ```lua
-cru.fs.mkdir("kiln://notes/.crucible/proposals")
-cru.fs.write("kiln://notes/.crucible/proposals/idea.md", body)
+local root = cru.kiln.path("notes")
+local dir  = cru.kiln.path("notes", ".crucible/proposals")
+cru.fs.mkdir(dir)
+
+local f = assert(io.open(dir .. "/idea.md", "w"))
+f:write(body)
+f:close()
 ```
+
+The relative part must be plain components — `..`, `.` and absolute parts
+are refused. That is a bug lint, not a boundary: a plugin builds the
+relative half from pieces it already knows, so a `..` there is a mistake
+worth reporting.
 
 
 ### Plugin & Agent Modules
@@ -103,7 +119,7 @@ cru.fs.write("kiln://notes/.crucible/proposals/idea.md", body)
 | `cru.retry(fn, opts)` | Exponential backoff retry (opts: `max_retries`, `base_delay`, `max_delay`, `jitter`, `retryable`) |
 | `cru.emitter.new()` | Event emitter with `:on(event, fn)`, `:once(event, fn)`, `:off(event, id)`, `:emit(event, ...)` |
 | `cru.check` | Argument validation: `.string(val, name)`, `.number(val, name, opts)`, `.boolean(val, name)`, `.table(val, name)`, `.func(val, name)`, `.one_of(val, options, name)` -- all support `{optional=true}` |
-| `cru.spawn(fn)` | Spawn an async function as an independent tokio task (daemon context only) |
+| `cru.timer.spawn(fn)` | Spawn an async function as an independent tokio task (daemon context only) |
 | `cru.inspect(value, opts?)` | Pretty-print any value with cycle detection (`<cycle: table>`); opts: `max_depth`, `indent`. Also available as the global `inspect` |
 | `cru.tbl_deep_extend(behavior, ...)` | Deep-merge tables into a new table; `behavior` is `"force"` (last wins) or `"keep"` (first wins) |
 | `cru.tbl_get(t, ...)` | Safe nested access: `cru.tbl_get(cfg, "a", "b", "c")` returns the value or `nil` if any step is missing or not a table |
@@ -148,7 +164,7 @@ local elapsed = cru.timer.clock() - start  -- ~1.0
 
 ## Async Task Spawning
 
-### cru.spawn(fn)
+### cru.timer.spawn(fn)
 
 Spawns an async Lua function as an independent tokio task (fire-and-forget). The function runs concurrently with the caller. Only available when running in daemon context with the `send` feature enabled.
 
@@ -156,7 +172,7 @@ This is needed when event handlers (called via `pcall`) need to perform async op
 
 ```lua
 -- Inside a gateway event handler (runs under pcall):
-cru.spawn(function()
+cru.timer.spawn(function()
     local next_event, err = cru.sessions.subscribe(session_id)
     cru.sessions.send_message(session_id, content)
     while true do

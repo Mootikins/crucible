@@ -532,7 +532,7 @@ The `runtime/plugins/oci/init.lua` plugin is the canonical reference for product
 
 ## Best Practices
 
-1. **Keep handlers fast.** They run on the hot path; long operations should use `cru.timer.sleep` / `cru.spawn` to yield.
+1. **Keep handlers fast.** They run on the hot path; long operations should use `cru.timer.sleep` / `cru.timer.spawn` to yield.
 2. **Use specific patterns.** A `pattern = "*"` handler runs for every tool call; narrow it if possible.
 3. **Return explicitly.** If you want pass-through, `return` with no value. If you transform, return the modified event. Don't accidentally return a truthy value that Crucible interprets as a transform.
 4. **Handle errors gracefully.** Check fields with `event.tool and event.tool:find(...)` rather than assuming shape.

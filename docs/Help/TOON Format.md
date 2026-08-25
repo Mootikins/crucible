@@ -73,7 +73,7 @@ print(cru.oq.format({ users = rows }))     -- smart TOON, long fields extracted
 print(cru.oq.format(result, { tool = "search_notes" }))  -- tool-aware formatting
 ```
 
-`cru.oq` also parses (`parse`, `parse_as`, `detect`), re-encodes (`json`, `json_pretty`,
+`cru.oq` also parses (`parse`, `parse_as`, `detect`), re-encodes (`cru.json.encode`, with `{ pretty = true }` for indented output,
 `yaml`, `toml`), and runs jq-style queries (`query`). See
 [[Help/Plugins/Lua Runtime API]] for the wider `cru.*` surface.
 
