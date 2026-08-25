@@ -4,9 +4,11 @@
 //! registered projects and provides CRUD operations. Projects are
 //! persisted to a JSON file in the crucible home directory.
 
+use crate::registry_store::RegistryStore;
 use crucible_core::config::{read_kiln_config, read_project_config};
 use crucible_core::{Project, ProjectKiln, RepositoryInfo};
 use dashmap::DashMap;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
@@ -79,22 +81,127 @@ pub fn forbidden_root_reason(path: &Path, home: Option<&Path>) -> Option<&'stati
     None
 }
 
+/// The schema version this daemon writes and understands.
+pub const PROJECT_STATE_VERSION: u32 = 1;
+
+/// The whole of `projects.json`.
+///
+/// # Two shapes, one type
+///
+/// This file predates the state-store pattern and shipped as a bare JSON
+/// array. Reading accepts both that and the versioned object; writing always
+/// produces the versioned one, so a file upgrades itself the first time the
+/// daemon touches it. A user who never registers another project keeps a
+/// readable legacy file forever, which is the correct outcome — nothing is
+/// rewritten for its own sake.
+#[derive(Debug, Clone, Serialize)]
+pub struct ProjectStateFile {
+    /// Written on every save so a future reader can refuse a file it is too
+    /// old to model, rather than rewriting it through the wrong struct.
+    pub version: u32,
+    pub projects: Vec<Project>,
+}
+
+impl Default for ProjectStateFile {
+    fn default() -> Self {
+        Self {
+            version: PROJECT_STATE_VERSION,
+            projects: Vec::new(),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ProjectStateFile {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // Untagged, and the object arm is first: a bare array cannot match the
+        // struct, so a legacy file falls through to `Legacy` rather than
+        // erroring. A legacy file is assigned the CURRENT version because it
+        // holds exactly what this build models — there is nothing in it this
+        // daemon could erase.
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Shape {
+            Versioned {
+                version: u32,
+                #[serde(default)]
+                projects: Vec<Project>,
+            },
+            Legacy(Vec<Project>),
+        }
+
+        Ok(match Shape::deserialize(deserializer)? {
+            Shape::Versioned { version, projects } => Self { version, projects },
+            Shape::Legacy(projects) => Self {
+                version: PROJECT_STATE_VERSION,
+                projects,
+            },
+        })
+    }
+}
+
+/// Refuse a file this daemon is too old to read.
+///
+/// Fail closed: a higher version means keys this build does not model, and
+/// writing the file back would erase them.
+fn gate_version(state: ProjectStateFile, path: &Path) -> anyhow::Result<ProjectStateFile> {
+    anyhow::ensure!(
+        state.version <= PROJECT_STATE_VERSION,
+        "{} is version {}; this daemon understands version {PROJECT_STATE_VERSION}. \
+         The daemon is older than the file — upgrade Crucible.",
+        path.display(),
+        state.version
+    );
+    Ok(state)
+}
+
 /// Manages registered projects in the daemon.
 pub struct ProjectManager {
     projects: DashMap<PathBuf, Project>,
-    storage_path: PathBuf,
+    /// The file, behind the same locked read-modify-write the kiln and LLM
+    /// registries use.
+    ///
+    /// `projects.json` was the last registry writing itself: an unlocked
+    /// `fs::write` of the in-memory map. Two writers interleaving lost an
+    /// entry, a crash mid-write left a truncated file that `load` read back as
+    /// the project list, and an older daemon silently erased keys a newer one
+    /// wrote. Two of three registries being safe is worse than none, because
+    /// nobody remembers which is which.
+    store: RegistryStore<ProjectStateFile>,
 }
 
 impl ProjectManager {
     pub fn new(storage_path: PathBuf) -> Self {
         let manager = Self {
             projects: DashMap::new(),
-            storage_path,
+            store: RegistryStore::new(storage_path),
         };
         if let Err(e) = manager.load() {
             warn!("Failed to load projects from storage: {}", e);
         }
         manager
+    }
+
+    /// Where the registry lives. Named in diagnostics.
+    pub fn storage_path(&self) -> &Path {
+        self.store.path()
+    }
+
+    /// Read, gate, mutate, write — all under one lock.
+    ///
+    /// Every writer goes through here, so the version gate cannot be skipped
+    /// by a new call site, and no mutation can read the file, decide, and then
+    /// write with another writer in between.
+    fn update_file<R>(
+        &self,
+        mutate: impl FnOnce(&mut ProjectStateFile) -> R,
+    ) -> Result<R, ProjectError> {
+        let file = self.store.path().to_path_buf();
+        self.store
+            .update(|state| {
+                *state = gate_version(std::mem::take(state), &file)?;
+                Ok(mutate(state))
+            })
+            .map_err(|e| ProjectError::Storage(e.to_string()))
     }
 
     pub fn register(&self, path: &Path) -> Result<Project, ProjectError> {
@@ -172,8 +279,15 @@ impl ProjectManager {
             project = project.with_repository(repo);
         }
 
+        // Written INSIDE the lock, against the file as it stands — not by
+        // replacing the file with this process's in-memory map. The map is a
+        // cache and can be stale; blasting it over the file is how a
+        // concurrent registration disappears.
+        self.update_file(|state| {
+            state.projects.retain(|p| p.path != canonical);
+            state.projects.push(project.clone());
+        })?;
         self.projects.insert(canonical.clone(), project.clone());
-        self.persist()?;
 
         info!(
             path = %canonical.display(),
@@ -239,11 +353,21 @@ impl ProjectManager {
             .canonicalize()
             .map_err(|_| ProjectError::NotFound(path.to_path_buf()))?;
 
-        if self.projects.remove(&canonical).is_none() {
+        // The FILE decides whether there was anything to remove, and it
+        // decides under the lock. The in-memory map can be missing an entry a
+        // second daemon wrote a moment ago, and reporting NotFound for one
+        // that is on disk would leave it there forever.
+        let removed = self.update_file(|state| {
+            let before = state.projects.len();
+            state.projects.retain(|p| p.path != canonical);
+            state.projects.len() != before
+        })?;
+
+        self.projects.remove(&canonical);
+        if !removed {
             return Err(ProjectError::NotFound(canonical));
         }
 
-        self.persist()?;
         info!(path = %canonical.display(), "Project unregistered");
         Ok(())
     }
@@ -305,10 +429,29 @@ impl ProjectManager {
             false
         };
 
-        // Now safe to call persist() - no DashMap locks held
+        // Now safe to write — no DashMap locks held. The timestamp is applied
+        // to the FILE's entry, not by writing this process's whole map over
+        // it: a touch must not resurrect a project another writer just
+        // unregistered, nor drop one it just added.
         if should_persist {
-            if let Err(e) = self.persist() {
-                warn!("Failed to persist after touch: {}", e);
+            if let Ok(canonical) = path.canonicalize() {
+                let written = self.update_file(|state| {
+                    match state.projects.iter_mut().find(|p| p.path == canonical) {
+                        Some(project) => {
+                            project.touch();
+                            true
+                        }
+                        None => false,
+                    }
+                });
+                match written {
+                    Ok(true) => {}
+                    Ok(false) => debug!(
+                        path = %canonical.display(),
+                        "Touched a project the registry file no longer holds"
+                    ),
+                    Err(e) => warn!("Failed to persist after touch: {}", e),
+                }
             }
         }
     }
@@ -406,26 +549,14 @@ impl ProjectManager {
         (name, kilns)
     }
 
-    fn persist(&self) -> Result<(), ProjectError> {
-        let projects: Vec<Project> = self.projects.iter().map(|r| r.value().clone()).collect();
-        let json = serde_json::to_string_pretty(&projects)?;
-
-        if let Some(parent) = self.storage_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        fs::write(&self.storage_path, json)?;
-        debug!(path = %self.storage_path.display(), count = projects.len(), "Projects persisted");
-        Ok(())
-    }
-
     fn load(&self) -> Result<(), ProjectError> {
-        if !self.storage_path.exists() {
-            return Ok(());
-        }
-
-        let content = fs::read_to_string(&self.storage_path)?;
-        let projects: Vec<Project> = serde_json::from_str(&content)?;
+        let file = self.store.path().to_path_buf();
+        let state = self
+            .store
+            .read()
+            .and_then(|state| gate_version(state, &file))
+            .map_err(|e| ProjectError::Storage(e.to_string()))?;
+        let projects = state.projects;
         let home = dirs::home_dir();
 
         for mut project in projects {
@@ -469,7 +600,7 @@ impl ProjectManager {
         }
 
         debug!(
-            path = %self.storage_path.display(),
+            path = %self.storage_path().display(),
             count = self.projects.len(),
             "Projects loaded"
         );
@@ -493,6 +624,12 @@ pub enum ProjectError {
 
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+
+    /// The registry file could not be read or written. Distinct from `Io`
+    /// because the message already names the file and says what to do about
+    /// it — a version gate's refusal is not an errno.
+    #[error("{0}")]
+    Storage(String),
 }
 
 #[cfg(test)]
@@ -772,6 +909,120 @@ path = "./notes"
             assert_eq!(manager.list().len(), 1);
             assert_eq!(manager.list()[0].name, "persist-test");
         }
+    }
+
+    /// Eight `ProjectManager`s over one file, registering at once.
+    ///
+    /// This is the property the unlocked writer did not have. It read the file
+    /// (or rather, ignored it), serialized its own in-memory map, and wrote
+    /// the lot — so two managers interleaving left only the entries the last
+    /// one happened to hold. Each manager here knows about exactly one
+    /// project, which is the worst case for that bug and a no-op for a writer
+    /// that mutates the file under a lock.
+    ///
+    /// Separate managers, not threads sharing one: sharing a `DashMap` would
+    /// hide the defect behind the in-memory merge.
+    #[test]
+    fn concurrent_writers_do_not_lose_a_project() {
+        let tmp = TempDir::new().unwrap();
+        let storage = tmp.path().join("projects.json");
+        let dirs: Vec<PathBuf> = (0..8)
+            .map(|n| {
+                let dir = tmp.path().join(format!("project-{n}"));
+                fs::create_dir(&dir).unwrap();
+                dir
+            })
+            .collect();
+
+        let handles: Vec<_> = dirs
+            .iter()
+            .map(|dir| {
+                let storage = storage.clone();
+                let dir = dir.clone();
+                std::thread::spawn(move || {
+                    ProjectManager::new(storage).register(&dir).unwrap();
+                })
+            })
+            .collect();
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        let reloaded = ProjectManager::new(storage);
+        assert_eq!(
+            reloaded.list().len(),
+            8,
+            "every writer's project must survive: {:?}",
+            reloaded.list().iter().map(|p| &p.name).collect::<Vec<_>>()
+        );
+    }
+
+    /// `projects.json` shipped as a bare JSON array. A file written by an
+    /// older Crucible has to keep working, and the first write upgrades it.
+    #[test]
+    fn a_legacy_bare_array_file_is_read_and_upgraded_on_the_next_write() {
+        let tmp = TempDir::new().unwrap();
+        let storage = tmp.path().join("projects.json");
+        let existing = tmp.path().join("existing");
+        let added = tmp.path().join("added");
+        fs::create_dir(&existing).unwrap();
+        fs::create_dir(&added).unwrap();
+
+        // The old shape, written by hand exactly as an older daemon wrote it.
+        let legacy = serde_json::to_string_pretty(&vec![Project::new(
+            existing.canonicalize().unwrap(),
+            "existing".to_string(),
+        )])
+        .unwrap();
+        fs::write(&storage, legacy).unwrap();
+
+        let manager = ProjectManager::new(storage.clone());
+        assert_eq!(manager.list().len(), 1, "the legacy file must be read");
+
+        manager.register(&added).unwrap();
+
+        let on_disk: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&storage).unwrap()).unwrap();
+        assert_eq!(
+            on_disk["version"], PROJECT_STATE_VERSION,
+            "the first write upgrades the shape: {on_disk}"
+        );
+        assert_eq!(
+            on_disk["projects"].as_array().map(Vec::len),
+            Some(2),
+            "and it keeps what the legacy file held: {on_disk}"
+        );
+    }
+
+    /// Fail closed on a file from a newer Crucible. An older daemon writing it
+    /// back through this build's struct would erase every key this build does
+    /// not model.
+    #[test]
+    fn a_newer_file_is_refused_rather_than_rewritten() {
+        let tmp = TempDir::new().unwrap();
+        let storage = tmp.path().join("projects.json");
+        let dir = tmp.path().join("project");
+        fs::create_dir(&dir).unwrap();
+        fs::write(
+            &storage,
+            r#"{"version": 99, "projects": [], "something_new": true}"#,
+        )
+        .unwrap();
+
+        let manager = ProjectManager::new(storage.clone());
+        let err = manager
+            .register(&dir)
+            .expect_err("a newer file must not be written through this struct");
+        assert!(
+            err.to_string().contains("projects.json"),
+            "the refusal must name the file: {err}"
+        );
+
+        let after = fs::read_to_string(&storage).unwrap();
+        assert!(
+            after.contains("something_new"),
+            "the file must be left exactly as it was: {after}"
+        );
     }
 
     /// What `cru project forget` removes stays removed.

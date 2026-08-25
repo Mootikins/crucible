@@ -147,6 +147,9 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
                 &config,
                 plugin_sections.clone(),
                 plugin_watch,
+                cli.config
+                    .clone()
+                    .unwrap_or_else(crucible_core::config::CliAppConfig::default_config_path),
             ),
         )
         .await?;

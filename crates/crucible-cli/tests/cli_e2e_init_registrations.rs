@@ -132,3 +132,50 @@ fn acp_registers_a_kiln_directory_with_the_daemon() {
         "`--kiln <path>` must not write the user's config any more"
     );
 }
+
+/// The refusal names the config file, not "your config".
+///
+/// `kiln.register` refuses a name the config layer already declares elsewhere,
+/// and `kiln.forget` refuses a config-declared name outright. Both messages are
+/// built from the daemon's `config_path`, which was threaded through the bind
+/// params during M4 and then passed as `None` by both call sites — so every one
+/// of those refusals said "your config" and left a user with a global file and a
+/// kiln-local one to guess which layer had refused them.
+///
+/// Crossing the process boundary is the only way to catch that: the handler
+/// tests pass a path directly and cannot see a caller that supplies none.
+#[test]
+fn a_config_layer_refusal_names_the_config_file() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let declared = workspace.path().join("declared");
+    let other = workspace.path().join("other");
+    std::fs::create_dir_all(&declared).expect("declared dir");
+    std::fs::create_dir_all(&other).expect("other dir");
+
+    // A config that declares `notes`, so the config layer owns the name.
+    let daemon = TestDaemon::start_with_extra_config(&format!(
+        "\n[kilns]\nnotes = \"{}\"\n",
+        cli_e2e_helpers::toml_escape(&declared)
+    ));
+
+    let output = daemon
+        .command()
+        .args(["kiln", "register", "notes", other.to_str().unwrap()])
+        .output()
+        .expect("run cru kiln register");
+
+    let message = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !output.status.success(),
+        "re-pointing a config-declared name must be refused: {message}"
+    );
+    let config_file = daemon.config_path.to_string_lossy();
+    assert!(
+        message.contains(config_file.as_ref()),
+        "the refusal must name {config_file}, not 'your config': {message}"
+    );
+}

@@ -111,6 +111,13 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
             }
         });
 
+        // The file the config came from, resolved the same way `load` resolves
+        // it. Refusals name it: a user told "that kiln name is declared in your
+        // config" cannot act on it without knowing which file to open, and with
+        // `--config` in play the answer is not guessable.
+        let source = config_path
+            .clone()
+            .unwrap_or_else(crucible_core::config::CliAppConfig::default_config_path);
         let config = CliConfig::load(config_path.clone(), None, None)?;
         let (plugin_sections, plugin_watch) =
             crucible_daemon::daemon_plugins::split_plugins_config(&config.plugins);
@@ -119,6 +126,7 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
             &config,
             plugin_sections.clone(),
             plugin_watch,
+            source,
         ))
         .await?;
 

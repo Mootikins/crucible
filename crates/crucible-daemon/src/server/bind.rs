@@ -55,12 +55,21 @@ impl BindWithPluginConfigParams {
     /// so `cru --standalone` ran with none of the user's permission rules, and
     /// BOTH passed `None` for `mcp_config`, so the MCP gateway never started
     /// outside a test. A caller now names only what the config cannot decide:
-    /// the socket, the split plugin sections and the watch flag.
+    /// the socket, the split plugin sections, the watch flag, and the file the
+    /// config was read from.
+    ///
+    /// `config_path` is required rather than optional here because
+    /// `CliAppConfig::load` reads exactly ONE file — the explicit `--config` or
+    /// the default path — so a loaded config always has a source, and a caller
+    /// that could not name it would be a caller that did not know what it
+    /// loaded. The `Option` survives on the field itself for the binding that
+    /// genuinely has no file: an in-process daemon handed a config value.
     pub fn from_app_config(
         path: std::path::PathBuf,
         config: &crucible_core::config::CliAppConfig,
         plugin_config: std::collections::HashMap<String, serde_json::Value>,
         plugin_watch: bool,
+        config_path: std::path::PathBuf,
     ) -> Self {
         Self {
             path,
@@ -83,7 +92,7 @@ impl BindWithPluginConfigParams {
             app_config: serde_json::to_value(config).ok(),
             data_home: config.data_home.clone(),
             config_home: None,
-            config_path: None,
+            config_path: Some(config_path),
         }
     }
 }
@@ -209,6 +218,7 @@ auto_archive_hours = 12
             &config,
             Default::default(),
             false,
+            std::path::PathBuf::from("/etc/crucible/config.toml"),
         );
 
         let mcp = params.mcp_config.expect("[mcp] reaches the daemon");
@@ -224,6 +234,12 @@ auto_archive_hours = 12
             "[context] reaches the daemon"
         );
         assert_eq!(params.auto_archive_hours, Some(12));
+        assert_eq!(
+            params.config_path.as_deref(),
+            Some(std::path::Path::new("/etc/crucible/config.toml")),
+            "the file the config came from reaches the daemon, or every refusal \
+             that names it says 'your config' instead"
+        );
         assert_eq!(params.runtimepath.len(), 1);
         assert!(params.llm_config.is_some());
         assert!(
