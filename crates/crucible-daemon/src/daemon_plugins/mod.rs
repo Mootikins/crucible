@@ -198,7 +198,7 @@ impl DaemonPluginLoader {
     pub fn new(plugin_config: HashMap<String, serde_json::Value>) -> anyhow::Result<Self> {
         let executor = LuaExecutor::new().map_err(|e| anyhow::anyhow!("LuaExecutor init: {e}"))?;
 
-        // LuaExecutor::new() already registers: http, fs, timer, ratelimit, lua_stdlib.
+        // LuaExecutor::new() already registers: http, fs, timer, ratelimit, the prelude.
         // Register additional daemon-specific modules here.
         let lua = executor.lua();
 

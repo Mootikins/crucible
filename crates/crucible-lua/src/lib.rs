@@ -60,7 +60,6 @@ mod http;
 pub mod isolation;
 mod json_query;
 pub mod lifecycle;
-mod lua_stdlib;
 pub mod lua_util;
 pub mod manifest;
 mod mcp;
@@ -72,6 +71,7 @@ pub mod options;
 mod paths;
 pub mod plugin_context;
 pub mod plugin_status;
+mod prelude;
 pub mod publications;
 mod ratelimit;
 pub mod schedule;
@@ -138,13 +138,13 @@ pub use json_query::{
     detect_format, encode_to_format, json_to_lua, lua_to_json, parse_auto, parse_with_format,
     register_oq_module, Format,
 };
-pub use lua_stdlib::{register_lua_stdlib, register_test_harness};
 pub use oil::{register_oil_module, LuaNode};
 pub use paths::{register_paths_module, PathsContext};
 pub use plugin_context::{
     current_may_intercept, current_plugin_context, current_plugin_name, enter_plugin,
     set_plugin_context, PluginContext,
 };
+pub use prelude::{register_prelude, register_test_harness};
 pub use ratelimit::register_ratelimit_module;
 pub use schedule::register_schedule_module;
 pub use schema::{discovered_params_to_json_schema, generate_input_schema};

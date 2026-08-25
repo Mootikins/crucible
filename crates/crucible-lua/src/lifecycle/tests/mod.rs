@@ -150,6 +150,6 @@ pub(super) fn setup_emitter_manager_with_paths(paths: Vec<PathBuf>) -> PluginMan
         )
         .exec()
         .unwrap();
-    crate::lua_stdlib::register_lua_stdlib(&manager.lua).unwrap();
+    crate::prelude::register_prelude(&manager.lua).unwrap();
     manager
 }

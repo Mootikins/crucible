@@ -322,7 +322,7 @@ impl LuaExecutor {
         register_fs_module(lua)?;
         crate::timer::register_timer_module(lua)?;
         crate::ratelimit::register_ratelimit_module(lua)?;
-        crate::lua_stdlib::register_lua_stdlib(lua)?;
+        crate::prelude::register_prelude(lua)?;
 
         Ok(())
     }
@@ -332,7 +332,7 @@ impl LuaExecutor {
     /// Only the plugin test runner calls this. A production VM must not carry
     /// `describe`, `it`, `run_tests`, or the harness `assert` table.
     pub fn install_test_harness(&self) -> Result<(), LuaError> {
-        crate::lua_stdlib::register_test_harness(&self.lua).map_err(LuaError::from)
+        crate::prelude::register_test_harness(&self.lua).map_err(LuaError::from)
     }
 
     /// Compile Fennel source to Lua with this executor's compiler.

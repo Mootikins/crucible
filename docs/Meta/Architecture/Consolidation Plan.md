@@ -825,7 +825,7 @@ Items the pass kept, with the reason:
 - [narrow-to-cfg(test)] PluginErrorLog::clear, is_empty (lifecycle/error_log.rs:55) — clear is test-only; narrow it to #[cfg(test)]. Keep is_empty: pub len() without is_empty trips clippy::len_without_is_empty, which just ci lints.
 - [keep] load_plugin_spec_from_source (lifecycle/spec.rs:136) — The claim is wrong. Only the pub(crate) re-export in lifecycle/mod.rs:30 is test-only; it could become #[cfg(test)] but that is trivial.
 - [keep] PluginSpec.handlers, DiscoveredHandler (lifecycle/spec.rs:23) — Handlers are parsed but never dispatched; the daemon warns about this on purpose. The count appears in an RPC response (server/plugins.rs:55), so removal changes a wire payload.
-- [keep] cru.tbl_get, cru.tbl_deep_extend, cru.on_error (lua_stdlib/qol.rs:123) — These are documented public Lua API for user plugins, not internal code. No bundled runtime plugin uses them. cru.on_error is documented as a reserved slot that nothing invokes; deleting it means remo
+- [keep] cru.tbl_get, cru.tbl_deep_extend, cru.on_error (prelude/qol.rs:123) — These are documented public Lua API for user plugins, not internal code. No bundled runtime plugin uses them. cru.on_error is documented as a reserved slot that nothing invokes; deleting it means remo
 - [keep] compile_fennel (fennel.rs:105) — The claim is wrong. The function is the only Fennel compile path for spec extraction and discovery.
 - [keep] McpGatewayManager::upstream_status tools/mcp_gateway.rs:454 (weak: own tests only) — The item is already gone. Nothing to remove. Strike the claim from the plan.
 - [keep-protected-path] RpcMethod::SessionReindex rpc/dispatch.rs:175 (weak; protected path; retired name in METHODS) — Referenced by a handler arm, a CLI test and the changelog. Protected path rpc/dispatch.rs. Removal is a wire change (METHODS list).
@@ -879,7 +879,7 @@ For each item: run `rg -nw <name>` over `crates/ runtime/ docs/ scripts/ example
 - [ ] `PluginErrorLog::clear`, `is_empty` `lifecycle/error_log.rs:55`
 - [ ] `load_plugin_spec_from_source` `lifecycle/spec.rs:136`
 - [ ] `PluginSpec.handlers`, `DiscoveredHandler` `lifecycle/spec.rs:23`
-- [ ] `cru.tbl_get`, `cru.tbl_deep_extend`, `cru.on_error` `lua_stdlib/qol.rs:123` (grep `runtime/` Lua and Fennel)
+- [ ] `cru.tbl_get`, `cru.tbl_deep_extend`, `cru.on_error` `prelude/qol.rs:123` (grep `runtime/` Lua and Fennel)
 - [ ] `compile_fennel` `fennel.rs:105`
 - [ ] `get_pending_notifications`, `get_messages_action` `notify.rs:241`, `:262`
 - [ ] `ModeRegistry::is_empty` `modes.rs:183`

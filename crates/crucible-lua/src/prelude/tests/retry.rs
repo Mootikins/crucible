@@ -1,4 +1,4 @@
-use super::super::register_lua_stdlib;
+use super::super::register_prelude;
 use crate::test_support::TestLuaBuilder;
 use mlua::Lua;
 
@@ -67,7 +67,7 @@ async fn test_retry_with_real_timer() {
     lua.load("cru = cru or {}").exec().unwrap();
     lua.load(r#"cru.log = function() end"#).exec().unwrap();
     crate::timer::register_timer_module(&lua).unwrap();
-    register_lua_stdlib(&lua).unwrap();
+    register_prelude(&lua).unwrap();
 
     let start = std::time::Instant::now();
     let result: (String, i32) = lua
