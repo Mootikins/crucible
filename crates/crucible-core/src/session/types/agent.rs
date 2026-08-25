@@ -163,7 +163,9 @@ impl SessionAgent {
             max_context_tokens: None,
             thinking_budget: None,
             endpoint: None,
-            env_overrides: profile.env.clone(),
+            // The profile's map is BTreeMap (stable config rendering); the
+            // session type keeps its own shape.
+            env_overrides: profile.env.clone().into_iter().collect(),
             mcp_servers: Vec::new(),
             agent_card_name: None,
             agent_description: profile.description.clone(),
@@ -718,7 +720,7 @@ mod internal_defaults_tests {
     fn the_default_provider_supplies_model_key_endpoint_and_knobs() {
         let llm = LlmConfig {
             default: Some("anthropic".to_string()),
-            providers: HashMap::from([(
+            providers: std::collections::BTreeMap::from([(
                 "anthropic".to_string(),
                 LlmProviderConfig::builder(BackendType::Anthropic)
                     .model("claude-x")

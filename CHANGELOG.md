@@ -28,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   never fired before and does not fire now.
 
 ### Added
+- **`cru config migrate`** — the one-time TOML → Lua generator. It moves
+  machine-written `auto` kiln entries (and the machine-set default) into
+  `kilns.json`, seeds `projects.json`, emits everything else as Lua,
+  verifies the result in memory before writing anything, names what moved
+  and what stayed, and renames `config.toml` to `config.toml.migrated`.
+- **`config.effective` RPC** — the daemon's live config, its config root,
+  its boot-input hash, and per-leaf provenance.
 - **`kiln://<name>/<path>` addressing in `cru.fs`.** Plugin Lua can read and
   write kiln-relative files without learning the kiln's absolute path. The
   daemon resolves the name through the registry and refuses `..`, absolute
@@ -65,6 +72,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   refuses — a symlink into `~/.config`, or a dotfiles repo holding `.ssh`.
 
 ### Changed
+- **`init.lua` is evaluated BEFORE plugins load, in the one plugin VM.** The
+  daemon seeds defaults plus the (now deprecated) `config.toml`, evaluates
+  `init.lua` once under a 30 s budget, then activates plugins against the
+  result — Neovim's model. `init.lua` can author any config key,
+  `runtimepath` included, and a `runtimepath` addition serves `require` on
+  the next line. `cru.config.set` deep-merges (objects merge per key; arrays
+  and scalars replace; `__replace = true` replaces a table wholesale) with
+  `file:line` provenance per leaf.
+- **Plugin configuration is one form per plugin.** A direct
+  `require("x").setup{...}` in `init.lua` OWNS that plugin's setup;
+  the `plugins.x` store section feeds the default `setup(cfg)` for every
+  other plugin. A plugin configured both ways takes the direct call, and
+  the boot warns once naming the ignored section. (Per-key layering of the
+  two forms is gone.)
+- **Commands acquire config at dispatch.** Daemon-backed commands fetch the
+  daemon's `config.effective` when one runs (with a root-mismatch refusal
+  and a staleness warning); bootstrap commands run one throwaway
+  evaluation; the rest load nothing. The config file's `logging_level`
+  governs the daemon and bootstrap commands only.
+- **`cru config show --sources` walks every leaf** and names each source —
+  `default`, `toml (<path>)`, `lua (<file>:<line>)`, `rpc`, `cli`,
+  `registered`, `discovered` — and says whether it rendered the daemon's
+  copy or a local evaluation. `kiln forget` refusals name a Lua
+  declaration's exact `file:line`.
+- **Config map fields render in stable order.** `kilns`, `projects`,
+  `plugins`, `llm.providers`, `llm.models`, `acp.agents`, and MCP `env`
+  are ordered maps now, so `cru config show` output stops shuffling
+  between runs.
+- **The first-run wizard and `cru config init` write `init.lua`, not
+  `config.toml`.** The wizard verifies the file by evaluation before
+  writing it and records the provider selection in `llm.json`.
 - **`cru session send --raw` and `replay --raw` emit `event_type` again,
   beside `event`.** The rename to `event` dropped the old key with no
   deprecation window, which broke readers of the old shape in one release.
@@ -201,6 +239,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   worth holding a task open for the provider's own timeout.
 
 ### Fixed
+- **`--config X` now evaluates `X`'s own `init.lua`.** The daemon used to
+  evaluate `~/.config/crucible/init.lua` regardless of `--config`, so a
+  daemon on an alternate root ran someone else's Lua. The config file's
+  directory is the config root now; an `init.lua` kept in the DEFAULT
+  directory is no longer read when `--config` points elsewhere.
+- **In-process test daemons no longer evaluate the developer's real
+  `init.lua`.** The value-injection bind path reads no user file at all,
+  and a regression test pins it.
 - **A saved bash allow-rule matches each chained statement.** A rule for
   `git ` allowed `git log; curl evil`. Every statement joined by `;`, `&&`,
   `||`, `|`, `&` or a newline must match, and a line with `$(...)`,

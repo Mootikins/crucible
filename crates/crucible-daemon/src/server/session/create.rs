@@ -410,7 +410,10 @@ impl RpcContext {
                 Some(card) => Ok(crucible_core::session::SessionAgent::from_card(
                     card,
                     &base,
-                    self.llm_config.get().map(|c| c.models.clone()).as_ref(),
+                    self.llm_config
+                        .get()
+                        .map(|c| c.models.clone().into_iter().collect())
+                        .as_ref(),
                 )),
                 None => Err(format!(
                     "Unknown agent card: {name}. Available cards: {}",

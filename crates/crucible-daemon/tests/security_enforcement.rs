@@ -29,7 +29,7 @@ use tokio::sync::broadcast;
 fn local_ollama_config() -> crucible_core::config::LlmConfig {
     crucible_core::config::LlmConfig {
         default: None,
-        providers: HashMap::from([(
+        providers: std::collections::BTreeMap::from([(
             "ollama".to_string(),
             crucible_core::config::LlmProviderConfig {
                 provider_type: BackendType::Ollama,

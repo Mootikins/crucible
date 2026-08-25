@@ -415,9 +415,24 @@ pub(crate) async fn handle_kiln_forget(
                 .filter(|kiln| kiln.origin() == RegistrationOrigin::Config)
         });
         if let Some(kiln) = declared {
-            let file = config_path
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| "your config".to_string());
+            // A Lua-declared entry carries its call site in the boot
+            // provenance: name `file:line`, not just a file, so the user
+            // can go to the exact declaration. A TOML seed names its file;
+            // no provenance falls back to the config path the daemon was
+            // handed.
+            let declared_at = crucible_lua::get_app_config_provenance().and_then(|provenance| {
+                let exact = format!("kilns.{}", params.name);
+                let prefix = format!("{exact}.");
+                provenance
+                    .iter()
+                    .find(|(path, _)| **path == exact || path.starts_with(&prefix))
+                    .map(|(_, tag)| tag.detail())
+            });
+            let file = declared_at.unwrap_or_else(|| {
+                config_path
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "your config".to_string())
+            });
             return Response::error(
                 req.id,
                 INVALID_PARAMS,
@@ -1530,6 +1545,49 @@ mod tests {
             .resolve(&KilnName::parse("notes").unwrap())
             .registered()
             .is_some());
+    }
+
+    /// A Lua-declared kiln upgrades the refusal from file-only to
+    /// `file:line`: the boot provenance knows the exact `cru.config.set`
+    /// call site, so the user is sent to the declaration, not the file.
+    #[tokio::test]
+    async fn forgetting_a_lua_declared_kiln_names_the_call_site() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let dir = tmp.path().join("notes");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // The boot store as the daemon's evaluation leaves it: a kilns entry
+        // merged during the boot phase with a Lua call-site tag, location
+        // keys stripped from the value afterwards — provenance survives.
+        crucible_lua::begin_boot_store();
+        crucible_lua::merge_app_config_tagged(
+            serde_json::json!({ "kilns": { "notes": dir.to_string_lossy() } }),
+            crucible_core::config::SourceTag::Lua {
+                file: "init.lua".to_string(),
+                line: Some(7),
+            },
+        );
+        crucible_lua::end_boot_phase();
+
+        let registry = crate::test_support::kiln_registry(&data_home, &[("notes", &dir)]);
+        let state = Arc::new(crate::kiln_state::KilnStateStore::new(&data_home));
+        let config_path = tmp.path().join("config.toml");
+
+        let resp = handle_kiln_forget(
+            name_request("kiln.forget", "notes"),
+            &registry,
+            &state,
+            Some(&config_path),
+        )
+        .await;
+
+        let err = resp.error.expect("a declared name must be refused");
+        assert!(
+            err.message.contains("lua (init.lua:7)"),
+            "the refusal must name the call site: {}",
+            err.message
+        );
     }
 
     /// The shadowed case is the one where `forget` earns its keep: both layers

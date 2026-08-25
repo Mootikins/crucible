@@ -6,7 +6,7 @@ async fn test_switch_model_zai_llm_config() {
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
-    let mut providers = std::collections::HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "zai-coding".to_string(),
         LlmProviderConfig::builder(BackendType::ZAI)
@@ -62,7 +62,7 @@ async fn test_switch_model_legacy_still_works() {
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
-    let mut llm_providers = std::collections::HashMap::new();
+    let mut llm_providers = std::collections::BTreeMap::new();
     llm_providers.insert(
         "local".to_string(),
         LlmProviderConfig::builder(BackendType::Ollama)
@@ -121,7 +121,7 @@ async fn test_switch_model_llm_config_invalidates_cache() {
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
-    let mut providers = std::collections::HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "zai-coding".to_string(),
         LlmProviderConfig::builder(BackendType::ZAI)
@@ -222,11 +222,10 @@ async fn test_switch_model_org_slash_model_format() {
 #[tokio::test]
 async fn test_switch_model_to_zai_provider() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
-    use std::collections::HashMap;
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
-    let mut providers = HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "openai".to_string(),
         LlmProviderConfig::builder(BackendType::OpenAI)

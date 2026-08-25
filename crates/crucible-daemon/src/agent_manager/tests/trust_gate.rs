@@ -26,7 +26,7 @@ fn straddling_providers() -> LlmConfig {
     };
     LlmConfig {
         default: None,
-        providers: HashMap::from([
+        providers: std::collections::BTreeMap::from([
             (
                 "local".to_string(),
                 provider(BackendType::Ollama, TrustLevel::Local),

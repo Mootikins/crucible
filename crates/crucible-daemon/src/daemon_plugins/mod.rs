@@ -9,9 +9,14 @@
 //! ([`DaemonPluginLoader::register_statusline_exprs`]) are still registered:
 //! plugins *build* UI descriptions daemon-side and clients render them.
 
+pub mod boot;
 pub mod bootstrap;
 pub mod option_store;
 
+pub use boot::{
+    boot_input_hash, evaluate_boot_config, evaluate_boot_config_with_paths, BootConfig,
+    PluginPathsFn,
+};
 pub use bootstrap::{
     bootstrap_plugin_entry, bootstrap_plugins, daemon_plugin_paths, default_daemon_plugin_paths,
     BootstrapOutcome,
@@ -95,7 +100,7 @@ fn extract_exports(spec: &mlua::Table) -> PluginExports {
 /// and the file watcher stayed hardcoded off (`plugin_watch: false` at every
 /// construction site, with no config key at all).
 pub fn split_plugins_config(
-    raw: &HashMap<String, serde_json::Value>,
+    raw: &std::collections::BTreeMap<String, serde_json::Value>,
 ) -> (HashMap<String, serde_json::Value>, bool) {
     let watch = raw.get("watch").and_then(|v| v.as_bool()).unwrap_or(false);
     let sections = raw
@@ -157,6 +162,12 @@ pub struct DaemonPluginLoader {
     publications: PublicationRegistry,
     /// Settings trees plugins declared, read by TUI and web.
     options: OptionsRegistry,
+    /// One notice per plugin configured BOTH ways: a `plugins.<name>` store
+    /// section AND a direct `setup` call in init.lua. The direct call owns
+    /// the plugin, so the section is ignored — and one layer superseding
+    /// another must never be silent. Warned at activation and kept here so
+    /// a surface (and a test) can read what was said.
+    supersession_notices: std::sync::Mutex<Vec<String>>,
     /// Data root under which [`option_store`] keeps values changed through the
     /// settings pane — the daemon's *resolved* `data_home`, never the global
     /// `crucible_home()`, so an injected root is honored.
@@ -280,8 +291,35 @@ impl DaemonPluginLoader {
             status,
             publications,
             options,
+            supersession_notices: std::sync::Mutex::new(Vec::new()),
             option_store_dir: None,
         })
+    }
+
+    /// Install the `[plugins.<name>]` sections after construction.
+    ///
+    /// The boot inversion creates the loader BEFORE the config exists — the
+    /// VM must be live for `init.lua` to evaluate in it — so the sections
+    /// arrive from the FINAL store once the evaluation has finished, and the
+    /// `cru.plugin.config` table is re-registered over the empty one the
+    /// constructor installed.
+    pub fn with_plugin_config(
+        mut self,
+        plugin_config: HashMap<String, serde_json::Value>,
+    ) -> anyhow::Result<Self> {
+        Self::register_plugin_config(self.executor.lua(), plugin_config.clone())
+            .map_err(|e| anyhow::anyhow!("config module: {e}"))?;
+        self.plugin_config = plugin_config;
+        Ok(self)
+    }
+
+    /// The both-forms notices recorded at activation — see
+    /// `supersession_notices`.
+    pub fn supersession_notices(&self) -> Vec<String> {
+        self.supersession_notices
+            .lock()
+            .map(|notices| notices.clone())
+            .unwrap_or_default()
     }
 
     /// Bind the data root persisted plugin options live under.
@@ -708,6 +746,25 @@ end
             }
         }
 
+        // A disabled plugin the user's init.lua `require`d still loaded its
+        // module (as in Neovim) — and its top-level `cru.on` calls registered
+        // under its name through the boot searcher's context stamp. Activation
+        // registers none of a disabled plugin's hooks or exports, so what the
+        // module load registered is cleared here.
+        for name in boot::BootRequireState::required_plugins(self.executor.lua()) {
+            let disabled = self
+                .plugin_manager
+                .get(&name)
+                .is_some_and(|p| p.state == crucible_lua::manifest::PluginState::Disabled);
+            if disabled {
+                self.handler_registry.clear_plugin_handlers(&name);
+                if let Err(e) = crucible_lua::clear_plugin_hooks(self.executor.lua(), &name) {
+                    warn!("clear boot-require hooks for disabled plugin '{name}': {e}");
+                }
+                info!("Plugin '{name}' is disabled; its boot-require registrations were cleared");
+            }
+        }
+
         let loaded = self
             .plugin_manager
             .load_all()
@@ -963,6 +1020,44 @@ end
         init_path: &std::path::Path,
     ) -> anyhow::Result<PluginExports> {
         let lua = self.executor.lua();
+
+        // One module, one setup, per plugin: a plugin whose entry module the
+        // user's init.lua already `require`d is activated FROM that same
+        // `package.loaded` instance — the file is never evaluated a second
+        // time — and a plugin whose `setup` the user called owns its setup:
+        // the default `setup(cfg)` call is skipped for it.
+        if let Some((spec, module_name)) = self.boot_required_instance(init_path)? {
+            // Rebind the attribution modules WITHOUT releasing: the boot
+            // require already ran this plugin's body under its own binding,
+            // and releasing here would wipe what the body published.
+            register_publish_module(lua, self.publications.clone(), name.to_string())?;
+            crucible_lua::register_options_module(lua, self.options.clone(), name.to_string())?;
+
+            // Ownership is keyed by the MODULE name the user required, which
+            // is not always the plugin's declared name.
+            let owner_key = module_name.split('.').next().unwrap_or(&module_name);
+            if boot::BootRequireState::user_owns_setup(lua, owner_key) {
+                debug!("Plugin '{name}': init.lua called setup(); the default call is skipped");
+                // The direct call owns the plugin — but a store section for
+                // the same plugin is being ignored, and that must be said,
+                // once, at boot. Silence here is how a user concludes a
+                // setting never worked.
+                if self.plugin_config.contains_key(name) {
+                    let notice = format!(
+                        "init.lua calls {name}'s setup directly, so the plugins.{name} config                          section is ignored; move those keys into the setup call"
+                    );
+                    warn!("{notice}");
+                    if let Ok(mut notices) = self.supersession_notices.lock() {
+                        notices.push(notice);
+                    }
+                }
+            } else {
+                self.call_plugin_setup(name, &spec).await?;
+            }
+            info!("Activated plugin '{name}' from the module instance init.lua required");
+            return Ok(extract_exports(&spec));
+        }
+
         let plugin_dir = init_path
             .parent()
             .ok_or_else(|| anyhow::anyhow!("init path has no parent"))?;
@@ -1075,6 +1170,43 @@ end
         Ok(exports)
     }
 
+    /// The `package.loaded` instance the user's boot `require` created for
+    /// this plugin's entry module, when it exists and was loaded from THIS
+    /// plugin's own entry file (a user `lua/` module that shadows the name
+    /// does not count).
+    /// Matched by FILE identity, not by plugin name: activation must never
+    /// execute a file `package.loaded` already holds, whatever name the
+    /// user's `require` reached it under — re-executing doubles every
+    /// top-level hook and publish. Returns the instance and the module name
+    /// it was loaded as (whose first segment keys the setup-ownership
+    /// record).
+    fn boot_required_instance(
+        &self,
+        init_path: &std::path::Path,
+    ) -> anyhow::Result<Option<(mlua::Table, String)>> {
+        let lua = self.executor.lua();
+        let canonical_init =
+            std::fs::canonicalize(init_path).unwrap_or_else(|_| init_path.to_path_buf());
+        let Some(module_name) = boot::BootRequireState::module_for_file(lua, &canonical_init)
+        else {
+            return Ok(None);
+        };
+        let package: mlua::Table = lua
+            .globals()
+            .get("package")
+            .map_err(|e| anyhow::anyhow!("package table: {e}"))?;
+        let loaded: mlua::Table = package
+            .get("loaded")
+            .map_err(|e| anyhow::anyhow!("package.loaded: {e}"))?;
+        match loaded
+            .get::<mlua::Value>(module_name.as_str())
+            .map_err(|e| anyhow::anyhow!("package.loaded[{module_name}]: {e}"))?
+        {
+            mlua::Value::Table(table) => Ok(Some((table, module_name))),
+            _ => Ok(None),
+        }
+    }
+
     /// Whether this plugin's installation granted it the right to take a tool
     /// call over (`intercept_tools` in its manifest).
     ///
@@ -1116,42 +1248,6 @@ end
 
         debug!("Called setup() for plugin '{}'", name);
         Ok(())
-    }
-
-    /// Evaluate the user's init.lua in the plugin runtime, if one exists.
-    ///
-    /// Runs AFTER plugins load — that ordering is the configuration
-    /// precedence contract: the daemon applies `[plugins.<name>]` TOML as
-    /// each plugin's base config via `setup()` at load, and the user's
-    /// `require("<plugin>").setup{...}` here lands last and wins. Lua beats
-    /// TOML, the Neovim convention (it used to be silently backwards: TOML
-    /// was both base and final word, with no user-Lua entry point at all).
-    ///
-    /// Fail-open: this is user configuration, not a gate — a broken init.lua
-    /// is warned about and the daemon runs with TOML-only config.
-    pub async fn eval_user_init(&self, path: &std::path::Path) {
-        if !path.exists() {
-            return;
-        }
-        let source = match std::fs::read_to_string(path) {
-            Ok(s) => s,
-            Err(e) => {
-                warn!("Failed to read {}: {e}", path.display());
-                return;
-            }
-        };
-        let chunk_name = format!("@{}", path.to_string_lossy());
-        match self
-            .executor
-            .lua()
-            .load(&source)
-            .set_name(chunk_name)
-            .eval_async::<mlua::Value>()
-            .await
-        {
-            Ok(_) => info!("Evaluated user init: {}", path.display()),
-            Err(e) => warn!("User init.lua error ({}): {e}", path.display()),
-        }
     }
 
     /// Reload a plugin: unload registrations, re-execute `init.lua`, and

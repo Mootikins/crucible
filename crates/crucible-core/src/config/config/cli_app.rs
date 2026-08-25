@@ -76,7 +76,7 @@ use crate::config::components::{
 };
 use crate::config::EnrichmentConfig;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use tracing::{debug, error, info, warn};
 
 #[cfg(feature = "toml")]
@@ -113,11 +113,11 @@ pub struct CliAppConfig {
     /// Named kilns registry. Each entry maps a name to a path (+ options).
     /// If empty, falls back to `kiln_path` for backward compatibility.
     #[serde(default)]
-    pub kilns: HashMap<String, crate::config::config::registry::KilnEntry>,
+    pub kilns: BTreeMap<String, crate::config::config::registry::KilnEntry>,
 
     /// Registered projects with kiln bindings.
     #[serde(default)]
-    pub projects: HashMap<String, crate::config::config::registry::ProjectEntry>,
+    pub projects: BTreeMap<String, crate::config::config::registry::ProjectEntry>,
 
     /// Which named kiln is the default (session storage, tool scoping).
     /// If unset and `kilns` is non-empty, uses the first kiln alphabetically.
@@ -196,7 +196,7 @@ pub struct CliAppConfig {
 
     /// Per-plugin configuration sections (e.g. `[plugins.discord]`)
     #[serde(default)]
-    pub plugins: HashMap<String, serde_json::Value>,
+    pub plugins: BTreeMap<String, serde_json::Value>,
 
     /// Web UI server configuration
     #[serde(default)]
@@ -216,12 +216,108 @@ pub struct CliAppConfig {
     /// Tracks where each configuration value came from (file, environment, CLI, default).
     /// Populated during `load()` or `load_with_tracking()`.
     #[serde(skip)]
-    pub source_map: Option<crate::config::value_source::ValueSourceMap>,
+    pub source_map: Option<crate::config::provenance::ProvenanceMap>,
 }
 
 /// A config parse failure is a first-run dead end, so every variant carries
 /// the same pointer at `cru doctor` — the one place that explains the
 /// failure with a concrete fix.
+/// One annotated leaf tree for `display_as_json_with_sources`.
+fn annotate_leaves(
+    value: &serde_json::Value,
+    path: &mut String,
+    provenance: &crate::config::provenance::ProvenanceMap,
+) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(map) if !map.is_empty() => serde_json::Value::Object(
+            map.iter()
+                .map(|(key, child)| {
+                    let saved = path.len();
+                    if !path.is_empty() {
+                        path.push('.');
+                    }
+                    path.push_str(key);
+                    let annotated = annotate_leaves(child, path, provenance);
+                    path.truncate(saved);
+                    (key.clone(), annotated)
+                })
+                .collect(),
+        ),
+        leaf => {
+            let source = provenance
+                .get(path)
+                .cloned()
+                .unwrap_or(crate::config::provenance::SourceTag::Default);
+            serde_json::json!({
+                "value": leaf,
+                "source": source.detail(),
+                "source_short": source.short(),
+            })
+        }
+    }
+}
+
+/// One `[section]` of the sourced TOML rendering: leaves first, then the
+/// non-empty sub-tables as their own headed sections.
+#[cfg(feature = "toml")]
+fn render_sourced_table(
+    out: &mut String,
+    path: &mut String,
+    map: &serde_json::Map<String, serde_json::Value>,
+    provenance: &crate::config::provenance::ProvenanceMap,
+) {
+    let source_for = |path: &str| {
+        provenance
+            .get(path)
+            .cloned()
+            .unwrap_or(crate::config::provenance::SourceTag::Default)
+            .detail()
+    };
+
+    for (key, child) in map {
+        let is_table = child.as_object().is_some_and(|m| !m.is_empty());
+        if is_table {
+            continue;
+        }
+        let saved = path.len();
+        if !path.is_empty() {
+            path.push('.');
+        }
+        path.push_str(key);
+        match serde_json::from_value::<toml::Value>(child.clone()) {
+            Ok(rendered) => {
+                out.push_str(&format!(
+                    "{key} = {rendered}  # from: {}\n",
+                    source_for(path)
+                ));
+            }
+            // `null` (an unset Option) has no TOML value; keep the row as a
+            // comment so the document stays valid and the field stays visible.
+            Err(_) => {
+                out.push_str(&format!(
+                    "# {key} = <unset>  # from: {}\n",
+                    source_for(path)
+                ));
+            }
+        }
+        path.truncate(saved);
+    }
+
+    for (key, child) in map {
+        let Some(table) = child.as_object().filter(|m| !m.is_empty()) else {
+            continue;
+        };
+        let saved = path.len();
+        if !path.is_empty() {
+            path.push('.');
+        }
+        path.push_str(key);
+        out.push_str(&format!("\n[{path}]\n"));
+        render_sourced_table(out, path, table, provenance);
+        path.truncate(saved);
+    }
+}
+
 fn config_parse_error(
     config_path: &std::path::Path,
     detail: impl std::fmt::Display,
@@ -246,8 +342,8 @@ impl Default for CliAppConfig {
             kiln_path: default_kiln_path(),
             session_kiln: None,
             data_home: None,
-            kilns: HashMap::new(),
-            projects: HashMap::new(),
+            kilns: BTreeMap::new(),
+            projects: BTreeMap::new(),
             default_kiln: None,
             agent_directories: Vec::new(),
             acp: AcpConfig::default(),
@@ -261,7 +357,7 @@ impl Default for CliAppConfig {
             permissions: None,
             schedules: Vec::new(),
             runtimepath: Vec::new(),
-            plugins: HashMap::new(),
+            plugins: BTreeMap::new(),
             web: None,
             server: super::server::ServerConfig::default(),
             workspace: None,
@@ -298,7 +394,7 @@ impl CliAppConfig {
         embedding_url: Option<String>,
         embedding_model: Option<String>,
     ) -> anyhow::Result<Self> {
-        use crate::config::value_source::{ValueSource, ValueSourceMap};
+        use crate::config::provenance::{ProvenanceMap, SourceTag};
 
         // Determine config file path. An explicitly named file must exist: a
         // typo'd `-C` is otherwise indistinguishable from omitting the flag,
@@ -317,8 +413,7 @@ impl CliAppConfig {
 
         debug!("Attempting to load config from: {}", config_path.display());
 
-        let mut source_map = ValueSourceMap::new();
-        let config_path_str = config_path.to_string_lossy().to_string();
+        let mut source_map = ProvenanceMap::new();
 
         // Try to load config file or use defaults
         let (mut config, file_fields) = if config_path.exists() {
@@ -333,26 +428,7 @@ impl CliAppConfig {
                 let raw_table: toml::Table =
                     toml::from_str(&contents).map_err(|e| config_parse_error(&config_path, e))?;
 
-                if raw_table.contains_key("embedding") {
-                    return Err(config_parse_error(
-                        &config_path,
-                        "legacy [embedding] is no longer supported. Use [llm.providers.<name>] with [llm].default",
-                    ));
-                }
-                if raw_table.contains_key("providers") {
-                    return Err(config_parse_error(
-                        &config_path,
-                        "legacy [providers] is no longer supported. Use [llm.providers.<name>] with [llm].default",
-                    ));
-                }
-                if let Some(toml::Value::Table(chat)) = raw_table.get("chat") {
-                    if chat.contains_key("provider") {
-                        return Err(config_parse_error(
-                            &config_path,
-                            "chat.provider is no longer supported. Use [llm.providers.<name>] with [llm].default",
-                        ));
-                    }
-                }
+                Self::reject_legacy_keys(&raw_table, &config_path)?;
 
                 let file_fields = Self::detect_present_fields(&raw_table);
                 let mut value = toml::Value::Table(raw_table);
@@ -398,14 +474,9 @@ impl CliAppConfig {
 
         for field in &all_tracked_fields {
             if file_fields.contains(&(*field).to_string()) {
-                source_map.set(
-                    field,
-                    ValueSource::File {
-                        path: Some(config_path_str.clone()),
-                    },
-                );
+                source_map.set(*field, SourceTag::Toml(config_path.clone()));
             } else {
-                source_map.set(field, ValueSource::Default);
+                source_map.set(*field, SourceTag::Default);
             }
         }
 
@@ -418,7 +489,7 @@ impl CliAppConfig {
                         default_key, url
                     );
                     provider.endpoint = Some(url);
-                    source_map.set("llm.default.endpoint", ValueSource::Cli);
+                    source_map.set("llm.default.endpoint", SourceTag::Cli);
                 }
             }
         }
@@ -430,13 +501,102 @@ impl CliAppConfig {
                         default_key, model
                     );
                     provider.default_model = Some(model);
-                    source_map.set("llm.default.model", ValueSource::Cli);
+                    source_map.set("llm.default.model", SourceTag::Cli);
                 }
             }
         }
 
         config.source_map = Some(source_map);
         Ok(config)
+    }
+
+    /// The three legacy-key rejections, shared by [`Self::load`] and
+    /// [`Self::load_seed_value`] so the two parse paths cannot drift.
+    #[cfg(feature = "toml")]
+    fn reject_legacy_keys(
+        raw_table: &toml::Table,
+        config_path: &std::path::Path,
+    ) -> anyhow::Result<()> {
+        if raw_table.contains_key("embedding") {
+            return Err(config_parse_error(
+                config_path,
+                "legacy [embedding] is no longer supported. Use [llm.providers.<name>] with [llm].default",
+            ));
+        }
+        if raw_table.contains_key("providers") {
+            return Err(config_parse_error(
+                config_path,
+                "legacy [providers] is no longer supported. Use [llm.providers.<name>] with [llm].default",
+            ));
+        }
+        if let Some(toml::Value::Table(chat)) = raw_table.get("chat") {
+            if chat.contains_key("provider") {
+                return Err(config_parse_error(
+                    config_path,
+                    "chat.provider is no longer supported. Use [llm.providers.<name>] with [llm].default",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Apply the two embedding CLI-flag overrides onto an already-built
+    /// config — the same mutation [`Self::load`] performs, callable by the
+    /// boot path that builds its config through the store instead.
+    pub fn apply_embedding_overrides(
+        &mut self,
+        embedding_url: Option<String>,
+        embedding_model: Option<String>,
+    ) {
+        if let Some(url) = embedding_url {
+            if let Some(default_key) = self.llm.default.clone() {
+                if let Some(provider) = self.llm.providers.get_mut(&default_key) {
+                    provider.endpoint = Some(url);
+                }
+            }
+        }
+        if let Some(model) = embedding_model {
+            if let Some(default_key) = self.llm.default.clone() {
+                if let Some(provider) = self.llm.providers.get_mut(&default_key) {
+                    provider.default_model = Some(model);
+                }
+            }
+        }
+    }
+
+    /// The raw keys `config.toml` sets, as JSON — the deprecated SEED layer
+    /// of the Lua-config boot.
+    ///
+    /// Runs the oracle's own parse path — the legacy-key rejections and the
+    /// include pass, with the same messages — but returns only the file's own
+    /// keys instead of a defaults-filled struct, so the config store can
+    /// merge them as one layer over the defaults layer and keep per-key
+    /// provenance honest.
+    #[cfg(feature = "toml")]
+    pub fn load_seed_value(
+        config_path: &std::path::Path,
+    ) -> Result<serde_json::Value, ConfigError> {
+        Self::load_seed_value_inner(config_path).map_err(ConfigError::from)
+    }
+
+    #[cfg(feature = "toml")]
+    fn load_seed_value_inner(config_path: &std::path::Path) -> anyhow::Result<serde_json::Value> {
+        let contents = std::fs::read_to_string(config_path)
+            .map_err(|e| anyhow::anyhow!("Failed to read config file: {}", e))?;
+        let raw_table: toml::Table =
+            toml::from_str(&contents).map_err(|e| config_parse_error(config_path, e))?;
+        Self::reject_legacy_keys(&raw_table, config_path)?;
+
+        let mut value = toml::Value::Table(raw_table);
+        let base_dir = config_path.parent().unwrap_or(std::path::Path::new("."));
+        if let Err(errors) = crate::config::includes::process_file_references(&mut value, base_dir)
+        {
+            for error in errors {
+                tracing::warn!("Config reference error: {}", error);
+            }
+        }
+
+        serde_json::to_value(value).map_err(|e| config_parse_error(config_path, e))
     }
 
     /// Detect which [`TRACKED_FIELDS`] are present in a TOML table.
@@ -526,138 +686,45 @@ impl CliAppConfig {
         Ok(serde_json::to_string_pretty(self)?)
     }
 
-    /// Get the source map, preferring the stored one if available
-    fn get_source_map(&self) -> crate::config::value_source::ValueSourceMap {
-        if let Some(ref map) = self.source_map {
-            return map.clone();
-        }
-        // Fallback to heuristic for configs created without load()
-        Self::build_fallback_source_map()
-    }
-
-    /// Build a fallback source map when no tracking data is available.
-    /// Used when config is created with default() instead of load().
-    fn build_fallback_source_map() -> crate::config::value_source::ValueSourceMap {
-        use crate::config::value_source::{ValueSource, ValueSourceMap};
-
-        let mut map = ValueSourceMap::new();
-        for (field_name, _) in TRACKED_FIELDS {
-            map.set(field_name, ValueSource::Default);
-        }
-
-        map
-    }
-
-    /// Current value of a [`TRACKED_FIELDS`] path as JSON.
-    ///
-    /// Returns `None` when the field is `Option`-typed and unset — callers
-    /// render those as explicit "unset" entries rather than omitting them.
-    /// The `tracked_value_covers_every_tracked_field` test keeps this match
-    /// in sync with the const.
-    fn tracked_value(&self, path: &str) -> Option<serde_json::Value> {
-        use serde_json::json;
-        match path {
-            "kiln_path" => Some(json!(self.kiln_path.to_string_lossy())),
-            "agent_directories" => Some(json!(self
-                .agent_directories
-                .iter()
-                .map(|p| p.to_string_lossy())
-                .collect::<Vec<_>>())),
-            "session_kiln" => self
-                .session_kiln
-                .as_ref()
-                .map(|p| json!(p.to_string_lossy())),
-            "llm.default" => self.llm.default.as_ref().map(|v| json!(v)),
-            "acp.default_agent" => self.acp.default_agent.as_ref().map(|v| json!(v)),
-            "chat.model" => self.chat.model.as_ref().map(|v| json!(v)),
-            "chat.endpoint" => self.chat.endpoint.as_ref().map(|v| json!(v)),
-            "chat.temperature" => self.chat.temperature.map(|v| json!(v)),
-            "chat.max_tokens" => self.chat.max_tokens.map(|v| json!(v)),
-            "logging.level" => self.logging.as_ref().map(|l| json!(l.level)),
-            _ => None,
-        }
+    /// The stored provenance, or an empty map (every leaf renders `default`).
+    fn get_source_map(&self) -> crate::config::provenance::ProvenanceMap {
+        self.source_map.clone().unwrap_or_default()
     }
 
     /// Display the current configuration as JSON with source tracking.
     ///
-    /// Every [`TRACKED_FIELDS`] entry appears in the output (unset fields get
-    /// a `null` value) so the trace can't silently drop fields.
+    /// Walks every leaf of the effective config and annotates it from the
+    /// provenance map — a leaf nothing recorded renders as `default`. The
+    /// item shape (`value` / `source` / `source_short`) is stable, so the
+    /// JSON form stays machine-readable.
     pub fn display_as_json_with_sources(&self) -> Result<String, ConfigError> {
-        use crate::config::value_source::ValueSource;
-
-        let source_map = self.get_source_map();
-        let mut output = serde_json::Map::new();
-
-        for (path, _) in TRACKED_FIELDS {
-            let source = source_map.get(path).unwrap_or(&ValueSource::Default);
-            let mut item = serde_json::Map::new();
-            item.insert(
-                "value".to_string(),
-                self.tracked_value(path).unwrap_or(serde_json::Value::Null),
-            );
-            item.insert(
-                "source".to_string(),
-                serde_json::Value::String(source.detail()),
-            );
-            item.insert(
-                "source_short".to_string(),
-                serde_json::Value::String(source.short().to_string()),
-            );
-            let item = serde_json::Value::Object(item);
-
-            match path.split_once('.') {
-                None => {
-                    output.insert(path.to_string(), item);
-                }
-                Some((section, key)) => {
-                    output
-                        .entry(section.to_string())
-                        .or_insert_with(|| serde_json::Value::Object(Default::default()))
-                        .as_object_mut()
-                        .expect("section entries are always objects")
-                        .insert(key.to_string(), item);
-                }
-            }
-        }
-
-        Ok(serde_json::to_string_pretty(&output)?)
+        let provenance = self.get_source_map();
+        let value = serde_json::to_value(self)?;
+        let annotated = annotate_leaves(&value, &mut String::new(), &provenance);
+        Ok(serde_json::to_string_pretty(&annotated)?)
     }
 
     /// Display the current configuration as TOML with source tracking.
     ///
-    /// Every [`TRACKED_FIELDS`] entry appears in the output; unset fields
-    /// render as `# key = <unset>` comments so the document stays valid TOML.
+    /// Same walk as the JSON form, rendered as a TOML document: one
+    /// `# from: <source>` comment per leaf, `# key = <unset>` for a null.
+    #[cfg(feature = "toml")]
     pub fn display_as_toml_with_sources(&self) -> Result<String, ConfigError> {
-        use crate::config::value_source::ValueSource;
+        let provenance = self.get_source_map();
+        let value = serde_json::to_value(self)?;
+        let Some(map) = value.as_object() else {
+            return Err(ConfigError::Other(
+                "config did not serialize to a table".into(),
+            ));
+        };
 
-        let source_map = self.get_source_map();
-        let mut output = String::new();
-        output.push_str("# Effective Configuration with Value Sources\n");
-        output.push_str("# Sources: file (<path>), cli, env (<var>), default\n\n");
-
-        // TRACKED_FIELDS keeps each section's fields contiguous, so emitting a
-        // header on section change yields one [section] block per section.
-        let mut current_section = "";
-        for (path, _) in TRACKED_FIELDS {
-            let (section, key) = path.split_once('.').unwrap_or(("", path));
-            if section != current_section {
-                output.push_str(&format!("\n[{section}]\n"));
-                current_section = section;
-            }
-            let source = source_map.get(path).unwrap_or(&ValueSource::Default);
-            match self.tracked_value(path) {
-                // Compact JSON encoding of the tracked scalar/string-array
-                // types is also valid TOML.
-                Some(value) => {
-                    output.push_str(&format!("{key} = {value}  # from: {}\n", source.detail()));
-                }
-                None => {
-                    output.push_str(&format!("# {key} = <unset>  # from: {}\n", source.detail()));
-                }
-            }
-        }
-
-        Ok(output)
+        let mut out = String::new();
+        out.push_str("# Effective Configuration with Value Sources\n");
+        out.push_str(
+            "# Sources: default, toml (<path>), lua (<file>:<line>), rpc, cli, registered, discovered\n\n",
+        );
+        render_sourced_table(&mut out, &mut String::new(), map, &provenance);
+        Ok(out)
     }
 
     /// Create a new config file with example values
@@ -787,7 +854,7 @@ endpoint = "http://localhost:11434"
     /// [`resolve_kiln_entries`](crate::config::config::registry::resolve_kiln_entries) —
     /// which is this method's body. Keep the logic there, not here, or the two
     /// answers drift.
-    pub fn resolved_kilns(&self) -> HashMap<String, crate::config::config::registry::KilnEntry> {
+    pub fn resolved_kilns(&self) -> BTreeMap<String, crate::config::config::registry::KilnEntry> {
         crate::config::config::registry::resolve_kiln_entries(&self.kiln_path, &self.kilns)
     }
 
@@ -1013,15 +1080,44 @@ mod tests {
         );
     }
 
+    /// The `--sources` rendering names every source kind the store can
+    /// record: a Lua call site as `lua (file:line)`, a state-overlay leaf as
+    /// `registered`, and an unrecorded leaf as `default`.
     #[test]
-    fn tracked_value_covers_every_tracked_field() {
-        let config = fully_populated_config();
-        for (path, _) in TRACKED_FIELDS {
-            assert!(
-                config.tracked_value(path).is_some(),
-                "tracked_value has no accessor for TRACKED_FIELDS entry {path:?}"
-            );
-        }
+    fn sources_rendering_names_lua_call_sites_and_registered_leaves() {
+        let mut config = CliAppConfig::default();
+        config.chat.model = Some("sonnet".to_string());
+        let mut provenance = crate::config::provenance::ProvenanceMap::new();
+        provenance.set(
+            "chat.model",
+            crate::config::provenance::SourceTag::Lua {
+                file: "init.lua".to_string(),
+                line: Some(7),
+            },
+        );
+        provenance.set(
+            "llm.default",
+            crate::config::provenance::SourceTag::Registered,
+        );
+        config.source_map = Some(provenance);
+
+        let toml = config.display_as_toml_with_sources().unwrap();
+        assert!(
+            toml.contains("# from: lua (init.lua:7)"),
+            "a Lua leaf must name its call site:\n{toml}"
+        );
+        assert!(
+            toml.contains("# from: registered"),
+            "a state-overlay leaf must render `registered`:\n{toml}"
+        );
+        assert!(toml.contains("# from: default"), "{toml}");
+
+        let json: serde_json::Value =
+            serde_json::from_str(&config.display_as_json_with_sources().unwrap()).unwrap();
+        assert_eq!(json["chat"]["model"]["value"], "sonnet");
+        assert_eq!(json["chat"]["model"]["source"], "lua (init.lua:7)");
+        assert_eq!(json["chat"]["model"]["source_short"], "lua");
+        assert_eq!(json["llm"]["default"]["source_short"], "registered");
     }
 
     #[test]

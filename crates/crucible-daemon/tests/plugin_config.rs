@@ -212,53 +212,519 @@ async fn load_from(
     loader
 }
 
-/// End-to-end through the loader: TOML seeds setup() at load, and the user's
-/// init.lua — evaluated AFTER plugins load — calls setup() again and wins.
-/// Lua beats TOML; the ordering IS the precedence mechanism.
+/// Run the one-VM boot against a fixture: `config.toml` and `init.lua` under
+/// `<tmp>/config/`, plugins under `root` — the plugin-path resolution is
+/// injected as a value, so nothing reaches outside the fixture. Returns the
+/// loader with `init.lua` already evaluated and plugins ACTIVATED against
+/// the extracted config (the deferred phase, as the daemon runs it).
+async fn boot_and_activate(
+    tmp: &Path,
+    root: &Path,
+    config_toml: &str,
+    init_lua: &str,
+) -> (
+    crucible_core::config::CliAppConfig,
+    crucible_daemon::daemon_plugins::DaemonPluginLoader,
+) {
+    use crucible_daemon::daemon_plugins::PluginPathsFn;
+
+    let config_dir = tmp.join("config");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::write(config_dir.join("config.toml"), config_toml).unwrap();
+    std::fs::write(config_dir.join("init.lua"), init_lua).unwrap();
+
+    let fixture_root = root.to_path_buf();
+    let paths: PluginPathsFn = std::sync::Arc::new(move |rtp: &[PathBuf]| {
+        let mut dirs = vec![(fixture_root.clone(), PluginSource::EnvPath)];
+        for entry in rtp {
+            let plugins = entry.join("plugins");
+            if plugins.exists() {
+                dirs.push((plugins, PluginSource::Runtime));
+            }
+        }
+        dirs
+    });
+
+    let boot = crucible_daemon::daemon_plugins::evaluate_boot_config_with_paths(
+        Some(config_dir.join("config.toml")),
+        None,
+        None,
+        std::sync::Arc::clone(&paths),
+    )
+    .await
+    .unwrap();
+
+    let mut loader = boot.loader;
+    loader
+        .load_plugins(&paths(&boot.config.runtimepath))
+        .await
+        .unwrap();
+    (boot.config, loader)
+}
+
+/// The idiom, end to end under the boot inversion: init.lua runs FIRST, its
+/// `require("prefs").setup{...}` works through the live search space, the
+/// deferred activation reuses that same module instance (the file is never
+/// evaluated twice), and the user's call OWNS the setup — the default
+/// `setup(cfg)` with the TOML section is skipped, so setup runs exactly once
+/// and the user's value stands.
 #[tokio::test]
-async fn user_init_lua_setup_overrides_toml() {
+async fn user_init_lua_setup_owns_the_plugin_and_runs_once() {
     let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plugins");
     write_plugin(
-        tmp.path(),
+        &root,
         "prefs",
         r#"
+_G.__prefs_setups = 0
 return {
     name = "prefs",
-    setup = function(cfg) _G.__prefs_config = cfg end,
+    setup = function(cfg)
+        _G.__prefs_setups = _G.__prefs_setups + 1
+        _G.__prefs_config = cfg
+    end,
 }
 "#,
     );
-    let config = std::collections::HashMap::from([(
-        "prefs".to_string(),
-        serde_json::json!({ "greeting": "from-toml" }),
-    )]);
-    let loader = load_from(tmp.path(), config).await;
 
-    let seeded = loader.eval("return __prefs_config.greeting").await.unwrap();
-    assert_eq!(seeded, "from-toml", "TOML is the base at load");
-
-    let init_path = tmp.path().join("init.lua");
-    std::fs::write(
-        &init_path,
+    let (_config, loader) = boot_and_activate(
+        tmp.path(),
+        &root,
+        "[plugins.prefs]\ngreeting = \"from-toml\"\n",
         r#"require("prefs").setup({ greeting = "from-lua" })"#,
     )
-    .unwrap();
-    loader.eval_user_init(&init_path).await;
+    .await;
 
     let resolved = loader.eval("return __prefs_config.greeting").await.unwrap();
     assert_eq!(
         resolved, "from-lua",
-        "the user's init.lua setup() call must override the TOML seed"
+        "the user's direct setup() call owns this plugin's config"
+    );
+    let count = loader.eval("return __prefs_setups").await.unwrap();
+    assert_eq!(count, "1", "setup must run exactly once — the user's call");
+}
+
+/// The store form: `cru.config.set{ plugins = { prefs = {...} } }` in
+/// init.lua merges over the TOML seed and feeds the activation phase's
+/// default `setup(cfg)` call for a plugin the user did not set up directly.
+#[tokio::test]
+async fn store_form_plugin_config_reaches_the_default_setup() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plugins");
+    write_plugin(
+        &root,
+        "prefs",
+        r#"
+_G.__prefs_setups = 0
+return {
+    name = "prefs",
+    setup = function(cfg)
+        _G.__prefs_setups = _G.__prefs_setups + 1
+        _G.__prefs_config = cfg
+    end,
+}
+"#,
+    );
+
+    let (_config, loader) = boot_and_activate(
+        tmp.path(),
+        &root,
+        "",
+        r#"cru.config.set({ plugins = { prefs = { greeting = "from-store" } } })"#,
+    )
+    .await;
+
+    let resolved = loader.eval("return __prefs_config.greeting").await.unwrap();
+    assert_eq!(
+        resolved, "from-store",
+        "a store-form plugin config must reach the default setup(cfg)"
+    );
+    let count = loader.eval("return __prefs_setups").await.unwrap();
+    assert_eq!(count, "1");
+}
+
+/// A `runtimepath` set in init.lua reaches plugin discovery: the plugin
+/// lives ONLY under a directory init.lua names, and it still activates.
+#[tokio::test]
+async fn a_runtimepath_set_in_init_lua_reaches_discovery() {
+    let tmp = tempfile::tempdir().unwrap();
+    let empty_root = tmp.path().join("plugins");
+    std::fs::create_dir_all(&empty_root).unwrap();
+    let rtp = tmp.path().join("extra");
+    write_plugin(
+        &rtp.join("plugins"),
+        "fromrtp",
+        r#"
+return {
+    name = "fromrtp",
+    setup = function(cfg) _G.__fromrtp_active = true end,
+}
+"#,
+    );
+
+    let init = format!(
+        r#"cru.config.set({{ runtimepath = {{ [[{}]] }} }})"#,
+        rtp.display()
+    );
+    let (config, loader) = boot_and_activate(tmp.path(), &empty_root, "", &init).await;
+
+    assert_eq!(config.runtimepath, vec![rtp.clone()]);
+    let active = loader.eval("return _G.__fromrtp_active").await.unwrap();
+    assert_eq!(
+        active, "true",
+        "a plugin under an init.lua-declared runtimepath must activate"
     );
 }
 
-/// A broken user init.lua is user configuration, not a gate: it must warn
-/// and leave the TOML-seeded config intact, never take the daemon down.
+/// A plugin whose DECLARED name differs from its directory name is
+/// required under the directory-derived module name — outside the boot
+/// searcher's claim shape. Activation must still execute its file exactly
+/// once: re-execution doubles every top-level hook, and the require-time
+/// registrations are unattributed, so nothing could clear the first copy.
+#[tokio::test]
+async fn a_name_mismatched_plugin_executes_once_and_hooks_once() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plugins");
+    let dir = root.join("plainmod");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("plugin.yaml"),
+        "name: fancy-name\nversion: \"0.1.0\"\nmain: init.lua\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("init.lua"),
+        r#"
+_G.__plainmod_execs = (_G.__plainmod_execs or 0) + 1
+cru.on("turn:complete", function() end)
+return { name = "fancy-name" }
+"#,
+    )
+    .unwrap();
+
+    let (_config, loader) =
+        boot_and_activate(tmp.path(), &root, "", r#"require("plainmod")"#).await;
+
+    let execs = loader.eval("return _G.__plainmod_execs").await.unwrap();
+    assert_eq!(
+        execs, "1",
+        "the file package.loaded already holds must not execute again"
+    );
+    let handlers = loader.plugin_handlers();
+    let count = handlers
+        .runtime_handlers()
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|h| h.event_type == "turn:complete")
+        .count();
+    assert_eq!(count, 1, "a re-execution would register the hook twice");
+}
+
+/// The same entry FILE reached under a different module name — a dotted
+/// `require("dotmod.init")` resolves `<root>/dotmod/init.lua` through the
+/// standard loader, outside the searcher's claim shape. Only the post-eval
+/// sweep records it, and without that record activation executes the file
+/// a second time.
+#[tokio::test]
+async fn a_dotted_require_of_the_entry_file_still_activates_once() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plugins");
+    write_plugin(
+        &root,
+        "dotmod",
+        r#"
+_G.__dotmod_execs = (_G.__dotmod_execs or 0) + 1
+cru.on("turn:complete", function() end)
+return { name = "dotmod" }
+"#,
+    );
+
+    let (_config, loader) =
+        boot_and_activate(tmp.path(), &root, "", r#"require("dotmod.init")"#).await;
+
+    let execs = loader.eval("return _G.__dotmod_execs").await.unwrap();
+    assert_eq!(
+        execs, "1",
+        "one file, one execution, whatever name reached it"
+    );
+}
+
+/// A `.fnl` entry cannot be `require`d at all — only `?.lua` patterns are
+/// on `package.path` and the C searchers are neutered — so the file
+/// executes exactly once, at activation, where the loader compiles it.
+/// Pins the claim rather than asserting it.
+#[tokio::test]
+async fn a_fennel_plugin_executes_once_because_require_cannot_reach_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plugins");
+    let dir = root.join("fnlplug");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("plugin.yaml"),
+        "name: fnlplug\nversion: \"0.1.0\"\nmain: init.fnl\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("init.fnl"),
+        "(set _G.__fnl_execs (+ (or _G.__fnl_execs 0) 1))\n{:name \"fnlplug\"}\n",
+    )
+    .unwrap();
+
+    let (_config, loader) = boot_and_activate(
+        tmp.path(),
+        &root,
+        "",
+        r#"
+local ok = pcall(require, "fnlplug")
+cru.config.set({ fnl_probe = { requirable = ok } })
+"#,
+    )
+    .await;
+
+    let store = crucible_lua::get_app_config().expect("store live");
+    assert_eq!(
+        store["fnl_probe"]["requirable"],
+        serde_json::json!(false),
+        "precondition: a .fnl entry is not requirable"
+    );
+    let execs = loader.eval("return _G.__fnl_execs").await.unwrap();
+    assert_eq!(execs, "1", "the .fnl entry executes once, at activation");
+}
+
+/// A plugin configured BOTH ways gets one boot notice naming the ignored
+/// section — one layer superseding another must never be silent. A plugin
+/// configured one way only gets no notice.
+#[tokio::test]
+async fn a_both_forms_plugin_gets_one_supersession_notice() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plugins");
+    write_plugin(
+        &root,
+        "prefs",
+        r#"
+return { name = "prefs", setup = function(cfg) _G.__prefs_config = cfg end }
+"#,
+    );
+
+    let (_config, loader) = boot_and_activate(
+        tmp.path(),
+        &root,
+        "[plugins.prefs]\nclip = 4\n",
+        r#"require("prefs").setup({ greeting = "from-lua" })"#,
+    )
+    .await;
+
+    let notices = loader.supersession_notices();
+    assert_eq!(notices.len(), 1, "one notice per plugin: {notices:?}");
+    assert!(notices[0].contains("prefs"), "{notices:?}");
+    assert!(
+        notices[0].contains("plugins.prefs"),
+        "the notice must name the ignored section: {notices:?}"
+    );
+    assert!(
+        notices[0].contains("move those keys into the setup call"),
+        "the notice must name the remedy: {notices:?}"
+    );
+}
+
+/// The notice fires ONLY for the both-forms combination.
+#[tokio::test]
+async fn a_single_form_plugin_gets_no_supersession_notice() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plugins");
+    write_plugin(
+        &root,
+        "prefs",
+        r#"
+return { name = "prefs", setup = function(cfg) _G.__prefs_config = cfg end }
+"#,
+    );
+
+    // Direct form only.
+    let (_config, loader) = boot_and_activate(
+        tmp.path(),
+        &root,
+        "",
+        r#"require("prefs").setup({ greeting = "from-lua" })"#,
+    )
+    .await;
+    assert!(
+        loader.supersession_notices().is_empty(),
+        "a direct-only plugin is not superseding anything"
+    );
+
+    // Store form only.
+    let tmp2 = tempfile::tempdir().unwrap();
+    let root2 = tmp2.path().join("plugins");
+    write_plugin(
+        &root2,
+        "prefs",
+        r#"
+return { name = "prefs", setup = function(cfg) _G.__prefs_config = cfg end }
+"#,
+    );
+    let (_config, loader) =
+        boot_and_activate(tmp2.path(), &root2, "[plugins.prefs]\nclip = 4\n", "").await;
+    assert!(
+        loader.supersession_notices().is_empty(),
+        "a store-only plugin gets its default setup, nothing is ignored"
+    );
+}
+
+/// A plugin the user merely `require`d — no setup call — still receives the
+/// default `setup(cfg)` at activation. This is the arm that silently
+/// regresses into an unconfigured plugin if the recorder over-records.
+#[tokio::test]
+async fn a_require_without_setup_still_gets_the_default_setup_call() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plugins");
+    write_plugin(
+        &root,
+        "prefs",
+        r#"
+_G.__prefs_setups = 0
+return {
+    name = "prefs",
+    setup = function(cfg)
+        _G.__prefs_setups = _G.__prefs_setups + 1
+        _G.__prefs_config = cfg
+    end,
+}
+"#,
+    );
+
+    let (_config, loader) = boot_and_activate(
+        tmp.path(),
+        &root,
+        "[plugins.prefs]\ngreeting = \"from-toml\"\n",
+        r#"local _ = require("prefs")"#,
+    )
+    .await;
+
+    let count = loader.eval("return __prefs_setups").await.unwrap();
+    assert_eq!(
+        count, "1",
+        "a require without a setup call must still get the default setup"
+    );
+    let greeting = loader.eval("return __prefs_config.greeting").await.unwrap();
+    assert_eq!(greeting, "from-toml", "the section must reach that call");
+}
+
+/// The boot's setup recorder is a boot-phase device only: after boot, the
+/// module table in `package.loaded` holds the plugin's OWN function again.
+/// A plugin that stores `M.setup` and compares it later must see itself.
+#[tokio::test]
+async fn a_wrapped_setup_is_restored_to_the_plugins_own_function_after_boot() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plugins");
+    write_plugin(
+        &root,
+        "prefs",
+        r#"
+local function my_setup(cfg)
+    _G.__prefs_config = cfg
+end
+_G.__prefs_original_setup = my_setup
+return { name = "prefs", setup = my_setup }
+"#,
+    );
+
+    let (_config, loader) = boot_and_activate(
+        tmp.path(),
+        &root,
+        "",
+        // During the evaluation the recorder is in place, so identity does
+        // not hold yet — the fixture records that too, as the contrast.
+        r#"
+local m = require("prefs")
+cru.config.set({ probe = { wrapped_during_boot = not rawequal(m.setup, _G.__prefs_original_setup) } })
+m.setup({ marker = "user-owned" })
+"#,
+    )
+    .await;
+
+    let store = crucible_lua::get_app_config().expect("store live");
+    assert_eq!(
+        store["probe"]["wrapped_during_boot"],
+        serde_json::json!(true),
+        "precondition: the recorder was in place during the evaluation"
+    );
+    let restored = loader
+        .eval(r#"return tostring(rawequal(require("prefs").setup, _G.__prefs_original_setup))"#)
+        .await
+        .unwrap();
+    assert_eq!(
+        restored, "true",
+        "after boot the table must hold the plugin's own setup, not the recorder"
+    );
+}
+
+/// A DISABLED plugin: the user's `require` still loads its module (as in
+/// Neovim), but activation registers none of its hooks or exports.
+#[tokio::test]
+async fn a_disabled_plugin_loads_as_a_module_but_activates_nothing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plugins");
+    write_plugin(
+        &root,
+        "offplug",
+        r#"
+_G.__offplug_module_loaded = true
+cru.on("turn:complete", function() end)
+return {
+    name = "offplug",
+    setup = function(cfg) _G.__offplug_setup_ran = true end,
+    commands = {
+        ["offplug.hello"] = { desc = "hello", fn = function() return {} end },
+    },
+}
+"#,
+    );
+
+    let (_config, loader) = boot_and_activate(
+        tmp.path(),
+        &root,
+        "[plugins.offplug]\nenabled = false\n",
+        r#"require("offplug")"#,
+    )
+    .await;
+
+    let loaded = loader
+        .eval("return _G.__offplug_module_loaded")
+        .await
+        .unwrap();
+    assert_eq!(loaded, "true", "require must still load the module");
+    let setup = loader
+        .eval("return tostring(_G.__offplug_setup_ran)")
+        .await
+        .unwrap();
+    assert_eq!(setup, "nil", "a disabled plugin gets no setup call");
+    assert_eq!(
+        loader.plugin_handlers().plugin_handler_count("offplug"),
+        0,
+        "a disabled plugin's boot-require hooks must be cleared"
+    );
+    let command = loader
+        .plugin_registry()
+        .run_command("offplug.hello", serde_json::json!({}))
+        .await
+        .unwrap();
+    assert!(
+        command.is_none(),
+        "a disabled plugin's commands must not register"
+    );
+}
+
+/// A broken user init.lua is user configuration, not a gate: the boot warns,
+/// continues on the seed, and activation still hands the plugin its TOML
+/// section. The daemon never goes down for it.
 #[tokio::test]
 async fn broken_user_init_lua_fails_open() {
     let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plugins");
     write_plugin(
-        tmp.path(),
+        &root,
         "prefs",
         r#"
 return {
@@ -267,16 +733,20 @@ return {
 }
 "#,
     );
-    let config = std::collections::HashMap::from([(
-        "prefs".to_string(),
-        serde_json::json!({ "greeting": "from-toml" }),
-    )]);
-    let loader = load_from(tmp.path(), config).await;
 
-    let init_path = tmp.path().join("init.lua");
-    std::fs::write(&init_path, "this is not lua (").unwrap();
-    loader.eval_user_init(&init_path).await;
+    let (config, loader) = boot_and_activate(
+        tmp.path(),
+        &root,
+        "default_kiln = \"seeded\"\n\n[plugins.prefs]\ngreeting = \"from-toml\"\n",
+        "this is not lua (",
+    )
+    .await;
 
+    assert_eq!(
+        config.default_kiln.as_deref(),
+        Some("seeded"),
+        "the extracted config must be the seed"
+    );
     let resolved = loader.eval("return __prefs_config.greeting").await.unwrap();
     assert_eq!(resolved, "from-toml");
 }
@@ -464,33 +934,24 @@ async fn generate_title(
     (title, system, prompt)
 }
 
-/// The documented Lua config path, end to end: the daemon loads the plugin by
-/// path, the user's init.lua reaches it by `require`, and the command the
-/// daemon calls has to see what they set.
-///
-/// This is the whole reason the plugin registers itself in `package.loaded`.
-/// Without that, `require("auto-title")` builds a second copy of the file with
-/// its own config, `setup{}` configures the copy, and the prompt the daemon
-/// gets is still the shipped default — a config surface that ignores you.
+/// The documented Lua config path, end to end under the boot inversion: the
+/// user's init.lua reaches the shipped plugin by `require` BEFORE activation,
+/// activation reuses that same module instance, and the command the daemon
+/// calls sees what the user set.
 #[tokio::test]
 async fn user_init_lua_configures_the_shipped_auto_title_plugin() {
     let tmp = tempfile::tempdir().unwrap();
-    copy_shipped_plugin(tmp.path(), "auto-title");
-    let loader = load_from(tmp.path(), std::collections::HashMap::new()).await;
+    let root = tmp.path().join("plugins");
+    std::fs::create_dir_all(&root).unwrap();
+    copy_shipped_plugin(&root, "auto-title");
 
-    let (_, default_system, _) = generate_title(&loader, "help me fix the auth flow").await;
-    assert!(
-        default_system.contains("3 to 7 words"),
-        "the shipped prompt is the base: {default_system}"
-    );
-
-    let init_path = tmp.path().join("init.lua");
-    std::fs::write(
-        &init_path,
+    let (_config, loader) = boot_and_activate(
+        tmp.path(),
+        &root,
+        "",
         r#"require("auto-title").setup({ prompt = "Name it.", clip = 4 })"#,
     )
-    .unwrap();
-    loader.eval_user_init(&init_path).await;
+    .await;
 
     let (title, system, prompt) = generate_title(&loader, "abcdefgh").await;
     assert_eq!(
@@ -504,50 +965,70 @@ async fn user_init_lua_configures_the_shipped_auto_title_plugin() {
     assert_eq!(title, "A perfectly good title");
 }
 
-/// `[plugins.auto-title]` seeds the plugin at load, and the user's init.lua
-/// overrides one key without dropping the others. Lua beats TOML, per key.
+/// With no init.lua configuration at all, the shipped defaults stand.
 #[tokio::test]
-async fn user_init_lua_overrides_one_auto_title_key_and_keeps_the_rest() {
+async fn the_shipped_auto_title_defaults_stand_without_user_config() {
     let tmp = tempfile::tempdir().unwrap();
-    copy_shipped_plugin(tmp.path(), "auto-title");
-    let config = std::collections::HashMap::from([(
-        "auto-title".to_string(),
-        serde_json::json!({ "prompt": "From TOML.", "clip": 4 }),
-    )]);
-    let loader = load_from(tmp.path(), config).await;
+    let root = tmp.path().join("plugins");
+    std::fs::create_dir_all(&root).unwrap();
+    copy_shipped_plugin(&root, "auto-title");
 
-    let (_, system, prompt) = generate_title(&loader, "abcdefgh").await;
-    assert_eq!(system, "From TOML.");
-    assert_eq!(prompt, "User: abcd");
+    let (_config, loader) = boot_and_activate(tmp.path(), &root, "", "").await;
 
-    let init_path = tmp.path().join("init.lua");
-    std::fs::write(
-        &init_path,
-        r#"require("auto-title").setup({ prompt = "From Lua." })"#,
-    )
-    .unwrap();
-    loader.eval_user_init(&init_path).await;
-
-    let (_, system, prompt) = generate_title(&loader, "abcdefgh").await;
-    assert_eq!(system, "From Lua.", "Lua wins over TOML");
-    assert_eq!(
-        prompt, "User: abcd",
-        "the TOML clip survives an unrelated override"
+    let (_, default_system, _) = generate_title(&loader, "help me fix the auth flow").await;
+    assert!(
+        default_system.contains("3 to 7 words"),
+        "the shipped prompt is the base: {default_system}"
     );
 }
 
-/// Configuring the plugin must not publish the channel a second time.
+/// A plugin configured BOTH ways takes the direct call: the user's
+/// `require("auto-title").setup{...}` owns this plugin's setup, so the
+/// `[plugins.auto-title]` TOML section is NOT applied — the docs say pick
+/// one form per plugin. (Before the boot inversion the two composed per
+/// key; the composition rule is now ownership, not layering.)
+#[tokio::test]
+async fn a_direct_setup_call_owns_the_plugin_over_the_toml_section() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plugins");
+    std::fs::create_dir_all(&root).unwrap();
+    copy_shipped_plugin(&root, "auto-title");
+
+    let (_config, loader) = boot_and_activate(
+        tmp.path(),
+        &root,
+        "[plugins.auto-title]\nprompt = \"From TOML.\"\nclip = 4\n",
+        r#"require("auto-title").setup({ prompt = "From Lua." })"#,
+    )
+    .await;
+
+    let (_, system, prompt) = generate_title(&loader, "abcdefgh").await;
+    assert_eq!(system, "From Lua.", "the direct call owns the setup");
+    assert_eq!(
+        prompt, "User: abcdefgh",
+        "the TOML clip is not applied — the direct call owns the whole setup"
+    );
+}
+
+/// The channel publishes exactly once, whichever path loads the plugin.
 ///
-/// `cru.plugin.publish` is bound to whichever plugin the loader executed last, so
-/// a `setup{}` that published would file the title provider under someone
-/// else's name — the daemon then warns about two titlers and picks by name, so
-/// editing the prompt could change who generates the title. Publishing belongs
-/// to loading the plugin, which happens once.
+/// The user's `require` at boot runs the plugin body (which publishes, under
+/// the plugin's own binding via the boot searcher); activation then reuses
+/// the instance and must not run the body — or publish — a second time.
 #[tokio::test]
 async fn configuring_auto_title_does_not_republish_the_channel() {
     let tmp = tempfile::tempdir().unwrap();
-    copy_shipped_plugin(tmp.path(), "auto-title");
-    let loader = load_from(tmp.path(), std::collections::HashMap::new()).await;
+    let root = tmp.path().join("plugins");
+    std::fs::create_dir_all(&root).unwrap();
+    copy_shipped_plugin(&root, "auto-title");
+
+    let (_config, loader) = boot_and_activate(
+        tmp.path(),
+        &root,
+        "",
+        r#"require("auto-title").setup({ prompt = "Name it." })"#,
+    )
+    .await;
 
     let titlers: Vec<String> = loader
         .publications()
@@ -558,28 +1039,6 @@ async fn configuring_auto_title_does_not_republish_the_channel() {
     assert_eq!(
         titlers,
         vec!["auto-title".to_string()],
-        "loading publishes once"
-    );
-
-    // Watch what the user's init.lua publishes. Asserting on the registry
-    // instead would depend on which plugin the loader happened to execute last
-    // — a republish under `auto-title`'s own name overwrites and hides itself.
-    loader
-        .eval("__published = {}; cru.plugin.publish = function(key) __published[#__published + 1] = key end")
-        .await
-        .unwrap();
-
-    let init_path = tmp.path().join("init.lua");
-    std::fs::write(
-        &init_path,
-        r#"require("auto-title").setup({ prompt = "Name it." })"#,
-    )
-    .unwrap();
-    loader.eval_user_init(&init_path).await;
-
-    assert_eq!(
-        loader.eval("=#__published").await.unwrap(),
-        "0",
-        "setup() must publish nothing"
+        "one load, one publication, attributed to the plugin itself"
     );
 }

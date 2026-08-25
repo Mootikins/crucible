@@ -155,7 +155,7 @@ mod tests {
     use crate::kiln_manager::KilnManager;
     use crate::test_support::temp_session_manager;
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashSet;
     use std::sync::Arc;
     use tokio::sync::broadcast;
 
@@ -207,7 +207,7 @@ mod tests {
         let _env_lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _env_guards = clear_provider_env();
         let config = LlmConfig {
-            providers: HashMap::from([(
+            providers: std::collections::BTreeMap::from([(
                 "openai".to_string(),
                 LlmProviderConfig {
                     provider_type: BackendType::OpenAI,
@@ -245,7 +245,7 @@ mod tests {
         let _env_lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _env_guards = clear_provider_env();
         let config = LlmConfig {
-            providers: HashMap::from([(
+            providers: std::collections::BTreeMap::from([(
                 "openai".to_string(),
                 LlmProviderConfig {
                     provider_type: BackendType::OpenAI,
@@ -291,7 +291,7 @@ mod tests {
         let _env_lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _env_guards = clear_provider_env();
         let config = LlmConfig {
-            providers: HashMap::from([(
+            providers: std::collections::BTreeMap::from([(
                 "fastembed".to_string(),
                 LlmProviderConfig {
                     provider_type: BackendType::FastEmbed,
@@ -398,7 +398,7 @@ mod tests {
         use crucible_core::config::TrustLevel;
 
         let config = LlmConfig {
-            providers: HashMap::from([
+            providers: std::collections::BTreeMap::from([
                 (
                     "openai".to_string(),
                     LlmProviderConfig {

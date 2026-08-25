@@ -1,6 +1,5 @@
 //! Daemon management commands
 
-use crate::config::CliConfig;
 use anyhow::Result;
 use clap::Subcommand;
 use crucible_daemon::rpc_client::lifecycle::is_daemon_running;
@@ -111,23 +110,26 @@ async fn start_daemon(foreground: bool, wait: bool, config_path: Option<PathBuf>
             }
         });
 
-        // The file the config came from, resolved the same way `load` resolves
-        // it. Refusals name it: a user told "that kiln name is declared in your
-        // config" cannot act on it without knowing which file to open, and with
-        // `--config` in play the answer is not guessable.
-        let source = config_path
-            .clone()
-            .unwrap_or_else(crucible_core::config::CliAppConfig::default_config_path);
-        let config = CliConfig::load(config_path.clone(), None, None)?;
+        // The one-VM config boot: seed defaults + config.toml, create THE
+        // plugin VM, evaluate init.lua in it once (fail open), extract the
+        // effective config. The loader rides into the bind so the same VM
+        // runs the deferred plugin activation.
+        let boot =
+            crucible_daemon::daemon_plugins::evaluate_boot_config(config_path.clone(), None, None)
+                .await?;
         let (plugin_sections, plugin_watch) =
-            crucible_daemon::daemon_plugins::split_plugins_config(&config.plugins);
-        let server = Server::bind_with_plugin_config(BindWithPluginConfigParams::from_app_config(
-            sock.clone(),
-            &config,
-            plugin_sections.clone(),
-            plugin_watch,
-            source,
-        ))
+            crucible_daemon::daemon_plugins::split_plugins_config(&boot.config.plugins);
+        let server = Server::bind_with_plugin_config(
+            BindWithPluginConfigParams::from_app_config(
+                sock.clone(),
+                &boot.config,
+                plugin_sections.clone(),
+                plugin_watch,
+                boot.config_source.clone(),
+            )
+            .with_boot_hash(boot.boot_hash.clone())
+            .with_loader(boot.loader),
+        )
         .await?;
 
         println!("Daemon listening on {:?}", sock);

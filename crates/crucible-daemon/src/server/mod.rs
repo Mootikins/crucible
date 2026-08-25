@@ -197,11 +197,15 @@ impl Server {
             None
         };
 
-        // Seed the Lua app-config store BEFORE init.lua runs so plugin code
-        // (and later `cru.config.set` / `config.set` merges) layer on top of
-        // the TOML-loaded values.
-        if let Some(app_config) = params.app_config.clone() {
-            crucible_lua::seed_app_config(app_config);
+        // Seed the Lua app-config store — but only on the value-injection
+        // path (tests, an in-process daemon handed a config value). When the
+        // boot evaluation built the loader, the store is already live from
+        // that evaluation, and re-seeding would wipe the free-form keys
+        // init.lua's `cru.config.set` calls put there.
+        if params.loader.is_none() {
+            if let Some(app_config) = params.app_config.clone() {
+                crucible_lua::seed_app_config(app_config);
+            }
         }
 
         // Resolve the daemon data root ONCE. Every crucible_home() read below and
@@ -295,8 +299,15 @@ impl Server {
             }
         }
 
+        // The boot evaluation's loader when one was handed in — init.lua has
+        // already evaluated in its VM — otherwise a fresh one (tests, an
+        // in-process daemon handed a config value).
+        let built_loader = match params.loader {
+            Some(loader) => Ok(loader),
+            None => DaemonPluginLoader::new(params.plugin_config.clone()),
+        };
         let plugin_loader = Arc::new(Mutex::new(
-            match DaemonPluginLoader::new(params.plugin_config.clone()).and_then(|loader| {
+            match built_loader.and_then(|loader| {
                 // `kiln://<name>/…` paths in `cru.fs` resolve through the
                 // registry inside the daemon; the directory never reaches Lua.
                 loader.with_kiln_path_resolver(kiln_registry.clone())
@@ -444,6 +455,11 @@ impl Server {
             kiln_registry,
             kiln_state,
             llm_state,
+            // What `config.effective` serves: the extracted config this
+            // daemon was bound with, and the boot-input hash when it booted
+            // through the one-VM evaluation.
+            effective_config: params.app_config.clone(),
+            boot_hash: params.boot_hash.clone(),
             // `[projects.*]` from the config the daemon was handed. Normalized
             // here so the listing applies the one precedence rule rather than
             // re-deriving it, and so a user can SEE which layer owns a project

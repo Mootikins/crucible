@@ -124,25 +124,17 @@ impl Server {
                 }
             }
 
-            // Register `cru.colorscheme` / `cru.statusline` on the PLUGIN VM
-            // before user init.lua runs — this is the VM that evaluates it.
-            // Without this they are nil there, so `cru.colorscheme.setup{...}`
-            // errors and the user's theme never parses. Registration only; the
-            // init.lua evaluation is `eval_user_init` below, and doing both here
-            // would evaluate it twice.
+            // Register `cru.colorscheme` / `cru.statusline` on the PLUGIN VM.
+            // The daemon's boot path already did this before it evaluated the
+            // user's init.lua (the evaluation now runs BEFORE plugin loading —
+            // the boot inversion); the call is guarded, so repeating it here
+            // covers the value-injection binds (tests, embeddings) that never
+            // went through the boot evaluation.
             if let Err(e) = crucible_lua::config::register_ui_namespaces(&loader.plugin_lua()) {
                 warn!("Failed to register UI config namespaces on the plugin VM: {e}");
             }
 
-            // User init.lua runs AFTER plugins so its setup() calls override
-            // the TOML each plugin was loaded with — Lua beats TOML.
-            if let Some(config_dir) = dirs::config_dir() {
-                loader
-                    .eval_user_init(&config_dir.join("crucible").join("init.lua"))
-                    .await;
-            }
-
-            // ...and settings changed through the options pane beat both, for
+            // Settings changed through the options pane beat the config, for
             // the same reason init.lua beats TOML: it is the most recent thing
             // the user actually did. Last in the chain, and replayed through
             // each plugin's own setter — see `option_store`.

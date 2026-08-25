@@ -253,6 +253,48 @@ impl TestDaemon {
         })
     }
 
+    /// Start a test daemon after `setup` has arranged extra fixture files
+    /// under the hermetic HOME (the TempDir root) — an `init.lua` beside the
+    /// config, a plugin in the default user plugins dir, and so on.
+    #[allow(dead_code)]
+    pub async fn start_with_home_setup(setup: impl FnOnce(&Path) -> Result<()>) -> Result<Self> {
+        let temp_dir = tempfile::tempdir()?;
+        let socket_path = temp_dir.path().join("daemon.sock");
+        write_daemon_config(temp_dir.path())?;
+        setup(temp_dir.path())?;
+
+        let cru_exe = std::env::var("CARGO_BIN_EXE_cru").unwrap_or_else(|_| {
+            let test_exe = std::env::current_exe().expect("current_exe");
+            let target_dir = test_exe
+                .parent()
+                .and_then(|p| p.parent())
+                .expect("target dir");
+            target_dir.join("cru").to_string_lossy().to_string()
+        });
+
+        let mut cmd = Command::new(&cru_exe);
+        cmd.env_clear();
+        for (k, v) in crucible_core::test_support::hermetic_env_pairs(temp_dir.path()) {
+            cmd.env(k, v);
+        }
+        let process = cmd
+            .args(["daemon", "serve"])
+            .env("CRUCIBLE_SOCKET", &socket_path)
+            .env("CRUCIBLE_HOME", temp_dir.path())
+            .env("XDG_DATA_HOME", temp_dir.path().join("data"))
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()?;
+
+        wait_until_accepting(&socket_path).await?;
+        Ok(Self {
+            socket_path,
+            process: Some(process),
+            temp_dir,
+        })
+    }
+
     /// Start a test daemon with additional environment variables.
     #[allow(dead_code)]
     pub async fn start_with_env(env_vars: Vec<(&str, &str)>) -> Result<Self> {

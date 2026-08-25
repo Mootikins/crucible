@@ -616,7 +616,7 @@ impl McpGatewayManager {
             transport: TransportType::Stdio {
                 command: "echo".to_string(),
                 args: vec![],
-                env: HashMap::new(),
+                env: std::collections::BTreeMap::new(),
             },
             allowed_tools: None,
             blocked_tools: None,
@@ -723,7 +723,7 @@ mod call_failure_tests {
             transport: TransportType::Stdio {
                 command: "echo".to_string(),
                 args: vec![],
-                env: HashMap::new(),
+                env: std::collections::BTreeMap::new(),
             },
             allowed_tools: None,
             blocked_tools: None,
@@ -798,7 +798,6 @@ mod call_failure_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
     fn test_config(name: &str, prefix: &str) -> UpstreamServerConfig {
         UpstreamServerConfig {
@@ -807,7 +806,7 @@ mod tests {
             transport: TransportType::Stdio {
                 command: "echo".to_string(),
                 args: vec![],
-                env: HashMap::new(),
+                env: std::collections::BTreeMap::new(),
             },
             allowed_tools: None,
             blocked_tools: None,
@@ -1018,7 +1017,7 @@ mod tests {
         config.transport = TransportType::Stdio {
             command: "/nonexistent/crucible-no-such-mcp-server".to_string(),
             args: vec![],
-            env: HashMap::new(),
+            env: std::collections::BTreeMap::new(),
         };
         UpstreamClient::new(config)
     }

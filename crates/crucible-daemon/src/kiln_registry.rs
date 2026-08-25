@@ -389,10 +389,7 @@ impl KilnRegistry {
 
         // Sorted, so which entry wins the reverse index for an aliased path —
         // and which pair a collision names — does not depend on hash order.
-        let entries: BTreeMap<String, KilnEntry> =
-            resolve_kiln_entries(&view.kiln_path, &view.kilns)
-                .into_iter()
-                .collect();
+        let entries = resolve_kiln_entries(&view.kiln_path, &view.kilns);
         for (key, entry) in entries {
             registry.insert_configured(&key, &entry.path(), entry.lazy())?;
         }
@@ -833,7 +830,7 @@ struct KilnConfigView {
     #[serde(default)]
     kiln_path: PathBuf,
     #[serde(default)]
-    kilns: HashMap<String, KilnEntry>,
+    kilns: BTreeMap<String, KilnEntry>,
 }
 
 #[cfg(test)]

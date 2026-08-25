@@ -145,7 +145,6 @@ mod tests {
     use super::*;
     use crucible_core::config::BackendType;
     use crucible_core::config::LlmProviderConfig;
-    use std::collections::HashMap;
     use std::fs;
     use tempfile::TempDir;
 
@@ -326,7 +325,7 @@ data_classification = "confidential"
         // internal session: its trust is its provider's. Reading the name as
         // "this is ACP" pinned it to Cloud, which is BELOW Local, so a local
         // Ollama session was refused on a confidential kiln.
-        let mut providers = HashMap::new();
+        let mut providers = std::collections::BTreeMap::new();
         providers.insert(
             "local-ollama".to_string(),
             LlmProviderConfig {
@@ -359,7 +358,7 @@ data_classification = "confidential"
     fn provider_trust_configured_provider_returns_explicit_level() {
         // When provider_key exists and provider is found in config,
         // return the provider's effective trust level
-        let mut providers = HashMap::new();
+        let mut providers = std::collections::BTreeMap::new();
         let provider_config = LlmProviderConfig {
             provider_type: BackendType::Ollama,
             endpoint: None,
@@ -390,7 +389,7 @@ data_classification = "confidential"
         let agent = make_test_agent("internal", None, Some("nonexistent-provider"));
         let llm_config = LlmConfig {
             default: None,
-            providers: HashMap::new(),
+            providers: std::collections::BTreeMap::new(),
             models: Default::default(),
         };
         let result = resolve_provider_trust(&agent, Some(&llm_config));
@@ -403,7 +402,7 @@ data_classification = "confidential"
         let agent = make_test_agent("internal", None, None);
         let llm_config = LlmConfig {
             default: None,
-            providers: HashMap::new(),
+            providers: std::collections::BTreeMap::new(),
             models: Default::default(),
         };
         let result = resolve_provider_trust(&agent, Some(&llm_config));

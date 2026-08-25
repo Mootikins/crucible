@@ -31,7 +31,6 @@ async fn list_models_dynamic_discovery_succeeds(
     expected_models: &[&str],
 ) {
     use crucible_core::config::{LlmConfig, LlmProviderConfig};
-    use std::collections::HashMap;
 
     // openai/openrouter read their API key from the process env when none is
     // configured, so those cases must serialize on ENV_LOCK and clear the vars;
@@ -48,7 +47,7 @@ async fn list_models_dynamic_discovery_succeeds(
     if let Some(key) = api_key {
         builder = builder.api_key(key);
     }
-    let mut providers = HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(provider_name.to_string(), builder.build());
 
     let llm_config = LlmConfig {
@@ -88,7 +87,6 @@ async fn list_models_dynamic_discovery_succeeds(
 #[tokio::test]
 async fn test_list_models_dynamic_discovery_failure_returns_empty() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
-    use std::collections::HashMap;
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
@@ -106,7 +104,7 @@ async fn test_list_models_dynamic_discovery_failure_returns_empty() {
     drop(zai_listener);
     let zai_endpoint = format!("http://{}", zai_addr);
 
-    let mut providers = HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "openai-fail".to_string(),
         LlmProviderConfig::builder(BackendType::OpenAI)
@@ -148,12 +146,11 @@ async fn test_list_models_dynamic_discovery_failure_returns_empty() {
 #[tokio::test]
 async fn test_list_models_explicit_config_skips_dynamic_discovery() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
-    use std::collections::HashMap;
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
     // No mock server needed — explicit config should bypass API call entirely
-    let mut providers = HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "openai-explicit".to_string(),
         LlmProviderConfig::builder(BackendType::OpenAI)
@@ -216,14 +213,13 @@ async fn test_list_models_explicit_config_skips_dynamic_discovery() {
 #[tokio::test]
 async fn test_list_models_integration_multi_provider() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
-    use std::collections::HashMap;
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
     let (ollama_endpoint, ollama_server) =
         start_mock_ollama_tags_server(vec!["llama3.3", "qwen2.5"]).await;
 
-    let mut providers = HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "ollama-int".to_string(),
         LlmProviderConfig::builder(BackendType::Ollama)
@@ -289,7 +285,6 @@ async fn test_list_models_integration_multi_provider() {
 #[allow(clippy::await_holding_lock)]
 async fn test_list_models_integration_dynamic_discovery() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
-    use std::collections::HashMap;
 
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     let _env_guards = clear_provider_env();
@@ -307,7 +302,7 @@ async fn test_list_models_integration_dynamic_discovery() {
     )
     .await;
 
-    let mut providers = HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "openai-discovery-int".to_string(),
         LlmProviderConfig::builder(BackendType::OpenAI)
@@ -359,7 +354,6 @@ async fn test_list_models_integration_dynamic_discovery() {
 #[tokio::test]
 async fn test_list_models_integration_override_precedence() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
-    use std::collections::HashMap;
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
@@ -380,7 +374,7 @@ async fn test_list_models_integration_override_precedence() {
     )
     .await;
 
-    let mut providers = HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "openai-override-int".to_string(),
         LlmProviderConfig::builder(BackendType::OpenAI)
@@ -438,7 +432,6 @@ async fn test_list_models_integration_override_precedence() {
 #[tokio::test]
 async fn test_list_models_integration_partial_failure() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
-    use std::collections::HashMap;
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
@@ -447,7 +440,7 @@ async fn test_list_models_integration_partial_failure() {
     drop(ollama_listener);
     let ollama_dead_endpoint = format!("http://{}", ollama_addr);
 
-    let mut providers = HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "ollama-bad-int".to_string(),
         LlmProviderConfig::builder(BackendType::Ollama)
@@ -517,7 +510,6 @@ async fn test_list_models_integration_partial_failure() {
 #[tokio::test]
 async fn test_openai_model_discovery_returns_all_models() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
-    use std::collections::HashMap;
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
@@ -552,7 +544,7 @@ async fn test_openai_model_discovery_returns_all_models() {
     )
     .await;
 
-    let mut providers = HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "openai-test".to_string(),
         LlmProviderConfig::builder(BackendType::OpenAI)
@@ -620,7 +612,6 @@ async fn test_openai_model_discovery_returns_all_models() {
 #[allow(clippy::await_holding_lock)]
 async fn test_list_models_ollama_failure() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
-    use std::collections::HashMap;
 
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     let _env_guards = clear_provider_env();
@@ -632,7 +623,7 @@ async fn test_list_models_ollama_failure() {
     drop(ollama_listener);
     let ollama_endpoint = format!("http://{}", ollama_addr);
 
-    let mut providers = HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "ollama-dead".to_string(),
         LlmProviderConfig::builder(BackendType::Ollama)
@@ -698,7 +689,7 @@ async fn test_model_cache_hit() {
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
-    let mut providers = std::collections::HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "test".to_string(),
         LlmProviderConfig::builder(BackendType::OpenAI)
@@ -740,7 +731,7 @@ async fn test_model_cache_invalidation() {
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
-    let mut providers = std::collections::HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "test".to_string(),
         LlmProviderConfig::builder(BackendType::OpenAI)
@@ -790,7 +781,7 @@ async fn test_model_cache_does_not_cache_errors() {
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
-    let mut providers = std::collections::HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     // Configure provider with models
     providers.insert(
         "test".to_string(),

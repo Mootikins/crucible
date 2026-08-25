@@ -303,7 +303,7 @@ mod tests {
             extends: None,
             command: command.map(str::to_string),
             args: None,
-            env: std::collections::HashMap::new(),
+            env: std::collections::BTreeMap::new(),
             description: None,
             delegation: None,
             permissions: None,

@@ -2,7 +2,7 @@
 
 use super::backend::BackendType;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// Named LLM provider instance configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -218,7 +218,7 @@ pub struct LlmConfig {
 
     /// Named provider instances
     #[serde(default)]
-    pub providers: HashMap<String, LlmProviderConfig>,
+    pub providers: BTreeMap<String, LlmProviderConfig>,
 
     /// Specialty → model mapping for agent cards (`[llm.models]`), e.g.
     /// `reasoning = "openai/o1"` or `coder = "qwen2.5-coder"` (provider
@@ -226,7 +226,7 @@ pub struct LlmConfig {
     /// explicit `model:` resolves through this table, keeping cards portable
     /// across machines with different providers.
     #[serde(default)]
-    pub models: HashMap<String, String>,
+    pub models: BTreeMap<String, String>,
 }
 
 impl LlmConfig {
@@ -356,7 +356,7 @@ mod tests {
 
     #[test]
     fn test_llm_config_default_provider() {
-        let mut providers = HashMap::new();
+        let mut providers = BTreeMap::new();
         providers.insert(
             "local".to_string(),
             LlmProviderConfig::builder(BackendType::Ollama)
@@ -386,7 +386,7 @@ mod tests {
 
     #[test]
     fn test_llm_config_get_provider() {
-        let mut providers = HashMap::new();
+        let mut providers = BTreeMap::new();
         providers.insert(
             "local".to_string(),
             LlmProviderConfig::builder(BackendType::Ollama)
@@ -409,7 +409,7 @@ mod tests {
 
     #[test]
     fn test_llm_config_provider_keys() {
-        let mut providers = HashMap::new();
+        let mut providers = BTreeMap::new();
         providers.insert(
             "local".to_string(),
             LlmProviderConfig::builder(BackendType::Ollama).build(),
@@ -435,12 +435,12 @@ mod tests {
     fn test_llm_config_has_providers() {
         let config = LlmConfig {
             default: None,
-            providers: HashMap::new(),
+            providers: BTreeMap::new(),
             models: Default::default(),
         };
         assert!(!config.has_providers());
 
-        let mut providers = HashMap::new();
+        let mut providers = BTreeMap::new();
         providers.insert(
             "local".to_string(),
             LlmProviderConfig::builder(BackendType::Ollama).build(),
@@ -458,7 +458,7 @@ mod tests {
     fn test_llm_config_no_default_provider() {
         let config = LlmConfig {
             default: None,
-            providers: HashMap::new(),
+            providers: BTreeMap::new(),
             models: Default::default(),
         };
 
@@ -467,7 +467,7 @@ mod tests {
 
     #[test]
     fn test_llm_config_invalid_default_provider() {
-        let mut providers = HashMap::new();
+        let mut providers = BTreeMap::new();
         providers.insert(
             "local".to_string(),
             LlmProviderConfig::builder(BackendType::Ollama).build(),
@@ -503,7 +503,7 @@ mod tests {
 
     #[test]
     fn test_all_provider_models_aggregates() {
-        let mut providers = HashMap::new();
+        let mut providers = BTreeMap::new();
         providers.insert(
             "local".to_string(),
             LlmProviderConfig::builder(BackendType::Ollama)
@@ -545,7 +545,7 @@ mod tests {
 
     #[test]
     fn test_all_provider_models_without_available_models_returns_empty() {
-        let mut providers = HashMap::new();
+        let mut providers = BTreeMap::new();
         // Without available_models, effective_models returns empty (dynamic discovery at daemon layer)
         providers.insert(
             "anthropic".to_string(),

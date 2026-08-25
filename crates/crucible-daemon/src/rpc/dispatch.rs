@@ -23,7 +23,6 @@ use crate::subscription::ClientId;
 // The app-config keys that name where the daemon acts, classified once beside
 // the struct whose fields they are, so the keys `config.set` refuses and the
 // keys the plugin-visible config store withholds cannot drift apart.
-use crucible_core::config::LOCATION_CONFIG_KEYS;
 use std::sync::Arc;
 
 pub type RpcResult<T> = Result<T, RpcError>;
@@ -206,6 +205,7 @@ rpc_methods! {
     LuaEval = "lua.eval",
     ConfigGet = "config.get",
     ConfigSet = "config.set",
+    ConfigEffective = "config.effective",
     UiConfig = "ui.config",
     UiSetTheme = "ui.set_theme",
     ProjectRegister = "project.register",
@@ -907,6 +907,7 @@ impl RpcDispatcher {
             // App-config store (the same store `cru.config.*` reads in Lua)
             RpcMethod::ConfigGet => to_response(id, self.handle_config_get(&req)),
             RpcMethod::ConfigSet => to_response(id, self.handle_config_set(&req)),
+            RpcMethod::ConfigEffective => to_response(id, self.handle_config_effective()),
 
             // Lua-defined UI config (theme now; surfaces and bars follow).
             // Snapshot half of the handshake — see `rpc::ui`.
@@ -1696,6 +1697,90 @@ impl RpcDispatcher {
     /// seeing it. The way to add a kiln is `kiln.register` (`cru kiln
     /// register`) or a config-file edit; both pass the floor, and this
     /// method must not become a third way that does not.
+    /// The daemon's effective config: what the boot evaluation extracted,
+    /// with the LIVE provider table folded in at answer time (a provider
+    /// added through `cru init` while the daemon runs must show). Daemon-
+    /// backed commands fetch this instead of evaluating anything themselves —
+    /// the daemon's copy IS the live truth, and evaluation is heavyweight.
+    fn handle_config_effective(&self) -> RpcResult<serde_json::Value> {
+        let Some(config) = self.ctx.effective_config.clone() else {
+            return Err(RpcError {
+                code: INTERNAL_ERROR,
+                message: "this daemon was bound without an app config".to_string(),
+                data: None,
+            });
+        };
+        let mut config = config;
+        let mut provenance = crucible_lua::get_app_config_provenance().unwrap_or_default();
+        if let Some(object) = config.as_object_mut() {
+            if let Some(llm) = self.ctx.llm_config.get() {
+                if let Ok(llm) = serde_json::to_value(llm.as_ref()) {
+                    // A provider the live table holds that the STORE never
+                    // merged came through the state overlay (`llm.json`) —
+                    // registered, and its leaves say so.
+                    let store_has = |name: &str| {
+                        crucible_lua::get_app_config()
+                            .and_then(|store| {
+                                store
+                                    .get("llm")
+                                    .and_then(|l| l.get("providers"))
+                                    .and_then(|p| p.get(name))
+                                    .map(|_| true)
+                            })
+                            .unwrap_or(false)
+                    };
+                    if let Some(providers) = llm.get("providers").and_then(|p| p.as_object()) {
+                        for (name, entry) in providers {
+                            if !store_has(name) {
+                                record_registered_leaves(
+                                    &mut provenance,
+                                    &format!("llm.providers.{name}"),
+                                    entry,
+                                );
+                            }
+                        }
+                    }
+                    object.insert("llm".to_string(), llm);
+                }
+            }
+        }
+        let config_root = self
+            .ctx
+            .config_path
+            .as_ref()
+            .and_then(|p| p.parent())
+            .map(|p| p.display().to_string());
+        // `kiln_path` DEFAULTS to the current directory of whichever process
+        // computes it. When nothing configured it, the daemon's value is the
+        // daemon's cwd — meaningless to the client — so the response says so
+        // and the client substitutes its own default. Read off the boot
+        // store's provenance; a daemon handed a config value directly (no
+        // boot) reports false and its value stands.
+        //
+        // "No provenance row" meaning "defaulted" rests on the store
+        // recording a row for EVERY leaf it merges — `ConfigStore::merge` is
+        // the only write door, and
+        // `every_leaf_in_the_store_has_a_provenance_row` (store.rs) is the
+        // gate. A writer that bypassed it would make clients silently
+        // override a configured kiln_path with their own cwd.
+        let kiln_path_is_default = self.ctx.boot_hash.is_some()
+            && crucible_lua::get_app_config_provenance()
+                .map(|provenance| {
+                    provenance
+                        .get("kiln_path")
+                        .map(|tag| tag.short() == "default")
+                        .unwrap_or(true)
+                })
+                .unwrap_or(true);
+        Ok(serde_json::json!({
+            "config": config,
+            "config_root": config_root,
+            "boot_hash": self.ctx.boot_hash,
+            "kiln_path_is_default": kiln_path_is_default,
+            "provenance": provenance,
+        }))
+    }
+
     fn handle_config_set(&self, req: &Request) -> RpcResult<serde_json::Value> {
         use crate::rpc::params::parse_params;
         use serde::Deserialize;
@@ -1706,18 +1791,15 @@ impl RpcDispatcher {
         }
 
         let params: Params = parse_params(req)?;
-        let mut values = params.values;
-        let rejected: Vec<&str> = LOCATION_CONFIG_KEYS
-            .into_iter()
-            .filter(|key| values.remove(*key).is_some())
-            .collect();
+        // One door-keeping implementation: the store's Withhold policy strips
+        // the location keys and reports them; this handler only relays.
+        let rejected = crucible_lua::merge_app_config(serde_json::Value::Object(params.values));
         if !rejected.is_empty() {
             tracing::warn!(
                 keys = ?rejected,
                 "config.set refused keys that name where the daemon acts; edit the config file instead"
             );
         }
-        crucible_lua::merge_app_config(serde_json::Value::Object(values));
         Ok(serde_json::json!({ "ok": true, "rejected": rejected }))
     }
 
@@ -1881,6 +1963,24 @@ impl RpcDispatcher {
 
         Ok(serde_json::json!({ "status": "ok" }))
     }
+}
+
+/// Record `registered` provenance for every leaf under `path` of `value` —
+/// the state overlay's contribution to the effective config.
+fn record_registered_leaves(
+    provenance: &mut crucible_core::config::ProvenanceMap,
+    path: &str,
+    value: &serde_json::Value,
+) {
+    if let serde_json::Value::Object(map) = value {
+        if !map.is_empty() {
+            for (key, child) in map {
+                record_registered_leaves(provenance, &format!("{path}.{key}"), child);
+            }
+            return;
+        }
+    }
+    provenance.set(path, crucible_core::config::SourceTag::Registered);
 }
 
 #[cfg(test)]
@@ -2880,6 +2980,8 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
             llm_state: Arc::new(crate::llm_state::LlmStateStore::new(data_home)),
             config_projects: Vec::new(),
             config_path: None,
+            effective_config: None,
+            boot_hash: None,
             config_default_kiln: None,
         }))
     }

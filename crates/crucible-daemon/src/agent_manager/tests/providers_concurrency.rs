@@ -47,7 +47,7 @@ async fn stalling_endpoint(delay: Duration) -> String {
 /// exported — the first draft of this test found four providers where it
 /// declared three, and would have dialled a real endpoint. Declaring a backend
 /// puts it in `seen_types`, and env discovery skips backends already seen.
-fn claim_every_backend() -> std::collections::HashMap<String, LlmProviderConfig> {
+fn claim_every_backend() -> std::collections::BTreeMap<String, LlmProviderConfig> {
     let backends = [
         BackendType::Ollama,
         BackendType::OpenAI,
@@ -76,7 +76,7 @@ fn claim_every_backend() -> std::collections::HashMap<String, LlmProviderConfig>
         .collect()
 }
 
-fn manager_with(providers: std::collections::HashMap<String, LlmProviderConfig>) -> AgentManager {
+fn manager_with(providers: std::collections::BTreeMap<String, LlmProviderConfig>) -> AgentManager {
     let (event_tx, _) = broadcast::channel(16);
     AgentManager::new(AgentManagerParams {
         kiln_manager: Arc::new(KilnManager::new()),

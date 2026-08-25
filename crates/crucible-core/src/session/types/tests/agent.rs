@@ -385,7 +385,7 @@ fn test_session_agent_from_profile_basic() {
         command: None,
         args: None,
         env: {
-            let mut map = HashMap::new();
+            let mut map = std::collections::BTreeMap::new();
             map.insert("ANTHROPIC_API_KEY".to_string(), "key123".to_string());
             map
         },
@@ -421,7 +421,7 @@ fn test_session_agent_from_profile_env_isolation() {
         command: None,
         args: None,
         env: {
-            let mut map = HashMap::new();
+            let mut map = std::collections::BTreeMap::new();
             map.insert("CUSTOM_VAR".to_string(), "custom_value".to_string());
             map.insert("ANOTHER_VAR".to_string(), "another_value".to_string());
             map
@@ -463,7 +463,7 @@ fn test_session_agent_from_profile_with_delegation() {
         extends: Some("opencode".to_string()),
         command: None,
         args: None,
-        env: HashMap::new(),
+        env: std::collections::BTreeMap::new(),
         description: Some("Delegating agent".to_string()),
         delegation: Some(delegation),
         permissions: None,

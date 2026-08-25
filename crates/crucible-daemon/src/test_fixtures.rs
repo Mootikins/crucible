@@ -13,7 +13,6 @@ use crate::kiln_manager::KilnManager;
 use crate::protocol::SessionEventMessage;
 use crate::session_manager::SessionManager;
 use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig, TrustLevel};
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
@@ -30,7 +29,7 @@ pub(crate) fn build_llm_config_with_trust(
     provider_type: BackendType,
     trust_level: Option<TrustLevel>,
 ) -> LlmConfig {
-    let mut providers = HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         default_key.to_string(),
         LlmProviderConfig {

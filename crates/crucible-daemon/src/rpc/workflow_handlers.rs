@@ -835,7 +835,7 @@ mod tests {
         let kiln_manager = Arc::new(KilnManager::new());
         let session_manager = crate::test_support::temp_session_manager();
         let acp_config = profile.map(|permissions| {
-            let mut agents = std::collections::HashMap::new();
+            let mut agents = std::collections::BTreeMap::new();
             agents.insert(
                 PROFILE_NAME.to_string(),
                 crucible_core::config::components::acp::AgentProfile {

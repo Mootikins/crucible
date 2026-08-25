@@ -115,6 +115,13 @@ pub struct RpcContext {
     /// client knew it. A refusal that names the config layer names this file,
     /// so the user knows which one to edit.
     pub config_path: Option<std::path::PathBuf>,
+    /// The extracted app config the daemon was bound with, as JSON — what
+    /// `config.effective` serves (with the LIVE provider table folded in at
+    /// answer time).
+    pub effective_config: Option<serde_json::Value>,
+    /// The boot-input hash (`daemon_plugins::boot_input_hash`) recorded at
+    /// boot; `None` for a daemon handed a config value directly.
+    pub boot_hash: Option<String>,
     /// `default_kiln` as the CONFIG layer states it, when it states one.
     ///
     /// The state store carries its own default — the chat preflight sets it —
@@ -150,6 +157,8 @@ pub struct RpcContextParams {
     pub kiln_registry: Arc<crate::kiln_registry::KilnRegistry>,
     pub kiln_state: Arc<crate::kiln_state::KilnStateStore>,
     pub config_path: Option<std::path::PathBuf>,
+    pub effective_config: Option<serde_json::Value>,
+    pub boot_hash: Option<String>,
     pub config_default_kiln: Option<String>,
     pub llm_state: Arc<crate::llm_state::LlmStateStore>,
     pub config_projects: Vec<crate::project_manager::ProjectLayerEntry>,
@@ -174,6 +183,8 @@ impl RpcContext {
             kiln_registry,
             kiln_state,
             config_path,
+            effective_config,
+            boot_hash,
             config_default_kiln,
             llm_state,
             config_projects,
@@ -202,6 +213,8 @@ impl RpcContext {
             kiln_registry,
             kiln_state,
             config_path,
+            effective_config,
+            boot_hash,
             config_default_kiln,
             llm_state,
             config_projects,
@@ -273,6 +286,8 @@ impl RpcContext {
             llm_state: Arc::new(crate::llm_state::LlmStateStore::new(&data_home)),
             config_projects: Vec::new(),
             config_path: None,
+            effective_config: None,
+            boot_hash: None,
             config_default_kiln: None,
             data_home,
             workspace_config: None,

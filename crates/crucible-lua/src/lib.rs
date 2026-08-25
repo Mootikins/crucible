@@ -105,8 +105,11 @@ pub mod ui_geometry;
 
 pub use auth_plugin::{fire_provider_auth_hooks, get_provider_auth_hooks};
 pub use config::{
-    get_app_config, get_layout, get_theme_config, get_ui_geometry, list_available_themes,
-    merge_app_config, seed_app_config, ConfigLoader, ConfigState,
+    begin_boot_store, end_boot_phase, evaluate_config_source, get_app_config,
+    get_app_config_provenance, get_layout, get_theme_config, get_ui_geometry, in_boot_phase,
+    install_state, install_store, list_available_themes, merge_app_config, merge_app_config_tagged,
+    seed_app_config, set_runtimepath_extender, snapshot_state, snapshot_store, ConfigLoader,
+    ConfigState,
 };
 pub use context::{
     register_context_module, register_context_module_stub, register_context_validators,

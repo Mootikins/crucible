@@ -417,11 +417,11 @@ async fn reloading_one_plugin_leaves_another_plugins_handler_bound_to_its_own_fu
     }
 }
 
-/// `~/.config/crucible/init.lua` is evaluated into the loader's VM *after*
-/// every plugin, so its handlers hold the highest indices — the first names a
-/// reload would reuse — and carry `plugin: None`, so nothing ever clears them.
-/// A rebound user handler stays wrong for the daemon's lifetime, which makes
-/// this the likeliest way the collision is met in the field.
+/// The user's init.lua handlers carry `plugin: None`, so nothing ever clears
+/// them — a plugin reload that reused their names would leave a rebound user
+/// handler wrong for the daemon's lifetime. This pins that a reload keeps a
+/// user handler bound to its own function, whichever order the user file and
+/// the plugins were evaluated in.
 #[tokio::test]
 async fn reloading_a_plugin_leaves_a_user_init_handler_bound_to_its_own_function() {
     use tempfile::TempDir;
@@ -456,8 +456,10 @@ async fn reloading_a_plugin_leaves_a_user_init_handler_bound_to_its_own_function
         .execute_plugin("alpha", &alpha.join("init.lua"))
         .await
         .expect("load alpha");
-    // The real entry point, so the `plugin: None` attribution is genuine.
-    loader.eval_user_init(&user_init).await;
+    // Evaluated with no plugin context, as the boot evaluation runs the
+    // user's file, so the `plugin: None` attribution is genuine.
+    let user_source = std::fs::read_to_string(&user_init).unwrap();
+    loader.eval(&user_source).await.expect("user init");
     loader
         .execute_plugin("alpha", &alpha.join("init.lua"))
         .await

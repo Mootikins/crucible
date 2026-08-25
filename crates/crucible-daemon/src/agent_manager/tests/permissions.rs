@@ -610,7 +610,7 @@ mod permission_channel_tests {
             .await
             .unwrap();
 
-        let mut providers = std::collections::HashMap::new();
+        let mut providers = std::collections::BTreeMap::new();
         providers.insert(
             "ollama".to_string(),
             LlmProviderConfig::builder(BackendType::Ollama)
@@ -715,7 +715,6 @@ mod resolve_agent_profile_tests {
         acp::AgentProfile,
         permissions::{PermissionConfig, PermissionMode},
     };
-    use std::collections::HashMap;
 
     use crate::agent_manager::resolve_agent_profile;
     use test_case::test_case;
@@ -740,7 +739,7 @@ mod resolve_agent_profile_tests {
     #[test_case(ProfileScenario::MergesPermissions; "resolve_agent_profile_merges_permissions")]
     #[test_case(ProfileScenario::NoPermissionsReturnsNone; "resolve_agent_profile_no_permissions_returns_none")]
     fn resolve_agent_profile_outcomes(scenario: ProfileScenario) {
-        let mut configured = HashMap::new();
+        let mut configured = std::collections::BTreeMap::new();
         let (name, expected_some) = match scenario {
             ProfileScenario::MergesPermissions => {
                 configured.insert(
@@ -781,12 +780,11 @@ mod session_permission_config_tests {
         permissions::{PermissionConfig, PermissionMode},
     };
     use crucible_core::session::SessionType;
-    use std::collections::HashMap;
 
     /// An `AgentManager` whose global rules are `default = allow` and whose
     /// `my-claude` profile is the stricter `default = deny`.
     fn manager_with_strict_profile(session_manager: Arc<SessionManager>) -> AgentManager {
-        let mut agents = HashMap::new();
+        let mut agents = std::collections::BTreeMap::new();
         agents.insert(
             "my-claude".to_string(),
             AgentProfile {

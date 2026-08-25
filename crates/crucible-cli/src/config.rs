@@ -17,6 +17,138 @@ pub use crucible_core::config::{
     HighlightingConfig,
 };
 
+/// Fetch the daemon's effective config over `config.effective`.
+///
+/// Daemon-backed commands acquire their config here: the daemon's copy holds
+/// the runtime `config.set` merges and the live provider table, and IS the
+/// live truth — a per-command client evaluation would be both wrong and
+/// expensive (it runs the user's whole runtime file).
+///
+/// Two client-side checks ride along:
+/// - the ROOT-MISMATCH refusal: an invocation whose resolved config root
+///   differs from the daemon's is refused, naming both roots;
+/// - the STALENESS warning: a changed boot-input hash (`init.lua`, plus
+///   `config.toml` while it exists) warns "restart to apply".
+pub async fn fetch_effective_config(
+    config_file: Option<std::path::PathBuf>,
+    embedding_url: Option<String>,
+    embedding_model: Option<String>,
+) -> anyhow::Result<CliConfig> {
+    // Only a RUNNING daemon is asked. Acquisition must never be the reason a
+    // daemon starts: with no daemon, the local evaluation reads the same
+    // files the daemon's boot would, so the values agree by construction,
+    // and the command's own daemon contact (if it gets that far) spawns one.
+    match fetch_effective_from_daemon(
+        config_file.clone(),
+        embedding_url.clone(),
+        embedding_model.clone(),
+    )
+    .await?
+    {
+        Some(config) => Ok(config),
+        None => local_evaluation(config_file, embedding_url, embedding_model).await,
+    }
+}
+
+/// [`fetch_effective_config`]'s daemon half: `Ok(None)` when no daemon is
+/// running. `cru config show` uses this to say WHICH copy it rendered.
+pub async fn fetch_effective_from_daemon(
+    config_file: Option<std::path::PathBuf>,
+    embedding_url: Option<String>,
+    embedding_model: Option<String>,
+) -> anyhow::Result<Option<CliConfig>> {
+    let Some(client) = crate::common::daemon_client_if_running().await else {
+        return Ok(None);
+    };
+    let resp = client
+        .call("config.effective", serde_json::json!({}))
+        .await?;
+
+    let my_source =
+        config_file.unwrap_or_else(crucible_core::config::CliAppConfig::default_config_path);
+    let my_root = my_source
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(std::path::Path::new("."));
+
+    if let Some(daemon_root) = resp["config_root"].as_str() {
+        if std::path::Path::new(daemon_root) != my_root {
+            anyhow::bail!(
+                "the daemon runs on config root {daemon_root}, but this invocation resolves {}; \
+                 run `cru daemon restart` to move the daemon to this root",
+                my_root.display()
+            );
+        }
+    }
+
+    if let Some(boot_hash) = resp["boot_hash"].as_str() {
+        let current = crucible_daemon::daemon_plugins::boot_input_hash(&my_source);
+        if current != boot_hash {
+            eprintln!(
+                "warning: the config changed since the daemon started; run `cru daemon restart` to apply"
+            );
+        }
+    }
+
+    let mut config: CliConfig = serde_json::from_value(resp["config"].clone())
+        .map_err(|e| anyhow::anyhow!("the daemon's effective config does not parse: {e}"))?;
+    // A DEFAULTED kiln_path is the daemon's own cwd — meaningless here. The
+    // default is "the invoking process's directory", so this process
+    // computes its own, exactly as a local load would have.
+    if resp["kiln_path_is_default"].as_bool() == Some(true) {
+        config.kiln_path = CliConfig::default().kiln_path;
+    }
+    // The daemon's per-leaf provenance, for `--sources` rendering.
+    if let Ok(provenance) =
+        serde_json::from_value::<crucible_core::config::ProvenanceMap>(resp["provenance"].clone())
+    {
+        config.source_map = Some(provenance);
+    }
+    config.apply_embedding_overrides(embedding_url, embedding_model);
+    Ok(Some(config))
+}
+
+/// A `ProvenanceMap` travels the `config.effective` wire intact — the
+/// `--sources` rendering on the client is only as good as this round trip.
+#[cfg(test)]
+mod effective_fetch_tests {
+    #[test]
+    fn a_wire_provenance_round_trips_into_source_map() {
+        let mut provenance = crucible_core::config::ProvenanceMap::new();
+        provenance.set(
+            "chat.model",
+            crucible_core::config::SourceTag::Lua {
+                file: "init.lua".into(),
+                line: Some(3),
+            },
+        );
+        let wire = serde_json::to_value(&provenance).unwrap();
+        let back: crucible_core::config::ProvenanceMap = serde_json::from_value(wire).unwrap();
+        assert_eq!(
+            back.get("chat.model").map(|t| t.detail()),
+            Some("lua (init.lua:3)".to_string())
+        );
+    }
+}
+
+/// One throwaway evaluation for a bootstrap command: seed, evaluate
+/// `init.lua` in a fresh executor, read the store, drop. The same
+/// construction as the daemon's boot — one code path — with hooks
+/// registering into a VM nothing ever dispatches on.
+pub async fn local_evaluation(
+    config_file: Option<std::path::PathBuf>,
+    embedding_url: Option<String>,
+    embedding_model: Option<String>,
+) -> anyhow::Result<CliConfig> {
+    let boot = crucible_daemon::daemon_plugins::evaluate_boot_config(
+        config_file,
+        embedding_url,
+        embedding_model,
+    )
+    .await?;
+    Ok(boot.config)
+}
+
 /// Builder for programmatically constructing CliConfig (top-level CLI configuration)
 #[cfg(test)]
 pub struct CliConfigBuilder {
