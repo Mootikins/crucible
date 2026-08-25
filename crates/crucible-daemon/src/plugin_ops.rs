@@ -273,7 +273,10 @@ pub fn sweep_legacy_plugins_toml(toml_path: &Path, manifest_path: &Path) -> Vec<
                 manifest_path.display()
             ),
         )),
-        Err(e) => lines.push((true, format!("Failed to import {}: {e}", toml_path.display()))),
+        Err(e) => lines.push((
+            true,
+            format!("Failed to import {}: {e}", toml_path.display()),
+        )),
     }
     lines
 }
@@ -486,7 +489,9 @@ mod tests {
             "the warning must name the move: {lines:?}"
         );
         assert!(
-            lines.iter().any(|(warn, msg)| !*warn && msg.contains("Imported 1")),
+            lines
+                .iter()
+                .any(|(warn, msg)| !*warn && msg.contains("Imported 1")),
             "the first sweep imports: {lines:?}"
         );
 
@@ -520,7 +525,10 @@ enabled = false
         )
         .unwrap();
 
-        assert_eq!(import_legacy_plugins_toml(&toml_path, &manifest).unwrap(), 2);
+        assert_eq!(
+            import_legacy_plugins_toml(&toml_path, &manifest).unwrap(),
+            2
+        );
         let manifest_now = read_manifest(&manifest).unwrap();
         assert_eq!(manifest_now.plugins["repo"].pin.as_deref(), Some("v1"));
         assert!(!manifest_now.plugins["tool"].enabled);
@@ -531,7 +539,10 @@ enabled = false
             Ok(())
         })
         .unwrap();
-        assert_eq!(import_legacy_plugins_toml(&toml_path, &manifest).unwrap(), 0);
+        assert_eq!(
+            import_legacy_plugins_toml(&toml_path, &manifest).unwrap(),
+            0
+        );
         assert_eq!(
             read_manifest(&manifest).unwrap().plugins["repo"]
                 .pin
@@ -542,6 +553,9 @@ enabled = false
 
         // A missing legacy file imports nothing.
         std::fs::remove_file(&toml_path).unwrap();
-        assert_eq!(import_legacy_plugins_toml(&toml_path, &manifest).unwrap(), 0);
+        assert_eq!(
+            import_legacy_plugins_toml(&toml_path, &manifest).unwrap(),
+            0
+        );
     }
 }

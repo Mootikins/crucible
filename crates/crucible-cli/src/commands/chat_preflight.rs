@@ -270,7 +270,9 @@ mod tests {
         std::fs::write(&init_lua, format!("{before}-- user edit\n")).unwrap();
         assert!(!ensure_kiln_scaffold(tmp.path()).unwrap());
         assert!(
-            std::fs::read_to_string(&init_lua).unwrap().contains("user edit"),
+            std::fs::read_to_string(&init_lua)
+                .unwrap()
+                .contains("user edit"),
             "an existing init.lua must not be overwritten"
         );
     }

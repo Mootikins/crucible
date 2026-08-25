@@ -362,8 +362,7 @@ pub async fn evaluate_boot_config_with_paths(
         }
         Err(e) => {
             warn!("init.lua produced a config that does not extract ({e}); continuing on the seed");
-            eval_error
-                .get_or_insert_with(|| format!("the evaluated config does not extract: {e}"));
+            eval_error.get_or_insert_with(|| format!("the evaluated config does not extract: {e}"));
             crucible_lua::install_store(seed_store);
             seed_config
         }

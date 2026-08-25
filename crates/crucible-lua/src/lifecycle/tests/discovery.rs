@@ -104,9 +104,7 @@ fn test_empty_directory_not_discovered() {
 #[test]
 fn a_plugin_named_declare_is_a_named_discovery_error_not_a_plugin() {
     let temp = TempDir::new().unwrap();
-    let plugin_dir = temp
-        .path()
-        .join(crucible_core::config::PLUGINS_DECLARE_KEY);
+    let plugin_dir = temp.path().join(crucible_core::config::PLUGINS_DECLARE_KEY);
     std::fs::create_dir_all(&plugin_dir).unwrap();
     std::fs::write(plugin_dir.join("init.lua"), "return { name = 'declare' }").unwrap();
 

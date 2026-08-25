@@ -45,8 +45,10 @@ impl EntrySource {
 ///
 /// Best-effort on the config side: an unreadable config yields the manifest
 /// alone, with the reason surfaced to the caller.
-pub(crate) async fn configured_plugin_entries(
-) -> Result<(Vec<(String, crucible_core::config::PluginEntry, EntrySource)>, Vec<String>)> {
+pub(crate) async fn configured_plugin_entries() -> Result<(
+    Vec<(String, crucible_core::config::PluginEntry, EntrySource)>,
+    Vec<String>,
+)> {
     let mut notes = Vec::new();
 
     let declared = match crate::config::fetch_effective_config(None, None, None).await {
@@ -56,7 +58,9 @@ pub(crate) async fn configured_plugin_entries(
             entries
         }
         Err(e) => {
-            notes.push(format!("could not read the config for declared plugins: {e}"));
+            notes.push(format!(
+                "could not read the config for declared plugins: {e}"
+            ));
             Vec::new()
         }
     };

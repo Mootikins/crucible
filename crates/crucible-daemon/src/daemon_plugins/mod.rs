@@ -19,8 +19,7 @@ pub use boot::{
 };
 pub use bootstrap::{
     bootstrap_plugin_entry, bootstrap_plugins, daemon_plugin_paths, default_daemon_plugin_paths,
-    union_plugin_entries,
-    BootstrapOutcome,
+    union_plugin_entries, BootstrapOutcome,
 };
 #[cfg(test)]
 pub(crate) use bootstrap::{normalize_git_url, plugin_name_from_url, runtime_plugin_paths};

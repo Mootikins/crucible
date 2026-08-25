@@ -112,9 +112,10 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: TextFormat) 
                 .and_then(|resp| resp["boot_hash"].as_str().map(String::from)),
             Err(_) => None,
         };
-        let paths_fn: crucible_daemon::daemon_plugins::PluginPathsFn = std::sync::Arc::new(
-            |rtp: &[PathBuf]| crucible_daemon::daemon_plugins::daemon_plugin_paths(rtp),
-        );
+        let paths_fn: crucible_daemon::daemon_plugins::PluginPathsFn =
+            std::sync::Arc::new(|rtp: &[PathBuf]| {
+                crucible_daemon::daemon_plugins::daemon_plugin_paths(rtp)
+            });
         // An explicit-but-missing `-C` path must keep failing loudly (the
         // boot's own oracle rule); the default path passes as `None` so a
         // missing `config.toml` beside a real `init.lua` is not an error.
@@ -809,12 +810,9 @@ mod tests {
         std::fs::write(tmp.path().join("init.lua"), "-- fine").unwrap();
         let current = crucible_daemon::daemon_plugins::boot_input_hash(&config_toml);
 
-        let (results, _) = evaluate_config_check(
-            Some(config_toml.clone()),
-            Some(current),
-            no_plugin_paths(),
-        )
-        .await;
+        let (results, _) =
+            evaluate_config_check(Some(config_toml.clone()), Some(current), no_plugin_paths())
+                .await;
         let fresh = results
             .iter()
             .find(|r| r.check_name == "Config freshness")
@@ -857,8 +855,7 @@ mod tests {
         let row = kiln_local_config_note(tmp.path()).expect("a row for the existing file");
         assert_eq!(row.status, "warn");
         assert!(
-            row.message.contains("nothing reads it")
-                && row.message.contains("never taken effect"),
+            row.message.contains("nothing reads it") && row.message.contains("never taken effect"),
             "the row must state the true fact: {}",
             row.message
         );

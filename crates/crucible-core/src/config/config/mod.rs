@@ -19,7 +19,8 @@ pub use provider::EffectiveLlmConfig;
 #[cfg(feature = "toml")]
 pub use server::{LoggingConfig, ServerConfig, WebConfig, WorkspaceConfig};
 pub use types::{
-    parse_duration_string, plugin_name_from_url, PluginEntry, PluginsConfig, ScheduleEntry, declared_plugins, PLUGINS_DECLARE_KEY,
+    declared_plugins, parse_duration_string, plugin_name_from_url, PluginEntry, PluginsConfig,
+    ScheduleEntry, PLUGINS_DECLARE_KEY,
 };
 
 /// Returns the Crucible home directory (`~/.crucible/`).

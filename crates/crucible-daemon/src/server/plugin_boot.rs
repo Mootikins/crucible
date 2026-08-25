@@ -115,9 +115,9 @@ impl Server {
                 .as_ref()
                 .and_then(|cfg| cfg.get("plugins"))
                 .and_then(|v| {
-                    serde_json::from_value::<
-                        std::collections::BTreeMap<String, serde_json::Value>,
-                    >(v.clone())
+                    serde_json::from_value::<std::collections::BTreeMap<String, serde_json::Value>>(
+                        v.clone(),
+                    )
                     .ok()
                 })
                 .map(|map| crucible_core::config::declared_plugins(&map))

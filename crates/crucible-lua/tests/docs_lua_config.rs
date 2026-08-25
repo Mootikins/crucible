@@ -76,9 +76,7 @@ fn extract_lua_blocks(content: &str) -> Vec<LuaBlock> {
             }
             None => {
                 if ticks >= 3 {
-                    let is_lua = info
-                        .split(|c: char| c.is_whitespace() || c == ',')
-                        .next()
+                    let is_lua = info.split(|c: char| c.is_whitespace() || c == ',').next()
                         == Some("lua")
                         && !marked;
                     marked = false;
