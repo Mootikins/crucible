@@ -305,8 +305,8 @@ pub fn import_legacy_plugins_toml(toml_path: &Path, manifest_path: &Path) -> Res
         let mut imported = 0usize;
         for entry in legacy.plugin {
             let Some(name) = entry.name() else { continue };
-            if !manifest.plugins.contains_key(&name) {
-                manifest.plugins.insert(name, entry);
+            if let std::collections::btree_map::Entry::Vacant(slot) = manifest.plugins.entry(name) {
+                slot.insert(entry);
                 imported += 1;
             }
         }
