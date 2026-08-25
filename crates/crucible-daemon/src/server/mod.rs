@@ -458,10 +458,23 @@ impl Server {
                         .iter()
                         .filter_map(|(name, entry)| {
                             let path = entry.get("path")?.as_str()?;
-                            Some(crucible_core::config::Registration::config(
-                                name.clone(),
-                                std::path::PathBuf::from(path),
-                            ))
+                            Some(crate::project_manager::ProjectLayerEntry {
+                                name: name.clone(),
+                                path: std::path::PathBuf::from(path),
+                                // The `[projects.*].kilns` list is already kiln
+                                // NAMES, which is what the state layer has to
+                                // be resolved into to match it.
+                                kilns: entry
+                                    .get("kilns")
+                                    .and_then(|k| k.as_array())
+                                    .map(|k| {
+                                        k.iter()
+                                            .filter_map(|v| v.as_str().map(str::to_string))
+                                            .collect()
+                                    })
+                                    .unwrap_or_default(),
+                                origin: crucible_core::config::RegistrationOrigin::Config,
+                            })
                         })
                         .collect()
                 })

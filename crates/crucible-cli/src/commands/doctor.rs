@@ -199,26 +199,44 @@ pub async fn execute(config_path_override: Option<PathBuf>, format: TextFormat) 
         }
     }
 
-    // Check 7: Kiln References
-    if let Some(ref config) = loaded_config {
-        let warnings = validate_kiln_references(config);
-        if warnings.is_empty() {
-            if !config.projects.is_empty() {
-                results.push(DoctorCheckResult {
-                    check_name: "Kiln References".to_string(),
-                    status: "pass".to_string(),
-                    message: "All project kiln references are valid".to_string(),
-                });
-            }
-        } else {
-            for warning in &warnings {
-                results.push(DoctorCheckResult {
-                    check_name: "Kiln References".to_string(),
-                    status: "warn".to_string(),
-                    message: warning.clone(),
-                });
+    // Check 7: Kiln References, against the registries rather than the config.
+    //
+    // Both listings come from the daemon, which is the only layer that merges
+    // the config and the state store. A daemon that cannot be reached means the
+    // check did not run — reported as such, because silence here would read as
+    // "no problems found".
+    match registry_listings().await {
+        Ok((projects, kilns)) => {
+            let warnings = validate_kiln_references(&projects, &kilns);
+            if warnings.is_empty() {
+                if !projects.is_empty() {
+                    let by_origin =
+                        |origin: &str| projects.iter().filter(|p| p["origin"] == origin).count();
+                    results.push(DoctorCheckResult {
+                        check_name: "Kiln References".to_string(),
+                        status: "pass".to_string(),
+                        message: format!(
+                            "All project kiln references are valid ({} registered, {} declared in config)",
+                            by_origin("registered"),
+                            by_origin("config"),
+                        ),
+                    });
+                }
+            } else {
+                for warning in &warnings {
+                    results.push(DoctorCheckResult {
+                        check_name: "Kiln References".to_string(),
+                        status: "warn".to_string(),
+                        message: warning.clone(),
+                    });
+                }
             }
         }
+        Err(e) => results.push(DoctorCheckResult {
+            check_name: "Kiln References".to_string(),
+            status: "warn".to_string(),
+            message: format!("Could not read the registries from the daemon: {e}"),
+        }),
     }
 
     // Check 8: Config validation (structural parse of config.toml)
@@ -384,20 +402,63 @@ fn is_writable_dir(path: &Path) -> bool {
     }
 }
 
+/// The project and kiln registry listings, from the daemon.
+///
+/// One connection for both: they are two halves of one question, and asking
+/// twice would let them come from two different daemon states.
+async fn registry_listings() -> anyhow::Result<(Vec<serde_json::Value>, Vec<serde_json::Value>)> {
+    let client = crate::common::daemon_client().await?;
+    let projects = client.project_registry_list().await?;
+    let kilns = client.kiln_registry_list().await?;
+    Ok((
+        projects["projects"].as_array().cloned().unwrap_or_default(),
+        kilns["kilns"].as_array().cloned().unwrap_or_default(),
+    ))
+}
+
 fn display_path(path: &Path) -> String {
     path.to_string_lossy().to_string()
 }
 
-/// Validates that every kiln name referenced by a project actually exists in `resolved_kilns()`.
-pub fn validate_kiln_references(config: &CliConfig) -> Vec<String> {
-    let resolved = config.resolved_kilns();
+/// Validate that every kiln a project references is one Crucible can resolve.
+///
+/// Takes the two REGISTRY listings rather than the config, because neither
+/// question can be answered from the config any more. Projects registered by
+/// `cru init` live in `projects.json`, and kilns registered by `cru kiln
+/// register` live in `kilns.json` — so the old version, which read
+/// `config.projects` against `config.resolved_kilns()`, had drifted from a
+/// check into a false one: a config project referencing a registered kiln was
+/// reported broken, and a registered project was not checked at all.
+///
+/// A check that cannot fail is worse than a missing check, because it ends the
+/// investigation. This one looks where the entries actually are.
+///
+/// `projects` and `kilns` are the `projects` array of `project.registry_list`
+/// and the `kilns` array of `kiln.registry_list`.
+pub fn validate_kiln_references(
+    projects: &[serde_json::Value],
+    kilns: &[serde_json::Value],
+) -> Vec<String> {
+    let known: std::collections::BTreeSet<&str> = kilns
+        .iter()
+        .filter_map(|kiln| kiln["name"].as_str())
+        .collect();
+
     let mut warnings = Vec::new();
-    for (project_name, project) in &config.projects {
-        for kiln_name in &project.kilns {
-            if !resolved.contains_key(kiln_name) {
+    for project in projects {
+        let project_name = project["name"].as_str().unwrap_or("<unnamed>");
+        let origin = project["origin"].as_str().unwrap_or("unknown");
+        for kiln_name in project["kiln_names"].as_array().into_iter().flatten() {
+            let Some(kiln_name) = kiln_name.as_str() else {
+                continue;
+            };
+            if !known.contains(kiln_name) {
+                // The origin is named because the fix differs: an entry the
+                // user authored is edited, an entry a command wrote is
+                // re-registered or forgotten.
                 warnings.push(format!(
-                    "Project '{}' references kiln '{}' which is not defined in [kilns]",
-                    project_name, kiln_name
+                    "Project '{project_name}' ({origin}) references kiln '{kiln_name}', \
+                     which no registered kiln answers to"
                 ));
             }
         }
@@ -465,47 +526,53 @@ mod tests {
         assert_eq!(parsed[1].status, "fail");
     }
 
-    #[test]
-    fn doctor_reports_missing_kiln_references() {
-        use crucible_core::config::ProjectEntry;
+    fn project(name: &str, origin: &str, kilns: &[&str]) -> serde_json::Value {
+        serde_json::json!({
+            "name": name,
+            "origin": origin,
+            "kiln_names": kilns,
+        })
+    }
 
-        let mut config = CliConfig::default();
-        config.projects.insert(
-            "test".to_string(),
-            ProjectEntry {
-                path: PathBuf::from("/tmp/test"),
-                kilns: vec!["nonexistent".to_string()],
-            },
-        );
-        let warnings = validate_kiln_references(&config);
-        assert_eq!(warnings.len(), 1);
-        assert!(warnings[0].contains("nonexistent"));
-        assert!(warnings[0].contains("test"));
+    fn kiln(name: &str) -> serde_json::Value {
+        serde_json::json!({ "name": name })
     }
 
     #[test]
-    fn doctor_no_warnings_when_kiln_references_are_valid() {
-        use crucible_core::config::{KilnEntry, ProjectEntry};
+    fn doctor_reports_missing_kiln_references() {
+        let warnings =
+            validate_kiln_references(&[project("test", "registered", &["nonexistent"])], &[]);
 
-        let mut config = CliConfig::default();
-        config
-            .kilns
-            .insert("vault".to_string(), KilnEntry::Path("~/vault".into()));
-        config.projects.insert(
-            "myproject".to_string(),
-            ProjectEntry {
-                path: PathBuf::from("/tmp/myproject"),
-                kilns: vec!["vault".to_string()],
-            },
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("nonexistent"), "{}", warnings[0]);
+        assert!(warnings[0].contains("test"), "{}", warnings[0]);
+    }
+
+    /// The origin is in the message because the fix differs: an entry the user
+    /// authored is edited, an entry a command wrote is re-registered.
+    #[test]
+    fn a_broken_reference_names_the_layer_that_declared_the_project() {
+        let warnings = validate_kiln_references(&[project("legacy", "config", &["gone"])], &[]);
+
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("config"), "{}", warnings[0]);
+    }
+
+    /// The check that had drifted into a false one: a project referencing a
+    /// kiln that lives in the STATE layer. Read against `config.resolved_kilns()`
+    /// this was reported broken; read against the registry it is fine.
+    #[test]
+    fn a_kiln_registered_with_the_daemon_satisfies_a_reference() {
+        let warnings = validate_kiln_references(
+            &[project("myproject", "registered", &["vault"])],
+            &[kiln("vault")],
         );
-        let warnings = validate_kiln_references(&config);
-        assert!(warnings.is_empty());
+
+        assert!(warnings.is_empty(), "{warnings:?}");
     }
 
     #[test]
     fn doctor_no_warnings_when_no_projects() {
-        let config = CliConfig::default();
-        let warnings = validate_kiln_references(&config);
-        assert!(warnings.is_empty());
+        assert!(validate_kiln_references(&[], &[]).is_empty());
     }
 }

@@ -70,12 +70,12 @@ pub struct RpcContext {
     pub plugin_loader: Arc<Mutex<Option<DaemonPluginLoader>>>,
     /// `<data_home>/llm.json`: the provider selection the daemon recorded.
     pub llm_state: Arc<crate::llm_state::LlmStateStore>,
-    /// The projects the CONFIG layer declares, as `Registration` values.
+    /// The projects the CONFIG layer declares.
     ///
     /// Normalized at bind rather than carried as a config document, so
-    /// `overlay_layers` does the same work over it that it does over kilns —
-    /// one precedence rule, three registries.
-    pub config_projects: Vec<crucible_core::config::Registration>,
+    /// `overlay_layers` does the same work over it that it does over kilns and
+    /// providers — one precedence rule, three registries, three shapes.
+    pub config_projects: Vec<crate::project_manager::ProjectLayerEntry>,
     /// The provider table, shared with `AgentManager` rather than cloned.
     ///
     /// One table: it can gain a provider while the daemon runs, and two copies
@@ -152,7 +152,7 @@ pub struct RpcContextParams {
     pub config_path: Option<std::path::PathBuf>,
     pub config_default_kiln: Option<String>,
     pub llm_state: Arc<crate::llm_state::LlmStateStore>,
-    pub config_projects: Vec<crucible_core::config::Registration>,
+    pub config_projects: Vec<crate::project_manager::ProjectLayerEntry>,
 }
 
 impl RpcContext {

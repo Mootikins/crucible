@@ -42,7 +42,7 @@ use anyhow::{Context, Result};
 use tracing::info;
 
 use crate::config::CliConfig;
-use crate::kiln_attach::CliKilnRegistry;
+use crate::kiln_attach::{AttachedKiln, CliKilnRegistry, KilnTarget};
 use crate::kiln_discover::discover_kiln;
 
 pub use agent::CrucibleAcpAgent;
@@ -52,12 +52,8 @@ pub use agent::CrucibleAcpAgent;
 /// `kiln_override` comes from `cru acp --kiln <name-or-path>`; otherwise the
 /// kiln is taken from config or discovered by walking up from the current
 /// directory. This is headless: we never prompt (an editor host has no TTY).
-pub async fn execute(
-    mut config: CliConfig,
-    kiln_override: Option<String>,
-    config_path: Option<PathBuf>,
-) -> Result<()> {
-    resolve_kiln(&mut config, kiln_override, config_path)?;
+pub async fn execute(mut config: CliConfig, kiln_override: Option<String>) -> Result<()> {
+    resolve_kiln(&mut config, kiln_override).await?;
     info!(kiln = %config.kiln_path.display(), "starting ACP agent (cru acp)");
 
     // ACP framing is line-delimited JSON on stdio. The SDK transport reads
@@ -80,32 +76,20 @@ pub async fn execute(
 /// through the same registration door: sessions address kilns by name, and a
 /// discovered directory with no `[kilns]` entry would otherwise produce a
 /// session with no kiln at all.
-fn resolve_kiln(
-    config: &mut CliConfig,
-    kiln_override: Option<String>,
-    config_path: Option<PathBuf>,
-) -> Result<()> {
-    let config_path =
-        config_path.unwrap_or_else(crucible_core::config::CliAppConfig::default_config_path);
-
+async fn resolve_kiln(config: &mut CliConfig, kiln_override: Option<String>) -> Result<()> {
     if let Some(value) = kiln_override {
-        let mut registry = CliKilnRegistry::for_cli(config, config_path)?;
-        let attached = registry.attach(&value)?;
-        if attached.registered {
-            info!(kiln = %attached.name, path = %attached.path.display(), "registered a new kiln");
-        }
+        let attached = attach_kiln(config, &value).await?;
         attached.apply_to(config);
         return Ok(());
     }
 
-    // A configured kiln already has a name by definition — it came out of
-    // `[kilns]` — so this branch needs no registration.
+    // A configured kiln already has a name by definition — it came out of the
+    // registry — so this branch needs no registration.
     if config.kiln_path.join(".crucible").is_dir() {
         return Ok(());
     }
     if let Some(found) = discover_kiln(None, None) {
-        let mut registry = CliKilnRegistry::for_cli(config, config_path)?;
-        let attached = registry.attach(&found.path.to_string_lossy())?;
+        let attached = attach_kiln(config, &found.path.to_string_lossy()).await?;
         attached.apply_to(config);
         return Ok(());
     }
@@ -113,6 +97,47 @@ fn resolve_kiln(
         "no valid kiln found for `cru acp`; pass --kiln <name|path> or run from inside a kiln \
          (a directory containing .crucible/). Initialize one with `cru init`."
     )
+}
+
+/// Resolve a `--kiln` value, registering the directory it names if it needs one.
+///
+/// The resolver decides; this does the registering, because a registration is
+/// the daemon's to make and this is the layer holding the connection. The NAME
+/// comes back from the daemon rather than being derived here: it depends on
+/// what is already registered — `notes`, then `notes-2` — so a caller deriving
+/// its own would derive against a different set.
+async fn attach_kiln(config: &CliConfig, value: &str) -> Result<AttachedKiln> {
+    let registry = CliKilnRegistry::for_cli(config)?;
+    let directory = match registry.resolve(value)? {
+        KilnTarget::Registered(attached) => return Ok(attached),
+        KilnTarget::Directory(path) => path,
+    };
+
+    let client = crate::common::daemon_client().await?;
+    let reply = client
+        .kiln_register_derived(
+            &directory, /* auto */ true, /* make_default */ false,
+        )
+        .await
+        .with_context(|| format!("registering kiln at {}", directory.display()))?;
+
+    let name = reply["name"]
+        .as_str()
+        .and_then(|n| crucible_core::config::KilnName::parse(n).ok())
+        .ok_or_else(|| anyhow::anyhow!("the daemon returned no usable kiln name: {reply}"))?;
+    let path = reply["path"]
+        .as_str()
+        .map(PathBuf::from)
+        .unwrap_or(directory);
+    let registered = reply["outcome"].as_str() == Some("added");
+    if registered {
+        info!(kiln = %name, path = %path.display(), "registered a new kiln");
+    }
+    Ok(AttachedKiln {
+        name,
+        path,
+        registered,
+    })
 }
 
 #[cfg(test)]

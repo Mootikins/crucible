@@ -338,9 +338,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             commands::mcp::execute(config, args).await?
         }
 
-        Some(Commands::Acp { kiln }) => {
-            commands::acp::execute(config, kiln, cli_config_path.clone()).await?
-        }
+        Some(Commands::Acp { kiln }) => commands::acp::execute(config, kiln).await?,
 
         Some(Commands::Kiln { command }) => commands::kiln::handle(command).await?,
 

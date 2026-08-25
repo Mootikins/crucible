@@ -390,15 +390,37 @@ pub(crate) async fn handle_project_list(req: Request, pm: &Arc<ProjectManager>) 
 pub(crate) async fn handle_project_registry_list(
     req: Request,
     pm: &Arc<ProjectManager>,
-    config_projects: &[crucible_core::config::Registration],
+    km_registry: &Arc<crate::kiln_registry::KilnRegistry>,
+    config_projects: &[crate::project_manager::ProjectLayerEntry],
 ) -> Response {
-    use crucible_core::config::{overlay_layers, Registration, RegistrationOrigin};
+    use crate::project_manager::ProjectLayerEntry;
+    use crucible_core::config::{overlay_layers, RegistrationOrigin};
 
     let projects = pm.list();
-    let registered: Vec<Registration> = projects
+    // The state layer, in the same shape as the config layer. A project's kiln
+    // refs are NAMES on the config side and PATHS on the daemon side, so the
+    // paths are resolved through the kiln registry here — the registry name is
+    // what every other call answers to, and it is the only spelling the two
+    // layers can be compared in.
+    let registered: Vec<ProjectLayerEntry> = projects
         .iter()
-        .map(|p| Registration::registered(p.name.clone(), p.path.clone()))
+        .map(|p| ProjectLayerEntry {
+            name: p.name.clone(),
+            path: p.path.clone(),
+            kilns: p
+                .kilns
+                .iter()
+                .filter_map(|k| {
+                    km_registry
+                        .name_for(&k.path)
+                        .map(|n| n.to_string())
+                        .or_else(|| k.name.clone())
+                })
+                .collect(),
+            origin: RegistrationOrigin::Registered,
+        })
         .collect();
+
     let merged = overlay_layers(
         config_projects.to_vec(),
         registered,
@@ -406,9 +428,6 @@ pub(crate) async fn handle_project_registry_list(
         |declared, entry| declared.path == entry.path,
     );
 
-    // The daemon's own record, by name, so an entry that has one keeps its
-    // kilns and its last-accessed time. A config-only entry has neither, and
-    // saying so is the point of the listing.
     let by_name: std::collections::BTreeMap<String, crucible_core::Project> =
         projects.into_iter().map(|p| (p.name.clone(), p)).collect();
 
@@ -424,24 +443,26 @@ pub(crate) async fn handle_project_registry_list(
             let record = by_name
                 .get(&entry.name)
                 .filter(|project| project.path == entry.path);
-            match record {
-                Some(project) => {
-                    let mut value = serde_json::to_value(project).unwrap_or_default();
-                    if let Some(obj) = value.as_object_mut() {
-                        obj.insert(
-                            "origin".to_string(),
-                            serde_json::Value::String(entry.origin.as_str().to_string()),
-                        );
-                    }
-                    value
-                }
+            let mut value = match record {
+                Some(project) => serde_json::to_value(project).unwrap_or_default(),
                 None => serde_json::json!({
                     "name": entry.name,
                     "path": entry.path.to_string_lossy(),
                     "kilns": [],
-                    "origin": RegistrationOrigin::Config.as_str(),
                 }),
+            };
+            if let Some(obj) = value.as_object_mut() {
+                obj.insert(
+                    "origin".to_string(),
+                    serde_json::Value::String(entry.origin.as_str().to_string()),
+                );
+                // The kiln names, in one spelling for both layers. `kilns`
+                // keeps whatever shape its layer had, so a caller checking
+                // references reads this and a caller rendering paths reads
+                // that.
+                obj.insert("kiln_names".to_string(), serde_json::json!(entry.kilns));
             }
+            value
         })
         .collect();
 
@@ -1145,9 +1166,20 @@ mod project_open_kilns_tests {
 #[cfg(test)]
 mod project_registry_list_tests {
     use super::*;
+    use crate::project_manager::ProjectLayerEntry;
     use crate::protocol::RequestId;
-    use crucible_core::config::Registration;
+    use crucible_core::config::RegistrationOrigin;
     use tempfile::TempDir;
+
+    /// A config-layer project entry, the way `Server::bind` builds one.
+    fn config_project(name: &str, path: std::path::PathBuf) -> ProjectLayerEntry {
+        ProjectLayerEntry {
+            name: name.to_string(),
+            path,
+            kilns: Vec::new(),
+            origin: RegistrationOrigin::Config,
+        }
+    }
 
     fn request() -> Request {
         Request {
@@ -1176,12 +1208,13 @@ mod project_registry_list_tests {
     async fn each_layer_gets_a_row_that_names_it() {
         let tmp = TempDir::new().unwrap();
         let (pm, registered_path) = registered_project(&tmp, "from-daemon");
-        let config = vec![Registration::config(
+        let registry = crate::test_support::kiln_registry(&tmp.path().join("data"), &[]);
+        let config = vec![config_project(
             "from-config",
             tmp.path().join("from-config"),
         )];
 
-        let resp = handle_project_registry_list(request(), &pm, &config).await;
+        let resp = handle_project_registry_list(request(), &pm, &registry, &config).await;
         let data = resp.result.expect("the listing answers");
         let rows = data["projects"].as_array().expect("an array");
 
@@ -1208,10 +1241,11 @@ mod project_registry_list_tests {
     async fn a_contested_name_reports_the_registration_the_config_out_ranks() {
         let tmp = TempDir::new().unwrap();
         let (pm, registered_path) = registered_project(&tmp, "repo");
+        let registry = crate::test_support::kiln_registry(&tmp.path().join("data"), &[]);
         let declared = tmp.path().join("elsewhere").join("repo");
-        let config = vec![Registration::config("repo", declared.clone())];
+        let config = vec![config_project("repo", declared.clone())];
 
-        let resp = handle_project_registry_list(request(), &pm, &config).await;
+        let resp = handle_project_registry_list(request(), &pm, &registry, &config).await;
         let data = resp.result.expect("the listing answers");
 
         let rows = data["projects"].as_array().expect("an array");
@@ -1242,9 +1276,10 @@ mod project_registry_list_tests {
     async fn the_same_project_in_both_layers_is_not_a_conflict() {
         let tmp = TempDir::new().unwrap();
         let (pm, registered_path) = registered_project(&tmp, "repo");
-        let config = vec![Registration::config("repo", registered_path)];
+        let registry = crate::test_support::kiln_registry(&tmp.path().join("data"), &[]);
+        let config = vec![config_project("repo", registered_path)];
 
-        let resp = handle_project_registry_list(request(), &pm, &config).await;
+        let resp = handle_project_registry_list(request(), &pm, &registry, &config).await;
         let data = resp.result.expect("the listing answers");
 
         assert!(

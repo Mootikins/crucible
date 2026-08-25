@@ -1014,6 +1014,7 @@ impl RpcDispatcher {
                 crate::server::plugins::handle_project_registry_list(
                     req.clone(),
                     &self.ctx.project_manager,
+                    &self.ctx.kiln_registry,
                     &self.ctx.config_projects
                 )
             ),

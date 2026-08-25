@@ -5,6 +5,12 @@
 //! judged against a data root and a home the test owns. A fixture that let
 //! `KilnRegistryContext::for_daemon` read the real `~/.crucible` would pass on
 //! CI and fail on a developer's machine — or worse, the other way round.
+//!
+//! None of these touch a config file any more. The door used to WRITE a
+//! `[kilns]` entry, and half these tests read the file back; it now DECIDES,
+//! and the registration is the daemon's. So each one asserts the decision —
+//! which of the two `KilnTarget` cases, and with what — and the file the
+//! registration lands in is asserted where the registration happens.
 
 use super::*;
 use tempfile::TempDir;
@@ -20,100 +26,97 @@ fn context(tmp: &TempDir) -> KilnRegistryContext {
     )
 }
 
-/// A config file plus a loaded config that agree with each other, which is the
-/// state every real invocation is in.
-fn fixture(tmp: &TempDir, toml: &str) -> (CliAppConfig, PathBuf) {
-    let config_path = tmp.path().join("config.toml");
-    std::fs::write(&config_path, toml).unwrap();
+fn registry(tmp: &TempDir, toml: &str) -> CliKilnRegistry {
     let config: CliAppConfig = toml::from_str(toml).unwrap();
-    (config, config_path)
+    CliKilnRegistry::new(&config, context(tmp)).unwrap()
 }
 
-fn registry(tmp: &TempDir, toml: &str) -> (CliKilnRegistry, PathBuf) {
-    let (config, config_path) = fixture(tmp, toml);
-    let cli = CliKilnRegistry::new(&config, config_path.clone(), context(tmp)).unwrap();
-    (cli, config_path)
+/// The name a resolution produced, or a panic naming what came back instead.
+fn registered(target: KilnTarget) -> AttachedKiln {
+    match target {
+        KilnTarget::Registered(attached) => attached,
+        KilnTarget::Directory(path) => {
+            panic!("expected a registered kiln, got a directory needing one: {path:?}")
+        }
+    }
 }
 
-fn written(config_path: &Path) -> CliAppConfig {
-    toml::from_str(&std::fs::read_to_string(config_path).unwrap()).unwrap()
+/// The directory a resolution produced, or a panic naming what came back.
+fn directory(target: KilnTarget) -> PathBuf {
+    match target {
+        KilnTarget::Directory(path) => path,
+        KilnTarget::Registered(attached) => {
+            panic!(
+                "expected a directory needing a name, got {:?}",
+                attached.name
+            )
+        }
+    }
 }
 
 /// The first half of the rule: a value naming an entry the user already has is
-/// that kiln, and nothing is written.
+/// that kiln, and no registration is needed.
 #[test]
-fn a_registered_name_resolves_without_touching_the_config() {
+fn a_registered_name_resolves_to_itself() {
     let tmp = TempDir::new().unwrap();
     let notes = tmp.path().join("home").join("vault");
     std::fs::create_dir_all(&notes).unwrap();
-    let (mut cli, config_path) = registry(&tmp, "[kilns]\nnotes = \"~/vault\"\n");
-    let before = std::fs::read_to_string(&config_path).unwrap();
+    let cli = registry(&tmp, "[kilns]\nnotes = \"~/vault\"\n");
 
-    let attached = cli.attach("notes").unwrap();
+    let attached = registered(cli.resolve("notes").unwrap());
 
     assert_eq!(attached.name, KilnName::parse("notes").unwrap());
     assert_eq!(attached.path, notes);
-    assert!(!attached.registered);
-    assert_eq!(
-        std::fs::read_to_string(&config_path).unwrap(),
-        before,
-        "resolving an existing name must not rewrite the user's config"
+    assert!(
+        !attached.registered,
+        "a name the registry already answers to is not a new registration"
     );
 }
 
-/// The second half: a directory registers, under a name derived from its
-/// basename, and the entry lands in the one registry file.
+/// The second half: a directory with no name comes back as one needing a
+/// registration, and the caller makes it.
+///
+/// The NAME is deliberately not decided here. It depends on what is already
+/// registered — `notes`, then `notes-2` — so the registry that will answer to
+/// it is the one that picks it, and that registry lives in the daemon.
 #[test]
-fn a_directory_auto_registers_under_a_derived_name() {
+fn an_unregistered_directory_comes_back_needing_a_name() {
     let tmp = TempDir::new().unwrap();
     let notes = tmp.path().join("home").join("My Notes");
     std::fs::create_dir_all(&notes).unwrap();
-    let (mut cli, config_path) = registry(&tmp, "");
+    let cli = registry(&tmp, "");
 
-    let attached = cli.attach(notes.to_str().unwrap()).unwrap();
+    let path = directory(cli.resolve(notes.to_str().unwrap()).unwrap());
 
-    assert_eq!(attached.name, KilnName::parse("my-notes").unwrap());
-    assert!(attached.registered);
-    assert_eq!(written(&config_path).kilns["my-notes"].path(), notes);
+    assert_eq!(path, notes, "the resolved path is what gets registered");
 }
 
-/// One registry file, not two: the entry a `--kiln <path>` writes is the same
-/// entry `cru kiln register` and a hand edit write, so deleting it actually
-/// detaches the kiln and a later run resolves the name rather than adding a
-/// second entry for the same directory.
+/// A directory the registry already has a name for is that kiln, named — not a
+/// second registration for the same directory.
 #[test]
-fn attaching_the_same_directory_twice_writes_one_entry() {
+fn a_directory_the_registry_already_names_resolves_to_that_name() {
     let tmp = TempDir::new().unwrap();
     let notes = tmp.path().join("home").join("notes");
     std::fs::create_dir_all(&notes).unwrap();
-    let (mut cli, config_path) = registry(&tmp, "");
+    let cli = registry(&tmp, "[kilns]\nnotes = \"~/notes\"\n");
 
-    let first = cli.attach(notes.to_str().unwrap()).unwrap();
-    let second = cli.attach(notes.to_str().unwrap()).unwrap();
+    let attached = registered(cli.resolve(notes.to_str().unwrap()).unwrap());
 
-    assert_eq!(first.name, second.name);
-    assert!(first.registered);
-    assert!(
-        !second.registered,
-        "the second attach must recognise the directory, not register it again"
-    );
-    assert_eq!(written(&config_path).kilns.len(), 1);
+    assert_eq!(attached.name, KilnName::parse("notes").unwrap());
+    assert!(!attached.registered);
 }
 
 /// `~` is expanded by the registry, not by the shell, when the flag was
-/// quoted. Un-expanded, the entry would be the literal string `~/vault`
-/// anchored at whatever directory the daemon happens to be running in.
+/// quoted. Un-expanded, the path handed to the daemon would be the literal
+/// string `~/vault`, anchored at whatever directory the daemon runs in.
 #[test]
-fn a_tilde_path_is_expanded_before_it_is_written() {
+fn a_tilde_path_is_expanded_before_it_leaves_the_cli() {
     let tmp = TempDir::new().unwrap();
     let vault = tmp.path().join("home").join("vault");
     std::fs::create_dir_all(&vault).unwrap();
-    let (mut cli, config_path) = registry(&tmp, "");
+    let cli = registry(&tmp, "");
 
-    let attached = cli.attach("~/vault").unwrap();
-
-    assert_eq!(attached.path, vault);
-    assert_eq!(written(&config_path).kilns["vault"].path(), vault);
+    assert_eq!(directory(cli.resolve("~/vault").unwrap()), vault);
 }
 
 /// **The deny.** A bare word that is neither a registered name nor a directory
@@ -125,11 +128,10 @@ fn a_misspelled_name_is_refused_rather_than_registered() {
     let tmp = TempDir::new().unwrap();
     let real = tmp.path().join("home").join("notes");
     std::fs::create_dir_all(&real).unwrap();
-    let (mut cli, config_path) = registry(&tmp, "[kilns]\nnotes = \"~/notes\"\n");
-    let before = std::fs::read_to_string(&config_path).unwrap();
+    let cli = registry(&tmp, "[kilns]\nnotes = \"~/notes\"\n");
 
     let err = cli
-        .attach("ntoes")
+        .resolve("ntoes")
         .expect_err("a name nothing claims, naming no directory, must be refused");
 
     let message = err.to_string();
@@ -141,17 +143,12 @@ fn a_misspelled_name_is_refused_rather_than_registered() {
         message.contains("cru kiln register"),
         "the refusal must name the remedy: {message}"
     );
-    assert_eq!(
-        std::fs::read_to_string(&config_path).unwrap(),
-        before,
-        "a refused attach must leave no entry behind"
-    );
 }
 
 /// The floor is the registry's and the CLI adds none of its own, so this is
 /// asserted as a *denial* at the CLI door: the paths five review rounds put
 /// behind `refuse_forbidden_scope` are still refused when they arrive through
-/// a flag, and none of them leaves an entry.
+/// a flag, and none of them reaches the daemon.
 #[test]
 fn the_floor_still_refuses_a_catastrophic_root_through_the_flag() {
     let tmp = TempDir::new().unwrap();
@@ -162,7 +159,7 @@ fn the_floor_still_refuses_a_catastrophic_root_through_the_flag() {
         .join("sessions")
         .join("chat-victim");
     std::fs::create_dir_all(&sessions).unwrap();
-    let (mut cli, config_path) = registry(&tmp, "");
+    let cli = registry(&tmp, "");
 
     let mut forbidden = vec![
         PathBuf::from("/"),
@@ -176,21 +173,17 @@ fn the_floor_still_refuses_a_catastrophic_root_through_the_flag() {
 
     for path in &forbidden {
         assert!(
-            cli.attach(path.to_str().unwrap()).is_err(),
+            cli.resolve(path.to_str().unwrap()).is_err(),
             "{} was accepted through --kiln",
             path.display()
         );
     }
-    assert!(
-        !config_path.exists() || written(&config_path).kilns.is_empty(),
-        "a refused path must write no entry"
-    );
 
     // Without this the assertions above could all be passing because the
-    // fixture cannot register anything at all.
+    // fixture cannot resolve anything at all.
     let ok = tmp.path().join("home").join("notes");
     std::fs::create_dir_all(&ok).unwrap();
-    assert!(cli.attach(ok.to_str().unwrap()).is_ok());
+    assert!(cli.resolve(ok.to_str().unwrap()).is_ok());
 }
 
 /// A name beats a same-named directory in the working directory, and `./name`
@@ -203,34 +196,38 @@ fn a_name_wins_over_a_same_named_directory_and_dot_slash_forces_the_path() {
     let local = tmp.path().join("cwd").join("notes");
     std::fs::create_dir_all(&configured).unwrap();
     std::fs::create_dir_all(&local).unwrap();
-    let (mut cli, _) = registry(&tmp, "[kilns]\nnotes = \"~/configured-notes\"\n");
+    let cli = registry(&tmp, "[kilns]\nnotes = \"~/configured-notes\"\n");
 
     assert_eq!(
-        cli.attach("notes").unwrap().path,
+        registered(cli.resolve("notes").unwrap()).path,
         configured,
         "a registered name must not be shadowed by a directory of the same name"
     );
     assert_eq!(
-        cli.attach("./notes").unwrap().path,
+        directory(cli.resolve("./notes").unwrap()),
         local,
         "`./notes` must always be read as the directory"
     );
 }
 
-/// The in-memory half. Attaching writes the file, but the *running* process
-/// also has to resolve the name — `session_kiln_name` is what decides which
-/// kiln a new session gets, and it reads `session_kiln` against the entries.
-/// Updating one without the other silently attaches the default kiln instead
-/// of the one the flag named.
+/// The in-memory half. The registration goes to the daemon, but the *running*
+/// process also has to resolve the name — `session_kiln_name` is what decides
+/// which kiln a new session gets, and it reads `session_kiln` against the
+/// entries. Updating one without the other silently attaches the default kiln
+/// instead of the one the flag named.
 #[test]
 fn an_attached_kiln_is_the_one_a_new_session_in_this_process_gets() {
     let tmp = TempDir::new().unwrap();
     let notes = tmp.path().join("home").join("notes");
     std::fs::create_dir_all(&notes).unwrap();
-    let (mut config, config_path) = fixture(&tmp, "[kilns]\nother = \"~/other\"\n");
-    let mut cli = CliKilnRegistry::new(&config, config_path, context(&tmp)).unwrap();
+    let mut config: CliAppConfig = toml::from_str("[kilns]\nother = \"~/other\"\n").unwrap();
 
-    let attached = cli.attach(notes.to_str().unwrap()).unwrap();
+    // What the caller builds from the daemon's reply.
+    let attached = AttachedKiln {
+        name: KilnName::parse("notes").unwrap(),
+        path: notes.clone(),
+        registered: true,
+    };
     attached.apply_to(&mut config);
 
     assert_eq!(

@@ -68,7 +68,6 @@ pub use config::registry::{resolve_kiln_entries, KilnEntry, ProjectEntry};
 // has two security consumers (the plugin-visible config store and
 // `config.set`) that should be able to find it without reading a 6-line list.
 #[cfg(feature = "toml")]
-pub use config::register_kiln_entry_in_config;
 pub use config::{
     crucible_home, lua_stubs_dir, lua_stubs_dir_in, parse_duration_string, plugin_name_from_url,
     CliAppConfig, ConfigError, ConfigValidationError, EffectiveLlmConfig, InvalidKilnName,

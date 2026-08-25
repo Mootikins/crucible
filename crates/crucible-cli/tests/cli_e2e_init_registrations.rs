@@ -69,3 +69,66 @@ fn init_registers_the_kiln_with_the_daemon_and_leaves_the_config_alone() {
         "cru init must not write the user's config file any more"
     );
 }
+
+/// `cru acp --kiln <directory>` registers the directory with the daemon, under
+/// a name the DAEMON derived.
+///
+/// The name is the point. `--kiln` names a directory and no name, so something
+/// has to turn `.../notes-kiln` into `notes-kiln`, and the derivation depends
+/// on what is already registered — the first `notes` is `notes`, the second is
+/// `notes-2`. The CLI used to derive it against its own copy of the registry
+/// and write the answer to the user's config; it now asks the registry that
+/// will answer to the name.
+///
+/// Asserted on the side effect, not the exit status: `cru acp` speaks ACP over
+/// stdio, so with stdin closed it resolves the kiln and then terminates for
+/// want of a peer. Resolution is what this test is about.
+#[test]
+fn acp_registers_a_kiln_directory_with_the_daemon() {
+    let daemon = TestDaemon::start();
+    let workspace = tempfile::tempdir().expect("workspace");
+    let kiln_dir = workspace.path().join("acp-kiln");
+    std::fs::create_dir_all(kiln_dir.join(".crucible")).expect("kiln dir");
+
+    let config_before =
+        std::fs::read_to_string(&daemon.config_path).expect("the fixture wrote a config");
+
+    // `cru acp` reads stdin, so it is given an empty one: an inherited stdin
+    // would hang the suite, and `write_stdin("")` closes it after nothing,
+    // which is what makes the ACP transport terminate once resolution is done.
+    let output = daemon
+        .command()
+        .args(["acp", "--kiln", kiln_dir.to_str().unwrap()])
+        .write_stdin("")
+        .output()
+        .expect("run cru acp");
+
+    let state_file = daemon.data_root().join("kilns.json");
+    let state = std::fs::read_to_string(&state_file).unwrap_or_else(|e| {
+        panic!(
+            "kilns.json must exist at {}: {e}\nstderr: {}",
+            state_file.display(),
+            String::from_utf8_lossy(&output.stderr)
+        )
+    });
+    let parsed: serde_json::Value = serde_json::from_str(&state).expect("kilns.json is JSON");
+    let entry = parsed["kilns"]["acp-kiln"]
+        .as_object()
+        .unwrap_or_else(|| panic!("expected a kiln named after the directory: {state}"));
+    assert!(
+        entry["path"]
+            .as_str()
+            .is_some_and(|p| p.ends_with("acp-kiln")),
+        "{state}"
+    );
+    assert_eq!(
+        entry["auto"], true,
+        "a name Crucible derived is marked as one it derived: {state}"
+    );
+
+    assert_eq!(
+        std::fs::read_to_string(&daemon.config_path).expect("config still readable"),
+        config_before,
+        "`--kiln <path>` must not write the user's config any more"
+    );
+}

@@ -133,6 +133,13 @@ inside a kiln does the same for whatever it discovers — see [[Help/CLI/acp]]. 
 `cru kiln register` when you want the name to be something other than the basename, or
 when a derived name has already been taken.
 
+**The daemon derives the name, not the CLI.** The derivation depends on what is already
+registered: the first `notes` is `notes`, the second is `notes-2`. A registration
+derived anywhere else would be derived against a different set of names.
+
+These registrations are marked `auto` in the state file, which records that Crucible
+chose the name and you did not.
+
 ## See also
 
 - [[Help/CLI/acp]] — `--kiln` accepts either a registered name or a directory

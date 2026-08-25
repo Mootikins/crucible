@@ -40,7 +40,7 @@
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
-use crucible_core::config::{register_kiln_entry_in_config, CliAppConfig, KilnEntry, KilnName};
+use crucible_core::config::{CliAppConfig, KilnEntry, KilnName};
 use crucible_daemon::kiln_registry::{KilnRegistry, KilnRegistryContext};
 
 /// What a `--kiln` value, or a `cru kiln register` pair, turned out to name.
@@ -69,7 +69,6 @@ pub struct AttachedKiln {
 /// under our own collision rule.
 pub struct CliKilnRegistry {
     registry: KilnRegistry,
-    config_path: PathBuf,
 }
 
 impl CliKilnRegistry {
@@ -79,11 +78,7 @@ impl CliKilnRegistry {
     /// daemon threads its data root: a registry that read the environment would
     /// resolve the developer's real `~/.crucible` in every test, and the floor
     /// would then be judged against a root no test controls.
-    pub fn new(
-        config: &CliAppConfig,
-        config_path: PathBuf,
-        ctx: KilnRegistryContext,
-    ) -> Result<Self> {
+    pub fn new(config: &CliAppConfig, ctx: KilnRegistryContext) -> Result<Self> {
         // Through `from_app_config`, not by reaching into `config.kilns`: that
         // is the builder the daemon uses, so a name means the same thing on
         // both sides of the socket. Going around it loses the `kiln_path`-only
@@ -92,10 +87,7 @@ impl CliKilnRegistry {
             .context("serializing the loaded config for the kiln registry")?;
         let registry = KilnRegistry::from_app_config(ctx, Some(&app_config))
             .context("building the kiln registry from the loaded config")?;
-        Ok(Self {
-            registry,
-            config_path,
-        })
+        Ok(Self { registry })
     }
 
     /// The production shape: relative paths anchored at the user's working
@@ -105,73 +97,72 @@ impl CliKilnRegistry {
     /// that *spawns* the daemon and hands it this very config, so a CLI that
     /// anchored a relative `--kiln ./notes` anywhere else would write an entry
     /// the daemon then resolves to a different directory.
-    pub fn for_cli(config: &CliAppConfig, config_path: PathBuf) -> Result<Self> {
+    pub fn for_cli(config: &CliAppConfig) -> Result<Self> {
         Self::new(
             config,
-            config_path,
             KilnRegistryContext::for_daemon(crucible_core::config::crucible_home()),
         )
     }
 
-    /// Resolve a `--kiln` value to a name, registering the directory it names
-    /// if it is a path. See the module docs for the rule.
-    pub fn attach(&mut self, value: &str) -> Result<AttachedKiln> {
+    /// Decide what a `--kiln` value names. See the module docs for the rule.
+    ///
+    /// **Decides; does not register.** This used to write a `[kilns]` entry
+    /// into the user's config, which is the whole reason it needed `&mut self`
+    /// and a config path. A registration is state the daemon owns, and the
+    /// caller is the layer holding the daemon connection — so this answers the
+    /// question and the caller acts on the answer.
+    ///
+    /// The floor still runs here, on the resolved path, so the refusal that
+    /// names BOTH readings of an unresolvable value is produced where both
+    /// readings are still in view.
+    pub fn resolve(&self, value: &str) -> Result<KilnTarget> {
         if let Ok(name) = KilnName::parse(value) {
             if let Some(entry) = self.registry.resolve(&name).registered() {
-                return Ok(AttachedKiln {
+                return Ok(KilnTarget::Registered(AttachedKiln {
                     name,
                     path: entry.path().to_path_buf(),
                     registered: false,
-                });
+                }));
             }
         }
 
         let raw = Path::new(value);
-        // Asked before registering, because registering is what makes the
-        // answer yes. This is what distinguishes "you already had this kiln,
-        // under this name" from "I just added an entry to your config", and
-        // the difference decides whether the file is touched at all.
-        let known = self.registry.name_for(raw).is_some();
-        let name = self
+        // A directory the registry already has a name for is not a
+        // registration request: it is that kiln, named.
+        if let Some(name) = self.registry.name_for(raw) {
+            let path = self.path_of(&name);
+            return Ok(KilnTarget::Registered(AttachedKiln {
+                name,
+                path,
+                registered: false,
+            }));
+        }
+
+        let path = self
             .registry
-            .register_path(raw)
+            .canonical_for_registration(raw)
             .map_err(|refusal| anyhow::anyhow!("{refusal}"))?;
-        let path = self.path_of(&name);
 
         if !path.is_dir() {
             // Both readings, because the caller does not yet know which one we
             // took, and the fix differs: a misspelled name, or a missing
-            // directory. The in-memory entry created a moment ago dies with
-            // this process — nothing was written, and nothing downstream runs.
+            // directory. Nothing has been written and nothing downstream runs.
             bail!(
-                "Unknown kiln {value:?}: no `[kilns]` entry is registered under that name, and \
+                "Unknown kiln {value:?}: no kiln is registered under that name, and \
                  '{}' is not a directory. Register one with `cru kiln register <name> <path>`.",
                 path.display()
             );
         }
 
-        if !known {
-            register_kiln_entry_in_config(&self.config_path, name.as_str(), &path, true)
-                .with_context(|| {
-                    format!(
-                        "registering kiln '{name}' in {}",
-                        self.config_path.display()
-                    )
-                })?;
-        }
-        Ok(AttachedKiln {
-            name,
-            path,
-            registered: !known,
-        })
+        Ok(KilnTarget::Directory(path))
     }
 
-    /// Where a name the registry just accepted lives.
+    /// Where a name the registry resolves lives.
     ///
-    /// Only ever called on a name a `register_*` call returned `Ok` for, so
-    /// `Unknown` is unreachable — and it is a panic rather than a fallback
-    /// because the fallback would be a path, which is exactly what must not be
-    /// invented here.
+    /// Only ever called on a name the registry just answered for, so `Unknown`
+    /// is unreachable — and it is a panic rather than a fallback because the
+    /// fallback would be a path, which is exactly what must not be invented
+    /// here.
     fn path_of(&self, name: &KilnName) -> PathBuf {
         self.registry
             .resolve(name)
@@ -179,6 +170,20 @@ impl CliKilnRegistry {
             .expect("a name the registry just accepted must resolve")
             .to_path_buf()
     }
+}
+
+/// What a `--kiln` value turned out to name.
+///
+/// Two cases and no third: either the registry already answers to it, or it is
+/// a directory that passed the floor and needs a name. The caller decides what
+/// to do about the second, because registering is the daemon's job and the
+/// caller is the layer holding the connection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KilnTarget {
+    /// A name the registry resolves, or a directory it already has a name for.
+    Registered(AttachedKiln),
+    /// An existing directory with no name yet, absolute and normalized.
+    Directory(PathBuf),
 }
 
 impl AttachedKiln {

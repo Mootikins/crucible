@@ -42,6 +42,24 @@ const HOME_PARENTS: &[&str] = &["/home", "/Users"];
 ///
 /// Returns the reason clause alone ("it is the filesystem root"); callers frame
 /// it for the thing they were asked to do — a project root, a session kiln.
+/// One project, from whichever layer declared it.
+///
+/// Not [`crucible_core::config::Registration`]: a project carries the kiln
+/// NAMES it uses, and a kiln registration has nothing of the kind. The
+/// precedence rule is shared through `overlay_layers`, which is generic
+/// precisely so three registries of three shapes can state it once.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectLayerEntry {
+    /// The name the project is addressed by.
+    pub name: String,
+    /// Its root. Absolute; comparison between layers is textual.
+    pub path: std::path::PathBuf,
+    /// The kiln names it uses, as registry names.
+    pub kilns: Vec<String>,
+    /// Which layer declared it.
+    pub origin: crucible_core::config::RegistrationOrigin,
+}
+
 pub fn forbidden_root_reason(path: &Path, home: Option<&Path>) -> Option<&'static str> {
     if path.parent().is_none() {
         return Some("it is the filesystem root");
