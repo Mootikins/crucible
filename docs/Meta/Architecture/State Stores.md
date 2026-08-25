@@ -59,14 +59,27 @@ rules this preserves:
 - **Never re-point silently.** Registering a known name at a different path
   is a refusal inside the RPC, under the store lock.
 
-## Plugin declarations
+## Plugin declarations — the C11 split
 
-`~/.config/crucible/plugins.toml` (`crucible-daemon/src/plugin_ops.rs`) is
-the remaining mixed file: `cru plugin add/remove`, the `plugin.install` /
-`plugin.remove` RPCs and the web plugin routes all edit it under the same
-sidecar-lock pattern the registry store uses. M6 splits it: user-declared
-plugins move to `init.lua`, machine-installed ones to
-`<data_home>/plugins.installed.json`, and the bootstrap reads the union.
+The last mixed file, `~/.config/crucible/plugins.toml`, is split and no
+longer read:
+
+- **Declared** — `plugins.declare.<name>` in `init.lua`, parsed by
+  `declared_plugins` (`crucible-core/src/config/config/types.rs`). User
+  authorship; the daemon never writes it. The key is reserved: discovery
+  refuses a plugin named `declare`, and `split_plugins_config` never hands
+  the declaration table to a `setup(cfg)`. One constant
+  (`PLUGINS_DECLARE_KEY`) serves all three consumers.
+- **Installed** — `<data_home>/plugins.installed.json`
+  (`crucible-daemon/src/plugin_ops.rs`), a versioned `RegistryStore` file
+  written by `cru plugin add/remove`, the `plugin.install`/`plugin.remove`
+  RPCs and the web plugin routes.
+
+The bootstrap loads the union, declaration winning by name with each
+shadowed manifest entry named at boot. Removing a declared plugin is a
+refusal that names the declaration's `file:line` from store provenance. A
+leftover `plugins.toml` is imported into the manifest idempotently and
+warned about each boot (`sweep_legacy_plugins_toml`); the file is inert.
 
 See also [[Config Boot]] for how the config side is produced, and
 [[Storage Schema]] for the session and note storage this note does not cover.

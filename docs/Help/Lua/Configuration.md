@@ -81,6 +81,8 @@ Plugin configuration has two working forms, and each plugin uses **one**:
 
 A plugin configured both ways takes the direct call; pick one form per plugin. Bundled plugins (in `runtime/plugins/`) load with their defaults when you configure nothing. To disable one entirely, set `plugins = { <name> = { enabled = false } }`.
 
+Declaring a git-hosted plugin is a third, separate act: `plugins.declare.<name>` in the same table names a repository the daemon clones and loads at boot. See the plugins section of [[Configuration]] — declarations are not configuration, and the `declare` key is reserved for them.
+
 **Fennel plugins take the store form only.** The direct form requires a `.lua` entry: `require` resolves only Lua patterns (`?.lua`, `?/init.lua`), so a plugin whose entry is `init.fnl` cannot be `require`d from `init.lua` — the call fails with a module-not-found error. That is a documented constraint, not a bug: configure a Fennel plugin through `cru.config.set({ plugins = { <name> = {...} } })` and its `setup(cfg)` receives the values at activation.
 
 See [[Help/Extending/Creating Plugins]] for writing your own plugins.

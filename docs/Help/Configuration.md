@@ -346,10 +346,48 @@ stderr.
 | `workspace` | The default workspace directory the daemon scans, and the `scm.clone` destination | `docs/Config.toml` |
 | `server` | `auto_archive_hours`, and nothing else. `host`/`port` and the TLS keys were removed — the daemon binds a Unix socket and the web address is `web` | `docs/Config.toml` |
 | `schedules` | Recurring Lua snippets run on an interval — `cru.schedule` in `init.lua` is the native spelling | `docs/Config.toml` |
-| `plugins.*` | Free-form per-plugin tables, fed to that plugin's `setup(cfg)` | [[Help/Lua/Configuration|Lua Configuration]] — the two plugin-config forms |
+| `plugins.*` | Free-form per-plugin tables, fed to that plugin's `setup(cfg)`; plus the reserved `plugins.declare` table below | [[Help/Lua/Configuration|Lua Configuration]] — the two plugin-config forms |
 
 A `[storage]` or `[discovery]` section in a leftover `config.toml` loads and
 is ignored; both were removed.
+
+### plugins.declare — git-hosted plugin declarations
+
+Declare a plugin in your config and the daemon clones and loads it at every
+boot. Each entry is a URL string, or a table with `url`, `branch`, `pin`
+and `enabled`; the key must equal the URL-derived name (the last path
+segment, without `.git`).
+
+```lua
+cru.config.set({
+  plugins = {
+    declare = {
+      greeter = "user/greeter",
+      review = { url = "someone/review", pin = "v1.2" },
+    },
+    -- Options stay per-plugin, beside the declarations:
+    greeter = { greeting = "hello" },
+  },
+})
+```
+
+Declaration and configuration are different acts: `plugins.declare.<name>`
+says the plugin should exist; `plugins.<name>` configures it. The name
+`declare` is therefore reserved — a discovered plugin actually named
+`declare` is refused at discovery with an error naming its path.
+
+The machine's own record is separate: `cru plugin add` and the web install
+button write `<data_home>/plugins.installed.json`, never your config. The
+daemon loads the union, and when both name the same plugin your declaration
+wins — the boot says so by name. `cru plugin remove` removes installed
+plugins only; for a declared one it refuses and names the `file:line` of
+the declaration, because Crucible never edits your config file.
+
+`plugins.toml`, which used to hold declarations, is no longer read. Its
+entries are imported into the installed manifest automatically, and the
+boot warns while the leftover file exists; delete it to silence the
+warning. (The kiln-local `.crucible/config.toml` needs no such migration:
+nothing ever read it, and `cru doctor` says so when one exists.)
 
 ## Secrets and computed values
 

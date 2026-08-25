@@ -494,7 +494,7 @@ Files: `commands/plugin/list.rs`, `commands/plugin/update.rs`, `commands/plugin/
 
 | Item | Location | Action |
 |---|---|---|
-| `plugins.toml` path x2 | `plugin/list.rs:28-43`, `plugin/update.rs:13-28` | call `plugin_ops::plugins_toml_path` and `plugins_dir` |
+| `plugins.toml` path x2 | resolved: `plugins.toml` is no longer read (M6 split); list and update read the declared set and the installed manifest through `plugin_ops` | done |
 | `agents.rs::resolve_path(path, _config_dir)` | `agents.rs:91-101` | call `kiln_validate::expand_tilde` (`:66`); drop the unused parameter at four call sites |
 | `is_temp_directory` x2, `is_temp_root` | `kiln_discover.rs:105`, `kiln_validate.rs:216`, `:237` | keep one `pub(crate) fn is_temp_root` in `kiln_validate.rs` |
 | `parse_log_level` | `main.rs:15-25` | call `LogLevel::from_str` then `LevelFilter::from(LogLevel)` (`cli/mod.rs:31-58`) |
