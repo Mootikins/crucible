@@ -789,13 +789,7 @@ impl AgentManager {
         let kiln_path = session_for_factory
             .as_ref()
             .and_then(|s| s.default_kiln())
-            .and_then(|name| {
-                self.session_manager
-                    .kiln_registry()
-                    .resolve(name)
-                    .path()
-                    .map(std::path::Path::to_path_buf)
-            });
+            .and_then(|name| self.session_manager.kiln_registry().resolve(name).path());
         let kiln_path = kiln_path.as_deref();
         let mut knowledge_repo = None;
         let mut embedding_provider = None;

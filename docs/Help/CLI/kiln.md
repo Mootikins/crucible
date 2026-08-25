@@ -47,6 +47,20 @@ differs only in case.
 **Registering the same name and path twice is a no-op**, so the command is safe to run
 from a setup script.
 
+### Where the registration goes
+
+The command sends the registration to the daemon. The daemon writes it to
+`<data_home>/kilns.json`, not to your config file. The reply names the file it wrote.
+
+Two layers hold kiln names. Your config file holds a `[kilns]` table that you edit.
+The state file holds the registrations that commands make. The config layer out-ranks
+the state layer. Therefore the daemon refuses a name that the config already gives to a
+different directory: the state entry would never be used.
+
+The daemon is the only writer of the state file, and it is also the process that
+resolves the name. A registration takes effect immediately. You do not have to restart
+the daemon.
+
 ### Why the command exists
 
 Two daemon refusals name `cru kiln register` as the remedy: `session.create` telling a

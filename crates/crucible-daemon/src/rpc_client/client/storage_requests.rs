@@ -17,6 +17,22 @@ pub struct KilnOpenRequest {
     pub force: bool,
 }
 
+/// Request for `kiln.register`.
+///
+/// `auto` and `make_default` default because they answer questions the plain
+/// `cru kiln register <name> <path>` does not ask: `auto` records that Crucible
+/// derived the entry rather than the user naming it, and `make_default` is the
+/// chat preflight's answer to "which kiln does every future command use".
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct KilnRegisterRequest {
+    pub name: String,
+    pub path: String,
+    #[serde(default)]
+    pub auto: bool,
+    #[serde(default)]
+    pub make_default: bool,
+}
+
 /// Request for `kiln.set_classification`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct KilnSetClassificationRequest {

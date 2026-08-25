@@ -37,6 +37,7 @@ mod enrichment;
 mod includes;
 mod io_helpers;
 mod kiln_config;
+pub mod overlay;
 mod patterns;
 mod project_config;
 mod security;
@@ -88,6 +89,9 @@ pub use enrichment::{
 };
 pub use includes::{process_file_references, IncludeError};
 pub use kiln_config::{read_kiln_config, write_kiln_config, KilnConfig, KilnMeta};
+pub use overlay::{
+    overlay_registrations, Overlay, Registration, RegistrationOrigin, ShadowedRegistration,
+};
 pub use patterns::{
     BashPatterns, FilePatterns, PatternError, PatternResult, PatternStore, ToolPatterns,
 };

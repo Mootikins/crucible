@@ -60,11 +60,8 @@ fn a_tilde_path_and_its_expanded_form_are_one_entry() {
         expanded,
         "the configured `~` must be expanded once, at construction"
     );
-    assert_eq!(registry.name_for(&expanded), Some(&name("vault")));
-    assert_eq!(
-        registry.name_for(Path::new("~/vault")),
-        Some(&name("vault"))
-    );
+    assert_eq!(registry.name_for(&expanded), Some(name("vault")));
+    assert_eq!(registry.name_for(Path::new("~/vault")), Some(name("vault")));
 }
 
 /// The shipped `create_example` config has no `[kilns]` at all. A registry
@@ -99,9 +96,13 @@ fn a_lazy_entry_resolves_lazily_and_is_never_eager() {
         registry.resolve(&name("archive")),
         KilnResolution::Lazy(_)
     ));
-    let eager: Vec<&KilnName> = registry.eager().map(|kiln| kiln.name()).collect();
+    let eager: Vec<KilnName> = registry
+        .eager()
+        .into_iter()
+        .map(|kiln| kiln.name().clone())
+        .collect();
     assert!(
-        !eager.contains(&&name("archive")),
+        !eager.contains(&name("archive")),
         "a lazy kiln must not be in the set a startup open touches: {eager:?}"
     );
 
@@ -202,7 +203,7 @@ fn an_entry_on_a_missing_directory_is_kept() {
     );
 
     assert_eq!(ready_path(&registry, "vault"), missing);
-    assert_eq!(registry.name_for(&missing), Some(&name("vault")));
+    assert_eq!(registry.name_for(&missing), Some(name("vault")));
 }
 
 // ── The floor at the registration door ───────────────────────────────────
@@ -257,7 +258,7 @@ fn no_app_config_yields_an_empty_registry() {
 #[test]
 fn the_floor_refuses_a_runtime_registration_and_mints_no_name() {
     let tmp = TempDir::new().unwrap();
-    let mut registry = KilnRegistry::empty(context(&tmp));
+    let registry = KilnRegistry::empty(context(&tmp));
     let sessions_root = tmp.path().join("home").join(".crucible").join("sessions");
     let victim = sessions_root.join("chat-victim");
     std::fs::create_dir_all(&victim).unwrap();
@@ -311,7 +312,7 @@ fn the_floor_refuses_a_runtime_registration_and_mints_no_name() {
 #[test]
 fn a_path_whose_basename_folds_to_nothing_is_refused() {
     let tmp = TempDir::new().unwrap();
-    let mut registry = KilnRegistry::empty(context(&tmp));
+    let registry = KilnRegistry::empty(context(&tmp));
 
     for basename in ["...", "\u{2026}", "-"] {
         let path = tmp.path().join(basename);
@@ -331,7 +332,7 @@ fn a_path_whose_basename_folds_to_nothing_is_refused() {
 #[test]
 fn a_derived_name_collision_disambiguates_and_leaves_the_incumbent_alone() {
     let tmp = TempDir::new().unwrap();
-    let mut registry = KilnRegistry::empty(context(&tmp));
+    let registry = KilnRegistry::empty(context(&tmp));
     let first = tmp.path().join("a").join("notes");
     let second = tmp.path().join("b").join("notes");
 
@@ -346,7 +347,7 @@ fn a_derived_name_collision_disambiguates_and_leaves_the_incumbent_alone() {
 #[test]
 fn registering_a_known_path_returns_its_existing_name() {
     let tmp = TempDir::new().unwrap();
-    let mut registry = KilnRegistry::empty(context(&tmp));
+    let registry = KilnRegistry::empty(context(&tmp));
     let notes = tmp.path().join("notes");
     std::fs::create_dir_all(&notes).unwrap();
 
@@ -373,7 +374,7 @@ fn registering_a_known_path_returns_its_existing_name() {
 #[test]
 fn a_user_named_registration_runs_the_same_floor() {
     let tmp = TempDir::new().unwrap();
-    let mut registry = KilnRegistry::empty(context(&tmp));
+    let registry = KilnRegistry::empty(context(&tmp));
     let sessions_root = tmp.path().join("home").join(".crucible").join("sessions");
     let victim = sessions_root.join("chat-victim");
     std::fs::create_dir_all(&victim).unwrap();
@@ -423,7 +424,7 @@ fn a_user_named_registration_runs_the_same_floor() {
 #[test]
 fn a_user_named_registration_never_repoints_an_existing_name() {
     let tmp = TempDir::new().unwrap();
-    let mut registry = registry(&tmp, json!({ "kilns": { "notes": "~/first" } }));
+    let registry = registry(&tmp, json!({ "kilns": { "notes": "~/first" } }));
     let first = tmp.path().join("home").join("first");
     let second = tmp.path().join("home").join("second");
 

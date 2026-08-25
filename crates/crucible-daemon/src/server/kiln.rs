@@ -136,7 +136,7 @@ pub(crate) async fn handle_kiln_list(
         .map(|(path, name, last_access)| {
             let registered = registry
                 .name_for(path)
-                .map(ToString::to_string)
+                .map(|name| name.to_string())
                 .or_else(|| {
                     path.file_name()
                         .and_then(|n| n.to_str())
@@ -153,6 +153,118 @@ pub(crate) async fn handle_kiln_list(
         })
         .collect();
     Response::success(req.id, list)
+}
+
+/// `kiln.register`: give a directory a name, and write it down.
+///
+/// Three layers, in this order, and the order is the point.
+///
+/// 1. **The floor.** The path is absolutized and refused by the registry
+///    before anything is written — a refused path yields no entry and no name.
+/// 2. **The config layer.** A name the user's config already points somewhere
+///    else is refused. A registration that lands shadowed is a lie shaped like
+///    success: it would sit in `kilns.json` forever, out-ranked, doing nothing.
+/// 3. **The state layer, then memory.** `kilns.json` is written first, under
+///    its own lock, with its own never-re-point check; the live registry takes
+///    the name only after the write succeeded. The other order would serve a
+///    name this daemon forgets at the next boot.
+///
+/// The registration is **additive at runtime**: the name resolves in this same
+/// daemon process, with no restart. Adding a name re-points nothing, so it is
+/// safe under the boot freeze's own reasoning — re-pointing and removal are
+/// what the freeze protects, and both still wait for the next boot.
+pub(crate) async fn handle_kiln_register(
+    req: Request,
+    registry: &Arc<crate::kiln_registry::KilnRegistry>,
+    state: &Arc<crate::kiln_state::KilnStateStore>,
+    config_path: Option<&Path>,
+) -> Response {
+    use crucible_core::config::{KilnName, RegistrationOrigin};
+
+    let params = match typed_params::<crate::rpc_client::KilnRegisterRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+
+    let name = match KilnName::parse(&params.name) {
+        Ok(name) => name,
+        Err(e) => {
+            return Response::error(
+                req.id,
+                INVALID_PARAMS,
+                format!(
+                    "{e}. A kiln name is lower-case `[a-z0-9._-]`, at most {} characters, and \
+                     does not start with a dot.",
+                    KilnName::MAX_LEN
+                ),
+            )
+        }
+    };
+
+    // The floor, and the one spelling both layers must agree on.
+    let path = match registry.canonical_for_registration(Path::new(&params.path)) {
+        Ok(path) => path,
+        Err(refusal) => return Response::error(req.id, INVALID_PARAMS, refusal.to_string()),
+    };
+
+    // An entry pointing at nothing is a name that resolves to nothing, and
+    // every consumer that reads absence as "unconstrained" is waiting for one.
+    if !path.is_dir() {
+        return Response::error(
+            req.id,
+            INVALID_PARAMS,
+            format!(
+                "Refusing to register '{name}': '{}' is not a directory.",
+                path.display()
+            ),
+        );
+    }
+
+    // The config layer out-ranks the state layer, so a name it claims for a
+    // different directory can never be served from state.
+    if let Some(existing) = registry.resolve(&name).registered() {
+        if existing.origin() == RegistrationOrigin::Config && existing.path() != path {
+            let file = config_path
+                .map(|p| format!(" in {}", p.display()))
+                .unwrap_or_default();
+            return Response::error(
+                req.id,
+                INVALID_PARAMS,
+                format!(
+                    "the kiln name '{name}' is declared as '{}'{file}. The config out-ranks a \
+                     registration, so this one would never be used. Choose another name, or \
+                     change that entry.",
+                    existing.path().display()
+                ),
+            );
+        }
+    }
+
+    let outcome = match state.register(&name, &path, params.auto, params.make_default) {
+        Ok(outcome) => outcome,
+        Err(e) => return Response::error(req.id, INVALID_PARAMS, e.to_string()),
+    };
+
+    // The second layer, exactly as the file check and the registry check pair
+    // up: the file outlives the process, the registry answers this one.
+    if let Err(refusal) = registry.register_named(name.clone(), &path) {
+        return Response::error(req.id, INVALID_PARAMS, refusal.to_string());
+    }
+
+    info!(kiln = %name, path = %path.display(), "Kiln registered");
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "status": "ok",
+            "name": name.to_string(),
+            "path": path.to_string_lossy(),
+            "outcome": match outcome {
+                crate::kiln_state::RegisterOutcome::Added => "added",
+                crate::kiln_state::RegisterOutcome::AlreadyPresent => "already_present",
+            },
+            "state_file": state.path().to_string_lossy(),
+        }),
+    )
 }
 
 pub(crate) async fn handle_kiln_set_classification(
@@ -806,6 +918,7 @@ pub(crate) async fn handle_suggest_links(req: Request, km: &Arc<KilnManager>) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_core::config::KilnName;
     use tempfile::TempDir;
 
     fn list_request() -> Request {
@@ -857,6 +970,138 @@ mod tests {
             .expect("the client DTO parses the reply");
         assert_eq!(note.wikilinks.len(), 1, "the client must see the link");
         assert_eq!(note.wikilinks[0].target, "target");
+    }
+
+    fn register_request(name: &str, path: &Path) -> Request {
+        serde_json::from_value(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "kiln.register",
+            "params": {
+                "name": name,
+                "path": path.to_string_lossy(),
+                "auto": false,
+                "make_default": false,
+            },
+        }))
+        .unwrap()
+    }
+
+    /// `cru kiln register` writes the state file, not the user's config.
+    ///
+    /// The CLI used to edit `crucible.toml` itself. It now calls this handler,
+    /// so the assertion that used to read the config back reads the reply and
+    /// the state file the reply names.
+    #[tokio::test]
+    async fn registering_a_name_records_it_in_the_state_file() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let dir = tmp.path().join("some-directory");
+        std::fs::create_dir_all(&dir).unwrap();
+        let registry = crate::test_support::kiln_registry(&data_home, &[]);
+        let state = Arc::new(crate::kiln_state::KilnStateStore::new(&data_home));
+
+        let resp =
+            handle_kiln_register(register_request("work", &dir), &registry, &state, None).await;
+        let data = resp.result.expect("the directory exists, so it registers");
+
+        assert_eq!(data["name"], serde_json::json!("work"));
+        assert_eq!(data["outcome"], serde_json::json!("added"));
+        let state_file = std::path::PathBuf::from(data["state_file"].as_str().unwrap());
+        assert!(state_file.is_file(), "the reply names the file it wrote");
+
+        // The running registry resolves it too, not only the file. A name that
+        // needs a daemon restart to work is the bug this pairing prevents.
+        assert_eq!(
+            registry
+                .resolve(&KilnName::parse("work").unwrap())
+                .path()
+                .as_deref(),
+            Some(dir.canonicalize().unwrap().as_path()),
+        );
+    }
+
+    /// Names are case-folded, so `Notes` is refused rather than becoming a
+    /// second kiln beside `notes` — and the refusal states the rule, because
+    /// "invalid kiln name" alone leaves the user guessing.
+    #[tokio::test]
+    async fn registering_an_out_of_charset_name_is_refused_with_the_rule() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let dir = tmp.path().join("notes");
+        std::fs::create_dir_all(&dir).unwrap();
+        let registry = crate::test_support::kiln_registry(&data_home, &[]);
+        let state = Arc::new(crate::kiln_state::KilnStateStore::new(&data_home));
+
+        for bad in ["Notes", "my notes", "../escape", ".hidden", ""] {
+            let resp =
+                handle_kiln_register(register_request(bad, &dir), &registry, &state, None).await;
+            let err = resp
+                .error
+                .unwrap_or_else(|| panic!("{bad:?} must be refused"));
+            assert!(
+                err.message.contains("[a-z0-9._-]"),
+                "{bad:?}: the refusal must state the rule, got: {}",
+                err.message
+            );
+        }
+        assert!(
+            !state.path().exists(),
+            "a refused registration writes nothing"
+        );
+    }
+
+    /// Registering a directory that does not exist is refused: the entry would
+    /// be a name resolving to nothing, which is what the whole rule exists to
+    /// prevent, and a typo'd path is the ordinary way to produce one.
+    #[tokio::test]
+    async fn registering_a_missing_directory_is_refused() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let registry = crate::test_support::kiln_registry(&data_home, &[]);
+        let state = Arc::new(crate::kiln_state::KilnStateStore::new(&data_home));
+
+        let resp = handle_kiln_register(
+            register_request("work", &tmp.path().join("not-there")),
+            &registry,
+            &state,
+            None,
+        )
+        .await;
+
+        let err = resp.error.expect("a missing directory must not register");
+        assert!(err.message.contains("not a directory"), "{}", err.message);
+        assert!(!state.path().exists(), "nothing is written");
+    }
+
+    /// A name the config already claims for a different directory is refused,
+    /// because the config out-ranks the state layer: the entry would be
+    /// written and then never used, which is worse than not writing it.
+    #[tokio::test]
+    async fn registering_over_a_config_declared_name_is_refused() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let first = tmp.path().join("first");
+        let second = tmp.path().join("second");
+        std::fs::create_dir_all(&first).unwrap();
+        std::fs::create_dir_all(&second).unwrap();
+        let registry = crate::test_support::kiln_registry(&data_home, &[("notes", &first)]);
+        let state = Arc::new(crate::kiln_state::KilnStateStore::new(&data_home));
+
+        let resp =
+            handle_kiln_register(register_request("notes", &second), &registry, &state, None).await;
+
+        let err = resp.error.expect("a claimed name must not be repointed");
+        assert!(err.message.contains("notes"), "{}", err.message);
+        assert!(!state.path().exists(), "nothing is written");
+        // And the name still reaches the directory the config gave it.
+        assert_eq!(
+            registry
+                .resolve(&KilnName::parse("notes").unwrap())
+                .path()
+                .as_deref(),
+            Some(first.canonicalize().unwrap().as_path()),
+        );
     }
 
     /// `kiln.list`'s `name` is the registry key, not the name the kiln asserts

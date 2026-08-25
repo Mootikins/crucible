@@ -39,6 +39,30 @@ impl DaemonClient {
         .await
     }
 
+    /// Register a directory as a kiln under `name`.
+    ///
+    /// The daemon is the only writer of `kilns.json`, so every registration
+    /// goes through here — including the CLI's, which used to edit the user's
+    /// config file itself.
+    pub async fn kiln_register(
+        &self,
+        name: &str,
+        path: &Path,
+        auto: bool,
+        make_default: bool,
+    ) -> Result<serde_json::Value> {
+        self.typed_call(
+            "kiln.register",
+            KilnRegisterRequest {
+                name: name.to_string(),
+                path: path.to_string_lossy().to_string(),
+                auto,
+                make_default,
+            },
+        )
+        .await
+    }
+
     pub async fn kiln_list(&self) -> Result<Vec<serde_json::Value>> {
         let result: serde_json::Value = self.typed_call("kiln.list", EmptyParams {}).await?;
         Ok(result.as_array().cloned().unwrap_or_default())

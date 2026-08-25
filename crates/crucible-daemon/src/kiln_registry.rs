@@ -39,8 +39,12 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::RwLock;
 
-use crucible_core::config::{resolve_kiln_entries, KilnEntry, KilnName};
+use crucible_core::config::{
+    overlay_registrations, resolve_kiln_entries, KilnEntry, KilnName, Registration,
+    RegistrationOrigin, ShadowedRegistration,
+};
 use tracing::{debug, warn};
 
 use crate::project_manager::forbidden_root_reason;
@@ -203,6 +207,7 @@ pub struct RegisteredKiln {
     /// kiln opened under a symlinked spelling still matches.
     resolved: PathBuf,
     lazy: bool,
+    origin: RegistrationOrigin,
 }
 
 impl RegisteredKiln {
@@ -224,6 +229,12 @@ impl RegisteredKiln {
     pub fn lazy(&self) -> bool {
         self.lazy
     }
+
+    /// Which layer this entry came from — the config the user authored, or the
+    /// state store a registration command wrote.
+    pub fn origin(&self) -> RegistrationOrigin {
+        self.origin
+    }
 }
 
 /// What a name resolves to.
@@ -233,17 +244,17 @@ impl RegisteredKiln {
 /// corpus, which is exactly what marking it lazy exists to prevent — Crucible's
 /// own documentation turning up in every search about your notes.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum KilnResolution<'a> {
+pub enum KilnResolution {
     /// Registered and eager: safe to open, index and search.
-    Ready(&'a RegisteredKiln),
+    Ready(RegisteredKiln),
     /// Registered, but must not be opened until explicitly asked for.
-    Lazy(&'a RegisteredKiln),
+    Lazy(RegisteredKiln),
     /// No such entry. **Not a kiln**: no root, no classification, no search
     /// source, no prompt line.
     Unknown,
 }
 
-impl<'a> KilnResolution<'a> {
+impl KilnResolution {
     /// The entry behind a name, eager or lazy — for the consumers that need to
     /// know a name *is* a kiln (containment, classification, the reverse path
     /// a save writes) rather than whether it may be opened unasked.
@@ -251,7 +262,7 @@ impl<'a> KilnResolution<'a> {
     /// `None` is [`Self::Unknown`], and it is a denial. Callers that would
     /// *open* or *index* the kiln must branch on the variant instead, or a
     /// lazy entry's whole point is lost.
-    pub fn registered(self) -> Option<&'a RegisteredKiln> {
+    pub fn registered(self) -> Option<RegisteredKiln> {
         match self {
             Self::Ready(kiln) | Self::Lazy(kiln) => Some(kiln),
             Self::Unknown => None,
@@ -259,8 +270,8 @@ impl<'a> KilnResolution<'a> {
     }
 
     /// The path a name resolves to, or `None` when it resolves to nothing.
-    pub fn path(self) -> Option<&'a Path> {
-        self.registered().map(RegisteredKiln::path)
+    pub fn path(self) -> Option<PathBuf> {
+        self.registered().map(|kiln| kiln.path)
     }
 }
 
@@ -290,6 +301,24 @@ pub enum RegistryError {
 /// Name → kiln, and the floor every path crosses to get in here.
 #[derive(Debug)]
 pub struct KilnRegistry {
+    /// The two indexes, behind one lock so they cannot disagree.
+    ///
+    /// A lock rather than a plain field because registration is **additive at
+    /// runtime**: `kiln.register` adds a name to the live registry and the
+    /// daemon serves it at once, without the restart the boot freeze used to
+    /// demand. Only *adding* is allowed — re-pointing and removal still wait
+    /// for the next boot, because they change what an already-persisted
+    /// session reference means.
+    ///
+    /// Every reader therefore takes a snapshot: [`Self::resolve`] and
+    /// [`Self::name_for`] return owned values, not borrows into the map.
+    index: RwLock<KilnIndex>,
+    ctx: KilnRegistryContext,
+}
+
+/// Name → kiln, plus the reverse index.
+#[derive(Debug, Default)]
+struct KilnIndex {
     /// Ordered so iteration — and therefore every diagnostic built from it —
     /// is stable.
     entries: BTreeMap<KilnName, RegisteredKiln>,
@@ -297,7 +326,6 @@ pub struct KilnRegistry {
     /// opened through a symlink must still match the name it was registered
     /// under.
     by_path: HashMap<PathBuf, KilnName>,
-    ctx: KilnRegistryContext,
 }
 
 impl KilnRegistry {
@@ -308,10 +336,23 @@ impl KilnRegistry {
     /// name is unresolvable and no session gets scope it cannot justify.
     pub fn empty(ctx: KilnRegistryContext) -> Self {
         Self {
-            entries: BTreeMap::new(),
-            by_path: HashMap::new(),
+            index: RwLock::new(KilnIndex::default()),
             ctx,
         }
+    }
+
+    /// The index, or a panic naming the poisoned lock.
+    ///
+    /// A poisoned lock means a registration panicked half-applied, so the two
+    /// indexes may disagree about which names exist. Continuing from that is a
+    /// name that resolves to nothing — the exact shape the module refuses to
+    /// produce — so it fails loudly instead.
+    fn read(&self) -> std::sync::RwLockReadGuard<'_, KilnIndex> {
+        self.index.read().expect("kiln registry lock poisoned")
+    }
+
+    fn write(&self) -> std::sync::RwLockWriteGuard<'_, KilnIndex> {
+        self.index.write().expect("kiln registry lock poisoned")
     }
 
     /// Build from the config JSON the daemon was **handed**
@@ -332,7 +373,7 @@ impl KilnRegistry {
         ctx: KilnRegistryContext,
         app_config: Option<&serde_json::Value>,
     ) -> Result<Self, RegistryError> {
-        let mut registry = Self::empty(ctx);
+        let registry = Self::empty(ctx);
         let Some(app_config) = app_config else {
             debug!("No app config: the kiln registry is empty and every name unresolvable");
             return Ok(registry);
@@ -358,13 +399,66 @@ impl KilnRegistry {
         Ok(registry)
     }
 
+    /// The config layer this registry was built from, as overlay input.
+    ///
+    /// Read back out rather than kept alongside, so there is one answer to
+    /// "which names does the config claim" and it is the one the registry
+    /// actually holds.
+    pub fn config_layer(&self) -> Vec<Registration> {
+        self.read()
+            .entries
+            .values()
+            .filter(|kiln| kiln.origin == RegistrationOrigin::Config)
+            .map(|kiln| {
+                Registration::config(kiln.name.to_string(), kiln.path.clone()).with_lazy(kiln.lazy)
+            })
+            .collect()
+    }
+
+    /// Add the state layer under the config layer this registry already holds.
+    ///
+    /// Called once at bind, with what `kilns.json` holds. The config layer wins
+    /// on a name conflict, and each shadowed state entry comes back so the
+    /// caller can log it — a registration the user cannot see is one they
+    /// cannot remove.
+    ///
+    /// A state entry the floor refuses is dropped with a warning, exactly like
+    /// a configured one: no entry and no name.
+    pub fn overlay_state(&self, state: Vec<Registration>) -> Vec<ShadowedRegistration> {
+        let overlay = overlay_registrations(self.config_layer(), state);
+        for entry in overlay.effective {
+            if entry.origin != RegistrationOrigin::Registered {
+                continue;
+            }
+            let Some(name) = KilnName::normalize(&entry.name) else {
+                warn!(
+                    kiln = entry.name,
+                    "Ignoring a registration whose name folds to nothing usable"
+                );
+                continue;
+            };
+            let absolute = self.absolutize(&entry.path);
+            if let Err(reason) = self.refuse(&absolute) {
+                warn!(kiln = %name, "{reason}");
+                continue;
+            }
+            self.insert_entry(
+                name,
+                ResolvedPath::resolve(&absolute),
+                entry.lazy,
+                RegistrationOrigin::Registered,
+            );
+        }
+        overlay.shadowed
+    }
+
     /// Resolve a name. [`KilnResolution::Unknown`] is a **denial**, and every
     /// consumer must treat it as one.
-    pub fn resolve(&self, name: &KilnName) -> KilnResolution<'_> {
-        match self.entries.get(name) {
+    pub fn resolve(&self, name: &KilnName) -> KilnResolution {
+        match self.read().entries.get(name) {
             None => KilnResolution::Unknown,
-            Some(kiln) if kiln.lazy => KilnResolution::Lazy(kiln),
-            Some(kiln) => KilnResolution::Ready(kiln),
+            Some(kiln) if kiln.lazy => KilnResolution::Lazy(kiln.clone()),
+            Some(kiln) => KilnResolution::Ready(kiln.clone()),
         }
     }
 
@@ -402,30 +496,40 @@ impl KilnRegistry {
     /// Both spellings of both sides are compared, so `~/vault` in the config
     /// and the expanded absolute path in a persisted `meta.json` are one
     /// entry, and so is a kiln opened through a symlink.
-    pub fn name_for(&self, path: &Path) -> Option<&KilnName> {
+    pub fn name_for(&self, path: &Path) -> Option<KilnName> {
         let resolved = ResolvedPath::resolve(&self.absolutize(path));
-        self.by_path
+        let index = self.read();
+        index
+            .by_path
             .get(resolved.lexical())
-            .or_else(|| self.by_path.get(resolved.canonical()))
+            .or_else(|| index.by_path.get(resolved.canonical()))
+            .cloned()
     }
 
     /// Registered, eager entries, in name order — what a startup open should
     /// touch. Lazy entries are absent by construction rather than by a filter
     /// the caller has to remember.
-    pub fn eager(&self) -> impl Iterator<Item = &RegisteredKiln> {
-        self.entries.values().filter(|kiln| !kiln.lazy)
+    pub fn eager(&self) -> Vec<RegisteredKiln> {
+        self.read()
+            .entries
+            .values()
+            .filter(|kiln| !kiln.lazy)
+            .cloned()
+            .collect()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &RegisteredKiln> {
-        self.entries.values()
+    /// Every entry, in name order. A snapshot: the registry may gain a name
+    /// after this returns.
+    pub fn entries(&self) -> Vec<RegisteredKiln> {
+        self.read().entries.values().cloned().collect()
     }
 
     pub fn len(&self) -> usize {
-        self.entries.len()
+        self.read().entries.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+        self.read().entries.is_empty()
     }
 
     /// Register a path that arrived at runtime — `cru chat --kiln ./notes`, an
@@ -441,17 +545,13 @@ impl KilnRegistry {
     /// Re-registering a path that is already known is a no-op returning its
     /// existing name. Persisting the new entry back to the user's config is
     /// the caller's job (Phase 3); this registry is the in-memory authority.
-    pub fn register_path(&mut self, path: &Path) -> Result<KilnName, RegistrationRefused> {
+    pub fn register_path(&self, path: &Path) -> Result<KilnName, RegistrationRefused> {
         let absolute = self.absolutize(path);
         self.refuse(&absolute).map_err(RegistrationRefused)?;
 
         let resolved = ResolvedPath::resolve(&absolute);
-        if let Some(existing) = self
-            .by_path
-            .get(resolved.lexical())
-            .or_else(|| self.by_path.get(resolved.canonical()))
-        {
-            return Ok(existing.clone());
+        if let Some(existing) = self.name_for(&absolute) {
+            return Ok(existing);
         }
 
         let derived = absolute
@@ -472,8 +572,26 @@ impl KilnRegistry {
             ))
         })?;
 
-        self.index(name.clone(), resolved, false);
+        self.insert_entry(
+            name.clone(),
+            resolved,
+            false,
+            RegistrationOrigin::Registered,
+        );
         Ok(name)
+    }
+
+    /// Absolutize a caller-supplied path and run the floor over it, **without**
+    /// creating an entry.
+    ///
+    /// What a two-layer registration needs: the state store must write the same
+    /// spelling the registry would have indexed, or one directory ends up with
+    /// two entries. Deciding that spelling anywhere else is how the two layers
+    /// drift.
+    pub fn canonical_for_registration(&self, path: &Path) -> Result<PathBuf, RegistrationRefused> {
+        let absolute = self.absolutize(path);
+        self.refuse(&absolute).map_err(RegistrationRefused)?;
+        Ok(ResolvedPath::resolve(&absolute).lexical().to_path_buf())
     }
 
     /// Register a path under a name the caller chose —
@@ -491,16 +609,12 @@ impl KilnRegistry {
     /// no-op, so re-running the command is not an error.
     ///
     /// [`insert_configured`]: Self::insert_configured
-    pub fn register_named(
-        &mut self,
-        name: KilnName,
-        path: &Path,
-    ) -> Result<(), RegistrationRefused> {
+    pub fn register_named(&self, name: KilnName, path: &Path) -> Result<(), RegistrationRefused> {
         let absolute = self.absolutize(path);
         self.refuse(&absolute).map_err(RegistrationRefused)?;
 
         let resolved = ResolvedPath::resolve(&absolute);
-        match self.entries.get(&name) {
+        match self.read().entries.get(&name) {
             Some(existing) if existing.path == *resolved.lexical() => return Ok(()),
             Some(existing) => {
                 return Err(RegistrationRefused(format!(
@@ -512,7 +626,7 @@ impl KilnRegistry {
             None => {}
         }
 
-        self.index(name, resolved, false);
+        self.insert_entry(name, resolved, false, RegistrationOrigin::Registered);
         Ok(())
     }
 
@@ -522,12 +636,7 @@ impl KilnRegistry {
     /// keys folding onto one name is a config the user must resolve, and
     /// picking a winner silently re-points already-persisted sessions at a
     /// different corpus.
-    fn insert_configured(
-        &mut self,
-        key: &str,
-        raw: &Path,
-        lazy: bool,
-    ) -> Result<(), RegistryError> {
+    fn insert_configured(&self, key: &str, raw: &Path, lazy: bool) -> Result<(), RegistryError> {
         let Some(name) = KilnName::normalize(key) else {
             warn!(
                 kiln = key,
@@ -556,7 +665,7 @@ impl KilnRegistry {
         }
 
         let resolved = ResolvedPath::resolve(&absolute);
-        match self.entries.get(&name) {
+        match self.read().entries.get(&name) {
             // Same name, same directory: two spellings of one entry, so
             // there is nothing to choose between.
             Some(existing) if existing.path == *resolved.lexical() => return Ok(()),
@@ -570,7 +679,7 @@ impl KilnRegistry {
             None => {}
         }
 
-        self.index(name, resolved, lazy);
+        self.insert_entry(name, resolved, lazy, RegistrationOrigin::Config);
         Ok(())
     }
 
@@ -622,30 +731,41 @@ impl KilnRegistry {
         Ok(())
     }
 
-    fn index(&mut self, name: KilnName, resolved: ResolvedPath, lazy: bool) {
+    fn insert_entry(
+        &self,
+        name: KilnName,
+        resolved: ResolvedPath,
+        lazy: bool,
+        origin: RegistrationOrigin,
+    ) {
         let kiln = RegisteredKiln {
             name: name.clone(),
             path: resolved.lexical().to_path_buf(),
             resolved: resolved.canonical().to_path_buf(),
             lazy,
+            origin,
         };
+        let mut index = self.write();
         // `or_insert`, not `insert`: two names may legitimately alias one
         // directory, and the reverse lookup then answers with the first in
         // name order rather than whichever was indexed last.
-        self.by_path
+        index
+            .by_path
             .entry(kiln.path.clone())
             .or_insert_with(|| name.clone());
-        self.by_path
+        index
+            .by_path
             .entry(kiln.resolved.clone())
             .or_insert_with(|| name.clone());
-        self.entries.insert(name, kiln);
+        index.entries.insert(name, kiln);
     }
 
     /// `derived`, or the first free `derived-2`, `derived-3`, … `None` when
     /// every candidate is taken — which is a refusal, not a licence to reuse
     /// the incumbent.
     fn free_name(&self, derived: &KilnName) -> Option<KilnName> {
-        if !self.entries.contains_key(derived) {
+        let index = self.read();
+        if !index.entries.contains_key(derived) {
             return Some(derived.clone());
         }
         for n in 2..=MAX_DERIVED_SUFFIX {
@@ -653,7 +773,7 @@ impl KilnRegistry {
             let room = KilnName::MAX_LEN.saturating_sub(suffix.len());
             let stem = &derived.as_str()[..derived.as_str().len().min(room)];
             let candidate = KilnName::normalize(&format!("{stem}{suffix}"))?;
-            if !self.entries.contains_key(&candidate) {
+            if !index.entries.contains_key(&candidate) {
                 return Some(candidate);
             }
         }

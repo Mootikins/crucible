@@ -244,6 +244,24 @@ impl Server {
             crate::kiln_registry::KilnRegistryContext::for_daemon(data_home.clone()),
             params.app_config.as_ref(),
         )?);
+
+        // The state layer, under the config layer. `kilns.json` holds what the
+        // daemon was TOLD; the config holds what the user AUTHORED, and the
+        // config wins on a name conflict. A shadowed entry stays in the file:
+        // the overlay decides which layer answers a name, and it never
+        // rewrites the file it read.
+        let kiln_state = Arc::new(crate::kiln_state::KilnStateStore::new(&data_home));
+        // A shadowed entry is the one case where a name the user registered
+        // resolves somewhere else. Silence here is a support ticket: say it
+        // once at startup, naming both paths.
+        for shadowed in kiln_registry.overlay_state(kiln_state.registrations()) {
+            warn!(
+                kiln = shadowed.name,
+                config = %shadowed.config_path.display(),
+                registered = %shadowed.state_path.display(),
+                "The config declares this kiln name, so the registered directory is not used"
+            );
+        }
         info!(kilns = kiln_registry.len(), "Kiln registry built");
 
         let plugin_loader = Arc::new(Mutex::new(
@@ -394,6 +412,8 @@ impl Server {
             data_home: data_home.clone(),
             workspace_config,
             kiln_registry,
+            kiln_state,
+            config_path: params.config_path.clone(),
         }));
         // Same instance for both paths: delegated children fire plugin start
         // hooks and get their own isolation claim, and the once-only teardown

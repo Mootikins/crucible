@@ -39,6 +39,11 @@ pub struct BindWithPluginConfigParams {
     /// they are first in discovery precedence, so they would shadow a
     /// fixture's.
     pub config_home: Option<std::path::PathBuf>,
+    /// The config FILE this daemon's config came from, when the spawning
+    /// client knew it. Refusals name it: a user told "that name is declared in
+    /// your config" cannot act on it without knowing which file to open.
+    /// `None` leaves the refusal naming the layer but not the file.
+    pub config_path: Option<std::path::PathBuf>,
 }
 
 impl BindWithPluginConfigParams {
@@ -78,6 +83,7 @@ impl BindWithPluginConfigParams {
             app_config: serde_json::to_value(config).ok(),
             data_home: config.data_home.clone(),
             config_home: None,
+            config_path: None,
         }
     }
 }
@@ -104,6 +110,7 @@ impl Default for BindWithPluginConfigParams {
             app_config: None,
             data_home: None,
             config_home: None,
+            config_path: None,
         }
     }
 }

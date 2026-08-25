@@ -92,6 +92,14 @@ pub struct RpcContext {
     /// through. Built once at bind from the config the daemon was handed;
     /// handlers resolve names against it rather than accepting paths.
     pub kiln_registry: Arc<crate::kiln_registry::KilnRegistry>,
+    /// `<data_home>/kilns.json` — the registrations the daemon was told about,
+    /// and the only writer of them. The registry is the in-memory authority;
+    /// this is what makes a registration outlive the process.
+    pub kiln_state: Arc<crate::kiln_state::KilnStateStore>,
+    /// The config FILE this daemon's config came from, when the spawning
+    /// client knew it. A refusal that names the config layer names this file,
+    /// so the user knows which one to edit.
+    pub config_path: Option<std::path::PathBuf>,
     /// Plugin session start/end enforcement, shared with `DelegationService`.
     ///
     /// Built here rather than passed in because every input it needs is
@@ -120,6 +128,8 @@ pub struct RpcContextParams {
     pub data_home: std::path::PathBuf,
     pub workspace_config: Option<WorkspaceConfig>,
     pub kiln_registry: Arc<crate::kiln_registry::KilnRegistry>,
+    pub kiln_state: Arc<crate::kiln_state::KilnStateStore>,
+    pub config_path: Option<std::path::PathBuf>,
 }
 
 impl RpcContext {
@@ -140,6 +150,8 @@ impl RpcContext {
             data_home,
             workspace_config,
             kiln_registry,
+            kiln_state,
+            config_path,
         } = params;
         let session_lifecycle = SessionLifecycle::new(sessions.clone(), plugin_loader.clone());
         session_lifecycle.bind_agent_manager(&agents);
@@ -160,6 +172,8 @@ impl RpcContext {
             workflows: Arc::new(WorkflowRegistry::new()),
             workspace_config,
             kiln_registry,
+            kiln_state,
+            config_path,
             session_lifecycle,
         }
     }
@@ -228,6 +242,8 @@ impl RpcContext {
             llm_config,
             mcp_server_manager: Arc::new(McpServerManager::new()),
             mcp_config: None,
+            kiln_state: Arc::new(crate::kiln_state::KilnStateStore::new(&data_home)),
+            config_path: None,
             data_home,
             workspace_config: None,
             // The session manager's own registry, not a second empty one: the

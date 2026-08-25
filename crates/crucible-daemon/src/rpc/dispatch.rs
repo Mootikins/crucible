@@ -87,6 +87,7 @@ rpc_methods! {
     KilnOpen = "kiln.open",
     KilnClose = "kiln.close",
     KilnList = "kiln.list",
+    KilnRegister = "kiln.register",
     KilnSetClassification = "kiln.set_classification",
     SearchVectors = "search_vectors",
     SearchText = "search_text",
@@ -406,6 +407,15 @@ impl RpcDispatcher {
                     &self.ctx.kiln,
                     &self.ctx.kiln_registry,
                     &self.ctx.data_home
+                )
+            ),
+            RpcMethod::KilnRegister => forward!(
+                id,
+                crate::server::kiln::handle_kiln_register(
+                    req.clone(),
+                    &self.ctx.kiln_registry,
+                    &self.ctx.kiln_state,
+                    self.ctx.config_path.as_deref()
                 )
             ),
             RpcMethod::KilnSetClassification => {
@@ -1643,8 +1653,9 @@ impl RpcDispatcher {
     /// reads its own state and code from. A caller that can write them
     /// introduces or re-points an entry without ever handing a path to
     /// `KilnRegistry::register_path` — which is to say, without the floor
-    /// seeing it. Changing where kilns live is a config-file edit
-    /// (`cru kiln register`), not a socket call.
+    /// seeing it. The way to add a kiln is `kiln.register` (`cru kiln
+    /// register`) or a config-file edit; both pass the floor, and this
+    /// method must not become a third way that does not.
     fn handle_config_set(&self, req: &Request) -> RpcResult<serde_json::Value> {
         use crate::rpc::params::parse_params;
         use serde::Deserialize;
@@ -2802,6 +2813,10 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
                     "/tmp",
                 )),
             )),
+            kiln_state: Arc::new(crate::kiln_state::KilnStateStore::new(
+                std::path::Path::new("/tmp"),
+            )),
+            config_path: None,
         }))
     }
 

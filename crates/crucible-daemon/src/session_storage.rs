@@ -146,8 +146,8 @@ impl FileSessionStorage {
         let mut unresolved: Vec<PathBuf> = Vec::new();
         for path in session.take_persisted_kiln_paths() {
             match self.registry.name_for(&path) {
-                Some(name) if names.contains(name) => {}
-                Some(name) => names.push(name.clone()),
+                Some(name) if names.contains(&name) => {}
+                Some(name) => names.push(name),
                 None => {
                     tracing::warn!(
                         session_id = %session.id,

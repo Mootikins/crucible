@@ -317,9 +317,9 @@ impl AgentManager {
             let Some(kiln_path) = registry.resolve(kiln).path() else {
                 continue;
             };
-            match self.kiln_manager.get_or_open(kiln_path).await {
+            match self.kiln_manager.get_or_open(&kiln_path).await {
                 Ok(handle) => sources.push(KilnSearchSource {
-                    kiln_path: kiln_path.to_path_buf(),
+                    kiln_path: kiln_path.clone(),
                     // The session's own name for it. This is the single point
                     // where a hit acquires a kiln label; nothing downstream
                     // derives one from the directory.

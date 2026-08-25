@@ -342,9 +342,7 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
             commands::acp::execute(config, kiln, cli_config_path.clone()).await?
         }
 
-        Some(Commands::Kiln { command }) => {
-            commands::kiln::handle(command, config, cli_config_path.clone())?
-        }
+        Some(Commands::Kiln { command }) => commands::kiln::handle(command).await?,
 
         Some(Commands::Process {
             path,

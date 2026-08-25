@@ -309,7 +309,6 @@ impl DaemonPluginLoader {
             registry
                 .resolve(&name)
                 .path()
-                .map(std::path::Path::to_path_buf)
                 .ok_or_else(|| format!("kiln '{name}' is not registered"))
         });
         crucible_lua::register_fs_module_with_resolver(self.executor.lua(), resolver)

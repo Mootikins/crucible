@@ -106,13 +106,14 @@ pub(crate) async fn handle_session_list(
         // no session can name it.
         let mut names: Vec<crucible_core::config::KilnName> = sm
             .kiln_registry()
+            .entries()
             .iter()
             .map(|kiln| kiln.name().clone())
             .collect();
         for (kiln_path, _, _) in km.list().await {
             if let Some(name) = sm.kiln_registry().name_for(&kiln_path) {
-                if !names.contains(name) {
-                    names.push(name.clone());
+                if !names.contains(&name) {
+                    names.push(name);
                 }
             }
         }

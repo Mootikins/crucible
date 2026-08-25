@@ -80,8 +80,8 @@ pub use session::{
 };
 pub use storage_requests::{
     FsListDirRequest, FsMoveRequest, FsPathRequest, GrepSearchRequest, KilnOpenRequest,
-    KilnSetClassificationRequest, McpStartRequest, NoteRenameRequest, ProcessFileRequest,
-    ScmCloneRequest, SearchVectorsRequest,
+    KilnRegisterRequest, KilnSetClassificationRequest, McpStartRequest, NoteRenameRequest,
+    ProcessFileRequest, ScmCloneRequest, SearchVectorsRequest,
 };
 pub use types::{
     AgentsListCardsRequest, DaemonCapabilities, NameRequest, PathRequest, SessionEvent,

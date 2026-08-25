@@ -166,44 +166,6 @@ impl CliKilnRegistry {
         })
     }
 
-    /// `cru kiln register <name> <path>`: the same floor, a name the user chose.
-    pub fn register(&mut self, name: &str, path: &Path) -> Result<AttachedKiln> {
-        let name = KilnName::parse(name).map_err(|e| {
-            anyhow::anyhow!(
-                "{e}. A kiln name is lower-case `[a-z0-9._-]`, at most {} characters, and does \
-                 not start with a dot.",
-                KilnName::MAX_LEN
-            )
-        })?;
-        self.registry
-            .register_named(name.clone(), path)
-            .map_err(|refusal| anyhow::anyhow!("{refusal}"))?;
-        let resolved = self.path_of(&name);
-
-        // Same rule as `attach`, for the same reason: an entry pointing at
-        // nothing is a name that resolves to nothing, and every consumer that
-        // reads absence as "unconstrained" is a bug waiting for it.
-        if !resolved.is_dir() {
-            bail!(
-                "Refusing to register '{name}': '{}' is not a directory.",
-                resolved.display()
-            );
-        }
-
-        register_kiln_entry_in_config(&self.config_path, name.as_str(), &resolved, false)
-            .with_context(|| {
-                format!(
-                    "registering kiln '{name}' in {}",
-                    self.config_path.display()
-                )
-            })?;
-        Ok(AttachedKiln {
-            name,
-            path: resolved,
-            registered: true,
-        })
-    }
-
     /// Where a name the registry just accepted lives.
     ///
     /// Only ever called on a name a `register_*` call returned `Ok` for, so

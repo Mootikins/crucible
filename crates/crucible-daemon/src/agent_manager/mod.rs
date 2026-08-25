@@ -985,8 +985,7 @@ impl AgentManager {
             // unavailable, rather than with one rooted somewhere unaudited.
             let default_kiln = session
                 .default_kiln()
-                .and_then(|name| self.session_manager.kiln_registry().resolve(name).path())
-                .map(Path::to_path_buf);
+                .and_then(|name| self.session_manager.kiln_registry().resolve(name).path());
             let (knowledge_repo, embedding_provider): (
                 Arc<dyn crucible_core::traits::KnowledgeRepository>,
                 Arc<dyn crucible_core::enrichment::EmbeddingProvider>,

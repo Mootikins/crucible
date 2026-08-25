@@ -359,3 +359,178 @@ async fn test_kiln_lifecycle_open_query_close() {
 
     server.shutdown().await;
 }
+
+// =============================================================================
+// kiln.register
+// =============================================================================
+
+/// A name registered through the socket resolves in the SAME daemon process.
+///
+/// This is the no-restart guarantee, and it is the reason the registry gained
+/// interior mutability. The old path wrote the user's config file and the
+/// running daemon kept its startup snapshot, so `cru kiln register work …`
+/// followed by a session on `work` was refused until the daemon restarted.
+///
+/// The test crosses the wire on purpose. A handler-level test can assert the
+/// registry was updated, but only a request over the socket proves the
+/// registry the handler wrote is the registry `session.create` reads. Those
+/// are the same `Arc` today; nothing but this test says they must stay so.
+#[tokio::test]
+async fn a_registered_name_is_usable_without_restarting_the_daemon() {
+    let server = TestServer::start().await.expect("Failed to start server");
+    let late = tempfile::tempdir().expect("Failed to create kiln dir");
+
+    let client = DaemonClient::connect_to(&server.socket_path)
+        .await
+        .expect("Failed to connect");
+
+    // Precondition: the daemon started with one kiln, `kiln`, and it was not
+    // this one. A session on `late` must be refused before the registration,
+    // or the assertion after it proves nothing.
+    let before = client
+        .call(
+            "session.create",
+            serde_json::json!({ "type": "chat", "kilns": ["late"] }),
+        )
+        .await;
+    assert!(
+        before.is_err(),
+        "precondition: `late` must be unknown before it is registered"
+    );
+
+    let reply = client
+        .kiln_register("late", late.path(), false, false)
+        .await
+        .expect("registering an existing directory succeeds");
+    assert_eq!(reply["outcome"], serde_json::json!("added"));
+
+    // The registration went to the state file, not to the user's config. The
+    // reply names the file, and the version gate's number is in it.
+    let state_file = PathBuf::from(
+        reply["state_file"]
+            .as_str()
+            .expect("the reply must name the file it wrote"),
+    );
+    let state: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&state_file).expect("kilns.json was written"),
+    )
+    .expect("kilns.json is JSON");
+    assert_eq!(state["version"], 1);
+    assert!(state["kilns"]["late"]["path"].is_string(), "{state}");
+
+    // No restart, no reconnect, no second client: the same connection.
+    let after = client
+        .call(
+            "session.create",
+            serde_json::json!({ "type": "chat", "kilns": ["late"] }),
+        )
+        .await
+        .expect("the name the daemon just registered must resolve now");
+    assert!(
+        after["session_id"].as_str().is_some(),
+        "session.create must accept the freshly registered name: {after}"
+    );
+
+    server.shutdown().await;
+}
+
+/// The registration survives a restart, because it went to a file.
+///
+/// The live-registry assertion above would also pass if the handler only
+/// mutated memory. This one fails in that case: a second server over the same
+/// data home reads `kilns.json` at startup and must already know the name.
+#[tokio::test]
+async fn a_registered_name_survives_a_daemon_restart() {
+    let data_home = tempfile::tempdir().expect("Failed to create data home");
+    let late = tempfile::tempdir().expect("Failed to create kiln dir");
+    ensure_crypto_provider();
+
+    for round in 0..2 {
+        let socket_path = data_home.path().join(format!("daemon-{round}.sock"));
+        let server = Server::bind_with_data_home_and_kilns(
+            &socket_path,
+            data_home.path().to_path_buf(),
+            &[],
+        )
+        .await
+        .expect("bind");
+        let shutdown = server.shutdown_handle();
+        let handle = tokio::spawn(async move {
+            let _ = server.run().await;
+        });
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            if DaemonClient::connect_to(&socket_path).await.is_ok() {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "daemon never accepted"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let client = DaemonClient::connect_to(&socket_path)
+            .await
+            .expect("connect");
+
+        if round == 0 {
+            client
+                .kiln_register("late", late.path(), false, false)
+                .await
+                .expect("register");
+        } else {
+            // A fresh process, a fresh registry, no registration call.
+            let after = client
+                .call(
+                    "session.create",
+                    serde_json::json!({ "type": "chat", "kilns": ["late"] }),
+                )
+                .await
+                .expect("the registration must have been persisted, not only cached");
+            assert!(after["session_id"].as_str().is_some(), "{after}");
+        }
+
+        drop(client);
+        let _ = shutdown.send(());
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        handle.abort();
+    }
+}
+
+/// The never-re-point rule, across the socket: a name this daemon already holds
+/// for one directory is refused for another. A session that persisted `late`
+/// must not open a different corpus after a second registration.
+#[tokio::test]
+async fn registering_a_held_name_over_another_directory_is_refused() {
+    let server = TestServer::start().await.expect("Failed to start server");
+    let first = tempfile::tempdir().expect("Failed to create kiln dir");
+    let second = tempfile::tempdir().expect("Failed to create kiln dir");
+
+    let client = DaemonClient::connect_to(&server.socket_path)
+        .await
+        .expect("Failed to connect");
+
+    client
+        .kiln_register("late", first.path(), false, false)
+        .await
+        .expect("the first registration lands");
+    let err = client
+        .kiln_register("late", second.path(), false, false)
+        .await
+        .expect_err("the second must be refused");
+    assert!(
+        err.to_string().contains("already registered"),
+        "the refusal must say why: {err}"
+    );
+
+    // Re-registering the identical pair stays a no-op, so a setup script that
+    // runs twice is not an error.
+    let again = client
+        .kiln_register("late", first.path(), false, false)
+        .await
+        .expect("the same name and path again is a no-op");
+    assert_eq!(again["outcome"].as_str(), Some("already_present"));
+
+    server.shutdown().await;
+}

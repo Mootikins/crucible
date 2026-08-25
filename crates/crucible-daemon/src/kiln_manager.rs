@@ -426,7 +426,6 @@ impl KilnManager {
         self.kiln_registry
             .as_ref()
             .and_then(|r| r.name_for(&canonical))
-            .cloned()
     }
 
     pub fn enrichment_config(&self) -> Option<&EmbeddingProviderConfig> {
