@@ -166,6 +166,7 @@ fn removed_root_names_are_gone_and_their_replacements_answer() {
         "cru.oq.json",
         "cru.oq.json_pretty",
         "cru.paths.join",
+        "cru.paths.kiln",
         "cru.oil.if_else",
         "cru.oil.hr",
         "cru.oil.maybe",
@@ -199,6 +200,7 @@ fn removed_root_names_are_gone_and_their_replacements_answer() {
         ("cru.fs.mkdir", "function"),    // was _G.fs.mkdir
         ("cru.shell.exec", "function"),  // was _G.shell.exec
         ("cru.paths.state", "function"), // was _G.paths.state
+        ("cru.kiln.path", "function"),   // was cru.paths.kiln (name-addressed now)
         ("cru.http.get", "function"),    // was _G.http.get
     ];
     // (cru.mcp is not on the daemon plugin VM at all — the mcp stub module is

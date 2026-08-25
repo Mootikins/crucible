@@ -29,7 +29,12 @@ describe("daily-notes", function()
     before_each(function()
         KILN = os.tmpname()
         os.remove(KILN)
-        test_mocks.setup({ paths = { kiln = KILN }, fs = { real_dirs = true } })
+        -- The plugin resolves the ACTIVE kiln by name through cru.kiln.path,
+        -- so the fixture provides both the name and its root.
+        test_mocks.setup({
+            kiln = { active = "notes", roots = { notes = KILN } },
+            fs = { real_dirs = true },
+        })
         cru.fs.mkdir(KILN)
         -- Re-apply defaults: `config` is module state that survives require
         -- caching, so a test that changes `folder` would leak into the next.
@@ -81,18 +86,43 @@ describe("daily-notes", function()
             expect.equal(note.path, "/srv/journal/" .. os.date("%Y-%m-%d") .. ".md")
         end)
 
-        it("falls back to the workspace when no kiln is mounted", function()
+        it("falls back to the workspace when no kiln is active", function()
             -- daily_list resolves without writing, so the mock workspace path
             -- never has to exist for real.
-            test_mocks.setup({ paths = { kiln = false } })
+            test_mocks.setup({})
             local note = plugin.tools.daily_list.fn({ days = 1 }).notes[1]
             expect.equal(note.path, "/mock/workspace/Journal/" .. os.date("%Y-%m-%d") .. ".md")
         end)
 
         it("falls back to a relative path when neither is configured", function()
-            test_mocks.setup({ paths = { kiln = false, workspace = false } })
+            test_mocks.setup({ paths = { workspace = false } })
             local note = plugin.tools.daily_list.fn({ days = 1 }).notes[1]
             expect.equal(note.path, "Journal/" .. os.date("%Y-%m-%d") .. ".md")
+        end)
+
+        it("warns once, naming both paths, when only the legacy folder exists", function()
+            -- The resolved journal directory is missing while the cwd-relative
+            -- one exists — a silently empty journal without the warning. The
+            -- mock's in-memory dirs stand in for the cwd, so no real file is
+            -- involved.
+            test_mocks.setup({
+                kiln = { active = "notes", roots = { notes = "/kilns/notes" } },
+                fs = { dirs = { ["Journal"] = true } },
+            })
+            local warnings = {}
+            local had_log = cru.log
+            cru.log = function(level, msg)
+                if level == "warn" then warnings[#warnings + 1] = msg end
+            end
+            local ok, err = pcall(function()
+                plugin.tools.daily_list.fn({ days = 1 })
+                plugin.tools.daily_list.fn({ days = 1 })
+            end)
+            cru.log = had_log
+            if not ok then error(err) end
+            expect.equal(#warnings, 1)
+            expect.truthy(warnings[1]:find("/kilns/notes/Journal", 1, true))
+            expect.truthy(warnings[1]:find("'Journal'", 1, true))
         end)
     end)
 
@@ -135,7 +165,7 @@ describe("daily-notes", function()
             -- `exists` is the guard, and it answers from the mock: record the
             -- file there too, the way production `cru.fs.exists` would see it.
             test_mocks.setup({
-                paths = { kiln = KILN },
+                kiln = { active = "notes", roots = { notes = KILN } },
                 fs = { real_dirs = true, files = { [path] = "mine" } },
             })
             local result = plugin.tools.daily_create.fn({ date = "2025-06-15" })
@@ -188,7 +218,7 @@ describe("daily-notes", function()
             handle:write("hi")
             handle:close()
             test_mocks.setup({
-                paths = { kiln = KILN },
+                kiln = { active = "notes", roots = { notes = KILN } },
                 fs = { real_dirs = true, files = { [path] = "hi" } },
             })
             local result = plugin.tools.daily_open.fn({ date = "2025-03-20" })
@@ -223,7 +253,7 @@ describe("daily-notes", function()
         it("reports exists = true only for notes on disk", function()
             local today = os.date("%Y-%m-%d")
             test_mocks.setup({
-                paths = { kiln = KILN },
+                kiln = { active = "notes", roots = { notes = KILN } },
                 fs = { files = { [KILN .. "/Journal/" .. today .. ".md"] = "hi" } },
             })
             local notes = plugin.tools.daily_list.fn({ days = 2 }).notes

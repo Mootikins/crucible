@@ -5,9 +5,6 @@
 //! ## Usage in Lua
 //!
 //! ```lua
-//! -- Get the kiln root directory
-//! local kiln_path = cru.paths.kiln()
-//!
 //! -- Get the current session directory
 //! local session_path = cru.paths.session()
 //!
@@ -31,8 +28,6 @@ const PLUGIN_STATE_DIR: &str = "plugin-state";
 /// Paths context containing configured paths
 #[derive(Debug, Clone)]
 pub struct PathsContext {
-    /// The kiln root directory
-    pub kiln: Option<PathBuf>,
     /// The current session directory
     pub session: Option<PathBuf>,
     /// The workspace directory
@@ -43,16 +38,9 @@ impl PathsContext {
     /// Create a new empty paths context
     pub fn new() -> Self {
         Self {
-            kiln: None,
             session: None,
             workspace: None,
         }
-    }
-
-    /// Set the kiln path
-    pub fn with_kiln(mut self, path: PathBuf) -> Self {
-        self.kiln = Some(path);
-        self
     }
 
     /// Set the session path
@@ -104,18 +92,6 @@ fn plugin_state_dir(home: &Path, plugin: &str) -> Result<PathBuf, LuaError> {
 /// Register the paths module with a Lua state
 pub fn register_paths_module(lua: &Lua, context: PathsContext) -> Result<(), LuaError> {
     let paths = lua.create_table()?;
-
-    // paths.kiln() -> string or nil
-    let kiln_path = context.kiln.clone();
-    let kiln_fn = lua.create_function(move |lua, ()| match &kiln_path {
-        Some(path) => Ok(Value::String(
-            lua.create_string(path.to_string_lossy().as_ref())?,
-        )),
-        None => Err(mlua::Error::external(LuaError::Runtime(
-            "Kiln path not configured".to_string(),
-        ))),
-    })?;
-    paths.set("kiln", kiln_fn)?;
 
     // paths.session() -> string or nil
     let session_path = context.session.clone();
@@ -181,15 +157,6 @@ mod tests {
         let lua = Lua::new();
         register_paths_module(&lua, ctx).unwrap();
         lua
-    }
-
-    #[test]
-    fn test_kiln_path() {
-        let ctx = PathsContext::new().with_kiln(PathBuf::from("/home/user/notes"));
-        let lua = create_lua_with_paths(ctx);
-
-        let result: String = lua.load("return cru.paths.kiln()").eval().unwrap();
-        assert_eq!(result, "/home/user/notes");
     }
 
     #[test]

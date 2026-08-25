@@ -38,19 +38,58 @@ end
 --- Where notes live, as an absolute path.
 ---
 --- An absolute `folder` is taken as given — that is how a user puts their
---- journal outside the kiln. A relative one hangs off the kiln root, falling
---- back to the workspace and finally to the cwd, because `paths.kiln()` raises
---- rather than returning nil when no kiln is mounted (see `paths.rs`).
+--- journal outside the kiln. A relative one hangs off the ACTIVE kiln's root
+--- (by name, through `cru.kiln.path` — the one name-to-path API), falling
+--- back to the workspace and finally to the cwd.
+---
+--- Kiln-root resolution used to be dead in production (the daemon registers
+--- no kiln path on `cru.paths`), so an existing journal lives wherever the
+--- daemon's cwd happened to be. Now that the kiln arm is live, reading only
+--- the new location would make that journal silently look empty — so say
+--- where it used to resolve, once, and move NOTHING: never relocate user
+--- data on their behalf.
+local warned_legacy = false
+local function warn_if_legacy_dir(resolved)
+    if warned_legacy then return end
+    local ok, seen = pcall(cru.fs.is_dir, resolved)
+    if ok and seen then return end
+    ok, seen = pcall(cru.fs.is_dir, config.folder)
+    if not ok or not seen then return end
+    warned_legacy = true
+    cru.log("warn", string.format(
+        "daily-notes: notes now resolve to '%s', but a directory exists at "
+            .. "the old cwd-relative location '%s'. Nothing was moved — move "
+            .. "the old directory there if it is the one you want.",
+        resolved, config.folder))
+end
+
+--- The root the journal folder hangs off: the active kiln, else the
+--- workspace, else nil.
+local function resolve_root()
+    local active = cru.kiln and cru.kiln.active
+    if type(active) == "string" then
+        local ok, root = pcall(cru.kiln.path, active)
+        if ok and type(root) == "string" and root ~= "" then
+            return root
+        end
+    end
+    local ok, root = pcall(cru.paths.workspace)
+    if ok and type(root) == "string" and root ~= "" then
+        return root
+    end
+    return nil
+end
+
 local function notes_dir()
     if config.folder:sub(1, 1) == "/" then
         return config.folder
     end
-    for _, accessor in ipairs({ cru.paths.kiln, cru.paths.workspace }) do
-        local ok, root = pcall(accessor)
-        if ok and root and root ~= "" then
-            -- `config.folder` is known relative here, so concat is the join.
-            return root .. "/" .. config.folder
-        end
+    local root = resolve_root()
+    if root then
+        -- `config.folder` is known relative here, so concat is the join.
+        local dir = root .. "/" .. config.folder
+        warn_if_legacy_dir(dir)
+        return dir
     end
     return config.folder
 end

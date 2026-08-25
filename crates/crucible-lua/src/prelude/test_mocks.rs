@@ -22,6 +22,8 @@ local function default_fixtures()
         -- `roots` maps a kiln NAME to a directory, which is the one thing
         -- `cru.kiln.path` does. Empty by default: a test that stages files
         -- names its own directory, so nothing writes to a guessed path.
+        -- `active` mirrors the daemon's `cru.kiln.active` string field: absent
+        -- by default, the way a daemon with no open kiln leaves it nil.
         kiln = { notes = {}, outlinks = {}, backlinks = {}, neighbors = {}, roots = {} },
         http = { responses = {} },
         -- `real_dirs` makes the `mkdir` mock create the directory for real, as
@@ -30,9 +32,10 @@ local function default_fixtures()
         -- one. Off by default, so no suite touches the disk by accident.
         fs = { files = {}, dirs = {}, real_dirs = false },
         -- Absolute by default: a plugin that resolves its files against the
-        -- kiln has to be testable without the assertion depending on where the
-        -- daemon happened to be started.
-        paths = { kiln = "/mock/kiln", workspace = "/mock/workspace", session = false, state = "/mock/state" },
+        -- workspace has to be testable without the assertion depending on
+        -- where the daemon happened to be started. No `kiln` entry: kiln
+        -- resolution goes through `cru.kiln.path`, in tests as in production.
+        paths = { workspace = "/mock/workspace", session = false, state = "/mock/state" },
         session = { temperature = 0.7, max_tokens = nil, model = "mock-model", mode = "act", thinking_budget = nil },
         -- `info` mirrors the bridge's `get_session` payload: kiln NAMES in a
         -- `kilns` array, never kiln paths (see session_bridge.rs).
@@ -80,6 +83,8 @@ end
 local function create_kiln_mock(fixtures)
     local f = fixtures.kiln
     return {
+        -- A plain string, not a function — the daemon sets it the same way.
+        active = f.active,
         list = function(limit)
             record_call("kiln", "list", limit)
             local notes = f.notes or {}
@@ -160,6 +165,14 @@ local function create_fs_mock(fixtures)
             record_call("fs", "exists", path)
             return files[path] ~= nil or dirs[path] ~= nil
         end,
+        is_file = function(path)
+            record_call("fs", "is_file", path)
+            return files[path] ~= nil
+        end,
+        is_dir = function(path)
+            record_call("fs", "is_dir", path)
+            return dirs[path] ~= nil
+        end,
         mkdir = function(path)
             record_call("fs", "mkdir", path)
             dirs[path] = true
@@ -209,7 +222,6 @@ local function create_paths_mock(fixtures)
         end
     end
     return {
-        kiln = accessor("kiln"),
         workspace = accessor("workspace"),
         session = accessor("session"),
         state = function(plugin)

@@ -53,7 +53,12 @@ describe("todo-list", function()
     before_each(function()
         KILN = os.tmpname()
         os.remove(KILN)
-        test_mocks.setup({ paths = { kiln = KILN }, fs = { real_dirs = true } })
+        -- The plugin resolves the ACTIVE kiln by name through cru.kiln.path,
+        -- so the fixture provides both the name and its root.
+        test_mocks.setup({
+            kiln = { active = "notes", roots = { notes = KILN } },
+            fs = { real_dirs = true },
+        })
         cru.fs.mkdir(KILN)
         TASKS_PATH = KILN .. "/TASKS.md"
         -- `config` is module state that survives require caching.
@@ -97,9 +102,34 @@ describe("todo-list", function()
             expect.equal(plugin.tools.tasks_list.fn({ file = "/srv/T.md" }).file, "/srv/T.md")
         end)
 
-        it("falls back to the workspace when no kiln is mounted", function()
-            test_mocks.setup({ paths = { kiln = false } })
+        it("falls back to the workspace when no kiln is active", function()
+            test_mocks.setup({})
             expect.equal(plugin.tools.tasks_list.fn({}).file, "/mock/workspace/TASKS.md")
+        end)
+
+        it("warns once, naming both paths, when only the legacy cwd file exists", function()
+            -- The resolved location is missing and the old cwd-relative file
+            -- is present — exactly the situation where a silently empty list
+            -- would be the outcome. `cru.fs.exists` answers from the mock, so
+            -- no real cwd file is involved.
+            test_mocks.setup({
+                kiln = { active = "notes", roots = { notes = "/kilns/notes" } },
+                fs = { files = { ["TASKS.md"] = "- [ ] old task\n" } },
+            })
+            local warnings = {}
+            local had_log = cru.log
+            cru.log = function(level, msg)
+                if level == "warn" then warnings[#warnings + 1] = msg end
+            end
+            local ok, err = pcall(function()
+                plugin.tools.tasks_list.fn({})
+                plugin.tools.tasks_list.fn({})
+            end)
+            cru.log = had_log
+            if not ok then error(err) end
+            expect.equal(#warnings, 1)
+            expect.truthy(warnings[1]:find("/kilns/notes/TASKS.md", 1, true))
+            expect.truthy(warnings[1]:find("'TASKS.md'", 1, true))
         end)
     end)
 

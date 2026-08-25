@@ -122,7 +122,7 @@ kiln     = { notes = {}, outlinks = {}, backlinks = {}, neighbors = {},
              roots = {} },
 http     = { responses = {} },
 fs       = { files = {}, dirs = {}, real_dirs = false },
-paths    = { kiln = "/mock/kiln", workspace = "/mock/workspace",
+paths    = { workspace = "/mock/workspace",
              session = false, state = "/mock/state" },
 session  = { temperature = 0.7, max_tokens = nil, model = "mock-model",
              mode = "act", thinking_budget = nil },
@@ -139,8 +139,12 @@ part that holds `..`, `.` or a leading `/` — the same two refusals the daemon
 makes. A plugin that passes here therefore cannot fail in production.
 
 ```lua
-test_mocks.setup({ kiln = { roots = { notes = "/kilns/notes" } } })
+test_mocks.setup({ kiln = { active = "notes", roots = { notes = "/kilns/notes" } } })
 ```
+
+`kiln.active` mirrors the daemon's `cru.kiln.active` string field — the NAME of
+the open kiln, absent by default the way a daemon with no open kiln leaves it
+nil.
 
 ### real directories
 
@@ -155,7 +159,7 @@ calls `test_mocks.setup()` before it loads any test file, so
 
 ### paths fixture
 
-Mirrors the real `cru.paths` shape: each accessor **raises** when its path is unconfigured rather than returning `nil`, so a plugin that pcalls `paths.kiln()` and falls back is exercised against production behavior. Mark a path unconfigured with `false`, not `nil` — a `nil` override is indistinguishable from no override and silently leaves the default in place (which is why `session = false` is the default). `paths.state(plugin)` returns `state .. "/" .. plugin`. There is no `paths.join`: joining is plain string concatenation, in tests as in production.
+Mirrors the real `cru.paths` shape: each accessor **raises** when its path is unconfigured rather than returning `nil`, so a plugin that pcalls an accessor and falls back is exercised against production behavior. There is no `paths.kiln`: kiln roots resolve by NAME through `cru.kiln.path`, and the mock mirrors the daemon’s `cru.kiln.active` string via the `kiln.active` fixture. Mark a path unconfigured with `false`, not `nil` — a `nil` override is indistinguishable from no override and silently leaves the default in place (which is why `session = false` is the default). `paths.state(plugin)` returns `state .. "/" .. plugin`. There is no `paths.join`: joining is plain string concatenation, in tests as in production.
 
 ### sessions fixture
 
