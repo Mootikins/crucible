@@ -1,0 +1,101 @@
+# Adversarial golden set: see README.md for class description.
+
+top_k = 10
+
+
+[[queries]]
+question = "what ratio of grounds to output should I aim for in my shot?"
+expect_note = "espresso-extraction-ratio"
+
+[[queries]]
+question = "how many gravity points per pound should I collect from the mash?"
+expect_note = "beer-mash-efficiency"
+
+[[queries]]
+question = "how many buy-ins do I need before playing bigger games?"
+expect_note = "poker-bankroll-management"
+
+[[queries]]
+question = "what percent of equity should one position risk?"
+expect_note = "portfolio-position-sizing"
+
+[[queries]]
+question = "tapering steroids safely after a long course"
+expect_note = "medication-taper-schedule"
+
+[[queries]]
+question = "replacing extract with paste or whole bean in a recipe"
+expect_note = "vanilla-substitution-ratios"
+
+[[queries]]
+question = "how much gain reduction on vocals before it sounds squashed?"
+expect_note = "vocal-compression-threshold"
+
+[[queries]]
+question = "what water-cement ratio hits structural strength targets?"
+expect_note = "concrete-mix-strength"
+
+[[queries]]
+question = "how many shares does one equity contract cover?"
+expect_note = "options-contract-multiplier"
+
+[[queries]]
+question = "drills to switch grips between forehand and serve"
+expect_note = "tennis-grip-change-drills"
+
+[[queries]]
+question = "where should the bag sit and where does the brush attach?"
+expect_note = "climbing-chalk-bag-setup"
+
+[[queries]]
+question = "which primer blocks tannin bleed under a water-based topcoat?"
+expect_note = "paint-primer-selection"
+[[queries]]
+question = "how long until the dough is ready to shape?"
+expect_note = "fermentation-proofing-dough"
+
+[[queries]]
+question = "what does falling foam tell me about my brew?"
+expect_note = "beer-krausen-fermentation-stage"
+
+[[queries]]
+question = "why does option time value bleed fastest at the end?"
+expect_note = "option-premium-decay"
+
+[[queries]]
+question = "flush draw odds against the river bet"
+expect_note = "poker-draw-equity"
+
+[[queries]]
+question = "finding my grams-per-unit number safely"
+expect_note = "insulin-carb-ratio-basics"
+
+[[queries]]
+question = "blond versus dark — which thickens better?"
+expect_note = "roux-color-stages"
+
+[[queries]]
+question = "when do I raise temperature to clean up buttery flavors?"
+expect_note = "lager-diacytal-rest"
+
+[[queries]]
+question = "start low and wait a full day before judging dropper effects"
+expect_note = "tincture-dosing-droppers"
+[[queries]]
+question = "which number on the bag feeds leaves versus roots?"
+expect_note = "fertilizer-npk-ratios"
+
+[[queries]]
+question = "stretching time between first crack changes body how?"
+expect_note = "coffee-roast-development-time"
+
+[[queries]]
+question = "how long until the new rate pays for its own fees?"
+expect_note = "mortgage-refinance-breakeven"
+[[queries]]
+question = "when does the clock add time — before or after my move?"
+expect_note = "chess-clock--increments"
+
+[[queries]]
+question = "do shorter antibiotic courses really work as well?"
+expect_note = "antibiotic-course-completion"

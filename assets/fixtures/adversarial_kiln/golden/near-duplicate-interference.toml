@@ -1,0 +1,104 @@
+# Adversarial golden set: see README.md for class description.
+
+top_k = 10
+
+
+[[queries]]
+question = "simple one-rise sandwich loaf with instant yeast for someone new"
+expect_note = "bread-recipe-beginner"
+
+[[queries]]
+question = "poolish preferment and steam injection formula at high hydration"
+expect_note = "bread-recipe-professional"
+
+[[queries]]
+question = "psyllium husk batter bread without wheat"
+expect_note = "bread-recipe-glutenfree"
+
+[[queries]]
+question = "auto ISO capped program mode for daylight snapshots"
+expect_note = "camera-settings-beginner"
+
+[[queries]]
+question = "manual exposure with back-button focus and gray-card white balance"
+expect_note = "camera-settings-professional"
+
+[[queries]]
+question = "shutter double the frame rate with flat profile for grading"
+expect_note = "camera-settings-video"
+
+[[queries]]
+question = "run-walk intervals three days a week just starting out"
+expect_note = "running-plan-beginner"
+
+[[queries]]
+question = "fifty mile weeks and a twenty miler before race day"
+expect_note = "running-plan-marathon"
+
+[[queries]]
+question = "hiking the steeps and vertical gain as the key metric"
+expect_note = "running-plan-trail"
+
+[[queries]]
+question = "pytest discovery with plain asserts for a first test suite"
+expect_note = "python-testing-beginner"
+
+[[queries]]
+question = "hypothesis property-based testing with coverage gates"
+expect_note = "python-testing-professional"
+
+[[queries]]
+question = "characterization tests before refactoring untested modules"
+expect_note = "python-testing-legacy"
+
+[[queries]]
+question = "why expense ratios matter for a first index fund"
+expect_note = "investment-fees-beginner"
+
+[[queries]]
+question = "institutional share classes and performance fee hurdles"
+expect_note = "investment-fees-professional"
+
+[[queries]]
+question = "is the robo advisor premium worth it at a small balance?"
+expect_note = "investment-fees-roboadvisor"
+
+[[queries]]
+question = "fourteen inches of loose fill in the attic"
+expect_note = "home-insulation-beginner"
+
+[[queries]]
+question = "dense pack cellulose with blower door guided sealing"
+expect_note = "home-insulation-professional"
+
+[[queries]]
+question = "insulating plaster walls without trapping moisture"
+expect_note = "home-insulation-historic"
+
+[[queries]]
+question = "bilateral freestyle breathing drills for new swimmers"
+expect_note = "swim-strokes-beginner"
+
+[[queries]]
+question = "high elbow catch and flip turn technique for swim meets"
+expect_note = "swim-strokes-competitive"
+
+[[queries]]
+question = "sighting and drafting in open water with a wetsuit"
+expect_note = "swim-strokes-triathlon"
+
+[[queries]]
+question = "two-zone fire and thermometer basics at the grill"
+expect_note = "grilling-methods-beginner"
+
+[[queries]]
+question = "injection brines and rest boxes for barbecue contests"
+expect_note = "grilling-methods-competition"
+
+[[queries]]
+question = "does lump charcoal or propane give better flavor?"
+expect_note = "grilling-methods-charcoal-vs-gas"
+[[queries]]
+question = "backyard two-zone setup for weeknight burgers"
+expect_note = "grilling-methods-beginner"
+

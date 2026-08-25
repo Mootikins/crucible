@@ -1,0 +1,102 @@
+# Adversarial golden set: see README.md for class description.
+
+top_k = 10
+
+
+[[queries]]
+question = "how do I make pour-over coffee taste balanced?"
+expect_note = "coffee-brewing"
+
+[[queries]]
+question = "what's the hydration percentage for a sourdough loaf?"
+expect_note = "sourdough-baking"
+
+[[queries]]
+question = "growing tomatoes on a balcony in pots"
+expect_note = "container-tomatoes"
+
+[[queries]]
+question = "metronome practice routine for bass"
+expect_note = "bass-guitar-practice"
+
+[[queries]]
+question = "espresso shots pull sour — which way do I adjust grind?"
+expect_note = "espresso-dialing-in"
+
+[[queries]]
+question = "how often should I water succulents indoors?"
+expect_note = "indoor-succulent-care"
+
+[[queries]]
+question = "king and pawn versus king endgame technique"
+expect_note = "chess-endgame-study"
+
+[[queries]]
+question = "eating during an ultramarathon"
+expect_note = "marathon-fueling"
+
+[[queries]]
+question = "brine percentage for fermenting cucumbers"
+expect_note = "vegetable-fermentation"
+
+[[queries]]
+question = "cold brew concentrate ratio"
+expect_note = "cold-brew-coffee"
+[[queries]]
+question = "how long should I hold milk warm when making yogurt at home?"
+expect_note = "yogurt-culturing"
+
+[[queries]]
+question = "wiring branches without cracking the bark"
+expect_note = "bonsai-wiring"
+
+[[queries]]
+question = "keeping mosquitoes out of a rain barrel"
+expect_note = "rainwater-harvesting"
+
+[[queries]]
+question = "cold ferment pizza dough for a blistered rim"
+expect_note = "sourdough-pizza-dough"
+
+[[queries]]
+question = "wall-facing progression for balance on hands"
+expect_note = "handstand-progression"
+
+[[queries]]
+question = "when to bottle kombucha for fizz"
+expect_note = "kombucha-bottling"
+
+[[queries]]
+question = "soil mix recipe for a new raised bed"
+expect_note = "raised-bed-soil-mix"
+
+[[queries]]
+question = "loudness target and edit hygiene for podcast production"
+expect_note = "podcast-editing-workflow"
+
+[[queries]]
+question = "tilting the board for a graded wash"
+expect_note = "watercolor-washes"
+
+[[queries]]
+question = "when to replace a bicycle chain to save the cassette"
+expect_note = "bike-drivetrain-cleaning"
+[[queries]]
+question = "what temperature do I culture milk for homemade yogurt?"
+expect_note = "yogurt-culturing"
+
+[[queries]]
+question = "how tight should bonsai wire sit on the trunk?"
+expect_note = "bonsai-wiring"
+
+[[queries]]
+question = "sizing storage tanks by the driest month"
+expect_note = "rainwater-harvesting"
+
+[[queries]]
+question = "maximum oven temperature bake for thin-crust pies"
+expect_note = "sourdough-pizza-dough"
+[[queries]]
+question = "wall-facing drills before kicking up into balance"
+expect_note = "handstand-progression"
+

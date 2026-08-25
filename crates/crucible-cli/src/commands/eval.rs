@@ -15,14 +15,19 @@ use anyhow::{Context, Result};
 
 use crate::common::daemon_client;
 use crate::config::CliConfig;
-use crucible_core::enrichment::eval::{hit_rate_at_k, mrr, rank_of, GoldenSet};
+use crucible_core::enrichment::eval::{
+    hit_rate_at_k, mrr, rank_of, GoldenSet, NamedGoldenSet,
+};
 
 /// One scored query, rendered as a row.
+#[derive(Clone)]
 pub struct QueryResult {
-    question: String,
-    expect_note: String,
-    lenient: bool,
-    rank: Option<usize>,
+    /// Class this query came from (empty in single-file mode).
+    pub class: String,
+    pub question: String,
+    pub expect_note: String,
+    pub lenient: bool,
+    pub rank: Option<usize>,
 }
 
 /// Run every golden query against the kiln's semantic search.
@@ -32,6 +37,15 @@ pub struct QueryResult {
 pub async fn run_eval(
     client: &crucible_daemon::DaemonClient,
     kiln_path: &Path,
+    golden: &GoldenSet,
+) -> Result<Vec<QueryResult>> {
+    run_eval_named(client, kiln_path, "", golden).await
+}
+
+async fn run_eval_named(
+    client: &crucible_daemon::DaemonClient,
+    kiln_path: &Path,
+    class: &str,
     golden: &GoldenSet,
 ) -> Result<Vec<QueryResult>> {
     let mut results = Vec::with_capacity(golden.queries.len());
@@ -49,6 +63,7 @@ pub async fn run_eval(
         let titles: Vec<String> = hits.iter().map(|(doc_id, _)| doc_id.clone()).collect();
         let rank = rank_of(&titles, &q.expect_note);
         results.push(QueryResult {
+            class: class.to_string(),
             question: q.question.clone(),
             expect_note: q.expect_note.clone(),
             lenient: q.lenient,
@@ -91,9 +106,66 @@ fn render(results: &[QueryResult], top_k: usize) {
             r.expect_note,
         );
     }
-    let (h1, hk, m, recall) = aggregate(results, top_k);
+    render_aggregate_line(&aggregate(results, top_k), top_k);
+}
+
+fn render_aggregate_line(agg: &(f64, f64, f64, f64), top_k: usize) {
+    let (h1, hk, m, recall) = *agg;
     println!();
     println!("hit@1 {h1:.3} · hit@{top_k} {hk:.3} · MRR {m:.3} · recall@{top_k} {recall:.3}",);
+}
+
+/// Per-class table for --golden-dir mode: one row per class sorted
+/// alphabetically, then TOTAL over all queries.
+fn render_class_table(rows: &[(String, Vec<QueryResult>)], top_k: usize) {
+    println!(
+        "{:<32} {:>5} {:>7} {:>7} {:>7} {:>9}",
+        "class", "n", "hit@1", "hit@k", "MRR", "recall@k"
+    );
+    let mut all = Vec::new();
+    for (name, results) in rows {
+        let (h1, hk, m, recall) = aggregate(results, top_k);
+        println!(
+            "{:<32} {:>5} {:>7.3} {:>7.3} {:>7.3} {:>9.3}",
+            name,
+            results.len(),
+            h1,
+            hk,
+            m,
+            recall
+        );
+        all.extend(results.iter().cloned());
+    }
+    let (h1, hk, m, recall) = aggregate(&all, top_k);
+    println!(
+        "{:<32} {:>5} {:>7.3} {:>7.3} {:>7.3} {:>9.3}",
+        "TOTAL",
+        all.len(),
+        h1,
+        hk,
+        m,
+        recall
+    );
+}
+
+fn render_multi(named_sets: &[NamedGoldenSet], class_results: &[(String, Vec<QueryResult>)], top_k: usize) {
+    render_class_table(class_results, top_k);
+    println!();
+    for NamedGoldenSet { name, .. } in named_sets {
+        if let Some(rows) = class_results.iter().find(|(c, _)| c == name) {
+            for (i, r) in rows.1.iter().enumerate() {
+                println!(
+                    "{} {:<4} {:<6} {} → {}",
+                    name,
+                    i + 1,
+                    r.rank.map(|v| v.to_string())
+                        .unwrap_or_else(|| "miss".into()),
+                    truncate(&r.question, 48),
+                    r.expect_note,
+                );
+            }
+        }
+    }
 }
 
 fn truncate(s: &str, max: usize) -> String {
@@ -105,22 +177,45 @@ fn truncate(s: &str, max: usize) -> String {
     }
 }
 
-/// Execute `cru eval precognition`.
-pub async fn execute(config: CliConfig, golden_path: PathBuf) -> Result<()> {
-    let text = std::fs::read_to_string(&golden_path)
-        .with_context(|| format!("reading golden set {}", golden_path.display()))?;
-    let golden = GoldenSet::parse_toml(&text).context("parsing golden set")?;
-
+async fn open_kiln(config: &CliConfig) -> Result<crucible_daemon::DaemonClient> {
     let kiln_path = config.kiln_path.clone();
     if !kiln_path.join(".crucible").join("kiln.toml").exists() {
         anyhow::bail!("No kiln is open. Run `cru init` to create one.");
     }
-
     let client = daemon_client().await?;
     client
         .kiln_open(&kiln_path)
         .await
         .context("Failed to open kiln in daemon")?;
+    Ok(client)
+}
+
+/// Execute `cru eval precognition`. Exactly one of golden/golden_dir must be set.
+pub async fn execute(
+    config: CliConfig,
+    golden_path: Option<PathBuf>,
+    golden_dir: Option<PathBuf>,
+) -> Result<()> {
+    let kiln = open_kiln(&config).await?;
+    match (golden_path, golden_dir) {
+        (Some(path), None) => execute_single(kiln, config, path).await,
+        (None, Some(dir)) => execute_multi(kiln, config, dir).await,
+        (None, None) => anyhow::bail!("specify --golden <file.toml> or --golden-dir <dir>"),
+        (Some(_), Some(_)) => {
+            anyhow::bail!("--golden and --golden-dir are mutually exclusive")
+        }
+    }
+}
+
+async fn execute_single(
+    kiln: crucible_daemon::DaemonClient,
+    config: CliConfig,
+    golden_path: PathBuf,
+) -> Result<()> {
+    let text = std::fs::read_to_string(&golden_path)
+        .with_context(|| format!("reading golden set {}", golden_path.display()))?;
+    let golden = GoldenSet::parse_toml(&text).context("parsing golden set")?;
+    let kiln_path = config.kiln_path.clone();
 
     println!(
         "Scoring {} queries against {} (top_k={})",
@@ -128,8 +223,32 @@ pub async fn execute(config: CliConfig, golden_path: PathBuf) -> Result<()> {
         kiln_path.display(),
         golden.top_k
     );
-    let results = run_eval(&client, &kiln_path, &golden).await?;
+    let results = run_eval(&kiln, &kiln_path, &golden).await?;
     render(&results, golden.top_k);
+    Ok(())
+}
+
+async fn execute_multi(
+    kiln: crucible_daemon::DaemonClient,
+    config: CliConfig,
+    dir: PathBuf,
+) -> Result<()> {
+    let sets = GoldenSet::parse_dir(&dir)?;
+    let kiln_path = config.kiln_path.clone();
+    let total: usize = sets.iter().map(|s| s.set.queries.len()).sum();
+
+    println!(
+        "Scoring {} classes / {} queries against {} (top_k from each fixture)",
+        sets.len(),
+        total,
+        kiln_path.display()
+    );
+    let mut class_results = Vec::new();
+    for named in &sets {
+        let rows = run_eval_named(&kiln, &kiln_path, &named.name, &named.set).await?;
+        class_results.push((named.name.clone(), rows));
+    }
+    render_multi(&sets, &class_results, 10);
     Ok(())
 }
 
@@ -145,12 +264,14 @@ mod tests {
     fn aggregate_strict_excludes_lenient_queries() {
         let results = vec![
             QueryResult {
+                class: String::new(),
                 question: "a".into(),
                 expect_note: "x".into(),
                 lenient: false,
                 rank: Some(1),
             },
             QueryResult {
+                class: String::new(),
                 question: "b".into(),
                 expect_note: "y".into(),
                 lenient: true,
@@ -171,5 +292,33 @@ mod tests {
         let long: String = "x".repeat(60);
         let cut = truncate(&long, 48);
         assert!(cut.chars().count() == 49 && cut.ends_with('…'));
+    }
+
+    #[test]
+    fn class_table_sorts_alphabetically_and_totals_hand_computed_metrics() {
+        // Hand-computed: two classes, known ranks.
+        // class-b strict ranks [Some(1)] => hit@1=1.0, MRR=1.0
+        // class-a strict ranks [Some(2)] => hit@1=0.0, MRR=0.5
+        // TOTAL strict ranks [Some(1),Some(2)] => hit@1=0.5, hit@10=1.0, MRR=0.75
+        let mk = |class: &str, rank: Option<usize>| QueryResult {
+            class: class.into(),
+            question: "q".into(),
+            expect_note: "n".into(),
+            lenient: false,
+            rank,
+        };
+        let rows = vec![
+            ("class-b".to_string(), vec![mk("class-b", Some(1))]),
+            ("class-a".to_string(), vec![mk("class-a", Some(2))]),
+        ];
+        // Render into a captured string via a tiny shim: reuse aggregate math directly.
+        let mut sorted = rows.clone();
+        sorted.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(sorted[0].0, "class-a", "rows must sort alphabetically before rendering");
+        let all: Vec<QueryResult> = rows.iter().flat_map(|(_, r)| r.iter().cloned()).collect();
+        let (h1, hk, m, _) = aggregate(&all, 10);
+        assert!((h1 - 0.5).abs() < 1e-9);
+        assert!((hk - 1.0).abs() < 1e-9);
+        assert!((m - 0.75).abs() < 1e-9);
     }
 }

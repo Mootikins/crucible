@@ -1,0 +1,103 @@
+# Adversarial golden set: see README.md for class description.
+
+top_k = 10
+
+
+[[queries]]
+question = "handle small tasks right away instead of adding them to a list"
+expect_note = "two-minute-rule"
+lenient = true
+
+[[queries]]
+question = "flashcard app schedules reviews at growing gaps"
+expect_note = "spaced-repetition-cards"
+lenient = true
+
+[[queries]]
+question = "getting email down to nothing by deciding each message once"
+expect_note = "inbox-zero-method"
+lenient = true
+
+[[queries]]
+question = "talking through the bug out loud to anything nearby"
+expect_note = "rubber-duck-debugging"
+lenient = true
+
+[[queries]]
+question = "twenty-five minute focused sprints with short breaks"
+expect_note = "pomodoro-technique"
+lenient = true
+
+[[queries]]
+question = "limiting how many items sit in each stage of the board"
+expect_note = "kanban-wip-limits"
+lenient = true
+
+[[queries]]
+question = "asking why five times until you hit the process failure"
+expect_note = "five-whys-root-cause"
+lenient = true
+
+[[queries]]
+question = "assigning every work hour a name the night before"
+expect_note = "time-blocking-calendar"
+lenient = true
+
+[[queries]]
+question = "tackling the worst task first thing in the morning"
+expect_note = "eat-the-frog"
+lenient = true
+
+[[queries]]
+question = "written lists catch what expert memory skips under pressure"
+expect_note = "checklist-manifesto-surgery"
+lenient = true
+
+[[queries]]
+question = "work stretches to fill whatever time you give it"
+expect_note = "parkinsons-law-deadlines"
+lenient = true
+
+[[queries]]
+question = "each project needs a concrete next verb, not a vague outcome"
+expect_note = "gtd-next-action"
+lenient = true
+[[queries]]
+question = "summarize their position honestly before disagreeing"
+expect_note = "straw-man-rebuttal"
+lenient = true
+
+[[queries]]
+question = "a side list for tangents keeps meetings moving"
+expect_note = "parking-lot-idea-capture"
+lenient = true
+
+[[queries]]
+question = "stop new scope before the deadline so polish wins"
+expect_note = "feature-freeze-windows"
+lenient = true
+
+[[queries]]
+question = "decide each message once when first opened"
+expect_note = "one-touch-email-rule"
+lenient = true
+
+[[queries]]
+question = "walking meetings surface honesty sitting rooms suppress"
+expect_note = "walking-one-on-ones"
+lenient = true
+
+[[queries]]
+question = "cash envelopes make overspending physically hard"
+expect_note = "budget-envelope-method"
+lenient = true
+
+[[queries]]
+question = "documentation written first defends no broken interface"
+expect_note = "readme-driven-development"
+lenient = true
+
+[[queries]]
+question = "timed throwaway exploration before committing code"
+expect_note = "spike-then-commit"
+lenient = true

@@ -1,0 +1,124 @@
+# Adversarial golden set: see README.md for class description.
+
+top_k = 10
+
+
+[[queries]]
+question = "my screen goes dark halfway through a gaming session"
+expect_note = "gpu-thermal-throttling"
+
+[[queries]]
+question = "the shower water never gets as hot as it used to and the bill went up"
+expect_note = "water-heater-sediment"
+
+[[queries]]
+question = "small plane lost power on a humid cold morning"
+expect_note = "carburetor-icing"
+
+[[queries]]
+question = "my plant drinks water instantly but the leaves still turn yellow"
+expect_note = "root-bound-houseplant"
+
+[[queries]]
+question = "files are disappearing and the computer freezes when starting up"
+expect_note = "hard-drive-bad-sectors"
+
+[[queries]]
+question = "we burn logs all winter and the sweep found something flammable inside"
+expect_note = "chimney-creosote-buildup"
+
+[[queries]]
+question = "ice cream gives me stomach cramps but aged cheddar doesn't"
+expect_note = "lactose-malabsorption"
+
+[[queries]]
+question = "my front tires are worn on the edges and I fill them at the gas station"
+expect_note = "tire-pressure-underinflation"
+
+[[queries]]
+question = "white powder is coming through the wall in the lowest room"
+expect_note = "wet-basement-efflorescence"
+
+[[queries]]
+question = "the office machine eats pages no matter what brand I buy"
+expect_note = "printer-paper-jams"
+
+[[queries]]
+question = "the bottoms of my fruit have sunken black spots this season"
+expect_note = "tomato-blossom-end-rot"
+
+[[queries]]
+question = "something beeps upstairs every minute but there's no emergency"
+expect_note = "smoke-detector-chirping"
+
+[[queries]]
+question = "after the long downhill my car squeals when stopping"
+expect_note = "brake-pad-glazing"
+
+[[queries]]
+question = "one room gets no internet through the stone wall"
+expect_note = "wifi-dead-zones"
+
+[[queries]]
+question = "eggs slide off the skillet since it went through the dishwasher"
+expect_note = "cast-iron-seasoning-strip"
+
+[[queries]]
+question = "I see flashing zigzags before the headache arrives"
+expect_note = "migraine-aura-triggers"
+lenient = true
+
+[[queries]]
+question = "laundry takes twice as long and the hose behind is packed with fuzz"
+expect_note = "dryer-vent-lint-fire"
+
+[[queries]]
+question = "the boat's wiring keeps corroding even though we're careful"
+expect_note = "salt-water-corrosion-marina"
+
+[[queries]]
+question = "should I scrape that bumpy texture off my 1979 ceiling myself?"
+expect_note = "asbestos-popcorn-ceiling"
+
+[[queries]]
+question = "my orchid is healthy but hasn't flowered again in over a year"
+expect_note = "orchid-no-rebloom"
+
+[[queries]]
+question = "the white lines between shower tiles keep coming back black"
+expect_note = "grout-mold-shower"
+
+[[queries]]
+question = "the heater kicks on then immediately shuts off over and over"
+expect_note = "furnace-short-cycling"
+
+[[queries]]
+question = "strings rattle against the metal strips low on the neck"
+expect_note = "guitar-fret-buzz"
+
+[[queries]]
+question = "the floor joists below smell musty and the soil down there is bare"
+expect_note = "crawl-space-humidity"
+
+[[queries]]
+question = "the brew has gotten slow and bitter after months of tap water"
+expect_note = "coffee-machine-descaling"
+[[queries]]
+question = "the lawn feels spongy and water just sits on top"
+expect_note = "lawn-thatch-removal"
+
+[[queries]]
+question = "frost is growing inside the fridge behind the drawers"
+expect_note = "refrigerator-icing-back-panel"
+
+[[queries]]
+question = "every door in the house announces itself"
+expect_note = "squeaky-hinge-fix"
+
+[[queries]]
+question = "my phone's back is bulging apart"
+expect_note = "phone-battery-swelling"
+
+[[queries]]
+question = "the pool turned hazy after we treated the green"
+expect_note = "pool-cloudy-water-balance"
