@@ -1131,3 +1131,4 @@ The kiln API is `cru.kiln` / `cru.kiln` — there is no `cru.vault` table. The o
 - [[Help/Lua/Configuration]] -- Configuration via init.lua
 - [[Help/Extending/Creating Plugins]] -- Plugin development guide
 - [[Help/Plugins/Oil Lua API]] -- TUI rendering primitives
+- [[Help/Plugins/Vendoring Lua Dependencies]] -- ship a pure-Lua library with a plugin
