@@ -208,6 +208,32 @@ impl KilnStateStore {
             Ok(outcome)
         })
     }
+
+    /// Remove one registration.
+    ///
+    /// `Ok(false)` means the file held no such name — not an error, because the
+    /// name may belong to the config layer instead, and only the caller knows
+    /// which refusal the user needs to read.
+    ///
+    /// The removal lands in the file at once. It reaches the LIVE registry only
+    /// at the next boot: removing a name changes what an already-persisted
+    /// session reference means, which is the hazard the boot freeze exists for.
+    /// Adding a name re-points nothing, which is why adding is additive and
+    /// removing is not.
+    pub fn forget(&self, name: &str) -> Result<bool> {
+        let file = self.path().to_path_buf();
+        self.store.update(|state| {
+            *state = gate_version(std::mem::take(state), &file)?;
+            let removed = state.kilns.remove(name).is_some();
+            // A default naming an entry that no longer exists resolves to
+            // nothing, and a `default_kiln` that resolves to nothing is read as
+            // "no default" by one consumer and as a name by another.
+            if removed && state.default_kiln.as_deref() == Some(name) {
+                state.default_kiln = state.kilns.keys().next().cloned();
+            }
+            Ok(removed)
+        })
+    }
 }
 
 /// Refuse a file this daemon is too old to read.
@@ -330,6 +356,48 @@ mod tests {
             .register(&name("notes"), Path::new("relative/notes"), false, false)
             .is_err());
         assert!(!store.path().exists(), "no file may have been created");
+    }
+
+    #[test]
+    fn forgetting_removes_the_entry_and_reports_whether_it_was_there() {
+        let tmp = TempDir::new().unwrap();
+        let store = KilnStateStore::new(tmp.path());
+        store
+            .register(&name("notes"), Path::new("/a/notes"), false, false)
+            .unwrap();
+
+        assert!(store.forget("notes").unwrap(), "the entry was there");
+        assert!(store.read().unwrap().kilns.is_empty());
+        assert!(
+            !store.forget("notes").unwrap(),
+            "a second forget reports nothing to remove rather than failing"
+        );
+    }
+
+    /// A `default_kiln` naming a forgotten entry resolves to nothing, and a
+    /// name that resolves to nothing is exactly what the registry refuses to
+    /// hold. So the default moves, or clears.
+    #[test]
+    fn forgetting_the_default_moves_the_default() {
+        let tmp = TempDir::new().unwrap();
+        let store = KilnStateStore::new(tmp.path());
+        store
+            .register(&name("first"), Path::new("/a"), false, true)
+            .unwrap();
+        store
+            .register(&name("second"), Path::new("/b"), false, false)
+            .unwrap();
+        assert_eq!(store.read().unwrap().default_kiln.as_deref(), Some("first"));
+
+        store.forget("first").unwrap();
+        assert_eq!(
+            store.read().unwrap().default_kiln.as_deref(),
+            Some("second"),
+            "the default must name an entry that exists"
+        );
+
+        store.forget("second").unwrap();
+        assert_eq!(store.read().unwrap().default_kiln, None);
     }
 
     /// A file from a newer Crucible is refused rather than rewritten: writing

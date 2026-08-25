@@ -414,6 +414,15 @@ impl Server {
             kiln_registry,
             kiln_state,
             config_path: params.config_path.clone(),
+            // The config layer's own answer to "which kiln by default". Read
+            // from the config the daemon was HANDED, like every other config
+            // value here, never from a file this process re-opens.
+            config_default_kiln: params
+                .app_config
+                .as_ref()
+                .and_then(|c| c.get("default_kiln"))
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
         }));
         // Same instance for both paths: delegated children fire plugin start
         // hooks and get their own isolation claim, and the once-only teardown

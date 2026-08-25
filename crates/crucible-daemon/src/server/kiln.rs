@@ -267,6 +267,192 @@ pub(crate) async fn handle_kiln_register(
     )
 }
 
+/// `kiln.registry_list`: every kiln name Crucible knows, and which layer owns it.
+///
+/// The honesty mechanism for the split ownership model. Two layers hold kiln
+/// names — the config the user authored, and the state the daemon was told —
+/// and a user can only act on a conflict they can see. Six situations, all
+/// reported here:
+///
+/// | Situation | `origin` | markers |
+/// |---|---|---|
+/// | Declared in the config only | `config` | — |
+/// | Registered in state only | `registered` | — |
+/// | Both, same path | `config` | `also_registered` |
+/// | Both, different paths | `config` | `shadows` names the state path |
+/// | Open by path, never registered | `discovered` | — |
+/// | Registered, directory gone | `registered` | `missing` |
+///
+/// `discovered` is not a registration. It is a directory some other door
+/// opened — `kiln.open` has no registration floor — and it is listed so the
+/// user can see it is NOT a kiln any session can name.
+pub(crate) async fn handle_kiln_registry_list(
+    req: Request,
+    registry: &Arc<crate::kiln_registry::KilnRegistry>,
+    state: &Arc<crate::kiln_state::KilnStateStore>,
+    km: &Arc<KilnManager>,
+    config_default_kiln: Option<&str>,
+    data_home: &Path,
+) -> Response {
+    use crucible_core::config::RegistrationOrigin;
+
+    let recorded = state.read().unwrap_or_default();
+    // The config layer wins on `default_kiln` too, exactly as it wins on a
+    // name: one rule, stated once, applied everywhere.
+    let default = config_default_kiln
+        .map(str::to_string)
+        .or_else(|| recorded.default_kiln.clone());
+
+    let mut rows = Vec::new();
+    for kiln in registry.entries() {
+        let name = kiln.name().to_string();
+        let also = recorded.kilns.get(&name);
+        rows.push(serde_json::json!({
+            "name": name,
+            "path": kiln.path().to_string_lossy(),
+            "origin": kiln.origin().as_str(),
+            "default": default.as_deref() == Some(name.as_str()),
+            "missing": !kiln.path().is_dir(),
+            "lazy": kiln.lazy(),
+            // Both layers hold the name and agree: one registration written
+            // down twice, not a conflict.
+            "also_registered": kiln.origin() == RegistrationOrigin::Config
+                && also.is_some_and(|entry| entry.path == kiln.path()),
+            // Both layers hold the name and disagree: the config wins, and the
+            // state entry sits there doing nothing until `cru kiln forget`.
+            "shadows": match (kiln.origin(), also) {
+                (RegistrationOrigin::Config, Some(entry)) if entry.path != kiln.path() => {
+                    serde_json::Value::String(entry.path.to_string_lossy().into_owned())
+                }
+                _ => serde_json::Value::Null,
+            },
+        }));
+    }
+
+    // Directories that are open but claim no name. The daemon data root is
+    // opened as the fallback kiln for kiln-less sessions and is not a user
+    // kiln, so it is filtered here for the same reason `kiln.list` filters it.
+    for (path, _, _) in km.list().await {
+        if path == data_home || registry.name_for(&path).is_some() {
+            continue;
+        }
+        let derived = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(crucible_core::config::KilnName::normalize)
+            .map(|n| n.to_string())
+            .unwrap_or_default();
+        rows.push(serde_json::json!({
+            "name": derived,
+            "path": path.to_string_lossy(),
+            "origin": RegistrationOrigin::Discovered.as_str(),
+            "default": false,
+            "missing": !path.is_dir(),
+            "lazy": false,
+            "also_registered": false,
+            "shadows": serde_json::Value::Null,
+        }));
+    }
+
+    Response::success(
+        req.id,
+        serde_json::json!({
+            "kilns": rows,
+            "state_file": state.path().to_string_lossy(),
+        }),
+    )
+}
+
+/// `kiln.forget`: remove one registration from the state store.
+///
+/// Absence is not intent, so no config edit removes a registration. This
+/// command is the only removal, which is the price of a config language with
+/// conditionals: the daemon cannot tell "the user deleted the line" from "the
+/// branch did not run".
+///
+/// A name the config declares is refused, and the refusal names the file: there
+/// is nothing in the state store to forget, and the fix is an edit the user
+/// makes. A name BOTH layers hold is forgotten — that is the shadowed entry,
+/// and forgetting it clears the conflict.
+///
+/// The removal takes effect at the next daemon start. Removing a name changes
+/// what an already-persisted session reference means, which is the hazard the
+/// boot freeze exists for; adding one re-points nothing, which is why adding is
+/// immediate and removing is not.
+pub(crate) async fn handle_kiln_forget(
+    req: Request,
+    registry: &Arc<crate::kiln_registry::KilnRegistry>,
+    state: &Arc<crate::kiln_state::KilnStateStore>,
+    config_path: Option<&Path>,
+) -> Response {
+    use crucible_core::config::{KilnName, RegistrationOrigin};
+
+    let params = match typed_params::<crate::rpc_client::NameRequest>(&req) {
+        Ok(p) => p,
+        Err(response) => return *response,
+    };
+
+    let held = state
+        .read()
+        .map(|file| file.kilns.contains_key(&params.name))
+        .unwrap_or(false);
+
+    if !held {
+        // Nothing in state. Say which of the two reasons it is, because the
+        // remedies are different: edit a file, or check the name.
+        let declared = KilnName::parse(&params.name).ok().and_then(|name| {
+            registry
+                .resolve(&name)
+                .registered()
+                .filter(|kiln| kiln.origin() == RegistrationOrigin::Config)
+        });
+        if let Some(kiln) = declared {
+            let file = config_path
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "your config".to_string());
+            return Response::error(
+                req.id,
+                INVALID_PARAMS,
+                format!(
+                    "the kiln '{}' is declared in {file}, at '{}'. There is nothing in {} to \
+                     forget — remove the entry from {file} instead.",
+                    params.name,
+                    kiln.path().display(),
+                    state.path().display()
+                ),
+            );
+        }
+        return Response::error(
+            req.id,
+            INVALID_PARAMS,
+            format!(
+                "no kiln named '{}' is registered in {}.",
+                params.name,
+                state.path().display()
+            ),
+        );
+    }
+
+    match state.forget(&params.name) {
+        Ok(_) => {
+            info!(kiln = %params.name, "Kiln registration forgotten");
+            Response::success(
+                req.id,
+                serde_json::json!({
+                    "status": "ok",
+                    "name": params.name,
+                    "state_file": state.path().to_string_lossy(),
+                    // Said in the reply rather than only in the CLI, because
+                    // every client needs to know the running daemon still
+                    // answers to the name.
+                    "takes_effect": "next daemon start",
+                }),
+            )
+        }
+        Err(e) => Response::error(req.id, INVALID_PARAMS, e.to_string()),
+    }
+}
+
 pub(crate) async fn handle_kiln_set_classification(
     req: Request,
     _km: &Arc<KilnManager>,
@@ -1102,6 +1288,249 @@ mod tests {
                 .as_deref(),
             Some(first.canonicalize().unwrap().as_path()),
         );
+    }
+
+    fn name_request(method: &str, name: &str) -> Request {
+        serde_json::from_value(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": method,
+            "params": { "name": name },
+        }))
+        .unwrap()
+    }
+
+    fn registry_list_request() -> Request {
+        serde_json::from_value(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "kiln.registry_list",
+            "params": {},
+        }))
+        .unwrap()
+    }
+
+    /// One row per situation, from the daemon's side of the table. The CLI
+    /// renders these; this pins what it renders.
+    #[tokio::test]
+    async fn the_registry_listing_reports_which_layer_owns_each_name() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let declared = tmp.path().join("declared");
+        let shadowed_by_config = tmp.path().join("shadowed");
+        let registered = tmp.path().join("registered");
+        let agreed = tmp.path().join("agreed");
+        let opened = tmp.path().join("opened-by-path");
+        for dir in [
+            &declared,
+            &shadowed_by_config,
+            &registered,
+            &agreed,
+            &opened,
+        ] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+
+        // The state layer, written before the registry reads it — which is the
+        // order the daemon does it in at bind.
+        let state = Arc::new(crate::kiln_state::KilnStateStore::new(&data_home));
+        state
+            .register(
+                &KilnName::parse("only-state").unwrap(),
+                &registered,
+                false,
+                false,
+            )
+            .unwrap();
+        state
+            .register(&KilnName::parse("both").unwrap(), &agreed, false, false)
+            .unwrap();
+        state
+            .register(
+                &KilnName::parse("contested").unwrap(),
+                &shadowed_by_config,
+                false,
+                false,
+            )
+            .unwrap();
+        // A registration whose directory is gone.
+        let vanished = tmp.path().join("vanished");
+        std::fs::create_dir_all(&vanished).unwrap();
+        state
+            .register(&KilnName::parse("gone").unwrap(), &vanished, false, false)
+            .unwrap();
+        std::fs::remove_dir_all(&vanished).unwrap();
+
+        let registry = crate::test_support::kiln_registry(
+            &data_home,
+            &[
+                ("only-config", &declared),
+                ("both", &agreed),
+                ("contested", &declared),
+            ],
+        );
+        registry.overlay_state(state.registrations());
+
+        // And one directory open by path, which no registration claims.
+        let km = Arc::new(KilnManager::new());
+        km.open(&opened).await.expect("open the kiln");
+
+        let resp = handle_kiln_registry_list(
+            registry_list_request(),
+            &registry,
+            &state,
+            &km,
+            Some("only-config"),
+            &data_home,
+        )
+        .await;
+        let data = resp.result.expect("the listing returns rows");
+        let rows = data["kilns"].as_array().expect("an array").clone();
+        let by_name = |name: &str| {
+            rows.iter()
+                .find(|row| row["name"] == serde_json::json!(name))
+                .unwrap_or_else(|| panic!("no row for {name}: {rows:?}"))
+                .clone()
+        };
+
+        let only_config = by_name("only-config");
+        assert_eq!(only_config["origin"], "config");
+        assert_eq!(
+            only_config["default"], true,
+            "the config layer's `default_kiln` out-ranks the state layer's"
+        );
+        assert_eq!(only_config["also_registered"], false);
+
+        assert_eq!(by_name("only-state")["origin"], "registered");
+
+        let both = by_name("both");
+        assert_eq!(both["origin"], "config");
+        assert_eq!(
+            both["also_registered"], true,
+            "one registration written down twice is not a conflict: {both}"
+        );
+        assert_eq!(both["shadows"], serde_json::Value::Null);
+
+        let contested = by_name("contested");
+        assert_eq!(contested["origin"], "config");
+        assert_eq!(
+            contested["path"],
+            declared.to_string_lossy().as_ref(),
+            "the config wins the name"
+        );
+        assert_eq!(
+            contested["shadows"],
+            shadowed_by_config.to_string_lossy().as_ref(),
+            "the losing path must be named, or the user cannot act on it"
+        );
+
+        assert_eq!(by_name("gone")["missing"], true);
+
+        let discovered = by_name("opened-by-path");
+        assert_eq!(
+            discovered["origin"], "discovered",
+            "a directory some other door opened is NOT a kiln a session can name"
+        );
+    }
+
+    /// `forget` on a config-declared name refuses, and names the file to edit.
+    /// There is nothing in the state store to remove, and telling the user
+    /// "not found" would send them looking in the wrong place.
+    #[tokio::test]
+    async fn forgetting_a_config_declared_kiln_refuses_and_names_the_config_file() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let dir = tmp.path().join("notes");
+        std::fs::create_dir_all(&dir).unwrap();
+        let config_path = tmp.path().join("config.toml");
+        let registry = crate::test_support::kiln_registry(&data_home, &[("notes", &dir)]);
+        let state = Arc::new(crate::kiln_state::KilnStateStore::new(&data_home));
+
+        let resp = handle_kiln_forget(
+            name_request("kiln.forget", "notes"),
+            &registry,
+            &state,
+            Some(&config_path),
+        )
+        .await;
+
+        let err = resp.error.expect("a config-declared name must be refused");
+        assert!(
+            err.message.contains("config.toml"),
+            "the refusal must name the declaring file: {}",
+            err.message
+        );
+        // And the name still resolves: a refused forget removes nothing.
+        assert!(registry
+            .resolve(&KilnName::parse("notes").unwrap())
+            .registered()
+            .is_some());
+    }
+
+    /// The shadowed case is the one where `forget` earns its keep: both layers
+    /// claim the name, the config wins, and the state entry sits there doing
+    /// nothing. Forgetting it clears the conflict.
+    #[tokio::test]
+    async fn forgetting_a_shadowed_registration_clears_the_conflict() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let declared = tmp.path().join("declared");
+        let shadowed = tmp.path().join("shadowed");
+        std::fs::create_dir_all(&declared).unwrap();
+        std::fs::create_dir_all(&shadowed).unwrap();
+
+        let state = Arc::new(crate::kiln_state::KilnStateStore::new(&data_home));
+        state
+            .register(&KilnName::parse("notes").unwrap(), &shadowed, false, false)
+            .unwrap();
+        let registry = crate::test_support::kiln_registry(&data_home, &[("notes", &declared)]);
+        assert_eq!(
+            registry.overlay_state(state.registrations()).len(),
+            1,
+            "precondition: the config must shadow the registration"
+        );
+
+        let resp = handle_kiln_forget(
+            name_request("kiln.forget", "notes"),
+            &registry,
+            &state,
+            None,
+        )
+        .await;
+
+        let data = resp
+            .result
+            .expect("a shadowed registration can be forgotten");
+        assert_eq!(data["takes_effect"], "next daemon start");
+        assert!(
+            state.read().unwrap().kilns.is_empty(),
+            "the state entry must be gone"
+        );
+        // The running daemon still answers to the name — removal waits for the
+        // boot freeze, because it changes what a persisted reference means.
+        assert!(registry
+            .resolve(&KilnName::parse("notes").unwrap())
+            .registered()
+            .is_some());
+    }
+
+    #[tokio::test]
+    async fn forgetting_an_unknown_name_says_so() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let registry = crate::test_support::kiln_registry(&data_home, &[]);
+        let state = Arc::new(crate::kiln_state::KilnStateStore::new(&data_home));
+
+        let resp = handle_kiln_forget(
+            name_request("kiln.forget", "nothing"),
+            &registry,
+            &state,
+            None,
+        )
+        .await;
+
+        let err = resp.error.expect("an unknown name must be refused");
+        assert!(err.message.contains("nothing"), "{}", err.message);
     }
 
     /// `kiln.list`'s `name` is the registry key, not the name the kiln asserts

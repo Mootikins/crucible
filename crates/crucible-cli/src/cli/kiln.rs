@@ -3,11 +3,18 @@ use std::path::PathBuf;
 
 /// Kiln registry subcommands.
 ///
-/// Only `register` for now, and it exists because two daemon refusals name it
-/// as the remedy: `session.create` telling a caller that kilns are addressed by
-/// the name of a `[kilns]` entry, and the registry telling a user that every
-/// disambiguation of a derived name is taken. An error that names a command
-/// which does not exist is worse than one that names nothing.
+/// `register` exists because two daemon refusals name it as the remedy:
+/// `session.create` telling a caller that kilns are addressed by the name of a
+/// registry entry, and the registry telling a user that every disambiguation of
+/// a derived name is taken. An error that names a command which does not exist
+/// is worse than one that names nothing.
+///
+/// `list` and `forget` exist because Crucible holds kiln names in two layers —
+/// the config the user wrote, and the state the daemon was told — and a split
+/// ownership model is only tolerable while the user can see which side owns an
+/// entry. `list` is that view. `forget` is the only removal, because a config
+/// edit never deletes a registration: absence is not intent in a language with
+/// conditionals.
 #[derive(Subcommand)]
 pub enum KilnCommands {
     /// Give a directory a name, so sessions can attach it by that name
@@ -22,5 +29,21 @@ pub enum KilnCommands {
         /// Directory to register
         #[arg(value_name = "PATH")]
         path: PathBuf,
+    },
+
+    /// Show every kiln name Crucible knows, and which layer owns it
+    #[command(
+        long_about = "List every kiln name Crucible knows.\n\nThe `origin` column says which layer owns the name:\n\n  config      declared in your config file\n  registered  written by `cru kiln register` into the daemon's state file\n  discovered  a directory something opened by path; NOT a kiln any session can name\n\nThe config layer out-ranks the state layer. An entry marked `shadows` is a name both layers claim for different directories: the config wins, and the state entry does nothing until you run `cru kiln forget`.\n\n`*` marks the default kiln. `(missing)` marks a registration whose directory is gone."
+    )]
+    List,
+
+    /// Remove a kiln registration from the daemon's state
+    #[command(
+        long_about = "Remove one kiln registration.\n\nDeleting a kiln from your config does NOT remove a registration — the daemon cannot tell a deleted line from a branch that did not run, so absence never deletes. This command is the removal.\n\nA name your config declares is refused: there is nothing in the state file to forget, and the fix is to edit the config. A name BOTH layers claim is forgotten, which clears the conflict.\n\nThe removal takes effect at the next daemon start."
+    )]
+    Forget {
+        /// Name of the kiln to forget
+        #[arg(value_name = "NAME")]
+        name: String,
     },
 }

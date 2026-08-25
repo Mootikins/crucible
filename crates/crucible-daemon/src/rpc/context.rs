@@ -100,6 +100,12 @@ pub struct RpcContext {
     /// client knew it. A refusal that names the config layer names this file,
     /// so the user knows which one to edit.
     pub config_path: Option<std::path::PathBuf>,
+    /// `default_kiln` as the CONFIG layer states it, when it states one.
+    ///
+    /// The state store carries its own default — the chat preflight sets it —
+    /// and the config out-ranks it, the same rule that decides a name conflict.
+    /// Held here so the listing applies that rule instead of re-deriving it.
+    pub config_default_kiln: Option<String>,
     /// Plugin session start/end enforcement, shared with `DelegationService`.
     ///
     /// Built here rather than passed in because every input it needs is
@@ -130,6 +136,7 @@ pub struct RpcContextParams {
     pub kiln_registry: Arc<crate::kiln_registry::KilnRegistry>,
     pub kiln_state: Arc<crate::kiln_state::KilnStateStore>,
     pub config_path: Option<std::path::PathBuf>,
+    pub config_default_kiln: Option<String>,
 }
 
 impl RpcContext {
@@ -152,6 +159,7 @@ impl RpcContext {
             kiln_registry,
             kiln_state,
             config_path,
+            config_default_kiln,
         } = params;
         let session_lifecycle = SessionLifecycle::new(sessions.clone(), plugin_loader.clone());
         session_lifecycle.bind_agent_manager(&agents);
@@ -174,6 +182,7 @@ impl RpcContext {
             kiln_registry,
             kiln_state,
             config_path,
+            config_default_kiln,
             session_lifecycle,
         }
     }
@@ -244,6 +253,7 @@ impl RpcContext {
             mcp_config: None,
             kiln_state: Arc::new(crate::kiln_state::KilnStateStore::new(&data_home)),
             config_path: None,
+            config_default_kiln: None,
             data_home,
             workspace_config: None,
             // The session manager's own registry, not a second empty one: the

@@ -88,6 +88,8 @@ rpc_methods! {
     KilnClose = "kiln.close",
     KilnList = "kiln.list",
     KilnRegister = "kiln.register",
+    KilnRegistryList = "kiln.registry_list",
+    KilnForget = "kiln.forget",
     KilnSetClassification = "kiln.set_classification",
     SearchVectors = "search_vectors",
     SearchText = "search_text",
@@ -412,6 +414,26 @@ impl RpcDispatcher {
             RpcMethod::KilnRegister => forward!(
                 id,
                 crate::server::kiln::handle_kiln_register(
+                    req.clone(),
+                    &self.ctx.kiln_registry,
+                    &self.ctx.kiln_state,
+                    self.ctx.config_path.as_deref()
+                )
+            ),
+            RpcMethod::KilnRegistryList => forward!(
+                id,
+                crate::server::kiln::handle_kiln_registry_list(
+                    req.clone(),
+                    &self.ctx.kiln_registry,
+                    &self.ctx.kiln_state,
+                    &self.ctx.kiln,
+                    self.ctx.config_default_kiln.as_deref(),
+                    &self.ctx.data_home
+                )
+            ),
+            RpcMethod::KilnForget => forward!(
+                id,
+                crate::server::kiln::handle_kiln_forget(
                     req.clone(),
                     &self.ctx.kiln_registry,
                     &self.ctx.kiln_state,
@@ -2817,6 +2839,7 @@ return { name = "sandbox", version = "0.1.0", description = "test isolation clai
                 std::path::Path::new("/tmp"),
             )),
             config_path: None,
+            config_default_kiln: None,
         }))
     }
 

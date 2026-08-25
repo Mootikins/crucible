@@ -18,6 +18,8 @@ plugin payloads, and the agent's prompt. This is where a directory gets a name.
 
 ```
 cru kiln register <NAME> <PATH>
+cru kiln list
+cru kiln forget <NAME>
 ```
 
 ## register
@@ -68,6 +70,61 @@ caller that kilns are addressed by the name of a `[kilns]` entry, and the regist
 telling a user that every disambiguation of a derived name is taken. An error that names
 a command which does not exist is worse than one that names nothing.
 
+## list
+
+Show every kiln name Crucible knows, and which layer owns it.
+
+```bash
+cru kiln list
+```
+
+```
+*notes    /home/u/vault/notes   config
+ docs     /home/u/docs          config (also registered)
+ work     /w/notes              registered
+ archive  /home/u/archive       config (shadows registered /old/archive)
+ scratch  /p/kiln               discovered
+ gone     /home/u/gone          registered (missing)
+```
+
+The `origin` column says which layer owns the name.
+
+| Origin | Meaning |
+|--------|---------|
+| `config` | You declared it in your config file |
+| `registered` | A command wrote it into the daemon's state file |
+| `discovered` | Something opened the directory by path. It is **not** a kiln that a session can name |
+
+The qualifiers in brackets say what is unusual about the entry.
+
+| Qualifier | Meaning |
+|-----------|---------|
+| `also registered` | Both layers hold the name, and both point at the same directory. One registration, written down twice |
+| `shadows registered <PATH>` | Both layers hold the name, and they disagree. The config wins. The registration does nothing until you forget it |
+| `missing` | The directory is gone |
+| `lazy` | Crucible does not open or index this kiln until a session asks for it by name |
+
+`*` marks the default kiln.
+
+## forget
+
+Remove one registration from the daemon's state file.
+
+```bash
+cru kiln forget work
+```
+
+Deleting a kiln from your config does **not** remove a registration. The daemon cannot
+tell a line you deleted from a branch that did not run, so absence never deletes. This
+command is the removal.
+
+The daemon refuses a name that your config declares, and the refusal names the file to
+edit: there is nothing in the state file to forget. The daemon forgets a name that
+**both** layers hold, which clears the conflict that `cru kiln list` shows as `shadows`.
+
+The removal takes effect at the next daemon start. A running daemon keeps resolving the
+name, because a removal changes what an already-stored session reference means.
+
 ## Where names come from otherwise
 
 You do not have to register a kiln by hand. `cru acp --kiln <path>` registers an
@@ -79,4 +136,5 @@ when a derived name has already been taken.
 ## See also
 
 - [[Help/CLI/acp]] — `--kiln` accepts either a registered name or a directory
+- [[Help/CLI/project]] — the same three verbs over the project registry
 - [[Help/Core/Sessions]] — how a session's attached kilns are stored

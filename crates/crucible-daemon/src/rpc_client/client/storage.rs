@@ -6,7 +6,7 @@ use anyhow::Result;
 use std::path::{Path, PathBuf};
 use tracing::warn;
 
-use super::types::{EmptyParams, KilnPathRequest, PathRequest};
+use super::types::{EmptyParams, KilnPathRequest, NameRequest, PathRequest};
 use super::DaemonClient;
 
 use super::storage_requests::*;
@@ -58,6 +58,25 @@ impl DaemonClient {
                 path: path.to_string_lossy().to_string(),
                 auto,
                 make_default,
+            },
+        )
+        .await
+    }
+
+    /// Every kiln name Crucible knows, with the layer that owns it.
+    ///
+    /// Not [`Self::kiln_list`], which lists the kilns that happen to be OPEN.
+    /// This is the registry: what a session may name.
+    pub async fn kiln_registry_list(&self) -> Result<serde_json::Value> {
+        self.typed_call("kiln.registry_list", EmptyParams {}).await
+    }
+
+    /// Remove one registration from the daemon's state store.
+    pub async fn kiln_forget(&self, name: &str) -> Result<serde_json::Value> {
+        self.typed_call(
+            "kiln.forget",
+            NameRequest {
+                name: name.to_string(),
             },
         )
         .await

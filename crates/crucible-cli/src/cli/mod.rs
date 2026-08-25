@@ -7,6 +7,7 @@ mod agents;
 mod auth;
 mod config;
 mod kiln;
+mod project;
 mod proposals;
 mod session;
 mod skills;
@@ -20,6 +21,7 @@ pub use agents::AgentsCommands;
 pub use auth::AuthCommands;
 pub use config::ConfigCommands;
 pub use kiln::KilnCommands;
+pub use project::ProjectCommands;
 pub use proposals::ProposalsCommands;
 pub use session::SessionCommands;
 pub use skills::SkillsCommands;
@@ -213,13 +215,22 @@ pub enum Commands {
         kiln: Option<String>,
     },
 
-    /// Manage the kilns Crucible knows about (register)
+    /// Manage the kilns Crucible knows about (register, list, forget)
     #[command(
-        long_about = "Manage the kilns Crucible knows about.\n\nA kiln is addressed everywhere else in Crucible by the NAME of its `[kilns]` entry, never by its path — that is what keeps your directory layout out of session metadata, plugin payloads and the agent's prompt. This is where a directory gets a name.\n\nExamples:\n  # Give a directory a name of your choosing\n  cru kiln register notes ~/vault/notes"
+        long_about = "Manage the kilns Crucible knows about.\n\nA kiln is addressed everywhere else in Crucible by the NAME of its registry entry, never by its path — that is what keeps your directory layout out of session metadata, plugin payloads and the agent's prompt. This is where a directory gets a name.\n\nExamples:\n  # Give a directory a name of your choosing\n  cru kiln register notes ~/vault/notes\n\n  # See every name, and which layer owns it\n  cru kiln list\n\n  # Drop a registration you no longer want\n  cru kiln forget notes"
     )]
     Kiln {
         #[command(subcommand)]
         command: KilnCommands,
+    },
+
+    /// Manage the projects Crucible knows about (register, list, forget)
+    #[command(
+        long_about = "Manage the projects Crucible knows about.\n\nA project is where work OUTPUT goes; a kiln is where knowledge goes. The daemon keeps the two in separate registries, so they have separate commands.\n\nExamples:\n  # Register the working directory\n  cru project register\n\n  # See what is registered\n  cru project list\n\n  # Drop a registration\n  cru project forget /path/to/repo"
+    )]
+    Project {
+        #[command(subcommand)]
+        command: ProjectCommands,
     },
 
     /// Process kiln files through the pipeline (parse, enrich, store)

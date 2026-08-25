@@ -344,6 +344,8 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
 
         Some(Commands::Kiln { command }) => commands::kiln::handle(command).await?,
 
+        Some(Commands::Project { command }) => commands::project::handle(command).await?,
+
         Some(Commands::Process {
             path,
             force,
