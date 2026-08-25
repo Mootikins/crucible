@@ -98,23 +98,13 @@ impl Server {
             // into the manifest once (idempotently); the leftover file is
             // inert and warned about until the user deletes it.
             if let Some(toml_path) = crate::plugin_ops::legacy_plugins_toml_path() {
-                if toml_path.exists() {
-                    warn!(
-                        "{} is no longer read; its entries were imported into {} — delete the \
-                         file to silence this warning",
-                        toml_path.display(),
-                        manifest_path.display()
-                    );
-                    match crate::plugin_ops::import_legacy_plugins_toml(&toml_path, &manifest_path)
-                    {
-                        Ok(0) => {}
-                        Ok(n) => info!(
-                            "Imported {n} plugin entr{} from {} into {}",
-                            if n == 1 { "y" } else { "ies" },
-                            toml_path.display(),
-                            manifest_path.display()
-                        ),
-                        Err(e) => warn!("Failed to import {}: {e}", toml_path.display()),
+                for (is_warning, line) in
+                    crate::plugin_ops::sweep_legacy_plugins_toml(&toml_path, &manifest_path)
+                {
+                    if is_warning {
+                        warn!("{line}");
+                    } else {
+                        info!("{line}");
                     }
                 }
             }

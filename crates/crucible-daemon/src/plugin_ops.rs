@@ -243,6 +243,41 @@ pub fn installed_entries(manifest_path: &Path) -> Result<Vec<(String, PluginEntr
     Ok(read_manifest(manifest_path)?.plugins.into_iter().collect())
 }
 
+/// The boot-time legacy sweep: import `plugins.toml` if it exists, and
+/// return the log lines the boot must say — the warning that the file is no
+/// longer read (every boot while it exists), and the import count when
+/// anything moved. Returning the messages instead of logging them here is
+/// what lets a test hold the warning to its wording.
+pub fn sweep_legacy_plugins_toml(toml_path: &Path, manifest_path: &Path) -> Vec<(bool, String)> {
+    let mut lines = Vec::new();
+    if !toml_path.exists() {
+        return lines;
+    }
+    lines.push((
+        true,
+        format!(
+            "{} is no longer read; its entries were imported into {} — delete the file to \
+             silence this warning",
+            toml_path.display(),
+            manifest_path.display()
+        ),
+    ));
+    match import_legacy_plugins_toml(toml_path, manifest_path) {
+        Ok(0) => {}
+        Ok(n) => lines.push((
+            false,
+            format!(
+                "Imported {n} plugin entr{} from {} into {}",
+                if n == 1 { "y" } else { "ies" },
+                toml_path.display(),
+                manifest_path.display()
+            ),
+        )),
+        Err(e) => lines.push((true, format!("Failed to import {}: {e}", toml_path.display()))),
+    }
+    lines
+}
+
 /// Move the legacy `plugins.toml` entries into the manifest, once.
 ///
 /// Idempotent: an entry whose name the manifest already holds is left
@@ -431,6 +466,39 @@ mod tests {
             !installed_at(&manifest, "ghost").unwrap(),
             "the manifest entry really is gone — no message may claim otherwise"
         );
+    }
+
+    /// The sweep's contract: a leftover file warns on EVERY boot naming the
+    /// move; a missing file says nothing at all.
+    #[test]
+    fn the_legacy_sweep_warns_while_the_file_exists_and_is_silent_after() {
+        let tmp = tempdir().unwrap();
+        let toml_path = tmp.path().join("plugins.toml");
+        let manifest = tmp.path().join(INSTALLED_PLUGINS_FILE);
+        std::fs::write(&toml_path, "[[plugin]]\nurl = \"user/repo\"\n").unwrap();
+
+        let lines = sweep_legacy_plugins_toml(&toml_path, &manifest);
+        assert!(
+            lines.iter().any(|(warn, msg)| *warn
+                && msg.contains("no longer read")
+                && msg.contains("plugins.toml")
+                && msg.contains(INSTALLED_PLUGINS_FILE)),
+            "the warning must name the move: {lines:?}"
+        );
+        assert!(
+            lines.iter().any(|(warn, msg)| !*warn && msg.contains("Imported 1")),
+            "the first sweep imports: {lines:?}"
+        );
+
+        // Second boot: the file still exists, so the warning repeats — but
+        // nothing imports again.
+        let lines = sweep_legacy_plugins_toml(&toml_path, &manifest);
+        assert!(lines.iter().any(|(_, msg)| msg.contains("no longer read")));
+        assert!(!lines.iter().any(|(_, msg)| msg.contains("Imported")));
+
+        // File deleted: fully silent.
+        std::fs::remove_file(&toml_path).unwrap();
+        assert!(sweep_legacy_plugins_toml(&toml_path, &manifest).is_empty());
     }
 
     #[test]
