@@ -182,25 +182,37 @@ pub(crate) async fn handle_kiln_register(
         Err(response) => return *response,
     };
 
-    let name = match KilnName::parse(&params.name) {
-        Ok(name) => name,
-        Err(e) => {
-            return Response::error(
-                req.id,
-                INVALID_PARAMS,
-                format!(
-                    "{e}. A kiln name is lower-case `[a-z0-9._-]`, at most {} characters, and \
-                     does not start with a dot.",
-                    KilnName::MAX_LEN
-                ),
-            )
-        }
-    };
-
-    // The floor, and the one spelling both layers must agree on.
+    // The floor, and the one spelling both layers must agree on. Runs before
+    // the name is settled, because deriving a name for a path the floor
+    // refuses would mint a name for a directory that never gets an entry.
     let path = match registry.canonical_for_registration(Path::new(&params.path)) {
         Ok(path) => path,
         Err(refusal) => return Response::error(req.id, INVALID_PARAMS, refusal.to_string()),
+    };
+
+    // A caller that named one gets that name, or the rule if it is not a name.
+    // A caller that named none is asking this registry to derive one, which is
+    // the only place the derivation can be correct: it depends on what is
+    // already registered here.
+    let name = match params.name.as_deref() {
+        Some(raw) => match KilnName::parse(raw) {
+            Ok(name) => name,
+            Err(e) => {
+                return Response::error(
+                    req.id,
+                    INVALID_PARAMS,
+                    format!(
+                        "{e}. A kiln name is lower-case `[a-z0-9._-]`, at most {} characters, \
+                         and does not start with a dot.",
+                        KilnName::MAX_LEN
+                    ),
+                )
+            }
+        },
+        None => match registry.derive_name_for(&path) {
+            Ok(name) => name,
+            Err(refusal) => return Response::error(req.id, INVALID_PARAMS, refusal.to_string()),
+        },
     };
 
     // An entry pointing at nothing is a name that resolves to nothing, and
@@ -1064,6 +1076,99 @@ mod tests {
             },
         }))
         .unwrap()
+    }
+
+    /// `--kiln <path>` and kiln discovery: a directory, and no name.
+    fn unnamed_register_request(path: &Path) -> Request {
+        serde_json::from_value(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "kiln.register",
+            "params": { "path": path.to_string_lossy() },
+        }))
+        .unwrap()
+    }
+
+    /// A registration with no name asks the daemon to derive one.
+    ///
+    /// The derivation has to happen here, not in the caller: it depends on
+    /// what is already registered, and a caller with its own copy of the
+    /// registry derives against a different set.
+    #[tokio::test]
+    async fn a_registration_with_no_name_gets_one_derived_from_the_basename() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let dir = tmp.path().join("My Vault");
+        std::fs::create_dir_all(&dir).unwrap();
+        let registry = crate::test_support::kiln_registry(&data_home, &[]);
+        let state = Arc::new(crate::kiln_state::KilnStateStore::new(&data_home));
+
+        let resp =
+            handle_kiln_register(unnamed_register_request(&dir), &registry, &state, None).await;
+        let data = resp.result.expect("an unnamed registration succeeds");
+
+        assert_eq!(data["name"], serde_json::json!("my-vault"));
+        assert_eq!(data["outcome"], serde_json::json!("added"));
+        assert!(state.read().unwrap().kilns.contains_key("my-vault"));
+        assert_eq!(
+            registry
+                .resolve(&KilnName::parse("my-vault").unwrap())
+                .path()
+                .as_deref(),
+            Some(dir.canonicalize().unwrap().as_path()),
+        );
+    }
+
+    /// Two directories with the same basename. The second gets the
+    /// disambiguation, not a refusal and not the first one's entry —
+    /// re-pointing `notes` at a second corpus is the failure this avoids.
+    #[tokio::test]
+    async fn a_derived_name_already_taken_is_disambiguated() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let first = tmp.path().join("a").join("notes");
+        let second = tmp.path().join("b").join("notes");
+        std::fs::create_dir_all(&first).unwrap();
+        std::fs::create_dir_all(&second).unwrap();
+        let registry = crate::test_support::kiln_registry(&data_home, &[("notes", &first)]);
+        let state = Arc::new(crate::kiln_state::KilnStateStore::new(&data_home));
+
+        let resp =
+            handle_kiln_register(unnamed_register_request(&second), &registry, &state, None).await;
+        let data = resp.result.expect("the second directory registers");
+
+        assert_eq!(data["name"], serde_json::json!("notes-2"));
+        // And `notes` still reaches the directory it always did.
+        assert_eq!(
+            registry
+                .resolve(&KilnName::parse("notes").unwrap())
+                .path()
+                .as_deref(),
+            Some(first.canonicalize().unwrap().as_path()),
+        );
+    }
+
+    /// Registering a directory that already has a name does not mint a second
+    /// one. `--kiln ~/notes` twice is one kiln, not `notes` and `notes-2`.
+    #[tokio::test]
+    async fn an_unnamed_registration_of_a_known_directory_reuses_its_name() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let dir = tmp.path().join("notes");
+        std::fs::create_dir_all(&dir).unwrap();
+        let registry = crate::test_support::kiln_registry(&data_home, &[("notes", &dir)]);
+        let state = Arc::new(crate::kiln_state::KilnStateStore::new(&data_home));
+
+        let resp =
+            handle_kiln_register(unnamed_register_request(&dir), &registry, &state, None).await;
+        let data = resp.result.expect("a known directory registers as itself");
+
+        assert_eq!(data["name"], serde_json::json!("notes"));
+        assert_eq!(
+            data["outcome"],
+            serde_json::json!("added"),
+            "the config layer held the name; the state layer records it too"
+        );
     }
 
     /// `cru kiln register` writes the state file, not the user's config.

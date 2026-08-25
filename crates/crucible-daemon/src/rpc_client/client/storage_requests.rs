@@ -25,7 +25,14 @@ pub struct KilnOpenRequest {
 /// chat preflight's answer to "which kiln does every future command use".
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct KilnRegisterRequest {
-    pub name: String,
+    /// The name to bind, or `None` to let the daemon derive one.
+    ///
+    /// Optional because the derivation depends on what is already registered
+    /// (`notes`, then `notes-2`), and only the daemon's registry knows that.
+    /// A caller that derived its own name would be deriving against a
+    /// different set.
+    #[serde(default)]
+    pub name: Option<String>,
     pub path: String,
     #[serde(default)]
     pub auto: bool,

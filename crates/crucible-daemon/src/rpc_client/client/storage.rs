@@ -51,10 +51,37 @@ impl DaemonClient {
         auto: bool,
         make_default: bool,
     ) -> Result<serde_json::Value> {
+        self.kiln_register_opt(Some(name), path, auto, make_default)
+            .await
+    }
+
+    /// Register a directory, letting the daemon derive the name.
+    ///
+    /// For `--kiln <path>` and kiln discovery, where the user named a
+    /// directory and not a name. The derivation belongs to the daemon because
+    /// it depends on what is already registered: a caller that derived its own
+    /// would derive against a different set and pick a name the daemon then
+    /// refuses.
+    pub async fn kiln_register_derived(
+        &self,
+        path: &Path,
+        auto: bool,
+        make_default: bool,
+    ) -> Result<serde_json::Value> {
+        self.kiln_register_opt(None, path, auto, make_default).await
+    }
+
+    async fn kiln_register_opt(
+        &self,
+        name: Option<&str>,
+        path: &Path,
+        auto: bool,
+        make_default: bool,
+    ) -> Result<serde_json::Value> {
         self.typed_call(
             "kiln.register",
             KilnRegisterRequest {
-                name: name.to_string(),
+                name: name.map(str::to_string),
                 path: path.to_string_lossy().to_string(),
                 auto,
                 make_default,

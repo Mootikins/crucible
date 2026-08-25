@@ -594,6 +594,48 @@ impl KilnRegistry {
         Ok(ResolvedPath::resolve(&absolute).lexical().to_path_buf())
     }
 
+    /// The name this registry WOULD give `path`, without creating an entry.
+    ///
+    /// [`Self::register_path`] derives a name and inserts in one step, which is
+    /// right for a caller that owns only the in-memory registry. A two-layer
+    /// registration cannot use it: the name has to be known before the state
+    /// file is written, and the entry must not exist if that write fails.
+    ///
+    /// Deriving here rather than in the CLI is the point. The name depends on
+    /// what is already registered — `notes`, then `notes-2` — so a caller with
+    /// its own copy of the registry derives against a different set and the two
+    /// disagree. The registry that will answer to the name is the one that
+    /// picks it.
+    ///
+    /// A path this registry already knows keeps its existing name: registering
+    /// the same directory twice is not a request for a second name.
+    pub fn derive_name_for(&self, path: &Path) -> Result<KilnName, RegistrationRefused> {
+        let absolute = self.absolutize(path);
+        self.refuse(&absolute).map_err(RegistrationRefused)?;
+
+        if let Some(existing) = self.name_for(&absolute) {
+            return Ok(existing);
+        }
+
+        let derived = absolute
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(KilnName::normalize)
+            .ok_or_else(|| {
+                RegistrationRefused(format!(
+                    "Refusing '{}' as a kiln: no usable name can be derived from it",
+                    absolute.display()
+                ))
+            })?;
+        self.free_name(&derived).ok_or_else(|| {
+            RegistrationRefused(format!(
+                "Refusing '{}' as a kiln: '{derived}' and every disambiguation of it are taken. \
+                 Give it a name of its own with `cru kiln register <name> <path>`.",
+                absolute.display()
+            ))
+        })
+    }
+
     /// Register a path under a name the caller chose —
     /// `cru kiln register <name> <path>`.
     ///
