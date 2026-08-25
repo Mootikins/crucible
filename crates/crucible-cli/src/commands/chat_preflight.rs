@@ -133,15 +133,7 @@ pub async fn ensure_valid_kiln(config: &mut CliConfig) -> Result<()> {
         std::fs::create_dir_all(&expanded)?;
     }
 
-    let crucible_dir = expanded.join(".crucible");
-    if !crucible_dir.join("config.toml").exists() {
-        // We don't have provider detection at this point (that's now daemon-side
-        // and fires after session.create). Use conservative defaults for the
-        // generated config; the user can edit it later via `cru init` or
-        // `cru config`.
-        let config_content =
-            crate::commands::init::generate_config_with_provider("ollama", "llama3.2");
-        crate::commands::init::create_kiln_with_config(&crucible_dir, &config_content, false)?;
+    if ensure_kiln_scaffold(&expanded)? {
         println!("{} Kiln initialized at {}", "✓".green(), expanded.display());
     }
 
@@ -233,6 +225,23 @@ pub fn fill_default_model_if_missing(config: &mut CliConfig) {
     }
 }
 
+/// Generate the kiln-local `.crucible/init.lua` scaffold, once.
+///
+/// Returns whether it generated. Nothing is written when the kiln already
+/// has an `init.lua`, or a pre-Lua `config.toml` — the not-yet-migrated
+/// form; generating a second config file beside it would leave the kiln
+/// with two, and the templates carry no provider detection at this point
+/// (that is daemon-side, after session.create).
+pub(crate) fn ensure_kiln_scaffold(kiln_root: &std::path::Path) -> Result<bool> {
+    let crucible_dir = kiln_root.join(".crucible");
+    if crucible_dir.join("init.lua").exists() || crucible_dir.join("config.toml").exists() {
+        return Ok(false);
+    }
+    let init_lua = crate::commands::init::generate_kiln_init_lua("ollama", "llama3.2");
+    crate::commands::init::create_kiln_with_init_lua(&crucible_dir, &init_lua, false)?;
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,5 +254,38 @@ mod tests {
         assert!(msg.contains("cru auth login"), "must offer the cloud path");
         assert!(msg.contains("ollama serve"), "must offer the local path");
         assert!(msg.contains("cru doctor"), "must point at diagnostics");
+    }
+
+    #[test]
+    fn the_scaffold_generates_init_lua_once() {
+        let tmp = tempfile::TempDir::new().unwrap();
+
+        assert!(ensure_kiln_scaffold(tmp.path()).unwrap());
+        let init_lua = tmp.path().join(".crucible/init.lua");
+        assert!(init_lua.exists());
+        assert!(!tmp.path().join(".crucible/config.toml").exists());
+
+        // Second run: the file is there, nothing regenerates.
+        let before = std::fs::read_to_string(&init_lua).unwrap();
+        std::fs::write(&init_lua, format!("{before}-- user edit\n")).unwrap();
+        assert!(!ensure_kiln_scaffold(tmp.path()).unwrap());
+        assert!(
+            std::fs::read_to_string(&init_lua).unwrap().contains("user edit"),
+            "an existing init.lua must not be overwritten"
+        );
+    }
+
+    /// A kiln that still has the pre-Lua `config.toml` is configured, not
+    /// fresh: generating an `init.lua` beside it would leave two config
+    /// files, one of them unexplained.
+    #[test]
+    fn the_scaffold_leaves_an_unmigrated_kiln_alone() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let crucible_dir = tmp.path().join(".crucible");
+        std::fs::create_dir_all(&crucible_dir).unwrap();
+        std::fs::write(crucible_dir.join("config.toml"), "[chat]\n").unwrap();
+
+        assert!(!ensure_kiln_scaffold(tmp.path()).unwrap());
+        assert!(!crucible_dir.join("init.lua").exists());
     }
 }
