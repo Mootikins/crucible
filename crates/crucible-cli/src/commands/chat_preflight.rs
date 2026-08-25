@@ -90,6 +90,20 @@ pub async fn ensure_valid_kiln(config: &mut CliConfig) -> Result<()> {
         return Ok(());
     }
 
+    // Before prompting, ask the daemon. It holds `<data_home>/kilns.json`,
+    // which this process's config does not see — so a kiln the user named at
+    // this very prompt on a previous run lives somewhere `resolved_kiln_path`
+    // cannot reach. Skipping this is how "No kiln found" greets a user forever
+    // no matter how many times they answer it.
+    if let Some(path) = registered_default_kiln().await {
+        info!(
+            "Using the kiln registered with the daemon: {}",
+            path.display()
+        );
+        config.kiln_path = path;
+        return Ok(());
+    }
+
     if !std::io::stdin().is_terminal() {
         anyhow::bail!("no valid kiln configured; run `cru init` first");
     }
@@ -132,32 +146,68 @@ pub async fn ensure_valid_kiln(config: &mut CliConfig) -> Result<()> {
     }
 
     // Persist, or this prompt fires again on every run from outside a kiln.
-    // Assigning the in-memory config only was why "No kiln found" greeted the
-    // user forever no matter how many times they answered it.
-    let config_path = crucible_core::config::CliAppConfig::default_config_path();
-    if let Err(e) = crucible_core::config::register_kiln_in_config(
-        &config_path,
-        "default",
-        &expanded,
-        /* make_default */ true,
-    ) {
-        // Non-fatal: the session can still proceed with the in-memory value.
-        // Say so rather than failing the chat the user actually asked for.
-        warn!("could not save kiln path to {}: {e}", config_path.display());
-        println!(
-            "{} Could not save the kiln path — you may be asked again next time.",
-            "Note:".yellow()
-        );
-    } else {
-        println!(
-            "{} Saved kiln path to {}",
-            "✓".green(),
-            config_path.display()
-        );
+    // Through the daemon, which owns the registry: the CLI used to edit the
+    // user's config file here, which put storage in a layer that must not have
+    // any and buried a machine-written entry in a hand-edited file.
+    match crate::common::daemon_client().await {
+        Ok(client) => {
+            match client
+                .kiln_register(
+                    "default", &expanded, /* auto */ true, /* make_default */ true,
+                )
+                .await
+            {
+                Ok(reply) => println!(
+                    "{} Saved kiln path to {}",
+                    "✓".green(),
+                    reply["state_file"].as_str().unwrap_or_default()
+                ),
+                // Non-fatal: the session can still proceed with the in-memory
+                // value. Say so rather than failing the chat the user asked for.
+                Err(e) => {
+                    warn!("could not register the kiln: {e}");
+                    println!(
+                        "{} Could not save the kiln path — you may be asked again next time.",
+                        "Note:".yellow()
+                    );
+                }
+            }
+        }
+        Err(e) => {
+            warn!("could not reach the daemon to register the kiln: {e}");
+            println!(
+                "{} Could not save the kiln path — you may be asked again next time.",
+                "Note:".yellow()
+            );
+        }
     }
 
     config.kiln_path = expanded;
     Ok(())
+}
+
+/// The path of the kiln the daemon would pick by default, if it knows one.
+///
+/// Asks over RPC rather than reading a file, because the answer spans two
+/// layers the daemon merges and this process sees only one of them. A daemon
+/// that cannot be reached is not an error here — it means the same as "no kiln
+/// registered", and the caller's next step is the prompt either way.
+///
+/// A `discovered` entry is skipped: that is a directory something opened by
+/// path, not a kiln any session can name.
+async fn registered_default_kiln() -> Option<std::path::PathBuf> {
+    let client = crate::common::daemon_client().await.ok()?;
+    let reply = client.kiln_registry_list().await.ok()?;
+    let rows = reply["kilns"].as_array()?;
+
+    let usable = |row: &&serde_json::Value| {
+        row["origin"] != "discovered" && row["missing"] != true && row["path"].is_string()
+    };
+    let chosen = rows
+        .iter()
+        .find(|row| row["default"] == true && usable(row))
+        .or_else(|| rows.iter().find(usable))?;
+    Some(std::path::PathBuf::from(chosen["path"].as_str()?))
 }
 
 /// Backfill `config.chat.model` from the detected Ollama provider's default

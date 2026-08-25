@@ -18,7 +18,7 @@ pub use errors::{ConfigError, ConfigValidationError};
 pub use kiln_name::{InvalidKilnName, KilnName};
 pub use provider::EffectiveLlmConfig;
 #[cfg(feature = "toml")]
-pub use registration::{register_kiln_entry_in_config, register_kiln_in_config};
+pub use registration::register_kiln_entry_in_config;
 pub use server::{LoggingConfig, ServerConfig, WebConfig, WorkspaceConfig};
 pub use types::{
     parse_duration_string, plugin_name_from_url, PluginEntry, PluginsConfig, ScheduleEntry,

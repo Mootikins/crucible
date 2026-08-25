@@ -4,49 +4,15 @@
 //! *write* the global config file, and [`edit_config_in_place`] is the
 //! contract they share: never destroy what the user hand-wrote.
 
-/// Persist a kiln path to the global config file.
-///
-/// Without this, a kiln
-/// the user supplies at a prompt lives only in the in-memory config and the
-/// prompt returns on every subsequent run.
-///
-/// Writes both `kiln_path` and a `[kilns]` entry: the former is what
-/// `ensure_valid_kiln` checks directly, the latter is what `resolved_kilns`
-/// and the daemon use. Keeping them in step here is what stops the two
-/// halves of the config disagreeing about where the kiln is.
-pub fn register_kiln_in_config(
-    config_path: &std::path::Path,
-    name: &str,
-    kiln_path: &std::path::Path,
-    make_default: bool,
-) -> anyhow::Result<()> {
-    // Absolute, always. This is the *global* config: a relative path like "."
-    // — which is what `cru init` in the current directory hands us — would
-    // resolve against whatever directory the next command runs from.
-    let kiln_path = kiln_path
-        .canonicalize()
-        .unwrap_or_else(|_| kiln_path.to_path_buf());
-    let kiln_str = kiln_path.to_string_lossy().to_string();
-
-    edit_config_in_place(config_path, |doc| {
-        doc["kiln_path"] = toml_edit::value(kiln_str.clone());
-        if make_default || doc.get("default_kiln").is_none() {
-            doc["default_kiln"] = toml_edit::value(name);
-        }
-        ensure_table(doc.as_table_mut(), "kilns").insert(name, toml_edit::value(kiln_str.clone()));
-        Ok(())
-    })
-}
-
 /// Add one `[kilns]` entry, and change nothing else.
 ///
-/// The counterpart to [`register_kiln_in_config`], which is the *wizard's*
-/// writer: that one also sets `kiln_path` and may claim `default_kiln`,
-/// because the wizard is answering "where is your kiln". This one is called
-/// when a `--kiln <path>` named a directory that had no entry yet, or when the
-/// user ran `cru kiln register <name> <path>` — neither of which says anything
-/// about which kiln every *future* command should use, so neither may quietly
-/// answer that question.
+/// The last config writer. It is called when a `--kiln <path>` names a
+/// directory that has no entry yet — which says nothing about which kiln every
+/// *future* command should use, so it never claims `default_kiln`.
+///
+/// The wizard's writer used to live beside this one and also set `kiln_path`.
+/// It is gone: the wizard's answer is a registration, and registrations belong
+/// to the daemon.
 ///
 /// `auto` records that Crucible wrote the entry rather than the user, and is
 /// the difference between the two shapes written here: an entry the user named
@@ -182,117 +148,10 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::TempDir;
 
-    /// A kiln the user names at a prompt has to survive the process, or the
-    /// prompt fires again on the next run — forever.
-    #[test]
-    fn a_registered_kiln_survives_a_config_round_trip() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let config_path = tmp.path().join("config.toml");
-        let kiln = tmp.path().join("my-kiln");
-
-        register_kiln_in_config(&config_path, "default", &kiln, true).unwrap();
-
-        let contents = std::fs::read_to_string(&config_path).unwrap();
-        let config: CliAppConfig = toml::from_str(&contents).unwrap();
-
-        // Both halves must agree: `kiln_path` is what the preflight check
-        // reads, `[kilns]` is what the daemon and `resolved_kilns` use.
-        assert_eq!(config.kiln_path, kiln);
-        assert_eq!(config.default_kiln.as_deref(), Some("default"));
-        assert!(config.kilns.contains_key("default"));
-        assert_eq!(
-            config.resolved_kilns()["default"],
-            crate::config::config::registry::KilnEntry::Path(kiln)
-        );
-    }
-
-    /// The global config is read from arbitrary working directories, so a
-    /// relative path stored in it points somewhere different every time.
-    /// `cru init` with no argument hands us exactly that: ".".
-    ///
-    /// `#[serial]` because the cwd is process-global, exactly like the env:
-    /// changing it under a parallel run corrupts unrelated tests.
-    #[test]
-    #[serial_test::serial]
-    fn a_registered_kiln_path_is_stored_absolute() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let config_path = tmp.path().join("config.toml");
-        let kiln = tmp.path().join("relative-kiln");
-        std::fs::create_dir_all(&kiln).unwrap();
-
-        let previous = std::env::current_dir().unwrap();
-        std::env::set_current_dir(&kiln).unwrap();
-        let result = register_kiln_in_config(&config_path, "here", std::path::Path::new("."), true);
-        std::env::set_current_dir(previous).unwrap();
-        result.unwrap();
-
-        let contents = std::fs::read_to_string(&config_path).unwrap();
-        let config: CliAppConfig = toml::from_str(&contents).unwrap();
-        assert!(
-            config.kiln_path.is_absolute(),
-            "stored kiln path must be absolute, got {}",
-            config.kiln_path.display()
-        );
-    }
-
-    /// The global config is hand-edited. Rewriting it through serde drops
-    /// every comment and every key the struct does not model — which is how a
-    /// working config got mangled while this feature was being built.
-    #[test]
-    fn registering_a_kiln_preserves_comments_and_unknown_keys() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let config_path = tmp.path().join("config.toml");
-        std::fs::write(
-            &config_path,
-            "# my careful notes\nkiln_path = \"/old\"\n\n\
-             [llm]\ndefault = \"zai-coding\"\n\n\
-             [some_future_section]\nkey = \"value\"\n",
-        )
-        .unwrap();
-
-        register_kiln_in_config(&config_path, "new", tmp.path(), false).unwrap();
-
-        let after = std::fs::read_to_string(&config_path).unwrap();
-        assert!(
-            after.contains("# my careful notes"),
-            "comments must survive: {after}"
-        );
-        assert!(
-            after.contains("[some_future_section]"),
-            "unknown sections must survive: {after}"
-        );
-        assert!(
-            after.contains("zai-coding"),
-            "unrelated settings must survive: {after}"
-        );
-        // And the edit actually landed. Assert on the parsed value, not the
-        // text: toml_edit may write an inline table (`kilns = { new = ... }`)
-        // rather than a `[kilns]` section, which is the same config.
-        let parsed: CliAppConfig = toml::from_str(&after).unwrap();
-        assert!(parsed.kilns.contains_key("new"));
-        assert_eq!(parsed.kiln_path, tmp.path().canonicalize().unwrap());
-    }
-
-    /// Registering a second kiln must not silently steal the default.
-    #[test]
-    fn registering_a_second_kiln_leaves_the_existing_default_alone() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let config_path = tmp.path().join("config.toml");
-
-        register_kiln_in_config(&config_path, "first", &tmp.path().join("a"), true).unwrap();
-        register_kiln_in_config(&config_path, "second", &tmp.path().join("b"), false).unwrap();
-
-        let contents = std::fs::read_to_string(&config_path).unwrap();
-        let config: CliAppConfig = toml::from_str(&contents).unwrap();
-        assert_eq!(config.default_kiln.as_deref(), Some("first"));
-        assert_eq!(config.kilns.len(), 2);
-    }
-
-    /// The auto-registration writer is not the wizard's writer. `--kiln <path>`
-    /// says "attach this corpus to this session", not "make it the kiln every
-    /// future command uses", so it adds one `[kilns]` entry and touches
-    /// nothing else — `kiln_path` and `default_kiln` are the user's answers to
-    /// a different question.
+    /// `--kiln <path>` says "attach this corpus to this session", not "make it
+    /// the kiln every future command uses", so it adds one `[kilns]` entry and
+    /// touches nothing else — `kiln_path` and `default_kiln` are the user's
+    /// answers to a different question.
     #[test]
     fn an_auto_registered_kiln_adds_an_entry_without_claiming_the_default() {
         let tmp = TempDir::new().unwrap();

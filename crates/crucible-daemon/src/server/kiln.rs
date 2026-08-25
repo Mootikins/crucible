@@ -1205,6 +1205,73 @@ mod tests {
         );
     }
 
+    /// A relative path is stored absolute.
+    ///
+    /// The registration is read back from arbitrary working directories, so a
+    /// relative entry points somewhere different every time. `cru init` with no
+    /// argument hands the CLI exactly that: ".".
+    ///
+    /// Owned by `registration.rs` until the wizard's config writer was deleted;
+    /// the property belongs wherever the write now happens.
+    #[tokio::test]
+    async fn a_relative_path_is_registered_absolute() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        // Relative paths anchor at the registry's base, which the fixture sets
+        // to `data_home` — so the directory has to be there for the floor to
+        // accept it.
+        std::fs::create_dir_all(data_home.join("relative-kiln")).unwrap();
+        let registry = crate::test_support::kiln_registry(&data_home, &[]);
+        let state = Arc::new(crate::kiln_state::KilnStateStore::new(&data_home));
+
+        let resp = handle_kiln_register(
+            register_request("here", Path::new("relative-kiln")),
+            &registry,
+            &state,
+            None,
+        )
+        .await;
+        let data = resp.result.expect("a relative path registers");
+
+        let stored = std::path::PathBuf::from(data["path"].as_str().expect("a path"));
+        assert!(
+            stored.is_absolute(),
+            "a relative entry points somewhere different on every run: {stored:?}"
+        );
+        assert!(state.read().unwrap().kilns["here"].path.is_absolute());
+    }
+
+    /// Registering a second kiln must not silently steal the default.
+    ///
+    /// Also owned by `registration.rs` before its writer was deleted. The rule
+    /// is unchanged: only an explicit `make_default`, or an empty slot, sets it.
+    #[tokio::test]
+    async fn registering_a_second_kiln_leaves_the_existing_default_alone() {
+        let tmp = TempDir::new().unwrap();
+        let data_home = tmp.path().join("data");
+        let first = tmp.path().join("a");
+        let second = tmp.path().join("b");
+        std::fs::create_dir_all(&first).unwrap();
+        std::fs::create_dir_all(&second).unwrap();
+        let registry = crate::test_support::kiln_registry(&data_home, &[]);
+        let state = Arc::new(crate::kiln_state::KilnStateStore::new(&data_home));
+
+        handle_kiln_register(register_request("first", &first), &registry, &state, None)
+            .await
+            .result
+            .expect("the first registers");
+        handle_kiln_register(register_request("second", &second), &registry, &state, None)
+            .await
+            .result
+            .expect("the second registers");
+
+        assert_eq!(
+            state.read().unwrap().default_kiln.as_deref(),
+            Some("first"),
+            "the second registration must not claim the default"
+        );
+    }
+
     /// Names are case-folded, so `Notes` is refused rather than becoming a
     /// second kiln beside `notes` — and the refusal states the rule, because
     /// "invalid kiln name" alone leaves the user guessing.
