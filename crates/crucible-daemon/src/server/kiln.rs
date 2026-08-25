@@ -8,10 +8,6 @@ use super::*;
 /// in `req.params` is now ignored.
 use crate::kiln_manager::request_scope;
 use crate::rpc_helpers::typed_params;
-use crucible_core::config::{
-    read_kiln_config, read_project_config, write_kiln_config, write_project_config,
-    DataClassification, KilnConfig, KilnMeta, ProjectConfig,
-};
 use crucible_core::storage::Scope;
 
 pub(crate) async fn handle_kiln_open(
@@ -451,109 +447,6 @@ pub(crate) async fn handle_kiln_forget(
         }
         Err(e) => Response::error(req.id, INVALID_PARAMS, e.to_string()),
     }
-}
-
-pub(crate) async fn handle_kiln_set_classification(
-    req: Request,
-    _km: &Arc<KilnManager>,
-) -> Response {
-    let params = match typed_params::<crate::rpc_client::KilnSetClassificationRequest>(&req) {
-        Ok(p) => p,
-        Err(response) => return *response,
-    };
-    let path_str = params.path.as_str();
-    let classification_str = params.classification.as_str();
-
-    let classification = match DataClassification::from_str_insensitive(classification_str) {
-        Some(c) => c,
-        None => {
-            let valid: Vec<&str> = DataClassification::all()
-                .iter()
-                .map(|c| c.as_str())
-                .collect();
-            return Response::error(
-                req.id,
-                INVALID_PARAMS,
-                format!(
-                    "Invalid classification '{}'. Valid values: {}",
-                    classification_str,
-                    valid.join(", ")
-                ),
-            );
-        }
-    };
-
-    let workspace = Path::new(path_str);
-    let crucible_dir = workspace.join(".crucible");
-    if let Err(e) = std::fs::create_dir_all(&crucible_dir) {
-        return internal_error(req.id, e);
-    }
-
-    // Read existing project config or create default
-    let mut config = match read_project_config(workspace) {
-        Some(c) => c,
-        None => {
-            // Create default ProjectConfig with a single kiln at "."
-            ProjectConfig {
-                kilns: vec![crucible_core::config::KilnAttachment {
-                    path: ".".into(),
-                    name: None,
-                    data_classification: None,
-                }],
-                security: Default::default(),
-            }
-        }
-    };
-
-    // Update classification on the first kiln entry (or the matching one)
-    let mut updated = false;
-    if let Some(kiln) = config.kilns.first_mut() {
-        kiln.data_classification = Some(classification);
-        updated = true;
-    }
-
-    if !updated {
-        // No kiln entries — add one
-        config.kilns.push(crucible_core::config::KilnAttachment {
-            path: ".".into(),
-            name: None,
-            data_classification: Some(classification),
-        });
-    }
-
-    // Write project config
-    if let Err(e) = write_project_config(workspace, &config) {
-        return internal_error(req.id, e);
-    }
-
-    // Ensure kiln.toml exists with default metadata
-    if read_kiln_config(workspace).is_none() {
-        let kiln_name = workspace
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "kiln".to_string());
-        let kiln_config = KilnConfig {
-            kiln: KilnMeta { name: kiln_name },
-        };
-        if let Err(e) = write_kiln_config(workspace, &kiln_config) {
-            return internal_error(req.id, e);
-        }
-    }
-
-    info!(
-        "Set data classification to '{}' for workspace at {:?}",
-        classification.as_str(),
-        workspace
-    );
-
-    Response::success(
-        req.id,
-        serde_json::json!({
-            "status": "ok",
-            "classification": classification.as_str(),
-            "path": path_str,
-        }),
-    )
 }
 
 pub(crate) async fn handle_search_vectors(req: Request, km: &Arc<KilnManager>) -> Response {

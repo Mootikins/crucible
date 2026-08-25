@@ -33,13 +33,6 @@ pub struct KilnRegisterRequest {
     pub make_default: bool,
 }
 
-/// Request for `kiln.set_classification`.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct KilnSetClassificationRequest {
-    pub path: String,
-    pub classification: String,
-}
-
 /// Request for `get_note_by_name`.
 ///
 /// `scope` is the request authority — defaults server-side to

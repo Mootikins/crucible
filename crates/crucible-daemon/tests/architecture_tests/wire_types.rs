@@ -72,10 +72,6 @@ const WIRE_REQUEST_TYPES: &[(&str, &str)] = &[
         "crates/crucible-daemon/src/server/kiln.rs",
     ),
     (
-        "KilnSetClassificationRequest",
-        "crates/crucible-daemon/src/server/kiln.rs",
-    ),
-    (
         "SearchVectorsRequest",
         "crates/crucible-daemon/src/server/kiln.rs",
     ),

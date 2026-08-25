@@ -90,7 +90,6 @@ rpc_methods! {
     KilnRegister = "kiln.register",
     KilnRegistryList = "kiln.registry_list",
     KilnForget = "kiln.forget",
-    KilnSetClassification = "kiln.set_classification",
     SearchVectors = "search_vectors",
     SearchText = "search_text",
     SearchGrep = "search_grep",
@@ -440,16 +439,6 @@ impl RpcDispatcher {
                     self.ctx.config_path.as_deref()
                 )
             ),
-            RpcMethod::KilnSetClassification => {
-                forward!(
-                    id,
-                    crate::server::kiln::handle_kiln_set_classification(
-                        req.clone(),
-                        &self.ctx.kiln
-                    )
-                )
-            }
-
             // Note search and retrieval handlers
             RpcMethod::SearchVectors => forward!(
                 id,
