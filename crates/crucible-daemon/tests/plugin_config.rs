@@ -376,6 +376,174 @@ return {
     );
 }
 
+/// A plugin configured BOTH ways gets one boot notice naming the ignored
+/// section — one layer superseding another must never be silent. A plugin
+/// configured one way only gets no notice.
+#[tokio::test]
+async fn a_both_forms_plugin_gets_one_supersession_notice() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plugins");
+    write_plugin(
+        &root,
+        "prefs",
+        r#"
+return { name = "prefs", setup = function(cfg) _G.__prefs_config = cfg end }
+"#,
+    );
+
+    let (_config, loader) = boot_and_activate(
+        tmp.path(),
+        &root,
+        "[plugins.prefs]\nclip = 4\n",
+        r#"require("prefs").setup({ greeting = "from-lua" })"#,
+    )
+    .await;
+
+    let notices = loader.supersession_notices();
+    assert_eq!(notices.len(), 1, "one notice per plugin: {notices:?}");
+    assert!(notices[0].contains("prefs"), "{notices:?}");
+    assert!(
+        notices[0].contains("plugins.prefs"),
+        "the notice must name the ignored section: {notices:?}"
+    );
+    assert!(
+        notices[0].contains("move those keys into the setup call"),
+        "the notice must name the remedy: {notices:?}"
+    );
+}
+
+/// The notice fires ONLY for the both-forms combination.
+#[tokio::test]
+async fn a_single_form_plugin_gets_no_supersession_notice() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plugins");
+    write_plugin(
+        &root,
+        "prefs",
+        r#"
+return { name = "prefs", setup = function(cfg) _G.__prefs_config = cfg end }
+"#,
+    );
+
+    // Direct form only.
+    let (_config, loader) = boot_and_activate(
+        tmp.path(),
+        &root,
+        "",
+        r#"require("prefs").setup({ greeting = "from-lua" })"#,
+    )
+    .await;
+    assert!(
+        loader.supersession_notices().is_empty(),
+        "a direct-only plugin is not superseding anything"
+    );
+
+    // Store form only.
+    let tmp2 = tempfile::tempdir().unwrap();
+    let root2 = tmp2.path().join("plugins");
+    write_plugin(
+        &root2,
+        "prefs",
+        r#"
+return { name = "prefs", setup = function(cfg) _G.__prefs_config = cfg end }
+"#,
+    );
+    let (_config, loader) =
+        boot_and_activate(tmp2.path(), &root2, "[plugins.prefs]\nclip = 4\n", "").await;
+    assert!(
+        loader.supersession_notices().is_empty(),
+        "a store-only plugin gets its default setup, nothing is ignored"
+    );
+}
+
+/// A plugin the user merely `require`d — no setup call — still receives the
+/// default `setup(cfg)` at activation. This is the arm that silently
+/// regresses into an unconfigured plugin if the recorder over-records.
+#[tokio::test]
+async fn a_require_without_setup_still_gets_the_default_setup_call() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plugins");
+    write_plugin(
+        &root,
+        "prefs",
+        r#"
+_G.__prefs_setups = 0
+return {
+    name = "prefs",
+    setup = function(cfg)
+        _G.__prefs_setups = _G.__prefs_setups + 1
+        _G.__prefs_config = cfg
+    end,
+}
+"#,
+    );
+
+    let (_config, loader) = boot_and_activate(
+        tmp.path(),
+        &root,
+        "[plugins.prefs]\ngreeting = \"from-toml\"\n",
+        r#"local _ = require("prefs")"#,
+    )
+    .await;
+
+    let count = loader.eval("return __prefs_setups").await.unwrap();
+    assert_eq!(
+        count, "1",
+        "a require without a setup call must still get the default setup"
+    );
+    let greeting = loader.eval("return __prefs_config.greeting").await.unwrap();
+    assert_eq!(greeting, "from-toml", "the section must reach that call");
+}
+
+/// The boot's setup recorder is a boot-phase device only: after boot, the
+/// module table in `package.loaded` holds the plugin's OWN function again.
+/// A plugin that stores `M.setup` and compares it later must see itself.
+#[tokio::test]
+async fn a_wrapped_setup_is_restored_to_the_plugins_own_function_after_boot() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plugins");
+    write_plugin(
+        &root,
+        "prefs",
+        r#"
+local function my_setup(cfg)
+    _G.__prefs_config = cfg
+end
+_G.__prefs_original_setup = my_setup
+return { name = "prefs", setup = my_setup }
+"#,
+    );
+
+    let (_config, loader) = boot_and_activate(
+        tmp.path(),
+        &root,
+        "",
+        // During the evaluation the recorder is in place, so identity does
+        // not hold yet — the fixture records that too, as the contrast.
+        r#"
+local m = require("prefs")
+cru.config.set({ probe = { wrapped_during_boot = not rawequal(m.setup, _G.__prefs_original_setup) } })
+m.setup({ marker = "user-owned" })
+"#,
+    )
+    .await;
+
+    let store = crucible_lua::get_app_config().expect("store live");
+    assert_eq!(
+        store["probe"]["wrapped_during_boot"],
+        serde_json::json!(true),
+        "precondition: the recorder was in place during the evaluation"
+    );
+    let restored = loader
+        .eval(r#"return tostring(rawequal(require("prefs").setup, _G.__prefs_original_setup))"#)
+        .await
+        .unwrap();
+    assert_eq!(
+        restored, "true",
+        "after boot the table must hold the plugin's own setup, not the recorder"
+    );
+}
+
 /// A DISABLED plugin: the user's `require` still loads its module (as in
 /// Neovim), but activation registers none of its hooks or exports.
 #[tokio::test]

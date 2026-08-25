@@ -131,7 +131,7 @@ pub fn run(config_path_flag: Option<PathBuf>) -> Result<()> {
     } else {
         std::fs::write(&init_path, &lua_chunk)?;
         println!("Wrote {}.", init_path.display());
-        init_path
+        init_path.clone()
     };
 
     // The state files, under their own sidecar locks.
@@ -160,14 +160,73 @@ pub fn run(config_path_flag: Option<PathBuf>) -> Result<()> {
     let migrated = source.with_extension("toml.migrated");
     std::fs::rename(&source, &migrated)?;
     println!("Renamed {} to {}.", source.display(), migrated.display());
-    if !auto_kilns.is_empty() || !project_paths.is_empty() {
+
+    // Say what moved and what stayed, BY NAME. A migration that relocates a
+    // user's registrations silently is a supersession the user cannot see —
+    // and this one they cannot easily undo.
+    if !auto_kilns.is_empty() {
+        let moved: Vec<String> = auto_kilns
+            .iter()
+            .map(|k| format!("{} (auto)", k.name))
+            .collect();
         println!(
-            "Moved {} auto kiln(s) into {} and {} project(s) into projects.json.",
-            auto_kilns.len(),
+            "Moved to {}: {}",
             kiln_state.path().display(),
-            project_paths.len()
+            moved.join(", ")
         );
     }
+    let kept_kilns: Vec<String> = remaining
+        .get("kilns")
+        .and_then(Value::as_object)
+        .map(|kilns| kilns.keys().cloned().collect())
+        .unwrap_or_default();
+    if !kept_kilns.is_empty() {
+        println!(
+            "Kept in the Lua config (hand-written): {}",
+            kept_kilns.join(", ")
+        );
+    }
+    if !project_paths.is_empty() {
+        let moved: Vec<String> = project_paths
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect();
+        println!("Moved to projects.json: {}", moved.join(", "));
+    }
+    let kept_projects: Vec<String> = remaining
+        .get("projects")
+        .and_then(Value::as_object)
+        .map(|projects| projects.keys().cloned().collect())
+        .unwrap_or_default();
+    if !kept_projects.is_empty() {
+        println!(
+            "Kept in the Lua config (directory missing): {}",
+            kept_projects.join(", ")
+        );
+    }
+
+    // A `[plugins.X]` section stops applying the moment init.lua calls X's
+    // setup directly — the direct call owns the plugin. Say so HERE, where
+    // the user can still act on it, with the same words the boot warning
+    // uses.
+    if init_path.exists() {
+        if let Ok(init_source) = std::fs::read_to_string(&init_path) {
+            if let Some(sections) = remaining.get("plugins").and_then(Value::as_object) {
+                for name in sections.keys() {
+                    let double = format!("require(\"{name}\")");
+                    let single = format!("require('{name}')");
+                    if init_source.contains(&double) || init_source.contains(&single) {
+                        println!(
+                            "note: init.lua appears to call {name}'s setup directly, so the \
+                             plugins.{name} section will be ignored; move those keys into the \
+                             setup call"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     println!("Restart the daemon to apply: cru daemon restart");
     let _ = written;
     Ok(())

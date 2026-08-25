@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// A named kiln entry in global config.
@@ -69,10 +69,10 @@ impl KilnEntry {
 /// why it is `lazy`.
 pub fn resolve_kiln_entries(
     kiln_path: &Path,
-    kilns: &HashMap<String, KilnEntry>,
-) -> HashMap<String, KilnEntry> {
+    kilns: &BTreeMap<String, KilnEntry>,
+) -> BTreeMap<String, KilnEntry> {
     let mut map = if kilns.is_empty() {
-        HashMap::from([(
+        BTreeMap::from([(
             "default".to_string(),
             KilnEntry::Path(kiln_path.to_path_buf()),
         )])
@@ -110,7 +110,7 @@ mod tests {
     #[test]
     fn kiln_entry_shorthand_deserializes_from_string() {
         let toml_str = r#"vault = "~/vault""#;
-        let map: std::collections::HashMap<String, KilnEntry> = toml::from_str(toml_str).unwrap();
+        let map: std::collections::BTreeMap<String, KilnEntry> = toml::from_str(toml_str).unwrap();
         assert_eq!(map["vault"].path(), PathBuf::from("~/vault"));
         assert!(!map["vault"].lazy());
     }
@@ -122,7 +122,7 @@ mod tests {
 path = "~/work/notes"
 lazy = true
 "#;
-        let map: std::collections::HashMap<String, KilnEntry> = toml::from_str(toml_str).unwrap();
+        let map: std::collections::BTreeMap<String, KilnEntry> = toml::from_str(toml_str).unwrap();
         assert_eq!(map["work"].path(), PathBuf::from("~/work/notes"));
         assert!(map["work"].lazy());
     }
@@ -154,7 +154,7 @@ default_kiln = "vault"
             KilnEntry::Path(PathBuf::from("~/vault")),
         );
         let serialized = toml::to_string(&map).unwrap();
-        let deserialized: std::collections::HashMap<String, KilnEntry> =
+        let deserialized: std::collections::BTreeMap<String, KilnEntry> =
             toml::from_str(&serialized).unwrap();
         assert_eq!(deserialized["vault"].path(), PathBuf::from("~/vault"));
     }

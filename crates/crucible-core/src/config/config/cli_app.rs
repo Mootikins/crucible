@@ -76,7 +76,7 @@ use crate::config::components::{
 };
 use crate::config::EnrichmentConfig;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use tracing::{debug, error, info, warn};
 
 #[cfg(feature = "toml")]
@@ -113,11 +113,11 @@ pub struct CliAppConfig {
     /// Named kilns registry. Each entry maps a name to a path (+ options).
     /// If empty, falls back to `kiln_path` for backward compatibility.
     #[serde(default)]
-    pub kilns: HashMap<String, crate::config::config::registry::KilnEntry>,
+    pub kilns: BTreeMap<String, crate::config::config::registry::KilnEntry>,
 
     /// Registered projects with kiln bindings.
     #[serde(default)]
-    pub projects: HashMap<String, crate::config::config::registry::ProjectEntry>,
+    pub projects: BTreeMap<String, crate::config::config::registry::ProjectEntry>,
 
     /// Which named kiln is the default (session storage, tool scoping).
     /// If unset and `kilns` is non-empty, uses the first kiln alphabetically.
@@ -196,7 +196,7 @@ pub struct CliAppConfig {
 
     /// Per-plugin configuration sections (e.g. `[plugins.discord]`)
     #[serde(default)]
-    pub plugins: HashMap<String, serde_json::Value>,
+    pub plugins: BTreeMap<String, serde_json::Value>,
 
     /// Web UI server configuration
     #[serde(default)]
@@ -342,8 +342,8 @@ impl Default for CliAppConfig {
             kiln_path: default_kiln_path(),
             session_kiln: None,
             data_home: None,
-            kilns: HashMap::new(),
-            projects: HashMap::new(),
+            kilns: BTreeMap::new(),
+            projects: BTreeMap::new(),
             default_kiln: None,
             agent_directories: Vec::new(),
             acp: AcpConfig::default(),
@@ -357,7 +357,7 @@ impl Default for CliAppConfig {
             permissions: None,
             schedules: Vec::new(),
             runtimepath: Vec::new(),
-            plugins: HashMap::new(),
+            plugins: BTreeMap::new(),
             web: None,
             server: super::server::ServerConfig::default(),
             workspace: None,
@@ -854,7 +854,7 @@ endpoint = "http://localhost:11434"
     /// [`resolve_kiln_entries`](crate::config::config::registry::resolve_kiln_entries) —
     /// which is this method's body. Keep the logic there, not here, or the two
     /// answers drift.
-    pub fn resolved_kilns(&self) -> HashMap<String, crate::config::config::registry::KilnEntry> {
+    pub fn resolved_kilns(&self) -> BTreeMap<String, crate::config::config::registry::KilnEntry> {
         crate::config::config::registry::resolve_kiln_entries(&self.kiln_path, &self.kilns)
     }
 

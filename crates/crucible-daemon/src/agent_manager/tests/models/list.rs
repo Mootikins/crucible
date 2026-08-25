@@ -4,11 +4,10 @@ use test_case::test_case;
 #[tokio::test]
 async fn test_list_models_returns_all_providers() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
-    use std::collections::HashMap;
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
-    let mut providers = HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "ollama".to_string(),
         LlmProviderConfig::builder(BackendType::Ollama)
@@ -95,7 +94,6 @@ async fn list_models_trust_classification(
     expected: &[(&str, bool)],
 ) {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig, TrustLevel};
-    use std::collections::HashMap;
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
@@ -109,7 +107,7 @@ async fn list_models_trust_classification(
         .build();
     cloud.trust_level = Some(TrustLevel::Cloud);
 
-    let mut providers = HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert("local-custom".to_string(), local);
     providers.insert("cloud-openai".to_string(), cloud);
 
@@ -164,7 +162,6 @@ async fn list_models_trust_classification(
 #[tokio::test]
 async fn test_list_models_all_chat_backends_with_explicit_models() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
-    use std::collections::HashMap;
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
@@ -172,7 +169,7 @@ async fn test_list_models_all_chat_backends_with_explicit_models() {
     // The mock server is kept for the endpoint URL but never contacted.
     let (ollama_endpoint, ollama_server) = start_mock_ollama_tags_server(vec!["llama3.2"]).await;
 
-    let mut providers = HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "ollama-local".to_string(),
         LlmProviderConfig::builder(BackendType::Ollama)
@@ -277,7 +274,6 @@ async fn test_list_models_all_chat_backends_with_explicit_models() {
 #[tokio::test]
 async fn test_list_models_discovery_failure_returns_empty() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
-    use std::collections::HashMap;
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
@@ -287,7 +283,7 @@ async fn test_list_models_discovery_failure_returns_empty() {
     drop(dead_listener);
     let dead_endpoint = format!("http://{}", dead_addr);
 
-    let mut providers = HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "anthropic-dead".to_string(),
         LlmProviderConfig::builder(BackendType::Anthropic)
@@ -334,11 +330,10 @@ async fn test_list_models_discovery_failure_returns_empty() {
 #[tokio::test]
 async fn test_list_models_count_matches_sum() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
-    use std::collections::HashMap;
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
-    let mut providers = HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "openai-count".to_string(),
         LlmProviderConfig::builder(BackendType::OpenAI)
@@ -427,7 +422,6 @@ async fn test_list_models_no_llm_config() {
 #[allow(clippy::await_holding_lock)]
 async fn test_list_models_includes_env_discovered_providers() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
-    use std::collections::HashMap;
 
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     let _env_guards = clear_provider_env();
@@ -436,7 +430,7 @@ async fn test_list_models_includes_env_discovered_providers() {
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
     // Configure ZAI provider with static available_models (no network needed)
-    let mut providers = HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "zai".to_string(),
         LlmProviderConfig::builder(BackendType::ZAI)
@@ -471,7 +465,6 @@ async fn test_list_models_classification_filters_env_providers() {
     use crucible_core::config::{
         BackendType, DataClassification, LlmConfig, LlmProviderConfig, TrustLevel,
     };
-    use std::collections::HashMap;
 
     let _env_lock = ENV_LOCK.lock().expect("env lock poisoned");
     let _env_guards = clear_provider_env();
@@ -480,7 +473,7 @@ async fn test_list_models_classification_filters_env_providers() {
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
     // Configure ZAI provider with Cloud trust level (simulates env-discovered provider)
-    let mut providers = HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     let mut zai_config = LlmProviderConfig::builder(BackendType::ZAI)
         .available_models(vec!["glm-4".to_string()])
         .build();
@@ -514,11 +507,10 @@ async fn test_list_models_classification_filters_env_providers() {
 #[tokio::test]
 async fn test_list_models_prefixes_with_provider_key() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
-    use std::collections::HashMap;
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
-    let mut providers = HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "anthropic".to_string(),
         LlmProviderConfig::builder(BackendType::Anthropic)
@@ -564,11 +556,10 @@ async fn test_list_models_prefixes_with_provider_key() {
 #[tokio::test]
 async fn test_list_models_multi_provider_with_zai() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
-    use std::collections::HashMap;
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
-    let mut providers = HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "zai-coding".to_string(),
         LlmProviderConfig::builder(BackendType::ZAI)
@@ -639,7 +630,7 @@ async fn test_list_models_legacy_providers_config() {
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
-    let mut providers = std::collections::HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "openai".to_string(),
         LlmProviderConfig::builder(BackendType::OpenAI)
@@ -690,11 +681,10 @@ async fn test_list_models_legacy_providers_config() {
 #[tokio::test]
 async fn test_list_models_both_configs() {
     use crucible_core::config::{BackendType, LlmConfig, LlmProviderConfig};
-    use std::collections::HashMap;
 
     let (_tmp, session_manager, session) = setup_session_manager().await;
 
-    let mut llm_providers = HashMap::new();
+    let mut llm_providers = std::collections::BTreeMap::new();
     llm_providers.insert(
         "legacy-openai".to_string(),
         LlmProviderConfig::builder(BackendType::OpenAI)

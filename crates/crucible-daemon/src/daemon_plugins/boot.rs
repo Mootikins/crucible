@@ -57,6 +57,11 @@ pub(crate) struct BootRequireState {
     loaded_modules: HashMap<String, PathBuf>,
     /// Plugins whose `setup` the user called during the evaluation.
     user_setup: HashSet<String>,
+    /// The tables whose `setup` the boot wrapped, with the plugin's ORIGINAL
+    /// function — restored when the boot phase ends, so a module table in
+    /// `package.loaded` holds the plugin's own function for the process
+    /// lifetime, not the recorder.
+    wrapped_setups: Vec<(Table, mlua::Function)>,
 }
 
 impl BootRequireState {
@@ -69,6 +74,27 @@ impl BootRequireState {
     fn record_user_setup(lua: &Lua, plugin: &str) {
         if let Some(mut state) = lua.app_data_mut::<BootRequireState>() {
             state.user_setup.insert(plugin.to_string());
+        }
+    }
+
+    fn record_wrapped_setup(lua: &Lua, table: Table, original: mlua::Function) {
+        if let Some(mut state) = lua.app_data_mut::<BootRequireState>() {
+            state.wrapped_setups.push((table, original));
+        }
+    }
+
+    /// End-of-boot restore: every wrapped `setup` goes back to the plugin's
+    /// own function. A plugin that stores `M.setup` and compares it later —
+    /// or a user calling it after boot — must see the original.
+    fn restore_wrapped_setups(lua: &Lua) {
+        let wrapped = match lua.app_data_mut::<BootRequireState>() {
+            Some(mut state) => std::mem::take(&mut state.wrapped_setups),
+            None => Vec::new(),
+        };
+        for (table, original) in wrapped {
+            if let Err(e) = table.set("setup", original) {
+                warn!("could not restore a plugin's own setup after boot: {e}");
+            }
         }
     }
 
@@ -266,11 +292,13 @@ pub async fn evaluate_boot_config_with_paths(
         }
 
         // The boot phase ends: the searcher goes inert, the extender comes
-        // out, the store withholds location keys from here on.
+        // out, every wrapped `setup` is restored to the plugin's own
+        // function, and the store withholds location keys from here on.
         crucible_lua::set_runtimepath_extender(None);
         if let Some(mut state) = lua.app_data_mut::<BootRequireState>() {
             state.active = false;
         }
+        BootRequireState::restore_wrapped_setups(lua);
     }
 
     // Step 5: extract the effective config. A store the evaluation left
@@ -442,6 +470,7 @@ fn seed_boot_search_path(
         plugin_patterns,
         loaded_modules: HashMap::new(),
         user_setup: HashSet::new(),
+        wrapped_setups: Vec::new(),
     });
     Ok(())
 }
@@ -622,8 +651,9 @@ return function(...)
 end
 "#,
                 )
-                .call((recorder, original))?;
+                .call((recorder, original.clone()))?;
             table.set("setup", wrapped)?;
+            BootRequireState::record_wrapped_setup(lua, table.clone(), original);
         }
     }
 

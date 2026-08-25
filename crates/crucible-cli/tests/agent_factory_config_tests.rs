@@ -8,7 +8,7 @@
 //! used to create internal agents with the correct settings.
 
 use crucible_core::config::{BackendType, CliAppConfig, LlmConfig, LlmProviderConfig};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// Helper to create a minimal CliAppConfig for testing
 fn create_agent_factory_test_config() -> CliAppConfig {
@@ -33,7 +33,7 @@ fn create_config_with_provider(provider: BackendType, model: Option<String>) -> 
 /// Helper to create CliAppConfig with named LLM providers
 fn create_config_with_named_providers(
     default_key: Option<String>,
-    providers: HashMap<String, LlmProviderConfig>,
+    providers: BTreeMap<String, LlmProviderConfig>,
 ) -> CliAppConfig {
     let mut config = create_agent_factory_test_config();
     config.llm = LlmConfig {
@@ -78,7 +78,7 @@ fn test_custom_chat_config_values() {
 
 #[test]
 fn test_llm_config_with_single_ollama_provider() {
-    let mut providers = HashMap::new();
+    let mut providers = BTreeMap::new();
     providers.insert(
         "local".to_string(),
         LlmProviderConfig {
@@ -108,7 +108,7 @@ fn test_llm_config_with_single_ollama_provider() {
 
 #[test]
 fn test_llm_config_with_multiple_providers() {
-    let mut providers = HashMap::new();
+    let mut providers = BTreeMap::new();
 
     providers.insert(
         "local-ollama".to_string(),
@@ -158,7 +158,7 @@ fn test_llm_config_with_multiple_providers() {
 
 #[test]
 fn test_llm_config_provider_not_found() {
-    let providers = HashMap::new();
+    let providers = BTreeMap::new();
     let config = create_config_with_named_providers(None, providers);
 
     assert!(!config.llm.has_providers());
@@ -168,7 +168,7 @@ fn test_llm_config_provider_not_found() {
 
 #[test]
 fn test_llm_config_invalid_default_provider() {
-    let mut providers = HashMap::new();
+    let mut providers = BTreeMap::new();
     providers.insert(
         "local".to_string(),
         LlmProviderConfig {
@@ -303,7 +303,7 @@ fn test_model_name_fallback_to_default() {
 
 #[test]
 fn test_model_name_from_named_provider() {
-    let mut providers = HashMap::new();
+    let mut providers = BTreeMap::new();
     providers.insert(
         "custom".to_string(),
         LlmProviderConfig {
@@ -331,7 +331,7 @@ fn test_model_name_from_named_provider() {
 
 #[test]
 fn test_empty_llm_config() {
-    let config = create_config_with_named_providers(None, HashMap::new());
+    let config = create_config_with_named_providers(None, BTreeMap::new());
 
     assert!(!config.llm.has_providers());
     assert_eq!(config.llm.provider_keys().len(), 0);
@@ -451,7 +451,7 @@ fn test_provider_no_api_key_configured() {
 
 #[test]
 fn test_realistic_ollama_config() {
-    let mut providers = HashMap::new();
+    let mut providers = BTreeMap::new();
     providers.insert(
         "local-llama".to_string(),
         LlmProviderConfig {
@@ -478,7 +478,7 @@ fn test_realistic_ollama_config() {
 
 #[test]
 fn test_realistic_openai_config() {
-    let mut providers = HashMap::new();
+    let mut providers = BTreeMap::new();
     providers.insert(
         "openai-gpt4".to_string(),
         LlmProviderConfig {
@@ -507,7 +507,7 @@ fn test_realistic_openai_config() {
 
 #[test]
 fn test_realistic_multi_provider_config() {
-    let mut providers = HashMap::new();
+    let mut providers = BTreeMap::new();
 
     // Local development with Ollama
     providers.insert(

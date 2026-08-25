@@ -53,7 +53,7 @@ pub(crate) const MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 
 pub(crate) fn resolve_agent_profile(
     name: &str,
-    configured: &HashMap<String, AgentProfile>,
+    configured: &std::collections::BTreeMap<String, AgentProfile>,
     available: &HashMap<String, AgentProfile>,
 ) -> Option<AgentProfile> {
     let profile = configured.get(name)?;
@@ -1216,7 +1216,8 @@ impl AgentManager {
 
     /// The `[llm.models]` specialty → model table for agent-card resolution.
     pub(crate) fn specialty_models(&self) -> Option<HashMap<String, String>> {
-        self.llm_config().map(|c| c.models.clone())
+        self.llm_config()
+            .map(|c| c.models.clone().into_iter().collect())
     }
 
     /// Wait for a mixed set of job ids — delegations (child session ids) and

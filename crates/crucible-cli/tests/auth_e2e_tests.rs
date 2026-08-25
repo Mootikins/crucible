@@ -303,6 +303,19 @@ fn auth_login_creates_file_with_restricted_permissions() {
     assert_eq!(mode, 0o600, "secrets.toml should have 0600 permissions");
 }
 
+/// A bare `cru` whose daemon socket is pinned into a fresh temp dir.
+///
+/// Structural, not a line each test remembers: on the developer's shared
+/// default socket, a daemon LEAKED by any other test would answer this
+/// process's config fetch and fail it before the behaviour under test.
+/// Returns the guard so the directory outlives the command.
+fn cru_with_pinned_socket() -> (Command, tempfile::TempDir) {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut cmd = Command::cargo_bin("cru").unwrap();
+    cmd.env("CRUCIBLE_SOCKET", tmp.path().join("daemon.sock"));
+    (cmd, tmp)
+}
+
 #[test]
 #[serial]
 fn error_invalid_subcommand_shows_suggestion() {
@@ -318,15 +331,9 @@ fn error_invalid_subcommand_shows_suggestion() {
 #[test]
 #[serial]
 fn error_missing_required_arg_shows_help() {
-    let tmp = tempfile::tempdir().unwrap();
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let (mut cmd, _socket_dir) = cru_with_pinned_socket();
     cmd.arg("session").arg("resume");
     cmd.env_remove("CRU_SESSION");
-    // Pin the daemon socket into the temp dir: on the developer's shared
-    // default socket, a daemon leaked by another test would answer this
-    // process's config fetch and fail it before the argument validation
-    // this test exists to see.
-    cmd.env("CRUCIBLE_SOCKET", tmp.path().join("daemon.sock"));
 
     cmd.assert()
         .failure()
@@ -340,8 +347,7 @@ fn error_conflicting_args_shows_message() {
     let fake_replay = tmp.path().join("replay.jsonl");
     std::fs::write(&fake_replay, "").unwrap();
 
-    let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.env("CRUCIBLE_SOCKET", tmp.path().join("daemon.sock"));
+    let (mut cmd, _socket_dir) = cru_with_pinned_socket();
     cmd.arg("chat")
         .arg("--record")
         .arg("recording.jsonl")

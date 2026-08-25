@@ -1,7 +1,7 @@
 //! MCP configuration for upstream servers
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// Configuration for MCP upstream servers.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -55,7 +55,7 @@ pub enum TransportType {
         args: Vec<String>,
         /// Environment variables.
         #[serde(default)]
-        env: HashMap<String, String>,
+        env: BTreeMap<String, String>,
     },
     /// SSE transport (HTTP+Server-Sent Events).
     Sse {
@@ -201,7 +201,7 @@ url = "http://localhost:3000/sse"
                 transport: TransportType::Stdio {
                     command: "test-cmd".to_string(),
                     args: vec!["arg1".to_string()],
-                    env: HashMap::from([("KEY".to_string(), "value".to_string())]),
+                    env: BTreeMap::from([("KEY".to_string(), "value".to_string())]),
                 },
                 prefix: "test_".to_string(),
                 allowed_tools: None,

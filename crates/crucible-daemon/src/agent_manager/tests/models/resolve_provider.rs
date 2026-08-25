@@ -7,7 +7,7 @@ async fn test_resolve_provider_config_from_llm_config() {
 
     let session_manager = temp_session_manager();
 
-    let mut providers = std::collections::HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "zai-coding".to_string(),
         LlmProviderConfig::builder(BackendType::ZAI)
@@ -42,7 +42,7 @@ async fn test_resolve_provider_config_from_providers_config() {
 
     let session_manager = temp_session_manager();
 
-    let mut providers = std::collections::HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "local".to_string(),
         LlmProviderConfig::builder(BackendType::Ollama)
@@ -101,7 +101,7 @@ async fn test_resolve_provider_config_llm_config_wins_over_providers_config() {
 
     let session_manager = temp_session_manager();
 
-    let mut llm_providers = std::collections::HashMap::new();
+    let mut llm_providers = std::collections::BTreeMap::new();
     llm_providers.insert(
         "shared".to_string(),
         LlmProviderConfig::builder(BackendType::OpenAI)

@@ -1,7 +1,7 @@
 //! Simple ACP (Agent Client Protocol) configuration
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use crate::config::components::permissions::PermissionConfig;
 
@@ -16,7 +16,7 @@ pub struct AcpConfig {
     pub streaming_timeout_minutes: u64,
     /// Custom agent profiles with environment variable overrides
     #[serde(default)]
-    pub agents: HashMap<String, AgentProfile>,
+    pub agents: BTreeMap<String, AgentProfile>,
 }
 
 /// Delegation configuration for an ACP agent
@@ -74,7 +74,7 @@ pub struct AgentProfile {
     pub args: Option<Vec<String>>,
     /// Environment variables to pass to the agent process
     #[serde(default)]
-    pub env: HashMap<String, String>,
+    pub env: BTreeMap<String, String>,
     /// Human-readable description of this agent profile
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -99,7 +99,7 @@ impl Default for AcpConfig {
         Self {
             default_agent: None, // Auto-discover first available
             streaming_timeout_minutes: 15,
-            agents: HashMap::new(),
+            agents: BTreeMap::new(),
         }
     }
 }

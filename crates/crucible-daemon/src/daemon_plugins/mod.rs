@@ -100,7 +100,7 @@ fn extract_exports(spec: &mlua::Table) -> PluginExports {
 /// and the file watcher stayed hardcoded off (`plugin_watch: false` at every
 /// construction site, with no config key at all).
 pub fn split_plugins_config(
-    raw: &HashMap<String, serde_json::Value>,
+    raw: &std::collections::BTreeMap<String, serde_json::Value>,
 ) -> (HashMap<String, serde_json::Value>, bool) {
     let watch = raw.get("watch").and_then(|v| v.as_bool()).unwrap_or(false);
     let sections = raw
@@ -162,6 +162,12 @@ pub struct DaemonPluginLoader {
     publications: PublicationRegistry,
     /// Settings trees plugins declared, read by TUI and web.
     options: OptionsRegistry,
+    /// One notice per plugin configured BOTH ways: a `plugins.<name>` store
+    /// section AND a direct `setup` call in init.lua. The direct call owns
+    /// the plugin, so the section is ignored — and one layer superseding
+    /// another must never be silent. Warned at activation and kept here so
+    /// a surface (and a test) can read what was said.
+    supersession_notices: std::sync::Mutex<Vec<String>>,
     /// Data root under which [`option_store`] keeps values changed through the
     /// settings pane — the daemon's *resolved* `data_home`, never the global
     /// `crucible_home()`, so an injected root is honored.
@@ -285,6 +291,7 @@ impl DaemonPluginLoader {
             status,
             publications,
             options,
+            supersession_notices: std::sync::Mutex::new(Vec::new()),
             option_store_dir: None,
         })
     }
@@ -304,6 +311,15 @@ impl DaemonPluginLoader {
             .map_err(|e| anyhow::anyhow!("config module: {e}"))?;
         self.plugin_config = plugin_config;
         Ok(self)
+    }
+
+    /// The both-forms notices recorded at activation — see
+    /// `supersession_notices`.
+    pub fn supersession_notices(&self) -> Vec<String> {
+        self.supersession_notices
+            .lock()
+            .map(|notices| notices.clone())
+            .unwrap_or_default()
     }
 
     /// Bind the data root persisted plugin options live under.
@@ -1019,6 +1035,19 @@ end
 
             if boot::BootRequireState::user_owns_setup(lua, name) {
                 debug!("Plugin '{name}': init.lua called setup(); the default call is skipped");
+                // The direct call owns the plugin — but a store section for
+                // the same plugin is being ignored, and that must be said,
+                // once, at boot. Silence here is how a user concludes a
+                // setting never worked.
+                if self.plugin_config.contains_key(name) {
+                    let notice = format!(
+                        "init.lua calls {name}'s setup directly, so the plugins.{name} config                          section is ignored; move those keys into the setup call"
+                    );
+                    warn!("{notice}");
+                    if let Ok(mut notices) = self.supersession_notices.lock() {
+                        notices.push(notice);
+                    }
+                }
             } else {
                 self.call_plugin_setup(name, &spec).await?;
             }

@@ -125,7 +125,7 @@ pub fn default_agent_profiles() -> HashMap<String, AgentProfile> {
                     extends: None,
                     command: Some(agent.command.to_string()),
                     args: Some(agent.args.iter().map(|s| s.to_string()).collect()),
-                    env: HashMap::new(),
+                    env: std::collections::BTreeMap::new(),
                     description: Some(agent.description.to_string()),
                     delegation: None,
                     permissions: None,
@@ -176,7 +176,7 @@ fn profile_to_agent_info(name: &str, profile: &AgentProfile) -> Result<AgentInfo
         name: name.to_string(),
         command,
         args: profile.args.clone().unwrap_or_default(),
-        env_vars: profile.env.clone(),
+        env_vars: profile.env.clone().into_iter().collect(),
     })
 }
 
@@ -617,11 +617,10 @@ mod tests {
     #[test]
     fn test_resolve_agent_from_config_profile() {
         use crucible_core::config::{AcpConfig, AgentProfile};
-        use std::collections::HashMap;
 
         // Create a config with a custom profile
-        let mut agents = HashMap::new();
-        let mut env = HashMap::new();
+        let mut agents = std::collections::BTreeMap::new();
+        let mut env = std::collections::BTreeMap::new();
         env.insert(
             "LOCAL_ENDPOINT".to_string(),
             "http://localhost:11434/v1".to_string(),
@@ -660,16 +659,15 @@ mod tests {
     #[test]
     fn test_resolve_agent_custom_command_overrides_builtin() {
         use crucible_core::config::{AcpConfig, AgentProfile};
-        use std::collections::HashMap;
 
-        let mut agents = HashMap::new();
+        let mut agents = std::collections::BTreeMap::new();
         agents.insert(
             "my-agent".to_string(),
             AgentProfile {
                 extends: None,
                 command: Some("/usr/local/bin/my-agent".to_string()),
                 args: Some(vec!["--mode".to_string(), "acp".to_string()]),
-                env: HashMap::new(),
+                env: std::collections::BTreeMap::new(),
                 description: None,
                 delegation: None,
                 permissions: None,
@@ -745,14 +743,14 @@ mod tests {
 
     #[test]
     fn test_resolve_agent_user_overlay_overrides_command_and_falls_back_for_none_fields() {
-        let mut agents = HashMap::new();
+        let mut agents = std::collections::BTreeMap::new();
         agents.insert(
             "opencode".to_string(),
             AgentProfile {
                 extends: None,
                 command: Some("cargo".to_string()),
                 args: None,
-                env: HashMap::new(),
+                env: std::collections::BTreeMap::new(),
                 description: None,
                 delegation: None,
                 permissions: None,
@@ -771,14 +769,14 @@ mod tests {
 
     #[test]
     fn test_resolve_agent_uses_extends_for_backward_compatible_defaults() {
-        let mut agents = HashMap::new();
+        let mut agents = std::collections::BTreeMap::new();
         agents.insert(
             "my-claude".to_string(),
             AgentProfile {
                 extends: Some("claude".to_string()),
                 command: None,
                 args: None,
-                env: HashMap::new(),
+                env: std::collections::BTreeMap::new(),
                 description: None,
                 delegation: None,
                 permissions: None,
@@ -811,14 +809,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_discover_agent_preferred_uses_merged_profile_command() {
-        let mut agents = HashMap::new();
+        let mut agents = std::collections::BTreeMap::new();
         agents.insert(
             "opencode".to_string(),
             AgentProfile {
                 extends: None,
                 command: Some("cargo".to_string()),
                 args: Some(vec!["--version".to_string()]),
-                env: HashMap::new(),
+                env: std::collections::BTreeMap::new(),
                 description: Some("Overridden".to_string()),
                 delegation: None,
                 permissions: None,
@@ -841,14 +839,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_discover_agent_without_preferred_can_use_config_only_profile() {
-        let mut agents = HashMap::new();
+        let mut agents = std::collections::BTreeMap::new();
         agents.insert(
             "cargo-agent".to_string(),
             AgentProfile {
                 extends: None,
                 command: Some("cargo".to_string()),
                 args: Some(vec!["--version".to_string()]),
-                env: HashMap::new(),
+                env: std::collections::BTreeMap::new(),
                 description: Some("Cargo-backed profile".to_string()),
                 delegation: None,
                 permissions: None,

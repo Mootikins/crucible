@@ -103,8 +103,8 @@ fn a_retired_server_key_is_rejected_by_name() {
 
 #[test]
 fn test_cli_app_config_effective_llm_provider() {
-    use std::collections::HashMap;
-    let mut providers = HashMap::new();
+    use std::collections::BTreeMap;
+    let mut providers = BTreeMap::new();
     providers.insert(
         "local".to_string(),
         crate::config::components::LlmProviderConfig {

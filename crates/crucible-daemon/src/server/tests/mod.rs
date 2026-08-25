@@ -10,6 +10,7 @@ use tempfile::TempDir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
+mod boot_hermeticity;
 mod child_sessions;
 mod delegation_e2e;
 mod event_seq;

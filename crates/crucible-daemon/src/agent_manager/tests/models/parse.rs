@@ -7,7 +7,7 @@ async fn test_parse_provider_model_llm_config_found() {
 
     let session_manager = temp_session_manager();
 
-    let mut providers = std::collections::HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "zai-coding".to_string(),
         LlmProviderConfig::builder(BackendType::ZAI)
@@ -40,7 +40,7 @@ async fn test_parse_provider_model_llm_config_not_found() {
 
     let session_manager = temp_session_manager();
 
-    let mut providers = std::collections::HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "zai-coding".to_string(),
         LlmProviderConfig::builder(BackendType::ZAI).build(),
@@ -72,7 +72,7 @@ async fn test_parse_provider_model_legacy_takes_precedence() {
 
     let session_manager = temp_session_manager();
 
-    let mut llm_providers = std::collections::HashMap::new();
+    let mut llm_providers = std::collections::BTreeMap::new();
     llm_providers.insert(
         "local".to_string(),
         LlmProviderConfig::builder(BackendType::Ollama)
@@ -118,7 +118,7 @@ async fn test_parse_provider_model_trailing_slash() {
 
     let session_manager = temp_session_manager();
 
-    let mut providers = std::collections::HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "provider".to_string(),
         LlmProviderConfig::builder(BackendType::Ollama)
@@ -152,7 +152,7 @@ async fn test_parse_provider_model_whitespace() {
 
     let session_manager = temp_session_manager();
 
-    let mut providers = std::collections::HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "provider".to_string(),
         LlmProviderConfig::builder(BackendType::Ollama)
@@ -185,7 +185,7 @@ async fn test_parse_provider_model_case_sensitivity() {
 
     let session_manager = temp_session_manager();
 
-    let mut providers = std::collections::HashMap::new();
+    let mut providers = std::collections::BTreeMap::new();
     providers.insert(
         "ollama".to_string(),
         LlmProviderConfig::builder(BackendType::Ollama)

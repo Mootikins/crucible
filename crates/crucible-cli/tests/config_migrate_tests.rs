@@ -50,10 +50,19 @@ auto = true
 "#,
     );
 
-    hermetic(home)
+    let assert = hermetic(home)
         .args(["config", "migrate"])
         .assert()
         .success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(
+        stdout.contains("scratch (auto)"),
+        "the moved entry is named: {stdout}"
+    );
+    assert!(
+        stdout.contains("Kept in the Lua config (hand-written): notes"),
+        "the kept entry is named: {stdout}"
+    );
 
     // The TOML retired; the Lua took its place.
     assert!(!config_path.exists(), "config.toml must be renamed away");
@@ -82,6 +91,35 @@ auto = true
     assert_eq!(kilns["scratch"]["path"], "/tmp/migrate-gate/scratch");
     assert_eq!(kilns["scratch"]["auto"], true);
     assert_eq!(state["default_kiln"], "scratch");
+}
+
+/// A `[plugins.X]` section migrated into store form stops applying when
+/// init.lua calls X's setup directly. The migrator says so at the one
+/// moment the user can still act on it.
+#[test]
+fn migrate_warns_when_a_plugin_section_is_owned_by_a_direct_setup_call() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    let config_path = write_config(home, "[plugins.reflection]\nmin_turns = 4\n");
+    std::fs::write(
+        config_path.parent().unwrap().join("init.lua"),
+        "require(\"reflection\").setup({})\n",
+    )
+    .unwrap();
+
+    let assert = hermetic(home)
+        .args(["config", "migrate"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(
+        stdout.contains("plugins.reflection section will be ignored"),
+        "the migrator must name the superseded section: {stdout}"
+    );
+    assert!(
+        stdout.contains("move those keys into the setup call"),
+        "and the remedy: {stdout}"
+    );
 }
 
 /// An existing `init.lua` is never edited: the chunk becomes a module and
