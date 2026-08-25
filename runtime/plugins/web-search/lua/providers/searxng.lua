@@ -142,7 +142,7 @@ return function(query, opts)
     if timeout < 1 then timeout = DEFAULT_TIMEOUT end
 
     local url = string.format("%s/search?q=%s&format=json", base, encode(trim(query)))
-    local response = http.get(url, { headers = headers, timeout = timeout })
+    local response = cru.http.get(url, { headers = headers, timeout = timeout })
 
     -- The response's `ok` flag is a convenience over the status; the status is
     -- the fact. A transport failure (DNS, refused, timed out) reports status 0

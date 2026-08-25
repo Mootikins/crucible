@@ -29,15 +29,15 @@ use crucible_core::storage::NoteStore;
 use crucible_core::storage::PropertyStore;
 use crucible_lua::{
     register_context_attach, register_context_module, register_context_validators,
-    register_cru_on_api, register_graph_module, register_isolation_module, register_oq_module,
-    register_paths_module, register_publish_module, register_schedule_module,
-    register_sessions_module, register_sessions_module_with_api, register_shell_module,
-    register_status_module, register_storage_module, register_storage_module_with_store,
-    register_tools_module, register_tools_module_with_api, register_ui_module,
-    register_ui_module_with_api, register_vault_module, register_ws_module, ContextAttachRegistry,
-    DaemonSessionApi, DaemonToolsApi, IsolationRegistry, LuaExecutor, LuaScriptHandlerRegistry,
-    LuaValidatorRegistry, OptionsRegistry, PathsContext, PluginManager, PluginShellPolicy,
-    PluginSource, PluginSpec, PublicationRegistry, StatusRegistry,
+    register_cru_on_api, register_isolation_module, register_oq_module, register_paths_module,
+    register_publish_module, register_schedule_module, register_sessions_module,
+    register_sessions_module_with_api, register_shell_module, register_status_module,
+    register_storage_module, register_storage_module_with_store, register_tools_module,
+    register_tools_module_with_api, register_ui_module, register_ui_module_with_api,
+    register_vault_module, register_ws_module, ContextAttachRegistry, DaemonSessionApi,
+    DaemonToolsApi, IsolationRegistry, LuaExecutor, LuaScriptHandlerRegistry, LuaValidatorRegistry,
+    OptionsRegistry, PathsContext, PluginManager, PluginShellPolicy, PluginSource, PluginSpec,
+    PublicationRegistry, StatusRegistry,
 };
 use mlua::LuaSerdeExt;
 use std::collections::HashMap;
@@ -214,7 +214,6 @@ impl DaemonPluginLoader {
         )?;
         reg("oq", register_oq_module(lua))?;
         reg("paths", register_paths_module(lua, PathsContext::new()))?;
-        reg("graph", register_graph_module(lua))?;
         reg("vault", register_vault_module(lua))?;
         reg("storage", register_storage_module(lua))?;
         reg("sessions", register_sessions_module(lua))?;
@@ -568,12 +567,6 @@ impl DaemonPluginLoader {
         let lua = self.executor.lua();
         let authority = crucible_core::storage::Scope::workspace_unchecked(kiln_path);
 
-        crucible_lua::register_graph_module_with_store_scoped(
-            lua,
-            store.clone(),
-            authority.clone(),
-        )
-        .map_err(|e| anyhow::anyhow!("graph upgrade: {e}"))?;
         crucible_lua::register_vault_module_with_store_scoped(lua, store, authority)
             .map_err(|e| anyhow::anyhow!("vault upgrade: {e}"))?;
 

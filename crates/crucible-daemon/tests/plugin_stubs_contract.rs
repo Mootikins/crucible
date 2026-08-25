@@ -152,6 +152,80 @@ fn cru_fs_surface_is_reduced_on_the_vm_and_in_the_stubs() {
     }
 }
 
+/// The M1 hard removals hold on the running VM — each removed name is nil,
+/// and its replacement answers. Derived from the VM, never from source text.
+#[test]
+fn removed_root_names_are_gone_and_their_replacements_answer() {
+    let loader = loader();
+    let lua = loader.plugin_lua();
+
+    // Removed name -> the Lua expression that must be nil.
+    let removed = [
+        "cru.fmt",
+        "cru.spawn",
+        "cru.oq.json",
+        "cru.oq.json_pretty",
+        "cru.paths.join",
+        "cru.oil.if_else",
+        "cru.oil.hr",
+        "cru.oil.maybe",
+        "_G.inspect",
+        "cru.graph",
+        // The six bare globals: one namespace, `cru`.
+        "_G.fs",
+        "_G.shell",
+        "_G.paths",
+        "_G.http",
+        "_G.graph",
+        "_G.mcp",
+    ];
+    for name in removed {
+        let value: mlua::Value = lua
+            .load(format!("return {name}"))
+            .eval()
+            .expect("evaluating a name never raises");
+        assert!(
+            value.is_nil(),
+            "{name} is removed and must be nil, got {value:?}"
+        );
+    }
+
+    // Each replacement answers, so the removal is a rename, not a hole.
+    let replacements = [
+        ("cru.timer.spawn", "function"), // was cru.spawn
+        ("cru.inspect", "function"),     // was _G.inspect
+        ("cru.oil.either", "function"),  // was if_else
+        ("cru.oil.divider", "function"), // was hr
+        ("cru.fs.mkdir", "function"),    // was _G.fs.mkdir
+        ("cru.shell.exec", "function"),  // was _G.shell.exec
+        ("cru.paths.state", "function"), // was _G.paths.state
+        ("cru.http.get", "function"),    // was _G.http.get
+    ];
+    // (cru.mcp is not on the daemon plugin VM at all — the mcp stub module is
+    // registered only on the stub generator's own VM, where its bare global
+    // is likewise removed.)
+    for (name, expected) in replacements {
+        let type_name: String = lua
+            .load(format!("return type({name})"))
+            .eval()
+            .expect("type() never raises");
+        assert_eq!(
+            type_name, expected,
+            "{name} must answer for its removed form"
+        );
+    }
+
+    // The pretty option replaces oq.json_pretty in place.
+    let pretty: String = lua
+        .load(r#"return cru.json.encode({ a = 1 }, { pretty = true })"#)
+        .eval()
+        .expect("cru.json.encode with pretty must answer");
+    assert!(
+        pretty.contains('\n'),
+        "pretty output must actually be pretty-printed: {pretty:?}"
+    );
+}
+
 /// `cru.kiln.path` resolves a name against the DAEMON's registry.
 ///
 /// The assertion runs against a real registry over a tempdir, not against the

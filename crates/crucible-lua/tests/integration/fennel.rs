@@ -494,7 +494,7 @@ async fn test_fennel_oil_basic_components() {
   (cru.oil.when condition node))
 
 (fn if-else [condition true-node false-node]
-  (cru.oil.if_else condition true-node false-node))
+  (cru.oil.either condition true-node false-node))
 
 (global handler (fn [args]
   ;; Build a simple UI tree

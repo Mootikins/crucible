@@ -1,8 +1,8 @@
 use crate::error::LuaError;
 use crate::{
-    register_context_module_stub, register_graph_module, register_mcp_module_stub,
-    register_oq_module, register_paths_module, register_sessions_module, register_tools_module,
-    register_ui_module, register_vault_module, LuaExecutor, PathsContext,
+    register_context_module_stub, register_mcp_module_stub, register_oq_module,
+    register_paths_module, register_sessions_module, register_tools_module, register_ui_module,
+    register_vault_module, LuaExecutor, PathsContext,
 };
 
 use mlua::{Lua, Table, Value};
@@ -65,7 +65,6 @@ impl StubGenerator {
 
         register_oq_module(lua)?;
         register_paths_module(lua, PathsContext::new())?;
-        register_graph_module(lua)?;
         register_vault_module(lua)?;
         register_sessions_module(lua)?;
         register_ui_module(lua)?;

@@ -23,7 +23,6 @@ local function default_fixtures()
         -- `cru.kiln.path` does. Empty by default: a test that stages files
         -- names its own directory, so nothing writes to a guessed path.
         kiln = { notes = {}, outlinks = {}, backlinks = {}, neighbors = {}, roots = {} },
-        graph = { notes = {}, outlinks = {}, backlinks = {}, neighbors = {} },
         http = { responses = {} },
         -- `real_dirs` makes the `mkdir` mock create the directory for real, as
         -- well as recording the call. A plugin that writes with `io.open`
@@ -123,23 +122,6 @@ local function create_kiln_mock(fixtures)
     }
 end
 
-local function create_graph_mock(fixtures)
-    local f = fixtures.graph
-    return {
-        get_note = function(path)
-            record_call("graph", "get_note", path)
-            for _, note in ipairs(f.notes or {}) do
-                if note.path == path then return deep_copy(note) end
-            end
-            return nil
-        end,
-        get_outlinks = link_lookup("graph", f, "outlinks"),
-        get_backlinks = link_lookup("graph", f, "backlinks"),
-        get_neighbors = link_lookup("graph", f, "neighbors"),
-        search_semantic = note_search("graph", f, "search_semantic", 0.9),
-    }
-end
-
 local function create_http_mock(fixtures)
     local default_resp = { status = 200, body = "", ok = true, headers = {} }
     local function respond(method, url, opts)
@@ -235,20 +217,6 @@ local function create_paths_mock(fixtures)
             if not f.state then error("state path not configured") end
             return f.state .. "/" .. plugin
         end,
-        -- Matches PathBuf::push: an absolute component discards what preceded it.
-        join = function(...)
-            local parts = {}
-            for _, part in ipairs({ ... }) do
-                if type(part) == "string" and part ~= "" then
-                    if part:sub(1, 1) == "/" then
-                        parts = { (part:gsub("/+$", "")) }
-                    else
-                        table.insert(parts, (part:gsub("^/+", ""):gsub("/+$", "")))
-                    end
-                end
-            end
-            return (table.concat(parts, "/"))
-        end,
     }
 end
 
@@ -325,15 +293,11 @@ function test_mocks.setup(overrides)
     _calls = {}
     cru = cru or {}
     cru.kiln = create_kiln_mock(_fixtures)
-    cru.graph = create_graph_mock(_fixtures)
     cru.http = create_http_mock(_fixtures)
     cru.fs = create_fs_mock(_fixtures)
     cru.paths = create_paths_mock(_fixtures)
     cru.session = create_session_mock(_fixtures)
     cru.sessions = create_sessions_mock(_fixtures)
-    http = cru.http
-    fs = cru.fs
-    paths = cru.paths
 end
 
 function test_mocks.reset()

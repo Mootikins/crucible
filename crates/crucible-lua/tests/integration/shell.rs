@@ -18,7 +18,7 @@ async fn test_lua_shell_module_registration() {
     let source = r#"
 function handler(args)
     -- shell.which is synchronous and should work
-    local echo_path = shell.which("echo")
+    local echo_path = cru.shell.which("echo")
     return {
         found = echo_path ~= nil,
         is_string = type(echo_path) == "string"
@@ -46,7 +46,7 @@ async fn test_lua_shell_policy_blocks_dangerous_commands() {
 
     let source = r#"
 function handler(args)
-    local result = shell.exec("rm", {"-rf", "/"}, {})
+    local result = cru.shell.exec("rm", {"-rf", "/"}, {})
     return { executed = true }
 end
 "#;

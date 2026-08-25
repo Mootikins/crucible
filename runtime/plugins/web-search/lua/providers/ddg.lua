@@ -387,7 +387,7 @@ function M.search(query, opts)
         return fail("query must be a non-empty string")
     end
 
-    local response = http.post(M.ENDPOINT, {
+    local response = cru.http.post(M.ENDPOINT, {
         headers = {
             ["Content-Type"] = "application/x-www-form-urlencoded",
             ["User-Agent"] = M.USER_AGENT,

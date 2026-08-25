@@ -53,7 +53,6 @@ mod executor;
 #[cfg(feature = "fennel")]
 mod fennel;
 mod fs;
-mod graph;
 pub mod handler_budget;
 mod handlers;
 mod hooks;
@@ -126,7 +125,6 @@ pub use executor::LuaExecutor;
 #[cfg(feature = "fennel")]
 pub use fennel::FennelCompiler;
 pub use fs::register_fs_module;
-pub use graph::{register_graph_module, register_graph_module_with_store_scoped};
 pub use handler_budget::{
     enter as enter_handler_budget, install_deadline_hook, BudgetGuard, LIFECYCLE_BUDGET,
     PERMISSION_BUDGET, TURN_STAGE_BUDGET,

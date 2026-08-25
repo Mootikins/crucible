@@ -10,11 +10,11 @@ use mlua::{Lua, Table};
 
 use crate::notify::register_notify_module;
 use crate::{
-    register_graph_module, register_hooks_module, register_lua_stdlib, register_oil_module,
-    register_oq_module, register_session_module, register_sessions_module,
-    register_sessions_module_with_api, register_storage_module, register_storage_module_with_store,
-    register_tools_module, register_tools_module_with_api, register_ui_module,
-    register_ui_module_with_api, register_vault_module, register_vault_module_with_store,
+    register_hooks_module, register_lua_stdlib, register_oil_module, register_oq_module,
+    register_session_module, register_sessions_module, register_sessions_module_with_api,
+    register_storage_module, register_storage_module_with_store, register_tools_module,
+    register_tools_module_with_api, register_ui_module, register_ui_module_with_api,
+    register_vault_module, register_vault_module_with_store,
     register_vault_module_with_store_scoped, CurrentSession, DaemonSessionApi, DaemonToolsApi,
 };
 
@@ -159,12 +159,6 @@ impl TestLuaBuilder {
         register_storage_module(&self.lua).expect("Should register storage stubs");
         register_storage_module_with_store(&self.lua, store)
             .expect("Should register storage with store");
-        self
-    }
-
-    /// Register the graph module.
-    pub fn with_graph(self) -> Self {
-        register_graph_module(&self.lua).unwrap();
         self
     }
 

@@ -62,7 +62,7 @@
 
 (fn hr []
   "Horizontal rule"
-  (cru.oil.hr))
+  (cru.oil.divider))
 
 ;; ═══════════════════════════════════════════════════════════════════════════
 ;; Interactive Components
@@ -110,7 +110,7 @@
 
 (fn if-else [condition true-node false-node]
   "Conditional rendering with else branch"
-  (cru.oil.if_else condition true-node false-node))
+  (cru.oil.either condition true-node false-node))
 
 (fn map-each [items render-fn]
   "Iterate items and render each"
@@ -167,7 +167,7 @@
                 result (. clauses (+ i 1))]
             (if (= cond-expr :else)
                 result
-                `(cru.oil.if_else ,cond-expr ,result ,(build-cond (+ i 2)))))))
+                `(cru.oil.either ,cond-expr ,result ,(build-cond (+ i 2)))))))
     (build-cond 1)))
 
 ;; ═══════════════════════════════════════════════════════════════════════════

@@ -155,7 +155,7 @@ return function(query, opts)
     -- pcall because a raised error would escape the chain entirely: an argument
     -- the host refuses to convert must still come back as this provider
     -- failing, not as the whole search dying.
-    local ok, resp = pcall(http.post, ENDPOINT, {
+    local ok, resp = pcall(cru.http.post, ENDPOINT, {
         headers = headers,
         body = body,
         timeout = timeout,

@@ -155,8 +155,6 @@ pub fn register_fs_module(lua: &Lua) -> Result<(), LuaError> {
     })?;
     fs_table.set("copy", copy_fn)?;
 
-    // Register fs module globally
-    lua.globals().set("fs", fs_table.clone())?;
     crate::lua_util::register_module(lua, "fs", fs_table)?;
 
     Ok(())
@@ -186,7 +184,7 @@ mod tests {
 
         let lua = create_lua();
         let err = lua
-            .load(format!(r#"fs.remove("{}")"#, victim.to_string_lossy()))
+            .load(format!(r#"cru.fs.remove("{}")"#, victim.to_string_lossy()))
             .exec()
             .expect_err("cru.fs.remove must always raise");
         let text = err.to_string();
@@ -210,7 +208,7 @@ mod tests {
         fs::write(dir.join("nested/file.txt"), "x").unwrap();
 
         let lua = create_lua();
-        lua.load(format!(r#"fs.remove_all("{}")"#, dir.to_string_lossy()))
+        lua.load(format!(r#"cru.fs.remove_all("{}")"#, dir.to_string_lossy()))
             .exec()
             .expect("remove_all must delete a directory tree");
         assert!(!dir.exists());
@@ -231,14 +229,14 @@ mod tests {
 
         let lua = create_lua();
         let calls = [
-            r#"return fs.exists("kiln://notes/x")"#.to_string(),
-            r#"return fs.is_file("kiln://notes/x")"#.to_string(),
-            r#"return fs.is_dir("kiln://notes/x")"#.to_string(),
-            r#"return fs.list("kiln://notes/x")"#.to_string(),
-            r#"fs.mkdir("kiln://notes/x")"#.to_string(),
-            r#"fs.remove_all("kiln://notes/x")"#.to_string(),
-            format!(r#"fs.copy("kiln://notes/x", "{real}")"#),
-            format!(r#"fs.copy("{real}", "kiln://notes/x")"#),
+            r#"return cru.fs.exists("kiln://notes/x")"#.to_string(),
+            r#"return cru.fs.is_file("kiln://notes/x")"#.to_string(),
+            r#"return cru.fs.is_dir("kiln://notes/x")"#.to_string(),
+            r#"return cru.fs.list("kiln://notes/x")"#.to_string(),
+            r#"cru.fs.mkdir("kiln://notes/x")"#.to_string(),
+            r#"cru.fs.remove_all("kiln://notes/x")"#.to_string(),
+            format!(r#"cru.fs.copy("kiln://notes/x", "{real}")"#),
+            format!(r#"cru.fs.copy("{real}", "kiln://notes/x")"#),
         ];
         for call in &calls {
             // `exec` succeeding would mean the scheme resolved silently — the
@@ -274,9 +272,9 @@ mod tests {
         let result: Table = lua
             .load(format!(
                 r#"
-            local before = fs.exists("{0}")
-            fs.mkdir("{0}")
-            local after = fs.exists("{0}")
+            local before = cru.fs.exists("{0}")
+            cru.fs.mkdir("{0}")
+            local after = cru.fs.exists("{0}")
             return {{ before = before, after = after }}
             "#,
                 path_str
@@ -302,10 +300,10 @@ mod tests {
             .load(format!(
                 r#"
             return {{
-                file_is_file = fs.is_file("{}"),
-                file_is_dir = fs.is_dir("{}"),
-                dir_is_file = fs.is_file("{}"),
-                dir_is_dir = fs.is_dir("{}")
+                file_is_file = cru.fs.is_file("{}"),
+                file_is_dir = cru.fs.is_dir("{}"),
+                dir_is_file = cru.fs.is_file("{}"),
+                dir_is_dir = cru.fs.is_dir("{}")
             }}
             "#,
                 file_path.to_string_lossy(),
@@ -332,7 +330,7 @@ mod tests {
 
         let lua = create_lua();
         let result: Table = lua
-            .load(format!(r#"return fs.list("{}")"#, dir_path))
+            .load(format!(r#"return cru.fs.list("{}")"#, dir_path))
             .eval()
             .unwrap();
 
@@ -357,7 +355,7 @@ mod tests {
 
         let lua = create_lua();
         lua.load(format!(
-            r#"fs.copy("{}", "{}")"#,
+            r#"cru.fs.copy("{}", "{}")"#,
             src.to_string_lossy(),
             dest.to_string_lossy()
         ))

@@ -93,8 +93,7 @@ pub fn register_lua_stdlib(lua: &Lua) -> Result<()> {
     cru.set("errors", errors_table)?;
 
     lua.load(LUA_QOL).set_name("qol").exec()?;
-    lua.load(LUA_HEALTH).set_name("health").exec()?;
-    lua.load("_G.inspect = cru.inspect").exec()
+    lua.load(LUA_HEALTH).set_name("health").exec()
 }
 
 #[cfg(test)]

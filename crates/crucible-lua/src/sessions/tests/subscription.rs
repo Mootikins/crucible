@@ -597,21 +597,21 @@ async fn subscribe_receiver_not_dropped_prematurely() {
     assert_eq!(result.get::<String>("text").unwrap(), "delayed-event");
 }
 
-/// Test 5: The cru.spawn pattern — subscribe + next_event from a spawned
+/// Test 5: The cru.timer.spawn pattern — subscribe + next_event from a spawned
 /// Lua task, mimicking the Discord plugin's responder flow.
 ///
 /// This is the exact pattern that was failing in production:
-///   cru.spawn(function()
+///   cru.timer.spawn(function()
 ///     local next_event = cru.sessions.subscribe(session_id)
 ///     cru.sessions.send_message(session_id, content)
 ///     local event = next_event()  -- THIS was hanging
 ///   end)
 ///
-/// NOTE: cru.spawn uses tokio::spawn which requires the mlua `send`
+/// NOTE: cru.timer.spawn uses tokio::spawn which requires the mlua `send`
 /// feature. Without it, this test will not compile.
 #[cfg(feature = "send")]
 #[tokio::test]
-async fn subscribe_next_event_via_cru_spawn() {
+async fn subscribe_next_event_via_timer_spawn() {
     let api = Arc::new(AsyncMockDaemonApi::new());
     let barrier = Arc::clone(&api.subscribe_barrier);
 
@@ -637,14 +637,14 @@ async fn subscribe_next_event_via_cru_spawn() {
     });
 
     // Use a shared table to capture results from the spawned task.
-    // cru.spawn is fire-and-forget, so we use a global to communicate.
+    // cru.timer.spawn is fire-and-forget, so we use a global to communicate.
     let result = lua
         .load(
             r#"
             -- Shared result table
             _G.spawn_result = { done = false, text = "not-set" }
 
-            cru.spawn(function()
+            cru.timer.spawn(function()
                 local next_event, err = cru.sessions.subscribe("test-session")
                 if err then
                     _G.spawn_result.text = "subscribe error: " .. err
@@ -686,7 +686,7 @@ async fn subscribe_next_event_via_cru_spawn() {
         }
         Err(e) => {
             panic!(
-                "Lua execution failed: {}. This likely means cru.spawn \
+                "Lua execution failed: {}. This likely means cru.timer.spawn \
                  cannot call async functions — check if mlua 'send' feature is enabled",
                 e
             );

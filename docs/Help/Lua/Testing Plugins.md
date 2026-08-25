@@ -115,12 +115,11 @@ before_each(function()
 end)
 ```
 
-`test_mocks.setup(overrides)` replaces `cru.kiln`, `cru.graph`, `cru.http`, `cru.fs`, `cru.paths`, `cru.session`, and `cru.sessions` with fixture-backed mocks (mirrored onto `crucible.*` and the `http`/`fs`/`paths` globals). Overrides are merged per module key over these defaults:
+`test_mocks.setup(overrides)` replaces `cru.kiln`, `cru.http`, `cru.fs`, `cru.paths`, `cru.session`, and `cru.sessions` with fixture-backed mocks. There are no bare-global mirrors: `cru` is the one namespace, in tests as in production. Overrides are merged per module key over these defaults:
 
 ```lua
 kiln     = { notes = {}, outlinks = {}, backlinks = {}, neighbors = {},
              roots = {} },
-graph    = { notes = {}, outlinks = {}, backlinks = {}, neighbors = {} },
 http     = { responses = {} },
 fs       = { files = {}, dirs = {}, real_dirs = false },
 paths    = { kiln = "/mock/kiln", workspace = "/mock/workspace",
@@ -154,22 +153,9 @@ Note that a test file cannot capture the host's `cru.fs` for itself: the runner
 calls `test_mocks.setup()` before it loads any test file, so
 `local real = cru.fs.mkdir` at the top of a suite captures the mock.
 
-### graph fixture
-
-Backs `cru.graph.get_note(path)` (looked up in `notes` by `path`), `get_outlinks` / `get_backlinks` / `get_neighbors` (looked up in the same-named maps, keyed by note path), and `search_semantic` (case-insensitive substring match over each note's `title` and `content`, returning `{ path, score = 0.9 }` rows; `opts.limit` defaults to 100). The `kiln` mock's `search` works the same way with score 1.0.
-
-```lua
-test_mocks.setup({
-  graph = {
-    notes = { { path = "a.md", title = "Alpha", content = "links to beta" } },
-    outlinks = { ["a.md"] = { "b.md" } },
-  },
-})
-```
-
 ### paths fixture
 
-Mirrors the real `cru.paths` shape: each accessor **raises** when its path is unconfigured rather than returning `nil`, so a plugin that pcalls `paths.kiln()` and falls back is exercised against production behavior. Mark a path unconfigured with `false`, not `nil` — a `nil` override is indistinguishable from no override and silently leaves the default in place (which is why `session = false` is the default). `paths.state(plugin)` returns `state .. "/" .. plugin`; `paths.join` follows `PathBuf::push` semantics, so an absolute component discards what preceded it.
+Mirrors the real `cru.paths` shape: each accessor **raises** when its path is unconfigured rather than returning `nil`, so a plugin that pcalls `paths.kiln()` and falls back is exercised against production behavior. Mark a path unconfigured with `false`, not `nil` — a `nil` override is indistinguishable from no override and silently leaves the default in place (which is why `session = false` is the default). `paths.state(plugin)` returns `state .. "/" .. plugin`. There is no `paths.join`: joining is plain string concatenation, in tests as in production.
 
 ### sessions fixture
 
