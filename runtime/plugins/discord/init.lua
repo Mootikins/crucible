@@ -85,13 +85,13 @@ gateway.on("MESSAGE_CREATE", function(data)
 
     -- Above `get_or_create` so a throttled user never causes a session to
     -- exist, and inline so the check and the increment are one synchronous
-    -- critical section — `cru.spawn` is a real `tokio::spawn`, so a flood run
+    -- critical section — `cru.timer.spawn` is a real `tokio::spawn`, so a flood run
     -- through it could charge the same turn twice. Only the refusal reply is
     -- spawned, and only for the message that crosses the cap.
     local within_quota, refusal = quota.charge(author_id)
     if not within_quota then
         if refusal then
-            cru.spawn(function()
+            cru.timer.spawn(function()
                 pcall(api.send_message, channel_id, refusal,
                     { reply_to = guild_id and msg_id or nil })
             end)
@@ -123,7 +123,7 @@ gateway.on("MESSAGE_CREATE", function(data)
 
     local interactive = sessions.tier_is_interactive(sessions.access_tier(guild_id, author_id, roles))
 
-    cru.spawn(function()
+    cru.timer.spawn(function()
         local reply_to = guild_id and msg_id or nil
         local ok, resp_err = pcall(
             responder.respond, session_id, channel_id, content, reply_to, author_id, interactive
@@ -134,8 +134,8 @@ gateway.on("MESSAGE_CREATE", function(data)
     end)
 end)
 
--- Runs on every receive-loop iteration, so it stays inline: `cru.spawn` is a
--- real `tokio::spawn`, and one task per iteration would pile up faster than
+-- Runs on every receive-loop iteration, so it stays inline: `cru.timer.spawn`
+-- is a real `tokio::spawn`, and one task per iteration would pile up faster than
 -- they finish.
 gateway.set_periodic_hook(function()
     sessions.cleanup_stale()

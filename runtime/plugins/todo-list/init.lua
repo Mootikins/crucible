@@ -54,7 +54,8 @@ local function tasks_file(args)
     for _, accessor in ipairs({ cru.paths.kiln, cru.paths.workspace }) do
         local ok, root = pcall(accessor)
         if ok and root and root ~= "" then
-            return cru.paths.join(root, name)
+            -- `name` is known relative here, so string concat is the join.
+            return root .. "/" .. name
         end
     end
     return name
@@ -62,8 +63,15 @@ end
 
 --- Every line of the file, or nil if it does not exist.
 local function read_lines(path)
-    local ok, content = pcall(cru.fs.read, path)
-    if not ok or not content then
+    -- A missing file and an unreadable one land the same way: `io.open`
+    -- answers nil, and the caller treats the list as absent.
+    local handle = io.open(path, "r")
+    if not handle then
+        return nil
+    end
+    local content = handle:read("a")
+    handle:close()
+    if type(content) ~= "string" then
         return nil
     end
     local lines = {}
@@ -80,7 +88,16 @@ local function read_lines(path)
 end
 
 local function write_lines(path, lines)
-    return pcall(cru.fs.write, path, table.concat(lines, "\n") .. "\n")
+    local handle, open_err = io.open(path, "w")
+    if not handle then
+        return false, open_err
+    end
+    local wrote, write_err = handle:write(table.concat(lines, "\n") .. "\n")
+    handle:close()
+    if not wrote then
+        return false, write_err
+    end
+    return true
 end
 
 --- Parse tasks out of `lines`, in document order.

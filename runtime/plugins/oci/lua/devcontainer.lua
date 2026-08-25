@@ -444,8 +444,13 @@ end
 function M.find(workspace)
   for _, relative in ipairs(M.CANDIDATES) do
     local path = workspace .. "/" .. relative
-    if cru.fs.exists(path) then
-      return path, cru.fs.read(path), dirname(path)
+    -- `io.open` is the existence check and the read in one: a nil handle
+    -- means "not this candidate", whatever the reason.
+    local handle = io.open(path, "r")
+    if handle then
+      local text = handle:read("a")
+      handle:close()
+      return path, text, dirname(path)
     end
   end
   return nil

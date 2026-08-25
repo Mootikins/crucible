@@ -4,9 +4,10 @@
 --- daemon's cwd is wherever it was spawned (`%h` for the systemd unit, the
 --- repo root for a shell-started one), so a relative `Journal/` meant a
 --- different destination for every user and dropped a stray `Journal/` next to
---- whatever directory the daemon happened to start in. Same reason the plugin
---- goes through `cru.fs` rather than `io.open` and `os.execute("mkdir -p")`:
---- the shell form interpolated a config value into a command line unescaped.
+--- whatever directory the daemon happened to start in. Files are read and
+--- written with `io.open`; directories go through `cru.fs.mkdir` rather than
+--- `os.execute("mkdir -p")`, because the shell form interpolated a config
+--- value into a command line unescaped.
 
 local M = {}
 
@@ -47,7 +48,8 @@ local function notes_dir()
     for _, accessor in ipairs({ cru.paths.kiln, cru.paths.workspace }) do
         local ok, root = pcall(accessor)
         if ok and root and root ~= "" then
-            return cru.paths.join(root, config.folder)
+            -- `config.folder` is known relative here, so concat is the join.
+            return root .. "/" .. config.folder
         end
     end
     return config.folder
@@ -58,7 +60,7 @@ local function date_string(timestamp)
 end
 
 local function note_path(timestamp)
-    return cru.paths.join(notes_dir(), date_string(timestamp) .. ".md")
+    return notes_dir() .. "/" .. date_string(timestamp) .. ".md"
 end
 
 --- `nil` for a missing or unreadable template, so a bad path degrades to the
@@ -67,10 +69,14 @@ local function read_template()
     if config.template == "" then
         return nil
     end
-    local ok, content = pcall(cru.fs.read, config.template)
-    if not ok then
+    -- A missing template and an unreadable one land the same way: `io.open`
+    -- answers nil, and the built-in body is used.
+    local handle = io.open(config.template, "r")
+    if not handle then
         return nil
     end
+    local content = handle:read("a")
+    handle:close()
     return content
 end
 
@@ -95,7 +101,12 @@ local function create_note(timestamp)
         content = default_body(date_str)
     end
 
-    local wrote, write_err = pcall(cru.fs.write, path, content)
+    local handle, open_err = io.open(path, "w")
+    if not handle then
+        return nil, "Cannot create file: " .. tostring(open_err)
+    end
+    local wrote, write_err = handle:write(content)
+    handle:close()
     if not wrote then
         return nil, "Cannot create file: " .. tostring(write_err)
     end

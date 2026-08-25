@@ -15,23 +15,31 @@ local devcontainer = require("devcontainer")
 -- `cru.shell`.
 local real_json = cru.json
 
---- Run `fn` with a stubbed filesystem and PATH.
+--- Run `fn(workspace)` against a real working tree and a stubbed PATH.
 ---
---- `files` maps absolute path -> contents. Resolution reads the working tree,
---- so that is the whole story; `present` lists commands `cru.shell.which`
---- should find.
+--- `files` maps a workspace-relative path to contents, materialized in a fresh
+--- REAL directory per call: `M.find` reads the tree with `io.open`, which has
+--- no mock to agree with. The directory's path is handed to `fn`. `present`
+--- lists commands `cru.shell.which` should find. `real_dirs` makes the
+--- `cru.fs.mkdir` mock create directories for real.
 local function with_env(files, present, fn)
-  local saved_fs, saved_shell, saved_json = cru.fs, cru.shell, cru.json
+  local saved_shell, saved_json = cru.shell, cru.json
   local found = {}
   for _, name in ipairs(present or {}) do found[name] = true end
 
-  cru.fs = {
-    exists = function(path) return files[path] ~= nil end,
-    read = function(path)
-      if files[path] == nil then error("File not found: " .. path) end
-      return files[path]
-    end,
-  }
+  test_mocks.setup({ fs = { real_dirs = true } })
+  local workspace = os.tmpname()
+  os.remove(workspace)
+  cru.fs.mkdir(workspace)
+  for rel, content in pairs(files) do
+    local path = workspace .. "/" .. rel
+    local dir = path:match("^(.*)/[^/]*$")
+    if dir then cru.fs.mkdir(dir) end
+    local handle = assert(io.open(path, "w"))
+    handle:write(content)
+    handle:close()
+  end
+
   cru.shell = {
     which = function(cmd) return found[cmd] and ("/usr/bin/" .. cmd) or nil end,
     exec = function(cmd, args, opts)
@@ -41,8 +49,8 @@ local function with_env(files, present, fn)
   }
   cru.json = real_json
 
-  local ok, err = pcall(fn)
-  cru.fs, cru.shell, cru.json = saved_fs, saved_shell, saved_json
+  local ok, err = pcall(fn, workspace)
+  cru.shell, cru.json = saved_shell, saved_json
   if not ok then error(err, 0) end
 end
 
@@ -356,12 +364,12 @@ describe("devcontainer.parse refuses the keys that reach the host", function()
 end)
 
 describe("devcontainer.resolve", function()
-  local DC = "/home/user/project/.devcontainer/devcontainer.json"
-  local FLAT = "/home/user/project/.devcontainer.json"
+  local DC = ".devcontainer/devcontainer.json"
+  local FLAT = ".devcontainer.json"
 
   it("reads .devcontainer/devcontainer.json", function()
-    with_env({ [DC] = '{ "image": "alpine" }' }, {}, function()
-      local env = devcontainer.resolve("/home/user/project")
+    with_env({ [DC] = '{ "image": "alpine" }' }, {}, function(ws)
+      local env = devcontainer.resolve(ws)
       expect.equals("alpine", env.image)
     end)
   end)
@@ -369,15 +377,15 @@ describe("devcontainer.resolve", function()
   -- The other location the spec calls canonical. Missing it would fall through
   -- to a profile and build a different environment.
   it("reads a top-level .devcontainer.json", function()
-    with_env({ [FLAT] = '{ "image": "alpine" }' }, {}, function()
-      local env = devcontainer.resolve("/home/user/project")
+    with_env({ [FLAT] = '{ "image": "alpine" }' }, {}, function(ws)
+      local env = devcontainer.resolve(ws)
       expect.equals("alpine", env.image)
     end)
   end)
 
   it("returns nil when the workspace has no devcontainer", function()
-    with_env({}, {}, function()
-      expect.is_nil(devcontainer.resolve("/home/user/project"))
+    with_env({}, {}, function(ws)
+      expect.is_nil(devcontainer.resolve(ws))
     end)
   end)
 
@@ -390,8 +398,8 @@ describe("devcontainer.resolve", function()
   -- The whole point of the deferral: with the CLI installed the environment is
   -- built by the tool that knows how, and the plugin adopts it.
   it("delegates to @devcontainers/cli when it is installed", function()
-    with_env({ [DC] = '{ "image": "alpine", "postCreateCommand": "make" }' }, { "devcontainer" }, function()
-      local env = devcontainer.resolve("/home/user/project")
+    with_env({ [DC] = '{ "image": "alpine", "postCreateCommand": "make" }' }, { "devcontainer" }, function(ws)
+      local env = devcontainer.resolve(ws)
       expect.truthy(env.cli, "an installed CLI must be used rather than refused")
     end)
   end)
@@ -399,8 +407,8 @@ describe("devcontainer.resolve", function()
   -- ...and without it, a refusal naming the key. Never a container built from
   -- the subset we happened to understand.
   it("refuses naming the key it cannot honour when the CLI is absent", function()
-    with_env({ [DC] = '{ "image": "alpine", "postCreateCommand": "make" }' }, {}, function()
-      local ok, err = pcall(devcontainer.resolve, "/home/user/project")
+    with_env({ [DC] = '{ "image": "alpine", "postCreateCommand": "make" }' }, {}, function(ws)
+      local ok, err = pcall(devcontainer.resolve, ws)
       expect.falsy(ok, "a devcontainer needing the CLI must not build a partial environment")
       expect.truthy(tostring(err):find("postCreateCommand", 1, true))
       expect.truthy(tostring(err):find("devcontainers/cli", 1, true),
@@ -413,8 +421,8 @@ describe("devcontainer.resolve", function()
   -- session rather than a refusal.
   it("builds a permitted compose devcontainer through the CLI", function()
     local compose = '{ "dockerComposeFile": "compose.yml", "service": "app" }'
-    with_env({ [DC] = compose }, { "devcontainer" }, function()
-      local env = devcontainer.resolve("/home/user/project", true)
+    with_env({ [DC] = compose }, { "devcontainer" }, function(ws)
+      local env = devcontainer.resolve(ws, true)
       expect.truthy(env.cli, "a permitted compose devcontainer must still be built by the CLI")
       expect.truthy(contains(env.cli_keys, "dockerComposeFile"))
     end)
@@ -422,8 +430,8 @@ describe("devcontainer.resolve", function()
 
   it("refuses a compose devcontainer without the operator opt-in", function()
     with_env({ [DC] = '{ "dockerComposeFile": "compose.yml", "service": "app" }' },
-      { "devcontainer" }, function()
-        local ok, err = pcall(devcontainer.resolve, "/home/user/project")
+      { "devcontainer" }, function(ws)
+        local ok, err = pcall(devcontainer.resolve, ws)
         expect.falsy(ok, "an installed CLI must not bypass the host gate")
         expect.truthy(tostring(err):find("dockerComposeFile", 1, true))
       end)
@@ -431,8 +439,8 @@ describe("devcontainer.resolve", function()
 
   it("names every deferred key, not just the first", function()
     with_env({ [DC] = '{ "image": "alpine", "onCreateCommand": "setup", "postCreateCommand": "make" }' },
-      {}, function()
-      local ok, err = pcall(devcontainer.resolve, "/home/user/project")
+      {}, function(ws)
+      local ok, err = pcall(devcontainer.resolve, ws)
       expect.falsy(ok)
       expect.truthy(tostring(err):find("onCreateCommand", 1, true))
       expect.truthy(tostring(err):find("postCreateCommand", 1, true))

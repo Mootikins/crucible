@@ -1,16 +1,21 @@
 --- Tests for the todo-list plugin.
 ---
---- Runs entirely against the `cru.fs` and `cru.paths` mocks — no real file is
---- read or written. The three regressions these lock down are the ones the
---- previous implementation had: rewriting the file destroyed its section
---- headings, filtered listings renumbered task ids so completing one hit the
---- wrong task, and paths resolved against the daemon's working directory.
+--- The tasks file is REAL: the plugin reads and writes it with `io.open`,
+--- which has no mock to agree with, so each test gets a fresh directory and
+--- the `cru.paths` mock points the kiln at it. The three regressions these
+--- lock down are the ones the previous implementation had: rewriting the file
+--- destroyed its section headings, filtered listings renumbered task ids so
+--- completing one hit the wrong task, and paths resolved against the daemon's
+--- working directory.
 
 -- Required by DIRECTORY NAME, never by `init`: the runner's package.path
 -- mirrors the daemon loader's, which exposes a plugin as `<parent>/?/init.lua`.
 local plugin = require("todo-list")
 
-local TASKS_PATH = "/mock/kiln/TASKS.md"
+--- Minted per test in before_each: a REAL kiln directory, and the tasks file
+--- inside it. `real_dirs` makes the `cru.fs.mkdir` mock create it for real.
+local KILN
+local TASKS_PATH
 
 --- A file with headings, prose, and a mix of done and not-done tasks — the
 --- shape a whole-file rewrite silently flattens.
@@ -30,17 +35,27 @@ local SECTIONED = table.concat({
 }, "\n") .. "\n"
 
 local function with_file(content)
-    test_mocks.setup({ fs = { files = { [TASKS_PATH] = content or SECTIONED } } })
+    local handle = assert(io.open(TASKS_PATH, "w"))
+    handle:write(content or SECTIONED)
+    handle:close()
 end
 
+--- What the tasks file holds right now, or nil when it does not exist.
 local function written()
-    local writes = test_mocks.get_calls("fs", "write")
-    return writes[#writes] and writes[#writes][2]
+    local handle = io.open(TASKS_PATH, "r")
+    if not handle then return nil end
+    local content = handle:read("a")
+    handle:close()
+    return content
 end
 
 describe("todo-list", function()
     before_each(function()
-        test_mocks.setup()
+        KILN = os.tmpname()
+        os.remove(KILN)
+        test_mocks.setup({ paths = { kiln = KILN }, fs = { real_dirs = true } })
+        cru.fs.mkdir(KILN)
+        TASKS_PATH = KILN .. "/TASKS.md"
         -- `config` is module state that survives require caching.
         plugin.setup({ default_file = "TASKS.md", show_completed = false })
     end)
@@ -52,7 +67,7 @@ describe("todo-list", function()
     describe("setup", function()
         it("applies the configured default file", function()
             plugin.setup({ default_file = "BACKLOG.md" })
-            expect.equal(plugin.tools.tasks_list.fn({}).file, "/mock/kiln/BACKLOG.md")
+            expect.equal(plugin.tools.tasks_list.fn({}).file, KILN .. "/BACKLOG.md")
         end)
 
         it("applies the configured show_completed default", function()
@@ -135,7 +150,9 @@ describe("todo-list", function()
         it("writes nothing when only listing", function()
             with_file()
             plugin.tools.tasks_list.fn({})
-            expect.equal(#test_mocks.get_calls("fs", "write"), 0)
+            -- Byte-identical content is the point: a listing that rewrites the
+            -- file is the regression that flattened section headings.
+            expect.equal(written(), SECTIONED)
         end)
     end)
 
@@ -244,7 +261,7 @@ describe("todo-list", function()
             local result = plugin.tools.tasks_complete.fn({ id = 2 })
             expect.equal(result.success, false)
             expect.equal(result.message, "Task already completed")
-            expect.equal(#test_mocks.get_calls("fs", "write"), 0)
+            expect.equal(written(), SECTIONED)
         end)
 
         it("does not rewrite a checkbox that appears in the task text", function()
