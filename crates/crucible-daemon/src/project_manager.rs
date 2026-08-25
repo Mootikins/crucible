@@ -756,6 +756,37 @@ path = "./notes"
         }
     }
 
+    /// What `cru project forget` removes stays removed.
+    ///
+    /// The kiln registry has two layers — the config the user wrote out-ranks
+    /// the state the daemon was told — so a kiln `forget` has to refuse a
+    /// config-declared name or it would appear to work and be undone at the
+    /// next boot. The project registry has NO config layer: `load` reads
+    /// `projects.json` and nothing else. This test is what says so, because
+    /// "there is no overlay" is invisible until someone adds one.
+    #[test]
+    fn a_forgotten_project_does_not_come_back_at_the_next_start() {
+        let tmp = TempDir::new().unwrap();
+        let storage = tmp.path().join("projects.json");
+        let project_dir = tmp.path().join("forget-test");
+        fs::create_dir(&project_dir).unwrap();
+
+        {
+            let manager = ProjectManager::new(storage.clone());
+            manager.register(&project_dir).unwrap();
+            manager.unregister(&project_dir).unwrap();
+            assert!(manager.list().is_empty());
+        }
+
+        // A fresh process over the same file, which is where a config overlay
+        // would put the entry back.
+        let manager = ProjectManager::new(storage);
+        assert!(
+            manager.list().is_empty(),
+            "a forgotten project must not be re-declared by any other layer"
+        );
+    }
+
     #[test]
     fn list_filters_nonexistent_paths() {
         let tmp = TempDir::new().unwrap();
