@@ -1026,14 +1026,17 @@ end
         // `package.loaded` instance — the file is never evaluated a second
         // time — and a plugin whose `setup` the user called owns its setup:
         // the default `setup(cfg)` call is skipped for it.
-        if let Some(spec) = self.boot_required_instance(name, init_path)? {
+        if let Some((spec, module_name)) = self.boot_required_instance(init_path)? {
             // Rebind the attribution modules WITHOUT releasing: the boot
             // require already ran this plugin's body under its own binding,
             // and releasing here would wipe what the body published.
             register_publish_module(lua, self.publications.clone(), name.to_string())?;
             crucible_lua::register_options_module(lua, self.options.clone(), name.to_string())?;
 
-            if boot::BootRequireState::user_owns_setup(lua, name) {
+            // Ownership is keyed by the MODULE name the user required, which
+            // is not always the plugin's declared name.
+            let owner_key = module_name.split('.').next().unwrap_or(&module_name);
+            if boot::BootRequireState::user_owns_setup(lua, owner_key) {
                 debug!("Plugin '{name}': init.lua called setup(); the default call is skipped");
                 // The direct call owns the plugin — but a store section for
                 // the same plugin is being ignored, and that must be said,
@@ -1171,20 +1174,23 @@ end
     /// this plugin's entry module, when it exists and was loaded from THIS
     /// plugin's own entry file (a user `lua/` module that shadows the name
     /// does not count).
+    /// Matched by FILE identity, not by plugin name: activation must never
+    /// execute a file `package.loaded` already holds, whatever name the
+    /// user's `require` reached it under — re-executing doubles every
+    /// top-level hook and publish. Returns the instance and the module name
+    /// it was loaded as (whose first segment keys the setup-ownership
+    /// record).
     fn boot_required_instance(
         &self,
-        name: &str,
         init_path: &std::path::Path,
-    ) -> anyhow::Result<Option<mlua::Table>> {
+    ) -> anyhow::Result<Option<(mlua::Table, String)>> {
         let lua = self.executor.lua();
-        let Some(loaded_from) = boot::BootRequireState::module_file(lua, name) else {
-            return Ok(None);
-        };
         let canonical_init =
             std::fs::canonicalize(init_path).unwrap_or_else(|_| init_path.to_path_buf());
-        if loaded_from != canonical_init {
+        let Some(module_name) = boot::BootRequireState::module_for_file(lua, &canonical_init)
+        else {
             return Ok(None);
-        }
+        };
         let package: mlua::Table = lua
             .globals()
             .get("package")
@@ -1193,10 +1199,10 @@ end
             .get("loaded")
             .map_err(|e| anyhow::anyhow!("package.loaded: {e}"))?;
         match loaded
-            .get::<mlua::Value>(name)
-            .map_err(|e| anyhow::anyhow!("package.loaded[{name}]: {e}"))?
+            .get::<mlua::Value>(module_name.as_str())
+            .map_err(|e| anyhow::anyhow!("package.loaded[{module_name}]: {e}"))?
         {
-            mlua::Value::Table(table) => Ok(Some(table)),
+            mlua::Value::Table(table) => Ok(Some((table, module_name))),
             _ => Ok(None),
         }
     }

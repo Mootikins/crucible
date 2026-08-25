@@ -1756,6 +1756,13 @@ impl RpcDispatcher {
         // and the client substitutes its own default. Read off the boot
         // store's provenance; a daemon handed a config value directly (no
         // boot) reports false and its value stands.
+        //
+        // "No provenance row" meaning "defaulted" rests on the store
+        // recording a row for EVERY leaf it merges — `ConfigStore::merge` is
+        // the only write door, and
+        // `every_leaf_in_the_store_has_a_provenance_row` (store.rs) is the
+        // gate. A writer that bypassed it would make clients silently
+        // override a configured kiln_path with their own cwd.
         let kiln_path_is_default = self.ctx.boot_hash.is_some()
             && crucible_lua::get_app_config_provenance()
                 .map(|provenance| {

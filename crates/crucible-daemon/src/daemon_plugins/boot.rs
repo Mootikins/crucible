@@ -98,18 +98,24 @@ impl BootRequireState {
         }
     }
 
-    /// The file the user's boot `require` loaded `name` from, if any.
-    pub(crate) fn module_file(lua: &Lua, name: &str) -> Option<PathBuf> {
-        lua.app_data_ref::<BootRequireState>()?
-            .loaded_modules
-            .get(name)
-            .cloned()
-    }
-
     /// Whether the user called this plugin's `setup` during the evaluation.
     pub(crate) fn user_owns_setup(lua: &Lua, plugin: &str) -> bool {
         lua.app_data_ref::<BootRequireState>()
             .is_some_and(|state| state.user_setup.contains(plugin))
+    }
+
+    /// The module name whose boot `require` loaded exactly `file`, if any.
+    ///
+    /// Matched by FILE, not by name: a plugin whose declared name differs
+    /// from its directory name is required under the directory-derived
+    /// module name, and activation must still find the instance.
+    pub(crate) fn module_for_file(lua: &Lua, file: &Path) -> Option<String> {
+        let state = lua.app_data_ref::<BootRequireState>()?;
+        state
+            .loaded_modules
+            .iter()
+            .find(|(_, loaded)| loaded.as_path() == file)
+            .map(|(name, _)| name.clone())
     }
 
     /// Plugin names the user's boot `require` loaded modules for.
@@ -257,10 +263,10 @@ pub async fn evaluate_boot_config_with_paths(
     // module entries first, then the default plugin locations (env path,
     // user plugins dir, shipped runtime), then the seed's own runtimepath
     // entries — membership that exists before any user file runs.
-    let loader = DaemonPluginLoader::new(HashMap::new())?;
-    {
+    let mut loader = DaemonPluginLoader::new(HashMap::new())?;
+    let seed_rtp: Vec<PathBuf> = seed_config.runtimepath.clone();
+    let eval_failed = {
         let lua = loader.executor().lua();
-        let seed_rtp: Vec<PathBuf> = seed_config.runtimepath.clone();
         let plugin_dirs = plugin_paths(&seed_rtp);
         seed_boot_search_path(lua, &config_root, &plugin_dirs)?;
         install_boot_searcher(lua, loader.publications(), loader.options())?;
@@ -283,12 +289,35 @@ pub async fn evaluate_boot_config_with_paths(
         )));
 
         // Step 4: evaluate init.lua once, top to bottom, under the boot
-        // deadline. Errors fail open onto the seed.
+        // deadline. Errors fail open onto the seed — ENTIRELY: the state
+        // snapshot below rolls the store, theme, layout, geometry, syntax
+        // and highlight groups back, and the failed VM is dropped after
+        // this scope, taking hooks, handlers, `package.loaded` and every
+        // `_G` mutation with it. "Seed plus whatever registered before the
+        // error line" would depend on WHERE the file failed; the rollback
+        // makes a broken config mean exactly what the warning says.
         let init_path = config_root.join("init.lua");
-        if init_path.exists() {
-            evaluate_init_file(lua, &init_path, &seed_store).await;
+        let failed = if init_path.exists() {
+            let pre_eval = crucible_lua::snapshot_state().expect("the config state is live");
+            let ok = evaluate_init_file(lua, &init_path).await;
+            if !ok {
+                crucible_lua::install_state(pre_eval);
+            }
+            !ok
         } else {
             debug!("No init.lua at {}", init_path.display());
+            false
+        };
+
+        // Before the phase ends: record every module the evaluation loaded
+        // from under a plugin root, whatever loader served it. The searcher
+        // records the entries it CLAIMED; a module whose name does not match
+        // the entry shape (a plugin whose declared name differs from its
+        // directory) went through the standard loader unobserved, and
+        // without this sweep activation would execute its file a second
+        // time — doubling every top-level hook and publish.
+        if !failed {
+            record_boot_loaded_modules(lua);
         }
 
         // The boot phase ends: the searcher goes inert, the extender comes
@@ -299,6 +328,19 @@ pub async fn evaluate_boot_config_with_paths(
             state.active = false;
         }
         BootRequireState::restore_wrapped_setups(lua);
+        failed
+    };
+
+    if eval_failed {
+        // The VM is part of the rollback. A fresh loader over the restored
+        // state is byte-for-byte the no-init.lua boot.
+        loader = DaemonPluginLoader::new(HashMap::new())?;
+        let lua = loader.executor().lua();
+        seed_boot_search_path(lua, &config_root, &plugin_paths(&seed_rtp))?;
+        if let Some(mut state) = lua.app_data_mut::<BootRequireState>() {
+            state.active = false;
+        }
+        crucible_lua::config::register_ui_namespaces(lua)?;
     }
 
     // Step 5: extract the effective config. A store the evaluation left
@@ -337,17 +379,14 @@ pub async fn evaluate_boot_config_with_paths(
     })
 }
 
-/// Evaluate one init.lua in the boot VM: guards on, budget armed, fail open.
-async fn evaluate_init_file(
-    lua: &Lua,
-    init_path: &Path,
-    seed_store: &crucible_core::config::ConfigStore,
-) {
+/// Evaluate one init.lua in the boot VM: guards on, budget armed. Returns
+/// whether the evaluation SUCCEEDED; the caller owns the fail-open rollback.
+async fn evaluate_init_file(lua: &Lua, init_path: &Path) -> bool {
     let source = match std::fs::read_to_string(init_path) {
         Ok(source) => source,
         Err(e) => {
             warn!("Failed to read {}: {e}", init_path.display());
-            return;
+            return false;
         }
     };
 
@@ -380,13 +419,16 @@ async fn evaluate_init_file(
     }
 
     match outcome {
-        Ok(Ok(_)) => info!("Evaluated user init: {}", init_path.display()),
+        Ok(Ok(_)) => {
+            info!("Evaluated user init: {}", init_path.display());
+            true
+        }
         Ok(Err(e)) => {
             warn!(
                 "User init.lua error ({}): {e}; continuing on the seed",
                 init_path.display()
             );
-            crucible_lua::install_store(seed_store.clone());
+            false
         }
         Err(_) => {
             warn!(
@@ -394,7 +436,7 @@ async fn evaluate_init_file(
                 BOOT_EVAL_BUDGET.as_secs(),
                 init_path.display()
             );
-            crucible_lua::install_store(seed_store.clone());
+            false
         }
     }
 }
@@ -660,6 +702,52 @@ end
     Ok(value)
 }
 
+/// Record every `package.loaded` module whose file lies under a plugin
+/// search root — the generalized half of the searcher's bookkeeping, run
+/// once after the evaluation so activation can reuse by FILE identity.
+fn record_boot_loaded_modules(lua: &Lua) {
+    let roots = match lua.app_data_ref::<BootRequireState>() {
+        Some(state) => state.plugin_roots.clone(),
+        None => return,
+    };
+    let Ok(package) = lua.globals().get::<Table>("package") else {
+        return;
+    };
+    let (Ok(loaded), Ok(searchpath), Ok(path)) = (
+        package.get::<Table>("loaded"),
+        package.get::<mlua::Function>("searchpath"),
+        package.get::<String>("path"),
+    ) else {
+        return;
+    };
+
+    for pair in loaded.pairs::<Value, Value>() {
+        let Ok((Value::String(name), _)) = pair else {
+            continue;
+        };
+        let Ok(name) = name.to_str().map(|s| s.to_string()) else {
+            continue;
+        };
+        let already = lua
+            .app_data_ref::<BootRequireState>()
+            .is_some_and(|state| state.loaded_modules.contains_key(&name));
+        if already {
+            continue;
+        }
+        let Ok((Some(file), _)) =
+            searchpath.call::<(Option<String>, Option<String>)>((name.clone(), path.clone()))
+        else {
+            continue;
+        };
+        let Ok(canonical) = std::fs::canonicalize(&file) else {
+            continue;
+        };
+        if roots.iter().any(|root| canonical.starts_with(root)) {
+            BootRequireState::record_module(lua, &name, canonical);
+        }
+    }
+}
+
 /// Replace the daemon-state namespaces with tables that raise on any index.
 fn install_boot_guards(lua: &Lua) -> mlua::Result<Vec<(String, Value)>> {
     let cru: Table = lua.globals().get("cru")?;
@@ -789,8 +877,10 @@ cru.config.set({ guard_probe = { ok = ok, err = tostring(err) } })
         assert!(err.contains("use a hook"), "{err}");
     }
 
-    /// An evaluation error fails open: warn, continue on the seed — a
-    /// half-applied Lua config never becomes the daemon's config.
+    /// An evaluation error fails open ENTIRELY: the config is the seed, and
+    /// everything the file registered before the error line — hooks, theme —
+    /// is rolled back with the VM. "Seed plus whatever ran before the error"
+    /// would be a state that depends on WHERE the file failed.
     #[tokio::test]
     async fn a_failed_evaluation_continues_on_the_seed() {
         let tmp = tempfile::tempdir().unwrap();
@@ -806,6 +896,8 @@ cru.config.set({ guard_probe = { ok = ok, err = tostring(err) } })
             &config_root,
             r#"
 cru.config.set({ default_kiln = "from-lua" })
+cru.on("turn:complete", function() end)
+cru.colorscheme.setup({ name = "broken-config-theme" })
 error("boom")
 "#,
         )
@@ -818,6 +910,19 @@ error("boom")
         );
         let store = crucible_lua::get_app_config().expect("store is live");
         assert_eq!(store["default_kiln"], json!("seeded"));
+
+        // The registrations from before the error line are gone with the VM.
+        let handlers = boot.loader.plugin_handlers();
+        assert_eq!(
+            handlers.runtime_handlers().lock().unwrap().len(),
+            0,
+            "a hook registered before the error must not survive the rollback"
+        );
+        assert_ne!(
+            crucible_lua::get_theme_config().map(|t| t.name),
+            Some("broken-config-theme".to_string()),
+            "a theme set before the error must not survive the rollback"
+        );
     }
 
     /// After the boot phase, today's rules resume: a location key through

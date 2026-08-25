@@ -376,6 +376,122 @@ return {
     );
 }
 
+/// A plugin whose DECLARED name differs from its directory name is
+/// required under the directory-derived module name — outside the boot
+/// searcher's claim shape. Activation must still execute its file exactly
+/// once: re-execution doubles every top-level hook, and the require-time
+/// registrations are unattributed, so nothing could clear the first copy.
+#[tokio::test]
+async fn a_name_mismatched_plugin_executes_once_and_hooks_once() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plugins");
+    let dir = root.join("plainmod");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("plugin.yaml"),
+        "name: fancy-name\nversion: \"0.1.0\"\nmain: init.lua\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("init.lua"),
+        r#"
+_G.__plainmod_execs = (_G.__plainmod_execs or 0) + 1
+cru.on("turn:complete", function() end)
+return { name = "fancy-name" }
+"#,
+    )
+    .unwrap();
+
+    let (_config, loader) =
+        boot_and_activate(tmp.path(), &root, "", r#"require("plainmod")"#).await;
+
+    let execs = loader.eval("return _G.__plainmod_execs").await.unwrap();
+    assert_eq!(
+        execs, "1",
+        "the file package.loaded already holds must not execute again"
+    );
+    let handlers = loader.plugin_handlers();
+    let count = handlers
+        .runtime_handlers()
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|h| h.event_type == "turn:complete")
+        .count();
+    assert_eq!(count, 1, "a re-execution would register the hook twice");
+}
+
+/// The same entry FILE reached under a different module name — a dotted
+/// `require("dotmod.init")` resolves `<root>/dotmod/init.lua` through the
+/// standard loader, outside the searcher's claim shape. Only the post-eval
+/// sweep records it, and without that record activation executes the file
+/// a second time.
+#[tokio::test]
+async fn a_dotted_require_of_the_entry_file_still_activates_once() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plugins");
+    write_plugin(
+        &root,
+        "dotmod",
+        r#"
+_G.__dotmod_execs = (_G.__dotmod_execs or 0) + 1
+cru.on("turn:complete", function() end)
+return { name = "dotmod" }
+"#,
+    );
+
+    let (_config, loader) =
+        boot_and_activate(tmp.path(), &root, "", r#"require("dotmod.init")"#).await;
+
+    let execs = loader.eval("return _G.__dotmod_execs").await.unwrap();
+    assert_eq!(
+        execs, "1",
+        "one file, one execution, whatever name reached it"
+    );
+}
+
+/// A `.fnl` entry cannot be `require`d at all — only `?.lua` patterns are
+/// on `package.path` and the C searchers are neutered — so the file
+/// executes exactly once, at activation, where the loader compiles it.
+/// Pins the claim rather than asserting it.
+#[tokio::test]
+async fn a_fennel_plugin_executes_once_because_require_cannot_reach_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plugins");
+    let dir = root.join("fnlplug");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("plugin.yaml"),
+        "name: fnlplug\nversion: \"0.1.0\"\nmain: init.fnl\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("init.fnl"),
+        "(set _G.__fnl_execs (+ (or _G.__fnl_execs 0) 1))\n{:name \"fnlplug\"}\n",
+    )
+    .unwrap();
+
+    let (_config, loader) = boot_and_activate(
+        tmp.path(),
+        &root,
+        "",
+        r#"
+local ok = pcall(require, "fnlplug")
+cru.config.set({ fnl_probe = { requirable = ok } })
+"#,
+    )
+    .await;
+
+    let store = crucible_lua::get_app_config().expect("store live");
+    assert_eq!(
+        store["fnl_probe"]["requirable"],
+        serde_json::json!(false),
+        "precondition: a .fnl entry is not requirable"
+    );
+    let execs = loader.eval("return _G.__fnl_execs").await.unwrap();
+    assert_eq!(execs, "1", "the .fnl entry executes once, at activation");
+}
+
 /// A plugin configured BOTH ways gets one boot notice naming the ignored
 /// section — one layer superseding another must never be silent. A plugin
 /// configured one way only gets no notice.

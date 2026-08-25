@@ -281,6 +281,61 @@ mod tests {
         assert_eq!(store.value()["myplugin"]["debug"], json!(true));
     }
 
+    /// The invariant `config.effective`'s `kiln_path_is_default` rests on:
+    /// EVERY leaf the store's value holds has a provenance row, because
+    /// `merge` is the only write door and it records as it merges. A future
+    /// bypass would have to add a store method — this test is the gate that
+    /// makes "no provenance row" mean "defaulted" rather than "someone
+    /// forgot".
+    #[test]
+    fn every_leaf_in_the_store_has_a_provenance_row() {
+        fn walk(value: &Value, path: &mut String, check: &mut dyn FnMut(&str)) {
+            match value {
+                Value::Object(map) if !map.is_empty() => {
+                    for (key, child) in map {
+                        let saved = path.len();
+                        if !path.is_empty() {
+                            path.push('.');
+                        }
+                        path.push_str(key);
+                        walk(child, path, check);
+                        path.truncate(saved);
+                    }
+                }
+                _ => check(path),
+            }
+        }
+
+        let mut store = ConfigStore::for_load();
+        store.merge(
+            json!({"kiln_path": "/k", "chat": {"show_thinking": true, "model": "m"}}),
+            SourceTag::Toml("/tmp/config.toml".into()),
+        );
+        store.merge(
+            json!({"chat": {"model": "n"}, "llm": {"providers": {"a": {"endpoint": "x"}}}}),
+            SourceTag::Lua {
+                file: "init.lua".into(),
+                line: Some(2),
+            },
+        );
+        store.merge(
+            json!({"llm": {"providers": {"__replace": true, "b": {"endpoint": "y"}}}}),
+            SourceTag::Rpc,
+        );
+
+        let value = store.value().clone();
+        let mut missing = Vec::new();
+        walk(&value, &mut String::new(), &mut |path| {
+            if store.provenance().get(path).is_none() {
+                missing.push(path.to_string());
+            }
+        });
+        assert!(
+            missing.is_empty(),
+            "leaves present in the value with no provenance row: {missing:?}"
+        );
+    }
+
     #[test]
     fn a_non_object_overlay_is_refused_wholesale() {
         let mut store = ConfigStore::for_load();

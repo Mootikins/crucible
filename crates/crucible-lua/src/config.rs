@@ -34,7 +34,7 @@ use tracing::{debug, info, warn};
 const DEFAULT_THEME_LUA: &str = include_str!("../../../runtime/themes/default.lua");
 
 /// Global config state - stores parsed configuration from Lua
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ConfigState {
     pub theme: Option<ThemeConfig>,
     /// Highlight groups authored via `cru.hl.set/link`. Open namespace —
@@ -215,6 +215,22 @@ pub fn snapshot_store() -> Option<ConfigStore> {
 pub fn install_store(store: ConfigStore) {
     if let Ok(mut state) = get_config().write() {
         state.app_config = Some(store);
+    }
+}
+
+/// A copy of the WHOLE config state — store, theme, layout, geometry,
+/// syntax, highlight groups. The boot takes one before it evaluates
+/// `init.lua`, so a failed evaluation can be rolled back entirely: the
+/// daemon after a broken config is byte-for-byte the daemon with none.
+pub fn snapshot_state() -> Option<ConfigState> {
+    Some(get_config().read().ok()?.clone())
+}
+
+/// The fail-open half of [`snapshot_state`]: reinstall a pre-evaluation
+/// copy wholesale.
+pub fn install_state(state: ConfigState) {
+    if let Ok(mut current) = get_config().write() {
+        *current = state;
     }
 }
 

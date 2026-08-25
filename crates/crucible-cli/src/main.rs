@@ -95,6 +95,17 @@ enum ConfigNeed {
 
 /// The classification, exhaustive over `Commands` so a new command cannot
 /// silently fall into "no config" — the compiler forces the decision.
+///
+/// NOTE(finding): the Daemon/Local assignments below are grep-derived
+/// judgment (which modules construct a `DaemonClient`), not a proven
+/// property. A misclassified command reads a local evaluation instead of
+/// the daemon's live truth; the two diverge only once runtime `config.set`
+/// merges or state-file registrations exist — exactly when nobody is
+/// looking. Partial pins exist: `a_daemon_on_a_different_config_root_is_refused`
+/// (config_acquisition_e2e) proves a Daemon-class command consults the
+/// daemon, and `daemon_status_completes_with_no_daemon_and_spawns_none`
+/// pins the None class. No per-command matrix ties every assignment to
+/// behaviour.
 fn config_need(command: &Option<Commands>) -> ConfigNeed {
     let Some(command) = command else {
         // Bare `cru` is chat.
