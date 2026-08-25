@@ -25,11 +25,14 @@ pub enum KilnEntry {
         /// Nothing in Crucible reads it: it is a marker for the human whose
         /// config file grew a line they did not type, so they can tell their
         /// own entries from ours and delete ours without wondering what
-        /// depends on it. Modelled rather than merely written so that the one
-        /// writer that still round-trips the config through serde
-        /// ([`register_project_in_config`]) does not silently erase it.
+        /// depends on it.
         ///
-        /// [`register_project_in_config`]: crate::config::register_project_in_config
+        /// Modelled rather than merely written, because a config that
+        /// round-trips through serde drops what the struct does not describe.
+        /// No writer does that any more — Crucible writes no `[kilns]` entries
+        /// at all, and an entry here is one a user typed or one an older
+        /// version left behind — but the field has to survive being READ and
+        /// written back by anything that ever does.
         #[serde(default)]
         auto: bool,
     },
