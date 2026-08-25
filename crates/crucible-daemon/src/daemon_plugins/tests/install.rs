@@ -29,18 +29,18 @@ fn write_plugin(plugins_dir: &std::path::Path, name: &str) {
 /// The full install → activate → remove round trip that the RPC handlers
 /// perform: after install + a second `load_plugins` pass the plugin's tools
 /// are registered and it is listed; after the remove flow nothing remains in
-/// the loader and the TOML declaration is gone.
+/// the loader and the manifest record is gone.
 #[tokio::test]
-async fn install_then_remove_acts_on_the_running_loader_and_the_toml() {
+async fn install_then_remove_acts_on_the_running_loader_and_the_manifest() {
     let tmp = tempfile::TempDir::new().unwrap();
-    let toml_path = tmp.path().join("plugins.toml");
+    let manifest_path = tmp.path().join(plugin_ops::INSTALLED_PLUGINS_FILE);
     let plugins_dir = tmp.path().join("plugins");
     // Pre-created clone: `bootstrap_plugin_entry` short-circuits to
     // AlreadyPresent, so the test exercises name derivation, bootstrap
-    // outcome, and the TOML write without relaxing the git-URL allowlist.
+    // outcome, and the manifest write without relaxing the git-URL allowlist.
     write_plugin(&plugins_dir, "fresh");
 
-    // Step 1 of handle_plugin_install: clone + declare.
+    // Step 1 of handle_plugin_install: clone + record.
     let installed = plugin_ops::install_at(
         crucible_core::config::PluginEntry {
             url: "user/fresh".to_string(),
@@ -48,7 +48,7 @@ async fn install_then_remove_acts_on_the_running_loader_and_the_toml() {
             pin: None,
             enabled: true,
         },
-        &toml_path,
+        &manifest_path,
         &plugins_dir,
     )
     .await
@@ -79,17 +79,18 @@ async fn install_then_remove_acts_on_the_running_loader_and_the_toml() {
         .expect("installed plugin listed");
     assert_eq!(entry["state"], "Active", "got: {entry}");
 
-    // The remove flow, in handler order: declared-precondition, deactivate +
-    // forget, then the TOML commit (purge only after success).
+    // The remove flow, in handler order: installed-precondition, deactivate +
+    // forget, then the manifest commit (purge only after success).
     assert!(
-        plugin_ops::declared_at(&toml_path, "fresh").expect("declared check"),
-        "an installed plugin is declared"
+        plugin_ops::installed_at(&manifest_path, "fresh").expect("installed check"),
+        "an installed plugin is recorded"
     );
     loader
         .deactivate_and_forget_plugin("fresh")
         .await
         .expect("deactivate");
-    let removed = plugin_ops::remove_at("fresh", true, &toml_path, &plugins_dir).expect("remove");
+    let removed =
+        plugin_ops::remove_at("fresh", true, &manifest_path, &plugins_dir).expect("remove");
     assert_eq!(removed.purged_dir, Some(plugins_dir.join("fresh")));
 
     assert!(
@@ -107,15 +108,15 @@ async fn install_then_remove_acts_on_the_running_loader_and_the_toml() {
         "a removed plugin must leave plugin.list"
     );
     assert!(
-        !plugin_ops::declared_at(&toml_path, "fresh").expect("declared check"),
-        "the TOML declaration must be gone"
+        !plugin_ops::installed_at(&manifest_path, "fresh").expect("installed check"),
+        "the manifest record must be gone"
     );
 }
 
-/// A plugin can be declared in plugins.toml yet unknown to the running
+/// A plugin can be recorded in the manifest yet unknown to the running
 /// daemon — its clone was deleted by hand, or bootstrap failed at boot (no
 /// network, repo gone). Removal must still work: `handle_plugin_remove`'s
-/// declared-precondition already guards against typos, and "nothing to
+/// installed-precondition already guards against typos, and "nothing to
 /// deactivate" is not a refusal. Erroring on `unload`'s NotFound left the
 /// stale declaration permanently unremovable while the daemon ran.
 #[tokio::test]
@@ -128,8 +129,8 @@ async fn removing_a_declared_plugin_the_daemon_never_discovered_still_works() {
 }
 
 /// `plugin.install` of a plugin that is ALREADY Active — manually cloned
-/// into the user plugins dir and loaded at boot, now being declared in
-/// plugins.toml — must report loaded, not failure. `load_all` skips Active
+/// into the user plugins dir and loaded at boot, now being recorded in the
+/// manifest — must report loaded, not failure. `load_all` skips Active
 /// plugins (`AlreadyLoaded`), so the activation pass's return value does not
 /// contain them; judging by that value alone reported `loaded: false` with a
 /// fabricated error for a healthy plugin and failed `cru plugin add`'s exit
@@ -212,15 +213,15 @@ async fn install_load_report_surfaces_failure_and_absence() {
 
 /// A repo named `crucible-greeter` whose plugin.yaml says `name: greeter` is
 /// a thoroughly conventional layout, and it puts two naming authorities in
-/// play: plugins.toml and the clone dir go by the URL name, the plugin
-/// manager by the manifest name. Resolution must go through the clone
-/// DIRECTORY, or install reports a healthy plugin as broken and remove
-/// silently no-ops (unload's NotFound swallowed, TOML entry gone, plugin
-/// still running and now unremovable).
+/// play: the installed manifest and the clone dir go by the URL name, the
+/// plugin manager by the yaml/spec name. Resolution must go through the
+/// clone DIRECTORY, or install reports a healthy plugin as broken and remove
+/// silently no-ops (unload's NotFound swallowed, manifest record gone,
+/// plugin still running and now unremovable).
 #[tokio::test]
 async fn a_manifest_name_differing_from_the_repo_name_still_installs_and_removes() {
     let tmp = tempfile::TempDir::new().unwrap();
-    let toml_path = tmp.path().join("plugins.toml");
+    let manifest_path = tmp.path().join(plugin_ops::INSTALLED_PLUGINS_FILE);
     let plugins_dir = tmp.path().join("plugins");
     let clone_dir = plugins_dir.join("crucible-greeter");
     std::fs::create_dir_all(&clone_dir).unwrap();
@@ -246,7 +247,7 @@ async fn a_manifest_name_differing_from_the_repo_name_still_installs_and_removes
             pin: None,
             enabled: true,
         },
-        &toml_path,
+        &manifest_path,
         &plugins_dir,
     )
     .await
@@ -283,5 +284,78 @@ async fn a_manifest_name_differing_from_the_repo_name_still_installs_and_removes
             .tool_names()
             .contains("greeter_probe"),
         "remove must deactivate the ACTUAL plugin, not no-op on the URL name"
+    );
+}
+
+/// The bootstrap union: a declared plugin bootstraps with nothing in the
+/// manifest, an installed one with nothing declared, and on a name shared
+/// by both the DECLARATION wins — with the shadowed name reported, never
+/// applied silently.
+#[test]
+fn the_bootstrap_union_prefers_the_declaration_and_names_the_shadow() {
+    let entry = |url: &str, pin: Option<&str>| crucible_core::config::PluginEntry {
+        url: url.to_string(),
+        branch: None,
+        pin: pin.map(str::to_string),
+        enabled: true,
+    };
+
+    // Declared alone: bootstraps with an empty manifest.
+    let (entries, shadows) = crate::daemon_plugins::union_plugin_entries(
+        vec![("greeter".into(), entry("user/greeter", None))],
+        Vec::new(),
+    );
+    assert_eq!(entries.len(), 1);
+    assert!(shadows.is_empty());
+
+    // Installed alone: bootstraps with nothing declared.
+    let (entries, shadows) = crate::daemon_plugins::union_plugin_entries(
+        Vec::new(),
+        vec![("tool".into(), entry("other/tool", None))],
+    );
+    assert_eq!(entries.len(), 1);
+    assert!(shadows.is_empty());
+
+    // Both name the same plugin: the declaration's entry survives, the
+    // installed one is shadowed BY NAME in the returned report.
+    let (entries, shadows) = crate::daemon_plugins::union_plugin_entries(
+        vec![("greeter".into(), entry("user/greeter", Some("v2")))],
+        vec![
+            ("greeter".into(), entry("user/greeter", Some("v1"))),
+            ("tool".into(), entry("other/tool", None)),
+        ],
+    );
+    assert_eq!(entries.len(), 2);
+    let greeter = entries.iter().find(|e| e.url == "user/greeter").unwrap();
+    assert_eq!(
+        greeter.pin.as_deref(),
+        Some("v2"),
+        "the declared entry must win the union"
+    );
+    assert_eq!(shadows, vec!["greeter".to_string()]);
+}
+
+/// `plugins.declare` is a reserved subkey holding declarations; the option
+/// splitter must never hand it to a plugin's `setup(cfg)`.
+#[test]
+fn split_plugins_config_never_hands_declarations_to_setup() {
+    let raw = std::collections::BTreeMap::from([
+        (
+            crucible_core::config::PLUGINS_DECLARE_KEY.to_string(),
+            serde_json::json!({ "greeter": "user/greeter" }),
+        ),
+        (
+            "reflection".to_string(),
+            serde_json::json!({ "model": "llama3.2" }),
+        ),
+        ("watch".to_string(), serde_json::json!(true)),
+    ]);
+
+    let (sections, watch) = crate::daemon_plugins::split_plugins_config(&raw);
+    assert!(watch);
+    assert!(sections.contains_key("reflection"));
+    assert!(
+        !sections.contains_key(crucible_core::config::PLUGINS_DECLARE_KEY),
+        "the declaration table must not reach any setup(cfg): {sections:?}"
     );
 }

@@ -21,6 +21,75 @@ pub use list::ListArgs;
 pub use remove::RemoveArgs;
 pub use update::UpdateArgs;
 
+/// Where a git-hosted plugin entry came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EntrySource {
+    /// `plugins.declare.<name>` in the config.
+    Declared,
+    /// `<data_home>/plugins.installed.json`.
+    Installed,
+}
+
+impl EntrySource {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            EntrySource::Declared => "declared",
+            EntrySource::Installed => "installed",
+        }
+    }
+}
+
+/// Every configured git-hosted plugin: the config-declared entries plus the
+/// installed manifest, name-deduplicated with the declaration winning (the
+/// same rule the daemon's bootstrap union applies).
+///
+/// Best-effort on the config side: an unreadable config yields the manifest
+/// alone, with the reason surfaced to the caller.
+pub(crate) async fn configured_plugin_entries(
+) -> Result<(Vec<(String, crucible_core::config::PluginEntry, EntrySource)>, Vec<String>)> {
+    let mut notes = Vec::new();
+
+    let declared = match crate::config::fetch_effective_config(None, None, None).await {
+        Ok(config) => {
+            let (entries, warnings) = crucible_core::config::declared_plugins(&config.plugins);
+            notes.extend(warnings);
+            entries
+        }
+        Err(e) => {
+            notes.push(format!("could not read the config for declared plugins: {e}"));
+            Vec::new()
+        }
+    };
+
+    let manifest_path = crucible_daemon::plugin_ops::installed_manifest_path(
+        &crucible_core::config::crucible_home(),
+    );
+    let installed = match crucible_daemon::plugin_ops::installed_entries(&manifest_path) {
+        Ok(entries) => entries,
+        Err(e) => {
+            notes.push(format!("could not read {}: {e}", manifest_path.display()));
+            Vec::new()
+        }
+    };
+
+    let declared_names: std::collections::BTreeSet<String> =
+        declared.iter().map(|(name, _)| name.clone()).collect();
+    let mut entries: Vec<_> = declared
+        .into_iter()
+        .map(|(name, entry)| (name, entry, EntrySource::Declared))
+        .collect();
+    for (name, entry) in installed {
+        if declared_names.contains(&name) {
+            notes.push(format!(
+                "plugin '{name}': the config declaration supersedes the installed manifest entry"
+            ));
+        } else {
+            entries.push((name, entry, EntrySource::Installed));
+        }
+    }
+    Ok((entries, notes))
+}
+
 #[derive(Debug, Subcommand)]
 pub enum PluginCommands {
     /// Run plugin tests in a sandboxed Lua runtime

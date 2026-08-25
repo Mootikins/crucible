@@ -1,5 +1,5 @@
 //! `cru plugin add` / `cru install` — clone a plugin from a git URL,
-//! declare it in plugins.toml, and load it into the running daemon.
+//! record it in the installed manifest, and load it into the running daemon.
 
 use std::fmt::Write as _;
 
@@ -20,7 +20,7 @@ pub struct AddArgs {
 
 pub async fn execute(args: AddArgs) -> Result<()> {
     // Route through the daemon so the plugin activates without a restart —
-    // the in-process path only edits TOML and clones. Fall back to that
+    // the in-process path only edits the manifest and clones. Fall back to that
     // offline path only when no daemon can be reached at all; an RPC error
     // from a reachable daemon is a refusal, not a cue to bypass it.
     match crucible_daemon::DaemonClient::connect_or_start().await {
@@ -36,7 +36,7 @@ pub async fn execute(args: AddArgs) -> Result<()> {
                 // plugin sits broken in the daemon.
                 anyhow::bail!(
                     "plugin '{}' installed but failed to load: {err}\n\
-                     (it stays declared; the next daemon start retries it)",
+                     (it stays recorded; the next daemon start retries it)",
                     resp["name"].as_str().unwrap_or(&args.url)
                 );
             }
@@ -52,7 +52,7 @@ pub async fn execute(args: AddArgs) -> Result<()> {
 /// Split the daemon's `plugin.install` response into terminal output and,
 /// when the plugin installed but failed to load, the load error. Split
 /// rather than bailed inside so the caller can print what DID happen (clone,
-/// TOML entry) before failing the exit code.
+/// manifest entry) before failing the exit code.
 fn render_install_response(resp: &serde_json::Value) -> (String, Option<String>) {
     let name = resp["name"].as_str().unwrap_or("?");
     let mut out = String::new();
@@ -64,13 +64,15 @@ fn render_install_response(resp: &serde_json::Value) -> (String, Option<String>)
         Some("already_present") => {
             let _ = writeln!(
                 out,
-                "Plugin '{name}' is already cloned; declaring in plugins.toml"
+                "Plugin '{name}' is already cloned; recording in the installed manifest"
             );
         }
         _ => {}
     }
-    let toml = resp["plugins_toml"].as_str().unwrap_or("plugins.toml");
-    let _ = writeln!(out, "Declared '{name}' in {toml}");
+    let manifest = resp["manifest"]
+        .as_str()
+        .unwrap_or("plugins.installed.json");
+    let _ = writeln!(out, "Recorded '{name}' in {manifest}");
 
     if resp["loaded"].as_bool().unwrap_or(false) {
         let _ = writeln!(
@@ -97,8 +99,8 @@ fn render_install_response(resp: &serde_json::Value) -> (String, Option<String>)
     }
 }
 
-/// The pre-daemon-routing behavior: clone + TOML edit in-process, nothing
-/// loaded anywhere. Only reachable when connect_or_start failed.
+/// The pre-daemon-routing behavior: clone + manifest edit in-process,
+/// nothing loaded anywhere. Only reachable when connect_or_start failed.
 async fn install_offline(args: AddArgs) -> Result<()> {
     let entry = crucible_core::config::PluginEntry {
         url: args.url.clone(),
@@ -115,7 +117,7 @@ async fn install_offline(args: AddArgs) -> Result<()> {
         }
         crucible_daemon::BootstrapOutcome::AlreadyPresent => {
             println!(
-                "Plugin '{}' is already cloned; declaring in plugins.toml",
+                "Plugin '{}' is already cloned; recording in the installed manifest",
                 result.name
             );
         }
@@ -126,9 +128,9 @@ async fn install_offline(args: AddArgs) -> Result<()> {
         }
     }
     println!(
-        "Declared '{}' in {}",
+        "Recorded '{}' in {}",
         result.name,
-        result.plugins_toml.display()
+        result.manifest.display()
     );
     // Only a restart loads daemon plugins — a new session does not.
     println!("Restart the daemon to load it.");
@@ -153,7 +155,7 @@ mod tests {
             "error": null,
             "watch": "not hot-watched until restart",
             "outcome": { "kind": "cloned", "dest": "/plugins/greeter" },
-            "plugins_toml": "/cfg/plugins.toml",
+            "manifest": "/data/plugins.installed.json",
         });
         let (out, load_error) = render_install_response(&resp);
         assert!(
@@ -165,7 +167,7 @@ mod tests {
             "got: {out}"
         );
         assert!(
-            out.contains("Declared 'greeter' in /cfg/plugins.toml"),
+            out.contains("Recorded 'greeter' in /data/plugins.installed.json"),
             "got: {out}"
         );
         assert!(
@@ -190,12 +192,12 @@ mod tests {
             "error": "boom inside setup",
             "watch": "not hot-watched until restart",
             "outcome": { "kind": "already_present" },
-            "plugins_toml": "/cfg/plugins.toml",
+            "manifest": "/data/plugins.installed.json",
         });
         let (out, load_error) = render_install_response(&resp);
         // The install DID happen on disk — say so before failing.
         assert!(
-            out.contains("Declared 'broken' in /cfg/plugins.toml"),
+            out.contains("Recorded 'broken' in /data/plugins.installed.json"),
             "got: {out}"
         );
         let err = load_error.expect("loaded: false must produce an error for the exit code");
@@ -210,7 +212,7 @@ mod tests {
             "loaded": false,
             "error": null,
             "outcome": { "kind": "already_present" },
-            "plugins_toml": "/cfg/plugins.toml",
+            "manifest": "/data/plugins.installed.json",
         });
         let (_, load_error) = render_install_response(&resp);
         let err = load_error.expect("loaded: false must produce an error even without a reason");

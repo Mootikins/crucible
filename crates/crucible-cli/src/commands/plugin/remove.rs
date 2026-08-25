@@ -1,5 +1,7 @@
 //! `cru plugin remove` — deactivate a plugin in the running daemon and
-//! remove its declaration from plugins.toml.
+//! remove its record from the installed manifest. A config-DECLARED plugin
+//! is refused by the daemon with its declaration site: the user edits their
+//! own init.lua, never the machine.
 
 use std::fmt::Write as _;
 
@@ -17,10 +19,10 @@ pub struct RemoveArgs {
 
 pub async fn execute(args: RemoveArgs) -> Result<()> {
     // Route through the daemon: the RPC deactivates + forgets the running
-    // plugin before touching TOML, and refuses with the reason (bundled
-    // plugin, dependents) instead of leaving a half-removed state. Daemon
-    // refusals propagate as errors; only an unreachable daemon falls back to
-    // the offline TOML-only path.
+    // plugin before touching the manifest, and refuses with the reason
+    // (declared plugin, bundled plugin) instead of leaving a half-removed
+    // state. Daemon refusals propagate as errors; only an unreachable daemon
+    // falls back to the offline manifest-only path.
     match crucible_daemon::DaemonClient::connect_or_start().await {
         Ok(client) => {
             let resp = client.plugin_remove(&args.name, args.purge).await?;
@@ -38,9 +40,11 @@ pub async fn execute(args: RemoveArgs) -> Result<()> {
 /// never reach here — the RPC call errors instead.
 fn render_remove_response(resp: &serde_json::Value, purge: bool) -> String {
     let name = resp["name"].as_str().unwrap_or("?");
-    let toml = resp["plugins_toml"].as_str().unwrap_or("plugins.toml");
+    let manifest = resp["manifest"]
+        .as_str()
+        .unwrap_or("plugins.installed.json");
     let mut out = String::new();
-    let _ = writeln!(out, "Removed plugin '{name}' from {toml}");
+    let _ = writeln!(out, "Removed plugin '{name}' from {manifest}");
     // Distinguishes this path from the offline fallback, whose output is
     // otherwise identical — the user should know the running daemon changed.
     let _ = writeln!(out, "Unloaded from the running daemon.");
@@ -77,14 +81,14 @@ fn render_remove_response(resp: &serde_json::Value, purge: bool) -> String {
     out
 }
 
-/// TOML-only removal for when no daemon is reachable — nothing is running,
-/// so there is nothing to deactivate.
+/// Manifest-only removal for when no daemon is reachable — nothing is
+/// running, so there is nothing to deactivate.
 fn remove_offline(args: RemoveArgs) -> Result<()> {
     let outcome = crucible_daemon::plugin_ops::remove(&args.name, args.purge)?;
     println!(
         "Removed plugin '{}' from {}",
         outcome.name,
-        outcome.plugins_toml.display()
+        outcome.manifest.display()
     );
     if let Some(dir) = outcome.purged_dir {
         println!("Deleted {}", dir.display());
@@ -100,15 +104,15 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn a_daemon_remove_reports_the_toml_and_purged_dir() {
+    fn a_daemon_remove_reports_the_manifest_and_purged_dir() {
         let resp = json!({
             "name": "greeter",
-            "plugins_toml": "/cfg/plugins.toml",
+            "manifest": "/data/plugins.installed.json",
             "purged_dir": "/plugins/greeter",
         });
         let out = render_remove_response(&resp, true);
         assert!(
-            out.contains("Removed plugin 'greeter' from /cfg/plugins.toml"),
+            out.contains("Removed plugin 'greeter' from /data/plugins.installed.json"),
             "got: {out}"
         );
         assert!(out.contains("Deleted /plugins/greeter"), "got: {out}");
@@ -118,7 +122,7 @@ mod tests {
     fn a_purge_with_no_directory_says_so() {
         let resp = json!({
             "name": "greeter",
-            "plugins_toml": "/cfg/plugins.toml",
+            "manifest": "/data/plugins.installed.json",
             "purged_dir": null,
         });
         let out = render_remove_response(&resp, true);
@@ -129,7 +133,7 @@ mod tests {
     fn a_plain_remove_warns_that_the_kept_directory_loads_again() {
         let resp = json!({
             "name": "greeter",
-            "plugins_toml": "/cfg/plugins.toml",
+            "manifest": "/data/plugins.installed.json",
             "purged_dir": null,
             "kept_dir": "/plugins/greeter",
         });
@@ -142,21 +146,21 @@ mod tests {
     }
 
     #[test]
-    fn a_purge_failure_is_a_warning_that_does_not_claim_the_toml_survived() {
+    fn a_purge_failure_is_a_warning_that_does_not_claim_the_manifest_survived() {
         let resp = json!({
             "name": "greeter",
-            "plugins_toml": "/cfg/plugins.toml",
+            "manifest": "/data/plugins.installed.json",
             "purged_dir": null,
             "purge_error": "failed to remove plugin dir /plugins/greeter: EACCES",
         });
         let out = render_remove_response(&resp, true);
         assert!(out.contains("Warning:"), "got: {out}");
         assert!(out.contains("EACCES"), "got: {out}");
-        // The TOML edit succeeded — output must not claim otherwise.
+        // The manifest edit succeeded — output must not claim otherwise.
         assert!(
-            out.contains("Removed plugin 'greeter' from /cfg/plugins.toml"),
+            out.contains("Removed plugin 'greeter' from /data/plugins.installed.json"),
             "got: {out}"
         );
-        assert!(!out.contains("still declared"), "got: {out}");
+        assert!(!out.contains("still recorded"), "got: {out}");
     }
 }

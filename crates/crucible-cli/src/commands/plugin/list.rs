@@ -1,4 +1,5 @@
-//! `cru plugin list` — declared plugins (plugins.toml) plus the daemon's
+//! `cru plugin list` — the configured git-hosted plugins (declared in
+//! init.lua, or recorded in the installed manifest) plus the daemon's
 //! runtime view: what actually loaded, and *why* the broken ones broke.
 //!
 //! The runtime section is the only place a user can see a load failure:
@@ -25,64 +26,65 @@ async fn runtime_plugins() -> Option<Vec<serde_json::Value>> {
 }
 
 pub async fn execute(args: ListArgs) -> Result<()> {
-    let plugins_toml = crucible_daemon::plugin_ops::plugins_toml_path()?;
-
-    let config: crucible_core::config::PluginsConfig = if plugins_toml.exists() {
-        let content = std::fs::read_to_string(&plugins_toml)?;
-        toml::from_str(&content)?
-    } else {
-        crucible_core::config::PluginsConfig::default()
-    };
-
+    let (entries, notes) = super::configured_plugin_entries().await?;
     let plugins_dir = crucible_daemon::plugin_ops::plugins_dir()?;
 
     let runtime = runtime_plugins().await;
 
     if args.json {
-        let declared: Vec<_> = config
-            .plugin
+        let configured: Vec<_> = entries
             .iter()
-            .map(|p| {
-                let name = p.name();
-                let cloned = name
-                    .as_ref()
-                    .map(|n| plugins_dir.join(n).exists())
-                    .unwrap_or(false);
+            .map(|(name, entry, source)| {
+                let cloned = plugins_dir.join(name).exists();
                 serde_json::json!({
                     "name": name,
-                    "url": p.url,
-                    "branch": p.branch,
-                    "pin": p.pin,
-                    "enabled": p.enabled,
+                    "url": entry.url,
+                    "branch": entry.branch,
+                    "pin": entry.pin,
+                    "enabled": entry.enabled,
                     "cloned": cloned,
+                    "source": source.as_str(),
                 })
             })
             .collect();
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
-                "declared": declared,
+                "configured": configured,
+                "notes": notes,
                 "runtime": runtime,
             }))?
         );
         return Ok(());
     }
 
-    if config.plugin.is_empty() {
-        println!("No plugins declared.");
+    for note in &notes {
+        eprintln!("note: {note}");
+    }
+    if entries.is_empty() {
+        println!("No git-hosted plugins configured.");
         println!("Add one with: cru install <user/repo>");
     } else {
-        println!("{:<24} {:<10} {:<10} URL", "NAME", "STATE", "PIN");
-        for entry in &config.plugin {
-            let name = entry.name().unwrap_or_else(|| "(invalid)".into());
-            let cloned = plugins_dir.join(&name).exists();
+        println!(
+            "{:<24} {:<10} {:<10} {:<10} URL",
+            "NAME", "SOURCE", "STATE", "PIN"
+        );
+        for (name, entry, source) in &entries {
+            let cloned = plugins_dir.join(name).exists();
             let state = match (entry.enabled, cloned) {
                 (false, _) => "disabled",
                 (true, true) => "cloned",
                 (true, false) => "pending",
             };
             let pin = entry.pin.as_deref().unwrap_or("-");
-            println!("{:<24} {:<10} {:<10} {}", name, state, pin, entry.url);
+            println!(
+                "{:<24} {:<10} {:<10} {:<10} {}",
+                name,
+                source.as_str(),
+                state,
+                pin,
+                entry.url
+            );
         }
     }
 

@@ -10,35 +10,22 @@ pub struct UpdateArgs {
 }
 
 pub async fn execute(args: UpdateArgs) -> Result<()> {
-    let plugins_toml = crucible_daemon::plugin_ops::plugins_toml_path()?;
-
-    if !plugins_toml.exists() {
-        anyhow::bail!("No plugins.toml found at {}", plugins_toml.display());
+    let (entries, notes) = super::configured_plugin_entries().await?;
+    for note in &notes {
+        eprintln!("note: {note}");
     }
-
-    let content = std::fs::read_to_string(&plugins_toml)?;
-    let config: crucible_core::config::PluginsConfig = toml::from_str(&content)?;
+    if entries.is_empty() {
+        anyhow::bail!("no git-hosted plugins configured (declared or installed)");
+    }
 
     let plugins_dir = crucible_daemon::plugin_ops::plugins_dir()?;
 
     let mut updated = 0;
-    for entry in &config.plugin {
+    for (name, entry, _source) in &entries {
         if !entry.enabled {
             continue;
         }
-
-        let name = entry
-            .url
-            .trim_end_matches('/')
-            .rsplit('/')
-            .next()
-            .unwrap_or("")
-            .trim_end_matches(".git");
-
-        if name.is_empty() || name == "." || name == ".." {
-            eprintln!("Skipping plugin with unparseable URL: '{}'", entry.url);
-            continue;
-        }
+        let name = name.as_str();
 
         if let Some(ref filter) = args.name {
             if name != filter.as_str() {

@@ -89,26 +89,70 @@ impl Server {
                 warn!("Failed to upgrade Lua tools module: {}", e);
             }
 
-            // Bootstrap declared plugins from plugins.toml before discovery
-            let plugins_toml = dirs::config_dir().map(|d| d.join("crucible").join("plugins.toml"));
-            if let Some(ref path) = plugins_toml {
-                if path.exists() {
-                    match std::fs::read_to_string(path) {
-                        Ok(content) => {
-                            match toml::from_str::<crucible_core::config::PluginsConfig>(&content) {
-                                Ok(config) => {
-                                    if let Err(e) =
-                                        crate::daemon_plugins::bootstrap_plugins(&config.plugin)
-                                            .await
-                                    {
-                                        warn!("Plugin bootstrap error: {}", e);
-                                    }
-                                }
-                                Err(e) => warn!("Failed to parse {}: {}", path.display(), e),
-                            }
-                        }
-                        Err(e) => warn!("Failed to read {}: {}", path.display(), e),
+            // Bootstrap git-hosted plugins before discovery: the union of
+            // the DECLARED set (`plugins.declare` in init.lua) and the
+            // INSTALLED manifest (`<data_home>/plugins.installed.json`).
+            let manifest_path = crate::plugin_ops::installed_manifest_path(&self.data_home);
+
+            // `plugins.toml` is no longer read. Its entries are imported
+            // into the manifest once (idempotently); the leftover file is
+            // inert and warned about until the user deletes it.
+            if let Some(toml_path) = crate::plugin_ops::legacy_plugins_toml_path() {
+                if toml_path.exists() {
+                    warn!(
+                        "{} is no longer read; its entries were imported into {} — delete the \
+                         file to silence this warning",
+                        toml_path.display(),
+                        manifest_path.display()
+                    );
+                    match crate::plugin_ops::import_legacy_plugins_toml(&toml_path, &manifest_path)
+                    {
+                        Ok(0) => {}
+                        Ok(n) => info!(
+                            "Imported {n} plugin entr{} from {} into {}",
+                            if n == 1 { "y" } else { "ies" },
+                            toml_path.display(),
+                            manifest_path.display()
+                        ),
+                        Err(e) => warn!("Failed to import {}: {e}", toml_path.display()),
                     }
+                }
+            }
+
+            let declared = self
+                .rpc_context
+                .effective_config
+                .as_ref()
+                .and_then(|cfg| cfg.get("plugins"))
+                .and_then(|v| {
+                    serde_json::from_value::<
+                        std::collections::BTreeMap<String, serde_json::Value>,
+                    >(v.clone())
+                    .ok()
+                })
+                .map(|map| crucible_core::config::declared_plugins(&map))
+                .unwrap_or_default();
+            for warning in &declared.1 {
+                warn!("{warning}");
+            }
+            let installed = match crate::plugin_ops::installed_entries(&manifest_path) {
+                Ok(entries) => entries,
+                Err(e) => {
+                    warn!("Failed to read {}: {e}", manifest_path.display());
+                    Vec::new()
+                }
+            };
+            let (entries, shadows) =
+                crate::daemon_plugins::union_plugin_entries(declared.0, installed);
+            for name in &shadows {
+                info!(
+                    "plugin '{name}': the init.lua declaration supersedes the installed \
+                     manifest entry"
+                );
+            }
+            if !entries.is_empty() {
+                if let Err(e) = crate::daemon_plugins::bootstrap_plugins(&entries).await {
+                    warn!("Plugin bootstrap error: {}", e);
                 }
             }
 

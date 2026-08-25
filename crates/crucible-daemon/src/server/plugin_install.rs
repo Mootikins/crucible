@@ -70,10 +70,66 @@ pub(crate) fn install_load_report(
     }
 }
 
+/// The config-declared plugin names, read from the effective config the
+/// daemon was bound with. Empty when the daemon has no app config.
+fn declared_plugin_names(ctx: &crate::rpc::RpcContext) -> Vec<String> {
+    ctx.effective_config
+        .as_ref()
+        .and_then(|cfg| cfg.get("plugins"))
+        .and_then(|v| {
+            serde_json::from_value::<std::collections::BTreeMap<String, serde_json::Value>>(
+                v.clone(),
+            )
+            .ok()
+        })
+        .map(|map| {
+            crucible_core::config::declared_plugins(&map)
+                .0
+                .into_iter()
+                .map(|(name, _)| name)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Where the declaration was written — `lua (init.lua:12)` — from the boot
+/// store's provenance. The refusal that names this is what lets the user
+/// find the line to edit.
+fn declaration_site(name: &str) -> Option<String> {
+    let provenance = crucible_lua::get_app_config_provenance()?;
+    let leaf = format!(
+        "plugins.{}.{name}",
+        crucible_core::config::PLUGINS_DECLARE_KEY
+    );
+    let child_prefix = format!("{leaf}.");
+    provenance
+        .get(&leaf)
+        .cloned()
+        .or_else(|| {
+            provenance
+                .iter()
+                .find(|(path, _)| path.starts_with(&child_prefix))
+                .map(|(_, tag)| tag.clone())
+        })
+        .map(|tag| tag.detail())
+}
+
+/// The refusal both handlers give for a config-declared plugin: the machine
+/// must not edit the user's config file, so it names the declaration site
+/// and stops.
+fn declared_refusal(name: &str, action: &str) -> String {
+    let site = declaration_site(name).unwrap_or_else(|| "your init.lua".to_string());
+    format!(
+        "plugin '{name}' is declared in your config ({site}); {action}. Edit the          `plugins.{}.{name}` entry there — Crucible never edits your config file",
+        crucible_core::config::PLUGINS_DECLARE_KEY
+    )
+}
+
 pub(crate) async fn handle_plugin_install(
     req: Request,
-    plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
+    ctx: &Arc<crate::rpc::RpcContext>,
 ) -> Response {
+    let plugin_loader = &ctx.plugin_loader;
     let params =
         match crate::rpc_helpers::typed_params::<crate::rpc_client::PluginInstallRequest>(&req) {
             Ok(p) => p,
@@ -87,9 +143,28 @@ pub(crate) async fn handle_plugin_install(
         enabled: true,
     };
 
-    let result = match crate::plugin_ops::install(entry).await {
-        Ok(r) => r,
-        Err(e) => return internal_error(req.id, e),
+    // A declared plugin already bootstraps at every boot; recording it in
+    // the manifest too would create a permanent shadow pair.
+    if let Some(name) = entry.name() {
+        if declared_plugin_names(ctx).contains(&name) {
+            return Response::error(
+                req.id,
+                INVALID_PARAMS,
+                declared_refusal(&name, "it is already installed at every boot"),
+            );
+        }
+    }
+
+    let manifest_path = crate::plugin_ops::installed_manifest_path(&ctx.data_home);
+    let result = {
+        let plugins_dir = match crate::plugin_ops::plugins_dir() {
+            Ok(d) => d,
+            Err(e) => return internal_error(req.id, e),
+        };
+        match crate::plugin_ops::install_at(entry, &manifest_path, &plugins_dir).await {
+            Ok(r) => r,
+            Err(e) => return internal_error(req.id, e),
+        }
     };
 
     // Activate on the running daemon: a second `load_plugins` pass over the
@@ -155,15 +230,16 @@ pub(crate) async fn handle_plugin_install(
                     "kind": "disabled",
                 }),
             },
-            "plugins_toml": result.plugins_toml.to_string_lossy(),
+            "manifest": result.manifest.to_string_lossy(),
         }),
     )
 }
 
 pub(crate) async fn handle_plugin_remove(
     req: Request,
-    plugin_loader: &Arc<Mutex<Option<DaemonPluginLoader>>>,
+    ctx: &Arc<crate::rpc::RpcContext>,
 ) -> Response {
+    let plugin_loader = &ctx.plugin_loader;
     let params =
         match crate::rpc_helpers::typed_params::<crate::rpc_client::PluginRemoveRequest>(&req) {
             Ok(p) => p,
@@ -172,25 +248,32 @@ pub(crate) async fn handle_plugin_remove(
     let name = params.name;
     let purge = params.purge;
 
-    // Precondition FIRST: only plugins declared in plugins.toml are
-    // removable, and every bundled `runtime/plugins/*` plugin is not.
+    // A config-declared plugin is refused with its declaration site: the
+    // user removes it by editing their own file, never the machine.
+    if declared_plugin_names(ctx).contains(&name) {
+        return Response::error(
+            req.id,
+            INVALID_PARAMS,
+            declared_refusal(&name, "`cru plugin remove` removes installed plugins only"),
+        );
+    }
+
+    // Precondition FIRST: only plugins recorded in the installed manifest
+    // are removable, and every bundled `runtime/plugins/*` plugin is not.
     // Checking after deactivation instead would unload e.g. `oci` and THEN
-    // fail the TOML step — a silently unloaded isolation plugin, reachable
-    // from the web UI's remove button.
-    let toml_path = match crate::plugin_ops::plugins_toml_path() {
-        Ok(p) => p,
-        Err(e) => return internal_error(req.id, e),
-    };
-    match crate::plugin_ops::declared_at(&toml_path, &name) {
+    // fail the manifest step — a silently unloaded isolation plugin,
+    // reachable from the web UI's remove button.
+    let manifest_path = crate::plugin_ops::installed_manifest_path(&ctx.data_home);
+    match crate::plugin_ops::installed_at(&manifest_path, &name) {
         Ok(true) => {}
         Ok(false) => {
             return Response::error(
                 req.id,
                 INVALID_PARAMS,
                 format!(
-                    "plugin '{name}' is not declared in plugins.toml, so there is nothing to \
-                     remove; to turn off a bundled plugin, set `[plugins.{name}] enabled = false` \
-                     in config.toml"
+                    "plugin '{name}' is not in the installed manifest, so there is nothing to \
+                     remove; to turn off a bundled plugin, set \
+                     `plugins = {{ {name} = {{ enabled = false }} }}` in init.lua"
                 ),
             )
         }
@@ -216,11 +299,19 @@ pub(crate) async fn handle_plugin_remove(
         }
     }
 
-    // TOML commit; `remove` purges the clone dir only after the TOML write
-    // succeeded. Run on spawn_blocking because it does fs writes.
+    // Manifest commit; the clone dir is purged only after the manifest
+    // write succeeded. Run on spawn_blocking because it does fs writes.
     let result = {
         let name = name.clone();
-        tokio::task::spawn_blocking(move || crate::plugin_ops::remove(&name, purge)).await
+        let manifest_path = manifest_path.clone();
+        let plugins_dir = match crate::plugin_ops::plugins_dir() {
+            Ok(d) => d,
+            Err(e) => return internal_error(req.id, e),
+        };
+        tokio::task::spawn_blocking(move || {
+            crate::plugin_ops::remove_at(&name, purge, &manifest_path, &plugins_dir)
+        })
+        .await
     };
 
     match result {
@@ -242,23 +333,60 @@ pub(crate) async fn handle_plugin_remove(
                 req.id,
                 serde_json::json!({
                     "name": outcome.name,
-                    "plugins_toml": outcome.plugins_toml.to_string_lossy(),
+                    "manifest": outcome.manifest.to_string_lossy(),
                     "purged_dir": outcome.purged_dir.map(|p| p.to_string_lossy().to_string()),
                     "purge_error": outcome.purge_error,
                     "kept_dir": kept_dir,
                 }),
             )
         }
-        // A concurrent plugins.toml write since the precondition check can
-        // land here: the plugin is deactivated but still declared, which the
+        // A concurrent manifest write since the precondition check can
+        // land here: the plugin is deactivated but still recorded, which the
         // next daemon boot recovers by loading it again.
         Ok(Err(e)) => internal_error(
             req.id,
             format!(
-                "plugin '{name}' was deactivated, but removing its plugins.toml entry failed \
-                 (still declared; the next daemon start will load it again): {e}"
+                "plugin '{name}' was deactivated, but removing its manifest entry failed \
+                 (still recorded; the next daemon start will load it again): {e}"
             ),
         ),
         Err(e) => internal_error(req.id, e),
+    }
+}
+
+#[cfg(test)]
+mod declared_refusal_tests {
+    use super::*;
+    use crucible_core::config::SourceTag;
+
+    /// The refusal names the `file:line` of the declaration — that is the
+    /// whole value of the refusal: the user knows which line to edit.
+    #[test]
+    fn the_declared_refusal_names_the_declaration_site() {
+        // Process-per-test (nextest): the global store starts empty here.
+        crucible_lua::begin_boot_store();
+        crucible_lua::merge_app_config_tagged(
+            serde_json::json!({
+                "plugins": { "declare": { "greeter": "user/greeter" } }
+            }),
+            SourceTag::Lua {
+                file: "init.lua".into(),
+                line: Some(12),
+            },
+        );
+
+        let site = declaration_site("greeter").expect("a declared plugin has a site");
+        assert_eq!(site, "lua (init.lua:12)");
+
+        let refusal = declared_refusal("greeter", "cannot remove");
+        assert!(
+            refusal.contains("init.lua:12") && refusal.contains("plugins.declare.greeter"),
+            "the refusal must name the line and the entry to edit: {refusal}"
+        );
+
+        assert!(
+            declaration_site("ghost").is_none(),
+            "an undeclared plugin has no site"
+        );
     }
 }

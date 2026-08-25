@@ -2,45 +2,84 @@
 //!
 //! Both the `cru plugin add` / `cru plugin remove` CLI commands and the
 //! `plugin.install` / `plugin.remove` RPC handlers call into these
-//! functions. Centralizing the `plugins.toml` read-modify-write here
-//! gives us one place to enforce locking (`fs2::FileExt` on the
-//! `plugins.toml.lock` sidecar) and atomic replacement, so concurrent
-//! CLI and daemon writes can't corrupt or lose each other's config.
+//! functions. The machine's record of installed plugins is
+//! `<data_home>/plugins.installed.json`, a [`RegistryStore`] file like
+//! `kilns.json` — locked through a sidecar, replaced atomically. The
+//! user's own declarations live in `init.lua` (`plugins.declare.<name>`)
+//! and are never written here: a machine that edits the user's config file
+//! is the defect this split removes.
+//!
+//! `plugins.toml` — the file that used to hold both — is no longer read.
+//! [`import_legacy_plugins_toml`] moves its entries into the manifest once
+//! (idempotently), and the boot warns while the leftover file exists.
 
 use anyhow::{anyhow, Context, Result};
 use crucible_core::config::{plugin_name_from_url, PluginEntry, PluginsConfig};
-use fs2::FileExt;
-use std::fs::{File, OpenOptions};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use crate::registry_store::RegistryStore;
 use crate::{bootstrap_plugin_entry, BootstrapOutcome};
+
+/// The schema version this daemon writes and understands.
+pub const INSTALLED_PLUGINS_VERSION: u32 = 1;
+
+/// The file name under the daemon data root.
+pub const INSTALLED_PLUGINS_FILE: &str = "plugins.installed.json";
+
+/// The whole of `plugins.installed.json`: name → entry.
+///
+/// Name-keyed (the URL-derived directory name), because every read is by
+/// name: the bootstrap union, the remove path, the membership check.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstalledPlugins {
+    /// Gates future shape changes. A reader refuses a higher number rather
+    /// than rewriting a schema it does not know.
+    pub version: u32,
+    /// Installed plugins, keyed by the URL-derived name.
+    #[serde(default)]
+    pub plugins: BTreeMap<String, PluginEntry>,
+}
+
+impl Default for InstalledPlugins {
+    fn default() -> Self {
+        Self {
+            version: INSTALLED_PLUGINS_VERSION,
+            plugins: BTreeMap::new(),
+        }
+    }
+}
 
 /// Outcome of a successful install operation.
 #[derive(Debug, Clone)]
 pub struct InstallOutcome {
     pub name: String,
     pub outcome: BootstrapOutcome,
-    pub plugins_toml: PathBuf,
+    pub manifest: PathBuf,
 }
 
 /// Outcome of a successful remove operation.
 #[derive(Debug, Clone)]
 pub struct RemoveOutcome {
     pub name: String,
-    pub plugins_toml: PathBuf,
+    pub manifest: PathBuf,
     pub purged_dir: Option<PathBuf>,
-    /// The TOML commit lands before the purge, so a purge failure must not
-    /// fail the whole removal — and must not surface as an error message
-    /// claiming the entry is "still declared" when it is already gone.
+    /// The manifest commit lands before the purge, so a purge failure must
+    /// not fail the whole removal — and must not surface as an error message
+    /// claiming the entry is "still installed" when it is already gone.
     pub purge_error: Option<String>,
 }
 
-/// Resolve the user's `plugins.toml` path. Returns an error if the
-/// platform doesn't expose a config directory (almost never on
-/// production targets).
-pub fn plugins_toml_path() -> Result<PathBuf> {
-    let base = dirs::config_dir().ok_or_else(|| anyhow!("could not determine config directory"))?;
-    Ok(base.join("crucible").join("plugins.toml"))
+/// The installed-plugins manifest under `data_home`.
+pub fn installed_manifest_path(data_home: &Path) -> PathBuf {
+    data_home.join(INSTALLED_PLUGINS_FILE)
+}
+
+/// The legacy declaration file this manifest replaced. Read only by
+/// [`import_legacy_plugins_toml`]; nothing writes it any more.
+pub fn legacy_plugins_toml_path() -> Option<PathBuf> {
+    dirs::config_dir().map(|base| base.join("crucible").join("plugins.toml"))
 }
 
 /// Resolve the directory where cloned plugins live.
@@ -49,81 +88,118 @@ pub fn plugins_dir() -> Result<PathBuf> {
     Ok(base.join("crucible").join("plugins"))
 }
 
-/// Install a plugin: clone it (idempotent if already cloned) and
-/// declare it in `plugins.toml`. The TOML write is guarded by a
-/// file-level lock so CLI + daemon writes don't race.
+/// Read-modify-write on the manifest, under its sidecar lock, with the
+/// version gate applied before `mutate` sees the value.
+fn with_manifest<R>(
+    manifest_path: &Path,
+    mutate: impl FnOnce(&mut InstalledPlugins) -> Result<R>,
+) -> Result<R> {
+    let store: RegistryStore<InstalledPlugins> = RegistryStore::new(manifest_path.to_path_buf());
+    store.update(|manifest| {
+        if manifest.version > INSTALLED_PLUGINS_VERSION {
+            anyhow::bail!(
+                "{} is version {} but this daemon understands up to {}; upgrade Crucible",
+                manifest_path.display(),
+                manifest.version,
+                INSTALLED_PLUGINS_VERSION
+            );
+        }
+        mutate(manifest)
+    })
+}
+
+/// Read the manifest without writing it back.
+fn read_manifest(manifest_path: &Path) -> Result<InstalledPlugins> {
+    let store: RegistryStore<InstalledPlugins> = RegistryStore::new(manifest_path.to_path_buf());
+    let manifest = store.read()?;
+    if manifest.version > INSTALLED_PLUGINS_VERSION {
+        anyhow::bail!(
+            "{} is version {} but this daemon understands up to {}; upgrade Crucible",
+            manifest_path.display(),
+            manifest.version,
+            INSTALLED_PLUGINS_VERSION
+        );
+    }
+    Ok(manifest)
+}
+
+/// Install a plugin: clone it (idempotent if already cloned) and record it
+/// in the installed manifest.
 ///
-/// Path-resolving wrapper over [`install_at`] for callers acting on the
-/// user's real config (CLI offline fallback, RPC handler).
+/// Path-resolving wrapper over [`install_at`] for callers acting without a
+/// daemon context (CLI offline fallback); the RPC handler passes the
+/// daemon's own `data_home` instead.
 pub async fn install(entry: PluginEntry) -> Result<InstallOutcome> {
-    install_at(entry, &plugins_toml_path()?, &plugins_dir()?).await
+    install_at(
+        entry,
+        &installed_manifest_path(&crucible_core::config::crucible_home()),
+        &plugins_dir()?,
+    )
+    .await
 }
 
 /// [`install`]'s core with every path injected, so tests never touch the
-/// real `~/.config/crucible`.
+/// real data root or `~/.config/crucible`.
 pub async fn install_at(
     entry: PluginEntry,
-    toml_path: &Path,
+    manifest_path: &Path,
     plugins_dir: &Path,
 ) -> Result<InstallOutcome> {
     let name = plugin_name_from_url(&entry.url)
         .ok_or_else(|| anyhow!("cannot derive plugin name from URL '{}'", entry.url))?;
 
     // Clone first. If the clone fails (bad URL, no network), don't
-    // leave a phantom declaration behind in plugins.toml.
+    // leave a phantom record behind in the manifest.
     let outcome = bootstrap_plugin_entry(&entry, plugins_dir)
         .await
         .with_context(|| format!("failed to install plugin '{name}'"))?;
 
-    // Read-modify-write under exclusive lock.
-    with_locked_config(toml_path, |config| {
-        if config
-            .plugin
-            .iter()
-            .any(|p| p.name().as_deref() == Some(name.as_str()))
-        {
-            return Err(anyhow!("plugin '{name}' already declared in plugins.toml"));
+    with_manifest(manifest_path, |manifest| {
+        if manifest.plugins.contains_key(&name) {
+            return Err(anyhow!(
+                "plugin '{name}' is already installed (see {})",
+                manifest_path.display()
+            ));
         }
-        config.plugin.push(entry.clone());
+        manifest.plugins.insert(name.clone(), entry.clone());
         Ok(())
     })?;
 
     Ok(InstallOutcome {
         name,
         outcome,
-        plugins_toml: toml_path.to_path_buf(),
+        manifest: manifest_path.to_path_buf(),
     })
 }
 
-/// Remove a plugin: drop it from `plugins.toml` and optionally
+/// Remove a plugin: drop it from the installed manifest and optionally
 /// delete its clone directory.
 ///
 /// Path-resolving wrapper over [`remove_at`].
 pub fn remove(name: &str, purge: bool) -> Result<RemoveOutcome> {
-    remove_at(name, purge, &plugins_toml_path()?, &plugins_dir()?)
+    remove_at(
+        name,
+        purge,
+        &installed_manifest_path(&crucible_core::config::crucible_home()),
+        &plugins_dir()?,
+    )
 }
 
 /// [`remove`]'s core with every path injected.
 pub fn remove_at(
     name: &str,
     purge: bool,
-    toml_path: &Path,
+    manifest_path: &Path,
     plugins_dir: &Path,
 ) -> Result<RemoveOutcome> {
-    if !toml_path.exists() {
-        return Err(anyhow!("no plugins.toml found at {}", toml_path.display()));
-    }
-
-    let found = with_locked_config(toml_path, |config| {
-        let before = config.plugin.len();
-        config.plugin.retain(|p| p.name().as_deref() != Some(name));
-        Ok(config.plugin.len() < before)
+    let found = with_manifest(manifest_path, |manifest| {
+        Ok(manifest.plugins.remove(name).is_some())
     })?;
 
     if !found {
         return Err(anyhow!(
-            "plugin '{name}' not found in {}",
-            toml_path.display()
+            "plugin '{name}' is not installed in {}",
+            manifest_path.display()
         ));
     }
 
@@ -149,117 +225,55 @@ pub fn remove_at(
 
     Ok(RemoveOutcome {
         name: name.to_string(),
-        plugins_toml: toml_path.to_path_buf(),
+        manifest: manifest_path.to_path_buf(),
         purged_dir,
         purge_error,
     })
 }
 
-/// Whether `name` is declared in `plugins.toml`, read under the sidecar
-/// lock so a concurrent writer's in-flight edit isn't observed. A missing
-/// file declares nothing — every bundled `runtime/plugins/*` plugin lands
-/// here, which is how `plugin.remove` tells "removable" from "bundled".
-pub fn declared_at(toml_path: &Path, name: &str) -> Result<bool> {
+/// Whether `name` is recorded in the installed manifest. A missing file
+/// records nothing — every bundled `runtime/plugins/*` plugin lands here,
+/// which is how `plugin.remove` tells "removable" from "bundled".
+pub fn installed_at(manifest_path: &Path, name: &str) -> Result<bool> {
+    Ok(read_manifest(manifest_path)?.plugins.contains_key(name))
+}
+
+/// Every installed entry, name-keyed, for the bootstrap union and listings.
+pub fn installed_entries(manifest_path: &Path) -> Result<Vec<(String, PluginEntry)>> {
+    Ok(read_manifest(manifest_path)?.plugins.into_iter().collect())
+}
+
+/// Move the legacy `plugins.toml` entries into the manifest, once.
+///
+/// Idempotent: an entry whose name the manifest already holds is left
+/// alone, so the call is safe on every boot while the leftover file exists.
+/// The file itself is not deleted or renamed — it is the user's to remove,
+/// and the boot warning names it until they do. Returns how many entries
+/// were imported this time.
+pub fn import_legacy_plugins_toml(toml_path: &Path, manifest_path: &Path) -> Result<usize> {
     if !toml_path.exists() {
-        return Ok(false);
+        return Ok(0);
     }
-    let _lock = acquire_sidecar_lock(toml_path)?;
-    let content = std::fs::read_to_string(toml_path).unwrap_or_default();
-    let config: PluginsConfig = if content.is_empty() {
-        PluginsConfig::default()
-    } else {
-        toml::from_str(&content)
-            .with_context(|| format!("failed to parse {}", toml_path.display()))?
-    };
-    Ok(config
-        .plugin
-        .iter()
-        .any(|p| p.name().as_deref() == Some(name)))
-}
-
-/// Acquire an exclusive lock on the `plugins.toml.lock` sidecar
-/// (creating it + any parent dirs if needed), run `mutate` on the
-/// parsed config, then atomically replace the TOML via
-/// write-beside-then-rename. Lock is released when the sidecar
-/// handle drops at the end of the function.
-///
-/// The lock file is the lock; the TOML is only data. Locking the
-/// data file would break under the rename: writer B could lock the
-/// old inode while writer C locks the freshly renamed one — two
-/// holders, lost update. The sidecar is never renamed, so lock
-/// identity is stable, and the rename means unlocked readers (e.g.
-/// the boot-time load in `plugin_boot`) only ever see a complete
-/// file.
-///
-/// Uses `try_lock_exclusive` rather than `lock_exclusive` so racing
-/// writers fail fast with a clear "busy, retry" error instead of
-/// blocking the caller indefinitely.
-fn with_locked_config<F, R>(toml_path: &Path, mutate: F) -> Result<R>
-where
-    F: FnOnce(&mut PluginsConfig) -> Result<R>,
-{
-    if let Some(parent) = toml_path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create {}", parent.display()))?;
-    }
-
-    // Lock is held until `_lock` drops at function exit.
-    let _lock = acquire_sidecar_lock(toml_path)?;
-    let content = std::fs::read_to_string(toml_path).unwrap_or_default();
-    let mut config: PluginsConfig = if content.is_empty() {
+    let content = std::fs::read_to_string(toml_path)
+        .with_context(|| format!("failed to read {}", toml_path.display()))?;
+    let legacy: PluginsConfig = if content.trim().is_empty() {
         PluginsConfig::default()
     } else {
         toml::from_str(&content)
             .with_context(|| format!("failed to parse {}", toml_path.display()))?
     };
 
-    let result = mutate(&mut config)?;
-
-    let serialized = toml::to_string_pretty(&config).context("failed to serialize plugins.toml")?;
-    let parent = toml_path.parent().unwrap_or_else(|| Path::new("."));
-    let mut tmp = tempfile::NamedTempFile::new_in(parent)
-        .with_context(|| format!("failed to create temp file in {}", parent.display()))?;
-    {
-        use std::io::Write as _;
-        tmp.as_file_mut()
-            .write_all(serialized.as_bytes())
-            .context("failed to write plugins.toml contents")?;
-    }
-    // NamedTempFile creates 0600 and persist preserves it; plugins.toml
-    // is ordinary config, so restore the conventional 0644.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        tmp.as_file()
-            .set_permissions(std::fs::Permissions::from_mode(0o644))
-            .context("failed to set plugins.toml permissions")?;
-    }
-    tmp.persist(toml_path)
-        .with_context(|| format!("failed to write {}", toml_path.display()))?;
-
-    Ok(result)
-}
-
-/// Open (creating if needed) and exclusively lock the `plugins.toml.lock`
-/// sidecar. The returned handle holds the lock until dropped.
-fn acquire_sidecar_lock(toml_path: &Path) -> Result<File> {
-    let lock_path = {
-        let mut p = toml_path.as_os_str().to_owned();
-        p.push(".lock");
-        PathBuf::from(p)
-    };
-    let lock_file: File = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(&lock_path)
-        .with_context(|| format!("failed to open {}", lock_path.display()))?;
-
-    lock_file
-        .try_lock_exclusive()
-        .map_err(|e| anyhow!("plugins.toml is locked by another process (retry shortly): {e}",))?;
-    Ok(lock_file)
+    with_manifest(manifest_path, |manifest| {
+        let mut imported = 0usize;
+        for entry in legacy.plugin {
+            let Some(name) = entry.name() else { continue };
+            if !manifest.plugins.contains_key(&name) {
+                manifest.plugins.insert(name, entry);
+                imported += 1;
+            }
+        }
+        Ok(imported)
+    })
 }
 
 #[cfg(test)]
@@ -295,163 +309,117 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn install_at_declares_an_already_cloned_plugin_in_the_given_toml() {
+    async fn install_at_records_an_already_cloned_plugin_in_the_manifest() {
         let tmp = tempdir().unwrap();
-        let toml_path = tmp.path().join("plugins.toml");
+        let manifest = tmp.path().join(INSTALLED_PLUGINS_FILE);
         let plugins_dir = tmp.path().join("plugins");
         write_clone(&plugins_dir, "repo");
 
-        let outcome = install_at(entry("user/repo"), &toml_path, &plugins_dir)
+        let outcome = install_at(entry("user/repo"), &manifest, &plugins_dir)
             .await
             .unwrap();
         assert_eq!(outcome.name, "repo");
         assert!(matches!(outcome.outcome, BootstrapOutcome::AlreadyPresent));
 
-        let written: PluginsConfig =
-            toml::from_str(&std::fs::read_to_string(&toml_path).unwrap()).unwrap();
-        assert_eq!(written.plugin.len(), 1);
-        assert_eq!(written.plugin[0].url, "user/repo");
+        let written = read_manifest(&manifest).unwrap();
+        assert_eq!(written.version, INSTALLED_PLUGINS_VERSION);
+        assert_eq!(written.plugins["repo"].url, "user/repo");
 
-        // Installing the same plugin twice is a declaration conflict.
-        let err = install_at(entry("user/repo"), &toml_path, &plugins_dir)
+        // Installing the same plugin twice is a record conflict.
+        let err = install_at(entry("user/repo"), &manifest, &plugins_dir)
             .await
             .unwrap_err();
-        assert!(err.to_string().contains("already declared"), "got: {err}");
+        assert!(err.to_string().contains("already installed"), "got: {err}");
     }
 
     #[tokio::test]
-    async fn remove_at_drops_the_declaration_and_purges_only_on_request() {
+    async fn remove_at_drops_the_record_and_purges_only_on_request() {
         let tmp = tempdir().unwrap();
-        let toml_path = tmp.path().join("plugins.toml");
+        let manifest = tmp.path().join(INSTALLED_PLUGINS_FILE);
         let plugins_dir = tmp.path().join("plugins");
         write_clone(&plugins_dir, "repo");
-        install_at(entry("user/repo"), &toml_path, &plugins_dir)
+        install_at(entry("user/repo"), &manifest, &plugins_dir)
             .await
             .unwrap();
 
         // Without purge the clone dir survives.
-        let removed = remove_at("repo", false, &toml_path, &plugins_dir).unwrap();
+        let removed = remove_at("repo", false, &manifest, &plugins_dir).unwrap();
         assert_eq!(removed.purged_dir, None);
         assert!(plugins_dir.join("repo").exists());
-        let written: PluginsConfig =
-            toml::from_str(&std::fs::read_to_string(&toml_path).unwrap()).unwrap();
-        assert!(written.plugin.is_empty(), "declaration must be gone");
+        assert!(read_manifest(&manifest).unwrap().plugins.is_empty());
 
         // Reinstall + purge deletes the dir too.
-        install_at(entry("user/repo"), &toml_path, &plugins_dir)
+        install_at(entry("user/repo"), &manifest, &plugins_dir)
             .await
             .unwrap();
-        let removed = remove_at("repo", true, &toml_path, &plugins_dir).unwrap();
+        let removed = remove_at("repo", true, &manifest, &plugins_dir).unwrap();
         assert_eq!(removed.purged_dir, Some(plugins_dir.join("repo")));
         assert!(!plugins_dir.join("repo").exists());
     }
 
-    #[tokio::test]
-    async fn declared_at_reports_membership_and_a_missing_file_declares_nothing() {
+    #[test]
+    fn remove_at_errors_when_the_plugin_is_not_installed() {
         let tmp = tempdir().unwrap();
-        let toml_path = tmp.path().join("plugins.toml");
+        let manifest = tmp.path().join(INSTALLED_PLUGINS_FILE);
+        let err = remove_at("ghost", false, &manifest, &tmp.path().join("plugins")).unwrap_err();
+        assert!(err.to_string().contains("not installed"), "got: {err}");
+    }
 
-        // No plugins.toml at all — nothing is declared (every bundled
+    #[tokio::test]
+    async fn installed_at_reports_membership_and_a_missing_file_records_nothing() {
+        let tmp = tempdir().unwrap();
+        let manifest = tmp.path().join(INSTALLED_PLUGINS_FILE);
+
+        // No manifest at all — nothing is installed (every bundled
         // runtime/plugins/* plugin lands here).
-        assert!(!declared_at(&toml_path, "repo").unwrap());
+        assert!(!installed_at(&manifest, "repo").unwrap());
 
         let plugins_dir = tmp.path().join("plugins");
         write_clone(&plugins_dir, "repo");
-        install_at(entry("user/repo"), &toml_path, &plugins_dir)
+        install_at(entry("user/repo"), &manifest, &plugins_dir)
             .await
             .unwrap();
-        assert!(declared_at(&toml_path, "repo").unwrap());
-        assert!(!declared_at(&toml_path, "other").unwrap());
+        assert!(installed_at(&manifest, "repo").unwrap());
+        assert!(!installed_at(&manifest, "other").unwrap());
     }
 
     #[test]
-    fn with_locked_config_creates_missing_file_and_writes_back() {
+    fn a_newer_manifest_version_is_refused_not_rewritten() {
         let tmp = tempdir().unwrap();
-        let path = tmp.path().join("plugins.toml");
-
-        // Initial mutate creates file.
-        with_locked_config(&path, |c| {
-            c.plugin.push(entry("user/repo"));
-            Ok(())
-        })
-        .unwrap();
-
-        let written: PluginsConfig =
-            toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(written.plugin.len(), 1);
-        assert_eq!(written.plugin[0].url, "user/repo");
-
-        // The rename must not leak NamedTempFile's private 0600 mode.
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
-            assert_eq!(mode, 0o644, "plugins.toml should be world-readable");
-        }
-    }
-
-    #[test]
-    fn with_locked_config_fails_fast_when_sidecar_lock_is_held() {
-        let tmp = tempdir().unwrap();
-        let path = tmp.path().join("plugins.toml");
-
-        // Simulate another process mid-write: hold the sidecar lock.
-        let lock_path = tmp.path().join("plugins.toml.lock");
-        let held = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(&lock_path)
-            .unwrap();
-        held.try_lock_exclusive().unwrap();
-
-        let err = with_locked_config(&path, |_| Ok(())).unwrap_err();
-        assert!(
-            err.to_string().contains("locked by another process"),
-            "got: {err}"
-        );
-    }
-
-    #[test]
-    fn remove_returns_error_when_plugin_not_present() {
-        let tmp = tempdir().unwrap();
-        let path = tmp.path().join("plugins.toml");
+        let manifest = tmp.path().join(INSTALLED_PLUGINS_FILE);
         std::fs::write(
-            &path,
-            toml::to_string_pretty(&PluginsConfig::default()).unwrap(),
+            &manifest,
+            format!(
+                r#"{{ "version": {}, "plugins": {{}} }}"#,
+                INSTALLED_PLUGINS_VERSION + 1
+            ),
         )
         .unwrap();
 
-        let err = with_locked_config(&path, |config| {
-            let before = config.plugin.len();
-            config.plugin.retain(|p| p.url != "ghost");
-            Ok(config.plugin.len() < before)
-        })
-        .unwrap();
-
-        assert!(!err, "no plugin should have been removed");
+        let err = installed_at(&manifest, "x").unwrap_err();
+        assert!(err.to_string().contains("upgrade Crucible"), "got: {err}");
+        let err = with_manifest(&manifest, |_| Ok(())).unwrap_err();
+        assert!(err.to_string().contains("upgrade Crucible"), "got: {err}");
     }
 
-    /// The TOML commit lands before the purge, so a purge failure must not
-    /// fail the removal — and must not produce an error claiming the entry
-    /// is "still declared" when it is already gone. The removal succeeded;
-    /// the purge outcome is reported separately.
+    /// The manifest commit lands before the purge, so a purge failure must
+    /// not fail the removal — and must not produce an error claiming the
+    /// entry is "still installed" when it is already gone.
     #[test]
-    fn remove_at_reports_purge_failure_without_lying_about_the_toml() {
+    fn remove_at_reports_purge_failure_without_lying_about_the_manifest() {
         let tmp = tempdir().unwrap();
-        let toml_path = tmp.path().join("plugins.toml");
+        let manifest = tmp.path().join(INSTALLED_PLUGINS_FILE);
         let plugins_dir = tmp.path().join("plugins");
         std::fs::create_dir_all(&plugins_dir).unwrap();
         // A FILE where the clone dir should be: remove_dir_all fails on it.
         std::fs::write(plugins_dir.join("ghost"), "not a directory").unwrap();
-        with_locked_config(&toml_path, |c| {
-            c.plugin.push(entry("user/ghost"));
+        with_manifest(&manifest, |m| {
+            m.plugins.insert("ghost".into(), entry("user/ghost"));
             Ok(())
         })
         .unwrap();
 
-        let outcome = remove_at("ghost", true, &toml_path, &plugins_dir)
+        let outcome = remove_at("ghost", true, &manifest, &plugins_dir)
             .expect("a purge failure must not fail the removal itself");
 
         assert!(outcome.purged_dir.is_none());
@@ -460,8 +428,52 @@ mod tests {
             "the purge failure must be reported, not swallowed"
         );
         assert!(
-            !declared_at(&toml_path, "ghost").unwrap(),
-            "the TOML entry really is gone — no message may claim otherwise"
+            !installed_at(&manifest, "ghost").unwrap(),
+            "the manifest entry really is gone — no message may claim otherwise"
         );
+    }
+
+    #[test]
+    fn legacy_import_moves_entries_once_and_only_once() {
+        let tmp = tempdir().unwrap();
+        let toml_path = tmp.path().join("plugins.toml");
+        let manifest = tmp.path().join(INSTALLED_PLUGINS_FILE);
+        std::fs::write(
+            &toml_path,
+            r#"
+[[plugin]]
+url = "user/repo"
+pin = "v1"
+
+[[plugin]]
+url = "other/tool"
+enabled = false
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(import_legacy_plugins_toml(&toml_path, &manifest).unwrap(), 2);
+        let manifest_now = read_manifest(&manifest).unwrap();
+        assert_eq!(manifest_now.plugins["repo"].pin.as_deref(), Some("v1"));
+        assert!(!manifest_now.plugins["tool"].enabled);
+
+        // Idempotent: a second boot imports nothing and clobbers nothing.
+        with_manifest(&manifest, |m| {
+            m.plugins.get_mut("repo").unwrap().pin = Some("v2-local-edit".into());
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(import_legacy_plugins_toml(&toml_path, &manifest).unwrap(), 0);
+        assert_eq!(
+            read_manifest(&manifest).unwrap().plugins["repo"]
+                .pin
+                .as_deref(),
+            Some("v2-local-edit"),
+            "a re-import must not overwrite a later manifest edit"
+        );
+
+        // A missing legacy file imports nothing.
+        std::fs::remove_file(&toml_path).unwrap();
+        assert_eq!(import_legacy_plugins_toml(&toml_path, &manifest).unwrap(), 0);
     }
 }
