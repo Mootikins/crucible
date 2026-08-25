@@ -1823,11 +1823,8 @@ impl RpcDispatcher {
     }
 
     async fn handle_plugin_install(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::plugin_install::handle_plugin_install(
-            req.clone(),
-            &self.ctx.plugin_loader,
-        )
-        .await;
+        let resp =
+            crate::server::plugin_install::handle_plugin_install(req.clone(), &self.ctx).await;
 
         // Install runs the new plugin's init.lua, which may set up
         // theme/ui/statusline and registers commands/tools clients cache —
@@ -1842,11 +1839,8 @@ impl RpcDispatcher {
     }
 
     async fn handle_plugin_remove(&self, req: &Request) -> RpcResult<serde_json::Value> {
-        let resp = crate::server::plugin_install::handle_plugin_remove(
-            req.clone(),
-            &self.ctx.plugin_loader,
-        )
-        .await;
+        let resp =
+            crate::server::plugin_install::handle_plugin_remove(req.clone(), &self.ctx).await;
 
         // Removal just unregistered commands/tools/status surface that
         // clients cache.

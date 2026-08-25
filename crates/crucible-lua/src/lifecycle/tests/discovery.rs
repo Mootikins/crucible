@@ -96,3 +96,34 @@ fn test_empty_directory_not_discovered() {
 
     assert!(discovered.is_empty());
 }
+
+/// `plugins.declare` in the config holds plugin declarations, so a plugin
+/// actually named `declare` could never be configured through the store
+/// form. Discovery must refuse it by name — a silent discovery would drop
+/// that plugin's configuration with no visible reason.
+#[test]
+fn a_plugin_named_declare_is_a_named_discovery_error_not_a_plugin() {
+    let temp = TempDir::new().unwrap();
+    let plugin_dir = temp.path().join(crucible_core::config::PLUGINS_DECLARE_KEY);
+    std::fs::create_dir_all(&plugin_dir).unwrap();
+    std::fs::write(plugin_dir.join("init.lua"), "return { name = 'declare' }").unwrap();
+
+    let mut manager = PluginManager::new().with_search_paths(vec![temp.path().to_path_buf()]);
+    let discovered = manager.discover().unwrap();
+
+    assert!(
+        discovered.is_empty(),
+        "the reserved name must not be discovered: {discovered:?}"
+    );
+    let errors = manager.discovery_errors();
+    assert_eq!(errors.len(), 1, "one named refusal: {errors:?}");
+    assert_eq!(errors[0].path, plugin_dir, "the error names the path");
+    assert!(
+        errors[0].error.contains("reserved")
+            && errors[0]
+                .error
+                .contains(crucible_core::config::PLUGINS_DECLARE_KEY),
+        "the error names the reserved name and why: {}",
+        errors[0].error
+    );
+}

@@ -19,7 +19,7 @@ pub use boot::{
 };
 pub use bootstrap::{
     bootstrap_plugin_entry, bootstrap_plugins, daemon_plugin_paths, default_daemon_plugin_paths,
-    BootstrapOutcome,
+    union_plugin_entries, BootstrapOutcome,
 };
 #[cfg(test)]
 pub(crate) use bootstrap::{normalize_git_url, plugin_name_from_url, runtime_plugin_paths};
@@ -105,6 +105,11 @@ pub fn split_plugins_config(
     let watch = raw.get("watch").and_then(|v| v.as_bool()).unwrap_or(false);
     let sections = raw
         .iter()
+        // `plugins.declare` holds plugin DECLARATIONS, not the options of a
+        // plugin named "declare" — handing it to `setup(cfg)` would feed one
+        // plugin's install table to another's configuration. Discovery
+        // refuses a plugin actually carrying the reserved name.
+        .filter(|(k, _)| k.as_str() != crucible_core::config::PLUGINS_DECLARE_KEY)
         .filter(|(_, v)| v.is_object())
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();

@@ -106,6 +106,31 @@ pub fn default_daemon_plugin_paths() -> Vec<(PathBuf, PluginSource)> {
     daemon_plugin_paths(&[])
 }
 
+/// Union of the config-DECLARED entries and the INSTALLED manifest entries,
+/// by name. The declaration wins — config over state, the same rule the
+/// kiln overlay applies — and each shadowed installed entry's name comes
+/// back so the boot can say the supersession out loud instead of applying
+/// it silently.
+pub fn union_plugin_entries(
+    declared: Vec<(String, crucible_core::config::PluginEntry)>,
+    installed: Vec<(String, crucible_core::config::PluginEntry)>,
+) -> (Vec<crucible_core::config::PluginEntry>, Vec<String>) {
+    let declared_names: std::collections::BTreeSet<String> =
+        declared.iter().map(|(name, _)| name.clone()).collect();
+
+    let mut entries: Vec<crucible_core::config::PluginEntry> =
+        declared.into_iter().map(|(_, entry)| entry).collect();
+    let mut shadows = Vec::new();
+    for (name, entry) in installed {
+        if declared_names.contains(&name) {
+            shadows.push(name);
+        } else {
+            entries.push(entry);
+        }
+    }
+    (entries, shadows)
+}
+
 /// Outcome of attempting to bootstrap a single plugin entry.
 #[derive(Debug, Clone)]
 pub enum BootstrapOutcome {

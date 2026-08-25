@@ -144,14 +144,14 @@ async fn run_kiln_init(
         prompt_kiln_init(target_path)?
     };
 
-    let config_content = generate_config_with_provider(&provider, &model);
+    let init_lua_content = generate_kiln_init_lua(&provider, &model);
     let target_for_display = target_path.to_path_buf();
     let markdown_count = validation.markdown_file_count;
 
     let name_clone = name.clone();
     let classification_copy = classification;
     task::spawn_blocking(move || {
-        create_kiln_with_config(&crucible_dir, &config_content, force)?;
+        create_kiln_with_init_lua(&crucible_dir, &init_lua_content, force)?;
         write_kiln_and_project_config(&crucible_dir, &name_clone, classification_copy)?;
         Ok::<(), anyhow::Error>(())
     })
@@ -433,9 +433,9 @@ fn prompt_project_init(path: &Path) -> Result<(String, Vec<String>)> {
 
 // --- Existing helpers (kept) ---
 
-pub fn create_kiln_with_config(
+pub fn create_kiln_with_init_lua(
     crucible_dir: &Path,
-    config_content: &str,
+    init_lua_content: &str,
     force: bool,
 ) -> Result<()> {
     if force && crucible_dir.exists() {
@@ -451,7 +451,7 @@ pub fn create_kiln_with_config(
     fs::create_dir_all(crucible_dir)?;
     fs::create_dir_all(crucible_dir.join("sessions"))?;
     fs::create_dir_all(crucible_dir.join("plugins"))?;
-    fs::write(crucible_dir.join("config.toml"), config_content)?;
+    fs::write(crucible_dir.join("init.lua"), init_lua_content)?;
 
     Ok(())
 }
@@ -588,33 +588,23 @@ fn write_kiln_and_project_config(
     Ok(())
 }
 
-pub fn generate_config_with_provider(provider: &str, model: &str) -> String {
-    let endpoint = match provider {
-        "ollama" => "http://localhost:11434",
-        "openai" => "https://api.openai.com/v1",
-        "anthropic" => "https://api.anthropic.com/v1",
-        _ => "http://localhost:11434",
-    };
-
-    // No `[chat] provider` key: the loader rejects it outright as legacy
-    // config (see `CliAppConfig::load`), so emitting it here left a file that
-    // would hard-fail the moment anything parsed it. `[llm.providers.*]` is
-    // the supported spelling.
+/// The kiln-local `.crucible/init.lua` scaffold.
+///
+/// Deliberately all comments. The provider selection is registered with the
+/// daemon (`llm.json`) by the caller, and the old kiln-local `config.toml`
+/// this replaces was read by nothing — repeating the selection here as live
+/// code would invent a kiln-local config layer, which is an explicit
+/// non-goal (the deferred trust question).
+pub fn generate_kiln_init_lua(provider: &str, model: &str) -> String {
     format!(
-        r#"# Crucible kiln configuration
-# See https://github.com/Mootikins/crucible for options
-
-[chat]
-model = "{model}"
-endpoint = "{endpoint}"
-
-[llm]
-default = "chat"
-
-[llm.providers.chat]
-type = "{provider}"
-endpoint = "{endpoint}"
-default_model = "{model}"
+        r#"-- Crucible kiln configuration (Lua).
+--
+-- This file loads into each session runtime that opens this kiln, after
+-- the global init.lua (`cru.paths.config()`). Put kiln-specific Lua here.
+--
+-- `cru init` registered this kiln with the daemon, and the provider
+-- selection ({provider}, model {model}) lives in the daemon's llm.json;
+-- neither needs to be repeated in this file.
 "#
     )
 }
@@ -715,68 +705,37 @@ mod tests {
         assert_eq!(detect_init_type(tmp.path()), InitType::Kiln);
     }
 
+    /// The scaffold is executable Lua: a syntax error in the template would
+    /// otherwise surface as a load warning in every session runtime that
+    /// opens the kiln.
     #[test]
-    fn test_generate_config_with_provider() {
-        let config = generate_config_with_provider("ollama", "llama3.2");
-        assert!(config.contains("[chat]"));
-        assert!(config.contains("type = \"ollama\""));
-        assert!(config.contains("model = \"llama3.2\""));
-    }
-
-    #[test]
-    fn test_generate_config_openai() {
-        let config = generate_config_with_provider("openai", "gpt-4o");
-        assert!(config.contains("type = \"openai\""));
-        assert!(config.contains("model = \"gpt-4o\""));
-    }
-
-    #[test]
-    fn test_generate_config_anthropic() {
-        let config = generate_config_with_provider("anthropic", "claude-3-5-sonnet-latest");
-        assert!(config.contains("type = \"anthropic\""));
-        assert!(config.contains("model = \"claude-3-5-sonnet-latest\""));
-        assert!(config.contains("endpoint = \"https://api.anthropic.com/v1\""));
-    }
-
-    /// The generated file used to carry `[chat] provider`, which the loader
-    /// rejects outright as legacy config — so anything that parsed it would
-    /// hard-fail. These three tests previously asserted that key was present,
-    /// pinning the defect in place.
-    #[test]
-    fn the_generated_kiln_config_does_not_use_rejected_legacy_keys() {
-        for provider in ["ollama", "openai", "anthropic"] {
-            let config = generate_config_with_provider(provider, "some-model");
-
-            let parsed: toml::Value =
-                toml::from_str(&config).expect("generated kiln config must be valid TOML");
-            let chat = parsed
-                .get("chat")
-                .and_then(|c| c.as_table())
-                .expect("a [chat] table");
-            assert!(
-                !chat.contains_key("provider"),
-                "[chat] provider is rejected by the config loader; the provider belongs \
-                 under [llm.providers.*] (provider={provider})"
-            );
-
-            // The supported spelling must still be present and correct.
-            assert!(config.contains(&format!("type = \"{provider}\"")));
+    fn the_generated_kiln_init_lua_is_valid_lua() {
+        for provider in ["ollama", "openai", "anthropic", "unknown"] {
+            let source = generate_kiln_init_lua(provider, "some-model");
+            let executor = crucible_lua::LuaExecutor::new().unwrap();
+            executor
+                .lua()
+                .load(&source)
+                .exec()
+                .unwrap_or_else(|e| panic!("template for {provider} must execute: {e}"));
         }
     }
 
+    /// The scaffold records the `cru init` selection for the reader, and
+    /// carries no live config code: the kiln-local config layer is a
+    /// deliberate non-goal, so everything in the template is a comment.
     #[test]
-    fn test_generate_config_endpoint_mapping() {
-        let ollama_config = generate_config_with_provider("ollama", "test");
-        assert!(ollama_config.contains("endpoint = \"http://localhost:11434\""));
-
-        let openai_config = generate_config_with_provider("openai", "test");
-        assert!(openai_config.contains("endpoint = \"https://api.openai.com/v1\""));
-
-        let anthropic_config = generate_config_with_provider("anthropic", "test");
-        assert!(anthropic_config.contains("endpoint = \"https://api.anthropic.com/v1\""));
-
-        let unknown_config = generate_config_with_provider("unknown", "test");
-        assert!(unknown_config.contains("endpoint = \"http://localhost:11434\""));
+    fn the_generated_kiln_init_lua_names_the_selection_in_comments_only() {
+        let source = generate_kiln_init_lua("anthropic", "claude-3-5-sonnet-latest");
+        assert!(source.contains("anthropic"));
+        assert!(source.contains("claude-3-5-sonnet-latest"));
+        for line in source.lines() {
+            let trimmed = line.trim();
+            assert!(
+                trimmed.is_empty() || trimmed.starts_with("--"),
+                "template line is live code, not a comment: {line}"
+            );
+        }
     }
 
     #[test]
@@ -817,7 +776,9 @@ mod tests {
 
         // Should have created kiln.toml (kiln is the default with --yes)
         assert!(tmp.path().join(".crucible/kiln.toml").exists());
-        assert!(tmp.path().join(".crucible/config.toml").exists());
+        // The kiln-local config template is Lua; no TOML config is generated.
+        assert!(tmp.path().join(".crucible/init.lua").exists());
+        assert!(!tmp.path().join(".crucible/config.toml").exists());
     }
 
     #[tokio::test]

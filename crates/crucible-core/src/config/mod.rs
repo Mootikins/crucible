@@ -72,10 +72,10 @@ pub use config::registry::{resolve_kiln_entries, KilnEntry, ProjectEntry};
 // `config.set`) that should be able to find it without reading a 6-line list.
 #[cfg(feature = "toml")]
 pub use config::{
-    crucible_home, lua_stubs_dir, lua_stubs_dir_in, parse_duration_string, plugin_name_from_url,
-    CliAppConfig, ConfigError, ConfigValidationError, EffectiveLlmConfig, InvalidKilnName,
-    KilnName, LoggingConfig, PluginEntry, PluginsConfig, ScheduleEntry, ServerConfig, WebConfig,
-    WorkspaceConfig,
+    crucible_home, declared_plugins, lua_stubs_dir, lua_stubs_dir_in, parse_duration_string,
+    plugin_name_from_url, CliAppConfig, ConfigError, ConfigValidationError, EffectiveLlmConfig,
+    InvalidKilnName, KilnName, LoggingConfig, PluginEntry, PluginsConfig, ScheduleEntry,
+    ServerConfig, WebConfig, WorkspaceConfig, PLUGINS_DECLARE_KEY,
 };
 pub use config::{LOCATION_CONFIG_KEYS, SETTINGS_CONFIG_KEYS};
 pub use credentials::{

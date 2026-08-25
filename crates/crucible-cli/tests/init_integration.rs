@@ -2,7 +2,7 @@
 use tempfile::TempDir;
 
 #[tokio::test]
-async fn test_init_creates_config_with_provider() {
+async fn test_init_creates_kiln_init_lua() {
     let temp_dir = TempDir::new().unwrap();
     let path = temp_dir.path().to_path_buf();
 
@@ -15,23 +15,19 @@ async fn test_init_creates_config_with_provider() {
     let crucible_dir = path.join(".crucible");
     assert!(crucible_dir.exists(), ".crucible directory should exist");
 
-    // Verify config.toml was created
-    let config_path = crucible_dir.join("config.toml");
-    assert!(config_path.exists(), "config.toml should exist");
+    // Verify the kiln-local init.lua was created; the TOML template is gone.
+    let init_lua = crucible_dir.join("init.lua");
+    assert!(init_lua.exists(), "init.lua should exist");
+    assert!(
+        !crucible_dir.join("config.toml").exists(),
+        "no kiln-local config.toml is generated any more"
+    );
 
-    // Verify config contains expected sections
-    let content = std::fs::read_to_string(&config_path).unwrap();
-    assert!(
-        content.contains("[chat]"),
-        "config should have [chat] section"
-    );
-    assert!(
-        content.contains("provider"),
-        "config should have provider setting"
-    );
+    // The scaffold names the provider selection for the reader.
+    let content = std::fs::read_to_string(&init_lua).unwrap();
     assert!(
         content.contains("model"),
-        "config should have model setting"
+        "the scaffold should name the model selection"
     );
 }
 
@@ -74,10 +70,10 @@ async fn test_init_is_idempotent_on_existing_kiln() {
     );
 
     // Config should still be intact
-    let config_path = path.join(".crucible/config.toml");
+    let init_lua = path.join(".crucible/init.lua");
     assert!(
-        config_path.exists(),
-        "config should still exist after re-init"
+        init_lua.exists(),
+        "the kiln-local init.lua should still exist after re-init"
     );
 }
 
@@ -140,7 +136,7 @@ async fn a_kiln_init_writes_nothing_to_the_global_config() {
         .unwrap();
 
     assert!(
-        kiln.join(".crucible").join("config.toml").is_file(),
+        kiln.join(".crucible").join("init.lua").is_file(),
         "the kiln itself is still created"
     );
     assert!(

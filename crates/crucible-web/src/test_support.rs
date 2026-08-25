@@ -649,7 +649,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         "plugin.install" => json!({
             "name": "installed-plugin",
             "outcome": { "kind": "cloned", "dest": "/tmp/installed-plugin" },
-            "plugins_toml": "/tmp/plugins.toml",
+            "manifest": "/tmp/plugins.installed.json",
             "installed": true,
             "loaded": true,
             "tools": 0,
@@ -659,7 +659,7 @@ pub fn mock_rpc_response(method: &str, msg: &Value) -> Value {
         }),
         "plugin.remove" => json!({
             "name": "removed-plugin",
-            "plugins_toml": "/tmp/plugins.toml",
+            "manifest": "/tmp/plugins.installed.json",
             "purge_error": Value::Null,
             "kept_dir": Value::Null,
             "purged_dir": Value::Null,

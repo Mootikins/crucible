@@ -144,6 +144,90 @@ impl PluginEntry {
     }
 }
 
+/// The reserved subkey of the `plugins` config table that holds the user's
+/// plugin DECLARATIONS: `plugins.declare.<name>` is a git-hosted plugin to
+/// bootstrap, while every other `plugins.<name>` is that plugin's options.
+///
+/// One constant, three consumers: `split_plugins_config` excludes it from
+/// the option sections handed to `setup(cfg)`, plugin discovery refuses a
+/// plugin actually named this, and [`declared_plugins`] reads it. A string
+/// literal in any one of those is how the three drift.
+pub const PLUGINS_DECLARE_KEY: &str = "declare";
+
+/// Parse the `plugins.declare` table into named [`PluginEntry`]s.
+///
+/// Each entry is either a URL string (`reflection = "user/reflection"`) or a
+/// `PluginEntry` table (`{ url = ..., branch = ..., pin = ..., enabled = ... }`).
+/// Returns the entries plus one human-readable warning per entry that could
+/// not be honoured — the caller logs them, because a silently dropped
+/// declaration is a plugin that never loads with no visible reason.
+///
+/// The key must match the URL-derived directory name: the clone lands at the
+/// URL's name, so a differing key would declare one name and produce
+/// another. A mismatch is a warning and the entry is skipped.
+pub fn declared_plugins(
+    plugins: &std::collections::BTreeMap<String, serde_json::Value>,
+) -> (Vec<(String, PluginEntry)>, Vec<String>) {
+    let mut entries = Vec::new();
+    let mut warnings = Vec::new();
+
+    let Some(declare) = plugins.get(PLUGINS_DECLARE_KEY) else {
+        return (entries, warnings);
+    };
+    let Some(map) = declare.as_object() else {
+        warnings.push(format!(
+            "plugins.{PLUGINS_DECLARE_KEY} must be a table of name = url-or-entry; found {declare}"
+        ));
+        return (entries, warnings);
+    };
+
+    for (name, value) in map {
+        let entry = match value {
+            serde_json::Value::String(url) => PluginEntry {
+                url: url.clone(),
+                branch: None,
+                pin: None,
+                enabled: true,
+            },
+            serde_json::Value::Object(_) => {
+                match serde_json::from_value::<PluginEntry>(value.clone()) {
+                    Ok(entry) => entry,
+                    Err(e) => {
+                        warnings.push(format!(
+                            "plugins.{PLUGINS_DECLARE_KEY}.{name} is not a plugin declaration \
+                             (url, branch, pin, enabled): {e}"
+                        ));
+                        continue;
+                    }
+                }
+            }
+            other => {
+                warnings.push(format!(
+                    "plugins.{PLUGINS_DECLARE_KEY}.{name} must be a URL string or an entry \
+                     table; found {other}"
+                ));
+                continue;
+            }
+        };
+
+        match entry.name() {
+            Some(derived) if derived == *name => entries.push((name.clone(), entry)),
+            Some(derived) => warnings.push(format!(
+                "plugins.{PLUGINS_DECLARE_KEY}.{name}: the URL '{}' names a plugin '{derived}', \
+                 not '{name}'; rename the key or fix the URL (skipped)",
+                entry.url
+            )),
+            None => warnings.push(format!(
+                "plugins.{PLUGINS_DECLARE_KEY}.{name}: cannot derive a safe plugin name from \
+                 URL '{}' (skipped)",
+                entry.url
+            )),
+        }
+    }
+
+    (entries, warnings)
+}
+
 /// Extract a safe plugin directory name from a git URL.
 ///
 /// Returns `None` when the derived name would be unsafe: empty, `.`,
@@ -171,5 +255,80 @@ pub fn plugin_name_from_url(url: &str) -> Option<String> {
         None
     } else {
         Some(name)
+    }
+}
+
+#[cfg(test)]
+mod declared_plugins_tests {
+    use super::*;
+    use serde_json::json;
+    use std::collections::BTreeMap;
+
+    fn plugins(declare: serde_json::Value) -> BTreeMap<String, serde_json::Value> {
+        let mut map = BTreeMap::new();
+        map.insert(PLUGINS_DECLARE_KEY.to_string(), declare);
+        map.insert("reflection".to_string(), json!({ "model": "llama3.2" }));
+        map
+    }
+
+    #[test]
+    fn a_string_and_a_table_entry_both_declare() {
+        let (entries, warnings) = declared_plugins(&plugins(json!({
+            "greeter": "user/greeter",
+            "review": { "url": "someone/review", "pin": "v1", "enabled": false },
+        })));
+
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(entries.len(), 2);
+        let greeter = &entries.iter().find(|(n, _)| n == "greeter").unwrap().1;
+        assert_eq!(greeter.url, "user/greeter");
+        assert!(greeter.enabled);
+        let review = &entries.iter().find(|(n, _)| n == "review").unwrap().1;
+        assert_eq!(review.pin.as_deref(), Some("v1"));
+        assert!(!review.enabled);
+    }
+
+    #[test]
+    fn an_absent_declare_key_declares_nothing() {
+        let mut map = BTreeMap::new();
+        map.insert("reflection".to_string(), json!({ "model": "x" }));
+        let (entries, warnings) = declared_plugins(&map);
+        assert!(entries.is_empty());
+        assert!(warnings.is_empty());
+    }
+
+    /// The clone lands at the URL-derived name, so a key that names something
+    /// else would declare one plugin and produce another. Skipped, loudly.
+    #[test]
+    fn a_key_that_does_not_match_the_url_name_is_a_warning_not_an_entry() {
+        let (entries, warnings) =
+            declared_plugins(&plugins(json!({ "greeter": "user/other-name" })));
+        assert!(entries.is_empty());
+        assert_eq!(warnings.len(), 1);
+        assert!(
+            warnings[0].contains("greeter") && warnings[0].contains("other-name"),
+            "the warning must name both sides: {}",
+            warnings[0]
+        );
+    }
+
+    #[test]
+    fn malformed_entries_warn_and_do_not_abort_the_rest() {
+        let (entries, warnings) = declared_plugins(&plugins(json!({
+            "greeter": "user/greeter",
+            "broken": 7,
+            "alsobad": { "pin": "v1" },
+        })));
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].0, "greeter");
+        assert_eq!(warnings.len(), 2, "{warnings:?}");
+    }
+
+    #[test]
+    fn a_non_table_declare_value_is_one_warning() {
+        let (entries, warnings) = declared_plugins(&plugins(json!("user/repo")));
+        assert!(entries.is_empty());
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains(PLUGINS_DECLARE_KEY));
     }
 }
