@@ -7,6 +7,7 @@ pub mod chat_preflight;
 pub mod completions;
 pub mod daemon;
 pub mod doctor;
+pub mod eval;
 pub mod init;
 pub mod kiln;
 pub mod lua;

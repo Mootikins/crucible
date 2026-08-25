@@ -5,9 +5,11 @@
 //! and one is enough.
 
 pub mod embedding;
+pub mod eval;
 pub mod types;
 
 pub use embedding::EmbeddingProvider;
+pub use eval::{GoldenQuery, GoldenSet};
 pub use types::{BlockEmbedding, EnrichedNote, EnrichmentMetadata};
 
 pub use crate::config::{

@@ -124,6 +124,7 @@ fn config_need(command: &Option<Commands>) -> ConfigNeed {
         | Commands::Acp { .. }
         | Commands::Process { .. }
         | Commands::Search { .. }
+        | Commands::Eval(_)
         | Commands::Models { .. }
         | Commands::Storage(_)
         | Commands::Workflow { .. }
@@ -436,6 +437,8 @@ async fn async_main(cli: Cli, standalone_sock: Option<std::path::PathBuf>) -> Re
         }
 
         Some(Commands::Acp { kiln }) => commands::acp::execute(config, kiln).await?,
+
+        Some(Commands::Eval(cmd)) => cmd.execute(config).await?,
 
         Some(Commands::Kiln { command }) => commands::kiln::handle(command).await?,
 

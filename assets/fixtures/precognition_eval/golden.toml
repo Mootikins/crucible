@@ -1,0 +1,109 @@
+# Golden queries for precognition retrieval eval.
+#
+# One entry per (question, note that should surface). `lenient = true` marks
+# defensible-but-not-unambiguous matches: counted for recall@k, excluded from
+# strict hit rate. Every query names why the expected note should win.
+
+top_k = 10
+
+[[queries]]
+question = "how do I stay productive working from my apartment?"
+expect_note = "work-from-home-tips"
+
+[[queries]]
+question = "I keep getting distracted, how do I concentrate better?"
+expect_note = "focus-strategies"
+lenient = true
+
+[[queries]]
+question = "should I have my camera on for the standup call?"
+expect_note = "remote-meeting-etiquette"
+
+[[queries]]
+question = "is it rude to reply to Slack tomorrow instead of now?"
+expect_note = "async-communication"
+
+[[queries]]
+question = "how do I link one note to another?"
+expect_note = "wikilink-syntax"
+
+[[queries]]
+question = "my frontmatter tags are getting messy, any advice?"
+expect_note = "tag-taxonomy"
+
+[[queries]]
+question = "what should I write in my evening review?"
+expect_note = "daily-journaling"
+
+[[queries]]
+question = "how often should I review flashcards?"
+expect_note = "spaced-repetition"
+
+[[queries]]
+question = "why does the borrow checker complain about my reference?"
+expect_note = "rust-lifetimes"
+
+[[queries]]
+question = "should my library return anyhow errors?"
+expect_note = "rust-error-handling"
+
+[[queries]]
+question = "this query is slow, where do I start looking?"
+expect_note = "sql-query-planning"
+
+[[queries]]
+question = "do I need an ANN index for my note search yet?"
+expect_note = "vector-databases"
+
+[[queries]]
+question = "can I switch embedding providers halfway through indexing?"
+expect_note = "embedding-models"
+
+[[queries]]
+question = "the injected notes eat my prompt budget, what do I do?"
+expect_note = "context-window-management"
+
+[[queries]]
+question = "how does the agent run shell commands safely?"
+expect_note = "agent-tool-use"
+
+[[queries]]
+question = "when is my starter ready to bake with?"
+expect_note = "sourdough-starter"
+
+[[queries]]
+question = "should I retard the dough overnight?"
+expect_note = "sourdough-timing"
+lenient = true
+
+[[queries]]
+question = "plan my weekly cooking ahead"
+expect_note = "meal-prep-sunday"
+
+[[queries]]
+question = "what grows well next to tomatoes?"
+expect_note = "garden-companion-planting"
+
+[[queries]]
+question = "my espresso pulls way too fast"
+expect_note = "home-espresso"
+
+[[queries]]
+question = "dough is too sticky to shape"
+expect_note = "bread-baking-hydration"
+
+[[queries]]
+question = "change the word under the cursor without reaching for the mouse"
+expect_note = "keyboard-shortcuts-vim"
+
+[[queries]]
+question = "did my backup actually restore?"
+expect_note = "backup-strategy"
+
+[[queries]]
+question = "how much should I keep in an emergency fund?"
+expect_note = "personal-finance-basics"
+
+[[queries]]
+question = "screens before bed wreck my mornings"
+expect_note = "sleep-hygiene"

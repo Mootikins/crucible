@@ -6,6 +6,7 @@ use tracing_subscriber::filter::LevelFilter;
 mod agents;
 mod auth;
 mod config;
+mod eval;
 mod kiln;
 mod project;
 mod proposals;
@@ -20,6 +21,7 @@ mod tests;
 pub use agents::AgentsCommands;
 pub use auth::AuthCommands;
 pub use config::ConfigCommands;
+pub use eval::EvalCommands;
 pub use kiln::KilnCommands;
 pub use project::ProjectCommands;
 pub use proposals::ProposalsCommands;
@@ -399,6 +401,10 @@ Examples:
         long_about = "Manage the Crucible daemon server for multi-session support.\n\nStart, stop, and monitor the background daemon that handles session persistence and agent execution.\n\nExamples:\n  # Start daemon\n  cru daemon start\n\n  # Check daemon status\n  cru daemon status\n\n  # Stop daemon\n  cru daemon stop\n\n  # View daemon logs\n  cru daemon logs\n\n  # Restart daemon\n  cru daemon restart"
     )]
     Daemon(crate::commands::daemon::DaemonCommands),
+
+    /// Measure the system against golden sets (precognition retrieval)
+    #[command(subcommand)]
+    Eval(EvalCommands),
 
     /// Discover and manage agent skills (list, show, search)
     #[command(
