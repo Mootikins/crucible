@@ -925,6 +925,78 @@ error("boom")
         );
     }
 
+    /// The rollback's rebuild must go through the SAME seeding as a clean
+    /// boot: a daemon whose init.lua failed and a daemon with no init.lua
+    /// at all must agree on the module search path. If the two paths could
+    /// diverge, the bug the rollback exists to prevent would be relocated
+    /// into the rollback itself.
+    #[tokio::test]
+    async fn a_failed_init_boot_and_a_no_init_boot_agree_on_the_search_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let rtp = tmp.path().join("extra");
+        write_fixture_plugin(&rtp, "sp_probe", r#"return { name = "sp_probe" }"#);
+        let config_root = tmp.path().join("config");
+        std::fs::create_dir_all(&config_root).unwrap();
+        std::fs::write(
+            config_root.join("config.toml"),
+            format!(
+                "runtimepath = [{:?}]
+",
+                rtp.display().to_string()
+            ),
+        )
+        .unwrap();
+
+        let path_of = |boot: &BootConfig| -> String {
+            boot.loader
+                .executor()
+                .lua()
+                .load("return package.path")
+                .eval::<String>()
+                .expect("package.path")
+        };
+
+        // Failed evaluation → fresh VM.
+        std::fs::write(
+            config_root.join("init.lua"),
+            "error('boom')
+",
+        )
+        .unwrap();
+        let failed_boot = evaluate_boot_config_with_paths(
+            Some(config_root.join("config.toml")),
+            None,
+            None,
+            fixture_paths(),
+        )
+        .await
+        .expect("fail-open boot");
+        let failed_path = path_of(&failed_boot);
+        drop(failed_boot);
+
+        // No init.lua at all.
+        std::fs::remove_file(config_root.join("init.lua")).unwrap();
+        let clean_boot = evaluate_boot_config_with_paths(
+            Some(config_root.join("config.toml")),
+            None,
+            None,
+            fixture_paths(),
+        )
+        .await
+        .expect("clean boot");
+        let clean_path = path_of(&clean_boot);
+
+        assert_eq!(
+            failed_path, clean_path,
+            "the rebuilt VM must be seeded exactly as a no-init boot"
+        );
+        // And the seeded path is real: the fixture plugin resolves on both.
+        assert!(
+            failed_path.contains("sp_probe") || failed_path.contains("extra"),
+            "precondition: the seed runtimepath reached the search path: {failed_path}"
+        );
+    }
+
     /// After the boot phase, today's rules resume: a location key through
     /// the runtime `config.set` door is withheld and reported.
     #[tokio::test]

@@ -93,6 +93,10 @@ test.describe('live kiln truth (WS-201/202/205/206)', () => {
     // file event at all in the failing case — if no `fs_changed` fires, the
     // watcher missed the write; if it fires and the index never updates, the
     // fault is in the debounce or the note pipeline downstream.
+    // The live tier runs with retries: 2 (playwright.live.config.ts) FOR
+    // THIS finding — a "flaky" line in the run report is this failure
+    // firing and is the signal to re-open the investigation, not ordinary
+    // CI hygiene to ignore.
     await expect
       .poll(
         async () => {
