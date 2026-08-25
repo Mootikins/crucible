@@ -86,6 +86,72 @@ fn every_plugin_vm_namespace_is_stubbed() {
     );
 }
 
+/// The reduced `cru.fs` surface, held in both directions, derived from the
+/// running VM and the stub file the generator renders from it — never from
+/// source text, which a change can satisfy without doing the work.
+#[test]
+fn cru_fs_surface_is_reduced_on_the_vm_and_in_the_stubs() {
+    let loader = loader();
+    let lua = loader.plugin_lua();
+    let cru: mlua::Table = lua.globals().get("cru").expect("cru global");
+    let fs: mlua::Table = cru.get("fs").expect("cru.fs");
+
+    // Removed names are nil on the VM: with no shims, an out-of-tree caller
+    // gets Lua's own nil-call error, which names the field.
+    for name in ["read", "write", "append", "rename"] {
+        let value: mlua::Value = fs.get(name).expect("table get");
+        assert!(
+            value.is_nil(),
+            "cru.fs.{name} is removed and must be nil, got {value:?}"
+        );
+    }
+
+    // Surviving names are functions — `remove` among them, as the raising
+    // data-loss guard rather than a delete.
+    for name in [
+        "exists",
+        "is_file",
+        "is_dir",
+        "list",
+        "mkdir",
+        "copy",
+        "remove_all",
+        "remove",
+    ] {
+        let value: mlua::Value = fs.get(name).expect("table get");
+        assert!(
+            value.is_function(),
+            "cru.fs.{name} must be a function, got {value:?}"
+        );
+    }
+    let err = lua
+        .load(r#"cru.fs.remove("nowhere")"#)
+        .exec()
+        .expect_err("the remove guard must raise");
+    let text = err.to_string();
+    assert!(
+        text.contains("remove_all") && text.contains("os.remove"),
+        "the remove guard must name both replacements: {text}"
+    );
+
+    // And the generated stubs agree with the VM they were rendered from.
+    let dir = tempfile::tempdir().expect("tempdir");
+    loader.generate_stubs(dir.path()).expect("generate stubs");
+    let src = std::fs::read_to_string(dir.path().join("cru.lua")).expect("cru.lua");
+    for name in ["read", "write", "append", "rename"] {
+        assert!(
+            !src.contains(&format!("function cru.fs.{name}(")),
+            "the stubs still advertise cru.fs.{name}"
+        );
+    }
+    for name in ["exists", "mkdir", "remove_all"] {
+        assert!(
+            src.contains(&format!("function cru.fs.{name}(")),
+            "the stubs must document cru.fs.{name}"
+        );
+    }
+}
+
 /// `cru.kiln.path` resolves a name against the DAEMON's registry.
 ///
 /// The assertion runs against a real registry over a tempdir, not against the

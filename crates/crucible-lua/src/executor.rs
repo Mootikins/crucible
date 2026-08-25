@@ -756,11 +756,11 @@ mod tests {
 
         let result: bool = executor
             .lua()
-            .load(r#"return fs ~= nil and type(fs.read) == "function""#)
+            .load(r#"return fs ~= nil and type(fs.exists) == "function""#)
             .eval()
             .unwrap();
 
-        assert!(result, "fs module should be available with read function");
+        assert!(result, "fs module should be available with exists function");
     }
 
     #[test]
@@ -772,7 +772,7 @@ mod tests {
             .load(
                 r#"
                 local has_http = http ~= nil and type(http.get) == "function" and type(http.post) == "function"
-                local has_fs = fs ~= nil and type(fs.read) == "function" and type(fs.write) == "function"
+                local has_fs = fs ~= nil and type(fs.mkdir) == "function" and type(fs.exists) == "function"
                 return has_http and has_fs
             "#,
             )

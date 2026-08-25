@@ -330,14 +330,13 @@ impl DaemonPluginLoader {
         self
     }
 
-    /// Re-register `cru.fs` with a kiln-name resolver, so plugins can
-    /// address `kiln://<name>/<relative>` paths.
+    /// Wire `cru.kiln.path` to the daemon's kiln registry.
     ///
-    /// The resolver runs registry lookups inside the daemon and the resolved
-    /// directory never reaches Lua — a plugin keeps knowing kilns by NAME
-    /// only, the same rule `cru.kiln.active` and `LOCATION_CONFIG_KEYS`
-    /// hold. Containment (no `..`, no absolute part, no symlink out of the
-    /// root) is enforced centrally in `crucible_lua::fs::resolve_path`.
+    /// The resolver runs registry lookups inside the daemon; a plugin asks
+    /// for a kiln by NAME and receives the resolved root only from this one
+    /// API — the same rule `cru.kiln.active` and `LOCATION_CONFIG_KEYS`
+    /// hold. (`kiln://` addressing in `cru.fs` is removed; the fs module
+    /// refuses the scheme permanently.)
     pub fn with_kiln_path_resolver(
         self,
         registry: Arc<crate::kiln_registry::KilnRegistry>,
@@ -349,8 +348,6 @@ impl DaemonPluginLoader {
                 .path()
                 .ok_or_else(|| format!("kiln '{name}' is not registered"))
         });
-        crucible_lua::register_fs_module_with_resolver(self.executor.lua(), resolver.clone())
-            .map_err(|e| anyhow::anyhow!("fs module (kiln resolver): {e}"))?;
         crucible_lua::register_kiln_path_resolver(self.executor.lua(), resolver)
             .map_err(|e| anyhow::anyhow!("cru.kiln.path (kiln resolver): {e}"))?;
         Ok(self)

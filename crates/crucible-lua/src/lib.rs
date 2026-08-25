@@ -125,7 +125,7 @@ pub use error::{format_lua_error, LuaError};
 pub use executor::LuaExecutor;
 #[cfg(feature = "fennel")]
 pub use fennel::FennelCompiler;
-pub use fs::{register_fs_module, register_fs_module_with_resolver};
+pub use fs::register_fs_module;
 pub use graph::{register_graph_module, register_graph_module_with_store_scoped};
 pub use handler_budget::{
     enter as enter_handler_budget, install_deadline_hook, BudgetGuard, LIFECYCLE_BUDGET,
