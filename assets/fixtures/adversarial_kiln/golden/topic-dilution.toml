@@ -100,3 +100,10 @@ expect_note = "sourdough-pizza-dough"
 question = "wall-facing drills before kicking up into balance"
 expect_note = "handstand-progression"
 
+[[queries]]
+question = "which direction should tension wrench pressure rotate?"
+expect_note = "lockpicking-basics"
+
+[[queries]]
+question = "isolating smart TVs from workstations on one switch"
+expect_note = "home-network-vlans"

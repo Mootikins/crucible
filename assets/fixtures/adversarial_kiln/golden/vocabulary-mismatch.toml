@@ -122,3 +122,28 @@ expect_note = "phone-battery-swelling"
 [[queries]]
 question = "the pool turned hazy after we treated the green"
 expect_note = "pool-cloudy-water-balance"
+[[queries]]
+question = "the dryer runs but everything comes out cold"
+expect_note = "dryer-heating-element-failure"
+
+[[queries]]
+question = "my dough never rises — maybe the water was too hot"
+expect_note = "yeast-water-temperature"
+
+[[queries]]
+question = "a whine from the front that changes pitch with the gas pedal"
+expect_note = "alternator-whine-diagnosis"
+
+[[queries]]
+question = "the starter smells like nail polish remover"
+expect_note = "sourdough-starter-smell"
+lenient = true
+
+[[queries]]
+question = "pedal goes soft halfway down long hills"
+expect_note = "brake-fluid-moisture"
+lenient = true
+
+[[queries]]
+question = "tiny webs and speckles showed up on my plant leaves this winter"
+expect_note = "houseplant-spider-mites"

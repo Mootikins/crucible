@@ -1,6 +1,6 @@
 ---
-tags: [Small enough to feed with two pizzas stays communicative without meetings about meetings.]
+tags: [teams]
 ---
 # Two Pizza Team Size
 
-teams
+Small enough to feed with two pizzas stays communicative without meetings about meetings.

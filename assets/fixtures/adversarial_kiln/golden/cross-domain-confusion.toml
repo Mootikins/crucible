@@ -99,3 +99,31 @@ expect_note = "chess-clock--increments"
 [[queries]]
 question = "do shorter antibiotic courses really work as well?"
 expect_note = "antibiotic-course-completion"
+[[queries]]
+question = "is my claim still editable after settlement?"
+expect_note = "proofing-window-insurance"
+
+[[queries]]
+question = "when can I still amend the paperwork after payout?"
+expect_note = "proofing-window-insurance"
+lenient = true
+
+[[queries]]
+question = "the poke test springs back slowly — bake now or toss?"
+expect_note = "proofing-window-bread"
+
+[[queries]]
+question = "announcing which card you need before betting"
+expect_note = "draw-call-poker"
+
+[[queries]]
+question = "too many submissions per frame stalls rendering"
+expect_note = "draw-call-graphics"
+
+[[queries]]
+question = "one-sided prints mark when the order book empties"
+expect_note = "volume-serialization"
+
+[[queries]]
+question = "coarse sample spacing bands smoke and clouds"
+expect_note = "volume-rendering"

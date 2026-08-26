@@ -1,6 +1,6 @@
 ---
-tags: [An off-agenda list keeps tangents acknowledged without derailing the current discussion.]
+tags: [meetings]
 ---
 # Parking Lot Idea Capture
 
-meetings
+An off-agenda list keeps tangents acknowledged without derailing the current discussion.

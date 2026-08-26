@@ -102,3 +102,18 @@ expect_note = "grilling-methods-charcoal-vs-gas"
 question = "backyard two-zone setup for weeknight burgers"
 expect_note = "grilling-methods-beginner"
 
+[[queries]]
+question = "einkorn and spelt soaked overnight for a denser crumb"
+expect_note = "bread-recipe-ancientgrains"
+
+[[queries]]
+question = "wide open at ISO 3200 on a tracking mount"
+expect_note = "camera-settings-astro"
+
+[[queries]]
+question = "every run capped at thirty minutes below aerobic threshold"
+expect_note = "running-plan-recovery"
+
+[[queries]]
+question = "executable specs with shrinking examples promoted to regressions"
+expect_note = "python-testing-contracts"

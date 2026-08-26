@@ -1,6 +1,6 @@
 ---
-tags: [A task leaves the board only when its written criteria hold — not when it feels finished.]
+tags: [workflow]
 ---
 # Definition Of Done Checklists
 
-workflow
+A task leaves the board only when its written criteria hold, not when it feels finished.

@@ -1,6 +1,6 @@
 ---
-tags: [Decide an message's fate the moment you open it; reopening costs more than deciding now.]
+tags: [productivity]
 ---
 # One Touch Email Rule
 
-productivity
+Decide a message's fate the moment you open it; reopening costs more than deciding now.
