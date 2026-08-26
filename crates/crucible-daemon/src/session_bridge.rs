@@ -29,6 +29,10 @@ pub struct DaemonSessionBridge {
     session_manager: Arc<SessionManager>,
     agent_manager: Arc<AgentManager>,
     event_tx: broadcast::Sender<SessionEventMessage>,
+    /// Overrides the agent manager's delegation service. Production leaves it
+    /// `None`; tests inject a mock so the delegation gates can be proven
+    /// without standing up a real child session.
+    delegation_spawner: Option<Arc<dyn crate::delegation::DelegationSpawner>>,
 }
 
 impl DaemonSessionBridge {
@@ -42,7 +46,123 @@ impl DaemonSessionBridge {
             agent_manager: ctx.agents.clone(),
             event_tx: ctx.event_tx.clone(),
             ctx,
+            delegation_spawner: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_delegation_spawner(
+        mut self,
+        spawner: Arc<dyn crate::delegation::DelegationSpawner>,
+    ) -> Self {
+        self.delegation_spawner = Some(spawner);
+        self
+    }
+
+    /// The `delegate = true` half of `cru.session.create`.
+    ///
+    /// The gates mirror `delegate_session`'s: the parent session must exist,
+    /// its own `delegation_config` must have delegation enabled, and a named
+    /// target must be inside the configured allowlist when one exists. The
+    /// spawn itself goes through the same `DelegationSpawner` the tool uses,
+    /// so depth limits, concurrency permits, child isolation enforcement and
+    /// event emission are whatever that service already guarantees.
+    ///
+    /// Returns the job-shaped record `cru.session.collect_subagents` polls —
+    /// `delegation_id` doubles as the child session id.
+    fn create_delegation(&self, params: serde_json::Value) -> BoxFut<serde_json::Value> {
+        let parent_id = params
+            .get("parent_session_id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+
+        let Some(parent) = self.session_manager.get_session(&parent_id) else {
+            return Box::pin(async move {
+                Err(format!(
+                    "delegate: parent session '{parent_id}' does not exist"
+                ))
+            });
+        };
+
+        let delegation_config = parent
+            .agent
+            .as_ref()
+            .and_then(|agent| agent.delegation_config.as_ref());
+        let enabled = delegation_config
+            .map(|config| config.enabled)
+            .unwrap_or(false);
+        if !enabled {
+            return Box::pin(async move {
+                Err("delegate: delegation is disabled for the parent session".to_string())
+            });
+        }
+
+        let Some(prompt) = params
+            .get("prompt")
+            .and_then(serde_json::Value::as_str)
+            .filter(|p| !p.is_empty())
+            .map(str::to_string)
+        else {
+            return Box::pin(async move {
+                Err("delegate: a prompt is required (the child's task)".to_string())
+            });
+        };
+
+        let target = params
+            .get("target")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string);
+        let targets = delegation_config
+            .and_then(|config| config.allowed_targets.clone())
+            .unwrap_or_default();
+        if let Some(target) = target.clone() {
+            if !targets.is_empty() && !targets.contains(&target) {
+                let message = format!(
+                    "delegate: target '{target}' is not allowed. Available targets: {}",
+                    targets.join(", ")
+                );
+                return Box::pin(async move { Err(message) });
+            }
+        }
+
+        let description = params
+            .get("description")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string);
+        let context = description
+            .as_deref()
+            .filter(|d| !d.is_empty())
+            .map(|d| format!("Delegated task: {d}"));
+
+        let request = crate::delegation::DelegationRequest {
+            parent_session_id: parent_id,
+            prompt,
+            context,
+            target_agent: target,
+            description,
+        };
+
+        let spawner: Arc<dyn crate::delegation::DelegationSpawner> = match &self.delegation_spawner
+        {
+            Some(spawner) => Arc::clone(spawner),
+            None => {
+                let service: Arc<crate::delegation::DelegationService> =
+                    Arc::clone(self.agent_manager.delegation_service());
+                service
+            }
+        };
+        Box::pin(async move {
+            let spawned = spawner
+                .spawn_delegation(request)
+                .await
+                .map_err(|e| format!("Failed to spawn delegated session: {e}"))?;
+            Ok(serde_json::json!({
+                "delegation_id": spawned.delegation_id,
+                "child_session_id": spawned.child_session_id,
+                "status": "spawned",
+            }))
+        })
     }
 }
 
@@ -79,6 +199,19 @@ impl DaemonSessionApi for DaemonSessionBridge {
     /// root, and a path this bridge invented would be scope-checked as if the
     /// caller had asked for it — which fails whenever the data root is `$HOME`.
     fn create_session(&self, params: serde_json::Value) -> BoxFut<serde_json::Value> {
+        // `parent_session_id` is the delegation discriminant. It is trusted
+        // input on this side of the trait because only the Lua binding's
+        // delegate stamping ever writes it — the binding strips the field
+        // from every caller-supplied table first, so reaching this branch
+        // means the daemon's own current-session binding vouched for the
+        // parent.
+        if params
+            .get("parent_session_id")
+            .and_then(serde_json::Value::as_str)
+            .is_some()
+        {
+            return self.create_delegation(params);
+        }
         bridge_async!(self.ctx, |ctx| async move {
             let request: crate::rpc_client::SessionCreateRequest =
                 serde_json::from_value(params)

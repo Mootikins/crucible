@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **`delegate = true` on `cru.session.create`** — the Lua plugin path to
+  subagents. A delegated create spawns through the daemon's
+  `DelegationService` (the same machinery as the `delegate_session` tool):
+  the parent is stamped from the session the Lua VM is executing for and is
+  never settable from data; the parent's own `delegation_config` gates it
+  (`enabled`, `allowed_targets`, depth/concurrency enforced by the service);
+  the result is a job record pollable with `cru.session.collect_subagents`.
+  Session VMs now register the full `cru.session` module bound to their own
+  session — `cru.session.current()` and `delegate` work from a session's own
+  Lua. The shared plugin VM and `lua.init_session` wire the module where a
+  current session exists; `delegate` on a VM without one is refused with the
+  reason.
+
 ### Changed
 - **`cru.sessions` is now `cru.session`, and its factory verbs return
   handles.** One canonical module holds the lifecycle verbs plus `current()`;

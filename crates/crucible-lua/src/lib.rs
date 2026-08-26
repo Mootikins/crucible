@@ -202,7 +202,8 @@ pub use session_defaults::{
     register_session_defaults, SessionDefaultValues, SessionDefaults, SessionDefaultsRpc,
 };
 pub use sessions::{
-    register_sessions_module, register_sessions_module_with_api, DaemonSessionApi, ResponsePart,
+    register_sessions_module, register_sessions_module_with_api,
+    register_sessions_module_with_api_and_current, DaemonSessionApi, ResponsePart,
 };
 pub use tools_api::{register_tools_module, register_tools_module_with_api, DaemonToolsApi};
 pub use ui::{register_ui_module, register_ui_module_with_api, INTERACTION_KINDS};

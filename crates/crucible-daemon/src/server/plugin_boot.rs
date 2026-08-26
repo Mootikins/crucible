@@ -16,9 +16,13 @@ impl Server {
             let session_api: Arc<dyn crucible_lua::DaemonSessionApi> = Arc::new(
                 crate::session_bridge::DaemonSessionBridge::new(self.rpc_context.clone()),
             );
-            if let Err(e) = loader.upgrade_with_sessions(session_api) {
+            if let Err(e) = loader.upgrade_with_sessions(session_api.clone()) {
                 warn!("Failed to upgrade Lua sessions module: {}", e);
             }
+            // Session VMs register `cru.session` against the same bridge, so
+            // `delegate = true` from a session's own Lua and from the plugin
+            // VM reach one enforcement path.
+            self.agent_manager.set_session_api(session_api);
 
             // Hand the validator registry + plugin Lua handle to the
             // agent manager so the stream loop can dispatch

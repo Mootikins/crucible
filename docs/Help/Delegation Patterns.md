@@ -21,6 +21,14 @@ The primitives you'll use:
 
 - `cru.session.create({ type = "chat", kilns = {...} })` — spawn a
   fresh session (optionally with kilns attached for knowledge access).
+- `cru.session.create({ delegate = true, prompt = "...", target = "..." })` —
+  spawn through the daemon's delegation service instead. The parent is
+  stamped from the session your Lua runs for (never settable from data), the
+  parent's own `delegation_config` gates it (`enabled`, `allowed_targets`),
+  and the result is a job record — `{ delegation_id, child_session_id,
+  status }` — that `collect_subagents` polls. Reachable from a session VM's
+  own Lua and from `lua.init_session`; the shared plugin VM has no current
+  session, so `delegate = true` there is refused with that reason.
 - `cru.session.configure_agent(id, { agent_name = "..." })` — pick
   which agent profile drives this session.
 - `cru.session.send_and_collect(id, prompt, { timeout = N })` —
@@ -30,8 +38,9 @@ The primitives you'll use:
   request id. Use this when you want the agent processing in the
   background and don't need to await output inline.
 - `cru.session.collect_subagents(job_ids, timeout)` — await N
-  background subagent jobs (spawned via the daemon's subagent
-  infrastructure, distinct from the sessions created above).
+  background subagent jobs. `delegation_id` from a delegated create is one
+  of these job ids, so the delegate primitive and the session primitive
+  meet on one polling surface.
 - `cru.session.fork(id, opts?)` — clone a session's history into a
   new session, e.g. for A/B exploration.
 - `cru.session.end_session(id)` — clean up.

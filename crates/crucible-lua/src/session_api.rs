@@ -282,6 +282,10 @@ impl Session {
             .expect("session_config_rpc: poisoned while binding RPC client") = Some(rpc);
     }
 
+    pub fn id(&self) -> String {
+        self.id.clone()
+    }
+
     fn with_rpc<F, T>(&self, f: F) -> mlua::Result<T>
     where
         F: FnOnce(&dyn SessionConfigRpc) -> Result<T, String>,

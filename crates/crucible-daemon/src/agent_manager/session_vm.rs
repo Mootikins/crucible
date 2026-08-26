@@ -162,6 +162,39 @@ impl AgentManager {
             error!(session_id = %session_id, error = %e, "Failed to register cru.context.attach");
         }
 
+        // `cru.session.*` and `cru.session.current()`, bound to THIS session.
+        // A session VM is 1:1 with its session and never shared, so the
+        // current-session binding is authoritative here — which is what makes
+        // `delegate = true` parentage honest from session Lua. Skipped
+        // entirely (rather than half-registered) when boot wired no API.
+        if let Some(api) = self.session_api() {
+            let mut lua_session = crucible_lua::Session::new(session_id.to_string());
+            if let Some(daemon_session) = self.session_manager.get_session(session_id) {
+                if let Some(workspace) = &daemon_session.workspace {
+                    lua_session =
+                        lua_session.with_workspace(workspace.to_string_lossy().into_owned());
+                }
+                if let Some(isolation) = daemon_session.isolation {
+                    lua_session = lua_session.with_isolation(isolation);
+                }
+            }
+            match crucible_lua::register_session_module(&lua) {
+                Ok(current) => {
+                    current.set_current(lua_session.clone().with_api(api.clone()));
+                    if let Err(e) = crucible_lua::register_sessions_module_with_api_and_current(
+                        &lua,
+                        api.clone(),
+                        current,
+                    ) {
+                        error!(session_id = %session_id, error = %e, "Failed to register cru.session module");
+                    }
+                }
+                Err(e) => {
+                    error!(session_id = %session_id, error = %e, "Failed to register cru.session.current");
+                }
+            }
+        }
+
         if let Ok(cru) = lua.globals().get::<mlua::Table>("cru") {
             if let Err(e) =
                 crucible_lua::register_statusline_exprs(&lua, &cru, self.statusline_exprs())

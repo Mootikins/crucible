@@ -55,7 +55,10 @@ use std::pin::Pin;
 // methods and the free functions both call.
 pub(crate) mod register;
 
-pub use register::{register_sessions_module, register_sessions_module_with_api};
+pub use register::{
+    register_sessions_module, register_sessions_module_with_api,
+    register_sessions_module_with_api_and_current,
+};
 
 #[cfg(test)]
 mod tests;

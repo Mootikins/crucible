@@ -31,13 +31,12 @@ use crucible_lua::{
     register_context_attach, register_context_module, register_context_validators,
     register_cru_on_api, register_isolation_module, register_oq_module, register_paths_module,
     register_publish_module, register_schedule_module, register_sessions_module,
-    register_sessions_module_with_api, register_shell_module, register_status_module,
-    register_storage_module, register_storage_module_with_store, register_tools_module,
-    register_tools_module_with_api, register_ui_module, register_ui_module_with_api,
-    register_vault_module, register_ws_module, ContextAttachRegistry, DaemonSessionApi,
-    DaemonToolsApi, IsolationRegistry, LuaExecutor, LuaScriptHandlerRegistry, LuaValidatorRegistry,
-    OptionsRegistry, PathsContext, PluginManager, PluginShellPolicy, PluginSource, PluginSpec,
-    PublicationRegistry, StatusRegistry,
+    register_shell_module, register_status_module, register_storage_module,
+    register_storage_module_with_store, register_tools_module, register_tools_module_with_api,
+    register_ui_module, register_ui_module_with_api, register_vault_module, register_ws_module,
+    ContextAttachRegistry, DaemonSessionApi, DaemonToolsApi, IsolationRegistry, LuaExecutor,
+    LuaScriptHandlerRegistry, LuaValidatorRegistry, OptionsRegistry, PathsContext, PluginManager,
+    PluginShellPolicy, PluginSource, PluginSpec, PublicationRegistry, StatusRegistry,
 };
 use mlua::LuaSerdeExt;
 use std::collections::HashMap;
@@ -124,6 +123,10 @@ pub struct DaemonPluginLoader {
     executor: LuaExecutor,
     plugin_manager: PluginManager,
     loaded_specs: Vec<PluginSpec>,
+    /// The daemon-backed session API `upgrade_with_sessions` registered with,
+    /// so late-created Lua runtimes (`lua.init_session`) can register the
+    /// same module against the same bridge instead of a second instance.
+    session_api: std::sync::Mutex<Option<Arc<dyn crucible_lua::DaemonSessionApi>>>,
     /// Service functions extracted from plugins during loading, drained by
     /// the spawn site via [`Self::take_service_fns`].
     service_fns: Vec<PluginServiceFn>,
@@ -285,6 +288,7 @@ impl DaemonPluginLoader {
             executor,
             plugin_manager,
             loaded_specs: Vec::new(),
+            session_api: std::sync::Mutex::new(None),
             service_fns: Vec::new(),
             service_tasks: HashMap::new(),
             validator_registry,
@@ -614,19 +618,37 @@ impl DaemonPluginLoader {
 
     /// Upgrade sessions module with real daemon-backed implementations.
     ///
-    /// Call after session/agent managers are created. Replaces stub `cru.sessions.*`
+    /// Call after session/agent managers are created. Replaces stub `cru.session.*`
     /// functions with implementations that delegate to the provided API. Also
     /// registers `cru.context.*` (Wave 1 plugin closure surface) which shares
     /// the same [`DaemonSessionApi`].
     pub fn upgrade_with_sessions(&self, api: Arc<dyn DaemonSessionApi>) -> anyhow::Result<()> {
         let lua = self.executor.lua();
-        register_sessions_module_with_api(lua, Arc::clone(&api))
-            .map_err(|e| anyhow::anyhow!("sessions upgrade: {e}"))?;
+        // Bound to this VM's current-session holder so a `delegate = true`
+        // create stamps parentage from the session the daemon bound here —
+        // never from anything a plugin wrote.
+        crucible_lua::register_sessions_module_with_api_and_current(
+            lua,
+            Arc::clone(&api),
+            self.executor.current_session().clone(),
+        )
+        .map_err(|e| anyhow::anyhow!("sessions upgrade: {e}"))?;
+        *self.session_api.lock().expect("session_api: poisoned") = Some(api.clone());
         register_ui_module_with_api(lua, Arc::clone(&api))
             .map_err(|e| anyhow::anyhow!("ui upgrade: {e}"))?;
         register_context_module(lua, api).map_err(|e| anyhow::anyhow!("context module: {e}"))?;
         info!("Lua sessions + ui + context modules upgraded with daemon API");
         Ok(())
+    }
+
+    /// The daemon-backed session API `upgrade_with_sessions` registered with,
+    /// for late-created runtimes that want the same module against the same
+    /// bridge. `None` before the upgrade has run.
+    pub fn session_api(&self) -> Option<Arc<dyn DaemonSessionApi>> {
+        self.session_api
+            .lock()
+            .expect("session_api: poisoned")
+            .clone()
     }
 
     /// Upgrade tools module with real daemon-backed implementations.

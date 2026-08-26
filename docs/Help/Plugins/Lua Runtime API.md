@@ -402,6 +402,45 @@ passed.
 
 Also accepts a string for the legacy positional form: `cru.session.create("chat")`.
 
+#### Delegated creates
+
+`delegate = true` turns the create into a delegation spawn through the
+daemon's `DelegationService` — the same machinery the `delegate_session`
+tool uses, with the same gates:
+
+```lua
+local job, err = cru.session.create({
+    delegate = true,
+    prompt = "fix the failing tests",   -- required: the child's task
+    target = "cursor",                  -- optional: ACP profile or agent card
+    description = "CI is red",          -- optional: becomes the child's title
+})
+-- job = { delegation_id = "...", child_session_id = "...", status = "spawned" }
+
+local results, err = cru.session.collect_subagents({ job.delegation_id }, 120)
+```
+
+Three properties hold by construction:
+
+- **Parentage is stamped, never supplied.** The daemon writes
+  `parent_session_id` from the session your Lua is executing for; a
+  `parent_session_id` you put in the options table is stripped before the
+  boundary, on every create. Borrowing another session's delegation
+  allowlist is not sayable from Lua.
+- **The parent's config is the gate.** The parent session's
+  `delegation_config` decides: `enabled` must be true, a named `target`
+  must be inside `allowed_targets` when that list exists, and the spawn
+  itself goes through the same service that enforces depth limits,
+  concurrency permits and child isolation.
+- **One polling surface.** `delegation_id` is a `collect_subagents` job id,
+  so waiting on a delegation and waiting on any other subagent job is the
+  same call.
+
+`delegate = true` needs a current session on the VM. Session VMs (a
+session's own Lua) and `lua.init_session` runtimes have one; the shared
+plugin VM does not, and a delegate there is refused with that reason —
+spawn a plain session instead, or move the call into the session's Lua.
+
 ### cru.session.get(session_id)
 
 Get a session by ID. Returns a session handle or `(nil, nil)` if not found.

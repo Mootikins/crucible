@@ -1,7 +1,7 @@
 use super::DaemonSessionApi;
 use crate::error::LuaError;
 use crate::lua_util::{gate_module_keys, get_or_create_module, install_sessions_alias};
-use crate::session_api::Session;
+use crate::session_api::{CurrentSession, Session};
 use mlua::{Lua, LuaSerdeExt, Value};
 use std::sync::Arc;
 
@@ -86,11 +86,53 @@ pub(crate) async fn create_op(
     lua: &Lua,
     api: &Arc<dyn DaemonSessionApi>,
     args: Value,
+    current: Option<&CurrentSession>,
 ) -> mlua::Result<(Value, Value)> {
-    let params = match create_params(&args) {
+    let mut params = match create_params(&args) {
         Ok(params) => params,
         Err(message) => return err_pair(lua, message),
     };
+    // Parentage is stamped here or not at all. A caller-supplied
+    // `parent_session_id` is removed unconditionally — including on a plain
+    // create — so borrowing another session's delegation allowlist is not
+    // sayable from Lua, and `delegate = true` is the one switch that turns
+    // the create path into the delegation path.
+    if let Some(obj) = params.as_object_mut() {
+        obj.remove("parent_session_id");
+        if let Some(delegate) = obj.remove("delegate") {
+            match delegate {
+                serde_json::Value::Bool(true) => {
+                    let parent = current
+                        .and_then(CurrentSession::get_current)
+                        .map(|session| session.id());
+                    let Some(parent) = parent else {
+                        return err_pair(
+                            lua,
+                            "delegate = true requires a current session: this Lua VM has no \
+                             session bound (delegate from a session's own Lua, or spawn a plain \
+                             session instead)"
+                                .to_string(),
+                        );
+                    };
+                    obj.insert(
+                        "parent_session_id".to_string(),
+                        serde_json::Value::String(parent),
+                    );
+                }
+                serde_json::Value::Bool(false) => {}
+                other => {
+                    return err_pair(
+                        lua,
+                        format!(
+                            "delegate must be a boolean, got {}",
+                            serde_json::Value::as_str(&other)
+                                .map_or_else(|| other.to_string(), str::to_string)
+                        ),
+                    );
+                }
+            }
+        }
+    }
     match api.create_session(params).await {
         Ok(val) => Ok((wrap_session_record(lua, api, val)?, Value::Nil)),
         Err(e) => err_pair(lua, e),
@@ -758,9 +800,33 @@ fn merge_session_fns(lua: &Lua, table: &mlua::Table) -> Result<(), LuaError> {
 ///
 /// This replaces the stub functions registered by [`register_sessions_module`]
 /// with implementations that delegate to the provided [`DaemonSessionApi`].
+/// `delegate = true` in a create options table is refused: with no
+/// per-VM current session to stamp parentage from, a delegation could not be
+/// attributed (and therefore gated) honestly.
 pub fn register_sessions_module_with_api(
     lua: &Lua,
     api: Arc<dyn DaemonSessionApi>,
+) -> Result<(), LuaError> {
+    register_sessions_inner(lua, api, None)
+}
+
+/// [`register_sessions_module_with_api`] bound to one VM's current session:
+/// a `delegate = true` create is stamped with that session's id as the
+/// delegation parent. The daemon — not Lua — remains the only writer of
+/// `parent_session_id`, and the parent's own delegation policy is enforced
+/// against the stamped id server-side.
+pub fn register_sessions_module_with_api_and_current(
+    lua: &Lua,
+    api: Arc<dyn DaemonSessionApi>,
+    current: CurrentSession,
+) -> Result<(), LuaError> {
+    register_sessions_inner(lua, api, Some(current))
+}
+
+fn register_sessions_inner(
+    lua: &Lua,
+    api: Arc<dyn DaemonSessionApi>,
+    current: Option<CurrentSession>,
 ) -> Result<(), LuaError> {
     // Build a fresh table. The gate at the end compares its keys against
     // SESSION_FN_NAMES, so a name with no daemon-backed body cannot hide
@@ -773,7 +839,8 @@ pub fn register_sessions_module_with_api(
     let a = Arc::clone(&api);
     let create_fn = lua.create_async_function(move |lua, args: Value| {
         let a = Arc::clone(&a);
-        async move { create_op(&lua, &a, args).await }
+        let current = current.clone();
+        async move { create_op(&lua, &a, args, current.as_ref()).await }
     })?;
     sessions.set("create", create_fn)?;
 

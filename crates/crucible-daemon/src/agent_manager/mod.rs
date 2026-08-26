@@ -386,6 +386,12 @@ pub struct AgentManager {
     /// The service holds a `Weak` back-reference (bound at startup), so this
     /// strong Arc creates no cycle.
     delegation_service: Arc<DelegationService>,
+    /// The daemon session API session VMs register `cru.session` against.
+    /// Bound once at boot (`Server` owns both halves by then); `None` in
+    /// tests and any boot that never wired it, where session VMs simply do
+    /// not get the module — the pre-existing behaviour, not a half-registered
+    /// one.
+    session_api: std::sync::OnceLock<Arc<dyn crucible_lua::DaemonSessionApi>>,
     mcp_gateway: Option<Arc<tokio::sync::RwLock<crate::tools::mcp_gateway::McpGatewayManager>>>,
     card_roots: crate::agent_cards::CardRoots,
     llm_config: crate::llm_state::LiveLlmConfig,
@@ -518,6 +524,7 @@ impl AgentManager {
             session_manager: params.session_manager,
             background_manager: params.background_manager,
             delegation_service,
+            session_api: std::sync::OnceLock::new(),
             mcp_gateway: params.mcp_gateway,
             llm_config: crate::llm_state::LiveLlmConfig::new(params.llm_config),
             acp_config: params.acp_config,
@@ -1192,6 +1199,16 @@ impl AgentManager {
     /// Access the delegation service (child-session spawning).
     pub fn delegation_service(&self) -> &Arc<DelegationService> {
         &self.delegation_service
+    }
+
+    /// Bind the daemon session API session VMs register `cru.session`
+    /// against. Idempotent; first binder wins.
+    pub fn set_session_api(&self, api: Arc<dyn crucible_lua::DaemonSessionApi>) {
+        let _ = self.session_api.set(api);
+    }
+
+    fn session_api(&self) -> Option<&Arc<dyn crucible_lua::DaemonSessionApi>> {
+        self.session_api.get()
     }
 
     /// The provider table as it stands.

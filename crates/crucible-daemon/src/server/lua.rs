@@ -34,8 +34,31 @@ pub(crate) async fn handle_lua_init_session(
         );
     }
 
-    let session = LuaSession::new("chat".to_string());
+    // The session this VM is executing for, carrying the daemon session API
+    // so `current()`'s lifecycle methods work, and — through the module
+    // registration below — so `delegate = true` stamps THIS session as the
+    // delegation parent. The real id, not a placeholder: parentage and every
+    // lifecycle verb on the handle key on it.
+    let mut session = LuaSession::new(session_id.clone());
     session.bind(Box::new(crucible_lua::UnsupportedSessionRpc));
+    let plugin_guard = plugin_loader.lock().await;
+    if let Some(loader) = plugin_guard.as_ref() {
+        if let Some(api) = loader.session_api() {
+            session = session.with_api(api.clone());
+            if let Err(e) = crucible_lua::register_sessions_module_with_api_and_current(
+                executor.lua(),
+                api,
+                executor.current_session().clone(),
+            ) {
+                warn!(
+                    session_id = %session_id,
+                    error = %e,
+                    "Failed to register cru.session module"
+                );
+            }
+        }
+    }
+    drop(plugin_guard);
     executor.current_session().set_current(session.clone());
 
     if let Err(e) = executor.sync_session_start_hooks() {

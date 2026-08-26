@@ -3,6 +3,7 @@ use std::sync::Mutex as StdMutex;
 
 mod completion;
 mod crud;
+mod delegate;
 mod graph;
 mod handles;
 mod messages;
