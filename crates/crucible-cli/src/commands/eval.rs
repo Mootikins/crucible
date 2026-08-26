@@ -75,12 +75,16 @@ fn aggregate(results: &[QueryResult], top_k: usize) -> (f64, f64, f64, f64) {
 }
 
 fn render(results: &[QueryResult], top_k: usize) {
-    println!("{:<4} {:<6} {:<8} question → expected", "#", "rank", "lenient");
+    println!(
+        "{:<4} {:<6} {:<8} question → expected",
+        "#", "rank", "lenient"
+    );
     for (i, r) in results.iter().enumerate() {
         println!(
             "{:<4} {:<6} {:<8} {} → {}",
             i + 1,
-            r.rank.map(|v| v.to_string())
+            r.rank
+                .map(|v| v.to_string())
                 .unwrap_or_else(|| "miss".into()),
             if r.lenient { "yes" } else { "no" },
             truncate(&r.question, 48),
@@ -89,9 +93,7 @@ fn render(results: &[QueryResult], top_k: usize) {
     }
     let (h1, hk, m, recall) = aggregate(results, top_k);
     println!();
-    println!(
-        "hit@1 {h1:.3} · hit@{top_k} {hk:.3} · MRR {m:.3} · recall@{top_k} {recall:.3}",
-    );
+    println!("hit@1 {h1:.3} · hit@{top_k} {hk:.3} · MRR {m:.3} · recall@{top_k} {recall:.3}",);
 }
 
 fn truncate(s: &str, max: usize) -> String {
@@ -156,7 +158,10 @@ mod tests {
             },
         ];
         let (h1, _hk, _m, recall10) = aggregate(&results, 10);
-        assert!((h1 - 1.0).abs() < 1e-9, "lenient miss must not drag strict hit@1");
+        assert!(
+            (h1 - 1.0).abs() < 1e-9,
+            "lenient miss must not drag strict hit@1"
+        );
         assert!((recall10 - 0.5).abs() < 1e-9);
     }
 

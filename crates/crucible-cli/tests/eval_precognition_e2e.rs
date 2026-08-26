@@ -111,13 +111,19 @@ async fn eval_precognition_runs_end_to_end_against_hermetic_daemon() {
         String::from_utf8_lossy(&output.stdout)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Scoring 2 queries"), "header missing:\n{stdout}");
+    assert!(
+        stdout.contains("Scoring 2 queries"),
+        "header missing:\n{stdout}"
+    );
     assert_eq!(
         stdout.matches("what is a kiln?").count(),
         1,
         "each query appears exactly once"
     );
-    assert!(stdout.contains("hit@1"), "aggregate line missing:\n{stdout}");
+    assert!(
+        stdout.contains("hit@1"),
+        "aggregate line missing:\n{stdout}"
+    );
     assert!(stdout.contains("recall@"), "recall line missing:\n{stdout}");
 }
 

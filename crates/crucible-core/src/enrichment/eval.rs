@@ -59,8 +59,7 @@ pub fn rank_of(results: &[String], expect_note: &str) -> Option<usize> {
 fn normalize_stem(name: &str) -> String {
     let no_ext = name.strip_suffix(".md").unwrap_or(name);
     let stem = no_ext.rsplit(['/', '\\']).next().unwrap_or(no_ext);
-    stem.to_lowercase()
-        .replace([' ', '_'], "-")
+    stem.to_lowercase().replace([' ', '_'], "-")
 }
 
 /// Did the expected note appear in the top `k`?
