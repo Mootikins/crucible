@@ -264,3 +264,48 @@ fn inserting_shell_output_fills_the_composer_and_the_transcript() {
         "and the command should still be recorded in the transcript"
     );
 }
+
+#[test]
+fn precognition_result_renders_as_a_system_line_listing_notes() {
+    use crucible_core::traits::chat::PrecognitionNoteInfo;
+
+    let mut app = OilChatApp::default();
+    app.on_message(ChatAppMsg::PrecognitionResult {
+        notes_count: 2,
+        notes: vec![
+            PrecognitionNoteInfo {
+                title: "Kilns".into(),
+                kiln: Some("docs".parse().unwrap()),
+                score: 0.91,
+            },
+            PrecognitionNoteInfo {
+                title: "Wikilinks".into(),
+                kiln: None,
+                score: 0.72,
+            },
+        ],
+    });
+
+    let nodes = app.container_list().nodes();
+    let last = nodes.last().expect("a node was added");
+    let focus = crucible_oil::focus::FocusContext::default();
+    let mut ctx = crate::tui::oil::ViewContext::new(&focus);
+    let rendered = crucible_oil::render::render_to_plain_text(&last.render(None, &ctx), 120);
+    assert!(
+        rendered.contains("precognition pulled 2 notes"),
+        "count line missing: {rendered}"
+    );
+    assert!(rendered.contains("Kilns (docs, 0.91)"), "kiln-labelled entry missing: {rendered}");
+    assert!(rendered.contains("Wikilinks (0.72)"), "unlabelled entry missing: {rendered}");
+}
+
+#[test]
+fn an_empty_precognition_result_adds_nothing() {
+    let mut app = OilChatApp::default();
+    let before = app.container_list().nodes().len();
+    app.on_message(ChatAppMsg::PrecognitionResult {
+        notes_count: 0,
+        notes: vec![],
+    });
+    assert_eq!(app.container_list().nodes().len(), before);
+}

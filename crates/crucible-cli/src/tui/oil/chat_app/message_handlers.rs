@@ -270,9 +270,25 @@ impl OilChatApp {
             ChatAppMsg::CacheHitRate(rate) => {
                 self.cache_hit_rate = rate;
             }
-            // The TUI does not show precognition notes. The message stays so
-            // that the runner keeps one reply shape for the RPC.
-            ChatAppMsg::PrecognitionResult { .. } => {}
+            // Injected context is part of the visible transcript: the notes
+            // that grounded an answer are the product's core value, so they
+            // render as a dim system line above the response (title + score).
+            ChatAppMsg::PrecognitionResult { notes_count, notes } => {
+                if notes_count > 0 {
+                    let listing = notes
+                        .iter()
+                        .map(|n| match n.kiln.as_ref() {
+                            Some(kiln) => format!("{} ({}, {})", n.title, kiln, n.score),
+                            None => format!("{} ({})", n.title, n.score),
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" · ");
+                    self.add_system_message(format!(
+                        "precognition pulled {notes_count} note{}: {listing}",
+                        if notes_count == 1 { "" } else { "s" }
+                    ));
+                }
+            }
             ChatAppMsg::UndoComplete {
                 turns,
                 messages_removed,
