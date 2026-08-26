@@ -55,7 +55,16 @@ pub async fn execute(
 ) -> Result<()> {
     info!("Starting process command");
 
-    let target_path = path.as_deref().unwrap_or(config.kiln_path.as_path());
+    let mut config = config;
+    let target_path = path
+        .as_deref()
+        .unwrap_or(config.kiln_path.as_path())
+        .to_path_buf();
+    // A named DIRECTORY is the kiln to open; a named FILE still belongs to the
+    // configured kiln (its parent may not even be a kiln root).
+    if path.as_deref().is_some_and(|p| p.is_dir()) {
+        config.kiln_path = target_path.clone();
+    }
     info!("Processing path: {}", target_path.display());
     info!("Watch mode: {}", watch);
     info!("Dry-run mode: {}", dry_run);
@@ -136,7 +145,7 @@ pub async fn execute(
 
             // Enter watch mode if requested (watching only this file's parent)
             if watch {
-                run_watch_mode(&config, target_path).await?;
+                run_watch_mode(&config, &target_path).await?;
             }
 
             return Ok(());
@@ -165,8 +174,12 @@ pub async fn execute(
     if !json {
         println!("Processing kiln via daemon...");
     }
+    // The kiln processed is the one the user named — `path` when given, the
+    // configured kiln otherwise. Opening `config.kiln_path` here instead
+    // indexed the wrong kiln while reporting the requested path in the summary.
+    let process_target = target_path.to_path_buf();
     let result = client
-        .kiln_open_with_options(&config.kiln_path, true, force)
+        .kiln_open_with_options(&process_target, true, force)
         .await?;
 
     // Parse response
@@ -233,7 +246,7 @@ pub async fn execute(
 
     // Watch mode
     if watch {
-        run_watch_mode(&config, target_path).await?;
+        run_watch_mode(&config, &target_path).await?;
     }
 
     Ok(())

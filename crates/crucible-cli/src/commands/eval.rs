@@ -118,6 +118,21 @@ fn render_aggregate_line(agg: &(f64, f64, f64, f64), top_k: usize) {
 /// Per-class table for --golden-dir mode: one row per class sorted
 /// alphabetically, then TOTAL over all queries.
 fn render_class_table(rows: &[(String, Vec<QueryResult>)], top_k: usize) {
+    // A class whose queries are ALL lenient has an empty strict set, so its
+    // hit@1/hit@k/MRR are 0.000 over zero samples — indistinguishable from a
+    // class that missed everything. Flag it so the numbers get read honestly.
+    let no_strict: Vec<&str> = rows
+        .iter()
+        .filter(|(_, r)| r.iter().all(|q| q.lenient))
+        .map(|(name, _)| name.as_str())
+        .collect();
+    if !no_strict.is_empty() {
+        eprintln!(
+            "warning: these classes have no strict (non-lenient) queries; their \
+             hit@1/hit@k/MRR are vacuous — mark some queries strict or read only recall: {}",
+            no_strict.join(", ")
+        );
+    }
     println!(
         "{:<32} {:>5} {:>7} {:>7} {:>7} {:>9}",
         "class", "n", "hit@1", "hit@k", "MRR", "recall@k"

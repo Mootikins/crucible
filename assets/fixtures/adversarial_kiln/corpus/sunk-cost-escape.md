@@ -1,6 +1,6 @@
 ---
-tags: [Money spent is gone regardless; only future costs and benefits should steer the next choice.]
+tags: [decisions]
 ---
 # Sunk Cost Escape
 
-decisions
+Money spent is gone regardless; only future costs and benefits should steer the next choice.

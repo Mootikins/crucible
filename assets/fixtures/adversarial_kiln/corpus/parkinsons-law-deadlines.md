@@ -1,6 +1,6 @@
 ---
-tags: [Work expands to fill the time allotted, so shrink the allotment deliberately.]
+tags: [planning]
 ---
 # Parkinsons Law Deadlines
 
-planning
+Work expands to fill the time allotted, so shrink the allotment deliberately.

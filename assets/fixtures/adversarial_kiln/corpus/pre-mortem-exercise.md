@@ -1,6 +1,6 @@
 ---
-tags: [Imagine the project already failed, then list why — risks surface before work begins.]
+tags: [planning]
 ---
 # Pre Mortem Exercise
 
-planning
+Imagine the project already failed, then list why; risks surface before work begins.

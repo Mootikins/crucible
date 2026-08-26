@@ -1,6 +1,6 @@
 ---
-tags: [Automatic rollback trips at error thresholds so bad releases self-extinguish.]
+tags: [operations]
 ---
 # Circuit Breaker Deployments
 
-operations
+Automatic rollback trips at error thresholds so bad releases self-extinguish.

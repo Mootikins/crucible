@@ -1,6 +1,6 @@
 ---
-tags: [Process every message to a decision — delete, delegate, defer, or do — until the queue is empty.]
+tags: [productivity]
 ---
 # Inbox Zero Method
 
-productivity
+Process every message to a decision: delete, delegate, defer, or do until the queue is empty.

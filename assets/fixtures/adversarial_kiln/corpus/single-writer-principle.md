@@ -1,6 +1,6 @@
 ---
-tags: [One person edits each artifact at a time; coordination replaces merge conflicts.]
+tags: [engineering]
 ---
 # Single Writer Principle
 
-engineering
+One person edits each artifact at a time; coordination replaces merge conflicts.

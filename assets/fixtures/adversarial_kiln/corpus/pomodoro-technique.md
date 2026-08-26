@@ -1,6 +1,6 @@
 ---
-tags: [Work twenty-five minutes, rest five; after four cycles take a longer break.]
+tags: [focus]
 ---
 # Pomodoro Technique
 
-focus
+Work twenty-five minutes, rest five; after four cycles take a longer break.

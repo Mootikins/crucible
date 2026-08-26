@@ -21,13 +21,21 @@ pub enum EvalCommands {
         /// Directory of golden-set TOMLs; each file is scored as its own class
         #[arg(short = 'd', long)]
         golden_dir: Option<PathBuf>,
+
+        /// Kiln to score against; defaults to the configured kiln_path
+        #[arg(long)]
+        kiln: Option<PathBuf>,
     },
 }
 
 impl EvalCommands {
     pub async fn execute(&self, config: crate::config::CliConfig) -> anyhow::Result<()> {
         match self {
-            EvalCommands::Precognition { golden, golden_dir } => {
+            EvalCommands::Precognition { golden, golden_dir, kiln } => {
+                let mut config = config;
+                if let Some(path) = kiln {
+                    config.kiln_path = path.clone();
+                }
                 super::super::commands::eval::execute(
                     config,
                     golden.clone(),

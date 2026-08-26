@@ -1,6 +1,6 @@
 ---
-tags: [Restate the opposing argument fairly before answering it; attacking a weaker version convinces no one.]
+tags: [debate]
 ---
 # Straw Man Rebuttal
 
-debate
+Restate the opposing argument fairly before answering it; attacking a weaker version convinces no one.

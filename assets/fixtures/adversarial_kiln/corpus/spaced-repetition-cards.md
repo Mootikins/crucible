@@ -1,6 +1,6 @@
 ---
-tags: [Review flashcards at expanding intervals to move facts into long-term memory.]
+tags: [learning]
 ---
 # Spaced Repetition Cards
 
-learning
+Review flashcards at expanding intervals to move facts into long-term memory.

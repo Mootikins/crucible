@@ -1,6 +1,6 @@
 ---
-tags: [Track every recurring charge quarterly; subscriptions multiply in the dark.]
+tags: [finance]
 ---
 # Rubber Glove Audit
 
-finance
+Track every recurring charge quarterly; subscriptions multiply in the dark.

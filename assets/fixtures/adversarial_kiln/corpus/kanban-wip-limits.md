@@ -1,6 +1,6 @@
 ---
-tags: [Cap work in progress per column so the queue drains instead of growing without bound.]
+tags: [workflow]
 ---
 # Kanban Wip Limits
 
-workflow
+Cap work in progress per column so the queue drains instead of growing without bound.

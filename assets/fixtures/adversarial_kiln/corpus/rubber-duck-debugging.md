@@ -1,6 +1,6 @@
 ---
-tags: [Explain your problem aloud to an inanimate object; articulation alone often reveals the bug.]
+tags: [programming]
 ---
 # Rubber Duck Debugging
 
-programming
+Explain your problem aloud to an inanimate object; articulation alone often reveals the bug.

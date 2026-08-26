@@ -1,6 +1,6 @@
 ---
-tags: [Stop accepting new scope before a deadline so polish gets the final days instead of half-built additions.]
+tags: [engineering]
 ---
 # Feature Freeze Windows
 
-engineering
+Stop accepting new scope before a deadline so polish gets the final days instead of half-built additions.

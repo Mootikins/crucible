@@ -1,6 +1,6 @@
 ---
-tags: [Even experts skip steps under load; a written list catches what memory drops.]
+tags: [safety]
 ---
 # Checklist Manifesto Surgery
 
-safety
+Even experts skip steps under load; a written list catches what memory drops.

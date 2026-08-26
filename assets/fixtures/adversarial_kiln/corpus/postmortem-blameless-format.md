@@ -1,6 +1,6 @@
 ---
-tags: [Ask how the system allowed the failure, never who pressed the button; honesty survives only without blame.]
+tags: [operations]
 ---
 # Postmortem Blameless Format
 
-operations
+Ask how the system allowed the failure, never who pressed the button; honesty survives only without blame.

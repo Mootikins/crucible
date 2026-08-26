@@ -1,6 +1,6 @@
 ---
-tags: [Cash in labeled envelopes makes overspending physically impossible rather than merely unwise.]
+tags: [finance]
 ---
 # Budget Envelope Method
 
-finance
+Cash in labeled envelopes makes overspending physically impossible rather than merely unwise.
