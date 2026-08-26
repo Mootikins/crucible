@@ -18,6 +18,20 @@ use serial_test::serial;
 use std::fs;
 use tempfile::TempDir;
 
+/// A `cru` command whose socket lives inside this test's tempdir.
+///
+/// `config show` asks an already-running daemon for its effective config when
+/// one answers on the default per-uid socket — machine state, not test state.
+/// A daemon left over from another checkout (or a developer's real one)
+/// fails every test here with a config-root refusal. A scoped socket means
+/// "no daemon", which is the path these assertions describe; nothing is ever
+/// bound to it, so no file appears in the tempdir.
+fn cru_with_isolated_socket(dir: &std::path::Path) -> Command {
+    let mut cmd = Command::cargo_bin("cru").unwrap();
+    cmd.env("CRUCIBLE_SOCKET", dir.join("daemon.sock"));
+    cmd
+}
+
 // ============================================================================
 // Config Init Command Tests
 // ============================================================================
@@ -28,7 +42,7 @@ fn test_config_init_creates_file() {
     let temp = TempDir::new().unwrap();
     let config_path = temp.path().join("test-config.toml");
 
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = cru_with_isolated_socket(temp.path());
     cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
         .arg("config")
         .arg("init")
@@ -60,7 +74,7 @@ fn test_config_init_fails_without_force_if_exists() {
     // Create existing file
     fs::write(&config_path, "existing content").unwrap();
 
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = cru_with_isolated_socket(temp.path());
     cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
         .arg("config")
         .arg("init")
@@ -82,7 +96,7 @@ fn test_config_init_overwrites_with_force() {
     // Create existing file
     fs::write(&config_path, "existing content").unwrap();
 
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = cru_with_isolated_socket(temp.path());
     cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
         .arg("config")
         .arg("init")
@@ -106,7 +120,7 @@ fn test_config_init_creates_parent_directories() {
     let temp = TempDir::new().unwrap();
     let nested_path = temp.path().join("a/b/c/config.toml");
 
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = cru_with_isolated_socket(temp.path());
     cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
         .arg("config")
         .arg("init")
@@ -129,7 +143,7 @@ fn test_config_init_uses_default_path() {
     let _guard = EnvVarGuard::set("HOME", temp.path().to_string_lossy().to_string());
 
     // On Windows, setting HOME isn't enough, we need CRUCIBLE_CONFIG_DIR to isolate
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = cru_with_isolated_socket(temp.path());
     cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join(".config/crucible"))
         .arg("config")
         .arg("init")
@@ -148,7 +162,7 @@ fn test_config_init_uses_default_path() {
 #[serial]
 fn test_config_show_default() {
     let temp = TempDir::new().unwrap();
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = cru_with_isolated_socket(temp.path());
     cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
         .arg("config")
         .arg("show");
@@ -163,7 +177,7 @@ fn test_config_show_default() {
 #[serial]
 fn test_config_show_json_format() {
     let temp = TempDir::new().unwrap();
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = cru_with_isolated_socket(temp.path());
     cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
         .arg("config")
         .arg("show")
@@ -216,7 +230,7 @@ streaming = false
     fs::copy(&config_path, &default_config_path).unwrap();
     let _guard = EnvVarGuard::set("HOME", temp.path().to_string_lossy().to_string());
 
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = cru_with_isolated_socket(temp.path());
     // On Windows, set CRUCIBLE_CONFIG_DIR explicitly to the directory containing config.toml
     cmd.env("CRUCIBLE_CONFIG_DIR", default_config_path.parent().unwrap())
         .arg("config")
@@ -248,7 +262,7 @@ fn config_show_honours_the_config_path_flag() {
     )
     .unwrap();
 
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = cru_with_isolated_socket(temp.path());
     cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
         .arg("-C")
         .arg(&config_path)
@@ -271,7 +285,7 @@ fn config_show_honours_the_config_path_flag() {
 #[serial]
 fn test_config_show_trace_without_config_file() {
     let temp = TempDir::new().unwrap();
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = cru_with_isolated_socket(temp.path());
     cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
         .arg("config")
         .arg("show")
@@ -309,7 +323,7 @@ default_model = "nomic-embed-text"
     )
     .unwrap();
 
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = cru_with_isolated_socket(temp.path());
     cmd.env("CRUCIBLE_CONFIG_DIR", &config_dir)
         .arg("config")
         .arg("show")
@@ -329,7 +343,7 @@ default_model = "nomic-embed-text"
 fn test_config_show_sources_alias() {
     // Test that --sources works as an alias for --trace
     let temp = TempDir::new().unwrap();
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = cru_with_isolated_socket(temp.path());
     cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
         .arg("config")
         .arg("show")
@@ -344,7 +358,7 @@ fn test_config_show_sources_alias() {
 #[serial]
 fn test_config_show_trace_json_format() {
     let temp = TempDir::new().unwrap();
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = cru_with_isolated_socket(temp.path());
     cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
         .arg("config")
         .arg("show")
@@ -367,7 +381,7 @@ fn test_config_show_trace_json_format() {
 #[test]
 fn test_config_dump_default() {
     let temp = TempDir::new().unwrap();
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = cru_with_isolated_socket(temp.path());
     cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
         .arg("config")
         .arg("dump");
@@ -381,7 +395,7 @@ fn test_config_dump_default() {
 #[test]
 fn test_config_dump_json_format() {
     let temp = TempDir::new().unwrap();
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = cru_with_isolated_socket(temp.path());
     cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
         .arg("config")
         .arg("dump")
@@ -412,7 +426,7 @@ fn test_config_show_with_invalid_config_file() {
 
     let _guard = EnvVarGuard::set("HOME", temp.path().to_string_lossy().to_string());
 
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = cru_with_isolated_socket(temp.path());
     // Set CRUCIBLE_CONFIG_DIR explicitly
     cmd.env("CRUCIBLE_CONFIG_DIR", config_path.parent().unwrap())
         .arg("config")
@@ -452,7 +466,7 @@ default_agent = "partial-agent"
 
     let _guard = EnvVarGuard::set("HOME", temp.path().to_string_lossy().to_string());
 
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = cru_with_isolated_socket(temp.path());
     // Set CRUCIBLE_CONFIG_DIR explicitly
     cmd.env("CRUCIBLE_CONFIG_DIR", default_config_path.parent().unwrap())
         .arg("config")
@@ -470,7 +484,7 @@ default_agent = "partial-agent"
 #[serial]
 fn test_config_show_preserves_order() {
     let temp = TempDir::new().unwrap();
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = cru_with_isolated_socket(temp.path());
     cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
         .arg("config")
         .arg("show");
@@ -517,7 +531,7 @@ type = "fastembed"
     .unwrap();
 
     // Test that stats command uses the config
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = cru_with_isolated_socket(temp.path());
     // Use temp config directory
     cmd.env("CRUCIBLE_CONFIG_DIR", temp.path().join("config"))
         .arg("config")
@@ -559,7 +573,7 @@ fn test_config_show_performance() {
 
     let start = std::time::Instant::now();
 
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = cru_with_isolated_socket(temp.path());
     cmd.arg("config").arg("show");
 
     cmd.assert().success();
@@ -617,7 +631,7 @@ kiln_path = "/vault{}"
     fs::copy(&config_path, &default_config_path).unwrap();
 
     let start = std::time::Instant::now();
-    let mut cmd = Command::cargo_bin("cru").unwrap();
+    let mut cmd = cru_with_isolated_socket(temp.path());
     cmd.arg("config").arg("show");
 
     cmd.assert().success();
