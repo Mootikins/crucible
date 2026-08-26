@@ -278,7 +278,7 @@ function M.get_or_create(channel_id, guild_id, author_id, opts)
         -- misconfigured daemon every later message from this sender re-ended
         -- the same dead id (swallowed by the pcall) and `active_count` kept
         -- reporting it to `:discord status`.
-        pcall(cru.sessions.end_session, entry.session_id)
+        pcall(cru.session.end_session, entry.session_id)
         sender_sessions[key] = nil
         persist(guild_id)
     end
@@ -288,7 +288,7 @@ function M.get_or_create(channel_id, guild_id, author_id, opts)
     -- root where `cru proposals list` never looks. Refuse before creating
     -- anything.
     --
-    -- It is the NAME of a `[kilns]` entry, not a directory — `cru.sessions.create`
+    -- It is the NAME of a `[kilns]` entry, not a directory — `cru.session.create`
     -- takes names. A path is not a name and resolves to nothing, so a config
     -- carried over from the path era produces a kiln-less session; the daemon
     -- warns and this plugin's writes land nowhere useful.
@@ -335,7 +335,7 @@ function M.get_or_create(channel_id, guild_id, author_id, opts)
         create_opts.tool_policy = M.tool_policy_for(tier)
     end
 
-    local session, err = cru.sessions.create(create_opts)
+    local session, err = cru.session.create(create_opts)
     if not session then
         return nil, "Failed to create session: " .. tostring(err)
     end
@@ -344,7 +344,7 @@ function M.get_or_create(channel_id, guild_id, author_id, opts)
     -- "NoAgentConfigured" for the full TTL if it is cached, so end it and
     -- report the failure instead.
     if not agent_card and not M.configure_agent(session.id, tier) then
-        pcall(cru.sessions.end_session, session.id)
+        pcall(cru.session.end_session, session.id)
         return nil, "Discord plugin: could not configure an agent for this session"
     end
 
@@ -586,13 +586,13 @@ function M.configure_agent(session_id, tier)
             cru.log("warn",
                 "Discord plugin: [plugins.discord] agent_name names an ACP profile and needs "
                 .. "agent_type = \"acp\". For an internal agent persona set agent_card instead — "
-                .. "it is resolved at create (`cru.sessions.create{ agent_card = ... }`).")
+                .. "it is resolved at create (`cru.session.create{ agent_card = ... }`).")
             return false
         end
         agent_config.agent_name = agent_name
     end
 
-    local _, err = cru.sessions.configure_agent(session_id, agent_config)
+    local _, err = cru.session.configure_agent(session_id, agent_config)
     if err then
         cru.log("warn", "Failed to configure agent for session " .. session_id .. ": " .. tostring(err))
         return false
@@ -611,7 +611,7 @@ function M.cleanup_stale()
 
     for key, entry in pairs(sender_sessions) do
         if now - entry.last_active > STALE_TTL then
-            pcall(cru.sessions.end_session, entry.session_id)
+            pcall(cru.session.end_session, entry.session_id)
             table.insert(to_remove, key)
             if not entry.guild_id then swept_a_dm = true end
         end

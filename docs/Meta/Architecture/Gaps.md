@@ -72,7 +72,7 @@ Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 | G33 | session | A child ends with its parent (3.8) | `child_session_ids` turns a storage error into an empty list (`session_manager.rs:369`) | code-wrong | S |
 | G34 | session | `Notification` has `created: SystemTime` (3.24) | `Session.notifications` persists an `Instant`-aged queue in `meta.json` (`crucible-core/src/types/notification.rs:20`) | code-wrong | S |
 | G35 | session | `WorkspaceSnapshot` is `GitTree` or `Journal` (3.11) | Three shapes in four fields (`workspace_snapshot.rs:123`); git plumbing is duplicated with `review/git.rs:300,210-240` | code-wrong | S |
-| G36 | session | `cru.sessions.undo`, `can_undo`, `undo_depth` read live data (F49) | The client `Undoable` impl returns constants while the RPC wrappers are unused (`rpc_client/agent/agent_handle.rs:441-464`) | code-wrong | S |
+| G36 | session | `cru.session.undo`, `can_undo`, `undo_depth` read live data (F49) | The client `Undoable` impl returns constants while the RPC wrappers are unused (`rpc_client/agent/agent_handle.rs:441-464`) | code-wrong | S |
 | G37 | session | `Workspace { path, kind }` with `Scratch(SessionId)` (3.3, D16) | `Session.workspace` is a path (`session/types/session.rs:31`) | both-acceptable | - |
 | G38 | session | `fire_stage` is one operation (S12) | The session-VM-then-plugin-VM loop is hand-written eleven times (`tool_call.rs:358-393`, `permission.rs:331-365,502-533`, `stream.rs:1181-1199,1250-1279`, `tool_hooks.rs`, `precognition/mod.rs:159-175,253-274`) | code-wrong | M |
 | G39 | session | One payload per stage name (8.2) | `post_llm_call` is emitted with two payloads (`stream.rs:1152` wire, `stream.rs:1173` Lua) | code-wrong | S |
@@ -163,7 +163,7 @@ Expected.md sections 2a and 7a carry the missing input), `both-acceptable`,
 | G124 | crates | `crucible-lua` and `crucible-oil` depend on `core` only (7, D19) | `crucible-lua` imports `crucible_oil::style` and node builders (Actual 4) | code-wrong | M |
 | G125 | lua | One colour codec (3.29) | Four parsers across `theme.rs`, `theme_wire.rs`, `hl_lua.rs`; `ThemeLayout` and `UiLayout` are twins; `ThemeIcons`, `ThemeSpinnerStyle`, `BorderStyle`, `StatusBarPosition` are parsed and read by no renderer | code-wrong | S |
 | G126 | lua | Theme state is per VM (4.17) | `CONFIG` is a process-global `OnceLock<RwLock<ConfigState>>` (`crucible-lua/src/config.rs:55`); every VM shares it | code-wrong | S |
-| G127 | lua | `cru.sessions` and `cru.kiln` names are one list (9.3) | 28 `cru.sessions` names and 6 `cru.kiln` names are listed twice as strings with no check (`sessions/register.rs:26-74,187-867`, `vault/mod.rs:64,133`) | code-wrong | S |
+| G127 | lua | `cru.session` and `cru.kiln` names are one list (9.3) | 28 `cru.session` names and 6 `cru.kiln` names are listed twice as strings with no check (`sessions/register.rs:26-74,187-867`, `vault/mod.rs:64,133`) | code-wrong | S |
 | G128 | lua | `Skill` carries `shadowed_by`; `name == dir` is checked (3.19) | The rule is documented and not checked (`skills/types.rs:95`); `content_hash` is computed and never read; `platform.rs:66-180` copies fields by hand and drops five | code-wrong | S |
 | G129 | lua | `cru.permissions.on_request` is available to plugins (9.4) | `register_permission_hook_api` is called only from `session_vm.rs:113`; the plugin loader never registers it | code-wrong | S |
 | G130 | lua | Hooks are named by the name table, not by position (9.3) | `register_permission_hook_api` names hooks from `guard.len()` (`handlers/permission.rs:132`) | code-wrong | S |
@@ -663,7 +663,7 @@ to wire it or withdraw it.
 2. **Closed sets with a side list.** Every enumerated table the clean room
    asked for exists. Beside each one the code keeps a hand list that re-spells a
    subset: six beside `BuiltinTool`, four REPL lists, two ACP tables, two
-   `cru.sessions` lists, three Rust copies of the mode names, a 70-name
+   `cru.session` lists, three Rust copies of the mode names, a 70-name
    `Group::of`. Rows: G7, G9, G10, G11, G78, G105, G121, G127, G144.
 3. **Traits where the clean room expected enums, and defaults where it expected
    required methods.** `AgentHandle` 41 defaulted, `SessionConfigRpc` 22,
@@ -809,7 +809,7 @@ does not name are unchanged.
 | G116 | T3-A3 | `81eb69ca3` | closed |
 | G117 | T3-A2 | `1d60a80ed` | closed |
 | G125 | T3-C4 | `9434cc15d` | part: one set of colour parsers; `BorderStyle` maps onto oil; the unread theme fields stay |
-| G127 | T3-B24 | `80d003052` | part: `cru.sessions` from one list with a set-equality test; `cru.kiln` still twice |
+| G127 | T3-B24 | `80d003052` | part: `cru.session` from one list with a set-equality test; `cru.kiln` still twice |
 | G132 | T3-C8 | `f36093d2b` | closed: `crucible_core::paths` |
 | G134 | T3-A5 | `ca9473cf4` | closed |
 | G144 | T3-C20 | `bcf424dd3` | closed: one `ReplCommand` table |

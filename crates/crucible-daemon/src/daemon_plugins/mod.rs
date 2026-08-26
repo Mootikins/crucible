@@ -221,7 +221,7 @@ impl DaemonPluginLoader {
         reg("paths", register_paths_module(lua, PathsContext::new()))?;
         reg("vault", register_vault_module(lua))?;
         reg("storage", register_storage_module(lua))?;
-        reg("sessions", register_sessions_module(lua))?;
+        reg("session", register_sessions_module(lua))?;
         reg("ui", register_ui_module(lua))?;
         reg("tools", register_tools_module(lua))?;
         reg("schedule", register_schedule_module(lua))?;

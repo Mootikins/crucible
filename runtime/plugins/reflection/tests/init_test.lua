@@ -124,7 +124,7 @@ describe("reflection", function()
 
   describe("run recursion guard", function()
     it("skips a session carrying the reflection marker without touching the daemon", function()
-      -- The guard is the first thing run() checks, before any cru.sessions
+      -- The guard is the first thing run() checks, before any cru.session
       -- call, so a marked session short-circuits cleanly.
       local marked = { id = "aux-1", system_prompt = plugin.reflection_marker .. "\n\nx" }
       local ok = pcall(plugin.run, marked)

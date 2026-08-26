@@ -30,7 +30,13 @@ fn stubbed_namespaces(loader: &DaemonPluginLoader) -> BTreeSet<String> {
 }
 
 /// Tables actually hanging off `cru` on the plugin VM.
+///
+/// `cru.sessions` is excluded by name: it is the deprecated metatable alias
+/// over `cru.session`, offers no functions of its own, and must not be
+/// advertised by autocomplete. It leaves this list the day the alias is
+/// removed.
 fn live_namespaces(loader: &DaemonPluginLoader) -> BTreeSet<String> {
+    const DEPRECATED_ALIASES: &[&str] = &["sessions"];
     let lua = loader.plugin_lua();
     let cru: mlua::Table = lua.globals().get("cru").expect("cru global");
     cru.pairs::<String, mlua::Value>()
@@ -38,6 +44,7 @@ fn live_namespaces(loader: &DaemonPluginLoader) -> BTreeSet<String> {
             let (name, value) = pair.ok()?;
             matches!(value, mlua::Value::Table(_)).then_some(name)
         })
+        .filter(|name| !DEPRECATED_ALIASES.contains(&name.as_str()))
         .collect()
 }
 

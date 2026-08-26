@@ -58,7 +58,7 @@ local function generate(args)
     error("auto-title: no user message to derive a title from")
   end
 
-  local answer, err = cru.sessions.complete(args.session_id, {
+  local answer, err = cru.session.complete(args.session_id, {
     system = config.prompt or title.SYSTEM_PROMPT,
     prompt = title.exchange(user, args.assistant, config.clip or title.CLIP),
     timeout = config.timeout,

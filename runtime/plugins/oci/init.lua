@@ -463,7 +463,7 @@ local function cleanup_orphans(runtime)
   if not runtime then return end
   local live = in_use()
   for _, c in ipairs(container.list_crucible(runtime)) do
-    local session = cru.sessions and cru.sessions.get(c.session_id)
+    local session = cru.session and cru.session.get(c.session_id)
     if not session and not live[c.name] then
       cru.log("info", "Removing orphaned container: " .. c.name)
       container.rm(runtime, c.name)

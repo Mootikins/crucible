@@ -41,7 +41,7 @@ async fn cloud_provider_confidential_kiln_returns_insufficient_error() {
 
 /// The plugin door answers the same as the RPC door.
 ///
-/// `cru.sessions.create` used to call `SessionManager::create_session`
+/// `cru.session.create` used to call `SessionManager::create_session`
 /// directly, so a plugin could open a cloud-provider session on a confidential
 /// kiln that `session.create` would have refused — same daemon, same socket,
 /// two different answers. It now runs `create_session_resolved`, which is what

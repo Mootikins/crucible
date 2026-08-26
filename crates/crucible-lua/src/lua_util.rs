@@ -59,3 +59,36 @@ pub fn gate_module_keys(module: &str, table: &Table, names: &[&str]) -> Result<(
         diff.join(", ")
     )))
 }
+
+/// Install the deprecated `cru.sessions` alias over `cru.session`.
+///
+/// Every key read forwards to `cru.session[k]` resolved at call time, so the
+/// upgrade that swaps stub functions for daemon-backed ones is picked up
+/// without reinstalling the alias — and the alias hands back the *same*
+/// function objects, never a copy. The first read in a VM warns once, through
+/// `cru.log` when that module exists and `print` when it does not.
+pub fn install_sessions_alias(lua: &Lua) -> LuaResult<()> {
+    get_or_create_namespace(lua, "cru")?;
+    lua.load(
+        r#"
+        do
+            local warned = false
+            cru.sessions = setmetatable({}, {
+                __index = function(_, k)
+                    if not warned then
+                        warned = true
+                        local ok = pcall(function()
+                            cru.log("warn", "cru.sessions is deprecated; use cru.session")
+                        end)
+                        if not ok then
+                            print("cru.sessions is deprecated; use cru.session")
+                        end
+                    end
+                    return cru.session[k]
+                end,
+            })
+        end
+        "#,
+    )
+    .exec()
+}

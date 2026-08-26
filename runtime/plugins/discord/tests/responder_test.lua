@@ -15,20 +15,20 @@ local api = require("api")
 --- Run `fn` with config, the session bridge, the clock and the REST surface
 --- under the test's control, restoring all of them however `fn` ends.
 ---
---- `cru.plugin.config` and `cru.sessions` are absent in the test VM. `api` is
+--- `cru.plugin.config` and `cru.session` are absent in the test VM. `api` is
 --- stubbed by replacing fields on the module table, because `responder`
 --- captured that table at load and it is what the stub has to reach.
 local function with_env(cfg, env, fn)
     crucible = crucible or {}
     local had_config = cru.plugin.config
-    local had_sessions = cru.sessions
+    local had_sessions = cru.session
     local had_timer = cru.timer
     local had_send = api.send_message
     local had_typing = api.trigger_typing
     local had_dm = api.create_dm_channel
 
     cru.plugin.config = { get = function(key) return cfg[key] end }
-    cru.sessions = env.sessions
+    cru.session = env.sessions
     -- A fixed clock keeps the typing refresh out of the way; `sleep` is where
     -- the test stands in for the reply arriving over the gateway.
     cru.timer = { clock = function() return 0 end, sleep = env.sleep or function() end }
@@ -43,7 +43,7 @@ local function with_env(cfg, env, fn)
     api.trigger_typing = had_typing
     api.send_message = had_send
     cru.timer = had_timer
-    cru.sessions = had_sessions
+    cru.session = had_sessions
     cru.plugin.config = had_config
     if not ok then error(err) end
 end
@@ -97,10 +97,10 @@ end
 --- Run a second turn from a different account while the first is waiting, with
 --- its own request id so the two verdicts are distinguishable.
 local function second_turn(answers, channel_id, author_id)
-    local outer = cru.sessions
-    cru.sessions = permission_session(answers, "req-second")
+    local outer = cru.session
+    cru.session = permission_session(answers, "req-second")
     responder.respond("chat-2", channel_id, "write it too", "msg-2", author_id, true)
-    cru.sessions = outer
+    cru.session = outer
 end
 
 describe("delegated approval", function()

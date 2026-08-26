@@ -1,6 +1,6 @@
 //! Daemon-side implementation of [`DaemonSessionApi`] for Lua plugins.
 //!
-//! Bridges `cru.sessions.*` Lua calls to the daemon's `SessionManager`,
+//! Bridges `cru.session.*` Lua calls to the daemon's `SessionManager`,
 //! `AgentManager`, and event broadcast infrastructure.
 
 use crate::agent_manager::AgentManager;
@@ -147,7 +147,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
     /// to `Deny` (`PermissionEngine::evaluate`) and the gate return a tool
     /// error before any prompt is emitted. A plugin that wants to drive
     /// permissions itself can still subscribe and use
-    /// `cru.sessions.interaction_respond`.
+    /// `cru.session.interaction_respond`.
     fn send_message(&self, session_id: String, content: String) -> BoxFut<String> {
         bridge_async!(
             self.agent_manager,
@@ -859,7 +859,7 @@ impl DaemonSessionApi for DaemonSessionBridge {
     }
 }
 
-/// Read a `cru.sessions.review_comment` spec as the wire request the RPC
+/// Read a `cru.session.review_comment` spec as the wire request the RPC
 /// handler reads, so the two entry points share one set of field names.
 ///
 /// The Lua caller passes `session_id` as its own argument, so this merges

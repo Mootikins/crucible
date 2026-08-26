@@ -100,7 +100,7 @@ entry but no shipped proof.
 | F37 | Reflection pass: on session end a cheap subagent proposes notes *(in progress)* | P |
 | F38 | The precognition badge persists because `precognition_complete` is part of the session log | W |
 | F39 | Anthropic cache control on the system prompt and the second-to-last turn | P |
-| F40 | Cache statistics: `session.cache_stats`, `cru.sessions.cache_stats`, `sl.cache` | P, T |
+| F40 | Cache statistics: `session.cache_stats`, `cru.session.cache_stats`, `sl.cache` | P, T |
 | F41 | Token budget tracking with `context_budget` and a chars/4 estimate | P, T, W |
 | F42 | Auto-compaction request at `context_budget * autocompact_threshold` *(in progress)* | P, T |
 | F43 | Context strategies: Truncate, SlidingWindow, Summarize; Lua strategies *(planned)* | P |
@@ -109,7 +109,7 @@ entry but no shipped proof.
 | F46 | Max iterations: a depth cap replays the prompt and the turn ends with text | P, W |
 | F47 | Execution timeout `execution_timeout_secs` per turn | P, W |
 | F48 | Turn undo `/undo [N]`: file rollback plus message truncation | P, T |
-| F49 | Undo Lua API `cru.sessions.{undo, can_undo, undo_depth, undo_history}` | P |
+| F49 | Undo Lua API `cru.session.{undo, can_undo, undo_depth, undo_history}` | P |
 | F50 | Output validation after each assistant turn, with retries | P, W |
 | F51 | Lua validators `cru.context.register_validator` | P |
 
@@ -172,7 +172,7 @@ entry but no shipped proof.
 | F99 | Chat modes `normal`, `plan`, `auto` declared in Lua; BackTab cycles; one slash command per mode | P, R, T |
 | F100 | Active tool set narrowing `cru.tools.set_active` and `get_active` | P |
 | F101 | Lua tool primitives `cru.tools.{call, batch, list}` under the operator's rules | P |
-| F102 | Lua session primitives `cru.sessions.{messages, inject, fork, collect_subagents, subscribe, create}` | P |
+| F102 | Lua session primitives `cru.session.{messages, inject, fork, collect_subagents, subscribe, create}` | P |
 | F103 | `cru.ui.{ask, ask_batch, edit, show, permission, popup, panel}` open a modal and await | P |
 | F104 | Session event handlers: `turn:complete` can inject a follow-up message | P |
 | F105 | Plugin-published session status `cru.plugin.set_status{}` | P |
@@ -344,7 +344,7 @@ review named them as suspects, and the check found them covered.
 | Lua webhook handlers: `webhook:received` from `POST /api/webhook/:name` and the `webhook.receive` RPC | `crates/crucible-web/src/routes/webhook.rs:47`; `crates/crucible-daemon/src/rpc/dispatch.rs:234`; `crates/crucible-lua/src/handlers/hook_name.rs:60` | yes (F194) |
 | Webhook secret minting and HMAC verification | `crates/crucible-daemon/src/webhook/mod.rs:359`; `crates/crucible-daemon/src/webhook/mod.rs:256` | yes, as `webhook.receive`; the secret file is not named |
 | `cru.http` client | `crates/crucible-lua/src/http.rs:47`; registered at `crates/crucible-lua/src/executor.rs:290` | yes (F186) |
-| `cru.sessions.*`, 28 names over `DaemonSessionApi` | `crates/crucible-lua/src/sessions/register.rs:154`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:572` | yes (F102) |
+| `cru.session.*`, 28 names over `DaemonSessionApi` | `crates/crucible-lua/src/sessions/register.rs:154`; wired at `crates/crucible-daemon/src/daemon_plugins/mod.rs:572` | yes (F102) |
 | `cru.schedule` interval callbacks | `crates/crucible-daemon/src/daemon_plugins/mod.rs:212` | yes (F193) |
 | `cru.ratelimit` | `crates/crucible-lua/src/ratelimit.rs:117`; registered at `crates/crucible-lua/src/executor.rs:293` | yes (F179) |
 | MCP gateway: upstream servers with prefixed names, reconnect loop, gateway tools on the served MCP surface | `crates/crucible-daemon/src/tools/mcp_gateway.rs:486`; `crates/crucible-daemon/src/tools/extended_mcp_server.rs:123` | yes (F210); the wiring landed in Tier 3 A10 and A11 |
@@ -1279,7 +1279,7 @@ Each seam names what crosses, the direction, and whether the call blocks.
 | S30 | AcpHost → TurnLoop | `SessionEvent` with `ToolSource::Acp` | one way | async |
 | S31 | AcpHost → PermissionEngine plus InteractionBroker | `session/request_permission` | request with reply | async |
 | S32 | PluginHost → ToolDispatch | `cru.tools.call\|batch` through the same gate, no prompt fallback | request | async |
-| S33 | PluginHost → SessionManager | `cru.sessions.*` through a `DaemonBridge` | request | async |
+| S33 | PluginHost → SessionManager | `cru.session.*` through a `DaemonBridge` | request | async |
 | S34 | PluginHost → InteractionBroker | `cru.ui.*` | request with reply | async, not serialized |
 | S35 | PluginHost → EventBus | `UiStyleChanged`, `StatusPublished`, `ConfigChanged` | fan-out | async |
 | S36 | PluginHost ↔ Knowledge | `cru.kiln.search\|neighbors` out; note events in | both | async |
@@ -1930,9 +1930,9 @@ determine the design.
 8. **Kiln-local `.crucible/config.toml`.** `cru init` writes it. It appears never to load. Whether per-kiln config is a layer at all is undecided.
 9. **Webhook auth posture.** The route sits inside bearer auth, so a remote sender gets 401 before its HMAC is read. Move it outside, or add an opt-in key. Not decided.
 10. **Agent-initiated questions.** Seven interaction kinds render in both clients. No agent tool produces an `Ask`. Should `ask` be a `BuiltinTool` with surface `Daemon`, or a Lua-only primitive through `cru.ui`? Its plan-mode class is unspecified.
-11. **`cru.sessions.fork`.** The Lua path copies history with no agent config. Whether fork copies the agent, the mode and the kiln set is unspecified.
-12. **`cru.sessions.inject`.** Writes the log only. Whether inject also appends to the conversation tree for the next turn is unspecified. `cru.context.attach` covers this turn.
-13. **Two Lua objects named `session`.** The hook parameter reaches `SessionAgent`. The `cru.get_session()` object on the plugin VM does not. One of them should go, or the plugin VM should reach session state only through `cru.sessions.*`.
+11. **`cru.session.fork`.** The Lua path copies history with no agent config. Whether fork copies the agent, the mode and the kiln set is unspecified.
+12. **`cru.session.inject`.** Writes the log only. Whether inject also appends to the conversation tree for the next turn is unspecified. `cru.context.attach` covers this turn.
+13. **Two Lua objects named `session`.** The hook parameter reaches `SessionAgent`. The `cru.get_session()` object on the plugin VM does not. One of them should go, or the plugin VM should reach session state only through `cru.session.*`. — *Resolved 2026-08: one canonical `cru.session` module (lifecycle verbs, `current()`, handle-returning `create`/`get`/`list`/`fork`); `cru.get_session()` and the plural `cru.sessions` are deprecated aliases into it. The hook parameter remains a distinct argument-passed `Session` — same type, different delivery — with its gap to `SessionAgent` unchanged.*
 14. **Session VM versus plugin VM.** `cru.defaults` lives on the session VM, so `cru lua` cannot see it. Should the two VMs merge, or should the plugin VM get a read-only view?
 15. **`cru.oil` versus `cru.ui`.** `cru.oil` builds nodes that no client consumes. `cru.ui` opens real modals. Withdraw `cru.oil` or wire it.
 16. **Review gate for ACP agents.** The daemon cannot hold an external agent at a pre-write gate. The effective policy for an ACP session is "review at turn end". Whether to block the turn's result is open.

@@ -9,26 +9,27 @@ async fn sessions_with_mock_api_create_returns_id() {
     let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
-    let result: Table = lua
+    // create returns a handle; its fields read through the same property
+    // access the old plain table offered, which is the compat contract.
+    let (id, state, kilns): (String, String, Table) = lua
         .load(
             r#"
-            local session, err = cru.sessions.create({ type = "chat", kilns = { "notes" } })
+            local session, err = cru.session.create({ type = "chat", kilns = { "notes" } })
             assert(err == nil, "unexpected error: " .. tostring(err))
-            return session
+            assert(type(session) == "userdata", "create returns a handle")
+            return session.id, session.state, session.kilns
             "#,
         )
         .eval_async()
         .await
         .unwrap();
 
-    let id: String = result.get("id").unwrap();
     assert!(
         id.starts_with("chat-"),
         "id should start with 'chat-': {}",
         id
     );
-    assert_eq!(result.get::<String>("state").unwrap(), "active");
-    let kilns: Table = result.get("kilns").unwrap();
+    assert_eq!(state, "active");
     assert_eq!(kilns.get::<String>(1).unwrap(), "notes");
 }
 
@@ -37,23 +38,21 @@ async fn sessions_with_mock_api_create_no_kiln_uses_default() {
     let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
-    let result: Table = lua
+    let (id, first_kiln): (String, String) = lua
         .load(
             r#"
-            local session, err = cru.sessions.create({ type = "chat" })
+            local session, err = cru.session.create({ type = "chat" })
             assert(err == nil, "unexpected error: " .. tostring(err))
-            return session
+            return session.id, session.kilns[1]
             "#,
         )
         .eval_async()
         .await
         .unwrap();
 
-    let id: String = result.get("id").unwrap();
     assert!(id.starts_with("chat-"));
     // kilns should be the mock default
-    let kilns: Table = result.get("kilns").unwrap();
-    assert_eq!(kilns.get::<String>(1).unwrap(), "default");
+    assert_eq!(first_kiln, "default");
 }
 
 #[tokio::test]
@@ -61,30 +60,28 @@ async fn sessions_with_mock_api_create_with_kilns() {
     let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
-    let result: Table = lua
+    let (id, n_kilns, k1, k2): (String, usize, String, String) = lua
         .load(
             r#"
-            local session, err = cru.sessions.create({
+            local session, err = cru.session.create({
                 type = "chat",
                 kilns = { "notes", "docs" },
             })
             assert(err == nil, "unexpected error: " .. tostring(err))
-            return session
+            return session.id, #session.kilns, session.kilns[1], session.kilns[2]
             "#,
         )
         .eval_async()
         .await
         .unwrap();
 
-    let id: String = result.get("id").unwrap();
     assert!(id.starts_with("chat-"));
     // The whole kiln set crossed the boundary, in order. It used to be
     // plucked into a positional argument the mock threw away, so this file
     // asserted nothing about it.
-    let kilns: Table = result.get("kilns").unwrap();
-    assert_eq!(kilns.len().unwrap(), 2);
-    assert_eq!(kilns.get::<String>(1).unwrap(), "notes");
-    assert_eq!(kilns.get::<String>(2).unwrap(), "docs");
+    assert_eq!(n_kilns, 2);
+    assert_eq!(k1, "notes");
+    assert_eq!(k2, "docs");
 }
 
 /// `kilns` is both the plugin spelling and the wire name now, so the binding
@@ -100,8 +97,8 @@ async fn create_sends_kilns_as_an_ordered_array() {
     let api: Arc<dyn DaemonSessionApi> = Arc::clone(&mock) as _;
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
-    let _: Table = lua
-        .load(r#"return (cru.sessions.create({ kilns = { "a", "b", "c" } }))"#)
+    let _: Value = lua
+        .load(r#"return (cru.session.create({ kilns = { "a", "b", "c" } }))"#)
         .eval_async()
         .await
         .unwrap();
@@ -122,19 +119,19 @@ async fn create_tolerates_an_empty_kilns_table() {
     let api: Arc<dyn DaemonSessionApi> = Arc::clone(&mock) as _;
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
-    let result: Table = lua
+    let id: String = lua
         .load(
             r#"
-            local session, err = cru.sessions.create({ type = "chat", kilns = {} })
+            local session, err = cru.session.create({ type = "chat", kilns = {} })
             assert(err == nil, "unexpected error: " .. tostring(err))
-            return session
+            return session.id
             "#,
         )
         .eval_async()
         .await
         .unwrap();
 
-    assert!(result.get::<String>("id").unwrap().starts_with("chat-"));
+    assert!(id.starts_with("chat-"));
     let params = mock.last_create_params().expect("api was invoked");
     assert_eq!(
         params.get("kilns"),
@@ -156,10 +153,10 @@ async fn create_forwards_the_whole_options_table() {
     let api: Arc<dyn DaemonSessionApi> = Arc::clone(&mock) as _;
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
-    let _: Table = lua
+    let _: Value = lua
         .load(
             r#"
-            local session, err = cru.sessions.create({
+            local session, err = cru.session.create({
                 type = "chat",
                 workspace = "/tmp/ws",
                 kilns = { "notes" },
@@ -214,9 +211,9 @@ async fn create_forwards_the_acp_profile_shape() {
     let api: Arc<dyn DaemonSessionApi> = Arc::clone(&mock) as _;
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
-    let _: Table = lua
+    let _: Value = lua
         .load(
-            r#"return (cru.sessions.create({
+            r#"return (cru.session.create({
                 type = "agent",
                 agent_type = "acp",
                 agent_name = "claude",
@@ -247,8 +244,8 @@ async fn create_implies_configure_agent_when_an_agent_field_is_present() {
     let api: Arc<dyn DaemonSessionApi> = Arc::clone(&mock) as _;
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
-    let _: Table = lua
-        .load(r#"return (cru.sessions.create({ agent_card = "researcher" }))"#)
+    let _: Value = lua
+        .load(r#"return (cru.session.create({ agent_card = "researcher" }))"#)
         .eval_async()
         .await
         .unwrap();
@@ -259,8 +256,8 @@ async fn create_implies_configure_agent_when_an_agent_field_is_present() {
 
     // …and a table with no agent field is left alone: create stays agent-less
     // and the caller configures it afterwards, as Discord does.
-    let _: Table = lua
-        .load(r#"return (cru.sessions.create({ type = "chat" }))"#)
+    let _: Value = lua
+        .load(r#"return (cru.session.create({ type = "chat" }))"#)
         .eval_async()
         .await
         .unwrap();
@@ -279,8 +276,8 @@ async fn create_forwards_a_tool_policy_and_implies_configure_agent() {
     let api: Arc<dyn DaemonSessionApi> = Arc::clone(&mock) as _;
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
-    let _: Table = lua
-        .load(r#"return (cru.sessions.create({ tool_policy = { bash = "deny" } }))"#)
+    let _: Value = lua
+        .load(r#"return (cru.session.create({ tool_policy = { bash = "deny" } }))"#)
         .eval_async()
         .await
         .unwrap();
@@ -297,8 +294,8 @@ async fn create_respects_an_explicit_configure_agent_false() {
     let api: Arc<dyn DaemonSessionApi> = Arc::clone(&mock) as _;
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
-    let _: Table = lua
-        .load(r#"return (cru.sessions.create({ model = "llama3.2", configure_agent = false }))"#)
+    let _: Value = lua
+        .load(r#"return (cru.session.create({ model = "llama3.2", configure_agent = false }))"#)
         .eval_async()
         .await
         .unwrap();
@@ -316,19 +313,19 @@ async fn create_accepts_the_legacy_positional_string_form() {
     let api: Arc<dyn DaemonSessionApi> = Arc::clone(&mock) as _;
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
-    let result: Table = lua
+    let id: String = lua
         .load(
             r#"
-            local session, err = cru.sessions.create("agent")
+            local session, err = cru.session.create("agent")
             assert(err == nil, "unexpected error: " .. tostring(err))
-            return session
+            return session.id
             "#,
         )
         .eval_async()
         .await
         .unwrap();
 
-    assert!(result.get::<String>("id").unwrap().starts_with("agent-"));
+    assert!(id.starts_with("agent-"));
     let params = mock.last_create_params().expect("api was invoked");
     assert_eq!(params, serde_json::json!({ "type": "agent" }));
 }
@@ -341,7 +338,7 @@ async fn create_rejects_a_list_argument() {
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
     let result: (Value, Value) = lua
-        .load(r#"return cru.sessions.create({ "chat" })"#)
+        .load(r#"return cru.session.create({ "chat" })"#)
         .eval_async()
         .await
         .unwrap();
@@ -359,7 +356,7 @@ async fn sessions_create_with_invalid_arg_returns_error() {
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
     let result: (Value, Value) = lua
-        .load(r#"return cru.sessions.create(42)"#)
+        .load(r#"return cru.session.create(42)"#)
         .eval_async()
         .await
         .unwrap();
@@ -379,7 +376,7 @@ async fn sessions_with_mock_api_list_returns_array() {
     let result: Table = lua
         .load(
             r#"
-            local sessions, err = cru.sessions.list()
+            local sessions, err = cru.session.list()
             assert(err == nil, "unexpected error: " .. tostring(err))
             return sessions
             "#,
@@ -390,12 +387,22 @@ async fn sessions_with_mock_api_list_returns_array() {
 
     assert_eq!(result.len().unwrap(), 2);
 
-    let first: Table = result.get(1).unwrap();
-    assert_eq!(first.get::<String>("id").unwrap(), "chat-001");
+    // Entries are handles; their fields read through the same property
+    // access the old plain-table list offered.
+    let first_id: String = lua
+        .load(r#"local s = cru.session.list(); return s[1].id"#)
+        .eval_async()
+        .await
+        .unwrap();
+    let (second_id, second_state): (String, String) = lua
+        .load(r#"local s = cru.session.list(); return s[2].id, s[2].state"#)
+        .eval_async()
+        .await
+        .unwrap();
 
-    let second: Table = result.get(2).unwrap();
-    assert_eq!(second.get::<String>("id").unwrap(), "agent-002");
-    assert_eq!(second.get::<String>("state").unwrap(), "paused");
+    assert_eq!(first_id, "chat-001");
+    assert_eq!(second_id, "agent-002");
+    assert_eq!(second_state, "paused");
 }
 
 #[tokio::test]
@@ -403,19 +410,19 @@ async fn sessions_with_mock_api_get_existing() {
     let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
-    let result: Table = lua
+    let id: String = lua
         .load(
             r#"
-            local session, err = cru.sessions.get("exists-123")
+            local session, err = cru.session.get("exists-123")
             assert(err == nil)
-            return session
+            return session.id
             "#,
         )
         .eval_async()
         .await
         .unwrap();
 
-    assert_eq!(result.get::<String>("id").unwrap(), "exists-123");
+    assert_eq!(id, "exists-123");
 }
 
 #[tokio::test]
@@ -424,7 +431,7 @@ async fn sessions_with_mock_api_get_missing_returns_nil() {
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
     let result: (Value, Value) = lua
-        .load(r#"return cru.sessions.get("nonexistent")"#)
+        .load(r#"return cru.session.get("nonexistent")"#)
         .eval_async()
         .await
         .unwrap();

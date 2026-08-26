@@ -208,7 +208,7 @@ async fn a_publication_naming_an_undeclared_command_falls_back() {
 
 /// The two halves of the port meet: the bundled plugin publishes the channel
 /// this file's constant names, declares the command it published, and reaches
-/// `cru.sessions.complete` when the command runs.
+/// `cru.session.complete` when the command runs.
 ///
 /// Everything above scripts the plugin; this loads the real one through the
 /// real loader. Without it the daemon could look up `session_title` while the
@@ -251,7 +251,7 @@ async fn the_bundled_plugin_publishes_the_channel_the_daemon_reads() {
         .to_string();
     assert!(
         err.contains("no daemon connected"),
-        "the command must reach cru.sessions.complete; got: {err}"
+        "the command must reach cru.session.complete; got: {err}"
     );
 }
 

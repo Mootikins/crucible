@@ -67,13 +67,13 @@ async fn a_plugin_creating_a_session_from_on_session_end_does_not_deadlock() {
         .eval(
             r#"
             cru.on_session_end(function(_session)
-                local aux, err = cru.sessions.create({ type = "chat" })
+                local aux, err = cru.session.create({ type = "chat" })
                 if err or not aux then
                     _G.hook_error = "create: " .. tostring(err)
                     return
                 end
                 _G.hook_session_id = aux.id
-                local _, cfg_err = cru.sessions.configure_agent(aux.id, {
+                local _, cfg_err = cru.session.configure_agent(aux.id, {
                     agent_type = "internal",
                     provider = "ollama",
                     provider_key = "ollama",

@@ -115,7 +115,7 @@ before_each(function()
 end)
 ```
 
-`test_mocks.setup(overrides)` replaces `cru.kiln`, `cru.http`, `cru.fs`, `cru.paths`, `cru.session`, and `cru.sessions` with fixture-backed mocks. There are no bare-global mirrors: `cru` is the one namespace, in tests as in production. Overrides are merged per module key over these defaults:
+`test_mocks.setup(overrides)` replaces `cru.kiln`, `cru.http`, `cru.fs`, `cru.paths`, and `cru.session` (whose deprecated plural alias `cru.sessions` points at the same mock) with fixture-backed mocks. There are no bare-global mirrors: `cru` is the one namespace, in tests as in production. Overrides are merged per module key over these defaults:
 
 ```lua
 kiln     = { notes = {}, outlinks = {}, backlinks = {}, neighbors = {},

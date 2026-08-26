@@ -68,7 +68,7 @@ f:close()
 | `cru.oq` | Data query/transform: `parse`, `yaml`, `toml`, `toon`, `query`, `format` (JSON is `cru.json`) |
 | `cru.paths` | Directories the host owns: `config`, `workspace`, `session`, `state(plugin)`. Join with `..`. |
 | `cru.kiln` | Kiln access |
-| `cru.sessions` | Daemon session management (create, send messages, subscribe to events) |
+| `cru.session` | Daemon session management (create, send messages, subscribe to events) |
 
 ### Kiln-Addressed Paths
 
@@ -168,13 +168,13 @@ local elapsed = cru.timer.clock() - start  -- ~1.0
 
 Spawns an async Lua function as an independent tokio task (fire-and-forget). The function runs concurrently with the caller. Only available when running in daemon context with the `send` feature enabled.
 
-This is needed when event handlers (called via `pcall`) need to perform async operations that require yielding, such as `cru.sessions.subscribe()` or `cru.sessions.send_message()`. Since `pcall`/`xpcall` create a yield barrier, spawning the async work as a separate task is the workaround.
+This is needed when event handlers (called via `pcall`) need to perform async operations that require yielding, such as `cru.session.subscribe()` or `cru.session.send_message()`. Since `pcall`/`xpcall` create a yield barrier, spawning the async work as a separate task is the workaround.
 
 ```lua
 -- Inside a gateway event handler (runs under pcall):
 cru.timer.spawn(function()
-    local next_event, err = cru.sessions.subscribe(session_id)
-    cru.sessions.send_message(session_id, content)
+    local next_event, err = cru.session.subscribe(session_id)
+    cru.session.send_message(session_id, content)
     while true do
         local event = next_event()
         if not event then break end
@@ -187,7 +187,7 @@ Errors in the spawned function are logged as warnings but do not propagate to th
 
 ## Session API
 
-The `cru.sessions` module provides full session management for daemon plugins. All functions are async and follow the convention of returning `(result, nil)` on success or `(nil, error_string)` on failure. Without a daemon connection, all calls return `(nil, "no daemon connected")`.
+The `cru.session` module provides full session management for daemon plugins. All functions are async and follow the convention of returning `(result, nil)` on success or `(nil, error_string)` on failure. Without a daemon connection, all calls return `(nil, "no daemon connected")`.
 
 See [[Help/Plugins/Lua Runtime API]] for the complete reference.
 
@@ -195,19 +195,19 @@ See [[Help/Plugins/Lua Runtime API]] for the complete reference.
 
 ```lua
 -- Create a session
-local session, err = cru.sessions.create({ type = "chat" })
+local session, err = cru.session.create({ type = "chat" })
 
 -- Configure the agent
-cru.sessions.configure_agent(session.id, {
+cru.session.configure_agent(session.id, {
     model = "claude-sonnet-4-20250514",
     system_prompt = "You are a helpful assistant.",
 })
 
 -- Subscribe to events BEFORE sending the message
-local next_event, err = cru.sessions.subscribe(session.id)
+local next_event, err = cru.session.subscribe(session.id)
 
 -- Send a message (triggers agent processing)
-local msg_id, err = cru.sessions.send_message(session.id, "Hello!")
+local msg_id, err = cru.session.send_message(session.id, "Hello!")
 
 -- Read streaming events
 while true do
@@ -220,8 +220,8 @@ while true do
     end
 end
 
-cru.sessions.unsubscribe(session.id)
-cru.sessions.end_session(session.id)
+cru.session.unsubscribe(session.id)
+cru.session.end_session(session.id)
 ```
 
 ## Fennel

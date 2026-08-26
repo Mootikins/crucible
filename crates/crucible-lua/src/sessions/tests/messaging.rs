@@ -11,7 +11,7 @@ async fn sessions_send_message_returns_response_id() {
     let result: String = lua
         .load(
             r#"
-            local id, err = cru.sessions.send_message("session-1", "Hello agent")
+            local id, err = cru.session.send_message("session-1", "Hello agent")
             assert(err == nil)
             return id
             "#,
@@ -31,7 +31,7 @@ async fn sessions_cancel_returns_bool() {
     let result: bool = lua
         .load(
             r#"
-            local ok, err = cru.sessions.cancel("session-1")
+            local ok, err = cru.session.cancel("session-1")
             assert(err == nil)
             return ok
             "#,
@@ -51,7 +51,7 @@ async fn sessions_end_session_succeeds() {
     let result: bool = lua
         .load(
             r#"
-            local ok, err = cru.sessions.end_session("session-1")
+            local ok, err = cru.session.end_session("session-1")
             assert(err == nil)
             return ok
             "#,

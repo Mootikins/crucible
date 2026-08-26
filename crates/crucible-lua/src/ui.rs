@@ -6,11 +6,11 @@
 //! shape of its own, because a request no client knows how to draw is a
 //! plugin hanging until its timeout.
 //!
-//! ## Why this is not `cru.sessions.ask`
+//! ## Why this is not `cru.session.ask`
 //!
 //! An interaction is addressed to a *client*, not to a session — the session
 //! id only says which attached client to route to. Putting these under
-//! `cru.sessions` would read as "do something to this conversation", which is
+//! `cru.session` would read as "do something to this conversation", which is
 //! what `send_message` does and this does not.
 //!
 //! ## Usage in Lua

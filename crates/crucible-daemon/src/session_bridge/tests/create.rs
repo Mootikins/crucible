@@ -1,4 +1,4 @@
-//! The plugin create surface: `cru.sessions.create` runs the daemon's real
+//! The plugin create surface: `cru.session.create` runs the daemon's real
 //! create path, so everything the RPC handler does — scope refusal, trust
 //! validation, agent-card resolution, the setup task — happens here too.
 //!
@@ -458,7 +458,7 @@ async fn an_acp_profile_session_is_refused_the_kiln_a_card_session_clears() {
     );
 }
 
-/// `cru.sessions.configure_agent` is the other half of the plugin create
+/// `cru.session.configure_agent` is the other half of the plugin create
 /// surface, and it is the step that would otherwise walk a session onto a
 /// provider its kiln never cleared. Gated in `AgentManager::configure_agent`,
 /// so the plugin door and the RPC door cannot answer differently.

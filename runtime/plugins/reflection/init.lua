@@ -272,7 +272,7 @@ function M.run(session)
 
     -- The bridge sends kiln NAMES in a `kilns` array (session_bridge.rs).
     -- The first name is our staging target; cru.kiln.path resolves it.
-    local info = cru.sessions.get(session_id)
+    local info = cru.session.get(session_id)
     local kilns = info and info.kilns
     local kiln = kilns and kilns[1]
     if not kiln then
@@ -280,7 +280,7 @@ function M.run(session)
         return
     end
 
-    local messages = cru.sessions.messages(session_id, {})
+    local messages = cru.session.messages(session_id, {})
     if not messages then return end
 
     local turns = M.count_user_turns(messages)
@@ -292,11 +292,11 @@ function M.run(session)
     end
 
     -- Fork a separate session for the review so it never touches the source
-    -- session's prompt cache. It is NOT kiln-less: cru.sessions.create with no
+    -- session's prompt cache. It is NOT kiln-less: cru.session.create with no
     -- kiln defaults to the daemon's data root, so the marker-based recursion
     -- guard above (not the absence of a kiln) is what stops it reflecting on
     -- itself.
-    local aux, err = cru.sessions.create({ type = "chat" })
+    local aux, err = cru.session.create({ type = "chat" })
     if err or not aux then
         cru.log("warn", "reflection: failed to create aux session: " .. tostring(err))
         return
@@ -316,21 +316,21 @@ function M.run(session)
     }
     local provider = config.get("provider", nil)
     if provider then agent_cfg.provider = provider end
-    cru.sessions.configure_agent(aux.id, agent_cfg)
+    cru.session.configure_agent(aux.id, agent_cfg)
 
     local transcript = M.build_transcript(messages)
     local prompt = "Review this finished session and propose durable notes.\n\n" .. transcript
 
-    local iter, send_err = cru.sessions.send_and_collect(
+    local iter, send_err = cru.session.send_and_collect(
         aux.id, prompt, { timeout = config.get("timeout", 120) })
     if send_err then
         cru.log("warn", "reflection: review failed: " .. tostring(send_err))
-        cru.sessions.end_session(aux.id)
+        cru.session.end_session(aux.id)
         return
     end
 
     local output = collect_text(iter)
-    cru.sessions.end_session(aux.id)
+    cru.session.end_session(aux.id)
 
     local proposals = M.parse_proposals(output)
     if proposals == nil then

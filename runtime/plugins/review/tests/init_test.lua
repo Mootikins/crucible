@@ -6,7 +6,7 @@
 --- all the logic is: the truncation, the `external` derivation, the state
 --- validation, and every error path.
 ---
---- `cru.sessions.review_*` is registered by the daemon, not by the bare
+--- `cru.session.review_*` is registered by the daemon, not by the bare
 --- executor the runner builds, so each case installs its own stub and asserts
 --- on what the plugin passed down as well as what it handed back.
 
@@ -21,7 +21,7 @@ local calls
 
 local function stub(overrides)
     calls = {}
-    cru.sessions = cru.sessions or {}
+    cru.session = cru.session or {}
     local function record(name)
         return function(...)
             table.insert(calls, { name = name, args = { ... } })
@@ -32,10 +32,10 @@ local function stub(overrides)
             return nil, nil
         end
     end
-    cru.sessions.review_list_hunks = record("review_list_hunks")
-    cru.sessions.review_set_state = record("review_set_state")
-    cru.sessions.review_comment = record("review_comment")
-    cru.sessions.review_resolve_comment = record("review_resolve_comment")
+    cru.session.review_list_hunks = record("review_list_hunks")
+    cru.session.review_set_state = record("review_set_state")
+    cru.session.review_comment = record("review_comment")
+    cru.session.review_resolve_comment = record("review_resolve_comment")
 end
 
 local function hunk(over)

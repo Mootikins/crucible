@@ -182,8 +182,6 @@ fn collect_function_stubs(
     functions: &mut Vec<FunctionStub>,
     class_paths: &mut BTreeSet<String>,
 ) -> Result<(), LuaError> {
-    class_paths.insert(base_path.to_string());
-
     let mut keys = Vec::new();
     for pair in table.pairs::<Value, Value>() {
         let (key, value) = pair?;
@@ -208,8 +206,17 @@ fn collect_function_stubs(
 
         let path = format!("{}.{}", base_path, key);
         match value {
-            Value::Function(_) => functions.push(FunctionStub { path, ui_only }),
+            // A class is declared only for a table that contributes
+            // something. `cru.sessions` is a deprecated metatable alias
+            // with no functions of its own; declaring `---@class
+            // cru.sessions` would advertise the wrong name on the strength
+            // of the alias table merely existing.
+            Value::Function(_) => {
+                class_paths.insert(base_path.to_string());
+                functions.push(FunctionStub { path, ui_only });
+            }
             Value::Table(sub_table) => {
+                class_paths.insert(base_path.to_string());
                 collect_function_stubs(&sub_table, &path, ui_only, functions, class_paths)?;
             }
             _ => {}

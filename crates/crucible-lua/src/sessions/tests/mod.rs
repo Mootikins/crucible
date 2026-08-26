@@ -4,6 +4,7 @@ use std::sync::Mutex as StdMutex;
 mod completion;
 mod crud;
 mod graph;
+mod handles;
 mod messages;
 mod messaging;
 mod namespace;
@@ -31,6 +32,13 @@ pub(super) struct MockDaemonApi {
     undo_depth_value: StdMutex<usize>,
     /// Every `complete` call, as `(session_id, params)`.
     completions: StdMutex<Vec<(String, serde_json::Value)>>,
+    /// Session ids from every `send_message` call, in order — what the
+    /// handle-method tests assert the handle passed through.
+    send_calls: StdMutex<Vec<String>>,
+    /// Session ids from every `end_session` call, in order.
+    end_calls: StdMutex<Vec<String>>,
+    /// `(session_id, hunk_id)` from every `review_list_hunks` call.
+    review_list_calls: StdMutex<Vec<String>>,
     /// Every `request_interaction` call, as `(session_id, request, timeout)`.
     interaction_calls: StdMutex<Vec<(String, serde_json::Value, u64)>>,
     /// What the next `request_interaction` resolves to. Defaults to
@@ -49,6 +57,9 @@ impl MockDaemonApi {
             can_undo_value: StdMutex::new(true),
             undo_depth_value: StdMutex::new(2),
             completions: StdMutex::new(Vec::new()),
+            send_calls: StdMutex::new(Vec::new()),
+            end_calls: StdMutex::new(Vec::new()),
+            review_list_calls: StdMutex::new(Vec::new()),
             interaction_calls: StdMutex::new(Vec::new()),
             interaction_answer: StdMutex::new(None),
         }
@@ -57,6 +68,21 @@ impl MockDaemonApi {
     /// Every `complete` call this mock saw.
     pub(super) fn completions(&self) -> Vec<(String, serde_json::Value)> {
         self.completions.lock().unwrap().clone()
+    }
+
+    /// Session ids from every `send_message` call, in order.
+    pub(super) fn send_calls(&self) -> Vec<String> {
+        self.send_calls.lock().unwrap().clone()
+    }
+
+    /// Session ids from every `end_session` call, in order.
+    pub(super) fn end_calls(&self) -> Vec<String> {
+        self.end_calls.lock().unwrap().clone()
+    }
+
+    /// Session ids from every `review_list_hunks` call, in order.
+    pub(super) fn review_list_calls(&self) -> Vec<String> {
+        self.review_list_calls.lock().unwrap().clone()
     }
 
     /// Every `request_interaction` call this mock saw.
@@ -110,9 +136,10 @@ impl DaemonSessionApi for MockDaemonApi {
 
     fn review_list_hunks(
         &self,
-        _: String,
+        session_id: String,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<serde_json::Value>, String>> + Send>> {
-        unimplemented!()
+        self.review_list_calls.lock().unwrap().push(session_id);
+        Box::pin(async { Ok(vec![]) })
     }
 
     fn review_set_state(
@@ -261,9 +288,10 @@ impl DaemonSessionApi for MockDaemonApi {
 
     fn send_message(
         &self,
-        _session_id: String,
+        session_id: String,
         _content: String,
     ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
+        self.send_calls.lock().unwrap().push(session_id);
         Box::pin(async { Ok("msg-response-001".to_string()) })
     }
 
@@ -290,8 +318,9 @@ impl DaemonSessionApi for MockDaemonApi {
 
     fn end_session(
         &self,
-        _session_id: String,
+        session_id: String,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+        self.end_calls.lock().unwrap().push(session_id);
         Box::pin(async { Ok(()) })
     }
 

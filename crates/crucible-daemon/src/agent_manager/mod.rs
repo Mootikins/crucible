@@ -1225,7 +1225,7 @@ impl AgentManager {
     /// id with `id`, `status`, and (when finished) `output`/`error`/
     /// `exit_code`; still-running ids get `"timeout"`, unknown `"not_found"`.
     ///
-    /// This is the fan-in primitive behind `cru.sessions.collect_subagents`
+    /// This is the fan-in primitive behind `cru.session.collect_subagents`
     /// and the `jobs.collect` RPC; it must span BOTH registries because
     /// delegations no longer live in the background-job manager.
     pub async fn collect_jobs(

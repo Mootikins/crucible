@@ -19,7 +19,7 @@ holds one Gateway WebSocket, routes the messages it is allowed to answer into a
 per-channel agent session, and streams the reply back as Discord messages.
 
 It is the reference implementation for a plugin that *is* a service: everything
-here is Lua on the daemon's plugin VM — `cru.ws`, `cru.http`, `cru.sessions` —
+here is Lua on the daemon's plugin VM — `cru.ws`, `cru.http`, `cru.session` —
 with no Discord-specific Rust. See [[Help/Extending/Creating Plugins]] for the
 plugin structure and [[Help/Plugins/Lua Runtime API]] for the APIs it calls.
 
@@ -247,7 +247,7 @@ be set anyway.
 ### `kiln` is a name, and it is required
 
 `kiln` is the **key of a `[kilns]` entry**, not a directory. The plugin passes
-it straight to `cru.sessions.create`, which takes names; a path is not a name,
+it straight to `cru.session.create`, which takes names; a path is not a name,
 resolves to nothing, and produces a session with no kiln at all.
 
 Without a kiln a session has no note tools, and its reflection proposals land
@@ -489,7 +489,7 @@ min_turns = 1                          # required — the default of 3 skips a D
 ```
 
 `min_turns = 1` needs no recursion guard from you. The reflection subagent's
-auxiliary session is ended through `cru.sessions.end_session`, which goes
+auxiliary session is ended through `cru.session.end_session`, which goes
 through the session bridge and fires no session hooks — and the plugin
 independently tags its own aux sessions with a marker in their system prompt
 and skips them regardless of turn count.
@@ -537,6 +537,6 @@ reused session never invokes precognition at all.
 - [[Help/Concepts/Precognition]] — what puts the notes in context
 - [[Help/Concepts/Reflection Pass]] — what turns a conversation into a proposal
 - [[Help/Extending/Creating Plugins]] — plugin structure and `setup()`
-- [[Help/Plugins/Lua Runtime API]] — `cru.sessions`, `cru.ws`, `cru.http`
+- [[Help/Plugins/Lua Runtime API]] — `cru.session`, `cru.ws`, `cru.http`
 - [[Help/Concepts/Permission Precedence]] — why an `ask` rule denies here
 - [[Container Isolation]] — the other bundled plugin built entirely in Lua

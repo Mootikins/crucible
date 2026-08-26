@@ -1,4 +1,4 @@
-//! `cru.sessions.complete` — the one-shot completion primitive.
+//! `cru.session.complete` — the one-shot completion primitive.
 //!
 //! What is asserted here is the boundary, not the model: which options reach
 //! the daemon, and what a plugin sees come back. The daemon half (resolving
@@ -13,7 +13,7 @@ use std::sync::Arc;
 fn lua_with(api: Arc<MockDaemonApi>) -> Lua {
     let lua = TestLuaBuilder::new().build();
     register_sessions_module_with_api(&lua, api as Arc<dyn DaemonSessionApi>)
-        .expect("register cru.sessions");
+        .expect("register cru.session");
     lua
 }
 
@@ -24,7 +24,7 @@ async fn an_options_table_crosses_whole() {
     let answer: String = lua
         .load(
             r#"
-            local text, err = cru.sessions.complete("chat-1", {
+            local text, err = cru.session.complete("chat-1", {
                 system = "You name conversations.",
                 prompt = "User: hello",
                 timeout = 7,
@@ -51,7 +51,7 @@ async fn an_options_table_crosses_whole() {
 async fn a_bare_string_is_the_prompt() {
     let api = Arc::new(MockDaemonApi::new());
     let lua = lua_with(Arc::clone(&api));
-    lua.load(r#"cru.sessions.complete("chat-1", "name this")"#)
+    lua.load(r#"cru.session.complete("chat-1", "name this")"#)
         .exec_async()
         .await
         .expect("complete");
@@ -59,7 +59,7 @@ async fn a_bare_string_is_the_prompt() {
     assert_eq!(api.completions()[0].1["prompt"], "name this");
 }
 
-/// The `(nil, err)` convention every other `cru.sessions` function follows —
+/// The `(nil, err)` convention every other `cru.session` function follows —
 /// the auto-title plugin branches on exactly this.
 #[tokio::test]
 async fn a_call_with_no_daemon_answers_nil_and_a_reason() {
@@ -68,7 +68,7 @@ async fn a_call_with_no_daemon_answers_nil_and_a_reason() {
     let reason: String = lua
         .load(
             r#"
-            local text, err = cru.sessions.complete("chat-1", "name this")
+            local text, err = cru.session.complete("chat-1", "name this")
             assert(text == nil, "a stub must not invent an answer")
             return err
             "#,

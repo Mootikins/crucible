@@ -57,7 +57,7 @@ local function recording_api(prefix)
     }
 end
 
---- `cru.plugin.config`, `cru.sessions` and `cru.paths` are all absent from the
+--- `cru.plugin.config`, `cru.session` and `cru.paths` are all absent from the
 --- plugin test VM — the daemon registers them, the bare executor the test
 --- runner builds does not. The file itself is REAL: every round trip below is
 --- an `io.open` write followed by an `io.open` read on disk, rather than a
@@ -65,9 +65,9 @@ end
 local function with_env(cfg, session_api, fn)
     ensure_state_root()
     crucible = crucible or {}
-    local had_config, had_sessions, had_paths = cru.plugin.config, cru.sessions, cru.paths
+    local had_config, had_sessions, had_paths = cru.plugin.config, cru.session, cru.paths
     cru.plugin.config = { get = function(key) return cfg[key] end }
-    cru.sessions = session_api
+    cru.session = session_api
     cru.paths = {
         state = function(plugin) return state_root .. "/" .. plugin end,
     }
@@ -75,7 +75,7 @@ local function with_env(cfg, session_api, fn)
     local ok, err = pcall(fn)
 
     cru.paths = had_paths
-    cru.sessions = had_sessions
+    cru.session = had_sessions
     cru.plugin.config = had_config
     if not ok then error(err) end
 end
@@ -245,11 +245,11 @@ describe("DM session persistence", function()
         local calls, api = recording_api("cold")
         local ok, err = pcall(function()
             crucible = crucible or {}
-            local had_config, had_sessions = cru.plugin.config, cru.sessions
+            local had_config, had_sessions = cru.plugin.config, cru.session
             cru.plugin.config = { get = function(key) return configured()[key] end }
-            cru.sessions = api
+            cru.session = api
             local id = sessions.get_or_create("dm-no-paths", nil, "u-4")
-            cru.sessions = had_sessions
+            cru.session = had_sessions
             cru.plugin.config = had_config
             expect.truthy(id)
             expect.equals(1, #calls.created)

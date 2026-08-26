@@ -1,6 +1,6 @@
 //! One-shot completions against a session's own client.
 //!
-//! The daemon half of `cru.sessions.complete`. It resolves the session's
+//! The daemon half of `cru.session.complete`. It resolves the session's
 //! configured provider the same way a turn would, then runs exactly one
 //! exchange through [`crate::provider::oneshot`] — no tools, no history, no
 //! writes back to the session.
@@ -12,7 +12,7 @@
 use super::*;
 use serde::Deserialize;
 
-/// A plugin's `cru.sessions.complete(session_id, opts)` options.
+/// A plugin's `cru.session.complete(session_id, opts)` options.
 ///
 /// `timeout` is seconds; omitted means [`crate::provider::oneshot::DEFAULT_TIMEOUT_SECS`].
 #[derive(Debug, Deserialize)]

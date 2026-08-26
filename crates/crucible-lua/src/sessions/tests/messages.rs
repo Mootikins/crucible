@@ -12,7 +12,7 @@ async fn sessions_messages_returns_all_roles() {
     let result: Table = lua
         .load(
             r#"
-            local msgs, err = cru.sessions.messages("test-session")
+            local msgs, err = cru.session.messages("test-session")
             assert(err == nil, "unexpected error: " .. tostring(err))
             return msgs
             "#,
@@ -32,7 +32,7 @@ async fn sessions_messages_filters_by_role() {
     let result: Table = lua
         .load(
             r#"
-            local msgs, err = cru.sessions.messages("test-session", { role = "user" })
+            local msgs, err = cru.session.messages("test-session", { role = "user" })
             assert(err == nil, "unexpected error: " .. tostring(err))
             return msgs
             "#,
@@ -52,7 +52,7 @@ async fn sessions_messages_respects_limit() {
     let result: Table = lua
         .load(
             r#"
-            local msgs, err = cru.sessions.messages("test-session", { limit = 1 })
+            local msgs, err = cru.session.messages("test-session", { limit = 1 })
             assert(err == nil, "unexpected error: " .. tostring(err))
             return msgs
             "#,

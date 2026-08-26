@@ -11,18 +11,18 @@ local sessions = require("sessions")
 
 --- `config.get` reads `cru.plugin.config.get("discord." .. key)` inside a pcall,
 --- and the test VM has no `cru.plugin.config` — same shape as `routing_test`.
---- `cru.sessions` is stubbed for the same reason: the plugin VM has the real
+--- `cru.session` is stubbed for the same reason: the plugin VM has the real
 --- bridge, the test VM has nothing.
 local function with_env(cfg, session_api, fn)
     crucible = crucible or {}
     local had_config = cru.plugin.config
-    local had_sessions = cru.sessions
+    local had_session = cru.session
     cru.plugin.config = { get = function(key) return cfg[key] end }
-    cru.sessions = session_api
+    cru.session = session_api
 
     local ok, err = pcall(fn)
 
-    cru.sessions = had_sessions
+    cru.session = had_session
     cru.plugin.config = had_config
     if not ok then error(err) end
 end
@@ -52,7 +52,7 @@ local function recording_api(opts)
             return { id = "chat-" .. #calls.created }
         end,
         -- The bridge returns `(result, err)` rather than raising — every
-        -- `cru.sessions.*` method surfaces its error as a second return value
+        -- `cru.session.*` method surfaces its error as a second return value
         -- (`DaemonSessionApi`), and `configure_agent` branches on `err`.
         configure_agent = function()
             calls.configured = calls.configured + 1

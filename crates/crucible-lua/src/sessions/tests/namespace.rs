@@ -6,7 +6,7 @@ async fn sessions_stub_create_returns_nil() {
     let lua = TestLuaBuilder::new().with_sessions().build();
 
     let result: (Value, Value) = lua
-        .load(r#"return cru.sessions.create({ type = "chat", kiln = "/tmp/kiln" })"#)
+        .load(r#"return cru.session.create({ type = "chat", kiln = "/tmp/kiln" })"#)
         .eval_async()
         .await
         .unwrap();
@@ -24,7 +24,7 @@ async fn sessions_stub_list_returns_nil() {
     let lua = TestLuaBuilder::new().with_sessions().build();
 
     let result: (Value, Value) = lua
-        .load(r#"return cru.sessions.list()"#)
+        .load(r#"return cru.session.list()"#)
         .eval_async()
         .await
         .unwrap();
@@ -37,7 +37,7 @@ async fn sessions_stub_get_returns_nil() {
     let lua = TestLuaBuilder::new().with_sessions().build();
 
     let result: (Value, Value) = lua
-        .load(r#"return cru.sessions.get("some-id")"#)
+        .load(r#"return cru.session.get("some-id")"#)
         .eval_async()
         .await
         .unwrap();
@@ -69,7 +69,7 @@ fn stub_and_daemon_tables_expose_the_same_functions() {
             .globals()
             .get::<Table>("cru")
             .unwrap()
-            .get("sessions")
+            .get("session")
             .unwrap(),
     );
 
@@ -81,7 +81,7 @@ fn stub_and_daemon_tables_expose_the_same_functions() {
             .globals()
             .get::<Table>("cru")
             .unwrap()
-            .get("sessions")
+            .get("session")
             .unwrap(),
     );
 
@@ -90,4 +90,54 @@ fn stub_and_daemon_tables_expose_the_same_functions() {
 
     assert_eq!(stub_keys, listed);
     assert_eq!(real_keys, listed);
+}
+
+/// `cru.sessions` is a deprecated alias: it must hand back the *same*
+/// function objects as `cru.session`, so a plugin still on the old name runs
+/// the new implementation — never a copy that could drift.
+#[tokio::test]
+async fn the_deprecated_sessions_alias_forwards_the_same_functions() {
+    let api: std::sync::Arc<dyn crate::sessions::DaemonSessionApi> =
+        std::sync::Arc::new(super::MockDaemonApi::new());
+    let lua = TestLuaBuilder::new().with_sessions_api(api).build();
+
+    let same: (bool, bool) = lua
+        .load(
+            r#"
+            return cru.sessions.send_message == cru.session.send_message,
+                   cru.sessions.end_session == cru.session.end_session
+            "#,
+        )
+        .eval()
+        .unwrap();
+    assert!(
+        same.0,
+        "send_message through the alias must be the same function"
+    );
+    assert!(
+        same.1,
+        "end_session through the alias must be the same function"
+    );
+}
+
+/// The alias works end to end, and the forward target resolves at call time —
+/// the stub-to-daemon upgrade after the alias was installed is picked up.
+#[tokio::test]
+async fn the_alias_answers_calls_with_the_underlying_module() {
+    let api: std::sync::Arc<dyn crate::sessions::DaemonSessionApi> =
+        std::sync::Arc::new(super::MockDaemonApi::new());
+    let lua = TestLuaBuilder::new().with_sessions_api(api).build();
+
+    let id: String = lua
+        .load(
+            r#"
+            local session, err = cru.sessions.create({ type = "chat" })
+            assert(err == nil, "unexpected error: " .. tostring(err))
+            return session.id
+            "#,
+        )
+        .eval_async()
+        .await
+        .unwrap();
+    assert!(id.starts_with("chat-"));
 }

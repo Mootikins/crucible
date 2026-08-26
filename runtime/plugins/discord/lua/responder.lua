@@ -394,7 +394,7 @@ function M.respond(session_id, channel_id, user_message, reply_to_msg_id, user_i
     cru.log("info", "Responder: starting for session " .. session_id)
     pcall(api.trigger_typing, channel_id)
 
-    local next_part, err = cru.sessions.send_and_collect(session_id, user_message, {
+    local next_part, err = cru.session.send_and_collect(session_id, user_message, {
         timeout = RESPONSE_TIMEOUT,
         -- Only the `ask` tier. The daemon cannot tell that a named account is
         -- standing by to answer a prompt; the plugin can — either an approver
@@ -468,7 +468,7 @@ function M.respond(session_id, channel_id, user_message, reply_to_msg_id, user_i
             first_message = false
 
             local _, respond_err =
-                cru.sessions.interaction_respond(session_id, part.request_id, reply)
+                cru.session.interaction_respond(session_id, part.request_id, reply)
             if respond_err then
                 cru.log("warn", "Failed to respond to permission: " .. tostring(respond_err))
             end

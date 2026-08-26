@@ -902,11 +902,11 @@ fn copy_shipped_plugin(root: &Path, plugin: &str) {
     copy_tree(&plugins_root().join(plugin), &root.join(plugin));
 }
 
-/// Record what `auto-title` asks `cru.sessions.complete` for, and answer.
+/// Record what `auto-title` asks `cru.session.complete` for, and answer.
 const RECORD_COMPLETIONS: &str = r#"
 __completion_opts = nil
-cru.sessions = cru.sessions or {}
-cru.sessions.complete = function(session_id, opts)
+cru.session = cru.session or {}
+cru.session.complete = function(session_id, opts)
     __completion_opts = opts
     return "A perfectly good title"
 end

@@ -115,7 +115,7 @@ pub fn register_context_module(lua: &Lua, api: Arc<dyn DaemonSessionApi>) -> Res
 
     // messages(session_id, opts?) -> (messages_table, nil) or (nil, err)
     // opts: { role = "user"|"assistant"|"system", limit = N }
-    // Thin alias over load_messages; identical semantics to cru.sessions.messages.
+    // Thin alias over load_messages; identical semantics to cru.session.messages.
     let a = Arc::clone(&api);
     let messages_fn =
         lua.create_async_function(move |lua, (session_id, opts): (String, Value)| {

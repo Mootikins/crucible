@@ -1,11 +1,11 @@
-//! The plugin review surface: `cru.sessions.review_comment` reads its spec
+//! The plugin review surface: `cru.session.review_comment` reads its spec
 //! through the bridge's `parse_comment_spec`, so the serde error a plugin
 //! sees for a bad spec is pinned here, from Lua, not from the parser alone.
 
 use super::*;
 use crucible_lua::{register_sessions_module_with_api, DaemonSessionApi};
 
-/// A Lua VM whose `cru.sessions` talks to a bridge over a fresh session
+/// A Lua VM whose `cru.session` talks to a bridge over a fresh session
 /// manager. The spec parse runs before any session lookup, so no session
 /// exists.
 fn lua_over_bridge(tmp: &std::path::Path) -> mlua::Lua {
@@ -22,7 +22,7 @@ fn lua_over_bridge(tmp: &std::path::Path) -> mlua::Lua {
 async fn review_comment_error(lua: &mlua::Lua, spec: &str) -> String {
     let (value, err): (mlua::Value, Option<String>) = lua
         .load(format!(
-            r#"return cru.sessions.review_comment("no-such-session", {spec})"#
+            r#"return cru.session.review_comment("no-such-session", {spec})"#
         ))
         .eval_async()
         .await

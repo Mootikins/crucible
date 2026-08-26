@@ -111,7 +111,7 @@ impl TestLuaBuilder {
         self
     }
 
-    /// Register the sessions module (cru.sessions).
+    /// Register the sessions module (cru.session).
     /// Sets up: cru global table.
     pub fn with_sessions(self) -> Self {
         self.ensure_cru_table();

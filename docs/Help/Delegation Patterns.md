@@ -1,6 +1,6 @@
 ---
 title: Delegation Patterns
-description: Common subagent orchestration recipes — broadcast, router, supervisor — written in plain Lua against cru.sessions primitives
+description: Common subagent orchestration recipes — broadcast, router, supervisor — written in plain Lua against cru.session primitives
 status: implemented
 tags:
   - scripting
@@ -14,27 +14,27 @@ tags:
 
 Crucible doesn't ship hardcoded "team" types. Three common delegation
 patterns — broadcast, router, supervisor — are short Lua recipes against
-the existing [[Help/Core/Sessions|cru.sessions]] primitives. This page
+the existing [[Help/Core/Sessions|cru.session]] primitives. This page
 is a reference, not a library: copy a recipe, edit it for your case.
 
 The primitives you'll use:
 
-- `cru.sessions.create({ type = "chat", kilns = {...} })` — spawn a
+- `cru.session.create({ type = "chat", kilns = {...} })` — spawn a
   fresh session (optionally with kilns attached for knowledge access).
-- `cru.sessions.configure_agent(id, { agent_name = "..." })` — pick
+- `cru.session.configure_agent(id, { agent_name = "..." })` — pick
   which agent profile drives this session.
-- `cru.sessions.send_and_collect(id, prompt, { timeout = N })` —
+- `cru.session.send_and_collect(id, prompt, { timeout = N })` —
   blocking. Returns an iterator that yields structured response parts:
   `{ type = "text"|"tool_call"|"tool_result"|"thinking", ... }`.
-- `cru.sessions.send_message(id, content)` — async dispatch; returns a
+- `cru.session.send_message(id, content)` — async dispatch; returns a
   request id. Use this when you want the agent processing in the
   background and don't need to await output inline.
-- `cru.sessions.collect_subagents(job_ids, timeout)` — await N
+- `cru.session.collect_subagents(job_ids, timeout)` — await N
   background subagent jobs (spawned via the daemon's subagent
   infrastructure, distinct from the sessions created above).
-- `cru.sessions.fork(id, opts?)` — clone a session's history into a
+- `cru.session.fork(id, opts?)` — clone a session's history into a
   new session, e.g. for A/B exploration.
-- `cru.sessions.end_session(id)` — clean up.
+- `cru.session.end_session(id)` — clean up.
 
 See [[Help/Core/Sessions]] for full signatures and the
 [[Help/Plugins/Lua Runtime API|Lua Runtime API]] reference for return
@@ -85,13 +85,13 @@ end
 
 local function route(prompt)
     local agent_name = classify(prompt)
-    local s = cru.sessions.create({ type = "chat" })
-    cru.sessions.configure_agent(s.id, { agent_name = agent_name })
+    local s = cru.session.create({ type = "chat" })
+    cru.session.configure_agent(s.id, { agent_name = agent_name })
 
-    local stream = cru.sessions.send_and_collect(s.id, prompt,
+    local stream = cru.session.send_and_collect(s.id, prompt,
         { timeout = 60 })
     local reply = collect_text(stream)
-    cru.sessions.end_session(s.id)
+    cru.session.end_session(s.id)
     return reply, agent_name
 end
 ```
@@ -104,8 +104,8 @@ ask it what to do, run that, and feed the output back.
 
 ```lua
 local function supervise(task, agent_pool, max_steps)
-    local sup = cru.sessions.create({ type = "chat" })
-    cru.sessions.configure_agent(sup.id, { agent_name = "supervisor" })
+    local sup = cru.session.create({ type = "chat" })
+    cru.session.configure_agent(sup.id, { agent_name = "supervisor" })
 
     local history = {}
     for step = 1, (max_steps or 10) do
@@ -118,25 +118,25 @@ local function supervise(task, agent_pool, max_steps)
             task, cru.json.encode(history),
             table.concat(agent_pool, ", "))
         local plan = collect_text(
-            cru.sessions.send_and_collect(sup.id, plan_prompt, { timeout = 60 }))
+            cru.session.send_and_collect(sup.id, plan_prompt, { timeout = 60 }))
 
         local ok, decision = pcall(cru.json.decode, plan)
         if not ok or not decision then break end
         if decision.done then break end
 
         -- Run the chosen specialist on the chosen sub-prompt.
-        local worker = cru.sessions.create({ type = "chat" })
-        cru.sessions.configure_agent(worker.id,
+        local worker = cru.session.create({ type = "chat" })
+        cru.session.configure_agent(worker.id,
             { agent_name = decision.agent })
         local output = collect_text(
-            cru.sessions.send_and_collect(worker.id, decision.prompt,
+            cru.session.send_and_collect(worker.id, decision.prompt,
                 { timeout = 120 }))
-        cru.sessions.end_session(worker.id)
+        cru.session.end_session(worker.id)
 
         history[#history + 1] = { agent = decision.agent, output = output }
     end
 
-    cru.sessions.end_session(sup.id)
+    cru.session.end_session(sup.id)
     return history
 end
 ```
@@ -150,7 +150,7 @@ the LLM call and `return history[step]` from a static table.
 
 Use when: multiple agents should weigh in on the same input.
 
-Note: `cru.sessions.send_and_collect` is blocking, so a loop over N
+Note: `cru.session.send_and_collect` is blocking, so a loop over N
 sessions runs sequentially. That's the right answer when each
 sub-call is cheap or you don't mind serialised latency:
 
@@ -158,14 +158,14 @@ sub-call is cheap or you don't mind serialised latency:
 local function broadcast_sequential(agents, prompt)
     local results = {}
     for i, agent_name in ipairs(agents) do
-        local s = cru.sessions.create({ type = "chat" })
-        cru.sessions.configure_agent(s.id, { agent_name = agent_name })
+        local s = cru.session.create({ type = "chat" })
+        cru.session.configure_agent(s.id, { agent_name = agent_name })
         results[i] = {
             agent = agent_name,
             output = collect_text(
-                cru.sessions.send_and_collect(s.id, prompt, { timeout = 60 })),
+                cru.session.send_and_collect(s.id, prompt, { timeout = 60 })),
         }
-        cru.sessions.end_session(s.id)
+        cru.session.end_session(s.id)
     end
     return results
 end
@@ -183,13 +183,13 @@ for _, agent in ipairs({ "researcher", "skeptic", "writer" }) do
     -- and your plugin's subagent factory for the exact call shape.
     job_ids[#job_ids + 1] = spawn_subagent(agent, prompt)
 end
-local results = cru.sessions.collect_subagents(job_ids, 60)
+local results = cru.session.collect_subagents(job_ids, 60)
 -- results is { { id, status, output | error, exit_code }, ... }
 ```
 
 `collect_subagents` waits on background jobs from the daemon's
 subagent infrastructure (distinct from sessions created by
-`cru.sessions.create`). See [[Help/Concepts/Delegation]] for how to
+`cru.session.create`). See [[Help/Concepts/Delegation]] for how to
 spawn those jobs and the `delegate_session` tool for the host-side
 contract.
 

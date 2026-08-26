@@ -36,7 +36,6 @@ local function default_fixtures()
         -- where the daemon happened to be started. No `kiln` entry: kiln
         -- resolution goes through `cru.kiln.path`, in tests as in production.
         paths = { workspace = "/mock/workspace", session = false, state = "/mock/state" },
-        session = { temperature = 0.7, max_tokens = nil, model = "mock-model", mode = "act", thinking_budget = nil },
         -- `info` mirrors the bridge's `get_session` payload: kiln NAMES in a
         -- `kilns` array, never kiln paths (see session_bridge.rs).
         sessions = {
@@ -232,55 +231,46 @@ local function create_paths_mock(fixtures)
     }
 end
 
+-- `cru.session` — the session lifecycle API, mocked to the shape the real
+-- module has: factory verbs returning handle-shaped records (a table with
+-- `id` plus the record's fields), id-passing free functions, and `current`.
+-- Plugins that spin up a helper session (kiln-expert's search, reflection's
+-- review pass) are untestable without it: the real module is registered by
+-- the daemon, not by the bare executor the plugin test runner builds.
 local function create_session_mock(fixtures)
-    local state = {
-        temperature = fixtures.session.temperature,
-        max_tokens = fixtures.session.max_tokens,
-        model = fixtures.session.model or "mock-model",
-        mode = fixtures.session.mode or "act",
-        thinking_budget = fixtures.session.thinking_budget,
-    }
-    local session = {}
-    for _, field in ipairs({"temperature", "max_tokens", "model", "mode", "thinking_budget"}) do
-        session["get_" .. field] = function()
-            record_call("session", "get_" .. field)
-            return state[field]
-        end
-        session["set_" .. field] = function(val)
-            record_call("session", "set_" .. field, val)
-            state[field] = val
-        end
-    end
-    return session
-end
-
--- `cru.sessions` — the subagent-delegation API. Plugins that spin up a helper
--- session (kiln-expert's search, reflection's review pass) are untestable
--- without it: the real module is registered by the daemon, not by the bare
--- executor the plugin test runner builds.
-local function create_sessions_mock(fixtures)
     local f = fixtures.sessions
     local counter = 0
+    local function handle()
+        counter = counter + 1
+        return { id = string.format("mock-session-%d", counter) }
+    end
     return {
         create = function(opts)
-            record_call("sessions", "create", opts)
-            counter = counter + 1
-            return { id = string.format("mock-session-%d", counter) }, nil
+            record_call("session", "create", opts)
+            return handle(), nil
         end,
         get = function(id)
-            record_call("sessions", "get", id)
+            record_call("session", "get", id)
+            return deep_copy(f.info)
+        end,
+        list = function()
+            record_call("session", "list")
+            return {}
+        end,
+        current = function()
+            record_call("session", "current")
             return deep_copy(f.info)
         end,
         messages = function(id, opts)
-            record_call("sessions", "messages", id, opts)
+            record_call("session", "messages", id, opts)
             return deep_copy(f.messages or {})
         end,
         configure_agent = function(id, config)
-            record_call("sessions", "configure_agent", id, config)
+            record_call("session", "configure_agent", id, config)
         end,
         -- Returns an iterator over response parts, exhausting to nil.
         send_and_collect = function(id, prompt, opts)
-            record_call("sessions", "send_and_collect", id, prompt, opts)
+            record_call("session", "send_and_collect", id, prompt, opts)
             local parts = f.response_parts or {}
             local i = 0
             return function()
@@ -289,7 +279,7 @@ local function create_sessions_mock(fixtures)
             end, nil
         end,
         end_session = function(id)
-            record_call("sessions", "end_session", id)
+            record_call("session", "end_session", id)
         end,
     }
 end
@@ -309,7 +299,8 @@ function test_mocks.setup(overrides)
     cru.fs = create_fs_mock(_fixtures)
     cru.paths = create_paths_mock(_fixtures)
     cru.session = create_session_mock(_fixtures)
-    cru.sessions = create_sessions_mock(_fixtures)
+    -- The deprecated plural alias, mirroring the real module's forwarding.
+    cru.sessions = cru.session
 end
 
 function test_mocks.reset()

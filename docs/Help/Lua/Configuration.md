@@ -56,7 +56,7 @@ The daemon evaluates your `init.lua` exactly once, at boot, **before** it loads 
 - **`cru.config.set` deep-merges.** Objects merge key by key; arrays and scalars replace wholesale. To replace a whole table instead of merging into it, put `__replace = true` inside it: `cru.config.set({ llm = { providers = { __replace = true, mine = { type = "ollama" } } } })` drops every provider the table does not restate. The marker is the one replacement mechanism, spelled the same in a hand-written table, a not-yet-migrated `config.toml`, and the `config.set` RPC; it is always consumed and never appears in a `cru.config.get` read.
 - **The module search path is live.** A `runtimepath` entry added on line N serves every `require` after line N — and none before it. The lazy.nvim bootstrap has the same rule: prepend, then require. A failed `require` is never cached, so a retry after the addition succeeds.
 - **`require` is a module load, not membership.** It cannot enable, disable, or activate a plugin. A `require` of a disabled plugin still loads its module, but activation registers none of its hooks or exports.
-- **Daemon-state APIs raise during evaluation.** `cru.kiln.*`, `cru.sessions.*`, and storage-backed calls answer "daemon state is not ready during init.lua evaluation; use a hook" — the kiln registry is built *from* your file's output, so it cannot exist during it. Move such reads into a hook.
+- **Daemon-state APIs raise during evaluation.** `cru.kiln.*`, `cru.session.*`, and storage-backed calls answer "daemon state is not ready during init.lua evaluation; use a hook" — the kiln registry is built *from* your file's output, so it cannot exist during it. Move such reads into a hook.
 - **No hot reload.** Runtime `config.set` and `plugin.reload` do not re-run the bootstrap; a `runtimepath` change needs `cru daemon restart`.
 - **`require("my.mod")`** resolves from `~/.config/crucible/lua/` everywhere — during boot, in hooks, and in plugins. A module there shadows a same-named plugin module.
 - **`config.toml` is a deprecated seed.** While it exists it loads *under* your `init.lua` (your Lua wins per key). Run `cru config migrate` to move it into Lua.
@@ -151,7 +151,7 @@ cru.check            -- Argument validation (.string, .number, .boolean, .table,
 cru.timer.spawn(fn)  -- Spawn async task (daemon context only, requires send feature)
 
 -- Daemon-side modules (available when running as a plugin in the daemon)
-cru.sessions         -- Session management: create, get, list, send_message, subscribe, etc.
+cru.session         -- Session management: create, get, list, send_message, subscribe, etc.
 
 -- UI configuration
 cru.colorscheme      -- colour palette

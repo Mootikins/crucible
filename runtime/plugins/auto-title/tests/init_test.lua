@@ -1,7 +1,7 @@
 -- Integration tests for the auto-title plugin entry point.
 -- Run with: cru plugin test runtime/plugins/auto-title
 --
--- Loads the REAL init.lua against a scripted `cru.sessions.complete`, so these
+-- Loads the REAL init.lua against a scripted `cru.session.complete`, so these
 -- fail if the plugin stops publishing its channel, stops declaring its
 -- command, or stops sanitizing what the model answered.
 
@@ -16,8 +16,8 @@ cru.plugin.publish = function(key, value) publications[key] = value end
 
 cru = cru or {}
 cru.log = function() end
-cru.sessions = cru.sessions or {}
-cru.sessions.complete = function(session_id, opts)
+cru.session = cru.session or {}
+cru.session.complete = function(session_id, opts)
   table.insert(completions, { session_id = session_id, opts = opts })
   return next_answer[1], next_answer[2]
 end

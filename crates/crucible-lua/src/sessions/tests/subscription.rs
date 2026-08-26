@@ -13,7 +13,7 @@ async fn sessions_subscribe_returns_iterator() {
     let result: Table = lua
         .load(
             r#"
-            local next_event, err = cru.sessions.subscribe("test-session")
+            local next_event, err = cru.session.subscribe("test-session")
             assert(err == nil, "subscribe error: " .. tostring(err))
             assert(type(next_event) == "function", "expected function iterator")
 
@@ -366,7 +366,7 @@ async fn subscribe_next_event_receives_async_events() {
     let result: Table = lua
         .load(
             r#"
-            local next_event, err = cru.sessions.subscribe("test-session")
+            local next_event, err = cru.session.subscribe("test-session")
             assert(err == nil, "subscribe error: " .. tostring(err))
             assert(type(next_event) == "function", "expected function, got " .. type(next_event))
 
@@ -400,8 +400,8 @@ async fn subscribe_next_event_receives_async_events() {
 /// next_event in the same Lua execution context.
 ///
 /// This reproduces the exact sequence from responder.lua:
-///   local next_event = cru.sessions.subscribe(session_id)
-///   cru.sessions.send_message(session_id, content)
+///   local next_event = cru.session.subscribe(session_id)
+///   cru.session.send_message(session_id, content)
 ///   local event = next_event()
 #[tokio::test]
 async fn subscribe_send_message_then_next_event() {
@@ -440,11 +440,11 @@ async fn subscribe_send_message_then_next_event() {
         .load(
             r#"
             -- Step 1: Subscribe
-            local next_event, sub_err = cru.sessions.subscribe("test-session")
+            local next_event, sub_err = cru.session.subscribe("test-session")
             assert(sub_err == nil, "subscribe error: " .. tostring(sub_err))
 
             -- Step 2: Send message (triggers agent processing)
-            local msg_id, msg_err = cru.sessions.send_message("test-session", "Hello!")
+            local msg_id, msg_err = cru.session.send_message("test-session", "Hello!")
             assert(msg_err == nil, "send_message error: " .. tostring(msg_err))
 
             -- Step 3: Read events (should yield until events arrive)
@@ -508,7 +508,7 @@ async fn subscribe_next_event_inside_timeout() {
     let result: Table = lua
         .load(
             r#"
-            local next_event, err = cru.sessions.subscribe("test-session")
+            local next_event, err = cru.session.subscribe("test-session")
             assert(err == nil, "subscribe error: " .. tostring(err))
 
             -- Wrap next_event in a timeout to avoid hanging forever if broken
@@ -567,7 +567,7 @@ async fn subscribe_receiver_not_dropped_prematurely() {
     let result: Table = lua
         .load(
             r#"
-            local next_event, err = cru.sessions.subscribe("test-session")
+            local next_event, err = cru.session.subscribe("test-session")
             assert(err == nil, "subscribe error: " .. tostring(err))
 
             -- Simulate some work between subscribe and reading events
@@ -602,8 +602,8 @@ async fn subscribe_receiver_not_dropped_prematurely() {
 ///
 /// This is the exact pattern that was failing in production:
 ///   cru.timer.spawn(function()
-///     local next_event = cru.sessions.subscribe(session_id)
-///     cru.sessions.send_message(session_id, content)
+///     local next_event = cru.session.subscribe(session_id)
+///     cru.session.send_message(session_id, content)
 ///     local event = next_event()  -- THIS was hanging
 ///   end)
 ///
@@ -645,7 +645,7 @@ async fn subscribe_next_event_via_timer_spawn() {
             _G.spawn_result = { done = false, text = "not-set" }
 
             cru.timer.spawn(function()
-                local next_event, err = cru.sessions.subscribe("test-session")
+                local next_event, err = cru.session.subscribe("test-session")
                 if err then
                     _G.spawn_result.text = "subscribe error: " .. err
                     _G.spawn_result.done = true
@@ -730,7 +730,7 @@ async fn subscribe_multiple_next_event_calls_receive_in_order() {
     let result: Table = lua
         .load(
             r#"
-            local next_event, err = cru.sessions.subscribe("test-session")
+            local next_event, err = cru.session.subscribe("test-session")
             assert(err == nil, "subscribe error: " .. tostring(err))
 
             local texts = {}

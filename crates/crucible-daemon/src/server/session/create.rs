@@ -72,7 +72,7 @@ impl RpcContext {
     /// It stays at the RPC layer (`RpcDispatcher::handle_session_create`) until
     /// `fire_session_start`/`fire_session_end` stop holding `plugin_loader`'s
     /// mutex across their Lua call: the reflection plugin calls
-    /// `cru.sessions.create` from inside `on_session_end`, and tokio's mutex is
+    /// `cru.session.create` from inside `on_session_end`, and tokio's mutex is
     /// not reentrant, so a plugin-side create that reached the start hooks
     /// would deadlock the daemon.
     pub(crate) async fn create_session_resolved(

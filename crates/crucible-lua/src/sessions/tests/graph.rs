@@ -10,7 +10,7 @@ async fn sessions_inject_succeeds() {
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
     let result: (Value, Value) = lua
-        .load(r#"return cru.sessions.inject("test-session", "system", "injected context")"#)
+        .load(r#"return cru.session.inject("test-session", "system", "injected context")"#)
         .eval_async()
         .await
         .unwrap();
@@ -24,20 +24,21 @@ async fn sessions_fork_returns_child_info() {
     let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
-    let result: Table = lua
+    let (id, parent_id, copied): (String, String, i64) = lua
         .load(
             r#"
-            local info, err = cru.sessions.fork("parent-session")
+            local info, err = cru.session.fork("parent-session")
             assert(err == nil, "unexpected error: " .. tostring(err))
-            return info
+            return info.id, info.parent_id, info.messages_copied
             "#,
         )
         .eval_async()
         .await
         .unwrap();
 
-    let id: String = result.get("id").unwrap();
-    assert!(!id.is_empty());
+    assert_eq!(id, "fork-123");
+    assert_eq!(parent_id, "parent-123");
+    assert_eq!(copied, 3);
 }
 
 #[tokio::test]
@@ -45,20 +46,19 @@ async fn sessions_fork_with_up_to() {
     let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
-    let result: Table = lua
+    let id: String = lua
         .load(
             r#"
-            local info, err = cru.sessions.fork("parent-session", { up_to = 5 })
+            local info, err = cru.session.fork("parent-session", { up_to = 5 })
             assert(err == nil, "unexpected error: " .. tostring(err))
-            return info
+            return info.id
             "#,
         )
         .eval_async()
         .await
         .unwrap();
 
-    let id: String = result.get("id").unwrap();
-    assert!(!id.is_empty());
+    assert_eq!(id, "fork-123");
 }
 
 #[tokio::test]
@@ -69,7 +69,7 @@ async fn sessions_collect_subagents_returns_results() {
     let result: (Value, Value) = lua
         .load(
             r#"
-            return cru.sessions.collect_subagents({"job-1", "job-2"}, 5)
+            return cru.session.collect_subagents({"job-1", "job-2"}, 5)
             "#,
         )
         .eval_async()
@@ -84,7 +84,7 @@ async fn sessions_collect_subagents_returns_results() {
     assert!(matches!(result.1, Value::Nil));
 }
 
-/// `cru.sessions.cache_stats(session_id)` returns a table with the
+/// `cru.session.cache_stats(session_id)` returns a table with the
 /// cache aggregate fields.
 #[tokio::test]
 async fn sessions_cache_stats_returns_aggregate_table() {
@@ -94,7 +94,7 @@ async fn sessions_cache_stats_returns_aggregate_table() {
     let result: Table = lua
         .load(
             r#"
-            local stats, err = cru.sessions.cache_stats("test-session")
+            local stats, err = cru.session.cache_stats("test-session")
             assert(err == nil, "unexpected error: " .. tostring(err))
             return stats
             "#,
@@ -126,7 +126,7 @@ async fn sessions_set_output_validation_accepts_string_spec() {
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
     let result: (Value, Value) = lua
-        .load(r#"return cru.sessions.set_output_validation("s1", "json")"#)
+        .load(r#"return cru.session.set_output_validation("s1", "json")"#)
         .eval_async()
         .await
         .unwrap();
@@ -148,7 +148,7 @@ async fn sessions_set_output_validation_serialises_lua_table_spec() {
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
     let result: (Value, Value) = lua
-        .load(r#"return cru.sessions.set_output_validation("s1", { type = "lua", name = "x" })"#)
+        .load(r#"return cru.session.set_output_validation("s1", { type = "lua", name = "x" })"#)
         .eval_async()
         .await
         .unwrap();
@@ -169,7 +169,7 @@ async fn sessions_set_output_validation_serialises_regex_table_spec() {
 
     let result: (Value, Value) = lua
         .load(
-            r#"return cru.sessions.set_output_validation("s1", { type = "regex", pattern = "^OK$" })"#,
+            r#"return cru.session.set_output_validation("s1", { type = "regex", pattern = "^OK$" })"#,
         )
         .eval_async()
         .await
@@ -180,7 +180,7 @@ async fn sessions_set_output_validation_serialises_regex_table_spec() {
     assert_eq!(captured.1, "regex:^OK$");
 }
 
-/// `cru.sessions.undo(session_id, count?)` returns the number of turns
+/// `cru.session.undo(session_id, count?)` returns the number of turns
 /// undone. Default count is 1.
 #[tokio::test]
 async fn sessions_undo_returns_count() {
@@ -189,7 +189,7 @@ async fn sessions_undo_returns_count() {
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
     let result: (Value, Value) = lua
-        .load(r#"return cru.sessions.undo("s1", 2)"#)
+        .load(r#"return cru.session.undo("s1", 2)"#)
         .eval_async()
         .await
         .unwrap();
@@ -209,7 +209,7 @@ async fn sessions_undo_default_count_is_one() {
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
     let result: (Value, Value) = lua
-        .load(r#"return cru.sessions.undo("s1")"#)
+        .load(r#"return cru.session.undo("s1")"#)
         .eval_async()
         .await
         .unwrap();
@@ -220,14 +220,14 @@ async fn sessions_undo_default_count_is_one() {
     assert_eq!(count, 1, "missing count must default to 1");
 }
 
-/// `cru.sessions.can_undo(session_id)` round-trips a boolean.
+/// `cru.session.can_undo(session_id)` round-trips a boolean.
 #[tokio::test]
 async fn sessions_can_undo_returns_bool() {
     let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
     let result: (Value, Value) = lua
-        .load(r#"return cru.sessions.can_undo("s1")"#)
+        .load(r#"return cru.session.can_undo("s1")"#)
         .eval_async()
         .await
         .unwrap();
@@ -236,14 +236,14 @@ async fn sessions_can_undo_returns_bool() {
     assert!(matches!(result.1, Value::Nil));
 }
 
-/// `cru.sessions.undo_depth(session_id)` returns an integer count.
+/// `cru.session.undo_depth(session_id)` returns an integer count.
 #[tokio::test]
 async fn sessions_undo_depth_returns_int() {
     let api: Arc<dyn DaemonSessionApi> = Arc::new(MockDaemonApi::new());
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
     let result: (Value, Value) = lua
-        .load(r#"return cru.sessions.undo_depth("s1")"#)
+        .load(r#"return cru.session.undo_depth("s1")"#)
         .eval_async()
         .await
         .unwrap();
@@ -252,7 +252,7 @@ async fn sessions_undo_depth_returns_int() {
     assert!(matches!(result.1, Value::Nil));
 }
 
-/// `cru.sessions.undo_history(session_id)` returns a list with one
+/// `cru.session.undo_history(session_id)` returns a list with one
 /// table per undoable turn, each carrying `turn_index` and
 /// `messages_removed`.
 #[tokio::test]
@@ -263,7 +263,7 @@ async fn sessions_undo_history_returns_list() {
     let result: Table = lua
         .load(
             r#"
-            local entries, err = cru.sessions.undo_history("s1")
+            local entries, err = cru.session.undo_history("s1")
             assert(err == nil, "unexpected error: " .. tostring(err))
             return entries
             "#,
@@ -290,7 +290,7 @@ async fn sessions_set_output_validation_rejects_unknown_type() {
     let lua = TestLuaBuilder::new().with_sessions_api(api).build();
 
     let res: mlua::Result<(Value, Value)> = lua
-        .load(r#"return cru.sessions.set_output_validation("s1", { type = "bogus" })"#)
+        .load(r#"return cru.session.set_output_validation("s1", { type = "bogus" })"#)
         .eval_async()
         .await;
     let err = res.expect_err("expected error from unknown type");

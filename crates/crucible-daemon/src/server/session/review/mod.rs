@@ -17,7 +17,7 @@
 //!   Including acceptance, which is silent to the *agent* but not to the
 //!   panel showing the queue.
 //!
-//! The same functions back the Lua bridge (`cru.sessions.review_*`), so the
+//! The same functions back the Lua bridge (`cru.session.review_*`), so the
 //! logic lives in free functions here rather than inside the handlers; §6
 //! needs a delegating agent to be able to review a sub-session, and a
 //! handler-only implementation would have to be written twice.

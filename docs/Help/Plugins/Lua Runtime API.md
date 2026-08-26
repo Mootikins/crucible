@@ -126,7 +126,7 @@ cru.timer.spawn(function()
 end)
 ```
 
-This is primarily needed when gateway event handlers (which run under `pcall`) need to call async functions that yield, such as `cru.sessions.subscribe()`. Since `pcall`/`xpcall` create a yield barrier in Lua, the async work must be moved to a separate task.
+This is primarily needed when gateway event handlers (which run under `pcall`) need to call async functions that yield, such as `cru.session.subscribe()`. Since `pcall`/`xpcall` create a yield barrier in Lua, the async work must be moved to a separate task.
 
 Errors in the spawned function are logged as warnings but do not propagate to the caller.
 
@@ -313,15 +313,52 @@ ws:close()
 
 ## Sessions
 
-The `cru.sessions` module provides daemon-backed session management for Lua plugins. It enables plugins to create agent sessions, send messages, and receive streaming responses.
+The `cru.session` module provides daemon-backed session management for Lua plugins. It enables plugins to create agent sessions, send messages, and receive streaming responses.
 
 All functions are async and follow the convention of returning `(result, nil)` on success or `(nil, error_string)` on failure. Without a daemon connection, all calls return `(nil, "no daemon connected")`.
 
 The trait is defined in `crucible-lua` as `DaemonSessionApi` and implemented by the daemon crate, avoiding a circular dependency.
 
-### cru.sessions.create(opts)
+> **Renamed from `cru.sessions`.** The module is singular now — `list` is the
+> only plural-returning verb. `cru.sessions` still works as a deprecated alias
+> that forwards to the same functions and warns once per VM; migrate when you
+> can, it will be removed.
 
-Create a new session. Returns a session table with at least `{ id, session_type, state, kilns }`.
+### Session handles
+
+`create`, `get`, `list` and `fork` return **session handles** (userdata), not
+plain tables. A handle carries the daemon's own response object, so every
+field the old plain table exposed (`session.id`, `session.state`,
+`session.kilns`, …) reads the same. On top of that:
+
+- Every session-scoped function also exists as a **method** on the handle,
+  calling the same implementation — `s:send_message("…")` is
+  `cru.session.send_message(s.id, "…")`:
+  `configure_agent`, `send_message`, `cancel`, `pause`, `resume`,
+  `end_session`, `interaction_respond`, `subscribe`, `unsubscribe`,
+  `send_and_collect`, `inject`, `messages`, `fork`, `cache_stats`, `complete`,
+  `set_output_validation`, `undo`, `can_undo`, `undo_depth`, `undo_history`,
+  `review_list_hunks`, `review_set_state`, `review_comment`,
+  `review_resolve_comment`.
+- On the *current session's* handle (`cru.session.current()`), the live config
+  knobs also work as properties: `s.model = "…"`, `s.temperature = 0.5`,
+  `s:get_variable(k)`. These need the per-session RPC binding; on a handle
+  from `create`/`get`/`list` they report not-connected, and config changes go
+  through `s:configure_agent(...)` instead.
+
+```lua
+local s, err = cru.session.create({ type = "chat", kilns = { "notes" } })
+local response_id, err = s:send_message("summarize today's notes")
+local ok, err = s:end_session()
+```
+
+`cru.session.current()` returns the session the VM is executing for (the old
+spelling `cru.get_session()` still works and reads the same binding); it
+errors with "No active session" when none is bound.
+
+### cru.session.create(opts)
+
+Create a new session. Returns a session handle whose fields read like the old plain table: at least `{ id, session_type, state, kilns }`.
 
 `kilns` is the session's whole knowledge scope — a flat set with no primary
 member, and each member is the **name** of a `[kilns]` entry in the user's
@@ -337,7 +374,7 @@ writes. `workspace` stays a path — workspaces have no registry to resolve a
 name against.
 
 ```lua
-local session, err = cru.sessions.create({
+local session, err = cru.session.create({
     type = "chat",                            -- session type (default: "chat")
     kilns = { "notes", "reference" },         -- knowledge scope, by NAME (optional; omitted = none)
     workspace = "/path/to/workspace",         -- workspace path (optional)
@@ -363,36 +400,36 @@ rather than with a follow-up `configure_agent`: that call writes the *whole*
 agent, so it would replace a card's prompt and model with whatever else you
 passed.
 
-Also accepts a string for the legacy positional form: `cru.sessions.create("chat")`.
+Also accepts a string for the legacy positional form: `cru.session.create("chat")`.
 
-### cru.sessions.get(session_id)
+### cru.session.get(session_id)
 
-Get a session by ID. Returns the session table or `(nil, nil)` if not found.
+Get a session by ID. Returns a session handle or `(nil, nil)` if not found.
 
 ```lua
-local session, err = cru.sessions.get("chat-2025-01-01T0000-abc123")
+local session, err = cru.session.get("chat-2025-01-01T0000-abc123")
 if session then
     print(session.id, session.state)
 end
 ```
 
-### cru.sessions.list()
+### cru.session.list()
 
-List all sessions. Returns an array of session summary tables.
+List all sessions. Returns an array of session handles.
 
 ```lua
-local sessions, err = cru.sessions.list()
+local sessions, err = cru.session.list()
 for _, s in ipairs(sessions) do
     print(s.id, s.session_type, s.state)
 end
 ```
 
-### cru.sessions.configure_agent(session_id, config)
+### cru.session.configure_agent(session_id, config)
 
 Configure the agent for a session. The `config` table matches `SessionAgent` fields.
 
 ```lua
-cru.sessions.configure_agent(session_id, {
+cru.session.configure_agent(session_id, {
     model = "claude-sonnet-4-20250514",
     system_prompt = "You are a helpful assistant for a Discord server.",
 })
@@ -400,15 +437,15 @@ cru.sessions.configure_agent(session_id, {
 
 Returns `(true, nil)` on success.
 
-### cru.sessions.send_message(session_id, content)
+### cru.session.send_message(session_id, content)
 
 Send a user message to a session, triggering agent processing. Returns a request/response ID for tracking.
 
 ```lua
-local msg_id, err = cru.sessions.send_message(session_id, "What is Crucible?")
+local msg_id, err = cru.session.send_message(session_id, "What is Crucible?")
 ```
 
-### cru.sessions.send_and_collect(session_id, content, opts)
+### cru.session.send_and_collect(session_id, content, opts)
 
 Send a message and read the reply back as a stream of parts, rather than
 subscribing to the raw event bus and filtering it yourself. Returns an iterator
@@ -418,7 +455,7 @@ Each part is a table with a `type`: `text`, `tool_call`, `tool_result`,
 `thinking`, or `permission_request`.
 
 ```lua
-local next_part, err = cru.sessions.send_and_collect(session_id, "What is Crucible?", {
+local next_part, err = cru.session.send_and_collect(session_id, "What is Crucible?", {
     timeout = 120,              -- seconds to wait for the turn (default 120)
     max_tool_result_len = 500,  -- truncate tool output at this many chars
     interactive = false,        -- see below; default false
@@ -435,14 +472,14 @@ false is right for almost every plugin. Setting it true is an assertion about
 your own channel — see the warning under
 [Full subscribe/respond pattern](#full-subscriberespond-pattern).
 
-### cru.sessions.complete(session_id, opts)
+### cru.session.complete(session_id, opts)
 
 Run **one** completion against the session's own model and get the text back.
 No tools, no history, nothing written to the session — this asks the model a
 question *about* a session rather than taking a turn in it.
 
 ```lua
-local text, err = cru.sessions.complete(session_id, {
+local text, err = cru.session.complete(session_id, {
     prompt  = "User: how do I open a kiln?",  -- required
     system  = "You name conversations.",      -- optional
     timeout = 20,                             -- seconds; default 30
@@ -450,21 +487,21 @@ local text, err = cru.sessions.complete(session_id, {
 ```
 
 `opts` may also be a bare string, which is the prompt. On failure it returns
-`(nil, reason)` like every other `cru.sessions` function; a session with no
+`(nil, reason)` like every other `cru.session` function; a session with no
 agent configured is one such failure.
 
 The bundled `auto-title` plugin is built on this: it owns the prompt, clips
 the exchange, sanitizes the answer, and the daemon persists whatever comes
 back.
 
-### cru.sessions.subscribe(session_id)
+### cru.session.subscribe(session_id)
 
 Subscribe to session events. Returns a `next_event` iterator function.
 
 Calling `next_event()` yields until the next event arrives. Returns `(event_table, nil)` for each event, or `(nil, nil)` when the stream ends.
 
 ```lua
-local next_event, err = cru.sessions.subscribe(session_id)
+local next_event, err = cru.session.subscribe(session_id)
 if not next_event then
     cru.log("warn", "Subscribe failed: " .. tostring(err))
     return
@@ -481,39 +518,39 @@ end
 
 A `text_delta` event has `event.data.text` (or `event.data.content`) containing the text chunk.
 
-### cru.sessions.unsubscribe(session_id)
+### cru.session.unsubscribe(session_id)
 
 Unsubscribe from session events. Returns `(true, nil)` on success.
 
 ```lua
-cru.sessions.unsubscribe(session_id)
+cru.session.unsubscribe(session_id)
 ```
 
-### cru.sessions.cancel(session_id)
+### cru.session.cancel(session_id)
 
 Cancel the current operation in a session. Returns `(true/false, nil)` indicating whether something was cancelled.
 
 ```lua
-local cancelled, err = cru.sessions.cancel(session_id)
+local cancelled, err = cru.session.cancel(session_id)
 ```
 
-### cru.sessions.pause(session_id)
+### cru.session.pause(session_id)
 
 Pause a session. Returns `(true, nil)` on success.
 
-### cru.sessions.resume(session_id)
+### cru.session.resume(session_id)
 
 Resume a paused session. Returns `(true, nil)` on success.
 
-### cru.sessions.end_session(session_id)
+### cru.session.end_session(session_id)
 
 End a session permanently. Returns `(true, nil)` on success.
 
 ```lua
-cru.sessions.end_session(session_id)
+cru.session.end_session(session_id)
 ```
 
-### cru.sessions.interaction_respond(session_id, request_id, response)
+### cru.session.interaction_respond(session_id, request_id, response)
 
 Respond to a permission or interaction request. The `response` table is passed through as JSON to the daemon.
 
@@ -523,7 +560,7 @@ The key is `allowed`, not `approved`: the daemon deserializes the table into
 as an unknown key and the request is rejected for the missing field.
 
 ```lua
-cru.sessions.interaction_respond(session_id, request_id, { allowed = true })
+cru.session.interaction_respond(session_id, request_id, { allowed = true })
 ```
 
 ### Full subscribe/respond pattern
@@ -547,13 +584,13 @@ Subscribe *before* sending the message to avoid missing early events:
 
 ```lua
 -- 1. Subscribe first
-local next_event, err = cru.sessions.subscribe(session_id)
+local next_event, err = cru.session.subscribe(session_id)
 if not next_event then return nil, err end
 
 -- 2. Send the message (triggers agent processing)
-local msg_id, err = cru.sessions.send_message(session_id, user_message)
+local msg_id, err = cru.session.send_message(session_id, user_message)
 if not msg_id then
-    pcall(cru.sessions.unsubscribe, session_id)
+    pcall(cru.session.unsubscribe, session_id)
     return nil, err
 end
 
@@ -574,7 +611,7 @@ while true do
 end
 
 -- 4. Clean up
-pcall(cru.sessions.unsubscribe, session_id)
+pcall(cru.session.unsubscribe, session_id)
 local response = table.concat(parts)
 ```
 
@@ -703,7 +740,7 @@ Compact the session's context. Returns `(true, nil)` on success.
 
 ### cru.context.messages(session_id, opts?)
 
-Load conversation messages. `opts`: `{ role = "user"|"assistant"|"system", limit = N }`. A thin alias over the same daemon call as `cru.sessions.messages` — identical semantics, kept here so context-manipulating code can stay inside one namespace.
+Load conversation messages. `opts`: `{ role = "user"|"assistant"|"system", limit = N }`. A thin alias over the same daemon call as `cru.session.messages` — identical semantics, kept here so context-manipulating code can stay inside one namespace.
 
 ### cru.context.remove(session_id, range)
 
@@ -730,7 +767,7 @@ Returns `(true, nil)` when queued, `(false, reason)` when dropped. Dropping is n
 
 ### cru.context.register_validator(name, fn)
 
-Register a named output validator. `fn` receives the agent's text response and returns `true`, `false`, or `(false, reason)`. A validator runs when a session agent's `output_validation` is set to `lua:<name>` — via `cru.sessions.set_output_validation(session_id, "lua:<name>")` (which also accepts the table form `{ type = "lua", name = "<name>" }`) or the `session.set_output_validation` RPC; on failure the reason is fed back to the agent for retry (`validation_retries`, default 3). A non-boolean or missing first return value counts as a failure with a descriptive reason, as does naming a validator that was never registered.
+Register a named output validator. `fn` receives the agent's text response and returns `true`, `false`, or `(false, reason)`. A validator runs when a session agent's `output_validation` is set to `lua:<name>` — via `cru.session.set_output_validation(session_id, "lua:<name>")` (which also accepts the table form `{ type = "lua", name = "<name>" }`) or the `session.set_output_validation` RPC; on failure the reason is fed back to the agent for retry (`validation_retries`, default 3). A non-boolean or missing first return value counts as a failure with a descriptive reason, as does naming a validator that was never registered.
 
 ```lua
 cru.context.register_validator("has_sources", function(text)

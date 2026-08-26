@@ -64,7 +64,7 @@ function M.list_hunks(args)
         return { error = "session_id is required" }
     end
 
-    local hunks, err = cru.sessions.review_list_hunks(args.session_id)
+    local hunks, err = cru.session.review_list_hunks(args.session_id)
     if err then
         return { error = err }
     end
@@ -94,7 +94,7 @@ function M.set_state(args)
         return { error = "state must be 'accepted', 'rejected' or 'unreviewed'" }
     end
 
-    local ok, err = cru.sessions.review_set_state(args.session_id, args.hunk_id, state)
+    local ok, err = cru.session.review_set_state(args.session_id, args.hunk_id, state)
     if not ok then
         return { error = err }
     end
@@ -116,7 +116,7 @@ function M.comment(args)
         return { error = "line_start is required" }
     end
 
-    local comment, err = cru.sessions.review_comment(args.session_id, {
+    local comment, err = cru.session.review_comment(args.session_id, {
         path = args.path,
         line_start = args.line_start,
         line_end = args.line_end,
@@ -138,7 +138,7 @@ function M.resolve_comment(args)
         return { error = "comment_id is required" }
     end
 
-    local ok, err = cru.sessions.review_resolve_comment(args.session_id, args.comment_id)
+    local ok, err = cru.session.review_resolve_comment(args.session_id, args.comment_id)
     if not ok then
         return { error = err }
     end

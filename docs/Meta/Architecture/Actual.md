@@ -842,7 +842,7 @@ plugin_boot,plugin_install}.rs`, `rpc/ui.rs`, `runtime/`.
 | `EventOutcome` | `crucible-lua/src/handlers/script_handler.rs:110` | Observed or StopChain for broadcast events |
 | `PermissionHook`, `PermissionRequest`, `PermissionHookResult` | `crucible-lua/src/handlers/permission.rs:48,25,14` | `cru.permissions.on_request` |
 | `ToolBeforeExecuteEvent`, `ToolDisplayStartHints`, `ToolDisplayCompleteHints` | `handlers/before_execute.rs:12`, `display_hooks.rs:18,42` | Tool hook payloads |
-| `DaemonSessionApi` | `crucible-lua/src/sessions/mod.rs:103` | `cru.sessions.*` contract; the daemon implements it |
+| `DaemonSessionApi` | `crucible-lua/src/sessions/mod.rs:103` | `cru.session.*` contract; the daemon implements it |
 | `DaemonSessionBridge` | `crucible-daemon/src/session_bridge.rs:23` | The one production `DaemonSessionApi` |
 | `DaemonToolsApi`, `DaemonToolsBridge` | `crucible-lua/src/tools_api.rs:95`, `crucible-daemon/src/tools_bridge.rs:19` | `cru.tools.*` contract and impl |
 | `SessionConfigRpc`, `Session`, `CurrentSession` | `crucible-lua/src/session_api.rs:67,297,489` | Lua `session` userdata and its knob contract |
@@ -896,7 +896,7 @@ methods plus `ui.config` and `ui.set_theme`; the daemon stores opaque JSON.
   grant is dropped with a warning (`discovery.rs:267`).
 - `register_permission_hook_api` names hooks from `guard.len()`
   (`handlers/permission.rs:132`), the pattern `crucible_on.rs:86-94` forbids.
-- 28 `cru.sessions` names are listed twice as strings
+- 28 `cru.session` names are listed twice as strings
   (`sessions/register.rs:26-74,187-867`); 6 `cru.kiln` names twice
   (`vault/mod.rs:64,133`); no check keeps them equal.
 - `execute_runtime_json_handler` (`handlers/before_execute.rs:83`) repeats
@@ -1141,7 +1141,7 @@ Surprising edges:
 | `InteractionRequest` kinds | `crucible-core/src/interaction/types.rs:380` | 7 | `KINDS` const; `interaction-coverage.test.ts` on the web side; `Show` has no response variant |
 | `Capability` (plugin) | `crucible-lua/src/manifest.rs:80` | 9 | serde derive for `plugin.yaml`; `parse_capability` (`lifecycle/spec.rs:31`) is a second decoder that omits `intercept_tools` |
 | Built-in ACP agents | `crucible-daemon/src/acp/discovery.rs:52` | 6 | One table; `acp_launch.rs` resolves through `builtin_command` (`discovery.rs:111`); `test_default_agent_profiles_include_all_builtin_agents` walks it |
-| `cru.sessions` names | `crucible-lua/src/sessions/register.rs:26-74,187-867` | 28 | None; the stub list and the real list are both string literals |
+| `cru.session` names | `crucible-lua/src/sessions/register.rs:26-74,187-867` | 28 | None; the stub list and the real list are both string literals |
 | REPL commands | `crucible-cli/src/tui/oil/chat_app/{autocomplete.rs:201,474; command_handling.rs:20,99}` | about 20 | None; four hand-kept lists |
 | `LogEvent` persisted names | `crucible-daemon/src/server/core/mod.rs:465-474` | 2 of 16 | A string match after `should_persist` already decoded the typed payload |
 | `TRACKED_FIELDS` | `crucible-core/src/config/cli_app.rs:5` | 18 of about 60 leaf fields | The coverage test checks the list against itself |

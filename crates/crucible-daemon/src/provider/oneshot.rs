@@ -1,6 +1,6 @@
 //! One-shot completions: a single exchange against a session's own client.
 //!
-//! The primitive under `cru.sessions.complete`. One request, one answer — no
+//! The primitive under `cru.session.complete`. One request, one answer — no
 //! tools, no history, no turn loop, and nothing written back to the session.
 //! It is the shape every "ask the model a small question about this session"
 //! feature wants: titling it, summarising it, classifying it.

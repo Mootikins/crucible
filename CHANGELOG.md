@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **`cru.sessions` is now `cru.session`, and its factory verbs return
+  handles.** One canonical module holds the lifecycle verbs plus `current()`;
+  `cru.sessions` remains as a deprecated alias forwarding to the same
+  functions (one warning per VM) and will be removed after a release. In-tree
+  plugins migrated in the same change. `create`, `get`, `list` and `fork` now
+  return `Session` userdata instead of plain tables: every field the tables
+  exposed still reads the same, and every session-scoped function is also a
+  method on the handle (`s:send_message("…")`) calling the same
+  implementation. `cru.get_session()` is likewise deprecated in favour of
+  `cru.session.current()`. Live config knobs (`.model = …`,
+  `.temperature = …`) still work only on the current session's handle;
+  handles from `create`/`get`/`list` configure through `:configure_agent`.
+
 ### Removed
 - **266 dead items and duplicate copies are gone, about 14,000 lines.** An
   audit at `7053bcfe7` read every module, and skeptic agents verified each

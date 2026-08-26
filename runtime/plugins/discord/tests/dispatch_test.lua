@@ -42,7 +42,7 @@ describe("message dispatch", function()
         }
         local had_config = cru.plugin.config
         local had_ws = cru.ws
-        local had_sessions = cru.sessions
+        local had_sessions = cru.session
         local had_paths = cru.paths
         local had_clock = cru.timer.clock
         local had_spawn = cru.timer.spawn
@@ -74,7 +74,7 @@ describe("message dispatch", function()
         end
 
         local created = {}
-        cru.sessions = {
+        cru.session = {
             create = function(opts)
                 table.insert(created, opts)
                 return { id = "dispatch-session-1" }
@@ -104,7 +104,7 @@ describe("message dispatch", function()
         local ok, err = pcall(gateway.connect)
 
         cru.ws = had_ws
-        cru.sessions = had_sessions
+        cru.session = had_sessions
         cru.paths = had_paths
         cru.timer.clock = had_clock
         cru.timer.spawn = had_spawn

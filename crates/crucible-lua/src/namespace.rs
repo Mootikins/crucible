@@ -65,6 +65,10 @@ pub enum CruNamespace {
     Retry,
     Schedule,
     Service,
+    /// The canonical session module: lifecycle verbs plus `current`.
+    Session,
+    /// The deprecated plural alias over [`CruNamespace::Session`]; removed
+    /// with the alias after the deprecation window.
     Sessions,
     Shell,
     Statusline,
@@ -122,6 +126,7 @@ impl CruNamespace {
             | Self::Retry
             | Self::Schedule
             | Self::Service
+            | Self::Session
             | Self::Sessions
             | Self::Shell
             | Self::Statusline

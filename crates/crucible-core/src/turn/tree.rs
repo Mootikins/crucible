@@ -218,7 +218,7 @@ impl ConversationTree {
     /// Per-turn summaries for every undoable turn on the current path,
     /// in oldest-to-newest order. Each entry mirrors what `undo_turns`
     /// *would* produce if invoked with the full undo depth — without
-    /// mutating the tree. Useful for the `cru.sessions.undo_history`
+    /// mutating the tree. Useful for the `cru.session.undo_history`
     /// Lua API and any UI that wants to show "what would be undone".
     pub fn turn_summaries(&self) -> Vec<crate::types::UndoSummary> {
         let path = self.path_to_here(self.current);

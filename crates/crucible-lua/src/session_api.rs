@@ -28,6 +28,14 @@
 //! command instead. This prevents plugins from unexpectedly changing models.
 
 use crate::error::LuaError;
+use crate::sessions::register::{
+    cache_stats_op, can_undo_op, cancel_op, complete_op, configure_agent_op, end_session_op,
+    fork_op, inject_op, interaction_respond_op, messages_op, pause_op, resume_op,
+    review_comment_op, review_list_hunks_op, review_resolve_comment_op, review_set_state_op,
+    send_and_collect_op, send_message_op, set_output_validation_op, subscribe_op, undo_depth_op,
+    undo_history_op, undo_op, unsubscribe_op,
+};
+use crate::sessions::DaemonSessionApi;
 use mlua::{Lua, LuaSerdeExt, MetaMethod, UserData, UserDataMethods, Value};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -186,6 +194,12 @@ impl SessionVariables {
 #[derive(Clone)]
 pub struct Session {
     rpc: Arc<Mutex<Option<Box<dyn SessionConfigRpc>>>>,
+    /// The lifecycle API a handle's methods delegate to. Present on handles
+    /// that came from `cru.session.create/get/list/fork` (they were made
+    /// *through* an API, so they carry it) and on the current-session handle
+    /// where the daemon wired it; absent otherwise, and methods then report
+    /// that they are not connected rather than silently doing nothing.
+    api: Option<Arc<dyn DaemonSessionApi>>,
     id: String,
     /// The session's working directory. Identity, not mutable config, so it
     /// lives here rather than behind `SessionConfigRpc` — a plugin that needs
@@ -202,15 +216,22 @@ pub struct Session {
     /// API. Lua sees `nil` when the caller said nothing, which is distinct from
     /// `false` ("no container even if the project has one").
     isolation: Option<serde_json::Value>,
+    /// The daemon's own response object for this session (`create`/`get`/
+    /// `list` results). Property reads that name no fixed field and no live
+    /// knob fall back to it, so `session.state` and friends keep working on
+    /// a handle exactly as they did on the plain table the API used to return.
+    record: Option<serde_json::Value>,
 }
 
 impl Session {
     pub fn new(id: String) -> Self {
         Self {
             rpc: Arc::new(Mutex::new(None)),
+            api: None,
             id,
             workspace: None,
             isolation: None,
+            record: None,
         }
     }
 
@@ -228,6 +249,30 @@ impl Session {
     pub fn with_isolation(mut self, isolation: serde_json::Value) -> Self {
         self.isolation = Some(isolation);
         self
+    }
+
+    /// Attach the daemon record this handle was built from.
+    #[must_use]
+    pub fn with_record(mut self, record: serde_json::Value) -> Self {
+        self.record = Some(record);
+        self
+    }
+
+    /// Attach the lifecycle API the handle's methods delegate to.
+    #[must_use]
+    pub fn with_api(mut self, api: Arc<dyn DaemonSessionApi>) -> Self {
+        self.api = Some(api);
+        self
+    }
+
+    /// The `(api, id)` pair a lifecycle method runs against, or why it cannot.
+    fn op_ctx(&self, op: &str) -> mlua::Result<(Arc<dyn DaemonSessionApi>, String)> {
+        match &self.api {
+            Some(api) => Ok((Arc::clone(api), self.id.clone())),
+            None => Err(mlua::Error::runtime(format!(
+                "session method '{op}' is not connected to the daemon"
+            ))),
+        }
     }
 
     pub fn bind(&self, rpc: Box<dyn SessionConfigRpc>) {
@@ -248,6 +293,65 @@ impl Session {
             .ok_or_else(|| mlua::Error::runtime("Session not connected"))
             .and_then(|rpc| f(rpc.as_ref()).map_err(mlua::Error::runtime))
     }
+}
+
+/// Wire one lifecycle verb onto the handle.
+///
+/// The free function `cru.session.<name>(id, …)` and the method `s:<name>(…)`
+/// call the same `_op`, so the two surfaces cannot drift. The session id
+/// comes from the handle, which is the whole point of a handle.
+macro_rules! session_method {
+    ($m:expr, $name:literal, $op:path) => {
+        $m.add_async_method($name, |lua, this, (): ()| {
+            let this = this.clone();
+            async move {
+                let (api, sid) = match this.op_ctx($name) {
+                    Ok(pair) => pair,
+                    // The free functions answer `(nil, err)`; a method that
+                    // raised instead would be the one caller in the module
+                    // with a different error convention.
+                    Err(mlua::Error::RuntimeError(msg)) => {
+                        let err = lua.create_string(msg)?;
+                        return Ok((Value::Nil, Value::String(err)));
+                    }
+                    Err(e) => return Err(e),
+                };
+                $op(&lua, &api, &sid).await
+            }
+        });
+    };
+    ($m:expr, $name:literal, $op:path, $a:ident: $ta:ty) => {
+        $m.add_async_method($name, |lua, this, $a: $ta| {
+            let this = this.clone();
+            async move {
+                let (api, sid) = match this.op_ctx($name) {
+                    Ok(pair) => pair,
+                    Err(mlua::Error::RuntimeError(msg)) => {
+                        let err = lua.create_string(msg)?;
+                        return Ok((Value::Nil, Value::String(err)));
+                    }
+                    Err(e) => return Err(e),
+                };
+                $op(&lua, &api, &sid, $a).await
+            }
+        });
+    };
+    ($m:expr, $name:literal, $op:path, $a:ident: $ta:ty, $b:ident: $tb:ty) => {
+        $m.add_async_method($name, |lua, this, ($a, $b): ($ta, $tb)| {
+            let this = this.clone();
+            async move {
+                let (api, sid) = match this.op_ctx($name) {
+                    Ok(pair) => pair,
+                    Err(mlua::Error::RuntimeError(msg)) => {
+                        let err = lua.create_string(msg)?;
+                        return Ok((Value::Nil, Value::String(err)));
+                    }
+                    Err(e) => return Err(e),
+                };
+                $op(&lua, &api, &sid, $a, $b).await
+            }
+        });
+    };
 }
 
 impl UserData for Session {
@@ -286,7 +390,24 @@ impl UserData for Session {
                             None => Ok(Value::Nil),
                         })
                 }
-                _ => Err(mlua::Error::runtime(format!("unknown property: {}", key))),
+                // A handle from create/get/list carries the daemon's own
+                // response object; its fields (`session_type`, `state`,
+                // `kilns`, …) read exactly as they did on the plain table
+                // the API used to return. Live state above always wins over
+                // a stale record.
+                key => {
+                    let from_record = this
+                        .record
+                        .as_ref()
+                        .and_then(|record| record.get(key))
+                        .map(|v| lua.to_value(v))
+                        .transpose()
+                        .map_err(mlua::Error::runtime)?;
+                    match from_record {
+                        Some(v) => Ok(v),
+                        None => Err(mlua::Error::runtime(format!("unknown property: {key}"))),
+                    }
+                }
             }
         });
 
@@ -330,7 +451,10 @@ impl UserData for Session {
                     let prompt: String = lua.unpack(val)?;
                     this.with_rpc(|r| r.set_system_prompt(&prompt))
                 }
-                _ => Err(mlua::Error::runtime(format!("cannot set session.{}", key))),
+                _ => Err(mlua::Error::runtime(format!(
+                    "cannot set session.{key}: read-only (record fields are read-only; use \
+                     configure_agent to change another session's agent)"
+                ))),
             },
         );
 
@@ -355,6 +479,60 @@ impl UserData for Session {
                 Ok(())
             })
         });
+
+        // ── Lifecycle verbs ─────────────────────────────────────────────
+        session_method!(methods, "configure_agent", configure_agent_op, config: Value);
+        session_method!(methods, "send_message", send_message_op, content: String);
+        session_method!(methods, "cancel", cancel_op);
+        session_method!(methods, "pause", pause_op);
+        session_method!(methods, "resume", resume_op);
+        session_method!(methods, "end_session", end_session_op);
+        session_method!(
+            methods,
+            "interaction_respond",
+            interaction_respond_op,
+            request_id: String,
+            response: Value
+        );
+        session_method!(methods, "subscribe", subscribe_op);
+        session_method!(methods, "unsubscribe", unsubscribe_op);
+        session_method!(
+            methods,
+            "send_and_collect",
+            send_and_collect_op,
+            content: String,
+            opts: Value
+        );
+        session_method!(methods, "messages", messages_op, opts: Value);
+        session_method!(methods, "inject", inject_op, role: String, content: String);
+        session_method!(methods, "fork", fork_op, opts: Value);
+        session_method!(methods, "cache_stats", cache_stats_op);
+        session_method!(methods, "complete", complete_op, opts: Value);
+        session_method!(
+            methods,
+            "set_output_validation",
+            set_output_validation_op,
+            spec: Value
+        );
+        session_method!(methods, "undo", undo_op, opts: Value);
+        session_method!(methods, "can_undo", can_undo_op);
+        session_method!(methods, "undo_depth", undo_depth_op);
+        session_method!(methods, "undo_history", undo_history_op);
+        session_method!(methods, "review_list_hunks", review_list_hunks_op);
+        session_method!(
+            methods,
+            "review_set_state",
+            review_set_state_op,
+            hunk: String,
+            state: String
+        );
+        session_method!(methods, "review_comment", review_comment_op, spec: Value);
+        session_method!(
+            methods,
+            "review_resolve_comment",
+            review_resolve_comment_op,
+            comment_id: String
+        );
     }
 }
 
@@ -401,22 +579,35 @@ impl Default for CurrentSession {
 
 pub fn register_session_module(lua: &Lua) -> Result<CurrentSession, LuaError> {
     let manager = CurrentSession::new();
-    let globals = lua.globals();
+    let cru = crate::lua_util::get_or_create_namespace(lua, "cru")?;
 
-    let table: mlua::Table = globals.get("cru").or_else(|_| {
-        let t = lua.create_table()?;
-        globals.set("cru", t.clone())?;
-        Ok::<_, mlua::Error>(t)
-    })?;
-
+    // `current` is registered here, not with the lifecycle module, because the
+    // closure must close over *this* CurrentSession — the same instance the
+    // daemon later binds a session into. The lifecycle registrations merge
+    // their functions into the same table, so whichever runs first, both
+    // surfaces end up on `cru.session`.
+    let session_mod = crate::lua_util::get_or_create_module(lua, "session")?;
     let mgr = manager.clone();
-    table.set(
+    session_mod.set(
+        "current",
+        lua.create_function(move |_, ()| {
+            mgr.get_current()
+                .ok_or_else(|| mlua::Error::runtime("No active session"))
+        })?,
+    )?;
+
+    // Deprecated spelling kept for one release. Zero production callers when
+    // it was deprecated; it stays only so a user's local plugin keeps working.
+    let mgr = manager.clone();
+    cru.set(
         "get_session",
         lua.create_function(move |_, ()| {
             mgr.get_current()
                 .ok_or_else(|| mlua::Error::runtime("No active session"))
         })?,
     )?;
+
+    crate::lua_util::install_sessions_alias(lua)?;
 
     Ok(manager)
 }
@@ -531,6 +722,31 @@ pub mod tests {
 
         let id: String = lua.load("return cru.get_session().id").eval().unwrap();
         assert_eq!(id, "test-123");
+    }
+
+    /// `current()` and the deprecated `get_session()` read the same binding —
+    /// the daemon sets one current session per VM, and both spellings of the
+    /// getter must see it.
+    #[test]
+    fn current_and_the_deprecated_getter_read_the_same_session() {
+        let (lua, mgr) = TestLuaBuilder::new().build_with_current_session();
+
+        let session = Session::new("s-current".to_string());
+        session.bind(Box::new(MockRpc::new()));
+        mgr.set_current(session);
+
+        let (current_id, deprecated_id, temp): (String, String, f64) = lua
+            .load(
+                r#"
+                local cur = cru.session.current()
+                return cur.id, cru.get_session().id, cur.temperature
+                "#,
+            )
+            .eval()
+            .unwrap();
+        assert_eq!(current_id, "s-current");
+        assert_eq!(deprecated_id, "s-current");
+        assert!((temp - 0.7).abs() < 0.001);
     }
 
     #[test]

@@ -26,7 +26,7 @@ pub struct SessionCreateRequest {
     /// fallback daemon-side means clients can never drift from it.
     ///
     /// Replaces the pre-flatten `kiln` + `connect_kilns` pair. `kilns` is the
-    /// spelling the Lua binding always used (`cru.sessions.create{ kilns =
+    /// spelling the Lua binding always used (`cru.session.create{ kilns =
     /// {...} }`), so plugins keep working; a caller still sending `kiln` or
     /// `connect_kilns` now gets the default set, which is the intended break.
     #[serde(default, skip_serializing_if = "Option::is_none")]

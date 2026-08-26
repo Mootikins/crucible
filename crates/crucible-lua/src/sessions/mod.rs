@@ -1,8 +1,12 @@
 //! Multi-session management API for Lua scripts
 //!
-//! Provides `cru.sessions.*` functions for managing daemon sessions from Lua plugins.
-//! This module defines a [`DaemonSessionApi`] trait that the daemon crate implements,
-//! avoiding a circular dependency (crucible-lua cannot depend on crucible-daemon).
+//! Provides `cru.session.*` functions for managing daemon sessions from Lua
+//! plugins, and the shared operation bodies (`_op` functions in `register`)
+//! that the `Session` handle's methods also call. This module defines a
+//! [`DaemonSessionApi`] trait that the daemon crate implements, avoiding a
+//! circular dependency (crucible-lua cannot depend on crucible-daemon).
+//!
+//! `cru.sessions` (plural) is a deprecated alias forwarding to `cru.session`.
 //!
 //! ## Architecture
 //!
@@ -20,37 +24,36 @@
 //! ## Usage in Lua
 //!
 //! ```lua
-//! -- Create a new session
-//! local session, err = cru.sessions.create("chat", "/path/to/kiln")
+//! -- Create a new session (returns a handle)
+//! local session, err = cru.session.create({ type = "chat" })
 //! if session then
 //!     print(session.id, session.state)
 //! end
 //!
-//! -- List all sessions
-//! local sessions, err = cru.sessions.list()
+//! -- List all sessions (handles again; `list` is the only plural verb)
+//! local sessions, err = cru.session.list()
 //! for _, s in ipairs(sessions) do
 //!     print(s.id, s.session_type, s.state)
 //! end
 //!
-//! -- Send a message to a session
-//! local response_id, err = cru.sessions.send_message("chat-2025-...", "Hello!")
+//! -- Send a message: free function or handle method, same body
+//! local response_id, err = cru.session.send_message(session.id, "Hello!")
+//! local response_id, err = session:send_message("Hello!")
 //!
-//! -- Subscribe to events
-//! local next_event, err = cru.sessions.subscribe("chat-2025-...")
-//! if next_event then
-//!     local event = next_event()  -- blocks until next event
-//!     print(event.type, event.data)
-//! end
+//! -- The session this VM is executing for
+//! local cur = cru.session.current()
 //!
 //! -- End a session
-//! cru.sessions.end_session("chat-2025-...")
+//! cru.session.end_session(session.id)
 //! ```
 
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::pin::Pin;
 
-mod register;
+// `pub(crate)` so `session_api` can reach the shared `_op` bodies the handle
+// methods and the free functions both call.
+pub(crate) mod register;
 
 pub use register::{register_sessions_module, register_sessions_module_with_api};
 
@@ -99,7 +102,7 @@ pub enum ResponsePart {
 /// # Error Convention
 ///
 /// Methods return `Result<T, String>` where the error string is surfaced to Lua
-/// as the second return value: `local result, err = cru.sessions.create(...)`.
+/// as the second return value: `local result, err = cru.session.create(...)`.
 pub trait DaemonSessionApi: Send + Sync + 'static {
     /// Create a new session.
     ///

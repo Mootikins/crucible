@@ -315,7 +315,7 @@ fn session_create_request_agent_card_roundtrips_and_is_distinct_from_agent_name(
     assert_eq!(roundtrip["agent_card"], "researcher");
 }
 
-/// `cru.sessions.create{ kilns = {...} }` is the spelling every plugin uses,
+/// `cru.session.create{ kilns = {...} }` is the spelling every plugin uses,
 /// and it is now the wire name too — the flatten collapsed `kiln` +
 /// `connect_kilns` into it, so the binding sends its table through untouched.
 /// Order is preserved because the daemon takes the first entry as the
