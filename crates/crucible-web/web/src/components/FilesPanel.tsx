@@ -20,7 +20,7 @@ import { moveTargetRel, type FileDragData } from '@/lib/file-dnd';
 import type { KilnListEntry, FsEntry } from '@/lib/types';
 import { buildRoster, rootKey, type TreeRoot } from '@/lib/tree-root';
 import { resolveSessionRoot, sessionRoots, type SessionRoot } from '@/lib/session-roots';
-import { pinnedRootKey, treeRootActions } from '@/stores/treeRootStore';
+import { NO_SESSION_PIN_KEY, pinnedRootKey, treeRootActions } from '@/stores/treeRootStore';
 import type { FileTreeNode as Node } from '@/lib/file-tree/types';
 import type { SortSpec } from '@/lib/file-tree/types';
 import { makeFileCollection, sortTree } from '@/lib/file-tree/collection';
@@ -143,8 +143,16 @@ export const FilesPanel: Component = () => {
   const roster = createMemo(() => buildRoster(projects(), kilns()));
 
   // What this session can browse: its workspace and attached kilns first,
-  // then every other registered kiln.
-  const roots = createMemo(() => sessionRoots(currentSession(), kilns(), projects()));
+  // then every other registered kiln. Roots the daemon already refused to
+  // list are excluded — offering a root that only errors re-traps the tree.
+  const roots = createMemo(() => {
+    const all = sessionRoots(currentSession(), kilns(), projects());
+    const keep = (r: SessionRoot) => !unlistable.has(r.path);
+    return {
+      own: all.own.filter(keep),
+      others: all.others.filter(keep),
+    };
+  });
 
   /**
    * The root on screen. Follows the active session unless that session has a
@@ -152,7 +160,7 @@ export const FilesPanel: Component = () => {
    * the session list out of this panel.
    */
   const activeRoot = createMemo<SessionRoot | null>(() =>
-    resolveSessionRoot(roots(), pinnedRootKey(currentSession()?.id)),
+    resolveSessionRoot(roots(), pinnedRootKey(currentSession()?.id ?? NO_SESSION_PIN_KEY)),
   );
 
   /**
@@ -164,7 +172,11 @@ export const FilesPanel: Component = () => {
   const stripRoots = createMemo<SessionRoot[]>(() => {
     const { own } = roots();
     const active = activeRoot();
-    return active && active.origin === 'other-kiln' ? [...own, active] : own;
+    // other-kiln AND other-project: a browsed root outside the session must
+    // appear in the strip or the selection has nowhere to live.
+    return active && (active.origin === 'other-kiln' || active.origin === 'other-project')
+      ? [...own, active]
+      : own;
   });
 
   /**
@@ -175,8 +187,11 @@ export const FilesPanel: Component = () => {
    * `resolveSessionRoot` rather than stranding the tree.
    */
   const selectRoot = (r: TreeRoot) => {
-    const id = currentSession()?.id;
-    if (id) treeRootActions.pin(id, r);
+    // No session yet: pin under the session-less key so a cold-start pick
+    // still browses. A sessionless browse dies the moment a session appears
+    // (its pin map is per-session), which is the right lifetime.
+    const id = currentSession()?.id ?? NO_SESSION_PIN_KEY;
+    treeRootActions.pin(id, r);
   };
 
   /**
@@ -220,6 +235,11 @@ export const FilesPanel: Component = () => {
   // top-level fetch would discard the loaded subtrees — the machine then
   // paints the persisted-expanded nodes as empty, which reads as the tree
   // spontaneously collapsing (the bug this replaces).
+  // Roots the daemon refused to list ("not a registered project"). Keyed by
+  // path; cleared never — a workspace that 422s once will 422 again this
+  // session, and re-offering it in the strip just re-traps the tree.
+  const unlistable = new Set<string>();
+
   async function loadProjectTree(root: TreeRoot) {
     setLoading(true);
     setError(null);
@@ -248,7 +268,17 @@ export const FilesPanel: Component = () => {
       }
     } catch (e) {
       setRawRoot(null);
-      setError(e instanceof Error ? e.message : 'Failed to list directory');
+      // A workspace the daemon refuses to list (not a registered project —
+      // e.g. ~/.crucible or a scratch tmpdir a session was born in) must not
+      // strand the tree on an error banner: remember the root as unlistable
+      // so the strip stops offering it and the active root falls through to
+      // something browsable.
+      unlistable.add(root.path);
+      setError(
+        e instanceof Error && e.message
+          ? e.message
+          : `Failed to list ${root.path}`,
+      );
     } finally {
       setLoading(false);
     }

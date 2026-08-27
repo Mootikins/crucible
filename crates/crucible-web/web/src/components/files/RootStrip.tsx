@@ -45,7 +45,7 @@ export const RootStrip: Component<{
               data-origin={r.origin}
               aria-pressed={isActive(r)}
               title={
-                r.origin === 'other-kiln'
+                r.origin === 'other-kiln' || r.origin === 'other-project'
                   ? `${r.name} — browsing only; this session is not attached`
                   : r.path
               }
@@ -55,7 +55,7 @@ export const RootStrip: Component<{
                 'bg-surface-elevated text-shell-ink': isActive(r),
                 'text-muted hover:text-shell-ink hover:bg-hover-wash': !isActive(r),
                 // Dimmed + italic: the tree shows it, the agent does not.
-                'italic opacity-60': r.origin === 'other-kiln',
+                'italic opacity-60': r.origin === 'other-kiln' || r.origin === 'other-project',
               }}
             >
               {r.name}

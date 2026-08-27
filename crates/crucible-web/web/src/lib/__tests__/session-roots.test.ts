@@ -15,6 +15,12 @@ const PROJECTS: Project[] = [
     kilns: [],
     last_accessed: '2026-01-01T00:00:00Z',
   },
+  {
+    path: '/home/me/other-repo',
+    name: 'other-repo',
+    kilns: [],
+    last_accessed: '2026-01-01T00:00:00Z',
+  },
 ];
 
 const session = (over: Partial<Session> = {}): Session =>
@@ -46,14 +52,17 @@ describe('sessionRoots', () => {
     ]);
   });
 
-  it('offers every unattached kiln separately', () => {
+  it('offers every unattached kiln and non-workspace project separately', () => {
     const { others } = sessionRoots(
       session({ workspace: '/home/me/crucible', kilns: ['docs'] }),
       KILNS,
       PROJECTS,
     );
-    expect(others.map((r) => r.name)).toEqual(['notes', 'archive']);
-    expect(others.every((r) => r.origin === 'other-kiln')).toBe(true);
+    expect(others.map((r) => [r.name, r.origin])).toEqual([
+      ['notes', 'other-kiln'],
+      ['archive', 'other-kiln'],
+      ['other-repo', 'other-project'],
+    ]);
   });
 
   // A session with no workspace is a legitimate shape (a tools-only agent),
@@ -66,7 +75,13 @@ describe('sessionRoots', () => {
   it('has no roots at all with no session', () => {
     const roots = sessionRoots(null, KILNS, PROJECTS);
     expect(roots.own).toEqual([]);
-    expect(roots.others.map((r) => r.name)).toEqual(['docs', 'notes', 'archive']);
+    expect(roots.others.map((r) => r.name)).toEqual([
+      'docs',
+      'notes',
+      'archive',
+      'crucible',
+      'other-repo',
+    ]);
   });
 
   // `kilnPathForName` answers null for an unknown name, and null is not a
@@ -116,6 +131,22 @@ describe('resolveSessionRoot', () => {
 
   it('falls back when the pin no longer resolves', () => {
     expect(resolveSessionRoot(roots(), 'kiln:/home/me/deleted')?.name).toBe('crucible');
+  });
+
+  // Pinning a REGISTERED PROJECT that is not this session's workspace must
+  // browse it, not silently fall back: the roster offers every project, and a
+  // pick that does nothing reads as broken. Projects get the same
+  // browse-not-attach treatment kilns already have.
+  it('honours a pin to a registered project the session does not work in', () => {
+    const pinned = resolveSessionRoot(roots(), 'project:/home/me/other-repo');
+    expect(pinned?.name).toBe('other-repo');
+    expect(pinned?.origin).toBe('other-project');
+  });
+
+  // An unregistered directory was never offered by the roster; a stale pin to
+  // one must not invent a root out of thin air.
+  it('still falls back for a pin to an unregistered project path', () => {
+    expect(resolveSessionRoot(roots(), 'project:/home/me/gone')?.name).toBe('crucible');
   });
 
   it('is null when the session reaches nothing at all', () => {

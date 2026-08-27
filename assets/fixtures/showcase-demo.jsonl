@@ -1,80 +1,21 @@
 {"version": 1, "session_id": "chat-2026-08-26T1000-demo", "recording_mode": "granular", "started_at": "2026-08-26T10:00:00Z"}
-{"ts": "2026-08-26T10:00:00.005000Z", "seq": 1, "event": "session_initialized", "session_id": "chat-2026-08-26T1000-demo", "data": {"model": "", "mode": "normal", "agent_name": null, "kiln_path": "/home/user/notes", "workspace_path": "/home/user/notes"}}
-{"ts": "2026-08-26T10:00:00.020000Z", "seq": 2, "event": "kiln_notes_indexed", "session_id": "chat-2026-08-26T1000-demo", "data": {"notes": ["note:Precognition.md", "note:Kilns.md", "note:The Knowledge Graph.md", "note:Semantic Search.md", "note:Wikilinks.md"]}}
-{"ts": "2026-08-26T10:00:00.030000Z", "seq": 3, "event": "mcp_servers_ready", "session_id": "chat-2026-08-26T1000-demo", "data": {"servers": []}}
-{"ts": "2026-08-26T10:00:00.120000Z", "seq": 4, "event": "user_message", "session_id": "chat-2026-08-26T1000-demo", "data": {"message_id": "msg-demo-1", "content": "How does precognition decide which notes to pull in?"}}
-{"ts": "2026-08-26T10:00:00.260000Z", "seq": 5, "event": "precognition_complete", "session_id": "chat-2026-08-26T1000-demo", "data": {"notes_count": 3, "query_summary": "How does precognition decide which notes to pull in?", "notes": [{"title": "Precognition", "kiln": "docs", "score": 0.91}, {"title": "Semantic Search", "kiln": "docs", "score": 0.84}, {"title": "The Knowledge Graph", "kiln": "docs", "score": 0.78}]}}
-{"ts": "2026-08-26T10:00:00.400000Z", "seq": 6, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "Before "}}
-{"ts": "2026-08-26T10:00:00.445000Z", "seq": 7, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "your "}}
-{"ts": "2026-08-26T10:00:00.490000Z", "seq": 8, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "message "}}
-{"ts": "2026-08-26T10:00:00.535000Z", "seq": 9, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "reaches "}}
-{"ts": "2026-08-26T10:00:00.580000Z", "seq": 10, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "the "}}
-{"ts": "2026-08-26T10:00:00.625000Z", "seq": 11, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "model, "}}
-{"ts": "2026-08-26T10:00:00.670000Z", "seq": 12, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "Crucible "}}
-{"ts": "2026-08-26T10:00:00.715000Z", "seq": 13, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "embeds "}}
-{"ts": "2026-08-26T10:00:00.760000Z", "seq": 14, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "your "}}
-{"ts": "2026-08-26T10:00:00.805000Z", "seq": 15, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "question "}}
-{"ts": "2026-08-26T10:00:00.850000Z", "seq": 16, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "and "}}
-{"ts": "2026-08-26T10:00:00.895000Z", "seq": 17, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "searches "}}
-{"ts": "2026-08-26T10:00:00.940000Z", "seq": 18, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "every "}}
-{"ts": "2026-08-26T10:00:00.985000Z", "seq": 19, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "attached "}}
-{"ts": "2026-08-26T10:00:01.030000Z", "seq": 20, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "kiln "}}
-{"ts": "2026-08-26T10:00:01.075000Z", "seq": 21, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "for "}}
-{"ts": "2026-08-26T10:00:01.120000Z", "seq": 22, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "semantically "}}
-{"ts": "2026-08-26T10:00:01.165000Z", "seq": 23, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "similar "}}
-{"ts": "2026-08-26T10:00:01.210000Z", "seq": 24, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "notes. "}}
-{"ts": "2026-08-26T10:00:01.255000Z", "seq": 25, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "The "}}
-{"ts": "2026-08-26T10:00:01.300000Z", "seq": 26, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "top "}}
-{"ts": "2026-08-26T10:00:01.345000Z", "seq": 27, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "matches "}}
-{"ts": "2026-08-26T10:00:01.390000Z", "seq": 28, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "\u2014 "}}
-{"ts": "2026-08-26T10:00:01.435000Z", "seq": 29, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "here, "}}
-{"ts": "2026-08-26T10:00:01.480000Z", "seq": 30, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "Precognition "}}
-{"ts": "2026-08-26T10:00:01.525000Z", "seq": 31, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "itself, "}}
-{"ts": "2026-08-26T10:00:01.570000Z", "seq": 32, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "Semantic "}}
-{"ts": "2026-08-26T10:00:01.615000Z", "seq": 33, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "Search, "}}
-{"ts": "2026-08-26T10:00:01.660000Z", "seq": 34, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "and "}}
-{"ts": "2026-08-26T10:00:01.705000Z", "seq": 35, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "The "}}
-{"ts": "2026-08-26T10:00:01.750000Z", "seq": 36, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "Knowledge "}}
-{"ts": "2026-08-26T10:00:01.795000Z", "seq": 37, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "Graph "}}
-{"ts": "2026-08-26T10:00:01.840000Z", "seq": 38, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "\u2014 "}}
-{"ts": "2026-08-26T10:00:01.885000Z", "seq": 39, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "are "}}
-{"ts": "2026-08-26T10:00:01.930000Z", "seq": 40, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "injected "}}
-{"ts": "2026-08-26T10:00:01.975000Z", "seq": 41, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "as "}}
-{"ts": "2026-08-26T10:00:02.020000Z", "seq": 42, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "context "}}
-{"ts": "2026-08-26T10:00:02.065000Z", "seq": 43, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "above "}}
-{"ts": "2026-08-26T10:00:02.110000Z", "seq": 44, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "your "}}
-{"ts": "2026-08-26T10:00:02.155000Z", "seq": 45, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "question. "}}
-{"ts": "2026-08-26T10:00:02.200000Z", "seq": 46, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "Relevance "}}
-{"ts": "2026-08-26T10:00:02.245000Z", "seq": 47, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "is "}}
-{"ts": "2026-08-26T10:00:02.290000Z", "seq": 48, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "decided "}}
-{"ts": "2026-08-26T10:00:02.335000Z", "seq": 49, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "by "}}
-{"ts": "2026-08-26T10:00:02.380000Z", "seq": 50, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "embedding "}}
-{"ts": "2026-08-26T10:00:02.425000Z", "seq": 51, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "similarity, "}}
-{"ts": "2026-08-26T10:00:02.470000Z", "seq": 52, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "not "}}
-{"ts": "2026-08-26T10:00:02.515000Z", "seq": 53, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "keywords, "}}
-{"ts": "2026-08-26T10:00:02.560000Z", "seq": 54, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "so "}}
-{"ts": "2026-08-26T10:00:02.605000Z", "seq": 55, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "a "}}
-{"ts": "2026-08-26T10:00:02.650000Z", "seq": 56, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "note "}}
-{"ts": "2026-08-26T10:00:02.695000Z", "seq": 57, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "written "}}
-{"ts": "2026-08-26T10:00:02.740000Z", "seq": 58, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "months "}}
-{"ts": "2026-08-26T10:00:02.785000Z", "seq": 59, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "ago "}}
-{"ts": "2026-08-26T10:00:02.830000Z", "seq": 60, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "surfaces "}}
-{"ts": "2026-08-26T10:00:02.875000Z", "seq": 61, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "if "}}
-{"ts": "2026-08-26T10:00:02.920000Z", "seq": 62, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "its "}}
-{"ts": "2026-08-26T10:00:02.965000Z", "seq": 63, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "meaning "}}
-{"ts": "2026-08-26T10:00:03.010000Z", "seq": 64, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "fits. "}}
-{"ts": "2026-08-26T10:00:03.055000Z", "seq": 65, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "You "}}
-{"ts": "2026-08-26T10:00:03.100000Z", "seq": 66, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "can "}}
-{"ts": "2026-08-26T10:00:03.145000Z", "seq": 67, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "shape "}}
-{"ts": "2026-08-26T10:00:03.190000Z", "seq": 68, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "or "}}
-{"ts": "2026-08-26T10:00:03.235000Z", "seq": 69, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "cap "}}
-{"ts": "2026-08-26T10:00:03.280000Z", "seq": 70, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "the "}}
-{"ts": "2026-08-26T10:00:03.325000Z", "seq": 71, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "selection "}}
-{"ts": "2026-08-26T10:00:03.370000Z", "seq": 72, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "with "}}
-{"ts": "2026-08-26T10:00:03.415000Z", "seq": 73, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": ":set "}}
-{"ts": "2026-08-26T10:00:03.460000Z", "seq": 74, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "precognition.results "}}
-{"ts": "2026-08-26T10:00:03.505000Z", "seq": 75, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "or "}}
-{"ts": "2026-08-26T10:00:03.550000Z", "seq": 76, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "a "}}
-{"ts": "2026-08-26T10:00:03.595000Z", "seq": 77, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "precognition_select "}}
-{"ts": "2026-08-26T10:00:03.640000Z", "seq": 78, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "hook."}}
-{"ts": "2026-08-26T10:00:03.885000Z", "seq": 79, "event": "message_complete", "session_id": "chat-2026-08-26T1000-demo", "data": {"message_id": "msg-demo-1", "full_response": "Before your message reaches the model, Crucible embeds your question and searches every attached kiln for semantically similar notes. The top matches \u2014 here, Precognition itself, Semantic Search, and The Knowledge Graph \u2014 are injected as context above your question. Relevance is decided by embedding similarity, not keywords, so a note written months ago surfaces if its meaning fits. You can shape or cap the selection with :set precognition.results or a precognition_select hook."}}
+{"ts": "2026-08-26T10:00:00.005000Z", "seq": 1, "event": "session_initialized", "session_id": "chat-2026-08-26T1000-demo", "data": {"model": "glm-4.7-flash", "mode": "normal", "agent_name": null, "kiln_path": "/home/user/notes", "workspace_path": "/home/user/notes"}}
+{"ts": "2026-08-26T10:00:00.300000Z", "seq": 2, "event": "kiln_notes_indexed", "session_id": "chat-2026-08-26T1000-demo", "data": {"notes": ["note:Precognition.md", "note:Kilns.md", "note:The Knowledge Graph.md", "note:Semantic Search.md", "note:Wikilinks.md"]}}
+{"ts": "2026-08-26T10:00:00.450000Z", "seq": 3, "event": "mcp_servers_ready", "session_id": "chat-2026-08-26T1000-demo", "data": {"servers": []}}
+{"ts": "2026-08-26T10:00:00.900000Z", "seq": 4, "event": "user_message", "session_id": "chat-2026-08-26T1000-demo", "data": {"message_id": "msg-demo-1", "content": "How does precognition decide which notes to pull in?"}}
+{"ts": "2026-08-26T10:00:02.100000Z", "seq": 5, "event": "precognition_complete", "session_id": "chat-2026-08-26T1000-demo", "data": {"notes_count": 3, "query_summary": "How does precognition decide which notes to pull in?", "notes": [{"title": "Precognition", "kiln": "docs", "score": 0.91}, {"title": "Semantic Search", "kiln": "docs", "score": 0.84}, {"title": "The Knowledge Graph", "kiln": "docs", "score": 0.78}]}}
+{"ts": "2026-08-26T10:00:02.600000Z", "seq": 6, "event": "thinking", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "The user asks how precognition selects notes. "}}
+{"ts": "2026-08-26T10:00:03.400000Z", "seq": 7, "event": "thinking", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "The Precognition note documents this directly \u2014 search, then inject."}}
+{"ts": "2026-08-26T10:00:04.300000Z", "seq": 8, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "Before your message reaches the model, "}}
+{"ts": "2026-08-26T10:00:05Z", "seq": 9, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "Crucible embeds your question and searches "}}
+{"ts": "2026-08-26T10:00:05.700000Z", "seq": 10, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "every attached kiln for semantically similar "}}
+{"ts": "2026-08-26T10:00:06.400000Z", "seq": 11, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "notes. The top matches \u2014 Precognition "}}
+{"ts": "2026-08-26T10:00:07.100000Z", "seq": 12, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "itself, Semantic Search, and The Knowledge "}}
+{"ts": "2026-08-26T10:00:07.800000Z", "seq": 13, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "Graph here \u2014 are injected as "}}
+{"ts": "2026-08-26T10:00:08.500000Z", "seq": 14, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "context above your question. Relevance is "}}
+{"ts": "2026-08-26T10:00:09.200000Z", "seq": 15, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "decided by embedding similarity, not keywords, "}}
+{"ts": "2026-08-26T10:00:09.900000Z", "seq": 16, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "so a note written months ago "}}
+{"ts": "2026-08-26T10:00:10.600000Z", "seq": 17, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "surfaces if its meaning fits. Shape "}}
+{"ts": "2026-08-26T10:00:11.300000Z", "seq": 18, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "or cap the selection with :set "}}
+{"ts": "2026-08-26T10:00:12Z", "seq": 19, "event": "text_delta", "session_id": "chat-2026-08-26T1000-demo", "data": {"content": "precognition.results or a precognition_select hook."}}
+{"ts": "2026-08-26T10:00:13.400000Z", "seq": 20, "event": "message_complete", "session_id": "chat-2026-08-26T1000-demo", "data": {"message_id": "msg-demo-1", "full_response": "Before your message reaches the model, Crucible embeds your question and searches every attached kiln for semantically similar notes. The top matches \u2014 Precognition itself, Semantic Search, and The Knowledge Graph here \u2014 are injected as context above your question. Relevance is decided by embedding similarity, not keywords, so a note written months ago surfaces if its meaning fits. Shape or cap the selection with :set precognition.results or a precognition_select hook."}}

@@ -19,11 +19,12 @@ import { sessionWorkspace } from '@/lib/session-scope';
 import { rootKey, type TreeRoot } from '@/lib/tree-root';
 
 /**
- * Where a root came from — and, for a kiln, whether the session can already
- * query it. `other-kiln` is browsable but NOT attached: the agent cannot read
- * or cite it until the user attaches it deliberately.
+ * Where a root came from — and, for a non-workspace root, whether the session
+ * can already query it. `other-kiln` and `other-project` are browsable but NOT
+ * attached: the agent cannot read or cite them until the user attaches
+ * deliberately.
  */
-export type RootOrigin = 'workspace' | 'attached-kiln' | 'other-kiln';
+export type RootOrigin = 'workspace' | 'attached-kiln' | 'other-kiln' | 'other-project';
 
 export interface SessionRoot extends TreeRoot {
   origin: RootOrigin;
@@ -95,6 +96,22 @@ export function sessionRoots(
       name: k.name!,
       origin: 'other-kiln' as const,
     }));
+
+  // Registered projects the session does not work in, same treatment as
+  // unattached kilns: the roster offers them, so browsing them must be
+  // possible. Without this, pinning such a project resolved to nothing and the
+  // picker silently stayed on the old root.
+  const ownPaths = new Set(own.map((r) => r.path.replace(/\/+$/, '')));
+  for (const p of projects) {
+    const path = p.path.replace(/\/+$/, '');
+    if (!path || ownPaths.has(path)) continue;
+    others.push({
+      kind: 'project',
+      path: p.path,
+      name: p.name || basename(p.path),
+      origin: 'other-project',
+    });
+  }
 
   return { own, others };
 }

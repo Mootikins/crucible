@@ -21,4 +21,4 @@ Type "/tmp/cru-showcase-wrapper"
 Enter
 Sleep 2s
 Show
-Sleep 6s
+Sleep 4s

@@ -20,6 +20,10 @@ import { rootKey } from '@/lib/tree-root';
 export const TREE_ROOT_STORAGE_KEY = 'crucible:treeRoot.bySession';
 /** The pre-session global preference. Read once to drop it, never written. */
 const LEGACY_GLOBAL_KEY = 'crucible:treeRoot';
+/** Pin key for a session-less browse: picking a root before any session
+ * exists must still re-root the tree, or the roster's picker is dead on a
+ * cold start. Not a session id, so it can never collide with one. */
+export const NO_SESSION_PIN_KEY = '__no_session__';
 
 type PinMap = Record<string, string>;
 
