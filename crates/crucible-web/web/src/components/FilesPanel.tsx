@@ -169,15 +169,10 @@ export const FilesPanel: Component = () => {
    * re-root the tree to something the strip does not show — the selection
    * would have nowhere to live.
    */
-  const stripRoots = createMemo<SessionRoot[]>(() => {
-    const { own } = roots();
-    const active = activeRoot();
-    // other-kiln AND other-project: a browsed root outside the session must
-    // appear in the strip or the selection has nowhere to live.
-    return active && (active.origin === 'other-kiln' || active.origin === 'other-project')
-      ? [...own, active]
-      : own;
-  });
+  /** Strip contents: the session's own roots ONLY. Picking from the roster
+   * dropdown re-roots the tree in place — the dropdown's own label shows the
+   * browsed root, so a picked root must NOT materialize as a strip tab. */
+  const stripRoots = createMemo<SessionRoot[]>(() => roots().own);
 
   /**
    * Picking a root PINS it for this session. There is no separate "follow"

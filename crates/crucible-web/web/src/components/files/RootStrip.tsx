@@ -82,11 +82,10 @@ export const RootStrip: Component<{
 
       <RootDropdown
         groups={props.groups}
-        selectedKey={null}
+        selectedKey={props.active ? rootKey(props.active) : null}
         onSelect={props.onSelect}
         activeRoot={props.active}
         onNotice={props.onNotice}
-        bare
       />
     </div>
   );

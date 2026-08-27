@@ -33,16 +33,11 @@ export const RootDropdown: Component<{
   groups: RosterGroup[];
   selectedKey: string | null;
   onSelect: (r: TreeRoot) => void;
-  /** Resolved active root — its repo feeds the Branches section. */
+  /** Resolved active root — its repo feeds the Branches section and its name
+   * labels the trigger (the dropdown IS the current-root display). */
   activeRoot?: TreeRoot | null;
   /** Surface warnings/errors (FilesPanel banner). */
   onNotice?: (msg: string | null) => void;
-  /**
-   * Render as a bare chevron: the overflow at the end of `RootStrip`, where
-   * the strip already names the active root and a second label would repeat
-   * it. Suppresses the trigger's text, not its menu.
-   */
-  bare?: boolean;
 }> = (props) => {
   const { refreshProjects } = useProjectSafe();
   const index = () => rosterIndex(props.groups);
@@ -148,18 +143,16 @@ export const RootDropdown: Component<{
       <ChipSelect
         name="Browse root"
         options={options()}
-        // Bare: an empty placeholder leaves the trigger's label empty, so the
-        // chevron stands alone beside the strip that already names the root.
-        placeholder={props.bare ? '' : undefined}
-        value={props.bare ? '' : (props.selectedKey ?? '')}
+        // The trigger IS the current-root display: picking from the menu
+        // re-roots the tree in place (no strip tab appears for the pick), so
+        // the label must always name the resolved active root — including one
+        // that is not itself a roster row (an unregistered workspace).
+        triggerLabel={props.activeRoot ? props.activeRoot.name : undefined}
+        value={props.selectedKey ?? ''}
         onSelect={onPick}
         onOpen={loadBranches}
         testid="root-dropdown"
-        triggerClass={
-          props.bare
-            ? 'inline-flex items-center px-1 py-1 rounded text-muted hover:text-shell-ink hover:bg-hover-wash transition-colors'
-            : 'inline-flex items-center gap-1 max-w-[12rem] bg-surface-elevated text-shell-ink text-xs px-2 py-1 rounded border border-hairline hover:border-hairline-strong transition-colors'
-        }
+        triggerClass="inline-flex items-center gap-1 max-w-[12rem] bg-surface-elevated text-shell-ink text-xs px-2 py-1 rounded border border-hairline hover:border-hairline-strong transition-colors"
         action={{
           label: 'Clone a repository…',
           placeholder: 'github.com/owner/repo or git URL',
