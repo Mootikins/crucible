@@ -289,14 +289,20 @@ fn precognition_result_renders_as_a_system_line_listing_notes() {
     let nodes = app.container_list().nodes();
     let last = nodes.last().expect("a node was added");
     let focus = crucible_oil::focus::FocusContext::default();
-    let mut ctx = crate::tui::oil::ViewContext::new(&focus);
+    let ctx = crate::tui::oil::ViewContext::new(&focus);
     let rendered = crucible_oil::render::render_to_plain_text(&last.render(None, &ctx), 120);
     assert!(
         rendered.contains("precognition pulled 2 notes"),
         "count line missing: {rendered}"
     );
-    assert!(rendered.contains("Kilns (docs, 0.91)"), "kiln-labelled entry missing: {rendered}");
-    assert!(rendered.contains("Wikilinks (0.72)"), "unlabelled entry missing: {rendered}");
+    assert!(
+        rendered.contains("Kilns (docs, 0.91)"),
+        "kiln-labelled entry missing: {rendered}"
+    );
+    assert!(
+        rendered.contains("Wikilinks (0.72)"),
+        "unlabelled entry missing: {rendered}"
+    );
 }
 
 #[test]
