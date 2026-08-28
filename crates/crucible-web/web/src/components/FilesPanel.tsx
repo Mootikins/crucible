@@ -142,6 +142,15 @@ export const FilesPanel: Component = () => {
   // kiln, plus branches and clone). The STRIP is narrower on purpose.
   const roster = createMemo(() => buildRoster(projects(), kilns()));
 
+  // Roots the daemon refused to list ("not a registered project"). Keyed by
+  // path; cleared never — a workspace that 422s once will 422 again this
+  // session, and re-offering it just re-traps the tree.
+  //
+  // Declared ABOVE the memo that reads it. `createMemo` runs its computation
+  // eagerly, so a `const` declared further down left the memo reading a name
+  // in its temporal dead zone — the panel threw on mount.
+  const unlistable = new Set<string>();
+
   // What this session can browse: its workspace and attached kilns first,
   // then every other registered kiln. Roots the daemon already refused to
   // list are excluded — offering a root that only errors re-traps the tree.
@@ -230,10 +239,6 @@ export const FilesPanel: Component = () => {
   // top-level fetch would discard the loaded subtrees — the machine then
   // paints the persisted-expanded nodes as empty, which reads as the tree
   // spontaneously collapsing (the bug this replaces).
-  // Roots the daemon refused to list ("not a registered project"). Keyed by
-  // path; cleared never — a workspace that 422s once will 422 again this
-  // session, and re-offering it in the strip just re-traps the tree.
-  const unlistable = new Set<string>();
 
   async function loadProjectTree(root: TreeRoot) {
     setLoading(true);
