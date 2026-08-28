@@ -113,6 +113,50 @@ beforeEach(() => {
   );
 });
 
+/**
+ * The panel has exactly ONE root control.
+ *
+ * It used to have two: a strip of tabs for the session's own roots AND a
+ * dropdown for the rest. They were the same piece of state behind two
+ * affordances, so a root picked in the menu had no tab to live in and the two
+ * disagreed about what "selected" meant. The strip is gone; these hold it
+ * gone.
+ */
+describe('FilesPanel — one always-visible root selector', () => {
+  it('renders the dropdown and no tab strip', async () => {
+    const { findByTestId, queryByTestId, container } = render(() => <FilesPanel />);
+    await findByTestId('root-dropdown');
+    expect(queryByTestId('root-strip')).toBeNull();
+    expect(container.querySelector('[data-testid^="root-tab-"]')).toBeNull();
+  });
+
+  it('shows the dropdown even with nothing to browse', async () => {
+    // No session, no projects, no kilns: the emptiest state the panel has.
+    currentSessionValue = null;
+    projectRoots = [];
+    listKilnsMock.mockResolvedValue([]);
+    const { findByTestId } = render(() => <FilesPanel />);
+    const trigger = await findByTestId('root-dropdown');
+    expect(trigger.textContent).toContain('No roots');
+  });
+
+  it('names the browsed root on the trigger', async () => {
+    const { findByTestId } = render(() => <FilesPanel />);
+    const trigger = await findByTestId('root-dropdown');
+    expect(trigger.textContent).toContain('kiln');
+  });
+
+  // Attaching is a separate, explicit gesture from browsing: picking a root
+  // must never widen what the agent can read. The affordance therefore exists
+  // only while an UNATTACHED kiln is the one on screen.
+  it('offers Attach only for a browsed kiln the session has not attached', async () => {
+    const { findByTestId, queryByTestId } = render(() => <FilesPanel />);
+    await findByTestId('root-dropdown');
+    // The fixture session is attached to its kiln, so there is nothing to attach.
+    expect(queryByTestId('root-attach')).toBeNull();
+  });
+});
+
 describe('FilesPanel — a project root loads once', () => {
   // `swrLocal` applies twice by design (cached value, then fetched), so
   // `setKilns` fires twice per mount. `activeRoot` is a memo over a rebuilt

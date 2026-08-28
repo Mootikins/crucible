@@ -73,8 +73,16 @@ test('picking a non-workspace project from the root dropdown browses it', async 
     timeout: 10_000,
   });
 
-  // And the strip names the browsed root, dimmed as browse-only.
-  const stripTab = page.locator('[data-testid^="root-tab-"]:has-text("other-repo")');
-  await expect(stripTab).toBeVisible();
-  await expect(stripTab).toHaveAttribute('data-origin', 'other-project');
+  // The dropdown IS the current-root display, so its own trigger names the
+  // browsed root. Nothing else in the panel shows a root: the strip of tabs
+  // that used to sit beside it is gone.
+  await expect(page.locator('[data-testid="root-dropdown"]')).toContainText('other-repo');
+  await expect(page.locator('[data-testid^="root-tab-"]')).toHaveCount(0);
+
+  // Reopening lists it as browse-only — this session works in a different
+  // project, so browsing it never let the agent read it.
+  await page.click('[data-testid="root-dropdown"]', { force: true });
+  await expect(
+    page.locator('[role="option"]:has-text("other-repo")'),
+  ).toContainText('browse only');
 });

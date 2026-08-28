@@ -1,6 +1,7 @@
-import { Component, Show, createSignal } from 'solid-js';
+import { Component, createSignal } from 'solid-js';
 import type { RosterGroup, TreeRoot } from '@/lib/tree-root';
 import { rosterIndex, rootKey } from '@/lib/tree-root';
+import type { SessionRoot } from '@/lib/session-roots';
 import { ChipSelect, type ChipOption } from '@/components/composer/ChipSelect';
 import {
   isGitRepoUrl,
@@ -17,12 +18,28 @@ function basename(p: string): string {
   return parts[parts.length - 1] || p;
 }
 
+/** Section header for the session's own roots — its workspace and its kilns. */
+const OWN_GROUP = 'This session';
+
 /**
- * Popout picker for the browsable root — the composer's ChipSelect idiom
- * (searchable list, grouped sections) instead of a native `<select>`, because
- * the roster now goes beyond existing roots: when the active root is a git
- * project, a Branches section lists every workspace target its providers
- * offer. Picking one jumps to its checkout, creating it if there is none.
+ * The file tree's ONLY root control: one dropdown that selects one root.
+ *
+ * It is a selector, not a tab bar. An earlier version paired this popout with
+ * a strip of tabs for the session's own roots, which gave the panel two
+ * controls for one piece of state — the tabs and the menu disagreed about what
+ * "selected" meant, and a root picked from the menu had no tab to live in. The
+ * session's roots are now the first section of this list, so there is one
+ * control, one selection and one label.
+ *
+ * The trigger is ALWAYS rendered, including with an empty roster. It reads "No
+ * roots" and still opens: the Clone action is how a fresh install gets its
+ * first root, so hiding the control makes the empty state a dead end.
+ *
+ * It uses the composer's ChipSelect idiom (searchable list, grouped sections)
+ * instead of a native `<select>`, because the roster goes beyond existing
+ * roots: when the active root is a git project, a Branches section lists every
+ * workspace target its providers offer. Picking one jumps to its checkout,
+ * creating it if there is none.
  *
  * The branch list and the creation both come from the workspace provider that
  * owns them. This file used to call `scm.branches` and `scm.worktree_add`
@@ -30,6 +47,9 @@ function basename(p: string): string {
  * copy of what a branch is.
  */
 export const RootDropdown: Component<{
+  /** The session's own roots — workspace and attached kilns. They lead the list. */
+  own: SessionRoot[];
+  /** Full registry roster: every project, worktree and kiln. */
   groups: RosterGroup[];
   selectedKey: string | null;
   onSelect: (r: TreeRoot) => void;
@@ -40,8 +60,14 @@ export const RootDropdown: Component<{
   onNotice?: (msg: string | null) => void;
 }> = (props) => {
   const { refreshProjects } = useProjectSafe();
-  const index = () => rosterIndex(props.groups);
-  const nonEmpty = () => props.groups.filter((g) => g.roots.length > 0);
+  const ownKeys = () => new Set(props.own.map(rootKey));
+  // Own roots override their roster twins, so one key resolves to one row.
+  const index = () => {
+    const idx = rosterIndex(props.groups);
+    for (const r of props.own) idx.set(rootKey(r), r);
+    return idx;
+  };
+  const hasRoots = () => props.own.length > 0 || props.groups.some((g) => g.roots.length > 0);
 
   const [targets, setTargets] = createSignal<ProviderTarget[]>([]);
 
@@ -61,12 +87,25 @@ export const RootDropdown: Component<{
   };
 
   const options = (): ChipOption[] => {
-    const rosterOptions = nonEmpty().flatMap((g) =>
-      g.roots.map((r) => ({
-        value: rootKey(r),
-        label: r.name,
-        group: g.label as string,
-      })),
+    const ownOptions = props.own.map((r) => ({
+      value: rootKey(r),
+      label: r.name,
+      group: OWN_GROUP,
+      hint: r.origin === 'workspace' ? 'workspace' : 'attached',
+    }));
+    // A root the session does not own is browsable but NOT readable by the
+    // agent. Say so on the row: picking one is navigation, and a navigation
+    // gesture must never read as widening what the agent can see.
+    const skip = ownKeys();
+    const rosterOptions = props.groups.flatMap((g) =>
+      g.roots
+        .filter((r) => !skip.has(rootKey(r)))
+        .map((r) => ({
+          value: rootKey(r),
+          label: r.name,
+          group: g.label as string,
+          hint: 'browse only',
+        })),
     );
     const repo = props.activeRoot?.path;
     const branchOptions = targets().map((t) => ({
@@ -75,7 +114,7 @@ export const RootDropdown: Component<{
       group: repo ? `Branches — ${basename(repo)}` : 'Branches',
       hint: t.hint,
     }));
-    return [...rosterOptions, ...branchOptions];
+    return [...ownOptions, ...rosterOptions, ...branchOptions];
   };
 
   const selectWorktreeRoot = async (path: string) => {
@@ -136,47 +175,43 @@ export const RootDropdown: Component<{
   };
 
   return (
-    <Show
-      when={nonEmpty().length > 0}
-      fallback={<span class="text-xs text-muted-dark">No roots</span>}
-    >
-      <ChipSelect
-        name="Browse root"
-        options={options()}
-        // The trigger IS the current-root display: picking from the menu
-        // re-roots the tree in place (no strip tab appears for the pick), so
-        // the label must always name the resolved active root — including one
-        // that is not itself a roster row (an unregistered workspace).
-        triggerLabel={props.activeRoot ? props.activeRoot.name : undefined}
-        value={props.selectedKey ?? ''}
-        onSelect={onPick}
-        onOpen={loadBranches}
-        testid="root-dropdown"
-        triggerClass="inline-flex items-center gap-1 max-w-[12rem] bg-surface-elevated text-shell-ink text-xs px-2 py-1 rounded border border-hairline hover:border-hairline-strong transition-colors"
-        action={{
-          label: 'Clone a repository…',
-          placeholder: 'github.com/owner/repo or git URL',
-          buttonLabel: 'Clone',
-          validate: isGitRepoUrl,
-          run: (url) => void cloneRepo(url),
-        }}
-        create={
-          targets().length > 0
-            ? {
-                // Branch names only — explicit URL forms (https://, git@…)
-                // contain ':' and are excluded here; the clone action row owns
-                // those. owner/repo-shaped text stays valid as a branch name
-                // (feature/x is the common case).
-                when: (text) => !!text && !/\s|\.\.|^[-/]|\\|:|@\{|\/$/.test(text),
-                label: (text) => `Create branch + worktree '${text}'`,
-                // The provider validates the name properly and refuses what it
-                // cannot honour; the guard above only keeps clone URLs out of
-                // this row.
-                run: (text) => pickTarget(`${targets()[0].spec.split(':')[0]}:${text}`),
-              }
-            : undefined
-        }
-      />
-    </Show>
+    <ChipSelect
+      name="Browse root"
+      options={options()}
+      // The trigger IS the current-root display: picking from the menu re-roots
+      // the tree in place, so the label must always name the resolved active
+      // root — including one that is not itself a roster row (an unregistered
+      // workspace). With nothing to browse it says so and still opens, because
+      // the Clone action inside is the way out of an empty roster.
+      triggerLabel={props.activeRoot?.name ?? (hasRoots() ? undefined : 'No roots')}
+      value={props.selectedKey ?? ''}
+      onSelect={onPick}
+      onOpen={loadBranches}
+      testid="root-dropdown"
+      triggerClass="inline-flex items-center gap-1 min-w-0 max-w-[12rem] bg-surface-elevated text-shell-ink text-xs px-2 py-1 rounded border border-hairline hover:border-hairline-strong transition-colors"
+      action={{
+        label: 'Clone a repository…',
+        placeholder: 'github.com/owner/repo or git URL',
+        buttonLabel: 'Clone',
+        validate: isGitRepoUrl,
+        run: (url) => void cloneRepo(url),
+      }}
+      create={
+        targets().length > 0
+          ? {
+              // Branch names only — explicit URL forms (https://, git@…)
+              // contain ':' and are excluded here; the clone action row owns
+              // those. owner/repo-shaped text stays valid as a branch name
+              // (feature/x is the common case).
+              when: (text) => !!text && !/\s|\.\.|^[-/]|\\|:|@\{|\/$/.test(text),
+              label: (text) => `Create branch + worktree '${text}'`,
+              // The provider validates the name properly and refuses what it
+              // cannot honour; the guard above only keeps clone URLs out of
+              // this row.
+              run: (text) => pickTarget(`${targets()[0].spec.split(':')[0]}:${text}`),
+            }
+          : undefined
+      }
+    />
   );
 };

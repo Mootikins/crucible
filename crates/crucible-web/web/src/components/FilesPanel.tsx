@@ -31,11 +31,11 @@ import {
   type RootMount,
 } from '@/lib/file-tree/reconcile';
 import { FileTreeView, cssId } from './files/FileTreeView';
-import { RootStrip } from './files/RootStrip';
+import { RootDropdown } from './files/RootDropdown';
 import type { ContextAction } from './files/FileTreeContextMenu';
 import { currentOpenFilePath, revealLoadedPath, revealLazyPath } from './files/file-tree-a11y';
 import type { UseTreeViewReturn } from '@ark-ui/solid';
-import { ChevronsDownUp, RefreshCw, ArrowUpDown, Plus } from '@/lib/icons';
+import { ChevronsDownUp, RefreshCw, ArrowUpDown, Plus, Link2 } from '@/lib/icons';
 
 // ---- localStorage helpers (per-root expanded state, global sort) ----------
 const EXPANDED_KEY = (rootId: string) => `crucible.filetree.expanded.${rootId}`;
@@ -138,8 +138,8 @@ export const FilesPanel: Component = () => {
     swrLocal('kilns', listKilns, setKilns);
   });
 
-  // The full roster still backs the overflow chevron (every project, every
-  // kiln, plus branches and clone). The STRIP is narrower on purpose.
+  // Every registered project, worktree and kiln, plus the branches and clone
+  // action the dropdown adds. The session's own roots lead the same list.
   const roster = createMemo(() => buildRoster(projects(), kilns()));
 
   // Roots the daemon refused to list ("not a registered project"). Keyed by
@@ -173,15 +173,11 @@ export const FilesPanel: Component = () => {
   );
 
   /**
-   * Strip contents: the session's own roots, plus the unattached kiln being
-   * browsed. Without that second part, picking a kiln from the overflow would
-   * re-root the tree to something the strip does not show — the selection
-   * would have nowhere to live.
+   * The dropdown's leading section: the session's workspace and its attached
+   * kilns. They are the roots the agent can actually read, so they sort above
+   * the rest of the registry rather than into it.
    */
-  /** Strip contents: the session's own roots ONLY. Picking from the roster
-   * dropdown re-roots the tree in place — the dropdown's own label shows the
-   * browsed root, so a picked root must NOT materialize as a strip tab. */
-  const stripRoots = createMemo<SessionRoot[]>(() => roots().own);
+  const ownRoots = createMemo<SessionRoot[]>(() => roots().own);
 
   /**
    * Picking a root PINS it for this session. There is no separate "follow"
@@ -594,14 +590,33 @@ export const FilesPanel: Component = () => {
       {/* No "Files" heading — the panel tab already names it. The dropdown
           leads so the browsed root reads as the panel's title. */}
       <div class="shrink-0 flex items-center justify-between gap-2 p-3 border-b border-hairline">
-        <RootStrip
-          roots={stripRoots()}
-          active={activeRoot()}
-          onSelect={selectRoot}
-          onAttach={attachRoot}
-          groups={roster()}
-          onNotice={setError}
-        />
+        <div class="flex items-center gap-1 min-w-0 flex-1">
+          <RootDropdown
+            own={ownRoots()}
+            groups={roster()}
+            selectedKey={activeRoot() ? rootKey(activeRoot()!) : null}
+            onSelect={selectRoot}
+            activeRoot={activeRoot()}
+            onNotice={setError}
+          />
+
+          {/* Only on the ACTIVE unattached kiln: an affordance for a root you
+              are not looking at would be a claim about a corpus you cannot
+              see. */}
+          <Show when={activeRoot()?.origin === 'other-kiln' ? activeRoot() : null} keyed>
+            {(root) => (
+              <button
+                type="button"
+                data-testid="root-attach"
+                title={`Let this session query ${root.name}`}
+                onClick={() => attachRoot(root)}
+                class="flex items-center gap-1 px-1.5 py-1 rounded text-[11px] text-muted hover:text-shell-ink hover:bg-hover-wash whitespace-nowrap transition-colors"
+              >
+                <Link2 class="w-3 h-3" /> Attach
+              </button>
+            )}
+          </Show>
+        </div>
         <div class="flex items-center gap-1 shrink-0">
           <button
             type="button"

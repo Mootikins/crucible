@@ -3,6 +3,7 @@ import { createMemo, createSignal } from 'solid-js';
 import { render, fireEvent, screen, waitFor } from '@solidjs/testing-library';
 import { RootDropdown } from '../RootDropdown';
 import { buildRoster, rootKey, rosterIndex, type TreeRoot } from '@/lib/tree-root';
+import type { SessionRoot } from '@/lib/session-roots';
 import type { KilnListEntry, Project } from '@/lib/types';
 
 vi.mock('@/lib/api', () => ({
@@ -26,6 +27,25 @@ const openPopout = (getByTestId: (id: string) => HTMLElement) => {
   fireEvent.click(getByTestId('root-dropdown'));
 };
 
+const WORKSPACE: SessionRoot = {
+  kind: 'project',
+  path: '/home/me/crucible',
+  name: 'crucible',
+  origin: 'workspace',
+};
+const ATTACHED: SessionRoot = {
+  kind: 'kiln',
+  path: '/vault',
+  name: 'Vault',
+  origin: 'attached-kiln',
+};
+
+/** Section header + row labels in document order, so grouping is assertable. */
+const rowLabels = (popout: HTMLElement): string[] =>
+  [...popout.querySelectorAll('[role="option"]')].map((el) =>
+    (el.querySelector('span')?.textContent ?? '').trim(),
+  );
+
 beforeEach(() => {
   // A repo-less root answers with no targets rather than throwing — the
   // enumerating calls swallow provider failure so one bad plugin cannot take
@@ -42,7 +62,7 @@ describe('RootDropdown', () => {
       [{ path: '/vault', name: 'Vault' }],
     );
     const { getByTestId } = render(() => (
-      <RootDropdown groups={groups} selectedKey={null} onSelect={() => {}} />
+      <RootDropdown own={[]} groups={groups} selectedKey={null} onSelect={() => {}} />
     ));
     openPopout(getByTestId);
     const popout = screen.getByTestId('root-dropdown-popout');
@@ -67,7 +87,7 @@ describe('RootDropdown', () => {
       return first ? rootKey(first) : null;
     });
     const { getByTestId } = render(() => (
-      <RootDropdown groups={roster()} selectedKey={activeKey()} onSelect={() => {}} />
+      <RootDropdown own={[]} groups={roster()} selectedKey={activeKey()} onSelect={() => {}} />
     ));
 
     setProjects([project('/p1', 'crucible')]);
@@ -87,20 +107,95 @@ describe('RootDropdown', () => {
     const groups = buildRoster([project('/p1', 'P1')], [{ path: '/vault', name: 'Vault' }]);
     const onSelect = vi.fn<(r: TreeRoot) => void>();
     const { getByTestId } = render(() => (
-      <RootDropdown groups={groups} selectedKey={null} onSelect={onSelect} />
+      <RootDropdown own={[]} groups={groups} selectedKey={null} onSelect={onSelect} />
     ));
     openPopout(getByTestId);
     fireEvent.click(screen.getByText('Vault'));
     expect(onSelect).toHaveBeenCalledWith({ kind: 'kiln', path: '/vault', name: 'Vault' });
   });
 
-  it('shows a "No roots" fallback and no trigger for an empty roster', () => {
+  // The dropdown is the file pane's ONLY root control. An empty roster must
+  // still render it — and it must still open, because the Clone action inside
+  // is the only way out of having no roots at all.
+  it('keeps an openable trigger labelled "No roots" for an empty roster', () => {
     const groups = buildRoster([], []);
-    const { container, queryByTestId } = render(() => (
-      <RootDropdown groups={groups} selectedKey={null} onSelect={() => {}} />
+    const { getByTestId } = render(() => (
+      <RootDropdown own={[]} groups={groups} selectedKey={null} onSelect={() => {}} />
     ));
-    expect(queryByTestId('root-dropdown')).toBeNull();
-    expect(container.textContent).toContain('No roots');
+    const trigger = getByTestId('root-dropdown');
+    expect(trigger.textContent).toContain('No roots');
+    expect(trigger.hasAttribute('disabled')).toBe(false);
+
+    openPopout(getByTestId);
+    expect(screen.getByTestId('root-dropdown-action').textContent).toContain('Clone a repository');
+  });
+
+  // The strip of tabs this replaced showed the session's own roots. They are
+  // now the list's first section, so one control still reaches them in one
+  // open — and the roster does not repeat them further down.
+  it("leads with the session's own roots and does not repeat them in the roster", () => {
+    const groups = buildRoster(
+      [project('/home/me/crucible', 'crucible'), project('/p2', 'other')],
+      [
+        { path: '/vault', name: 'Vault' },
+        { path: '/archive', name: 'Archive' },
+      ],
+    );
+    const { getByTestId } = render(() => (
+      <RootDropdown
+        own={[WORKSPACE, ATTACHED]}
+        groups={groups}
+        selectedKey={rootKey(WORKSPACE)}
+        onSelect={() => {}}
+      />
+    ));
+    openPopout(getByTestId);
+    const popout = screen.getByTestId('root-dropdown-popout');
+
+    expect(rowLabels(popout)).toEqual(['crucible', 'Vault', 'other', 'Archive']);
+    expect(popout.textContent).toContain('This session');
+    // Four roots, four rows: the workspace and the attached kiln appear once
+    // each, in the session section, not again under Projects/Kilns.
+    expect(popout.querySelectorAll('[role="option"]')).toHaveLength(4);
+  });
+
+  // Browsing is not attaching. A root outside the session says so on its row,
+  // because picking one must never read as widening what the agent can see.
+  it('marks roots the session does not own as browse-only', () => {
+    const groups = buildRoster([project('/home/me/crucible', 'crucible')], [
+      { path: '/archive', name: 'Archive' },
+    ]);
+    const { getByTestId } = render(() => (
+      <RootDropdown
+        own={[WORKSPACE]}
+        groups={groups}
+        selectedKey={rootKey(WORKSPACE)}
+        onSelect={() => {}}
+      />
+    ));
+    openPopout(getByTestId);
+    const rows = [...screen.getByTestId('root-dropdown-popout').querySelectorAll('[role="option"]')];
+    const hintOf = (label: string) =>
+      rows.find((r) => r.textContent?.includes(label))?.textContent ?? '';
+    expect(hintOf('crucible')).toContain('workspace');
+    expect(hintOf('Archive')).toContain('browse only');
+  });
+
+  // A session root that is NOT a roster row (an unregistered workspace) is
+  // still selectable — the roster index alone could not resolve its key.
+  it('resolves a pick of a session root the roster does not list', () => {
+    const onSelect = vi.fn<(r: TreeRoot) => void>();
+    const { getByTestId } = render(() => (
+      <RootDropdown
+        own={[WORKSPACE]}
+        groups={buildRoster([], [])}
+        selectedKey={null}
+        onSelect={onSelect}
+      />
+    ));
+    openPopout(getByTestId);
+    fireEvent.click(screen.getByText('crucible'));
+    expect(onSelect).toHaveBeenCalledWith(WORKSPACE);
   });
 
   it('lists workspace targets for an active project root and jumps to an existing checkout', async () => {
@@ -126,6 +221,7 @@ describe('RootDropdown', () => {
     const groups = buildRoster([project('/repo', 'repo')], []);
     const { getByTestId } = render(() => (
       <RootDropdown
+        own={[]}
         groups={groups}
         selectedKey="project:/repo"
         onSelect={onSelect}
@@ -162,6 +258,7 @@ describe('RootDropdown', () => {
     const groups = buildRoster([project('/repo', 'repo')], []);
     const { getByTestId } = render(() => (
       <RootDropdown
+        own={[]}
         groups={groups}
         selectedKey="project:/repo"
         onSelect={onSelect}
@@ -195,6 +292,7 @@ describe('RootDropdown', () => {
     const groups = buildRoster([project('/repo', 'repo')], []);
     const { getByTestId } = render(() => (
       <RootDropdown
+        own={[]}
         groups={groups}
         selectedKey="project:/repo"
         onSelect={() => {}}
@@ -232,6 +330,7 @@ describe('RootDropdown', () => {
     );
     const { getByTestId } = render(() => (
       <RootDropdown
+        own={[]}
         groups={groups}
         selectedKey={null}
         onSelect={() => {}}
