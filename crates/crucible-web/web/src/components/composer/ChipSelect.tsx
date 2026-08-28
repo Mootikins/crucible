@@ -404,7 +404,7 @@ export const ChipSelect: Component<{
           <div
             ref={panelRef}
             data-testid={props.testid ? `${props.testid}-popout` : undefined}
-            class="fixed z-50 min-w-[220px] max-w-[320px] overflow-y-auto bg-surface-overlay border border-hairline-strong rounded-lg shadow-xl py-1 cru-anim-rise"
+            class="fixed z-50 flex flex-col min-w-[220px] max-w-[320px] overflow-hidden bg-surface-overlay border border-hairline-strong rounded-lg shadow-xl py-1 cru-anim-rise"
             style={{
               left: `${panelPos().left}px`,
               ...(panelPos().top !== undefined
@@ -418,7 +418,7 @@ export const ChipSelect: Component<{
             }}
           >
             <Show when={searchable()}>
-              <div class="px-2 pb-1 pt-0.5 border-b border-hairline">
+              <div class="shrink-0 px-2 pb-1 pt-0.5 border-b border-hairline">
                 <input
                   ref={inputRef}
                   value={filter()}
@@ -432,7 +432,11 @@ export const ChipSelect: Component<{
                 />
               </div>
             </Show>
-            <div class="max-h-[300px] overflow-y-auto" role="listbox" aria-label={props.name}>
+            <div
+              class="flex-1 min-h-0 overflow-y-auto"
+              role="listbox"
+              aria-label={props.name}
+            >
               <For each={visible()}>
                 {(o, i) => (
                   <>
@@ -514,7 +518,7 @@ export const ChipSelect: Component<{
                       setActionMode(true);
                       queueMicrotask(() => actionInputRef?.focus());
                     }}
-                    class="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs text-primary hover:bg-hover-wash transition-colors border-t border-hairline"
+                    class="shrink-0 w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs text-primary hover:bg-hover-wash transition-colors border-t border-hairline"
                     data-testid={props.testid ? `${props.testid}-action` : undefined}
                   >
                     <span class="w-3.5 flex-shrink-0">＋</span>
@@ -522,7 +526,7 @@ export const ChipSelect: Component<{
                   </button>
                 }
               >
-                <div class="px-2 py-1.5 border-t border-hairline flex items-center gap-1.5">
+                <div class="shrink-0 px-2 py-1.5 border-t border-hairline flex items-center gap-1.5">
                   <input
                     ref={actionInputRef}
                     value={actionText()}
@@ -553,7 +557,9 @@ export const ChipSelect: Component<{
                 </div>
               </Show>
             </Show>
-            <Show when={props.footer}>{props.footer}</Show>
+            <Show when={props.footer}>
+              <div class="shrink-0">{props.footer}</div>
+            </Show>
           </div>
         </Portal>
 

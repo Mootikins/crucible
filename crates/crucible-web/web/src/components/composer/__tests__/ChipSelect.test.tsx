@@ -24,6 +24,12 @@ const runOnOptions = (): ChipOption[] => [
 
 const openMenu = () => fireEvent.click(screen.getByTestId('run-on'));
 
+/** Every element in the popout that would grow its own scroll bar. */
+const scrollers = (panel: HTMLElement): Element[] =>
+  [panel, ...panel.querySelectorAll('*')].filter((el) =>
+    el.className && String(el.className).split(/\s+/).includes('overflow-y-auto'),
+  );
+
 const renderChip = (onSelect = vi.fn(), options = runOnOptions()) => {
   render(() => (
     <ChipSelect
@@ -164,5 +170,51 @@ describe('ChipSelect submenus', () => {
 
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByTestId('run-on-popout')).toBeNull();
+  });
+});
+
+/**
+ * One scroll bar, not two.
+ *
+ * The panel used to scroll AND hold a `max-h-[300px]` scrolling list, so a
+ * long roster painted two scroll bars side by side and the filter box scrolled
+ * away with the options it filters. The panel is now a column that clips, and
+ * the list is the only thing that scrolls.
+ */
+describe('ChipSelect — one scroll container', () => {
+  const manyOptions = (): ChipOption[] =>
+    Array.from({ length: 40 }, (_, i) => ({ value: `v${i}`, label: `Option ${i}` }));
+
+  it('scrolls the option list and nothing else', () => {
+    renderChip(vi.fn(), manyOptions());
+    openMenu();
+    const panel = screen.getByTestId('run-on-popout');
+
+    expect(scrollers(panel)).toEqual([screen.getByRole('listbox')]);
+  });
+
+  it('pins the filter box and the action row outside the scroll area', () => {
+    render(() => (
+      <ChipSelect
+        name="Run on"
+        testid="run-on"
+        options={manyOptions()}
+        value=""
+        onSelect={vi.fn()}
+        action={{
+          label: 'Clone a repository…',
+          placeholder: 'git URL',
+          buttonLabel: 'Clone',
+          run: vi.fn(),
+        }}
+      />
+    ));
+    openMenu();
+    const list = screen.getByRole('listbox');
+
+    // Both sit in the panel beside the list, never inside it — a control that
+    // scrolls away with the rows cannot filter them.
+    expect(list.contains(screen.getByLabelText('Search Run on'))).toBe(false);
+    expect(list.contains(screen.getByTestId('run-on-action'))).toBe(false);
   });
 });
