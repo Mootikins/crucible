@@ -15,9 +15,7 @@ use anyhow::{Context, Result};
 
 use crate::common::daemon_client;
 use crate::config::CliConfig;
-use crucible_core::enrichment::eval::{
-    hit_rate_at_k, mrr, rank_of, GoldenSet, NamedGoldenSet,
-};
+use crucible_core::enrichment::eval::{hit_rate_at_k, mrr, rank_of, GoldenSet, NamedGoldenSet};
 
 /// One scored query, rendered as a row.
 #[derive(Clone)]
@@ -163,7 +161,11 @@ fn render_class_table(rows: &[(String, Vec<QueryResult>)], top_k: usize) {
     );
 }
 
-fn render_multi(named_sets: &[NamedGoldenSet], class_results: &[(String, Vec<QueryResult>)], top_k: usize) {
+fn render_multi(
+    named_sets: &[NamedGoldenSet],
+    class_results: &[(String, Vec<QueryResult>)],
+    top_k: usize,
+) {
     render_class_table(class_results, top_k);
     println!();
     for NamedGoldenSet { name, .. } in named_sets {
@@ -173,7 +175,8 @@ fn render_multi(named_sets: &[NamedGoldenSet], class_results: &[(String, Vec<Que
                     "{} {:<4} {:<6} {} → {}",
                     name,
                     i + 1,
-                    r.rank.map(|v| v.to_string())
+                    r.rank
+                        .map(|v| v.to_string())
                         .unwrap_or_else(|| "miss".into()),
                     truncate(&r.question, 48),
                     r.expect_note,
@@ -329,7 +332,10 @@ mod tests {
         // Render into a captured string via a tiny shim: reuse aggregate math directly.
         let mut sorted = rows.clone();
         sorted.sort_by(|a, b| a.0.cmp(&b.0));
-        assert_eq!(sorted[0].0, "class-a", "rows must sort alphabetically before rendering");
+        assert_eq!(
+            sorted[0].0, "class-a",
+            "rows must sort alphabetically before rendering"
+        );
         let all: Vec<QueryResult> = rows.iter().flat_map(|(_, r)| r.iter().cloned()).collect();
         let (h1, hk, m, _) = aggregate(&all, 10);
         assert!((h1 - 0.5).abs() < 1e-9);

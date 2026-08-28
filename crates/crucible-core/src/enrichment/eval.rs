@@ -53,10 +53,7 @@ impl GoldenSet {
             .collect();
         entries.sort();
         if entries.is_empty() {
-            anyhow::bail!(
-                "no *.toml golden-set files found in {}",
-                dir.display()
-            );
+            anyhow::bail!("no *.toml golden-set files found in {}", dir.display());
         }
         entries
             .into_iter()

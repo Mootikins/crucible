@@ -31,17 +31,17 @@ pub enum EvalCommands {
 impl EvalCommands {
     pub async fn execute(&self, config: crate::config::CliConfig) -> anyhow::Result<()> {
         match self {
-            EvalCommands::Precognition { golden, golden_dir, kiln } => {
+            EvalCommands::Precognition {
+                golden,
+                golden_dir,
+                kiln,
+            } => {
                 let mut config = config;
                 if let Some(path) = kiln {
                     config.kiln_path = path.clone();
                 }
-                super::super::commands::eval::execute(
-                    config,
-                    golden.clone(),
-                    golden_dir.clone(),
-                )
-                .await
+                super::super::commands::eval::execute(config, golden.clone(), golden_dir.clone())
+                    .await
             }
         }
     }

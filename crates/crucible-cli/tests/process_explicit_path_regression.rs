@@ -83,8 +83,7 @@ async fn process_with_explicit_path_targets_that_kiln_not_the_configured_one() -
         env_dir.path().to_str().unwrap().to_string(),
     );
     let socket_path = lifecycle::default_socket_path();
-    let server =
-        Server::bind_with_data_home(&socket_path, env_dir.path().to_path_buf()).await?;
+    let server = Server::bind_with_data_home(&socket_path, env_dir.path().to_path_buf()).await?;
     let shutdown = server.shutdown_handle();
     let handle = tokio::spawn(async move {
         let _ = server.run().await;
@@ -121,10 +120,12 @@ async fn process_with_explicit_path_targets_that_kiln_not_the_configured_one() -
     // the configured kiln must NOT have absorbed it.
     let client = DaemonClient::connect_or_start().await?;
     let scope_target = Scope::workspace(target.path())?;
-    let target_notes = client.list_notes(target.path(), None, Some(scope_target)).await?;
-    let target_has_note = target_notes
-        .iter()
-        .any(|(_, path, ..)| path == "target-kiln-note.md" || path.ends_with("target-kiln-note.md"));
+    let target_notes = client
+        .list_notes(target.path(), None, Some(scope_target))
+        .await?;
+    let target_has_note = target_notes.iter().any(|(_, path, ..)| {
+        path == "target-kiln-note.md" || path.ends_with("target-kiln-note.md")
+    });
     assert!(
         target_has_note,
         "target kiln missing its note; indexed paths: {:?}",
@@ -141,12 +142,18 @@ async fn process_with_explicit_path_targets_that_kiln_not_the_configured_one() -
     assert!(
         !configured_got_stray || configured_notes.len() <= 1,
         "configured kiln unexpectedly received notes from the run: {:?}",
-        configured_notes.iter().map(|(_, p, ..)| p).collect::<Vec<_>>()
+        configured_notes
+            .iter()
+            .map(|(_, p, ..)| p)
+            .collect::<Vec<_>>()
     );
     assert!(
         configured_notes.is_empty(),
         "the run processed the CONFIGURED kiln instead of the named one; got {:?}",
-        configured_notes.iter().map(|(_, p, ..)| p).collect::<Vec<_>>()
+        configured_notes
+            .iter()
+            .map(|(_, p, ..)| p)
+            .collect::<Vec<_>>()
     );
 
     shutdown.send(()).ok();
