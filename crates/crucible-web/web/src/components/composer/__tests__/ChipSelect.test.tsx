@@ -174,6 +174,44 @@ describe('ChipSelect submenus', () => {
 });
 
 /**
+ * A scroll event is not a scroll.
+ *
+ * The popout closes on a background scroll, because a scroll moves the trigger
+ * out from under a `fixed` panel. But focusing the panel's search input makes
+ * the browser reveal it inside every `overflow-hidden` ancestor, and each one
+ * emits a scroll that reports `scrollTop === 0` — it never moved. The
+ * composer's chip row is such an ancestor, so the popout shut itself the
+ * instant it opened: one click, six phantom scrolls, no menu, and five e2e
+ * specs timing out on an option that resolved and then detached.
+ */
+describe('ChipSelect — a background scroll closes it only if the trigger moved', () => {
+  /** Fire a capturing scroll from an element that is NOT the panel. */
+  const scrollFrom = (el: Element) => {
+    el.dispatchEvent(new Event('scroll', { bubbles: false }));
+  };
+
+  it('stays open when the scroll did not move the trigger', () => {
+    renderChip();
+    openMenu();
+    const trigger = screen.getByTestId('run-on');
+    // jsdom reports every rect as zeroes, which is the "did not move" case.
+    scrollFrom(trigger.parentElement!);
+    expect(screen.getByTestId('run-on-popout')).toBeTruthy();
+  });
+
+  it('closes when the scroll did move the trigger', () => {
+    renderChip();
+    openMenu();
+    const trigger = screen.getByTestId('run-on');
+    // Move the trigger, then scroll: this is the case the handler exists for.
+    trigger.getBoundingClientRect = () =>
+      ({ left: 0, top: 400, right: 80, bottom: 420, width: 80, height: 20 }) as DOMRect;
+    scrollFrom(trigger.parentElement!);
+    expect(screen.queryByTestId('run-on-popout')).toBeNull();
+  });
+});
+
+/**
  * One scroll bar, not two.
  *
  * The panel used to scroll AND hold a `max-h-[300px]` scrolling list, so a

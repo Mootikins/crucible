@@ -233,9 +233,13 @@ export const ChipSelect: Component<{
    * clamp, a chip near the right edge (narrow window, docked panel) pushed
    * the popout off-screen.
    */
+  /** The trigger's viewport position when the panel was last placed. */
+  let anchorAt: { left: number; top: number } | null = null;
+
   const positionPanel = () => {
     if (!triggerRef) return;
     const rect = triggerRef.getBoundingClientRect();
+    anchorAt = { left: rect.left, top: rect.top };
     const panel = panelRef?.getBoundingClientRect();
     setPanelPos(
       placePopup(rect, { width: window.innerWidth, height: window.innerHeight }, {
@@ -360,6 +364,20 @@ export const ChipSelect: Component<{
     const onViewportChange = () => close();
     const onScroll = (e: Event) => {
       if (panelRef && e.target instanceof Node && panelRef.contains(e.target)) return;
+      // Close on the scroll HAVING MOVED THE TRIGGER, not on the event.
+      //
+      // A scroll event does not imply a scroll. Focusing the panel's search
+      // input makes the browser reveal it inside every `overflow-hidden`
+      // ancestor, and each one emits a scroll that reports `scrollTop === 0` —
+      // it never moved. The composer's chip row is such an ancestor, so the
+      // popout shut itself the moment it opened: six phantom scrolls, one
+      // click, no menu. It only surfaced once the composer moved from a rail
+      // into a centre pane, which is where that row starts overflowing.
+      if (!triggerRef || !anchorAt) return close();
+      const now = triggerRef.getBoundingClientRect();
+      if (Math.abs(now.left - anchorAt.left) < 0.5 && Math.abs(now.top - anchorAt.top) < 0.5) {
+        return;
+      }
       close();
     };
     document.addEventListener('mousedown', onDocClick);
