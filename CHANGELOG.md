@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-08-29
+
 ### Breaking
 
 - A runnable `## Validation` entry now needs an `allow` rule. With the shipped

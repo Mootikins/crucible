@@ -465,12 +465,12 @@ Linked into the released binary.
 | `crossbeam-utils` | 0.8.21 | MIT OR Apache-2.0 |
 | `crossterm` | 0.28.1 | MIT |
 | `crossterm` | 0.29.0 | MIT |
-| `crucible-cli` | 0.28.1 | MIT OR Apache-2.0 |
-| `crucible-core` | 0.28.1 | MIT OR Apache-2.0 |
-| `crucible-daemon` | 0.28.1 | MIT OR Apache-2.0 |
-| `crucible-lua` | 0.28.1 | MIT OR Apache-2.0 |
-| `crucible-oil` | 0.28.1 | MIT OR Apache-2.0 |
-| `crucible-web` | 0.28.1 | MIT OR Apache-2.0 |
+| `crucible-cli` | 0.29.0 | MIT OR Apache-2.0 |
+| `crucible-core` | 0.29.0 | MIT OR Apache-2.0 |
+| `crucible-daemon` | 0.29.0 | MIT OR Apache-2.0 |
+| `crucible-lua` | 0.29.0 | MIT OR Apache-2.0 |
+| `crucible-oil` | 0.29.0 | MIT OR Apache-2.0 |
+| `crucible-web` | 0.29.0 | MIT OR Apache-2.0 |
 | `crypto-common` | 0.1.7 | MIT OR Apache-2.0 |
 | `crypto-common` | 0.2.2 | MIT OR Apache-2.0 |
 | `ctutils` | 0.4.2 | Apache-2.0 OR MIT |
