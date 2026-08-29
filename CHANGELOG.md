@@ -7,7 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+
+- A runnable `## Validation` entry now needs an `allow` rule. With the shipped
+  default (`default = "ask"`) an unconfigured daemon runs none of them. To keep
+  a command running, name it: `allow = ["bash:cargo test *"]`.
+
+- **The web shell has two rails, not four docks.** `EdgePanelPosition` names
+  `left` and `right` only; the bottom dock is gone and a stored layout that
+  still has one rehomes its tabs to the centre (layout v7). A session is now a
+  peer of the editor in the centre tiling rather than a sidebar, and swapping
+  sides is a true mirror — the centre tree and both rails invert together.
+
+- **`setRailPaneCollapsed(position, paneId, collapsed)` is now
+  `setPaneCollapsed(paneId, collapsed)`**, and `toggleRailPaneCollapsed` is
+  `togglePaneCollapsed`. A pane id is unique across every layout root, so
+  demanding an `EdgePanelPosition` asked the caller to tell the dock layer what
+  it already knew. The rule that a region keeps one pane at full height now
+  holds per root, which covers the centre tiling too.
+
 ### Added
+
 - **`delegate = true` on `cru.session.create`** — the Lua plugin path to
   subagents. A delegated create spawns through the daemon's
   `DelegationService` (the same machinery as the `delegate_session` tool):
@@ -21,60 +41,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   current session exists; `delegate` on a VM without one is refused with the
   reason.
 
-### Changed
-- **`cru.sessions` is now `cru.session`, and its factory verbs return
-  handles.** One canonical module holds the lifecycle verbs plus `current()`;
-  `cru.sessions` remains as a deprecated alias forwarding to the same
-  functions (one warning per VM) and will be removed after a release. In-tree
-  plugins migrated in the same change. `create`, `get`, `list` and `fork` now
-  return `Session` userdata instead of plain tables: every field the tables
-  exposed still reads the same, and every session-scoped function is also a
-  method on the handle (`s:send_message("…")`) calling the same
-  implementation. `cru.get_session()` is likewise deprecated in favour of
-  `cru.session.current()`. Live config knobs (`.model = …`,
-  `.temperature = …`) still work only on the current session's handle;
-  handles from `create`/`get`/`list` configure through `:configure_agent`.
-
-### Removed
-- **266 dead items and duplicate copies are gone, about 14,000 lines.** An
-  audit at `7053bcfe7` read every module, and skeptic agents verified each
-  claim. The removals are unused `pub` builders, accessors and modules
-  (`crucible-core/src/processing/`, `hashing/`, `content_category.rs`,
-  `note.rs`, `properties.rs`), plus exact duplicates merged into one
-  definition (`extract_yaml_frontmatter`, `truncate_to_width`, the theme
-  render slots, `SessionIdRequest`). The audit and the remaining work are in
-  `docs/Meta/Architecture/`. The wire changes that followed are listed under
-  Changed below.
-- **The `keyring` feature and `KeyringStore` are gone.** Nothing enabled the
-  feature. `SecretsFile` is the one credential store; `AutoStore` and the
-  `CredentialStore` trait went with it.
-- **The `[discovery]` config section is ignored.** No code read it. An old
-  config with the section still loads.
-- **Scripting event variants nothing produced are gone.** Forty
-  `SessionEvent`/`InternalSessionEvent` variants and eleven `LogEvent`
-  variants had no producer. A Lua handler that matched one of those names
-  never fired before and does not fire now.
-
-### Added
 - **`cru config migrate`** — the one-time TOML → Lua generator. It moves
   machine-written `auto` kiln entries (and the machine-set default) into
   `kilns.json`, seeds `projects.json`, emits everything else as Lua,
   verifies the result in memory before writing anything, names what moved
   and what stayed, and renames `config.toml` to `config.toml.migrated`.
+
 - **`config.effective` RPC** — the daemon's live config, its config root,
   its boot-input hash, and per-leaf provenance.
+
 - **`kiln://<name>/<path>` addressing in `cru.fs`.** Plugin Lua can read and
   write kiln-relative files without learning the kiln's absolute path. The
   daemon resolves the name through the registry and refuses `..`, absolute
   parts, and any symlinked directory that leaves the kiln. A plain runtime
   without a registry refuses the scheme. The reflection plugin uses it to
   stage proposals and is pure Lua again.
+
 - **`session:set_variable` / `session:get_variable` have a store.** The
   daemon keeps the map on the session and persists it in `meta.json`, so a
   value set in one hook reads back after resume.
+
 - **`agents.list_cards` RPC.** `cru agents list` asks a running daemon for the
   cards it resolves for the workspace, and reads disk only when no daemon
   answers.
+
 - **ACP: `session/resume`, `session/close`, model switching through
   `configOptions`.** The daemon persists the agent's own session id and
   resumes it after a restart; an agent that answers `-32601` gets
@@ -82,8 +72,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `session/close` is sent when the agent advertises it. Model selection reads
   `configOptions` and sends `session/set_config_option`; the legacy
   `session/set_model` path is gone.
+
 - **Hermes is a built-in ACP agent** (`cru chat --acp hermes`), with a
   recorded fixture and a help entry.
+
 - **MCP gateway reconnect and gateway tools on the served surface.**
   `auto_reconnect` now starts a loop with doubling backoff; upstream tools
   appear on `cru mcp` under their prefixed names.
@@ -99,311 +91,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   daemon floor, so it admits a checkout that `POST /api/project/register`
   refuses — a symlink into `~/.config`, or a dotfiles repo holding `.ssh`.
 
-### Changed
-- **`init.lua` is evaluated BEFORE plugins load, in the one plugin VM.** The
-  daemon seeds defaults plus the (now deprecated) `config.toml`, evaluates
-  `init.lua` once under a 30 s budget, then activates plugins against the
-  result — Neovim's model. `init.lua` can author any config key,
-  `runtimepath` included, and a `runtimepath` addition serves `require` on
-  the next line. `cru.config.set` deep-merges (objects merge per key; arrays
-  and scalars replace; `__replace = true` replaces a table wholesale) with
-  `file:line` provenance per leaf.
-- **Plugin configuration is one form per plugin.** A direct
-  `require("x").setup{...}` in `init.lua` OWNS that plugin's setup;
-  the `plugins.x` store section feeds the default `setup(cfg)` for every
-  other plugin. A plugin configured both ways takes the direct call, and
-  the boot warns once naming the ignored section. (Per-key layering of the
-  two forms is gone.)
-- **Commands acquire config at dispatch.** Daemon-backed commands fetch the
-  daemon's `config.effective` when one runs (with a root-mismatch refusal
-  and a staleness warning); bootstrap commands run one throwaway
-  evaluation; the rest load nothing. The config file's `logging_level`
-  governs the daemon and bootstrap commands only.
-- **`cru config show --sources` walks every leaf** and names each source —
-  `default`, `toml (<path>)`, `lua (<file>:<line>)`, `rpc`, `cli`,
-  `registered`, `discovered` — and says whether it rendered the daemon's
-  copy or a local evaluation. `kiln forget` refusals name a Lua
-  declaration's exact `file:line`.
-- **Config map fields render in stable order.** `kilns`, `projects`,
-  `plugins`, `llm.providers`, `llm.models`, `acp.agents`, and MCP `env`
-  are ordered maps now, so `cru config show` output stops shuffling
-  between runs.
-- **The first-run wizard and `cru config init` write `init.lua`, not
-  `config.toml`.** The wizard verifies the file by evaluation before
-  writing it and records the provider selection in `llm.json`.
-- **`cru session send --raw` and `replay --raw` emit `event_type` again,
-  beside `event`.** The rename to `event` dropped the old key with no
-  deprecation window, which broke readers of the old shape in one release.
-  Both keys carry the same value for one deprecation release. Read `event`;
-  `event_type` goes away in 0.30.
-- **`[scm]` is now `[workspace]`, and its two keys are renamed.**
-  `projects_dir` -> `root_dir`, `session_workspace_dir` -> `session_scratch_dir`.
-  The section named a git integration but held two directories, and
-  `session_workspace_dir` collided with `SessionManager::session_dir` and the
-  `CRU_SESSION_DIR` tool env var, which both mean the session TRANSCRIPT
-  directory. **Rename the section and the two keys by hand.** The config
-  loader accepts unknown top-level tables, so a config that still says `[scm]`
-  loads without complaint and both directories silently fall back to their
-  defaults, `~/Projects` and `~/.crucible/workspaces`. `enabled` and
-  `detect_worktrees` are already gone (see 0.28.1); they are not renamed.
-- **An event handler's return value is narrowed at the boundary.**
-  `ScriptHandlerResult` carries five variants for both dispatch paths, but an
-  event has already happened and already been broadcast before any handler runs,
-  so `Transform`, `Inject` and `Handled` cannot apply to one.
-  `ScriptHandlerResult::into_event_outcome` maps to a two-variant `EventOutcome`
-  (`Observed`, `StopChain`), and `server/file_event_hooks.rs` is now exhaustive
-  over that instead of carrying an arm that logged and dropped the other three.
-  A handler that returns one still lets the chain continue, and now says which
-  value it could not act on — an author writing `return { handled = true }` in a
-  `note:created` handler previously got silence.
-- **Four more colliding names separated, one orphan deleted.** Verified pairwise
-  before touching: `crucible_daemon::webhook::SecretsFile` ->
-  `WebhookSecretsFile` (core's is a `CredentialStore` over `secrets.toml`; this
-  one is a private DTO for `webhooks.toml`),
-  `crucible_daemon::llm::model_discovery::DiscoveryConfig` ->
-  `ModelDiscoveryConfig` (core's holds plugin search paths; this one holds GGUF
-  scan depth and a cache TTL), `crucible_cli::factories::StorageHandle` ->
-  `CliStorageHandle` (the daemon's owns SQLite plus the FTS index and takes an
-  explicit `Scope` authority on every method, which the CLI newtype has no
-  concept of), and the runtime
-  `crucible_daemon::llm::embeddings::fastembed::FastEmbedConfig` ->
-  `FastEmbedInitOptions` (core's is the serde form; this one holds the external
-  crate's `EmbeddingModel` enum and cannot derive `Deserialize`).
-  `crucible_core::config::components::handlers` is deleted — 309 lines whose
-  `HandlersConfig` was a field of no struct, with no `[handlers]` section in any
-  config or doc and no implementation behind any handler it named.
-- **Four colliding type names separated.** Each pair was read before it was
-  touched, and none of the four turned out to be mergeable.
-  `crucible_lua::ShellPolicy` is now `PluginShellPolicy`: it is **fail-open**
-  (an empty allow-list allows everything) while
-  `crucible_core::config::ShellPolicy` is **fail-closed**, so adopting either
-  default on the other side would have been a security change, not a refactor —
-  both types now say so. `crucible_daemon::observe::PermissionDecision` is now
-  `PermissionOutcome`: it records what the gate did and cannot represent `Ask`,
-  while the config enum is the rule engine's verdict and cannot represent
-  `AutoAllow`. `crucible_lua::SessionManager` is now `CurrentSession` — it holds
-  one `Option<Session>` with get/set/clear and manages nothing, while the
-  daemon's `SessionManager` reaches 20 files. The web route body
-  `SessionKilnRequest` is now `KilnRequest`, since the daemon's same-named type
-  is `Serialize` and carries `session_id` for the opposite direction.
-- **Four duplicate type declarations collapsed.** `crucible-web` declared its
-  own `GrepSearchRequest` and `OptionAction` beside the daemon's; both now use
-  the daemon's. The web copy of `GrepSearchRequest` hardcoded its default limit
-  at 100; the daemon's reads `GREP_DEFAULT_LIMIT`, which is also 100. The two
-  surfaces agreed, so nothing changes for a caller — but they agreed by
-  coincidence, and the next edit to that constant would have moved the JSON-RPC
-  default and left the HTTP one behind.
-  `crucible_daemon::server::plugins::OptionAction` is now `pub` and
-  `Deserialize` to carry both. `acp::tools::ToolExecutor` is renamed
-  `AcpToolExecutor` — it never implemented
-  `crucible_core::traits::tools::ToolExecutor`, and that file's own tests had to
-  alias the real trait around the collision. The dead
-  `crucible_cli::config::LlmConfig` alias is deleted; nothing used it and it
-  named `AcpConfig`.
-- **The 1500-line per-file ceiling is gone**, with
-  `scripts/check-file-sizes.sh` and `.file-size-whitelist`. It had no empirical
-  support: measured across thirteen codebases, Crucible kept 0.2% of its Rust
-  files over the limit and 2.2% of its lines in them, while every reference —
-  codex, zed, helix, rust-analyzer, ripgrep, postgres, git, go, neovim, redis,
-  sqlite, cpython — ran 2.7% to 21.3% of files and **24.6% to 76.2% of lines**.
-  All thirteen would fail the gate, most of them hundreds of times. Worse, the
-  largest files in the best of them are enumerated tables — ripgrep's
-  8,161-line `flags/defs.rs`, helix's 7,228-line `commands.rs` — which is the
-  exact pattern this codebase names as its exemplar, so the ceiling argued
-  against the shape it was trying to adopt. `just lint size` is removed;
-  `just lint` no longer runs it.
-- **JSON-RPC method names are one closed enum** (`RpcMethod`,
-  `crucible-daemon/src/rpc/dispatch.rs`). `METHODS` — what
-  `daemon.capabilities` advertises — and the 750-line dispatch match were two
-  hand-maintained lists, and drift between them hides a method from every
-  capability-detecting client; it happened once already with `plugin.install`
-  and `plugin.remove`. The gate meant to catch it scanned this file's own
-  source text and mistook any quoted dotted-lowercase literal in an arm body
-  for a method name. One `rpc_methods!` table now generates both, and the
-  dispatch match is exhaustive over the enum with no wildcard arm. No method
-  name and no wire behaviour changed.
-- **The scripting/transport name overlap is one shared type** (`ScriptingEvent`,
-  `crucible-core/src/events/session_event/`). `TurnPayload::as_scripting_event`
-  and `SessionEvent::event_type` spelled the same ten events in two independent
-  lists of string literals, held together only by a test that `include_str!`d
-  two files and sliced between literal markers. Both now read the name off the
-  same constant. `as_scripting_event` returns `Option<ScriptingEvent>` rather
-  than `Option<&'static str>`; call `.as_str()` for the name.
-- **`crucible.on` hook names are two closed enums, not one list of strings.**
-  `EventName` holds the eight daemon broadcast events, `StageId` the eleven
-  synchronous turn-loop stages
-  (`crucible-lua/src/handlers/hook_name.rs`); `HOOK_NAMES` is gone. The single
-  list conflated two contracts — a handler's return value changes what happens
-  next at a stage and can change nothing at an event, so `Cancel` meant
-  "stop the remaining handlers" on one side and "block the operation" on the
-  other, decided only by which name the author had written. Its completeness
-  was also checked by a test that scanned every `.rs` file in the workspace for
-  string literals, a gate satisfiable without adding the entry. `as_str` now has
-  no wildcard arm, the dispatch sites name the variant, and the documented table
-  in `docs/Help/Extending/Event Hooks.md` is checked against the enums. No hook
-  name changed, so no plugin or config needs an edit.
-- **One table now maps a daemon event to the hook name Lua registers for**
-  (`crucible-daemon/src/event_map.rs`). The outbound bridge that broadcasts to
-  clients and the inbound dispatch that runs Lua handlers each carried their own
-  three-arm `match` over the same three file events; they could disagree with
-  nothing to catch it, and every other event the daemon emits reached Lua not at
-  all. Adding an event is now a row plus an `EventName` variant, and tests pin the
-  two against each other in both directions. No behaviour change for the
-  three file events.
-- **Session titling moved out of the daemon into the bundled `auto-title`
-  plugin.** The system prompt, the 1500-character clip and the sanitizer that
-  strips quotes and `Title:` scaffolding were compiled in
-  (`crucible-daemon/src/provider/title.rs`, now deleted); they live in
-  `runtime/plugins/auto-title/` and are editable without a rebuild —
-  `require("auto-title").setup{ prompt = "…", clip = 800, timeout = 20 }` or
-  `[plugins.auto-title]`. The daemon keeps what every client depends on being
-  uniform: when titling fires, that it fires once, that the title is persisted
-  and announced, and that a session with content falls back to a truncated
-  first message when nothing answers. A plugin publishing `session_title`
-  replaces the behaviour; `[plugins.auto-title] enabled = false` leaves the
-  truncation fallback. One thing the compiled-in path did not have: the title
-  completion is now bounded at 30 seconds, through the same `timeout` key the
-  prompt and the clip are set by, because a title nobody is waiting for is not
-  worth holding a task open for the provider's own timeout.
-
-### Fixed
-- **`--config X` now evaluates `X`'s own `init.lua`.** The daemon used to
-  evaluate `~/.config/crucible/init.lua` regardless of `--config`, so a
-  daemon on an alternate root ran someone else's Lua. The config file's
-  directory is the config root now; an `init.lua` kept in the DEFAULT
-  directory is no longer read when `--config` points elsewhere.
-- **In-process test daemons no longer evaluate the developer's real
-  `init.lua`.** The value-injection bind path reads no user file at all,
-  and a regression test pins it.
-- **A saved bash allow-rule matches each chained statement.** A rule for
-  `git ` allowed `git log; curl evil`. Every statement joined by `;`, `&&`,
-  `||`, `|`, `&` or a newline must match, and a line with `$(...)`,
-  backticks or `<(...)` does not match. Saved rules that relied on the prefix
-  match now prompt again.
-- **`cru chat --record out.jsonl "query"` errors** instead of exiting without
-  writing the recording. The piped form already errored.
-- **A session cannot cancel another session's background job.** The MCP tool
-  and the RPC path check the owner; an unknown or foreign id returns the same
-  `invalid_params` error.
-- **A `User`-scope permission grant is persisted** to
-  `whitelists.d/user.toml`, created `0600`. Only `Project` was written
-  before.
-- **The reflection plugin runs.** It read `info.kiln`; the bridge sends
-  `kilns`, so no proposal was ever staged.
-- **`get_note_by_name` carries `wikilinks`**, which the client DTO reads;
-  every note came back with no links.
-- **`WatchConfig.debounce` reaches the notify backend.** It was set and never
-  read.
-- **Concurrent permission grants no longer lose a write.** Two sessions that
-  granted at the same time overwrote each other's entry in the store.
-- **A daemon write is not recorded as a user edit.** The write-suppression
-  window was shorter than the two debounce stages that deliver the event.
-- **Held ACP tool results are accounted, logged and marked.** A held result
-  released mid-turn refunds its bytes; a result still held when the turn
-  errors or times out is logged; a refused replacement leaves a drop marker.
-
-- **`cru chat "<query>"` re-embedded the whole kiln before it answered.**
-  `NoteRecord::content_hash` is documented as "BLAKE3 content hash (32 bytes)
-  for change detection", and the plain-text and canvas paths filled it — but the
-  markdown parser left `ParsedNote::content_hash` EMPTY, so
-  `BlockHash::from_hex("")` failed and every markdown note stored
-  `BlockHash::zero()`. With the column useless, Phase 1 consulted an
-  `InMemoryChangeDetectionStore` instead, and that map does not outlive the
-  daemon: the first `kiln.open(process = true)` after every daemon start
-  reprocessed and re-embedded EVERY note. Measured on the 150-note `docs` kiln:
-  150 discovered, **0 skipped, 3m35s** — and one-shot chat waits for it, because
-  `get_storage` runs before the agent is created. It looked like a hang. The
-  parser now fills the hash (over the whole input, so a frontmatter-only edit
-  still counts), Phase 1 compares the file against `notes.content_hash`, and
-  `update_file_state` is gone — all three calls sat right after the upsert that
-  now persists it. Same command against a cold daemon: **15.9s**. The TUI was
-  never affected; it does not call `get_storage`.
-- **A long kiln open looked like a crash.** The status line only repainted
-  between steps, so minutes of indexing sat behind one static `⟳ Opening
-  kiln...` — and behind nothing at all when stdout is piped, since
-  `StatusLine::update` suppresses itself there. It now redraws each second with
-  the elapsed time, and prints what the open indexed. `kiln.open` already
-  returned `discovered`/`processed`/`skipped` and every caller discarded them.
-- **A message send froze the TUI while inotify walked `target/`.** The review
-  watch registered ONE RECURSIVE watch on the repository top level, and the
-  recursive mode of `notify` adds a watch for each directory it walks — so it
-  descended the build output. `messaging/send.rs` awaits that call for each
-  turn, before precognition, and nothing reaches the client while it runs: no
-  message, no spinner, no error. On a 408 GB `target/` the turn stalled 13
-  seconds, and on a cold cache it never finished. The `BUILD_DIRS` list meant
-  to prevent this filtered EVENTS, after delivery, so it never stopped the
-  walk; it also matched at depth one only, which let `crates/*/target` and
-  `docs-site/node_modules` through. The watch now prunes with
-  `git ls-files --directory --others --ignored --exclude-standard`, which
-  answers in milliseconds because git does not descend a fully ignored tree.
-  This is exact rather than a guess: each tree the ledger records comes from
-  `git add -A`, so an ignored path can never reach a hunk. A subtree with
-  nothing ignored in it still gets one RECURSIVE watch, which is what keeps
-  directories created later covered. Measured on this repository: 13,205 ms
-  becomes 42 ms, and about 18,000 watches become 64. An ignored FILE inside a
-  watched directory (`.env.local`) is no longer reported as an external change.
-- **The Discord default intents asked for reactions, not guild messages.**
-  `37889` set bit 10 where bit 9 was meant, so the gateway delivered no guild
-  message at all: DMs worked, a server bot did not, and the whole
-  `respond_to`/mention/prefix path was unreachable. It shipped that way and
-  nothing asserted it. The default is now written as four commented shifts, and
-  the test reads the value out of the IDENTIFY payload rather than off the
-  constant.
-- **Discord posted the daemon's raw error into the channel.** Only the
-  concurrent-request case was special-cased; everything else was concatenated
-  into a public message, carrying absolute paths and session ids. The channel
-  now gets a fixed sentence and the detail stays in the log line that was
-  already there.
-- **The product-map proof gate counted gitignored files as evidence.**
-  `product_map_proof_tests_exist` greps the tree for each test a `**Proof:**`
-  line cites, and skipped `target`, `node_modules` and `dist` by directory
-  NAME. A denylist of names cannot be complete: a stale `crates/graphify-out/`
-  cache held the old name of a renamed test, so a dead citation passed locally
-  and failed in CI. It now uses `is_committable`, the same `git ls-files` line
-  the kiln sweep already draws.
-- **Four clippy lints new in rustc 1.98.0.** `iter_next_slice` in
-  `server/kiln.rs`, two `chunks_exact_to_as_chunks` in `note_store.rs` — which
-  also removes two `expect` panic paths, with iteration order and so cosine
-  scores unchanged — and `result_large_err` in `routes/webhook.rs`, where
-  boxing the error is what the rest of the codebase does and is impossible:
-  axum resolves a handler through `IntoResponse` on the error type, and
-  `Box<Response>` does not implement it.
-- **`cru plugin health` and `cru plugin test` reported a green run that ran
-  nothing.** The daemon sends a `message` when it finds no `health.lua` and
-  when it finds no test files, and both response types carry the field.
-  Neither client read it. So a plugin with no health file printed
-  `Healthy: yes`, and a directory with no test files printed
-  `0 passed, 0 failed` and exited 0 — character-for-character what a green
-  suite prints. Health now reports `not checked`; test prints the message and
-  exits 2.
-- **A batch of questions asked from a plugin lost every answer.** The TUI built
-  its reply with `AskBatchResponse::new(id)`, which sets `answers: Vec::new(),
-  cancelled: false`, and cleared the selection on the way to each next question.
-  So `cru.ui.ask_batch` came back with zero answers and `cancelled: false` —
-  indistinguishable, to the plugin that asked, from a user who deliberately
-  answered nothing. Answers are now recorded per question as the user moves
-  through the batch, including backwards with BackTab, and the reply carries one
-  `QuestionAnswer` per question.
-- **`[embedding.fastembed]` settings were deserialized and then thrown away.**
-  `FastEmbedProvider::new` hardcoded `cache_dir: None` and `batch_size:
-  Some(32)`, so a user who pointed the model cache at a large disk kept
-  downloading to the default location, and a configured batch size never
-  reached the encoder. Both are read from the config now, with a regression
-  test that fails if either is hardcoded again. `num_threads` stays inert and
-  now says so on the field: `fastembed` 5.13's `InitOptions` exposes
-  `max_length`, `cache_dir`, `execution_providers` and
-  `show_download_progress`, and no thread count.
-- **Discord handled every message twice after a `require`.**
-  `runtime/plugins/discord/init.lua` registers two gateway handlers at body
-  level and never claimed `package.loaded["discord"]`. The daemon executes the
-  file by path, so `require("discord")` — which the plugin's own
-  `tests/service_test.lua` does — loaded a second copy and ran those
-  registrations again; `Emitter:on` appends rather than replaces, so both
-  copies stayed live and one Discord message drove two agent turns, two replies
-  and two quota charges. The gate that should have caught it matched only
-  `crucible.on`/`cru.on` at column zero and now accepts any receiver.
-
-### Added
 - **The Discord plugin declares its deployment shape.** `mode` is `"personal"`
   (default) or `"server"`. Reply-chain continuity, self-approval and the `read`
   tier are each safe in one and wrong in the other, and previously the only
@@ -413,6 +100,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   reply to come from the sender who owns the session (`share_reply_chains`
   restores the old behaviour) and requires an `approvers` list before honouring
   `ask` from any grant. The `read` tier is deliberately unchanged.
+
 - **`just refs orphans`** — public types that no Rust code names outside their
   own declaration. `scip-refs.py` answers "is this field ever read"; this
   answers "is this type ever named". The loose test — no reference outside the
@@ -420,6 +108,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   a method in its own file; `scripts/orphan-types.py` counts total occurrences
   instead, and flags a name that also appears in `runtime/`, the frontend or
   `docs/` rather than reporting it.
+
 - **`cru.ui` — a plugin can ask the user a question.** One function per
   `InteractionRequest` variant: `ask`, `ask_batch`, `edit`, `show`,
   `permission`, `popup` and `panel`. Each call parks the plugin until an
@@ -449,6 +138,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   kind has no renderer. Responses now also state their own `kind`, because a
   panel result and an ask response both carry `selected`.
   See `Help/Extending/Scripted UI.md`.
+
 - **`cru.tools.set_active(session_id, names)` and `cru.tools.get_active(session_id)`.**
   A plugin can now narrow which tools one session offers its model, with glob
   patterns in the same language a mode's `tools` selector speaks. The set only
@@ -468,6 +158,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   be a control in name only), and the sets live in memory — a daemon restart
   drops them. `discover_tools`/`get_tool_schema` still enumerate excluded
   tools; the set governs what runs, not what can be found.
+
 - **Note lifecycle hooks.** `crucible.on("note:created", …)`, `note:modified`,
   `note:deleted` and `note:renamed` fire when the note pipeline writes. The
   identifier `opts.pattern` globs against is the kiln-relative note path, so
@@ -479,6 +170,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   announces `note:deleted` + `note:created` + `note:renamed`, because the
   reindex under it really performs all three — `note:renamed` fires last and is
   the event that says they were one move.
+
 - **`webhook:received` reaches Lua.** A signed delivery to
   `POST /api/webhook/{name}` now fires
   `crucible.on("webhook:received", { pattern = "ci" }, …)` with `event.name`,
@@ -487,12 +179,444 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   still sits inside the web server's bearer-auth layer, which waves loopback
   callers through but not remote ones, so a sender out on the internet still
   needs a proxy or tunnel terminating on the host. See `Help/Config/web.md`.
+
 - **`cru.sessions.complete(session_id, opts)`** — one exchange against a
   session's own model, no tools and no history, answered as text. `opts` takes
   `prompt` (or a bare string), `system` and `timeout` (seconds, default 30).
   This is the primitive `auto-title` runs on.
 
+- **A light theme, toggled from the bottom of the left ribbon.** The same token
+  names re-declared under `:root[data-theme='light']`, so every `bg-shell-bg`
+  and every inline `var(--color-…)` follows with no change. The greys are
+  slightly cool rather than warm, matching the dark theme's own hue; the four
+  ink steps are chosen by contrast ratio, not by hex, so a token carries the
+  same weight in both themes. The ember accent is the only warm thing in
+  either.
+
+- **The sessions rail** — projects in tiers, an inbox that surfaces sessions
+  waiting on you and drops them 24 hours after their last message, a scope
+  filter with a count, and a new-session button per project.
+
+- **Precognition notes render in the TUI transcript**, with a showcase demo on
+  the site.
+
+- **`--golden-dir` scores golden sets per class** in `cru eval`.
+
+### Changed
+
+- **`cru.sessions` is now `cru.session`, and its factory verbs return
+  handles.** One canonical module holds the lifecycle verbs plus `current()`;
+  `cru.sessions` remains as a deprecated alias forwarding to the same
+  functions (one warning per VM) and will be removed after a release. In-tree
+  plugins migrated in the same change. `create`, `get`, `list` and `fork` now
+  return `Session` userdata instead of plain tables: every field the tables
+  exposed still reads the same, and every session-scoped function is also a
+  method on the handle (`s:send_message("…")`) calling the same
+  implementation. `cru.get_session()` is likewise deprecated in favour of
+  `cru.session.current()`. Live config knobs (`.model = …`,
+  `.temperature = …`) still work only on the current session's handle;
+  handles from `create`/`get`/`list` configure through `:configure_agent`.
+
+- **`init.lua` is evaluated BEFORE plugins load, in the one plugin VM.** The
+  daemon seeds defaults plus the (now deprecated) `config.toml`, evaluates
+  `init.lua` once under a 30 s budget, then activates plugins against the
+  result — Neovim's model. `init.lua` can author any config key,
+  `runtimepath` included, and a `runtimepath` addition serves `require` on
+  the next line. `cru.config.set` deep-merges (objects merge per key; arrays
+  and scalars replace; `__replace = true` replaces a table wholesale) with
+  `file:line` provenance per leaf.
+
+- **Plugin configuration is one form per plugin.** A direct
+  `require("x").setup{...}` in `init.lua` OWNS that plugin's setup;
+  the `plugins.x` store section feeds the default `setup(cfg)` for every
+  other plugin. A plugin configured both ways takes the direct call, and
+  the boot warns once naming the ignored section. (Per-key layering of the
+  two forms is gone.)
+
+- **Commands acquire config at dispatch.** Daemon-backed commands fetch the
+  daemon's `config.effective` when one runs (with a root-mismatch refusal
+  and a staleness warning); bootstrap commands run one throwaway
+  evaluation; the rest load nothing. The config file's `logging_level`
+  governs the daemon and bootstrap commands only.
+
+- **`cru config show --sources` walks every leaf** and names each source —
+  `default`, `toml (<path>)`, `lua (<file>:<line>)`, `rpc`, `cli`,
+  `registered`, `discovered` — and says whether it rendered the daemon's
+  copy or a local evaluation. `kiln forget` refusals name a Lua
+  declaration's exact `file:line`.
+
+- **Config map fields render in stable order.** `kilns`, `projects`,
+  `plugins`, `llm.providers`, `llm.models`, `acp.agents`, and MCP `env`
+  are ordered maps now, so `cru config show` output stops shuffling
+  between runs.
+
+- **The first-run wizard and `cru config init` write `init.lua`, not
+  `config.toml`.** The wizard verifies the file by evaluation before
+  writing it and records the provider selection in `llm.json`.
+
+- **`cru session send --raw` and `replay --raw` emit `event_type` again,
+  beside `event`.** The rename to `event` dropped the old key with no
+  deprecation window, which broke readers of the old shape in one release.
+  Both keys carry the same value for one deprecation release. Read `event`;
+  `event_type` goes away in 0.30.
+
+- **`[scm]` is now `[workspace]`, and its two keys are renamed.**
+  `projects_dir` -> `root_dir`, `session_workspace_dir` -> `session_scratch_dir`.
+  The section named a git integration but held two directories, and
+  `session_workspace_dir` collided with `SessionManager::session_dir` and the
+  `CRU_SESSION_DIR` tool env var, which both mean the session TRANSCRIPT
+  directory. **Rename the section and the two keys by hand.** The config
+  loader accepts unknown top-level tables, so a config that still says `[scm]`
+  loads without complaint and both directories silently fall back to their
+  defaults, `~/Projects` and `~/.crucible/workspaces`. `enabled` and
+  `detect_worktrees` are already gone (see 0.28.1); they are not renamed.
+
+- **An event handler's return value is narrowed at the boundary.**
+  `ScriptHandlerResult` carries five variants for both dispatch paths, but an
+  event has already happened and already been broadcast before any handler runs,
+  so `Transform`, `Inject` and `Handled` cannot apply to one.
+  `ScriptHandlerResult::into_event_outcome` maps to a two-variant `EventOutcome`
+  (`Observed`, `StopChain`), and `server/file_event_hooks.rs` is now exhaustive
+  over that instead of carrying an arm that logged and dropped the other three.
+  A handler that returns one still lets the chain continue, and now says which
+  value it could not act on — an author writing `return { handled = true }` in a
+  `note:created` handler previously got silence.
+
+- **Four more colliding names separated, one orphan deleted.** Verified pairwise
+  before touching: `crucible_daemon::webhook::SecretsFile` ->
+  `WebhookSecretsFile` (core's is a `CredentialStore` over `secrets.toml`; this
+  one is a private DTO for `webhooks.toml`),
+  `crucible_daemon::llm::model_discovery::DiscoveryConfig` ->
+  `ModelDiscoveryConfig` (core's holds plugin search paths; this one holds GGUF
+  scan depth and a cache TTL), `crucible_cli::factories::StorageHandle` ->
+  `CliStorageHandle` (the daemon's owns SQLite plus the FTS index and takes an
+  explicit `Scope` authority on every method, which the CLI newtype has no
+  concept of), and the runtime
+  `crucible_daemon::llm::embeddings::fastembed::FastEmbedConfig` ->
+  `FastEmbedInitOptions` (core's is the serde form; this one holds the external
+  crate's `EmbeddingModel` enum and cannot derive `Deserialize`).
+  `crucible_core::config::components::handlers` is deleted — 309 lines whose
+  `HandlersConfig` was a field of no struct, with no `[handlers]` section in any
+  config or doc and no implementation behind any handler it named.
+
+- **Four colliding type names separated.** Each pair was read before it was
+  touched, and none of the four turned out to be mergeable.
+  `crucible_lua::ShellPolicy` is now `PluginShellPolicy`: it is **fail-open**
+  (an empty allow-list allows everything) while
+  `crucible_core::config::ShellPolicy` is **fail-closed**, so adopting either
+  default on the other side would have been a security change, not a refactor —
+  both types now say so. `crucible_daemon::observe::PermissionDecision` is now
+  `PermissionOutcome`: it records what the gate did and cannot represent `Ask`,
+  while the config enum is the rule engine's verdict and cannot represent
+  `AutoAllow`. `crucible_lua::SessionManager` is now `CurrentSession` — it holds
+  one `Option<Session>` with get/set/clear and manages nothing, while the
+  daemon's `SessionManager` reaches 20 files. The web route body
+  `SessionKilnRequest` is now `KilnRequest`, since the daemon's same-named type
+  is `Serialize` and carries `session_id` for the opposite direction.
+
+- **Four duplicate type declarations collapsed.** `crucible-web` declared its
+  own `GrepSearchRequest` and `OptionAction` beside the daemon's; both now use
+  the daemon's. The web copy of `GrepSearchRequest` hardcoded its default limit
+  at 100; the daemon's reads `GREP_DEFAULT_LIMIT`, which is also 100. The two
+  surfaces agreed, so nothing changes for a caller — but they agreed by
+  coincidence, and the next edit to that constant would have moved the JSON-RPC
+  default and left the HTTP one behind.
+  `crucible_daemon::server::plugins::OptionAction` is now `pub` and
+  `Deserialize` to carry both. `acp::tools::ToolExecutor` is renamed
+  `AcpToolExecutor` — it never implemented
+  `crucible_core::traits::tools::ToolExecutor`, and that file's own tests had to
+  alias the real trait around the collision. The dead
+  `crucible_cli::config::LlmConfig` alias is deleted; nothing used it and it
+  named `AcpConfig`.
+
+- **The 1500-line per-file ceiling is gone**, with
+  `scripts/check-file-sizes.sh` and `.file-size-whitelist`. It had no empirical
+  support: measured across thirteen codebases, Crucible kept 0.2% of its Rust
+  files over the limit and 2.2% of its lines in them, while every reference —
+  codex, zed, helix, rust-analyzer, ripgrep, postgres, git, go, neovim, redis,
+  sqlite, cpython — ran 2.7% to 21.3% of files and **24.6% to 76.2% of lines**.
+  All thirteen would fail the gate, most of them hundreds of times. Worse, the
+  largest files in the best of them are enumerated tables — ripgrep's
+  8,161-line `flags/defs.rs`, helix's 7,228-line `commands.rs` — which is the
+  exact pattern this codebase names as its exemplar, so the ceiling argued
+  against the shape it was trying to adopt. `just lint size` is removed;
+  `just lint` no longer runs it.
+
+- **JSON-RPC method names are one closed enum** (`RpcMethod`,
+  `crucible-daemon/src/rpc/dispatch.rs`). `METHODS` — what
+  `daemon.capabilities` advertises — and the 750-line dispatch match were two
+  hand-maintained lists, and drift between them hides a method from every
+  capability-detecting client; it happened once already with `plugin.install`
+  and `plugin.remove`. The gate meant to catch it scanned this file's own
+  source text and mistook any quoted dotted-lowercase literal in an arm body
+  for a method name. One `rpc_methods!` table now generates both, and the
+  dispatch match is exhaustive over the enum with no wildcard arm. No method
+  name and no wire behaviour changed.
+
+- **The scripting/transport name overlap is one shared type** (`ScriptingEvent`,
+  `crucible-core/src/events/session_event/`). `TurnPayload::as_scripting_event`
+  and `SessionEvent::event_type` spelled the same ten events in two independent
+  lists of string literals, held together only by a test that `include_str!`d
+  two files and sliced between literal markers. Both now read the name off the
+  same constant. `as_scripting_event` returns `Option<ScriptingEvent>` rather
+  than `Option<&'static str>`; call `.as_str()` for the name.
+
+- **`crucible.on` hook names are two closed enums, not one list of strings.**
+  `EventName` holds the eight daemon broadcast events, `StageId` the eleven
+  synchronous turn-loop stages
+  (`crucible-lua/src/handlers/hook_name.rs`); `HOOK_NAMES` is gone. The single
+  list conflated two contracts — a handler's return value changes what happens
+  next at a stage and can change nothing at an event, so `Cancel` meant
+  "stop the remaining handlers" on one side and "block the operation" on the
+  other, decided only by which name the author had written. Its completeness
+  was also checked by a test that scanned every `.rs` file in the workspace for
+  string literals, a gate satisfiable without adding the entry. `as_str` now has
+  no wildcard arm, the dispatch sites name the variant, and the documented table
+  in `docs/Help/Extending/Event Hooks.md` is checked against the enums. No hook
+  name changed, so no plugin or config needs an edit.
+
+- **One table now maps a daemon event to the hook name Lua registers for**
+  (`crucible-daemon/src/event_map.rs`). The outbound bridge that broadcasts to
+  clients and the inbound dispatch that runs Lua handlers each carried their own
+  three-arm `match` over the same three file events; they could disagree with
+  nothing to catch it, and every other event the daemon emits reached Lua not at
+  all. Adding an event is now a row plus an `EventName` variant, and tests pin the
+  two against each other in both directions. No behaviour change for the
+  three file events.
+
+- **Session titling moved out of the daemon into the bundled `auto-title`
+  plugin.** The system prompt, the 1500-character clip and the sanitizer that
+  strips quotes and `Title:` scaffolding were compiled in
+  (`crucible-daemon/src/provider/title.rs`, now deleted); they live in
+  `runtime/plugins/auto-title/` and are editable without a rebuild —
+  `require("auto-title").setup{ prompt = "…", clip = 800, timeout = 20 }` or
+  `[plugins.auto-title]`. The daemon keeps what every client depends on being
+  uniform: when titling fires, that it fires once, that the title is persisted
+  and announced, and that a session with content falls back to a truncated
+  first message when nothing answers. A plugin publishing `session_title`
+  replaces the behaviour; `[plugins.auto-title] enabled = false` leaves the
+  truncation fallback. One thing the compiled-in path did not have: the title
+  completion is now bounded at 30 seconds, through the same `timeout` key the
+  prompt and the clip are set by, because a title nobody is waiting for is not
+  worth holding a task open for the provider's own timeout.
+
+- **`just web` runs the hot-reload dev server**, with the API behind it, rather
+  than serving a built bundle through the Rust binary. The old behaviour is
+  `just web-static`. The Vite proxy now forwards WebSocket upgrades, without
+  which the terminal pane mounted and stayed blank.
+
+- **The file pane has one always-visible root control**, and picking a root
+  re-roots the tree in place instead of opening a second tab.
+
+- **The session tree is scoped to the pinned project**, with projects that have
+  no sessions in their own collapsed section.
+
+### Fixed
+
+- **`--config X` now evaluates `X`'s own `init.lua`.** The daemon used to
+  evaluate `~/.config/crucible/init.lua` regardless of `--config`, so a
+  daemon on an alternate root ran someone else's Lua. The config file's
+  directory is the config root now; an `init.lua` kept in the DEFAULT
+  directory is no longer read when `--config` points elsewhere.
+
+- **In-process test daemons no longer evaluate the developer's real
+  `init.lua`.** The value-injection bind path reads no user file at all,
+  and a regression test pins it.
+
+- **A saved bash allow-rule matches each chained statement.** A rule for
+  `git ` allowed `git log; curl evil`. Every statement joined by `;`, `&&`,
+  `||`, `|`, `&` or a newline must match, and a line with `$(...)`,
+  backticks or `<(...)` does not match. Saved rules that relied on the prefix
+  match now prompt again.
+
+- **`cru chat --record out.jsonl "query"` errors** instead of exiting without
+  writing the recording. The piped form already errored.
+
+- **A session cannot cancel another session's background job.** The MCP tool
+  and the RPC path check the owner; an unknown or foreign id returns the same
+  `invalid_params` error.
+
+- **A `User`-scope permission grant is persisted** to
+  `whitelists.d/user.toml`, created `0600`. Only `Project` was written
+  before.
+
+- **The reflection plugin runs.** It read `info.kiln`; the bridge sends
+  `kilns`, so no proposal was ever staged.
+
+- **`get_note_by_name` carries `wikilinks`**, which the client DTO reads;
+  every note came back with no links.
+
+- **`WatchConfig.debounce` reaches the notify backend.** It was set and never
+  read.
+
+- **Concurrent permission grants no longer lose a write.** Two sessions that
+  granted at the same time overwrote each other's entry in the store.
+
+- **A daemon write is not recorded as a user edit.** The write-suppression
+  window was shorter than the two debounce stages that deliver the event.
+
+- **Held ACP tool results are accounted, logged and marked.** A held result
+  released mid-turn refunds its bytes; a result still held when the turn
+  errors or times out is logged; a refused replacement leaves a drop marker.
+
+- **`cru chat "<query>"` re-embedded the whole kiln before it answered.**
+  `NoteRecord::content_hash` is documented as "BLAKE3 content hash (32 bytes)
+  for change detection", and the plain-text and canvas paths filled it — but the
+  markdown parser left `ParsedNote::content_hash` EMPTY, so
+  `BlockHash::from_hex("")` failed and every markdown note stored
+  `BlockHash::zero()`. With the column useless, Phase 1 consulted an
+  `InMemoryChangeDetectionStore` instead, and that map does not outlive the
+  daemon: the first `kiln.open(process = true)` after every daemon start
+  reprocessed and re-embedded EVERY note. Measured on the 150-note `docs` kiln:
+  150 discovered, **0 skipped, 3m35s** — and one-shot chat waits for it, because
+  `get_storage` runs before the agent is created. It looked like a hang. The
+  parser now fills the hash (over the whole input, so a frontmatter-only edit
+  still counts), Phase 1 compares the file against `notes.content_hash`, and
+  `update_file_state` is gone — all three calls sat right after the upsert that
+  now persists it. Same command against a cold daemon: **15.9s**. The TUI was
+  never affected; it does not call `get_storage`.
+
+- **A long kiln open looked like a crash.** The status line only repainted
+  between steps, so minutes of indexing sat behind one static `⟳ Opening
+  kiln...` — and behind nothing at all when stdout is piped, since
+  `StatusLine::update` suppresses itself there. It now redraws each second with
+  the elapsed time, and prints what the open indexed. `kiln.open` already
+  returned `discovered`/`processed`/`skipped` and every caller discarded them.
+
+- **A message send froze the TUI while inotify walked `target/`.** The review
+  watch registered ONE RECURSIVE watch on the repository top level, and the
+  recursive mode of `notify` adds a watch for each directory it walks — so it
+  descended the build output. `messaging/send.rs` awaits that call for each
+  turn, before precognition, and nothing reaches the client while it runs: no
+  message, no spinner, no error. On a 408 GB `target/` the turn stalled 13
+  seconds, and on a cold cache it never finished. The `BUILD_DIRS` list meant
+  to prevent this filtered EVENTS, after delivery, so it never stopped the
+  walk; it also matched at depth one only, which let `crates/*/target` and
+  `docs-site/node_modules` through. The watch now prunes with
+  `git ls-files --directory --others --ignored --exclude-standard`, which
+  answers in milliseconds because git does not descend a fully ignored tree.
+  This is exact rather than a guess: each tree the ledger records comes from
+  `git add -A`, so an ignored path can never reach a hunk. A subtree with
+  nothing ignored in it still gets one RECURSIVE watch, which is what keeps
+  directories created later covered. Measured on this repository: 13,205 ms
+  becomes 42 ms, and about 18,000 watches become 64. An ignored FILE inside a
+  watched directory (`.env.local`) is no longer reported as an external change.
+
+- **The Discord default intents asked for reactions, not guild messages.**
+  `37889` set bit 10 where bit 9 was meant, so the gateway delivered no guild
+  message at all: DMs worked, a server bot did not, and the whole
+  `respond_to`/mention/prefix path was unreachable. It shipped that way and
+  nothing asserted it. The default is now written as four commented shifts, and
+  the test reads the value out of the IDENTIFY payload rather than off the
+  constant.
+
+- **Discord posted the daemon's raw error into the channel.** Only the
+  concurrent-request case was special-cased; everything else was concatenated
+  into a public message, carrying absolute paths and session ids. The channel
+  now gets a fixed sentence and the detail stays in the log line that was
+  already there.
+
+- **The product-map proof gate counted gitignored files as evidence.**
+  `product_map_proof_tests_exist` greps the tree for each test a `**Proof:**`
+  line cites, and skipped `target`, `node_modules` and `dist` by directory
+  NAME. A denylist of names cannot be complete: a stale `crates/graphify-out/`
+  cache held the old name of a renamed test, so a dead citation passed locally
+  and failed in CI. It now uses `is_committable`, the same `git ls-files` line
+  the kiln sweep already draws.
+
+- **Four clippy lints new in rustc 1.98.0.** `iter_next_slice` in
+  `server/kiln.rs`, two `chunks_exact_to_as_chunks` in `note_store.rs` — which
+  also removes two `expect` panic paths, with iteration order and so cosine
+  scores unchanged — and `result_large_err` in `routes/webhook.rs`, where
+  boxing the error is what the rest of the codebase does and is impossible:
+  axum resolves a handler through `IntoResponse` on the error type, and
+  `Box<Response>` does not implement it.
+
+- **`cru plugin health` and `cru plugin test` reported a green run that ran
+  nothing.** The daemon sends a `message` when it finds no `health.lua` and
+  when it finds no test files, and both response types carry the field.
+  Neither client read it. So a plugin with no health file printed
+  `Healthy: yes`, and a directory with no test files printed
+  `0 passed, 0 failed` and exited 0 — character-for-character what a green
+  suite prints. Health now reports `not checked`; test prints the message and
+  exits 2.
+
+- **A batch of questions asked from a plugin lost every answer.** The TUI built
+  its reply with `AskBatchResponse::new(id)`, which sets `answers: Vec::new(),
+  cancelled: false`, and cleared the selection on the way to each next question.
+  So `cru.ui.ask_batch` came back with zero answers and `cancelled: false` —
+  indistinguishable, to the plugin that asked, from a user who deliberately
+  answered nothing. Answers are now recorded per question as the user moves
+  through the batch, including backwards with BackTab, and the reply carries one
+  `QuestionAnswer` per question.
+
+- **`[embedding.fastembed]` settings were deserialized and then thrown away.**
+  `FastEmbedProvider::new` hardcoded `cache_dir: None` and `batch_size:
+  Some(32)`, so a user who pointed the model cache at a large disk kept
+  downloading to the default location, and a configured batch size never
+  reached the encoder. Both are read from the config now, with a regression
+  test that fails if either is hardcoded again. `num_threads` stays inert and
+  now says so on the field: `fastembed` 5.13's `InitOptions` exposes
+  `max_length`, `cache_dir`, `execution_providers` and
+  `show_download_progress`, and no thread count.
+
+- **Discord handled every message twice after a `require`.**
+  `runtime/plugins/discord/init.lua` registers two gateway handlers at body
+  level and never claimed `package.loaded["discord"]`. The daemon executes the
+  file by path, so `require("discord")` — which the plugin's own
+  `tests/service_test.lua` does — loaded a second copy and ran those
+  registrations again; `Emitter:on` appends rather than replaces, so both
+  copies stayed live and one Discord message drove two agent turns, two replies
+  and two quota charges. The gate that should have caught it matched only
+  `crucible.on`/`cru.on` at column zero and now accepts any receiver.
+
+- **The light theme now reaches the text four surfaces kept dark.** A theme
+  switch rewrites CSS custom properties, so anything reading a token follows —
+  but the typography plugin's `prose-invert` is a class, CodeMirror compiles
+  syntax colors into a StyleModule, xterm takes a color object, and the graph
+  paints literal colors to a canvas. Chat bodies rendered light grey and inline
+  `code` chips rendered white on white; a contrast sweep of the running page
+  found 107 elements under 3.5:1, and now finds four, all of them a published
+  syntax theme's own deliberate values.
+
+- **A pane's ribbon marker sits on that pane's own top edge**, measured from
+  the panel rather than recomputed from the split ratios — the mirrored version
+  matched the proportions and missed the pixels by the height of every fixed
+  cluster above it. The rule above a marker is the pane boundary, so it drags
+  the split.
+
+- **The files tree survives an unlistable workspace root**, and can browse a
+  project with no session.
+
+- **The files panel no longer throws on mount** where `localStorage` is absent.
+
+- **A chip popout has one scroll bar, not two.**
+
+- **`cru process <path>` processes the named kiln**, not the configured one.
+
 ### Removed
+
+- **266 dead items and duplicate copies are gone, about 14,000 lines.** An
+  audit at `7053bcfe7` read every module, and skeptic agents verified each
+  claim. The removals are unused `pub` builders, accessors and modules
+  (`crucible-core/src/processing/`, `hashing/`, `content_category.rs`,
+  `note.rs`, `properties.rs`), plus exact duplicates merged into one
+  definition (`extract_yaml_frontmatter`, `truncate_to_width`, the theme
+  render slots, `SessionIdRequest`). The audit and the remaining work are in
+  `docs/Meta/Architecture/`. The wire changes that followed are listed under
+  Changed below.
+
+- **The `keyring` feature and `KeyringStore` are gone.** Nothing enabled the
+  feature. `SecretsFile` is the one credential store; `AutoStore` and the
+  `CredentialStore` trait went with it.
+
+- **The `[discovery]` config section is ignored.** No code read it. An old
+  config with the section still loads.
+
+- **Scripting event variants nothing produced are gone.** Forty
+  `SessionEvent`/`InternalSessionEvent` variants and eleven `LogEvent`
+  variants had no producer. A Lua handler that matched one of those names
+  never fired before and does not fire now.
 
 - **Ten public types that no code names.** `events::subscriber` (719 lines:
   `HandlerResult`, `EventFilter`, `SubscriptionId` and six more, re-exported
@@ -503,6 +627,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `CrucibleParser`; and the clap wrappers `TasksCommand` and `WorkflowCommand`,
   which `cli/mod.rs` bypasses. `crucible_core` no longer re-exports the
   subscriber names. The daemon's `watch::EventFilter` is now the only one.
+
 - **Config keys that did nothing are deleted, not documented as inert.** 22 keys
   across five sections deserialized, validated, and reached no code:
   `[server]` `host`, `port`, `https`, `cert_file`, `key_file`, `max_body_size`,
@@ -550,6 +675,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   same question with the compiler behind them. Callers testing membership move
   to `HookName::parse(name).is_some()`; callers iterating move to
   `crucible_lua::hook_names()`.
+
 - **The `Reactor` event system** (`crucible_core::events::{Reactor, Handler,
   HandlerContext, DependencyGraph}` and the four built-in handlers) — 3,076
   lines. It was wired into the turn loop at four points and dispatched on every
@@ -561,11 +687,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   has the production handlers. `HandlerResult` is kept and moved to
   `events::subscriber`, beside the EventBus that the file-watch pipeline
   actually runs on.
+
 - **`crucible_core::protocol::EVENT_NAMES`** — a 74-entry list of wire names
   whose only non-test reference was its own re-export. It existed so a test
   could diff it against the payload enums its own doc called the source of
   truth. The test that checked a real property (`Group::of` must know every
   declared event) is kept and now derives from the enums directly.
+
 - **`crucible_core::{InteractionRegistry, InteractionContext}`** — no production
   constructor between them.
 
@@ -612,11 +740,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `session.send_message` request and is never stored, so an assessment that
   runs after the turn has nothing to read it from.
 
-### Breaking
-- A runnable `## Validation` entry now needs an `allow` rule. With the shipped
-  default (`default = "ask"`) an unconfigured daemon runs none of them. To keep
-  a command running, name it: `allow = ["bash:cargo test *"]`.
-
 ## [0.28.1] - 2026-08-18
 
 ### Security
@@ -642,7 +765,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   and points at container isolation as the control that holds.
 - Removed a false claim in the modes page that the engine does not unwrap
   `xargs`, `eval` or `sh -c`. It does.
-
 
 ## [0.28.0] - 2026-08-18
 
@@ -835,7 +957,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   into `ProjectConfig` — so they had no consumer outside their own tests.
 - Dead frontend files and roughly 60 unused exports across the web UI; several
   more narrowed to module-private.
-
 
 ### Added
 - **`cru kiln register <name> <path>`** gives a directory a name of your
@@ -1101,6 +1222,7 @@ The plugin lifecycle release: "not running" now actually means not running.
   during tests.** It called `dirs::config_dir()` unconditionally and put it first
   in precedence, so `~/.config/crucible/agents/` entered every card-resolving
   test.
+
 ### Changed
 - **Web assets come from one place unless you say otherwise.** `cru web` served
   its bundle from `web/dist` on disk in debug builds and from the embedded copy
@@ -1165,6 +1287,7 @@ been running, which caught four failures on its first run.
 - **`cru mcp` serves the plugin registry**, not a separately scanned set of
   tools, so the tools an external MCP client sees are the tools the internal
   agent dispatches.
+
 ### Added
 - **`cru search -c/--preview`** shows a content snippet per hit again. The
   parameter had been threaded through both formatters and then hardcoded `false`
@@ -1278,7 +1401,6 @@ been running, which caught four failures on its first run.
   validator.
 - **Five dead subsystems**, a 5,739-line unused query layer, a dead kiln facade,
   a graph view with no callers, and a watch handler registered nowhere.
-
 
 ## [0.23.0] - 2026-08-11
 
@@ -1461,7 +1583,6 @@ convergence point, and nowhere else.
   around 900 lines with no production caller. `CrucibleClient` was also a
   liability: its `write_text_file` wrote to any absolute path an agent asked for.
   Breaking only for code depending on `crucible-daemon`'s `acp` module directly.
-
 
 ## [0.21.0] - 2026-08-03
 
@@ -1775,7 +1896,6 @@ behind 0.17.0.
 - **The daemon crashed parsing notes containing multi-byte characters.** The footnote extension walked a `Vec<char>` while slicing the note by byte offset; those indices agree only for ASCII, so one em dash before an inline footnote desynchronized them and the slice landed mid-codepoint. In the daemon that panic closed the client's connection, and `cru status` against a real kiln reported "Connection closed by daemon". Present since 0.15.0. Parsing is now covered by a suite that runs every extension over multi-byte text — em dashes, CJK, emoji, ZWJ sequences and combining marks — in the positions where a byte/character mix-up bites.
 - **A panicking handler no longer takes the connection with it.** Every RPC now dispatches behind a panic boundary, so a bug in one handler returns an error for that request instead of dropping the socket mid-conversation. Panics are still bugs and are logged at error level with the method name; they are simply no longer fatal to everything else the client was doing.
 
-
 ## [0.16.0] - 2026-07-27
 
 ### Added
@@ -1800,7 +1920,6 @@ behind 0.17.0.
 - **Bidi and zero-width characters could reorder the statusline.** They are not control characters, so stripping `is_control` let them through, and a right-to-left override changes how a bar reads without changing what it contains — in a branch name, that is attacker-influenced in any repo you clone.
 - **The completion popup could paint over the footer.** It reserved a fixed three lines, which was the footer height only while the footer was one bar and the input one line; it was already wrong for a wrapped multi-line message. It now measures the prompt region.
 - The web model picker could show a stale list, because two overlapping requests could resolve out of order and the older one win.
-
 
 ## [0.15.0] - 2026-07-24
 
