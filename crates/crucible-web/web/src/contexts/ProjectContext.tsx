@@ -8,6 +8,7 @@ import {
 import { createStore, produce, reconcile } from 'solid-js/store';
 import type { Project } from '@/lib/types';
 import type { ProjectContextValue } from '@/lib/types/context';
+import { projectFromUrl } from '@/lib/project-url';
 import {
   registerProject as apiRegisterProject,
   unregisterProject as apiUnregisterProject,
@@ -17,6 +18,29 @@ import {
 
 
 const ProjectContext = createContext<ProjectContextValue>();
+
+const PIN_KEY = 'crucible:pinnedProject';
+
+function trimSlash(p: string): string {
+  return p.replace(/\/+$/, '');
+}
+
+/** The project this browser last pinned, or null. */
+function cachedPinPath(): string | null {
+  try {
+    return localStorage.getItem(PIN_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberPin(path: string): void {
+  try {
+    localStorage.setItem(PIN_KEY, path);
+  } catch {
+    /* private mode */
+  }
+}
 
 function cachedProjects(): Project[] {
   try {
@@ -100,6 +124,7 @@ export const ProjectProvider: ParentComponent = (props) => {
     const existing = projects.find((p) => p.path === path);
     if (existing) {
       setCurrentProject(existing);
+      rememberPin(path);
       return;
     }
 
@@ -110,6 +135,7 @@ export const ProjectProvider: ParentComponent = (props) => {
       const project = await apiGetProject(path);
       if (project) {
         setCurrentProject(project);
+        rememberPin(path);
       } else {
         setError(`Project not found: ${path}`);
       }
@@ -128,9 +154,20 @@ export const ProjectProvider: ParentComponent = (props) => {
 
   onMount(async () => {
     await refreshProjects();
-    if (projects.length > 0 && !currentProject()) {
-      setCurrentProject(projects[0]);
-    }
+    if (currentProject() || projects.length === 0) return;
+    // A window opened from "Open <project> in a new window" is ADDRESSED to
+    // that project. Without this it ran the same cold-start rule as the first
+    // window and pinned projects[0], so every row but the first opened the
+    // wrong project under the right label.
+    // Order: the URL a "new window" was addressed to, then the pin this
+    // browser last held, then first-by-roster. The middle step exists because
+    // scope is supposed to change only on an explicit action, and without it
+    // F5 silently repointed the file tree and the switcher's Recent list.
+    const remembered = projectFromUrl() ?? cachedPinPath();
+    const match = remembered
+      ? projects.find((p) => trimSlash(p.path) === trimSlash(remembered))
+      : undefined;
+    setCurrentProject(match ?? projects[0]);
   });
 
   const value: ProjectContextValue = {

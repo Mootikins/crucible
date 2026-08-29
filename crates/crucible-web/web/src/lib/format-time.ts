@@ -12,6 +12,26 @@ export function relativeTime(iso: string, now: number = Date.now()): string {
   return `${days}d ago`;
 }
 
+/**
+ * Age in the tersest readable form: `now`, `5m`, `3h`, `2d`.
+ *
+ * For dense rows (session lists, the switcher flyout) where the column is a
+ * few characters wide and "3 hours ago" cannot fit. Returns null when the
+ * timestamp is absent or unparseable, so a caller renders nothing rather than
+ * an empty chip.
+ */
+export function terseAge(iso: string | null | undefined, now: number = Date.now()): string | null {
+  if (!iso) return null;
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return null;
+  const mins = Math.floor((now - then) / 60_000);
+  if (mins < 1) return 'now';
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
 /** Format a timestamp as relative time (e.g., "2 min ago") */
 export function formatRelativeTime(timestamp: number): string {
   const now = Date.now();

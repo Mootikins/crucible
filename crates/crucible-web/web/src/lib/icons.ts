@@ -93,4 +93,5 @@ export {
   ZoomIn,
   ZoomOut,
   Frame,
+  MoreHorizontal,
 } from 'lucide-solid';

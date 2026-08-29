@@ -1,6 +1,7 @@
 import { Component, For, JSX, Show } from 'solid-js';
 import { Menu } from '@ark-ui/solid';
 import { Portal } from 'solid-js/web';
+import { menuContent, menuItem, menuSeparator } from '@/components/ui/menu-style';
 import type { FileTreeNode } from '@/lib/file-tree/types';
 import type { TreeRootKind } from '@/lib/tree-root';
 import { Eye, FileText, Target, Copy, RefreshCw, Pencil, Plus, FolderTree, Trash2 } from '@/lib/icons';
@@ -107,16 +108,16 @@ export const FileTreeContextMenu: Component<{
       />
       <Portal>
         <Menu.Positioner>
-          <Menu.Content class="min-w-[10rem] rounded border border-hairline bg-surface-elevated py-1 text-xs text-shell-ink shadow-lg focus:outline-none">
+          <Menu.Content class={menuContent}>
             <For each={items()}>
               {(item) => (
                 <>
                   <Show when={item.group}>
-                    <Menu.Separator class="my-1 border-t border-hairline" />
+                    <Menu.Separator class={menuSeparator} />
                   </Show>
                   <Menu.Item
                     value={item.action}
-                    class="flex items-center gap-2 px-3 py-1.5 cursor-pointer data-[highlighted]:bg-hover-wash"
+                    class={menuItem}
                     classList={{ 'text-error': item.danger === true }}
                   >
                     <item.icon class="w-3.5 h-3.5 shrink-0" />

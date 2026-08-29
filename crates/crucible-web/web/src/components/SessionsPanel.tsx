@@ -5,29 +5,39 @@ import { listWorkspaceTargets } from '@/lib/api';
 import type { Session } from '@/lib/types';
 import { sessionDefaultKiln, sessionWorkspace } from '@/lib/session-scope';
 import { PanelShell } from './PanelShell';
-import { SessionRow } from './SessionTree';
-import { Plus, ChevronRight } from '@/lib/icons';
+import { TreeSection } from '@/components/tree/TreeSection';
+import { sessionStatus } from '@/lib/session-status';
+import { SessionRow, SessionTree } from './SessionTree';
+
+/** How long a session stays in the Inbox after its last message. */
+const INBOX_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 const byRecency = (a: Session, b: Session) =>
   (Date.parse(b.last_activity ?? b.started_at) || 0) - (Date.parse(a.last_activity ?? a.started_at) || 0);
 
 /**
- * The sessions rail — recency-ordered, with an Archived collapsible.
+ * The sessions rail — two tiers, project over session, with an Archived
+ * collapsible below.
  *
  * Its own panel, NOT a scope of the file tree. The Navigator made the two
  * mutually exclusive, so reading a file hid the session list and switching
  * session context cost a scope change; they now sit on opposite rails and are
  * both visible at once.
  *
- * A session carries its kiln and branch on its own row, so the list needs no
- * project grouping to stay legible. (Grouping is a separate, toggled view.)
+ * The project tier is not decoration. A session belongs to exactly one
+ * project, so the project is where "start a session" belongs: each group row
+ * carries its own New Session, on hover and in its context menu. The
+ * panel-wide button they replace could not name the project it meant, and the
+ * flat recency list this panel used to render could not either — it left the
+ * grouping to `SessionTree`, which nothing rendered.
  */
 export const SessionsPanel: Component = () => {
   const { currentSession, sessions, selectSession, archiveSession, deleteSession, refreshSessions } = useSessionSafe();
-  const { projects } = useProjectSafe();
+  const { projects, currentProject, selectProject } = useProjectSafe();
 
   const [checkoutBranch, setCheckoutBranch] = createSignal<Map<string, string>>(new Map());
   const [showArchived, setShowArchived] = createSignal(false);
+  const [inboxOpen, setInboxOpen] = createSignal(true);
 
   onMount(() => {
     refreshSessions({ includeArchived: true });
@@ -79,6 +89,24 @@ export const SessionsPanel: Component = () => {
   const kilnName = (name: string | null): string | null => name || null;
 
   const activeList = createMemo(() => sessions().filter((s) => !s.archived).sort(byRecency));
+
+  /**
+   * The Inbox: sessions doing something, freshest first.
+   *
+   * Membership is "not idle AND touched in the last day". The staleness rule
+   * is what keeps it an inbox rather than a second session list — an agent
+   * that has been blocked on a question since last week is not news, and left
+   * in, it would sit at the top of the rail forever. It stays reachable in the
+   * tree below, under its own project.
+   */
+  const inbox = createMemo(() =>
+    activeList().filter((s) => {
+      if (sessionStatus(s) === 'idle') return false;
+      const touched = Date.parse(s.last_activity ?? s.started_at);
+      return !Number.isNaN(touched) && Date.now() - touched < INBOX_MAX_AGE_MS;
+    }),
+  );
+  const waitingCount = () => inbox().filter((s) => sessionStatus(s) === 'waiting').length;
   const archivedList = createMemo(() => sessions().filter((s) => s.archived).sort(byRecency));
 
   const row = (s: Session) => (
@@ -93,37 +121,60 @@ export const SessionsPanel: Component = () => {
     />
   );
 
+  /** Start a session in one project. The tree offers it per group row. */
+  const newSessionIn = (projectPath: string) =>
+    window.dispatchEvent(
+      new CustomEvent('crucible:new-session', { detail: { workspace: projectPath } }),
+    );
+
   return (
     <PanelShell>
-      <div class="p-2.5 shrink-0">
-        <button
-          onClick={() => window.dispatchEvent(new CustomEvent('crucible:new-session'))}
-          class="w-full px-3 py-2 text-sm text-muted hover:text-shell-ink hover:bg-hover-wash rounded-lg transition-colors flex items-center justify-center gap-2"
-          data-testid="new-session-button"
+      {/* No switcher header. It was a dropdown listing sessions, sitting on
+          top of a list of sessions — its one unique offer was a GLOBAL
+          "active" group, and the Inbox below is that group, in the open,
+          without a click. The waiting count rides the Inbox header instead. */}
+      <div class="flex-1 overflow-y-auto px-1 py-1.5">
+        {/* Above the tree, because it is what you came to look at. */}
+        <TreeSection
+          label="Inbox"
+          count={inbox().length}
+          open={inboxOpen()}
+          onToggle={() => setInboxOpen((v) => !v)}
+          testid="inbox-section"
+          urgent={waitingCount() > 0}
         >
-          <Plus class="w-3.5 h-3.5" /> New Session
-        </button>
-      </div>
+          <div class="flex flex-col">
+            <For each={inbox()}>{row}</For>
+          </div>
+        </TreeSection>
 
-      <div class="flex-1 overflow-y-auto px-1 pb-2" data-testid="session-list">
-        <div class="flex flex-col gap-0.5">
-          <For each={activeList()}>{row}</For>
-        </div>
-        <Show when={!activeList().length}>
+        <SessionTree
+          sessions={activeList()}
+          currentSessionId={currentSession()?.id}
+          projects={projects()}
+          currentProjectPath={currentProject()?.path}
+          onSelectSession={(id) => void selectSession(id)}
+          onSelectProject={(path) => void selectProject(path)}
+          onNewSession={newSessionIn}
+          onArchiveSession={(id) => void archiveSession(id)}
+          onDeleteSession={(id) => void deleteSession(id)}
+          branchOf={branchOf}
+          kilnName={kilnName}
+        />
+        <Show when={!projects().length && !activeList().length}>
           <p class="px-3 py-6 text-center text-muted-dark text-sm">No sessions yet</p>
         </Show>
-        <Show when={archivedList().length}>
-          <button
-            onClick={() => setShowArchived((v) => !v)}
-            class="w-full flex items-center gap-1 px-3 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-dark hover:text-shell-body"
-          >
-            <ChevronRight class="w-3 h-3 transition-transform" style={{ transform: showArchived() ? 'rotate(90deg)' : 'none' }} />
-            Archived · {archivedList().length}
-          </button>
-          <Show when={showArchived()}>
-            <div class="opacity-60 flex flex-col gap-0.5"><For each={archivedList()}>{row}</For></div>
-          </Show>
-        </Show>
+        <TreeSection
+          label="Archived"
+          count={archivedList().length}
+          open={showArchived()}
+          onToggle={() => setShowArchived((v) => !v)}
+          testid="archived-section"
+        >
+          <div class="opacity-60 flex flex-col">
+            <For each={archivedList()}>{row}</For>
+          </div>
+        </TreeSection>
       </div>
     </PanelShell>
   );

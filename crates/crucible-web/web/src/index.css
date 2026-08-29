@@ -56,6 +56,15 @@
   --color-error: #ef4444;
   --color-error-dark: #991b1b;
 
+  /* ── Status ───────────────────────────────────────────────────────────
+   * One colour, one meaning, and no near-duplicates. A `--color-session`
+   * brass (#c9954a) briefly lived beside `attention` (#d4a72c) to mark the
+   * bound session; two ambers a shade apart cannot read as two meanings at
+   * 7px, which is the same argument `SessionStatusDot` makes against two
+   * brass tones. The three axes are now:
+   *   attention — something is waiting on YOU
+   *   ok        — the machine is busy, and it is fine
+   *   primary   — this is the one you are on (selection and binding) */
   --color-attention: #d4a72c;
   --color-ok: #7bc47f;
   --color-precog: #a78bda;

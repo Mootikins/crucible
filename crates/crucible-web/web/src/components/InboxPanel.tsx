@@ -6,6 +6,8 @@ import { InteractionHandler } from '@/components/interactions';
 import { respondToInteraction, listSessions, deleteSession, unarchiveSession } from '@/lib/api';
 import { sortByRecency, sessionDisplayTitle } from '@/lib/session-display';
 import { relativeTime } from '@/lib/format-time';
+import { sessionStatus, type SessionStatus } from '@/lib/session-status';
+import { SessionStatusDot } from '@/components/shell/SessionStatusDot';
 import type { InteractionResponse, Session, SessionState } from '@/lib/types';
 
 // ── Inbox — everything waiting on you, one place ─────────────────────────
@@ -24,18 +26,33 @@ const STATE_DISPLAY: Record<SessionState, { label: string; color: string }> = {
   ended: { label: 'ENDED', color: 'text-muted-dark' },
 };
 
-function sessionStatus(session: Session, attention: SessionAttention | undefined) {
-  if (attention?.pendingInteraction) {
-    return { label: 'WAITING', color: 'text-attention', dot: 'bg-attention animate-pulse' };
+const LIVE_LABEL: Record<SessionStatus, string | null> = {
+  waiting: 'WAITING',
+  working: 'STREAMING',
+  // Nothing live to say — the lifecycle axis below names it instead.
+  idle: null,
+};
+
+/**
+ * The word beside a row.
+ *
+ * TWO axes, not one. `sessionStatus` answers what the session is doing right
+ * now; `session.state` answers where it is in its lifecycle. This file used to
+ * own a second function of the same name over the same live states, with its
+ * own colours — streaming pulsed green here and read as filled brass in the
+ * switcher — so one session wore two vocabularies depending on the panel. The
+ * live axis now comes from `lib/session-status.ts` and renders through
+ * `SessionStatusDot`, which is the same dot the rail and the switcher draw.
+ */
+function statusLabel(session: Session): { label: string; color: string } {
+  const live = LIVE_LABEL[sessionStatus(session)];
+  if (live) {
+    return {
+      label: live,
+      color: sessionStatus(session) === 'waiting' ? 'text-attention' : 'text-ok',
+    };
   }
-  if (attention?.isStreaming) {
-    return { label: 'STREAMING', color: 'text-ok', dot: 'bg-ok animate-pulse' };
-  }
-  const display = STATE_DISPLAY[session.state] ?? STATE_DISPLAY.active;
-  return {
-    ...display,
-    dot: session.state === 'active' ? 'bg-ok' : 'bg-muted-dark',
-  };
+  return STATE_DISPLAY[session.state] ?? STATE_DISPLAY.active;
 }
 
 const InboxPanel: Component = () => {
@@ -142,10 +159,10 @@ const InboxPanel: Component = () => {
 
   const SessionRow = (rowProps: { session: Session; archivedRow: boolean }) => {
     const session = rowProps.session;
-    const status = () => sessionStatus(session, attentionStore.get(session.id));
+    const status = () => statusLabel(session);
     return (
       <div class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-hairline mb-1.5 hover:bg-surface-elevated hover:border-primary/40 transition-colors group">
-        <span class={`w-2 h-2 rounded-full flex-none ${status().dot}`} />
+        <SessionStatusDot status={sessionStatus(session)} labelled />
         <button
           type="button"
           class="flex-1 min-w-0 text-left cursor-pointer"
@@ -206,7 +223,7 @@ const InboxPanel: Component = () => {
           {(entry) => (
             <div class="bg-attention/5 border border-attention/40 rounded-lg px-3.5 py-3 mb-2.5">
               <div class="flex items-center gap-2 mb-2">
-                <span class="w-[7px] h-[7px] rounded-full bg-attention animate-pulse" />
+                <SessionStatusDot status="waiting" labelled />
                 <span class="text-[12.5px] font-semibold">{titleFor(entry)}</span>
                 <span class="flex-1" />
                 <button
