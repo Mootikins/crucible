@@ -3,7 +3,7 @@ title: Product
 description: Product feature map — capabilities, status, documentation, and dependencies
 type: product
 status: active
-updated: 2026-08-23
+updated: 2026-08-29
 tags:
   - meta
   - product
@@ -1180,6 +1180,12 @@ HTTP Gateway (crucible-web wired to daemon)
 - [x] **Web Chat UI** `P1` — SolidJS chat: streaming, markdown, tool cards, permission modals · `crucible-web`
   - **Gets you:** you type in the browser and see streamed tokens, a collapsible thinking block, tool-call cards with args and results, token counts, and permission modals you can answer — plus subagent and delegation cards, a precognition badge, per-segment message bubbles, a context-usage meter, a mode control and export.
   - **Proof:** `web/e2e/stories/chat-stream.story.spec.ts::streams tokens, thinking, tool card, then completes (visual)`; `web/e2e/chat-happy-path.spec.ts::sends a message and displays streamed response`, `::cancel button stops streaming`; markdown in `web/src/lib/__tests__/markdown.test.ts::renders crucible wikilink anchors`, `::sanitizes unsafe script tags`; tool cards in `web/src/components/__tests__/ToolCard.test.tsx`. Tool cards are TypeScript — the old "Lua can extend tool card definitions" clause is dropped.
+- [ ] **Trajectory Inspector** `P2` — a second tab beside Chat that renders the session's own event log as an inspectable list · `crucible-web`
+  - **Gets you:** the answer to "what actually happened" without leaving the session. The Chat tab is the readable story; this is the record it was built from — system prompts, context injections, tool calls with their arguments and results, and the token ledger of every request. Prior art is DeepSeek Harness's Trajectory tab, whose stated rule is *model-visible means logged*: anything that reached a model request must be reconstructable from the log.
+  - **The backend already ships.** `GET /api/session/{id}/history?limit=&offset=` returns the raw `SessionEventMessage` records with `seq` and `timestamp`, plus `total_events` (`crates/crucible-web/src/routes/session/mod.rs:88`, handler at `:608`; client type `DaemonHistoryEvent` at `web/src/lib/api.ts:991-1031`). The payloads already carry what the view needs: `tool_call` has `call_id, tool, args, description, source`; `tool_result` pairs by `call_id`; `message_complete` carries `prompt_tokens, completion_tokens, total_tokens, cache_read_tokens`. **No new route and no new type.**
+  - **One row per event does not work, and the data says why.** A 1.8 MB session on disk (`chat-2026-07-30T0011-1xrk52`) holds 9,748 events of which **9,403 are `thinking` deltas — 96%**. Coalescing each delta run into one collapsed row per `message_id` leaves ~345 rows, which needs no virtualization. Pair each `tool_call` with its `tool_result` by `call_id` into a single row (`args → result`); a split pair is what makes these logs hard to read. Note `seq` reaches 15,315 for 9,748 lines, so the daemon already drops events at write time — the log is a reduced stream, not a raw one, and the view must not claim otherwise.
+  - **Shape:** master-detail. A dense single-line list on the left, each row badged by kind (`SYSTEM`, `USER`, `CONTEXT`, `ASSISTANT`, `TOOL`) and addressed as `Turn N · Step N`; a detail pane on the right with Summary / Payload / Result / Schema / Timing, where Schema shows the tool description the model was actually given and Timing names its own source. A three-lane timeline (Input / Model / Tools) sits above the list as a minimap, which is what "inspect by source" looks like when drawn. Filter chips over kind and `source`, and a search box over the summary line.
+  - **Deliberately not:** replay, fork-from-here, or editing. It is an inspector. `session_resume_from_storage` already backs replay if that is ever wanted.
 - [x] **Flexible Panel System** `P1` — dockable, splittable, poppable panel layout with server-side persistence · `crucible-web`
   - **Gets you:** you drag tabs between left/right/bottom/center zones, split and nest center panes, pop a tab out to a floating window and dock it back, and the layout survives a reload — persisted **server-side** through `GET/POST/DELETE /api/layout` to a file on disk, so it follows you across browsers. The model is a binary split tree (layout v5), not a fixed 4-edge dock.
   - **Proof:** `web/e2e/cross-zone-dnd.spec.ts::drag center tab to left edge panel`, `::dragging last tab out of edge panel auto-collapses it`; `web/e2e/windowing-comprehensive.spec.ts::supports nested splits by splitting a child pane after initial split`, `::split ratio persists after dragging splitter away from default`; `web/e2e/windowing-regression.spec.ts::pop-out MOVES the tabs to a floating window (no mirrored group)`, `::dock button moves a floating window back into the layout`; plus `web/src/lib/__tests__/layout-serializer.property.test.ts`
@@ -1310,6 +1316,26 @@ HTTP Gateway (crucible-web wired to daemon)
   - **Proof:** `web/src/components/__tests__/CanvasPanel.test.tsx::renders every node type as DOM and edges as SVG`, `::draws edge labels`, `::offers four corner handles and four edge connectors on a selected card`, `::highlights the node a connection would land on, and snaps the line to it`, `::grows the marquee rectangle as the pointer moves`, `::flushes a pending save when the panel unmounts`, `::quarantines a rejected node without revealing its path`, `::sandboxes the embed into an opaque origin so it cannot reach the session` (22 tests); doc round-trip `web/src/lib/__tests__/canvas-doc.test.ts`, `canvas-viewport.test.ts`; route `crates/crucible-web/src/routes/canvas.rs`:32
 - [ ] **Workflow Visual Editor** `P3` — DAG editor for workflow markup. The shipped canvas surface is a plausible substrate if this is ever built · `crucible-web` · depends: [[#Workflow Automation]]
 - [ ] **Tauri Desktop** `P3` — native desktop app wrapping the web UI; menu-bar agent status, system notifications. Its stated blocker (a working web chat UI) is now satisfied, so this is genuine open work rather than blocked work; PWA install covers part of the motivation · `crucible-web`
+
+### Browser Extension
+
+> The browser is the one surface the daemon cannot reach. A page behind a login, a rendered
+> app, a document in a web editor — `WebFetch` sees none of them, and a headless browser is a
+> second identity with none of your cookies. An extension solves this because the **user**
+> already has the page open and the browser already trusts them.
+>
+> **The split that makes this work:** the extension owns the *permissions* — host access, tab
+> read, selection, screenshot — and grants them per site and per session. The HTTP gateway
+> owns the *tools* — it accepts a grant, and from the grant alone it knows which tools to
+> register on the session and what each one may touch. Neither half decides on its own. The
+> extension cannot invent a tool; the API cannot reach a page it holds no grant for. This is
+> the same shape as [[#Tools & Permissions]] and the ACP host: capability in, tool surface out.
+
+- [ ] **Extension Permission Grant** `P2` — the extension posts a signed grant (origin, tab or iframe id, scope, expiry) to the gateway; the gateway validates it and derives the session's browser tool surface from it. The enumerated-table rule applies — one table maps a grant scope to the tools it admits, with an exhaustive match and no `Default` · `crucible-web`, `extension/` (new) · depends: [[#HTTP Gateway|API Auth]]
+- [ ] **Page Sharing to a Session** `P2` — share a tab or a single iframe with a running session; the agent reads the rendered DOM text, the URL and the title through a `browser_read` tool the grant admitted. Read-only by default; a write scope (click, type, navigate) is a separate grant a user must give per site · `crucible-web`, `extension/` (new) · depends: **Extension Permission Grant**
+- [ ] **Context-Menu Actions** `P2` — right-click a selection to quote it into the active session, send the whole page, or capture a region as an image. The menu entries are the low-friction path; they post through the same grant as the tools do, so a quote from an ungranted origin fails the same way a tool call does · `extension/` (new)
+- [ ] **Session Picker & Live Status** `P2` — the extension popup lists the daemon's sessions over the gateway, shows which ones hold a grant on the current origin, and streams turn status so you see the agent work without leaving the page · `extension/` (new), `crucible-web` · depends: [[#HTTP Gateway|SSE Event Bridge]]
+- [ ] **Remote-Agent Iframe Host** `P2` — the reverse direction: an external agent embeds a Crucible session as an iframe in its own page, and the extension brokers the permissions that a bare cross-origin iframe cannot get. Distinct from **Plugin Panel Hosting** below, which was about *Crucible* hosting plugin panels and is superseded · `crucible-web`, `extension/` (new)
 
 ### Superseded Web Plans
 
