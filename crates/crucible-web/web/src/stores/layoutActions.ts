@@ -33,12 +33,11 @@ export interface LayoutActions {
   setEdgePanelCollapsed(position: EdgePanelPosition, collapsed: boolean): void;
   setEdgePanelActiveTab(position: EdgePanelPosition, tabId: string | null): void;
   setEdgePanelSize(position: EdgePanelPosition, size: number): void;
-  setRailPaneCollapsed(
-    position: EdgePanelPosition,
+  setPaneCollapsed(
     paneId: string,
     collapsed: boolean
   ): void;
-  toggleRailPaneCollapsed(position: EdgePanelPosition, paneId: string): void;
+  togglePaneCollapsed(paneId: string): void;
   getTabGroup(groupId: string): TabGroup | undefined;
   getPaneTabGroupId(paneId: string): string | null;
   findPaneById(paneId: string): ReturnType<typeof findPaneAnywhere>;
@@ -168,45 +167,46 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
   };
 
   /**
-   * Collapse ONE pane of a rail to its tab strip, leaving the rail open.
+   * Collapse ONE pane to its tab strip, leaving the region around it open.
    *
-   * Scoped to a rail on purpose: the centre tiling has no ribbon to expand a
-   * pane from again, so a collapsed centre pane would be a state with no way
-   * out. Passing the position is what enforces that.
+   * A pane id is unique across every root, so this takes the id ALONE and
+   * finds the root itself — the same thing every other layout action does. It
+   * used to demand an `EdgePanelPosition` as well, which asked the caller to
+   * tell the dock layer something the dock layer already knows, and made a
+   * capability of the layout tree read as a property of the rails.
+   *
+   * The guard that actually matters is not "which region": it is that a root
+   * must keep at least one pane at full height. A region of nothing but bars
+   * reads as broken, and hiding everything is what collapsing the whole rail
+   * already does. That invariant holds per root, so it covers the centre
+   * tiling for free.
    */
-  const setRailPaneCollapsed = (
-    position: EdgePanelPosition,
-    paneId: string,
-    collapsed: boolean
-  ) => {
-    const rail = store.edgePanels[position];
-    if (!findPaneInLayout(rail.layout, paneId)) return;
-    // The LAST expanded pane may not collapse. A rail of nothing but bars
-    // reads as a broken rail, and hiding everything is what the rail's own
-    // collapse already does.
-    if (
-      collapsed &&
-      expandedPanes(rail.layout).every((p) => p.id === paneId)
-    ) {
-      return;
-    }
+  const setPaneCollapsed = (paneId: string, collapsed: boolean) => {
     setStore(
       produce((s) => {
-        // Mutated in place rather than rebuilt: only this leaf's flag changes,
-        // so the panes around it keep their nodes and never re-render.
-        const pane = findPaneInLayout(s.edgePanels[position].layout, paneId);
-        if (pane) pane.collapsed = collapsed;
+        updateRootWhere(
+          s,
+          (root) => !!findPaneInLayout(root, paneId),
+          (root) => {
+            if (collapsed && expandedPanes(root).every((p) => p.id === paneId)) {
+              return root;
+            }
+            // Mutated in place rather than rebuilt: only this leaf's flag
+            // changes, so the panes around it keep their nodes and never
+            // re-render.
+            const pane = findPaneInLayout(root, paneId);
+            if (pane) pane.collapsed = collapsed;
+            return root;
+          }
+        );
       })
     );
   };
 
-  const toggleRailPaneCollapsed = (
-    position: EdgePanelPosition,
-    paneId: string
-  ) => {
-    const pane = findPaneInLayout(store.edgePanels[position].layout, paneId);
+  const togglePaneCollapsed = (paneId: string) => {
+    const pane = findPaneAnywhere(store, paneId);
     if (!pane) return;
-    setRailPaneCollapsed(position, paneId, !pane.collapsed);
+    setPaneCollapsed(paneId, !pane.collapsed);
   };
 
   const getTabGroup = (groupId: string) => {
@@ -283,8 +283,8 @@ export function createLayoutActions(context: WindowStoreContext): LayoutActions 
     setEdgePanelCollapsed,
     setEdgePanelActiveTab,
     setEdgePanelSize,
-    setRailPaneCollapsed,
-    toggleRailPaneCollapsed,
+    setPaneCollapsed,
+    togglePaneCollapsed,
     getTabGroup,
     getPaneTabGroupId,
     findPaneById,

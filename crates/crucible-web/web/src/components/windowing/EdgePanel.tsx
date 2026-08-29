@@ -1,24 +1,23 @@
 import { Component, Show, createEffect, createSignal, on, onCleanup } from 'solid-js';
-import { Dynamic } from 'solid-js/web';
 import { Key } from '@solid-primitives/keyed';
 import { createDraggable, createDroppable } from '@thisbeyond/solid-dnd';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import { ProjectMenu } from '@/components/shell/ProjectMenu';
-import { applyTheme, readTheme, type Theme } from '@/lib/theme';
+import { applyTheme, theme } from '@/lib/theme';
 import {
   collectPanes,
   findPaneInLayout,
   primaryEdgeGroupId,
 } from '@/stores/windowStoreInternals';
-import { paneFlex } from '@/lib/pane-collapse';
-import type { EdgePanelPosition, LayoutNode, PaneNode, Tab } from '@/types/windowTypes';
+import type { EdgePanelPosition, Tab } from '@/types/windowTypes';
 import { openPanelTab } from '@/lib/panel-actions';
 import { isRestoringLayout } from '@/lib/layout-restore';
 import { attachFileDropTarget } from '@/lib/file-dnd';
 import { openFileInGroup } from '@/lib/file-actions';
 import { terminalAllowed } from '@/lib/terminal-availability';
 import { SplitPane } from './SplitPane';
+import { RibbonPaneStrip } from './RibbonPaneStrip';
 import {
   IconPanelLeft,
   IconPanelLeftClose,
@@ -158,7 +157,7 @@ const RibbonTabButton: Component<{
       // open the pane. Collapsing the whole rail here would hide the tabs the
       // user can plainly see.
       windowActions.setActiveTab(props.groupId, props.tab.id);
-      windowActions.setRailPaneCollapsed(props.position, props.paneId, false);
+      windowActions.setPaneCollapsed(props.paneId, false);
     } else if (props.isActive) {
       windowActions.setEdgePanelCollapsed(props.position, true);
     } else {
@@ -208,102 +207,6 @@ const ribbonBtn =
   'flex items-center justify-center text-muted-dark hover:text-shell-body hover:bg-hover-wash transition-colors';
 
 /**
- * One pane's marker in the ribbon: click to tuck that pane away, click again
- * to bring it back.
- *
- * It wears the pane's ACTIVE TAB icon, so the terminal's marker is a terminal
- * — the rail reads as "this icon controls that pane" rather than as a row of
- * anonymous chevrons. The rail's own toggle is a different thing entirely and
- * stays at the top of the ribbon.
- */
-const RibbonPaneMarker: Component<{
-  position: EdgePanelPosition;
-  pane: PaneNode;
-}> = (props) => {
-  const group = () =>
-    props.pane.tabGroupId ? windowStore.tabGroups[props.pane.tabGroupId] : undefined;
-  // The active tab, or the first — a group whose active tab was just closed
-  // still has a pane to control.
-  const tab = () => {
-    const g = group();
-    if (!g) return undefined;
-    return g.tabs.find((t) => t.id === g.activeTabId) ?? g.tabs[0];
-  };
-  const collapsed = () => props.pane.collapsed === true;
-  const label = () => tab()?.title ?? 'pane';
-
-  return (
-    <button
-      type="button"
-      data-testid={`ribbon-pane-marker-${props.position}`}
-      data-pane-id={props.pane.id}
-      data-collapsed={collapsed() ? 'true' : 'false'}
-      aria-expanded={!collapsed()}
-      class={`${ribbonBtn} w-10 h-8 flex-none`}
-      classList={{ 'text-shell-body': !collapsed() }}
-      title={`${collapsed() ? 'Expand' : 'Collapse'} ${label()}`}
-      onClick={() =>
-        windowActions.toggleRailPaneCollapsed(props.position, props.pane.id)
-      }
-    >
-      <Show
-        when={tab()?.icon}
-        fallback={<span class="text-xs">{label()[0]}</span>}
-      >
-        {(icon) => <Dynamic component={icon()} class="w-4 h-4" />}
-      </Show>
-    </button>
-  );
-};
-
-/**
- * The ribbon's mirror of the rail's layout tree — one band per pane, in tree
- * order, flexed by the same ratios the panel uses.
- *
- * Sharing `paneFlex` with `SplitPane` is what makes a marker sit beside the
- * pane it controls: the bands split where the panes split, and a collapsed
- * band shrinks to the same strip height as its pane. The strip occupies the
- * ribbon's free space, so it is offset by the fixed clusters above and below
- * it (the rail toggle, the bell) — the ORDER and the proportions line up, not
- * the absolute pixels, which is as far as a ribbon can go without measuring
- * the panel on every frame.
- */
-const RibbonPaneStrip: Component<{
-  position: EdgePanelPosition;
-  node: LayoutNode;
-}> = (props) => (
-  <Show
-    when={props.node.type === 'split' ? props.node : undefined}
-    fallback={
-      <RibbonPaneMarker position={props.position} pane={props.node as PaneNode} />
-    }
-  >
-    {(split) => (
-      <div
-        classList={{
-          'flex min-h-0 min-w-0 h-full w-full': true,
-          'flex-row': split().direction === 'horizontal',
-          'flex-col': split().direction !== 'horizontal',
-        }}
-      >
-        <div
-          class="flex flex-col items-center overflow-hidden min-h-0 min-w-0"
-          style={{ flex: paneFlex(split().first, split().splitRatio) }}
-        >
-          <RibbonPaneStrip position={props.position} node={split().first} />
-        </div>
-        <div
-          class="flex flex-col items-center overflow-hidden min-h-0 min-w-0"
-          style={{ flex: paneFlex(split().second, 1 - split().splitRatio) }}
-        >
-          <RibbonPaneStrip position={props.position} node={split().second} />
-        </div>
-      </div>
-    )}
-  </Show>
-);
-
-/**
  * The notification bell, pinned to the bottom of the right ribbon.
  *
  * Its own component rather than a `RibbonCommand` because it carries an unread
@@ -322,7 +225,8 @@ const RibbonBell: Component = () => {
         type="button"
         ref={bellRef}
         data-testid="corner-bell"
-        class={`${ribbonBtn} relative w-10 h-9 flex-none mt-auto`}
+        data-ribbon-floor
+        class={`${ribbonBtn} relative z-20 bg-shell-bg w-10 h-9 flex-none mt-auto`}
         classList={{ 'text-shell-body': open() }}
         title="Notifications"
         aria-label="Toggle notifications"
@@ -352,7 +256,11 @@ const RibbonCommand: Component<{
   <button
     type="button"
     data-testid={props.testId}
-    classList={{ [`${ribbonBtn} w-10 h-9 flex-none`]: true, 'mt-auto': props.bottom }}
+    data-ribbon-floor={props.bottom ? '' : undefined}
+    classList={{
+      [`${ribbonBtn} w-10 h-9 flex-none`]: true,
+      'relative z-20 bg-shell-bg mt-auto': !!props.bottom,
+    }}
     title={props.title}
     onClick={() => props.onClick()}
   >
@@ -365,9 +273,10 @@ const RibbonCommand: Component<{
  * (or leading, for the bottom bar) button expands/collapses the panel. */
 const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
   const { currentProject } = useProjectSafe();
-  // Read once and kept in a signal: `document.documentElement` is not
-  // reactive, so the icon would otherwise never change after a toggle.
-  const [theme, setTheme] = createSignal<Theme>(readTheme());
+  // The box the pane markers are positioned inside. They are placed from the
+  // PANEL's measured geometry, so they need this element's own top to convert
+  // a viewport coordinate into an offset.
+  let ribbonRef: HTMLElement | undefined;
   const panel = () => windowStore.edgePanels[props.position];
   const isVertical = () => props.position === 'left' || props.position === 'right';
 
@@ -437,10 +346,13 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
   return (
     <div
       use:droppable
-      ref={attachRibbonFileDrop}
+      ref={(el) => {
+        ribbonRef = el;
+        attachRibbonFileDrop(el);
+      }}
       data-testid={`edge-collapsed-drop-${props.position}`}
       classList={{
-        'flex bg-shell-bg border-hairline transition-colors': true,
+        'relative flex bg-shell-bg border-hairline transition-colors': true,
         // Border faces the center/panel it grows toward.
         'flex-col border-r': props.position === 'left',
         'flex-col border-l': props.position === 'right',
@@ -452,9 +364,13 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
       <button
         type="button"
         data-testid={`ribbon-toggle-${props.position}`}
+        data-ribbon-ceiling
         classList={{
           [`${ribbonBtn} flex-none`]: true,
-          'w-10 h-9 border-b border-hairline': isVertical(),
+          // z-20: the topmost pane's own top edge is y=0, the same 36px this
+          // button occupies. The rail toggle owns those pixels, so the overlay
+          // never draws a marker there — see RibbonPaneStrip's floor.
+          'relative z-20 bg-shell-bg w-10 h-9 border-b border-hairline': isVertical(),
           'h-9 px-2 border-r border-hairline': !isVertical(),
         }}
         title={panel().isCollapsed ? 'Expand panel' : 'Collapse panel'}
@@ -520,11 +436,12 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
           />
         )}
       </Key>
+      {/* The pane markers are an OVERLAY, not a row in this flow: each one is
+          placed at the top edge of the pane it controls, measured off the
+          panel beside it. In the flow they inherited the offset of every fixed
+          cluster above them and pointed at the wrong pane. */}
       <Show when={panes().length > 1}>
-        <div class="mx-2 my-1 h-px flex-none bg-hairline" />
-        <div class="flex-1 min-h-0 flex flex-col">
-          <RibbonPaneStrip position={props.position} node={panel().layout} />
-        </div>
+        <RibbonPaneStrip position={props.position} ribbonEl={() => ribbonRef} />
       </Show>
       <Show when={props.position === 'left'}>
         {/* Project actions — pin one, or open one in a second window. They
@@ -543,9 +460,7 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
           testId="ribbon-cmd-theme"
           bottom
           onClick={() => {
-            const next = theme() === 'light' ? 'dark' : 'light';
-            setTheme(next);
-            applyTheme(next);
+            applyTheme(theme() === 'light' ? 'dark' : 'light');
           }}
         >
           <Show when={theme() === 'light'} fallback={<IconSun class="w-4 h-4" />}>
@@ -587,6 +502,7 @@ export const EdgePanel: Component<{ position: EdgePanelPosition }> = (props) => 
           SplitPane/Pane stack as the center tiling, so edge panels split,
           host tab bars, and accept drops exactly like center panes. */}
       <div
+        data-edge-panel-body={props.position}
         class="flex flex-col overflow-hidden"
         style={
           isVertical()

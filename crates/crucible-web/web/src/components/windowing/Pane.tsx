@@ -3,7 +3,6 @@ import { Dynamic } from 'solid-js/web';
 import { createDroppable, useDragDropContext } from '@thisbeyond/solid-dnd';
 import { TabBar } from './TabBar';
 import { windowStore, windowActions } from '@/stores/windowStore';
-import { findEdgePanelForPane } from '@/stores/windowStoreInternals';
 import { getGlobalRegistry } from '@/lib/panel-registry';
 import { reactiveMetadataProps } from '@/lib/panel-props';
 import { attachFileDropTarget } from '@/lib/file-dnd';
@@ -146,9 +145,9 @@ export const Pane: Component<{ paneId: string }> = (props) => {
     windowActions.setActivePane(props.paneId);
     // The bar IS the affordance: clicking anywhere on a collapsed pane opens
     // it, so the ribbon marker is a shortcut rather than the only way back.
-    if (!collapsed()) return;
-    const rail = findEdgePanelForPane(windowStore, props.paneId);
-    if (rail) windowActions.setRailPaneCollapsed(rail, props.paneId, false);
+    // No region lookup — a pane id is unique across every root, and a collapsed
+    // pane in the centre tiling has to reopen the same way one in a rail does.
+    if (collapsed()) windowActions.setPaneCollapsed(props.paneId, false);
   };
 
   return (

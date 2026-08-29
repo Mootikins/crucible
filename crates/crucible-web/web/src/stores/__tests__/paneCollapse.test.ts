@@ -53,44 +53,64 @@ describe('rail pane collapse — default seed', () => {
   });
 });
 
-describe('setRailPaneCollapsed', () => {
+describe('setPaneCollapsed', () => {
   it('expands and re-collapses one pane, leaving its sibling alone', () => {
-    windowActions.setRailPaneCollapsed('right', 'right-term-pane', false);
+    windowActions.setPaneCollapsed('right-term-pane', false);
     expect(rightPane('right-term-pane')?.collapsed).toBe(false);
     expect(rightPane('right-pane')?.collapsed).not.toBe(true);
 
-    windowActions.setRailPaneCollapsed('right', 'right-term-pane', true);
+    windowActions.setPaneCollapsed('right-term-pane', true);
     expect(rightPane('right-term-pane')?.collapsed).toBe(true);
     expect(rightPane('right-pane')?.collapsed).not.toBe(true);
   });
 
   it('toggles a pane both ways', () => {
-    windowActions.toggleRailPaneCollapsed('right', 'right-term-pane');
+    windowActions.togglePaneCollapsed('right-term-pane');
     expect(rightPane('right-term-pane')?.collapsed).toBe(false);
-    windowActions.toggleRailPaneCollapsed('right', 'right-term-pane');
+    windowActions.togglePaneCollapsed('right-term-pane');
     expect(rightPane('right-term-pane')?.collapsed).toBe(true);
   });
 
   // A rail of nothing but bars reads as a broken rail. Hiding everything is
   // what the rail's OWN collapse is for.
   it('refuses to collapse the last expanded pane of a rail', () => {
-    windowActions.setRailPaneCollapsed('right', 'right-pane', true);
+    windowActions.setPaneCollapsed('right-pane', true);
     expect(rightPane('right-pane')?.collapsed).not.toBe(true);
   });
 
   it('refuses to collapse the only pane of a single-pane rail', () => {
     const leftPaneId = collectPanes(windowStore.edgePanels.left.layout)[0].id;
-    windowActions.setRailPaneCollapsed('left', leftPaneId, true);
+    windowActions.setPaneCollapsed(leftPaneId, true);
     expect(
       findPaneInLayout(windowStore.edgePanels.left.layout, leftPaneId)?.collapsed,
     ).not.toBe(true);
   });
 
-  // The centre tiling has no ribbon to expand a pane from, so a collapsed
-  // centre pane would be a state with no way out.
-  it('ignores a pane that is not in the named rail', () => {
+  // The guard is per ROOT, not per region: the only pane of the centre tiling
+  // is also the last expanded pane of its root, so it is refused for the same
+  // reason a rail's last pane is.
+  it('refuses the last expanded pane of the centre tiling', () => {
     const centrePaneId = windowStore.layout.id;
-    windowActions.setRailPaneCollapsed('right', centrePaneId, true);
+    windowActions.setPaneCollapsed(centrePaneId, true);
+    expect(collectPanes(windowStore.layout)[0].collapsed).not.toBe(true);
+  });
+
+  // ...and it is ONLY that rule. A centre with two panes collapses one, which
+  // the old rail-scoped signature could not express at all: it demanded an
+  // EdgePanelPosition, so no centre pane could ever be named.
+  it('collapses a centre pane once the centre has a sibling', () => {
+    const firstId = windowStore.layout.id;
+    const groupId = Object.keys(windowStore.tabGroups)[0];
+    windowActions.openTabInNewPane(firstId, 'right', {
+      id: 'tab-collapse-probe',
+      title: 'Probe',
+      contentType: 'settings',
+    });
+    void groupId;
+    const panes = collectPanes(windowStore.layout);
+    expect(panes.length).toBe(2);
+    windowActions.setPaneCollapsed(panes[1].id, true);
+    expect(collectPanes(windowStore.layout)[1].collapsed).toBe(true);
     expect(collectPanes(windowStore.layout)[0].collapsed).not.toBe(true);
   });
 
@@ -100,8 +120,8 @@ describe('setRailPaneCollapsed', () => {
     windowActions.commitSplitRatio('right-split', 0.4);
     expect(rightSplitRatio()).toBe(0.4);
 
-    windowActions.setRailPaneCollapsed('right', 'right-term-pane', false);
-    windowActions.setRailPaneCollapsed('right', 'right-term-pane', true);
+    windowActions.setPaneCollapsed('right-term-pane', false);
+    windowActions.setPaneCollapsed('right-term-pane', true);
     expect(rightSplitRatio()).toBe(0.4);
   });
 });
@@ -122,8 +142,8 @@ describe('rail pane collapse survives layout transforms', () => {
   });
 
   it('survives a serialize / deserialize round trip', () => {
-    windowActions.setRailPaneCollapsed('right', 'right-term-pane', false);
-    windowActions.setRailPaneCollapsed('right', 'right-pane', true);
+    windowActions.setPaneCollapsed('right-term-pane', false);
+    windowActions.setPaneCollapsed('right-pane', true);
 
     const restored = deserializeLayout(serializeLayout(windowStore));
     const panes = collectPanes(restored.edgePanels.right.layout);
