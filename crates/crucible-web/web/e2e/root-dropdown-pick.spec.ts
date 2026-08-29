@@ -68,10 +68,15 @@ test('picking a non-workspace project from the root dropdown browses it', async 
   await page.click('[data-testid="root-dropdown"]', { force: true });
   await page.click('[role="listbox"] :text-is("other-repo")');
 
-  // The tree must show the picked project's contents.
-  await expect(page.locator('[role="treeitem"]:has-text("README.md")')).toBeVisible({
+  // The tree must show the picked project's contents. Named WITHOUT the
+  // extension: the panel's `.ext` toggle defaults to on and hides `.md`, so
+  // the row for `README.md` reads "README". Asserting the on-disk name here
+  // tested the display preference rather than the pick, and broke when that
+  // preference gained its default.
+  await expect(page.locator('[role="treeitem"]:has-text("README")')).toBeVisible({
     timeout: 10_000,
   });
+  await expect(page.locator('[role="treeitem"]:has-text("src")')).toBeVisible();
 
   // The dropdown IS the current-root display, so its own trigger names the
   // browsed root. Nothing else in the panel shows a root: the strip of tabs

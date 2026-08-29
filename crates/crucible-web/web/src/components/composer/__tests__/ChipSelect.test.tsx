@@ -174,17 +174,18 @@ describe('ChipSelect submenus', () => {
 });
 
 /**
- * A scroll event is not a scroll.
+ * A scroll event is not a scroll, and a scroll is not a reason to close.
  *
- * The popout closes on a background scroll, because a scroll moves the trigger
- * out from under a `fixed` panel. But focusing the panel's search input makes
- * the browser reveal it inside every `overflow-hidden` ancestor, and each one
- * emits a scroll that reports `scrollTop === 0` — it never moved. The
- * composer's chip row is such an ancestor, so the popout shut itself the
- * instant it opened: one click, six phantom scrolls, no menu, and five e2e
- * specs timing out on an option that resolved and then detached.
+ * The popout tracks its trigger, because a `fixed` panel anchored to a moving
+ * chip has to. Closing on the scroll EVENT broke two ways. Focusing the
+ * panel's search input makes the browser reveal it inside every
+ * `overflow-hidden` ancestor, and each emits a scroll that never moved
+ * anything. And a scroll that does move the trigger is usually one the popout
+ * caused: a chip row scrolled sideways snaps back to `scrollLeft: 0` on open,
+ * dragging its chip 8px. Either way the menu shut in the frame it appeared,
+ * which cost six e2e specs a click they could never land.
  */
-describe('ChipSelect — a background scroll closes it only if the trigger moved', () => {
+describe('ChipSelect — a background scroll moves the panel, it does not close it', () => {
   /** Fire a capturing scroll from an element that is NOT the panel. */
   const scrollFrom = (el: Element) => {
     el.dispatchEvent(new Event('scroll', { bubbles: false }));
@@ -199,13 +200,30 @@ describe('ChipSelect — a background scroll closes it only if the trigger moved
     expect(screen.getByTestId('run-on-popout')).toBeTruthy();
   });
 
-  it('closes when the scroll did move the trigger', () => {
+  it('stays open and follows when the scroll moved the trigger on screen', () => {
     renderChip();
     openMenu();
     const trigger = screen.getByTestId('run-on');
-    // Move the trigger, then scroll: this is the case the handler exists for.
     trigger.getBoundingClientRect = () =>
       ({ left: 0, top: 400, right: 80, bottom: 420, width: 80, height: 20 }) as DOMRect;
+    scrollFrom(trigger.parentElement!);
+    expect(screen.getByTestId('run-on-popout')).toBeTruthy();
+  });
+
+  it('closes once the trigger has scrolled out of the viewport', () => {
+    renderChip();
+    openMenu();
+    const trigger = screen.getByTestId('run-on');
+    // Below the fold entirely — there is no anchor left to point at.
+    trigger.getBoundingClientRect = () =>
+      ({
+        left: 0,
+        top: window.innerHeight + 50,
+        right: 80,
+        bottom: window.innerHeight + 70,
+        width: 80,
+        height: 20,
+      }) as DOMRect;
     scrollFrom(trigger.parentElement!);
     expect(screen.queryByTestId('run-on-popout')).toBeNull();
   });

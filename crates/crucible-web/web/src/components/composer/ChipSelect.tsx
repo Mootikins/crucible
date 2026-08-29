@@ -364,21 +364,32 @@ export const ChipSelect: Component<{
     const onViewportChange = () => close();
     const onScroll = (e: Event) => {
       if (panelRef && e.target instanceof Node && panelRef.contains(e.target)) return;
-      // Close on the scroll HAVING MOVED THE TRIGGER, not on the event.
+      // FOLLOW the trigger; close only when it leaves the viewport.
       //
-      // A scroll event does not imply a scroll. Focusing the panel's search
-      // input makes the browser reveal it inside every `overflow-hidden`
-      // ancestor, and each one emits a scroll that reports `scrollTop === 0` —
-      // it never moved. The composer's chip row is such an ancestor, so the
-      // popout shut itself the moment it opened: six phantom scrolls, one
-      // click, no menu. It only surfaced once the composer moved from a rail
-      // into a centre pane, which is where that row starts overflowing.
-      if (!triggerRef || !anchorAt) return close();
+      // Closing on the event was wrong twice over. A scroll event does not
+      // imply a scroll: focusing the panel's search input makes the browser
+      // reveal it inside every `overflow-hidden` ancestor, and each one emits
+      // a scroll that never moved. And a scroll that DOES move the trigger is
+      // usually one the popout caused — a chip row scrolled sideways snaps
+      // back to `scrollLeft: 0` on open, dragging its chip 8px with it, so the
+      // menu shut itself in the frame it appeared. Both killed a click.
+      //
+      // A fixed panel that tracks its anchor is what every menu does. The
+      // original "close instead of chasing it" assumed the user had scrolled
+      // away, which is the one case still handled: no anchor, no panel.
+      if (!triggerRef) return close();
       const now = triggerRef.getBoundingClientRect();
-      if (Math.abs(now.left - anchorAt.left) < 0.5 && Math.abs(now.top - anchorAt.top) < 0.5) {
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      if (now.bottom < 0 || now.top > vh || now.right < 0 || now.left > vw) return close();
+      if (
+        anchorAt &&
+        Math.abs(now.left - anchorAt.left) < 0.5 &&
+        Math.abs(now.top - anchorAt.top) < 0.5
+      ) {
         return;
       }
-      close();
+      positionPanel();
     };
     document.addEventListener('mousedown', onDocClick);
     document.addEventListener('keydown', onKey);
