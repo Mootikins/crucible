@@ -29,7 +29,11 @@ export default defineConfig(({ mode }) => ({
     allowedHosts: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        // Follows the port `just web` starts the API on. It was hardcoded to
+        // 3000, so `just web 3001` produced a dev server whose every request
+        // went nowhere — the recipe's own comment warned about it rather than
+        // fixing it.
+        target: `http://localhost:${process.env.CRUCIBLE_API_PORT ?? 3000}`,
         changeOrigin: true,
       },
     },

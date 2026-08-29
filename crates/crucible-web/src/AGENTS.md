@@ -16,12 +16,16 @@ Browser-based chat UI for Crucible: Axum backend (this module) + SolidJS fronten
 From the repo root, use `just`:
 
 ```bash
-just web                          # build frontend, serve on 0.0.0.0:3000
-cd crates/crucible-web/web && bun run dev   # hot reload, proxies /api to :3000
+just web                # hot reload (Vite) + the API behind it — the dev loop
+just web-static         # build the bundle, serve it from `cru` on 0.0.0.0:3000
 ```
 
-`just --show web` explains the flags, the LAN host policy, and why the dev
-server's proxy pins port 3000.
+`just web` runs both processes and passes the API port through to Vite's proxy,
+so `just web 3001` moves both ends. Use `web-static` when the thing under test
+is the binary's own responses — CSP, nosniff, Content-Disposition — which the
+dev server does not send.
+
+`just --show web` explains the flags and the LAN host policy.
 
 ## Structure
 

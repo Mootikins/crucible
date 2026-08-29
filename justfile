@@ -394,24 +394,47 @@ test tier="quick" *args:
 # `--standalone` is NOT optional: a debug `cru` on the shared socket detects the
 # git-SHA mismatch and shuts the installed daemon down to respawn its own.
 #
-# Bound to every interface by default so a headless box is reachable; pass a
-# host to narrow it (`just web 3000 127.0.0.1` for localhost-only). Any name or
-# address a LAN client reaches it by works with no configuration — those
-# clients authenticate with the key from `cru web key`.
+# `web-static` binds every interface by default so a headless box is reachable;
+# pass a host to narrow it (`just web-static 3000 127.0.0.1` for localhost-only).
+# Any name or address a LAN client reaches it by works with no configuration —
+# those clients authenticate with the key from `cru web key`. `just web` binds
+# the API to localhost instead: Vite is the LAN-facing surface there, and it
+# already accepts any Host header.
 #
 # `--static-dir` is what makes this recipe's `web-build` dependency take effect:
 # the binary's own assets are embedded at COMPILE time, so without the flag a
 # `bun run build` would change nothing until the Rust crate was rebuilt too.
-# Serving `dist/` from disk is a dev choice, not a build-profile one.
+# TWO processes, one recipe: Vite serves the app and rebuilds on save, `cru web`
+# supplies /api behind it. Neither is useful alone — the dev server without the
+# API gives an app whose every request fails, and `cru web` alone is what this
+# recipe used to be: no hot reload, and a full `bun run build` before every
+# run just to see a one-line change.
 #
-# For frontend hot reload, run `bun run dev` in crates/crucible-web/web
-# alongside this. Its proxy is hardcoded to localhost:3000, so changing the
-# port here leaves that dev server's /api pointing at nothing.
+# The API port is passed to Vite so its proxy follows it; the dev server's own
+# port is Vite's (5273, or CRUCIBLE_WEB_PORT). `just web-static` is the other
+# path — the built bundle served by the binary, which is the only way to see
+# the real response headers (CSP, nosniff, Content-Disposition).
 #
 #     just web / just web 3001 / just web 3000 127.0.0.1
 #
-# Build the frontend and serve it (default 0.0.0.0:3000)
-web port="3000" host="0.0.0.0": (web-build "off")
+# Frontend with hot reload, plus the API behind it
+web api_port="3000" host="127.0.0.1":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo build -p crucible-cli --bin cru
+    # The BINARY, not `cargo run`: killing cargo can leave the server it
+    # spawned holding the port, and the next run then fails to bind.
+    ./target/debug/cru --standalone web --host {{host}} --port {{api_port}} &
+    api=$!
+    trap 'kill "$api" 2>/dev/null || true' EXIT INT TERM
+    cd crates/crucible-web/web
+    bun install
+    CRUCIBLE_API_PORT={{api_port}} exec bun run dev
+
+# `off` disables the PWA service worker — see web-build.
+#
+# Build the frontend and serve it from the binary (default 0.0.0.0:3000)
+web-static port="3000" host="0.0.0.0": (web-build "off")
     cargo build -p crucible-cli --bin cru
     cargo run -p crucible-cli -- --standalone web --host {{host}} --port {{port}} --static-dir crates/crucible-web/web/dist
 
