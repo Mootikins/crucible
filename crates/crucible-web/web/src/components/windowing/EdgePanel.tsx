@@ -5,6 +5,7 @@ import { createDraggable, createDroppable } from '@thisbeyond/solid-dnd';
 import { windowStore, windowActions } from '@/stores/windowStore';
 import { useProjectSafe } from '@/contexts/ProjectContext';
 import { ProjectMenu } from '@/components/shell/ProjectMenu';
+import { applyTheme, readTheme, type Theme } from '@/lib/theme';
 import {
   collectPanes,
   findPaneInLayout,
@@ -27,6 +28,8 @@ import {
   IconPanelBottomClose,
   IconZap,
   IconSettings,
+  IconMoon,
+  IconSun,
   IconBell,
 } from './icons';
 import { ArrowLeftRight, Plus } from '@/lib/icons';
@@ -362,6 +365,9 @@ const RibbonCommand: Component<{
  * (or leading, for the bottom bar) button expands/collapses the panel. */
 const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
   const { currentProject } = useProjectSafe();
+  // Read once and kept in a signal: `document.documentElement` is not
+  // reactive, so the icon would otherwise never change after a toggle.
+  const [theme, setTheme] = createSignal<Theme>(readTheme());
   const panel = () => windowStore.edgePanels[props.position];
   const isVertical = () => props.position === 'left' || props.position === 'right';
 
@@ -529,11 +535,26 @@ const EdgeRibbon: Component<{ position: EdgePanelPosition }> = (props) => {
         </div>
       </Show>
       <Show when={props.position === 'left'}>
-        {/* Settings pinned at the ribbon's bottom, like Obsidian's gear. */}
+        {/* Appearance and settings, pinned at the ribbon's bottom-left like
+            Obsidian's gear. `bottom` on the FIRST of the pair: it carries the
+            `mt-auto` that pushes both down, so only one may claim it. */}
+        <RibbonCommand
+          title={theme() === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
+          testId="ribbon-cmd-theme"
+          bottom
+          onClick={() => {
+            const next = theme() === 'light' ? 'dark' : 'light';
+            setTheme(next);
+            applyTheme(next);
+          }}
+        >
+          <Show when={theme() === 'light'} fallback={<IconSun class="w-4 h-4" />}>
+            <IconMoon class="w-4 h-4" />
+          </Show>
+        </RibbonCommand>
         <RibbonCommand
           title="Open Settings"
           testId="ribbon-cmd-settings"
-          bottom
           onClick={() => openPanelTab('settings')}
         >
           <IconSettings class="w-4 h-4" />

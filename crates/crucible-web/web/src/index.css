@@ -115,6 +115,68 @@
   --shadow-2xl: 0 18px 46px -10px rgba(0, 0, 0, 0.6);
 }
 
+/* ── Light theme ────────────────────────────────────────────────────────
+ * The SAME token names, re-declared. Every `bg-shell-bg`, `text-muted` and
+ * inline `var(--color-…)` in the app follows with no change; a `dark:` variant
+ * per class would have meant touching every file and would still have missed
+ * the inline uses.
+ *
+ * SLIGHTLY COOL, not neutral and never warm. The first attempt made these
+ * greys warm (B-R of -7), which put the surfaces at OKLCH hue ~88 while the
+ * dark surfaces AND these light inks both sit near hue ~296 — a 208-degree
+ * conflict, and cool violet text on warm cream is the pairing that reads
+ * muddy. These are generated at the dark theme's own hue, so both themes and
+ * both halves of this one agree.
+ *
+ * The field backs the direction: of ten sourced light themes, nine are neutral
+ * or slightly cool (Primer #f6f8fa is +4, IntelliJ #F7F8FA is +3, VS Code
+ * Light Modern and Obsidian are flat neutral). Solarized Light is the one
+ * deliberate warm theme, and it is warm by -26, not by a little. Catppuccin
+ * Latte is cool-grey with warm ACCENTS — the same shape used here, where the
+ * ember stays the only warm thing in either theme.
+ *
+ * The four ink steps are chosen by CONTRAST, not by hex: each targets its dark
+ * counterpart's ratio (15.3 / 10.7 / 6.0), so a token carries the same visual
+ * weight in both themes.
+ *
+ * The accents all darken. #e0653a over white is 3.45:1 and #c4552e is 4.48:1 —
+ * both fail as text and as a button fill. Never reuse a dark accent on a light
+ * ground. */
+:root[data-theme='light'] {
+  --color-surface-base: #f5f4f8;
+  --color-surface-elevated: #ffffff;
+  --color-surface-overlay: #ffffff;
+  --color-control: #e0dee6;
+
+  --color-shell-bg: #edecf2;
+  --color-shell-panel: #f5f4f8;
+
+  --color-shell-ink: #17161c;
+  --color-shell-body: #34323c;
+  --color-muted: #5a5763;
+  /* 4.46:1, NOT the 3.20:1 twin of the dark theme's muted-dark. Every theme
+   * lets its faintest step fall under 4.5, but only for placeholders, gutters
+   * and disabled labels. Ours carries timestamps, counts and kiln names —
+   * text a user reads — so it has to clear the text floor. */
+  --color-muted-dark: #6d6b75;
+
+  --color-hairline: #dedde4;
+  --color-hairline-strong: #c7c5ce;
+
+  --color-hover-wash: rgba(23, 22, 28, 0.055);
+
+  --color-primary: #b04823;
+  --color-primary-hover: #963c1c;
+  --color-primary-active: #7d3116;
+
+  --color-error: #c02626;
+  --color-error-dark: #8a1b1b;
+
+  --color-attention: #866400;
+  --color-ok: #3a763f;
+  --color-precog: #6d51a8;
+}
+
 @layer base {
   html, body, #root {
     height: 100%;

@@ -63,6 +63,7 @@ export {
   Monitor,
   Network,
   Moon,
+  Sun,
   Cog,
   FolderTree,
   Search,

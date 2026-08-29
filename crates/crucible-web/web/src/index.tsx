@@ -13,6 +13,7 @@ import '@fontsource/ibm-plex-mono/500.css';
 import 'katex/dist/katex.min.css';
 import './index.css';
 import { initializeHighlighter } from '@/lib/shiki';
+import { applyTheme, readTheme } from '@/lib/theme';
 
 const root = document.getElementById('root');
 
@@ -56,5 +57,8 @@ if (import.meta.env.PROD) {
       console.error('Service worker registration failed:', err);
     });
 }
+
+// Before the first paint: a stored light theme must not flash dark.
+applyTheme(readTheme());
 
 render(() => <App />, root);

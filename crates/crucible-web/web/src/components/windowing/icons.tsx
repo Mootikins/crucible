@@ -5,6 +5,7 @@ export { PanelRightClose as IconPanelRightClose } from '@/lib/icons';
 export { PanelBottom as IconPanelBottom } from '@/lib/icons';
 export { PanelBottomClose as IconPanelBottomClose } from '@/lib/icons';
 export { Settings as IconSettings } from '@/lib/icons';
+export { Moon as IconMoon, Sun as IconSun } from '@/lib/icons';
 export { Zap as IconZap } from '@/lib/icons';
 export { LayoutDashboard as IconLayout } from '@/lib/icons';
 export { GripVertical as IconGripVertical } from '@/lib/icons';
