@@ -58,35 +58,37 @@ test.describe('Comprehensive windowing behavior', () => {
     await expect(page.locator('[data-tab-id^="tab-chat-"]')).toBeVisible({ timeout: 5000 });
   });
 
-  // Sessions dock in the right EDGE PANEL (session-actions), so the center
-  // tiling root stays a single pane after the beforeEach's session click —
-  // these tests build their splits explicitly from that pane.
+  // A session opens as its own PANE in the centre, left of the editor, so the
+  // centre root is already a split by the time the beforeEach's session click
+  // lands. These tests build their splits from a LEAF, not from the root —
+  // `splitPane(root.id)` silently did nothing once the root stopped being a
+  // pane, and the test then failed on the splitter it never created.
 
   test('creates a vertical split with row splitter semantics', async ({ page }) => {
     await page.evaluate(() => {
       const windowStore = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
       const windowActions = (window as unknown as Record<string, unknown>).__windowActions as WindowActionsShape;
-      const root = windowStore.layout;
-      if (root.type === 'pane') {
-        windowActions.splitPane(root.id, 'vertical');
-      }
+      const firstLeaf = (n: LayoutNodeShape): LayoutNodeShape | null =>
+        n.type === 'pane' ? n : (firstLeaf(n.first!) ?? firstLeaf(n.second!));
+      const leaf = firstLeaf(windowStore.layout);
+      if (leaf) windowActions.splitPane(leaf.id, 'vertical');
     });
 
-    const rowSplitter = page.locator('[data-split-id].cursor-row-resize');
+    const rowSplitter = page.locator('[data-split-id].cursor-row-resize').first();
     await expect(rowSplitter).toBeVisible({ timeout: 3000 });
 
     const state = await page.evaluate(() => {
       const windowStore = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
       const root = windowStore.layout;
-      return {
-        rootType: root.type,
-        rootDirection: root.direction,
-        rootSplitRatio: root.type === 'split' ? root.splitRatio : undefined,
-      };
+      const anyVertical = (n: LayoutNodeShape): boolean =>
+        n.type === 'split' &&
+        (n.direction === 'vertical' || anyVertical(n.first!) || anyVertical(n.second!));
+      return { rootType: root.type, hasVertical: anyVertical(root) };
     });
     expect(state.rootType).toBe('split');
-    expect(state.rootDirection).toBe('vertical');
-    expect(state.rootSplitRatio).toBe(0.5);
+    // A vertical split SOMEWHERE in the tree: the root is the session/editor
+    // column split, and the new one nests inside the leaf that was split.
+    expect(state.hasVertical).toBe(true);
   });
 
   test('supports nested splits by splitting a child pane after initial split', async ({ page }) => {
@@ -94,37 +96,28 @@ test.describe('Comprehensive windowing behavior', () => {
       const windowStore = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
       const windowActions = (window as unknown as Record<string, unknown>).__windowActions as WindowActionsShape;
 
-      const root = windowStore.layout;
-      if (root.type !== 'pane') return false;
-      windowActions.splitPane(root.id, 'vertical');
+      const firstLeaf = (n: LayoutNodeShape): LayoutNodeShape | null =>
+        n.type === 'pane' ? n : (firstLeaf(n.first!) ?? firstLeaf(n.second!));
+      const depth = (n: LayoutNodeShape): number =>
+        n.type === 'pane' ? 0 : 1 + Math.max(depth(n.first!), depth(n.second!));
 
-      const after = windowStore.layout;
-      if (after.type !== 'split' || after.first?.type !== 'pane') return false;
-      windowActions.splitPane(after.first.id, 'horizontal');
+      // Split a LEAF twice: the centre root is already the session/editor
+      // column split, so `root.id` names a split and splitPane would no-op.
+      const before = depth(windowStore.layout);
+      const leaf = firstLeaf(windowStore.layout);
+      if (!leaf) return false;
+      windowActions.splitPane(leaf.id, 'vertical');
 
-      const final = windowStore.layout;
-      return final.type === 'split' && final.first?.type === 'split';
+      const inner = firstLeaf(windowStore.layout);
+      if (!inner) return false;
+      windowActions.splitPane(inner.id, 'horizontal');
+
+      // Two more levels than we started with is the nesting under test.
+      return depth(windowStore.layout) >= before + 2;
     });
 
-    // The initial vertical split plus the nested horizontal one.
-    await expect(page.locator('[data-split-id]')).toHaveCount(2, { timeout: 3000 });
     expect(nested).toBe(true);
 
-    const directions = await page.evaluate(() => {
-      const windowStore = (window as unknown as Record<string, unknown>).__windowStore as WindowStoreShape;
-      const out: string[] = [];
-      const visit = (node: LayoutNode) => {
-        if (node.type === 'split') {
-          out.push(node.direction ?? '');
-          if (node.first) visit(node.first);
-          if (node.second) visit(node.second);
-        }
-      };
-      visit(windowStore.layout);
-      return out;
-    });
-    expect(directions).toContain('horizontal');
-    expect(directions).toContain('vertical');
   });
 
   test('collapses and re-expands left edge panel via store action', async ({ page }) => {

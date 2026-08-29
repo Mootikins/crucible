@@ -18,13 +18,17 @@ async function getFirstPaneState(page: Page): Promise<PaneState> {
   return page.evaluate(() => {
     const store = (window as unknown as { __windowStore?: any }).__windowStore;
 
-    const findFirstPaneGroupId = (node: any): string | null => {
-      if (!node) return null;
-      if (node.type === 'pane') return node.tabGroupId ?? null;
-      return findFirstPaneGroupId(node.first) || findFirstPaneGroupId(node.second);
-    };
-
-    const groupId = store ? findFirstPaneGroupId(store.layout) : null;
+    // The EDITOR group: the first centre leaf that is not a conversation. It
+    // used to be simply "the first leaf", which stopped meaning the editor the
+    // moment a session began opening as a pane to its LEFT.
+    const leaves = (node: any): string[] =>
+      !node ? [] : node.type === 'pane'
+        ? (node.tabGroupId ? [node.tabGroupId] : [])
+        : [...leaves(node.first), ...leaves(node.second)];
+    const ids = store ? leaves(store.layout) : [];
+    const isChat = (t: any) => t.contentType === 'chat' || t.contentType === 'chat-draft';
+    const groupId =
+      ids.find((id: string) => !(store.tabGroups[id]?.tabs ?? []).some(isChat)) ?? ids[0] ?? null;
     const group = groupId ? store.tabGroups[groupId] : null;
 
     return {
@@ -35,19 +39,19 @@ async function getFirstPaneState(page: Page): Promise<PaneState> {
   });
 }
 
-/** The RIGHT EDGE PANEL's tab group — sessions dock here (session-actions
- * sessionPane), not in the center tiling. */
+/** The CENTRE group holding conversations. A session is a PEER of the editor
+ * now — its own pane, left of it — not a tab docked in a rail. */
 async function getRightPaneState(page: Page): Promise<PaneState> {
   return page.evaluate(() => {
     const store = (window as unknown as { __windowStore?: any }).__windowStore;
-    // v5 model: edge panels carry a layout tree; the right panel's group is
-    // its first leaf.
-    const firstLeafGroupId = (node: any): string | null => {
-      if (!node) return null;
-      if (node.type === 'pane') return node.tabGroupId ?? null;
-      return firstLeafGroupId(node.first) || firstLeafGroupId(node.second);
-    };
-    const groupId = firstLeafGroupId(store?.edgePanels?.right?.layout) ?? null;
+    const leaves = (node: any): string[] =>
+      !node ? [] : node.type === 'pane'
+        ? (node.tabGroupId ? [node.tabGroupId] : [])
+        : [...leaves(node.first), ...leaves(node.second)];
+    const groupId =
+      leaves(store?.layout).find((id: string) =>
+        (store.tabGroups[id]?.tabs ?? []).some((t: any) =>
+          t.contentType === 'chat' || t.contentType === 'chat-draft')) ?? null;
     const group = groupId ? store.tabGroups[groupId] : null;
 
     return {
@@ -65,7 +69,7 @@ test.describe('New Session -> Chat Tab', () => {
     await openSessionsList(page);
   });
 
-  test('clicking New Session opens a draft; first message creates the chat tab in the right pane', async ({ page }) => {
+  test('clicking New Session opens a draft; first message creates the chat tab beside the editor', async ({ page }) => {
     const createdSession = {
       ...MOCK_SESSION,
       session_id: 'test-session-new',
@@ -133,7 +137,7 @@ test.describe('New Session -> Chat Tab', () => {
     expect(leftAfter.tabs.filter((t) => t.contentType === 'chat')).toHaveLength(0);
   });
 
-  test('clicking an existing session opens its chat tab in the right pane', async ({ page }) => {
+  test('clicking an existing session opens its chat tab beside the editor', async ({ page }) => {
     await page.route('**/api/session/test-session-002', (route) => route.fulfill({ json: MOCK_SESSION_2 }));
 
     const leftBefore = await getFirstPaneState(page);

@@ -314,30 +314,45 @@ export const SessionTree: Component<{
     return none.sessions.length ? [...all, none] : all;
   });
 
-  /**
-   * What the tree draws in its body: groups with sessions, newest first, plus
-   * the project-less bucket when it has any.
-   */
-  const groups = createMemo<SessionGroup[]>(() =>
+  const live = createMemo<SessionGroup[]>(() =>
     allGroups()
       .filter((g) => g.sessions.length || !g.projectPath)
       .sort((a, b) => b.lastActivity - a.lastActivity),
   );
 
+  /** True when the pinned project actually has a group to scope to. */
+  const scoped = () =>
+    !!props.currentProjectPath && live().some((g) => g.projectPath === props.currentProjectPath);
+
   /**
-   * Registered projects with nothing running, folded away by default.
+   * The tree's body: the PINNED project when there is one, everything
+   * otherwise.
    *
-   * Their own section rather than a tail of the list: a registry of twenty
-   * projects is mostly projects you are not working in today, and each one
-   * cost a row that pushed the ones you ARE working in off the screen. They
-   * stay reachable because starting a session in a quiet project is exactly
-   * what the New Session row on each of them is for.
+   * Scoping to a pin that matches nothing would empty the rail, which is a
+   * dead end on the screen a new user starts from — so the scope only applies
+   * when it has something to show.
    */
-  const idleGroups = createMemo<SessionGroup[]>(() =>
-    allGroups()
-      .filter((g) => !g.sessions.length && g.projectPath)
-      .sort((a, b) => a.name.localeCompare(b.name)),
+  const groups = createMemo<SessionGroup[]>(() =>
+    scoped() ? live().filter((g) => g.projectPath === props.currentProjectPath) : live(),
   );
+
+  /**
+   * Everything the body left out, folded and COUNTED: other projects' sessions
+   * and projects with nothing running, in one section.
+   *
+   * One fold rather than two. A registry of twenty projects is mostly projects
+   * you are not working in today, and each cost a row that pushed the ones you
+   * ARE working in off the screen — but a filter you cannot see is worse than
+   * the rows were, so the count states how much is hidden and one click shows
+   * it. They stay fully usable when open: a folded project is the same header
+   * row as a pinned one, so New Session and the context menu work there too.
+   */
+  const offScope = createMemo<SessionGroup[]>(() => {
+    const shown = new Set(groups().map((g) => g.key));
+    return allGroups()
+      .filter((g) => !shown.has(g.key))
+      .sort((a, b) => b.sessions.length - a.sessions.length || a.name.localeCompare(b.name));
+  });
 
   /**
    * Capture-phase router for the single hoisted context trigger.
@@ -497,13 +512,37 @@ export const SessionTree: Component<{
           a quiet registry states its size without spending a row on each
           member. */}
       <TreeSection
-        label="No sessions"
-        count={idleGroups().length}
+        label={scoped() ? 'Other projects' : 'No sessions'}
+        count={offScope().length}
         open={idleOpen()}
         onToggle={() => setIdleOpen((v) => !v)}
         testid="idle-projects-toggle"
       >
-        <For each={idleGroups()}>{(g) => groupHeader(g)}</For>
+        <For each={offScope()}>
+          {(g) => (
+            <div class="mb-0.5">
+              {groupHeader(g)}
+              <Show when={!collapsed().has(g.key) && g.sessions.length > 0}>
+                <div class="flex flex-col">
+                  <For each={g.sessions}>
+                    {(sn) => (
+                      <SessionRow
+                        session={sn}
+                        selected={props.currentSessionId === sn.id}
+                        branch={branchOfSession(sn)}
+                        kilnLabel={kilnNameOf(sn)}
+                        showKiln={kilnNameOf(sn) !== dominantKiln(g)}
+                        onSelect={() => props.onSelectSession(sn.id)}
+                        onArchive={() => props.onArchiveSession(sn.id)}
+                        onDelete={() => props.onDeleteSession(sn.id)}
+                      />
+                    )}
+                  </For>
+                </div>
+              </Show>
+            </div>
+          )}
+        </For>
       </TreeSection>
     </div>
         </div>

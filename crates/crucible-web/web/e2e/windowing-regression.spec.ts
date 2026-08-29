@@ -70,10 +70,11 @@ test('Ribbons carry the shell controls — no header bar', async ({ page }) => {
   await expect(page.getByTestId('ribbon-cmd-new-session')).toBeVisible();
   await expect(page.getByTestId('ribbon-cmd-settings')).toBeVisible();
 
-  // Every edge exposes its own toggle.
+  // Both edges expose their own toggle. There is no third: the bottom dock is
+  // gone, and the terminal it held is a pane under the file tree.
   await expect(page.getByTestId('ribbon-toggle-left')).toBeVisible();
   await expect(page.getByTestId('ribbon-toggle-right')).toBeVisible();
-  await expect(page.getByTestId('ribbon-toggle-bottom')).toBeVisible();
+  await expect(page.getByTestId('ribbon-toggle-bottom')).toHaveCount(0);
 
   // The header bar is gone: its Inbox pill and Ctrl+P kbd hint (the ribbon's
   // palette button shares the palette title, so Inbox is the discriminator)

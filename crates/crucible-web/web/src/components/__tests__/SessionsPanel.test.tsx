@@ -4,6 +4,9 @@ import type { Project, Session } from '@/lib/types';
 
 let sessionList: Session[] = [];
 let projectList: Project[] = [];
+// The pin is INDEPENDENT of the roster: a shell can have projects and no
+// pinned one, which is the state the tree must not scope itself into nothing.
+let pinnedProject: Project | null = null;
 
 vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -24,7 +27,7 @@ vi.mock('@/contexts/SessionContext', () => ({
 vi.mock('@/contexts/ProjectContext', () => ({
   useProjectSafe: () => ({
     projects: () => projectList,
-    currentProject: () => projectList[0] ?? null,
+    currentProject: () => pinnedProject,
     selectProject: async () => {},
   }),
 }));
@@ -60,6 +63,7 @@ describe('SessionsPanel — two tiers, project over session', () => {
   beforeEach(() => {
     localStorage.clear();
     projectList = [project('/home/me/crucible', 'crucible'), project('/home/me/atlas', 'atlas')];
+    pinnedProject = projectList[0];
     sessionList = [
       session('s1', 'netcode-spike', '/home/me/crucible'),
       session('s2', 'atlas-migration', '/home/me/atlas'),
@@ -71,12 +75,16 @@ describe('SessionsPanel — two tiers, project over session', () => {
     // The panel used to render a flat recency list and leave the grouping to a
     // SessionTree nothing mounted.
     expect(screen.getByTestId('session-group-/home/me/crucible')).toBeTruthy();
-    expect(screen.getByTestId('session-group-/home/me/atlas')).toBeTruthy();
     expect(screen.getByTestId('session-item-s1')).toBeTruthy();
+    // atlas is not the pinned project, so it sits behind the counted fold.
+    expect(screen.queryByTestId('session-group-/home/me/atlas')).toBeNull();
+    fireEvent.click(screen.getByTestId('idle-projects-toggle'));
+    expect(screen.getByTestId('session-group-/home/me/atlas')).toBeTruthy();
   });
 
   it('collapses a project without touching its neighbour', () => {
     render(() => <SessionsPanel />);
+    fireEvent.click(screen.getByTestId('idle-projects-toggle'));
     fireEvent.click(screen.getByTestId('session-group-/home/me/crucible'));
     expect(screen.queryByTestId('session-item-s1')).toBeNull();
     expect(screen.queryByTestId('session-item-s2')).toBeTruthy();
@@ -95,6 +103,7 @@ describe('SessionsPanel — two tiers, project over session', () => {
     window.addEventListener('crucible:new-session', listener);
 
     render(() => <SessionsPanel />);
+    fireEvent.click(screen.getByTestId('idle-projects-toggle'));
     fireEvent.click(screen.getByTestId('session-group-new-/home/me/atlas'));
 
     window.removeEventListener('crucible:new-session', listener);
@@ -110,6 +119,7 @@ describe('SessionsPanel — the Inbox', () => {
     localStorage.clear();
     for (const id of ['s1', 's2', 's3']) attentionActions.clear(id);
     projectList = [project('/home/me/crucible', 'crucible')];
+    pinnedProject = projectList[0];
     sessionList = [
       session('s1', 'netcode-spike', '/home/me/crucible'),
       session('s2', 'docs-pass', '/home/me/crucible'),
@@ -155,6 +165,7 @@ describe('SessionsPanel — one section vocabulary', () => {
     localStorage.clear();
     attentionActions.report('s1', { pendingInteraction: { id: 'r', kind: 'ask', question: 'q' } });
     projectList = [project('/home/me/crucible', 'crucible'), project('/home/me/quiet', 'quiet')];
+    pinnedProject = projectList[0];
     sessionList = [
       session('s1', 'netcode-spike', '/home/me/crucible'),
       { ...session('s9', 'old', '/home/me/crucible'), archived: true },
@@ -168,5 +179,52 @@ describe('SessionsPanel — one section vocabulary', () => {
     );
     expect(new Set(classes).size).toBe(1);
     attentionActions.clear('s1');
+  });
+});
+
+describe('SessionsPanel — the tree is scoped to the pinned project', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    projectList = [project('/home/me/crucible', 'crucible'), project('/home/me/atlas', 'atlas')];
+    pinnedProject = projectList[0];
+    sessionList = [
+      session('s1', 'netcode-spike', '/home/me/crucible'),
+      session('s2', 'atlas-migration', '/home/me/atlas'),
+    ];
+  });
+
+  it('states how much it is hiding, and shows it on one click', () => {
+    render(() => <SessionsPanel />);
+    const fold = screen.getByTestId('idle-projects-toggle');
+    // A filter you cannot see is worse than the rows it saves, so the count
+    // says how much is behind it.
+    expect(fold.textContent).toContain('Other projects');
+    expect(fold.textContent).toContain('1');
+
+    fireEvent.click(fold);
+    expect(screen.getByTestId('session-item-s2')).toBeTruthy();
+  });
+
+  it('shows everything when no project is pinned', () => {
+    // Scoping to a pin that matches nothing would empty the rail — a dead end
+    // on the screen a new user starts from.
+    pinnedProject = null;
+    render(() => <SessionsPanel />);
+    expect(screen.getByTestId('session-group-/home/me/crucible')).toBeTruthy();
+    expect(screen.getByTestId('session-group-/home/me/atlas')).toBeTruthy();
+  });
+
+  it('keeps a folded project fully usable', () => {
+    const started: unknown[] = [];
+    const listener = (e: Event) => started.push((e as CustomEvent).detail);
+    window.addEventListener('crucible:new-session', listener);
+
+    render(() => <SessionsPanel />);
+    fireEvent.click(screen.getByTestId('idle-projects-toggle'));
+    fireEvent.click(screen.getByTestId('session-group-new-/home/me/atlas'));
+
+    window.removeEventListener('crucible:new-session', listener);
+    // A folded project is the SAME header row as a pinned one.
+    expect(started).toEqual([{ workspace: '/home/me/atlas' }]);
   });
 });

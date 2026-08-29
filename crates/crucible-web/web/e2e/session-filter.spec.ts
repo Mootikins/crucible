@@ -7,7 +7,7 @@ import { openSessionsList } from './helpers/nav';
  * E2E: the Navigator's session list.
  *
  * The old active/all/archived <select> is gone. The list is recency-ordered
- * and archived sessions live behind a collapsible "Archived · N" section.
+ * and archived sessions live behind a collapsible "Archived" section.
  */
 
 const archived = { ...MOCK_SESSION, session_id: 'archived-001', title: 'Archived Session', archived: true };
@@ -33,7 +33,8 @@ test.describe('Session list', () => {
     await openSessionsList(page);
     await expect(page.getByTestId('session-list')).toBeVisible({ timeout: 10000 });
 
-    const toggle = page.getByRole('button', { name: /Archived · 1/ });
+    // One shared TreeSection header now: label on the left, count on the right.
+    const toggle = page.getByTestId('archived-section');
     await expect(toggle).toBeVisible();
     await toggle.click();
 
@@ -56,6 +57,9 @@ test.describe('Session list', () => {
     // a COUNT on its own row — beside the New Session button that fixes it.
     // The old "No sessions" body cost two rows per empty project, which with
     // twenty registered projects was thirty rows of nothing.
+    // A project with nothing running is behind the counted fold — the rail
+    // scopes to what you are working in, and states how much it hides.
+    await page.getByTestId('idle-projects-toggle').click();
     const group = page.getByTestId('session-group-/home/user/project');
     await expect(group).toBeVisible();
     await expect(group).toContainText('0');
