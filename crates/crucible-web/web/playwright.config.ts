@@ -84,7 +84,17 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         viewport: { width: 1280, height: 800 },
         video: 'on',
-        trace: 'on',
+        // NOT 'on'. On Playwright 1.59.1 a story that passes every assertion
+        // then blocks between `browserContext.close` and `browser.close` for
+        // exactly the test timeout, and is reported as "Test timeout of
+        // 30000ms exceeded" with no failing step — 29 of this project's 33
+        // reported failures were this and nothing else. The story is carried
+        // by the per-step screenshots and the video, both still always on; a
+        // trace is a debugging artifact, wanted on the run that failed.
+        //
+        // No separate gate guards this: setting it back to 'on' fails 29 specs,
+        // which is a louder alarm than any assertion about the config.
+        trace: 'retain-on-failure',
         // Story screenshots are deterministic frames; keep animations still.
         screenshot: 'on',
       },
