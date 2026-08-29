@@ -3,7 +3,7 @@ import { setupBasicMocks } from '../helpers/mock-api';
 import { createStory } from './_helpers/story';
 
 /**
- * Story: real terminal in the bottom panel (xterm.js over the PTY WebSocket).
+ * Story: the real terminal (xterm.js over the PTY WebSocket).
  *
  * The PTY endpoint is mocked with routeWebSocket (no real shell spawns in
  * CI): the mock "server" greets with a prompt, echoes typed input back, and
@@ -41,9 +41,33 @@ test.describe('Terminal panel (xterm over PTY WebSocket)', () => {
     await mockPty(page, state);
 
     await page.goto('/');
-    // Expand the bottom panel via its ribbon toggle and pick the Terminal tab.
-    await page.getByTestId('ribbon-toggle-bottom').click();
-    await page.getByTestId('edge-tab-bottom-terminal-tab-1').click();
+    // The terminal is a PANE of a rail, not a bottom dock — that dock is gone,
+    // and the pane ships collapsed to its tab strip. Open the rail, then the
+    // pane, through the store: both the ribbon toggle and the pane marker
+    // animate, and this story is about the PTY, not about hitting a chevron.
+    await page.evaluate(() => {
+      const store = (window as unknown as Record<string, any>).__windowStore;
+      const actions = (window as unknown as Record<string, any>).__windowActions;
+      const panes = (node: any): any[] =>
+        !node || typeof node !== 'object'
+          ? []
+          : node.type === 'pane'
+            ? [node]
+            : [...panes(node.first), ...panes(node.second)];
+      for (const pos of ['left', 'right'] as const) {
+        const panel = store.edgePanels[pos];
+        for (const pane of panes(panel.layout)) {
+          const group = store.tabGroups[pane.tabGroupId];
+          if (!group?.tabs.some((t: any) => t.contentType === 'terminal')) continue;
+          if (panel.isCollapsed) actions.toggleEdgePanel(pos);
+          actions.setPaneCollapsed(pane.id, false);
+          const tab = group.tabs.find((t: any) => t.contentType === 'terminal');
+          actions.setActiveTab(pane.tabGroupId, tab.id);
+          return;
+        }
+      }
+      throw new Error('no rail pane hosts a terminal tab');
+    });
 
     // 1. A real xterm mounted and shows the mock PTY's greeting.
     const panel = page.getByTestId('terminal-panel');

@@ -152,9 +152,16 @@ test.describe('rich transcript rhythm', () => {
   // the tool stack + meta row — the most design-relevant region — is in frame.
   test('narrow panel width (visual)', async ({ page }) => {
     await driveComplete(page);
+    // Width pinned as well as height: it used to be whatever the shell handed
+    // over — 520px, the old right rail — so moving the session into the centre
+    // tiling reshot this baseline at 458px. The story is about the transcript,
+    // not about the width of the pane beside it.
     await page.getByTestId('message-list').evaluate((el) => {
       el.style.height = '480px';
       el.style.maxHeight = '480px';
+      el.style.width = '520px';
+      el.style.minWidth = '520px';
+      el.style.maxWidth = '520px';
       el.style.flex = 'none';
       el.style.overflow = 'hidden';
       el.scrollTop = el.scrollHeight;

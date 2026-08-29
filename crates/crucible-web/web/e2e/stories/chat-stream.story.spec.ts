@@ -63,11 +63,20 @@ async function selectSession(page: Page) {
 // freetype) — and a size mismatch fails toHaveScreenshot before any diff
 // ratio applies. Both baselines have empty space at the bottom, so the crop
 // loses nothing.
+//
+// The WIDTH is pinned for the same reason, one layout change later. It used
+// to be whatever the surrounding shell handed over — 520px, the old right
+// rail — so moving the session into the centre tiling silently reshot every
+// baseline at 458px. A transcript story is about the transcript; it should
+// not fail because a pane beside it was resized.
 async function pinCaptureBox(page: Page) {
   await page.getByTestId('message-list').evaluate((el) => {
     el.style.height = '480px';
     el.style.minHeight = '480px';
     el.style.maxHeight = '480px';
+    el.style.width = '520px';
+    el.style.minWidth = '520px';
+    el.style.maxWidth = '520px';
     el.style.flex = 'none';
     el.style.overflow = 'hidden';
   });
