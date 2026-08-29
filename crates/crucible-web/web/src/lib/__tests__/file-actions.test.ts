@@ -17,7 +17,7 @@ function resetToState(overrides: Partial<{
   }>;
   layout: LayoutNode;
   activePaneId: string | null;
-  focusedRegion: 'left' | 'right' | 'bottom' | 'center';
+  focusedRegion: 'left' | 'right' | 'center';
 }>) {
   setStore(
     produce((s) => {
@@ -47,7 +47,7 @@ const makeEdgePanel = (position: EdgePanelPosition, tabGroupId: string, isCollap
   id: `${position}-panel`,
   layout: { id: `${position}-pane`, type: 'pane' as const, tabGroupId },
   isCollapsed,
-  ...(position === 'bottom' ? { height: 200 } : { width: 250 }),
+  width: 250,
 });
 
 const simpleLayout = (paneId: string, groupId: string): LayoutNode => ({
@@ -67,7 +67,6 @@ function setupDefaultState(extraTabs: Tab[] = []) {
     edgePanels: {
       left: makeEdgePanel('left', 'left-group'),
       right: makeEdgePanel('right', 'right-group'),
-      bottom: makeEdgePanel('bottom', 'bottom-group'),
     },
     layout: simpleLayout('pane-1', 'center-group'),
     activePaneId: 'pane-1',
@@ -168,5 +167,76 @@ describe('openFileInEditor', () => {
     const groupAfter = windowStore.tabGroups['center-group']!;
     expect(groupAfter.tabs).toHaveLength(2);
     expect(groupAfter.activeTabId).toBe('tab-file-/docs/a.md');
+  });
+});
+
+describe('openFileInEditor — beside the conversation, never on top of it', () => {
+  /** Centre split: a chat pane on the LEFT, the editor on the right — the
+   * arrangement a session creates when it opens. */
+  const centreWithChat = () =>
+    setStore(
+      produce((s) => {
+        s.layout = {
+          id: 'root',
+          type: 'split',
+          direction: 'horizontal',
+          splitRatio: 0.4,
+          first: { id: 'pane-chat', type: 'pane', tabGroupId: 'g-chat' },
+          second: { id: 'pane-editor', type: 'pane', tabGroupId: 'g-editor' },
+        };
+        s.tabGroups = {
+          'g-chat': {
+            id: 'g-chat',
+            tabs: [
+              { id: 'tab-chat-s1', title: 'One', contentType: 'chat', metadata: { sessionId: 's1' } },
+            ],
+            activeTabId: 'tab-chat-s1',
+          },
+          'g-editor': {
+            id: 'g-editor',
+            tabs: [{ id: 'tab-file-a', title: 'a.md', contentType: 'file', metadata: { filePath: '/a.md' } }],
+            activeTabId: 'tab-file-a',
+          },
+        };
+        s.activePaneId = null;
+      }),
+    );
+
+  it('opens into the editor pane, not the first leaf', () => {
+    centreWithChat();
+    openFileInEditor('/b.md', 'b.md');
+
+    // The chat pane is the FIRST centre leaf now, so "first" was the wrong
+    // rule: a file opened from the Files rail landed on top of the session.
+    expect(windowStore.tabGroups['g-chat'].tabs.map((t) => t.id)).toEqual(['tab-chat-s1']);
+    expect(windowStore.tabGroups['g-editor'].tabs.map((t) => t.id)).toContain('tab-file-/b.md');
+  });
+
+  it('reuses an empty pane rather than stacking onto the conversation', () => {
+    centreWithChat();
+    setStore(produce((s) => {
+      s.tabGroups['g-editor'] = { id: 'g-editor', tabs: [], activeTabId: null };
+    }));
+    openFileInEditor('/b.md', 'b.md');
+    expect(windowStore.tabGroups['g-editor'].tabs).toHaveLength(1);
+    expect(windowStore.tabGroups['g-chat'].tabs).toHaveLength(1);
+  });
+
+  it('falls back to a conversation pane when the centre holds nothing else', () => {
+    setStore(
+      produce((s) => {
+        s.layout = { id: 'pane-chat', type: 'pane', tabGroupId: 'g-chat' };
+        s.tabGroups = {
+          'g-chat': {
+            id: 'g-chat',
+            tabs: [{ id: 'tab-chat-s1', title: 'One', contentType: 'chat' }],
+            activeTabId: 'tab-chat-s1',
+          },
+        };
+      }),
+    );
+    openFileInEditor('/b.md', 'b.md');
+    // Opening it there beats not opening it at all.
+    expect(windowStore.tabGroups['g-chat'].tabs.map((t) => t.id)).toContain('tab-file-/b.md');
   });
 });

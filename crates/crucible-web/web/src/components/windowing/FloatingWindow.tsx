@@ -13,6 +13,7 @@ import {
 } from './icons';
 import { confirmTabClose } from '@/lib/tab-guards';
 import { getGlobalRegistry } from '@/lib/panel-registry';
+import { reactiveMetadataProps } from '@/lib/panel-props';
 
 type ResizeEdge = 'n' | 's' | 'e' | 'w' | 'nw' | 'ne' | 'sw' | 'se';
 
@@ -304,7 +305,7 @@ export const FloatingWindow: Component<{ window: FloatingWindowType }> = (props)
             const tab = untrack(() => activeTab());
             const panel = getGlobalRegistry().get(contentType);
             if (panel) {
-              const panelProps = (tab?.metadata ?? {}) as Record<string, unknown>;
+              const panelProps = reactiveMetadataProps(activeTab);
               return <Dynamic component={panel.component} {...panelProps} />;
             }
             return (

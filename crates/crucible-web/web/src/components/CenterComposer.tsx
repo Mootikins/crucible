@@ -72,7 +72,12 @@ const iconForProvider = (plugin: string) => PROVIDER_ICONS[plugin] ?? FlaskConic
  * nothing — starting a session is a deliberate act (the ribbon's New Session,
  * the command palette), not something a pane falls back into.
  */
-export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
+export const CenterComposer: Component<{
+  draftTabId?: string;
+  /** Project the draft opens aimed at (the sessions tree's per-project New
+   * Session row). Seeds the project chip; the user may still change it. */
+  workspace?: string;
+}> = (props) => {
   const { createSession } = useSessionSafe();
 
   const [agents, setAgents] = createSignal<AgentProfileEntry[]>([]);
@@ -146,6 +151,18 @@ export const CenterComposer: Component<{ draftTabId?: string }> = (props) => {
     });
     syncRecentsFromServer();
   });
+
+  // Follows the prop rather than seeding once: retargeting the open draft
+  // (New Session on a second project) changes it, and a one-shot seed would
+  // leave the chip naming the project the user just moved away from.
+  createEffect(
+    on(
+      () => props.workspace,
+      (ws) => {
+        if (ws !== undefined) setWorkspace(ws);
+      },
+    ),
+  );
 
   /**
    * The runtime chip's pick, as `session.create` takes it.

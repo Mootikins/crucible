@@ -1,6 +1,6 @@
 import { windowActions, windowStore } from '@/stores/windowStore';
 import type { Tab } from '@/types/windowTypes';
-import { focusTabInPlace, openTabDockedRight } from './session-actions';
+import { focusTabInPlace, openTabBesideEditor } from './session-actions';
 import { iconForContentType } from './tab-icons';
 
 /**
@@ -46,21 +46,40 @@ function findDraftTab(): { groupId: string; tab: Tab } | null {
  * Open (or focus) a draft session tab — the lazy-creation surface. Nothing
  * touches the daemon until the first message is sent; the draft panel then
  * creates the session and closes itself.
+ *
+ * `workspace` pre-selects the project the session will act in. It is what
+ * makes "New session" a PROJECT action: the sessions tree offers the row per
+ * project, and the draft must open already aimed at that one.
+ *
+ * One draft surface at a time. A second call RETARGETS the open draft instead
+ * of focusing it unchanged — focusing a draft still aimed at the previous
+ * project would silently discard the project the user just picked.
  */
-export function openDraftSession(): void {
+export function openDraftSession(opts: { workspace?: string } = {}): void {
   const existing = findDraftTab();
   if (existing) {
+    if (opts.workspace !== undefined) {
+      windowActions.updateTab(existing.groupId, existing.tab.id, {
+        metadata: { ...existing.tab.metadata, workspace: opts.workspace },
+      });
+    }
     focusTabInPlace(existing.groupId, existing.tab.id);
     return;
   }
 
   const tabId = `tab-draft-${++draftCounter}`;
-  const opened = openTabDockedRight({
+  const opened = openTabBesideEditor({
     id: tabId,
     title: 'New Session',
     contentType: 'chat-draft',
     icon: iconForContentType('chat-draft'),
-    metadata: { draftTabId: tabId },
+    // ALWAYS define `workspace`, even as undefined. A panel's props are keyed
+    // from the metadata present when it mounts (`reactiveMetadataProps`), so a
+    // key omitted here gets no reactive channel and can never be written to
+    // later. The spread guarded on truthiness dropped it for `''` — the
+    // ribbon's explicit "no project" — and that draft could then never be
+    // retargeted at a project, which is the common path.
+    metadata: { draftTabId: tabId, workspace: opts.workspace },
   });
   if (!opened) {
     console.error('openDraftSession: no pane available — cannot open draft tab');

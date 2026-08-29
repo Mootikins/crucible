@@ -1,81 +1,102 @@
-// Sessions dock in the RIGHT EDGE PANEL (the collapsible sidebar) — the
-// center tiling stays the editing surface. Pins the placement rules of
-// openSessionInChat/sessionPane.
+// A session is a PEER OF THE EDITOR: it opens as its own pane in the centre
+// tiling, to the LEFT of the editor, sharing the main area with it. Pins the
+// placement rules of openSessionInChat / sessionPane / openTabBesideEditor.
+//
+// It used to dock in an edge panel — first the right rail (where it covered
+// the file tree), then the left (where it covered the session list). Cursor's
+// agents window is the model: a nav rail with the session list, then the
+// conversation and the editor side by side, then the file tree beyond the
+// editor. A conversation has a composer and needs a working surface's width,
+// which is what a rail cannot give it.
 import { describe, it, expect, beforeEach } from 'vitest';
 import { produce } from 'solid-js/store';
-import { windowStore, setStore } from '@/stores/windowStore';
+import { windowStore, windowActions, setStore } from '@/stores/windowStore';
 import type { LayoutNode, TabGroup } from '@/types/windowTypes';
 import { openSessionInChat, sessionPane } from '../session-actions';
+import { collectLeafGroupIds } from '@/stores/windowStoreInternals';
 
-function resetLayout(
-  layout: LayoutNode,
-  tabGroups: Record<string, TabGroup>,
-  rightGroupId: string | null = 'g-right',
-) {
+/** Centre tab groups, left to right. */
+const centreGroups = () => collectLeafGroupIds(windowStore.layout);
+
+/** The group holding a session tab, or null. */
+const groupWithTab = (tabId: string) =>
+  Object.values(windowStore.tabGroups).find((g) => g.tabs.some((t) => t.id === tabId)) ?? null;
+
+function resetLayout(layout?: LayoutNode, tabGroups?: Record<string, TabGroup>) {
   setStore(
     produce((s) => {
-      s.layout = layout;
-      s.tabGroups = tabGroups;
-      s.activePaneId = null;
-      s.edgePanels.right.layout = {
-        id: 'right-pane',
-        type: 'pane',
-        tabGroupId: rightGroupId,
+      s.layout = layout ?? { id: 'pane-editor', type: 'pane', tabGroupId: 'g-editor' };
+      s.tabGroups = tabGroups ?? {
+        'g-editor': {
+          id: 'g-editor',
+          tabs: [{ id: 'tab-file-a', title: 'a.md', contentType: 'file' }],
+          activeTabId: 'tab-file-a',
+        },
+        'g-sessions-list': {
+          id: 'g-sessions-list',
+          tabs: [{ id: 'sessions-tab', title: 'Sessions', contentType: 'sessions' }],
+          activeTabId: 'sessions-tab',
+        },
+        'g-files': {
+          id: 'g-files',
+          tabs: [{ id: 'files-tab', title: 'Files', contentType: 'files' }],
+          activeTabId: 'files-tab',
+        },
       };
-      s.edgePanels.right.isCollapsed = true;
+      s.activePaneId = null;
+      // The rails: session LIST on one, file tree on the other. Neither is
+      // where a conversation goes.
+      s.edgePanels.left.layout = { id: 'left-pane', type: 'pane', tabGroupId: 'g-sessions-list' };
+      s.edgePanels.right.layout = { id: 'right-pane', type: 'pane', tabGroupId: 'g-files' };
     })
   );
 }
 
-const baseState = (): [LayoutNode, Record<string, TabGroup>] => [
-  { id: 'pane-1', type: 'pane', tabGroupId: 'g-editor' },
-  {
-    'g-editor': {
-      id: 'g-editor',
-      tabs: [{ id: 'tab-file-a', title: 'a.md', contentType: 'file' }],
-      activeTabId: 'tab-file-a',
-    },
-    'g-right': { id: 'g-right', tabs: [], activeTabId: null },
-  },
-];
+describe('session placement (a pane beside the editor)', () => {
+  beforeEach(() => resetLayout());
 
-describe('session placement (right edge panel)', () => {
-  beforeEach(() => resetLayout(...baseState()));
-
-  it('docks a new session in the right edge panel, expanded and active', () => {
+  it('splits the centre and puts the session LEFT of the editor', () => {
     openSessionInChat('s1', 'My Session');
 
-    // The center tiling is untouched — no split, editor tabs in place.
-    expect(windowStore.layout.type).toBe('pane');
-    expect(windowStore.tabGroups['g-editor'].tabs.map((t) => t.id)).toEqual(['tab-file-a']);
-
-    const right = windowStore.tabGroups['g-right'];
-    expect(right.tabs.map((t) => t.id)).toEqual(['tab-chat-s1']);
-    expect(right.activeTabId).toBe('tab-chat-s1');
-    expect(windowStore.edgePanels.right.isCollapsed).toBe(false);
+    expect(windowStore.layout.type).toBe('split');
+    const [firstGroup, secondGroup] = centreGroups();
+    // Left of the editor: the conversation is what you read and steer from,
+    // and the file it changes sits to its right.
+    expect(windowStore.tabGroups[firstGroup].tabs.map((t) => t.id)).toEqual(['tab-chat-s1']);
+    expect(windowStore.tabGroups[secondGroup].tabs.map((t) => t.id)).toEqual(['tab-file-a']);
   });
 
-  it('stacks further sessions in the same right panel group', () => {
+  it('leaves both rails alone', () => {
+    openSessionInChat('s1', 'My Session');
+    // The two defects this arrangement ends: a session used to land in a rail
+    // and cover whichever of these was there.
+    expect(windowStore.tabGroups['g-files'].tabs.map((t) => t.id)).toEqual(['files-tab']);
+    expect(windowStore.tabGroups['g-sessions-list'].tabs.map((t) => t.id)).toEqual(['sessions-tab']);
+  });
+
+  it('stacks a second session in the SAME pane, not a third column', () => {
     openSessionInChat('s1', 'One');
     openSessionInChat('s2', 'Two');
-    expect(windowStore.tabGroups['g-right'].tabs.map((t) => t.id)).toEqual([
-      'tab-chat-s1',
-      'tab-chat-s2',
-    ]);
-    expect(windowStore.tabGroups['g-right'].activeTabId).toBe('tab-chat-s2');
+
+    expect(centreGroups()).toHaveLength(2);
+    const pane = groupWithTab('tab-chat-s1')!;
+    expect(pane.tabs.map((t) => t.id)).toEqual(['tab-chat-s1', 'tab-chat-s2']);
+    expect(pane.activeTabId).toBe('tab-chat-s2');
   });
 
-  it('re-opening a session focuses its tab and re-expands the panel', () => {
+  it('re-opening a session focuses its tab where it already is', () => {
     openSessionInChat('s1', 'One');
-    setStore(produce((s) => { s.edgePanels.right.isCollapsed = true; }));
+    openSessionInChat('s2', 'Two');
     openSessionInChat('s1', 'One again');
-    expect(windowStore.tabGroups['g-right'].tabs).toHaveLength(1);
-    expect(windowStore.edgePanels.right.isCollapsed).toBe(false);
+
+    const pane = groupWithTab('tab-chat-s1')!;
+    expect(pane.tabs).toHaveLength(2);
+    expect(pane.activeTabId).toBe('tab-chat-s1');
   });
 
-  it('a session tab the user moved to a center pane focuses in place', () => {
+  it('honours a session the user dragged into the editor pane', () => {
     resetLayout(
-      { id: 'pane-1', type: 'pane', tabGroupId: 'g-editor' },
+      { id: 'pane-editor', type: 'pane', tabGroupId: 'g-editor' },
       {
         'g-editor': {
           id: 'g-editor',
@@ -85,24 +106,38 @@ describe('session placement (right edge panel)', () => {
           ],
           activeTabId: 'tab-file-a',
         },
-        'g-right': { id: 'g-right', tabs: [], activeTabId: null },
       },
     );
+
     openSessionInChat('s1', 'One');
-    // Focused where the user put it; NOT re-docked right.
+    // Focused where the user put it; the centre is NOT split behind their back.
+    expect(windowStore.layout.type).toBe('pane');
     expect(windowStore.tabGroups['g-editor'].activeTabId).toBe('tab-chat-s1');
-    expect(windowStore.tabGroups['g-right'].tabs).toHaveLength(0);
   });
 
-  it('sessionPane reports the right edge panel group', () => {
-    expect(sessionPane()?.groupId).toBe('g-right');
-  });
-
-  it('falls back to the first center group when the layout has no right group', () => {
-    const [layout, groups] = baseState();
-    delete groups['g-right'];
-    resetLayout(layout, groups, null);
+  it('adds to an existing session pane rather than splitting again', () => {
     openSessionInChat('s1', 'One');
-    expect(windowStore.tabGroups['g-editor'].tabs.some((t) => t.id === 'tab-chat-s1')).toBe(true);
+    const before = windowStore.layout;
+    openSessionInChat('s2', 'Two');
+    // Same split, same shape: `sessionPane` found the pane by role.
+    expect(centreGroups()).toHaveLength(2);
+    expect(windowStore.layout.type).toBe(before.type);
+  });
+
+  it('reports no session pane before one exists', () => {
+    expect(sessionPane()).toBeNull();
+    openSessionInChat('s1', 'One');
+    expect(sessionPane()).not.toBeNull();
+  });
+
+  it('never mistakes a RAIL for the session pane', () => {
+    // The session LIST is chrome, not a conversation, and it lives in a rail.
+    // Matching on it would send every session back into the sidebar.
+    windowActions.addTab('g-sessions-list', {
+      id: 'tab-chat-rail',
+      title: 'stray',
+      contentType: 'chat',
+    });
+    expect(sessionPane()).toBeNull();
   });
 });

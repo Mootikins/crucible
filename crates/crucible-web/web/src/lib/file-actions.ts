@@ -1,6 +1,6 @@
 import { windowActions, windowStore } from '@/stores/windowStore';
 import type { Tab } from '@/types/windowTypes';
-import { findFirstCenterPaneGroupId } from './panel-actions';
+import { editorGroupId } from './panel-actions';
 import { iconForContentType } from './tab-icons';
 import { recordRecentFile } from './recent-files';
 import { pendingDiffActions } from '@/stores/pendingDiffStore';
@@ -14,7 +14,10 @@ export function findTabByFilePath(filePath: string): { groupId: string; tab: Tab
 }
 
 export function openFileInEditor(filePath: string, fileName?: string): void {
-  openFileInGroup(findFirstCenterPaneGroupId(), filePath, fileName);
+  // The EDITOR group, not the first centre leaf. A session opens as a pane to
+  // the left of the editor, so "first" became the conversation and files
+  // opened on top of the chat.
+  openFileInGroup(editorGroupId(), filePath, fileName);
 }
 
 /**

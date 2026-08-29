@@ -4,6 +4,7 @@ import type {
   SplitDirection,
   Tab,
   TabGroup,
+  EdgePanelPosition,
 } from '@/types/windowTypes';
 import type { PaneDropPosition } from './windowStoreTypes';
 import type { WindowStoreContext } from './windowStoreInternals';
@@ -42,7 +43,7 @@ import type { WindowState } from './windowStoreTypes';
  * behavior). Call inside produce(). */
 function releaseEdgeGroup(
   s: WindowState,
-  pos: 'left' | 'right' | 'bottom',
+  pos: EdgePanelPosition,
   group: TabGroup
 ): void {
   const panel = s.edgePanels[pos];
@@ -76,6 +77,8 @@ export interface TabActions {
   updateTab(groupId: string, tabId: string, updates: Partial<Tab>): void;
   createTabGroup(paneId?: string): string;
   splitPane(paneId: string, direction: SplitDirection): void;
+  /** Open a new tab in a new pane beside `paneId`; returns the new group id. */
+  openTabInNewPane(paneId: string, position: PaneDropPosition, tab: Tab): string | null;
   splitPaneAndDrop(
     paneId: string,
     position: PaneDropPosition,
@@ -336,6 +339,46 @@ export function createTabActions(context: WindowStoreContext): TabActions {
     );
   };
 
+  /**
+   * Open a NEW tab in a NEW pane beside an existing one.
+   *
+   * `splitPaneAndDrop` is the drag path — it MOVES a tab that already exists.
+   * This is the programmatic path: a session opening beside the editor has no
+   * source group to move from, and routing it through a temporary group only
+   * to move it out again would fire two layout writes for one gesture.
+   *
+   * Returns the new group's id so the caller can act on it.
+   */
+  const openTabInNewPane = (
+    paneId: string,
+    position: PaneDropPosition,
+    tab: Tab,
+  ): string | null => {
+    if (!findPaneAnywhere(store, paneId)) {
+      console.warn(`openTabInNewPane: pane ${paneId} not found in layout`);
+      return null;
+    }
+    const newPaneId = generateId();
+    const newGroupId = generateId();
+    setStore(
+      produce((s) => {
+        updateRootWhere(
+          s,
+          (root) => !!findPaneInLayout(root, paneId),
+          (root) => insertPaneRelative(root, paneId, position, newPaneId, newGroupId)
+        );
+        s.tabGroups[newGroupId] = {
+          id: newGroupId,
+          tabs: [tab],
+          activeTabId: tab.id,
+        };
+        s.activePaneId = newPaneId;
+        s.focusedRegion = findEdgePanelForPane(s, newPaneId) ?? 'center';
+      })
+    );
+    return newGroupId;
+  };
+
   const splitPaneAndDrop = (
     paneId: string,
     position: PaneDropPosition,
@@ -379,6 +422,7 @@ export function createTabActions(context: WindowStoreContext): TabActions {
     updateTab,
     createTabGroup,
     splitPane,
+    openTabInNewPane,
     splitPaneAndDrop,
   };
 }

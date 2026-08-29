@@ -40,7 +40,7 @@ const makeEdgePanel = (position: EdgePanelPosition, tabGroupId: string, isCollap
   id: `${position}-panel`,
   layout: { id: `${position}-pane`, type: 'pane' as const, tabGroupId },
   isCollapsed,
-  ...(position === 'bottom' ? { height: 200 } : { width: 250 }),
+  width: 250,
 });
 
 const simpleLayout = (paneId: string, groupId: string): LayoutNode => ({
@@ -66,12 +66,10 @@ beforeEach(() => {
         { id: 'sessions-tab', title: 'Sessions', contentType: 'sessions' },
       ]),
       'right-group': makeTabGroup('right-group', [], null),
-      'bottom-group': makeTabGroup('bottom-group', [], null),
     },
     edgePanels: {
       left: makeEdgePanel('left', 'left-group', true),
       right: makeEdgePanel('right', 'right-group', true),
-      bottom: makeEdgePanel('bottom', 'bottom-group', true),
     },
     layout: simpleLayout('pane-1', 'center-group'),
     activePaneId: 'pane-1',

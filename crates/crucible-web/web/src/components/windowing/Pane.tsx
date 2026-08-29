@@ -1,9 +1,11 @@
-import { Component, Show, createMemo, createSignal, onCleanup, untrack } from 'solid-js';
+import { Component, Show, createMemo, createSignal, onCleanup } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { createDroppable, useDragDropContext } from '@thisbeyond/solid-dnd';
 import { TabBar } from './TabBar';
 import { windowStore, windowActions } from '@/stores/windowStore';
+import { findEdgePanelForPane } from '@/stores/windowStoreInternals';
 import { getGlobalRegistry } from '@/lib/panel-registry';
+import { reactiveMetadataProps } from '@/lib/panel-props';
 import { attachFileDropTarget } from '@/lib/file-dnd';
 import { openFileInGroup } from '@/lib/file-actions';
 
@@ -104,8 +106,9 @@ export const Pane: Component<{ paneId: string }> = (props) => {
   // changes — NOT when unrelated tab fields (e.g. isModified) churn the tab
   // object reference. updateTab() replaces the whole tabs array on every write,
   // so depending on activeTab() directly would remount the panel (and, for the
-  // editor, discard in-progress edits + loop). Metadata is read untracked since
-  // it is set once at tab creation.
+  // editor, discard in-progress edits + loop). Metadata is NOT write-once, so
+  // it reaches the panel through `reactiveMetadataProps` instead: per-key
+  // memos, which deliver a later write without re-running this.
   const activeTabId = createMemo(() => activeTab()?.id ?? null);
   const activeContentType = createMemo(() => activeTab()?.contentType ?? null);
 
@@ -119,10 +122,9 @@ export const Pane: Component<{ paneId: string }> = (props) => {
         </div>
       );
     }
-    const tab = untrack(() => activeTab());
     const panel = getGlobalRegistry().get(contentType);
     if (panel) {
-      const panelProps = (tab?.metadata ?? {}) as Record<string, unknown>;
+      const panelProps = reactiveMetadataProps(activeTab);
       return <Dynamic component={panel.component} {...panelProps} />;
     }
     // Every shipped content type is registry-backed; anything else is a
@@ -134,18 +136,36 @@ export const Pane: Component<{ paneId: string }> = (props) => {
     );
   };
 
+  // A collapsed rail pane is CLIPPED to its tab strip, not unmounted: the
+  // parent split gives it the strip's height and `overflow-hidden` takes the
+  // rest. Unmounting would tear down the shell (and its scrollback) every time
+  // the user tucked the terminal away.
+  const collapsed = () => windowActions.findPaneById(props.paneId)?.collapsed === true;
+
+  const handleClick = () => {
+    windowActions.setActivePane(props.paneId);
+    // The bar IS the affordance: clicking anywhere on a collapsed pane opens
+    // it, so the ribbon marker is a shortcut rather than the only way back.
+    if (!collapsed()) return;
+    const rail = findEdgePanelForPane(windowStore, props.paneId);
+    if (rail) windowActions.setRailPaneCollapsed(rail, props.paneId, false);
+  };
+
   return (
     <div
       use:centerDroppable
       ref={attachFileDrop}
+      data-pane-id={props.paneId}
+      data-pane-collapsed={collapsed() ? 'true' : undefined}
       classList={{
         'relative flex flex-col h-full overflow-hidden transition-all': true,
         // Focus reads through the active tab chip (Obsidian's language) —
         // no colored ring around the pane itself.
         'bg-primary/5': centerDroppable.isActiveDroppable,
         'ring-1 ring-primary/60': fileDropOver(),
+        'cursor-pointer': collapsed(),
       }}
-      onClick={() => windowActions.setActivePane(props.paneId)}
+      onClick={handleClick}
     >
       {/* A pane with no tabs is VOID — no splash, no hint. The session
           composer lives in its own New Session tab; an empty pane is just
